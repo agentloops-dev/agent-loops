@@ -159,6 +159,9 @@ func ParseCode(text string) (*Code, error) {
 	return c, nil
 }
 
+// Digits is the short code the holder shows for this code's token (TokenCode, #5359).
+func (c *Code) Digits() string { return TokenCode(c.Secret) }
+
 // ID is what the holder of the code presents: hex of the secret's first 16 bytes.
 func (c *Code) ID() string { return hex.EncodeToString(c.Secret[:16]) }
 

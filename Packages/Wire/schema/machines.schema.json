@@ -2040,6 +2040,10 @@
         },
         "fromPool": {
           "type": "boolean"
+        },
+        "code": {
+          "type": "string",
+          "description": "The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359)."
         }
       },
       "required": [
