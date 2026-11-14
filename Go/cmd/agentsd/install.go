@@ -18,12 +18,13 @@ import (
 const installUsage = `usage: agentsd install --join <host code> [--name NAME] [--runtime ID]... [--project DIR]... [--from-pool]
 
 Sets this machine up (#5356): installs this host, joins the control plane, installs the
-runtimes, and runs each project's .agents/setup.sh. Each step is reported to the control plane
+runtimes, runs each project's .agents/setup.sh, and starts one short session to check the machine answers (step 8; --no-smoke leaves it out). Each step is reported to the control plane
 as it ends. Run it again to do only what is missing.`
 
 // installCommand is `agentsd install --join <code>`, the one installer.
 func installCommand(args []string) int {
 	var o hostsetup.Options
+	noSmoke := false
 	for i := 0; i < len(args); i++ {
 		next := func() string {
 			if i+1 < len(args) {
@@ -41,6 +42,8 @@ func installCommand(args []string) int {
 			o.Runtimes = append(o.Runtimes, next())
 		case a == "--project":
 			o.Projects = append(o.Projects, next())
+		case a == "--no-smoke":
+			noSmoke = true
 		case a == "--from-pool":
 			o.FromPool = true
 		case strings.HasPrefix(a, "--join="):
@@ -50,6 +53,7 @@ func installCommand(args []string) int {
 			return 2
 		}
 	}
+	o.Smoke = !noSmoke
 	if o.Join == "" {
 		fmt.Fprintln(os.Stderr, installUsage)
 		return 2
