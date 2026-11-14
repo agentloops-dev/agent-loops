@@ -194,11 +194,12 @@ struct LocalServices {
         #if DEBUG
         // A walk's stand-in for a public root (#61, Pebble), for the host to follow a move.
         if let root = environment["AGENTS_TEST_TRUST_ROOT"] { variables["AGENTS_TEST_TRUST_ROOT"] = root }
-        // A video's first open (#5514): the scratch machine's name on camera, and its agents'
-        // gh and git signed in as the demo person, never as the person at this Mac. Only a
-        // scratch root's host takes them; launch.sh gives its own agentsd the same.
+        // A video's first open (#5514): the scratch machine's name on camera, a personal home
+        // of its own (skills, secrets, memories), and its agents' gh and git signed in as the
+        // demo person, never the person at this Mac's. Only a scratch root's host takes them;
+        // launch.sh gives its own agentsd the same.
         if job == .daemon, environment[StoreLocations.rootVariable] != nil {
-            for name in ["HOST_NAME", "GH_CONFIG_DIR", "GIT_CONFIG_GLOBAL"] { variables[name] = environment[name] }
+            for name in ["HOST_NAME", "AGENTS_PERSONAL_HOME", "GH_CONFIG_DIR", "GIT_CONFIG_GLOBAL"] { variables[name] = environment[name] }
         }
         #endif
         guard FileManager.default.isExecutableFile(atPath: arguments[0]) else {
