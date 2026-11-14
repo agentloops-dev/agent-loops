@@ -123,3 +123,13 @@ button.remove:hover { opacity: 1; }
 .new-heading .persona-segments { flex-wrap: nowrap; }
 .new-heading .persona-segments button { flex: none; white-space: nowrap; }
 .new-heading p { margin: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The Suggested section (#5461): at most 3 epics with no lead; a row fills the form. */
+.suggested { align-self: stretch; max-width: 520px; width: 100%; margin: 12px auto 0; text-align: left; display: flex; flex-direction: column; gap: 6px; }
+.suggested-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.suggested-head h2 { margin: 0; font-size: 0.8125rem; font-weight: 600; color: var(--paper-secondary); }
+.suggested-end { display: flex; align-items: baseline; gap: 10px; }
+.suggested ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.suggested li { display: flex; align-items: center; gap: 8px; }
+.suggested-row { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
+.suggested-title, .suggested-row .quiet { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggested-show { align-self: center; margin-top: 8px; }

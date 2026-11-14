@@ -1154,7 +1154,11 @@
     {
       "name": "work/dismiss-lead",
       "x-capability": "work.suggest-leads/1",
-      "tags": [],
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
@@ -1200,7 +1204,11 @@
     {
       "name": "work/suggest-leads",
       "x-capability": "work.suggest-leads/1",
-      "tags": [],
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
