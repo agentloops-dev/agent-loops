@@ -621,3 +621,16 @@ func (s *Service) joinCommand(person string) string {
 	}
 	return JoinCommand(s.codes.URL, s.codes.Pin, person)
 }
+
+// madeMachineKey carries, through a context, that a host code is for a machine the control
+// plane makes (#5359).
+type madeMachineKey struct{}
+
+func withMadeMachine(ctx context.Context) context.Context {
+	return context.WithValue(ctx, madeMachineKey{}, true)
+}
+
+func madeMachine(ctx context.Context) bool {
+	made, _ := ctx.Value(madeMachineKey{}).(bool)
+	return made
+}

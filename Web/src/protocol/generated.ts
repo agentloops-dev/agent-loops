@@ -8457,6 +8457,11 @@ export interface MachineSetupReport {
   detail?: string;
   error?: string;
   fromPool?: boolean;
+  /**
+   * The digits the host shows for its join token (controllink.TokenCode), said with the compare
+   * step: the control plane compares them with the ones it made (#5359).
+   */
+  code?: string;
 }
 
 export type MachineSetupState =
@@ -17597,7 +17602,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
-  MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool"] },
+  MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code"] },
   MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },

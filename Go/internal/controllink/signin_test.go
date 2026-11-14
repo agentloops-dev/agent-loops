@@ -33,3 +33,17 @@ func TestApprovalCodeIsBoundToBothKeys(t *testing.T) {
 		t.Fatalf("JoinCode = %q", got)
 	}
 }
+
+// The digits of a join token (#5359): the host and the control plane make the same from the
+// token's secret, and another token makes another.
+func TestTokenCodeIsTheSameOnBothSides(t *testing.T) {
+	_, secret := MakeCodeSecret([]byte("a control private key of 32 bytes"))
+	code := &Code{Host: true, Secret: secret}
+	if code.Digits() != TokenCode(secret) || len(code.Digits()) != 6 {
+		t.Fatalf("digits %q", code.Digits())
+	}
+	_, other := MakeCodeSecret([]byte("a control private key of 32 bytes"))
+	if TokenCode(other) == TokenCode(secret) {
+		t.Fatal("two tokens made the same digits")
+	}
+}

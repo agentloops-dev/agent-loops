@@ -9084,6 +9084,9 @@ type MachineSetupReport struct {
 	Error *string `json:"error,omitzero"`
 
 	FromPool *bool `json:"fromPool,omitzero"`
+
+	// The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359).
+	Code *string `json:"code,omitzero"`
 }
 
 type MachineSetupState string
