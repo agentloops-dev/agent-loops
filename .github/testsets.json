@@ -1,0 +1,100 @@
+{
+  "about": "The testset map (#5583, epic #5581 spec 1): which changed files select which checks, and why. scripts/checks.py reads it for scripts/checks.sh plan, scripts/select-test-suites.sh (CI's select and swift jobs), scripts/go-changed.sh and merge-wave.sh. Rules are tried in file order within their group, and the first rule whose paths match a file wins for that group. A glob's * stays inside one folder; ** crosses folders, and **/ also matches no folder. A file that no rule of a group matches selects that group's 'unmatched' testsets. A selection must never be less than the one it replaced (principle 8): python3 scripts/checks.py --selftest holds it to the old selection.",
+  "testsets": {
+    "apps": {"platform": "darwin", "about": "CI's apps job: the Xcode builds of the Mac app and the Remote"},
+    "agentskit": {"platform": "darwin", "about": "swift test on Packages/AgentsKit; agentskit:<Suite> is one suite of it"},
+    "codetext": {"platform": "darwin", "about": "swift test on Packages/CodeText; codetext:<Suite> is one suite of it"},
+    "go": {"platform": "linux", "about": "CI's go jobs: vet, test -race and the wire check on the whole Go module"},
+    "go-changed": {"platform": "darwin", "about": "scripts/go-changed.sh: vet and test -race on the changed Go packages; go-changed:<pkg> is one package"},
+    "marks": {"platform": "linux", "about": "CI's marks job: the logo and icons made from their source"},
+    "build-host": {"platform": "darwin", "about": "merge-wave: xcodebuild the AgentsHost scheme"},
+    "build-remote": {"platform": "darwin", "about": "merge-wave: xcodebuild the Remote scheme for the simulator"},
+    "web": {"platform": "any", "about": "merge-wave: scripts/web.sh build, then npm run check and npm test"}
+  },
+  "groups": {
+    "tests": {
+      "about": "The Swift suites and the Go module (was scripts/select-test-suites.sh). An unknown file runs every package suite and the Go module.",
+      "all": ["agentskit", "codetext", "go"],
+      "unmatched": "all"
+    },
+    "apps": {
+      "about": "Whether CI's macOS apps job starts (#594): skip only when every file is prose or config that no build reads.",
+      "all": ["apps"],
+      "unmatched": "all"
+    },
+    "builds": {
+      "about": "The Xcode builds and the web check a lane or a merge wave runs for its files (was merge-wave.sh builds_for_paths).",
+      "all": ["build-host", "build-remote", "web"],
+      "unmatched": "none"
+    },
+    "marks": {
+      "about": "Whether CI's marks job starts (#4615).",
+      "all": ["marks"],
+      "unmatched": "none"
+    }
+  },
+  "rules": [
+    {"id": "ci-workflow", "group": "tests", "paths": [".github/workflows/ci.yml"], "testsets": "all",
+     "about": "The main CI workflow defines the suites: run them all when it changes."},
+    {"id": "lint-config", "group": "tests", "paths": ["scripts/lint.sh", "ruff.toml", ".shellcheckrc", ".swiftlint.yml", "Web/biome.json"], "testsets": [],
+     "about": "The linters' own files (#1224): CI's lint job reads them, no build or test does."},
+    {"id": "agentskit-quarantine", "group": "tests", "paths": ["Packages/AgentsKit/Tests/AgentsKitTests/Support/FlakyUnderLoad.swift"], "testsets": ["agentskit:{touched}"],
+     "about": "Quarantine marks do not change what a test checks: they add no suite and need no whole run."},
+    {"id": "agentskit-tests", "group": "tests", "paths": ["Packages/AgentsKit/Tests/**"], "testsets": ["agentskit:{file-suite}"],
+     "about": "A <Suite>Tests.swift that declares that suite runs it; any other test file runs the whole package."},
+    {"id": "agentskit-core-source", "group": "tests", "paths": ["Packages/AgentsKit/Sources/AgentsKitCore/**"], "testsets": ["agentskit:{source}"], "if_filtered": ["agentskit:WireSchemaTests"],
+     "about": "Source runs the suites changed with it, else the whole package; a filtered run for AgentsKitCore also holds it to the wire schema."},
+    {"id": "agentskit-source", "group": "tests", "paths": ["Packages/AgentsKit/Sources/**"], "testsets": ["agentskit:{source}"],
+     "about": "Source runs the suites changed with it, else the whole package."},
+    {"id": "agentskit-package", "group": "tests", "paths": ["Packages/AgentsKit/**"], "testsets": ["agentskit"],
+     "about": "Package.swift, resources and the rest run the whole package."},
+    {"id": "wire-generated-web", "group": "tests", "paths": ["Web/src/protocol/generated.ts"],
+     "testsets": ["go", "go-changed", "agentskit:WireSchemaTests", "agentskit:WebSignaturesTests", "agentskit:WebDistManifestTests", "agentskit:ControlAgreementVectorTests", "agentskit:WebFixturesTests"],
+     "about": "The web types made from Packages/Wire (#1135): the wire's checks and the suites that hold Web/ to Swift."},
+    {"id": "wire", "group": "tests", "paths": ["Packages/Wire/**", "scripts/wire.sh"],
+     "testsets": ["go", "go-changed", "agentskit:WireSchemaTests", "agentskit:WebSignaturesTests"],
+     "about": "The wire's schema (#1135): wiregen's Go test, and the Swift suites held to it."},
+    {"id": "go-module", "group": "tests", "paths": ["Go/go.mod", "Go/go.sum"], "testsets": ["go", "go-changed"],
+     "about": "A module change can break any Go package."},
+    {"id": "go", "group": "tests", "paths": ["Go/**"], "testsets": ["go", "go-changed:{package}"],
+     "about": "Go: the whole module on Linux in CI, the changed packages on this Mac."},
+    {"id": "web", "group": "tests", "paths": ["Web/**"], "testsets": ["agentskit:WebDistManifestTests", "agentskit:ControlAgreementVectorTests", "agentskit:WebFixturesTests"],
+     "about": "AgentsKit's suites that hold Web/ to Swift; CI's web job checks the rest of Web/ on every run."},
+    {"id": "views", "group": "tests", "paths": ["App/Sources/**", "Remote/Sources/**", "Shared/UI/**"], "testsets": ["agentskit:ConsistencyTests", "agentskit:OneGroupingTests"],
+     "about": "AgentsKit's source scans read the apps' views from disk (#475)."},
+    {"id": "toolsets", "group": "tests", "paths": ["App/Resources/toolsets/**"], "testsets": ["agentskit:ToolsetTests", "agentskit:ArchiveToolsetTests"],
+     "about": "The two suites that read the bundled toolsets."},
+    {"id": "codetext-tests", "group": "tests", "paths": ["Packages/CodeText/Tests/**"], "testsets": ["codetext:{file-suite}"],
+     "about": "A <Suite>Tests.swift that declares that suite runs it; any other test file runs the whole package."},
+    {"id": "codetext-source", "group": "tests", "paths": ["Packages/CodeText/Sources/**"], "testsets": ["codetext:{source}"],
+     "about": "Source runs the suites changed with it, else the whole package."},
+    {"id": "codetext-package", "group": "tests", "paths": ["Packages/CodeText/**"], "testsets": ["codetext"],
+     "about": "Package.swift, resources and the rest run the whole package."},
+    {"id": "no-tests", "group": "tests",
+     "paths": ["App/**", "Host/**", "Remote/**", "RemoteNotify/**", "RemoteWidget/**", "docs/**", "mkdocs.yml", "specs/**", "design/**", ".agents/**", ".claude/**", ".github/workflows/**", ".github/testsets.json",
+               "scripts/select-test-suites.sh", "scripts/checks.sh", "scripts/checks.py", "scripts/checks-today.json", "scripts/check-test-indexing.py", "scripts/web.sh", "scripts/slow-tests.sh", "scripts/flaky-tests.sh", "scripts/normalize-metaltoolchain-cache.py", "scripts/rerun-cancelled-ci.py"],
+     "testsets": [],
+     "about": "These cannot change either Swift package's tests or the Go module. The map and its reader are held by lint's selftest instead."},
+
+    {"id": "apps-none", "group": "apps",
+     "paths": ["docs/**", "mkdocs.yml", "specs/**", "design/**", ".agents/**", ".claude/**", "**/*.md", "Go/**", "Packages/Wire/**", "scripts/wire.sh", "scripts/rerun-cancelled-ci.py", "scripts/lint.sh", "ruff.toml", ".shellcheckrc", ".swiftlint.yml", "Web/biome.json"],
+     "testsets": [],
+     "about": "Prose, agent config, Go, the wire's source and the linters' files: no Xcode build reads them."},
+    {"id": "apps", "group": "apps", "paths": ["**"], "testsets": ["apps"],
+     "about": "Anything else may change what the Xcode builds make."},
+
+    {"id": "host", "group": "builds", "paths": ["App/**", "Host/**"], "testsets": ["build-host"],
+     "about": "The Mac app."},
+    {"id": "shared", "group": "builds", "paths": ["Packages/**", "Shared/**", "project.yml"], "testsets": ["build-host", "build-remote"],
+     "about": "Code both apps build."},
+    {"id": "remote", "group": "builds", "paths": ["Remote/**", "RemoteNotify/**", "RemoteWidget/**"], "testsets": ["build-remote"],
+     "about": "The Remote and its extensions."},
+    {"id": "web-page", "group": "builds", "paths": ["Web/**"], "testsets": ["web"],
+     "about": "The web page."},
+
+    {"id": "marks", "group": "marks",
+     "paths": ["design/logo/blob/final/**", "scripts/design.sh", "App/Resources/Assets.xcassets/**", "Remote/Resources/Assets.xcassets/AppIcon**", "Web/assets/**", "docs/assets/**", "docs/favicon.ico", "www/assets/**", ".github/workflows/ci.yml"],
+     "testsets": ["marks"],
+     "about": "A mark, its source or CI itself."}
+  ]
+}

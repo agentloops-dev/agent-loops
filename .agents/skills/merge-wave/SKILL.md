@@ -97,6 +97,8 @@ verified by its lane.
 | shippable and `build-host` | `smoke`: the run-app check below |
 | `docs/`, `specs/`, `.agents/` only | nothing, so straight to `finish` |
 
+The builds and tests come from the testset map, `.github/testsets.json` (#5583): `scripts/checks.sh plan <base>` prints each one and the rules and files that chose it.
+
 The Mac builds use the wave's `build/DD`, as run-app's `launch.sh` does, so the smoke
 check rebuilds nothing. Every build and test goes through `scripts/build-cache.sh`, so a
 fresh wave worktree replays what the lanes already compiled.

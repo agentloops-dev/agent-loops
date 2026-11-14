@@ -304,6 +304,7 @@ run_dupes() {
 # Our own checks that read only text, and so run anywhere: the rest need a build.
 run_checks() {
 	local status=0
+	python3 scripts/checks.py --selftest || status=1
 	python3 scripts/check-test-indexing.py --selftest || status=1
 	python3 scripts/check-test-indexing.py || status=1
 	python3 scripts/check-window-defaults.py || status=1

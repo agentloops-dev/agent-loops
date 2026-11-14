@@ -66,21 +66,11 @@ check_command() { # name [filter]
 	esac
 }
 
-# Paths on stdin; the Xcode builds and the web check they need, one per line.
-builds_for_paths() {
-	local host=0 remote=0 web=0 p
-	while IFS= read -r p; do
-		case $p in
-		App/* | Host/*) host=1 ;;
-		Packages/* | Shared/* | project.yml) host=1 remote=1 ;;
-		Remote/* | RemoteNotify/* | RemoteWidget/*) remote=1 ;;
-		Web/*) web=1 ;;
-		esac
-	done
-	if [ $host = 1 ]; then echo build-host; fi
-	if [ $remote = 1 ]; then echo build-remote; fi
-	if [ $web = 1 ]; then echo web; fi
-}
+# Paths on stdin; the Xcode builds and the web check they need, one per line: the "builds"
+# group of the testset map, .github/testsets.json (#5583), as this copy reads it.
+CHECKS="$(cd "$(dirname "$0")/../../../.." && pwd)/scripts/checks.py"
+[ -f "$CHECKS" ] || CHECKS=$MAIN/scripts/checks.py
+builds_for_paths() { python3 "$CHECKS" builds; }
 
 # Paths on stdin; yes when any of them reaches the apps, the hosts or the page.
 shippable() {

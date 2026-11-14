@@ -2,10 +2,11 @@
 # Vets and tests, with -race as CI's `go` job does, only the Go packages this branch
 # changes, so a lane finds a Go failure before it pushes and not in CI (#2994).
 #
-# A package is changed when a file in its folder under Go/ changed since the merge base
-# with origin/main, committed or not (a testdata file counts for the package above it).
-# A change to Go/go.mod, Go/go.sum or Packages/Wire (wiregen's source) runs ./... . No Go
-# change: nothing runs. On a Mac it is the Mac's own Go (#4709), so a failure only Linux
+# The testset map, .github/testsets.json (#5583), chooses the packages: a package is changed
+# when a file in its folder under Go/ changed since the merge base with origin/main,
+# committed or not (a testdata file counts for the package above it). A change to Go/go.mod,
+# Go/go.sum or the wire (Packages/Wire, scripts/wire.sh, the web types made from it) runs
+# ./... . `scripts/checks.sh plan --worktree` says why. No Go change: nothing runs. On a Mac it is the Mac's own Go (#4709), so a failure only Linux
 # has (CI's `go` job) still shows only in CI.
 #
 # When Go/internal/agentsd changes, its hot-path benchmarks (#4505) then run once each,
@@ -20,18 +21,11 @@ cd "$repo"
 base=$(git merge-base "${1:-origin/main}" HEAD)
 
 changed=$( { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u)
-
-if grep -qE '^(Go/go\.(mod|sum)|Packages/Wire/)' <<<"$changed"; then
-	pkgs=(./...)
-else
-	pkgs=()
-	# The package a testdata file belongs to is the folder above testdata; sort -u keeps
-	# each folder once. A folder with no .go file left (all deleted) has nothing to test.
-	for dir in $(grep -E '^Go/' <<<"$changed" | sed -e 's|/[^/]*$||' -e 's|/testdata.*||' | sort -u); do
-		compgen -G "$dir/*.go" >/dev/null || continue
-		pkgs+=("./${dir#Go/}")
-	done
-fi
+# The packages come from the testset map's go-changed testsets (#5583); a package path has
+# no space in it.
+out=$(python3 scripts/checks.py go-packages "$base")
+pkgs=()
+for pkg in $out; do pkgs+=("$pkg"); done
 
 if [ ${#pkgs[@]} -eq 0 ]; then
 	echo "go-changed: no Go package changed since $(git rev-parse --short "$base")"

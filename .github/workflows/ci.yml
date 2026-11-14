@@ -67,19 +67,17 @@ jobs:
           fi
           bash scripts/select-test-suites.sh "$base" | tee -a "$GITHUB_OUTPUT"
 
-      # The `marks` job (#4615) starts only when a mark, its source or this file changed; with
-      # no base to compare against it starts anyway.
+      # The `marks` job (#4615) starts only when a mark, its source or this file changed (the
+      # `marks` rule of .github/testsets.json, #5583); with no base to compare against it
+      # starts anyway.
       - name: Did a mark change
         id: marks
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          marks=run
-          if [[ -n "$BASE_SHA" ]] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
-            git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(design/logo/blob/final/|scripts/design\.sh$|App/Resources/Assets\.xcassets/|Remote/Resources/Assets\.xcassets/AppIcon|Web/assets/|docs/assets/|docs/favicon\.ico$|www/assets/|\.github/workflows/ci\.yml$)' || marks=skip
-          fi
-          echo "marks=$marks" | tee -a "$GITHUB_OUTPUT"
+          marks=$(python3 scripts/checks.py outputs "$BASE_SHA" | sed -n 's/^marks=//p')
+          echo "marks=${marks:-run}" | tee -a "$GITHUB_OUTPUT"
 
   # The test job ran the Xcode builds and the package builds and tests one after the
   # other, and they share nothing: a run that touched both took 20–24 minutes on its own
