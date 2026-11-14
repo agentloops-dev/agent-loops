@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Mute Notifications (#2003): a muted session's need is offered to no control plane and

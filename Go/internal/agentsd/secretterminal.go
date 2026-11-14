@@ -16,9 +16,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/alexec/agents/Go/internal/agentsd/skillcatalog"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // agents-secret NAME from a terminal (#4179, step D of the spike #4168): a call with no
@@ -44,7 +44,7 @@ import (
 const secretUseHour = "hour"
 
 // terminalCaveat is the known gap, in the request's words on every client.
-const terminalCaveat = "Agents cannot tell a terminal from an agent outside its session."
+const terminalCaveat = "Agent Loops cannot tell a terminal from an agent outside its session."
 
 // terminalHour is how long Approve for 1 Hour lasts; a test makes it short.
 var terminalHour = time.Hour

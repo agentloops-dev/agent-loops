@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/agentsd/yamlnode"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Auto and the shared words (#2658): every cell of the shipped table is filled and gives no

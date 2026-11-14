@@ -3,7 +3,7 @@ package agentsd
 import (
 	"log"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A session's state in lineage (#4274): each change of an agent's record that moves it from
@@ -14,7 +14,7 @@ import (
 // a delete records deleted.
 
 // sessionState is an agent's state in lineage. A finished or stopped session waits when the
-// host knows it does: an event it waits on, or a block (check_again, or a wait on other
+// host knows it does: an event it waits on, or a block (a wait on other
 // agents) not cleared. That is so on every runtime, as the host keeps those waits, and a
 // runtime that waits in its own way reads as stopped.
 func sessionState(a *wire.Agent) wire.LineageSessionStateName {

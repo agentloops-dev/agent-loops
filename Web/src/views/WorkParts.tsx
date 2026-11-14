@@ -5,8 +5,10 @@ import type { ComponentChildren } from "preact";
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { ForgeLabel } from "../protocol/generated";
+import { LastUpdate } from "./LastUpdate";
 import { MessageBanner } from "./MessageKinds";
 import { avatarHue, chipColours, labelScope, stateGlyph, stateGlyphWords, type StateGlyph } from "../model/work";
+import { Icon } from "./Icon";
 
 const glyphPaths: Record<StateGlyph, ComponentChildren> = {
   "issue-open": <><circle cx="8" cy="8" r="6.25" /><circle cx="8" cy="8" r="1.5" class="fill" /></>,
@@ -163,7 +165,7 @@ export function FilterMenu({ label, value, choices, any, always, standard, onPic
     <span class="work-menu" ref={anchor}>
       <button type="button" class={`work-menu-button${set ? " set" : ""}`} aria-haspopup="menu" aria-expanded={open.value !== null}
         aria-label={`${label}: ${chosen?.words ?? any ?? label}`} onClick={toggle}>
-        {words}<span class="chevron" aria-hidden="true">▾</span>
+        {words}<Icon name="chevron-down" class="chevron" />
       </button>
       {open.value && (
         <div class="popover work-menu-list" role="menu" aria-label={label} ref={menu} onKeyDown={keys}
@@ -177,11 +179,12 @@ export function FilterMenu({ label, value, choices, any, always, standard, onPic
   );
 }
 
-/** Refresh (section 4): an arrow that spins while a read runs. */
+/** Refresh (section 4): the standard two-arrow circle (as the Mac's and the Remote's
+ * `arrow.triangle.2.circlepath`), which turns about its centre while a read runs. */
 export function RefreshButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
   return (
     <button type="button" class={`work-refresh${busy ? " busy" : ""}`} title="Refresh" aria-label={busy ? "Refreshing" : "Refresh"} onClick={onClick}>
-      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.25 8a5.25 5.25 0 1 1-1.54-3.71M13.5 2.5v3h-3" /></svg>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.75 8a5.25 5.25 0 0 1 9.1-3.57M13.25 8a5.25 5.25 0 0 1-9.1 3.57M12.25 1.75v3h-3M3.75 14.25v-3h3" /></svg>
     </button>
   );
 }
@@ -216,9 +219,18 @@ export function EmptyState({ kind, title, line, action }: {
 /** A forge that could not be read (section 7): a strip with what it said and Try again. In the middle of a list that read
  * nothing, a heading first ("Could not read issues", lists.md section 5), and `also` beside Try again (Settings ▸
  * Connectors, for a credential the forge refused). */
-export function ErrorStrip({ lines, retry, middle, title, also }: {
+/** A Work page drawn from this device's copy (#4930) while its machine is asked again: a neutral banner with a spinner,
+ * gone when the machine answers, that says when the copy was read (#5142). The window says the same (WorkLook.fromDevice). */
+export function FromDeviceStrip({ at }: { at: number | undefined }) {
+  if (at === undefined) return null;
+  return <MessageBanner tone="neutral" name="work-from-device" busy><strong>From this device.</strong> Reading it again. <LastUpdate at={at} /></MessageBanner>;
+}
+
+export function ErrorStrip({ lines, retry, middle, title, also, at }: {
   lines: readonly string[]; retry: () => void; middle?: boolean; title?: string | undefined;
   also?: { words: string; run: () => void } | undefined;
+  /** What is shown is an earlier read (#5142): "Last update 5 min ago" after the words. */
+  at?: number | undefined;
 }) {
   if (lines.length === 0) return null;
   return (
@@ -228,6 +240,7 @@ export function ErrorStrip({ lines, retry, middle, title, also }: {
       {also && <button type="button" onClick={also.run}>{also.words}</button>}
     </>}>
       {title && <span class="strong">{title}</span>}{lines.map((l) => <span key={l}>{l}</span>)}
+      {at !== undefined && <LastUpdate at={at} />}
     </MessageBanner>
   );
 }

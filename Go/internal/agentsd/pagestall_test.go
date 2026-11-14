@@ -10,7 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A page on this host that stops reading (a hung renderer, a frozen tab) does not hold an

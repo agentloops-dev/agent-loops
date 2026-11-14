@@ -1,6 +1,6 @@
 package agentsd
 
-import "github.com/alexec/agents/Go/wire"
+import "github.com/agentloops-dev/agent-loops/Go/wire"
 
 // waitingOnEvents is whether the agent has an open wait on something the app watches: an
 // event (wait_for_event), or its place in a lease's line (#2361), which is the same wait.
@@ -61,7 +61,7 @@ func settled(wantsAPerson bool, r *wire.WorkReport, waitingOnEvents bool) string
 		return "needsAttention"
 	}
 	open := r != nil && r.Outcome == wire.WorkOutcomeWaiting && (r.Block == nil || r.Block.ClearedAt == nil)
-	if open && r.Block != nil && (len(r.Block.Waits) > 0 || r.Block.CheckAgainAt != nil) || waitingOnEvents {
+	if open && r.Block != nil && (len(r.Block.Waits) > 0 || r.Block.Deadline != nil) || waitingOnEvents {
 		return "waiting"
 	}
 	// A block with nothing the app watches (an old record's) is done, not Needs you (#1916).

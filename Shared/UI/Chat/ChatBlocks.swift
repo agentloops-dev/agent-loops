@@ -35,7 +35,7 @@ struct BlocksView: View {
     private func view(for block: ContentBlock) -> some View {
         switch block {
         case .text(let text):
-            MarkdownText(markdown: text)
+            MarkdownText(markdown: text).readingSpacing()
 
         case .image(let data, _, _):
             if let image = Self.image(data) {
@@ -45,13 +45,13 @@ struct BlocksView: View {
                     .frame(maxWidth: 420, maxHeight: 320)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             } else {
-                Label("A picture that cannot be drawn here", systemImage: "photo")
+                Label("A picture that cannot be drawn here", icon: "photo")
                     .appText(.reading)
                     .foregroundStyle(.secondary)
             }
 
         case .audio:
-            Label("Audio", systemImage: "waveform")
+            Label("Audio", icon: "waveform")
                 .appText(.reading)
                 .foregroundStyle(.secondary)
 
@@ -61,7 +61,7 @@ struct BlocksView: View {
             Button {
                 if let url = URL(string: uri) { openURL(url) }
             } label: {
-                Label(name, systemImage: "doc")
+                Label(name, icon: "doc")
                     .appText(.reading)
             }
             .linkStyle()
@@ -167,7 +167,7 @@ struct TerminalOutputView: View {
 ///
 /// The clearest statement an agent makes of its intentions, which is the moment to stop
 /// it if it is wrong. 001 drew "Made a plan". In the transcript this is the plan as it
-/// was at that point; `CurrentPlanStrip`, at the head of the chat, draws it as it is now.
+/// was at that point; `NowTopCard`, at the head of the chat, draws it as it is now.
 struct PlanView: View {
     let plan: Plan
 
@@ -219,21 +219,27 @@ struct PlanView: View {
     }
 }
 
-/// Something the agent asked the app to do. Reads are quiet; a write says what it did.
+/// Something the agent asked the app to do, as a Line (#5036). Reads are quiet; a write says
+/// what it did; a refusal or a failure is red, with why after it.
 struct ServedRequestLine: View {
     let request: ServedRequest
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(request.summary)
-            if case .refused(let reason) = request.outcome {
-                Text(reason).tinted(.failure)
-            }
-            if case .failed(let message) = request.outcome {
-                Text(message).tinted(.failure)
-            }
+        switch request.outcome {
+        case .served:
+            RecordLine(icon: icon, detail: request.summary)
+        case .refused(let reason):
+            RecordLine(icon: icon, head: request.summary, detail: reason, tone: .failure)
+        case .failed(let message):
+            RecordLine(icon: icon, head: request.summary, detail: message, tone: .failure)
         }
-        .appText(.reading)
-        .foregroundStyle(.secondary)
+    }
+
+    private var icon: String {
+        switch request.kind {
+        case .readFile: return LineGlyph.tool("read")
+        case .writeFile: return LineGlyph.tool("edit")
+        case .runCommand: return LineGlyph.tool("execute")
+        }
     }
 }

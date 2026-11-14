@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Ports CostLimitTests: nothing new starts at the day's limit; what is sent to an agent at

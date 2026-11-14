@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 func TestNotCommittedIsWhatGitIgnoresInAgents(t *testing.T) {

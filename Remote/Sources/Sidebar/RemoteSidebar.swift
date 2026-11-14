@@ -2,11 +2,11 @@ import AgentsKitCore
 import SwiftUI
 import UIKit
 
-/// The Mac's one sidebar, on an iPad or an iPhone (#226, #498): New Session at the top,
-/// then Status, then what wants the person across every folder — Pinned, Needs You,
+/// The Mac's one sidebar, on an iPad or an iPhone (#226, #498): Work, then Status, then what wants the person across every folder — Pinned, Needs You,
 /// Working, Unread — then a group per folder, its sessions newest first with their state
 /// the row's mark, its workflows, and one Archived row opening a page; then the archived
 /// folders, folded, each with Unarchive (#343). Never more than two levels deep (#495).
+/// A folder's Sessions starts with New Session (#5267).
 ///
 /// The rules are the Mac's own, from `SidebarFolderFold`, `SidebarSmartRow`,
 /// `SidebarOrder` and `SidebarFolds` in AgentsKitCore: the same groups, order, pins and
@@ -72,7 +72,7 @@ struct RemoteSidebar: View {
             if !query.trimmingCharacters(in: .whitespaces).isEmpty {
                 Section {
                     Button { model.commandMenu = query } label: {
-                        Label(CommandMenuWords.searchRow(query), systemImage: CommandFinder.Kind.action.symbol)
+                        Label(CommandMenuWords.searchRow(query), icon: CommandFinder.Kind.action.symbol)
                             .lineLimit(1)
                     }
                     .accessibilityHint(CommandMenuWords.label)
@@ -155,15 +155,13 @@ struct RemoteSidebar: View {
             }
 
             if !model.folders.isEmpty {
-                // One way to start a session (#495), in the folder last started in.
-                // A folder's long press starts one in it.
-                Section {
-                    NewSessionTopRow()
-                    // The daily summary's page (#3721), while the daily summary is on.
-                    if model.dailySummarySettings?.mode.writesPages == true {
+                // The daily summary's page (#3721), while the daily summary is on. New Session is
+                // the first row of each folder's Sessions (#5267), and a folder's long press.
+                if model.dailySummarySettings?.mode.writesPages == true {
+                    Section {
                         SummaryRowLabel(newest: model.summaryPages.first)
                             .accessibilityHint("Opens your daily summary")
-                            .activityIcon(SummaryRowLabel.systemImage).appText(.supporting).tag(SidebarItem.summary)
+                            .activityIcon(SummaryRowLabel.systemImage).appText(.supporting).paperTag(SidebarItem.summary)
                     }
                 }
 
@@ -173,8 +171,10 @@ struct RemoteSidebar: View {
                     ForEach(WorkList.Kind.allCases.filter { $0 != .timeline }) { kind in
                         HStack { Text(kind.title); Spacer() }
                             .accessibilityHint(kind.sidebarHelp)
-                            .activityIcon(kind.sidebarIcon).appText(.supporting).tag(SidebarItem.work(kind))
+                            .activityIcon(kind.sidebarIcon).appText(.supporting).paperTag(SidebarItem.work(kind))
                     }
+                    // Work shown: its first list read ahead, so the page draws at once (#4930).
+                    .task(id: model.forgeMachines.map(\.id)) { await model.prefetchWork() }
                 } header: {
                     Text("Work")
                 }
@@ -185,21 +185,21 @@ struct RemoteSidebar: View {
                 Section(isExpanded: $showsStatus) {
                     // The Multiplier page (#4116), first, as the window has it first under Usage.
                     MultiplierRow().accessibilityHint(MultiplierRow.help)
-                        .activityIcon("multiply.circle").appText(.supporting).tag(SidebarItem.multiplier)
+                        .activityIcon("multiply.circle").appText(.supporting).paperTag(SidebarItem.multiplier)
                     // Velocity (#4758): the Multiplier's PRs over time, the one Usage page the
                     // Remote has (tier Core), after the Multiplier as the window has it in Usage.
                     HStack { Text("Velocity"); Spacer() }
                         .accessibilityHint("The pull requests that landed, over time")
-                        .activityIcon("arrow.triangle.merge").appText(.supporting).tag(SidebarItem.velocity)
-                    EventsRow().activityIcon("list.bullet.rectangle").appText(.supporting).tag(SidebarItem.events)
+                        .activityIcon("arrow.triangle.merge").appText(.supporting).paperTag(SidebarItem.velocity)
+                    EventsRow().activityIcon("list.bullet.rectangle").appText(.supporting).paperTag(SidebarItem.events)
                     RuntimesRow().activityIcon("cpu", warns: runtimesTally.map { $0.noneWorking || $0.isLow } ?? false,
-                                               tint: runtimesTally?.isLow == true ? .attention : .failure)
-                        .appText(.supporting).tag(SidebarItem.runtimes)
+                                               tint: runtimesTally?.isLow == true ? .warning : .failure)
+                        .appText(.supporting).paperTag(SidebarItem.runtimes)
                     // What happened last to the person's secrets and accounts (#4161), as the window's.
                     ForEach([StatusSecretsKind.secrets, .accounts], id: \.self) { kind in
                         StatusSecretsRow(kind: kind, state: model.userScope) { model.work.agent($0)?.title }
                             .activityIcon(kind.systemImage)
-                            .appText(.supporting).tag(kind == .secrets ? SidebarItem.secretsStatus : .accountsStatus)
+                            .appText(.supporting).paperTag(kind == .secrets ? SidebarItem.secretsStatus : .accountsStatus)
                     }
                 } header: {
                     Text("Status")
@@ -209,10 +209,11 @@ struct RemoteSidebar: View {
                 if !model.machines.isEmpty {
                     Section(isExpanded: $showsMachines) {
                         ForEach(model.machines, id: \.self) { host in
-                            RemoteMachineRow(host: host).tag(SidebarItem.machine(host))
+                            RemoteMachineRow(host: host).paperTag(SidebarItem.machine(host))
                         }
                         // The machines New Machine is making, and the ones the control plane
-                        // gave up waiting for (#4612): a row each until a machine of the name joins.
+                        // gave up waiting for (#4612), and every other machine of the person's that
+                        // never joined (#4978): a row each until a machine of the name joins.
                         ForEach(0..<model.machinesBeingMade, id: \.self) { _ in
                             RemoteMakingMachineRow(making: nil)
                         }
@@ -248,7 +249,7 @@ struct RemoteSidebar: View {
             if !searched.isEmpty, model.searchHasMore {
                 Button("More matches…") { Task { await model.searchMore() } }
                     .appText(.fine)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Paper.secondary)
             }
 
             // A server gone quiet greys its folders; this says why, once, as the window's
@@ -261,9 +262,9 @@ struct RemoteSidebar: View {
                         let row = model.controlHost(host)
                         HStack(spacing: 8) {
                             Label(OfflineWords.footLine(name: model.hostLabel(host), row: row),
-                                  systemImage: "bolt.horizontal.circle")
+                                  icon: "bolt.horizontal.circle")
                                 .appText(.fine)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Paper.secondary)
                                 .accessibilityElement(children: .combine)
                             Spacer(minLength: 0)
                             if let row, let workspace = row.workspace,
@@ -285,9 +286,9 @@ struct RemoteSidebar: View {
             if !model.work.storeNotes.isEmpty {
                 Section {
                     ForEach(model.work.storeNotes, id: \.self) { note in
-                        Label(note, systemImage: "exclamationmark.triangle")
+                        Label(note, icon: "exclamationmark.triangle")
                             .appText(.fine)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Paper.secondary)
                             .accessibilityElement(children: .combine)
                     }
                 }
@@ -304,11 +305,12 @@ struct RemoteSidebar: View {
             }
         }
         .modifier(RemoteListKeys())
+        .environment(\.sidebarPick, model.sidebarItem)
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .background(Paper.sidebar)
         .toolbarBackground(Paper.sidebar, for: .navigationBar)
-        .navigationTitle("Agents")
+        .navigationTitle("Agent Loops")
         // Add Folder… and Clone Git URL… on a machine (#4036), as the window's File menu.
         .toolbar {
             if !model.needsPairing {
@@ -515,21 +517,21 @@ private struct RemoteApprovalRow: View {
 
     var body: some View {
         ApprovalRowLabel(approval: approval, place: place)
-            .tag(item)
+            .paperTag(item)
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                 if approval.actions.contains(.approve) {
-                    Button(approval.word(for: .approve), systemImage: "checkmark") { answerNow(.approve) }
+                    Button(approval.word(for: .approve), icon: "checkmark") { answerNow(.approve) }
                         .tint(Paper.accent)
                 }
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if approval.actions.contains(.deny) {
-                    Button(approval.word(for: .deny), systemImage: "xmark") { answerNow(.deny) }
+                    Button(approval.word(for: .deny), icon: "xmark") { answerNow(.deny) }
                         .tint(StateTint.failure.color)
                 }
             }
             .contextMenu {
-                Button("Review…", systemImage: "doc.text.magnifyingglass") { model.sidebarItem = item }
+                Button("Review…", icon: "doc.text.magnifyingglass") { model.sidebarItem = item }
                 if approval.actions.contains(.approve) {
                     Button(approval.word(for: .approve)) { answerNow(.approve) }
                 }
@@ -564,12 +566,12 @@ private struct RemoteReviewPullRow: View {
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button("Dismiss", systemImage: "xmark") { dismissNow() }
+            Button("Dismiss", icon: "xmark") { dismissNow() }
                 .tint(.gray)
         }
         .contextMenu {
-            Button("Open Pull Request", systemImage: "arrow.up.right.square", action: open)
-            Button("Dismiss", systemImage: "xmark") { dismissNow() }
+            Button("Open Pull Request", icon: "arrow.up.right.square", action: open)
+            Button("Dismiss", icon: "xmark") { dismissNow() }
         }
         .accessibilityAction(named: "Dismiss", dismissNow)
     }
@@ -602,19 +604,19 @@ private struct RemoteCheckSuggestionRow: View {
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button("Start", systemImage: "play") { startNow() }
+            Button("Start", icon: "play") { startNow() }
                 .tint(Paper.accent)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button("Dismiss", systemImage: "xmark") { dismissNow() }
+            Button("Dismiss", icon: "xmark") { dismissNow() }
                 .tint(.gray)
         }
         .contextMenu {
-            Button("Start Session", systemImage: "play") { startNow() }
+            Button("Start Session", icon: "play") { startNow() }
             if let link = suggestion.link {
-                Button("Open Link", systemImage: "arrow.up.right.square") { openURL(link) }
+                Button("Open Link", icon: "arrow.up.right.square") { openURL(link) }
             }
-            Button("Dismiss", systemImage: "xmark") { dismissNow() }
+            Button("Dismiss", icon: "xmark") { dismissNow() }
         }
         .accessibilityAction(named: "Start", startNow)
         .accessibilityAction(named: "Dismiss", dismissNow)
@@ -646,7 +648,7 @@ private struct RemoteRequestRow: View {
     var body: some View {
         if let id = request.askedBy {
             answers(RequestRowLabel(request: request, asker: model.work.agent(id)?.title, place: place)
-                .tag(SidebarItem.session(id)))
+                .paperTag(SidebarItem.session(id)))
         } else if request.isTerminal {
             answers(RequestRowLabel(request: request, place: place))
         }
@@ -656,20 +658,20 @@ private struct RemoteRequestRow: View {
         row
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                 if request.secretUse != nil {
-                    Button(NeedRequest.Action.once.word, systemImage: "checkmark") { answerNow(.once) }
+                    Button(NeedRequest.Action.once.word, icon: "checkmark") { answerNow(.once) }
                         .tint(Paper.accent)
                 }
                 if request.isDeferred {
-                    Button("Bring Back", systemImage: "arrow.uturn.up") { bringBack() }
+                    Button("Bring Back", icon: "arrow.uturn.up") { bringBack() }
                         .tint(Paper.accent)
                 }
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if request.secretUse != nil {
-                    Button(NeedRequest.Action.deny.word, systemImage: "xmark") { answerNow(.deny) }
+                    Button(NeedRequest.Action.deny.word, icon: "xmark") { answerNow(.deny) }
                         .tint(StateTint.failure.color)
                 }
-                Button("Later", systemImage: "clock") { asksWhen = true }
+                Button("Later", icon: "clock") { asksWhen = true }
                     .tint(.indigo)
             }
             .contextMenu {
@@ -680,9 +682,9 @@ private struct RemoteRequestRow: View {
                     Divider()
                 }
                 if request.isDeferred {
-                    Button("Bring Back Now", systemImage: "arrow.uturn.up") { bringBack() }
+                    Button("Bring Back Now", icon: "arrow.uturn.up") { bringBack() }
                 }
-                Menu("Later", systemImage: "clock") { laterButtons }
+                Menu("Later", icon: "clock") { laterButtons }
             }
             .confirmationDialog("Later", isPresented: $asksWhen, titleVisibility: .visible) {
                 laterButtons
@@ -719,7 +721,7 @@ private struct RemoteLaterRows: View {
         if !requests.isEmpty {
             Button { withAnimation(ResponseMotion.snappy) { open.toggle() } } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right")
                         .imageScale(.small)
                         .rotationEffect(.degrees(open ? 90 : 0))
                         .frame(width: 16)
@@ -729,7 +731,7 @@ private struct RemoteLaterRows: View {
                         .appText(.fine)
                     Spacer(minLength: 4)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Paper.secondary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -758,19 +760,19 @@ private struct RemoteFailedWorkflowRow: View {
 
     var body: some View {
         ApprovalRowLabel(approval: approval, place: place)
-            .tag(item)
+            .paperTag(item)
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 if approval.actions.contains(.dismiss) {
-                    Button(approval.word(for: .dismiss), systemImage: "xmark") { dismissNow() }
+                    Button(approval.word(for: .dismiss), icon: "xmark") { dismissNow() }
                         .tint(.gray)
                 }
             }
             .contextMenu {
                 if approval.agentID != nil {
-                    Button("Open Workflow", systemImage: "flowchart") { model.sidebarItem = workflow }
+                    Button("Open Workflow", icon: "flowchart") { model.sidebarItem = workflow }
                 }
                 if approval.actions.contains(.dismiss) {
-                    Button(approval.word(for: .dismiss), systemImage: "xmark") { dismissNow() }
+                    Button(approval.word(for: .dismiss), icon: "xmark") { dismissNow() }
                 }
             }
     }
@@ -792,8 +794,8 @@ private struct RemoteFailedWorkflowRow: View {
 /// Needs You and absent at none, so the heading stays put. No icon (Alex, #495): the
 /// sessions under it carry the marks.
 ///
-/// Needs You says when its count was last true while the Mac is out of reach (#1163), so
-/// an old count does not pass for a live one.
+/// Needs You says how old its count is while the Mac is out of reach (#1163, #5141): "Last
+/// update 5 min ago", so an old count does not pass for a live one.
 private struct SmartHeading: View {
     let row: SidebarSmartRow
     let count: Int
@@ -803,29 +805,24 @@ private struct SmartHeading: View {
         HStack(spacing: 6) {
             Text(row.title).lineLimit(1)
             if let updatedAt {
-                Text(Self.updated(updatedAt))
-                    .appText(.fine)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                LastUpdateTimeline(read: updatedAt) { now in
+                    Text(LastUpdate.line(since: updatedAt, now: now))
+                        .appText(.fine)
+                        .foregroundStyle(Paper.tertiary)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 4)
             if count > 0 {
                 Text("\(count)")
                     .monospacedDigit()
                     .foregroundStyle(row == .needsYou ? StateTint.attention.style(or: .secondary)
-                                                      : AnyShapeStyle(.secondary))
+                                                      : AnyShapeStyle(Paper.secondary))
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([row.title, count > 0 ? "\(count)" : "none", updatedAt.map(Self.updated)]
+        .accessibilityLabel([row.title, count > 0 ? "\(count)" : "none", updatedAt.map { LastUpdate.spoken(since: $0) }]
             .compactMap { $0 }.joined(separator: ", "))
-    }
-
-    /// "Updated 14:02" today, "Updated Tue 14:02" before.
-    static func updated(_ date: Date) -> String {
-        Calendar.current.isDateInToday(date)
-            ? "Updated \(date.formatted(date: .omitted, time: .shortened))"
-            : "Updated \(date.formatted(.dateTime.weekday(.abbreviated).hour().minute()))"
     }
 }
 
@@ -936,12 +933,18 @@ struct RemoteFolderFold: View {
     /// only layout (#2381); not in a folder's own scene, whose group is Sessions already.
     @ViewBuilder
     private func sessionsFold(_ fold: SidebarFolderFold) -> some View {
-        let grouped = !inScene && !fold.sessions.isEmpty
+        // With New Session in it (#5267), a folder with no live session has the fold too.
+        let grouped = !inScene && (!fold.sessions.isEmpty || fold.showsNewSession)
         let isOpen = !grouped || fold.isSearching || folds.isOpen(key, .sessions)
         if grouped {
             SidebarFoldRow(title: "Sessions", count: fold.sessions.count, isOpen: isOpen) {
                 folds.set(key, .sessions, open: !isOpen)
             }
+        }
+        // New Session, the fold's first row (#5267), as Machines has New Machine. In a
+        // folder's own scene, the Sessions group's first row.
+        if isOpen && fold.showsNewSession {
+            NewSessionRow(folder: key, isNested: grouped)
         }
         // A closed fold has no rows at all (#237).
         ForEach(isOpen ? SidebarTree.rows(fold.sessions, in: model.work, folds: folds) : []) { row in
@@ -988,7 +991,7 @@ struct RemoteFolderFold: View {
             Text("\(rows.count)").monospacedDigit()
         }
             .appText(.fine)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Paper.secondary)
             .padding(.leading, 30)
         ForEach(rows) { summary in
             SidebarWorkflowRow(summary: summary, folder: key, isNested: true)
@@ -1009,7 +1012,7 @@ struct RemoteFolderFold: View {
         if fold.archived.count > shown.count {
             Button("Show all \(fold.archived.count)", action: showAllMatches)
                 .appText(.fine)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Paper.secondary)
         }
     }
 }
@@ -1024,7 +1027,7 @@ private struct FolderPageRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: systemImage)
+            Image(icon: systemImage)
                 .sidebarMark(Paper.accent)
                 .frame(width: 20)
                 .accessibilityHidden(true)
@@ -1036,7 +1039,7 @@ private struct FolderPageRow: View {
         .appText(.supporting)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([title, count.map(String.init)].compactMap { $0 }.joined(separator: ", "))
-        .tag(item)
+        .paperTag(item)
     }
 }
 
@@ -1059,7 +1062,7 @@ private struct IssueGroupHeading: View {
             Text("\(count)").monospacedDigit()
         }
         .appText(.fine)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Paper.secondary)
         .padding(.leading, 30 * scale)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(count)")
@@ -1079,16 +1082,16 @@ private struct SidebarFoldRow: View {
     var body: some View {
         Button(action: toggle) {
             HStack(spacing: 10) {
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .rotationEffect(.degrees(isOpen ? 90 : 0))
                     .appText(.fine)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Paper.secondary)
                     .frame(width: 20 * scale)
                 Text(title).lineLimit(1)
                 Spacer(minLength: 4)
                 Text("\(count)")
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Paper.secondary)
             }
             .appText(.supporting)
             .contentShape(Rectangle())
@@ -1110,7 +1113,7 @@ private extension View {
     /// `tint` is the attention orange for a page that only warns (#4161).
     func activityIcon(_ systemImage: String, warns: Bool = false, tint: StateTint = .failure) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: systemImage)
+            Image(icon: systemImage)
                 .sidebarMark(warns ? tint.style(or: .primary) : AnyShapeStyle(Paper.accent))
                 .frame(width: 20)
                 .accessibilityHidden(true)
@@ -1170,7 +1173,7 @@ private struct FolderMenuItems: View {
         }
         ShowHiddenViewsButton(summary: summary)
         // Work at Once, Sessions and Policy (#2798 kept the rest of it on the Mac and the web).
-        Button(RemoteProjectSettingsWords.menuItem, systemImage: "gearshape") {
+        Button(RemoteProjectSettingsWords.menuItem, icon: "gearshape") {
             model.projectSettingsFolder = summary.key
         }
         .disabled(model.hostIsOffline(summary.host))
@@ -1179,7 +1182,7 @@ private struct FolderMenuItems: View {
             Task { await model.setPinned(!summary.folder.isPinned, for: summary) }
         } label: {
             Label(summary.folder.isPinned ? "Unpin" : "Pin",
-                  systemImage: summary.folder.isPinned ? "pin.slash" : "pin")
+                  icon: summary.folder.isPinned ? "pin.slash" : "pin")
         }
         .disabled(model.isStale(on: summary.host))
     }
@@ -1194,23 +1197,26 @@ struct NewSessionButton: View {
         Button {
             model.sidebarItem = .folder(folder)
         } label: {
-            Label("New Session", systemImage: "plus")
+            Label("New Session", icon: "plus")
         }
         .disabled(model.isStale)
     }
 }
 
-/// The first row of the sidebar (#495, #498): a new session, in the folder the last one
-/// was started in, as the window's. It carries that folder's own item, which the list
-/// lights while that form is open. A folder's long press starts one in that folder
-/// instead.
-private struct NewSessionTopRow: View {
+/// The first row of a folder's Sessions (#5267; was the sidebar's first row, #495, #498): a
+/// new session in that folder, drawn as Machines' New Machine row. It carries the folder's
+/// own item, which the list lights while that form is open.
+private struct NewSessionRow: View {
     @Environment(RemoteModel.self) private var model
+    let folder: FolderKey
+    /// In its folder's Sessions fold: one level in, as a session's row (#2312).
+    var isNested = false
+    /// The sessions' mark well, as `SidebarSessionRow` scales it.
+    @ScaledMetric private var scale: CGFloat = 1
 
     var body: some View {
-        let folder = model.newSessionFolder
         HStack(spacing: 8) {
-            Image(systemName: "square.and.pencil")
+            Image(icon: "square.and.pencil")
                 .sidebarMark(Paper.accent)
                 .frame(width: 20)
                 .accessibilityHidden(true)
@@ -1218,25 +1224,14 @@ private struct NewSessionTopRow: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
+        .padding(.leading, isNested ? 20 * scale + 10 : 0)
         .appText(.supporting)
-        .foregroundStyle(model.isStale || folder == nil ? .secondary : .primary)
+        .foregroundStyle(model.isStale ? .secondary : .primary)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("New Session")
-        .modifier(NewSessionTag(folder: folder))
-        .selectionDisabled(model.isStale || folder == nil)
-    }
-}
-
-/// The row's item while there is a folder to start in; none while there is not.
-private struct NewSessionTag: ViewModifier {
-    let folder: FolderKey?
-
-    func body(content: Content) -> some View {
-        if let folder {
-            content.tag(SidebarItem.folder(folder))
-        } else {
-            content
-        }
+        .accessibilityHint("Starts a new session in this folder")
+        .paperTag(SidebarItem.folder(folder))
+        .selectionDisabled(model.isStale)
     }
 }
 
@@ -1254,13 +1249,17 @@ private struct RuntimesRow: View {
                 Spacer()
             }
             // An allowance nearly used up (#3956): the runtime, in grey under the title.
+            // On course to run out before the week resets (#5000) says so in the same place.
             if let low = tally?.lowWords {
-                Text(low).appText(.fine).foregroundStyle(.secondary).lineLimit(1)
+                Text(low).appText(.fine).foregroundStyle(Paper.secondary).lineLimit(1)
+                    .accessibilityHidden(true)
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityValue(tally.map { $0.noneWorking ? "None of \($0.total) working"
-                                                       : "\($0.working) of \($0.total) working" } ?? "")
+        // VoiceOver hears the line with the reset (#5000), in place of the grey line.
+        .accessibilityValue(tally.map { [$0.noneWorking ? "None of \($0.total) working"
+                                                        : "\($0.working) of \($0.total) working", $0.lowDetail]
+                                .compactMap { $0 }.joined(separator: ", ") } ?? "")
         .accessibilityHint("Opens Runtimes")
     }
 }

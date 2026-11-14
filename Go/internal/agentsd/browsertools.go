@@ -19,8 +19,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/alexec/agents/Go/internal/browser"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The browser tools (#3534, spike #3527): the `agents` server offers Playwright's tools
@@ -102,6 +102,9 @@ var browserTools = sync.OnceValues(func() ([]json.RawMessage, map[string]bool) {
 	// The app's own device profile (#4086), the same.
 	names[emulateDeviceName] = true
 	out = append(out, emulateDeviceTool)
+	// The app's own software passkey (#4085), the same.
+	names[passkeyName] = true
+	out = append(out, passkeyTool)
 	// The web page, paired (#4214), the same.
 	names[pairWebPageName] = true
 	out = append(out, pairWebPageTool)
@@ -256,6 +259,11 @@ func (d *Daemon) driveBrowser(ctx context.Context, agent wire.UUID, name string,
 			return failed(refusal)
 		}
 	}
+	if name == passkeyName {
+		if refusal := d.passkeyCheck(agent, args); refusal != "" {
+			return failed(refusal)
+		}
+	}
 	var device *browser.Device
 	if name == emulateDeviceName {
 		var refusal string
@@ -301,9 +309,17 @@ func (d *Daemon) driveBrowser(ctx context.Context, agent wire.UUID, name string,
 		// window off-screen (#4272), and browserDriveFor starts Playwright on it.
 		log.Printf("browser: a site that checks for bots, so the browser starts again headed")
 	}
+	if name == passkeyName && string(args["off"]) != "true" && d.browser.Passkeys() {
+		// A software passkey needs WebAuthn in the pages, which the browser starts with
+		// none of (#4084): it starts again with it (#4085), and its tabs close.
+		log.Printf("browser: a software passkey, so the browser starts again with WebAuthn")
+	}
 	drive, err := d.browserDriveFor(ctx, agent, folderPath(a))
 	if err != nil {
 		return failed("The browser did not start: " + browserWords(err))
+	}
+	if name != passkeyName {
+		d.keepSessionPasskey(agent)
 	}
 	if name == fillSecretName {
 		words, isError, site := d.approveFill(ctx, agent, drive, fill, args)
@@ -328,6 +344,10 @@ func (d *Daemon) driveBrowser(ctx context.Context, agent wire.UUID, name string,
 	}
 	if name == pairWebPageName {
 		return d.pairWebPage(ctx, drive)
+	}
+	if name == passkeyName {
+		said, isError := d.usePasskey(agent, args)
+		return []any{map[string]any{"type": "text", "text": said}}, isError, said
 	}
 	if name == emulateDeviceName {
 		said, isError := d.emulateDevice(agent, device)

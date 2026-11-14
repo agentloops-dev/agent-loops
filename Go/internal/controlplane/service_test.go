@@ -19,11 +19,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/internal/controlplane/web"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A control plane in this process, over plain HTTP on loopback, with the Go host's and a
@@ -214,6 +214,9 @@ func (p *plane) serveHost(root string, member *controllink.Membership, private [
 	}()
 	p.t.Cleanup(h.stop)
 	p.waitFor(func() bool { s, ok := p.s.Router().State(member.Host); return ok && s.online() }, "the host online")
+	// The host is online when its link is taken, before its machine/hello is settled. Wait
+	// for the answer too, so a test that says its own hello is not undone by this one (#5307).
+	p.waitFor(func() bool { return u.ControlCapabilities() != nil }, "the answer to the host's hello")
 	return h
 }
 
@@ -578,6 +581,11 @@ func TestTheInstallScriptIsSwifts(t *testing.T) {
 	}
 	if string(theirs) != InstallScript {
 		t.Fatal("install.sh differs from scripts/host-install.sh: copy it again")
+	}
+	// The browser step (#5228) is the ssh install's own text, called once.
+	browser, err := os.ReadFile("hostinstall/browser.sh")
+	if err != nil || !strings.Contains(InstallScript, strings.TrimPrefix(string(browser), "# shellcheck shell=sh\n")+"install_browser || true\n") {
+		t.Fatal("install.sh does not hold hostinstall/browser.sh: copy it again")
 	}
 	if got := InstallCommand("https://a:1/", "68pJOOtmq-dhsJdha_txtRqkMHL-HsskodMb3odpx3s", "CODE"); got !=
 		"curl -fsSL --insecure --pinnedpubkey sha256//68pJOOtmq+dhsJdha/txtRqkMHL+HsskodMb3odpx3s= https://a:1/v1/install.sh | sh -s -- 'CODE'" {

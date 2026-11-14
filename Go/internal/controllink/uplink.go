@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/buildinfo"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Conn is one channel as a daemon client connection: lines in, lines out.

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/alexec/agents/Go/internal/agentsd/redact"
-	"github.com/alexec/agents/Go/internal/buildinfo"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/redact"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Report a Problem (#3718): the person's words and this machine's facts, made into a
@@ -21,7 +21,7 @@ import (
 // for every client.
 
 // problemRepo is where a problem report goes.
-const problemRepo = "https://github.com/alexec/Agents/issues/new"
+const problemRepo = "https://github.com/agentloops-dev/agent-loops/issues/new"
 
 const (
 	// problemLogLines is how many of daemon.log's last lines a report may add.
@@ -100,7 +100,7 @@ func problemTitle(happened string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(happened), "\n")
 	line = strings.TrimSpace(line)
 	if line == "" {
-		return "A problem in Agents"
+		return "A problem in Agent Loops"
 	}
 	if utf8.RuneCountInString(line) > 80 {
 		return string([]rune(line)[:79]) + "…"

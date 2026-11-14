@@ -19,7 +19,7 @@ struct ChannelLinkCard: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: request.channel == "email" ? "envelope" : "bubble.left")
+            Image(icon: request.channel == "email" ? "envelope" : "bubble.left")
                 // Decorative: the card says what it is in words.
                 .glyph(size: 13)
                 .foregroundStyle(StateTint.attention.style(or: .primary))
@@ -43,11 +43,11 @@ struct ChannelLinkCard: View {
                 HStack(spacing: 8) {
                     if request.forUser == nil {
                         Button("Send") { answer(true, sendTo) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.paperProminent)
                             .disabled(sendTo.isEmpty)
                     } else {
                         Button("Approve") { answer(true, nil) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.paperProminent)
                     }
                     Button("Deny") { answer(false, nil) }
                         .buttonStyle(.bordered)

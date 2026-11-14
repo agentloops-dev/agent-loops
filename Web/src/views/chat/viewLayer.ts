@@ -136,7 +136,7 @@ export class HostedView {
     const proxy = await viewsOrigin();
     if (mine !== this.attempt || this.closed()) return;
     if (!proxy) {
-      this.failure.value = "Views are not drawn on this page: its control plane has no views name. The Agents apps draw them.";
+      this.failure.value = "Views are not drawn on this page: its control plane has no views name. The Agent Loops apps draw them.";
       this.phase.value = "failed";
       return;
     }
@@ -460,6 +460,13 @@ export class ViewLayer {
   }
 
   find(id: string): HostedView | undefined { return this.views.get(id); }
+
+  /** The views that ask the person now (Show, or Send), for the chat's "Waiting for you" (#5031). */
+  asking(): HostedView[] {
+    void this.made.value;
+    return [...this.views.values()].filter((view) =>
+      (view.phase.value === "asking" && view.ask.value !== null) || view.askedMessage.value !== null);
+  }
 
   attach(id: string, slot: HTMLElement): void {
     const view = this.views.get(id);

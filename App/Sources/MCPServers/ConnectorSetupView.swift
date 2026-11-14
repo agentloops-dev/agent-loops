@@ -465,7 +465,7 @@ private struct SlotCard: View {
             Text(slot.slot == .workspace ? place.line
                  : ConnectorSetupWords.line(slot, folder: folderName, repository: setup.repository, forge: setup.forgeOrGitHub))
                 .appText(.fine)
-                .tinted([.failed, .refused, .noRemote].contains(slot.state) ? .attention : .none)
+                .tinted([.failed, .refused, .noRemote].contains(slot.state) ? .warning : .none)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -521,16 +521,16 @@ private struct SlotMark: View {
         Group {
             switch state {
             case .read:
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(Paper.accent)
+                Image(icon: "checkmark.circle.fill").foregroundStyle(Paper.accent)
             case .failed, .refused:
-                Image(systemName: "exclamationmark.circle").tinted(.attention)
+                Image(icon: "exclamationmark.circle").tinted(.warning)
             case .skipped:
                 Circle().strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [2.5, 2])).foregroundStyle(.secondary)
                     .frame(width: 13, height: 13)
             case .notRead where reading:
                 ProgressView().controlSize(.mini)
             case .notConnected, .noRemote, .notRead:
-                Image(systemName: "circle").foregroundStyle(.secondary)
+                Image(icon: "circle").foregroundStyle(.secondary)
             }
         }
         .appText(.fine)
@@ -580,7 +580,7 @@ private struct SlotChange: View {
                 ForEach(choices, id: \.title) { choice in
                     Button(action: choice.pick) {
                         HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: choice.chosen ? "largecircle.fill.circle" : "circle")
+                            Image(icon: choice.chosen ? "largecircle.fill.circle" : "circle")
                                 .foregroundStyle(choice.chosen ? Paper.accent : .secondary)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(choice.title).appText(.supporting).fontWeight(.semibold)
@@ -740,7 +740,7 @@ private struct CodespacesSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("GitHub Codespaces").appText(.title).fontWeight(.semibold)
-            Text("Use a Codespace for this folder, or create one from \(repository). Connect over SSH; Agents installs on the Codespace.")
+            Text("Use a Codespace for this folder, or create one from \(repository). Connect over SSH; Agent Loops installs on the Codespace.")
                 .appText(.supporting).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text("Connect prepares the Codespaces entries in ~/.ssh/config with GitHub CLI.")
                 .appText(.fine).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/alexec/agents/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Tunneler opens a tunnel to the host that lends a runtime's sign-in.

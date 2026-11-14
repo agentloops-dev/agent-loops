@@ -138,7 +138,8 @@ struct ContentView: View {
         } else if model.showsVelocity {
             VelocityView().paperGround()
         } else if model.showsWork {
-            WorkView(model: model).paperGround()
+            // Build trends ↗ on the Pipeline line opens the web page (#5180).
+            WorkView(model: model).webPlaceLinks().paperGround()
         } else if model.showsDocs {
             DocsView().paperGround()
         } else if model.showsMessages {
@@ -199,7 +200,7 @@ struct ContentView: View {
                                                  set: { model.selection = $0 }))
                 .paperGround()
         } else {
-            MultiplierPage(multiplier: model.work.multiplier, achievements: model.work.achievements,
+            MultiplierPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
                            agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
                            hints: "⌘0 Multiplier · ⌘N new session · ↑↓ move · ⌘K find",
                            refresh: { await model.refreshMultiplier() })
@@ -247,7 +248,7 @@ struct ContentView: View {
                 Button {
                     Task { await model.setPinned(agent, !pinned) }
                 } label: {
-                    Label(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin")
+                    Label(pinned ? "Unpin" : "Pin", toolbarIcon: pinned ? "pin.slash" : "pin")
                 }
                 .disabled(agent.state == .archived)
                 .help(pinned ? "Take this session out of Pinned in the sidebar"
@@ -259,21 +260,21 @@ struct ContentView: View {
                 Button {
                     requests.wantsPrompts = true
                 } label: {
-                    Label("Prompts", systemImage: "list.number")
+                    Label("Prompts", toolbarIcon: "list.number")
                 }
                 .help("Show the prompts in this session (⇧⌘P)")
                 if agent.state == .archived {
                     Button {
                         Task { await model.unarchive(agent.id) }
                     } label: {
-                        Label("Unarchive", systemImage: "tray.and.arrow.up")
+                        Label("Unarchive", toolbarIcon: "tray.and.arrow.up")
                     }
                     .help("Unarchive this session (⌥⌘⌫)")
                 } else {
                     Button {
                         Task { await model.archive(agent.id, andLeave: true) }
                     } label: {
-                        Label("Archive", systemImage: "archivebox")
+                        Label("Archive", toolbarIcon: "archivebox")
                     }
                     .help("Archive this session and leave it (⌥⌘⌫)")
                 }
@@ -311,13 +312,25 @@ struct ContentView: View {
         // The organisation stopped all agent work, or this Mac follows no policy it can trust (#998).
         OrgPolicyStrip(state: model.policyState)
         Group {
-            if model.needsFirstRun {
+            if let firstOpen = HostScenes.firstOpen, firstOpen.step != .elsewhere,
+               model.needsFirstRun || model.asksFirstBuild {
+                // A newcomer's first open in the one app: the question page, with the
+                // set-up behind it (#5050, spec 5048 section 8).
+                FirstBuildQuestionView(firstOpen: firstOpen)
+            } else if model.needsFirstRun {
                 // No control plane yet: the first open sets one up on this Mac and pairs
                 // the window, with no sidebar or toolbar until it has (#4226).
                 FirstOpenView()
             } else if model.signIn.suspended {
                 // The organisation turned this person's access off: only that (#1002, FR-029).
                 SuspendedPage(device: "Mac")
+            } else if model.asksFirstBuild, model.firstBuildAnother {
+                // New App… (#5132): the question page, with Cancel, for a person who is set up.
+                FirstBuildQuestionView(firstOpen: nil)
+            } else if model.firstBuildPlanning {
+                // After Submit: the plan page, with the first-build session's chat, until
+                // Open Agents (#5053, spec 5048 section 5).
+                FirstBuildPlanView()
             } else {
                 // Two columns (#145): the one sidebar, then what is being read, with the
                 // inspector beside a chat.
@@ -405,18 +418,6 @@ struct ContentView: View {
             case .lendGit(let ask):
                 Button("Approve") { model.answerGitLend(ask, allowed: true) }
                 Button("Deny", role: .cancel) { model.answerGitLend(ask, allowed: false) }
-            case .folderGone(let ask):
-                // The ways on (#119). What was typed goes with Continue; Cancel leaves it
-                // in the bar.
-                Button(MissingFolderWords.continueInFolder) {
-                    Task { await model.continueInFolder(ask.agentID, text: ask.text, attachments: ask.attachments) }
-                }
-                .keyboardShortcut(.defaultAction)
-                if model.work.agent(ask.agentID)?.mayRecreateWorktree == true {
-                    Button(MissingFolderWords.recreateWorktree) { Task { await model.recreateWorktree(ask.agentID) } }
-                }
-                Button(MissingFolderWords.archive) { Task { await model.archive(ask.agentID) } }
-                Button("Cancel", role: .cancel) {}
             }
         } message: { alert in
             Text(alert.message)
@@ -454,13 +455,11 @@ struct ContentView: View {
 enum WindowAlert: Identifiable {
     case lend(SignInLendAsk)
     case lendGit(GitLendAsk)
-    case folderGone(FolderGoneAsk)
 
     var id: String {
         switch self {
         case .lend(let ask): "lend-\(ask.id)"
         case .lendGit(let ask): "lend-git-\(ask.id)"
-        case .folderGone(let ask): "folder-gone-\(ask.id)"
         }
     }
 
@@ -468,7 +467,6 @@ enum WindowAlert: Identifiable {
         switch self {
         case .lend(let ask): "Let \(ask.label) use this Mac’s \(ask.runtimeName) sign-in?"
         case .lendGit(let ask): ask.title
-        case .folderGone: "This agent’s folder isn’t there"
         }
     }
 
@@ -477,7 +475,6 @@ enum WindowAlert: Identifiable {
         case .lend(let ask):
             "Its agents will use \(ask.runtimeName) as you, through this Mac, whenever this Mac is awake. The sign-in itself stays on this Mac. You can stop it in Settings ▸ Machines."
         case .lendGit(let ask): ask.message
-        case .folderGone(let ask): ask.message + " What you typed is still in the prompt."
         }
     }
 
@@ -485,7 +482,6 @@ enum WindowAlert: Identifiable {
     static func wanted(by model: AppModel) -> WindowAlert? {
         if let ask = model.signInLendAsk { return .lend(ask) }
         if let ask = model.gitLendAsk { return .lendGit(ask) }
-        if let ask = model.folderGone { return .folderGone(ask) }
         return nil
     }
 
@@ -499,7 +495,6 @@ enum WindowAlert: Identifiable {
         case .lend: break
         // Escape is Deny, which its cancel button has said.
         case .lendGit: break
-        case .folderGone(let ask): if model.folderGone == ask { model.folderGone = nil }
         }
     }
 }

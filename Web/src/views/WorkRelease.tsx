@@ -21,8 +21,10 @@ import { lineageUrl } from "../model/lineage";
 import { planSessions } from "../model/epicPlan";
 import { allRows, askKey, loadList, workList } from "../model/workLists";
 import { go, routeHash } from "../route";
+import { buildsRunLinkHelp, buildsRunLinkQuery } from "../model/builds";
 import { ErrorStrip, PlaceholderRows, RefreshButton, StateIcon } from "./WorkParts";
 import { Choice, OpenGlyph, ReleaseChip, ReleaseGlyph, SideSection, Stepper, WorkRowView, WorkSession, pictureReader } from "./Work";
+import { Icon } from "./Icon";
 
 const allPulls: WorkFilter = { ...anyFilter, state: "all" };
 
@@ -99,6 +101,9 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
   const runtimes = figures.value ? runtimesWords(figures.value, runtimeName) : undefined;
   const sessions = planSessions(node, g?.links ?? [], rollup.value);
   const stages = g ? pipeline(node, g) : [];
+  // Build trends at the release's CI run, on Reports ▸ Planning ▸ Builds (#5180).
+  const run = g?.links.find((l) => l.rel === "builds" && l.to.kind === node.kind && l.to.ref === node.ref && l.from.kind === "ci-run")?.from;
+  const trends = stages.length > 0 && run ? buildsRunLinkQuery(run.ref) : undefined;
 
   const shown = pulls ? filterRows(pulls, filter.value) : [];
   const labels = pulls ? choices(pulls).labels : [];
@@ -129,7 +134,7 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
         <div class="work-page-bar">
           <nav class="work-place" aria-label="Place">
             <button type="button" class="link work-release-back" onClick={() => { pullsPage.value = false; }}>
-              <span aria-hidden="true">‹ </span>{tag}</button>
+              <Icon name="chevron-left" />{tag}</button>
           </nav>
         </div>
         <h2 class="work-release-pulls-title">Pull requests</h2>
@@ -147,7 +152,7 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
           <nav class="work-place" aria-label="Place">
             <a href={routeHash({ nav: "work", section: "release" })} title="All releases"
               onClick={(e) => { if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); go({ nav: "work", section: "release" }); }}>
-              <span class="back" aria-hidden="true">‹ </span>{workKindTitle.release}</a>
+              <Icon name="chevron-left" class="back" />{workKindTitle.release}</a>
             <span class="sep" aria-hidden="true">/</span>
             <span class="here">{tag}</span>
           </nav>
@@ -192,9 +197,11 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
             {g === null ? <span class="bar" />
               : stages.length === 0 ? <span class="quiet">{noPipeline}</span>
               : stages.map((s, i) => (
-                <span key={i} class="work-release-stage"><span class="tick" aria-label="Done">✓</span>
+                <span key={i} class="work-release-stage"><span class="tick" role="img" aria-label="Done"><Icon name="check" /></span>
                   {s.url ? <a href={s.url} target="_blank" rel="noopener noreferrer">{s.words}</a> : <span>{s.words}</span>}</span>
               ))}
+            {trends && <a href={routeHash({ nav: "reports", section: "value", item: "builds", query: trends })}
+              title={buildsRunLinkHelp("release")}>Build trends ›</a>}
           </SideSection>
           <SideSection title="Lineage">
             {lineageLine ? <span class="work-release-figures">{lineageLine}</span> : <span class="quiet">No agent worked on it yet</span>}
@@ -216,7 +223,7 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
               onClick={() => { pullsPage.value = true; }}>
               <StateIcon kind="pr" state="merged" size={14} />
               <span class="words">{pulls ? `Pull requests · ${pulls.length}` : "Pull requests"}</span>
-              <span aria-hidden="true">›</span>
+              <Icon name="chevron-right" />
             </button>
           </div></div>
         </div>

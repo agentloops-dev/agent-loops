@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Use Chrome (#1837): Claude's sessions get `--chrome` only when asked, the option is

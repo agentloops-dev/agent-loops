@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/diskjson"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // MARK: lines the disk refused (#212, #3245)

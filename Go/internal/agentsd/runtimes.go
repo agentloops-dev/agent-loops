@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/acp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // runtimeDef is a RuntimeCatalog entry, and what RuntimeLaunch passes it.
@@ -342,6 +342,11 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 	root := d.Store.Loc.Root
 	switch r.ID {
 	case "claude":
+		// Claude Code gives a model newer than claude-opus-4-7 no to-do tools unless this
+		// is set (2.1.318, #5093). With it, a session has TaskCreate and TaskUpdate, which
+		// the adapter sends as the session's plan: the plan strip and a first build's plan
+		// page read it. The person's own value, when set, is kept.
+		env = withClaudeTodoTools(env)
 		if rl := d.relayFor("claude"); rl != nil && account == nil {
 			env = without(env, "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
 				"ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "NODE_EXTRA_CA_CERTS")
@@ -450,6 +455,17 @@ func (d *Daemon) needsSignIn(runtimeID string) error {
 // nothing to take away since sub-agents and task lists came back (2026-09-29): an empty deny
 // list or policy file is not sent, as Swift did not send one.
 
+// claudeTodoTools turns Claude Code's task tools on for every model (#5093).
+const claudeTodoTools = "CLAUDE_CODE_ENABLE_TODO_TOOLS"
+
+// withClaudeTodoTools is env with claudeTodoTools on, unless the person set it.
+func withClaudeTodoTools(env []string) []string {
+	if hasVariable(env, claudeTodoTools) {
+		return env
+	}
+	return append(without(env, claudeTodoTools), claudeTodoTools+"=1")
+}
+
 // toolPolicyEnv is the environmentJSON lever: JSON in a variable the runtime reads at
 // start, compact with sorted keys, the person's own replaced.
 //   - Codex's feature switches in CODEX_CONFIG, which its adapter merges into every
@@ -496,7 +512,7 @@ type policyFile struct {
 //     ignored), never the person's ~/.grok/config.toml: no image or video generation.
 var toolPolicyFiles = map[string][]policyFile{
 	"grok": {{name: "grok-overlay.toml", variable: "GROK_CONFIG_PATH",
-		contents: "# Written by the Agents app. Do not edit: rebuilt on every launch.\n[features]\nimage_gen = false\nvideo_gen = false\n"}},
+		contents: "# Written by the Agent Loops app. Do not edit: rebuilt on every launch.\n[features]\nimage_gen = false\nvideo_gen = false\n"}},
 }
 
 // grokRemoved is Grok's deny list, a profile's disallowedTools: its scheduler, workflow,
@@ -516,7 +532,7 @@ func sessionMeta(runtimeID string) map[string]any {
 			"EnterWorktree", "ExitWorktree"}}}}
 	case "grok":
 		return map[string]any{"agentProfile": map[string]any{"disallowedTools": grokRemoved, "name": "agents-app",
-			"description": "An agent hosted by the Agents app."}, "rules": grokRules()}
+			"description": "An agent hosted by the Agent Loops app."}, "rules": grokRules()}
 	}
 	return nil
 }

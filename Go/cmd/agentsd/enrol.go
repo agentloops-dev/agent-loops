@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd"
-	"github.com/alexec/agents/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 )
 
 // enrolEvery is how often a host that could not enrol tries again, or looks for a new code.
@@ -76,6 +76,18 @@ func refusedForGood(err error) (string, bool) {
 // joinStatusFile is HostJoinFile.name (#113): how this host's join stands, for Agents Host
 // and the control plane beside it, which show its problem while it keeps failing.
 const joinStatusFile = "control-join.json"
+
+// joinProblem is the problem the last run's control-join.json says, or "".
+func joinProblem(root string) string {
+	var said struct {
+		Problem *string `json:"problem"`
+	}
+	b, err := os.ReadFile(filepath.Join(root, joinStatusFile))
+	if err != nil || json.Unmarshal(b, &said) != nil || said.Problem == nil {
+		return ""
+	}
+	return *said.Problem
+}
 
 // writeJoinStatus is HostJoinFile.write: the uplink's state and why its last dial failed,
 // so a host refused for ever says why where a person looks (#1996). Dates without

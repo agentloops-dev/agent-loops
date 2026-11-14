@@ -32,6 +32,13 @@ type ACPProviderInfo struct {
 	Configured *bool `json:"configured,omitzero"`
 }
 
+// An outside account by what tells it from the others (#5253): its service and address, as the control plane matches them, case aside.
+type AccountKey struct {
+	Service string `json:"service"`
+
+	Address *string `json:"address,omitzero"`
+}
+
 // An account's newest operation (#4157), for the time ago its row shows.
 type AccountLastOp struct {
 	What AccountOperationWhat `json:"what"`
@@ -54,12 +61,13 @@ type AccountOperation struct {
 	Agent *UUID `json:"agent,omitzero"`
 }
 
-// What an operation on an account was (#4157): read (by manage_accounts, or a read of its secret or card), added, or edited (it took another's place).
+// What an operation on an account was (#4157): read (by manage_accounts, or a read of its secret or card), added, edited (it took another's place), or removed (#5253). An account's lastOp is never removed: a removed account has none.
 type AccountOperationWhat string
 
 const AccountOperationWhatRead AccountOperationWhat = "read"
 const AccountOperationWhatAdded AccountOperationWhat = "added"
 const AccountOperationWhatEdited AccountOperationWhat = "edited"
+const AccountOperationWhatRemoved AccountOperationWhat = "removed"
 
 // An account added to a runtime (#840), beside the runtime's own sign-in, which is the Default account and is not one of these. The person picks one when they start a session.
 type AccountProfile struct {
@@ -1373,7 +1381,8 @@ func (v *BackupTarget) UnmarshalJSON(b []byte) error {
 type Block struct {
 	Waits []Wait `json:"waits"`
 
-	CheckAgainAt *Date `json:"checkAgainAt,omitzero"`
+	// When the wait ends if its sessions have not (#5152; was checkAgainAt).
+	Deadline *Date `json:"deadline,omitzero"`
 
 	WakeOn *BlockWakeOn `json:"wakeOn,omitzero"`
 
@@ -1517,6 +1526,15 @@ type BrowserControlSettings struct {
 	Mode DriveApproval `json:"mode"`
 }
 
+// edit's command (#5119): selectAll, undo and redo act in the page as Chromium's editing commands; copy says the page's selection back in copied, and cut also deletes it.
+type BrowserEditCommand string
+
+const BrowserEditCommandSelectAll BrowserEditCommand = "selectAll"
+const BrowserEditCommandUndo BrowserEditCommand = "undo"
+const BrowserEditCommandRedo BrowserEditCommand = "redo"
+const BrowserEditCommandCopy BrowserEditCommand = "copy"
+const BrowserEditCommandCut BrowserEditCommand = "cut"
+
 // browser/frame: a JPEG of the machine's browser's page (#3528, spike #3527), from CDP Page.startScreencast, sent only to the clients that watch it. Never recorded.
 type BrowserFrame struct {
 	Image Data `json:"image"`
@@ -1537,8 +1555,9 @@ const BrowserInputKindMouse BrowserInputKind = "mouse"
 const BrowserInputKindWheel BrowserInputKind = "wheel"
 const BrowserInputKindKey BrowserInputKind = "key"
 const BrowserInputKindText BrowserInputKind = "text"
+const BrowserInputKindEdit BrowserInputKind = "edit"
 
-// browser/input: the person's input in the page (#3528). mouse and wheel are CDP Input.dispatchMouseEvent, key is Input.dispatchKeyEvent, text is Input.insertText (a paste). x and y are in the page's CSS pixels.
+// browser/input: the person's input in the page (#3528). mouse and wheel are CDP Input.dispatchMouseEvent, key is Input.dispatchKeyEvent, text is Input.insertText (a paste), edit is an editing command for a client's shortcut (#5119). x and y are in the page's CSS pixels.
 type BrowserInputRequest struct {
 	Kind BrowserInputKind `json:"kind"`
 
@@ -1571,11 +1590,16 @@ type BrowserInputRequest struct {
 
 	// Alt 1, Control 2, Meta 4, Shift 8, as CDP has them.
 	Modifiers *int64 `json:"modifiers,omitzero"`
+
+	Command *BrowserEditCommand `json:"command,omitzero"`
 }
 
-// browser/input's answer. editing is said after a mouseReleased only: whether the click left the page's focus in a field that takes text (an input, a textarea, a contenteditable), so a touch client opens or closes its keyboard. Left out for other input, and by a host before it was added.
+// browser/input's answer. copied is said after an edit's copy or cut. editing is said after a mouseReleased only: whether the click left the page's focus in a field that takes text (an input, a textarea, a contenteditable), so a touch client opens or closes its keyboard. Left out for other input, and by a host before it was added.
 type BrowserInputResult struct {
 	Editing *bool `json:"editing,omitzero"`
+
+	// After an edit's copy or cut: the page's selected text (the focused field's selection, else the page's), for the client's clipboard. Empty when nothing is selected or the field is a password.
+	Copied *string `json:"copied,omitzero"`
 }
 
 type BrowserNavigateAction string
@@ -1714,6 +1738,287 @@ type BuildOutputRemoved struct {
 	Removed []string `json:"removed"`
 
 	Freed WorktreeSize `json:"freed"`
+}
+
+// A default-branch run of the workflow after a change's last fast run, up to its first slow one (#5177, board 2): whether its run started the job (a run whose paths did not select it did not), and how long the job ran, in seconds.
+type BuildsBetween struct {
+	Run BuildsRunRef `json:"run"`
+
+	Ran bool `json:"ran"`
+
+	JobRun *float64 `json:"jobRun,omitzero"`
+}
+
+// A change point in one job's run time on the default branch (#5177): the runs either side of the step, the medians of its run time and of its wait (for a runner and its turn) on each side, in seconds, and the score. slower says the run time went up. between is each run in between; points are the job's runs around the change. The finder does not blame: firstSlow is the first run to look at.
+type BuildsChange struct {
+	Workflow string `json:"workflow"`
+
+	Job string `json:"job"`
+
+	Slower bool `json:"slower"`
+
+	At Date `json:"at"`
+
+	LastFast BuildsRunRef `json:"lastFast"`
+
+	FirstSlow BuildsRunRef `json:"firstSlow"`
+
+	MedianBefore float64 `json:"medianBefore"`
+
+	MedianAfter float64 `json:"medianAfter"`
+
+	QueueBefore float64 `json:"queueBefore"`
+
+	QueueAfter float64 `json:"queueAfter"`
+
+	Score float64 `json:"score"`
+
+	Runner *string `json:"runner,omitzero"`
+
+	// When this machine sent ci.slowed for the change (#5200); absent when it sent none (a speed-up, or a change found too long after its first slow run).
+	SlowedSent *Date `json:"slowedSent,omitzero"`
+
+	Between []BuildsBetween `json:"between"`
+
+	Points []BuildsPoint `json:"points"`
+}
+
+// One day of a build trend (#5177), the day (YYYY-MM-DD) in the request's time zone.
+type BuildsDay struct {
+	Day string `json:"day"`
+
+	Figures BuildsFigures `json:"figures"`
+}
+
+// A set of CI runs' figures (#5177, spec 5166): runs is the first attempts, green those that passed, reruns the later attempts, counted apart and out of the time figures. Each time figure is of the runs that passed, in seconds: toGreen (made to the last job's end), run (the time a job ran), runner (waiting for a runner) and turn (waiting its turn: made to the first job made); run + runner + turn = toGreen. With a job picked, the job's own run and runner wait.
+type BuildsFigures struct {
+	Runs int64 `json:"runs"`
+
+	Green int64 `json:"green"`
+
+	Reruns int64 `json:"reruns"`
+
+	ToGreen BuildsStat `json:"toGreen"`
+
+	Run BuildsStat `json:"run"`
+
+	Runner BuildsStat `json:"runner"`
+
+	Turn BuildsStat `json:"turn"`
+}
+
+// builds/history's answer (#5177): the filters' choices in the range (workflows, jobs, branches), the range's figures and each day's, the change points found in the range (on the default branch, whatever the branch filter), and the job that waited longest for a runner. readAt is when this machine last read the forge's runs (Last update); filledFrom is the oldest day the backfill reached, absent before it starts. reader is github or gitlab, or none when Agents does not read CI timings from the repository's forge.
+type BuildsHistory struct {
+	Repo string `json:"repo"`
+
+	DefaultBranch *string `json:"defaultBranch,omitzero"`
+
+	Reader string `json:"reader"`
+
+	Workflows []string `json:"workflows"`
+
+	Jobs []string `json:"jobs"`
+
+	Branches []string `json:"branches"`
+
+	Total BuildsFigures `json:"total"`
+
+	Days []BuildsDay `json:"days"`
+
+	Changes []BuildsChange `json:"changes"`
+
+	LongestRunnerWait *BuildsRunnerWait `json:"longestRunnerWait,omitzero"`
+
+	ReadAt *Date `json:"readAt,omitzero"`
+
+	FilledFrom *Date `json:"filledFrom,omitzero"`
+}
+
+// builds/history (#5177): a repository (github:alexec/agents), runs made in [from, to), and the filters: a workflow's file name (ci.yml), a job, and the default branch (no branch and no pullRequests), the pull requests' runs, or one branch. timeZone (an IANA name) says the days; UTC when not said. scope is for builds/historyAll (#5232): whose machines' copies the control plane reads, as reports/value's; a machine leaves it out.
+type BuildsHistoryRequest struct {
+	Repo string `json:"repo"`
+
+	From Date `json:"from"`
+
+	To Date `json:"to"`
+
+	TimeZone *string `json:"timeZone,omitzero"`
+
+	Workflow *string `json:"workflow,omitzero"`
+
+	Job *string `json:"job,omitzero"`
+
+	Branch *string `json:"branch,omitzero"`
+
+	PullRequests *bool `json:"pullRequests,omitzero"`
+
+	Scope *ReportScope `json:"scope,omitzero"`
+}
+
+// One job of a CI run attempt (#5177): made (waiting for a runner from then), started and ended, in seconds from the run's made time; runner is its first runner label. A forge with no steps has none.
+type BuildsJob struct {
+	Name string `json:"name"`
+
+	Made float64 `json:"made"`
+
+	Started float64 `json:"started"`
+
+	Ended float64 `json:"ended"`
+
+	Conclusion *string `json:"conclusion,omitzero"`
+
+	Runner *string `json:"runner,omitzero"`
+
+	Steps []BuildsStep `json:"steps"`
+}
+
+// One run of a job around a change (#5177, board 2): its ci-run ref, when it was made, the job's run time and its wait (for a runner and its turn), in seconds.
+type BuildsPoint struct {
+	Ref string `json:"ref"`
+
+	Made Date `json:"made"`
+
+	Ran float64 `json:"ran"`
+
+	Queue float64 `json:"queue"`
+}
+
+// One CI run attempt, with its jobs and their steps (#5177, board 3): times in seconds from made; started is the attempt's start, ended its last job's end, turn its wait for its turn.
+type BuildsRun struct {
+	Ref string `json:"ref"`
+
+	ID int64 `json:"id"`
+
+	Attempt int64 `json:"attempt"`
+
+	Workflow string `json:"workflow"`
+
+	Event *string `json:"event,omitzero"`
+
+	Branch *string `json:"branch,omitzero"`
+
+	HeadSha *string `json:"headSha,omitzero"`
+
+	Pr *int64 `json:"pr,omitzero"`
+
+	URL *string `json:"url,omitzero"`
+
+	Default *bool `json:"default,omitzero"`
+
+	Tag *bool `json:"tag,omitzero"`
+
+	Made Date `json:"made"`
+
+	Started float64 `json:"started"`
+
+	Ended float64 `json:"ended"`
+
+	Turn float64 `json:"turn"`
+
+	Conclusion *string `json:"conclusion,omitzero"`
+
+	Jobs []BuildsJob `json:"jobs"`
+}
+
+// builds/run's answer (#5177): the run attempt, and the run to compare it with (the newest passed first attempt of its workflow before it on its branch, or on the default branch when its branch has none). attempts is how many attempts the store has of the run.
+type BuildsRunAnswer struct {
+	Run BuildsRun `json:"run"`
+
+	Before *BuildsRun `json:"before,omitzero"`
+
+	Attempts int64 `json:"attempts"`
+}
+
+// A CI run attempt, named (#5177): its ci-run ref (github:run:alexec/agents#123), id, attempt and when it was made; its address, head commit, branch, pull request and conclusion when known.
+type BuildsRunRef struct {
+	Ref string `json:"ref"`
+
+	ID int64 `json:"id"`
+
+	Attempt int64 `json:"attempt"`
+
+	Made Date `json:"made"`
+
+	URL *string `json:"url,omitzero"`
+
+	HeadSha *string `json:"headSha,omitzero"`
+
+	Branch *string `json:"branch,omitzero"`
+
+	Pr *int64 `json:"pr,omitzero"`
+
+	Conclusion *string `json:"conclusion,omitzero"`
+}
+
+// builds/run (#5177): a repository and a run's ci-run ref; its first attempt when attempt is not said. scope is for builds/runAll (#5232), as builds/historyAll's.
+type BuildsRunRequest struct {
+	Repo string `json:"repo"`
+
+	Ref string `json:"ref"`
+
+	Attempt *int64 `json:"attempt,omitzero"`
+
+	Scope *ReportScope `json:"scope,omitzero"`
+}
+
+// The job of a range's passed runs that waited longest for a runner (#5177, board 3 note 4): its run, its name, the wait and its run time, in seconds.
+type BuildsRunnerWait struct {
+	Run BuildsRunRef `json:"run"`
+
+	Job string `json:"job"`
+
+	Wait float64 `json:"wait"`
+
+	Ran float64 `json:"ran"`
+}
+
+// A median and a 90th percentile of n values, in seconds (#5177); 0 and 0 when n is 0.
+type BuildsStat struct {
+	Median float64 `json:"median"`
+
+	P90 float64 `json:"p90"`
+
+	N int64 `json:"n"`
+}
+
+// One step of a job (#5177), started and ended in seconds from the run's made time, as the forge says them.
+type BuildsStep struct {
+	Name string `json:"name"`
+
+	Number int64 `json:"number"`
+
+	Started float64 `json:"started"`
+
+	Ended float64 `json:"ended"`
+
+	Conclusion *string `json:"conclusion,omitzero"`
+}
+
+// builds/sync (#5232): what changed in one repository's build timings on a machine since its last send, for the control plane's copy. Each day is a UTC day the runs were made (YYYY-MM-DD) and all its runs as the machine has them now, so a day with no runs is gone; reset starts the copy of the repository again from this send, the first of a whole send. defaultBranch, readAt and filledFrom are as builds/history says them. Only refs, times, attempts, conclusions, runner labels and the names of workflows, jobs and steps: no titles, no logs (principle 7).
+type BuildsSync struct {
+	Repo string `json:"repo"`
+
+	Reset *bool `json:"reset,omitzero"`
+
+	DefaultBranch *string `json:"defaultBranch,omitzero"`
+
+	ReadAt *Date `json:"readAt,omitzero"`
+
+	FilledFrom *Date `json:"filledFrom,omitzero"`
+
+	Days []BuildsSyncDay `json:"days"`
+}
+
+// builds/sync's answer (#5232). full: the control plane has no copy of this repository from this machine (a new or moved control plane), so the machine sends all its days again, the first with reset.
+type BuildsSyncAnswer struct {
+	Full *bool `json:"full,omitzero"`
+}
+
+// One UTC day of a repository's build timings (#5232): its date (YYYY-MM-DD) and every run attempt made on it.
+type BuildsSyncDay struct {
+	Day string `json:"day"`
+
+	Runs []BuildsRun `json:"runs"`
 }
 
 // bus/deliver (#4729): one event on the bus that matched subscriptions of this machine, and which ones. Best effort: usually once, sometimes never, rarely twice.
@@ -3370,9 +3675,6 @@ type ControlPushItem struct {
 	Alert bool `json:"alert"`
 
 	Headline *Headline `json:"headline,omitzero"`
-
-	// Asked by an agent that holds the person's booking (person:<name>, #4268): notify it as timely (Time Sensitive on iOS, an alert on the Mac, an urgent Web Push).
-	Timely *bool `json:"timely,omitzero"`
 }
 
 type ControlStatus struct {
@@ -3567,6 +3869,174 @@ type DeliveredRoute struct {
 	SealVersion int64 `json:"sealVersion"`
 
 	Waiting *bool `json:"waiting,omitzero"`
+}
+
+// One try to put a version into a target (#5262, spec 5239): GitHub's Deployment, GitLab's deployment, Argo CD's sync, Kargo's Promotion, Octopus's Deployment. system and id are the system that said it and its id there, as a re-run of the same job is the same deploy; ref is its lineage ref, <system>:deploy:<topic>#<id>, when the source makes one. state is the model's, rawState the system's own word (GitHub's in_progress, Kargo's Errored). started and finished are when it went running and when it ended. rollback is set when the system says it is one (GitOps Promoter's RestoreActiveCommit, helm rollback); otherwise a rollback is computed. share is the per cent of the target's traffic the version takes when it is less than 100 (a canary, a Cloud Run split). observed is true for a deploy made from a change in what the target reports it runs, not from a system's record.
+type Deploy struct {
+	System string `json:"system"`
+
+	ID string `json:"id"`
+
+	Ref *string `json:"ref,omitzero"`
+
+	Target DeployTarget `json:"target"`
+
+	Version DeployVersion `json:"version"`
+
+	State DeployState `json:"state"`
+
+	RawState string `json:"rawState"`
+
+	Started *Date `json:"started,omitzero"`
+
+	Finished *Date `json:"finished,omitzero"`
+
+	Rollback *bool `json:"rollback,omitzero"`
+
+	Share *float64 `json:"share,omitzero"`
+
+	Observed *bool `json:"observed,omitzero"`
+
+	URL *string `json:"url,omitzero"`
+
+	Checks []DeployCheck `json:"checks,omitzero"`
+}
+
+// One immutable thing that a build made or a deploy uses (#5262): a commit, an image digest, a Helm chart version, a package version, a mobile build, a hydrated commit. kind is an open string (commit, image, chart, package, build, hydrated-commit…); id is its digest or version in system (github, oci, testflight…); ref is its lineage ref, <system>:artifact:<topic>#<id>, when the source makes one. builtFrom are the refs of the changes it was built from (a commit's, a PR's); with none, the commit itself is the change.
+type DeployArtifact struct {
+	Kind string `json:"kind"`
+
+	System string `json:"system"`
+
+	ID string `json:"id"`
+
+	Ref *string `json:"ref,omitzero"`
+
+	Name *string `json:"name,omitzero"`
+
+	BuiltFrom []string `json:"builtFrom,omitzero"`
+}
+
+// A condition with a state on a deploy or a target (#5262): an approval, a test, a health status, a soak time, a window, an App Review. kind is an open string (approval, test, health, soak, window, review…). when is before (it can hold the deploy) or after (it says how what runs there is). state is the model's, rawState the system's own word. Checks are details and events, not lineage nodes.
+type DeployCheck struct {
+	Kind string `json:"kind"`
+
+	System string `json:"system"`
+
+	ID *string `json:"id,omitzero"`
+
+	Name *string `json:"name,omitzero"`
+
+	When DeployCheckWhen `json:"when"`
+
+	State DeployState `json:"state"`
+
+	RawState string `json:"rawState"`
+
+	URL *string `json:"url,omitzero"`
+}
+
+// check.changed's details (#5262): the check, and what it is on: the deploy's ref when it is a deploy's check, and the target either way. component, environment and tier are the target's, flat, so a wait or a trigger can narrow by them.
+type DeployCheckEvent struct {
+	Check DeployCheck `json:"check"`
+
+	Deploy *string `json:"deploy,omitzero"`
+
+	Target DeployTarget `json:"target"`
+
+	Component string `json:"component"`
+
+	Environment string `json:"environment"`
+
+	Tier EnvironmentTier `json:"tier"`
+}
+
+// Whether a check is before a deploy (it can hold it) or after it (on what runs there).
+type DeployCheckWhen string
+
+const DeployCheckWhenBefore DeployCheckWhen = "before"
+const DeployCheckWhenAfter DeployCheckWhen = "after"
+
+// What runs and has versions (#5262): a service, an app, a site. kind is an open string (service, app, site…); id is its id in system; with none, it is the repo. repo is the forge repo it is built from, owner/name, when there is one.
+type DeployComponent struct {
+	Kind *string `json:"kind,omitzero"`
+
+	System string `json:"system"`
+
+	ID string `json:"id"`
+
+	Name *string `json:"name,omitzero"`
+
+	Repo *string `json:"repo,omitzero"`
+}
+
+// A place where components run (#5262), shared by many components and repos: GitHub's and GitLab's environments, Argo CD's destination, Kargo's Stage's place, TestFlight. name is its name in system; tier is GitLab's five, other when a system does not say. ephemeral is true for a preview for each PR (Vercel's previews, GitLab's review apps).
+type DeployEnvironment struct {
+	System string `json:"system"`
+
+	Name string `json:"name"`
+
+	Tier EnvironmentTier `json:"tier"`
+
+	Ephemeral *bool `json:"ephemeral,omitzero"`
+
+	URL *string `json:"url,omitzero"`
+}
+
+// deploy.started, deploy.succeeded and deploy.failed's details (#5262), and deploy.waiting's beside its own: the deploy, and its target's component, environment and tier, flat, so a wait or a trigger can narrow by them (tier: production). outcome is deploy.failed's: failed or cancelled.
+type DeployEvent struct {
+	Deploy Deploy `json:"deploy"`
+
+	Component string `json:"component"`
+
+	Environment string `json:"environment"`
+
+	Tier EnvironmentTier `json:"tier"`
+
+	Outcome *DeployOutcome `json:"outcome,omitzero"`
+}
+
+// How a deploy that did not succeed ended, as deploy.failed says it.
+type DeployOutcome string
+
+const DeployOutcomeFailed DeployOutcome = "failed"
+const DeployOutcomeCancelled DeployOutcome = "cancelled"
+
+// A deploy's or a check's state (#5262). Every system's states map to these five, and its own word is kept beside it as rawState: GitHub's queued and in_progress are running, success is succeeded, failure and error are failed. A deploy that a newer one replaced, or a rollback, is computed, not a state.
+type DeployState string
+
+const DeployStateWaiting DeployState = "waiting"
+const DeployStateRunning DeployState = "running"
+const DeployStateSucceeded DeployState = "succeeded"
+const DeployStateFailed DeployState = "failed"
+const DeployStateCancelled DeployState = "cancelled"
+
+// One component in one environment (#5262), where a version runs: Argo CD's Application, Kargo's Stage, a Cloud Run service in a region. labels tell instances apart (region, cluster, namespace, tenant, machine); with none, it is component × environment. system and id are set when the system has a target of its own; ref is its lineage ref, <system>:target:<topic>#<component>@<environment>.
+type DeployTarget struct {
+	Component DeployComponent `json:"component"`
+
+	Environment DeployEnvironment `json:"environment"`
+
+	Labels map[string]string `json:"labels,omitzero"`
+
+	System *string `json:"system,omitzero"`
+
+	ID *string `json:"id,omitzero"`
+
+	Ref *string `json:"ref,omitzero"`
+}
+
+// The set of artifacts that go out together (#5262); one artifact is the simple case. name is set for a Release (v0.18.0), a Kargo alias, an Octopus release; system and id are set when the version is a thing of its own there (Kargo's Freight, Octopus's Release). ref is a Release's ref when it has a name, else its one artifact's.
+type DeployVersion struct {
+	Artifacts []DeployArtifact `json:"artifacts"`
+
+	Name *string `json:"name,omitzero"`
+
+	System *string `json:"system,omitzero"`
+
+	ID *string `json:"id,omitzero"`
+
+	Ref *string `json:"ref,omitzero"`
 }
 
 // The live tile's latest look at the Mac's screen while an agent holds the screen lease (#3004, US4, FR-011): a downscaled JPEG of the whole screen, base64, or, while the screen is locked, locked and no image (FR-012). Sent only to the clients showing that agent, never recorded, never replayed (FR-016).
@@ -4099,11 +4569,14 @@ type ElicitationAnswer struct {
 	Answer string `json:"answer"`
 }
 
-// An agent's hand_to_person (#3529): one step the person does on the page in the machine's browser (solve a CAPTCHA, sign in). The form's one choice is Done or Can't do it; a client that can show the machine's browser offers Open the page.
+// An agent's hand_to_person (#3529): one step the person does on the page in the machine's browser (solve a CAPTCHA, sign in). The form's one choice is Done or Can't do it; a client that can show the machine's browser offers Open the page, unless the step is in another window (window).
 type ElicitationHandOff struct {
 	Step string `json:"step"`
 
 	Reason *string `json:"reason,omitzero"`
+
+	// Where the person does the step when it is not in the machine's browser (#5095): one of the agents' own Chrome windows, as "the agents' Chrome (DevTools port 9233), at the tab “Create account”". A client then offers no Open the page and says this window instead.
+	Window *string `json:"window,omitzero"`
 }
 
 type ElicitationNotification struct {
@@ -4313,6 +4786,34 @@ type EntryNotification struct {
 	Index *int64 `json:"index,omitzero"`
 
 	Oversized *int64 `json:"oversized,omitzero"`
+}
+
+// An environment's tier, as GitLab's five (#5262). A tier this build does not know reads as `other`.
+type EnvironmentTier string
+
+const EnvironmentTierProduction EnvironmentTier = "production"
+const EnvironmentTierStaging EnvironmentTier = "staging"
+const EnvironmentTierTesting EnvironmentTier = "testing"
+const EnvironmentTierDevelopment EnvironmentTier = "development"
+const EnvironmentTierOther EnvironmentTier = "other"
+
+// UnmarshalJSON reads a value this build does not know as "other".
+func (v *EnvironmentTier) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	switch EnvironmentTier(s) {
+	case EnvironmentTierProduction,
+		EnvironmentTierStaging,
+		EnvironmentTierTesting,
+		EnvironmentTierDevelopment,
+		EnvironmentTierOther:
+		*v = EnvironmentTier(s)
+	default:
+		*v = EnvironmentTierOther
+	}
+	return nil
 }
 
 type Event struct {
@@ -4726,6 +5227,26 @@ type FindResult struct {
 
 	More bool `json:"more"`
 }
+
+// firstBuild/start (#5056, spec 5048 section 7): the newcomer's idea, as typed, the starter the plan page shows, and the runtime its first task set up. The host makes the folder ~/.agents/first-build when it is not there, writes the first prompt itself, so every client sends the same, and labels the session first-build. It answers with the session's id. While a first-build session that is not archived is there, it refuses with firstBuildRunning, with that session's id as the data, unless another is true (New App…, #5132).
+type FirstBuildStartRequest struct {
+	// The person's words, as typed. Not empty.
+	Idea string `json:"idea"`
+
+	Starter FirstBuildStarter `json:"starter"`
+
+	// The runtime that the plan page's first task set up, as agents/start takes it.
+	RuntimeID string `json:"runtimeID"`
+
+	// New App… (#5132): start one more first build, also while a first-build session is there. Absent or false keeps the newcomer's rule: refuse with firstBuildRunning.
+	Another *bool `json:"another,omitzero"`
+}
+
+// The starter that a first build begins from (#5048): iphone-app is agentloops-dev/iphone-app-starter, web-service is agentloops-dev/web-service-starter, as make_app_repository names them.
+type FirstBuildStarter string
+
+const FirstBuildStarterIphoneApp FirstBuildStarter = "iphone-app"
+const FirstBuildStarterWebService FirstBuildStarter = "web-service"
 
 // console/fleet's answer (#1804): every machine on the control plane, for an admin.
 type FleetBoard struct {
@@ -7001,6 +7522,29 @@ const LiveSourceScreen LiveSource = "screen"
 const LiveSourceBrowser LiveSource = "browser"
 const LiveSourceSimulator LiveSource = "simulator"
 
+// A secret this machine keeps for itself (#5122): an agent saved it (ask_secret, capture_secret, generate_secret) or a connector's form set it. Every session's agent on this machine can name it. No value.
+type LocalSecret struct {
+	Name string `json:"name"`
+
+	SetAt Date `json:"setAt"`
+
+	LastOp *SecretLastOp `json:"lastOp,omitzero"`
+
+	// Always false: a secret this machine keeps for itself is on this machine only.
+	BackedUp *bool `json:"backedUp,omitzero"`
+
+	// Ask before use (#4014): a person approves each use (#4015). Left out is off.
+	NeedsApproval *bool `json:"needsApproval,omitzero"`
+
+	// A secret's description (#4167): one or two sentences on what it is and what it is for, such as which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a value. Left out when it has none.
+	Description *string `json:"description,omitzero"`
+}
+
+// secrets/localList (#5122): every secret this machine keeps for itself, by name. No value.
+type LocalSecrets struct {
+	Secrets []LocalSecret `json:"secrets"`
+}
+
 // A person's machine lock (#3399, specs/3399-machine-lock): its chain of entries, the root first. lock/get, and machine/lock to a machine.
 type Lock struct {
 	Person string `json:"person"`
@@ -7850,12 +8394,15 @@ type MacTerminalRequest struct {
 	Path *string `json:"path,omitzero"`
 }
 
-// machine/accounts (#3967), for an agent on a machine: its person's outside accounts, after add is added (one with the same service and address goes in its place).
+// machine/accounts (#3967), for an agent on a machine: its person's outside accounts, after add is added (one with the same service and address goes in its place) and remove is taken out (#5253).
 type MachineAccountsCall struct {
 	Add []OutsideAccount `json:"add,omitzero"`
 
 	// What manage_accounts did to the accounts (#4157): the control plane writes an audit entry for each.
 	Ops []AccountOperation `json:"ops,omitzero"`
+
+	// The accounts to take out, by service and address (#5253), after add. Needs machine.accounts/2: an older control plane does not know it.
+	Remove []AccountKey `json:"remove,omitzero"`
 }
 
 // machines/announce, on an enrolment connection.
@@ -8536,7 +9083,28 @@ type MessagesError struct {
 	Message string `json:"message"`
 }
 
-// messages/read (#4343): one page of a conversation's messages, newest first, as the connector's read_messages gave it. cursor gives the older page; absent on the last. untrusted is always true: every text is outside content.
+// messages/markAllRead (#5137): mark every conversation of folder's messaging connectors read, or of every folder's when folder is absent.
+type MessagesMarkAllReadRequest struct {
+	Folder *string `json:"folder,omitzero"`
+}
+
+// One connector that messages/markAllRead marked read (#5137): its name in mcp.json, a folder that reaches it, and how many messages it marked.
+type MessagesMarked struct {
+	Server string `json:"server"`
+
+	Folder string `json:"folder"`
+
+	Marked int64 `json:"marked"`
+}
+
+// messages/markAllRead (#5137): the connectors that marked their conversations read, and those that could not, with why. A connector with no mark_conversation_read (its service gives no read state) is in neither.
+type MessagesMarkedAllRead struct {
+	Marked []MessagesMarked `json:"marked"`
+
+	Errors []MessagesError `json:"errors,omitzero"`
+}
+
+// messages/read (#4343): one page of a conversation's messages, newest first, as the connector's read_messages gave it. cursor gives the older page; absent on the last. untrusted is always true: every text is outside content. markedRead (#5137): the connector's mark_conversation_read marked the conversation read on its service, so a client sets its unread count to 0; absent when the connector cannot mark read, on an older page, and on one thread's read.
 type MessagesRead struct {
 	Server string `json:"server"`
 
@@ -8549,6 +9117,8 @@ type MessagesRead struct {
 	Cursor *string `json:"cursor,omitzero"`
 
 	Untrusted bool `json:"untrusted"`
+
+	MarkedRead *bool `json:"markedRead,omitzero"`
 }
 
 // messages/read (#4343): a conversation from messages/conversations, by its server, folder and id. cursor is the last page's; thread: only that thread's messages; limit is 1 to 100, 20 when not said.
@@ -8605,6 +9175,9 @@ type MessagingConversation struct {
 
 	LastActivity *string `json:"lastActivity,omitzero"`
 
+	// Who sent the newest message, so the list can say who a conversation is from. Absent when the service's list does not say (a Slack channel, a Google Chat space).
+	Sender *ChannelSender `json:"sender,omitzero"`
+
 	// The conversation on the service's own site or app. Absent when it has none.
 	Link *URL `json:"link,omitzero"`
 }
@@ -8632,6 +9205,18 @@ type MessagingListRequest struct {
 	Limit *int64 `json:"limit,omitzero"`
 
 	Unread *bool `json:"unread,omitzero"`
+}
+
+// mark_conversation_read's input (#5137, docs/reference/messaging-contract.md): conversation, a conversation's id from list_conversations, marks its messages read on the service; all: true marks every conversation that list_conversations lists with no input. One of the two.
+type MessagingMarkReadRequest struct {
+	Conversation *string `json:"conversation,omitzero"`
+
+	All *bool `json:"all,omitzero"`
+}
+
+// mark_conversation_read's structuredContent (#5137): how many messages it marked read.
+type MessagingMarkedRead struct {
+	Marked int64 `json:"marked"`
 }
 
 // One message in read_messages' structuredContent (#4338). text is outside content: the result says so (untrusted), and a client draws it as Markdown that loads nothing: no HTML, no image from the network, and only http, https and mailto links. thread is the id of the message that starts its thread; absent when it is in no thread. link is the message on the service's own site or app.
@@ -8904,9 +9489,6 @@ type Need struct {
 	RaisedAt Date `json:"raisedAt"`
 
 	Headline Headline `json:"headline"`
-
-	// Asked by an agent that holds the person's booking (person:<name>, #4268): notify it as timely (Time Sensitive on iOS, an alert on the Mac, an urgent Web Push).
-	Timely *bool `json:"timely,omitzero"`
 }
 
 // NeedID (Attention/Need.swift): what is being answered, one key per kind. A notice (#2805) is what an agent told the person with `notify`: posted, never a Needs you row. A request (#4017) is a Needs you request posted so a phone can answer it: today only a secret's use (#4015), whose banner has its four answers.
@@ -9415,6 +9997,9 @@ type OutsideAccount struct {
 	// The address it signs in with.
 	Address *string `json:"address,omitzero"`
 
+	// The user name it signs in with, when that is not the address (#5116). Plain text, never a secret. Absent when not set.
+	Username *string `json:"username,omitzero"`
+
 	// Free, Pro…
 	Plan *string `json:"plan,omitzero"`
 
@@ -9450,6 +10035,9 @@ type OutsideAccount struct {
 
 	// The projects that use it, by name. Absent or empty: all of them.
 	Projects []string `json:"projects,omitzero"`
+
+	// The session whose manage_accounts add made it (#5253): an agent may remove such an account with no card; one with none is the person's, and its removal asks them. The control plane keeps it from the add that made it, and keeps it through a change by an agent or a client. Absent for one a person added, or one made before it.
+	AddedBy *UUID `json:"addedBy,omitzero"`
 
 	// Ask before use (#4163): an agent's manage_accounts get of it waits on a person's approval, as a secret's use does (#4015). Absent is on, also for an account an agent adds; false is off, which a person sets, or Always Approve on its request does. Not sealed: kept with the account, and agentsd enforces it.
 	AskBeforeUse *bool `json:"askBeforeUse,omitzero"`
@@ -11323,9 +11911,6 @@ type RelayDelivery struct {
 	Alert bool `json:"alert"`
 
 	Waiting *int64 `json:"waiting,omitzero"`
-
-	// Asked by an agent that holds the person's booking (person:<name>, #4268): notify it as timely (Time Sensitive on iOS, an alert on the Mac, an urgent Web Push).
-	Timely *bool `json:"timely,omitzero"`
 }
 
 type RelayGrantReply struct {
@@ -11979,6 +12564,9 @@ type RequestSecretUse struct {
 
 	// For screen (#4264): the app drive_screen names in the call that asks.
 	App *string `json:"app,omitzero"`
+
+	// For connector (#4538): the server's entry digest when the agent asked. Approve approves only that entry: one changed since is refused, and the agent asks again.
+	Digest *string `json:"digest,omitzero"`
 
 	// The secret is the session's own (#3548): Always Approve is the same as Approve for This Session.
 	SessionOnly *bool `json:"sessionOnly,omitzero"`
@@ -12852,7 +13440,7 @@ type SecretTerminalValue struct {
 	Words *string `json:"words,omitzero"`
 }
 
-// What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always.
+// What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always. workflow and connector (#4538) are not a secret's use either: an agent asks to turn on a workflow of its folder that is the person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name, place the folder's name, digest the server's entry as the agent saw it. Their answers are once (Approve: agentsd makes the change as the person) and deny.
 type SecretUse string
 
 const SecretUseFill SecretUse = "fill"
@@ -12862,6 +13450,8 @@ const SecretUseTerminal SecretUse = "terminal"
 const SecretUseAccount SecretUse = "account"
 const SecretUseBrowser SecretUse = "browser"
 const SecretUseScreen SecretUse = "screen"
+const SecretUseWorkflow SecretUse = "workflow"
+const SecretUseConnector SecretUse = "connector"
 
 // control/secretsLeft (#1760, FR-026): to the person's own clients, when one of their machines was removed with secrets on it.
 type SecretsLeft struct {
@@ -15047,6 +15637,55 @@ type UserRole string
 const UserRoleAdmin UserRole = "admin"
 const UserRoleMember UserRole = "member"
 
+// user/sealedSecret's answer (#5114): this client's own envelope of the secret, as the person's client sealed it (#3397). HPKE, info com.alexecollins.agents.usersecret.v1, associated data usersecret.v1|<person id>|c:<CLIENT UUID>|<name>|<version>, with |ask at the end when needsApproval is on. The control plane never has the value.
+type UserSealedSecret struct {
+	Name UserSecretName `json:"name"`
+
+	Version int64 `json:"version"`
+
+	Kind *UserSecretKind `json:"kind,omitzero"`
+
+	// Ask before use (#4014), bound into the associated data. Left out is off.
+	NeedsApproval *bool `json:"needsApproval,omitzero"`
+
+	Sealed SealedEnvelope `json:"sealed"`
+}
+
+// user/sealedSecret (#5114): the account a reveal or a copy was opened from, for the audit entry: its service and the address it signs in with. Never a value.
+type UserSealedSecretAccount struct {
+	Service string `json:"service"`
+
+	Address *string `json:"address,omitzero"`
+}
+
+// A card's part (#3531), for a copy of one part of a card: the card number, the expiry, the CVC, the name on card or the billing ZIP.
+type UserSealedSecretPart string
+
+const UserSealedSecretPartNumber UserSealedSecretPart = "number"
+const UserSealedSecretPartExpiry UserSealedSecretPart = "expiry"
+const UserSealedSecretPartCvc UserSealedSecretPart = "cvc"
+const UserSealedSecretPartName UserSealedSecretPart = "name"
+const UserSealedSecretPartZip UserSealedSecretPart = "zip"
+
+// Why a person's client asks for its copy of a secret (#5114): to show it, or to put it on the clipboard. Only for the audit entry's words.
+type UserSealedSecretPurpose string
+
+const UserSealedSecretPurposeReveal UserSealedSecretPurpose = "reveal"
+const UserSealedSecretPurposeCopy UserSealedSecretPurpose = "copy"
+
+// user/sealedSecret (#5112, #5114): a person's own client asks for its own sealed copy of one of the person's secrets, to reveal or copy it. The control plane writes the audit entry first, with the name and never the value.
+type UserSealedSecretRequest struct {
+	Name UserSecretName `json:"name"`
+
+	Purpose UserSealedSecretPurpose `json:"purpose"`
+
+	// A card's part, for a copy of that part; left out otherwise.
+	Part *UserSealedSecretPart `json:"part,omitzero"`
+
+	// The account the secret was opened from; left out when it was opened from Secrets.
+	Account *UserSealedSecretAccount `json:"account,omitzero"`
+}
+
 // user/setSecret (#1760, FR-025): a secret the control plane keeps sealed, and sends only to its person's own machines. The value is never sent back to a client.
 type UserSecret struct {
 	Name UserSecretName `json:"name"`
@@ -15410,7 +16049,7 @@ type WakeSettings struct {
 	// How long a finished runtime whose background processes (a dev server, a build, a watcher) still run is kept, counted from its last turn's end (#4044): 1 to 24 hours, default 4. Its processes are then ended with it. 0, or missing, from a client that does not know it, keeps the value the host has.
 	BackgroundHours *int64 `json:"backgroundHours,omitzero"`
 
-	// How long a finished runtime with no background processes is kept, counted from its last turn's end, before the host ends it (#4044, #4513): 0 to 1440 minutes, default 10. An agent that waits for an event (wait_for_event, check_again, a lease) is then continued with session/load when the event comes. 0 releases none for being idle; warmRuntimes still holds. Missing, from a client that does not know it, keeps the value the host has. A runtime that can neither load nor resume a conversation is kept while its agent waits.
+	// How long a finished runtime with no background processes is kept, counted from its last turn's end, before the host ends it (#4044, #4513): 0 to 1440 minutes, default 10. An agent that waits for an event (wait_for_event, a lease) is then continued with session/load when the event comes. 0 releases none for being idle; warmRuntimes still holds. Missing, from a client that does not know it, keeps the value the host has. A runtime that can neither load nor resume a conversation is kept while its agent waits.
 	ReleaseAfterMinutes *int64 `json:"releaseAfterMinutes,omitzero"`
 }
 

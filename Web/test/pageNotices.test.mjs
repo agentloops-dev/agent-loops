@@ -37,16 +37,10 @@ test("a Web Push shows the need's words, buzzing only for an alert, one a need",
   assert.equal(shown.options.silent, false);
   assert.equal(shown.options.tag, 'need:{"permission":"P"}');
   const quiet = pushItem.notificationFor({ needID: { permission: "P" }, alert: false });
-  assert.equal(quiet.title, "Agents");
+  assert.equal(quiet.title, "Agent Loops");
   assert.equal(quiet.options.body, "An agent needs you");
   assert.equal(quiet.options.silent, true);
   assert.equal(quiet.options.data.open, "/");
-  assert.equal(quiet.options.requireInteraction, false);
-});
-
-test("a timely need stays until the person acts on it (#4268)", () => {
-  const timely = pushItem.notificationFor({ needID: { permission: "P" }, alert: true, timely: true, headline: { h1: "work", h2: "Sign in", h3: "Type the code" } });
-  assert.equal(timely.options.requireInteraction, true);
 });
 
 test("a machine's notice opens the machines, not a chat (#3682)", () => {

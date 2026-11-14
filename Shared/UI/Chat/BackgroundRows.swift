@@ -1,39 +1,6 @@
 import AgentsKitCore
 import SwiftUI
 
-/// What an agent has running in the background, over the prompt (057, frame A): one row
-/// per shell or subagent while it runs, a shell with Stop, a subagent with Steps.
-///
-/// Where 036's leases and 042's wait already sit, and like them untinted: something
-/// running is neither a person being needed nor anything broken. Only running ones are
-/// here; one that ends leaves, and the chat keeps the line saying how.
-///
-/// One view for both apps. The phone draws `BackgroundLine` instead, because two rows
-/// over a phone's prompt are a fifth of its screen (frame E); an iPad draws this.
-struct BackgroundBlock: View {
-    let items: [BackgroundItem]
-    var actions: BackgroundActions
-
-    private var running: [BackgroundItem] { items.filter(\.isRunning) }
-
-    var body: some View {
-        if !running.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("In the background · \(running.count)")
-                    .appText(.fine)
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 4)
-                ForEach(running) { item in
-                    BackgroundItemRow(item: item, actions: actions)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .paperRaised(in: RoundedRectangle(cornerRadius: 10))
-        }
-    }
-}
-
 /// What a row can do, which differs by app. Nil is not offered.
 struct BackgroundActions {
     /// Stop a task. Offered only where the runtime says Stop works on it.
@@ -54,7 +21,7 @@ struct BackgroundItemRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: BackgroundWords.symbol(item))
+            Image(icon: BackgroundWords.symbol(item))
                 .appText(.fine)
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
@@ -150,76 +117,6 @@ struct BackgroundItemRow: View {
     }
 }
 
-/// The phone's form (frame E): one line over the prompt, "2 in the background ›", which
-/// opens the list in a sheet with Stop on each shell.
-struct BackgroundLine: View {
-    let items: [BackgroundItem]
-    var actions: BackgroundActions
-    @State private var isShowingList = false
-
-    private var running: [BackgroundItem] { items.filter(\.isRunning) }
-
-    var body: some View {
-        if !running.isEmpty {
-            Button {
-                isShowingList = true
-            } label: {
-                Label("\(running.count) in the background", systemImage: "chevron.right")
-                    .labelStyle(TrailingIcon())
-                    .appText(.fine)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .paperRaised(in: Capsule())
-                    .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(BackgroundWords.mark(running) ?? "")
-            .accessibilityHint("Shows what is running, with Stop")
-            .sheet(isPresented: $isShowingList) {
-                NavigationStack {
-                    List {
-                        ForEach(running) { item in
-                            BackgroundItemRow(item: item, actions: sheetActions, stacked: true)
-                        }
-                    }
-                    .navigationTitle("In the background")
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { isShowingList = false }
-                        }
-                    }
-                }
-                .presentationDetents([.medium, .large])
-                .paperSheet()
-            }
-            // The last one ending takes the sheet with it rather than leaving it empty.
-            .onChange(of: running.isEmpty) { _, empty in if empty { isShowingList = false } }
-        }
-    }
-
-    /// Opening steps from the sheet closes it first, so the steps are not under it.
-    private var sheetActions: BackgroundActions {
-        var actions = actions
-        if let steps = actions.steps {
-            actions.steps = { item in
-                isShowingList = false
-                steps(item)
-            }
-        }
-        return actions
-    }
-}
-
-private struct TrailingIcon: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 4) {
-            configuration.title
-            configuration.icon.imageScale(.small)
-        }
-    }
-}
-
 /// The line the chat keeps for background work (057): a subagent starting, with Steps,
 /// and anything ending, with how.
 ///
@@ -230,24 +127,19 @@ struct BackgroundEntryLine: View {
     let item: BackgroundItem
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(line)
-                .appText(.reading)
-                .foregroundStyle((item.state == .failed ? StateTint.failure : .none).style(or: .secondary))
-            if item.kind == .subagent, let steps = actions.subagentSteps {
-                Button("Steps") { steps(item.id) }
-                    .linkStyle()
-                    .appText(.reading)
-                    .help("See what this subagent did")
-            }
-            if item.outputFilePath != nil, !item.isRunning, let output = actions.backgroundOutput {
-                Button("Output") { output(item) }
-                    .linkStyle()
-                    .appText(.reading)
-                    .help("Open what it printed")
-            }
+        // One action link (#5036): a subagent's Steps, or what a task printed.
+        RecordLine(icon: item.state == .failed ? LineGlyph.failed : LineGlyph.background, detail: line,
+                   tone: item.state == .failed ? .failure : .plain, action: link)
+    }
+
+    private var link: StripButton? {
+        if item.kind == .subagent, let steps = actions.subagentSteps {
+            return StripButton(title: "Steps", help: "See what this subagent did") { steps(item.id) }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        if item.outputFilePath != nil, !item.isRunning, let output = actions.backgroundOutput {
+            return StripButton(title: "Output", help: "Open what it printed") { output(item) }
+        }
+        return nil
     }
 
     private var line: String {
@@ -275,7 +167,7 @@ struct SubagentStepsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let back {
                     Button(action: back) {
-                        Label("Everything in the background", systemImage: "chevron.left")
+                        Label("Everything in the background", icon: "chevron.left")
                     }
                     .linkStyle()
                     .appText(.fine)

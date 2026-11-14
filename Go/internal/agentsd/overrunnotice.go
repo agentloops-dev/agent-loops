@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // An epic's overrun notice (#4529): an open epic whose spend passes 2×, then 3×, its kept

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // start_session with send (#2929): the branch the agent is on, with its uncommitted
@@ -84,7 +84,7 @@ func TestStartSessionSendsTheBranchFirst(t *testing.T) {
 			starts = append(starts, s)
 			return json.RawMessage(`"11111111-2222-3333-4444-555555555555"`), nil
 		}
-		return nil, &controllink.AskError{Code: -32010, Message: "Agents can’t ask that of the control plane."}
+		return nil, &controllink.AskError{Code: -32010, Message: "Agent Loops can’t ask that of the control plane."}
 	})
 	l := d.live(a.ID)
 	l.mu.Lock()

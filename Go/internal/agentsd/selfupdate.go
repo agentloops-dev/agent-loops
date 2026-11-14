@@ -14,14 +14,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"golang.org/x/sys/unix"
 )
 
@@ -29,7 +30,7 @@ import (
 // release in machine/release at each join. When it is newer than this copy, and the person
 // has not turned updating off (selfUpdate/set, self-update.json in the root), the host:
 //
-//  1. downloads the release's Agents-<version>.zip and SHA256SUMS, and checks the sum;
+//  1. downloads the release's Agent-Loops-<version>.zip and SHA256SUMS, and checks the sum;
 //  2. unpacks it beside this copy, and checks the new copy's signature (the same team and
 //     identifier as this one), its notarisation and its version;
 //  3. waits until no turn runs, then swaps the new copy and this one in one step, and keeps
@@ -44,17 +45,17 @@ import (
 // person cannot change, such as /Applications for a standard user, says so and stays.
 // A development build, or a copy with no team, never updates itself.
 //
-// Agents was Agents Host, with the same bundle ID (#4224). A release's copy that runs from
-// an Agents Host.app takes the new name once (takeNewName), so an install of Agents Host
-// moves across with no step from the person.
+// Agent Loops was Agents, and Agents Host before that, with the same bundle ID (#4224,
+// #5297). A release's copy that runs from an Agents.app or an Agents Host.app takes the new
+// name once (takeNewName), so an earlier install moves across with no step from the person,
+// and no second app stays beside it.
 
 const selfUpdateFile = "self-update.json"
 
-// The app's name, and Agents Host's before it (#4225).
-const (
-	appName    = "Agents.app"
-	oldAppName = "Agents Host.app"
-)
+// The app's name (#5297), and its names before it: Agents (#4225) and Agents Host.
+const appName = "Agent Loops.app"
+
+var oldAppNames = []string{"Agents.app", "Agents Host.app"}
 
 // An update's folder beside the app is updateFolderPrefix and a random end; Agents Host's
 // were oldUpdateFolderPrefix.
@@ -87,12 +88,12 @@ type selfUpdateMarkFile struct {
 
 // releaseDownloads is where a release's files are, by tag. AGENTS_RELEASE_DOWNLOADS
 // replaces it, for a test or a mirror.
-const releaseDownloads = "https://github.com/alexec/Agents/releases/download"
+const releaseDownloads = "https://github.com/agentloops-dev/agent-loops/releases/download"
 
 // selfUpdater is one Mac host's updater; nil on a host that is not in an app.
 type selfUpdater struct {
 	file    string
-	app     string // the Agents.app this host runs from
+	app     string // the app this host runs from (Agent Loops.app)
 	running string // this copy's version
 	tell    func(wire.SelfUpdate)
 	turns   func() int
@@ -160,10 +161,10 @@ func newSelfUpdater(file, app, running string) *selfUpdater {
 // cannot is why this copy never updates itself, or "".
 func (u *selfUpdater) cannot() string {
 	if _, ok := releaseVersion(u.running); !ok {
-		return "This copy of Agents is a development build, so it does not update itself."
+		return "This copy of Agent Loops is a development build, so it does not update itself."
 	}
 	if strings.Contains(u.app, "/AppTranslocation/") {
-		return "macOS runs this copy of Agents from a temporary place. Move it to Applications in your home folder, then open it again, so it can update itself."
+		return "macOS runs this copy of Agent Loops from a temporary place. Move it to Applications in your home folder, then open it again, so it can update itself."
 	}
 	return ""
 }
@@ -232,13 +233,13 @@ func (u *selfUpdater) Named(version string) {
 		return
 	}
 	if version == u.rolledBack {
-		why := "Agents " + version + " did not stay running here, so this Mac went back to " + u.running +
+		why := "Agent Loops " + version + " did not stay running here, so this Mac went back to " + u.running +
 			". It waits for the next release."
 		u.set(func(s *wire.SelfUpdate) { s.State, s.Message = wire.SelfUpdateStateFailed, &why })
 		return
 	}
 	if err := u.writable(u.app); err != nil {
-		why := "Agents is in a folder you can change only as an administrator (" + filepath.Dir(u.app) +
+		why := "Agent Loops is in a folder you can change only as an administrator (" + filepath.Dir(u.app) +
 			"). Move it to Applications in your home folder, then open it again, so it can update itself."
 		u.set(func(s *wire.SelfUpdate) { s.State, s.Message = wire.SelfUpdateStateCannot, &why })
 		return
@@ -271,7 +272,7 @@ func (u *selfUpdater) update(version string) error {
 	u.set(func(s *wire.SelfUpdate) { s.State, s.Message = wire.SelfUpdateStateDownloading, nil })
 	work, err := os.MkdirTemp(filepath.Dir(u.app), updateFolderPrefix)
 	if err != nil {
-		return fmt.Errorf("Agents could not make a folder beside itself for the update: %w", err)
+		return fmt.Errorf("Agent Loops could not make a folder beside itself for the update: %w", err)
 	}
 	swapped := false
 	defer func() {
@@ -286,7 +287,7 @@ func (u *selfUpdater) update(version string) error {
 		return err
 	}
 	if v, err := u.version(next); err != nil || v != version {
-		return fmt.Errorf("The download is not Agents %s (it says %q), so it was not installed.", version, v)
+		return fmt.Errorf("The download is not Agent Loops %s (it says %q), so it was not installed.", version, v)
 	}
 	if err := u.verify(next, u.app); err != nil {
 		return fmt.Errorf("The download's signature or notarisation did not check out, so it was not installed: %v", err)
@@ -299,14 +300,14 @@ func (u *selfUpdater) update(version string) error {
 		return err
 	}
 	swapped = true
-	log.Printf("self-update: Agents %s is in place of %s", version, u.running)
+	log.Printf("self-update: Agent Loops %s is in place of %s", version, u.running)
 	u.set(func(s *wire.SelfUpdate) { s.State, s.Message = wire.SelfUpdateStateRestarting, nil })
 	// A turn that started since is not cut: the restart waits for it too.
 	if err := u.betweenTurns(); err != nil && !errors.Is(err, errTurnedOff) {
 		return err
 	}
 	if err := u.restart(); err != nil {
-		return fmt.Errorf("Agents %s is installed. Quit and open Agents to finish: %v", version, err)
+		return fmt.Errorf("Agent Loops %s is installed. Quit and open Agent Loops to finish: %v", version, err)
 	}
 	return nil
 }
@@ -318,7 +319,7 @@ func (u *selfUpdater) update(version string) error {
 func (u *selfUpdater) putInPlace(version, work, next string) error {
 	mark := selfUpdateMarkFile{From: u.running, To: version, Old: strings.TrimPrefix(next, work+string(filepath.Separator))}
 	if err := writeSelfUpdateMark(work, mark); err != nil {
-		return fmt.Errorf("Agents could not keep a note of the update: %w", err)
+		return fmt.Errorf("Agent Loops could not keep a note of the update: %w", err)
 	}
 	err := u.swap(u.app, next)
 	if err == nil {
@@ -327,15 +328,15 @@ func (u *selfUpdater) putInPlace(version, work, next string) error {
 	log.Printf("self-update: no swap in one step (%v): two renames", err)
 	mark.Old = "old.app"
 	if err := writeSelfUpdateMark(work, mark); err != nil {
-		return fmt.Errorf("Agents could not keep a note of the update: %w", err)
+		return fmt.Errorf("Agent Loops could not keep a note of the update: %w", err)
 	}
 	old := filepath.Join(work, mark.Old)
 	if err := os.Rename(u.app, old); err != nil {
-		return fmt.Errorf("Agents could not move itself aside: %w", err)
+		return fmt.Errorf("Agent Loops could not move itself aside: %w", err)
 	}
 	if err := os.Rename(next, u.app); err != nil {
 		os.Rename(old, u.app)
-		return fmt.Errorf("Agents could not put the new copy in its place: %w", err)
+		return fmt.Errorf("Agent Loops could not put the new copy in its place: %w", err)
 	}
 	return nil
 }
@@ -368,14 +369,14 @@ func (u *selfUpdater) betweenTurns() error {
 }
 
 // download fetches the release's zip and its sum, checks the one against the other, and
-// unpacks it in work. It is the new Agents.app, which goes where this copy is, whatever
+// unpacks it in work. It is the new Agent Loops.app, which goes where this copy is, whatever
 // that is named.
 func (u *selfUpdater) download(version, work string) (string, error) {
 	base := strings.TrimSuffix(cmp.Or(os.Getenv("AGENTS_RELEASE_DOWNLOADS"), releaseDownloads), "/") + "/v" + version + "/"
-	name := "Agents-" + version + ".zip"
+	name := releaseZip(version)
 	var sums strings.Builder
 	if err := u.fetch(u.ctx, base+"SHA256SUMS", &sums, 1<<16); err != nil {
-		return "", fmt.Errorf("Agents could not download release %s's checksums: %w", version, err)
+		return "", fmt.Errorf("Agent Loops could not download release %s's checksums: %w", version, err)
 	}
 	want := sumFor(sums.String(), name)
 	if want == "" {
@@ -390,14 +391,14 @@ func (u *selfUpdater) download(version, work string) (string, error) {
 	err = u.fetch(u.ctx, base+name, io.MultiWriter(f, h), selfUpdateLimit)
 	f.Close()
 	if err != nil {
-		return "", fmt.Errorf("Agents could not download release %s: %w", version, err)
+		return "", fmt.Errorf("Agent Loops could not download release %s: %w", version, err)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		return "", fmt.Errorf("The download of release %s does not match its checksum, so it was not installed.", version)
 	}
 	out := filepath.Join(work, "new")
 	if err := u.unpack(zip, out); err != nil {
-		return "", fmt.Errorf("Agents could not unpack release %s: %w", version, err)
+		return "", fmt.Errorf("Agent Loops could not unpack release %s: %w", version, err)
 	}
 	os.Remove(zip)
 	next := filepath.Join(out, appName)
@@ -406,6 +407,11 @@ func (u *selfUpdater) download(version, work string) (string, error) {
 	}
 	return next, nil
 }
+
+// releaseZip is the release's zip of Agent Loops.app. A release also carries
+// Agents-<version>.zip (Agents.app) and Agents-Host-<version>.zip (Agents Host.app), for
+// the copies that named their zip so before (#5297, #4225).
+func releaseZip(version string) string { return "Agent-Loops-" + version + ".zip" }
 
 // sumFor is the sum SHA256SUMS gives a file ("<hex>  <name>"), or "".
 func sumFor(sums, name string) string {
@@ -481,7 +487,7 @@ func settleSelfUpdates(app, running, settingsFile string, swap func(a, b string)
 				log.Printf("self-update: no app at %s, and the old copy did not go back: %v", app, err)
 				continue
 			}
-			log.Printf("self-update: no app at %s: Agents %s went back", app, mark.From)
+			log.Printf("self-update: no app at %s: Agent Loops %s went back", app, mark.From)
 			os.RemoveAll(work)
 			back = true
 			continue
@@ -499,11 +505,11 @@ func settleSelfUpdates(app, running, settingsFile string, swap func(a, b string)
 			continue
 		}
 		if err := swapBack(app, old, swap); err != nil {
-			log.Printf("self-update: Agents %s did not stay up, and %s did not go back: %v", mark.To, mark.From, err)
+			log.Printf("self-update: Agent Loops %s did not stay up, and %s did not go back: %v", mark.To, mark.From, err)
 			keep = append(keep, work)
 			continue
 		}
-		log.Printf("self-update: Agents %s started %d times without staying up: %s went back", mark.To, selfUpdateTries, mark.From)
+		log.Printf("self-update: Agent Loops %s started %d times without staying up: %s went back", mark.To, selfUpdateTries, mark.From)
 		settings := readSelfUpdateSettings(settingsFile)
 		settings.RolledBack = mark.To
 		if err := writeSelfUpdateSettings(settingsFile, settings); err != nil {
@@ -564,7 +570,7 @@ func newerRelease(named, running string) bool {
 	return false
 }
 
-// enclosingApp is the outermost-first .app the executable is in: Agents.app for
+// enclosingApp is the outermost-first .app the executable is in: Agent Loops.app for
 // Contents/Helpers/agentsd. "" when it is in none.
 func enclosingApp(executable string) string {
 	for dir := filepath.Dir(executable); dir != "/" && dir != "."; dir = filepath.Dir(dir) {
@@ -575,13 +581,13 @@ func enclosingApp(executable string) string {
 	return ""
 }
 
-// takeNewName is where a release's copy of the app runs from once it has Agents' name
-// (#4225): an Agents Host.app becomes an Agents.app beside it, once. It stays where it is
-// when something else has the name there (the App Store window, in /Applications), or the
-// rename fails. moved is whether it was renamed: what runs from the old path then
-// restarts, from the new one.
+// takeNewName is where a release's copy of the app runs from once it has Agent Loops' name
+// (#5297, #4225): an Agents.app or an Agents Host.app becomes an Agent Loops.app beside it,
+// once, so the old bundle is gone. It stays where it is when something else has the name
+// there, or the rename fails. moved is whether it was renamed: what runs from the old path
+// then restarts, from the new one.
 func takeNewName(app string, rename func(a, b string) error) (now string, moved bool) {
-	if filepath.Base(app) != oldAppName {
+	if !slices.Contains(oldAppNames, filepath.Base(app)) {
 		return app, false
 	}
 	next := filepath.Join(filepath.Dir(app), appName)

@@ -34,6 +34,7 @@ struct MarkdownText: View {
     /// A page's zoom (#1419), which headings take as the steps do.
     @Environment(\.textZoom) private var zoom
     @Environment(\.dynamicTypeSize) private var dynamicType
+    @Environment(\.selectsAcrossBlocks) private var selectsAcross
     let markdown: String
     /// The document's own location, when there is one, so a relative image can be
     /// found. Nil in the conversation, where there is no document to be relative to —
@@ -50,13 +51,25 @@ struct MarkdownText: View {
     /// the machine's `forge/image`, never by the app. Nil everywhere else, where a remote
     /// image stays its alternative text, so documents and the chat do not change.
     var remoteImage: RemoteImageLoader?
+    /// The images this text opens large, which the viewer goes through (#4954).
+    @State private var gallery = ImageGallery()
 
     var body: some View {
-        if caret != nil {
-            content.textRenderer(CaretFlagRenderer())
-        } else {
-            content
+        Group {
+            if caret != nil {
+                content.textRenderer(CaretFlagRenderer())
+            } else {
+                content
+            }
         }
+        .environment(\.imageSequence, sequence)
+    }
+
+    /// A forge page's images, in their order, for the viewer; nil where no image opens large.
+    private var sequence: ImageSequenceScope? {
+        guard remoteImage != nil else { return nil }
+        let order = ImageSequence.sources(in: MarkdownBlock.parsed(markdown)).compactMap(ForgeMarkdown.imageURL(of:))
+        return ImageSequenceScope(gallery: gallery, order: order)
     }
 
     private var content: AnyView {
@@ -67,9 +80,9 @@ struct MarkdownText: View {
         if parsed.isEmpty, let caret { return AnyView(caret.caret) }
         if let range {
             let shown = range.clamped(to: parsed.indices)
-            return blocks(Array(parsed[shown]), caret: shown.upperBound == parsed.count ? caret : nil)
+            return blocks(Array(parsed[shown]), caret: shown.upperBound == parsed.count ? caret : nil, top: true)
         }
-        return blocks(parsed, caret: caret)
+        return blocks(parsed, caret: caret, top: true)
     }
 
     /// Erased on purpose, and this is the only place it is.
@@ -79,23 +92,42 @@ struct MarkdownText: View {
     /// functions define their opaque types in terms of themselves and do not compile.
     /// One concrete type in the cycle breaks it. A document is tens of blocks, not
     /// thousands, so the cost is not worth a cleverer shape.
-    private func blocks(_ blocks: [MarkdownBlock], caret: CursorFlag? = nil) -> AnyView {
-        AnyView(stack(blocks, caret: caret))
+    /// `top` is the message's own blocks, not those inside a list item or a quote, which
+    /// keep a `Text` each: their marker or bar is set by the first line's baseline.
+    private func blocks(_ blocks: [MarkdownBlock], caret: CursorFlag? = nil, top: Bool = false) -> AnyView {
+        AnyView(stack(blocks, caret: caret, top: top))
     }
 
     @ViewBuilder
-    private func stack(_ blocks: [MarkdownBlock], caret: CursorFlag?) -> some View {
+    private func stack(_ blocks: [MarkdownBlock], caret: CursorFlag?, top: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Indexed, not keyed by content. Two identical paragraphs are two
-            // paragraphs, and a document with two horizontal rules used to hand
-            // `ForEach` the same id twice.
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                // The caret is at the end of the text, so it goes to the last block and
-                // down into whatever that block holds last.
-                view(for: block, caret: index == blocks.count - 1 ? caret : nil)
+            if selectsAcross, top, caret == nil {
+                // The words between code, tables and pictures as one text, so a drag
+                // selects across paragraphs (#5155).
+                ForEach(MarkdownBlock.segments(blocks, code: Self.codeInText), id: \.self) { segment in
+                    switch segment {
+                    case .prose(let range):
+                        SelectableProse(blocks: Array(blocks[range]), fillsWidth: fillsWidth)
+                    case .block(let index):
+                        view(for: blocks[index], caret: nil)
+                    }
+                }
+            } else {
+                each(blocks, caret: caret)
             }
         }
         .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
+    }
+
+    private func each(_ blocks: [MarkdownBlock], caret: CursorFlag?) -> some View {
+        // Indexed, not keyed by content. Two identical paragraphs are two
+        // paragraphs, and a document with two horizontal rules used to hand
+        // `ForEach` the same id twice.
+        ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+            // The caret is at the end of the text, so it goes to the last block and
+            // down into whatever that block holds last.
+            view(for: block, caret: index == blocks.count - 1 ? caret : nil)
+        }
     }
 
     /// A fenced or indented block of code, coloured by its tag.
@@ -210,7 +242,7 @@ struct MarkdownText: View {
     @ViewBuilder
     private func marker(ordered: Bool, number: Int, checked: Bool?) -> some View {
         if let checked {
-            Image(systemName: checked ? "checkmark.square" : "square")
+            Image(icon: checked ? "checkmark.square" : "square")
                 .foregroundStyle(checked ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
                 .accessibilityLabel(checked ? "Done" : "Not done")
         } else if ordered {
@@ -229,7 +261,8 @@ struct MarkdownText: View {
     /// read is the app's: the Mac's disk, or the phone asking the Mac.
     ///
     /// A forge's page is the one exception (#4010): its `remoteImage` asks the machine that
-    /// read the page for an https image, and a click opens it in the image viewer.
+    /// read the page for an https image, and a click opens it in the image viewer. An image that
+    /// is a link is never here: it is the link's words, whose click follows the link (#4954).
     @ViewBuilder
     private func image(source: String, alt: String) -> some View {
         if let base, let url = ImageStamps.url(of: source, base: base) {
@@ -240,6 +273,11 @@ struct MarkdownText: View {
             PictureAlternative(source: source, alt: alt)
         }
     }
+
+    /// Whether a message's code goes in its one text too, so a selection goes from a
+    /// paragraph into the code (the Mac #5182, the Remote #5234). The text view draws the
+    /// code's well, colours and Run.
+    private static let codeInText = true
 
     /// Lists sit a little looser on a touch screen, where a line is a target.
     #if os(macOS)
@@ -556,9 +594,11 @@ private struct Sideways<Content: View>: View {
 ///
 /// A forge page's picture (`remote`, #4010) is asked for once, shows its alternative text
 /// while it loads and when it cannot be read, is never drawn larger than it is, and opens
-/// in the image viewer when clicked.
+/// in the image viewer when clicked, with the page's other images to go through (#4954). A
+/// small one (a logo, a badge) does not open.
 private struct PagePicture: View {
     @Environment(\.pageActions) private var actions
+    @Environment(\.imageSequence) private var sequence
     let url: URL
     let source: String
     let alt: String
@@ -570,8 +610,8 @@ private struct PagePicture: View {
 
     var body: some View {
         Group {
-            if let loaded, remote != nil {
-                Button { viewed = ViewedImage(image: loaded, alt: alt) } label: {
+            if let loaded, remote != nil, opensLarge(loaded) {
+                Button { open(loaded) } label: {
                     drawn(loaded).frame(maxWidth: loaded.size.width)
                 }
                 .buttonStyle(.plain)
@@ -581,6 +621,9 @@ private struct PagePicture: View {
                 .pointerStyle(.link)
                 #endif
                 .imageViewer($viewed)
+            } else if let loaded, remote != nil {
+                drawn(loaded).frame(maxWidth: loaded.size.width)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else if let loaded {
                 drawn(loaded).frame(maxWidth: .infinity, alignment: .leading)
             } else if tried || remote != nil {
@@ -594,6 +637,9 @@ private struct PagePicture: View {
             if let remote {
                 loaded = await remote(url)
                 tried = true
+                if let loaded, opensLarge(loaded) {
+                    sequence?.gallery.add(url, ViewedImage.Item(image: loaded, alt: alt))
+                }
                 return
             }
             // Asked more than once: on a phone a picture is drawn by WebKit, and a
@@ -607,6 +653,16 @@ private struct PagePicture: View {
             }
             tried = true
         }
+    }
+
+    private func opensLarge(_ image: PlatformImage) -> Bool {
+        ImageSequence.opensLarge(width: image.size.width, height: image.size.height)
+    }
+
+    /// The viewer, at this image, with the page's other images read so far.
+    private func open(_ image: PlatformImage) {
+        viewed = sequence?.gallery.viewed(at: url, order: sequence?.order ?? [url])
+            ?? ViewedImage(images: [ViewedImage.Item(image: image, alt: alt)], start: 0)
     }
 
     private func drawn(_ image: PlatformImage) -> some View {
@@ -628,7 +684,7 @@ private struct PictureAlternative: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "photo").foregroundStyle(.tertiary)
+            Image(icon: "photo").foregroundStyle(.tertiary)
             Text(alt.isEmpty ? URL(string: source)?.lastPathComponent ?? source : alt)
                 .foregroundStyle(.secondary)
         }

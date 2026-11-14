@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/controlplane/providers"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // person is one person's window on a plane, and the machines they joined.
@@ -308,7 +308,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 		"providers/list": true, "providers/refresh": true, "providers/add": true, "providers/update": true,
 		"providers/remove": true, "providers/options": true, "providers/runtimes": true, "providers/draftStart": true,
 		"providers/draftAnswer": true, "providers/draftCancel": true, "providers/draftSigned": true, "providers/create": true, "providers/deleteWorkspace": true, "providers/makeDefault": true, "machines/listKept": true,
-		"machines/retryKept": true, "machines/dropKept": true, "reports/usage": true, "reports/export": true, "reports/value": true, "reports/nodes": true, "lineage/walkAll": true, "lineage/sessionsOn": true, "bus/log": true,
+		"machines/retryKept": true, "machines/dropKept": true, "reports/usage": true, "reports/export": true, "reports/value": true, "reports/nodes": true, "lineage/walkAll": true, "lineage/sessionsOn": true, "builds/historyAll": true, "builds/runAll": true, "bus/log": true,
 		"user/settings": true, "user/setSettings": true, "user/setAgentConfigFile": true, "user/setSecret": true, "user/removeSecret": true,
 		"user/secretNames": true, "groups/list": true, "groups/set": true, "groups/remove": true,
 		"providers/setGroup": true, "bots/make": true, "bots/setCaps": true,
@@ -323,7 +323,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 		"policy/askForMore": true, "policy/requests": true, "policy/refuseMore": true,
 		"orgRoutes/mine": true, "orgRoutes/list": true, "orgRoutes/set": true, "orgRoutes/replaceKey": true,
 		"orgRoutes/check": true, "orgRoutes/remove": true, "orgRoutes/recipients": true, "orgRoutes/sealed": true,
-		"sealing/work": true, "sealing/add": true, "user/secretRecipients": true,
+		"sealing/work": true, "sealing/add": true, "user/secretRecipients": true, "user/sealedSecret": true,
 		"lock/get": true, "lock/add": true, "lock/join": true, "lock/joinRequests": true, "lock/joinAnswer": true,
 		"lock/joinReveal": true, "lock/joinDeny": true, "lock/reset": true,
 		"scim/set": true, "scim/tokens/list": true, "scim/tokens/make": true, "scim/tokens/revoke": true,

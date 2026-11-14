@@ -18,6 +18,9 @@ struct WorkReleasePage: View {
     private let compact = false
     #endif
     @Environment(\.openURL) private var openURL
+    /// Opens a place on the web page; the Mac window sets it while it can open the page (#5180).
+    @Environment(\.openWebPlace) private var openWebPlace
+    @State private var trendsProblem: String?
 
     @State private var graph: DaemonAPI.LineageGraph?
     @State private var rollup: DaemonAPI.LineageCostRollup?
@@ -105,7 +108,7 @@ struct WorkReleasePage: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("All releases")
-                Image(systemName: "chevron.compact.right").foregroundStyle(.tertiary).accessibilityHidden(true)
+                Image(icon: "chevron.compact.right").foregroundStyle(.tertiary).accessibilityHidden(true)
                 Text(tag).fontWeight(.semibold).monospacedDigit()
             }
             .appText(.reading)
@@ -135,7 +138,7 @@ struct WorkReleasePage: View {
     }
 
     private func stepLabel(_ symbol: String) -> some View {
-        Image(systemName: symbol).frame(width: 24, height: 24).contentShape(Rectangle())
+        Image(icon: symbol).frame(width: 24, height: 24).contentShape(Rectangle())
     }
     #endif
 
@@ -146,7 +149,7 @@ struct WorkReleasePage: View {
         ToolbarItem(placement: .topBarLeading) {
             Button { back() } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "chevron.left").fontWeight(.semibold)
+                    Image(icon: "chevron.left").fontWeight(.semibold)
                     Text(WorkList.Kind.release.title)
                 }
             }
@@ -154,15 +157,15 @@ struct WorkReleasePage: View {
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             if let n = model.workNeighbours {
-                Button { Task { await model.stepWork(forward: false) } } label: { Image(systemName: "chevron.up") }
+                Button { Task { await model.stepWork(forward: false) } } label: { Image(toolbarIcon: "chevron.up") }
                     .disabled(n.previous == nil)
                     .accessibilityLabel("Previous")
-                Button { Task { await model.stepWork(forward: true) } } label: { Image(systemName: "chevron.down") }
+                Button { Task { await model.stepWork(forward: true) } } label: { Image(toolbarIcon: "chevron.down") }
                     .disabled(!model.workHasNext || list.loadingMore)
                     .accessibilityLabel("Next")
             }
             if compact, let url = forgeURL {
-                Button { openURL(url) } label: { Image(systemName: "arrow.up.right.square") }
+                Button { openURL(url) } label: { Image(toolbarIcon: "arrow.up.right.square") }
                     .accessibilityLabel(WorkList.openOnWords(node.ref))
             }
         }
@@ -185,12 +188,12 @@ struct WorkReleasePage: View {
                 if isLatest { WorkReleaseChip.latest.fixedSize() }
             }
             HStack(alignment: .center, spacing: 8) {
-                Image(systemName: WorkList.Kind.release.sidebarIcon).foregroundStyle(.secondary).accessibilityHidden(true)
+                Image(icon: WorkList.Kind.release.sidebarIcon).foregroundStyle(.secondary).accessibilityHidden(true)
                 stateLine.appText(.supporting).foregroundStyle(.secondary).lineLimit(narrow ? 2 : 1)
                 Spacer(minLength: 8)
                 if !compact, let url = forgeURL {
                     Button { openURL(url) } label: {
-                        Label(WorkList.openOnWords(node.ref), systemImage: "arrow.up.right.square")
+                        Label(WorkList.openOnWords(node.ref), icon: "arrow.up.right.square")
                     }
                     .linkStyle()
                     .help(WorkList.openOnWords(node.ref))
@@ -283,11 +286,11 @@ struct WorkReleasePage: View {
     private var pullsRow: some View {
         Button { showsPulls = true } label: {
             HStack(spacing: 8) {
-                Image(systemName: WorkList.Kind.pr.sidebarIcon).foregroundStyle(.secondary).accessibilityHidden(true)
+                Image(icon: WorkList.Kind.pr.sidebarIcon).foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(pulls.map { "Pull requests · \($0.count)" } ?? "Pull requests").monospacedDigit()
                 Spacer(minLength: 8)
                 if pulls == nil { ProgressView().controlSize(.small) }
-                Image(systemName: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
+                Image(icon: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
             }
             .appText(.supporting)
             .padding(.horizontal, 12)
@@ -309,7 +312,7 @@ struct WorkReleasePage: View {
     @ViewBuilder
     private var panel: some View {
         WorkSideSection(title: "Tag") {
-            Label(tag, systemImage: "tag").monospaced().textSelection(.enabled)
+            Label(tag, icon: "tag").monospaced().textSelection(.enabled)
         }
         WorkSideSection(title: "Compared with") {
             if let previous {
@@ -330,7 +333,7 @@ struct WorkReleasePage: View {
             } else {
                 ForEach(stages, id: \.self) { stage in
                     HStack(spacing: 6) {
-                        Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(WorkLook.Tone.green.color)
+                        Image(icon: "checkmark").fontWeight(.semibold).foregroundStyle(WorkLook.Tone.green.color)
                             .accessibilityLabel("Done")
                         if let url = stage.url {
                             Button(stage.words) { openURL(url) }.linkStyle()
@@ -339,9 +342,30 @@ struct WorkReleasePage: View {
                         }
                     }
                 }
+                trendsLink
             }
         }
         lineageSection
+    }
+
+    /// **Build trends ↗** under the stages (#5180): the web page's Builds at the release's CI run,
+    /// when this Mac can open the page. A Web + Mac link (#4937): the Remote sets no `openWebPlace`.
+    @ViewBuilder
+    private var trendsLink: some View {
+        let runs = graph?.links.filter { $0.rel == "builds" && $0.to == node && $0.from.kind == "ci-run" }.map(\.from) ?? []
+        if let openWebPlace, let run = BuildTrendsLink.run(in: runs), let place = BuildTrendsLink.place(run: run) {
+            Button("\(BuildTrendsLink.title) ↗") {
+                Task { trendsProblem = await openWebPlace.run(place) }
+            }
+            .linkStyle()
+            .help(BuildTrendsLink.help(kind: "release"))
+            .alert(BuildTrendsLink.cannotOpen, isPresented: Binding(get: { trendsProblem != nil },
+                                                                    set: { if !$0 { trendsProblem = nil } })) {
+                Button("OK") { trendsProblem = nil }
+            } message: {
+                Text(trendsProblem ?? "")
+            }
+        }
     }
 
     /// The cost, the sessions and how many run, the lead time (`lineage/figures`, #4427), the

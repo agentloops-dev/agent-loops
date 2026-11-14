@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // AttentionNeed is DaemonAPI.AttentionNeed, as a host says it on channel 0: a need to
@@ -97,7 +97,7 @@ func (d *Desk) Heard(message AttentionNeed, presences map[Surface]Presence, devi
 		headline = &need.Headline
 	}
 	return append(out, RelayDelivery{NeedID: need.ID, Device: wire.UUID(chosen.ID), PublicKey: chosen.PublicKey,
-		Headline: headline, Alert: decision.Alert, Timely: need.Timely})
+		Headline: headline, Alert: decision.Alert})
 }
 
 func (d *Desk) withdraw(id wire.NeedID) []RelayDelivery {

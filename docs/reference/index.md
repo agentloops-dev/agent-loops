@@ -48,8 +48,8 @@ something up, not for reading through.
   the control plane.
 - [The Console](console.md): the control plane's app for admins on the web page, and what
   each of its pages does.
-- [The Get started checklist](get-started-checklist.md): every Get started step and
-  milestone, when each is ticked, where it shows, and how to hide it.
+- [Achievements](achievements.md): every achievement, when each is ticked, where it
+  shows, and how to hide it.
 - [Charts and diagrams](charts-and-diagrams.md): which Vega-Lite charts and Mermaid
   diagrams each client draws, and what happens to one it cannot draw.
 - [The design system](design-system.md): the look of the app, the docs site and the website:
@@ -58,4 +58,4 @@ something up, not for reading through.
   menu in the iPhone and iPad app.
 - [Keyboard shortcuts](keyboard-shortcuts.md): every shortcut and menu command on the Mac.
 - [Feature matrix of coding-agent apps](feature-matrix.md): which apps for running several
-  coding agents have which features, Agents included.
+  coding agents have which features, Agent Loops included.

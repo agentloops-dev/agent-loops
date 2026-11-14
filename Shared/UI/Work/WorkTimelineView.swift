@@ -46,6 +46,21 @@ final class WorkTimelineState {
 
     var ask: Ask { Ask(asked: asked, project: project, board: board, range: range, anchor: anchor) }
 
+    /// The plot on screen came from this device's copy (#4930), until the machines answer.
+    var fromDevice = false
+    /// When the plot on screen was read (#5142): this device's copy's time, or the last read
+    /// that worked. A stale plot says it in the failure strip, not only by its dim.
+    var plotRead: Date?
+
+    /// Work ▸ Timeline as this device keeps it (#4930): the plot around now, and the boards.
+    struct Kept: Codable, Sendable {
+        var timeline: DaemonAPI.WorkTimeline
+        var boards: [DaemonAPI.ProjectBoard]
+    }
+
+    /// What the plot is kept under: the project, board and range.
+    private func copyAsk(_ project: String) -> String { [project, board, range.rawValue].joined(separator: "|") }
+
     /// What the plot holds: the window, and a range's width on each side of it to scroll through.
     var content: DateInterval {
         let window = range.window(now: anchor)
@@ -74,6 +89,14 @@ final class WorkTimelineState {
             return
         }
         if self.project != project.id { self.project = project.id }
+        // Seen before: this device's copy at once, until the machines answer (#4930).
+        let kept = copyAsk(project.id)
+        if timeline == nil, case let (copy, at)? = await model.keptWorkRead(Kept.self, .timeline, kept), ask == mine, timeline == nil {
+            timeline = copy.timeline
+            boards = copy.boards
+            plotRead = at
+            fromDevice = true
+        }
         let found = await model.workBoards()
         guard ask == mine else { return }
         boards = found
@@ -130,7 +153,14 @@ final class WorkTimelineState {
         fromMachines = merged
         sessions = await model.lineageSessionsOn(WorkTimeline.sessionNodes(merged))?.sessions ?? []
         guard ask == mine, fromMachines == merged else { return }
-        timeline = WorkTimeline.started(merged, by: sessions)
+        let drawn = WorkTimeline.started(merged, by: sessions)
+        timeline = drawn
+        plotRead = Date()
+        fromDevice = false
+        // Kept for the window around now, read by every machine: a plot scrolled away is not the one a person opens on.
+        if failed.isEmpty, abs(anchor.timeIntervalSinceNow) < 3600 {
+            model.keepWork(Kept(timeline: drawn, boards: boards), .timeline, kept)
+        }
     }
 
     /// The sessions again, on `control/lineageChanged` (#4276): a session that starts on a child on
@@ -272,8 +302,10 @@ struct WorkTimelinePane: View {
             let timeline = state.timeline ?? .init()
             VStack(spacing: 0) {
                 let lines = problems(timeline)
+                WorkFromDeviceStrip(read: state.fromDevice && lines.isEmpty ? state.plotRead : nil)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
                 if !lines.isEmpty {
-                    WorkErrorStrip(lines: lines) { state.asked += 1 }
+                    WorkErrorStrip(lines: lines, read: state.stale || state.fromDevice ? state.plotRead : nil) { state.asked += 1 }
                         .padding(.horizontal, 16).padding(.vertical, 8)
                 }
                 // Once a minute; while the first read runs, often, so the grey lanes shimmer.
@@ -493,7 +525,7 @@ struct WorkTimelinePane: View {
                     if let line = drawing.lines.first(where: { $0.id == id }) { lineRow(line, drawing: drawing) }
                 }
             case .release(let release):
-                miniRow(glyph: AnyView(Image(systemName: WorkList.Kind.release.sidebarIcon).foregroundStyle(.secondary)
+                miniRow(glyph: AnyView(Image(icon: WorkList.Kind.release.sidebarIcon).foregroundStyle(.secondary)
                             .accessibilityHidden(true)),
                         title: release.tag, labels: [], line: WorkTimeline.releaseLine(release, now: drawing.now))
             }
@@ -689,7 +721,7 @@ private struct Drawing {
             let c = colour(line)
             if case .waits(let n) = line.how {
                 // Where the forecast stops: "3 wait for you", with a person.
-                let words = Text("\(Image(systemName: "person.fill")) \(WorkTimeline.waitWords(n))")
+                let words = Text("\(Image(icon: "person.fill")) \(WorkTimeline.waitWords(n))")
                 let width = WorkTimelinePane.measure(WorkTimeline.waitWords(n)) + 16
                 pill(&gc, words, at: CGPoint(x: axis.x(line.end) + 6 + width / 2, y: yl), fill: Self.waits, text: .white)
             }

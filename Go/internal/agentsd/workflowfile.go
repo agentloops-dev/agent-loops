@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"unicode/utf8"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/agentsd/yamlnode"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A workflow's file, as WorkflowFile, WorkflowFolder and FrontMatter read it on the Swift
@@ -597,6 +597,9 @@ func unrecognisedTrigger(name string, keys map[string]any) wire.WorkflowTrigger 
 }
 
 func triggerNamed(name string, keys map[string]yamlnode.Node) (wire.WorkflowTrigger, error) {
+	if name == onceTrigger {
+		return parseOnce(keys)
+	}
 	if name == "schedule" {
 		s, err := parseSchedule(keys)
 		if err != nil {
@@ -805,6 +808,9 @@ func triggerSupported(t wire.WorkflowTrigger) bool {
 		return true
 	}
 	if _, ok := serverTrigger(t); ok {
+		return true
+	}
+	if _, ok := alarmOf(t); ok {
 		return true
 	}
 	_, ok := triggerPattern(t)

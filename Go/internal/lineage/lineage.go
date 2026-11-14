@@ -22,9 +22,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/diskjson"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The kinds of node and the relationships and sources this build makes. The lists are
@@ -46,11 +47,15 @@ const (
 	KindCIRun = "ci-run"
 	// KindHealth is a health signal (#3585): a Sentry issue, sentry:<org>/<issue id>.
 	KindHealth = "health"
-	// KindDeploy is a build or a version put on a deploy target (#3584), as a TestFlight build:
-	// testflight:<bundle id>/<build>, or a version submitted for App Review (#3657):
-	// appstore:<bundle id>/<version>. KindTarget is where it went: target:testflight:<bundle id>.
-	KindDeploy = "deploy"
-	KindTarget = "target"
+	// KindDeploy is one try to put a version into an environment (#5241, spec 5239-deploy-model):
+	// github:deploy:<owner>/<repo>#<deployment id>, from the deploy.* events. Its artifact, state,
+	// start and end are details, not links. KindEnvironment is where it went:
+	// github:environment:<owner>/<repo>#<name>. Before #5241 a deploy node was an artifact
+	// (testflight:<bundle id>/<build>, appstore:<bundle id>/<version>, #3584, #3657), part-of a
+	// KindTarget, target:testflight:<bundle id>; those are still read until they age out.
+	KindDeploy      = "deploy"
+	KindEnvironment = "environment"
+	KindTarget      = "target"
 
 	RelWorksOn = "works-on"
 	RelOpens   = "opens"
@@ -66,8 +71,14 @@ const (
 	RelBuilds = "builds"
 	// RelSeenIn is a health signal seen in a release or a deploy (#3585).
 	RelSeenIn = "seen-in"
-	// RelDeployedAs is a release deployed as a deploy (#3584); the deploy is part-of its target.
-	// A TestFlight build is deployed-as the App Store version it was submitted as (#3657).
+	// RelDeploys is a deploy that puts out a release, or a commit when no v* tag names it (#5241).
+	// The deploy is part-of its environment, and the CI run that ran it builds it.
+	RelDeploys = "deploys"
+	// RelBrings is a deploy that brings a PR (#5241): the PRs between the last deploy that
+	// succeeded in the same environment and this one. Computed for a walk's answer, never stored.
+	RelBrings = "brings"
+	// RelDeployedAs is the old link of a release to a deploy (#3584), and of a TestFlight build to
+	// its App Store version (#3657). Nothing makes it since #5241; it is read until it ages out.
 	RelDeployedAs = "deployed-as"
 	// RelReports is an issue filed for a health signal, or commented on for it (#3586).
 	RelReports = "reports"
@@ -82,6 +93,8 @@ const (
 	SourceForge = "forge"
 	// SourceHealth is a link a health source says, such as Sentry's release of an issue (#3585).
 	SourceHealth = "health"
+	// SourceComputed is a link the host works out for an answer and never stores (#5241).
+	SourceComputed = "computed"
 )
 
 // The bounds (#2348; "Bound data, not concurrency"). An ended link is kept KeepEnded after
@@ -248,10 +261,12 @@ func Open(path string, now func() time.Time) *Files { return OpenWith(path, now,
 func OpenWith(path string, now func() time.Time, topics Topics) *Files {
 	f := &Files{path: path, now: now, agentsTopic: map[string]string{}}
 	converted := false
+	// A node named again only by a repo's move (#4957) does not write the file again.
 	full := func(n *wire.LineageNode) {
 		if _, ok := ParseNode(*n); ok {
 			if m := f.canonLocked(*n); m != *n {
-				*n, converted = m, true
+				converted = converted || f.unaliasedLocked(*n) != *n
+				*n = m
 			}
 			f.noteTopic(*n)
 			return
@@ -379,17 +394,62 @@ func (f *Files) Canon(n wire.LineageNode) wire.LineageNode {
 // canonLocked is Canon, under mu: a ref in the old form is read in the full form, and an
 // agents node takes the topic the store has for its id, so it is one node whatever topic it
 // is named with.
-func (f *Files) canonLocked(n wire.LineageNode) wire.LineageNode {
+//
+// A repo whose owner moved (#4957) is named by its name now, so a node stored before the
+// move and one named after it are one node.
+func (f *Files) canonLocked(n wire.LineageNode) wire.LineageNode { return f.canonWith(n, true) }
+
+// unaliasedLocked is canonLocked with no repo's move: what the file would say.
+func (f *Files) unaliasedLocked(n wire.LineageNode) wire.LineageNode { return f.canonWith(n, false) }
+
+func (f *Files) canonWith(n wire.LineageNode, alias bool) wire.LineageNode {
 	n = Full(n, "")
 	r, ok := ParseNode(n)
-	if !ok || r.Provider != "agents" {
+	if !ok {
+		return n
+	}
+	if moved := repoalias.Ref(r); alias && moved != r && moved.Check() == nil {
+		r = moved
+		n.Ref = r.String()
+	}
+	if r.Provider != "agents" {
 		return n
 	}
 	if topic, known := f.agentsTopic[agentsKey(r)]; known && topic != r.Topic {
+		if alias {
+			topic = repoalias.Topic(r.Provider, topic)
+		} else if topic == repoalias.Topic(r.Provider, r.Topic) {
+			return n // only the move names it apart
+		}
 		r.Topic = topic
 		n.Ref = r.String()
 	}
 	return n
+}
+
+// Realias names every node again by its repo's name now, in memory only, after the book of
+// moved repos changed (#4957): links that are then the same link are one.
+func (f *Files) Realias() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.agentsTopic = map[string]string{}
+	for i := range f.states {
+		f.states[i].node = f.canonLocked(f.states[i].node)
+	}
+	seen := map[key]bool{}
+	links := f.links[:0]
+	for _, l := range f.links {
+		l.From, l.To = f.canonLocked(l.From), f.canonLocked(l.To)
+		if l.EndedAt == nil {
+			if seen[keyOf(l)] {
+				continue
+			}
+			seen[keyOf(l)] = true
+		}
+		links = append(links, l)
+	}
+	f.links = links
+	f.index()
 }
 
 // removedKindMilestone is the kind of a forge milestone's node, which #3878 removed: prune

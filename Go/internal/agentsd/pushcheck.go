@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The check before a session gets the App's token (#4079): can the token write code to the
@@ -74,7 +74,7 @@ func (d *Daemon) checkAppPush(ctx context.Context, agent wire.UUID, owner, token
 	d.credMu.Unlock()
 	d.attentionMu.Lock()
 	d.notices = append(d.notices, postedNotice{id: pushNoticePrefix + key, agentID: agent, raised: now(),
-		h3: "Agents cannot push to " + owner + " as the App. To fix it, " + grant + "."})
+		h3: "Agent Loops cannot push to " + owner + " as the App. To fix it, " + grant + "."})
 	d.attentionMu.Unlock()
 	d.reconsider()
 }

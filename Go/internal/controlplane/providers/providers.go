@@ -15,10 +15,10 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/internal/workspacecommands"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/workspacecommands"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // MachineRecords is what Providers needs of ControlRecords; records.Records has it.
@@ -255,7 +255,10 @@ type Providers struct {
 	// many installs: only their machine/installProgress is said to clients.
 	installing map[string]int
 	// The hosts whose codespaces their carrying machines are asked to keep awake (#4637).
-	awake    map[string]keptAwake
+	awake map[string]keptAwake
+	// One make at a time on each provider, by its id (#4706): seven makes sent in one
+	// second all failed in 3 s, and GitHub asks for one user's requests one after another.
+	making   map[string]*sync.Mutex
 	done     chan struct{}
 	stopOnce sync.Once
 }
@@ -299,7 +302,7 @@ func NewProviders(cfg Config) *Providers {
 		providers: map[string]heldProvider{}, connections: map[string]Provider{}, listed: map[string]*listed{},
 		activities: map[string]*activity{}, problems: map[string]string{}, statuses: map[string]MachineStatus{},
 		idleTimers: map[string]*time.Timer{}, idleStopping: map[string]int{}, stoppedBy: map[string]string{},
-		broughtBack: map[string]bool{}, joining: map[string]*joining{}, failedMakes: map[string][]failedMake{},
+		broughtBack: map[string]bool{}, joining: map[string]*joining{}, failedMakes: map[string][]failedMake{}, making: map[string]*sync.Mutex{},
 		done: make(chan struct{})}
 }
 
@@ -448,7 +451,7 @@ func (p *Providers) HostSaid(host, method string, params json.RawMessage) (any, 
 			return nil, err
 		}
 		if !AgentWorkspaceMethods[call.Method] {
-			return nil, fail(CodeNotPermitted, "Agents can’t ask that of the control plane.")
+			return nil, fail(CodeNotPermitted, "Agent Loops can’t ask that of the control plane.")
 		}
 		return p.AgentCall(host, call.Agent, call.Method, call.Params, call.Deliver)
 	case MethodHostProviderDraft:
@@ -1670,7 +1673,7 @@ func (p *Providers) run(kind activityKind, host string, link WorkspaceLink, who 
 		p.mu.Lock()
 		if minutes, ok := p.idleStopping[host]; ok {
 			delete(p.idleStopping, host)
-			p.stoppedBy[host] = "Stopped by Agents after " + minuteWords(minutes) + " idle"
+			p.stoppedBy[host] = "Stopped by Agent Loops after " + minuteWords(minutes) + " idle"
 		}
 		delete(p.statuses, host)
 		p.mu.Unlock()
@@ -1814,11 +1817,14 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	}
 	var made *MachineInfo
 	var runs bool
+	turn := p.makeTurn(id)
+	turn.Lock()
 	_, err = p.providerCall(id, func(c Provider) (any, error) {
 		var err error
 		made, runs, err = c.Create(name, options, &firstBoot)
 		return nil, err
 	})
+	turn.Unlock()
 	if err != nil {
 		p.log(fmt.Sprintf("workspace: create %s at %s by %s: failed: %s", name, provider.Name, who, errorWords(err)))
 		p.failed(id, name, person, errorWords(err))
@@ -1871,6 +1877,24 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 		go p.linkWhenJoined(name)
 	}
 	return ProviderCreated{Workspace: *found, Joining: runs}, nil
+}
+
+// makeTurn is the provider's make lock (#4706): a make waits for the one before it on the
+// same provider, so a burst of New Machine presses reaches the provider one at a time, not
+// all at once. GitHub's REST API asks for one user's requests one after another, and its
+// secondary rate limit refuses many made at the same time.
+func (p *Providers) makeTurn(provider string) *sync.Mutex {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.making == nil {
+		p.making = map[string]*sync.Mutex{}
+	}
+	turn := p.making[provider]
+	if turn == nil {
+		turn = &sync.Mutex{}
+		p.making[provider] = turn
+	}
+	return turn
 }
 
 // repositoryPath is an https git address's owner/name path, such as alexec/agents for

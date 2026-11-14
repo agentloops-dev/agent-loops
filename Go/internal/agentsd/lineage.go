@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The lineage graph (#2348): typed links between issues, sessions, PRs and the rest, in
@@ -24,6 +24,7 @@ type lineageBook struct {
 	issueParentBook
 	releaseTagsBook
 	lineageResolveBook
+	lineageDeployBook
 	lineageSyncBook
 }
 
@@ -43,8 +44,10 @@ func (d *Daemon) closeLineage() {
 	d.lineageSettle(2 * time.Second)
 	d.stopLinker()
 	d.resolveSettle(2 * time.Second)
+	d.deploySettle(2 * time.Second)
 	d.closeCost()
 	d.closeLineageSync()
+	d.closeCISync()
 	d.lineage().Close()
 }
 
@@ -69,6 +72,6 @@ func (d *Daemon) registerLineage() {
 		if r.Depth != nil {
 			depth = int(*r.Depth)
 		}
-		return d.resolvedGraph(d.lineage().Walk(r.Node, depth)), nil
+		return d.deployGraph(d.resolvedGraph(d.lineage().Walk(r.Node, depth))), nil
 	})
 }

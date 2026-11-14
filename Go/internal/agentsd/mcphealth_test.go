@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Ports MCPHealthTests: a server is checked as a session reaches it, initialize then

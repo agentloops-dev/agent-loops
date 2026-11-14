@@ -31,6 +31,17 @@ test("a secret's use has four answers, and a session's own secret no Always Appr
   assert.deepEqual(words.secretUseActions({ ...use, sessionOnly: true }), ["once", "session", "deny"]);
 });
 
+test("an agent asks to turn on a workflow or approve a connector, with Approve and Deny only (#4538)", () => {
+  const workflow = { name: "answer-a-sign-up-code", use: "workflow", place: "Agents" };
+  assert.equal(words.secretUseTitle(workflow), "Wants to turn on answer-a-sign-up-code");
+  assert.equal(words.secretUseWhere(workflow), "Workflow in Agents");
+  assert.deepEqual(words.secretUseActions(workflow), ["once", "deny"]);
+  const connector = { name: "email", use: "connector", place: "Agents", digest: "d1" };
+  assert.equal(words.secretUseTitle(connector), "Wants to approve email");
+  assert.equal(words.secretUseWhere(connector), "Connector in Agents");
+  assert.deepEqual(words.secretUseActions(connector), ["once", "deny"]);
+});
+
 test("another request is not a secret's use", () => {
   assert.equal(words.secretUseOf({ source: "question", kind: "decide", detail: {} }), undefined);
 });
@@ -52,5 +63,14 @@ test("a terminal's agents-secret has no session: once, for 1 hour or deny, and i
   assert.equal(words.isTerminalRequest(request({ name: "X", use: "fill", place: "a.com" })), false);
   const use = words.secretUseOf(terminal);
   assert.deepEqual(words.secretUseActions(use).map((a) => words.secretUseWords[a]), ["Approve", "Approve for 1 Hour", "Deny"]);
-  assert.equal(words.secretUseWhere(use), "Terminal: zsh · Agents cannot tell a terminal from an agent outside its session.");
+  assert.equal(words.secretUseWhere(use), "Terminal: zsh · Agent Loops cannot tell a terminal from an agent outside its session.");
+});
+
+test("a session's secret uses are its chat's cards, Later's too; another's, a question's and a terminal's are not (#4918)", () => {
+  const use = { name: "T", use: "fill", place: "a.com" };
+  const first = { ...request(use), id: "1", askedBy: "S" };
+  const later = { ...request(use), id: "2", askedBy: "S", deferred: { atMac: true } };
+  const list = [first, { source: "question", kind: "decide", detail: {}, id: "3", askedBy: "S" },
+    { ...request(use), id: "4", askedBy: "T" }, { ...request({ ...use, use: "terminal" }), id: "5" }, later];
+  assert.deepEqual(words.secretUsesAskedBy(list, "S").map((r) => r.id), ["1", "2"]);
 });

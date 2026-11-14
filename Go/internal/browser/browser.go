@@ -4,21 +4,30 @@
 // it through Playwright (#3534, agentsd's browsertools.go); clients watch it by a screencast
 // (screencast.go, #3528).
 //
-// The Chromium is Playwright's own build, installed by Playwright's own installer
-// (`playwright-core install chromium`) from the pinned @playwright/mcp toolset, so the
-// browser and the tools that drive it always match. chromedp starts it and speaks CDP.
+// With Google Chrome installed, it is that Chrome (#5207, spike #5127): Google Chrome
+// stable, in a profile of its own, headed and with none of the test flags, for every site.
+// A site's check sees the real Chrome it is, which Google's sign-in needs (#4837). On a Mac
+// its window is just below the screen; on a Linux machine with no display it is on an Xvfb
+// screen of its own, which agentsd starts and stops with it (xvfb.go, #5227, spike #5209).
+// Elsewhere, the Chromium is Playwright's own build (Chrome for
+// Testing), installed by Playwright's own installer (`playwright-core install chromium`)
+// from the pinned @playwright/mcp toolset, so the browser and the tools that drive it
+// always match. chromedp starts it and speaks CDP.
 package browser
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -57,7 +66,8 @@ type Machine struct {
 	// Binaries is where Playwright puts Chromium (PLAYWRIGHT_BROWSERS_PATH): in the
 	// cache, as it can be downloaded again.
 	Binaries string
-	// Profile is the kept profile: the sign-ins that agents on this machine share.
+	// Profile is the kept profile: the sign-ins that agents on this machine share. Google
+	// Chrome keeps its own beside it (ChromeProfile).
 	Profile string
 	// Install puts Node and the pinned packages on this machine, or says why it cannot.
 	Install func(progress func(string)) (Toolset, error)
@@ -68,19 +78,24 @@ type Machine struct {
 	// Filter is what every browser tool's result goes through (#3534): the values filled
 	// into its pages come out, and its images are masked.
 	Filter Filter
-	// Changed hears that Chromium started (true) or stopped (false), off the machine's
-	// lock: the clients that watch the page are told (#3528).
-	Changed func(running bool)
+	// Changed hears that Chromium started (true) or stopped (false), with its address, off
+	// the machine's lock: the clients that watch the page are told (#3528). Each call runs
+	// on its own goroutine, so a restart's stop can be heard after its start (#5196).
+	Changed func(running bool, endpoint string)
 
-	// launch starts Chromium, headed or not, and says how to reach it; a test gives its own.
-	launch func(exe, profile string, env []string, headed bool) (*process, error)
+	// launch starts Chromium as how says, and says how to reach it; a test gives its own.
+	launch func(exe, profile string, env []string, how mode) (*process, error)
 	// locate is the Chromium that the toolset installed; a test gives its own.
 	locate func(t Toolset, env []string) (string, error)
+	// chrome is Google Chrome stable on this machine, or "" (#5207); a test gives its own.
+	chrome func() string
 
-	mu       sync.Mutex
-	running  *process
+	mu      sync.Mutex
+	running *process
 	// headed is whether the next start has a window (Headed): until the browser stops.
-	headed   bool
+	headed bool
+	// webauthn is whether the next start has WebAuthn (Passkeys): until the browser stops.
+	webauthn bool
 	toolset  Toolset
 	lastUsed time.Time
 	stopLoop chan struct{}
@@ -96,9 +111,26 @@ type process struct {
 	stop     func()
 	// headed is whether it has a window (off-screen), not headless.
 	headed bool
+	// display is the Xvfb screen agentsd started for it (":<n>"), or "" (#5227).
+	display string
+	// chrome is whether it is Google Chrome stable (#5207), not Chrome for Testing.
+	chrome bool
+	// webauthn is whether its pages have WebAuthn, for a software passkey (#4085).
+	webauthn bool
 	// store is its cookies, for Settings ▸ Browser (sites.go).
 	store cookieStore
+	// below is whether its windows are kept below the screen (keepBelow, #5313): Google
+	// Chrome on a screen a person sees, not on an Xvfb screen.
+	below bool
+	// shown is how many hand-offs have its window on the screen now (ShowWindow), under
+	// the machine's lock: the keeper moves nothing then.
+	shown int
 }
+
+// mode is how Chromium starts: Google Chrome stable (#5207), always with a window; with a
+// window, off-screen (#4272); and with WebAuthn, for a software passkey (#4085). The zero
+// mode is Chrome for Testing, headless with no WebAuthn.
+type mode struct{ chrome, headed, webauthn bool }
 
 // New is the machine's browser with its binaries under cache and its profile under root.
 func New(cache, root string, install func(func(string)) (Toolset, error), busy func() bool, env func() []string) *Machine {
@@ -110,8 +142,14 @@ func New(cache, root string, install func(func(string)) (Toolset, error), busy f
 		Env:      env,
 		launch:   launchChromium,
 		locate:   locateChromium,
+		chrome:   FindChrome,
 	}
 }
+
+// FindChrome is how New finds Google Chrome stable on this machine (findChrome). A test of
+// another package that must not start the machine's own Chrome sets it to return "" before
+// it makes a Machine: GitHub's Linux runners have Chrome and Xvfb (#5227).
+var FindChrome = findChrome
 
 // Endpoint is the browser's CDP address (ws://127.0.0.1:<port>/devtools/browser/<id>),
 // after it installs and starts it when it must. Each call counts as use, so the browser
@@ -145,68 +183,152 @@ func (m *Machine) Endpoint(progress func(string)) (string, error) {
 	}
 	m.toolset = t
 	env := m.environment()
-	exe, err := m.locate(t, env)
-	if err != nil || !executable(exe) {
-		progress("Downloading Chromium")
-		if err := m.installChromium(t, env); err != nil {
-			return "", err
-		}
-		if exe, err = m.locate(t, env); err != nil {
-			return "", err
-		}
-		if !executable(exe) {
-			return "", fmt.Errorf("Playwright installed no Chromium at %s", exe)
-		}
-	}
-	if err := os.MkdirAll(m.Profile, 0o700); err != nil {
-		return "", err
-	}
 	m.endLeftover()
-	dropCaches(m.Profile)
-	progress("Starting the browser")
-	headed := m.headed && canHead(env)
-	p, err := m.launch(exe, m.Profile, env, headed)
-	if err != nil && headed {
-		// A window it cannot open is no reason to have no browser: headless, as always.
-		log.Printf("browser: Chromium did not start with a window (%v); starting it headless", err)
-		m.headed = false
-		p, err = m.launch(exe, m.Profile, env, false)
+	var p *process
+	if exe := m.chromeExe(); exe != "" {
+		// Google Chrome stable, headed, for every site (#5207).
+		if p, err = m.start(exe, m.ChromeProfile(), env, mode{chrome: true, headed: true, webauthn: m.webauthn}, progress); err != nil {
+			log.Printf("browser: Google Chrome did not start (%v); starting Chrome for Testing", err)
+		}
 	}
-	if err != nil {
-		return "", fmt.Errorf("the browser did not start: %w", err)
+	if p == nil {
+		if p, err = m.startForTesting(t, env, progress); err != nil {
+			return "", err
+		}
 	}
 	if err := os.WriteFile(m.pidFile(), []byte(strconv.Itoa(p.pid)), 0o600); err != nil {
 		log.Printf("browser: couldn't write down Chromium's pid: %v", err)
 	}
 	m.running = p
 	m.startLoop()
-	m.changed(true)
-	how := "headless"
-	if p.headed {
-		how = "with a window off-screen"
+	if p.below {
+		go m.keepBelow(p)
 	}
-	log.Printf("browser: Chromium (pid %d) started %s, with the profile in %s", p.pid, how, m.Profile)
+	m.changed(true, p.endpoint)
+	started := "headless"
+	if p.chrome && p.display != "" {
+		started = "as Google Chrome, on the Xvfb screen " + p.display
+	} else if p.chrome {
+		started = "as Google Chrome, with a window below the screen"
+	} else if p.headed {
+		started = "with a window off-screen"
+	}
+	if p.webauthn {
+		started += ", with WebAuthn for a software passkey"
+	}
+	log.Printf("browser: Chromium (pid %d) started %s, with the profile in %s", p.pid, started, m.profileOf(p))
 	return p.endpoint, nil
 }
 
-// Headed makes the browser have a window, off-screen, until it stops (#4272): a site whose
-// bot check refuses headless Chrome (ChecksBots). A headless Chromium that runs now stops,
-// with its cookies kept, and the next Endpoint starts it headed, at a new address. It says
-// whether it stopped one. Where no window can open (a Linux machine with no display), the
-// browser stays headless.
+// profileOf is the profile p runs on.
+func (m *Machine) profileOf(p *process) string {
+	if p.chrome {
+		return m.ChromeProfile()
+	}
+	return m.Profile
+}
+
+// chromeExe is Google Chrome stable on this machine, or "" when it has none.
+func (m *Machine) chromeExe() string {
+	if m.chrome == nil {
+		return ""
+	}
+	return m.chrome()
+}
+
+// ChromeProfile is Google Chrome's kept profile (#5207), beside Chrome for Testing's: Chrome
+// keeps its cookies sealed by the Keychain, where Chrome for Testing has a mock one, so
+// neither reads the other's sign-ins.
+func (m *Machine) ChromeProfile() string {
+	return filepath.Join(filepath.Dir(m.Profile), "chrome-profile")
+}
+
+// start makes profile, empties its caches and starts exe on it as how says.
+func (m *Machine) start(exe, profile string, env []string, how mode, progress func(string)) (*process, error) {
+	if err := os.MkdirAll(profile, 0o700); err != nil {
+		return nil, err
+	}
+	dropCaches(profile)
+	progress("Starting the browser")
+	return m.launch(exe, profile, env, how)
+}
+
+// startForTesting starts Chrome for Testing, after it downloads it when it must: headless,
+// or headed when a site asked for it (Headed) and a window can open.
+func (m *Machine) startForTesting(t Toolset, env []string, progress func(string)) (*process, error) {
+	exe, err := m.locate(t, env)
+	if err != nil || !executable(exe) {
+		progress("Downloading Chromium")
+		if err := m.installChromium(t, env); err != nil {
+			return nil, err
+		}
+		if exe, err = m.locate(t, env); err != nil {
+			return nil, err
+		}
+		if !executable(exe) {
+			return nil, fmt.Errorf("Playwright installed no Chromium at %s", exe)
+		}
+	}
+	how := mode{headed: m.headed && canHead(env), webauthn: m.webauthn}
+	p, err := m.start(exe, m.Profile, env, how, progress)
+	if err != nil && how.headed {
+		// A window it cannot open is no reason to have no browser: headless, as always.
+		log.Printf("browser: Chromium did not start with a window (%v); starting it headless", err)
+		m.headed, how.headed = false, false
+		p, err = m.launch(exe, m.Profile, env, how)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("the browser did not start: %w", err)
+	}
+	return p, nil
+}
+
+// Headed makes Chrome for Testing have a window, off-screen, until it stops (#4272): a site
+// whose bot check refuses headless Chrome (ChecksBots). A headless Chromium that runs now
+// stops, with its cookies kept, and the next Endpoint starts it headed, at a new address. It
+// says whether it stopped one. Where no window can open (a Linux machine with no display),
+// the browser stays headless. Google Chrome (#5207) always has a window, so it does nothing
+// there.
 func (m *Machine) Headed() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.stopped || !canHead(m.environment()) {
+	if m.stopped || !canHead(m.environment()) || m.running == nil && m.chromeExe() != "" {
 		return false
 	}
 	restarted := false
 	if m.running != nil && !m.running.headed {
-		m.stopLocked()
+		m.restartLocked()
 		restarted = true
 	}
 	m.headed = true
 	return restarted
+}
+
+// Passkeys gives the browser's pages WebAuthn until it stops (#4085), for a software
+// passkey on a tab (Tabs.Passkey): it starts with none, as it has no passkeys of its own
+// (#4084). A Chromium that runs with none stops now, with its cookies kept, and the next
+// Endpoint starts it with WebAuthn, at a new address; its tabs close. It says whether it
+// stopped one. A window it has (Headed) it keeps.
+func (m *Machine) Passkeys() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stopped {
+		return false
+	}
+	restarted := false
+	if m.running != nil && !m.running.webauthn {
+		m.restartLocked()
+		restarted = true
+	}
+	m.webauthn = true
+	return restarted
+}
+
+// restartLocked stops Chromium for a start in another mode, which keeps the mode it has.
+func (m *Machine) restartLocked() {
+	headed, webauthn := m.headed, m.webauthn
+	m.stopLocked()
+	m.headed, m.webauthn = headed, webauthn
 }
 
 // canHead is whether Chromium can open a window here: a Mac, or a display in env.
@@ -286,19 +408,21 @@ func (m *Machine) stopLocked() {
 	}
 	m.running.stop()
 	log.Printf("browser: Chromium (pid %d) stopped", m.running.pid)
+	endpoint := m.running.endpoint
 	m.running = nil
-	// The next start is headless again, unless a site asks for a window (Headed).
-	m.headed = false
+	// The next start is headless again, unless a site asks for a window (Headed), and has
+	// no WebAuthn, unless an agent asks for a software passkey (Passkeys).
+	m.headed, m.webauthn = false, false
 	// The pages are gone, and every value filled into them with the pages.
 	m.Filter.Forget()
 	os.Remove(m.pidFile())
-	m.changed(false)
+	m.changed(false, endpoint)
 }
 
 // changed tells Changed, on its own goroutine, as mu is held.
-func (m *Machine) changed(running bool) {
+func (m *Machine) changed(running bool, endpoint string) {
 	if m.Changed != nil {
-		go m.Changed(running)
+		go m.Changed(running, endpoint)
 	}
 }
 
@@ -394,18 +518,22 @@ func locateChromium(t Toolset, env []string) (string, error) {
 // launchChromium starts Chromium with chromedp: headless, the kept profile, its debugging
 // port on 127.0.0.1 and a port the system picks, so only this machine reaches it and the
 // address has the browser's random id in its path. Its user agent says Chrome, not
-// HeadlessChrome (#4060). It has no WebAuthn, as it cannot do passkeys (#4084). Headed
-// (#4272), it has a window off-screen instead, and its own user agent.
-func launchChromium(exe, profile string, env []string, headed bool) (*process, error) {
-	if headed {
-		p, _, err := startChromium(exe, profile, env, "", true)
+// HeadlessChrome (#4060). It has no WebAuthn, as it cannot do passkeys (#4084), unless
+// how asks for it, for a software passkey (#4085). Headed (#4272), it has a window
+// off-screen instead, and its own user agent.
+func launchChromium(exe, profile string, env []string, how mode) (*process, error) {
+	if how.chrome {
+		return launchChrome(exe, profile, env, how)
+	}
+	if how.headed {
+		p, _, err := startChromium(exe, profile, env, "", how)
 		return p, err
 	}
 	if ua, ok := userAgents.Load(exe); ok {
-		p, _, err := startChromium(exe, profile, env, ua.(string), false)
+		p, _, err := startChromium(exe, profile, env, ua.(string), how)
 		return p, err
 	}
-	p, ua, err := startChromium(exe, profile, env, "", false)
+	p, ua, err := startChromium(exe, profile, env, "", how)
 	if err != nil || !strings.Contains(ua, "HeadlessChrome/") {
 		return p, err
 	}
@@ -414,8 +542,146 @@ func launchChromium(exe, profile string, env []string, headed bool) (*process, e
 	userAgents.Store(exe, asChrome)
 	p.stop()
 	<-p.done
-	p, _, err = startChromium(exe, profile, env, asChrome, false)
+	p, _, err = startChromium(exe, profile, env, asChrome, how)
 	return p, err
+}
+
+// findChrome is Google Chrome stable on this machine, or "" (#5207, #5227).
+func findChrome() string {
+	home, _ := os.UserHomeDir()
+	for _, exe := range chromePaths(runtime.GOOS, home) {
+		if executable(exe) {
+			return exe
+		}
+	}
+	return ""
+}
+
+// chromePaths are where Google Chrome stable can be on goos, in the order they are tried:
+// on a Mac, /Applications and ~/Applications (#5207); on Linux, where Google's .deb and .rpm
+// put it (#5227). Google ships no Chrome for Linux on arm64, so there it is not found, and
+// the browser is Chrome for Testing.
+func chromePaths(goos, home string) []string {
+	switch goos {
+	case "darwin":
+		paths := []string{"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
+		if home != "" {
+			paths = append(paths, filepath.Join(home, "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"))
+		}
+		return paths
+	case "linux":
+		return []string{"/usr/bin/google-chrome-stable", "/usr/bin/google-chrome", "/opt/google/chrome/chrome"}
+	}
+	return nil
+}
+
+// launchChrome starts Google Chrome stable (#5207): headed, on the kept profile, its
+// debugging port on 127.0.0.1 and a free port agentsd picks, and none of chromedp's test
+// defaults (no mock keychain, no basic password store, sync and extensions as Chrome has
+// them), so a site sees the Chrome it is, except that a covered window's pages stay
+// visible. Its user agent is its own. WebAuthn is off unless
+// how asks for it (#4085), as for Chrome for Testing. Its window goes just below the screen
+// before the first page opens.
+//
+// Where no window can open (a Linux server: no DISPLAY or WAYLAND_DISPLAY), it runs on an
+// Xvfb screen that agentsd starts for it alone (#5227), which stops when Chrome does. Nobody
+// sees that screen, so its window stays where Chrome puts it. With no Xvfb, or one that does
+// not start, it says why, and the browser is Chrome for Testing, headless.
+//
+// The port is not 0: Google Chrome with --remote-debugging-port=0 sets navigator.webdriver
+// on every page, where a port of its own leaves it false, as a person's Chrome has it
+// (measured on Chrome 157, #5207). A port another program takes between the pick and the
+// start is tried again on a new one.
+func launchChrome(exe, profile string, env []string, how mode) (*process, error) {
+	if canHead(env) {
+		p, err := launchChromeOn(exe, profile, env, how, moveBelowScreen)
+		if p != nil {
+			p.below = true
+		}
+		return p, err
+	}
+	x, err := startXvfb(env)
+	if err != nil {
+		return nil, err
+	}
+	p, err := launchChromeOn(exe, profile, append(withoutKey(env, "DISPLAY"), "DISPLAY="+x.display), how, func(context.Context) {})
+	if err != nil {
+		x.stop()
+		return nil, err
+	}
+	p.display = x.display
+	go func() {
+		// Xvfb ends with Chrome: a stop, an idle stop or a crash.
+		<-p.done
+		x.stop()
+	}()
+	return p, nil
+}
+
+// launchChromeOn is launchChrome on the display env names, with place for its window.
+func launchChromeOn(exe, profile string, env []string, how mode, place func(context.Context)) (*process, error) {
+	var err error
+	for range 3 {
+		var port int
+		if port, err = freePort(); err != nil {
+			return nil, err
+		}
+		opts := []chromedp.ExecAllocatorOption{
+			chromedp.ExecPath(exe),
+			chromedp.UserDataDir(profile),
+			chromedp.NoInheritEnv,
+			chromedp.Env(env...),
+			remote.WebSocket,
+			chromedp.Flag("remote-debugging-address", "127.0.0.1"),
+			chromedp.Flag("remote-debugging-port", strconv.Itoa(port)),
+			chromedp.Flag("disk-cache-size", strconv.Itoa(diskCacheBytes)),
+			chromedp.NoFirstRun,
+			chromedp.NoDefaultBrowserCheck,
+			chromedp.WindowSize(windowWidth, windowHeight),
+			// A window that macOS says is covered (by another window, or below the
+			// screen with its strip under the Dock) has hidden pages: they run no
+			// requestAnimationFrame, so Playwright's clicks wait for ever and a sign-in
+			// page stops after its first step (#5230). A page cannot see this flag.
+			chromedp.Flag("disable-backgrounding-occluded-windows", true),
+		}
+		var p *process
+		at := func() (string, error) { return listening(port) }
+		if p, _, err = run(opts, how, place, at); err == nil {
+			return p, nil
+		}
+	}
+	return nil, err
+}
+
+// listening is the CDP address of the browser whose debugging port is port, as it says at
+// /json/version: Chrome writes no DevToolsActivePort for a port it did not pick.
+func listening(port int) (string, error) {
+	c := http.Client{Timeout: 5 * time.Second}
+	res, err := c.Get("http://127.0.0.1:" + strconv.Itoa(port) + "/json/version")
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	var v struct {
+		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(v.WebSocketDebuggerURL, "ws://127.0.0.1:"+strconv.Itoa(port)+"/devtools/browser/") {
+		return "", fmt.Errorf("the browser on port %d says no address of its own: %q", port, v.WebSocketDebuggerURL)
+	}
+	return v.WebSocketDebuggerURL, nil
+}
+
+// freePort is a TCP port on 127.0.0.1 that nothing listens on now.
+func freePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
 // userAgents is each Chromium's user agent as a headed Chrome, by its executable.
@@ -428,9 +694,9 @@ func headedUserAgent(ua string) string {
 	return strings.Replace(ua, "HeadlessChrome/", "Chrome/", 1)
 }
 
-// startChromium starts Chromium, with userAgent when it is not empty and a window when
-// headed, and says the user agent it has.
-func startChromium(exe, profile string, env []string, userAgent string, headed bool) (*process, string, error) {
+// startChromium starts Chromium, with userAgent when it is not empty, as how says, and says
+// the user agent it has.
+func startChromium(exe, profile string, env []string, userAgent string, how mode) (*process, string, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(exe),
 		chromedp.UserDataDir(profile),
@@ -445,17 +711,31 @@ func startChromium(exe, profile string, env []string, userAgent string, headed b
 		// The profile's bound (#3727): the HTTP cache stays under this while it runs, and
 		// dropCaches empties every cache before the next start.
 		chromedp.Flag("disk-cache-size", strconv.Itoa(diskCacheBytes)),
-		// The agents' browser has no passkeys (#4084): headless, it has no window for the
-		// passkey dialog and no Touch ID. With WebAuthn off in Blink, PublicKeyCredential
-		// is not there, so a page does not wait on a dialog nobody sees; agents use a
-		// password and TOTP (#3908). Only the flag, no script in pages.
-		chromedp.Flag("disable-blink-features", "WebAuth"),
 	)
 	if userAgent != "" {
 		opts = append(opts, chromedp.UserAgent(userAgent))
 	}
-	if headed {
+	if how.headed {
 		opts = append(opts, headedOptions...)
+	}
+	return run(opts, how, func(ctx context.Context) {
+		if how.headed {
+			moveOffScreen(ctx)
+		}
+	}, func() (string, error) { return activePort(profile) })
+}
+
+// run starts a browser with opts, and, after its first tab opens, places its window. It says
+// the user agent it has. With WebAuthn off (how), Blink has none.
+func run(opts []chromedp.ExecAllocatorOption, how mode, place func(context.Context), at func() (string, error)) (*process, string, error) {
+	if !how.webauthn {
+		// The agents' browser has no passkeys of its own (#4084): headless, it has no
+		// window for the passkey dialog and no Touch ID. With WebAuthn off in Blink,
+		// PublicKeyCredential is not there, so a page does not wait on a dialog nobody
+		// sees; agents use a password and TOTP (#3908). Only the flag, no script in pages.
+		// A software passkey (#4085) starts it without the flag, and puts an authenticator
+		// on the agent's tab, which answers with no dialog (passkey.go).
+		opts = append(opts, chromedp.Flag("disable-blink-features", "WebAuth"))
 	}
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancelCtx := chromedp.NewContext(allocCtx)
@@ -478,20 +758,18 @@ func startChromium(exe, profile string, env []string, userAgent string, headed b
 		stop()
 		return nil, "", errors.New("chromedp has no browser process")
 	}
-	if headed {
-		moveOffScreen(ctx)
-	}
+	place(ctx)
 	version, err := chromedp.CallBrowser(ctx, cdpbrowser.GetVersion, cdp.Empty{})
 	if err != nil {
 		stop()
 		return nil, "", err
 	}
-	endpoint, err := activePort(profile)
+	endpoint, err := at()
 	if err != nil {
 		stop()
 		return nil, "", err
 	}
-	return &process{endpoint: endpoint, pid: b.Process().Pid, done: ctx.Done(), stop: stop, headed: headed, store: cdpStore{ctx}}, version.UserAgent, nil
+	return &process{endpoint: endpoint, pid: b.Process().Pid, done: ctx.Done(), stop: stop, headed: how.headed, chrome: how.chrome, webauthn: how.webauthn, store: cdpStore{ctx}}, version.UserAgent, nil
 }
 
 // moveOffScreen puts the first tab's window far off every screen. A Mac moves a window that
@@ -512,6 +790,34 @@ func moveOffScreen(ctx context.Context) {
 // offScreen is where a headed window goes, left and top: beyond any screen.
 const offScreen = -32000
 
+// moveBelowScreen puts Google Chrome's window just below the screen (#5207). macOS keeps
+// part of a window on a screen: 40 points across when it is moved further left (spike
+// #5127: -32000, -32000 became -1240, 33), but only one at x = -(width-1); and down, it
+// stops at the bottom of the lowest display or a little above it (a 2560×1440 display
+// kept 129 points, -1279, 32000 became -1279, 1311). So the window goes all but one point
+// to the left, and down as far as macOS lets it: at most a line one point wide shows, at
+// the screen's left edge.
+func moveBelowScreen(ctx context.Context) {
+	w, err := chromedp.Call(ctx, cdpbrowser.GetWindowForTarget, cdpbrowser.GetWindowForTargetParams{})
+	if err == nil {
+		left, top := int64(-(windowWidth - 1)), int64(belowScreen)
+		_, err = chromedp.CallBrowser(ctx, cdpbrowser.SetWindowBounds,
+			cdpbrowser.SetWindowBoundsParams{WindowID: w.WindowID, Bounds: &cdpbrowser.Bounds{Left: &left, Top: &top}})
+	}
+	if err != nil {
+		log.Printf("browser: couldn't move the window below the screen: %v", err)
+	}
+}
+
+// belowScreen is how far down Google Chrome's window is asked to go: past any display.
+const belowScreen = 32000
+
+// windowWidth and windowHeight are a headed window's size.
+const (
+	windowWidth  = 1280
+	windowHeight = 800
+)
+
 // headedOptions are a headed Chromium's (#4272): a real window, so a bot check sees no
 // headless difference, placed far off every screen, so nobody sees it on this machine's
 // screen; people watch it by the screencast, as before. The browser still says it is
@@ -521,7 +827,7 @@ var headedOptions = []chromedp.ExecAllocatorOption{
 	chromedp.Flag("headless", false),
 	chromedp.Flag("hide-scrollbars", false),
 	chromedp.Flag("window-position", fmt.Sprintf("%d,%d", offScreen, offScreen)),
-	chromedp.WindowSize(1280, 800),
+	chromedp.WindowSize(windowWidth, windowHeight),
 }
 
 // activePort is the CDP address Chromium wrote in its profile's DevToolsActivePort:
@@ -578,10 +884,22 @@ func dropCaches(profile string) {
 
 func (m *Machine) pidFile() string { return filepath.Join(filepath.Dir(m.Profile), "chromium.pid") }
 
-// endLeftover ends a Chromium that a host which stopped without closing it left on the
+// EndLeftover ends a Chromium that the last host left running (endLeftover) when the host
+// starts (#5313), not at the first start of the browser: that Chrome can have a hand-off's
+// window on the screen, and its window keeper ended with that host.
+func (m *Machine) EndLeftover() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.running == nil {
+		m.endLeftover()
+	}
+}
+
+// endLeftover ends a Chromium that a host which stopped without closing it left on a
 // profile: a second one on the same profile hands its window to the first and exits.
 // Chromium names its holder in SingletonLock ("<host>-<pid>"); only that pid, and only
-// when it is the one this machine wrote down, is ended.
+// when it is the one this machine wrote down, is ended. Either profile (Chrome for
+// Testing's or Google Chrome's) can hold it.
 func (m *Machine) endLeftover() {
 	b, err := os.ReadFile(m.pidFile())
 	if err != nil {
@@ -592,8 +910,11 @@ func (m *Machine) endLeftover() {
 	if err != nil || pid <= 1 {
 		return
 	}
-	lock, err := os.Readlink(filepath.Join(m.Profile, "SingletonLock"))
-	if err != nil || !strings.HasSuffix(lock, "-"+strconv.Itoa(pid)) {
+	held := func(profile string) bool {
+		lock, err := os.Readlink(filepath.Join(profile, "SingletonLock"))
+		return err == nil && strings.HasSuffix(lock, "-"+strconv.Itoa(pid))
+	}
+	if !held(m.Profile) && !held(m.ChromeProfile()) {
 		return
 	}
 	if p, err := os.FindProcess(pid); err == nil && p.Signal(syscall.Signal(0)) == nil {

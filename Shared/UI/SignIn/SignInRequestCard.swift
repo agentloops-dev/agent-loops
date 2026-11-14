@@ -20,7 +20,7 @@ struct SignInRequestCard: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "person.badge.key")
+            Image(icon: "person.badge.key")
                 // Decorative: the card says what it is in words.
                 .glyph(size: 13)
                 .foregroundStyle(StateTint.attention.style(or: .primary))
@@ -54,7 +54,7 @@ struct SignInRequestCard: View {
                 }
                 HStack(spacing: 8) {
                     Button("Approve") { answer(true, request.needsCode ? typedCode : nil) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.paperProminent)
                         .disabled(request.needsCode && typedCode.isEmpty)
                     Button("Deny") { answer(false, nil) }
                         .buttonStyle(.bordered)

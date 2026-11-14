@@ -53,7 +53,7 @@ private struct Small: View {
         VStack(alignment: .leading, spacing: 0) {
             if entry.isUnknown {
                 Spacer(minLength: 0)
-                Text("Open Agents")
+                Text("Open Agent Loops")
                     .appText(.supporting)
                     .foregroundStyle(.secondary)
                 Text("to see what needs you")
@@ -87,7 +87,7 @@ private struct Small: View {
     }
 
     private var accessibilityLabel: String {
-        if entry.isUnknown { return "Agents. Open the app to see what needs you" }
+        if entry.isUnknown { return "Agent Loops. Open the app to see what needs you" }
         let said = entry.isEmpty ? "Nothing is waiting for you"
             : "\(entry.count) \(entry.count == 1 ? "session needs" : "sessions need") you"
         return [said, Updated.spoken(entry)].compactMap { $0 }.joined(separator: ". ")
@@ -368,7 +368,7 @@ private struct Unknown: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Spacer(minLength: 0)
-            Text("Open Agents")
+            Text("Open Agent Loops")
                 .appText(.reading)
                 .fontWeight(.semibold)
             Text("This widget shows what needs you once the app has been open.")
@@ -381,42 +381,32 @@ private struct Unknown: View {
     }
 }
 
-/// When the number was last true, always (#1163): the time of day while it is fresh, and
-/// how long ago once it is stale (FR-017), so an old number never passes for a new one.
+/// How old the number is, always (#1163, #5141): "Last update 5 min ago", the app's words
+/// (`LastUpdate`), so an old number never passes for a new one.
 ///
 /// The time is when the Mac counted it or the app was last live with the Mac, not when
-/// the file happened to be written.
+/// the file happened to be written. The provider's timeline draws it again as the words
+/// change.
 private struct Updated: View {
     let entry: AttentionEntry
-    /// The time alone, beside the medium size's count: "11:28", "40 min ago".
+    /// The age alone, beside the medium size's count: "5 min ago".
     var short = false
 
     var body: some View {
-        if let updated = entry.snapshot?.updated(at: entry.date) {
-            Group {
-                switch updated {
-                case .at(let when):
-                    Text("\(short ? "" : "Updated ")\(when, format: .dateTime.hour().minute())")
-                case .ago(let when):
-                    // "40 minutes ago", counting on by itself on the Home screen.
-                    Text("\(short ? "" : "Updated ")\(Text(.currentDate, format: .reference(to: when, allowedFields: [.day, .hour, .minute], maxFieldCount: 1)))")
-                }
-            }
-            .appText(.fine)
-            .monospacedDigit()
-            .foregroundStyle(.tertiary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .accessibilityLabel(Self.spoken(entry) ?? "")
+        if let read = entry.snapshot?.readAt(now: entry.date) {
+            Text(short ? LastUpdate.age(since: read, now: entry.date) : LastUpdate.line(since: read, now: entry.date))
+                .appText(.fine)
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .accessibilityLabel(Self.spoken(entry) ?? "")
         }
     }
 
     /// The same, as VoiceOver says it.
     static func spoken(_ entry: AttentionEntry) -> String? {
-        guard let updated = entry.snapshot?.updated(at: entry.date) else { return nil }
-        switch updated {
-        case .at(let when), .ago(let when):
-            return "Last updated \(when.formatted(.relative(presentation: .named)))"
-        }
+        guard let read = entry.snapshot?.readAt(now: entry.date) else { return nil }
+        return LastUpdate.spoken(since: read, now: entry.date)
     }
 }

@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/policylayers"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/policylayers"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The organisation's policy on this machine (#998, spec 998 slice 2a). The control plane
@@ -43,8 +43,8 @@ const (
 const (
 	orgSetBy          = "Set by your organisation."
 	orgStopAllWords   = "Your organisation has stopped all agent work."
-	orgNoPolicyWords  = "Agents has no policy from your organisation. Connect to the network."
-	orgUpdateWords    = "Update Agents to follow your organisation's policy."
+	orgNoPolicyWords  = "Agent Loops has no policy from your organisation. Connect to the network."
+	orgUpdateWords    = "Update Agent Loops to follow your organisation's policy."
 	orgUnmeteredWords = "Your organisation cannot measure this runtime's use."
 )
 

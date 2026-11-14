@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // required is the least the control plane needs of a peer to route for it (#1748,
@@ -60,7 +60,7 @@ func clientRefusal(list []string, version string, team bool) *RPCError {
 		}
 	}
 	if team && !slices.Contains(list, wire.CapClientTeam1) {
-		return joinTeamRefusal("Update Agents to join this team.", version, []string{wire.CapClientTeam1})
+		return joinTeamRefusal("Update Agent Loops to join this team.", version, []string{wire.CapClientTeam1})
 	}
 	return nil
 }

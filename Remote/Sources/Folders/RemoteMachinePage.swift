@@ -13,8 +13,8 @@ struct RemoteMachinePage: View {
 
     @State private var usage: DaemonAPI.MachineUsageState?
     @State private var failure: String?
-    /// The runtime whose Sign In… is open.
-    @State private var signingIn: Runtime?
+    /// When the last `machine/usage` read worked (#5146): a read that fails then says how old the page is.
+    @State private var readAt: Date?
 
     private var name: String { model.machineName(host) }
     private var offline: Bool { model.machineOffline(host) }
@@ -27,15 +27,15 @@ struct RemoteMachinePage: View {
             List {
                 Section {
                     Text(words ?? (offline ? "Offline" : "Online"))
-                        .foregroundStyle(offline ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(offline ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(Paper.secondary))
                     if offline {
-                        Text("\(name) is offline, so it can’t say how it is doing now.").foregroundStyle(.secondary)
+                        Text("\(name) is offline, so it can’t say how it is doing now.").foregroundStyle(Paper.secondary)
                     } else if !answersUsage {
-                        Text("Update Agents on \(name) to see its CPU, memory and disks here.").foregroundStyle(.secondary)
+                        Text("Update Agent Loops on \(name) to see its CPU, memory and disks here.").foregroundStyle(Paper.secondary)
                     } else if let usage {
                         summary(usage)
                     } else if let failure {
-                        Text(failure).foregroundStyle(.secondary)
+                        Text(failure).foregroundStyle(Paper.secondary)
                     } else {
                         ProgressView()
                     }
@@ -43,7 +43,7 @@ struct RemoteMachinePage: View {
                 if !offline, let usage {
                     Section("Disks") {
                         if usage.disks.isEmpty {
-                            Text("No disk looked at yet. \(name) looks every minute.").foregroundStyle(.secondary)
+                            Text("No disk looked at yet. \(name) looks every minute.").foregroundStyle(Paper.secondary)
                         }
                         ForEach(usage.disks.sorted { $0.level > $1.level }) { disk in
                             LabeledContent {
@@ -62,7 +62,7 @@ struct RemoteMachinePage: View {
                     Section("Runtimes") {
                         let runtimes = model.runtimes(on: host).filter(\.isInstalled)
                         if runtimes.isEmpty {
-                            Text("None installed here yet.").foregroundStyle(.secondary)
+                            Text("None installed here yet.").foregroundStyle(Paper.secondary)
                         }
                         ForEach(runtimes) { status in runtimeRow(status) }
                     }
@@ -81,15 +81,13 @@ struct RemoteMachinePage: View {
             await model.refreshMachineRuntimes(host)
             // A tap on a row that says a runtime needs sign-in comes here: Sign In… opens (#4035).
             if case .signIn = model.need(of: host), let first = model.runtimes(on: host).first(where: offersSignIn) {
-                signingIn = first.runtime
+                model.signingIn = RuntimeSignInTarget(host: host, runtime: first.runtime)
             }
-        }
-        .sheet(item: $signingIn) { runtime in
-            RuntimeSignInSheet(host: host, runtime: runtime)
         }
         .task(id: host) {
             usage = nil
             failure = nil
+            readAt = nil
             guard answersUsage else { return }
             while !Task.isCancelled {
                 if !offline { await read() }
@@ -105,9 +103,9 @@ struct RemoteMachinePage: View {
         VStack(alignment: .leading, spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(status.runtime.name)
-                Text(status.machineLine).appText(.fine).foregroundStyle(.secondary)
+                Text(status.machineLine).appText(.fine).foregroundStyle(Paper.secondary)
                 if host == .mac, status.needsSignIn {
-                    Text(RuntimeSignInWords.onTheMac).appText(.fine).foregroundStyle(.secondary)
+                    Text(RuntimeSignInWords.onTheMac).appText(.fine).foregroundStyle(Paper.secondary)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -115,7 +113,7 @@ struct RemoteMachinePage: View {
             if offersSignIn(status) || update {
                 HStack(spacing: 8) {
                     if offersSignIn(status) {
-                        Button("Sign In…") { signingIn = status.runtime }
+                        Button("Sign In…") { model.signingIn = RuntimeSignInTarget(host: host, runtime: status.runtime) }
                     }
                     if update {
                         Button("Update") { Task { await model.updateRuntime(status.id, on: host) } }
@@ -161,7 +159,13 @@ struct RemoteMachinePage: View {
             let waits = [CapacityWords.queued(model.work.agents.count { $0.host == host && $0.state == .queued }),
                          CapacityWords.leasesInLine(leases)].compactMap { $0 }
             if !waits.isEmpty {
-                Text(waits.joined(separator: " · ")).foregroundStyle(.secondary)
+                Text(waits.joined(separator: " · ")).foregroundStyle(Paper.secondary)
+            }
+            // A read every 3 s says no age while it works; one that fails says how old this is (#5146).
+            if let failure {
+                LastUpdateTimeline(read: readAt ?? .distantPast) { now in
+                    Text(LastUpdate.banner(failure, read: readAt, now: now)).foregroundStyle(Paper.secondary)
+                }
             }
         }
         .monospacedDigit()
@@ -171,7 +175,7 @@ struct RemoteMachinePage: View {
     private static func tint(_ level: DaemonAPI.CapacityLevel?) -> StateTint {
         switch level {
         case .ok, nil: .none
-        case .near: .attention
+        case .near: .warning
         case .full: .failure
         }
     }
@@ -179,7 +183,7 @@ struct RemoteMachinePage: View {
     private static func tint(_ level: DiskLevel) -> StateTint {
         switch level {
         case .ok: .none
-        case .low: .attention
+        case .low: .warning
         case .critical: .failure
         }
     }
@@ -188,6 +192,7 @@ struct RemoteMachinePage: View {
         do {
             usage = try await model.machineUsage(host)
             failure = nil
+            readAt = Date()
         } catch let error as JSONRPCError {
             failure = error.message
         } catch {

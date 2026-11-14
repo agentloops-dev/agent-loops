@@ -182,10 +182,10 @@ extension AgentsPlace {
 /// The two colours the tab draws in. What a runtime gets, and the chosen row, are in the
 /// accent, as the approved frames have them (look/): not a state, so not a `StateTint`,
 /// and the one line ConsistencyTests allows here. Everything that needs a look is
-/// `StateTint.attention`.
+/// `StateTint.warning`; a wait for the person is `StateTint.attention`.
 enum SharedInk {
     static let reach = Color.accentColor
-    static var attention: Color { StateTint.attention.color ?? .secondary }
+    static var warning: Color { StateTint.warning.color ?? .secondary }
 }
 
 extension DaemonAPI.SharedSnapshot {
@@ -211,7 +211,7 @@ private struct SharedEmptyState: View {
     var body: some View {
         VStack(spacing: 14) {
             // Decorative: the tab's own symbol, large, above the words that say it all.
-            Image(systemName: SettingsPane.agentConfiguration.symbol).glyph(size: 34).foregroundStyle(.secondary)
+            Image(icon: SettingsPane.agentConfiguration.symbol).glyph(size: 34).foregroundStyle(.secondary)
             Text("Nothing here yet").appText(.title)
             Text(words)
                 .appText(.supporting).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -236,7 +236,7 @@ private struct SharedOffState: View {
     var body: some View {
         VStack(spacing: 10) {
             // Decorative: the tab's own symbol, large, above the words that say it all.
-            Image(systemName: SettingsPane.agentConfiguration.symbol).glyph(size: 34).foregroundStyle(.secondary)
+            Image(icon: SettingsPane.agentConfiguration.symbol).glyph(size: 34).foregroundStyle(.secondary)
             Text("The shared folder is off for this copy of the app").appText(.reading)
             Text("It lays out and reports on ~/.agents only for the app’s own daemon, so a copy being tried out leaves your home folder alone.")
                 .appText(.fine).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -314,7 +314,7 @@ struct SharedChip: View {
     private var foreground: Color {
         switch tone {
         case .plain: .secondary
-        case .attention: SharedInk.attention
+        case .attention: SharedInk.warning
         case .source: SharedInk.reach
         }
     }
@@ -322,7 +322,7 @@ struct SharedChip: View {
     private var background: Color {
         switch tone {
         case .plain: Paper.wash
-        case .attention: SharedInk.attention.opacity(0.14)
+        case .attention: SharedInk.warning.opacity(0.14)
         case .source: SharedInk.reach.opacity(0.12)
         }
     }
@@ -401,8 +401,8 @@ struct AgentConfigurationPageList: View {
                             + (waiting.contains(each) ? ", waiting for your OK" : ""),
                         action: { choose(each) }) {
             if warns {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(lit ? .white : SharedInk.attention)
+                Image(icon: "exclamationmark.triangle")
+                    .foregroundStyle(lit ? .white : SharedInk.warning)
             }
             if waiting.contains(each) {
                 Circle().fill(StateTint.attention.style(or: .secondary)).frame(width: 7, height: 7)

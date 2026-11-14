@@ -12,10 +12,10 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/alexec/agents/Go/internal/agentsd/mcpcatalog"
-	"github.com/alexec/agents/Go/internal/agentsd/skillcatalog"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A server typed on the sheet (#305): connected to before anything is written, then written
@@ -281,7 +281,7 @@ func verifyMCP(ctx context.Context, s sdk.McpServer, cwd string, timeout time.Du
 		return err
 	}
 	raw, err := c.call(ctx, 1, "initialize", map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
-		"clientInfo": map[string]any{"name": "Agents", "version": "1"}})
+		"clientInfo": map[string]any{"name": "Agent Loops", "version": "1"}})
 	if err != nil {
 		return nil, nil, nil, timedOut(err)
 	}

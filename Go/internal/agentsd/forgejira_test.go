@@ -11,8 +11,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/jiramcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/jiramcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // fakeForgeJira is Jira's lists, item reads and writes, and what each was asked (#3260).

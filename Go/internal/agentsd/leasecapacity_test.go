@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // holds is whether agent holds name now.

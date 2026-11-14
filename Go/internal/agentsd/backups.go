@@ -20,10 +20,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/diskjson"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Backups of this machine's data (#1810): its agents, their transcripts, and its usage and

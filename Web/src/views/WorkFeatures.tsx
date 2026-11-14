@@ -7,13 +7,14 @@
 // (from the sessions labelled with them) and the rest in words; then its issues with no epic that are in flight. Under 700 px
 // the chip and the bars' words go, an epic's where and lead go on its second line, a child's words on its second line, and
 // an epic shows at most two children.
-import { signal } from "@preact/signals";
+import { effect, signal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
+import { keepWork, keptWorkRead } from "../model/localCopy";
 import type { Agent, ForgeFeature, ForgeItem, ForgePlan } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
 import { boardChoices, boardName, errorWords, labelColor, noForgeHere, shortRef, withBoard } from "../model/work";
-import { ErrorStrip, LabelChip, PlaceholderRows, RefreshButton, StateIcon } from "./WorkParts";
+import { ErrorStrip, FromDeviceStrip, LabelChip, PlaceholderRows, RefreshButton, StateIcon } from "./WorkParts";
 import { boardHosts, boards, forgeHosts, listHosts, loadBoards } from "../model/workLists";
 import { Choice } from "./Work";
 import {
@@ -24,6 +25,7 @@ import {
 } from "../model/workFeatures";
 import { go, routeHash } from "../route";
 import { ForgeTitle } from "../render/ForgeTitle";
+import { Icon } from "./Icon";
 
 // The list's state lives for the tab, so Back from an epic's page finds it as it was left.
 const features = signal<ForgeFeature[] | null>(null);
@@ -48,6 +50,37 @@ const reading = signal(false);
 /** The board chosen, by its url; empty for all. */
 const board = signal("");
 let read: string | undefined;
+/** The features on screen came from this device's copy (#4930), until the machines answer. */
+const fromDevice = signal(false);
+/** When the copy on screen was read from the machines (#5142), for the strip's "Last update" line. */
+const copyAt = signal<number | undefined>(undefined);
+/** The board the features on screen were read for: the copy is drawn only for another. */
+let shownFor: string | undefined;
+/** The machines answered for `shownFor`: what is on screen is theirs, and is kept as it fills in. */
+let answered = false;
+
+/** Work ▸ Features as this device keeps it (#4930). */
+interface KeptFeatures {
+  features: ForgeFeature[]; approvals: string[];
+  items: Record<string, { items: { host: string; item: ForgeItem }[]; errors: string[] }>; plans: Record<string, ForgePlan>;
+}
+
+// Kept a second after the features, their issues and their plans last changed, while every read answered (#4930).
+let keepTimer: ReturnType<typeof setTimeout> | undefined;
+effect(() => {
+  const list = features.value;
+  void items.value;
+  void plans.value;
+  if (keepTimer) clearTimeout(keepTimer);
+  if (!list || !answered || fromDevice.value || errors.value.length > 0) return;
+  const on = shownFor ?? "";
+  keepTimer = setTimeout(() => {
+    if (!answered || shownFor !== on || errors.peek().length > 0) return;
+    const fine = Object.fromEntries(Object.entries(items.peek()).filter(([, v]) => v.errors.length === 0));
+    const read = Object.fromEntries(Object.entries(plans.peek()).filter((e): e is [string, ForgePlan] => typeof e[1] !== "string"));
+    keepWork("features", on, { features: features.peek() ?? [], approvals: approvals.peek(), items: fine, plans: read } satisfies KeptFeatures);
+  }, 1_000);
+});
 
 async function loadFeatures(store: Store) {
   const mine = asked.value;
@@ -57,14 +90,24 @@ async function loadFeatures(store: Store) {
   if (read === key && features.value !== null) return;
   read = key;
   reading.value = true;
-  features.value = null;
-  approvals.value = [];
-  errors.value = [];
-  items.value = {};
-  plans.value = {};
-  planning.clear();
-  itemReads.clear();
-  featureOpen.value = {};
+  // The features on screen stay until the machines answer (#4930); a board not shown yet draws this device's copy.
+  if (shownFor !== on) {
+    const got = await keptWorkRead<KeptFeatures>("features", on);
+    const kept = got?.value;
+    if (got && kept && asked.value === mine && board.value === on && shownFor !== on) {
+      copyAt.value = got.at;
+      features.value = kept.features;
+      approvals.value = kept.approvals;
+      errors.value = [];
+      items.value = kept.items;
+      plans.value = kept.plans;
+      shownFor = on;
+      answered = false;
+      fromDevice.value = true;
+    } else if (shownFor !== on) {
+      features.value = null;
+    }
+  }
   const got = await Promise.all(hosts.map(async (h) => {
     try {
       return { host: h, list: await store.link.call("forge/features", withBoard({}, on), h.id) };
@@ -74,6 +117,15 @@ async function loadFeatures(store: Store) {
   }));
   if (asked.value !== mine || board.value !== on) return;
   reading.value = false;
+  approvals.value = [];
+  items.value = {};
+  plans.value = {};
+  planning.clear();
+  itemReads.clear();
+  featureOpen.value = {};
+  shownFor = on;
+  answered = true;
+  fromDevice.value = false;
   errors.value = got.flatMap(({ host, list }) => (list.errors ?? []).map((e) => errorWords(e, hosts.length > 1 ? host.name : undefined)));
   features.value = mergeFeatures(got.map(({ list }) => list.features));
   approvals.value = got.flatMap(({ list }) => list.approvals ?? []);
@@ -149,6 +201,7 @@ export function WorkFeatures({ store }: { store: Store }) {
           </div>
         ) : (
           <>
+            <FromDeviceStrip at={fromDevice.value ? copyAt.value : undefined} />
             <ErrorStrip lines={errors.value} retry={refresh} />
             <div class={errors.value.length > 0 ? "stale" : undefined}><FeatureGroups store={store} list={list} /></div>
           </>
@@ -175,7 +228,7 @@ function FeatureGroups({ store, list }: { store: Store; list: ForgeFeature[] }) 
               aria-label={`${words}, ${shown.length}`}
               onClick={() => { groupOpen.value = { ...groupOpen.value, [group]: !isOpen }; }}
               title={isOpen ? `Fold ${words}` : `Show ${words}`}>
-              <span class="chevron" aria-hidden="true">{isOpen ? "▾" : "▸"}</span>
+              <Icon name={isOpen ? "chevron-down" : "chevron-right"} class="chevron" />
               <span class="words">{words}</span>
               <span class="count">{shown.length}</span>
             </button>
@@ -236,7 +289,7 @@ function FeatureRow({ store, feature, agents, group, approvals: waiting, startOp
     <li>
       <button type="button" class="work-feature-head" aria-expanded={isOpen} onClick={() => toggle(feature.name, isOpen)}
         title={isOpen ? `Fold ${feature.name}` : `Show ${feature.name}'s epics in flight`}>
-        <span class="chevron" aria-hidden="true">{isOpen ? "▾" : "▸"}</span>
+        <Icon name={isOpen ? "chevron-down" : "chevron-right"} class="chevron" />
         <span class="dot" style={dot ? { background: dot } : undefined} aria-hidden="true" />
         <span class="work-row-main">
           <span class="work-row-head">
@@ -245,7 +298,7 @@ function FeatureRow({ store, feature, agents, group, approvals: waiting, startOp
           </span>
           <span class={`work-row-line small${needs ? " work-needs" : ""}`}>
             <span class={needs ? undefined : "quiet"}>{line2.join(" · ")}</span>
-            {needs && <><span aria-hidden="true">·</span><span><span aria-hidden="true">⚠ </span>{needs}</span></>}
+            {needs && <><span aria-hidden="true">·</span><span><Icon name="triangle-alert" /> {needs}</span></>}
           </span>
         </span>
         {delivery && delivery.total > 0 ? (
@@ -354,7 +407,7 @@ function FlightLine({ flight, phone }: { flight: InFlight; phone: boolean }) {
     <li class={phone ? undefined : "wide-only"}>
       <a class={`work-feature-row work-flight-row is-${mark}`} href={itemHref(item)} title={`Open ${shortRef(item.node.ref)}'s page`}
         onClick={(e) => openItem(e, item)}>
-        <span class="mark" role="img" aria-label={mark === "attention" ? "Needs you" : "Working"}>{mark === "attention" ? "⚠" : "●"}</span>
+        <span class="mark" role="img" aria-label={mark === "attention" ? "Needs you" : "Working"}><Icon name={mark === "attention" ? "triangle-alert" : "loader-circle"} /></span>
         <span class="name"><span class="ref quiet">{shortRef(item.node.ref)}</span> <ForgeTitle text={item.title} /></span>
         <span class="words"><span class="sep" aria-hidden="true">· </span>{words}</span>
         {pr && <span class="pr small"><StateIcon kind="pr" state="open" size={12} />{pr}</span>}

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The agent tools scoped to the project (#3277): list_sessions, read_session,
@@ -100,7 +100,7 @@ func TestSessionToolsReachTheProjectOnOtherMachines(t *testing.T) {
 			mu.Unlock()
 			return json.Marshal(wire.SessionCallReply{Said: s.Call.Op + " said", Title: lane.Title})
 		}
-		return nil, &controllink.AskError{Code: -32010, Message: "Agents can’t ask that of the control plane."}
+		return nil, &controllink.AskError{Code: -32010, Message: "Agent Loops can’t ask that of the control plane."}
 	})
 	last := func() wire.MachineSessionCall {
 		mu.Lock()

@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/agentsd/acp"
-	"github.com/alexec/agents/Go/internal/agentsd/diskjson"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The brief (#1801): what every agent is told once, before its first turn, that it cannot
@@ -30,7 +30,7 @@ import (
 
 // eventsBrief is EventWords.briefing (042): wait rather than poll.
 const eventsBrief = "Wait for an event (checks passing, this Mac waking) with wait_for_event, for sessions " +
-	"with wait_for_event on agent.ended naming them in agent, and to resume at a time with check_again, not repeated checks. " +
+	"with wait_for_event on agent.ended naming them in agent, and to resume at a time with wait_for_event on time.reached, not repeated checks. " +
 	"If told you are still waiting, you may end your turn; you will be started again when it happens. " +
 	"An event is a hint: before you act on it, read the state of what it is about now, by its ref; after a time-out, check the state now."
 
@@ -56,12 +56,7 @@ const leasesBrief = "Lease a shared resource with lease_resource before using it
 	// The machine's capacity (#4579).
 	"A lease or a start can wait for the machine, not only for a holder: before heavy work " +
 	"that no declared resource names (a long test suite, a Chromium, a simulator, a script that " +
-	"builds), lease capacity, which goes in line while the machine is near or at capacity. " +
-	// The person's booking (#4268).
-	"Before a step that gives me a short time to act (a code sent by text or email, a " +
-	"sign-in to approve on my phone), book me with lease_resource on person: minutes is how " +
-	"long my step takes, by is when it stops mattering. Book first, then start the clock " +
-	"(press Send code), then hand the step over, and release it the moment it is done."
+	"builds), lease capacity, which goes in line while the machine is near or at capacity."
 
 // endingBrief names the three ways a turn ends (#1801). Without it an agent learnt about
 // archiving only from archive_session's description, and one that had finished with
@@ -304,7 +299,7 @@ const memoryBrief = "Keep what you must remember after this session as one fact 
 // defers MCP tools, so a tool no paragraph names is one it does not know it has; and a
 // folder's AGENTS.md and skills reach only that folder. The browser and drive_screen are
 // named only where this host lists them, as tools/list does; hand_to_person not on a bot's
-// machine, where nobody answers it. The CI tools (#3706), make_app_repository (#3708) and the start-a-new-app skill (#3712) only where GitHub is connected.
+// machine, where nobody answers it. The CI tools (#3706), make_app_repository (#3708), make_public_repository (#4921) and the start-a-new-app skill (#3712) only where GitHub is connected.
 func toolsBrief(browser, screen, bot, github bool) string {
 	lines := []string{
 		"- notify: tell me that something happened, when you have no question for me.",
@@ -312,6 +307,7 @@ func toolsBrief(browser, screen, bot, github bool) string {
 		"- docs_search, then docs_read: find the docs for your work, in this folder and its docs connectors.",
 		"- estimate_issue: say what an issue or an epic will cost and take.",
 		"- manage_accounts: my outside accounts (gitlab.com, AWS…): find one before you make one, and add the one you make.",
+		"- manage_connectors: this folder's connectors (.agents/mcp.json). approve asks me to approve one that waits, as manage_workflows enable asks me to turn on a workflow that is mine to turn on: wait for my answer, never click Approve for me.",
 		"- agents-secret NAME, a command on your PATH: the value of one of my secrets that does not ask before use, for your own command, " +
 			"as in NAME=\"$(agents-secret NAME)\" your-command; never print it. agentsd records each read. " +
 			"A secret with Ask before use is refused: use the tool that puts it where it goes for you.",
@@ -324,7 +320,10 @@ func toolsBrief(browser, screen, bot, github bool) string {
 			"set_ci_secret puts a secret I gave you with ask_secret into it, without you seeing the value; never put a secret's value in a variable. "+
 			"For a secret with Ask before use it waits on my approval; when it names a request, wait for it with wait_for_event, then call it again.",
 			"- make_app_repository: make a new app's private GitHub repository from a starter, cloned here and added as a folder. "+
-				"Call it again after a step fails: it skips what is there.",
+				"The starters are template repositories: iphone-app (agentloops-dev/iphone-app-starter), web-service (agentloops-dev/web-service-starter), "+
+				"or one I name as owner/name. Call it again after a step fails: it skips what is there.",
+			"- make_public_repository: make a public GitHub repository from a folder's files. It is the only way to make one: "+
+				"it asks me on a card and makes nothing until I say yes. Never make a repository public with gh or git.",
 			"- When I ask for a new app (an iPhone app or a web service), by voice or typed, follow the start-a-new-app skill: "+
 				"it goes from the first question to my approval of the first deploy.")
 	}
@@ -336,7 +335,10 @@ func toolsBrief(browser, screen, bot, github bool) string {
 				"For a secret with Ask before use it waits on my approval; when it names a request, wait for it with wait_for_event, then call it again.",
 			"- generate_secret: make a new account's password, save it as one of my secrets and type it into the field. Never make a password yourself.",
 			"- capture_secret: save a value the page shows once (an app password, an API token) as one of my secrets. Never read it with browser_snapshot first.",
-			"- pair_web_page: open the app's web page in the browser, paired as me, for a step only the web page does (Connectors, Settings). Never ask me for a pairing code.")
+			"- browser_passkey: a software passkey, kept as one of my secrets, for a site that takes only a passkey or asks for one to confirm access. "+
+				"Call it before you open the page. Use a password and TOTP where the site takes them.",
+			"- pair_web_page: open the app's web page in the browser, paired as me, for a step only the web page does (Connectors, Settings). Never ask me for a pairing code. "+
+				"Never approve a connector or turn on a workflow there for me: manage_connectors and manage_workflows ask me.")
 		if !bot {
 			lines = append(lines, "- "+handToPersonName+": give me one step on the page that only I can do, such as a CAPTCHA or a sign-in.")
 		}

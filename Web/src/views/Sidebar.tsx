@@ -1,9 +1,9 @@
 // The page's one sidebar (#151), as the window's (#145, FolderListView.swift) and the Remote's
 // (RemoteSidebar.swift), and below 760 the root list, as the iPhone Remote's (#226, #235).
-// Things-style since #495 (#499): New Session at the top, in the folder last started in, and Agents'
+// Things-style since #495 (#499): Agents'
 // filters, a machine and a state (#2141); then what wants the person across every folder — Pinned, Needs You, Working, Unread — each drawn
 // only with something in it (#507), Needs You with what waits for an OK after its sessions (#773); then a group per folder, its sessions newest started first
-// with their state the row's mark, its Workflows fold (#885), and one Archived row opening a page; then the
+// with their state the row's mark under a Sessions fold that starts with New Session (#5267), its Workflows fold (#885), and one Archived row opening a page; then the
 // archived folders, Live Now (an admin's) and Projects (#2141); and at the foot what the hosts and
 // this browser are doing. The Activity pages are in Machines and Reports since #2141. Never more than three
 // levels deep: a folder's Workflows fold (#885) is the third. No host headings: a server's folder reads `host:Folder`. A folder's row only
@@ -33,7 +33,8 @@ import { folderLine, groupLabel, keeper, keepsInUnread, machineMark, machineStat
   connectorsPlace, folderSessions, projectGroups, rememberedFolder, rememberFolder, sharedProjects, smartAgents, smartApprovals, smartPulls,
   smartSuggestions, smartRows, smartTitles, withKept, groupsByIssue, issueGroups, type FolderKey, type ProjectGroup, type SmartRow } from "../model/sidebar";
 import { endedLine } from "../model/connectorSetup";
-import { updatedLine } from "../model/updated";
+import { lastUpdateSpoken, pageReadAt } from "../model/lastUpdate";
+import { LastUpdate } from "./LastUpdate";
 import { namedRelative, workflowSummary } from "../model/workflows";
 import { fromWireDate } from "../protocol/dates";
 import type { Agent, AgentsExportRequest, ControlMachine, FolderSummary, Request as PersonRequest, WorkflowSummary } from "../protocol/generated";
@@ -68,6 +69,7 @@ import { memo } from "../render/memo";
 import { ask } from "./MessageKinds";
 import { laterRequestOf, useListKeys } from "./ListKeys";
 import { laterTime, listKeyGlyph } from "../model/listKeys";
+import { Glyph, Icon, type IconName } from "./Icon";
 
 
 /** Folder Settings asked for another folder of the project, from Project Settings' Folders (#3280). */
@@ -189,7 +191,7 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
       .find((g) => [g.main, ...g.others].some((p) => placeKey(p.host.id, p.folder.folder.folder) === at))?.main;
     folds.set(owner?.host.id ?? r.host, owner?.folder.folder.folder ?? r.folder, true);
   }, [r.host, r.folder, r.session, r.workflow, r.page, r.archive, r.mcp]);
-  // The next New Session at the top starts here too (#495).
+  // The next New Session in the + menu starts here too (#495, #628).
   useEffect(() => {
     if (r.host && r.folder && r.compose) rememberFolder(storage, { host: r.host, folder: r.folder });
   }, [r.host, r.folder, r.compose]);
@@ -245,7 +247,6 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
       </header>
       {!held && <AgentFilters store={store} />}
       <div class="scroll" onKeyDown={(e) => moveWithKeys(e)}>
-        {folders.length > 0 && <NewSessionTopRow store={store} folders={folders} linkDown={linkDown} />}
         {/* The daily summary's page (#3721), above the smart groups, while the daily summary is on. */}
         {!held && <SummaryRow store={store} />}
         {/* A machine asking to join (#994): at the top, whatever groups are on, and with no folder yet. */}
@@ -260,7 +261,7 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
             each that is on in this browser's Settings (#846). */}
         {folders.length > 0 && smartRows.filter((row) => smartGroupsOn.value.has(row) && (!held || aloneRows.has(row))).map((row) => (
           <SmartFold key={row} row={row} store={store} folders={folders} places={places} query={query} linkDown={linkDown}
-            downSince={session.state.value.kind === "down" ? session.state.value.since : undefined} />
+            readSince={pageReadAt(session.state.value, store.copyAt.value)} />
         ))}
         {/* One group per project (#495, #3278), its name the group's heading, its sessions the rows. A
             project with one folder is that folder's group, as before. */}
@@ -291,8 +292,8 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
         )}
         {/* Every person's running agents for an admin, and every project (#2141): pages in the chat's place. */}
         {!held && <section class="agents-pages" aria-label="More">
-          {adminOf(store) === true && <AgentsPageRow id="live" title="Live Now" icon={"◉"} />}
-          <AgentsPageRow id="projects" title="Projects" icon={"▦"} />
+          {adminOf(store) === true && <AgentsPageRow id="live" title="Live Now" icon="radio" />}
+          <AgentsPageRow id="projects" title="Projects" icon="layout-grid" />
         </section>}
       </div>
       {/* What the hosts and this browser are doing, pinned at the foot: status lines rather than
@@ -310,7 +311,7 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
         ))}
         {offline.filter((host) => !store.isMac(host.id)).map((host) => (
           <p class="foot-line" role="status" key={host.id}>
-            <span aria-hidden="true">⚡︎</span> {footLine(host)}
+            <Icon name="plug" /> {footLine(host)}
             {/* One on a stopped workspace offers Start, as its strip (#961). */}
             {host.workspace && offersStart(host.state, host.workspace) ? (
               <button type="button" class="foot-start" disabled={store.hostsBeingStarted.value.includes(host.id)}
@@ -322,7 +323,7 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
             may have gone from view, and that what they held is kept. A server's are named. */}
         {store.hosts.value.flatMap((host) => (store.storeNotes.value[host.id] ?? []).map((note) => (
           <p class="foot-line store-note" role="status" key={`${host.id}|${note}`}>
-            <span aria-hidden="true">⚠︎</span> {store.isMac(host.id) ? note : `${host.name}: ${note}`}
+            <Icon name="triangle-alert" /> {store.isMac(host.id) ? note : `${host.name}: ${note}`}
           </p>
         )))}
         <div class="identity">
@@ -366,7 +367,7 @@ function SummaryRow({ store }: { store: Store }) {
     <button class={`row activity-row summary-row${chosen ? " chosen" : ""}${newest?.unread ? " unread" : ""}`}
       aria-current={chosen} title="Your daily summary: what landed, what failed and what waits on you"
       onClick={() => go({ nav: "agents", section: "summary" })}>
-      <span class="activity-icon" aria-hidden="true">{"☀"}</span>
+      <Icon name="sun" class="activity-icon" />
       <span class="title">Summary{newest?.unread && <span class="dot" aria-label="Unread" />}</span>
       <span class="small quiet line">{newest?.title ?? nonePage}</span>
     </button>
@@ -374,11 +375,11 @@ function SummaryRow({ store }: { store: Store }) {
 }
 
 /** A row at the sidebar's foot that opens one of Agents' pages in the chat's place. */
-function AgentsPageRow({ id, title, icon }: { id: string; title: string; icon: string }) {
+function AgentsPageRow({ id, title, icon }: { id: string; title: string; icon: IconName }) {
   const chosen = route.value.nav === "agents" && route.value.section === id;
   return (
     <button class={`row activity-row${chosen ? " chosen" : ""}`} aria-current={chosen} onClick={() => go({ nav: "agents", section: id })}>
-      <span class="activity-icon" aria-hidden="true">{icon}</span>
+      <Icon name={icon} class="activity-icon" />
       <span class="title">{title}</span>
     </button>
   );
@@ -446,35 +447,12 @@ function newSessionStart(store: Store, folders: Placed[], linkDown: boolean): ((
   return () => go({ host: target.host, folder: target.folder, compose: true });
 }
 
-/** The folder New Session starts in, at the top of the sidebar and in the + menu (#628). */
+/** The folder New Session in the + menu starts in (#628). */
 function newSessionTarget(folders: Placed[]): FolderKey | undefined {
   const r = route.value;
   const live = folders.map(({ host, folder }) => ({ host: host.id, folder: folder.folder.folder }));
   const open = r.host && r.folder ? { host: r.host, folder: r.folder } : undefined;
   return newSessionFolder(live, rememberedFolder(storage), open);
-}
-
-/**
- * The first row of the sidebar (#495): a new session, in the folder the last one was started in,
- * as the window's and the Remote's. Lit while that form is open. A folder's menu starts one in
- * that folder instead, and the form's folder name switches to another.
- */
-function NewSessionTopRow({ store, folders, linkDown }: { store: Store; folders: Placed[]; linkDown: boolean }) {
-  const r = route.value;
-  const target = newSessionTarget(folders);
-  const chosen = !!r.compose && !!target && r.host === target.host && r.folder !== undefined
-    && folderKey(r.folder) === folderKey(target.folder);
-  return (
-    <div class="nav-item new-session-top">
-      <div class={`row new-session${chosen ? " chosen" : ""}`}>
-        <button class="pick" aria-current={chosen} disabled={linkDown || !target || !store.hostIsOnline(target.host)}
-          onClick={() => target && go({ host: target.host, folder: target.folder, compose: true })}>
-          <span class="pin-mark" aria-hidden="true">✎</span>
-          <span class="title">New Session</span>
-        </button>
-      </div>
-    </div>
-  );
 }
 
 /** A row under a group at the top: a session or a pinned workflow, with the folder it is in. */
@@ -489,12 +467,13 @@ type SmartLine = Placed & ({ kind: "session"; agent: Agent } | { kind: "workflow
  * searching only with a match (#507); Unread still is while it keeps the open session. Folded, it
  * lists nothing but counts.
  */
-function SmartFold({ row, store, folders, places, query, linkDown, downSince }: {
+function SmartFold({ row, store, folders, places, query, linkDown, readSince }: {
   row: SmartRow; store: Store; folders: Placed[]; query: string; linkDown: boolean;
   /** Each folder's group name (#3278), which a row says after its title. */
   places: ReadonlyMap<string, string>;
   /** When the link was lost: Needs You says its count was last true then (#1163). */
-  downSince?: number | undefined;
+  /** When what the page shows was read, while it is not live (#5141). */
+  readSince?: number | undefined;
 }) {
   const r = route.value;
   const parsed = query ? { ...parseQuery(query), said: store.saidLines.value, onIssue: store.issueSessions.value, issueHeadings: store.issueHeadings.value } : undefined;
@@ -591,7 +570,9 @@ function SmartFold({ row, store, folders, places, query, linkDown, downSince }: 
   if (parsed ? lines.length === 0 && asked.length === 0 && later.length === 0 && approvals.length === 0 && pulls.length === 0 && suggestions.length === 0
     : count === 0 && !keptPlace && deferred.length === 0) return null;
   const title = smartTitles[row];
-  const updated = row === "needsYou" && downSince !== undefined ? updatedLine(downSince) : null;
+  // How old the count is while the link is lost (#1163, #5141).
+  const readAt = row === "needsYou" ? readSince : undefined;
+  const updated = readAt !== undefined ? lastUpdateSpoken(readAt) : null;
   return (
     <details class={`smart ${row}`} role="group" aria-label={title} open={open}
       onToggle={(e) => {
@@ -601,7 +582,7 @@ function SmartFold({ row, store, folders, places, query, linkDown, downSince }: 
       <summary class="sidebar-head-label" data-fold={`smart.${row}`}
         aria-label={[title, count > 0 ? `${count}` : "none", updated].filter(Boolean).join(", ")}>
         {title}
-        {updated && <span class="updated">{updated}</span>}
+        {readAt !== undefined && <LastUpdate at={readAt} />}
         {count > 0 && <span class={`count${row === "needsYou" ? " needs" : ""}`}>{count}</span>}
       </summary>
       {open && asked.map(({ host: on, folder: placed, request }) => {
@@ -772,20 +753,33 @@ const FolderFold = memo(function FolderFold({ store, host, folder: summary, quer
   const workflowsOpen = searching || folds.isWorkflowsOpen(host.id, folder);
   // Under a Sessions row, as the workflows are under theirs (#2312), the only layout (#2381); not in a
   // tab of the folder alone, whose group is headed Sessions already. A search holds it open.
-  const groupsSessions = !isAlone && sessions.length > 0;
+  const here = r.host === host.id && r.folder !== undefined && folderKey(r.folder) === folderKey(folder);
+  // With New Session first in it (#5267), a folder with no live session has the fold too; a search, for sessions, hides the row.
+  const groupsSessions = !isAlone && (sessions.length > 0 || !searching);
+  const composing = here && !!r.compose && !r.session && !r.workflow && !r.page && !r.archive && !r.mcp;
+  const newSession = !searching && (
+    <div class="nav-item new-session-item">
+      <div class={`row new-session${composing ? " chosen" : ""}`}>
+        <button class="pick" aria-current={composing} disabled={down} title="Start a new session in this folder"
+          onClick={() => go({ host: host.id, folder, compose: true })}>
+          <Icon name="square-pen" class="pin-mark" />
+          <span class="title">New Session</span>
+        </button>
+      </div>
+    </div>
+  );
   const sessionsOpen = searching || folds.isSessionsOpen(host.id, folder);
   const nameMatches = label.toLowerCase().includes(query.toLowerCase());
   if (searching && sessions.length === 0 && archived.length === 0 && byIssue.length === 0 && workflows.length === 0
     && archivedWorkflows.length === 0 && !nameMatches) return null;
 
-  const here = r.host === host.id && r.folder !== undefined && folderKey(r.folder) === folderKey(folder);
   const archivedSessionCount = summary.counts.archived ?? 0;
   const pageRow = (page: ArchiveRoute, mark: string, title: string, count: string) => (
     <div class="nav-item">
       <div class={`row page-row${here && r.archive === page ? " chosen" : ""}`}>
         <button class="pick" aria-current={here && r.archive === page} aria-label={`${title}, ${count}`}
           title={count} onClick={() => go({ host: host.id, folder: folder, archive: page })}>
-          <span class="pin-mark" aria-hidden="true">{mark}</span>
+          <Glyph of={mark} class="pin-mark" />
           <span class="title">{title}</span>
         </button>
       </div>
@@ -885,11 +879,11 @@ const FolderFold = memo(function FolderFold({ store, host, folder: summary, quer
       ) : (
       <div class={`row folder${drop.targeted ? " drop-target" : ""}`} {...drop.props}>
         <button class="disclosure" aria-label={unfolded ? `Fold ${label}` : `Unfold ${label}`} aria-expanded={unfolded}
-          tabIndex={-1} disabled={searching} onClick={() => fold(!unfolded)}>{unfolded ? "⌄" : "›"}</button>
+          tabIndex={-1} disabled={searching} onClick={() => fold(!unfolded)}><Icon name={unfolded ? "chevron-down" : "chevron-right"} /></button>
         <button class="pick" aria-expanded={unfolded} data-fold="folder" title={folderPath(folder)}
           onClick={(e) => {
-            // The row folds or unfolds, and nothing else (#375): a session starts from New Session
-            // at the top. Not when the arrow keys land here (a click with no detail): moving
+            // The row folds or unfolds, and nothing else (#375): a session starts from New Session,
+            // the first row of its Sessions (#5267). Not when the arrow keys land here (a click with no detail): moving
             // through the list folds nothing.
             if (e.detail > 0 && !searching) fold(!unfolded);
           }}
@@ -918,9 +912,9 @@ const FolderFold = memo(function FolderFold({ store, host, folder: summary, quer
               <summary data-fold="sessions" aria-label={`Sessions, ${sessions.length}`}>
                 Sessions<span class="count">{sessions.length}</span>
               </summary>
-              {sessionsOpen && sessionRows.map((tree) => row(tree.agent, tree))}
+              {sessionsOpen && <>{newSession}{sessionRows.map((tree) => row(tree.agent, tree))}</>}
             </details>
-          ) : sessionRows.map((tree) => row(tree.agent, tree))}
+          ) : <>{newSession}{sessionRows.map((tree) => row(tree.agent, tree))}</>}
           {/* A search for an epic (#3900): a heading for each issue, the epic's own first, held open as a search holds Sessions. */}
           {byIssue.map((group) => (
             <div class="issue-group" role="group" key={group.issue.node.ref} aria-label={`${group.title}, ${group.sessions.length}`}>
@@ -969,7 +963,7 @@ const FolderFold = memo(function FolderFold({ store, host, folder: summary, quer
             <div class={`row page-row${connectorsHere && r.mcp ? " chosen" : ""}`}>
               <button class="pick" aria-current={connectorsHere && !!r.mcp} aria-label={`Connectors, ${mcpTally || endedConnection ? connectorsWords : "none yet"}`}
                 title={connectorsWords} onClick={() => go({ host: connectorsHost, folder: connectorsFolder, mcp: true })}>
-                <span class={`pin-mark${mcpTally?.failing || endedConnection ? " warns" : ""}`} aria-hidden="true">▤</span>
+                <Icon name="plug" class={`pin-mark${mcpTally?.failing || endedConnection ? " warns" : ""}`} />
                 <span class="title">Connectors{mcpServers.length > 0 && <span class="count">{mcpServers.length}</span>}</span>
               </button>
             </div>
@@ -1064,7 +1058,7 @@ export const SidebarSession = memo(function SidebarSession({ store, host, folder
     // Beside this tab or in a window of its own (#826), as the Mac's Open in New Window.
     { label: "Open in New Tab", help: "Open this session in a new browser tab", run: () => openInNewTab(host, agent) },
     ...sessionActions(agent, store.sessionPinsIn(host, folder).includes(agent.id), startedBy(store, host, agent),
-      store.has(host, Capability.mute1), canMoveOn(store, host)).map(({ action, label: words, help, shortcut }) => ({
+      store.has(host, Capability.mute1), canMoveOn(store, host), store.has(host, Capability.agentsStartNow1)).map(({ action, label: words, help, shortcut }) => ({
       label: words, help, disabled: down || !!store.onItsWay.value[agent.id], ...shortcut ? { shortcut } : {},
       run: () => runSessionAction(store, host, agent, action),
     })),
@@ -1110,7 +1104,7 @@ export const SidebarSession = memo(function SidebarSession({ store, host, folder
           aria-label={tree.isUnfolded ? `Hide ${tree.children} started sessions` : `Show ${tree.children} started sessions`}
           title={tree.isUnfolded ? "Hide the sessions it started" : `Show the ${tree.children} sessions it started`}
           onClick={() => folds.setSession(agent.id, !tree.isUnfolded)}>
-          {tree.children}<span class={`chevron${tree.isUnfolded ? " open" : ""}`} aria-hidden="true">›</span>
+          {tree.children}<Icon name="chevron-right" class={`chevron${tree.isUnfolded ? " open" : ""}`} />
         </button>
       )}
     </div>
@@ -1143,7 +1137,7 @@ function folderPath(folder: string): string {
 /** Every row the keys move through, in the order shown. */
 function navRows(list: HTMLElement): HTMLElement[] {
   return [...list.querySelectorAll<HTMLElement>(
-    ".new-session-top .pick, .activity .row, details.smart > summary, details.sessions > summary, details.workflows > summary, .folder-fold > .row.folder .pick, .nav-item .row.pin .pick, .nav-item .row.session, .nav-item .row.workflow .pick, .nav-item .row.page-row .pick, details.archived > summary",
+    ".nav-item .row.new-session .pick, .activity .row, details.smart > summary, details.sessions > summary, details.workflows > summary, .folder-fold > .row.folder .pick, .nav-item .row.pin .pick, .nav-item .row.session, .nav-item .row.workflow .pick, .nav-item .row.page-row .pick, details.archived > summary",
   )].filter((el) => el.offsetParent !== null);
 }
 

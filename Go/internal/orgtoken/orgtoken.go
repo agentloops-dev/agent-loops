@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 const (

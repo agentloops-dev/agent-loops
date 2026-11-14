@@ -10,9 +10,11 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [A branch can move under a merge](branch-can-move-mid-merge.md) — another session's checkout lands your merge on…
 - [Brief, not AGENTS.md, for app tools](brief-not-agents-md-for-app-tools.md) — AGENTS.md/skills are this repo only; a new app tool gets a gated brief line
 - [Channels are MCP servers](channels-are-mcp-servers.md) — Alex 2026-10-16: no built-in Slack/Discord adapters; #1223 removed Slack + Need…
+- [Animated top inset loops AppKit layout](animated-top-inset-loops-appkit-layout.md) — #5189: no animated height in the Mac chat's top inset; repro at 1058x662, presses 0.3–0.6 s apart while working
 - [chat-transcript-scroll-geometry-lies](chat-transcript-scroll-geometry-lies.md) — ChatTranscript's LazyVStack re-measures every frame, so geometry can't tell a reader's scroll from the stack; 
 - [Check go-darwin before arming](check-go-darwin-before-arming.md) — auto-merge ignores non-required checks; #3503 broke main (#3517)
 - [Go tests on the Mac host](go-tests-on-the-mac-host.md) — #4709: go.sh clean env, go/tmp TMPDIR, go.mod toolchain, tests skip F_FULLFSYNC
+- [Scratch host dies on a reused slug](scratch-host-dies-on-a-reused-slug.md) — "Keychain did not let this program read" then a silent exit: the root path has an old key item; use a new --slug
 - [Clean up worktrees](clean-up-worktrees.md) — disk filled 2026-10-03 (80 GB worktrees); promp…
 - [Never mutate source to prove a test](do-not-mutate-source-to-prove-a-test.md) — an interrupt leaves it on disk; assert the prop…
 - [Drive a scratch window by pid with AX](drive-a-scratch-window-by-pid-with-ax.md) — Swift AXUIElement helper by pid presses cards a…
@@ -53,12 +55,12 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Settle the UX before building depth](settle-ux-before-building-depth.md) — layout first, confirmed by running it; machiner…
 - [stacked-accessibility-labels-crash-appkit](stacked-accessibility-labels-crash-appkit.md) — An .accessibilityLabel on a view whose child Text already has one crashed the Mac app (SIGSEGV, stack guard) t
 - [Stale local main, stale worktrees](stale-local-main-stale-worktrees.md) — new worktrees branch from local main; pull the main checkout (…
-- [Stopped with the daemon](stopped-with-the-daemon-resumes.md) — sometimes resumes, often not; wait ~10 min, then archive + new lane in its worktree
+- [Stopped with the daemon](stopped-with-the-daemon-resumes.md) — a dying start lost the pick-up list (#4917, fixed); if still stopped after ~10 min, archive + new lane in its worktree
 - [SwiftUI card taps and observation](swiftui-card-taps-and-observation.md) — the card must be the Button (nested buttons kee…
 - [Type into a scratch window by pid](type-into-a-scratch-window-by-pid.md) — AX set never moves a SwiftUI search binding; AX…
 - [Browser tool, not Chrome](use-browser-tool-not-chrome.md) — Alex 2026-11-06: web work via browser_* tools, not the cdp.mjs private Chrome
 - [Vendor scripts touch the real home](vendor-scripts-touch-the-real-home.md) — 048 walks need AGENTS_TEST_INSTALL_SCRIPT; ui.s…
-- [Voice mode not in the scratch app](voice-mode-not-in-scratch-app.md) — real mic/speech works only in the installed Mac app; walk with the voice command; a spoken walked reply crashes (#4853); sound in videos via the tape (#4854)
+- [Voice mode not in the scratch app](voice-mode-not-in-scratch-app.md) — real mic/speech works only in the installed Mac app; walk with the voice command; a walked reply often crashes in Kokoro's Core ML on macOS 27.0.1, not voice processing (#4853); sound in videos via the tape (#4854)
 - [Walk socket traps (#1172)](walk-socket-in-process-walks.md) — AXEnhancedUserInterface, legacy children, List user-select paths, GPU laye…
 - [walk-what-you-ship](walk-what-you-ship.md) — Never ship a build whose final code was not run on a scratch Mac app; a walk of an earlier commit does not cov
 - [Where each agent reads plugins](where-each-agent-reads-plugins.md) — project folders, manifests, index files per age…
@@ -67,9 +69,17 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [TOTP for agent sign-ins](totp-for-agent-sign-ins.md) — scripts/totp.sh <service>, seeds in ~/.agents/secrets/<service>-totp; otpauth, not pyotp/pquerna (stale)
 - [Walks and the machine lock](remote-walk-machine-lock.md) — Remote: pair first, approve hosts with walk.py "=Approve"; host to host on the Mac: approve both scratch hosts first; re-pair loses the lock
 - [go fmt rewrites other files](go-fmt-rewrites-other-files.md) — Go/scripts/go.sh fmt touches files on main that are not gofmt-clean; restore them
-- [The one app's program keeps its old name](one-app-program-keeps-agents-host-name.md) — Agents.app runs Contents/MacOS/Agents Host (#4225); match both names in pgrep
+- [The one app's program keeps its old name](one-app-program-keeps-agents-host-name.md) — Agent Loops.app (was Agents.app) runs Contents/MacOS/Agents Host (#4225, #5297); match every name in pgrep
 - [Developer ID has no Apple sign-in](developer-id-has-no-apple-sign-in.md) — Apple leaves applesignin out of Developer ID profiles; only the Live build has it (#4283); no release secret
-- [Shell is a stranger to the live socket](shell-is-a-stranger-to-the-live-socket.md) — control-role methods refused from a script; pair_web_page missing 2026-11-10; set connectors up by PR + Alex Approve
+- [Shell is a stranger to the live socket](shell-is-a-stranger-to-the-live-socket.md) — control-role methods refused from a script; ask by manage_connectors approve / manage_workflows enable (a #4538 card); pair_web_page needs Serve to browsers
 - [Claude works after its prompt ends](claude-works-after-its-prompt-ends.md) — background command's end starts a cycle with no prompt; agentsd's unprompted turn (#4323)
 - [Browser screenshots land in the main checkout](browser-screenshots-land-in-the-main-checkout.md) — browser_take_screenshot writes only under ~/Agents; use your worktree's build/
 - [Lineage tests fail on Mac main](lineage-tests-fail-on-mac-main.md) — health/sessions/signin agentsd tests fail on main on the Mac; check on a main copy, let Linux CI prove them
+- [New names for each round of PR shots](pr-shots-need-new-names-each-round.md) — GitHub caches images by URL; a re-run of pr-shots.sh under the same names showed Alex old pictures (#4933)
+- [Toolbar draws catalogue symbols empty](toolbar-draws-catalogue-symbols-empty.md) — macOS 27 toolbar items lose Image("lucide.x"); use Image(toolbarIcon:) there, Image(icon:) elsewhere (#4976)
+- [Outside code is not built here](outside-code-is-not-built-here.md) — cloning/building SwiftDraw or running picosvg was refused; data tarballs are fine; prefer platform libraries (#4976)
+- [The repo is agent-loops](repo-is-agent-loops.md) — agentloops-dev/agent-loops since 2026-11-13 (#5296); old names redirect; daemon alias learnt daily
+- [Never link node_modules into a worktree](never-link-node-modules-into-a-worktree.md) — the AgentsHost build's npm ci empties the link's target, the main checkout's packages (#5137)
+- [Chrome port 0 sets webdriver](chrome-port-zero-sets-webdriver.md) — Chrome 157 with --remote-debugging-port=0 says navigator.webdriver true; pick a free port, read /json/version (#5207)
+- [Ink drops Enter in a long write](ink-drops-enter-in-a-long-write.md) — claude setup-token lost the Enter sent with a real code; write the code, wait, then \r alone (#5202)
+- [Reach a codespace agentsd socket](reach-a-codespace-agentsd-socket.md) — gh codespace ssh -- -N -L forwards daemon.sock as control; server log path; no strace (ptrace_scope 1)

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 )
 
 // scrape reads the metrics as from remote.

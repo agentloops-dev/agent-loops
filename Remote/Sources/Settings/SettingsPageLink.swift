@@ -17,10 +17,11 @@ struct SettingsPageLink<Content: View>: View {
             Form { content() }
                 .scrollContentBackground(.hidden)
                 .background(Paper.ground)
+                .staleBanner()
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
         } label: {
-            Label(title, systemImage: systemImage)
+            Label(title, icon: systemImage)
         }
     }
 }

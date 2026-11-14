@@ -69,7 +69,11 @@ client could subscribe to them, would be possible in this shape; it is not done.
 An agent can wait for its own folder's events and for this Mac's. It cannot wait for
 another folder's events. To wait for particular sessions, it waits on `agent.ended` with `agent`, which reaches every
 session of the project, on every machine. To
-resume at a time, it calls `check_again`.
+resume at a time, it waits on `time.reached` alone, with `until_minutes` (#4843). It is a
+marker, not an event: nothing raises it on the bus, so the wait ends at its deadline and
+the agent is told the time has come. A list with `time.reached` and other events is
+refused, since every wait already ends at its deadline, and a workflow trigger refuses it:
+a schedule runs at a time.
 
 ## Agents
 
@@ -91,13 +95,13 @@ an event already on the log.
 | `agent.finished` | — | agent, outcome, afterwards | An agent ended a turn having done its work. `afterwards` is `archive_requested` when the turn ends waiting for you to approve archiving it, `archived` when the session is archived as the turn ends, else `stay`. `outcome` is `done`, `nothing_to_do`, `needs_answer` or `waiting` (#1916 removed `partly_done` and `stuck`). |
 | `agent.asked_permission` | — | agent | An agent is asking for permission. |
 | `agent.asked_form` | — | agent | An agent raised a form to fill in. |
-| `agent.waiting` | — | agent, waiting_on | An agent ended its turn waiting on something. When `waiting_on` names agents or a time to check again, the agent resumes by itself. See [Statuses and groups](statuses.md). |
+| `agent.waiting` | — | agent, waiting_on | An agent ended its turn waiting on something. When `waiting_on` names agents, the agent resumes by itself when they end or its wait's time limit comes. See [Statuses and groups](statuses.md). |
 | `agent.stopped` | — | agent, by | An agent was stopped before finishing. `by` is `you`, `admin` (an admin in the Console, #2435), `cost_limit` or `unknown`. |
 | `agent.failed` | — | agent, reason | An agent ended in an error. `reason` is `allowance_spent`, `rate_limited`, `process_died`, `sign_in_refused`, `runtime_error`, `sandbox_failed`, `max_tokens`, `max_turn_requests`, `refusal`, `daemon_gone`, `stopped_by_agent` or `unrecognised`. |
 | `agent.ended` | agent | agent, how | An agent ended: it finished its turn, was stopped, or failed. `how` is `done`, `nothing_to_do`, `needs_answer`, `stopped` or `failed`; a turn that ends waiting is not raised. A wait on it names the sessions in `agent`, by id or exact title, or sets `any: true`, and waits on it alone; it reaches every session of the project, on every machine, and wakes when all have ended or, with `wake_on: any`, at the first. One that has already ended answers at once. See [Wait for sessions](../how-to/wait-for-something.md#wait-for-sessions). |
 | `agent.archive_requested` | — | agent, outcome | An agent's turn ended after `archive_session`, and its session waits for you to approve archiving it. `outcome` is its last report's, when it made one. |
 | `agent.messaged` | — | agent, from, from_title | An agent was sent a message by another agent with `message_session`. `agent` is the one it was sent to; `from` is the sender's id and `from_title` its title. |
-| `agent.background_ended` | — | agent, commands, count, after_restart | The background commands an agent left running after its turn all ended (#4577): a dev server, a build or a watcher that its runtime runs in a process group of its own, or a terminal it asked for. `commands` names them (at most four), `count` says how many. Only that agent's own wait wakes on it, so an agent that ends its turn on a background build waits with `wait_for_event` on `agent.background_ended` and is started again when it ends. Looked at every 30 s. Not raised for processes that end within a turn, nor on Claude, which starts itself again when its command ends; a wait on it there, or with nothing running in the background, is refused. After an Agents restart the processes that outlived their runtime are watched again, and the event has `after_restart` `true`; a Claude session with no wait open is then sent a prompt, as its runtime would have started itself. |
+| `agent.background_ended` | — | agent, commands, count, after_restart | The background commands an agent left running after its turn all ended (#4577): a dev server, a build or a watcher that its runtime runs in a process group of its own, or a terminal it asked for. `commands` names them (at most four), `count` says how many. Only that agent's own wait wakes on it, so an agent that ends its turn on a background build waits with `wait_for_event` on `agent.background_ended` and is started again when it ends. Looked at every 30 s. Not raised for processes that end within a turn, nor on Claude, which starts itself again when its command ends; a wait on it there, or with nothing running in the background, is refused. After an Agent Loops restart the processes that outlived their runtime are watched again, and the event has `after_restart` `true`; a Claude session with no wait open is then sent a prompt, as its runtime would have started itself. |
 | `agent.archived` | — | agent, by, outcome | An agent was archived. `by` is `you`, or `agent` when the agent that started it archived it with `archive_session`. `outcome` is its last report's, when it made one. |
 | `agent.deleted` | — | agent, because | An archived agent was deleted with its conversation. `because` is `age` or `person`. |
 
@@ -126,6 +130,12 @@ counting again from the next agent that works.
 | Event | Filter by | Details | What it means |
 | --- | --- | --- | --- |
 | `branch.moved` | branch, any | branch, from, to | A branch an agent works on moved; never the default branch. A wait names the branch or sets `any: true` (#3797). |
+
+## Builds
+
+| Event | Filter by | Details | What it means |
+| --- | --- | --- | --- |
+| `ci.slowed` | repo, workflow, job | repo, workflow, job, branch, first_slow_run, first_slow_run_url, last_fast_run, last_fast_run_url, median_before, median_after, score | A job's run time on the default branch stepped up (#5200). The machine's daemon finds it in its build timings, with the per-job change finder of `Go/internal/citimings`. `first_slow_run` and `last_fast_run` are `ci-run` refs, as `github:run:owner/name#123`; `median_before` and `median_after` are the job's run time in seconds on each side; `repo` is `owner/name`. Raised once for each change, in each folder that pushes to the repository, and only for a change whose first slow run is at most 7 days old. A job that got faster sends nothing, and so does a longer wait for a runner or a turn: that is load, not a commit. Each machine that watches the repository finds the same change with the same envelope id (`<first_slow_run>@ci.slowed/<workflow>/<job>`), so the bus keeps one copy. GitHub only, as the build timings are. |
 
 ## Files
 
@@ -178,7 +188,7 @@ they are `machine.`.
 | `lease.released` | — | resource, how | A lease was given back, ended or ran out. `how` is `released`, `ended` or `expired`. |
 | `mac.sleep` | — | | The Mac is going to sleep. Mac only. |
 | `mac.wake` | — | | The Mac woke up. Mac only. |
-| `machine.disk_low` | — | volume, free_bytes, free_percent, level, threshold, worktrees | Free space on a volume holding the Agents root, a folder or a worktree fell below its threshold. `level` is `low` (below 10% of the disk) or `critical` (below 1%, where commands start failing); Folder Settings ▸ Disk Space moves both. `threshold` is the line it fell below, in bytes. `worktrees` names the largest worktrees on the volume and their sizes, measured within a budget, so `over` means at least. Raised once per crossing; falling further from low to critical is a second crossing. The window shows a strip across the top while it lasts. On a Linux server the volume is called "This server’s disk". |
+| `machine.disk_low` | — | volume, free_bytes, free_percent, level, threshold, worktrees | Free space on a volume holding the Agent Loops root, a folder or a worktree fell below its threshold. `level` is `low` (below 10% of the disk) or `critical` (below 1%, where commands start failing); Folder Settings ▸ Disk Space moves both. `threshold` is the line it fell below, in bytes. `worktrees` names the largest worktrees on the volume and their sizes, measured within a budget, so `over` means at least. Raised once per crossing; falling further from low to critical is a second crossing. The window shows a strip across the top while it lasts. On a Linux server the volume is called "This server’s disk". |
 | `machine.disk_ok` | — | volume, free_bytes, free_percent, threshold | Free space on a volume that was low climbed back above its threshold, by a margin of a tenth of it (at least 1 GB) so it does not flap. |
 | `machine.busy` | — | level, signal, load_per_core, memory_pressure, swap_used_percent | The machine is near or at capacity (#4578). `level` is `near` (load per core above 2.0) or `full` (load per core above 3.0, or memory pressure `critical`); `signal` is what put it there: `load` or `memory_pressure`. Memory pressure `warn` and swap are reported but give no level: on macOS both stay high when the machine is not busy (#4583). Load per core is the 1-minute load average over the cores; memory pressure is the kernel's (macOS `kern.memorystatus_vm_pressure_level`, Linux PSI). Looked at every 15 s. Raised as the level leaves `ok`, not when it goes from near to full. `machine/usage` carries the same signals and the level as `capacity`. |
 | `machine.ok` | — | was, load_per_core, memory_pressure, swap_used_percent | The machine that was near or at capacity is `ok` again: every signal was under its line for two looks in a row, so it does not flap. `was` is `near` or `full`. |
@@ -188,13 +198,13 @@ they are `machine.`.
 | `cost.allowance_out` | — | runtime, until, retry_after, reason | A runtime's allowance ran out, its credit was used up, or it failed. `until` is the time the provider gave, when it gave one; `retry_after` is when the app next checks it. See [Keep going when a runtime runs out](../how-to/keep-going-when-a-runtime-runs-out.md). |
 | `cost.allowance_back` | — | runtime, how | A runtime is back: `check` (the app's check passed), `person` (Mark available), `worked` (a turn on it worked), `time` (a rate limit's wait passed) or `another host` (a server said so). |
 | `account.read` | — | service, address, machine, agent | `manage_accounts` read an outside account: a `get`, or a `list` filtered to its service (#4157). A `list` with no service reads no account. Never a value of the account. |
-| `account.changed` | — | service, address, machine, agent, change | `manage_accounts` added an account (`change` is `added`) or put one in another's place (`edited`). |
+| `account.changed` | — | service, address, machine, agent, change | `manage_accounts` added an account (`change` is `added`), put one in another's place (`edited`), or took one out (`removed`, #5253). |
 | `secret.read` | — | name, machine, agent, use, place | agentsd gave a session a secret (#4156). `use` is `fill` (`fill_secret`; `place` is the field's domain), `ci` (`set_ci_secret`; `owner/repo`), `mcp` (an HTTP MCP server's header or url, filled by agentsd on each request; the server's name) or `env` (given at the session's start: its own secrets as variables, `place` is `session`, and each MCP server's `${NAME}`, the server's name) or `command` (`agents-secret NAME`, #4178; `place` is `agents-secret`, or `terminal` with no agent for a call with no session's grant that a person allowed, #4179). Never the value or its hint. Every value is sealed in `~/.agents-secrets/sealed.json`, which only agentsd opens, so each read goes through agentsd and is recorded. |
 | `secret.denied` | — | name, machine, agent, use, place | A person denied a use of a secret with Ask before use. |
 | `secret.changed` | — | name, machine, change, agent | A secret was set (`change` is `added`), replaced (`replaced`) or removed (`removed`) on this machine: in Settings ▸ Secrets, by `ask_secret`, or as a session's own. `agent` is there for a session's own secret. |
-| `server.offline` | — | server | A server's connection dropped. Raised once, while the Agents window is open. |
-| `server.online` | — | server | A server that was offline is back. Raised once, while the Agents window is open. |
-| `system.restarted` | — | reason, down_since, down_for, down_for_text | Agents started again, on a Mac or a server. `reason` is `stopped` (a clean stop was recorded), `crashed` (it was alive and never said it stopped) or `first_start` (nothing was recorded). `down_since` is when it stopped or was last alive; `down_for` is the gap in seconds and `down_for_text` in words ("3 min", or "unknown"). See [Restarts](#restarts). |
+| `server.offline` | — | server | A server's connection dropped. Raised once, while the Agent Loops window is open. |
+| `server.online` | — | server | A server that was offline is back. Raised once, while the Agent Loops window is open. |
+| `system.restarted` | — | reason, down_since, down_for, down_for_text | Agent Loops started again, on a Mac or a server. `reason` is `stopped` (a clean stop was recorded), `crashed` (it was alive and never said it stopped) or `first_start` (nothing was recorded). `down_since` is when it stopped or was last alive; `down_for` is the gap in seconds and `down_for_text` in words ("3 min", or "unknown"). See [Restarts](#restarts). |
 
 ## Requests
 
@@ -255,10 +265,10 @@ What is had again after a restart:
 
 What is not: events that happen once and that only the daemon sees, such as `agent.*`,
 `lease.*`, `workflow.*`, `mac.sleep` and `mac.wake`. Nothing recorded them. `server.*` is told
-by the Agents window, and a change while the daemon was down is not told again.
+by the Agent Loops window, and a change while the daemon was down is not told again.
 
 An agent whose wait was open over a restart is not woken only to be told. At its next wake,
-by its event or its time limit, the wake says when Agents restarted, for how long it was down,
+by its event or its time limit, the wake says when Agent Loops restarted, for how long it was down,
 and which of the events it waits on may be missing, so it can check the state itself (the
 branch or the pull request). A wait only on events that are had again says
 that they were caught up. To be woken by the restart itself, wait on `system.restarted`.
@@ -314,6 +324,14 @@ Every event, the app's own and every MCP server's, has the same envelope: the
 - **The details stay for one release.** `name`, `details`, `position`, `scope` and the rest
   are still there, so a reader of the old shape works. An event recorded before the
   envelope gets one when the log is read, with no subject for a server's event.
+- **A repo that moved has one name (#4957).** When a repo's owner moves (such as
+  `alexec/agents` to `agentloops-dev/agents`), a wait, a trigger or a lineage node that
+  names the old owner matches an event that names the new one, and the other way. A
+  minute or two after it starts and then once a day, the daemon asks GitHub
+  `GET /repos/<repo>` for each GitHub repo its folders and its lineage name. When the
+  `full_name` in the answer is another name, it keeps the alias in `repo-aliases.json` in
+  its root. The subject, the topic, a `repo` or `project` in `where`, and lineage's nodes
+  are then read by the new name. No file is written again for the move.
 
 ## The bus
 
@@ -535,6 +553,22 @@ iPhone and iPad and the web page: when it was last asked and when the last event
 why not (**Can't reach github**, the server no longer offers the event, refused it, or doesn't
 take the filters).
 
+### Deploys
+
+The `github` server sends `deploy.started`, `deploy.succeeded` and `deploy.failed` (#5240)
+from GitHub's Deployments: GitHub records one for each job with `environment:`, so no CI
+change is needed. Each event is a Deployment's change of state, once for each Deployment:
+`queued` or `in_progress` is started, `success` is succeeded, `failure` or `error` is failed.
+GitHub's `waiting` is `deploy.waiting`'s, and its `inactive` is not read: in a repo whose jobs
+share an environment, it does not mean "replaced". The details are the wire's `DeployEvent`
+(`docs/explanation/deploys.md`): the repo is the component, the environment and its tier the
+target, the sha the version's one artifact, named by the run's `v*` tag when it ran on one, and
+the url the job's. `deploy.failed`'s `outcome` is `cancelled` when its job was cancelled, else
+`failed`. `environment`, `tier` (`production` for GitHub's production environment, or one named
+`production` or `prod`) and `component` (the repo) filter them. The id is the deploy's ref and
+the event, `github:deploy:<owner/repo>#<deployment id>@deploy.succeeded`, from GitHub's data
+only, so two machines make the same id.
+
 ### Subjects and keys
 
 What each of this folder's MCP servers says of its events' envelope (#4728). The topic is
@@ -548,6 +582,7 @@ it, so two machines can make two ids for one change.
 | `github` | `pr.labelled`, `pr.unlabelled`, `pr.commented`, `pr.reviewed`, `review.comment` | `github:pr:<owner/repo>#<n>` | the label activity's, comment's or review's id |
 | `github` | `checks.failed`, `checks.passed` | the run's PR, or the run (`github:run:…#<run id>`) when it names none | the head commit, or the run's attempt |
 | `github` | `run.completed`, `deploy.waiting` | `github:run:<owner/repo>#<run id>` | the attempt (and the environments) |
+| `github` | `deploy.started`, `deploy.succeeded`, `deploy.failed` | `github:deploy:<owner/repo>#<deployment id>` | none: each is sent once for a Deployment |
 | `github` | `pr.merged` / `pr.closed` | the PR | none / the close time |
 | `github` | `pr.conflicted` and the other states | the PR, or the issue for `issue.assigned` | the review for `review.posted`, else the poll time |
 | `gitlab` | `issue.*`, `review.comment`, `pr.merged`, `pr.closed`, states | `gitlab:issue:` or `gitlab:mr:<group/project>#<n>` | as `github` |

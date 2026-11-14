@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/orgtoken"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/orgtoken"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Org routes on the machine (#999, spec 999 slice 2; #3397). The control plane sends each
@@ -643,7 +643,7 @@ func (d *Daemon) reachWordsFor(runtimeID string) *string {
 func orgRouteMissingError(waiting string) error {
 	if waiting != "" {
 		return &Error{Code: wire.FailureOrgRouteMissing,
-			Message: "Your organisation's " + waiting + " is waiting for an admin's app to seal its key for this machine. It comes when an admin opens Agents."}
+			Message: "Your organisation's " + waiting + " is waiting for an admin's app to seal its key for this machine. It comes when an admin opens Agent Loops."}
 	}
 	return &Error{Code: wire.FailureOrgRouteMissing,
 		Message: "Your organisation's way to this model has not reached this machine. Connect to the network."}

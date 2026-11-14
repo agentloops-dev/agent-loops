@@ -41,11 +41,11 @@ struct FolderRow: View {
                 if !summary.exists {
                     Text("Folder is missing")
                         .appText(.fine)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Paper.secondary)
                 } else if isFolded, !asHeading, let subtitle {
                     Text(subtitle)
                         .appText(.fine)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Paper.secondary)
                         .lineLimit(1)
                 }
             }
@@ -109,10 +109,10 @@ struct Waiting: View {
             PairingView()
         } else if model.isStale {
             ContentUnavailableView {
-                Label("Can't reach your Mac", systemImage: "wifi.slash")
+                // The control plane, by where it runs (#4916): the Mac, or its address.
+                Label(model.controlPlaneReach.title, icon: "wifi.slash")
             } description: {
-                Text("It needs to be awake and on a network. "
-                     + "This screen fills in as soon as it answers.")
+                Text(model.controlPlaneReach.detail)
             } actions: {
                 // A device the Mac has forgotten is only turned away at home, not told
                 // why, so the way back is offered here too.
@@ -127,7 +127,7 @@ struct Waiting: View {
                 Text("Add a folder on your Mac, or clone one from a Git URL.")
             } actions: {
                 Button("Add Folder…") { adding = .folder(.mac, "This Mac") }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.paperProminent)
                 Button("Clone Git URL…") { adding = .clone(.mac, "This Mac") }
             }
             .sheet(item: $adding) { NewFolderSheet(kind: $0) }

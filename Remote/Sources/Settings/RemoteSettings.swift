@@ -19,12 +19,12 @@ struct RemoteSettings: View {
                     NavigationLink {
                         RemoteSecretsPage()
                     } label: {
-                        Label(UserScopeWords.secretsTitle, systemImage: "key")
+                        Label(UserScopeWords.secretsTitle, icon: "key")
                     }
                     NavigationLink {
                         RemoteAccountsPage()
                     } label: {
-                        Label(AccountsWords.title, systemImage: "person.crop.rectangle.stack")
+                        Label(AccountsWords.title, icon: "person.crop.rectangle.stack")
                     }
                 }
                 .paperListRow()
@@ -42,10 +42,11 @@ struct RemoteSettings: View {
                 Section(PolicyLayersWords.groupTitle) {
                     NavigationLink {
                         PolicyPane(host: model.policyHost, revision: model.policyRevision)
+                            .staleBanner()
                             .navigationTitle(PolicyLayersWords.title)
                             .navigationBarTitleDisplayMode(.inline)
                     } label: {
-                        Label(PolicyLayersWords.title, systemImage: PolicyLayersWords.symbol)
+                        Label(PolicyLayersWords.title, icon: PolicyLayersWords.symbol)
                     }
                 }
                 .paperListRow()
@@ -58,12 +59,14 @@ struct RemoteSettings: View {
                 // The docs site (#1327), as the Mac's Help ▸ Agents Help.
                 Section {
                     Link(destination: HelpSite.url) {
-                        Label("Help", systemImage: "questionmark.circle")
+                        Label("Help", icon: "questionmark.circle")
                     }
                 }
             }
             .scrollContentBackground(.hidden)
             .background(Paper.ground)
+            // A sheet over the page's banner, so it says it too (#5147).
+            .staleBanner()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -81,7 +84,11 @@ private struct RemoteSecretsPage: View {
     var body: some View {
         // Read when the page opens: the control plane's client is not observed.
         SecretsPane(control: model.controlPlane, state: model.userScope,
-                    machineNames: SecretInfoWords.names(model.controlHosts)) { SessionSecretsSection(model: model) }
+                    machineNames: SecretInfoWords.names(model.controlHosts)) {
+                        SessionSecretsSection(model: model)
+                        LocalSecretsSection(model: model)
+                    }
+            .staleBanner()
             .navigationTitle(UserScopeWords.secretsTitle)
             .navigationBarTitleDisplayMode(.inline)
     }
@@ -95,6 +102,7 @@ private struct RemoteAccountsPage: View {
     var body: some View {
         AccountsPane(control: model.controlPlane, state: model.userScope,
                      machineNames: SecretInfoWords.names(model.controlHosts))
+            .staleBanner()
             .navigationTitle(AccountsWords.title)
             .navigationBarTitleDisplayMode(.inline)
     }

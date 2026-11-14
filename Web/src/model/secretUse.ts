@@ -11,7 +11,7 @@ export const secretUseWords: Record<SecretUseAction, string> = {
 };
 
 /** The known gap (#4179), as agentsd's banner and NeedRequest.SecretUse.terminalCaveat say it. */
-export const terminalCaveat = "Agents cannot tell a terminal from an agent outside its session.";
+export const terminalCaveat = "Agent Loops cannot tell a terminal from an agent outside its session.";
 
 /** A terminal's agents-secret NAME (#4179): a secret's use that no session asked. */
 export function isTerminalRequest(request: PersonRequest): boolean {
@@ -23,8 +23,15 @@ export function secretUseOf(request: PersonRequest): RequestSecretUse | undefine
   return request.source === "secretUse" ? request.detail.secretUse : undefined;
 }
 
+/** The uses of a secret a session waits on (#4918), in the list's order: its chat's cards. A terminal's has no session, so none is. */
+export function secretUsesAskedBy(requests: PersonRequest[], session: string): PersonRequest[] {
+  return requests.filter((r) => r.askedBy === session && secretUseOf(r) !== undefined);
+}
+
 /** The row's title: the secret first, as the banner says it, so a narrow sidebar cuts the place, not the name. */
 export function secretUseTitle(use: RequestSecretUse): string {
+  if (use.use === "workflow") return `Wants to turn on ${use.name}`;
+  if (use.use === "connector") return `Wants to approve ${use.name}`;
   return `Wants to ${use.use === "account" ? "read" : "use"} ${use.name}`;
 }
 
@@ -35,13 +42,16 @@ export function secretUseWhere(use: RequestSecretUse): string {
   if (use.use === "account") return `Account: manage_accounts ${use.call ?? "get"}`;
   if (use.use === "browser") return `Browser on ${use.place}`;
   if (use.use === "screen") return use.app ? `Screen: ${use.app} on ${use.place}` : `Screen on ${use.place}`;
+  if (use.use === "workflow") return `Workflow in ${use.place}`;
+  if (use.use === "connector") return `Connector in ${use.place}`;
   return use.use === "mcp" ? `MCP server ${use.place}` : `Fill on ${use.place}`;
 }
 
 /** The answers, in order. A session's own secret has no Always Approve: it is the same as for this session.
- * A terminal's are once, for 1 hour and deny (#4179). */
+ * A terminal's are once, for 1 hour and deny (#4179). A workflow's or a connector's are Approve and Deny (#4538). */
 export function secretUseActions(use: RequestSecretUse): SecretUseAction[] {
   if (use.use === "terminal") return ["once", "hour", "deny"];
+  if (use.use === "workflow" || use.use === "connector") return ["once", "deny"];
   return use.sessionOnly ? ["once", "session", "deny"] : ["once", "session", "always", "deny"];
 }
 

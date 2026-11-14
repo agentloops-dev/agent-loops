@@ -246,7 +246,12 @@ struct SettingsWindow: View {
         case .signIn:
             FormColumn { SignInPane(control: model.controlRequests, revision: model.people.revision) }
         case .policy:
+            // The Console's admin pages the window does not draw open on the web page (#4939).
             FormColumn { OrgPolicyPane(control: model.controlRequests, people: model.people) }
+                .environment(\.openWebPlace, OpenWebPlace { [control] place in
+                    guard let control else { return "The control plane can’t be reached." }
+                    return await control.openInBrowser(place: place)
+                })
         }
     }
 
@@ -513,14 +518,14 @@ private struct SettingsRail: View {
         return RailButton(lit: lit, label: [each.title, warns].compactMap { $0 }.joined(separator: ", "),
                           selected: lit, action: { pane = each }) {
             HStack(spacing: 8) {
-                Image(systemName: each.symbol)
+                Image(icon: each.symbol)
                     .frame(width: 20)
                     .foregroundStyle(lit ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                     .accessibilityHidden(true)
                 Text(each.title).lineLimit(1)
                 Spacer()
                 if warns != nil {
-                    Image(systemName: "exclamationmark.triangle.fill")
+                    Image(icon: "exclamationmark.triangle.fill")
                         .foregroundStyle(lit ? AnyShapeStyle(.white) : StateTint.failure.style(or: .secondary))
                         .accessibilityHidden(true)
                 }

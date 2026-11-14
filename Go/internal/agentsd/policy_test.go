@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The organisation's policy on a machine (#998, spec 998 slice 2a, T014–T018): kept and
@@ -746,7 +746,7 @@ func TestAMissingCapabilityRefusesEveryStart(t *testing.T) {
 	d.Told(wire.NotifyMachinePolicy.Name, b)
 	e := c.callError(t, 1, "agents/start", startParams(t.TempDir(), "claude", nil))
 	refused(t, e, "update", "requires")
-	if !strings.Contains(e.Message, "Update Agents to follow") {
+	if !strings.Contains(e.Message, "Update Agent Loops to follow") {
 		t.Fatal(e.Message)
 	}
 	if st := d.policyState(); len(st.Update) != 1 || st.Update[0] != "policy.reach/1" {

@@ -35,9 +35,10 @@ struct MachineRowActionsTests {
         #expect(MachineRowActions.of(row("online", canStop: false), isThisMac: false) == MachineRowActions(delete: true))
     }
 
-    private func provider(_ id: String, _ workspaces: [DaemonAPI.MachineInfo]) -> DaemonAPI.ProviderSummary {
+    private func provider(_ id: String, _ workspaces: [DaemonAPI.MachineInfo],
+                          capabilities: [String] = ["create", "delete"]) -> DaemonAPI.ProviderSummary {
         DaemonAPI.ProviderSummary(id: ProviderID(rawValue: id), name: id.capitalized, kind: "command",
-                                  capabilities: ["create"], workspaces: workspaces)
+                                  capabilities: capabilities, workspaces: workspaces)
     }
 
     /// A machine New Machine made has a row until it joins (#4610): Making… while the control
@@ -49,16 +50,84 @@ struct MachineRowActionsTests {
         let linked = DaemonAPI.MachineInfo(id: "ws-3", name: "machine-3", state: "running",
                                            host: MachineRef(rawValue: "h3"), joining: true)
         let joinedByName = DaemonAPI.MachineInfo(id: "ws-4", name: "machine-4", state: "running", joining: true)
-        let plain = DaemonAPI.MachineInfo(id: "ws-5", name: "old", state: "running")
-        let rows = MachineMaking.rows([provider("do", [gaveUp, plain, making, linked, joinedByName])], hostNames: ["machine-4"])
+        let rows = MachineMaking.rows([provider("do", [gaveUp, making, linked, joinedByName])], hostNames: ["machine-4"])
         #expect(rows.map(\.name) == ["machine-1", "machine-2"])
         let still = try #require(rows.first)
         let gone = try #require(rows.last)
+        #expect(!still.joinable && !gone.joinable)
+        #expect(gone.failed())
         #expect(still.line == "Making…")
         #expect(still.notJoined == nil)
         #expect(gone.line == "Made at Do, but it didn’t join in 10 minutes.")
         #expect(gone.id == "do/ws-2")
         #expect(gone.deleteMessage == "Do deletes machine-2. Nothing was installed on it, so there is nothing to back up.")
+    }
+
+    /// Every machine the person has shows, also one Agents did not make (#4978): grey and *Not
+    /// joined*, after the ones being made, and a click joins it; a failed make is no machine.
+    @Test func aMachineAgentsDidNotMakeShowsNotJoined() throws {
+        let making = DaemonAPI.MachineInfo(id: "ws-1", name: "machine-1", state: "starting", joining: true)
+        let running = DaemonAPI.MachineInfo(id: "cs-1", name: "alpha", state: "running", ssh: "cs.cs-1.main", tunnel: true)
+        let stopped = DaemonAPI.MachineInfo(id: "cs-2", name: "beta", state: "stopped", ssh: "cs.cs-2.main")
+        let noSSH = DaemonAPI.MachineInfo(id: "cs-3", name: "gamma", state: "running")
+        var failed = DaemonAPI.MachineInfo(id: "failed-x", name: "x", state: "failed")
+        failed.reason = "No quota."
+        let rows = MachineMaking.rows([provider("codespaces", [stopped, noSSH, failed, running, making])], hostNames: [])
+        #expect(rows.map(\.name) == ["machine-1", "alpha", "beta", "gamma"])
+        let alpha = try #require(rows.first { $0.name == "alpha" })
+        let beta = try #require(rows.first { $0.name == "beta" })
+        let gamma = try #require(rows.first { $0.name == "gamma" })
+        #expect(alpha.joinable && alpha.canJoin && alpha.tunnel)
+        #expect(alpha.line == "Not joined")
+        #expect(alpha.joinHint == "Joins alpha")
+        #expect(beta.line == "Stopped, not joined")
+        #expect(beta.joinHint == "Starts beta and joins it")
+        #expect(!gamma.canJoin)
+        #expect(gamma.joinHint == nil)
+        #expect(gamma.line.hasPrefix("Not joined. Codespaces gives no ssh destination"))
+        #expect(!alpha.failed())
+        #expect(alpha.deleteMessage == "Codespaces deletes alpha and its disk. It never joined Agents, so it has no backup: "
+            + "work on it that is not pushed is lost.")
+    }
+
+    /// Delete is on a row the control plane gave up on and on one that never joined, never
+    /// on one New Machine still makes, nor while a join runs.
+    @Test func deleteIsOnEveryRowThatIsNotBeingMade() throws {
+        let making = DaemonAPI.MachineInfo(id: "ws-1", name: "machine-1", state: "starting", joining: true)
+        let gaveUp = DaemonAPI.MachineInfo(id: "ws-2", name: "machine-2", state: "running", notJoined: "It didn’t join.")
+        let alpha = DaemonAPI.MachineInfo(id: "cs-1", name: "alpha", state: "running", ssh: "cs.cs-1.main")
+        let gamma = DaemonAPI.MachineInfo(id: "cs-3", name: "gamma", state: "running")
+        let rows = MachineMaking.rows([provider("codespaces", [making, gaveUp, alpha, gamma])], hostNames: [])
+        func row(_ name: String) throws -> MachineMaking { try #require(rows.first { $0.name == name }) }
+        #expect(try !row("machine-1").canDelete())
+        #expect(try row("machine-2").canDelete())
+        #expect(try row("alpha").canDelete())
+        #expect(try row("gamma").canDelete())
+        #expect(try !row("alpha").canDelete(.joining(step: nil)))
+        #expect(try row("alpha").canDelete(.failed("no")))
+        #expect(try row("alpha").canDelete(.needsTrust("SHA256:abc")))
+        // A provider that can't delete offers no Delete.
+        let cannot = MachineMaking.rows([provider("cws", [alpha], capabilities: [])], hostNames: [])
+        #expect(cannot.map { $0.canDelete() } == [false])
+    }
+
+    /// A click's join says how it goes, and why it failed, on the row (#4978).
+    @Test func aJoinSaysHowItGoes() throws {
+        let stopped = DaemonAPI.MachineInfo(id: "cs-2", name: "beta", state: "stopped", ssh: "cs.cs-2.main")
+        let beta = try #require(MachineMaking.rows([provider("codespaces", [stopped])], hostNames: []).first)
+        #expect(beta.line(.joining(step: nil)) == "Joining…")
+        #expect(beta.line(.joining(step: "connect")) == "Starting it and connecting…")
+        #expect(beta.line(.joining(step: "setUp")) == "Installing Agents…")
+        #expect(beta.line(.failed("ssh: connection refused")) == "Didn’t join: ssh: connection refused")
+        #expect(beta.failed(.failed("no")))
+        #expect(!beta.failed(.joining(step: nil)))
+        #expect(MachineJoin.joining(step: "start").isJoining)
+        #expect(beta.line(.needsTrust("SHA256:abc")) == "Its ssh host key is new to the control plane: SHA256:abc")
+        #expect(MachineJoin.needsTrust("SHA256:abc").fingerprint == "SHA256:abc")
+        #expect(!beta.failed(.needsTrust("SHA256:abc")))
+        #expect(beta.icon() == .stopped)
+        #expect(beta.icon(.joining(step: nil)) == .busy)
+        #expect(beta.icon(.failed("no")) == .failure)
     }
 
     @Test func aRegisteredMachineIsOnlyRemoved() {

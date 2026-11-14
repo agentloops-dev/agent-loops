@@ -19,8 +19,9 @@ import {
   titleWords, waitWords, zoomed, type Interval, type TimelineHit, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
 import { go } from "../route";
+import { keepWork, keptWorkRead } from "../model/localCopy";
 import { Choice, workProjects } from "./Work";
-import { EmptyState, ErrorStrip, FilterMenu, LabelChip, PlaceholderRows, RefreshButton, StateIcon } from "./WorkParts";
+import { EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, PlaceholderRows, RefreshButton, StateIcon } from "./WorkParts";
 
 const range = signal<TimelineRange>("twoDays");
 /** The project, by id; "" until one is picked, then the first one. */
@@ -41,6 +42,11 @@ const reading = signal(false);
 /** Every machine failed the last read: the plot is the one before it, dimmed under the strip (S12). */
 const stale = signal(false);
 let read: string | undefined;
+/** The plot on screen came from this device's copy (#4930), until the machines answer. */
+const fromDevice = signal(false);
+/** When the plot on screen was read (#5142): this device's copy's time, or the last read that worked. A stale plot says
+ * it in the failure strip, not only by its dim. */
+const plotAt = signal<number | undefined>(undefined);
 /**
  * Every machine's sessions on the epics and their children, from the control plane's merged copy
  * (#4276): a sleeping machine's sessions still start their children.
@@ -83,6 +89,12 @@ async function loadTimeline(store: Store) {
   const hosts = timelineHosts(store).filter((h) => on.has(h.id));
   const chosenBoard = board.value;
   reading.value = true;
+  // Seen before: this device's copy at once, until the machines answer (#4930). Kept by project, board and range.
+  const kept = [chosen.id, chosenBoard, range.value].join("|");
+  if (timeline.value === null) {
+    const copy = await keptWorkRead<Timeline>("timeline", kept);
+    if (copy && read === key && timeline.value === null) { timeline.value = copy.value; plotAt.value = copy.at; fromDevice.value = true; }
+  }
   const got = await Promise.all(hosts.map(async (h) => {
     try {
       const t = await store.link.call("work/timeline", { project: chosen.id, from: toWireDate(new Date(span.start)), to: toWireDate(new Date(span.end)) }, h.id);
@@ -117,6 +129,10 @@ async function loadTimeline(store: Store) {
   sessions.value = await readSessions(store, merged);
   if (read !== key || fromMachines !== merged) return;
   timeline.value = startedBySessions(merged, sessions.value);
+  plotAt.value = Date.now();
+  fromDevice.value = false;
+  // Kept for the window around now, read by every machine: a plot scrolled away is not the one a person opens on.
+  if (failed.length === 0 && Math.abs(anchor.value - Date.now()) < 3_600_000) keepWork("timeline", kept, timeline.value);
 }
 
 /** Every machine's sessions on the timeline's epics and children, from the control plane's merged copy (#4276); none from one before it. */
@@ -210,7 +226,8 @@ export function WorkTimeline({ store }: { store: Store }) {
         : projects.length === 0 ? <EmptyState kind="timeline" title={noProjectTitle} line={noProject} />
         : (
           <>
-            <ErrorStrip lines={problems} retry={refresh} />
+            <FromDeviceStrip at={fromDevice.value && problems.length === 0 ? plotAt.value : undefined} />
+            <ErrorStrip lines={problems} retry={refresh} at={stale.value || fromDevice.value ? plotAt.value : undefined} />
             <Plot timeline={t ?? { epics: [], releases: [] }} loading={t === null} dim={stale.value}
               projectName={projects.find((p) => p.id === project.value)?.name ?? ""}
               working={t ? workingNow(t, sessions.value, Object.values(store.agents.value).flat()) : new Set()} />

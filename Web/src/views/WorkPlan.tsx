@@ -10,6 +10,7 @@
 // Blocked by. Start lead and Open lead are the page header's. Under 700 px (note 19) the bar takes the width with the
 // words under it, and a child is the phone row: its title on up to two lines, no level chip or pull request, a short
 // line 2.
+import { keepWork, keptWorkRead } from "../model/localCopy";
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { AgentState, ForgeDone, ForgeItemDetail, ForgePlan, ForgePlanChild, ForgePlanStep, ForgeStanding, LineageCostRollup, LineageEstimate, LineageLink } from "../protocol/generated";
@@ -27,17 +28,27 @@ import { isMenuKey, openContextMenu, type MenuItem } from "./ContextMenu";
 import { go, routeHash } from "../route";
 import { ForgeTitle } from "../render/ForgeTitle";
 import { ErrorStrip, LabelChip, PlaceholderRows, StateIcon } from "./WorkParts";
+import { Icon, type IconName } from "./Icon";
 
 const holdsRuntime = (s: AgentState) => s === "starting" || s === "running" || s === "waitingOnUser";
-/** The mark's glyph before line 2's words; a closed child's state icon says it is done. */
-const markGlyph: Record<PlanMark, string | undefined> = { done: undefined, working: "●", attention: "⚠", waiting: "○", blocked: "⊘" };
+/** The mark's icon before line 2's words; a closed child's state icon says it is done. */
+const markIcon: Record<PlanMark, IconName | undefined> = { done: undefined, working: "loader-circle", attention: "triangle-alert", waiting: "circle", blocked: "ban" };
 
-export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = [], writes, wrote }: {
+export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = [], writes, waiting = false, wrote, fromCopy }: {
   store: Store; host: string; lineageHost: string | undefined; detail: ForgeItemDetail; asked: number;
-  estimates?: readonly LineageEstimate[]; writes: boolean; wrote: () => void;
+  estimates?: readonly LineageEstimate[]; writes: boolean;
+  /** The page is this device's copy (#4930): no changes, and no words on why, until the machine answers. */
+  waiting?: boolean; wrote: () => void;
+  /** Told when the plan drawn from this device's copy was read, until its machine answers, and undefined after (#5142):
+   * the page's one "From this device" strip says the oldest of it and the item's. */
+  fromCopy?: (at: number | undefined) => void;
 }) {
   const plan = useSignal<ForgePlan | null>(null);
   const problem = useSignal<string | null>(null);
+  /** The plan on screen came from this device's copy (#4930): no changes until its machine answers. */
+  const fromDevice = useSignal(false);
+  /** When the plan on screen was read (#5142): this device's copy's time, or the last read that worked. */
+  const planAt = useSignal<number | undefined>(undefined);
   const rollups = useSignal<Record<string, LineageCostRollup>>({});
   const links = useSignal<Record<string, LineageLink[]>>({});
   const said = useSignal<{ words: string; failed: boolean } | null>(null);
@@ -53,11 +64,20 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
   const field = useRef<HTMLInputElement>(null);
   const node = detail.item.node;
   useEffect(() => { folded.value = {}; }, [node.ref, asked]);
+  // The page's strip says when a plan from the copy was read, until the machine answers (#5142).
+  const copyAt = fromDevice.value && !problem.value ? planAt.value : undefined;
+  useEffect(() => { fromCopy?.(copyAt); }, [copyAt]);
+  useEffect(() => () => fromCopy?.(undefined), []);
   useEffect(() => {
     let current = true;
     // After a write the plan stays up while it is read again, and its line says what was done.
     if (changed.value === 0) said.value = null;
     void (async () => {
+      // Seen before: this device's copy at once, until the machine answers (#4930).
+      if (!plan.peek()) {
+        const kept = await keptWorkRead<ForgePlan>("plan", node.ref);
+        if (current && kept && !plan.peek()) { plan.value = kept.value; planAt.value = kept.at; fromDevice.value = true; }
+      }
       let got: ForgePlan;
       try {
         got = await store.link.call("forge/plan", { node }, host);
@@ -68,7 +88,10 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
       }
       if (!current) return;
       plan.value = got;
+      planAt.value = Date.now();
+      fromDevice.value = false;
       problem.value = null;
+      keepWork("plan", node.ref, got);
       if (!lineageHost) { rollups.value = {}; links.value = {}; return; }
       // Each child's cost and links: the links name a lane at once, the cost once it banked a turn.
       const read = await Promise.all(got.children.map(async (c) => {
@@ -127,7 +150,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
 
   const p = plan.value;
   /** Add child and Blocked by: an open epic, not a standing one, on a machine that writes. */
-  const changes = !!p && writes && p.item.state === "open" && !p.standing;
+  const changes = !!p && writes && !fromDevice.value && p.item.state === "open" && !p.standing;
   const running = p ? p.children.filter((c) => states(c).some(holdsRuntime)).length : 0;
 
   /** The row's menu (note 9): Blocked by, with a tick on each child that blocks it now; Open; Open lane; Open on GitHub. */
@@ -164,7 +187,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
     const ref = shortRef(c.item.node.ref);
     const levelLabel = c.item.level ? c.item.labels.find((x) => x.name.toLowerCase() === c.item.level) ?? { name: c.item.level } : undefined;
     const items = () => menu(c, pl);
-    const glyph = markGlyph[mark];
+    const icon = markIcon[mark];
     return (
       <li key={c.item.node.ref} class="work-plan-item" onContextMenu={(e) => openContextMenu(e, items())}>
         {/* A link: a click opens the page here, a middle-click or ⌘-click in a new tab. */}
@@ -186,7 +209,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
               {words && <>
                 <span class="quiet" aria-hidden="true">·</span>
                 <span class={`work-plan-mark is-${mark}`} aria-label={mark === "done" ? words : `${markWords[mark]}: ${words}`}>
-                  {glyph && <span aria-hidden="true">{glyph} </span>}<span class="wide-line">{words}</span><span class="short-line">{short}</span>
+                  {icon && <><Icon name={icon} /> </>}<span class="wide-line">{words}</span><span class="short-line">{short}</span>
                 </span>
               </>}
               <span class="work-plan-end">
@@ -210,7 +233,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
     return (
       <button type="button" class="work-plan-band" aria-expanded={!isFolded} title={isFolded ? `Show ${title}` : `Fold ${title}`}
         onClick={() => { folded.value = { ...folded.value, [s.step]: !isFolded }; }}>
-        <span class="chevron" aria-hidden="true">{isFolded ? "▸" : "▾"}</span>
+        <Icon name={isFolded ? "chevron-right" : "chevron-down"} class="chevron" />
         <span><span class="strong">{head}</span>{rest.length > 0 && ` · ${rest.join(" · ")}`}</span>
         <span class="end">{words}</span>
       </button>
@@ -223,7 +246,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
         <>
           <Header plan={p} running={running} rollups={Object.values(rollups.value)} estimates={estimates} />
           <LeadLine store={store} plan={p} open={openSession} />
-          {problem.value && <div class="work-plan-strip"><ErrorStrip lines={[problem.value]} retry={() => { changed.value++; }} /></div>}
+          {problem.value && <div class="work-plan-strip"><ErrorStrip lines={[problem.value]} retry={() => { changed.value++; }} at={planAt.value} /></div>}
           <div class={`work-plan-body${problem.value ? " stale" : ""}`}>
             {p.standing && <Query plan={p} standing={p.standing} running={running} rollups={Object.values(rollups.value)} />}
             {p.children.length === 0 ? !p.standing?.error && (
@@ -270,7 +293,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
                 )}
                 {said.value && <p class={said.value.failed ? "hint failure small" : "quiet small"} role="status">{said.value.words}</p>}
               </div>
-            ) : !writes && p.item.state === "open" && !p.standing && (
+            ) : !writes && !waiting && !fromDevice.value && p.item.state === "open" && !p.standing && (
               <p class="work-plan-no-writes quiet small">No machine of yours can write to {forgeName(p.item.node.ref)}.</p>
             )}
           </div>
@@ -279,7 +302,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
         <>
           <div class="work-plan-head"><PlanTitle standing={detail.item.standing === true} /></div>
           <div class="work-plan-could-not" role="alert">
-            <span class="mark" aria-hidden="true">⚠</span>
+            <span class="mark" aria-hidden="true"><Icon name="triangle-alert" /></span>
             <p class="strong">Could not read the plan</p>
             <p class="quiet small">{problem.value}</p>
             <button type="button" onClick={() => { changed.value++; }}>Try again</button>
@@ -339,7 +362,7 @@ function LeadLine({ store, plan, open }: { store: Store; plan: ForgePlan; open: 
   const title = chat?.title ?? lead.title;
   return (
     <p class="work-plan-lead small">
-      <span class="work-plan-lead-mark" aria-hidden="true">✦</span>
+      <span class="work-plan-lead-mark" aria-hidden="true"><Icon name="sparkles" /></span>
       <span>Lead</span>
       <button type="button" class="link" disabled={!chat} title="The lead's chat" onClick={() => open(id)}>{title ? `“${title}”` : "A session"}</button>
       <LeadState state={state} />
@@ -359,7 +382,7 @@ function Query({ plan, standing, running, rollups }: { plan: ForgePlan; standing
   if (standing.error) {
     return (
       <div class="work-plan-query-error small" role="status">
-        <span aria-hidden="true">⊘</span><span class="words">{standing.error}</span>
+        <Icon name="ban" /><span class="words">{standing.error}</span>
         {plan.item.url && <a href={plan.item.url} target="_blank" rel="noopener noreferrer">Edit on {forgeName(plan.item.node.ref)}</a>}
       </div>
     );

@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/githubmcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 func (f *fakeForgeGitHub) MakeRepository(_ context.Context, owner, name, _ string) (githubmcp.Repository, bool, error) {
@@ -21,6 +22,24 @@ func (f *fakeForgeGitHub) MakeRepository(_ context.Context, owner, name, _ strin
 		owner = "alexec"
 	}
 	full := owner + "/" + name
+	made := !slices.Contains(f.made, full)
+	if made {
+		f.made = append(f.made, full)
+	}
+	return githubmcp.Repository{FullName: full, CloneURL: f.bare, Login: "alexec", UserID: 1142830}, made, nil
+}
+
+func (f *fakeForgeGitHub) MakePublicRepository(_ context.Context, owner, name, _ string, template bool) (githubmcp.Repository, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if owner == "" {
+		owner = "alexec"
+	}
+	full := owner + "/" + name
+	f.public = append(f.public, fmt.Sprintf("%s template=%v", full, template))
+	if slices.Contains(f.private, full) {
+		return githubmcp.Repository{FullName: full, CloneURL: f.bare, Private: true, Login: "alexec", UserID: 1142830}, false, nil
+	}
 	made := !slices.Contains(f.made, full)
 	if made {
 		f.made = append(f.made, full)
@@ -40,6 +59,7 @@ func TestMakeAppRepositoryPushesTheStarterAndAddsTheFolder(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 	gh.bare = "file://" + bare
+	starterTemplate(t, "agentloops-dev/web-service-starter", webTemplate)
 	a := seeded(t, d, gitFolder(t, "git@github.com:alexec/agents.git"), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
 	if !appToolServed("make_app_repository") {
 		t.Fatal("make_app_repository is not served")
@@ -67,6 +87,9 @@ func TestMakeAppRepositoryPushesTheStarterAndAddsTheFolder(t *testing.T) {
 	deploy, _ := os.ReadFile(filepath.Join(dest, ".github/workflows/deploy.yml"))
 	if !strings.Contains(string(deploy), "tidelog") || strings.Contains(string(deploy), "__") {
 		t.Errorf("deploy.yml is not filled:\n%s", deploy)
+	}
+	if _, err := os.Stat(filepath.Join(dest, ".github/README.md")); err == nil {
+		t.Error("the template's own README is in the new app")
 	}
 	if fi, err := os.Stat(filepath.Join(dest, "setup-gcp.sh")); err != nil || fi.Mode()&0o100 == 0 {
 		t.Errorf("setup-gcp.sh cannot be run: %v", err)

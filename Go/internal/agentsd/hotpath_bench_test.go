@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The agentsd hot path (#4504): each changeAgent sends its folder's summary, and today
@@ -110,7 +110,7 @@ func BenchmarkArmBlockTimer(b *testing.B) {
 	d, id := hotPathStore(b)
 	d.change(id, func(a *wire.Agent) {
 		a.Report = &wire.WorkReport{Outcome: wire.WorkOutcomeWaiting, Message: "Waiting for CI.", At: now(),
-			Block: &wire.Block{Waits: []wire.Wait{}, CheckAgainAt: new(wire.DateOf(time.Now().Add(-time.Minute)))}}
+			Block: &wire.Block{Waits: []wire.Wait{{AgentID: store.NewUUID(), NameAtReport: "CI watcher"}}, Deadline: new(wire.DateOf(time.Now().Add(-time.Minute)))}}
 	})
 	l := d.live(id)
 	l.mu.Lock()

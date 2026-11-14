@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/forgejomcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 	sdk "github.com/coder/acp-go-sdk"
 )
 

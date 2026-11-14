@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/githubmcp"
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // milestoneNotices is the host's notices that a milestone can be late.

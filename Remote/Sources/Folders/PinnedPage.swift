@@ -28,7 +28,7 @@ struct PinnedPage: View {
         Group {
             if let problem {
                 ContentUnavailableView {
-                    Label("Not in the folder", systemImage: "doc.questionmark")
+                    Label("Not in the folder", icon: "doc.questionmark")
                 } description: {
                     Text(problem)
                 } actions: {
@@ -70,9 +70,9 @@ struct PinnedPage: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 if pin != nil {
-                    Button("Unpin", systemImage: "pin.slash") { Task { await model.unpin(path, in: folder) } }
+                    Button("Unpin", icon: "pin.slash") { Task { await model.unpin(path, in: folder) } }
                 } else {
-                    Button("Pin to Folder", systemImage: "pin") { Task { await model.pin(path, in: folder) } }
+                    Button("Pin to Folder", icon: "pin") { Task { await model.pin(path, in: folder) } }
                         .disabled(model.pins(in: folder).count >= PinLimits.perFolder || problem != nil)
                 }
             }
@@ -83,11 +83,19 @@ struct PinnedPage: View {
 
     private var actions: PageActions {
         let pictures = pictures ?? PhonePagePictures(model: model, folder: folder)
-        return PageActions(
+        var actions = PageActions(
             save: { [model, folder, path] _, document in await model.writePage(path, in: folder, text: document) },
             image: { url in await pictures.image(url) },
             stamp: { url in await pictures.stamp(url) },
             canEdit: model.isConnected)
+        // A page in the folder that a link names opens in this one's place, as on the Mac.
+        actions.openFile = { [model, folder] file in
+            guard let relative = PinRules.relative(file.path(percentEncoded: false), in: folder),
+                  PinRules.kind(relative) != nil else { return false }
+            model.openPin = relative
+            return true
+        }
+        return actions
     }
 
     private func load() async {

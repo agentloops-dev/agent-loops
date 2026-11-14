@@ -131,6 +131,10 @@ struct AgentsCommands: Commands {
                 .keyboardShortcut(MenuKeys.addFolder)
             Button("Clone Folder from Git URL…") { requests.folderSheet = .clone() }
                 .keyboardShortcut(MenuKeys.cloneFolder)
+            // Let's build your idea, again (#5132): the question page, for a person who is set up.
+            Button(FirstBuild.newAppItem) { newApp() }
+                .keyboardShortcut(MenuKeys.newApp)
+                .disabled(model.needsFirstRun || model.asksFirstBuild)
             // On a server (037).
             if !model.hosts.servers.isEmpty {
                 Menu("Add Folder On") {
@@ -331,7 +335,7 @@ struct AgentsCommands: Commands {
         // The main window, and a folder's own (#1089). The windows open are listed
         // below these by the system, by title.
         CommandGroup(before: .windowList) {
-            Button("Agents (All Folders)") { model.bringMainWindowForward(opening: openWindow) }
+            Button("Agent Loops (All Folders)") { model.bringMainWindowForward(opening: openWindow) }
                 .keyboardShortcut(pageZoom == nil ? KeyboardShortcut("0") : nil)
             Button("Open Folder in New Window") {
                 guard let key = model.selectedFolderKey else { return }
@@ -407,7 +411,7 @@ struct AgentsCommands: Commands {
         CommandGroup(replacing: .printItem) {}
 
         CommandGroup(replacing: .help) {
-            Button("Agents Help") { NSWorkspace.shared.open(HelpSite.url) }
+            Button("Agent Loops Help") { NSWorkspace.shared.open(HelpSite.url) }
                 .keyboardShortcut("?")
             Divider()
             Button("Report a Problem…") { requests.showsReportProblem = true }
@@ -433,7 +437,7 @@ struct AgentsCommands: Commands {
             control.stop()
             guard let why else { return }
             let alert = NSAlert()
-            alert.messageText = "Agents can’t open in a browser"
+            alert.messageText = "Agent Loops can’t open in a browser"
             alert.informativeText = why
             alert.runModal()
         }
@@ -512,6 +516,12 @@ struct AgentsCommands: Commands {
 
     // MARK: Command menu
 
+    /// New App… (#5132): the question page in the main window, in front.
+    private func newApp() {
+        if popped != nil || folderWindow != nil { model.bringMainWindowForward(opening: openWindow) }
+        model.newApp()
+    }
+
     /// ⌘K (#4787): the main window's command menu, in front, with the actions that can be
     /// done now. A folder's or a session's own window brings the main window forward.
     private func openCommandMenu() {
@@ -585,6 +595,8 @@ struct AgentsCommands: Commands {
             when: keyTerminal.isOpen || keyFolder?.exists == true) { keyTerminal.toggle() }
         add("Add Folder…", MenuKeys.addFolder) { requests.folderSheet = .chooseFolder() }
         add("Clone Folder from Git URL…", MenuKeys.cloneFolder) { requests.folderSheet = .clone() }
+        add(FirstBuild.newAppItem, MenuKeys.newApp, keywords: ["Let's build your idea", "first build"],
+            when: !model.needsFirstRun && !model.asksFirstBuild) { newApp() }
         add("Show in Finder", when: folderForFinder != nil) { showInFinder() }
         add("Events", MenuKeys.events) { model.showEvents() }
         add("Resources", MenuKeys.resources) { model.showResources() }

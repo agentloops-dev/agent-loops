@@ -140,7 +140,7 @@ struct SendingRow: View {
                         .buttonStyle(.link)
                         .appText(.fine)
                 }
-                Button { model.putAwaySend(send) } label: { Image(systemName: "xmark") }
+                Button { model.putAwaySend(send) } label: { Image(icon: "xmark") }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("Put away")
@@ -173,12 +173,6 @@ extension View {
             SendToHostSheet(request: request).paperSheet()
         }
     }
-}
-
-/// A send that stops before it starts, in words.
-struct SendFailure: Error, CustomStringConvertible {
-    let message: String
-    var description: String { message }
 }
 
 /// The sheet: the folder on the host, the branches to send, and whether the uncommitted

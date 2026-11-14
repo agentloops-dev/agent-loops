@@ -10,7 +10,7 @@ struct OrgPolicyLine: View {
 
     var body: some View {
         #if os(macOS)
-        Label(mark.title, systemImage: mark.symbol)
+        Label(mark.title, icon: mark.symbol)
             .appText(.fine)
             .foregroundStyle(.secondary)
             .help(mark.words)
@@ -18,7 +18,7 @@ struct OrgPolicyLine: View {
             .accessibilityLabel(OrgPolicyWords.line(mark))
         #else
         VStack(alignment: .leading, spacing: 1) {
-            Label(mark.title, systemImage: mark.symbol)
+            Label(mark.title, icon: mark.symbol)
             Text(mark.words).fixedSize(horizontal: false, vertical: true)
         }
         .appText(.fine)
@@ -26,23 +26,6 @@ struct OrgPolicyLine: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(OrgPolicyWords.line(mark))
         #endif
-    }
-}
-
-/// The line for a refused call (`policyRefused`, FR-010): the refusal's title and words, in the
-/// failure's colour where a call failed rather than a choice being shown.
-struct OrgPolicyRefusalLine: View {
-    let refusal: DaemonAPI.PolicyRefusal
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            if let title = refusal.title {
-                Label(title, systemImage: refusal.symbol).bold()
-            }
-            Text(refusal.words).fixedSize(horizontal: false, vertical: true)
-        }
-        .appText(.supporting)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -68,9 +51,9 @@ struct OrgPolicyStrip: View {
     let state: DaemonAPI.PolicyState?
 
     var body: some View {
-        // A neutral banner (#4737): set by the organisation, nothing for the person to do here.
+        // A grey strip (#5034): set by the organisation, nothing for the person to do here.
         if let state, state.startsNothing, let line = Self.line(state) {
-            PaneBanner(tone: .neutral, symbol: "building.2", line, detail: Self.detail(state))
+            Strip(tone: .neutral, symbol: "building.2", line: line, detail: Self.detail(state))
                 .paneBannerInset()
         }
     }
@@ -83,7 +66,7 @@ struct OrgPolicyStrip: View {
     private static func detail(_ state: DaemonAPI.PolicyState) -> String? {
         guard state.stopAll, let stop = state.policy?.stopAll, stop.on else { return nil }
         return [OrgPolicyWords.stoppedBy(stop), stop.note].compactMap { $0?.isEmpty == false ? $0 : nil }
-            .joined(separator: "\n")
+            .joined(separator: " · ")
     }
 }
 
@@ -123,19 +106,4 @@ extension EnvironmentValues {
     /// The organisation's mark while its policy requires the command sandbox (#998), for the
     /// sandbox failure card deep in the transcript: **Continue without sandbox** is not offered.
     @Entry var orgSandboxSetBy: DaemonAPI.PolicySetBy?
-}
-
-extension View {
-    /// Dims and disables a choice the policy refuses, with the rule as its tip (#998, FR-020).
-    /// Nothing changes without a mark.
-    @ViewBuilder
-    func setByOrganisation(_ mark: DaemonAPI.PolicySetBy?) -> some View {
-        if let mark {
-            disabled(true)
-                .opacity(0.5)
-                .help(OrgPolicyWords.line(mark))
-        } else {
-            self
-        }
-    }
 }

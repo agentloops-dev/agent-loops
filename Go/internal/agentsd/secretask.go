@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // ask_secret (#2885): an agent asks for one named secret, the person types it into a masked
@@ -69,7 +69,7 @@ func (d *Daemon) askSecret(id wire.UUID, args map[string]json.RawMessage) (strin
 	req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: id, Message: &name, Secret: &secret,
 		Mode: wire.ElicitationRequestMode{Form: &wire.ElicitationRequestModeForm{Value: schema}}, Scope: wire.ElicitationRequestScopeSession,
 		AskedAt: now()}
-	r, answered := l.holdAskedForm(req, nil)
+	r, answered := l.holdAskedForm(req, nil, formHoldLimit)
 	if !answered {
 		return formStillOpen, nil
 	}

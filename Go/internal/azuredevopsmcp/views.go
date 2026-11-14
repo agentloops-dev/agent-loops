@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/forgepages"
+	"github.com/agentloops-dev/agent-loops/Go/internal/forgepages"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

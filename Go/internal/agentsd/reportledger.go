@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // What the control plane adds up across machines (#1811): cost, tokens and time by the
@@ -416,6 +416,8 @@ func (d *Daemon) startReports() {
 	safe.Go("usage rollup", d.sendReport)
 	// And the lineage changed since (#4275), on the same clock in case a send failed.
 	safe.Go("lineage sync", d.sendLineage)
+	// And the build timings changed since (#5232), the same way.
+	safe.Go("build timings sync", d.sendCITimings)
 	// What it has from a catalogue (#2019, M5), on the same clock.
 	safe.Go("governance report", d.sendGovernanceReport)
 	d.reportTick.Do(func() {
@@ -430,6 +432,7 @@ func (d *Daemon) startReports() {
 					d.sendReport()
 					d.sendGovernanceReport()
 					d.sendLineage()
+					d.sendCITimings()
 				}
 			}
 		})

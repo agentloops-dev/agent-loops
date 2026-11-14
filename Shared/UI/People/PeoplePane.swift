@@ -53,6 +53,10 @@ struct PeoplePane: View {
 
     var body: some View {
         Form {
+            // Read when it opens and on each change (#5146): how old the list is, at the top.
+            if let readAt = people.listAt {
+                Section {} header: { LastUpdateText(read: readAt) }
+            }
             if let problem = problem ?? people.listProblem {
                 Section {
                     Text(problem).appText(.supporting).tinted(.failure)
@@ -64,7 +68,7 @@ struct PeoplePane: View {
             if kind == .bot, list?.admin == true, !people.capped.isEmpty {
                 Section {
                     ForEach(people.capped, id: \.user) { reached in
-                        Text(BotWords.capReached(reached)).appText(.supporting).tinted(.attention)
+                        Text(BotWords.capReached(reached)).appText(.supporting).tinted(.warning)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

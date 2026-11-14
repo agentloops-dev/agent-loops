@@ -17,8 +17,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Docs (#3319): docs/list, docs/search and docs/read over this machine's docs, beside Work.
@@ -231,7 +231,7 @@ func (d *Daemon) askConnectors(ctx context.Context, cs []docsConnector, words st
 		}
 		if asked >= docsSearchLimit {
 			out[i].source.State = wire.DocsSourceStateFailed
-			out[i].source.Message = new("Agents asks at most 6 docs connectors at once.")
+			out[i].source.Message = new("Agent Loops asks at most 6 docs connectors at once.")
 			continue
 		}
 		asked++

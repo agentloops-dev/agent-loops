@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Where each turn's time went (#852, TimeLedger): the agent working, its tools, waiting on
@@ -109,8 +109,7 @@ func toolTimeKind(name string) string {
 	case strings.HasSuffix(n, "release_resource"):
 		// release_resource ends with lease_resource: a release is quick, and a tool.
 		return "tools"
-	case strings.HasSuffix(n, "wait_for_event") ||
-		strings.HasSuffix(n, "check_again") || strings.HasSuffix(n, "lease_resource"):
+	case strings.HasSuffix(n, "wait_for_event") || strings.HasSuffix(n, "lease_resource"):
 		return "others"
 	}
 	return "tools"

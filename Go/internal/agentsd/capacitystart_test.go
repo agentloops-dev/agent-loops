@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // While the machine is near capacity an agent's start queues with the reason, though a place

@@ -30,11 +30,11 @@ import (
 
 	"gocloud.dev/secrets"
 
-	"github.com/alexec/agents/Go/internal/controlplane/kms"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/internal/noticebucket"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/kms"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/noticebucket"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Prefix is where every person's user settings are in the store.
@@ -55,6 +55,10 @@ var (
 	// ErrInvalid is a part or a secret that is not what it must be. Its words never hold a
 	// secret's value.
 	ErrInvalid = errors.New("invalid")
+	// ErrNoSecret is Sealed for a name the person has no secret under.
+	ErrNoSecret = errors.New("no such secret")
+	// ErrNoCopy is Sealed for a secret that has no copy for the recipient yet (#3397).
+	ErrNoCopy = errors.New("no copy for this recipient yet")
 )
 
 var secretName = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
@@ -191,6 +195,12 @@ func partKind(part wire.UserSettingsPartName) (string, bool) {
 // SetPart sets one part of a person's settings, or with a null value removes it from the
 // user scope. It says whether anything changed.
 func (b *Book) SetPart(ctx context.Context, user string, part wire.UserSettingsPartName, value json.RawMessage) (bool, error) {
+	return b.setPart(ctx, user, part, value, false)
+}
+
+// setPart is SetPart; byMachine is a machine's manage_accounts (#5253), which says who added a
+// new account, where a client's set does not.
+func (b *Book) setPart(ctx context.Context, user string, part wire.UserSettingsPartName, value json.RawMessage, byMachine bool) (bool, error) {
 	if err := checkUser(user); err != nil {
 		return false, err
 	}
@@ -228,7 +238,7 @@ func (b *Book) SetPart(ctx context.Context, user string, part wire.UserSettingsP
 		s.AgentConfigFiles = nil
 		slot := partOf(&s, part)
 		if part == wire.UserSettingsPartNameAccounts && !removing {
-			parsed = canonical(stampAccounts(*slot, parsed, b.now()))
+			parsed = canonical(stampAccounts(*slot, parsed, b.now(), byMachine))
 		}
 		if string(canonical(*slot)) == string(parsed) {
 			return nil, nil
@@ -686,6 +696,45 @@ func (b *Book) Work(ctx context.Context, user, client string, recipients []wire.
 		}
 	}
 	return items, lacks, nil
+}
+
+// Sealed is user/sealedSecret's part (#5114): one secret of user's as the person's client
+// sealed it to recipient, a client of theirs (c:<CLIENT UUID>). ErrNoSecret when there is
+// none under name, ErrNoCopy when it has no envelope for recipient. Nothing here opens it.
+func (b *Book) Sealed(ctx context.Context, user, name, recipient string) (wire.UserSealedSecret, error) {
+	if err := checkUser(user); err != nil {
+		return wire.UserSealedSecret{}, err
+	}
+	if !secretName.MatchString(name) {
+		return wire.UserSealedSecret{}, ErrNoSecret
+	}
+	o, err := b.store.Get(ctx, secretKey(user, name))
+	if err != nil {
+		return wire.UserSealedSecret{}, err
+	}
+	if o == nil {
+		return wire.UserSealedSecret{}, ErrNoSecret
+	}
+	var r secretRecord
+	if err := json.Unmarshal(o.Data, &r); err != nil {
+		return wire.UserSealedSecret{}, err
+	}
+	if r.Sealed == nil || r.Name != name {
+		return wire.UserSealedSecret{}, ErrNoSecret
+	}
+	mine, ok := r.Sealed[recipient]
+	if !ok {
+		return wire.UserSealedSecret{}, ErrNoCopy
+	}
+	out := wire.UserSealedSecret{Name: wire.UserSecretName(name), Version: r.Version, Sealed: mine}
+	if r.Kind != "" {
+		kind := wire.UserSecretKind(r.Kind)
+		out.Kind = &kind
+	}
+	if r.NeedsApproval {
+		out.NeedsApproval = new(true)
+	}
+	return out, nil
 }
 
 // Delivery is machine/userSettings for a machine of user's: the settings, and each secret as

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/internal/githubmcp"
-	"github.com/alexec/agents/Go/internal/gitlabmcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // fakeSetupGitHub answers the set-up's reads; err names a slot's error.
@@ -330,7 +330,7 @@ func TestAGitLabFoldersConnectorSetUp(t *testing.T) {
 		review.State != wire.ConnectorSlotStateRead || review.Choice != "GitLab merge requests" {
 		t.Fatalf("tasks %+v review %+v", tasks, review)
 	}
-	if ci.State != wire.ConnectorSlotStateRefused || ci.Message == nil || *ci.Message != "GitLab refused: Agents can't see pipelines in agentstest-group/agents-walk." {
+	if ci.State != wire.ConnectorSlotStateRefused || ci.Message == nil || *ci.Message != "GitLab refused: Agent Loops can't see pipelines in agentstest-group/agents-walk." {
 		t.Fatalf("ci: %+v", ci)
 	}
 	if setup.Done != 5 || setup.Connection == nil || setup.Connection.Provider != wire.ConnectionProviderGitlab || setup.Installed != nil {

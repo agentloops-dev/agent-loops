@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/acp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 var warmT0 = time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
@@ -364,8 +364,9 @@ func waitIdle(t *testing.T, d *Daemon, id wire.UUID) {
 		t.Fatal(text)
 	}
 	later := time.Now().Add(warmIdle + time.Minute)
-	warmNow = func() time.Time { return later }
-	t.Cleanup(func() { warmNow = time.Now })
+	clock := func() time.Time { return later }
+	warmClock.Store(&clock)
+	t.Cleanup(func() { warmClock.Store(nil) })
 }
 
 // An agent that waits past releaseAfterMinutes has no runtime; its ACP session id is kept,

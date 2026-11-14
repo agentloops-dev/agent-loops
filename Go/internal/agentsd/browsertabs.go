@@ -12,8 +12,8 @@ import (
 	"github.com/chromedp/cdproto/target"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/alexec/agents/Go/internal/browser"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Each session's tabs in the machine's browser (#3916). There is one Chromium and one
@@ -39,6 +39,8 @@ type browserTabState struct {
 	usedTurn map[wire.UUID]bool
 	// devices is each session's device profile (browserdevice.go, #4086).
 	devices map[wire.UUID]*browser.Device
+	// passkeys is each session's software passkey (browserpasskey.go, #4085).
+	passkeys map[wire.UUID]*sessionPasskey
 }
 
 // sessionKey is a session's id as these records and the watches keep it: a client may
@@ -54,7 +56,7 @@ func (d *Daemon) followBrowserTabs(endpoint string) {
 	}
 	old := d.tabs
 	d.tabs, d.tabsEndpoint = nil, ""
-	d.tabOwner, d.ownTabs, d.devices = nil, nil, nil
+	d.tabOwner, d.ownTabs, d.devices, d.passkeys = nil, nil, nil, nil
 	d.tabsMu.Unlock()
 	if old != nil {
 		old.Close()
@@ -77,11 +79,20 @@ func (d *Daemon) followBrowserTabs(endpoint string) {
 }
 
 // stopFollowingBrowserTabs is the browser stopped: its tabs are gone, and their owners.
-func (d *Daemon) stopFollowingBrowserTabs() {
+func (d *Daemon) stopFollowingBrowserTabs() { d.stopFollowingBrowserTabsOf("") }
+
+// stopFollowingBrowserTabsOf is the browser at endpoint stopped. On a restart (a software
+// passkey's, a window's) its stop can be heard after the next browser started and its tabs
+// were followed (#5196): those, their owners and their passkeys stay. "" is any browser.
+func (d *Daemon) stopFollowingBrowserTabsOf(endpoint string) {
 	d.tabsMu.Lock()
 	t := d.tabs
+	if t != nil && endpoint != "" && d.tabsEndpoint != endpoint {
+		d.tabsMu.Unlock()
+		return
+	}
 	d.tabs, d.tabsEndpoint = nil, ""
-	d.tabOwner, d.ownTabs, d.devices = nil, nil, nil
+	d.tabOwner, d.ownTabs, d.devices, d.passkeys = nil, nil, nil, nil
 	d.tabsMu.Unlock()
 	if t != nil {
 		t.Close()
@@ -95,7 +106,7 @@ func (d *Daemon) browserTabsEnded(t *browser.Tabs) {
 		return
 	}
 	d.tabs, d.tabsEndpoint = nil, ""
-	d.tabOwner, d.ownTabs, d.devices = nil, nil, nil
+	d.tabOwner, d.ownTabs, d.devices, d.passkeys = nil, nil, nil, nil
 	d.tabsMu.Unlock()
 }
 
@@ -114,6 +125,7 @@ func (d *Daemon) browserTabCreated(tab, opener target.ID) {
 	d.ownTabLocked(owner, tab)
 	d.tabsMu.Unlock()
 	d.giveTabDevice(owner, tab)
+	d.giveTabPasskey(owner, tab)
 	d.sessionTabChanged(owner)
 }
 
@@ -130,6 +142,7 @@ func (d *Daemon) browserTabClosed(tab target.ID) {
 		// Its tabs all closed: the session's next tab starts as a desktop browser again.
 		delete(d.ownTabs, owner)
 		delete(d.devices, owner)
+		delete(d.passkeys, owner)
 	}
 	d.tabsMu.Unlock()
 	d.sessionTabChanged(owner)
@@ -178,6 +191,7 @@ func (d *Daemon) openSessionTab(agent wire.UUID, address string) error {
 	d.ownTabLocked(agent, tab)
 	d.tabsMu.Unlock()
 	d.giveTabDevice(agent, tab)
+	d.giveTabPasskey(agent, tab)
 	d.sessionTabChanged(sessionKey(agent))
 	return nil
 }

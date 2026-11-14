@@ -230,7 +230,14 @@ struct EventsView: View {
     /// list leaves both room.
     private var filters: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) { menus }
+            HStack(spacing: 8) {
+                menus
+                // Other machines' events are read every 30 s (#5146): how old the last read is.
+                if scope == nil, let read = model.work.busReadAt {
+                    Spacer(minLength: 8)
+                    LastUpdateText(read: read)
+                }
+            }
             HStack(spacing: 8) { chips }
         }
     }
@@ -323,8 +330,7 @@ struct EventsView: View {
 }
 
 /// One row's piece of its day's raised card, so the rows can sit in a lazy stack and
-/// still read as one card: raised paper, a rule round the outside, the shadow only
-/// where the card's outside edge is. Rounded at the top of the first row and the foot
+/// still read as one card: raised paper and a rule round the outside. Rounded at the top of the first row and the foot
 /// of the last.
 private struct CardSlice: View {
     let isFirst: Bool
@@ -337,16 +343,8 @@ private struct CardSlice: View {
                                            bottomLeadingRadius: isLast ? Self.radius : 0,
                                            bottomTrailingRadius: isLast ? Self.radius : 0,
                                            topTrailingRadius: isFirst ? Self.radius : 0)
+        // No shadow: a card on the page is set apart by its rule alone (Paper v2, #4974).
         shape.fill(Paper.raised)
-            .shadow(color: Paper.shadow, radius: 6, y: 2)
-            // A slice's shadow falling on its neighbours would draw a band across the
-            // card; keep only what falls outside it.
-            .mask {
-                Rectangle()
-                    .padding(.horizontal, -12)
-                    .padding(.top, isFirst ? -12 : 0)
-                    .padding(.bottom, isLast ? -12 : 0)
-            }
             .overlay { Edges(isFirst: isFirst, isLast: isLast, radius: Self.radius).stroke(Paper.rule, lineWidth: 1) }
     }
 
@@ -413,7 +411,7 @@ private struct WaitingNow: View {
                             Button {
                                 Task { await model.cancelWait(of: agent.agentID) }
                             } label: {
-                                Image(systemName: "xmark").glyph(.caption) // decorative glyph
+                                Image(icon: "xmark").glyph(.caption) // decorative glyph
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(.secondary)
@@ -429,18 +427,26 @@ private struct WaitingNow: View {
     }
 }
 
-/// The foot of the sidebar's way into Events (042; wireframes §1). Its line says when
-/// the last thing happened. There is no count: the log is read, it does not ask.
+/// The foot of the sidebar's way into Events (042; wireframes §1). Under the title, in
+/// grey, how many sessions wait for an event; nothing when none waits. There is no count
+/// of events: the log is read, it does not ask.
 struct EventsRow: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        // The title alone (#587): only a session's row has something at its end. When
-        // the last event came is the tooltip's.
-        HStack(alignment: .firstTextBaseline) {
-            Text("Events").foregroundStyle(.primary)
-            Spacer()
+        // The title (#587): only a session's row has something at its end. When the last
+        // event came is the tooltip's; a wait's age says nothing, so the line has none.
+        let waiting = EventsWords.waitingLine(model.work.waitingAgents.count)
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Events").foregroundStyle(.primary)
+                Spacer()
+            }
+            if let waiting {
+                Text(waiting).appText(.fine).foregroundStyle(.secondary).lineLimit(1)
+            }
         }
+        .accessibilityValue(waiting ?? "")
         .help(model.work.lastEventAt.map { "Last at \(LeaseWords.clock($0)). What happened, what came of it, and who is waiting" }
               ?? "What happened, what came of it, and who is waiting")
     }

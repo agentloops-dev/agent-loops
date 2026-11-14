@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/mcpevents"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/mcpevents"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The MCP events (#1753) of a Forgejo or Gitea repository's pull requests, their checks and its

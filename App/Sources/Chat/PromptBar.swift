@@ -79,7 +79,9 @@ struct PromptBar: View {
     /// page's bar is that folder's; the chat's is its agent's.
     private var draftKey: DraftKey {
         if let agent { return .agent(agent.id) }
-        return .newAgent(folder: folderIsFixed ? model.selectedFolder : nil)
+        // The project's (#5376): On ▾ moves to its folder on another machine, the words stay.
+        guard folderIsFixed, let key = model.selectedFolderKey else { return .newAgent(folder: nil) }
+        return .newSession(in: key, folders: model.liveFolders)
     }
 
     // MARK: What the agent thinks you might ask
@@ -134,7 +136,6 @@ struct PromptBar: View {
         GlassEffectContainer(spacing: 12) {
             VStack(alignment: .leading, spacing: 12) {
                 whereAndWhat
-                atItsLimit
                 startingOnOut
                 if draftLostSomething {
                     Text(PromptWords.draftLostSomething)
@@ -274,29 +275,6 @@ struct PromptBar: View {
         }
     }
 
-    // MARK: A limit reached
-
-    /// Said above the field when the open agent may take no more prompts, with
-    /// exactly two ways out: raise the limit, or let this one agent go on.
-    ///
-    /// Neither happens without the reader choosing it and neither is the default.
-    /// Nothing here sends a prompt — raising a ceiling makes an agent promptable
-    /// again; continuing is the reader's second act, deliberately.
-    @ViewBuilder
-    private var atItsLimit: some View {
-        // The phone's too (033). Only the way to raise it is the Mac's own.
-        if let agent {
-            CostLimitBanner(agent: agent, limits: model.costLimits, costState: model.costState,
-                            goOn: { Task { await model.letThisAgentGoOn(agent) } }) {
-                // The limits are rules of Agents ▸ Policy (#2957): open Settings there.
-                SettingsLink { Text("Raise the limit") }
-                    .buttonStyle(.paper)
-                    .appText(.fine)
-                    .simultaneousGesture(TapGesture().onEnded { model.settingsPaneAsked = .agentsPolicy })
-            }
-        }
-    }
-
     /// A new chat about to start on a runtime that is out (052, US3; 065): said before
     /// the first prompt, and only said. Send still sends; there is no other runtime to
     /// offer, since there is no order to take one from.
@@ -306,20 +284,11 @@ struct PromptBar: View {
            let sentence = model.runtimeAllowances?.startingOnOut(runtimeID) {
             Text(sentence)
                 .appText(.fine)
-                .foregroundStyle(StateTint.attention.style(or: .primary))
+                .foregroundStyle(StateTint.warning.style(or: .primary))
         }
     }
 
     // MARK: The folder, and what runs in it
-
-    /// What a row over the prompt does on a Mac (057): Stop, the subagent's steps in
-    /// the sidebar, and the output in TextEdit.
-    private func backgroundActions(_ agent: Agent) -> BackgroundActions {
-        BackgroundActions(
-            stop: { [model] item in await model.stopBackground(item, of: agent.id) },
-            steps: { [chatActions] item in chatActions.subagentSteps?(item.id) },
-            output: { [model] item in Task { await BackgroundOutput.open(item, of: agent, model: model) } })
-    }
 
     private var whereAndWhat: some View {
         // Top for a chat, so its runtime sits level with the first line however tall the
@@ -336,9 +305,6 @@ struct PromptBar: View {
                         SessionLabelEditor(agent: agent)
                             .fixedSize(horizontal: true, vertical: false)
                     }
-                PromptHeader(agent: agent,
-                             background: agent.background,
-                             backgroundActions: backgroundActions(agent))
                 }
                 .task(id: "\(agent.id)-\(agent.cwd.path)") { await model.loadAgentWorktrees(of: agent) }
                 Spacer(minLength: 0)
@@ -358,7 +324,7 @@ struct PromptBar: View {
                 Button {
                     isShowingSessions = true
                 } label: {
-                    Image(systemName: "clock.arrow.circlepath")
+                    Image(icon: "clock.arrow.circlepath")
                 }
                 .buttonStyle(.paper)
                 .appText(.fine)
@@ -607,7 +573,7 @@ struct PromptBar: View {
 
             HStack(spacing: 8) {
                 Button(action: chooseAttachment) {
-                    Image(systemName: "paperclip")
+                    Image(icon: "paperclip")
                         .appText(.reading).fontWeight(.semibold)
                         .frame(width: 22, height: 22)
                 }
@@ -621,7 +587,7 @@ struct PromptBar: View {
                 PushToTalkButton(tap: toggleDictation, begin: beginDictation, end: finishPushToTalk,
                                  cancel: dictation.stop) {
                     // The microphone, blue while it listens: the waveform is voice mode's (Alex, 2026-10-29).
-                    Image(systemName: "microphone")
+                    Image(icon: "microphone")
                         .appText(.reading).fontWeight(.semibold)
                         .foregroundStyle(dictation.isListening ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
                         .frame(width: 22, height: 22)
@@ -663,7 +629,7 @@ struct PromptBar: View {
                             if acting == .stop {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Image(systemName: PromptWords.stopSymbol)
+                                Image(icon: PromptWords.stopSymbol)
                                     .appText(.reading).fontWeight(.semibold)
                             }
                         }
@@ -684,7 +650,7 @@ struct PromptBar: View {
                             if isGoing {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Image(systemName: PromptWords.sendSymbol(willQueue: willQueue))
+                                Image(icon: PromptWords.sendSymbol(willQueue: willQueue))
                                     .appText(.reading).fontWeight(.semibold)
                             }
                         }
@@ -1002,7 +968,7 @@ struct PromptBar: View {
         } label: {
             HStack(spacing: 4) {
                 Text(reachTitle)
-                Image(systemName: "chevron.down")
+                Image(icon: "chevron.down")
                     // Decorative: a glyph in a capsule, not text (FR-015).
                     .glyph(size: 8, weight: .semibold)
                     .foregroundStyle(.secondary)
@@ -1118,7 +1084,7 @@ struct PromptBar: View {
             .controlSize(.small)
         }
         .padding(10)
-        .background(StateTint.attention.color?.opacity(0.07) ?? .clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(StateTint.warning.color?.opacity(0.07) ?? .clear, in: RoundedRectangle(cornerRadius: 8))
     }
 
     /// The command sandbox, beside the mode it is so often mistaken for (064, FR-004).
@@ -1253,7 +1219,7 @@ struct PromptBar: View {
             }
         }
         .padding(10)
-        .background(StateTint.attention.color?.opacity(0.07) ?? .clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(StateTint.warning.color?.opacity(0.07) ?? .clear, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var labelDraft: some View {

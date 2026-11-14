@@ -6,7 +6,7 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A runtime moving itself to another mode (Claude leaving plan mode, or a config option

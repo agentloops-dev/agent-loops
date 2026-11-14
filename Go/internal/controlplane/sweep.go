@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controlplane/audit"
-	"github.com/alexec/agents/Go/internal/controlplane/providers"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/audit"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 )
 
 // What the store keeps, and for how long (StoreSweep, #174, contracts/store.md rule 11).
@@ -279,6 +279,12 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 	// The merged copy of lineage (#4275): old links and states, and a removed machine's.
 	graph, err := sweepLineageGraph(ctx, s, rs, now, left-report.usage)
 	report.usage += graph
+	if err != nil {
+		return report, err
+	}
+	// The copy of the build timings (#5232): a stopped machine's, and a removed machine's.
+	builds, err := sweepBuildTimings(ctx, s, rs, now, left-report.usage)
+	report.usage += builds
 	if err != nil {
 		return report, err
 	}

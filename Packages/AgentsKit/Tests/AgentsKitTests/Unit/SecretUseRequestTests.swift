@@ -35,6 +35,16 @@ struct SecretUseRequestTests {
         #expect(browser.secretUse?.actions == [.once, .session, .always, .deny])
         let screen = try request(#"{"secretUse":{"name":"the screen","use":"screen","place":"Studio","app":"TextEdit"}}"#)
         #expect(screen.line(asker: nil) == "Screen: TextEdit on Studio")
+        // #4538: an agent asks to turn on its folder's workflow, or approve its folder's connector.
+        let workflow = try request(#"{"secretUse":{"name":"answer-a-sign-up-code","use":"workflow","place":"Agents"}}"#)
+        #expect(workflow.title(asker: "Sign up") == "Wants to turn on answer-a-sign-up-code")
+        #expect(workflow.line(asker: "Sign up") == "Sign up · Workflow in Agents")
+        #expect(workflow.secretUse?.actions == [.once, .deny])
+        let connector = try request(#"{"secretUse":{"name":"email","use":"connector","place":"Agents","digest":"d1"}}"#)
+        #expect(connector.title(asker: nil) == "Wants to approve email")
+        #expect(connector.line(asker: nil) == "Connector in Agents")
+        #expect(connector.secretUse?.digest == "d1")
+        #expect(connector.secretUse?.actions == [.once, .deny])
         #expect(NeedRequest.Action.allCases.map(\.word) == ["Approve", "Approve for This Session", "Always Approve", "Approve for 1 Hour", "Deny"])
     }
 
@@ -51,6 +61,25 @@ struct SecretUseRequestTests {
         #expect(try request(#"{"secretUse":{"name":"T","use":"fill","place":"a.com"}}"#).isTerminal == false)
         let sent = try JSONValue.encoding(DaemonAPI.RequestsAnswer(id: terminal.id, secretUse: .hour))
         #expect(sent["answer"]?["secretUse"]?["action"]?.stringValue == "hour")
+    }
+
+    /// #4918: a session's own secret uses are cards in its chat, Later's too; another
+    /// session's, another kind of request and a terminal's (no session) are not.
+    @MainActor @Test func aSessionsSecretUsesAreItsChatCards() throws {
+        let asking = UUID()
+        func ask(_ source: String, by agent: UUID?, at: TimeInterval) throws -> NeedRequest {
+            NeedRequest(id: UUID(), kind: .approve, source: source, title: "Fill T on a.com",
+                        detail: try JSONValue.parse(Data(#"{"secretUse":{"name":"T","use":"fill","place":"a.com"}}"#.utf8)),
+                        folder: URL(filePath: "/tmp/work/api"), askedBy: agent, askedAt: Date(timeIntervalSince1970: at))
+        }
+        let first = try ask("secretUse", by: asking, at: 1)
+        var later = try ask("secretUse", by: asking, at: 2)
+        later.deferred = .init(atMac: true, at: Date())
+        let model = AgentsModel()
+        model.replaceRequests([later, try ask("question", by: asking, at: 3), try ask("secretUse", by: UUID(), at: 4),
+                               try ask("secretUse", by: nil, at: 5), first])
+        #expect(model.secretUses(askedBy: asking).map(\.id) == [first.id, later.id])
+        #expect(model.secretUses(askedBy: nil).isEmpty)
     }
 
     @Test func anotherRequestKeepsItsOwnTitle() throws {

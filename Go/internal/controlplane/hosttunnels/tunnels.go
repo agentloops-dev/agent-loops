@@ -34,9 +34,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Record is HostTunnels.Record, stored as v1/tunnels/<id>.json. Its fields are the

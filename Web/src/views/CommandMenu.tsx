@@ -19,10 +19,12 @@ import {
   appleKeys, commandFound, commandKey, commandKindWord, commandMenuWords, isCommandMenuKey, type CommandItem,
 } from "../model/commandMenu";
 import { orderedFolders } from "./Sidebar";
+import { firstBuild, newAppItem } from "../model/firstBuild";
 import { archiveAndLeave, runSessionAction } from "./SessionMenu";
 import { laterRequestOf } from "./ListKeys";
 import { laterTime, listKeyGlyph } from "../model/listKeys";
 import { laterWords } from "../model/later";
+import { Icon, type IconName } from "./Icon";
 
 /** A key press as the page's own handlers take it, so an action does what its shortcut does. */
 function press(key: string, apple: boolean) {
@@ -43,7 +45,8 @@ const goKey = (section: NavSection) => {
 type Run = () => void;
 
 /** Each kind's mark at the row's start, as the window's symbol. */
-const kindGlyph: Record<CommandItem["kind"], string> = { action: "⌘", session: "◍", folder: "▤", issue: "◉", pr: "⇄" };
+const kindIcon: Record<CommandItem["kind"], IconName> = {
+  action: "square-terminal", session: "message-circle", folder: "folder", issue: "circle-dot", pr: "git-pull-request" };
 
 /** The menu's items and what each does: the open folder's sessions, the actions that can be done now, the other
  * folders' sessions, the folders, then the issues and PRs the Work lists have read; the window's order. */
@@ -97,6 +100,7 @@ export function commandItems(store: Store, apple: boolean): { items: CommandItem
     add("Next Session", () => pressBare("j"), listKeyGlyph.next);
     add("Previous Session", () => pressBare("k"), listKeyGlyph.previous);
   }
+  add(newAppItem, () => firstBuild.newApp(), undefined, ["Let's build your idea", "first build"]);
   if (store.archiveUndo.value) add("Undo Archive", () => void store.undoArchive(), commandKey("z", apple));
   // The same for Unarchive, Rename, the labels, Mute and Later (#4793).
   const change = store.changeUndo.value;
@@ -199,7 +203,7 @@ function CommandMenuSheet({ store, close }: { store: Store; close: () => void })
                 aria-description={commandKindWord[item.kind]}
                 onMouseMove={() => { if (at.value !== i) at.value = i; }}
                 onMouseDown={(e) => { e.preventDefault(); pick(item); }}>
-                <span class="command-kind" aria-hidden="true" title={commandKindWord[item.kind]}>{kindGlyph[item.kind]}</span>
+                <span class="command-kind" aria-hidden="true" title={commandKindWord[item.kind]}><Icon name={kindIcon[item.kind]} /></span>
                 <span class="command-title">{item.title}</span>
                 {item.ref && !item.title.endsWith(item.ref) && <span class="command-detail">{item.ref}</span>}
                 {item.detail && <span class="command-detail">{item.detail}</span>}

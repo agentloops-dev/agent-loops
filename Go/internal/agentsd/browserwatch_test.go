@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/browser"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Watching the machine's browser (#3528): watching starts nothing, frames go only to the
@@ -119,6 +119,10 @@ func TestTheWiresInputIsTheBrowsers(t *testing.T) {
 	in := browserInput(wire.BrowserInputRequest{Kind: wire.BrowserInputKindMouse, Type: &kind, X: &x, Y: &y,
 		Button: &button, ClickCount: &clicks, Modifiers: &mods})
 	if in != (browser.Input{Kind: "mouse", Type: "mousePressed", X: 12.5, Y: 40, Button: "left", ClickCount: 2, Modifiers: 8}) {
+		t.Fatalf("%+v", in)
+	}
+	command := wire.BrowserEditCommandCut
+	if in := browserInput(wire.BrowserInputRequest{Kind: wire.BrowserInputKindEdit, Command: &command}); in != (browser.Input{Kind: "edit", Command: "cut"}) {
 		t.Fatalf("%+v", in)
 	}
 }

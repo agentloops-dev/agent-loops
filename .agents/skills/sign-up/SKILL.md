@@ -1,12 +1,12 @@
 ---
 name: sign-up
-description: Make a new outside account for Agents (gitlab.com, DigitalOcean, AWS and the like) with the app's browser tools, with Alex's rules for terms, cookies, the Privacy.com card, passwords and tokens (#1692). One provider per session. Use when an issue needs an account (`needs-account`), or when Alex asks to sign up to a service.
+description: Make a new outside account for Agent Loops (gitlab.com, DigitalOcean, AWS and the like) with the app's browser tools, with Alex's rules for terms, cookies, the Privacy.com card, passwords and tokens (#1692). One provider per session. Use when an issue needs an account (`needs-account`), or when Alex asks to sign up to a service.
 ---
 
 # Sign up to a service
 
 Alex asked for this skill (2026-10-16, 2026-10-19). The 0.7 sign-ups (gitlab.com #1634,
-DigitalOcean #865, AWS #1345) wrote it. An account made here is for Agents to test and run
+DigitalOcean #865, AWS #1345) wrote it. An account made here is for Agent Loops to test and run
 against. It is never Alex's personal account.
 
 ## Rules from Alex
@@ -37,7 +37,10 @@ against. It is never Alex's personal account.
   - **The form** to make the account, and **a form per charge** (#3910).
   - **A CAPTCHA or bot check** (reCAPTCHA, HUMAN's press-and-hold): `hand_to_person` on the
     page (#3907). It is one short step per account; after sign-up, use the site's API, a
-    token or a TOTP sign-in, never the sign-up page again.
+    token or a TOTP sign-in, never the sign-up page again. Google and Microsoft too: the
+    agents' browser is Google Chrome (#5207), signed in to both (#5230), and the card
+    brings its real window to the front (#5208). Never do the check with synthetic input
+    (a scripted click or a held press).
   - **An SMS code or a phone call** (#3914 is not planned: TOTP only). Ask with
     `ask_question` and name who asks ("the <provider> sign-up lane asks: …"), then type the
     code Alex gives.
@@ -87,7 +90,7 @@ the tab with `browser_close` when done.
 
 The `email` server's event `email.received` watches INBOX and the Junk folder (Fastmail's
 **Spam**) when no `folder` is given, so a code the server took for spam still comes, and Mail
-need not run. `scripts/mail-code.py` runs the server (`email-mcp`, in Agents.app) with
+need not run. `scripts/mail-code.py` runs the server (`email-mcp`, in Agent Loops.app) with
 `EMAIL_PASSWORD` from Settings ▸ Secrets, and prints only the code or the link:
 
 1. **Before** you press the button that sends the mail, start the wait:
@@ -115,8 +118,12 @@ agentloops@fastmail.com where the site lets you, or ask Alex with `ask_question`
   `<PROVIDER>_PASSWORD`: it is saved in Settings ▸ Secrets and typed in unseen. Fill a confirm
   field, and later sign-ins, with `fill_secret` and the same name. Give the site's rules as
   `rules` when it states them in words. On a change-password page, set `replace: true`; the
-  old value stays as `<NAME>_PREVIOUS`. Older accounts (0.7) keep theirs in the Keychain item
-  `agents-signup:<domain>`.
+  old value stays as `<NAME>_PREVIOUS`. Older accounts (0.7) kept theirs in the Keychain item
+  `agents-signup:<domain>`: agentsd copies each one into Settings ▸ Secrets at start (#5043), as
+  `<PROVIDER>_PASSWORD` (the domain's first label; `AWS_PASSWORD`, `GOOGLE_WORKSPACE_PASSWORD`,
+  `OKTA_INTEGRATOR_PASSWORD`), with Ask before use on, unless that name is set already. Sign in
+  with `fill_secret` and that name; never read the Keychain item yourself. A site that has not
+  seen the browser may still send a new-device code to agentstest@ until #4303 moves the account.
 - **Tokens, keys and app passwords a page shows once:** save it with `capture_secret` (#4028)
   on the element that shows it, named `<PROVIDER>_TOKEN` (or `_PASSWORD`), with its prefix as
   `pattern` (`glpat-[A-Za-z0-9_-]{20,}`, `dop_v1_[a-f0-9]{64}`). It is saved in Settings ▸
@@ -129,10 +136,14 @@ agentloops@fastmail.com where the site lets you, or ask Alex with `ask_question`
   pipe it from the page into `scripts/totp.sh --save <service>` (it writes
   `~/.agents/secrets/<service>-totp`, mode 600) without printing it. `scripts/totp.sh
   <service>` prints only the current code: read it into a script that types it, never into a
-  transcript. Where a site takes only a passkey, use a software passkey on Chrome's virtual
-  authenticator (WebAuthn over CDP), its key in `~/.agents/secrets/<service>-passkey.json`:
-  `scripts/okta-signin.mjs` makes one with `WebAuthn.addVirtualAuthenticator`, enrols it, and
-  saves it with `WebAuthn.getCredentials` for the next run (`okta-integrator-passkey.json`).
+  transcript. Where a site takes only a passkey, use a software passkey (#4085): call
+  `browser_passkey` with `secret` (one per account, e.g. `GITHUB_AGENT_PASSKEY`) and `site`
+  (`github.com`) **before** you open the sign-up or sign-in page, as it starts the browser
+  again with WebAuthn. With the secret not set yet, choose the site's "Add a passkey" or "Set
+  up a passkey": the passkey is saved as the secret, unseen. At the next sign-in, call it
+  again with the same secret and choose "Sign in with a passkey". Record the second factor as
+  "software passkey" in `manage_accounts`. The Okta walk's own Chrome still uses
+  `scripts/okta-signin.mjs`, which keeps its key in `~/.agents/secrets/okta-integrator-passkey.json`.
 - **Accounts:** `manage_accounts` with action `add` (#3967): service, a description (what it is
   for and who uses it, so another agent can tell it from the other accounts of the service, #4164), address, plan, monthly
   cost, card (its name in Settings ▸ You ▸ Secrets), secret (its name there, or where it is), the
@@ -141,6 +152,9 @@ agentloops@fastmail.com where the site lets you, or ask Alex with `ask_question`
   plane refuses one that looks like a token, a key or a card number.
   To change an account, give all its fields again: an add that replaces one asks the person
   first (#4001), and a field left out is lost.
+  When a new account replaces an old one (a new address, a closed account), remove the old
+  record: `manage_accounts` with action `remove` and its `ids` (#5253). One an agent added
+  goes at once; one the person added asks them on a card first.
 - **Tracker:** the account's row in Settings ▸ You ▸ Accounts (`manage_accounts`) and its notes.
   No secrets.
 
@@ -155,6 +169,38 @@ agentloops@fastmail.com where the site lets you, or ask Alex with `ask_question`
 ## Per provider
 
 What the 0.7 sign-ups found (2026-10-19). Pages change; read the page before you trust these.
+
+### A GitHub organisation (free)
+
+From #4955 and #5064 (2026-11-12). An organisation is not a new sign-up: it is made from
+`alexec`'s own account, so it is the one exception to "never sign in to Alex's existing
+accounts", and only for this step.
+
+- **Alex's yes first, by a form**, with the name, and "not now" as an option. The name is
+  published at once, and GitHub holds back a deleted organisation's name, so a wrong name
+  cannot simply be made again.
+- **Is it there already?** `gh api orgs/<name>`: a 200 means it exists. Then check
+  `env -u GH_TOKEN /usr/local/bin/gh api user/memberships/orgs/<name>` (Alex's own `gh`):
+  `role` `admin` means Alex owns it, so record it ("Then") and stop. A 404 on both means
+  the name is free.
+- **No API.** `POST /admin/organizations` is only for GitHub Enterprise Server site admins.
+  Use the page https://github.com/account/organizations/new in the agents' browser
+  (`browser_*`), signed in as `alexec` (as #4291 did).
+- **The form:** the **Free** plan (Team only with Alex's form for the charge, #1064), the
+  name, the contact email `alex@alexecollins.com`, "This organization belongs to: **My
+  personal account**", and the terms (accept them for Alex). Untick any marketing box. Skip
+  "add members".
+- **CAPTCHA or sudo:** GitHub's docs list no sudo step for this page. If GitHub shows a
+  CAPTCHA, or asks for sudo (its email code goes to Alex's address), do only that step with
+  `hand_to_person`, then add it to #5064 (or the open automation issue for it under #3905).
+  The software passkey of #4085 is the sudo factor Alex chose (#4955).
+- **Check after:** `gh api orgs/<name>` gives 200 and `type` `Organization`; Alex's own `gh`
+  on `user/memberships/orgs/<name>` gives `role` `admin` and `state` `active`, and on
+  `orgs/<name> --jq .plan.name` gives `free`. A plan that is not `free` is a charge: tell
+  Alex at once with `notify` and in the issue.
+- **Then:** record it with `manage_accounts` (`add`; service `github`, the plan, the owner
+  `alexec`, the issue). Transfer no repo or App here: those are their own issues, each after
+  Alex's yes (#5063, #5065).
 
 ### gitlab.com (free)
 
@@ -202,7 +248,7 @@ What the 0.7 sign-ups found (2026-10-19). Pages change; read the page before you
   preferences, Add payment method, make the other card the default, then open the sign-up
   URL again and it finishes. Type the card with `fill_secret`.
 - Never make root access keys. Root MFA is Alex's. Make an IAM user (`agents-ec2`) whose
-  policy allows only EC2 describe, start, stop and run/terminate on instances with an Agents
+  policy allows only EC2 describe, start, stop and run/terminate on instances with an Agent Loops
   tag; keep a copy of the policy in the account's notes. Its key goes in
   `~/.agents/secrets/aws-ec2` (credentials-file format, profile `agents-ec2`). The
   access-key description refuses "~".

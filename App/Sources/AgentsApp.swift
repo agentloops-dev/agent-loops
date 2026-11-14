@@ -21,6 +21,8 @@ struct AgentsApp: App {
         CrashHook.install()
         // And the next hang names its stack (#237).
         HangReporter.install()
+        // Paper v2's faces (#4975), before the first window draws in them.
+        PaperFonts.register()
         // The defaults of scratch copies that have gone (#1029).
         Task.detached(priority: .utility) { WindowDefaults.sweep() }
         #if DEBUG
@@ -81,6 +83,16 @@ struct AgentsApp: App {
                 .environment(model)
         }
         .defaultSize(width: 1_024, height: 768)
+
+        // A server runtime's sign-in (#4698) in a window of its own (#5203), so the person
+        // works on in the others while it waits on the browser. One per machine and runtime;
+        // not restored at launch, where it would start a sign-in nobody asked for.
+        WindowGroup(id: ServerSignInScene.id, for: ServerSignInKey.self) { $key in
+            ServerSignInWindow(key: key)
+                .environment(model)
+        }
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
 
         // The app's first Settings scene, and what gives it ⌘, and the menu item.
         // A scene rather than a page beside Spending, which Spending itself is not:

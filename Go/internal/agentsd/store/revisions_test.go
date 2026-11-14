@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 func revisionAgent(id wire.UUID) wire.Agent {

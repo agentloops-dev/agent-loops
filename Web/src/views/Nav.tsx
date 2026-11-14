@@ -2,13 +2,15 @@
 // (#1804), and every section but the Overview and Agents drawn as the Console was: its list of pages
 // on the left, the page open on the right. Below 760 the bar is one menu with the open section's
 // name. g then a letter goes to a section, when the focus is not in a field; ⌘K opens the command menu (#4788).
+import { forgeHosts, loadList, workList } from "../model/workLists";
+import type { WorkKind } from "../model/work";
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { Fragment, type ComponentChildren } from "preact";
 import type { Store } from "../model/store";
 import { go, route, sectionOf, usageAsked } from "../route";
 import { gated, groupedPages, machinePages, navPages, navTitle, openPage, pagesShown, sectionKeys, sectionsShown, usagePaneTitle, usagePanes,
-  type NavPage, type NavSection } from "../model/nav";
+  type NavPage, type NavSection, pageRoute, routePageID } from "../model/nav";
 import { adminOf, adminsOnly } from "../model/console";
 import { hostAnswers, stateWords, versionWords } from "../model/capabilities";
 import { needingYou, placedSessions } from "../model/overview";
@@ -18,6 +20,7 @@ import { requestCount } from "./ConsoleRecords";
 import { policyNotSaved } from "./ConsolePolicy";
 import { orgPolicyNotSaved } from "./ConsoleOrgPolicy";
 import { ReportsPage } from "./Reports";
+import { BuildsPage } from "./Builds";
 import { WorkList, WorkPage } from "./Work";
 import { WorkReleasePage } from "./WorkRelease";
 import { WorkFeatures } from "./WorkFeatures";
@@ -27,25 +30,28 @@ import { ConversationPage, MessagesList } from "./Messages";
 import { MachinePage } from "./MachinePage";
 import { machineNeed, machineNeedLine } from "./OfflineStrip";
 import { MachineRow, MakingRow } from "./MachineRow";
-import { deleteMakingQuestion, makingRows, newMachineItems } from "../model/machineRow";
+import { deleteMakingQuestion, joinTrustQuestion, type MachineMaking, makingRows, newMachineItems } from "../model/machineRow";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
 import { AddMachineDialog } from "./AddMachineDialog";
 import { addMachineWords } from "../model/addMachine";
 import { SettingsPage } from "./Settings";
 import { SecretsSection } from "./UserScope";
 import { AccountsSection } from "./Accounts";
-import { StatusListMark, StatusListReadLine, StatusSecretsPage, useUserScopeStatus } from "./StatusSecrets";
+import { StatusListMark, StatusListLastLine, StatusSecretsPage, useUserScopeStatus } from "./StatusSecrets";
 import { SessionSecretsSection } from "./settings/SessionSecrets";
+import { LocalSecretsSection } from "./settings/LocalSecrets";
 import { WorkflowRow } from "./WorkflowRow";
 import { BackToList } from "./BackToList";
 import { DataTable } from "./DataTable";
 import { PageTitle, PersonMenu, SearchBox } from "./TopBar";
-import { pageCrumbs } from "../model/crumbs";
+import { pageCrumbs, type Crumb } from "../model/crumbs";
 import { MultiplierPage } from "./Multiplier";
-import { lowWords, runtimeTally, setupRuntimes } from "../model/runtimes";
+import { lowDetail, lowWords, runtimeTally, setupRuntimes } from "../model/runtimes";
+import { eventsWaitingLine } from "../model/eventsWaiting";
 import type { Session } from "../session";
 import { ask } from "./MessageKinds";
 import { CommandMenu } from "./CommandMenu";
+import { Icon } from "./Icon";
 
 /**
  * How many requests and sessions need the person, across every folder: Agents' count in the bar.
@@ -114,7 +120,7 @@ export function NavBar({ store, session }: { store: Store; session: Session }) {
         <div class="nav-items wide-only">{shown.map(item)}</div>
         <div class="nav-menu narrow-only">
           <button type="button" class="nav-menu-button" aria-expanded={menuOpen.value} onClick={() => { menuOpen.value = !menuOpen.value; }}>
-            {navTitle[current]} {menuOpen.value ? "▴" : "▾"}
+            {navTitle[current]} <Icon name={menuOpen.value ? "chevron-up" : "chevron-down"} />
             {!menuOpen.value && shown.some((s) => countOf(store, s, admin) > 0) && <span class="sub-app-count" aria-hidden="true">•</span>}
           </button>
           {menuOpen.value && <div class="nav-menu-list">{shown.map(item)}</div>}
@@ -127,11 +133,14 @@ export function NavBar({ store, session }: { store: Store; session: Session }) {
   );
 }
 
-/** Status ▸ Runtimes' grey line (#3956), as the window's Runtimes row: each runtime read on the machine the page reads it on. */
-function runtimesLowWords(store: Store): string | undefined {
+/** Status ▸ Runtimes' grey line (#3956), as the window's Runtimes row: each runtime read on the machine the page reads
+ * it on. `detail` is the title's and a screen reader's, with the reset when it is on course to run out (#5000). */
+function runtimesLowWords(store: Store): { words: string; detail: string } | undefined {
   const all = setupRuntimes(store.hosts.value, store.macHostID.value, store.runtimes.value);
   const home = new Map(all.map((r) => [r.status.runtime.id, r.home]));
-  return lowWords(runtimeTally(all.map((r) => r.status), (id) => store.runtimeAllowances.value[home.get(id) ?? ""]));
+  const tally = runtimeTally(all.map((r) => r.status), (id) => store.runtimeAllowances.value[home.get(id) ?? ""]);
+  const words = lowWords(tally);
+  return words ? { words, detail: lowDetail(tally) ?? words } : undefined;
 }
 
 const isRuntimesPage = (page: NavPage) => page.draw.kind === "activity" && page.draw.page === "runtimes";
@@ -140,10 +149,10 @@ const isRuntimesPage = (page: NavPage) => page.draw.kind === "activity" && page.
 function PageMark({ store, page }: { store: Store; page: NavPage }) {
   // Status ▸ Secrets and Accounts (#4161): the newest operation's age.
   if (page.draw.kind === "statusList") return <StatusListMark store={store} list={page.draw.list} />;
-  // Status ▸ Runtimes (#3956): an allowance below 10% left, in the warning tint, as the window's orange Runtimes icon.
+  // Status ▸ Runtimes (#3956): an allowance below 10% left or on course to run out (#5000), in the warning tint, as the window's orange Runtimes icon.
   if (isRuntimesPage(page)) {
-    const words = runtimesLowWords(store);
-    if (words) return <span class="small attention" title={words} aria-hidden="true">●</span>;
+    const low = runtimesLowWords(store);
+    if (low) return <span class="small attention" title={low.detail} aria-hidden="true">●</span>;
   }
   if (page.id === "requests" && requestCount(store) > 0) return <span class="sub-app-count">{requestCount(store)}</span>;
   if (page.id === "reportPolicy" && policyNotSaved(store)) return <span class="quiet small attention">Not saved</span>;
@@ -168,9 +177,18 @@ function MachineNeedLine({ store, host }: { store: Store; host: string }) {
   );
 }
 
-/** Under Status ▸ Runtimes (#3956), in grey: `Claude: 8% left`. Nothing when no allowance is low, or none work. */
+/** Under Status ▸ Runtimes (#3956), in grey: `Claude: 8% left`, or `Claude: runs out Fri at this pace` (#5000). Nothing when no allowance is low, or none work. */
 function RuntimesLowLine({ store }: { store: Store }) {
-  const words = runtimesLowWords(store);
+  const low = runtimesLowWords(store);
+  return low ? <p class="page-need quiet small" role="status" title={low.detail} aria-label={low.detail}>{low.words}</p> : null;
+}
+
+const isEventsPage = (page: NavPage) => page.draw.kind === "activity" && page.draw.page === "events";
+
+/** Under Status ▸ Events, in grey: `4 sessions waiting`, as the window's Events row. Nothing when none waits;
+ * no time, as a wait's age says nothing. */
+function EventsWaitingLine({ store }: { store: Store }) {
+  const words = eventsWaitingLine(store.events.value);
   return words ? <p class="page-need quiet small" role="status">{words}</p> : null;
 }
 
@@ -180,11 +198,25 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   const r = route.value;
   // A page per machine under Machines (#3626).
   const more = section === "machines" ? machinePages(store.hosts.value, store.macHostID.value) : [];
-  const open = openPage(section, r.section, admin, more);
+  const open = openPage(section, routePageID(section, r), admin, more);
   const list = pagesShown(section, admin, open?.id, more);
   const registering = useSignal(false);
   useUserScopeStatus(store, section === "status");
-  // The Machines header (#3974): + opens New Machine's sheet (#4634); its menu also registers one.
+  // Work shown: the list it opens on read ahead (#4930), from this device's copy and then the machines, so it draws at once.
+  const forgeOn = forgeHosts(store).map((h) => h.id).join(",");
+  useEffect(() => {
+    if (section !== "work" || !forgeOn) return;
+    const kind: WorkKind = r.section === "pr" || r.section === "release" ? r.section : "issue";
+    const l = workList(kind);
+    if (l.lists.peek() === null && !l.loading.peek()) void loadList(store, l);
+  }, [section, forgeOn]);
+  // Status ▸ Events' grey line reads who waits on each machine that answers; events/changed keeps it.
+  const online = store.hosts.value.filter((h) => hostAnswers(h.state)).map((h) => h.id);
+  useEffect(() => {
+    if (section === "status") for (const host of online) void store.loadEvents(host);
+  }, [section, online.join(",")]);
+  // The Machines header (#3974): its menu has New Machine and registers one. New Machine itself is the group's
+  // last row, + New Machine, as the Remote's (#4034, #5265); a click opens its sheet (#4634).
   const machinesHead = (group: string) => section === "machines" && group === "Machines";
   // With two or more providers, New Machine names the default, and New Machine on ‹name› opens the sheet on another (#3979).
   useEffect(() => {
@@ -201,11 +233,7 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
           {groupedPages(list).map(([group, pages]) => (
             <div key={group} class="sub-app-group">
               {machinesHead(group) ? (
-                <h2 class="section-head with-add" onContextMenu={(e) => openContextMenu(e, headItems())}>
-                  {group}
-                  <button type="button" class="head-add" title="New Machine" aria-label="New Machine"
-                    onClick={() => store.newMachine()}>+</button>
-                </h2>
+                <h2 class="section-head" onContextMenu={(e) => openContextMenu(e, headItems())}>{group}</h2>
               ) : <h2 class="section-head">{group}</h2>}
               {pages.map((p) => p.draw.kind === "machine" ? (
                 <MachineRow key={p.id} store={store} host={p.draw.host} on={p.id === open?.id}
@@ -214,18 +242,28 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
                 </MachineRow>
               ) : (
                 <Fragment key={p.id}>
-                  <button type="button" class={`sub-app-row${p.id === open?.id ? " on" : ""}`}
-                    aria-current={p.id === open?.id ? "page" : undefined} onClick={() => go({ nav: section, section: p.id })}>
+                  <button type="button" class={`sub-app-row${p.id === open?.id ? " on" : ""}${p.under ? " under" : ""}`}
+                    aria-current={p.id === open?.id ? "page" : undefined} onClick={() => go(pageRoute(section, p))}>
                     {p.title}
                     <PageMark store={store} page={p} />
                   </button>
                   {isRuntimesPage(p) && <RuntimesLowLine store={store} />}
-                  {p.draw.kind === "statusList" && <StatusListReadLine store={store} list={p.draw.list} />}
+                  {isEventsPage(p) && <EventsWaitingLine store={store} />}
+                  {p.draw.kind === "statusList" && <StatusListLastLine store={store} list={p.draw.list} />}
                 </Fragment>
               ))}
               {machinesHead(group) && makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value)
                 .map((row) => <MakingRow key={`making-${row.provider}/${row.workspace}/${row.name}`} row={row}
-                  onDelete={async () => { if (await ask(deleteMakingQuestion(row))) void store.deleteWorkspace(row.provider, row.workspace); }} />)}
+                  join={store.machineJoins.value[`${row.provider}/${row.workspace}`]}
+                  onDelete={async () => { if (await ask(deleteMakingQuestion(row))) void store.deleteWorkspace(row.provider, row.workspace); }}
+                  onJoin={() => void joinAsking(store, row)} />)}
+              {machinesHead(group) && (
+                <button type="button" class="sub-app-row new-machine-row" title="New Machine: choose what the provider makes, starting from the options used last"
+                  onClick={() => store.newMachine()}
+                  onContextMenu={(e) => openContextMenu(e, headItems().slice(0, -1))}>
+                  <span><Icon name="plus" class="new-mark" /> New Machine</span>
+                </button>
+              )}
             </div>
           ))}
         </nav>
@@ -236,6 +274,15 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   );
 }
 
+/** A click on a machine that never joined (#4978): a host key new to the control plane is asked about first. */
+async function joinAsking(store: Store, row: MachineMaking): Promise<void> {
+  await store.joinMachine(row);
+  const join = store.machineJoins.value[`${row.provider}/${row.workspace}`];
+  if (!join || !("needsTrust" in join)) return;
+  if (await ask(joinTrustQuestion(row, join.needsTrust))) await store.joinMachine(row, join.needsTrust);
+  else store.cancelJoin(row);
+}
+
 /** One page of a section, in the chat's place: Agents' Live Now and Projects too. */
 export function PageView({ store, page, down }: { store: Store; page: NavPage; down: boolean }) {
   const section = sectionOfPage(page);
@@ -243,11 +290,14 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
   if (!gated(page, admin) && page.draw.kind === "activity") return <ActivityPageView store={store} page={page.draw.page} />;
   if (!gated(page, admin) && page.draw.kind === "settings") return <SettingsPage store={store} down={down} />;
   if (page.draw.kind === "multiplier") return <MultiplierPage store={store} />;
+  // A page under another (#5178) names that page in its breadcrumb: Reports › Planning › Builds.
+  const parent = page.under ? navPages[section].find((p) => p.id === page.under) : undefined;
   return (
-    <Framed title={page.title} section={section}>
+    <Framed title={page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
       {gated(page, admin) ? <p class="hint">{admin === null ? "Loading…" : roleProblemOf(store) ?? adminsOnly}</p>
         : page.draw.kind === "console" ? <ConsoleSection store={store} id={page.draw.id} down={down} />
         : page.draw.kind === "report" ? <ReportsPage store={store} section={page.draw.section} down={down} />
+        : page.draw.kind === "builds" ? <BuildsPage store={store} down={down} />
         : page.draw.kind === "machines" ? (admin === true ? <MachinesPage store={store} down={down} /> : <YourMachines store={store} />)
         : page.draw.kind === "workflows" ? <AllWorkflows store={store} down={down} />
         : page.draw.kind === "usage" ? <Usage store={store} />
@@ -260,8 +310,10 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         : page.draw.kind === "machine" ? <MachinePage key={page.draw.host} store={store} host={page.draw.host} />
         : page.draw.kind === "features" ? <WorkFeatures store={store} />
         : page.draw.kind === "timeline" ? <WorkTimeline store={store} />
-        // The person's secrets and cards (#1760), then a machine's for one session (#3548); were in Settings ▸ Machines.
-        : page.draw.kind === "secrets" ? <><SecretsSection store={store} down={down} /><SessionSecretsSection store={store} down={down} /></>
+        // The person's secrets and cards (#1760), then a machine's for one session (#3548), then what agents saved
+        // on that machine (#5122); were in Settings ▸ Machines.
+        : page.draw.kind === "secrets" ? <><SecretsSection store={store} down={down} /><SessionSecretsSection store={store} down={down} />
+          <LocalSecretsSection store={store} down={down} /></>
         : page.draw.kind === "accounts" ? <AccountsSection store={store} down={down} />
         : page.draw.kind === "statusList" ? <StatusSecretsPage store={store} list={page.draw.list} />
         : page.draw.kind === "docs" ? (route.value.item
@@ -280,10 +332,13 @@ function sectionOfPage(page: NavPage): Exclude<NavSection, "overview"> {
   return (Object.keys(navPages) as NavSection[]).find((s) => navPages[s].includes(page)) as Exclude<NavSection, "overview"> ?? "agents";
 }
 
-function Framed({ title, section, children }: { title: string; section: Exclude<NavSection, "overview">; children: ComponentChildren }) {
+function Framed({ title, section, parent, children }: { title: string; section: Exclude<NavSection, "overview">; parent?: Crumb | undefined;
+  children: ComponentChildren }) {
+  const crumbs = pageCrumbs(section, title);
   return (
     <section class="chat activity-page sub-app-page console" aria-label={title}>
-      <header class="column-head page-head"><BackToList /><PageTitle parts={pageCrumbs(section, title)}><h1>{title}</h1></PageTitle></header>
+      <header class="column-head page-head"><BackToList />
+        <PageTitle parts={parent ? [...crumbs.slice(0, -1), parent, ...crumbs.slice(-1)] : crumbs}><h1>{title}</h1></PageTitle></header>
       <div class="scroll">
         <div class="activity-body settings-body">{children}</div>
       </div>

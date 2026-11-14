@@ -17,9 +17,10 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/alexec/agents/Go/internal/agentsd/diskjson"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The test binary is also a fake ACP runtime: with AGENTS_FAKE_ACP=1 it serves one on its
@@ -46,6 +47,9 @@ func TestMain(m *testing.M) {
 	releaseLayerHere = false
 	// The machine's memory pressure does not move a test's warm pool (#4514).
 	pressureNow = func() string { return "" }
+	// The browser is Chrome for Testing, which a test fakes: never the machine's own Google
+	// Chrome, which GitHub's Linux runners have, with Xvfb (#5227).
+	browser.FindChrome = func() string { return "" }
 	// Nor does the load of the machine a test runs on raise machine.busy (#4578).
 	capacitySampler = func(context.Context) capacitySample { return capacitySample{} }
 	// No test asks the person's gh about merged pull requests unless it says so.
@@ -60,6 +64,8 @@ func TestMain(m *testing.M) {
 	erasing = false
 	// Nor asks a runtime its version (#3674): that starts the runtime too.
 	runtimeVersion = func(string) string { return "" }
+	// Nor fetches the ready-made workflows from GitHub (#5091): every daemon has the fixture's.
+	useReadyMadeFixture()
 	os.Exit(m.Run())
 }
 

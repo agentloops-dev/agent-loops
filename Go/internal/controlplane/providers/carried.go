@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Carried is a provider's connection through the machine that carries it (#3398): each
@@ -175,7 +175,7 @@ func (p *Providers) carrier(request ProviderAdd, before *ProviderRecord, caller 
 		return "", invalid("%s is offline: choose a machine that is online to carry it.", h.Name)
 	}
 	if !p.router.HostCan(machine, wire.CapProvidersCarry1) {
-		return "", invalid("%s can’t carry a provider: update Agents on it first.", h.Name)
+		return "", invalid("%s can’t carry a provider: update Agent Loops on it first.", h.Name)
 	}
 	return machine, nil
 }

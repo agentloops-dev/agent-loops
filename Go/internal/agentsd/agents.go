@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The rest of a chat's life, as DaemonCore serves it: prompts on a queue that is the
@@ -41,6 +41,10 @@ func (d *Daemon) registerAgents() {
 	})
 	On(d, wire.CallAgentsSendNow, func(ctx context.Context, c *Client, r wire.UnqueueRequest) (wire.Empty, error) {
 		return wire.Empty{}, d.sendNow(ctx, r)
+	})
+	On(d, wire.CallAgentsStartNow, func(ctx context.Context, c *Client, r wire.AgentRequest) (wire.Empty, error) {
+		d.actedOn(r.AgentID, c.actor())
+		return wire.Empty{}, d.startNow(r.AgentID)
 	})
 	On(d, wire.CallAgentsRename, func(ctx context.Context, c *Client, r wire.RenameRequest) (wire.Agent, error) {
 		return d.rename(r)

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Running workflows, as DaemonCore+Workflows fires them on the Swift host: on the clock
@@ -374,6 +374,11 @@ func (d *Daemon) fire(fr fireRequest) {
 		d.workflowMu.Unlock()
 		return
 	}
+	// So are a host's that its control plane forgot, or that does not know yet (#4985).
+	if d.notAMember() || d.membershipUnknown() {
+		d.workflowMu.Unlock()
+		return
+	}
 	// A bot's machine at the bot's spend cap starts no work (#1761, FR-033), and a runs-on:
 	// workflow runs once per trigger across the bot's machines (FR-034), by the trigger's
 	// scope (#2011, FR-035).
@@ -700,6 +705,8 @@ func (d *Daemon) runPrompt(w wire.Workflow, fr fireRequest) string {
 		text += started + "the agent " + d.agentWords(*fr.byAgent) + " (id " + string(*fr.byAgent) + ") ran it.)"
 	case fr.byHand:
 		text += started + "the person ran it by hand, with Run now.)"
+	case fr.trigger.Unrecognised != nil && fr.trigger.Unrecognised.Name == onceTrigger:
+		text += started + alarmPromptWords(fr, d.personZone(), time.Now())
 	case fr.trigger.Schedule != nil && fr.dueAt != nil:
 		text += started + "of its schedule: the " + fr.dueAt.Local().Format("15:04") + " run.)"
 	case fr.trigger.Schedule != nil:
@@ -996,6 +1003,11 @@ func (d *Daemon) workflowClock(stop <-chan struct{}) {
 }
 
 func (d *Daemon) workflowTickOnce(at time.Time) {
+	// A start that waits for its membership ticks once it is known: the schedules due
+	// meanwhile fire then, as the last tick's time says (#4985).
+	if d.membershipUnknown() {
+		return
+	}
 	d.noteDay()
 	d.workflowMu.Lock()
 	rec := d.recordsLocked()
@@ -1064,7 +1076,17 @@ func (d *Daemon) workflowTickOnce(at time.Time) {
 			}
 		}
 	}
+	alarms := d.alarmsDueLocked(at)
 	d.workflowMu.Unlock()
+	for _, of := range alarms {
+		of := of
+		safe.Go("workflow alarm", func() { d.runAlarm(of) })
+	}
+	// A wait's timer does not count the time the Mac slept: the clock, which reads the
+	// wall, ends the waits whose time came meanwhile (#4966).
+	if d.waitDeadlineDue(at) {
+		d.waitDeadlinesPassed()
+	}
 	for k := range held {
 		folder, id := k[:strings.LastIndex(k, "/")], k[strings.LastIndex(k, "/")+1:]
 		if !d.runningOf(folder, id) {

@@ -40,13 +40,25 @@ export const pairingWords: Record<RefusalReason | "notACode" | "otherControlPlan
   "wrong-control-plane": "This code is for another control plane.",
   suspended: "Your organisation's sign-in turned your access off.",
   // As the banner says it, for a tab one too many (#2194).
-  crowded: "Too many Agents tabs are open in this browser. Close one to use this one.",
-  notACode: "That isn't an Agents code. It starts agents-control:2:c:",
+  crowded: "Too many Agent Loops tabs are open in this browser. Close one to use this one.",
+  notACode: "That isn't an Agent Loops code. It starts agents-control:2:c:",
   otherControlPlane: "This code is for another control plane.",
-  unreachable: "Can't reach the control plane. Is Agents running on this Mac?",
+  unreachable: "Can't reach the control plane. Is Agent Loops running on this Mac?",
   unsupported: "This browser can't keep a key that can't be copied out of it. Use the current Safari or Chrome.",
   badProof: "That isn't a code from this control plane.",
 };
+
+/** Pairing could not reach the control plane (#4916). The page is served by the control plane
+ *  itself, so its host is where the control plane runs: on this Mac only at localhost; anywhere
+ *  else, by its address, with no "this Mac" in it. */
+export function unreachableWords(host: string = location.hostname): string {
+  return onThisMac(host) ? pairingWords.unreachable : `Can't reach the control plane at ${host}. Check that it is running, then try again.`;
+}
+
+/** A call that did not reach the control plane, as `forgetThisBrowser` says it (#4916). */
+export function notAnsweringWords(outcome: string, host: string = location.hostname): string {
+  return `${onThisMac(host) ? "Your Mac" : "The control plane"} is not answering. ${outcome}`;
+}
 
 /** "Safari", "Chrome", "Firefox": the control plane adds "on <this Mac>". */
 export function browserName(agent: string = navigator.userAgent): string {
@@ -348,7 +360,7 @@ export class Session {
     }
     if (error instanceof Refused) return pairingWords[error.reason];
     if (error instanceof UnsupportedBrowser) return pairingWords.unsupported;
-    return pairingWords.unreachable;
+    return unreachableWords();
   }
 
   /** Pairs with the pasted `text`; on success the link connects with the new key. */
@@ -388,7 +400,7 @@ export class Session {
       socket.close(1000, "");
       await this.keys.forget();
       this.state.value = { kind: "unpaired" };
-      let words = pairingWords.unreachable;
+      let words = unreachableWords();
       if (error instanceof Refused) words = pairingWords[error.reason];
       else if (error instanceof WrongControlPlane) words = pairingWords.otherControlPlane;
       else if (error instanceof BadServerProof) words = pairingWords.badProof;
@@ -408,7 +420,7 @@ export class Session {
       return null;
     } catch (error) {
       this.forgettingMyself = false;
-      return error instanceof CallFailed ? error.message : "Your Mac is not answering. This browser is still paired.";
+      return error instanceof CallFailed ? error.message : notAnsweringWords("This browser is still paired.");
     }
   }
 }

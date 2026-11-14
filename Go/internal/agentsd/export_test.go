@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // exportOf exports what params names and reads it in parts, as a client does.
@@ -253,8 +253,8 @@ func TestImportRefusesWhatIsNotAnExport(t *testing.T) {
 
 func TestExportFileName(t *testing.T) {
 	for in, want := range map[string]string{
-		"":                       "Agents",
-		"  ..  ":                 "Agents",
+		"":                       "Agent Loops",
+		"  ..  ":                 "Agent Loops",
 		"a/b\\c:d":               "a-b-c-d",
 		"line\nbreak\ttab":       "line-break-tab",
 		strings.Repeat("é", 100): strings.Repeat("é", exportNameMost),

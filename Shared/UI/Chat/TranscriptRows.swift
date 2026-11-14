@@ -124,11 +124,8 @@ struct TurnView: View, Equatable {
                 }
                 if detail.showsSteps, stepCount != 0 {
                     if waiting, fetchFailed {
-                        HStack(spacing: 8) {
-                            Text("These steps did not load.").foregroundStyle(.secondary)
-                            Button("Try Again") { Task { await fetch() } }
-                        }
-                        .appText(.fine)
+                        RecordLine(icon: LineGlyph.loadFailure, detail: "These steps did not load.",
+                                   action: StripButton(title: "Try Again") { Task { await fetch() } })
                     } else if waiting {
                         ProgressView().controlSize(.small)
                     } else {
@@ -201,6 +198,8 @@ private struct ReplyBlocks: View {
     var body: some View {
         if case .entry(let entry) = item, let text = TurnRows.text(of: item) {
             MarkdownText(markdown: text, range: range)
+                // One selectable text for the words of these blocks (#5155).
+                .environment(\.selectsAcrossBlocks, true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .appText(.reading)
                 // A shell's code block in a reply can be run (#1533).
@@ -282,11 +281,7 @@ private struct LiveLine: View {
 
     var body: some View {
         if case .toolRun(_, let calls) = item, let call = calls.last {
-            Text(call.turnLine)
-                .appText(.reading)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            RecordLine(icon: LineGlyph.tool(call.kind), detail: call.turnLine, oneLine: true)
         } else {
             StepRow(item: item)
         }
@@ -306,18 +301,17 @@ private struct StepRow: View {
             switch item {
             case .toolRun(_, let calls) where !isUnrolled && calls.count > 1:
                 if let last = calls.last {
-                    ToolCallLine(call: last, lineText: last.turnLine, onClick: { isUnrolled = true }, brightensOnHover: true)
+                    ToolCallLine(call: last, lineText: last.turnLine, onClick: { isUnrolled = true })
                 }
             case .toolRun(_, let calls):
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(calls.enumerated()), id: \.offset) { index, call in
-                        ToolCallLine(call: call, lineText: call.turnLine, isFocused: isFocused && index == 0,
-                                     brightensOnHover: true)
+                        ToolCallLine(call: call, lineText: call.turnLine, isFocused: isFocused && index == 0)
                     }
                 }
             case .entry(let entry):
                 if case .toolCall(let call) = entry.kind {
-                    ToolCallLine(call: call, lineText: call.turnLine, isFocused: isFocused, brightensOnHover: true)
+                    ToolCallLine(call: call, lineText: call.turnLine, isFocused: isFocused)
                 } else {
                     EntryRow(entry: entry)
                 }
@@ -341,8 +335,11 @@ private struct EntryRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("From the app").appText(.reading).foregroundStyle(.tertiary)
                     BlocksView(blocks: blocks.isEmpty ? [.text(text)] : blocks)
+                        // One selectable text for its words (#5155).
+                        .environment(\.selectsAcrossBlocks, true)
                         .appText(.reading)
                         .foregroundStyle(.secondary)
+                        .environment(\.quietProse, true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .copiesMessage(entry)
@@ -352,6 +349,8 @@ private struct EntryRow: View {
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(actions.fromLine(entry.sender)).appText(.reading).foregroundStyle(.tertiary)
                     BlocksView(blocks: blocks.isEmpty ? [.text(text)] : blocks)
+                        // One selectable text for its words (#5155).
+                        .environment(\.selectsAcrossBlocks, true)
                         .environment(\.textFillsWidth, false)
                         .appText(.reading)
                         .padding(12)
@@ -363,6 +362,8 @@ private struct EntryRow: View {
             } else {
                 // Theirs, so at the right, as wide as its words and no wider.
                 BlocksView(blocks: blocks.isEmpty ? [.text(text)] : blocks)
+                    // One selectable text for its words (#5155).
+                    .environment(\.selectsAcrossBlocks, true)
                     .environment(\.textFillsWidth, false)
                     .appText(.reading)
                     .padding(12)
@@ -374,22 +375,24 @@ private struct EntryRow: View {
 
         case .agentMessage(_, let text, let blocks):
             BlocksView(blocks: blocks.isEmpty ? [.text(text)] : blocks)
+                // One selectable text for its words (#5155).
+                .environment(\.selectsAcrossBlocks, true)
                 .appText(.reading)
                 // A shell's code block in a reply can be run (#1533).
                 .environment(\.codeRuns, true)
                 // A table or code wider than the text may reach into the margins (#3895).
                 .environment(\.widensBlocks, true)
                 .copiesMessage(entry)
-
         case .agentThought(_, let text):
             ThoughtLine(text: text)
 
         case .toolCall(let call), .toolCallUpdate(let call):
             // Reached only when something splits a run; a run is drawn by ToolRunRow.
-            Text(call.line).appText(.reading).foregroundStyle(.secondary)
+            RecordLine(icon: LineGlyph.tool(call.kind), detail: call.line, oneLine: true)
 
         case .planUpdated(let plan):
-            PlanView(plan: plan)
+            // One line that opens to the steps (#5033): the plan as it is now is in the top card.
+            PlanLine(plan: plan)
 
         case .usageRecorded:
             // Dropped by `TranscriptEntry.display` before it gets here. The cost of a
@@ -402,33 +405,34 @@ private struct EntryRow: View {
             ServedRequestLine(request: request)
 
         case .elicitationAsked(let request):
-            Text("Asked: \(request.title)").appText(.reading).foregroundStyle(.secondary)
+            RecordLine(icon: LineGlyph.asked, head: "Asked", detail: request.title)
 
         case .elicitationAnswered(_, let summary, let answers):
             if answers.isEmpty {
-                Text(summary).appText(.reading).foregroundStyle(.secondary)
+                RecordLine(icon: LineGlyph.answered, detail: summary)
             } else {
-                // What they said is theirs, so it sits in their bubble, each answer
-                // under the question it answers: the card that asked is gone.
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(answers.enumerated()), id: \.offset) { _, answer in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(answer.question).appText(.reading).foregroundStyle(.secondary)
-                            Text(answer.answer).appText(.reading).textSelection(.enabled)
+                // "You answered", which opens to each answer under the question it answers
+                // (#5036): the Ask that asked is gone.
+                RecordLine(icon: LineGlyph.answered, head: "You answered",
+                           detail: answers.count == 1 ? answers[0].question : "\(answers.count) questions",
+                           openHelp: ("Show the answers", "Hide the answers")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(answers.enumerated()), id: \.offset) { _, answer in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(answer.question).appText(.reading).foregroundStyle(.secondary)
+                                Text(answer.answer).appText(.reading).textSelection(.enabled)
+                            }
                         }
                     }
                 }
-                .padding(12)
-                .paperWell(in: RoundedRectangle(cornerRadius: 12))
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
         case .compaction(let status, let summary, _, let error):
-            VStack(alignment: .leading, spacing: 6) {
-                Text(CompactionLine.words(status: status, error: error))
-                    .appText(.reading)
-                    .foregroundStyle(.secondary)
-                if !summary.isEmpty {
+            if summary.isEmpty {
+                RecordLine(icon: LineGlyph.compaction, detail: CompactionLine.words(status: status, error: error))
+            } else {
+                RecordLine(icon: LineGlyph.compaction, detail: CompactionLine.words(status: status, error: error),
+                           openHelp: ("Show the summary", "Hide the summary")) {
                     BlocksView(blocks: summary).foregroundStyle(.secondary)
                 }
             }
@@ -437,14 +441,11 @@ private struct EntryRow: View {
             NoticeLine(notice: notice)
 
         case .permissionAsked(let request):
-            Text("Asked: \(request.toolCall.title)")
-                .appText(.reading)
-                .foregroundStyle(.secondary)
+            RecordLine(icon: LineGlyph.asked, head: "Asked", detail: request.toolCall.title)
 
         case .permissionAnswered(let optionID, let name):
-            Text("You chose \(name ?? optionID)")
-                .appText(.reading)
-                .foregroundStyle(.secondary)
+            // An answered Ask leaves one Line (#5036): "You chose ‹option›".
+            RecordLine(icon: LineGlyph.answered, lead: "You chose", head: name ?? optionID)
 
         case .optionChanged:
             // Dropped by `TranscriptEntry.display` before it gets here. Plumbing: the
@@ -460,13 +461,13 @@ private struct EntryRow: View {
             WorkReportLine(report: report)
 
         case .runtimeNote(let text):
-            Text(text).appText(.reading).foregroundStyle(.secondary)
+            RecordLine(icon: LineGlyph.note, detail: text)
 
         case .sandboxFailure(let record):
             SandboxFailureCard(record: record)
 
         case .policyStopped(let refusal):
-            PolicyStopCard(refusal: refusal)
+            PolicyStopCard(refusal: refusal, entryID: entry.id)
 
         case .background(let item):
             BackgroundEntryLine(item: item)
@@ -505,19 +506,8 @@ private struct NoticeLine: View {
     let notice: SessionNotice
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(notice.title)
-                .appText(.reading)
-                .fontWeight(notice.isError || notice.isWarning ? .medium : .regular)
-                .foregroundStyle((notice.isError ? StateTint.failure : .none).style(or: .secondary))
-            if let detail = notice.detail {
-                Text(detail)
-                    .appText(.reading)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        RecordLine(icon: LineGlyph.notice(notice), head: notice.title, detail: notice.detail,
+                   tone: notice.isError ? .failure : .plain)
     }
 }
 
@@ -526,33 +516,14 @@ private struct NoticeLine: View {
 /// at the Details level; a turn now draws every thought, so each has to be short.
 private struct ThoughtLine: View {
     let text: String
-    @State private var isExpanded = false
-    @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                withAnimation(ResponseMotion.response) { isExpanded.toggle() }
-            } label: {
-                Text(TranscriptItem.thoughtLine(text))
-                    .appText(.reading)
-                    .foregroundStyle(isHovering ? .primary : .secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(.rect)
-                .onHover { isHovering = $0 }
-            }
-            .buttonStyle(.plain)
-            .help(isExpanded ? "Hide the thought" : "Show the whole thought")
-            .accessibilityHint(isExpanded ? "Hides the thought" : "Shows the whole thought")
-            if isExpanded {
-                Text(text)
-                    .appText(.reading)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        RecordLine(icon: LineGlyph.thought, detail: TranscriptItem.thoughtLine(text), oneLine: true,
+                   openHelp: ("Show the whole thought", "Hide the thought")) {
+            Text(text)
+                .appText(.reading)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
         }
     }
 }
@@ -567,17 +538,9 @@ private struct WorkReportLine: View {
     let report: WorkReport
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(report.outcome.heading)
-                .appText(.reading).fontWeight(.medium)
-                .foregroundStyle((report.outcome.needsAPerson ? StateTint.attention : .none)
-                                    .style(or: .secondary))
-            Text(report.message)
-                .appText(.reading)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // No attention tint (#5036): "Waiting on your answer" has its Ask under it, so the
+        // yellow is said there, once.
+        RecordLine(icon: LineGlyph.report(report.outcome), head: report.outcome.heading, detail: report.message)
     }
 }
 
@@ -593,6 +556,9 @@ struct QueuedPromptRow: View {
     let agentID: UUID
     /// A turn is running and its runtime takes words mid-turn (`_session/steering`).
     var canSendNow = false
+    /// The words a queued session starts with (#5156): Send now starts the session at once,
+    /// past the running limit, as it sends a queued prompt at once. Nil for any other prompt.
+    var startNow: (@MainActor (UUID) async -> Void)? = nil
     /// The words being changed, while Edit is open (#1552); nil otherwise.
     @State private var draft: String?
     @FocusState private var editorFocused: Bool
@@ -654,10 +620,16 @@ struct QueuedPromptRow: View {
         Task { await actions.editQueued(prompt, words, agentID) }
     }
 
+    /// Send now: into the running turn, or, for a queued session's words, the session started.
+    private func send() async {
+        if let startNow { await startNow(agentID) } else { await actions.sendNow(prompt, agentID) }
+    }
+
     private var waiting: some View {
         // Held while anything is on its way to this agent; this one, said (#87).
         let acting = actions.acting(agentID)
-        let going = acting == .sendNow(prompt.id)
+        let going = startNow != nil ? acting == .startNow : acting == .sendNow(prompt.id)
+        let offersSendNow = canSendNow || startNow != nil
         // The person's bubble (TranscriptRow's .userMessage), dashed and dimmed: at the
         // right, as wide as its words, with what can be done to it underneath, so the
         // buttons never push it off the edge (#95).
@@ -683,8 +655,8 @@ struct QueuedPromptRow: View {
                     ? "Queued, \(actions.fromLine(prompt.sender)): \(prompt.text)"
                     : "Queued: \(prompt.text)")
                 .accessibilityAction(named: "Send now") {
-                    guard canSendNow, acting == nil else { return }
-                    Task { await actions.sendNow(prompt, agentID) }
+                    guard offersSendNow, acting == nil else { return }
+                    Task { await send() }
                 }
                 .accessibilityAction(named: "Remove") {
                     guard !going else { return }
@@ -697,15 +669,15 @@ struct QueuedPromptRow: View {
 
             // A step down from the words, so the row under the bubble stays quiet.
             HStack(spacing: 12) {
-                if canSendNow {
+                if offersSendNow {
                     Button {
-                        Task { await actions.sendNow(prompt, agentID) }
+                        Task { await send() }
                     } label: {
                         Group {
                             if going {
                                 Telling(host: actions.recipient(agentID), doing: acting?.doing)
                             } else {
-                                Label("Send now", systemImage: "arrow.up")
+                                Label("Send now", icon: "arrow.up")
                                     .appText(.supporting)
                             }
                         }
@@ -718,7 +690,8 @@ struct QueuedPromptRow: View {
                     // The one going stays bright, as on the answer cards (#86); the
                     // model refuses a second press of it.
                     .disabled(acting != nil && !going)
-                    .help("Send this into the turn that is running, without waiting for it to end")
+                    .help(startNow != nil ? HelperLimit.startNowHelp
+                          : "Send this into the turn that is running, without waiting for it to end")
                 }
 
                 // The person's own words only: another agent's are theirs (#560). On a host
@@ -728,7 +701,7 @@ struct QueuedPromptRow: View {
                     Button {
                         draft = prompt.text
                     } label: {
-                        Image(systemName: "pencil")
+                        Image(icon: "pencil")
                             .appText(.supporting)
                             .frame(width: 18, height: 18)
                             #if os(iOS)
@@ -746,7 +719,7 @@ struct QueuedPromptRow: View {
                 Button {
                     Task { await actions.unqueue(prompt, agentID) }
                 } label: {
-                    Image(systemName: "xmark")
+                    Image(icon: "xmark")
                         .appText(.supporting)
                         .frame(width: 18, height: 18)
                         #if os(iOS)
@@ -811,58 +784,27 @@ private struct ToolCallLine: View {
     /// What a click does instead of opening the call, where the line is standing in
     /// for a whole folded run.
     var onClick: (() -> Void)? = nil
-    /// Brighter under the pointer, as a turn's step is (069): the step is a line of
-    /// text like the rest of the turn's margin, with no chevron in front of it (#112).
-    var brightensOnHover = false
-    @State private var isExpanded = false
-    @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            summary
-            if isExpanded { detail }
+        if let onClick {
+            RecordLine(icon: LineGlyph.tool(call.kind), detail: words, oneLine: true,
+                       onClick: onClick, clickHelp: "Show the whole run")
+        } else if hasDetail {
+            RecordLine(icon: LineGlyph.tool(call.kind), detail: words, oneLine: true,
+                       openHelp: ("Show the argument and the return", "Hide the argument and the return"),
+                       isFocused: isFocused) { detail }
+        } else {
+            RecordLine(icon: LineGlyph.tool(call.kind), detail: words, oneLine: true)
         }
-        .onChange(of: isFocused, initial: true) { _, now in if now, hasDetail { isExpanded = true } }
     }
 
     // MARK: The line itself
 
-    @ViewBuilder
-    private var summary: some View {
-        if let onClick {
-            Button(action: onClick) { line }
-                .buttonStyle(.plain)
-                .help("Show the whole run")
-                .accessibilityHint("Shows every call in this run")
-        } else if hasDetail {
-            Button {
-                withAnimation(ResponseMotion.response) { isExpanded.toggle() }
-            } label: {
-                line
-            }
-            .buttonStyle(.plain)
-            .help(isExpanded ? "Hide the argument and the return" : "Show the argument and the return")
-            .accessibilityHint(isExpanded ? "Hides the argument and the return" : "Shows the argument and the return")
-        } else {
-            line
-        }
-    }
-
-    /// The description alone. It is the whole affordance: no chevron in front of it,
-    /// so a run of calls is a run of sentences — one line each. A title with no
-    /// description behind it is usually a command line or a path, and a path that
-    /// wraps to three lines is three lines of a run that reads as one call per line;
-    /// the whole of it is a click away in the detail, where the raw input is.
-    private var line: some View {
-        Text((lineText ?? call.line) + runsOn)
-            .appText(.reading)
-            .foregroundStyle(isHovering ? .primary : .secondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(.rect)
-        .onHover { isHovering = brightensOnHover && $0 }
-    }
+    /// The description alone, after the kind's glyph (#5036): a run of calls is a run of
+    /// sentences, one line each. A title with no description behind it is usually a command
+    /// line or a path, and a path that wraps to three lines is three lines of a run that
+    /// reads as one call per line; the whole of it is a click away in the detail.
+    private var words: String { (lineText ?? call.line) + runsOn }
 
     /// " · running in the background", while what this call started still runs (057).
     /// The call itself came back at once; without this it reads as done.
@@ -950,8 +892,9 @@ private struct ToolCallLine: View {
     /// thirty calls with their outputs was a good deal of JSON formatted to answer
     /// a yes or no.
     private var hasDetail: Bool {
+        // Not `raw` alone (#5036): the detail does not draw it, so a chevron for it opened to nothing.
         !call.content.isEmpty || !call.locations.isEmpty
-            || call.rawInput != nil || call.rawOutput != nil || call.raw != nil
+            || call.rawInput != nil || call.rawOutput != nil
     }
 
     /// The argument or the return, under a word that says which. A runtime's own
@@ -1037,23 +980,6 @@ private extension JSONValue {
     }
 }
 
-/// The agent is at work and the person is waiting: the same mark the sidebar row shows,
-/// in step with it (#2044), at the foot of the conversation, so the chat itself moves
-/// while nothing else on it does: the ring spins while it thinks or replies, and also
-/// pivots while it runs a tool (#2332). Live rather than recorded — it is there exactly as long as the wait is,
-/// and it rides the end of the transcript as the reply arrives.
-struct WorkingLine: View {
-    /// The tool it runs, or nil while it thinks (`RunningToolWords.tool`).
-    var tool: String?
-
-    var body: some View {
-        WorkingRing(size: 16, doing: tool != nil)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 2)
-            .accessibilityLabel(tool.map(RunningToolWords.label) ?? "Working")
-    }
-}
-
 /// How long the chat has been quiet and how old it is, at its foot: "Last activity 12
 /// minutes ago · started 3 hours ago" (#1564). Nothing under five minutes. Read again on
 /// the minute, as `ActivityTime` is.
@@ -1064,22 +990,15 @@ struct QuietLine: View {
     var body: some View {
         TimelineView(.everyMinute) { context in
             if let line = ActivityWords.quiet(since: since, startedAt: startedAt, now: context.date) {
+                // A Line with no glyph (#5036): under the words of the lines above it.
                 Text(line)
                     .appText(.fine)
                     .foregroundStyle(.tertiary)
+                    .padding(.leading, RecordLine<EmptyView>.glyphWidth + RecordLine<EmptyView>.gap)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 14)
             }
         }
-    }
-}
-
-/// The chat is being picked back up by the daemon, and nobody typed for it.
-struct ComingBackLine: View {
-    var body: some View {
-        Label(AgentsModel.comingBackDescription, systemImage: AgentsModel.comingBackSymbol)
-            .appText(.reading)
-            .foregroundStyle(.secondary)
     }
 }
 
@@ -1088,10 +1007,18 @@ private struct StateLine: View {
     let reason: EndedReason?
 
     var body: some View {
-        Text(text)
-            .appText(.reading)
-            // The one place in the transcript a colour earns itself: something went wrong.
-            .foregroundStyle((isFailure ? StateTint.failure : .none).style(or: .secondary))
+        // The one place in the transcript a colour earns itself: something went wrong.
+        RecordLine(icon: icon, head: text, tone: isFailure ? .failure : .plain)
+    }
+
+    private var icon: String {
+        if isFailure { return LineGlyph.failed }
+        switch state {
+        case .stopped: return LineGlyph.stopped
+        case .archived: return "archivebox"
+        case .finished: return "checkmark.circle"
+        default: return LineGlyph.note
+        }
     }
 
     private var isFailure: Bool {
@@ -1227,6 +1154,12 @@ struct CopiesMessage: ViewModifier {
             // On a host too old to branch, greyed and saying why (#1866).
             let greyedBranch = prompt != nil && branch == nil && actions.branchNeedsUpdate
             content
+                #if os(iOS)
+                // A long press on the words is the text view's, so its edit menu has these
+                // too (#5181).
+                .environment(\.messageMenu, MessageMenu(text: text, copy: { Self.copy(text) }, quote: quote,
+                                                         branch: branch, branchGreyed: greyedBranch))
+                #endif
                 .contextMenu {
                     Button("Copy Message") { Self.copy(text) }
                     if let quote {
@@ -1261,10 +1194,26 @@ struct CopiesMessage: ViewModifier {
     }
 }
 
+/// A message's actions, for the text view that draws its words on the phone (#5181): a long
+/// press there is the text view's, so its edit menu carries them, beside Copy.
+struct MessageMenu {
+    let text: String
+    let copy: () -> Void
+    let quote: ((String) -> Void)?
+    let branch: (() -> Void)?
+    /// Branch from Here, greyed: the host is too old to branch (#1866).
+    let branchGreyed: Bool
+}
+
+extension EnvironmentValues {
+    @Entry var messageMenu: MessageMenu? = nil
+}
+
 /// The words selected in a reply, for Quote in Prompt (#1553). Selectable text tells no one
 /// its selection, but it answers Copy: so it is asked to copy, and the pasteboard is put back
-/// as it was. The prompt bar's own words are not a reply's. The Remote has no such way, and
-/// quotes the whole message.
+/// as it was. The prompt bar's own words are not a reply's. On the Remote, the
+/// message's menu quotes the whole message; its words' edit menu quotes the words selected
+/// (`ProseEditMenu`, #5181).
 enum ChatSelection {
     @MainActor static func text() -> String? {
         #if os(macOS)

@@ -1,16 +1,18 @@
-# Publishes Agents on GitHub when a version tag is pushed (#669, #4225): `git tag v0.2.0 &&
+# Publishes Agent Loops on GitHub when a version tag is pushed (#669, #4225): `git tag v0.2.0 &&
 # git push origin v0.2.0` makes the release at releases/latest.
 #
 # The release carries:
-#   Agents-<version>.dmg                   signed with Developer ID, notarized, stapled
-#   Agents-<version>.zip                   the same app, stapled, for Macs that can't mount a .dmg
-#   Agents-Host-<version>.zip              the same app as Agents Host.app, for an Agents Host's
-#                                          self-update, which renames it Agents.app (#4225)
+#   Agent-Loops-<version>.dmg              signed with Developer ID, notarized, stapled
+#   Agent-Loops-<version>.zip              the same app, stapled, for Macs that can't mount a .dmg
+#   Agents-<version>.zip                   the same app as Agents.app, and
+#   Agents-Host-<version>.zip              as Agents Host.app, for the self-update of an Agents
+#                                          or an Agents Host, which renames it Agent Loops.app
+#                                          (#5297, #4225)
 #   agentsd-linux-<arch>-<version>.tar.gz  the Linux agentsd (Go, #1136), with the MCP
 #                                          servers Agents ships (#700)
 #   SHA256SUMS
 #
-# and the control plane's image, ghcr.io/alexec/agents-control:<version> (#2140), signed.
+# and the control plane's image, ghcr.io/<owner>/agents-control:<version> (#2140, #4958), signed.
 #
 # Beside it, the testflight job (#914) uploads the Remote to TestFlight as an .ipa, version <tag>
 # and build <run number>, and waits until App Store Connect has processed it. The Mac is not in
@@ -30,6 +32,7 @@
 #   PROFILE_REMOTE          "Agents Remote App Store"
 #   PROFILE_REMOTE_NOTIFY   "Agents Remote Notify App Store"
 #   PROFILE_REMOTE_WIDGET   "Agents Remote Widget App Store"
+#   PROFILE_REMOTE_SHARE    "Agents Remote Share App Store"
 name: release
 
 on:
@@ -87,10 +90,12 @@ jobs:
           retention-days: 3
 
   # The control plane's image (#2140): deploy/Containerfile for linux/amd64 and linux/arm64,
-  # pushed to ghcr.io/alexec/agents-control as <version>, and for a release X.Y.Z also as X.Y
+  # pushed to ghcr.io/<owner>/agents-control as <version>, and for a release X.Y.Z also as X.Y
   # and latest. It carries an SBOM and provenance (BuildKit's attestations), and a keyless
   # cosign signature made with this run's OIDC identity: docs/how-to/run-the-control-plane-in-the-cloud.md
   # says how to check it. GITHUB_TOKEN pushes it: no account or secret of our own.
+  # <owner> is the repo's owner (#4958): a package belongs to its owner, and a release can
+  # push only to its own owner's packages, so after a transfer the new owner gets the image.
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -99,7 +104,7 @@ jobs:
       packages: write
       id-token: write
     env:
-      IMAGE: ghcr.io/alexec/agents-control
+      IMAGE: ghcr.io/${{ github.repository_owner }}/agents-control
     steps:
       - uses: actions/checkout@v6
         with:
@@ -243,7 +248,7 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --clobber
           else
-            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --title "Agents ${TAG#v}" \
+            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --title "Agent Loops ${TAG#v}" \
               "${notes[@]}" --verify-tag
           fi
 
@@ -264,13 +269,14 @@ jobs:
           PROFILE_REMOTE: ${{ secrets.PROFILE_REMOTE }}
           PROFILE_REMOTE_NOTIFY: ${{ secrets.PROFILE_REMOTE_NOTIFY }}
           PROFILE_REMOTE_WIDGET: ${{ secrets.PROFILE_REMOTE_WIDGET }}
+          PROFILE_REMOTE_SHARE: ${{ secrets.PROFILE_REMOTE_SHARE }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           missing=()
           for name in APPLE_DISTRIBUTION_P12 APPLE_DISTRIBUTION_P12_PASSWORD PROFILE_REMOTE \
-            PROFILE_REMOTE_NOTIFY PROFILE_REMOTE_WIDGET ASC_KEY_P8 ASC_KEY_ID ASC_ISSUER_ID; do
+            PROFILE_REMOTE_NOTIFY PROFILE_REMOTE_WIDGET PROFILE_REMOTE_SHARE ASC_KEY_P8 ASC_KEY_ID ASC_ISSUER_ID; do
             [[ -n "${!name}" ]] || missing+=("$name")
           done
           if (( ${#missing[@]} )); then
@@ -302,6 +308,7 @@ jobs:
           PROFILE_REMOTE: ${{ secrets.PROFILE_REMOTE }}
           PROFILE_REMOTE_NOTIFY: ${{ secrets.PROFILE_REMOTE_NOTIFY }}
           PROFILE_REMOTE_WIDGET: ${{ secrets.PROFILE_REMOTE_WIDGET }}
+          PROFILE_REMOTE_SHARE: ${{ secrets.PROFILE_REMOTE_SHARE }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
           keychain="$RUNNER_TEMP/store.keychain-db"
@@ -320,6 +327,7 @@ jobs:
           echo "$PROFILE_REMOTE" | base64 --decode > "$profiles/agents-remote.mobileprovision"
           echo "$PROFILE_REMOTE_NOTIFY" | base64 --decode > "$profiles/agents-remote-notify.mobileprovision"
           echo "$PROFILE_REMOTE_WIDGET" | base64 --decode > "$profiles/agents-remote-widget.mobileprovision"
+          echo "$PROFILE_REMOTE_SHARE" | base64 --decode > "$profiles/agents-remote-share.mobileprovision"
           echo "$ASC_KEY_P8" > "$RUNNER_TEMP/asc.p8"
           security find-identity -v "$keychain" | grep -q "Apple Distribution" || {
             echo "::error::APPLE_DISTRIBUTION_P12 holds no Apple Distribution identity, or its password is wrong"; exit 1; }
@@ -332,7 +340,8 @@ jobs:
           python3 scripts/check-store-profiles.py \
             "PROFILE_REMOTE=$profiles/agents-remote.mobileprovision" \
             "PROFILE_REMOTE_NOTIFY=$profiles/agents-remote-notify.mobileprovision" \
-            "PROFILE_REMOTE_WIDGET=$profiles/agents-remote-widget.mobileprovision"
+            "PROFILE_REMOTE_WIDGET=$profiles/agents-remote-widget.mobileprovision" \
+            "PROFILE_REMOTE_SHARE=$profiles/agents-remote-share.mobileprovision"
 
       - name: Archive, check, export and upload
         env:

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Standing epics (#3659, #3661): an epic labelled standing as well as epic has a query, not

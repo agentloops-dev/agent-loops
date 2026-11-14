@@ -4,9 +4,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A place in a lease's line is an event wait (#2361): lease_resource answers at once, and
@@ -162,6 +162,6 @@ func (d *Daemon) reconcileLineWaits() {
 }
 
 func lostPlaceWords(name wire.ResourceName) string {
-	return "Your wait for your turn with " + string(name) + " ended: when Agents started again, you were no longer in its line. " +
+	return "Your wait for your turn with " + string(name) + " ended: when Agent Loops started again, you were no longer in its line. " +
 		"Call lease_resource again if you still need it: you keep your place in its line."
 }

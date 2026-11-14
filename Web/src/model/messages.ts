@@ -1,8 +1,10 @@
 // The Messages page (#4344), as the window's (AgentsKitCore's MessagesList): every machine's conversations
 // from messages/conversations in one list, each conversation once, the newest first, and its words; the
 // reply field's too (#4345).
-import type { ChannelSender, MessagesConversation, MessagesError, MessagingConversation } from "../protocol/generated";
+import type { ChannelSender, Event, MessagesConversation, MessagesError, MessagesMarkedAllRead, MessagingConversation } from "../protocol/generated";
+import { fromWireDate } from "../protocol/dates";
 import { channelName } from "./channelLinks";
+import { shortAgo } from "./statusSecrets";
 
 /** One machine's answer, or why it gave none. */
 export interface HostConversations {
@@ -62,7 +64,7 @@ export function messagesProblems(lists: HostConversations[]): string[] {
 export const noConnectorIn = (lists: HostConversations[]): boolean =>
   lists.every((l) => l.conversations.length === 0 && l.errors.length === 0 && !l.problem);
 
-export const noMachine = "No machine reads messages yet. Update Agents on a machine to read its messaging connectors.";
+export const noMachine = "No machine reads messages yet. Update Agent Loops on a machine to read its messaging connectors.";
 export const noConnector = "No messaging connector yet. Add Slack, Email, Google Chat or WhatsApp in a folder's Connectors ▸ Messaging.";
 export const setUp = "Open Connectors";
 export const noConversations = "No conversations.";
@@ -99,3 +101,69 @@ export function sourceGlyph(source: string): string {
     default: return "💬";
   }
 }
+
+// The grey line at the head of Messages (#4934), as the window's sidebar row (MessagesList.statusLine).
+
+/** The event a messaging connector raises for a message (Slack, Google Chat, WhatsApp). */
+export const receivedEvent = "message.received";
+
+/** The newest message.received and what came of it: "woke Fix login bug", "started triage", or "nothing woke". */
+export interface LastConsequence { at: number; words: string }
+
+/** The newest message.received in `events` (every machine's, in any order) and what it did: the session it woke, else
+ * the workflow it started, else "nothing woke", the case a person looks into. Undefined when there is none. */
+export function lastConsequence(events: readonly Event[]): LastConsequence | undefined {
+  const latest = (e: Event) => fromWireDate(e.lastAt ?? e.at).getTime();
+  const newest = events.filter((e) => e.name === receivedEvent).reduce<Event | undefined>((a, e) => (!a || latest(e) > latest(a) ? e : a), undefined);
+  if (!newest) return undefined;
+  const woke = newest.consequences.find((c) => "woke" in c);
+  const fired = newest.consequences.find((c) => "fired" in c);
+  const words = woke && "woke" in woke ? `woke ${woke.woke.title}`
+    : fired && "fired" in fired ? `started ${fired.fired.workflowID}` : "nothing woke";
+  return { at: latest(newest), words };
+}
+
+/** The unread messages of every machine's conversations, each conversation once; undefined when none gives a count. */
+export function unreadTotal(lists: HostConversations[]): number | undefined {
+  const counts = mergeConversations(lists).flatMap((r) => r.item.conversation.unread ?? []);
+  return counts.length ? counts.reduce((a, b) => a + b, 0) : undefined;
+}
+
+/** "12 unread · woke Fix login bug 4 min ago". A count of 0 or none is left out; undefined when there is nothing to say. */
+export function messagesStatusLine(unread: number | undefined, last: LastConsequence | undefined, now = Date.now()): string | undefined {
+  const parts = [unread ? `${unread} unread` : null, last ? `${last.words} ${shortAgo(last.at, now)}` : null].filter((p): p is string => !!p);
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+// Next and Mark All as Read (#5137), as the window's.
+
+/** The row after `key` in `rows` (the list as it is filtered and sorted now); undefined at the end, or when `key` is not in it. */
+export function nextRow(rows: MessagesRow[], key: string): MessagesRow | undefined {
+  const at = rows.findIndex((r) => r.key === key);
+  return at >= 0 ? rows[at + 1] : undefined;
+}
+
+/** The lists with the conversation `key` read on every machine that has it, or every conversation when `key` is absent.
+ * A count the service never gave stays absent. */
+export function markedRead(lists: HostConversations[], key?: string): HostConversations[] {
+  return lists.map((l) => ({
+    ...l,
+    conversations: l.conversations.map((c) => (key === undefined || conversationKey(c.conversation) === key) && c.conversation.unread !== undefined
+      ? { ...c, conversation: { ...c.conversation, unread: 0 } } : c),
+  }));
+}
+
+/** Whether Mark All as Read has something to do: a loaded row is unread, or a page is still to come. */
+export const hasUnread = (lists: HostConversations[]): boolean =>
+  mergeConversations(lists).some((r) => (r.item.conversation.unread ?? 0) > 0) || lists.some((l) => !!l.cursor);
+
+/** What Mark All as Read could not do: a machine, or a connector on one. */
+export function markProblems(answers: { name: string; marked?: MessagesMarkedAllRead | undefined; problem?: string | undefined }[]): string[] {
+  return answers.flatMap((a) => a.problem ? [`${a.name}: ${a.problem}`] : (a.marked?.errors ?? []).map((e) => `${a.name} ▸ ${e.server}: ${e.message}`));
+}
+
+export const nextConversation = "Next conversation";
+export const nextHelp = "The next conversation in the list (⌥⌘↓)";
+export const markAllRead = "Mark all as read";
+export const markingAllRead = "Marking…";
+export const markAllHelp = "Mark every conversation read, on each machine and service that keeps a read state";

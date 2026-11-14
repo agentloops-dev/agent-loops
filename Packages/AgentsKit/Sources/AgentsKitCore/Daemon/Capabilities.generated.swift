@@ -11,6 +11,7 @@ public enum Capability {
     public static let agentsFind1 = "agents.find/1"
     public static let agentsMoveWorktree1 = "agents.move-worktree/1"
     public static let agentsSaid1 = "agents.said/1"
+    public static let agentsStartNow1 = "agents.start-now/1"
     public static let agents1 = "agents/1"
     public static let approvals1 = "approvals/1"
     public static let artifact1 = "artifact/1"
@@ -23,6 +24,10 @@ public enum Capability {
     public static let bots1 = "bots/1"
     public static let bringBack1 = "bring.back/1"
     public static let browser1 = "browser/1"
+    public static let browser2 = "browser/2"
+    public static let buildsCopy1 = "builds.copy/1"
+    public static let buildsRead1 = "builds.read/1"
+    public static let buildsTrends1 = "builds.trends/1"
     public static let capacity1 = "capacity/1"
     public static let catalog1 = "catalog/1"
     public static let changesUndo1 = "changes.undo/1"
@@ -66,6 +71,7 @@ public enum Capability {
     public static let filesComplete1 = "files.complete/1"
     public static let filesDiagnostics1 = "files.diagnostics/1"
     public static let files1 = "files/1"
+    public static let firstBuild1 = "first-build/1"
     public static let folder1 = "folder/1"
     public static let foldersNotCommitted1 = "folders.not-committed/1"
     public static let foldersToMachine1 = "folders.to-machine/1"
@@ -86,6 +92,7 @@ public enum Capability {
     public static let hostBrowserSettings1 = "host.browser-settings/1"
     public static let hostDesktopControl1 = "host.desktop-control/1"
     public static let hostDriveApproval1 = "host.drive-approval/1"
+    public static let hostLocalSecrets1 = "host.local-secrets/1"
     public static let hostLock1 = "host.lock/1"
     public static let hostLock2 = "host.lock/2"
     public static let hostLock3 = "host.lock/3"
@@ -124,6 +131,7 @@ public enum Capability {
     public static let lock1 = "lock/1"
     public static let mac1 = "mac/1"
     public static let machineAccounts1 = "machine.accounts/1"
+    public static let machineAccounts2 = "machine.accounts/2"
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
     public static let machines1 = "machines/1"
@@ -131,6 +139,7 @@ public enum Capability {
     public static let marketplaces1 = "marketplaces/1"
     public static let mcpToolLevels1 = "mcp.tool-levels/1"
     public static let mcp1 = "mcp/1"
+    public static let messagesMarkRead1 = "messages.mark-read/1"
     public static let messagesReply1 = "messages.reply/1"
     public static let messages1 = "messages/1"
     public static let modes1 = "modes/1"
@@ -208,6 +217,7 @@ public enum Capability {
     public static let user1 = "user/1"
     public static let user2 = "user/2"
     public static let user3 = "user/3"
+    public static let user4 = "user/4"
     public static let velocity1 = "velocity/1"
     public static let views1 = "views/1"
     public static let wake1 = "wake/1"
@@ -263,6 +273,7 @@ public enum Capability {
         "agents/setSandbox": "agents/1",
         "agents/setUnread": "agents/1",
         "agents/start": "agents/1",
+        "agents/startNow": "agents.start-now/1",
         "agents/stop": "agents/1",
         "agents/stopBackground": "agents/1",
         "agents/summaryFacts": "summary.machines/1",
@@ -285,13 +296,15 @@ public enum Capability {
         "backups/state": "backups/1",
         "browser/ack": "browser/1",
         "browser/clear": "host.browser-settings/1",
-        "browser/input": "browser/1",
+        "browser/input": "browser/2",
         "browser/navigate": "browser/1",
         "browser/state": "host.browser-settings/1",
         "browser/unwatch": "browser/1",
         "browser/watch": "browser/1",
         "browserControl/set": "host.drive-approval/1",
         "browserControl/state": "host.drive-approval/1",
+        "builds/history": "builds.trends/1",
+        "builds/run": "builds.trends/1",
         "capacity/state": "capacity/1",
         "catalog/destination-state": "catalog/1",
         "catalog/preview": "catalog/1",
@@ -359,6 +372,7 @@ public enum Capability {
         "files/unwatch": "files/1",
         "files/watch": "files/1",
         "files/write": "files/1",
+        "firstBuild/start": "first-build/1",
         "folders/add": "folders/1",
         "folders/archive": "folders/1",
         "folders/bringBack": "folders/1",
@@ -451,6 +465,7 @@ public enum Capability {
         "mcp/tools": "mcp.tool-levels/1",
         "mcp/verify": "mcp/1",
         "messages/conversations": "messages/1",
+        "messages/markAllRead": "messages.mark-read/1",
         "messages/read": "messages/1",
         "messages/reply": "messages.reply/1",
         "modes/remembered": "modes/1",
@@ -545,6 +560,7 @@ public enum Capability {
         "sandbox/state": "sandbox/1",
         "secrets/addGrant": "host.secret-grants/1",
         "secrets/grants": "host.secret-grants/1",
+        "secrets/localList": "host.local-secrets/1",
         "secrets/removeGrant": "host.secret-grants/1",
         "secrets/sessionList": "host.session-secrets/1",
         "secrets/sessionRemove": "host.session-secrets/1",
@@ -694,6 +710,9 @@ public enum Capability {
         "bots/make": "bots/1",
         "bots/setCaps": "bots/1",
         "bots/stopRun": "bots/1",
+        "builds/historyAll": "builds.read/1",
+        "builds/runAll": "builds.read/1",
+        "builds/sync": "builds.copy/1",
         "bus/lease": "events.leases/1",
         "bus/log": "events.bus/1",
         "bus/publish": "events.bus/1",
@@ -757,7 +776,7 @@ public enum Capability {
         "lock/joinRequests": "lock-join/1",
         "lock/joinReveal": "lock-join/1",
         "lock/reset": "lock-reset/1",
-        "machine/accounts": "machine.accounts/1",
+        "machine/accounts": "machine.accounts/2",
         "machine/hello": "machine/1",
         "machine/lockAdd": "host.lock/2",
         "machine/lockAgain": "host.lock/4",
@@ -901,6 +920,7 @@ public enum Capability {
         "tunnel/open": "tunnel/1",
         "usage/rollup": "reports/1",
         "user/removeSecret": "user/2",
+        "user/sealedSecret": "user/4",
         "user/secretNames": "user/2",
         "user/secretRecipients": "user/2",
         "user/setAgentConfigFile": "user/1",
@@ -977,6 +997,7 @@ public enum Capability {
         ],
         "control": [
             "attention/1",
+            "machine.accounts/1",
         ],
         "host": [
             "host.wire/1",

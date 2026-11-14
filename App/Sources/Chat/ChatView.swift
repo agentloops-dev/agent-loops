@@ -49,7 +49,8 @@ struct ChatView: View {
                         // transcript scrolls on under it, as it does under the prompt.
                         .safeAreaInset(edge: .top, spacing: 0) {
                             VStack(spacing: 0) {
-                                OfflineStrip(host: agent.host)
+                                // What is wrong with the session's place, one strip at a time (#5034).
+                                strips(for: agent)
                                 actions(for: agent)
                                 if finding, popped == nil {
                                     ChatFindBar(agentID: agent.id,
@@ -57,10 +58,9 @@ struct ChatView: View {
                                                 go: { [model] match in await model.reveal(match) },
                                                 close: { finding = false })
                                 }
-                                // What it keeps working towards (#2742), then what it said
-                                // it would do, as the phone has them (#341).
-                                GoalCard(agent: agent)
-                                CurrentPlanStrip(agent: agent)
+                                // What it works towards: the goal (#2742) and the plan
+                                // (#341), one Now card with two rows (#5033).
+                                NowTopCard(agent: agent)
                             }
                             // On the page's own paper, across the whole pane: the
                             // transcript scrolls under this strip, and without a ground
@@ -186,6 +186,12 @@ struct ChatView: View {
         return { [model] command in Task { await model.tellAgent(about: command, in: agent.id) } }
     }
 
+    /// Start now on a queued session (#5156), where its host has it; nil draws no button.
+    private var startNow: (@MainActor (UUID) async -> Void)? {
+        guard model.agent(agent?.id, has: Capability.agentsStartNow1) else { return nil }
+        return { [model] agentID in await model.startNow(agentID) }
+    }
+
     /// What the shared chat rows mean on a Mac (033).
     private var chatActions: ChatActions {
         ChatActions(
@@ -202,6 +208,7 @@ struct ChatView: View {
             tellAgent: tellAgent,
             sendNow: { [model] prompt, agentID in await model.sendNow(prompt, to: agentID) },
             canSendNow: { [model] runtimeID in runtimeID.flatMap { model.accounts[$0]?.canSteer } ?? false },
+            startNow: startNow,
             acting: { [model] agentID in model.acting(agentID) },
             recipient: { [model] agentID in model.answerRecipient(agentID) },
             // The sidebar's Changes pane, open at that edit (035 FR-014).
@@ -211,6 +218,18 @@ struct ChatView: View {
                 if !hasInspector { return model.open(URL(filePath: diff.path), on: agent.host) }
                 states.state(for: agent.id).changesSelection = ChangesSelection(
                     path: ReportedChanges.key(diff.path), toolCallID: toolCallID)
+                frame.pane = .changes
+                if !frame.isOpen { frame.open() }
+            },
+            // A turn's Changed files card (#5035): the Changes pane, at the file or its list.
+            showChanges: { [model, frame, states, agent, hasInspector] path in
+                guard let agent else { return }
+                // A window of its own has no Changes pane: one file opens in the editor (#826).
+                if !hasInspector {
+                    if let path { model.open(URL(filePath: path), on: agent.host) }
+                    return
+                }
+                states.state(for: agent.id).changesSelection = path.map { ChangesSelection(path: ReportedChanges.key($0)) }
                 frame.pane = .changes
                 if !frame.isOpen { frame.open() }
             },
@@ -227,6 +246,7 @@ struct ChatView: View {
                 guard let agent else { return }
                 Task { await BackgroundOutput.open(item, of: agent, model: model) }
             },
+            stopBackground: { [model] item, agentID in await model.stopBackground(item, of: agentID) },
             turnEntries: { [model] agentID, range in await model.turnEntries(agentID, range) },
             reloadTranscript: { [model, popped] in
                 if let popped { await model.loadTranscript(of: popped) } else { await model.loadTranscript() }
@@ -311,14 +331,45 @@ struct ChatView: View {
         return { await model.answerSandbox(id, carryOn: carryOn) }
     }
 
+    /// The session's strips (#5034): its host, folder, account, allowance and limit, in that
+    /// order, one at a time with "+N more".
+    @ViewBuilder
+    private func strips(for agent: Agent) -> some View {
+        let reason = model.accountMoveReason(agent)
+        let kinds = SessionStripKind.allCases.filter { kind in
+            switch kind {
+            case .host: OfflineStrip.isShown(agent.host, model: model)
+            case .folder: MissingFolderStrip.isShown(agent, model: model)
+            case .account: reason != nil && !MissingFolderStrip.isShown(agent, model: model)
+            case .allowance: ContinueWhenBackStrip.isShown(agent, model: model)
+            case .limit: agent.state != .archived
+                && CostLimitStrip.isShown(agent: agent, limits: model.costLimits, costState: model.costState)
+            }
+        }
+        StripStack(kinds: kinds) { kind in
+            switch kind {
+            case .host: OfflineStrip(host: agent.host)
+            case .folder: MissingFolderStrip(agent: agent)
+            case .account: AccountMoveStrip(agent: agent, reason: reason ?? "")
+            case .allowance: ContinueWhenBackStrip(agent: agent)
+            case .limit:
+                CostLimitStrip(agent: agent, limits: model.costLimits, costState: model.costState,
+                               goOn: { Task { await model.letThisAgentGoOn(agent) } },
+                               raise: {
+                                   // The limits are rules of Agents ▸ Policy (#2957): open Settings there.
+                                   model.settingsPaneAsked = .agentsPolicy
+                                   openSettings()
+                               })
+            }
+        }
+        .chatColumn()
+        .padding(.top, kinds.isEmpty ? 0 : 8)
+    }
+
     /// What can be done to the chat as a whole, at the right-hand edge of its column.
     @ViewBuilder
     private func actions(for agent: Agent) -> some View {
-        if agent.missingFolder != nil, agent.state != .archived {
-            MissingFolderStrip(agent: agent)
-        } else if let reason = model.accountMoveReason(agent) {
-            AccountMoveStrip(agent: agent, reason: reason)
-        } else if agent.state == .archived {
+        if agent.state == .archived {
             // Matching the phone: an archived chat's own page is where Unarchive lives,
             // not only on the row you left it from.
             HStack(spacing: 8) {
@@ -326,7 +377,7 @@ struct ChatView: View {
                 Button {
                     Task { await model.unarchive(agent.id) }
                 } label: {
-                    Label("Unarchive", systemImage: "tray.and.arrow.up")
+                    Label("Unarchive", icon: "tray.and.arrow.up")
                 }
                 .buttonStyle(.paper)
                 .appText(.fine)
@@ -334,9 +385,6 @@ struct ChatView: View {
             }
             .chatColumn()
             .padding(.vertical, 8)
-        } else if ContinueWhenBackWords.offers(agent) || agent.continueWhenBack != nil,
-                  model.host(agent.host, has: Capability.chatContinueWhenBack1) {
-            ContinueWhenBackStrip(agent: agent)
         }
     }
 
@@ -378,6 +426,45 @@ struct ChatView: View {
                     .help(selectedHostOffline ? offlineHelp : "")
             })
         }
+        // A use of a secret with Ask before use waits the same way (#4918): its Needs you row
+        // stays, and an answer on either takes both away.
+        for request in model.work.secretUses(askedBy: agent.id) {
+            if let use = request.secretUse {
+                cards.append(WaitingCard(id: "secretUse:" + request.id.uuidString) {
+                    SecretUseCard(request: request, use: use,
+                                  answer: { await model.answerSecretUse(request, $0) },
+                                  isDisabled: selectedHostOffline)
+                        .chatColumn()
+                        .help(selectedHostOffline ? offlineHelp : "")
+                })
+            }
+        }
+        // The sandbox failure it waits on, once in the transcript, is an Ask here (#5031).
+        if let record = agent.pendingSandboxFailure, let keepStopped = sandboxAnswer(carryOn: false) {
+            cards.append(WaitingCard(id: "sandbox:" + agent.id.uuidString) {
+                SandboxAsk(record: record, setBy: model.sandboxSettings.setBy,
+                           keepStopped: keepStopped, continueWithout: sandboxAnswer(carryOn: true))
+                    .chatColumn()
+                    .disabled(selectedHostOffline)
+                    .help(selectedHostOffline ? offlineHelp : "")
+            })
+        }
+        // A policy stop that can still be raised, once in the transcript, is an Ask here (#5031).
+        if let askForMore = chatActions.askForMore,
+           let stop = PolicyStopAsks.shared.raisable((popped?.work ?? model.work).entries, agent: agent) {
+            cards.append(WaitingCard(id: "policy:" + stop.id.uuidString) {
+                PolicyStopAsk(refusal: stop.refusal, entryID: stop.id, askForMore: askForMore,
+                              openPolicy: chatActions.openPolicy)
+                    .chatColumn()
+            })
+        }
+        // A view's Show or Send, once in its row, is an Ask here (#5031).
+        for host in views.asking {
+            cards.append(WaitingCard(id: "view:" + host.call.id.uuidString) {
+                AppViewAsk(host: host)
+                    .chatColumn()
+            })
+        }
         // An ask to be archived waits the same way, last when asked at once (#827).
         if agent.asksToArchive {
             cards.append(WaitingCard(id: "archive:" + agent.id.uuidString) {
@@ -394,11 +481,10 @@ struct ChatView: View {
         // (#4141), also from a chat in a window of its own.
         let liveFrames = model.work.liveFrames.filter { $0.value.frame.agentID == agent.id }
         if agent.state == .running, !liveFrames.isEmpty {
-            cards.append(WaitingCard(id: "live:" + agent.id.uuidString) {
+            cards.append(WaitingCard(id: "live:" + agent.id.uuidString, asks: false) {
                 LiveTile(frames: liveFrames, open: { [openWindow] source in
                     openWindow(id: TakeOverKey.sceneID, value: TakeOverKey(agentID: agent.id, source: source))
                 })
-                .chatColumn()
             })
         }
         // Its drive_screen paused by the person's touch (#3004, US3): Resume or Take Over.
@@ -408,32 +494,33 @@ struct ChatView: View {
                                         resume: { await model.resumeDesktopControl(agent.id) },
                                         takeOver: { await model.takeOverDesktopControl(agent.id) },
                                         isDisabled: selectedHostOffline)
-                    .chatColumn()
                     .help(selectedHostOffline ? offlineHelp : "")
             })
         }
         // A wait on sessions or on a time, the same card in the same place (#2750): it was
         // a strip under the chat's head with Carry on.
         if let (report, block) = model.work.openBlock(agent) {
-            cards.append(WaitingCard(id: "block:" + agent.id.uuidString) {
+            cards.append(WaitingCard(id: "block:" + agent.id.uuidString, asks: false) {
                 BlockWaitCard(block: block, since: report.at, lines: model.blockLines(agent),
                               stop: { await model.carryOn(agent.id) },
                               help: AgentsModel.carryOnHelp(for: agent),
                               isDisabled: selectedHostOffline)
-                    .chatColumn()
                     .help(selectedHostOffline ? offlineHelp : "")
             })
         }
         // The agent's wait on events, under the questions (#1995): it was a capsule over
         // the prompt.
         if agent.eventWait?.isOpen == true, let status = model.work.waitStatus(of: agent) {
-            cards.append(WaitingCard(id: "wait:" + agent.id.uuidString) {
+            // A wait only the person can settle is an Ask (#5031), in the chat column; any other
+            // is a part of the Now card (#5033), which keeps the column itself.
+            let asks = agent.eventWait?.lineResource == nil && agent.eventWait?.personLine != nil
+            cards.append(WaitingCard(id: "wait:" + agent.id.uuidString, asks: asks) {
                 WaitCard(status: status, eventWait: agent.eventWait,
                          lines: model.work.waitEventLines(of: agent),
                          continueNow: { await model.continueWaiting(of: agent.id, line: agent.eventWait?.lineResource) },
                          stop: { await model.cancelWait(of: agent.id) },
                          isDisabled: selectedHostOffline)
-                    .chatColumn()
+                    .chatColumn(asks)
                     .help(selectedHostOffline ? offlineHelp : "")
             })
         }

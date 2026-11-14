@@ -59,9 +59,9 @@ struct FirstOpenView: View {
     private func failed(_ firstOpen: FirstOpen, line: String, details: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Label(line, systemImage: "exclamationmark.triangle")
+                Label(line, icon: "exclamationmark.triangle")
                     .appText(.reading)
-                    .tinted(.attention)
+                    .tinted(.warning)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if firstOpen.needsApproval {

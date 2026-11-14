@@ -18,11 +18,19 @@ of any group (below).
 
 ## What it does
 
-1. **Voice** (`voice.py`): each line of the scene is said by Chatterbox's default voice,
-   in two takes (exaggeration 0.65 and 0.85). Whisper (`mlx-whisper`) checks each take
-   against the script, and a take with more than one word in ten wrong is not used. A
-   usage video takes the calmer take, a marketing video the livelier one. The takes are
-   kept in `~/.cache/agents-video/voice`, so a line that has not changed is not said again.
+1. **Voice** (`voice.py`): each line of the scene is said by Qwen3-TTS CustomVoice 1.7B's
+   built-in speaker **Aiden** (Apache-2.0, through `mlx-audio`; Alex, 2026-11-12, #5062,
+   #5079), from a directed script: a line is plain words, or a small part of SSML, the
+   standard markup for a synthetic voice: `<break time="500ms"/>` a pause,
+   `<prosody rate="90%">` slower, `<emphasis>` a stressed word, and a tone
+   (`style="calm|warm|bright"` on `<speak>`). Each phrase between pauses is said on its own,
+   with an instruction made from its marks: the tone ("Warm and welcoming…"), "a little
+   slower" for a slow rate, and "Stress the words 'New Session'". The pauses are silence, and
+   the scene waits 0.9 s after each line. The model samples, so Whisper (`mlx-whisper`) hears
+   each phrase, and one it does not hear is said again with a new seed, at most 3 times, then
+   the take stops. Whisper then hears each line, and a line with more than one word in ten
+   wrong stops the take. The phrases are kept in `~/.cache/agents-video/voice`, so a phrase
+   that has not changed is not said again. `python3 scripts/video/voice.py` tests the markup.
 2. **Recording** (`make.py`): run-app launches a scratch set-up on `/tmp/run-vid-<id>`,
    never the live app, with the window opened from outside the checkout so that its
    title names no worktree. The window is recorded through its **walk socket** (#1172):
@@ -36,7 +44,9 @@ of any group (below).
    corners cut, on a cobalt backdrop; the phone in Apple's iPhone bezel; the browser in a
    plain toolbar. The waits marked `fast` are cut
    to a few seconds. Each line starts at the marker the scene wrote when it said it. The
-   video ends on a card with the logo, and the Apple trademark line when an iPhone is shown.
+   video starts on a title card (the logo, the scene's `TITLE`, and "Loops · How to" for a
+   usage video) and ends on a card of the same look (the logo, **Loops**, the scene's docs
+   page), with the Apple trademark line when an iPhone is shown (#4965).
 
 4. **Check**: Whisper hears the finished video against its script, and a contact sheet of
    it (`~/.cache/agents-video/work/<id>/video-sheet.png`) is made to look at before the
@@ -46,8 +56,7 @@ Real Claude agents run in the scenes, on scratch folders: a few cents a video. O
 the person is called Sam (`launch.sh --person`), and the scratch machine is "Sam's Mac"
 (`HOST_NAME`). Its join card (the machine lock) is approved and the recovery key skipped
 before the recording starts. The scratch root asks to say it has 500 GB free, but the Go
-host does not read that yet (#4851): the machine's row shows the real disk. A scene's
-`GET_STARTED = True` keeps the Get started card, which is otherwise put away. A scratch
+host does not read that yet (#4851): the machine's row shows the real disk. A scratch
 agent still reads the person's own `~/.claude/CLAUDE.md`: each folder tells it never to
 name an instructions file, and a take whose window shows the person's name or their own
 instructions fails.
@@ -83,17 +92,30 @@ changes, the same scene makes it again.
 - **Upload** (`upload.py`, #4836): the YouTube Data API v3, **private** always, on the
   `Loops` channel, to the playlist of the scene's `GROUP`: `Loops usage`, `Loops marketing` or
   `Loops integrations`, each made private the first time. The title is `<TITLE> — Loops
-  <version>` (`git describe`); the description gives the docs page (the scene's `DOCS`, a path
+  <x.y>`: the release being made (`LOOPS_RELEASE=v<version>`, which the release skill
+  passes), else the last tag with no count and hash (#4962). The description gives the full
+  `git describe`, the docs page (the scene's `DOCS`, a path
   on docs.agentloops.dev), the commit, the date and the scene file. The captions are the
   take's `<id>.vtt`, in English (`captions.insert`). The thumbnail is a frame of the take, at
   one of the contact sheet's two-second moments: the scene's `THUMBNAIL` second, or two
   fifths in (`thumbnails.set`; a channel that is not verified yet cannot set one, so the log
-  says so and YouTube picks one). A new take replaces the old one in its playlist: the old
+  says so and YouTube picks one; Loops is not verified yet, #4961). A playlist made a moment
+  before is 404 to YouTube for a few seconds: the calls on it wait and ask again (#4838). A new take replaces the old one in its playlist: the old
   video is made private and taken out of the playlist, never deleted. The local files are
-  deleted after a good upload. `upload.py --self-test` proves each call against a fake API. Until Alex's steps on #1793 are done (the
-  OAuth client in `~/.agents/secrets/youtube-client.json`, then `upload.py --sign-in`; with
-  `--no-browser` it only prints the consent address, for an agent to open in the Safari MCP), the
-  video stays in `out/` and the log says why.
+  deleted after a good upload. `upload.py --self-test` proves each call against a fake API. The OAuth client in
+  `~/.agents/secrets/youtube-client.json` is the agents' Google account's (Loops Agents, Cloud
+  project `loops-videos`, In production; #4837), and its refresh token is
+  `youtube-token.json`. The sign-in asks for `youtube.force-ssl`: plain `youtube` has no
+  captions (#4838), and `--preflight` fails a token without it. To sign in again, `upload.py --sign-in --no-browser` prints the consent
+  address; open it in the agents' browser (the `browser_*` tools: Google Chrome since #5207,
+  which keeps the Google sign-in since #5230). The app is not verified by Google, so the consent first shows "Google hasn't
+  verified this app": Advanced ▸ Go to Loops videos. Without a sign-in the video
+  stays in `out/` and the log says why. A revoked or expired refresh token (`invalid_grant`)
+  is the same as no sign-in: `--preflight` and the upload say so, and how to sign in again.
+  An agent does the whole sign-in (#4840); only a new Google sign-in in that browser (the
+  account's password, `GOOGLE_PASSWORD`, Ask before use) needs Alex's approval. Google has no API for the
+  OAuth app's branding or its publishing status (the IAP brands API made only Internal apps,
+  and is shut down), so those stay console pages, done once in #4837.
 - **Its walk hand-off.** A walk's Connect Linear sheet opens no authentication session (that
   is Safari's sheet, on the person's screen): it writes the flow and its address to
   `sign-in.json` in the walk's folder. The scene approves in the video Chrome, reads the code
@@ -194,7 +216,9 @@ run-app skill's "A silent clip" says when and how to put it on a PR.
 ## What it needs
 
 - `ffmpeg` (Homebrew), `uv`, Node and Chrome. The first run makes
-  `~/.cache/agents-video/venv` with Chatterbox and mlx-whisper.
+  `~/.cache/agents-video/venv` with mlx-audio and mlx-whisper, and fetches the voice's
+  weights (`mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16`, about 4 GB) into the
+  Hugging Face cache, once. `--preflight` prints a `note:` when they are not there yet.
 - Apple's iPhone 17 Pro bezel (Silver, portrait) from
   [Apple Design Resources](https://developer.apple.com/design/resources/), in
   `~/.agents/video/assets/`. Its licence lets it be shown in our videos but not given

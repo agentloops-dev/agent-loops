@@ -26,6 +26,18 @@ every turn, from `<its folder>/<its name>.behaviour`:
   goal    the turn sends the goal in `<its folder>/<its name>.goal` (JSON: a snapshot, or
           null to clear it) on a session_info_update, as Codex's and Claude's adapters do
           for an AIR client, then answers: for seeing the goal card (#2742).
+  plan [<name> <json arguments>]
+          the turn sends the plan in `<its folder>/<its name>.plan` (JSON: the entries, each
+          with content, priority and status) as Claude's to-do list, then, with a tool named,
+          calls it as `tool` does: for seeing the first build's plan page tick its tasks, and
+          a task wait on a card (#5054).
+  usage <tokens>
+          it answers as `ok` does, and the turn reports that many tokens (half in, half
+          out) on its prompt response: for reaching a token limit, as the limit strip
+          needs (#5034).
+  edit <path> [<path> ...]
+          the turn adds a line to each file, by its path in the session's folder (made when
+          it is not there), then answers: for seeing a turn's Changed files card (#5035).
   ok      (or no file) it answers, saying what it was handed.
 
 So a walk can make a runtime run out, and later come back, by rewriting one file.
@@ -75,6 +87,8 @@ SPENT = {"jetbrains": {"air": {"version": 1, "sessionFailure": {
 
 # The app's own MCP server, as session/new hands it over: its address and headers.
 servers = {}
+# Each session's folder, as session/new hands it over.
+folders = {}
 
 
 def call_tool(session_id, name, arguments):
@@ -167,6 +181,35 @@ def prompt(request_id, params):
         say(session_id, text)
         reply(request_id, {"stopReason": "end_turn"})
         return
+    if how and how[0] == "edit":
+        folder = folders.get(session_id, os.getcwd())
+        for rel in how[1:]:
+            path = os.path.join(folder, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a") as f:
+                f.write(f"A line from {NAME}.\n")
+        say(session_id, f"Edited {len(how) - 1} files.")
+        reply(request_id, {"stopReason": "end_turn"})
+        return
+    if how and how[0] == "plan":
+        with open(os.path.join(HERE, f"{NAME}.plan")) as f:
+            entries = json.load(f)
+
+        def update(body):
+            send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": session_id, "update": body}})
+
+        update({"sessionUpdate": "plan", "entries": entries})
+        text = "The plan is up."
+        if len(how) > 1:
+            _, name, arguments = behaviour().split(maxsplit=2)
+            update({"sessionUpdate": "tool_call", "toolCallId": "tool-1", "title": f"mcp__agents__{name}",
+                    "kind": "other", "status": "in_progress", "rawInput": json.loads(arguments)})
+            text = call_tool(session_id, name, json.loads(arguments))
+            update({"sessionUpdate": "tool_call_update", "toolCallId": "tool-1", "status": "completed",
+                    "content": [{"type": "content", "content": {"type": "text", "text": text}}]})
+        say(session_id, text)
+        reply(request_id, {"stopReason": "end_turn"})
+        return
     if how and how[0] == "goal":
         with open(os.path.join(HERE, f"{NAME}.goal")) as f:
             goal = json.load(f)
@@ -186,6 +229,11 @@ def prompt(request_id, params):
         words.append(f"{NAME} here. I was handed the conversation so far ({len(handoff)} characters).")
     words.append(f"You said: {typed[0][:200] if typed else '(nothing)'}")
     say(session_id, "\n\n".join(words))
+    if how and how[0] == "usage" and len(how) > 1:
+        tokens = int(how[1])
+        reply(request_id, {"stopReason": "end_turn", "usage": {
+            "totalTokens": tokens, "inputTokens": tokens // 2, "outputTokens": tokens - tokens // 2}})
+        return
     reply(request_id, {"stopReason": "end_turn"})
 
 
@@ -227,6 +275,7 @@ def main():
             for server in params.get("mcpServers", []):
                 if server.get("name") == "agents" and server.get("url"):
                     servers[session_id] = server
+            folders[session_id] = params.get("cwd") or os.getcwd()
             reply(request_id, {"sessionId": session_id, "configOptions": options()})
         elif method == "session/set_config_option":
             chosen[params.get("configId", "")] = params.get("value")

@@ -12,7 +12,7 @@
 #   scripts/release-secrets.sh --store path/to/Distribution.p12
 #
 # The TestFlight upload's secrets (#914), into the same environment: the Apple Distribution
-# identity, exported from Keychain Access as a .p12, and the Remote's three installed App Store
+# identity, exported from Keychain Access as a .p12, and the Remote's four installed App Store
 # profiles, found by name. The Mac is not in the App Store (#4229). Run
 # the plain form first: it makes the environment and sets the App Store Connect key both use.
 #
@@ -23,7 +23,8 @@
 # ~/.private_keys. Without a required reviewer app-store.yml submits nothing.
 set -euo pipefail
 
-repo=${RELEASE_REPO:-alexec/Agents}
+# The repo is this checkout's, so it follows a transfer (#4929).
+repo=${RELEASE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 keys=~/.private_keys
 profiles=~/Library/Developer/Xcode/UserData/Provisioning\ Profiles
 
@@ -56,6 +57,7 @@ if [[ ${1:-} == --store ]]; then
         PROFILE_REMOTE "Agents Remote App Store"
         PROFILE_REMOTE_NOTIFY "Agents Remote Notify App Store"
         PROFILE_REMOTE_WIDGET "Agents Remote Widget App Store"
+        PROFILE_REMOTE_SHARE "Agents Remote Share App Store"
     )
     typeset -A found
     for secret name in ${(kv)wanted}; do

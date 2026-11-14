@@ -2,13 +2,14 @@ package agentsd
 
 import (
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // What a host does with the agents the last one left working (DaemonCore+Recovery): each
@@ -19,7 +20,7 @@ import (
 const pickUpsBeforeLeavingAlone = 3
 
 // importedNote is RuntimeNote.imported.
-const importedNote = "This agent was made under another Agents set-up and copied here, so it is shown but never run here: its conversation and its folder belong to that set-up."
+const importedNote = "This agent was made under another Agent Loops set-up and copied here, so it is shown but never run here: its conversation and its folder belong to that set-up."
 
 // refuseToRun is DaemonCore.refuseToRun: an agent copied in from another set-up is never run.
 func (d *Daemon) refuseToRun(a *wire.Agent) error {
@@ -69,8 +70,7 @@ func pickUps(a *wire.Agent) int64 {
 }
 
 func mayBePickedUp(a *wire.Agent) bool {
-	return a.State == wire.AgentStateStopped && a.EndedReason != nil && *a.EndedReason == wire.EndedReasonDaemonGone &&
-		pickUps(a) < pickUpsBeforeLeavingAlone
+	return stoppedWithTheDaemon(a) && pickUps(a) < pickUpsBeforeLeavingAlone
 }
 
 // recover is DaemonCore.recover's part for agents: called before any client connects.
@@ -96,10 +96,11 @@ func (d *Daemon) recover() {
 		}
 	}
 	// Those a clean stop cut off in a turn, which it wrote stopped with the daemon (#1605).
-	if alive := d.readAlive(); alive != nil {
+	alive := d.readAlive()
+	if alive != nil {
 		for id, was := range alive.CutOff {
 			a := d.Store.Agent(id)
-			if a == nil || a.State != wire.AgentStateStopped || a.EndedReason == nil || *a.EndedReason != wire.EndedReasonDaemonGone {
+			if a == nil || !stoppedWithTheDaemon(a) {
 				continue
 			}
 			left = append(left, leftAgent{a: *a, was: was, ended: true})
@@ -128,6 +129,25 @@ func (d *Daemon) recover() {
 			d.resumeMu.Unlock()
 		}
 	}
+	// Those a start before this one told why they stopped, and died before it picked them up
+	// (#4917): picked up now, with nothing said again.
+	if alive != nil {
+		for id, was := range alive.PickUp {
+			a := d.Store.Agent(id)
+			if a == nil || !stoppedWithTheDaemon(a) || !mayBePickedUp(a) || a.Purpose != nil {
+				continue
+			}
+			d.resumeMu.Lock()
+			if _, already := d.interrupted[id]; !already {
+				d.interrupted[id] = was
+			}
+			d.resumeMu.Unlock()
+		}
+	}
+}
+
+func stoppedWithTheDaemon(a *wire.Agent) bool {
+	return a.State == wire.AgentStateStopped && a.EndedReason != nil && *a.EndedReason == wire.EndedReasonDaemonGone
 }
 
 func (d *Daemon) resumingNow() []wire.UUID {
@@ -153,6 +173,12 @@ func wordsAboutTheRestart(was wire.AgentState) string {
 // PickUpAfterRestart picks the interrupted agents back up, once the host serves: every one
 // said to be resuming at once, then two at a time, most recent first.
 func (d *Daemon) PickUpAfterRestart() {
+	// A host that its control plane forgot picks nobody up (#4985): they stay on the
+	// list for a start that is a member again.
+	if d.notAMember() {
+		log.Printf("not a member: %d interrupted agents are not picked up", d.interruptedCount())
+		return
+	}
 	d.resumeMu.Lock()
 	var ids []wire.UUID
 	for id := range d.interrupted {
@@ -183,6 +209,12 @@ func (d *Daemon) PickUpAfterRestart() {
 	})
 }
 
+func (d *Daemon) interruptedCount() int {
+	d.resumeMu.Lock()
+	defer d.resumeMu.Unlock()
+	return len(d.interrupted)
+}
+
 func (d *Daemon) leaveTheQueue(id wire.UUID) {
 	d.resumeMu.Lock()
 	was := d.resuming[id]
@@ -195,13 +227,21 @@ func (d *Daemon) leaveTheQueue(id wire.UUID) {
 
 // pickUp sends the restart words first in the agent's queue, as the person's, so what
 // they queued goes with them; the count is written before the words go.
+//
+// The agent stays on alive.json's list until the turn has begun or the attempt has ended,
+// so a host that dies first leaves it for the next start (#4917).
 func (d *Daemon) pickUp(id wire.UUID) {
 	d.resumeMu.Lock()
 	was, ok := d.interrupted[id]
-	delete(d.interrupted, id)
 	d.resumeMu.Unlock()
+	defer d.pickedUp(id)
 	a := d.Store.Agent(id)
 	if !ok || a == nil || !mayBePickedUp(a) {
+		return
+	}
+	// A lane whose pull request landed or closed while the host was down is left (#4985).
+	if why, ended := d.prEnded(a); ended {
+		d.record(id, runtimeNote("Not picked back up: "+why+". Send it a message to pick it up yourself."))
 		return
 	}
 	d.change(id, func(a *wire.Agent) {
@@ -234,6 +274,18 @@ func (d *Daemon) pickUp(id wire.UUID) {
 			return
 		}
 	}
+}
+
+// pickedUp takes an agent off the list to pick up, and off alive.json's, unless the host is
+// going: then its stop writes the list (noteCutOffAgents), the agent still on it.
+func (d *Daemon) pickedUp(id wire.UUID) {
+	if d.going() {
+		return
+	}
+	d.resumeMu.Lock()
+	delete(d.interrupted, id)
+	d.resumeMu.Unlock()
+	d.writeAlive(d.aliveNow(now(), nil))
 }
 
 // clearPickUps is a clean shutdown's: no agent was cut off by it.

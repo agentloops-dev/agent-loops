@@ -38,7 +38,7 @@ Session labels appear beneath the title on Mac rows and phone cards; agent-owned
 | **Waiting on your answer** | Needs you | The turn ended with a question for you. | Reply in the prompt. **Archive**, **Branch**. |
 | **Outcome unknown** | Needs you | The turn ended without a report saying how the work went. | Read the conversation and reply if needed. |
 | **Unexpected stop** | Needs you | The runtime crashed, failed, hit a limit or otherwise stopped short without you choosing to stop it. | Read the reason on the row and reply to resume. |
-| **Waiting** | Waiting | The agent is waiting on something the app watches: agents it started, a time to check again, or an event such as checks passing. The card says what it is waiting for. It carries on by itself when that comes, so you need not do anything. Its icon is Zs: asleep until what it waits for comes. | **Carry on**, to tell it the wait is over early. **Stop**, so it does not carry on. **Archive**, **Branch**. |
+| **Waiting** | Waiting | The agent is waiting on something the app watches: sessions it started, a time it set, or an event such as checks passing. The card says what it is waiting for. It carries on by itself when that comes, so you need not do anything. Its icon is Zs: asleep until what it waits for comes. | **Carry on**, to tell it the wait is over early. **Stop**, so it does not carry on. **Archive**, **Branch**. |
 | **Complete** | Done | The agent did what was asked. A turn with no question, no file and no archive ends so. An old record's **Stuck**, **Partly done** or a wait on nothing the app watches shows as **Complete** too (#1916). | Reply in the prompt. **Mark as Unread**, **Archive**, **Branch**. |
 | **Nothing to do** | Done | The agent found nothing that needed doing. | Reply in the prompt. **Mark as Unread**, **Archive**, **Branch**. |
 | **Stopped by you** or **Stopped by the agent that started it** | Paused | The turn was deliberately cut short. | Reply in the prompt to start a new turn. **Archive**, **Branch**. |
@@ -121,7 +121,7 @@ plane.
 | Line | What it means | What works |
 | --- | --- | --- |
 | No line | Connected to the control plane at its address. | Everything. |
-| Last heard from your Mac … | The device cannot reach the control plane: the Mac it runs on is asleep, or Agents is not running on it. What is shown is dimmed and offers nothing. | Nothing, until it answers. |
+| Can't reach your Mac. Last update … | The device cannot reach the control plane: the Mac it runs on is asleep, or Agent Loops is not running on it. What is shown is dimmed and offers nothing. | Nothing, until it answers. |
 | Not connected to your Mac yet | The app has not reached the control plane since it opened. If it has not paired, the page says **Connect to your agents**, with a button to scan the code the Mac shows in **Settings ▸ Control plane ▸ Clients ▸ Pair a Device…**. | Nothing, until it answers. |
 
 ## See also

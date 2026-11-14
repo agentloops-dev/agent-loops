@@ -21,17 +21,34 @@ struct WorkItemPage: View {
     private let compact = false
     #endif
     @Environment(\.openURL) private var openURL
+    /// Opens a place on the web page; the Mac window sets it while it can open the page (#5180).
+    @Environment(\.openWebPlace) private var openWebPlace
     let place: WorkPlace
 
     @State private var detail: (host: MachineRef, got: DaemonAPI.ForgeItemDetail)?
     @State private var forgeProblem: String?
     @State private var reading = false
+    /// The item on screen came from this device's copy (#4930): no writes until its machine answers.
+    @State private var fromDevice = false
+    /// When the item on screen was read from its machine (#5142): this device's copy's time, or
+    /// the last read that worked. The "Last update" line of the strips.
+    @State private var detailRead: Date?
+    /// When the plan drawn from this device's copy was read, until its machine answers (#5142).
+    @State private var planCopyRead: Date?
+
+    /// The page's one "From this device" strip (#5142): the oldest of the item's and the plan's
+    /// copies on screen, while a machine is asked again.
+    private var copyRead: Date? {
+        guard forgeProblem == nil else { return nil }
+        return [fromDevice ? detailRead : nil, planCopyRead].compactMap { $0 }.min()
+    }
     @State private var olderLoading = false
     @State private var estimate: DaemonAPI.LineageEstimate?
     @State private var estimateRange = false
     @State private var forecast: DaemonAPI.LineageForecast?
     @State private var forecastHelp = false
     @State private var pipeline: [Pipeline.Step] = []
+    @State private var trendsProblem: String?
     @State private var lineage: (cost: DaemonAPI.LineageCostRollup?, sessions: [UUID])?
     @State private var said: (words: String, failed: Bool)?
     @State private var writing = false
@@ -61,7 +78,8 @@ struct WorkItemPage: View {
     }
 
     /// The person's machine that read it takes writes: else no Start Agent, comment box or gears.
-    private var writes: Bool { detail.map { model.forgeWrites(on: $0.host) } ?? false }
+    /// None while the page is this device's copy (#4930): a write acts on the machine's own answer.
+    private var writes: Bool { !fromDevice && (detail.map { model.forgeWrites(on: $0.host) } ?? false) }
 
     var body: some View {
         ScrollView {
@@ -146,7 +164,7 @@ struct WorkItemPage: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("All \(place.kind.title.lowercased())")
-                Image(systemName: "chevron.compact.right").foregroundStyle(.tertiary).accessibilityHidden(true)
+                Image(icon: "chevron.compact.right").foregroundStyle(.tertiary).accessibilityHidden(true)
                 Text(WorkList.shortRef(node.ref)).fontWeight(.semibold).monospacedDigit()
             }
             .appText(.reading)
@@ -171,7 +189,7 @@ struct WorkItemPage: View {
             // An HStack, not a Label: the bar draws a Label's icon alone.
             Button { back() } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "chevron.left").fontWeight(.semibold)
+                    Image(icon: "chevron.left").fontWeight(.semibold)
                     Text(backWords)
                 }
             }
@@ -180,17 +198,17 @@ struct WorkItemPage: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if let n = model.workNeighbours {
                 let list = model.workLists[place.kind]
-                Button { Task { await model.stepWork(forward: false) } } label: { Image(systemName: "chevron.up") }
+                Button { Task { await model.stepWork(forward: false) } } label: { Image(toolbarIcon: "chevron.up") }
                     .disabled(n.previous == nil)
                     .accessibilityLabel("Previous")
                 Button { Task { await model.stepWork(forward: true) } } label: {
-                    if list.loadingMore { ProgressView() } else { Image(systemName: "chevron.down") }
+                    if list.loadingMore { ProgressView() } else { Image(toolbarIcon: "chevron.down") }
                 }
                 .disabled(!model.workHasNext || list.loadingMore)
                 .accessibilityLabel("Next")
             }
             if compact, let url = forgeURL {
-                Button { openURL(url) } label: { Image(systemName: "arrow.up.right.square") }
+                Button { openURL(url) } label: { Image(toolbarIcon: "arrow.up.right.square") }
                     .accessibilityLabel(WorkList.openOnWords(node.ref))
             }
         }
@@ -271,7 +289,7 @@ struct WorkItemPage: View {
             Spacer(minLength: 8)
             if let url {
                 Button { openURL(url) } label: {
-                    Label(WorkList.openOnWords(node.ref), systemImage: "arrow.up.right.square")
+                    Label(WorkList.openOnWords(node.ref), icon: "arrow.up.right.square")
                 }
                 .linkStyle()
                 .help(WorkList.openOnWords(node.ref))
@@ -316,7 +334,7 @@ struct WorkItemPage: View {
         if let lead = model.workLead(of: node) {
             Button { model.openWorkSession(lead.id) } label: {
                 HStack(spacing: 6) {
-                    Label("Open lead", systemImage: "person")
+                    Label("Open lead", icon: "person")
                     Circle().fill(leadDot(lead.state)).frame(width: 7, height: 7).accessibilityHidden(true)
                 }
                 .frame(maxWidth: narrow ? .infinity : nil)
@@ -327,9 +345,9 @@ struct WorkItemPage: View {
             .accessibilityValue(WorkPlan.leadWords(lead.state))
         } else if writes, item?.state == "open", let start = detail?.got.start {
             Button { startLead(start) } label: {
-                Label("Start lead", systemImage: "sparkle").frame(maxWidth: narrow ? .infinity : nil)
+                Label("Start lead", icon: "sparkle").frame(maxWidth: narrow ? .infinity : nil)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.paperProminent)
             .controlSize(compact ? .large : .regular)
             .help("The new-session form in this epic's folder, filled in for a lead with the lead skill")
         }
@@ -358,9 +376,9 @@ struct WorkItemPage: View {
 
     private func startButton(_ start: DaemonAPI.ForgeStart) -> some View {
         Button { startAgent(start) } label: {
-            Label("Start Agent", systemImage: "sparkle").frame(maxWidth: narrow ? .infinity : nil)
+            Label("Start Agent", icon: "sparkle").frame(maxWidth: narrow ? .infinity : nil)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.paperProminent)
         .controlSize(compact ? .large : .regular)
         .help("The new-agent form in this issue's folder, filled in for it")
     }
@@ -405,7 +423,7 @@ struct WorkItemPage: View {
 
     /// An arrow with a target a pointer finds.
     private func stepLabel(_ symbol: String) -> some View {
-        Image(systemName: symbol).frame(width: 24, height: 24).contentShape(Rectangle())
+        Image(icon: symbol).frame(width: 24, height: 24).contentShape(Rectangle())
     }
     #endif
 
@@ -415,15 +433,16 @@ struct WorkItemPage: View {
     @ViewBuilder
     private var problemStrip: some View {
         if detail != nil, let forgeProblem {
-            WorkErrorStrip(lines: [forgeProblem]) { asked += 1 }
+            WorkErrorStrip(lines: [forgeProblem], read: detailRead) { asked += 1 }
         }
+        WorkFromDeviceStrip(read: copyRead)
     }
 
     /// Nothing read: in the middle, the warning glyph, *Could not read #4331*, the forge's words,
     /// Try again and Open on GitHub.
     private func couldNotRead(_ words: String) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle")
+            Image(icon: "exclamationmark.triangle")
                 // The state's own glyph, larger than any text step: a marked decorative glyph.
                 .font(.system(size: 28))
                 .foregroundStyle(.secondary)
@@ -450,7 +469,8 @@ struct WorkItemPage: View {
         if let detail, WorkPlan.hasPlan(detail.got.item) {
             WorkPlanSection(model: model, host: detail.host, lineageHost: lineageHost, detail: detail.got, asked: asked,
                             estimates: estimate?.children ?? [], compact: compact,
-                            writes: writes, wrote: { Task { await reread() } })
+                            writes: writes, waiting: fromDevice, wrote: { Task { await reread() } },
+                            fromCopy: { planCopyRead = $0 })
         }
     }
 
@@ -520,7 +540,7 @@ struct WorkItemPage: View {
                 said = (words, failed)
                 if !failed { Task { await reread() } }
             }
-        } else if WorkLook.mergeBox(got) == nil {
+        } else if !fromDevice, WorkLook.mergeBox(got) == nil {
             Text("No machine of yours can write to \(WorkList.forgeName(node.ref)).")
                 .appText(.supporting).foregroundStyle(.secondary)
         }
@@ -543,7 +563,7 @@ struct WorkItemPage: View {
     }
 
     private func mergeBox(_ box: WorkLook.MergeBox, _ got: DaemonAPI.ForgeItemDetail, on host: MachineRef) -> some View {
-        WorkMergeBox(model: model, host: host, detail: got, box: box, writes: writes, compact: narrow) {
+        WorkMergeBox(model: model, host: host, detail: got, box: box, writes: writes, waiting: fromDevice, compact: narrow) {
             Task { await reread() }
         }
     }
@@ -565,7 +585,7 @@ struct WorkItemPage: View {
 
     private var olderComments: some View {
         WorkTimelineEntry {
-            Image(systemName: "ellipsis").appText(.fine).foregroundStyle(.secondary)
+            Image(icon: "ellipsis").appText(.fine).foregroundStyle(.secondary)
                 .frame(width: 22, height: 22).background(Circle().fill(Paper.well))
         } content: {
             Button(olderLoading ? "Loading…" : "Older comments") { Task { await readOlder() } }
@@ -629,7 +649,7 @@ struct WorkItemPage: View {
         if node.kind == "pr", let files = WorkLook.branchWords(detail?.got.filesChanged) {
             // The head and base branches and the size come with the forge's fields (#4406).
             WorkSideSection(title: "Branch") {
-                Label(files, systemImage: "arrow.triangle.branch").monospacedDigit()
+                Label(files, icon: "arrow.triangle.branch").monospacedDigit()
             }
         }
         WorkSideSection(title: "Repo") {
@@ -852,7 +872,9 @@ struct WorkItemPage: View {
         #endif
     }
 
-    /// "Release v1.2.0 · CI run · TestFlight 42 · Sentry issue 4321", each a link out (#3588).
+    /// "Release v1.2.0 · CI run · TestFlight 42 · Sentry issue 4321", each a link out (#3588), then
+    /// **Build trends ↗** on the web page when the line has a CI run and this Mac can open the page
+    /// (#5180): a Web + Mac link (#4937), so the Remote, which sets no `openWebPlace`, has none.
     private var pipelineLine: some View {
         var line = AttributedString()
         for (i, step) in pipeline.enumerated() {
@@ -861,7 +883,29 @@ struct WorkItemPage: View {
             words.link = step.url
             line += words
         }
-        return Text(line).appText(.fine).foregroundStyle(.secondary).monospacedDigit()
+        let text = Text(line).appText(.fine).foregroundStyle(.secondary).monospacedDigit()
+        let trends = openWebPlace.flatMap { open in
+            BuildTrendsLink.run(in: pipeline.compactMap(\.node)).flatMap(BuildTrendsLink.place(run:)).map { (open, $0) }
+        }
+        return HStack(alignment: .firstTextBaseline, spacing: 0) {
+            text
+            if let trends {
+                Text(" · ").appText(.fine).foregroundStyle(.secondary)
+                Button("\(BuildTrendsLink.title) ↗") {
+                    Task { trendsProblem = await trends.0.run(trends.1) }
+                }
+                .linkStyle()
+                .appText(.fine)
+                .help(BuildTrendsLink.help(kind: node.kind))
+                .fixedSize()
+            }
+        }
+        .alert(BuildTrendsLink.cannotOpen, isPresented: Binding(get: { trendsProblem != nil },
+                                                                set: { if !$0 { trendsProblem = nil } })) {
+            Button("OK") { trendsProblem = nil }
+        } message: {
+            Text(trendsProblem ?? "")
+        }
     }
 
     // MARK: Writing
@@ -888,13 +932,18 @@ struct WorkItemPage: View {
     /// `forge/image`), so the app never loads the page's remote URL. Nil when it cannot.
     private func image(on host: MachineRef) -> RemoteImageLoader {
         { [model] url in
-            guard let got = try? await model.forge(DaemonAPI.Method.forgeImage, DaemonAPI.ForgeImageRequest(url: url.absoluteString),
-                                                   returning: DaemonAPI.ForgeImage.self, on: host) else { return nil }
-            return PlatformImage(data: got.data)
+            guard let data = await model.forgeImage(url.absoluteString, on: host) else { return nil }
+            return PlatformImage(data: data)
         }
     }
 
     // MARK: Loading
+
+    /// An item as this device keeps it (#4930): the machine that read it, its body and its newest page of comments.
+    struct KeptItem: Codable, Sendable {
+        var host: MachineRef
+        var got: DaemonAPI.ForgeItemDetail
+    }
 
     /// The item, from the first machine that reads it. A refresh keeps the page as it is, and
     /// the toolbar's Refresh spins, until the new read comes.
@@ -905,13 +954,22 @@ struct WorkItemPage: View {
         guard !machines.isEmpty else { forgeProblem = WorkList.noForgeHere; return }
         reading = true
         defer { if asked == mine { reading = false } }
+        // Seen before: this device's copy at once, until a machine answers (#4930).
+        if detail == nil, case let (kept, at)? = await model.keptWorkRead(KeptItem.self, .item, node.ref), asked == mine, detail == nil {
+            detail = (kept.host, kept.got)
+            detailRead = at
+            fromDevice = true
+        }
         var last: String?
         for machine in machines {
             do {
                 let got = try await model.forgeItem(node, cursor: nil, on: machine.id)
                 guard asked == mine else { return }
                 detail = (machine.id, got)
+                detailRead = Date()
+                fromDevice = false
                 forgeProblem = nil
+                model.keepWork(KeptItem(host: machine.id, got: got), .item, node.ref)
                 return
             } catch {
                 last = WorkList.failureWords(error)
@@ -928,13 +986,16 @@ struct WorkItemPage: View {
         do {
             let got = try await model.forgeItem(node, cursor: nil, on: had.host)
             detail = (had.host, got)
+            detailRead = Date()
+            fromDevice = false
+            model.keepWork(KeptItem(host: had.host, got: got), .item, node.ref)
         } catch {
             forgeProblem = error.localizedDescription
         }
     }
 
     private func readOlder() async {
-        guard let had = detail, let cursor = had.got.cursor else { return }
+        guard !fromDevice, let had = detail, let cursor = had.got.cursor else { return }
         olderLoading = true
         defer { olderLoading = false }
         do {

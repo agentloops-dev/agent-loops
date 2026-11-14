@@ -12,7 +12,7 @@ import type { Agent } from "../protocol/generated";
 import type { Store } from "../model/store";
 import {
   cooldownSentence, labelsNote, mcpMissedWords, mcpTriggerWords, agentModeWords, unknownLines, isUnapproved, canBeApproved, canBeDenied, workflowStatusLines, takeReadyMadeTitle, takeReadyMadeHelp, keepEditedTitle, keepEditedHelp, isOn, isSupportedTrigger, switchesSentence, scopeSentence, lastRanLine, nextLine, resumedAgent, scopeLine, triggerFilters, triggerGlyph,
-  runsOnParts, triggerSummary, workflowRunsOnSentence, workflowHostChoices, workflowSummary,
+  runsOnParts, triggerSummary, workflowRunsOnSentence, workflowHostChoices, workflowSummary, alarmOf,
 } from "../model/workflows";
 import { go } from "../route";
 import { RunNow } from "./WorkflowRow";
@@ -28,6 +28,7 @@ import { WorkflowFileModal } from "./AgentConfigEditor";
 import { PageTitle } from "./TopBar";
 import { navTitle } from "../model/nav";
 import { ask } from "./MessageKinds";
+import { Glyph } from "./Icon";
 
 export function WorkflowPage({ store, host, folder, folderName, workflowID, down }: {
   store: Store; host: string; folder: string; folderName: string; workflowID: string; down: boolean;
@@ -188,7 +189,7 @@ export function WorkflowPage({ store, host, folder, folderName, workflowID, down
             <ul class="status-card">
               {status.map((line) => (
                 <li key={line.glyph + line.text} class={line.tint ? `tinted ${line.tint}` : undefined}>
-                  <span class="glyph" aria-hidden="true">{line.glyph}</span>
+                  <span class="glyph" aria-hidden="true"><Glyph of={line.glyph} /></span>
                   <span class="what">
                     <span>{line.text}</span>
                     {line.detail && <span class="quiet small">{line.detail}</span>}
@@ -245,7 +246,7 @@ export function WorkflowPage({ store, host, folder, folderName, workflowID, down
                   const scope = scopeLine(trigger, folderName, hostName);
                   return (
                     <li key={index} class="trigger">
-                      <span class="glyph" aria-hidden="true">{triggerGlyph(trigger)}</span>
+                      <span class="glyph" aria-hidden="true"><Glyph of={triggerGlyph(trigger)} /></span>
                       <span class="what">
                         <span>{triggerSummary(trigger)}
                           {!isSupportedTrigger(trigger) && (
@@ -258,7 +259,7 @@ export function WorkflowPage({ store, host, folder, folderName, workflowID, down
                         {scope && <span class="quiet small">{scope}</span>}
                         {workflow.mode === "triggering" && isSupportedTrigger(trigger) && <span class="quiet small">{resumedAgent(trigger)}</span>}
                       </span>
-                      {"schedule" in trigger && <span class="next quiet small">{nextLine(summary, index)}</span>}
+                      {("schedule" in trigger || alarmOf(trigger)) && <span class="next quiet small">{nextLine(summary, index)}</span>}
                     </li>
                   );
                 })}

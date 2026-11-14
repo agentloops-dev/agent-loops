@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/controlplane/signin"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 )
 
 // Who may sign up (#2152, spec 1003 FR-001–FR-012). A person with an account signs in as
@@ -380,9 +380,9 @@ func whyText(why string, minAge time.Duration) string {
 	case whyAge:
 		return fmt.Sprintf("Your GitHub account is newer than %d days.", int(minAge.Hours()/24))
 	case whyCap:
-		return "Agents has as many accounts as it can take for now."
+		return "Agent Loops has as many accounts as it can take for now."
 	default:
-		return "Sign-up is by invitation while Agents is in beta."
+		return "Sign-up is by invitation while Agent Loops is in beta."
 	}
 }
 

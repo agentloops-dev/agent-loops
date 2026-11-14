@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The page asks for a step of a move of the control plane (#4255): the Mac's window is told
@@ -32,7 +32,7 @@ func TestThePageAsksTheMacWindowToMoveTheControlPlane(t *testing.T) {
 		t.Fatalf("the window was told %+v", want)
 	}
 	report := map[string]any{"mac": "Alex's Mac", "rows": []map[string]any{{"kind": "move", "title": "Move to Another Machine", "detail": "To a server you run."}}}
-	if got := callError(t, page, "", "control/planeMoveReport", report); !strings.Contains(got, "Only Agents on a Mac") {
+	if got := callError(t, page, "", "control/planeMoveReport", report); !strings.Contains(got, "Only Agent Loops on a Mac") {
 		t.Fatalf("a browser reports: %s", got)
 	}
 	call(t, window, "", "control/planeMoveReport", report)

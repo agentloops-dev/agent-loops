@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // hand_to_person (#3529, spike #3527): the agent gives the person one step on the page in
@@ -14,6 +14,8 @@ import (
 // why, and one choice, Done or Can't do it, with a line for what stopped them. A client
 // that shows the machine's browser (the Mac and the web page) adds Open the page, which
 // opens the Agent Browser at the agent's tab; the Remote says to do it on one of those.
+// When the browser is Google Chrome, its real window comes to the front for the step
+// instead, and the card names it (handoffwindow.go, #5208).
 // While the card is open, the agent's other browser calls are refused, so the page does
 // not move under the person, and the agent keeps browser:agents past its turn's end, so
 // no other agent takes the page from them.
@@ -24,7 +26,8 @@ const handToPersonName = "hand_to_person"
 var handToPersonTool = json.RawMessage(`{"name":"hand_to_person","title":"Hand a step on the page to the person",` +
 	`"description":"Ask the person to do one step on the browser's current page that you cannot or must not do: solve a CAPTCHA, sign in, approve a sign-in on their phone, or click something only a person should. ` +
 	`Use it only when no tool or secret can do the step: fill a password with fill_secret, not this. ` +
-	`Every client shows a card with the step and Open the page; the person does it in the app's browser and answers Done or Can't do it. ` +
+	`Every client shows a card with the step; the person does it and answers Done or Can't do it. When the app's browser is Google Chrome on a Mac the person is at, its window comes to the front for the step and goes back on Done; otherwise the card has Open the page. ` +
+	`Never do a human check (a CAPTCHA, a press-and-hold, a slider) yourself with synthetic input: hand it over. ` +
 	`You get their answer; then call browser_snapshot to see where the page is now, and carry on from it. ` +
 	`Your other browser calls are refused until they answer. Hand over one step at a time.",` +
 	`"inputSchema":{"type":"object","properties":{` +
@@ -70,11 +73,17 @@ func (d *Daemon) handToPerson(agent wire.UUID, args map[string]json.RawMessage) 
 	if err != nil {
 		return browserWords(err), true
 	}
-	req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: agent, Message: &step,
-		HandOff: &wire.ElicitationHandOff{Step: step, Reason: &reason},
-		Mode:    wire.ElicitationRequestMode{Form: &wire.ElicitationRequestModeForm{Value: handOffSchema(reason)}},
-		Scope:   wire.ElicitationRequestScopeSession, AskedAt: now()}
-	r, answered := l.holdAskedForm(req, nil)
+	handOff := &wire.ElicitationHandOff{Step: step, Reason: &reason}
+	id := store.NewUUID()
+	// The agents' browser is Google Chrome (#5207): the person gets its real window
+	// (#5208), which comes down again with the card (formDown).
+	if window, ok := d.showHandOffWindow(agent, id); ok {
+		handOff.Window = &window
+	}
+	req := wire.ElicitationRequest{ID: id, AgentID: agent, Message: &step, HandOff: handOff,
+		Mode:  wire.ElicitationRequestMode{Form: &wire.ElicitationRequestModeForm{Value: handOffSchema(reason)}},
+		Scope: wire.ElicitationRequestScopeSession, AskedAt: now()}
+	r, answered := l.holdAskedForm(req, nil, formHoldLimit)
 	if !answered {
 		return handOffStillOpen, false
 	}

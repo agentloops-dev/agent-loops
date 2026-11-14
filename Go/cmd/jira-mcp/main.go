@@ -27,9 +27,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/alexec/agents/Go/internal/buildinfo"
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/internal/jiramcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/jiramcp"
 )
 
 func main() {

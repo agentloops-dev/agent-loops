@@ -13,16 +13,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/mcpcatalog"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/azureboardsmcp"
-	"github.com/alexec/agents/Go/internal/azuredevopsmcp"
-	"github.com/alexec/agents/Go/internal/bitbucketmcp"
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/internal/forgejomcp"
-	"github.com/alexec/agents/Go/internal/githubmcp"
-	"github.com/alexec/agents/Go/internal/gitlabmcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/azureboardsmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A folder's Connectors set-up (#1336): its GitHub repository (from its git remote), the
@@ -281,6 +281,8 @@ type setupBook struct {
 	newAzureDevOpsSetupReader func(root, token string) azureDevOpsSetupReader
 	// newCodespacesClient reads and changes Codespaces as the GitHub connection owner.
 	newCodespacesClient func(token string) codespacesClient
+	// repoAliasAPI is GitHub's API for the repo aliases (#4957); "" is api.github.com.
+	repoAliasAPI string
 }
 
 // setupRecord is what this host last read for one folder.
@@ -1151,7 +1153,7 @@ func forgeSlot(f forge, kind wire.ConnectorSlotKind, connected, skipped bool, re
 		s.State = wire.ConnectorSlotStateNotRead
 	case rec.Refused:
 		s.State = wire.ConnectorSlotStateRefused
-		say(f.name() + " refused: Agents can't see " + f.thing(kind) + " in " + repo + ".")
+		say(f.name() + " refused: Agent Loops can't see " + f.thing(kind) + " in " + repo + ".")
 	case rec.Read:
 		s.State, s.Proof = wire.ConnectorSlotStateRead, rec.Proof
 		at := wire.DateOf(rec.ReadAt)
@@ -1182,7 +1184,7 @@ func (d *Daemon) setupEvents(ctx context.Context, f forge, folder string, rec *s
 		ev.State = wire.ConnectorEventsStateOn
 	case taken:
 		ev.State = wire.ConnectorEventsStateTaken
-		m := "A connector not made by Agents is already called " + ours.NameHere() + " in .agents/mcp.json, so it was left as it is."
+		m := "A connector not made by Agent Loops is already called " + ours.NameHere() + " in .agents/mcp.json, so it was left as it is."
 		ev.Message = &m
 	case turnOn && reads && !rec.EventsAdded:
 		if err := d.addOurConnector(ctx, folder, ours); err != nil {

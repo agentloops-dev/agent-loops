@@ -15,15 +15,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/controlplane/apns"
-	"github.com/alexec/agents/Go/internal/controlplane/providers"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/internal/controlplane/web"
-	"github.com/alexec/agents/Go/internal/controlplane/webpush"
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/apns"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/webpush"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Methods is ControlMethods: the methods the control plane answers itself (058,
@@ -123,6 +123,8 @@ var own = methodSet(
 	"machines/update",
 	"lineage/sessionsOn",
 	"lineage/walkAll",
+	"builds/historyAll",
+	"builds/runAll",
 	"links/approve",
 	"links/deny",
 	"links/list",
@@ -202,6 +204,7 @@ var own = methodSet(
 	"signIn/requests",
 	"signIn/ticket",
 	"user/removeSecret",
+	"user/sealedSecret",
 	"user/secretNames",
 	"user/secretRecipients",
 	"user/setAgentConfigFile",
@@ -347,6 +350,13 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		if answer, carried, err := m.installCarried(params, from); carried {
 			return answer, err
 		}
+		// A click on a machine that never joined (#4978): its provider starts a stopped one first.
+		var request wire.MachineInstall
+		if json.Unmarshal(params, &request) == nil {
+			if err := m.s.providers.StartToJoin(request, m.callerPerson(from)); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if m.s.cfg.Hosted && overSSH[method] {
 		return nil, noSSHHere
@@ -409,6 +419,8 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.busLogMethod(ctx, params, from)
 	case "lineage/walkAll", "lineage/sessionsOn":
 		return m.lineageReadMethod(ctx, method, params, from)
+	case wire.CallBuildsHistoryAll.Name, wire.CallBuildsRunAll.Name:
+		return m.buildsReadMethod(ctx, method, params, from)
 	case "links/list", "links/requests", "links/approve", "links/deny", "links/remove":
 		return m.linksMethod(ctx, method, params, from)
 	case "lock/get", "lock/add", "lock/reset":
@@ -424,7 +436,7 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 	case "reports/usage", "reports/export", "reports/value", "reports/nodes":
 		return m.reportMethod(ctx, method, params, from)
 	case "user/settings", "user/setAgentConfigFile", "user/setSettings", "user/setSecret", "user/removeSecret", "user/secretNames",
-		"user/secretRecipients":
+		"user/secretRecipients", "user/sealedSecret":
 		return m.userMethod(ctx, method, params, from)
 	case "machines/joinRequests":
 		return m.s.joins.list(ctx, m.callerPerson(from))
@@ -1236,6 +1248,12 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 			prs = *count.PrsPerWeek
 		}
 		return m.s.multiplierCount(ctx, host, zoneOf(count.TimeZone), lineage.BaselineOf(prs, ""), time.Now())
+	case wire.CallBuildsSync.Name:
+		sync, err := require[wire.BuildsSync](params, "BuildsSync")
+		if err != nil {
+			return nil, err
+		}
+		return m.s.keepBuildsSync(ctx, host, sync, time.Now())
 	case "lineage/sync":
 		sync, err := require[wire.LineageSync](params, "LineageSync")
 		if err != nil {
@@ -1308,6 +1326,14 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		listed, changed, err := m.s.users.AddAccounts(ctx, user, request.Add, time.Now())
 		if err != nil {
 			return nil, userFailure(err)
+		}
+		if len(request.Remove) > 0 {
+			// Only an agent the person said yes to, or one that added them, gets here (#5253): agentsd asks.
+			var removed int
+			if listed, removed, err = m.s.users.RemoveAccounts(ctx, user, request.Remove); err != nil {
+				return nil, userFailure(err)
+			}
+			changed = changed || removed > 0
 		}
 		m.s.auditAccountOps(host, user, request.Ops)
 		m.s.noteAccountOps(user, request.Ops, wire.DateOf(time.Now()))
@@ -1737,7 +1763,7 @@ func (m *Methods) pairWebPage(ctx context.Context, host string) (*wire.WebPagePa
 	}
 	port := m.s.WebPort()
 	if port == 0 {
-		return nil, fail(notSupported, "This control plane serves no web page.")
+		return nil, fail(notSupported, "This control plane serves no web page: turn on Serve Agents to browsers on this Mac in Settings ▸ Control plane.")
 	}
 	shown, err := m.s.codes.Issue(withCodeOwner(ctx, m.s.ownerOf(host)), false, true, webPageCodeLifetime)
 	if err != nil {

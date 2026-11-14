@@ -136,7 +136,7 @@ struct ControlProvidersPage: View {
                         Button("Remove…") { removing = provider }
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(icon: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -165,7 +165,7 @@ struct ControlProvidersPage: View {
                             .buttonStyle(.paper)
                             .disabled(workspace.ssh == nil || workspace.state != "running")
                             .help(workspace.ssh == nil ? "\(provider.name) gives no ssh destination for it: add it by command, then use Link to Provider… on it."
-                                  : workspace.state == "running" ? "Installs Agents on it over ssh, and links the machine to it."
+                                  : workspace.state == "running" ? "Installs Agent Loops on it over ssh, and links the machine to it."
                                   : "Start it first: it has to be running to be installed.")
                         }
                         .fixedSize()
@@ -474,7 +474,7 @@ struct AddProviderSheet: View {
                     Button { choose(each) } label: {
                         VStack(spacing: 8) {
                             // Decorative: the kind's name is under it.
-                            Image(systemName: each.symbol).imageScale(.large).accessibilityHidden(true)
+                            Image(icon: each.symbol).imageScale(.large).accessibilityHidden(true)
                             Text(each.title).appText(.supporting)
                         }
                         .frame(maxWidth: .infinity, minHeight: 64)
@@ -775,7 +775,7 @@ struct AddProviderSheet: View {
                     Button {
                         secrets.removeAll { $0.id == secret.id }
                     } label: {
-                        Image(systemName: "minus.circle")
+                        Image(icon: "minus.circle")
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Remove \(secret.name.isEmpty ? "this secret" : secret.name)")
@@ -1287,7 +1287,7 @@ struct LinkWorkspaceSheet: View {
             chosen = key(provider, workspace)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: selected ? "largecircle.fill.circle" : "circle").accessibilityHidden(true)
+                Image(icon: selected ? "largecircle.fill.circle" : "circle").accessibilityHidden(true)
                 Text(workspace.name).appText(.reading)
                 Text(other.map { "linked to \($0)" } ?? workspace.state.capitalized)
                     .appText(.supporting).foregroundStyle(.secondary)

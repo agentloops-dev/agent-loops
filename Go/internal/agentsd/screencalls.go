@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // drive_screen (#3004, US1): an agent drives a named app through its own screen, mouse and
@@ -204,8 +204,14 @@ func (d *Daemon) stopScreenDrives() {
 // does the person's Take Over: the next turn may drive again.
 func (d *Daemon) endScreenDrive(agent wire.UUID) {
 	d.forgetDriveDenial(agent, wire.SecretUseScreen)
-	// The screen first: a call the pause's end lets go on finds it let go (#3295).
-	d.letGoOfScreen(agent)
+	// The screen first: a call the pause's end lets go on finds it let go (#3295). While the
+	// person has the agent's browser window in front (#5208), the lease stays until the
+	// hand-off's card comes down, as browser:agents does.
+	if d.windowHandedOff(agent) {
+		d.releaseScreenDrive(agent)
+	} else {
+		d.letGoOfScreen(agent)
+	}
 	d.endScreenPause(agent, "ended")
 	d.driveMu.Lock()
 	delete(d.takenOver, agent)
@@ -239,7 +245,7 @@ var driveScreenActions = map[string]bool{"screenshot": true, "click": true, "typ
 
 // desktopControlAccessibilityWords is drive_screen's refusal while Accessibility is not
 // granted: the rule, and where to grant it.
-const desktopControlAccessibilityWords = "Nothing was driven: Agents needs the Accessibility permission. " +
+const desktopControlAccessibilityWords = "Nothing was driven: Agent Loops needs the Accessibility permission. " +
 	"Grant it in System Settings ▸ Privacy & Security ▸ Accessibility."
 
 // desktopControlGate is drive_screen's entry gate (#3004, US2): Off, then Accessibility,

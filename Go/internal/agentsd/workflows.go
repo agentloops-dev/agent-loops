@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/diskjson"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/machine"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Workflows, as DaemonCore+Workflows and WorkflowStore keep them on the Swift host: each a
@@ -60,6 +60,9 @@ type workflowState struct {
 	// DismissedFailure is the failure the person dismissed from Needs You (#989): its key.
 	// A new failure has a new key, and an outcome that is not the same refusal again clears it.
 	DismissedFailure *string `json:"dismissedFailure,omitempty"`
+	// AlarmHandled is the time of the one-time alarm (#4966) the clock last fired or
+	// missed, so a tick, or a restart before its workflow is archived, takes it once.
+	AlarmHandled *wire.Date `json:"alarmHandled,omitempty"`
 }
 
 type heldFire struct {
@@ -364,20 +367,26 @@ func (d *Daemon) scanLocked() {
 }
 
 // approveReadyMadeLocked approves each ready-made user workflow that is, with its skill, the
-// app's own text, unless the person denied it; and says whether it approved one.
+// text of the release's pinned commit (#5091), and that was never approved or denied: a first
+// copy. It says whether it approved one. A later version, from a newer pin, waits for the
+// person, as any changed workflow does: what the repository says never keeps an approval.
 func (d *Daemon) approveReadyMadeLocked(home string, files map[string]*workflowFile) bool {
+	set := loadReadyMade(home)
+	if !set.pinned() {
+		return false
+	}
 	changed := false
-	for _, id := range readyMadeIDs() {
+	for _, id := range set.ids() {
 		f := files[id]
 		if f == nil || f.digest == "" {
 			continue
 		}
-		workflow, skill := readyMadeText(id)
+		workflow, skill := set.text(id)
 		if f.text != workflow || len(f.skills) != 1 || f.skills[0].name != id || f.skills[0].text != skill {
 			continue
 		}
 		st := d.stateLocked(home, id, false)
-		if st != nil && (same(st.ApprovedDigest, &f.digest) || same(st.DeniedDigest, &f.digest)) {
+		if st != nil && (st.ApprovedDigest != nil || st.DeniedDigest != nil) {
 			continue
 		}
 		d.keepCopyLocked(d.stateLocked(home, id, true), f)
@@ -571,7 +580,7 @@ func (d *Daemon) summaryLocked(folder, id string, over map[string]wire.WorkflowL
 	}
 	s.McpTriggers = d.mcpTriggerStatuses(folder, id)
 	if f.scope == "user" {
-		if home := d.personalHome(); home != "" && isReadyMade(id) {
+		if home := d.personalHome(); home != "" && loadReadyMade(home).has(id) {
 			s.ReadyMadeUpdatedAt, s.NewerReadyMade = readyMadeNotice(home, id, f.text, time.Now())
 		}
 	}
@@ -632,10 +641,18 @@ func (d *Daemon) summaryLocked(folder, id string, over map[string]wire.WorkflowL
 				if due, ok := nextDueOpen(t.Schedule.Value, win, time.Now()); ok {
 					v := wire.DateOf(due)
 					at = &v
-					if next == nil || v < *next {
-						next = &v
-					}
 				}
+			}
+			// An alarm's time (#4966), until it is handled.
+			if a, ok := alarmOf(t); ok {
+				if due, ok := a.due(d.personZone()); ok && time.Since(due) <= a.grace &&
+					(st == nil || st.AlarmHandled == nil || !st.AlarmHandled.Time().Equal(due)) {
+					v := wire.DateOf(due)
+					at = &v
+				}
+			}
+			if at != nil && (next == nil || *at < *next) {
+				next = at
 			}
 			s.NextFireAtByTrigger = append(s.NextFireAtByTrigger, at)
 		}

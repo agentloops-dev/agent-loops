@@ -11,10 +11,10 @@ import (
 
 	"github.com/shirou/gopsutil/v4/process"
 
-	"github.com/alexec/agents/Go/internal/agentsd/acp"
-	"github.com/alexec/agents/Go/internal/agentsd/diskjson"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A background command that ends after the turn (#4577). Claude's runtime starts a cycle
@@ -324,7 +324,7 @@ func (d *Daemon) adoptedPass() {
 		if wasWaiting || !wakesItself(a.RuntimeID) {
 			continue
 		}
-		text := "Your background commands ended while Agents restarted, so your runtime could not start you again itself: " +
+		text := "Your background commands ended while Agent Loops restarted, so your runtime could not start you again itself: " +
 			commandNames(e.cmds) + ". Read their output and carry on."
 		_ = d.enqueue(e.id, wire.QueuedPrompt{ID: store.NewUUID(), Text: text, QueuedAt: now(), From: wire.PromptOriginApp}, false)
 	}

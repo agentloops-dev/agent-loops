@@ -14,9 +14,12 @@ import type { FileStamp, PinView } from "../protocol/generated";
 import { go } from "../route";
 import { fromWireDate } from "../protocol/dates";
 import { holdForMenu, isMenuKey, openContextMenu, type MenuItem } from "./ContextMenu";
-import { LiveDocument, type PageSource } from "./LiveDocument";
+import { LiveDocument, type OpenPageFile, type PageSource } from "./LiveDocument";
+import { isPageFile, pathInFolder } from "../model/pageLink";
+import { pathOf } from "./files/paneState";
 import { BackToList } from "./BackToList";
 import { PinnedViewPage } from "./PinnedViewPage";
+import { Icon, type IconName } from "./Icon";
 
 /** A screen with no pointer to hover: there a held finger opens the menu (#663), with its Move Up and
  *  Down, rather than lifting the row to drag it. */
@@ -73,7 +76,7 @@ export function PinnedPageRows({ store, host, folder, chosen, down }: {
               title={pin.missing ? `Missing: ${pin.path}${pin.missingReason ? `: ${pin.missingReason}` : ""}` : pin.path}
               aria-description={pin.missing ? "missing" : undefined}
               onClick={() => go({ host, folder: folder, page: pin.path })}>
-              <span class="pin-mark" aria-hidden="true">{pinMark(pin)}</span>
+              <Icon name={pinMark(pin)} class="pin-mark" />
               {/* Nothing at its end, which is only a session's (#587): missing is the grey title and the tooltip. */}
               <span class="title">{pin.title}</span>
             </button>
@@ -105,7 +108,7 @@ export function ServerViewRows({ store, host, folder, chosen, down }: {
           <div class={`row pin${chosen === view.path ? " chosen" : ""}`}>
             <button class="pick" aria-current={chosen === view.path} title={countTitle(view)}
               onClick={() => go({ host, folder: folder, page: view.path })}>
-              <span class="pin-mark" aria-hidden="true">{pinMark(view)}</span>
+              <Icon name={pinMark(view)} class="pin-mark" />
               <span class="title">{view.title}</span>
               {/* Its server's count (#2033), grey as a fold's count. */}
               {view.count !== undefined && <span class="count">{view.count}</span>}
@@ -132,8 +135,8 @@ export function showHiddenViewsItem(store: Store, host: string, folder: string, 
     run: () => { for (const v of hidden) void store.setViewHidden(host, folder, v.path, false); } }];
 }
 
-function pinMark(pin: PinView): string {
-  return pin.kind === "view" ? "◇" : pin.kind === "html" ? "◍" : "▤";
+function pinMark(pin: PinView): IconName {
+  return pin.kind === "view" ? "layout-grid" : pin.kind === "html" ? "globe" : "file-text";
 }
 
 type Shown =
@@ -188,6 +191,12 @@ function PinnedFilePage({ store, host, folder, path, down }: {
     watch: () => () => {},
     changed: revision,
   };
+  // A page in the folder that a link names opens in this one's place, as on the Mac (#5068).
+  const inFolder = (file: string) => pathInFolder(file, pathOf(folder));
+  const opens: OpenPageFile = {
+    takes: (file) => { const page = inFolder(file); return page !== null && isPageFile(page); },
+    open: (file) => { const page = inFolder(file); if (page) go({ host, folder, page }); },
+  };
   const now = shown.value;
   return (
     <section class="chat pinned-page" aria-label={title}>
@@ -204,7 +213,7 @@ function PinnedFilePage({ store, host, folder, path, down }: {
       {pin?.missing ? (
         <p class="hint">{missingWords(path, "")}</p>
       ) : !isHTML ? (
-        <LiveDocument store={store} host={host} agentID="" path={path} source={page} />
+        <LiveDocument store={store} host={host} agentID="" path={path} source={page} opens={opens} />
       ) : now.kind === "problem" ? (
         <p class="hint">{now.why}</p>
       ) : now.kind === "reading" || now.path !== path ? (

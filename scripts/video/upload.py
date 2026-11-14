@@ -5,7 +5,7 @@
                                                 account of the channel
     scripts/video/upload.py --sign-in --no-browser
                                                 the same, but only print the consent address,
-                                                so an agent opens it in the Safari MCP (#1856)
+                                                so an agent opens it in the agents' Chrome (#4840)
     scripts/video/upload.py <scene id> [mp4]    upload ~/Movies/agents-video/out/<id>.mp4
     scripts/video/make.sh u1 --upload           make it, check it, then upload it
     scripts/video/upload.py --self-test         prove each API call against a fake YouTube
@@ -13,8 +13,9 @@
 Every video is **private** (an API project that Google has not audited can upload only
 private videos anyway; a flag for public comes later) and goes on the Loops channel, in the
 playlist of its scene's GROUP: "Loops usage", "Loops marketing" or "Loops integrations",
-each made private the first time. The title is `<TITLE> — Loops <version>` (`git describe`);
-the description gives the commit, the date, the scene file and the docs page, so a video
+each made private the first time. The title is `<TITLE> — Loops <x.y>`: the release being
+made (LOOPS_RELEASE=v<version>, from the release skill), else the last tag (#4962). The
+description gives the full `git describe`, the commit, the date, the scene file and the docs page, so a video
 always says which build it shows. The captions are the take's `<id>.vtt` (English), and the
 thumbnail is a frame of the take, at one of the contact sheet's moments. A new take of a
 video replaces the old one in its playlist: the old video is made private and taken out of
@@ -29,6 +30,7 @@ import hashlib
 import http.server
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -57,8 +59,9 @@ DOCS = "https://docs.agentloops.dev/"
 # The contact sheet takes a frame every two seconds (make.contact_sheet): the thumbnail is
 # one of those moments.
 SHEET_EVERY = 2
-# Upload, playlists and a video's privacy: the one scope that has all three.
-SCOPE = "https://www.googleapis.com/auth/youtube"
+# Upload, playlists, a video's privacy and captions: the one scope that has all four.
+# `youtube` alone has no captions.insert (403 insufficientPermissions, #4838).
+SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
 API = "https://www.googleapis.com/youtube/v3"
 UPLOAD = "https://www.googleapis.com/upload/youtube/v3/videos"
 CAPTIONS = "https://www.googleapis.com/upload/youtube/v3/captions"
@@ -67,7 +70,21 @@ SCIENCE_AND_TECHNOLOGY = "28"
 
 
 class NotSignedIn(RuntimeError):
-    """The person's steps on #1793 are not done yet: the video stays in out/."""
+    """There is no working sign-in yet: the video stays in out/."""
+
+
+# How a sign-in is done again, by an agent (#4840): only a new Google sign-in in that Chrome
+# (the account's password) needs Alex.
+SIGN_IN_AGAIN = ("an agent runs `scripts/video/upload.py --sign-in --no-browser` and approves in the "
+                 "agents' Chrome (scripts/video/README.md, #4840)")
+
+
+class GoogleError(RuntimeError):
+    """Google's OAuth error answer: `error` is its code, such as invalid_grant."""
+
+    def __init__(self, code, error, description):
+        super().__init__(f"Google answered {code}: {error} {description}".strip())
+        self.error = error
 
 
 def log(*parts):
@@ -91,7 +108,7 @@ def post_form(url, form):
     except urllib.error.HTTPError as error:
         # Google's error answer names the error, never the token sent.
         body = json.loads(error.read() or b"{}")
-        raise RuntimeError(f"Google answered {error.code}: {body.get('error', '')} {body.get('error_description', '')}".strip()) from None
+        raise GoogleError(error.code, body.get("error", ""), body.get("error_description", "")) from None
 
 
 def sign_in(browser=True):
@@ -152,16 +169,25 @@ def sign_in(browser=True):
 
 
 def access_token():
+    """An access token, and the scopes the sign-in gave."""
     if not TOKEN.exists():
-        raise NotSignedIn("not signed in to YouTube: Alex runs `scripts/video/upload.py --sign-in` (#1793, What Alex does)")
+        raise NotSignedIn(f"not signed in to YouTube: {SIGN_IN_AGAIN}")
     c = client()
     refresh = json.loads(TOKEN.read_text()).get("refresh_token")
     if not refresh:
         # A copy of the client file in its place (seen 2026-10-21) is not a sign-in.
-        raise NotSignedIn(f"{TOKEN} has no refresh token: Alex runs `scripts/video/upload.py --sign-in` (#1856, What Alex does)")
-    return post_form(c.get("token_uri", "https://oauth2.googleapis.com/token"), {
-        "refresh_token": refresh, "client_id": c["client_id"], "client_secret": c.get("client_secret", ""),
-        "grant_type": "refresh_token"})["access_token"]
+        raise NotSignedIn(f"{TOKEN} has no refresh token: {SIGN_IN_AGAIN}")
+    try:
+        answer = post_form(c.get("token_uri", "https://oauth2.googleapis.com/token"), {
+            "refresh_token": refresh, "client_id": c["client_id"], "client_secret": c.get("client_secret", ""),
+            "grant_type": "refresh_token"})
+    except GoogleError as error:
+        if error.error != "invalid_grant":
+            raise
+        # The account took its access back, its password changed, or the app went back to
+        # Testing (a token then lasts 7 days): a new consent is the fix (#4840).
+        raise NotSignedIn(f"the YouTube refresh token was revoked or has expired (invalid_grant): {SIGN_IN_AGAIN}") from None
+    return answer["access_token"], set(answer.get("scope", "").split())
 
 
 # --- the API -----------------------------------------------------------------------------
@@ -177,7 +203,8 @@ class YouTube:
     fake replaces."""
 
     def __init__(self, token=None):
-        self.token = token or access_token()
+        self.token, self.scopes = (token, {SCOPE}) if token else access_token()
+        self.waits = (5, 10, 20, 30)  # seconds, while a new playlist is 404
 
     def send(self, method, url, data=None, headers=None, timeout=120):
         """One request: the answer's headers and body. Fails with APIError on an HTTP error."""
@@ -203,6 +230,18 @@ class YouTube:
             if not answer.get("nextPageToken"):
                 return
             query["pageToken"] = answer["nextPageToken"]
+
+    def settled(self, call, *args):
+        """`call(*args)`, again after a wait while it is 404: YouTube answers 404
+        (playlistNotFound) for a playlist made a few seconds before (#4838)."""
+        for wait in (*self.waits, None):
+            try:
+                return call(*args)
+            except APIError as error:
+                if error.code != 404 or wait is None:
+                    raise
+                log(f"YouTube does not know the playlist yet (404): again in {wait} s")
+                time.sleep(wait)
 
     def channel(self):
         """The signed-in channel's title, or None when the sign-in has no channel."""
@@ -252,7 +291,9 @@ class YouTube:
 
 
 def check_channel(yt):
-    """Why the sign-in cannot upload, or None: it must be the Loops channel's."""
+    """Why the sign-in cannot upload, or None: it must be the Loops channel's, with SCOPE."""
+    if SCOPE not in yt.scopes:
+        return f"the YouTube sign-in lacks {SCOPE} (captions need it): sign in again with `scripts/video/upload.py --sign-in`"
     title = yt.channel()
     if title is None:
         return "the YouTube sign-in has no channel"
@@ -285,18 +326,32 @@ def docs_page(scene):
     return DOCS + getattr(scene, "DOCS", "").lstrip("/")
 
 
+def release(given=None, last_tag=None):
+    """The release a video's title names (#4962): `<x>.<y>` of the release being made
+    (LOOPS_RELEASE, which the release skill passes, such as `v0.19.0`), else of the last
+    `v*` tag, with no count and hash, else "unreleased". A viewer sees a version, not a
+    build id; the description keeps the full `git describe`."""
+    given = os.environ.get("LOOPS_RELEASE", "") if given is None else given
+    tag = given.strip() or (git("describe", "--tags", "--match", "v*", "--abbrev=0") if last_tag is None else last_tag)
+    match = re.match(r"v?(\d+)\.(\d+)", tag or "")
+    return f"{match[1]}.{match[2]}" if match else "unreleased"
+
+
 def describe(scene):
-    version = git("describe", "--tags", "--match", "v*") or "unreleased"
+    version = release()
+    build = git("describe", "--tags", "--match", "v*") or "no tag"
     commit = git("rev-parse", "HEAD")
     changed = " (with changes not committed)" if git("status", "--porcelain", "--untracked-files=no") else ""
     name = getattr(scene, "TITLE", scene.ID)
     group = getattr(scene, "GROUP", "")
-    lines = [*getattr(scene, "LINES", {}).values()]
+    from voice import plain  # a line's words, without its directions (#4964)
+    lines = [plain(line) for line in getattr(scene, "LINES", {}).values()]
     description = "\n".join([
         f"{name}, in Loops {version}.",
         "",
         f"Docs: {docs_page(scene)}",
         "",
+        f"Build: {build}",
         f"Commit: {commit}{changed}",
         f"Made: {time.strftime('%Y-%m-%d %H:%M %Z')}",
         marker(scene.ID),
@@ -342,13 +397,13 @@ def upload(scene, mp4, yt=None):
             log(f"not uploaded, {mp4} is kept: {why}")
             return None
     playlist = yt.playlist(title, about)
-    older = []
-    for item in yt.pages("playlistItems", {"part": "snippet", "playlistId": playlist, "maxResults": 50}):
-        if marker(scene.ID) in item["snippet"].get("description", ""):
-            older.append((item["id"], item["snippet"]["resourceId"]["videoId"]))
+    older = [(item["id"], item["snippet"]["resourceId"]["videoId"])
+             for item in yt.settled(lambda: list(yt.pages("playlistItems", {
+                 "part": "snippet", "playlistId": playlist, "maxResults": 50})))
+             if marker(scene.ID) in item["snippet"].get("description", "")]
     log(f"uploading {mp4.name} ({mp4.stat().st_size // 1_000_000} MB), private, to {title!r}")
     video = yt.upload(mp4, describe(scene))
-    yt.call("POST", "playlistItems", {"part": "snippet"}, {"snippet": {
+    yt.settled(yt.call, "POST", "playlistItems", {"part": "snippet"}, {"snippet": {
         "playlistId": playlist, "position": 0, "resourceId": {"kind": "youtube#video", "videoId": video}}})
     for item, old in older:
         yt.call("PUT", "videos", {"part": "status"}, {"id": old, "status": {"privacyStatus": "private"}})
@@ -376,13 +431,17 @@ def upload(scene, mp4, yt=None):
 class FakeYouTube(YouTube):
     """Answers as the API does, from state in memory, and keeps every request."""
 
-    def __init__(self, channel=CHANNEL, thumbnails=True):
+    def __init__(self, channel=CHANNEL, thumbnails=True, unknown_for=0, scopes=(SCOPE,)):
         self.token = "fake"
+        self.scopes = scopes
+        self.waits = (0, 0, 0, 0)
         self.requests = []
         self.playlists, self.items, self.videos = {}, {}, {}
         self.captions_of, self.thumbnails = {}, {}
         self.channel_title, self.thumbnails_allowed = channel, thumbnails
         self.n = 0
+        self.unknown_for = unknown_for  # playlistItems calls that 404 after a playlist is made
+        self.unknown = {}
 
     def new_id(self, kind):
         self.n += 1
@@ -402,7 +461,13 @@ class FakeYouTube(YouTube):
         if path.endswith("/youtube/v3/playlists") and method == "POST":
             made = self.new_id("PL")
             self.playlists[made] = body
+            self.unknown[made] = self.unknown_for
             return answer({"id": made})
+        if path.endswith("/playlistItems") and method in ("GET", "POST"):
+            playlist = query.get("playlistId") or body["snippet"]["playlistId"]
+            if self.unknown.get(playlist):
+                self.unknown[playlist] -= 1
+                raise APIError(method, url, 404, b'{"error": {"errors": [{"reason": "playlistNotFound"}]}}')
         if path.endswith("/playlistItems") and method == "GET":
             return answer({"items": [{"id": i, "snippet": {**self.videos[v["snippet"]["resourceId"]["videoId"]]["snippet"],
                                                            "resourceId": v["snippet"]["resourceId"]}}
@@ -463,6 +528,12 @@ def self_test():
         return types.SimpleNamespace(ID=scene_id, GROUP=group, TITLE=f"Scene {scene_id}",
                                      LINES={"a": "This is Loops."}, **more)
 
+    for given, last_tag, want in (("v0.19.0", "v0.18.0", "0.19"), ("0.19", None, "0.19"),
+                                  ("", "v0.18.0", "0.18"), ("", "", "unreleased")):
+        got = release(given, last_tag)
+        assert got == want and "-g" not in got, (given, last_tag, got)
+    print("ok: a title names the release (LOOPS_RELEASE, else the last tag), never a -g<hash>")
+
     try:
         yt = FakeYouTube()
         u1 = scene("u1", "usage", DOCS="tutorials/first-agent/")
@@ -471,9 +542,9 @@ def self_test():
         assert made["snippet"]["title"] == "Loops usage" and made["status"]["privacyStatus"] == "private", made
         video = yt.videos[first]
         assert video["status"]["privacyStatus"] == "private", video
-        assert video["snippet"]["title"].startswith("Scene u1 — Loops "), video["snippet"]["title"]
+        assert re.fullmatch(r"Scene u1 — Loops (\d+\.\d+|unreleased)", video["snippet"]["title"]), video["snippet"]["title"]
         about = video["snippet"]["description"]
-        for want in ("Commit: ", "Made: ", marker("u1"), "Docs: https://docs.agentloops.dev/tutorials/first-agent/"):
+        for want in ("Build: ", "Commit: ", "Made: ", marker("u1"), "Docs: https://docs.agentloops.dev/tutorials/first-agent/"):
             assert want in about, (want, about)
         assert video["bytes"] and video["bytes"][4:8] == b"ftyp", "the mp4 was not sent"
         (item,) = yt.items.values()
@@ -515,10 +586,46 @@ def self_test():
         assert made in bare.captions_of and not bare.thumbnails
         print("ok: a channel that cannot set a thumbnail still gets the video and its captions")
 
+        slow = FakeYouTube(unknown_for=2)
+        made = upload(scene("u4", "usage"), take("u4"), slow)
+        assert [i["snippet"]["resourceId"]["videoId"] for i in slow.items.values()] == [made], slow.items
+        print("ok: a playlist YouTube does not know yet (404) is asked again")
+
         assert check_channel(FakeYouTube()) is None
         assert "not 'Loops'" in check_channel(FakeYouTube(channel="Someone else"))
         assert "no channel" in check_channel(FakeYouTube(channel=None))
-        print("ok: --preflight takes only the Loops channel's sign-in")
+        assert "lacks" in check_channel(FakeYouTube(scopes=("https://www.googleapis.com/auth/youtube",)))
+        print("ok: --preflight takes only the Loops channel's sign-in, with the captions scope")
+
+        global CLIENT, TOKEN, post_form
+        kept = CLIENT, TOKEN, post_form
+        try:
+            CLIENT, TOKEN = work / "client.json", work / "token.json"
+            CLIENT.write_text(json.dumps({"installed": {"client_id": "id", "client_secret": "s"}}))
+            TOKEN.write_text(json.dumps({"refresh_token": "r"}))
+
+            def revoked(url, form):
+                raise GoogleError(400, "invalid_grant", "Token has been expired or revoked.")
+            post_form = revoked
+            try:
+                access_token()
+                raise AssertionError("a revoked token was taken")
+            except NotSignedIn as why:
+                assert "revoked" in str(why) and "--sign-in --no-browser" in str(why), why
+
+            def down(url, form):
+                raise GoogleError(500, "internal_failure", "")
+            post_form = down
+            try:
+                access_token()
+                raise AssertionError("an error was taken for a token")
+            except NotSignedIn:
+                raise AssertionError("an outage was taken for a revoked token") from None
+            except GoogleError:
+                pass
+        finally:
+            CLIENT, TOKEN, post_form = kept
+        print("ok: a revoked refresh token is a missing sign-in, and says how to sign in again")
         assert not [r for r in yt.requests if r[0] == "DELETE" and "/videos" in r[1]], "a video was deleted"
         print("self-test passed")
     finally:

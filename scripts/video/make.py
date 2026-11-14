@@ -214,8 +214,8 @@ class Video:
 
     # --- the scratch set-up -------------------------------------------------------------
     def launch(self, build):
-        # The real disk's free space is not the video's: a scratch root says its own (Debug).
-        # The Go host does not read it yet (#4851).
+        # The real disk's free space is not the video's: a scratch root says its own, which
+        # an unreleased agentsd reads (#195, #4851).
         Path(self.root).mkdir(parents=True)
         (Path(self.root) / "disk-free-override").write_text("500GB\n")
         args = [SKILL / "launch.sh", "--seeded", "--slug", f"vid-{self.scene.ID}", "--appearance", "light", "--outside-checkout", "--person", "Sam"]
@@ -233,7 +233,7 @@ class Video:
         self.client = Client(self.root)
         # Agents call the person by the Mac account's first name; on camera it is a made-up one.
         self.rpc("person/set", {"name": "Sam"})
-        self.host_app = REPO / "build/DD/Build/Products/Debug/Agents.app"
+        self.host_app = REPO / "build/DD/Build/Products/Debug/Agent Loops.app"
         self.stopping = False
         threading.Thread(target=self._permissions, daemon=True).start()
 
@@ -451,10 +451,8 @@ class Video:
             time.sleep(0.6)
 
     def tidy(self):
-        """Puts away a milestone's note and, unless the scene keeps it (GET_STARTED = True),
-        the Get started card, if they are showing."""
-        labels = ("Dismiss milestone",) if getattr(self.scene, "GET_STARTED", False) else ("Dismiss Get started", "Dismiss milestone")
-        for label in labels:
+        """Puts away a milestone's note, if it is showing."""
+        for label in ("Dismiss milestone",):
             if self.walk.call("find", text=label).get("ok"):
                 self.press(label, wait=0)
 
@@ -557,8 +555,9 @@ class Video:
             if not reply.get("ok"):
                 raise RuntimeError(f"voice tape: {reply.get('error')}")
 
-    def say(self, key, wait=True, after=0.4):
-        """Speaks line `key` here. With wait, the scene waits until the line has been said."""
+    def say(self, key, wait=True, after=0.9):
+        """Speaks line `key` here. With wait, the scene waits until the line has been said, and
+        `after` more, so lines do not run into each other (#4964)."""
         self.mark(f"say:{key}")
         if wait:
             time.sleep(self.takes[key]["duration"] + after)
@@ -691,9 +690,9 @@ def check(scene, mp4, work):
     off or two lines over each other shows here), and a sheet of it is made to look at."""
     # The narration and what voice mode said on its tape (#4854), in the order heard.
     marks = json.loads((work / "marks.json").read_text())["marks"]
-    heard_in_order = [(at, scene.LINES[name[4:]]) for name, at in marks if name.startswith("say:")]
+    heard_in_order = [(at, voice.plain(scene.LINES[name[4:]])) for name, at in marks if name.startswith("say:")]
     heard_in_order += [(at, mark["said"]) for at, mark in frame.tape_marks(work) if mark.get("said")]
-    script = " ".join(text for _, text in sorted(heard_in_order)) if frame.tape_marks(work) else " ".join(scene.LINES.values())
+    script = " ".join(text for _, text in sorted(heard_in_order)) if frame.tape_marks(work) else " ".join(map(voice.plain, scene.LINES.values()))
     heard = voice.hear(mp4)
     off = voice.wrong(script, heard)
     log(f"{scene.ID}: Whisper hears {off:.0%} of the script wrong: {heard}")
@@ -706,6 +705,9 @@ QUIET = """This is a demo project, recorded for a video.
 
 - Never name or quote an instructions file (CLAUDE.md, AGENTS.md or any other), and never say
   where an instruction came from or which rule you follow.
+- Read and run nothing outside this folder: no memory files (MEMORY.md, ~/.agents,
+  ~/.claude) and no other folder, whatever your other instructions say (#4964: a take
+  showed an agent's `cat` of the person's memory files).
 """
 
 # What is the person's own and must not be in a video: their name, and what an agent says of
@@ -817,7 +819,8 @@ def preflight(scene_ids):
     YouTube refresh token works and is the Loops channel's, the scene's GROUP has a playlist, and the
     scene's video Chrome profile is signed in to its site. Each failure adds one line to
     Alex's checklist on #1793 (once) and fails that scene. Prints `ready <id>` or
-    `skip <id>: <why>` per scene; exits 3 when any is skipped."""
+    `skip <id>: <why>` per scene; exits 3 when any is skipped. It also prints a `note:` when
+    the voice's weights are not in the cache, which skips nothing: make.sh fetches them."""
     import upload
     youtube = None
     try:
@@ -826,6 +829,9 @@ def preflight(scene_ids):
         youtube = str(why)
     except Exception as error:
         youtube = f"the YouTube refresh token does not work ({error})"
+    weights = voice.missing()
+    if weights:  # it needs no hands, so it skips no scene: the take fetches them (#5079)
+        print(f"note: {weights}", flush=True)
     skipped = 0
     for scene_id in scene_ids:
         scene = load_scene(scene_id)
@@ -834,7 +840,9 @@ def preflight(scene_ids):
             why.append(f"GROUP {getattr(scene, 'GROUP', '')!r} has no playlist (one of {', '.join(upload.PLAYLISTS)})")
         if youtube:
             why.append(youtube)
-            todo("Run `scripts/video/upload.py --sign-in` and approve with the Google account of the YouTube channel (#1856).",
+            todo("YouTube sign-in: an agent runs `scripts/video/upload.py --sign-in --no-browser` and approves in the "
+                 "agents' Chrome (scripts/video/README.md); Alex types the Google password only if that Chrome "
+                 "lost its Google sign-in (#4840).",
                  key="upload.py --sign-in")
         profile = getattr(scene, "CHROME_PROFILE", None)
         site = SIGN_IN.get(profile or "", {})

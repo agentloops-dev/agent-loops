@@ -6,7 +6,7 @@ description: Open the Cost, Tokens and Time pages, read their charts, and see ho
 
 # See usage, cost and time
 
-Agents keeps a record of what your agents cost, the tokens they used, and where their
+Agent Loops keeps a record of what your agents cost, the tokens they used, and where their
 time went. Three pages show it as charts: **Cost**, **Tokens** and **Time**. Use them to
 see which days and which runtimes cost the most, and how long agents wait for you.
 These pages only show figures. To set a limit, see [Limit what agents spend](limit-spending.md).
@@ -83,7 +83,7 @@ each kind of time:
 - **Agent**: the agent thinks or writes.
 - **Tools**: a tool call is open.
 - **Waiting on others**: the agent waits on something it does not control, such as
-  `wait_for_event`, `check_again` or `lease_resource`.
+  `wait_for_event` or `lease_resource`.
 - **Waiting for you**: a question, a permission or a form waits for your answer.
 
 When kinds overlap, **Waiting for you** counts first, then **Waiting on others**, then
@@ -97,7 +97,7 @@ prompt.
 
 The page loads new figures every minute while it is open. When you have earned every
 milestone, the **Milestones** list is under the Time charts. See
-[The Get started checklist](../reference/get-started-checklist.md).
+[Achievements](../reference/achievements.md).
 
 ## See how much of an allowance is used
 

@@ -13,7 +13,6 @@ import { lineDiff } from "../../model/diff";
 import { fromLine } from "../../model/asker";
 import { Lines } from "../Changes";
 import { backgroundEntryLine } from "../../model/background";
-import { outcomeNeedsAPerson } from "../../model/groups";
 import { outcomeHeadings, queuedLabel, startingLabel } from "../../model/status";
 import {
   callLine, compactionLine, copiedText, drawnInTurn, fields, isSummaryOnly, kindOf, thoughtLine, turnLine, turnParts, type ChatTurn, type Item,
@@ -29,9 +28,13 @@ import type { Shown } from "../../model/shownFile";
 import { continueWithout, keepStopped, sandboxCard } from "../../model/sandboxWords";
 import { OrgPolicyLine } from "../OrgPolicyLine";
 import { PolicyStopCard } from "./PolicyStopCard";
+import { Ask } from "../Ask";
 import { TurnChangesCard } from "./TurnChangesCard";
 import { memo } from "../../render/memo";
 import { terminalOutput } from "../../model/onTheMac";
+import { Icon } from "../Icon";
+import { nowPlan } from "../../model/nowWords";
+import { lineGlyph, RecordLine } from "./RecordLine";
 
 /** The text of a message's blocks: text blocks as Markdown, anything else named. */
 export function Blocks({ blocks, text }: { blocks: ContentBlock[] | undefined; text: string }) {
@@ -98,9 +101,15 @@ function Exchanged({ title, value }: { title: string; value: JSONValue }) {
   return <div><p class="faint">{title}</p>{structured ? <pre class="code">{highlightCode(text, "yaml")}</pre> : <pre>{text}</pre>}</div>;
 }
 
+/** The plan as the agent sent it, in the transcript: one line, "Plan · 5 steps", that opens to the steps then. */
+function PlanLine({ plan }: { plan: Plan }) {
+  return <RecordLine icon={lineGlyph.plan} detail={nowPlan(plan)} openTitles={["Show the plan's steps", "Hide the plan's steps"]}
+    more={<PlanView plan={plan} />} />;
+}
+
 /** ChatBlocks' PlanView: a withdrawn plan is struck through, and says the agent dropped it (#252). */
 export function PlanView({ plan }: { plan: Plan }) {
-  const marks = { pending: "○", in_progress: "◐", completed: "●" } as const;
+  const marks = { pending: "circle", in_progress: "circle-dot", completed: "circle-check" } as const;
   const spoken = { pending: "To do", in_progress: "Doing now", completed: "Done" } as const;
   const withdrawn = plan.state === "withdrawn";
   return (
@@ -108,7 +117,7 @@ export function PlanView({ plan }: { plan: Plan }) {
       <ul class="plan" aria-label="Plan">
         {plan.entries.map((entry, index) => (
           <li key={index} class={entry.status} aria-label={`${withdrawn ? "Dropped" : spoken[entry.status]}: ${entry.content}`}>
-            <span class="mark" aria-hidden="true">{marks[entry.status]}</span> <span class="content">{entry.content}</span>
+            <Icon name={marks[entry.status]} class="mark" /> <span class="content">{entry.content}</span>
           </li>
         ))}
       </ul>
@@ -117,13 +126,9 @@ export function PlanView({ plan }: { plan: Plan }) {
   );
 }
 
+// No attention tint (#5036): "Waiting on your answer" has its Ask under it, so the yellow is said there, once.
 function ReportLine({ report }: { report: WorkReport }) {
-  return (
-    <div class="note report">
-      <p class={`heading${outcomeNeedsAPerson(report.outcome) ? " tinted" : ""}`}>{outcomeHeadings[report.outcome]}</p>
-      <p class="quiet">{report.message}</p>
-    </div>
-  );
+  return <RecordLine icon={lineGlyph.report(report.outcome)} head={outcomeHeadings[report.outcome]} detail={report.message} />;
 }
 
 /**
@@ -158,6 +163,8 @@ export interface CallActions {
   fromLine?: ((sender: MessageSender | undefined) => string) | undefined;
   /** Ask for More on a Stopped by a policy card at the organisation's budget (ChatActions.askForMore, #3262). */
   askForMore?: (() => Promise<BudgetRequest>) | undefined;
+  /** Open the Changes pane at a file, or at its list for null: a turn's Changed files card (ChatActions.showChanges, #5035). */
+  showChanges?: ((path: string | null) => void) | undefined;
   /** Undo These Changes on a turn's card (ChatActions.undoTurn, #3437). Not on an archived session, nor a host too old. */
   undoTurn?: ((turn: string, confirmed: boolean) => Promise<UndoTurnResult>) | undefined;
 }
@@ -177,10 +184,6 @@ export function EditDiff({ diff }: { diff: Extract<ToolCallContent, { type: "dif
 export function ToolCallLine({ call, text, focused = false, background, onClick }: {
   call: ToolCall; text?: string; focused?: boolean; background: readonly BackgroundItem[]; onClick?: () => void;
 }) {
-  const expanded = useSignal(false);
-  useEffect(() => {
-    if (focused) expanded.value = true;
-  }, [focused]);
   const actions = useContext(CallActionsContext);
   const runsOn = call.toolCallID !== undefined
     && background.some((item) => item.toolCallID === call.toolCallID && (item.state === "running" || item.state === "paused"))
@@ -188,56 +191,51 @@ export function ToolCallLine({ call, text, focused = false, background, onClick 
   const hasDetail = (call.content ?? []).length > 0 || (call.locations ?? []).length > 0
     || call.rawInput !== undefined || call.rawOutput !== undefined;
   const words = (text ?? callLine(call)) + runsOn;
-  const showsDetail = expanded.value;
+  const glyph = lineGlyph.tool(call.kind);
+  if (onClick) return <RecordLine icon={glyph} detail={words} oneLine onClick={onClick} clickTitle="Show the whole run" extra="call" />;
+  if (!hasDetail) return <RecordLine icon={glyph} detail={words} oneLine extra="call" />;
   return (
-    <div class="call">
-      {onClick || hasDetail ? (
-        <button class="call-line" aria-expanded={onClick ? undefined : showsDetail}
-          title={onClick ? "Show the whole run" : showsDetail ? "Hide the argument and the return" : "Show the argument and the return"}
-          onClick={onClick ?? (() => (expanded.value = !expanded.value))}>
-          {words}
-        </button>
-      ) : <p class="call-line">{words}</p>}
-      {showsDetail && !onClick && (
-        <div class="call-detail">
-          {(call.content ?? []).map((piece, index) => {
-            if (piece.type === "diff") {
-              // A link under the edit rather than the edit as a button: the lines stay
-              // selectable, and the way in is said in words.
-              return (
-                <div key={index} class="edit">
-                  <EditDiff diff={piece} />
-                  {actions && (
-                    <button class="link reading" title="See this edit among everything the agent changed"
-                      onClick={() => actions.showEdit(piece, call.toolCallID)}>Show in Changes</button>
-                  )}
-                </div>
-              );
-            }
-            if (piece.type === "content" && piece.content.type === "text") return <Markdown key={index} text={piece.content.text} openFile={actions?.open} />;
-            // Any other block as a message draws it: a picture, an attachment (#252).
-            if (piece.type === "content") return <div key={index} class="quiet"><Blocks blocks={[piece.content]} text="" /></div>;
-            if (piece.type === "terminal") return <p key={index} class="quiet">{terminalOutput(actions?.hasMac ?? true)}</p>;
-            // Kept rather than dropped: what the runtime sent, as the window shows it.
-            return <pre key={index} class="raw faint">{readable(piece as unknown as JSONValue).text.split("\n").slice(0, 6).join("\n")}</pre>;
-          })}
-          {/* Where it did its work, each a way in, wrapped: file names are long. */}
-          {(call.locations ?? []).length > 0 && (
-            <p class="locations">
-              {(call.locations ?? []).map((l, i) => {
-                const words = `${l.path.split("/").pop()}${l.line ? `:${l.line}` : ""}`;
-                return actions
-                  ? <button key={i} class="link reading" aria-label={`Open ${l.path.split("/").pop()}`} title={l.path}
-                    onClick={() => actions.open(l)}>{words}</button>
-                  : <span key={i}>{words}</span>;
+    <RecordLine icon={glyph} detail={words} oneLine focused={focused} extra="call"
+      openTitles={["Show the argument and the return", "Hide the argument and the return"]}
+      more={
+            <div class="call-detail">
+              {(call.content ?? []).map((piece, index) => {
+                if (piece.type === "diff") {
+                  // A link under the edit rather than the edit as a button: the lines stay
+                  // selectable, and the way in is said in words.
+                  return (
+                    <div key={index} class="edit">
+                      <EditDiff diff={piece} />
+                      {actions && (
+                        <button class="link reading" title="See this edit among everything the agent changed"
+                          onClick={() => actions.showEdit(piece, call.toolCallID)}>Show in Changes</button>
+                      )}
+                    </div>
+                  );
+                }
+                if (piece.type === "content" && piece.content.type === "text") return <Markdown key={index} text={piece.content.text} openFile={actions?.open} />;
+                // Any other block as a message draws it: a picture, an attachment (#252).
+                if (piece.type === "content") return <div key={index} class="quiet"><Blocks blocks={[piece.content]} text="" /></div>;
+                if (piece.type === "terminal") return <p key={index} class="quiet">{terminalOutput(actions?.hasMac ?? true)}</p>;
+                // Kept rather than dropped: what the runtime sent, as the window shows it.
+                return <pre key={index} class="raw faint">{readable(piece as unknown as JSONValue).text.split("\n").slice(0, 6).join("\n")}</pre>;
               })}
-            </p>
-          )}
-          {call.rawInput !== undefined && <Exchanged title="Argument" value={call.rawInput} />}
-          {call.rawOutput !== undefined && <Exchanged title="Return" value={call.rawOutput} />}
-        </div>
-      )}
-    </div>
+              {/* Where it did its work, each a way in, wrapped: file names are long. */}
+              {(call.locations ?? []).length > 0 && (
+                <p class="locations">
+                  {(call.locations ?? []).map((l, i) => {
+                    const words = `${l.path.split("/").pop()}${l.line ? `:${l.line}` : ""}`;
+                    return actions
+                      ? <button key={i} class="link reading" aria-label={`Open ${l.path.split("/").pop()}`} title={l.path}
+                        onClick={() => actions.open(l)}>{words}</button>
+                      : <span key={i}>{words}</span>;
+                  })}
+                </p>
+              )}
+              {call.rawInput !== undefined && <Exchanged title="Argument" value={call.rawInput} />}
+              {call.rawOutput !== undefined && <Exchanged title="Return" value={call.rawOutput} />}
+            </div>
+      } />
   );
 }
 
@@ -251,35 +249,51 @@ function ToolRun({ calls, background }: { calls: ToolCall[]; background: readonl
 }
 
 /**
- * SandboxFailureCard (064, #253): what happened, what Continue without sandbox would change, and
- * the two answers while the card waits. An answered or superseded card keeps saying what happened.
+ * SandboxFailureCard (064, #253): what happened, on the record. While the agent waits on an answer,
+ * the answers are an Ask at the end of the chat (SandboxAsk, #5031), not here.
  */
 function SandboxFailureCard({ record }: { record: SandboxFailureRecord }) {
   const actions = useContext(CallActionsContext);
-  const sending = useSignal(false);
   const waiting = actions?.answerSandbox !== undefined && actions.waitingSandbox !== undefined
     && JSON.stringify(actions.waitingSandbox) === JSON.stringify(record);
   const words = sandboxCard(record);
-  const answer = (carryOn: boolean) => {
-    sending.value = true;
-    void actions!.answerSandbox!(carryOn).finally(() => (sending.value = false));
-  };
+  const offer = !waiting && !record.recoveryOffered;
+  const hasMore = !!record.detail || offer || !!actions?.sandboxSetBy;
+  // A failed Line (#5036): the title in red, what happened, and the error a click away.
   return (
-    <div class={`note switch sandbox-failure${waiting ? " waiting" : ""}`} role={waiting ? "alert" : undefined}>
-      <p class="strong">{words.title}</p>
-      <p>{words.body}</p>
-      {record.detail && <details><summary class="quiet">Show error details</summary><pre>{record.detail}</pre></details>}
-      {(waiting || !record.recoveryOffered) && <p class="quiet">{words.offer}</p>}
-      <OrgPolicyLine mark={actions?.sandboxSetBy} />
-      {waiting && (
-        <p class="answers">
-          <button disabled={sending.value} onClick={() => answer(false)}>{keepStopped}</button>
-          {record.recoveryOffered && !actions?.sandboxSetBy && (
-            <button class="prominent" disabled={sending.value} onClick={() => answer(true)}>{continueWithout}</button>
-          )}
-        </p>
-      )}
-    </div>
+    <RecordLine icon={lineGlyph.failed} head={words.title} detail={words.body} failure extra="sandbox-failure"
+      openTitles={["Show error details", "Hide error details"]}
+      more={hasMore ? (
+        <>
+          {record.detail && <pre>{record.detail}</pre>}
+          {offer && <p class="quiet">{words.offer}</p>}
+          <OrgPolicyLine mark={actions?.sandboxSetBy} />
+        </>
+      ) : undefined} />
+  );
+}
+
+/** The sandbox failure the agent waits on (#253), as an Ask (#5031): Keep stopped, or Continue without sandbox. */
+export function SandboxAsk({ record, setBy, answer }: {
+  record: SandboxFailureRecord; setBy: PolicySetBy | undefined; answer: (carryOn: boolean) => Promise<void>;
+}) {
+  const sending = useSignal(false);
+  const words = sandboxCard(record);
+  const send = (carryOn: boolean) => {
+    sending.value = true;
+    void answer(carryOn).finally(() => (sending.value = false));
+  };
+  const offered = record.recoveryOffered && !setBy;
+  return (
+    <Ask glyph="triangle-alert" title={words.title} label={words.title} alert extra="sandbox-ask"
+      decline={offered && <button class="link" disabled={sending.value} onClick={() => send(false)}>{keepStopped}</button>}
+      buttons={offered
+        ? <button class="prominent" disabled={sending.value} data-default="" onClick={() => send(true)}>{continueWithout}</button>
+        : <button class="prominent" disabled={sending.value} data-default="" onClick={() => send(false)}>{keepStopped}</button>}>
+      <p class="quiet small">{words.offer}</p>
+      {record.detail && <details><summary class="quiet small">Show error details</summary><pre>{record.detail}</pre></details>}
+      <OrgPolicyLine mark={setBy} />
+    </Ask>
   );
 }
 
@@ -372,70 +386,75 @@ function entryBody(entry: TranscriptEntry, from: (sender: MessageSender | undefi
       return <ThoughtLine text={fields(entry, "agentThought")!.text} />;
     case "toolCall":
     case "toolCallUpdate":
-      return <p class="quiet">{callLine((fields(entry, "toolCall") ?? fields(entry, "toolCallUpdate"))!._0)}</p>;
+      {
+        const call = (fields(entry, "toolCall") ?? fields(entry, "toolCallUpdate"))!._0;
+        return <RecordLine icon={lineGlyph.tool(call.kind)} detail={callLine(call)} oneLine />;
+      }
     case "planUpdated":
-      return <PlanView plan={fields(entry, "planUpdated")!._0} />;
+      // One line that opens to the steps (#5033): the plan as it is now is in the top Now card.
+      return <PlanLine plan={fields(entry, "planUpdated")!._0} />;
     case "servedRequest": {
       const request = fields(entry, "servedRequest")!._0;
       const what = "readFile" in request.kind ? `Read ${request.kind.readFile.path.split("/").pop()}`
         : "writeFile" in request.kind ? `Wrote ${request.kind.writeFile.path.split("/").pop()}`
         : [request.kind.runCommand.command, ...request.kind.runCommand.args].join(" ");
-      const how = "refused" in request.outcome ? ` — refused: ${request.outcome.refused.reason}`
-        : "failed" in request.outcome ? ` — failed: ${request.outcome.failed.message}` : "";
-      return <p class={`quiet${how ? " failure" : ""}`}>{what}{how}</p>;
+      const how = "refused" in request.outcome ? `refused: ${request.outcome.refused.reason}`
+        : "failed" in request.outcome ? `failed: ${request.outcome.failed.message}` : "";
+      const glyph = lineGlyph.tool("readFile" in request.kind ? "read" : "writeFile" in request.kind ? "edit" : "execute");
+      return how ? <RecordLine icon={glyph} head={what} detail={how} failure /> : <RecordLine icon={glyph} detail={what} />;
     }
     case "elicitationAsked":
-      return <p class="quiet">Asked: {elicitationTitle(fields(entry, "elicitationAsked")!._0)}</p>;
+      return <RecordLine icon={lineGlyph.asked} head="Asked" detail={elicitationTitle(fields(entry, "elicitationAsked")!._0)} />;
     case "elicitationAnswered": {
       const answered = fields(entry, "elicitationAnswered")!;
-      if (!answered.answers?.length) return <p class="quiet">{answered.summary}</p>;
+      if (!answered.answers?.length) return <RecordLine icon={lineGlyph.answered} detail={answered.summary} />;
+      // "You answered", which opens to each answer under the question it answers (#5036): the Ask that asked is gone.
       return (
-        <div class="answers">
-          {answered.answers.map((answer, i) => (
-            <div key={i}><p class="quiet">{answer.question}</p><p>{answer.answer}</p></div>
-          ))}
-        </div>
+        <RecordLine icon={lineGlyph.answered} head="You answered"
+          detail={answered.answers.length === 1 ? answered.answers[0]!.question : `${answered.answers.length} questions`}
+          openTitles={["Show the answers", "Hide the answers"]}
+          more={<div class="answers">
+            {answered.answers.map((answer, i) => (
+              <div key={i}><p class="quiet">{answer.question}</p><p>{answer.answer}</p></div>
+            ))}
+          </div>} />
       );
     }
     case "compaction": {
       const compaction = fields(entry, "compaction")!;
       return (
-        <div class="note">
-          <p class="quiet">{compactionLine(compaction.status, compaction.error)}</p>
-          {compaction.summary.length > 0 && <div class="quiet"><Blocks blocks={compaction.summary} text="" /></div>}
-        </div>
+        <RecordLine icon={lineGlyph.compaction} detail={compactionLine(compaction.status, compaction.error)}
+          openTitles={["Show the summary", "Hide the summary"]}
+          more={compaction.summary.length > 0 ? <div class="quiet"><Blocks blocks={compaction.summary} text="" /></div> : undefined} />
       );
     }
     case "notice": {
       const notice = fields(entry, "notice")!._0;
-      const error = notice.severity === "error";
-      return (
-        <div class="note">
-          <p class={error ? "failure strong" : notice.severity === "warning" ? "quiet strong" : "quiet"}>{notice.title}</p>
-          {notice.detail && <p class="quiet">{notice.detail}</p>}
-        </div>
-      );
+      return <RecordLine icon={lineGlyph.notice(notice.severity)} head={notice.title} detail={notice.detail} failure={notice.severity === "error"} />;
     }
     case "permissionAsked":
-      return <p class="quiet">Asked: {fields(entry, "permissionAsked")!._0.toolCall.title}</p>;
+      return <RecordLine icon={lineGlyph.asked} head="Asked" detail={fields(entry, "permissionAsked")!._0.toolCall.title} />;
     case "permissionAnswered": {
       const answered = fields(entry, "permissionAnswered")!;
-      return <p class="quiet">You chose {answered.optionName ?? answered.optionID}</p>;
+      // An answered Ask leaves one Line (#5036): "You chose ‹option›".
+      return <RecordLine icon={lineGlyph.answered} lead="You chose" head={answered.optionName ?? answered.optionID} />;
     }
     case "stateChanged": {
       const state = fields(entry, "stateChanged")!;
       const failed = state.reason === "processDied" || state.reason === "daemonGone";
-      return <p class={failed ? "failure" : "quiet"}>{stateWords(state._0, state.reason)}</p>;
+      const glyph = failed ? lineGlyph.failed : state._0 === "stopped" ? lineGlyph.stopped : state._0 === "archived" ? "archive"
+        : state._0 === "finished" ? "circle-check" : lineGlyph.note;
+      return <RecordLine icon={glyph} head={stateWords(state._0, state.reason)} failure={failed} />;
     }
     case "workReported":
       return <ReportLine report={fields(entry, "workReported")!._0} />;
     case "runtimeNote":
-      return <p class="quiet">{fields(entry, "runtimeNote")!._0}</p>;
+      return <RecordLine icon={lineGlyph.note} detail={fields(entry, "runtimeNote")!._0} />;
     case "sandboxFailure":
       return <SandboxFailureCard record={fields(entry, "sandboxFailure")!._0} />;
     case "policyStopped":
       // A rule stopped this agent (#2957, FR-025): the rule, the layer that decides, and where to change it.
-      return <PolicyStopCard refusal={fields(entry, "policyStopped")!._0} />;
+      return <PolicyStopCard refusal={fields(entry, "policyStopped")!._0} entryID={entry.id} />;
     case "appView":
       return <AppView call={fields(entry, "appView")!._0} />;
     case "fileShown":
@@ -445,16 +464,8 @@ function entryBody(entry: TranscriptEntry, from: (sender: MessageSender | undefi
     case "notified": {
       // What the agent told the person (#2805): Shared/UI/Chat/NotifiedLine.swift.
       const notice = fields(entry, "notified")!._0;
-      return (
-        <div class="notice-line">
-          <span class="notice-bell" aria-hidden="true">🔔︎</span>
-          <div>
-            <p class="notice-title">{notice.title}</p>
-            {notice.body !== undefined && <p class="notice-body">{notice.body}</p>}
-            <p class="quiet-line">{noticeClock(fromWireDate(entry.at))} · {noticeOutcome(notice)}</p>
-          </div>
-        </div>
-      );
+      const said = [...(notice.body !== undefined ? [notice.body] : []), noticeClock(fromWireDate(entry.at)), noticeOutcome(notice)];
+      return <RecordLine icon={lineGlyph.notified} head={notice.title} detail={said.join(" · ")} extra="notice-line" />;
     }
     case "background": {
       // As the window's line: how it started or ended, a failure in the failure tint (#253).
@@ -469,13 +480,10 @@ function entryBody(entry: TranscriptEntry, from: (sender: MessageSender | undefi
 /** BackgroundEntryLine: how it started or ended, and a subagent's Steps (#544). */
 function BackgroundEntryLine({ item }: { item: BackgroundItem }) {
   const steps = useContext(CallActionsContext)?.subagentSteps;
+  const failed = item.state === "failed";
   return (
-    <p class={item.state === "failed" ? "failure" : "quiet"}>
-      {backgroundEntryLine(item)}
-      {item.kind === "subagent" && steps && (
-        <> <button class="link" title="See what this subagent did" onClick={() => steps(item)}>Steps</button></>
-      )}
-    </p>
+    <RecordLine icon={failed ? lineGlyph.failed : lineGlyph.background} detail={backgroundEntryLine(item)} failure={failed}
+      action={item.kind === "subagent" && steps ? { label: "Steps", title: "See what this subagent did", run: () => steps(item) } : undefined} />
   );
 }
 
@@ -489,22 +497,13 @@ export function elicitationTitle(request: { message?: string; mode: { form: { _0
  * whole of it a click away, as a call's argument and return are.
  */
 function ThoughtLine({ text }: { text: string }) {
-  const expanded = useSignal(false);
-  return (
-    <div class="thought">
-      <button class="call-line" aria-expanded={expanded.value}
-        title={expanded.value ? "Hide the thought" : "Show the whole thought"}
-        onClick={() => (expanded.value = !expanded.value)}>
-        {thoughtLine(text)}
-      </button>
-      {expanded.value && <p class="quiet">{text}</p>}
-    </div>
-  );
+  return <RecordLine icon={lineGlyph.thought} detail={thoughtLine(text)} oneLine extra="thought"
+    openTitles={["Show the whole thought", "Hide the thought"]} more={<p class="quiet">{text}</p>} />;
 }
 
 /** A running turn's latest call, in one line, until the turn has its outcome (LiveLine). */
 function LiveRunLine({ call }: { call: ToolCall }) {
-  return <p class="live quiet">{turnLine(call)}</p>;
+  return <RecordLine icon={lineGlyph.tool(call.kind)} detail={turnLine(call)} oneLine extra="live" />;
 }
 
 /**
@@ -581,8 +580,8 @@ export const TurnView = memo(function TurnView({ turn, focusedRun, fetched, fetc
       {stepCount !== 0 ? (
         waiting ? (loading.value || (auto && !asked.current) ? <p class="quiet">Loading…</p>
           // A read that failed says so, as the window's turn does, rather than a bare Load steps (#544).
-          : fetchFailed ? <p class="load-failure" role="status"><span>These steps did not load.</span>
-            <button class="link" onClick={ask}>Try Again</button></p>
+          : fetchFailed ? <div role="status"><RecordLine icon={lineGlyph.loadFailure} detail="These steps did not load."
+            action={{ label: "Try Again", run: ask }} /></div>
           : <button class="steps-control" onClick={ask}>Load steps</button>) : (
           <>
             {hasEarlier && <button class="steps-control" onClick={() => void loadEarlier(turn)}>Earlier steps</button>}

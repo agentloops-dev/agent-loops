@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The event envelope (#4728, spec 4724-event-bus, "An event" and "Topics"): every event
@@ -56,6 +56,14 @@ func (d *Daemon) envelope(e *wire.Event, server *serverEnvelope) {
 		provider, topic, key, subject = s.Provider, s.Topic, server.key, &s
 	case server != nil:
 		provider, key = "server:"+server.server, server.eventID
+	case e.Name == ciSlowedName:
+		// The same id on every machine that finds the change (#5200), so the bus keeps one.
+		if s, k, ok := ciSlowedEnvelope(*e); ok {
+			topic, key, subject = s.Topic, k, &s
+			break
+		}
+		s := d.appSubject(*e)
+		topic, subject = s.Topic, &s
 	default:
 		s := d.appSubject(*e)
 		topic, subject = s.Topic, &s

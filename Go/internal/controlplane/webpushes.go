@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controlplane/apns"
-	"github.com/alexec/agents/Go/internal/controlplane/notices"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/webpush"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/apns"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/notices"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/webpush"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // WebPusher is what posts the control plane's Web Push to a browser (#1486):
@@ -68,24 +68,22 @@ func webPushFor(d notices.RelayDelivery, s records.WebPushSubscription) (webpush
 	if d.Headline == nil {
 		return webpush.Push{}, errors.New("a browser gets no withdrawal")
 	}
-	item := wire.ControlPushItem{NeedID: d.NeedID, Alert: d.Alert, Timely: d.Timely}
+	item := wire.ControlPushItem{NeedID: d.NeedID, Alert: d.Alert}
 	full := apns.Truncated(*d.Headline)
 	bare := full
 	bare.Answers = nil
-	placeholder := wire.Headline{H1: "Agents", H2: "An agent", H3: "needs you"}
+	placeholder := wire.Headline{H1: "Agent Loops", H2: "An agent", H3: "needs you"}
 	tries := []*wire.Headline{&full, &bare, &placeholder}
 	needID, _ := json.Marshal(d.NeedID)
 	sum := sha256.Sum256(needID)
 	// A topic is at most 32 base64url characters: a newer push for the need replaces one
 	// the push service still holds.
 	topic := base64.RawURLEncoding.EncodeToString(sum[:24])
-	// The person's booking's holder asks (#4268): the push service wakes the browser now.
-	timely := d.Timely != nil && *d.Timely
 	for _, headline := range tries {
 		item.Headline = headline
 		payload, _ := json.Marshal(item)
 		if len(payload) <= webpush.MaxPayload {
-			return webpush.Push{Subscription: webPushOf(&s), Payload: payload, Urgent: item.Alert || timely, Topic: topic}, nil
+			return webpush.Push{Subscription: webPushOf(&s), Payload: payload, Urgent: item.Alert, Topic: topic}, nil
 		}
 	}
 	return webpush.Push{}, errors.New("too big for Web Push")

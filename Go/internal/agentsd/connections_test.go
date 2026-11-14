@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/internal/emailmcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/emailmcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A GitHub sign-in (#1335) through the wire: the client is given the code and the links,
@@ -46,13 +47,24 @@ func TestConnectingGitHubWithTheDeviceFlow(t *testing.T) {
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
+	// The poll waits until the test has read the first answer (#4907): a Sleep that returns at
+	// once let a loaded runner connect before connections/sign-in answered, so it said connected.
+	polling := make(chan struct{})
 	d.newDeviceFlow = func(wire.ConnectionProvider) *connections.DeviceFlow {
 		return &connections.DeviceFlow{ClientID: connections.GitHubClientID, Base: gh.URL + "/", API: gh.URL + "/api/",
-			HTTP: gh.Client(), Sleep: func(ctx context.Context, _ time.Duration) error { return ctx.Err() }}
+			HTTP: gh.Client(), Sleep: func(ctx context.Context, _ time.Duration) error {
+				select {
+				case <-polling:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}}
 	}
 
 	var started wire.ConnectionSignIn
 	json.Unmarshal(c.call(t, 1, "connections/sign-in", map[string]any{"provider": "github"}), &started)
+	close(polling)
 	if started.Status != wire.ConnectionSignInStatusWaiting || started.UserCode == nil || *started.UserCode != "ABCD-1234" ||
 		started.Grant != wire.ConnectionSignInGrantDeviceCode ||
 		started.VerificationURL != "https://github.com/login/device" || started.InstallURL == nil ||
@@ -350,6 +362,41 @@ func TestConnectingGitHubWithAPersonalAccessToken(t *testing.T) {
 	kept, ok, _ := file.Get(connections.GitHub)
 	if !ok || kept.Access != "github_pat_secret" || kept.Refresh != "" ||
 		!kept.AccessExpiresAt.Equal(time.Date(2027, 2, 1, 16, 0, 0, 0, time.UTC)) || connections.ByAppToken(kept) {
+		t.Fatalf("kept: %+v", kept)
+	}
+}
+
+// A walk (#4092) connects its fixture GitHub with any token and no Keychain item by hand: with
+// AGENTS_TEST_GITHUB_URL set, connections/sign-in/token checks the token at the fixture's
+// /api/user, never at api.github.com. With it unset, the check goes to api.github.com.
+func TestAWalkConnectsTheFixtureGitHubWithAnyToken(t *testing.T) {
+	t.Setenv(skillcatalog.GitHubVariable, "")
+	if f := (&Daemon{}).deviceFlow(wire.ConnectionProviderGithub); f.API != "https://api.github.com/" {
+		t.Fatalf("live: %q", f.API)
+	}
+	var asked atomic.Int32
+	fixture := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/user" {
+			http.NotFound(w, r)
+			return
+		}
+		asked.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"login":"sam"}`)
+	}))
+	defer fixture.Close()
+	t.Setenv(skillcatalog.GitHubVariable, fixture.URL)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
+	d.connStoreFor = func() (connections.Store, error) { return file, nil }
+
+	var made wire.ConnectionTokenAnswer
+	json.Unmarshal(c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "github", "token": "walk"}), &made)
+	if made.Error != nil || made.Connection == nil || deref(made.Connection.Login) != "sam" || asked.Load() != 1 {
+		t.Fatalf("made: %+v, asked %d", made, asked.Load())
+	}
+	if kept, ok, _ := file.Get(connections.GitHub); !ok || kept.Access != "walk" || kept.Login != "sam" {
 		t.Fatalf("kept: %+v", kept)
 	}
 }

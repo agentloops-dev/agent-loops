@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 const (
@@ -53,6 +53,7 @@ const (
 // or an MCP server. Reads, prompts and presence are not kept.
 var hostActions = map[string]string{
 	"agents/start":             "Started an agent",
+	"firstBuild/start":         "Started the first build",
 	"agents/stop":              "Stopped an agent",
 	"agents/stopBackground":    "Stopped an agent's background work",
 	"agents/delete":            "Deleted an agent",

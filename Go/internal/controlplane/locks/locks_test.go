@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/internal/machinelock"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 func key(t *testing.T) *ecdsa.PrivateKey {

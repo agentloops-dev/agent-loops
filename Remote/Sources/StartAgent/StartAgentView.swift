@@ -49,7 +49,7 @@ struct StartAgentView: View {
             // What it starts opens in this scene (#1089).
             model.composingScene = sceneFolder
             model.startPageAppeared(in: key, page: page)
-            let kept = StartDraftKeeper.shared.draft(in: folder)
+            let kept = StartDraftKeeper.shared.draft(in: key, folders: model.folders)
             text = kept?.text ?? ""
             attachments = kept?.attachments ?? []
             if kept?.droppedInlineData == true {
@@ -58,9 +58,12 @@ struct StartAgentView: View {
             }
             // After the kept draft, so a view's prompt is what the field holds (#834).
             takeOffer()
+            takeShared()
             focused = true
         }
         .onChange(of: model.offeredStart) { takeOffer() }
+        // Share ▸ Agent Loops while this page is already on screen (#4915).
+        .onChange(of: model.sharedArrivals) { takeShared() }
         // Voice mode turned on in a chat (another window on an iPad): one listener (#2445).
         .onChange(of: VoiceMode.shared.isOn) { _, isOn in
             if isOn { dictation.stop() }
@@ -146,6 +149,8 @@ struct StartAgentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
+                // The Mac's banner, then the host's (#5147), as the chat has them.
+                StaleBanner()
                 HostOfflineStrip(host: model.startHost)
             }
         }
@@ -177,17 +182,17 @@ struct StartAgentView: View {
                     if !usable.isEmpty, personaAuto {
                         Text(Persona.autoLine(autoPick))
                             .appText(.supporting)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Paper.secondary)
                     }
                     if let description = picked?.description {
                         Text(description)
                             .appText(.supporting)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Paper.secondary)
                     }
                     ForEach(broken) { persona in
                         Text("\(persona.id).md: \(persona.problem ?? "")")
                             .appText(.supporting)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Paper.secondary)
                     }
                 }
                 .multilineTextAlignment(.center)
@@ -259,6 +264,16 @@ struct StartAgentView: View {
         text = start.prompt
         // Held to what a session takes, as a label typed here is.
         draftLabels += SessionLabelPolicy.accepted(start.labels, existing: draftLabels)
+        focused = true
+    }
+
+    /// What another app shared (#4915): its words after what is typed, its pictures and
+    /// files after what is attached, and what the paperclip would refuse said in its words.
+    private func takeShared() {
+        guard let shared = model.takeShared(in: key) else { return }
+        text = shared.text(after: text)
+        attachments += shared.attachments
+        if let note = shared.note { attachNote = note }
         focused = true
     }
 
@@ -349,7 +364,7 @@ struct StartAgentView: View {
                                 if model.isStarting {
                                     ProgressView()
                                 } else {
-                                    Image(systemName: "arrow.up")
+                                    Image(icon: "arrow.up")
                                         .appText(.reading).fontWeight(.semibold)
                                 }
                             }
@@ -397,7 +412,7 @@ struct StartAgentView: View {
     }
 
     private func keep() {
-        StartDraftKeeper.shared.note(text, attachments, in: folder)
+        StartDraftKeeper.shared.note(text, attachments, in: key, folders: model.folders)
     }
 
     private func send() {

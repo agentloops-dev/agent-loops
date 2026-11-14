@@ -4,13 +4,13 @@
 // has a scope, Me, a group or the organisation, and names it.
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import { signal, useSignal } from "@preact/signals";
-import { go, routeHash } from "../route";
+import { go, route, routeHash } from "../route";
 import { hasPage } from "../model/work";
 import type { Store } from "../model/store";
 import type { FeatureUsage, LineageForecast, ReportDelivery, LineageForecastAssumes, LineageForecastWhatIfEffect, LineageNode, MachineRef, ReportFormat, ReportPage, ReportRange, ReportRow, ReportScope, ReportScopeOption, ReportValue, ReportValueRow, ReportView,
   UsageReport } from "../protocol/generated";
 import { CallFailed } from "../wire/link";
-import { adoption, adoptionLine, barCaption, adoptionNote, budgetWords, dimensionTitle, empty, exportName, groupNote, hiddenNote, line, meNote,
+import { adoption, adoptionLine, rangeAsked, barCaption, adoptionNote, budgetWords, dimensionTitle, empty, exportName, groupNote, hiddenNote, line, meNote,
   memberNote, noOutcomes, noWorkflows, outcomeLine, outcomeTotals, outcomesNote, rangeSpan, ranges, reportTotals, runtimeLine,
   runtimesNote, sameScope, spendBarCaption, scopeKey, scopeNote, scopedDimensions, share, timeLine, timeNote, utcNote, waitingShare, weekTitle, workflowLine,
   workflowRows, workflowsNote, deleteViewWords, digestText, noCopy, noViews, noViewsHere, viewBy, viewWords, viewsNote } from "../model/reports";
@@ -24,6 +24,7 @@ import {
 import { assumesLine, burnLine, burnRuntime, forecastScoreLine, landsLine, laneOptions, loadedLine, mergeBurns, mixOptions, nextNote, noNext,
   noNextHere, noNextOffline, serviceLevelLine, spendLines, whatIfLines, whatIfNote, whatIfOf } from "../model/planning";
 import { deliveryCards, deliveryNote, noDelivery, repoTitle, sparkPath } from "../model/delivery";
+import { buildsLinkQuery } from "../model/builds";
 import { Capability } from "../protocol/capabilities.generated";
 import type { Section } from "../model/console";
 import { Choice } from "./Choice";
@@ -424,7 +425,7 @@ function PlanningPane({ store, scope, initial }: { store: Store; scope: ReportSc
           {unlinked && <li><span class="quiet">{unlinked}</span></li>}
         </ul>
       )}
-      {shown?.delivery && <DeliveryPart delivery={shown.delivery} />}
+      {shown?.delivery && <DeliveryPart delivery={shown.delivery} range={range.value} />}
       <NextPart store={store} epics={shown?.openEpics ?? []} />
       {(estimates || forecasts) && <h3>How the estimates and forecasts scored</h3>}
       {(estimates || forecasts) && (
@@ -449,7 +450,7 @@ function PlanningPane({ store, scope, initial }: { store: Store; scope: ReportSc
 /** Reports ▸ Planning's Delivery row (#4555): a card a figure for each repo the scope merged most in, with its
  * 4-week figure, a line of its weeks and DORA 2024's band where one exists. A repo's name heads its row only when
  * there are more than one. */
-function DeliveryPart({ delivery }: { delivery: readonly ReportDelivery[] }) {
+function DeliveryPart({ delivery, range }: { delivery: readonly ReportDelivery[]; range: ReportRange }) {
   return (
     <>
       <h3>Delivery</h3>
@@ -471,6 +472,10 @@ function DeliveryPart({ delivery }: { delivery: readonly ReportDelivery[] }) {
                   ) : <span class="delivery-spark" aria-hidden="true" />}
                   <span class="quiet small">{c.detail}</span>
                   {c.band && <span class="delivery-band">{`DORA: ${c.band}`}</span>}
+                  {/* The way in to Builds (#5178, spec 5166 board 4 note 5), with the card's repo and the range. */}
+                  {c.key === "ciTimeToGreen" && (
+                    <a class="small" href={routeHash({ nav: "reports", section: "value", item: "builds", query: buildsLinkQuery(d.repo, range) })}>Build trends ›</a>
+                  )}
                 </li>
               );
             })}
@@ -661,7 +666,9 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
     if (view) picked.value = scopeKey(view.scope);
     else if (opened.value && opened.value.page !== section.id) opened.value = null;
   }, [view?.id, section.id]);
-  const initial = view ? { range: view.range, by: viewBy(view) } : undefined;
+  // Cost's Open Reports on the Mac (#4938) names the range in the address: #/reports/spend?range=month.
+  const asked = rangeAsked(route.value.query);
+  const initial = view ? { range: view.range, by: viewBy(view) } : asked ? { range: asked } : undefined;
   const list = scopes.value ?? [];
   const option = list.find((o) => scopeKey(o.scope) === picked.value) ?? list[0];
   return (
@@ -677,7 +684,7 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
           kind={section.id as CountsKind} initial={initial} />
         : section.id === "value" ? <PlanningPane key={view?.id ?? ""} store={store} scope={option?.scope} initial={initial} />
         : section.id === "adoption" ? <AdoptionPane key={view?.id ?? ""} store={store} scope={option?.scope} initial={initial} />
-        : <ReportsPane key={view?.id ?? ""} store={store} runtimeName={runtimeNameIn(store)} scope={option?.scope} seesMore={list.length > 1} initial={initial} />)}
+        : <ReportsPane key={view?.id ?? asked ?? ""} store={store} runtimeName={runtimeNameIn(store)} scope={option?.scope} seesMore={list.length > 1} initial={initial} />)}
     </>
   );
 }

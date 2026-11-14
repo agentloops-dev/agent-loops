@@ -13,6 +13,11 @@ final class MessagesListState {
     var open: MessagesList.Row?
     var asked = 0
     var loadingMore = false
+    /// Goes up each time a conversation or all of them were marked read (#5137), so the sidebar row reads its count
+    /// again at once.
+    var marked = 0
+    var markingAll = false
+    var markProblems: [String] = []
 
     var ask: [String] { [String(asked), String(unreadOnly)] }
     var rows: [MessagesList.Row] { MessagesList.merged(lists ?? [], source: source) }
@@ -27,6 +32,43 @@ final class MessagesListState {
         }
         // A newer Refresh wins.
         if asked == self.asked, unread == unreadOnly { lists = read }
+    }
+
+    /// A read marked the conversation `key` read (#5137): its count goes to 0 here, and the sidebar's is read again.
+    func markedRead(_ key: String) {
+        if let lists { self.lists = MessagesList.markedRead(lists, key: key) }
+        marked += 1
+    }
+
+    /// Mark All as Read (#5137): every machine that can marks every conversation of its connectors read; then the
+    /// list is read again, as the services now say.
+    func markAllRead(model: AppModel) async {
+        guard !markingAll else { return }
+        markingAll = true
+        markProblems = []
+        defer { markingAll = false }
+        let machines = model.messagesMarkMachines
+        var answers: [(name: String, marked: DaemonAPI.MessagesMarkedAllRead?, problem: String?)] = []
+        await withTaskGroup(of: (String, DaemonAPI.MessagesMarkedAllRead?, String?).self) { group in
+            for machine in machines {
+                group.addTask {
+                    do {
+                        return (machine.name, try await model.messages(DaemonAPI.Method.messagesMarkAllRead,
+                                                                       DaemonAPI.MessagesMarkAllReadRequest(),
+                                                                       returning: DaemonAPI.MessagesMarkedAllRead.self,
+                                                                       on: machine.id), nil)
+                    } catch {
+                        return (machine.name, nil, error.localizedDescription)
+                    }
+                }
+            }
+            for await (name, got, problem) in group { answers.append((name: name, marked: got, problem: problem)) }
+        }
+        markProblems = MessagesList.markProblems(answers.sorted { a, b in
+            (machines.firstIndex { $0.name == a.name } ?? 0) < (machines.firstIndex { $0.name == b.name } ?? 0)
+        })
+        marked += 1
+        asked += 1
     }
 
     /// The next page of each machine that has one, after its own.
@@ -88,10 +130,14 @@ final class MessagesListState {
 struct MessagesView: View {
     @Bindable var list: MessagesListState
 
+    private var next: MessagesList.Row? {
+        list.open.flatMap { MessagesList.next(after: $0.id, in: list.rows) }
+    }
+
     var body: some View {
         Group {
             if let row = list.open {
-                ConversationPage(row: row).id(row.id)
+                ConversationPage(row: row) { list.markedRead(row.id) }.id(row.id)
             } else {
                 MessagesListPane(list: list)
             }
@@ -99,9 +145,15 @@ struct MessagesView: View {
         .navigationTitle(list.open?.conversation.title ?? MessagesList.title)
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                Button { list.open = nil } label: { Image(systemName: "chevron.left") }
+                Button { list.open = nil } label: { Image(toolbarIcon: "chevron.left") }
                     .disabled(list.open == nil)
                     .help("Back to Messages")
+                // Next (#5137): the next conversation in the list as it is filtered and sorted now.
+                Button { list.open = next } label: { Image(toolbarIcon: "chevron.down") }
+                    .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                    .disabled(next == nil)
+                    .help(MessagesList.nextHelp)
+                    .accessibilityLabel(MessagesList.nextConversation)
             }
         }
     }
@@ -130,6 +182,14 @@ private struct MessagesListPane: View {
             Toggle("Unread", isOn: $list.unreadOnly)
                 .toggleStyle(.checkbox)
             Spacer()
+            if !model.messagesMarkMachines.isEmpty {
+                Button(list.markingAll ? MessagesList.markingAllRead : MessagesList.markAllRead) {
+                    Task { await list.markAllRead(model: model) }
+                }
+                .linkStyle()
+                .disabled(list.markingAll || !MessagesList.hasUnread(list.lists ?? []))
+                .help(MessagesList.markAllHelp)
+            }
             Button("Refresh") { list.asked += 1 }
                 .linkStyle()
         }
@@ -145,8 +205,8 @@ private struct MessagesListPane: View {
             } else {
                 let rows = list.rows
                 List {
-                    ForEach(MessagesList.problems(lists), id: \.self) { line in
-                        Label(line, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+                    ForEach(MessagesList.problems(lists) + list.markProblems, id: \.self) { line in
+                        Label(line, icon: "exclamationmark.triangle").foregroundStyle(.secondary)
                     }
                     if rows.isEmpty {
                         Text(list.unreadOnly ? MessagesList.noUnread : MessagesList.noConversations).foregroundStyle(.secondary)
@@ -164,7 +224,8 @@ private struct MessagesListPane: View {
                 .listStyle(.inset)
             }
         } else {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The first read: placeholder rows, as Work draws them, no spinner in the middle.
+            List { WorkPlaceholderRows() }.listStyle(.inset).disabled(true)
         }
     }
 
@@ -195,19 +256,26 @@ private struct MessagesListPane: View {
     }
 }
 
-/// A row: the service's icon, the conversation's title, its unread count and when it last moved.
+/// A row: the service's icon, who sent the newest message (when the service says), the conversation's title,
+/// its unread count and when it last moved.
 private struct ConversationRow: View {
     let row: MessagesList.Row
 
     var body: some View {
         let c = row.conversation
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: MessagesList.symbol(c.source))
+            Image(icon: MessagesList.symbol(c.source))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
                 .help(ChannelLinkWords.channel(c.source))
                 .accessibilityLabel(ChannelLinkWords.channel(c.source))
+            if let sender = c.sender {
+                Text(verbatim: MessagesList.sender(sender)).fontWeight(row.isUnread ? .semibold : .regular).lineLimit(1)
+                    .frame(maxWidth: 180, alignment: .leading)
+                    .help(sender.identity)
+            }
             Text(verbatim: c.title).fontWeight(row.isUnread ? .semibold : .regular).lineLimit(1)
+                .foregroundStyle(c.sender == nil ? .primary : .secondary)
             if let unread = MessagesList.unread(c) {
                 Text(unread).appText(.fine).foregroundStyle(.tint)
             }
@@ -228,6 +296,8 @@ private struct ConversationPage: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     let row: MessagesList.Row
+    /// The read marked the conversation read on its service (#5137).
+    var markedRead: () -> Void = {}
 
     @State private var messages: [DaemonAPI.MessagingMessage]?
     @State private var cursor: String?
@@ -247,7 +317,7 @@ private struct ConversationPage: View {
                 Text(problem).foregroundStyle(.secondary).padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let messages {
                 List {
-                    Label(MessagesList.outside, systemImage: "exclamationmark.shield").appText(.fine).foregroundStyle(.secondary)
+                    Label(MessagesList.outside, icon: "exclamationmark.shield").appText(.fine).foregroundStyle(.secondary)
                     if messages.isEmpty {
                         Text(MessagesList.noMessages).foregroundStyle(.secondary)
                     }
@@ -262,7 +332,7 @@ private struct ConversationPage: View {
                 }
                 .listStyle(.inset)
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                List { WorkPlaceholderRows(count: 4) }.listStyle(.inset).disabled(true)
             }
             if let replyAs = row.item.replyAs, problem == nil, messages != nil {
                 Divider()
@@ -276,7 +346,7 @@ private struct ConversationPage: View {
         VStack(alignment: .leading, spacing: 6) {
             if thread != nil {
                 HStack(spacing: 8) {
-                    Label(MessagesList.inThread, systemImage: "arrowshape.turn.up.left").appText(.fine).foregroundStyle(.secondary)
+                    Label(MessagesList.inThread, icon: "arrowshape.turn.up.left").appText(.fine).foregroundStyle(.secondary)
                     Button(MessagesList.leaveThread) { thread = nil }
                         .linkStyle()
                 }
@@ -294,7 +364,7 @@ private struct ConversationPage: View {
             }
             Text(MessagesList.sentAs(replyAs)).appText(.fine).foregroundStyle(.secondary)
             if let sendProblem {
-                Label(sendProblem, systemImage: "exclamationmark.triangle").appText(.fine).foregroundStyle(.secondary)
+                Label(sendProblem, icon: "exclamationmark.triangle").appText(.fine).foregroundStyle(.secondary)
             }
         }
     }
@@ -320,7 +390,7 @@ private struct ConversationPage: View {
     private var header: some View {
         let c = row.conversation
         return HStack(spacing: 8) {
-            Image(systemName: MessagesList.symbol(c.source)).foregroundStyle(.secondary)
+            Image(icon: MessagesList.symbol(c.source)).foregroundStyle(.secondary)
             Text(ChannelLinkWords.channel(c.source)).foregroundStyle(.secondary)
             Text(verbatim: "▸ \(row.item.server)").appText(.fine).foregroundStyle(.secondary)
             Spacer()
@@ -343,6 +413,7 @@ private struct ConversationPage: View {
                 returning: DaemonAPI.MessagesRead.self, on: row.host)
             messages = (more ? messages ?? [] : []) + got.messages
             cursor = got.cursor
+            if got.markedRead == true { markedRead() }
         } catch {
             problem = error.localizedDescription
         }
@@ -380,5 +451,82 @@ private struct MessageRow: View {
             MarkdownText(markdown: message.text).textSelection(.enabled)
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// The sidebar's Messages row (#4934): the title, and under it in grey the unread count and what the newest
+/// `message.received` woke, as the Summary and Events rows have a line ("12 unread · woke Fix login bug 4 min ago").
+/// The count asks every messaging connector over MCP, so it is read on a timer, and left out while it fails;
+/// the events are each machine's newest page. No machine that reads messages: no line.
+struct MessagesRow: View {
+    @Environment(AppModel.self) private var model
+    @State private var unread: Int?
+    @State private var last: MessagesList.LastConsequence?
+
+    /// How often the line is read again.
+    static let every: Duration = .seconds(60)
+
+    /// What starts the reads again: the machines, a mark as read (#5137), and whether the sessions have been listed.
+    private struct Key: Equatable {
+        let machines: [String]
+        let marked: Int
+        let listed: Bool
+    }
+
+    var body: some View {
+        let machines = model.messagesMachines
+        // The time ago moves on between reads.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let line = machines.isEmpty ? nil : MessagesList.statusLine(unread: unread, last: last, now: context.date)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack { Text(MessagesList.title).foregroundStyle(.primary); Spacer() }
+                if let line {
+                    Text(line).appText(.fine).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .accessibilityValue(line ?? "")
+        }
+        // Not before the sessions' first list (#5173): the line is no reason to keep the list waiting
+        // at launch, and the night's run holds the Mac to 2 calls before it (#4891).
+        .task(id: Key(machines: machines.map(\.id.rawValue), marked: model.messagesList.marked,
+                      listed: model.hasLoadedAgents || !model.hasMacHost)) {
+            guard model.hasLoadedAgents || !model.hasMacHost else { return }
+            while !Task.isCancelled {
+                await read(machines)
+                try? await Task.sleep(for: Self.every)
+            }
+        }
+    }
+
+    private func read(_ machines: [(id: MachineRef, name: String)]) async {
+        guard !machines.isEmpty else { unread = nil; last = nil; return }
+        let model = model
+        var lists: [MessagesList.HostConversations] = []
+        var events: [Event] = []
+        await withTaskGroup(of: (MessagesList.HostConversations?, [Event]).self) { group in
+            for machine in machines {
+                group.addTask {
+                    async let list = try? model.messages(DaemonAPI.Method.messagesConversations,
+                                                         DaemonAPI.MessagesConversationsRequest(limit: 50, unread: true),
+                                                         returning: DaemonAPI.MessagesConversations.self, on: machine.id)
+                    async let page = try? model.client(for: machine.id).call(DaemonAPI.Method.eventsList,
+                                                                              DaemonAPI.EventsListRequest(),
+                                                                              returning: DaemonAPI.EventsPage.self)
+                    let conversations = await list
+                    return (conversations.map { .init(host: machine.id, name: machine.name, conversations: $0.conversations) },
+                            await page?.events ?? [])
+                }
+            }
+            for await (list, page) in group {
+                if let list { lists.append(list) }
+                events += page
+            }
+        }
+        // This Mac first, so its copy of a conversation is the one counted, as the page keeps it.
+        lists.sort { a, b in
+            (machines.firstIndex { $0.id == a.host } ?? 0) < (machines.firstIndex { $0.id == b.host } ?? 0)
+        }
+        unread = lists.isEmpty ? nil : MessagesList.unreadTotal(lists) ?? 0
+        last = MessagesList.lastConsequence(events)
     }
 }

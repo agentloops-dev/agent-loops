@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controlplane/audit"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/audit"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Who did what (#996, spec 736 US8): the actor the control plane knows each client by,
@@ -75,9 +75,10 @@ func (s *Service) personActor(user string) wire.AuditActor {
 
 // accountOpActions are the words of an entry for an operation on an account (#4157).
 var accountOpActions = map[wire.AccountOperationWhat]string{
-	wire.AccountOperationWhatRead:   "Listed accounts",
-	wire.AccountOperationWhatAdded:  "Added an account",
-	wire.AccountOperationWhatEdited: "Changed an account",
+	wire.AccountOperationWhatRead:    "Listed accounts",
+	wire.AccountOperationWhatAdded:   "Added an account",
+	wire.AccountOperationWhatEdited:  "Changed an account",
+	wire.AccountOperationWhatRemoved: "Removed an account",
 }
 
 // auditAccountOps queues an entry for each operation an agent on host did to its person's

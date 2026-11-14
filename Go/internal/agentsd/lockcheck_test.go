@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/machinelock"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // lockedMachine is a machine h-1 that holds sam's lock: the client phone, the machine

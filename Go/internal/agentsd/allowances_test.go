@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Ports RuntimeAllowanceTests for a server: every runtime's own row, the Mac's shared

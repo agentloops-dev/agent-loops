@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/agentsd/acp"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The three endings name the runtime's own question tool where the app knows it, and
@@ -296,11 +297,11 @@ func TestTheBriefNamesEveryAppTool(t *testing.T) {
 		browser, screen, bot, github bool
 		named, unnamed               []string
 	}{
-		{false, false, false, false, nil, []string{"browser_", "fill_secret", "hand_to_person", "drive_screen", "set_ci_secret", "make_app_repository", "start-a-new-app"}},
+		{false, false, false, false, nil, []string{"browser_", "fill_secret", "hand_to_person", "drive_screen", "set_ci_secret", "make_app_repository", "make_public_repository", "start-a-new-app"}},
 		{true, false, false, false, []string{"browser_* tools", "fill_secret", "hand_to_person", "take the browser lease themselves"}, []string{"drive_screen"}},
 		{true, false, true, false, []string{"browser_* tools", "fill_secret"}, []string{"hand_to_person"}},
 		{false, true, false, false, []string{"drive_screen", "takes the screen lease itself"}, []string{"browser_"}},
-		{false, false, false, true, []string{"set_ci_secret", "set_ci_variable", "set_environment_gate", "make_app_repository", "start-a-new-app"}, []string{"browser_"}},
+		{false, false, false, true, []string{"set_ci_secret", "set_ci_variable", "set_environment_gate", "make_app_repository", "make_public_repository", "start-a-new-app"}, []string{"browser_"}},
 	} {
 		got := toolsBrief(c.browser, c.screen, c.bot, c.github)
 		for _, w := range c.named {
@@ -327,7 +328,7 @@ func TestTheNewAppSkillIsReadyMade(t *testing.T) {
 	if !found {
 		t.Fatalf("%s is not a ready-made skill: %v", id, readyMadeSkillIDs())
 	}
-	skill, err := readyMadeSkillsFS.ReadFile("readymadeskills/" + id + "/SKILL.md")
+	skill, err := os.ReadFile(filepath.Join(readyMadeFixtureDir, "skills", id, "SKILL.md"))
 	if err != nil || !strings.HasPrefix(string(skill), "---\nname: "+id+"\n") {
 		t.Fatalf("its SKILL.md does not start with its name: %v", err)
 	}
@@ -337,6 +338,74 @@ func TestTheNewAppSkillIsReadyMade(t *testing.T) {
 		}
 		if !appToolServed(tool) {
 			t.Errorf("the skill names %s, which this host does not serve", tool)
+		}
+	}
+}
+
+// #5052: the skill keeps a first build's task list as its plan, and the plan page (#5053,
+// #5054) finds each task by its words, so the skill's two tables hold these words, in this
+// order. A change here is a change to the plan pages too.
+func TestTheNewAppSkillKeepsTheFirstBuildTaskList(t *testing.T) {
+	skill, err := os.ReadFile(filepath.Join(readyMadeFixtureDir, "skills", "start-a-new-app", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{
+		"iphone-app": {
+			"Set up the agent runtime",
+			"Connect GitHub",
+			"Make the repository from agentloops-dev/iphone-app-starter",
+			"Join the Apple Developer Program",
+			"Put the App Store Connect key in the repository's CI",
+			"Set up Sentry",
+			"Send the first build to TestFlight",
+			"Approve the first build",
+		},
+		"web-service": {
+			"Set up the agent runtime",
+			"Connect GitHub",
+			"Make the repository from agentloops-dev/web-service-starter",
+			"Set up Google Cloud (Cloud Run)",
+			"Set up Sentry",
+			"Deploy the first version",
+			"Approve the first deploy",
+		},
+	}
+	// Each table starts under the line that names its starter, as "(`iphone-app`):", and
+	// ends at its first line that is not a row.
+	lines := strings.Split(string(skill), "\n")
+	for starter, tasks := range want {
+		var got []string
+		start := -1
+		for i, l := range lines {
+			if strings.HasSuffix(l, "(`"+starter+"`):") {
+				start = i
+				break
+			}
+		}
+		if start < 0 {
+			t.Fatalf("no task list for %s", starter)
+		}
+		for _, l := range lines[start+1:] {
+			if l == "" && got == nil {
+				continue
+			}
+			if !strings.HasPrefix(l, "| ") {
+				break
+			}
+			cells := strings.Split(l, "|")
+			if len(cells) < 4 || strings.TrimSpace(cells[1]) == "#" || strings.HasPrefix(strings.TrimSpace(cells[1]), "-") {
+				continue
+			}
+			got = append(got, strings.TrimSpace(cells[2]))
+		}
+		if strings.Join(got, "\n") != strings.Join(tasks, "\n") {
+			t.Errorf("%s's task list is\n%s\nwant\n%s", starter, strings.Join(got, "\n"), strings.Join(tasks, "\n"))
+		}
+	}
+	for _, s := range []string{"`TaskCreate`", "`TaskUpdate`", "`activeForm`", "`update_plan`", "`completed`", "`in_progress`", "`pending`", "Keep the first-build task list as your plan."} {
+		if !strings.Contains(strings.Join(strings.Fields(string(skill)), " "), s) {
+			t.Errorf("the skill does not say %q", s)
 		}
 	}
 }
@@ -428,5 +497,16 @@ func TestVoiceModeTextGoesBeforeTheWords(t *testing.T) {
 	waitFor(t, "the second answer", func() bool { return strings.Count(agentMessages(d, id), "Before: ") == 2 })
 	if said := agentMessages(d, id); !strings.HasSuffix(said, "Before: ") {
 		t.Fatalf("said %q", said)
+	}
+}
+
+// Claude is started with its task tools on, which a model newer than claude-opus-4-7 does
+// not have otherwise, so it can send a plan (#5093). The person's own value is kept.
+func TestClaudeIsStartedWithItsTaskTools(t *testing.T) {
+	if got := withClaudeTodoTools([]string{"PATH=/bin", "CLAUDE_CODE_ENABLE_TODO_TOOLS="}); !slices.Equal(got, []string{"PATH=/bin", "CLAUDE_CODE_ENABLE_TODO_TOOLS=1"}) {
+		t.Fatalf("%q", got)
+	}
+	if got := withClaudeTodoTools([]string{"CLAUDE_CODE_ENABLE_TODO_TOOLS=0"}); !slices.Equal(got, []string{"CLAUDE_CODE_ENABLE_TODO_TOOLS=0"}) {
+		t.Fatalf("%q", got)
 	}
 }

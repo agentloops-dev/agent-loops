@@ -19,7 +19,9 @@ import {
 } from "../model/docs";
 import { projectName } from "../model/projects";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
-import { LiveDocument, type PageSource } from "./LiveDocument";
+import { LiveDocument, type OpenPageFile, type PageSource } from "./LiveDocument";
+import { isPageFile, pathInFolder } from "../model/pageLink";
+import { pathOf } from "./files/paneState";
 import { offerStart } from "./NewAgent";
 import { go, routeHash } from "../route";
 
@@ -123,7 +125,7 @@ export function DocsList({ store }: { store: Store }) {
   const problems = (l ?? []).filter((h) => h.problem).map((h) => `${h.name}: ${h.problem}`);
   const open = (doc: Doc, line?: number) => {
     openAt.value = line ? { ref: doc.ref, line } : undefined;
-    go({ nav: "docs", section: "docs", item: doc.ref });
+    go({ nav: "work", section: "docs", item: doc.ref });
   };
 
   return (
@@ -296,8 +298,13 @@ export function DocPage({ store, docRef }: { store: Store; docRef: string }) {
       copied.value = null;
     }
   };
-  const link = location.origin + location.pathname + location.search + routeHash({ nav: "docs", section: "docs", item: docRef });
+  const link = location.origin + location.pathname + location.search + routeHash({ nav: "work", section: "docs", item: docRef });
   const filesPlace = doc && got.value ? folderPlace(store, got.value.host, doc) : undefined;
+  // A page in the doc's folder that a link names opens as the folder's page, as Open in Files does (#5068).
+  const opens: OpenPageFile | undefined = filesPlace && {
+    takes: (file) => { const page = pathInFolder(file, pathOf(filesPlace.folder)); return page !== null && isPageFile(page); },
+    open: (file) => { const page = pathInFolder(file, pathOf(filesPlace.folder)); if (page) go({ ...filesPlace, page }); },
+  };
   // The project it is in (#3408), as an issue's or a PR's page says it.
   const project = doc && got.value ? projectOfIn(store)(got.value.host, doc.folder) : undefined;
 
@@ -306,7 +313,7 @@ export function DocPage({ store, docRef }: { store: Store; docRef: string }) {
       <div class="work-page-bar">
         <button type="button" title="Back" aria-label="Back" onClick={() => history.back()}>‹</button>
         <button type="button" title="Forward" aria-label="Forward" onClick={() => history.forward()}>›</button>
-        <button type="button" class="link" onClick={() => go({ nav: "docs" })}>All docs</button>
+        <button type="button" class="link" onClick={() => go({ nav: "work", section: "docs" })}>All docs</button>
       </div>
       <header class="work-page-head">
         <h2><span class="work-title">{doc ? shortForm(doc) : docRef}</span></h2>
@@ -330,7 +337,7 @@ export function DocPage({ store, docRef }: { store: Store; docRef: string }) {
       )}
       {got.value && source && (
         <section class="work-body docs-text" aria-label="Text">
-          <LiveDocument store={store} host={got.value.host} agentID="" path={doc?.path ?? doc?.title ?? docRef} line={line} source={source} />
+          <LiveDocument store={store} host={got.value.host} agentID="" path={doc?.path ?? doc?.title ?? docRef} line={line} source={source} opens={opens} />
         </section>
       )}
     </article>
@@ -413,7 +420,7 @@ export function WorkDocs({ store, itemRef, title, body, asked }: { store: Store;
     const beside = titleBeside(doc);
     return (
       <li key={doc.ref} data-ref={doc.ref}>
-        <button type="button" class="work-doc-row" title={doc.ref} onClick={() => go({ nav: "docs", section: "docs", item: doc.ref })}>
+        <button type="button" class="work-doc-row" title={doc.ref} onClick={() => go({ nav: "work", section: "docs", item: doc.ref })}>
           <span aria-hidden="true" class="quiet">▤</span>
           <span class="work-doc-words">
             <span class={doc.path ? "docs-path" : undefined}>{shortForm(doc)}</span>

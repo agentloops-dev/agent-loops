@@ -20,6 +20,7 @@ import { Exchanged } from "./Exchanged";
 import { SimulatorPane } from "./SimulatorPane";
 import { Capability } from "../protocol/capabilities.generated";
 import { hostNeedsUpdate } from "../model/capabilities";
+import { Icon } from "./Icon";
 
 const tabs: { tab: Tab; label: string }[] = [
   { tab: "files", label: "Files" }, { tab: "changes", label: "Changes" }, { tab: "page", label: "Page" },
@@ -44,7 +45,8 @@ function OpenFile({ store, host, session, file, line, back }: {
       </div>
       {/* Markdown reads as the live page, in place, and follows the file as the agent writes it. */}
       {textShownAs(file) === "page"
-        ? <LiveDocument store={store} host={host} agentID={session} path={file} line={line} />
+        ? <LiveDocument store={store} host={host} agentID={session} path={file} line={line}
+            opens={{ open: (linked) => setPane(session, { file: linked, fileLine: undefined, last: linked }) }} />
         : <FileView store={store} host={host} agentID={session} path={file} line={line} />}
     </div>
   );
@@ -116,7 +118,7 @@ function FolderList({ store, host, session, root, marks, changedAt }: {
               <button class={`row entry${last ? " chosen" : ""}`} aria-current={last}
                 onClick={() => setPane(session, entry.isDirectory ? { folder: path } : { file: path, fileLine: undefined, last: path })}>
                 <span class="title">
-                  {changed ? <StatusSquare file={changed} /> : <span aria-hidden="true">{entry.isDirectory ? "📁" : "📄"}</span>} {entry.name}
+                  {changed ? <StatusSquare file={changed} /> : <Icon name={entry.isDirectory ? "folder" : "file"} />} {entry.name}
                 </span>
                 {changed ? <Counts added={changed.added} removed={changed.removed} /> : total ? <Counts added={total.added} removed={total.removed} /> : null}
               </button>
@@ -151,7 +153,10 @@ export function FilesPane({ store, host, session }: { store: Store; host: string
         {/* Keyed by session, so one session's list never shows under the next (#4020). */}
         {pane.tab === "changes" && <Changes key={session} store={store} host={host} session={session} />}
         {pane.tab === "page" && (pane.page
-          ? <LiveDocument store={store} host={host} agentID={session} path={pane.page} line={pane.line} />
+          ? <LiveDocument store={store} host={host} agentID={session} path={pane.page} line={pane.line}
+              opens={{ open: (linked) => setPane(session, textShownAs(linked) === "page"
+                ? { page: linked, line: undefined }
+                : { tab: "files", file: linked, fileLine: undefined, last: linked }) }} />
           : <p class="hint">A Markdown file the agent shows reads here.</p>)}
         {pane.tab === "exchanged" && <Exchanged store={store} host={host} session={session} />}
         {pane.tab === "simulator" && (store.has(host, Capability.simulators1)

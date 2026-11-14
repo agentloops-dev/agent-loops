@@ -14,6 +14,8 @@ import {
   type CrowdLayout,
 } from "../model/multiplier";
 import { BlobParts } from "./Huddle";
+import { LastUpdate } from "./LastUpdate";
+import { Glyph } from "./Icon";
 
 function reducedMotion(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -97,6 +99,7 @@ export function MultiplierPage({ store }: { store: Store }) {
   const host = pageHost(store);
   const multiplier = host ? store.multiplier.value[host] : undefined;
   const achievements = host ? store.achievements.value[host] : undefined;
+  const readAt = host ? store.usageReadAt.value[host]?.multiplier : undefined;
   // Every agent the page holds with a turn starting or running, so "agents now" moves as they do.
   const agentsWorking = store.allAgents().filter((a) => a.state === "starting" || a.state === "running").length;
   const shown = useCounting({
@@ -114,6 +117,8 @@ export function MultiplierPage({ store }: { store: Store }) {
   );
   return (
     <section class="chat multiplier-page" aria-label="Multiplier">
+      {/* How old the figures are (#5144): when this page last heard the host's Multiplier. */}
+      {readAt !== undefined && <p class="page-fresh"><LastUpdate at={readAt} /></p>}
       <div class="multiplier-body">
         <Crowd multiplier={counted ? shown.multiplier : undefined} />
         {counted ? (
@@ -172,7 +177,7 @@ function EarnedBadges({ achievements }: { achievements: Parameters<typeof earned
             const words = `${b.title}, ${achievementDay(b.at)}`;
             return (
               <span key={b.id} class={`badge${first.current?.has(b.id) ? "" : " new"}`} title={words} aria-label={words} role="img">
-                {badgeGlyph[b.id]}
+                <Glyph of={badgeGlyph[b.id]} />
               </span>
             );
           })}

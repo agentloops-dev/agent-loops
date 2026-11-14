@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/redact"
-	"github.com/alexec/agents/Go/internal/rolllog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/redact"
+	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
 )
 
 // Log is ControlLog: every line stamped with the time and its zone, into control.log

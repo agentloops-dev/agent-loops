@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // move_session (#3717): a session goes on on another machine with its id, labels and
@@ -39,7 +39,7 @@ func movingPairHeld(t *testing.T, hold chan struct{}) (here, there *Daemon, c *c
 		call, ok := params.(wire.MachineWorkspaceCall)
 		b, _ := json.Marshal(call.Params)
 		if !ok || call.Method != "machines/sendFolder" {
-			return nil, &controllink.AskError{Code: -32010, Message: "Agents can’t ask that of the control plane."}
+			return nil, &controllink.AskError{Code: -32010, Message: "Agent Loops can’t ask that of the control plane."}
 		}
 		var s wire.MachineFolderSend
 		json.Unmarshal(b, &s)

@@ -1,6 +1,6 @@
 ---
 name: drive-a-scratch-window-by-pid-with-ax
-description: "How to open chats and files in a scratch Agents instance and screenshot it while Alex is using the Mac, with no clicks and no focus change: a Swift AXUIElement helper addressed by pid, and screencapture -l by window id."
+description: "How to open chats and files in a scratch Agent Loops instance and screenshot it while Alex is using the Mac, with no clicks and no focus change: a Swift AXUIElement helper addressed by pid, and screencapture -l by window id."
 metadata: 
   type: project
   modified: 2026-09-26T02:58:32.436Z
@@ -9,7 +9,7 @@ metadata:
 Verified 2026-09-24 with Alex active at the Mac (idle 0.2s) and three other `Agents`
 processes running. Nothing was raised, clicked or typed.
 
-1. **Launch behind:** `env -i … open -g -n <Agents.app> --args --root /tmp/<scratch>`
+1. **Launch behind:** `env -i … open -g -n <Agent Loops.app> --args --root /tmp/<scratch>`
    (`-g` keeps it out of front). Scratch root = copies of the live root's `agents/`,
    `projects.json`, `workflows.json`.
 2. **Window id, not coordinates:** a tiny Swift binary calling

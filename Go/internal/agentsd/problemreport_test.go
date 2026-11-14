@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 func problemFields(t *testing.T, link string) url.Values {
@@ -16,7 +16,7 @@ func problemFields(t *testing.T, link string) url.Values {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.Host != "github.com" || u.Path != "/alexec/Agents/issues/new" {
+	if u.Host != "github.com" || u.Path != "/agentloops-dev/agent-loops/issues/new" {
 		t.Fatalf("link goes to %s%s", u.Host, u.Path)
 	}
 	return u.Query()
@@ -57,7 +57,7 @@ func TestProblemReportCutsTokensAndHomes(t *testing.T) {
 
 func TestProblemReportWithoutLogOrWords(t *testing.T) {
 	got := problemReport(wire.ProblemReportRequest{Client: "Web page", ClientOS: "Safari"}, nil, "")
-	if got.Title != "A problem in Agents" {
+	if got.Title != "A problem in Agent Loops" {
 		t.Errorf("title %q", got.Title)
 	}
 	if strings.Contains(got.Body, "Recent log lines") || !strings.Contains(got.Body, "_Not given._") || !strings.Contains(got.Body, "- Runtime: none") {

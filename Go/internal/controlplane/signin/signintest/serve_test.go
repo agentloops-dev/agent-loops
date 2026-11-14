@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // TestServe runs the fake org provider until it is stopped, for a walk on a scratch

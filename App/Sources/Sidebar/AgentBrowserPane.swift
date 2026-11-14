@@ -36,15 +36,20 @@ struct AgentBrowserPane: View {
                 page
                     .onChange(of: geometry.size, initial: true) { _, size in area = size }
             }
-            if let problem = browser.problem {
-                Divider()
-                Text(problem)
-                    .appText(.supporting)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-            }
+            // The status line is always on, one line high: a line that came and went with
+            // each problem changed the page's height, and each new height laid the page out
+            // again, so the page flickered.
+            Divider()
+            Text(browser.problem ?? " ")
+                .appText(.supporting)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .help(browser.problem ?? "")
+                .accessibilityHidden(browser.problem == nil)
         }
         .task(id: WatchKey(session: agent.id, visible: isVisible, width: Int(area.width), height: Int(area.height))) {
             if isVisible, area.width > 0, area.height > 0 {
@@ -75,7 +80,7 @@ struct AgentBrowserPane: View {
     /// session's own tab stays below, to look at and use.
     private func holderLine(_ holder: UUID) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: "cursorarrow.rays")
+            Image(icon: "cursorarrow.rays")
                 .foregroundStyle(.secondary)
             Button {
                 if !model.showInFolderWindow(holder) { model.showInMainWindow(holder, opening: openWindow) }
@@ -97,15 +102,15 @@ struct AgentBrowserPane: View {
 
     private var bar: some View {
         HStack(spacing: 6) {
-            Button { Task { await browser.navigate(.back) } } label: { Image(systemName: "chevron.left") }
+            Button { Task { await browser.navigate(.back) } } label: { Image(icon: "chevron.left") }
                 .buttonStyle(.borderless)
                 .disabled(!running)
                 .help("Back")
-            Button { Task { await browser.navigate(.forward) } } label: { Image(systemName: "chevron.right") }
+            Button { Task { await browser.navigate(.forward) } } label: { Image(icon: "chevron.right") }
                 .buttonStyle(.borderless)
                 .disabled(!running)
                 .help("Forward")
-            Button { Task { await browser.navigate(.reload) } } label: { Image(systemName: "arrow.clockwise") }
+            Button { Task { await browser.navigate(.reload) } } label: { Image(icon: "arrow.clockwise") }
                 .buttonStyle(.borderless)
                 .disabled(!running)
                 .help("Reload")
@@ -140,7 +145,8 @@ struct AgentBrowserPane: View {
                             .aspectRatio(contentMode: .fit)
                             .accessibilityLabel("The page in the machine's browser")
                     }
-                    BrowserInput(pageSize: CGSize(width: frame.width, height: frame.height)) { browser.send($0) }
+                    BrowserInput(pageSize: CGSize(width: frame.width, height: frame.height),
+                                 edits: model.host(agent.host, has: Capability.browser2)) { browser.send($0) }
                 }
             } else {
                 Waiting(words: "Loading the page")
@@ -186,7 +192,7 @@ private struct Note: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .appText(.title)
                 .foregroundStyle(.tertiary)
             Text(title)
@@ -205,24 +211,29 @@ private struct Note: View {
 /// Over the page, drawn to fit: the person's mouse, scroll and keys, sent to it.
 private struct BrowserInput: NSViewRepresentable {
     let pageSize: CGSize
+    /// The host takes editing commands (browser/2, #5119).
+    let edits: Bool
     let send: (DaemonAPI.BrowserInputRequest) -> Void
 
     func makeNSView(context: Context) -> InputView {
         let view = InputView()
         view.send = send
         view.pageSize = pageSize
+        view.edits = edits
         return view
     }
 
     func updateNSView(_ view: InputView, context: Context) {
         view.send = send
         view.pageSize = pageSize
+        view.edits = edits
     }
 }
 
 private final class InputView: NSView {
     var send: (DaemonAPI.BrowserInputRequest) -> Void = { _ in }
     var pageSize: CGSize = .zero
+    var edits = false
     /// The button held, so a move while it is down is a drag.
     private var held: String?
 
@@ -298,14 +309,23 @@ private final class InputView: NSView {
                                modifiers: modifiers(event)))
     }
 
-    /// ⌘V pastes this Mac's clipboard into the page. Every other ⌘ shortcut stays the app's.
+    /// ⌘V pastes this Mac's clipboard into the page. ⌘A, ⌘C, ⌘X, ⌘Z and ⇧⌘Z act in the page
+    /// (#5119), when the host takes them: a copy or cut comes back to this Mac's clipboard.
+    /// Every other ⌘ shortcut stays the app's.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard window?.firstResponder === self,
-              event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-              event.charactersIgnoringModifiers == "v" else { return super.performKeyEquivalent(with: event) }
-        if let text = NSPasteboard.general.string(forType: .string), !text.isEmpty {
-            send(DaemonAPI.BrowserInputRequest(kind: .text, text: text))
+        guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let bare = event.charactersIgnoringModifiers ?? ""
+        if flags == .command, bare == "v" {
+            if let text = NSPasteboard.general.string(forType: .string), !text.isEmpty {
+                send(DaemonAPI.BrowserInputRequest(kind: .text, text: text))
+            }
+            return true
         }
+        guard edits, let command = BrowserKeys.edit(bare: bare, command: flags.contains(.command), shift: flags.contains(.shift),
+                                             option: flags.contains(.option), control: flags.contains(.control))
+        else { return super.performKeyEquivalent(with: event) }
+        send(DaemonAPI.BrowserInputRequest(kind: .edit, command: command))
         return true
     }
 }

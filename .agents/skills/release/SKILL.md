@@ -5,7 +5,7 @@ description: Take main to a new version with nobody watching (#914), started by 
 
 # Release
 
-A release takes `main` to a new version on the GitHub release page (Agents Host, the Linux
+A release takes `main` to a new version on the GitHub release page (Agent Loops, the Linux
 agentsd) and on TestFlight (the Mac window and the Remote, one Universal app). The tag does
 the publishing: `.github/workflows/release.yml` builds, signs and uploads when a `v*` tag
 is pushed. This skill decides when the tag is pushed, and what it says.
@@ -126,12 +126,28 @@ for its findings at once, so their fixes start while the others still run. One t
 failed, or is still running at T0 + 1 day (stop it with `stop_session`), is a note in
 your report, not a reason to stop, and it is not started again until the next release.
 
+### The ready-made workflows' pin (#5091)
+
+The ready-made workflows and skills are in agentloops-dev/dotagents, and each release pins one
+tag of it (`readyMadeTag` and `readyMadeCommit` in `Go/internal/agentsd/dotagents.go`). When
+`dotagents` main has commits since the pinned tag (`gh api repos/agentloops-dev/dotagents/compare/<tag>...main --jq .ahead_by`):
+
+1. Tag its main with the next tag (`v0.<n+1>.0`): `gh api repos/agentloops-dev/dotagents/git/refs -f ref=refs/tags/<tag> -f sha=<main's sha>`. Never move a tag that is there.
+2. On a branch `agents/dotagents-<tag>`, run `scripts/dotagents.sh pin <tag>`, then
+   `scripts/go-changed.sh` under the "build" lease: agentsd's tests check that each skill
+   names only tools this release serves. Open its PR with auto-merge on; the gate (step 5)
+   waits for it as for a fix. A failing test is a fix in `dotagents` and a new tag, not a
+   change to the test.
+
+With no new commit, `scripts/dotagents.sh check` still runs once: it fails when the tag
+moved, or the copy for the tests is not the pinned tag.
+
 ## 3. Have the high ones fixed, and file the medium ones
 
 Collect, in order:
 
 - **Dependabot alerts** (#1910, #3215): every open alert,
-  `gh api --paginate 'repos/alexec/Agents/dependabot/alerts?state=open'`. An alert is public
+  `gh api --paginate 'repos/agentloops-dev/agent-loops/dependabot/alerts?state=open'`. An alert is public
   already, so it gets an issue, not an advisory. Each **critical or high** alert gets a bug
   for the bug lane (#3212), unless an issue is open for it already (`gh issue list --search
   "<ghsa_id> in:body"`): title `Dependency (<severity>): <package> <advisory title>`, a body
@@ -171,7 +187,7 @@ the report.
 
 The paused security review (#3215) left draft advisories behind. The release makes no new
 ones. For each draft advisory
-(`gh api --paginate 'repos/alexec/Agents/security-advisories?state=draft'`):
+(`gh api --paginate 'repos/agentloops-dev/agent-loops/security-advisories?state=draft'`):
 
 1. Look for its fix on main (#1727): its description ends with `Fixed by <commit>` and that
    commit is on `origin/main`, or `findings.md` on `agents/reviews-security` says `fixed on
@@ -270,7 +286,7 @@ open for item 2 and for the notes' known issues (`git merge-base --is-ancestor <
 
    ```sh
    gh run view <id> --json jobs --jq '.jobs[] | select(.conclusion != "success" and .conclusion != "skipped") | [.databaseId, .name, .conclusion, (.steps | length)] | @tsv'
-   gh api repos/alexec/Agents/check-runs/<job id>/annotations --jq '.[].message'
+   gh api repos/agentloops-dev/agent-loops/check-runs/<job id>/annotations --jq '.[].message'
    ```
 
    A job that is `cancelled` with no steps run, or whose annotation says that no runner
@@ -290,7 +306,7 @@ open for item 2 and for the notes' known issues (`git merge-base --is-ancestor <
    --is-ancestor <merge commit> <sha>`).
 3. Write the notes in Markdown, in plain short sentences:
    - `## Milestones finished`, first, when step 2 found any: a line per milestone, its
-     title and link, `- [Projects](https://github.com/alexec/Agents/milestone/N)`;
+     title and link, `- [Projects](https://github.com/agentloops-dev/agent-loops/milestone/N)`;
    - one heading per kind that has changes, in this order: `## New` (the plan's
      `[enhancement]`), `## Fixed` (`[bug]`) and `## Changed` (the rest, `[tooling]` too), with a line per
      change, from the pull requests the plan lists. A line names the pull request:
@@ -329,13 +345,34 @@ A tag that already exists for this version means another release ran: end with
    A job that no runner took is not a failure: look and run it again once, as in step 5,
    item 4 (#3445). Only a job that ran and failed goes to items 2–4.
 2. **GitHub:** `gh release view v<version> --json assets` has the `.dmg`, the `.zip`,
-   both `agentsd-linux-*.tar.gz` and `SHA256SUMS`. Macs update Agents Host from the `.zip`
+   both `agentsd-linux-*.tar.gz` and `SHA256SUMS`. Macs update Agent Loops from the `.zip`
    and `SHA256SUMS` by these names (#2178): a release without them updates no Mac.
    **The image** (#2140): the `image` job passed, and
-   `docker buildx imagetools inspect ghcr.io/alexec/agents-control:<version>` lists
+   `docker buildx imagetools inspect ghcr.io/agentloops-dev/agents-control:<version>` lists
    `linux/amd64` and `linux/arm64`. If the job failed, name
    the step and the first error: the `mac` job waits for it, so there is no GitHub release
    either.
+   **The image is public** (#5066): `.agents/skills/release/scripts/ghcr-public.sh` asks
+   GHCR as a stranger (an anonymous token, then `tags/list`) for
+   `<the repo's owner>/agents-control`; exit 0 is public. The live control plane's VM pulls
+   with no credential, so item 5 waits for this. It fails only on the first release from a
+   new owner, as the first one from `agentloops-dev` after the #4929 move, because a new
+   package is private. Then:
+   1. **Ask Alex with `ask_question`** (it cannot be undone: GitHub says "Once you make a
+      package public, you cannot make it private again"): "Alex, do you want Claude (this
+      agent) to make `ghcr.io/<owner>/agents-control` public now? The live control plane
+      pulls it with no credential." Options: make it public (recommended), or not now.
+      Never change the visibility without that yes, also when an earlier release had one.
+   2. **After the yes**, in the agents' browser (`browser_*`), signed in as `alexec`: open
+      `https://github.com/orgs/<owner>/packages/container/agents-control/settings` ▸ Danger
+      Zone ▸ Change visibility ▸ Public, type `agents-control`, then "I understand the
+      consequences". There is no API for it: the Packages API only reads `visibility`. If
+      GitHub asks for sudo, use the agents' passkey (#4955, #4085); until that lands,
+      `hand_to_person` for the sudo step only.
+   3. Run `ghcr-public.sh` again: it must exit 0 before item 5.
+
+   **Not now**, or no answer: skip item 5 (the VM cannot pull the new image), and say in
+   the report that the control plane stays on the last version until the package is public.
    **The parts agree** (#1748): each asset's name says `<version>`, and so does the
    `testflight` job's version. On this Mac, make the scratch worktree at the tag under the
    home folder, never under `$TMPDIR` or `/tmp` (Go runs in a container that sees only the
@@ -356,13 +393,17 @@ A tag that already exists for this version means another release ran: end with
 5. **Deploy the control plane** (#2100). When steps 2 and 3 found the GitHub release and
    both TestFlight builds, put the version on the live control plane,
    control.agentloops.dev. Alex approved its restart for every release's deploy (2026-10-22).
-   In the scratch worktree of step 2 (`~/.agents/scratch/release-v<version>`), lease "build" (30 minutes), run
+   Lease "build" (30 minutes), run the scratch worktree's own deploy script, by that path and
+   with no `cd` or variable before it:
 
    ```sh
-   AGENTS_VERSION=<version> deploy/gcp/up.sh
+   ~/.agents/scratch/release-v<version>/.agents/skills/release/scripts/deploy-control-plane.sh <version>
    ```
 
-   and release "build" the moment it ends. It acts as `~/.agents/secrets/gcp-agents-control.json`
+   and release "build" the moment it ends. It runs `AGENTS_VERSION=<version> deploy/gcp/up.sh`
+   in that worktree, only when the worktree is at the tag `v<version>` and the tag is on origin.
+   `.claude/settings.json` allows that one command, so Claude Code's auto-mode check does not
+   refuse it as a production deploy (#3934); never run `up.sh` by hand here. It acts as `~/.agents/secrets/gcp-agents-control.json`
    and keeps the store and the APNs key. Then check, from this Mac:
    - `curl -fsS https://control.agentloops.dev/healthz` says `ok`;
    - the version it serves, the one Settings ▸ Control plane shows, is `<version>`. `up.sh`
@@ -378,9 +419,19 @@ A tag that already exists for this version means another release ran: end with
    failed: `git worktree remove --force ~/.agents/scratch/release-v<version>`.
 7. **Integration videos** (#1857): `scripts/video/make.sh --changed <the last tag> v<version>`
    lists the integration scenes whose integration this release changed. If it lists any,
-   run the `integration-videos` workflow with `manage_workflows run`, with those ids as
-   its note. Do not wait for it: it is not part of the gate, and its result is not in
+   run the `integration-videos` workflow with `manage_workflows run`, with the note
+   `release v<version>: <the ids>`, so each title names this release (#4962). Do not wait for it: it is not part of the gate, and its result is not in
    your report.
+8. **Alex's Claude sign-in on a server, once a release** (Alex, 2026-11-13, #5304,
+   #5331). CI tests the server's `claude setup-token` sign-in with a fake `claude` and a
+   code as long as a real one (`TestSigningClaudeInWithACodeAsLongAsARealOne`); only a
+   real code from Alex's Claude account proves the real Claude. Put it on Alex's list:
+   reuse the open issue titled `Release check by Alex: Claude sign-in on a server` (add
+   `- [ ] v<version>` to its `## What Alex does`), or file it once (labels `alex-todo`,
+   `task`, `feature:autonomy`, `size:XS`, assigned `alexec`, no milestone) with the step:
+   on a new server, in Runtimes, sign Claude in with the link and paste the code. Do not
+   wait for it, and never ask a lane for it. No agent holds a Claude account or a Claude
+   sign-in in its browser (#5304).
 
 ## 9. Close the finished milestones
 
@@ -392,7 +443,7 @@ that the notes name under `## Milestones finished` (#3760):
    is empty. A milestone never closes with open issues: nothing schedules an issue in a
    closed milestone. If one was added since the plan, leave the milestone open and say so
    in the report.
-2. Close it: `gh api -X PATCH repos/alexec/Agents/milestones/<number> -f state=closed`.
+2. Close it: `gh api -X PATCH repos/agentloops-dev/agent-loops/milestones/<number> -f state=closed`.
 
 Make no new milestone. The next milestone is the open one with the earliest due date. Its
 work did not wait for this release (#3465), so there is nothing to unpark. A lead may not read a message from you

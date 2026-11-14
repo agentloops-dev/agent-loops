@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/agentsd/skillcatalog"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The connectors Agents makes (#1428, #2155): rows of the Agents marketplace, a file carried
@@ -99,7 +99,7 @@ func OursResult(o Ours, declared Declared) wire.MCPCatalogResult {
 	levels := Levels(declared, o.Tested != "")
 	market := AgentsMarketplace
 	return wire.MCPCatalogResult{ID: o.ID, Title: o.Title, Description: o.Description, Version: "",
-		Publisher: wire.MCPPublisherInfo{Label: "Agents", Namespace: "agents", Known: true}, Known: true,
+		Publisher: wire.MCPPublisherInfo{Label: "Agent Loops", Namespace: "agents", Known: true}, Known: true,
 		Runs: []wire.MCPRunKind{wire.MCPRunKindCommand}, Levels: &levels, Marketplace: &market}
 }
 
@@ -133,8 +133,8 @@ type Declared struct {
 
 // ReadyMadeEvents is the events that Agents' ready-made workflows start on (#1342). A
 // workflow names events, never a server, so any server that declares one of them reaches
-// the Workflows level. agentsd's readymade folder holds the workflows; a test there keeps
-// this list the same as their triggers.
+// the Workflows level. agentloops-dev/dotagents holds the workflows (#5091); a test in agentsd
+// keeps this list the same as the triggers of its copy in testdata/dotagents.
 var ReadyMadeEvents = []string{"checks.failed", "email.received", "health.issue_new", "health.issue_regressed", "issue.labelled", "review.comment", "review.posted"}
 
 // Levels is the five levels (#1428) from what a server declares, and whether it was tested.

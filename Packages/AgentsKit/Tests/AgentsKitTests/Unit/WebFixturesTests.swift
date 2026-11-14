@@ -96,7 +96,7 @@ struct WebFixturesTests {
     /// `StatusShape.init`, each named for what it shows.
     static var agents: [(String, Agent)] {
         let waits = Block(waits: [Wait(agentID: id(77), nameAtReport: "Build")])
-        let later = Block(checkAgainAt: at(60))
+        let later = Block(deadline: at(60))
         let cleared = Block(waits: [Wait(agentID: id(77), nameAtReport: "Build")], clearedAt: at(2), clearedBy: .waits)
         return [
             ("starting", agent(1, .starting)),
@@ -279,8 +279,7 @@ struct WebFixturesTests {
             ("all of two, one finished", Block(waits: [one, two])),
             ("all of two, written out", Block(waits: [one, two], wakeOn: .all)),
             ("any of two", Block(waits: [one, two], wakeOn: .any)),
-            ("one, with a time to check again", Block(waits: [one], checkAgainAt: Self.at(90), wakeOn: .any)),
-            ("only a time", Block(checkAgainAt: Self.at(90))),
+            ("one, with a deadline", Block(waits: [one], deadline: Self.at(90), wakeOn: .any)),
             ("every way to end", Block(waits: [
                 Wait(agentID: Self.id(70), nameAtReport: "No outcome", ending: ended(.finished(outcome: nil, message: nil))),
                 Wait(agentID: Self.id(71), nameAtReport: "Asked", ending: ended(.finished(outcome: .needsAnswer, message: nil))),
@@ -308,12 +307,12 @@ struct WebFixturesTests {
             model.replaceAgents(agents)
             let agent = agents.first { $0.id.uuidString == input["agentID"]!.stringValue! }!
             var lines = model.blockLines(agent)
-            let checksAgain = model.openBlock(agent)?.block.checkAgainLine() != nil
-            if checksAgain { lines.removeLast() }
-            // The row's one line (#582), where it names someone: a time alone is the reader's own.
+            let hasDeadline = model.openBlock(agent)?.block.deadlineLine() != nil
+            if hasDeadline { lines.removeLast() }
+            // The row's one line (#582), where it names someone.
             let names = model.openBlock(agent)?.block.waits.isEmpty == false
             return .object(["isBlocked": .bool(model.openBlock(agent) != nil),
-                            "lines": .array(lines.map(JSONValue.string)), "checksAgain": .bool(checksAgain),
+                            "lines": .array(lines.map(JSONValue.string)), "hasDeadline": .bool(hasDeadline),
                             "waitLine": names ? .string(model.waitMark(of: agent)?.line ?? "") : .null,
                             "carryOnHelp": .string(AgentsModel.carryOnHelp(for: agent)),
                             "cardTitle": model.openBlock(agent).map { .string($0.block.cardTitle()) } ?? .null])
@@ -1606,6 +1605,41 @@ struct WebFixturesTests {
     /// A Swift-encoded sample of every case of each type whose Swift encoder is written by
     /// hand, so `Web/test/shapes.test.mjs`, `WireSchemaTests` and `Go/wire` can hold the
     /// schema's shape to real JSON (T020, T042, #1135).
+    /// The question page's ideas and their starters (#5050): the web page's list is the
+    /// same, in the same order (`Web/src/model/`, #5051).
+    @Test func firstBuildIdeas() throws {
+        try pin("first-build/ideas.json", [Case(name: "the ideas, in order", input: .null)]) { _ in
+            try Self.encode(FirstBuild.ideas)
+        }
+    }
+
+    /// The plan page's starter from the words (#5053, section 3): the web page's
+    /// `firstBuildStarter` is held to the same cases (#5054).
+    @Test func firstBuildStarters() throws {
+        let typed = FirstBuild.ideas.map(\.words) + [
+            "an iOS thing for my cat", "Something in the App Store", "an API for my recipes",
+            "a site, then an iPhone app", "an app for my dog", "a game about frogs",
+            "a Mac app with a web page", "web pages",
+        ]
+        try pin("first-build/starters.json", typed.map { Case(name: $0, input: .string($0)) }) { input in
+            let pick = FirstBuild.starter(for: input.stringValue ?? "")
+            switch pick {
+            case .starter(let starter): return .string(starter.rawValue)
+            case .unknown: return .string("unknown")
+            case .neither: return .string("neither")
+            }
+        }
+    }
+
+    /// The plan page's two task lists, in the skill's words (#5053, section 6).
+    @Test func firstBuildTasks() throws {
+        try pin("first-build/tasks.json", FirstBuild.Starter.allCases.map {
+            Case(name: $0.rawValue, input: .string($0.rawValue))
+        }) { input in
+            try Self.encode(FirstBuild.tasks(for: FirstBuild.Starter(rawValue: input.stringValue ?? "") ?? .iphoneApp))
+        }
+    }
+
     @Test func overrideSamples() throws {
         let stamp = FileStamp(size: 12, modifiedAt: Self.base)
         let text = Data("hi".utf8)

@@ -47,18 +47,21 @@ public extension DaemonAPI {
         public var unread: Int?
         /// The newest message's time, RFC 3339 as the connector wrote it (not a `WireDate`).
         public var lastActivity: String?
+        /// Who sent the newest message; nil when the service's list does not say (a Slack channel).
+        public var sender: ChannelSender?
         public var link: String?
 
         public var lastActivityDate: Date? { lastActivity.flatMap(MessagesList.date) }
 
         public init(source: String, id: String, title: String, kind: Kind, unread: Int? = nil,
-                    lastActivity: String? = nil, link: String? = nil) {
+                    lastActivity: String? = nil, sender: ChannelSender? = nil, link: String? = nil) {
             self.source = source
             self.id = id
             self.title = title
             self.kind = kind
             self.unread = unread
             self.lastActivity = lastActivity
+            self.sender = sender
             self.link = link
         }
     }
@@ -164,7 +167,8 @@ public extension DaemonAPI {
         }
     }
 
-    /// A page of a conversation's messages, the newest first. `cursor` is the older page.
+    /// A page of a conversation's messages, the newest first. `cursor` is the older page. `markedRead` (#5137): the
+    /// connector marked the conversation read on its service.
     struct MessagesRead: Codable, Sendable, Hashable {
         public var server: String
         public var folder: String
@@ -172,15 +176,17 @@ public extension DaemonAPI {
         public var messages: [MessagingMessage]
         public var cursor: String?
         public var untrusted: Bool
+        public var markedRead: Bool?
 
         public init(server: String, folder: String, conversation: String, messages: [MessagingMessage] = [],
-                    cursor: String? = nil, untrusted: Bool = true) {
+                    cursor: String? = nil, untrusted: Bool = true, markedRead: Bool? = nil) {
             self.server = server
             self.folder = folder
             self.conversation = conversation
             self.messages = messages
             self.cursor = cursor
             self.untrusted = untrusted
+            self.markedRead = markedRead
         }
     }
 }
@@ -219,12 +225,47 @@ public extension DaemonAPI {
     }
 }
 
+public extension DaemonAPI {
+    /// Mark every conversation of a folder's messaging connectors read, or of every folder's (#5137).
+    struct MessagesMarkAllReadRequest: Codable, Sendable, Hashable {
+        public var folder: String?
+
+        public init(folder: String? = nil) { self.folder = folder }
+    }
+
+    /// A connector that marked its conversations read, and how many messages.
+    struct MessagesMarked: Codable, Sendable, Hashable {
+        public var server: String
+        public var folder: String
+        public var marked: Int
+
+        public init(server: String, folder: String, marked: Int) {
+            self.server = server
+            self.folder = folder
+            self.marked = marked
+        }
+    }
+
+    /// The connectors that marked read, and those that could not, with why.
+    struct MessagesMarkedAllRead: Codable, Sendable, Hashable {
+        public var marked: [MessagesMarked]
+        public var errors: [MessagesError]?
+
+        public init(marked: [MessagesMarked] = [], errors: [MessagesError]? = nil) {
+            self.marked = marked
+            self.errors = errors
+        }
+    }
+}
+
 public extension DaemonAPI.Method {
     /// `MessagesConversationsRequest` → `MessagesConversations`, `MessagesReadRequest` → `MessagesRead` (#4343),
     /// `MessagesReplyRequest` → `MessagesReplied` (#4345).
     static let messagesConversations = "messages/conversations"
     static let messagesRead = "messages/read"
     static let messagesReply = "messages/reply"
+    /// `MessagesMarkAllReadRequest` → `MessagesMarkedAllRead` (#5137).
+    static let messagesMarkAllRead = "messages/markAllRead"
 }
 
 /// The Messages page (#4344): every machine's conversations in one list, the newest first, and its
@@ -296,6 +337,38 @@ public enum MessagesList {
         }.map(\.element)
     }
 
+    /// The row after `key` in `rows` (the list as it is filtered and sorted now), for Next (#5137); nil at the end, or
+    /// when `key` is not in it.
+    public static func next(after key: String, in rows: [Row]) -> Row? {
+        guard let at = rows.firstIndex(where: { $0.id == key }), at + 1 < rows.count else { return nil }
+        return rows[at + 1]
+    }
+
+    /// The lists with the conversation `key` read (#5137), on every machine that has it: what a read that marked it
+    /// read, or Mark All as Read, leaves.
+    public static func markedRead(_ lists: [HostConversations], key: String? = nil) -> [HostConversations] {
+        lists.map { list in
+            var list = list
+            for i in list.conversations.indices where key == nil || Self.key(list.conversations[i].conversation) == key {
+                if list.conversations[i].conversation.unread != nil { list.conversations[i].conversation.unread = 0 }
+            }
+            return list
+        }
+    }
+
+    /// Whether Mark All as Read has something to do: a loaded row is unread, or a page is still to come.
+    public static func hasUnread(_ lists: [HostConversations]) -> Bool {
+        merged(lists).contains(where: \.isUnread) || lists.contains { $0.cursor != nil }
+    }
+
+    /// What Mark All as Read could not do: a machine, or a connector on one.
+    public static func markProblems(_ answers: [(name: String, marked: DaemonAPI.MessagesMarkedAllRead?, problem: String?)]) -> [String] {
+        answers.flatMap { a -> [String] in
+            if let problem = a.problem { return ["\(a.name): \(problem)"] }
+            return (a.marked?.errors ?? []).map { "\(a.name) ▸ \($0.server): \($0.message)" }
+        }
+    }
+
     /// The services the lists have, for the Source filter, by name.
     public static func sources(_ lists: [HostConversations]) -> [String] {
         Set(lists.flatMap { $0.conversations.map(\.conversation.source) })
@@ -333,6 +406,13 @@ public enum MessagesList {
     public static let inThread = "In a thread"
     public static let leaveThread = "Not in the thread"
 
+    // Next and Mark All as Read (#5137).
+    public static let nextConversation = "Next Conversation"
+    public static let nextHelp = "The next conversation in the list (⌥⌘↓)"
+    public static let markAllRead = "Mark All as Read"
+    public static let markingAllRead = "Marking…"
+    public static let markAllHelp = "Mark every conversation read, on each machine and service that keeps a read state"
+
     /// Who the reply goes as, under the field: "Sent as the Slack bot @agents, not as an agent."
     public static func sentAs(_ replyAs: String) -> String { "Sent as \(replyAs), not as an agent." }
 
@@ -352,6 +432,52 @@ public enum MessagesList {
     public static func sender(_ s: DaemonAPI.ChannelSender) -> String {
         if let name = s.name, !name.isEmpty { return name }
         return s.identity
+    }
+
+    // MARK: The sidebar row's grey line (#4934)
+
+    /// The event a messaging connector raises for a message (Slack, Google Chat, WhatsApp).
+    public static let receivedEvent = "message.received"
+
+    /// The newest `message.received` and what came of it, for the row's line.
+    public struct LastConsequence: Sendable, Hashable {
+        public var at: Date
+        /// "woke Fix login bug", "started triage", or "nothing woke".
+        public var words: String
+
+        public init(at: Date, words: String) {
+            self.at = at
+            self.words = words
+        }
+    }
+
+    /// The newest `message.received` in `events` (every machine's, in any order) and what it did: the session it
+    /// woke, else the workflow it started, else "nothing woke", which is the case a person looks into. Nil when
+    /// there is none.
+    public static func lastConsequence(_ events: [Event]) -> LastConsequence? {
+        guard let newest = events.filter({ $0.name == receivedEvent }).max(by: { $0.latest < $1.latest }) else { return nil }
+        var words = "nothing woke"
+        for consequence in newest.consequences {
+            if case .woke(_, let title) = consequence { words = "woke \(title)"; break }
+            if case .fired(let workflow, _, _) = consequence, words == "nothing woke" { words = "started \(workflow)" }
+        }
+        return LastConsequence(at: newest.latest, words: words)
+    }
+
+    /// The unread messages of every machine's conversations, each conversation once; nil when no conversation
+    /// gives a count, so the line leaves it out.
+    public static func unreadTotal(_ lists: [HostConversations]) -> Int? {
+        let counts = merged(lists).compactMap(\.conversation.unread)
+        return counts.isEmpty ? nil : counts.reduce(0, +)
+    }
+
+    /// The Messages row's grey line: "12 unread · woke Fix login bug 4 min ago". A count of 0 or none is left out;
+    /// nil when there is nothing to say, so the row has no line.
+    public static func statusLine(unread: Int?, last: LastConsequence?, now: Date = Date()) -> String? {
+        var parts: [String] = []
+        if let unread, unread > 0 { parts.append("\(unread) unread") }
+        if let last { parts.append("\(last.words) \(StatusSecretsWords.ago(last.at, now: now))") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// An SF Symbol for a service.

@@ -15,10 +15,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/alexec/agents/Go/internal/agentsd/diskjson"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/noticebucket"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/noticebucket"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // What wants the person ("Needs you"), as DaemonCore+Attention derives and routes it on a
@@ -259,7 +259,7 @@ func truncating(h wire.Headline) wire.Headline {
 		}
 		return cut(s, headlineBudget)
 	}
-	h.H1, h.H2, h.H3 = field(h.H1, "Agents"), field(h.H2, "An agent"), field(h.H3, "needs you")
+	h.H1, h.H2, h.H3 = field(h.H1, "Agent Loops"), field(h.H2, "An agent"), field(h.H3, "needs you")
 	for i, a := range h.Answers {
 		title := strings.TrimSpace(a.Title)
 		if title == "" {
@@ -303,12 +303,22 @@ func secretUseWanted(u wire.RequestSecretUse) string {
 	if u.Use == wire.SecretUseScreen && u.App != nil {
 		return "Wants to use the screen on " + u.Place + " to drive " + *u.App
 	}
+	if u.Use == wire.SecretUseWorkflow {
+		return "Wants to turn on the workflow " + u.Name + " in " + u.Place
+	}
+	if u.Use == wire.SecretUseConnector {
+		return "Wants to approve the connector " + u.Name + " in " + u.Place
+	}
 	return "Wants to use " + u.Name + " on " + u.Place
 }
 
 // secretUseAnswers is NeedRequest.SecretUse.actions: the row's answers, as the banner's
 // buttons. A session's own secret has no Always Approve: it is the same as for this session.
 func secretUseAnswers(u wire.RequestSecretUse) []wire.QuickAnswer {
+	if personChange(u.Use) {
+		return []wire.QuickAnswer{{Kind: wire.QuickAnswerKindChoice, ID: secretUseOnce, Title: "Approve"},
+			{Kind: wire.QuickAnswerKindChoice, ID: secretUseDeny, Title: "Deny", IsDestructive: true}}
+	}
 	if u.Use == wire.SecretUseTerminal {
 		return []wire.QuickAnswer{{Kind: wire.QuickAnswerKindChoice, ID: secretUseOnce, Title: "Approve"},
 			{Kind: wire.QuickAnswerKindChoice, ID: secretUseHour, Title: "Approve for 1 Hour"},
@@ -377,13 +387,8 @@ func (d *Daemon) needs() []wire.Need {
 		}
 		folder := folderPath(a)
 		agentID := a.ID
-		n := wire.Need{ID: id, AgentID: &agentID, Folder: fileURL(folder, true), Kind: kind, RaisedAt: raised,
-			Headline: truncating(wire.Headline{H1: filepath.Base(folder), H2: title, H3: wanted, Answers: answers})}
-		if d.holdsPerson(agentID) {
-			// The person's booking's holder asks (#4268): it comes through Focus.
-			n.Timely = new(true)
-		}
-		found = append(found, n)
+		found = append(found, wire.Need{ID: id, AgentID: &agentID, Folder: fileURL(folder, true), Kind: kind, RaisedAt: raised,
+			Headline: truncating(wire.Headline{H1: filepath.Base(folder), H2: title, H3: wanted, Answers: answers})})
 	}
 	for _, p := range d.pendingPermissions() {
 		if a := d.Store.Agent(p.AgentID); a != nil && !archived[folderPath(a)] {

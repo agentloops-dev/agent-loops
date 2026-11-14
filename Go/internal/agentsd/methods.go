@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // register is every method this host serves. One it does not answers -32601, which the
@@ -33,6 +33,7 @@ func (d *Daemon) register() {
 	d.registerProblemReport()
 	d.registerBackups()
 	d.registerLockHello()
+	d.registerFirstBuild()
 	d.registerLockReset()
 	d.registerReceive()
 	d.registerSend()
@@ -54,6 +55,7 @@ func (d *Daemon) register() {
 	d.registerLineage()
 	d.registerLineageSessions()
 	d.registerLineageFigures()
+	d.registerBuilds()
 	d.registerForge()
 	d.registerMessages()
 	d.registerWorkTimeline()
@@ -73,6 +75,7 @@ func (d *Daemon) register() {
 	d.registerBrowserSettings()
 	d.registerSessionSecrets()
 	d.registerSealedSecrets()
+	d.registerLocalSecrets()
 	d.registerSecretUse()
 	d.registerSecretTerminal()
 	d.registerDesktopControlPause()
@@ -465,6 +468,7 @@ func (d *Daemon) archiveSweeping(id wire.UUID, by wire.AgentArchivedReason, swee
 	// Archived first, then its turn and runtime ended: the turn's ending finds it archived
 	// and leaves it so (#1611).
 	d.live(id).halt()
+	d.dropRequestsOf(id, wire.RequestDroppedWhyAskerEnded) // a lost form too (#4990)
 	if a := d.Store.Agent(id); a != nil {
 		details := map[string]string{"by": "you"}
 		if by == wire.AgentArchivedReasonByAgent {

@@ -40,10 +40,10 @@ struct WorkView: View {
             // The Remote's item page has its own bar: ‹ Issues, ↑ ↓ and Open on GitHub (#4401).
             if Self.history(place) {
                 ToolbarItemGroup(placement: Self.historyPlacement) {
-                    Button { model.workHistory.back() } label: { Image(systemName: "chevron.left") }
+                    Button { model.workHistory.back() } label: { Image(toolbarIcon: "chevron.left") }
                         .disabled(!model.workHistory.canGoBack)
                         .help("Back")
-                    Button { model.workHistory.forward() } label: { Image(systemName: "chevron.right") }
+                    Button { model.workHistory.forward() } label: { Image(toolbarIcon: "chevron.right") }
                         .disabled(!model.workHistory.canGoForward)
                         .help("Forward")
                 }
@@ -144,7 +144,7 @@ private struct WorkListPane: View {
         .toolbar {
             if !compact {
                 ToolbarItem(placement: .primaryAction) {
-                    WorkRefreshButton(running: list.lists == nil || list.loadingMore) { list.asked += 1 }
+                    WorkRefreshButton(running: list.reading || list.loadingMore) { list.asked += 1 }
                 }
             }
         }
@@ -299,8 +299,11 @@ private struct WorkListPane: View {
         let latest = kind == .release ? WorkReleaseLook.latest(list.all) : []
         return ScrollViewReader { reader in
             selectable {
+                if list.fromDevice {
+                    WorkFromDeviceStrip(read: list.fromDeviceRead).listRowSeparator(.hidden).selectionDisabled()
+                }
                 if !lines.isEmpty {
-                    WorkErrorStrip(lines: lines) { list.asked += 1 }.listRowSeparator(.hidden).selectionDisabled()
+                    WorkErrorStrip(lines: lines, read: list.keptRead) { list.asked += 1 }.listRowSeparator(.hidden).selectionDisabled()
                 }
                 ForEach(shown) { row in
                     Button { open(row.id) } label: {

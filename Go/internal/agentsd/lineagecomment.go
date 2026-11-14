@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The cost on a pull request when it merges (#2352): when the host hears pr.merged for a
@@ -335,7 +335,7 @@ func prCostText(c wire.LineageCost, sessions int, failed int64, mode wire.PRCost
 		}
 		fmt.Fprintf(&b, "\nWith the work on %s.\n", strings.Join(names, ", "))
 	}
-	b.WriteString("\nCounted by Agents from its own record. This comment is a copy of it, and is edited when more cost comes in.\n")
+	b.WriteString("\nCounted by Agent Loops from its own record. This comment is a copy of it, and is edited when more cost comes in.\n")
 	return b.String()
 }
 

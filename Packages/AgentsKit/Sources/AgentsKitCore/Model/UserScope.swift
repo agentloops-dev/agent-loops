@@ -2,7 +2,8 @@ import Foundation
 
 /// The user scope (#1760, spec 736 US4): a person's settings and secrets, which the control
 /// plane keeps and sends to each machine of theirs when it joins and when they change. Only
-/// the person's own clients change them. A secret's value is never sent back to a client.
+/// the person's own clients change them. A secret's value is never sent back to a client in
+/// plain text: only a client's own sealed copy, to reveal or copy (`user/sealedSecret`, #5114).
 public extension DaemonAPI {
     /// A part of the user settings. Each keeps the shape its file has on a machine.
     enum UserSettingsPartName: String, Codable, Sendable, Hashable, CaseIterable {
@@ -102,6 +103,8 @@ public extension DaemonAPI {
         /// accounts of the same service. nil on an account made before it.
         public var description: String?
         public var address: String?
+        /// The user name it signs in with, when that is not the address (#5116). Plain text.
+        public var username: String?
         public var plan: String?
         public var monthlyCostUsd: Double?
         public var card: String?
@@ -125,8 +128,9 @@ public extension DaemonAPI {
         public init(service: String, description: String? = nil, address: String? = nil, plan: String? = nil, monthlyCostUsd: Double? = nil,
                     card: String? = nil, secret: String? = nil, twoFactor: String? = nil, issue: String? = nil,
                     made: String? = nil, tokenExpires: String? = nil, notes: String? = nil, projects: [String]? = nil,
-                    askBeforeUse: Bool? = nil, edited: Date? = nil, lastOp: AccountLastOp? = nil) {
+                    askBeforeUse: Bool? = nil, edited: Date? = nil, lastOp: AccountLastOp? = nil, username: String? = nil) {
             self.service = service
+            self.username = username
             self.edited = edited
             self.lastOp = lastOp
             self.description = description
@@ -207,6 +211,55 @@ public extension DaemonAPI {
         public var name: String
 
         public init(name: String) { self.name = name }
+    }
+
+    /// `user/sealedSecret` (#5112, #5114): this client's own sealed copy of one of the person's
+    /// secrets, to reveal or copy it. The control plane audits it with the name, never the value.
+    struct UserSealedSecretRequest: Codable, Sendable, Hashable {
+        public enum Purpose: String, Codable, Sendable, Hashable { case reveal, copy }
+        /// A card's part, for a copy of that one part (#3531).
+        public enum Part: String, Codable, Sendable, Hashable { case number, expiry, cvc, name, zip }
+        /// The account it was opened from, for the audit entry.
+        public struct Account: Codable, Sendable, Hashable {
+            public var service: String
+            public var address: String?
+
+            public init(service: String, address: String? = nil) {
+                self.service = service
+                self.address = address
+            }
+        }
+
+        public var name: String
+        public var purpose: Purpose
+        public var part: Part?
+        public var account: Account?
+
+        public init(name: String, purpose: Purpose, part: Part? = nil, account: Account? = nil) {
+            self.name = name
+            self.purpose = purpose
+            self.part = part
+            self.account = account
+        }
+    }
+
+    /// `user/sealedSecret`'s answer: this client's envelope (`c:<CLIENT UUID>`), associated
+    /// data `usersecret.v1|<person>|c:<CLIENT UUID>|<name>|<version>`, `|ask` when
+    /// `needsApproval`.
+    struct UserSealedSecret: Codable, Sendable, Hashable {
+        public var name: String
+        public var version: Int
+        public var kind: String?
+        public var needsApproval: Bool?
+        public var sealed: Envelope
+
+        public init(name: String, version: Int, sealed: Envelope, kind: String? = nil, needsApproval: Bool? = nil) {
+            self.name = name
+            self.version = version
+            self.sealed = sealed
+            self.kind = kind
+            self.needsApproval = needsApproval
+        }
     }
 
     /// A machine removed with a secret on it (FR-026).
@@ -306,6 +359,8 @@ public extension DaemonAPI.Method {
     static let userSetSecret = "user/setSecret"
     /// `{}` → `SealRecipients`: the person's machines and clients, to seal a secret to (#3397).
     static let userSecretRecipients = "user/secretRecipients"
+    /// `UserSealedSecretRequest` → `UserSealedSecret`: this client's own copy, audited (#5114).
+    static let userSealedSecret = "user/sealedSecret"
     /// `UserSecretRequest` → `{}` (#1760).
     static let userRemoveSecret = "user/removeSecret"
     /// `{}` → `UserSecretNames` (#1760).
@@ -335,9 +390,61 @@ public enum UserScopeWords {
     public static let thisMacOnly = "This Mac's"
     public static let addSecret = "Add a Secret…"
 
-    public static let secretsFoot = "A secret is sealed in this app to each of your own machines, and only agentsd opens it "
-        + "there; the control plane cannot. Write ${NAME} for it in an MCP server's env or headers. Nobody can read it back, "
-        + "you included: to change it, replace it."
+    public static let secretsFoot = "A secret is sealed in this app to each of your own machines and apps; the control plane "
+        + "cannot open it. Write ${NAME} for it in an MCP server's env or headers. You can reveal and copy it here, and each "
+        + "reveal and copy is in the audit log. Agents never get a value from here. To change it, replace it."
+
+    // Reveal and Copy (#5112, #5115; specs/5112-view-copy-secrets-accounts/wireframes.md).
+    public static let reveal = "Reveal"
+    public static let hide = "Hide"
+    public static let copy = "Copy"
+    public static let copyValue = "Copy Value"
+    /// How long a value shows, and how long until the clipboard is cleared of it.
+    public static let shownSeconds = 30
+    public static let clipboardSeconds = 90
+    /// How long Copy shows its check, and the copied line.
+    public static let copiedSeconds = 2
+
+    /// Under a shown value, with the seconds left.
+    public static func hidesIn(_ seconds: Int, card: Bool) -> String {
+        "Hides in \(max(seconds, 0)) s · " + (card ? "each reveal and copy is in the audit log" : "in the audit log")
+    }
+
+    /// Under a row just copied: the whole value, or one part of a card.
+    public static func copied(_ part: DaemonAPI.UserSealedSecretRequest.Part? = nil) -> String {
+        (part.map { "Copied \(partWords($0))." } ?? "Copied.") + " The clipboard clears in \(clipboardSeconds) s."
+    }
+
+    /// Ask before use, on a row a person can reveal: it holds only an agent's use (#4016).
+    public static let asksForAgents = "Asks before use: for agents. You reveal and copy at once."
+    public static let noCopyYet = "This app has no copy yet. It gets one when another app of yours is online."
+    public static let revealNeedsNewerPlane = "This control plane cannot show or copy a secret yet. Update it."
+    public static let didNotOpen = "This app's copy did not open. Replace the secret to seal it again."
+
+    /// A card's part, as its line names it.
+    public static func partLabel(_ part: DaemonAPI.UserSealedSecretRequest.Part) -> String {
+        switch part {
+        case .number: "Card number"
+        case .expiry: "Expiry"
+        case .cvc: "CVC"
+        case .name: "Name on card"
+        case .zip: "Billing ZIP"
+        }
+    }
+
+    /// A card's part in a sentence, as the audit entry names it.
+    public static func partWords(_ part: DaemonAPI.UserSealedSecretRequest.Part) -> String {
+        switch part {
+        case .number: "the card number"
+        case .expiry: "the expiry"
+        case .cvc: "the CVC"
+        case .name: "the name on card"
+        case .zip: "the billing ZIP"
+        }
+    }
+
+    /// A card's parts, in the order a reveal shows them.
+    public static let cardParts: [DaemonAPI.UserSealedSecretRequest.Part] = [.number, .expiry, .cvc, .name, .zip]
 
     /// Under a secret that one of the person's machines has no copy of yet (#3397).
     public static func waiting(_ row: DaemonAPI.UserSecretRow) -> String? {
@@ -458,6 +565,31 @@ public struct CardSecret: Codable, Sendable, Hashable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return (try? encoder.encode(self)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+
+    /// A card's value as it was sealed (#5115), or nil when it is not a card's.
+    public init?(value: String) {
+        guard let card = try? JSONDecoder().decode(CardSecret.self, from: Data(value.utf8)) else { return nil }
+        self = card
+    }
+
+    /// One part (#5115), for a reveal's line and its Copy.
+    public func part(_ part: DaemonAPI.UserSealedSecretRequest.Part) -> String {
+        switch part {
+        case .number: number
+        case .expiry: expiry
+        case .cvc: cvc
+        case .name: name
+        case .zip: zip
+        }
+    }
+
+    /// The card number in groups of four, as a reveal shows it.
+    public var spacedNumber: String {
+        stride(from: 0, to: number.count, by: 4).map { i in
+            let start = number.index(number.startIndex, offsetBy: i)
+            return String(number[start..<(number.index(start, offsetBy: 4, limitedBy: number.endIndex) ?? number.endIndex)])
+        }.joined(separator: " ")
     }
 
     static func tidyExpiry(_ typed: String) -> String {

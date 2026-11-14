@@ -18,14 +18,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd"
-	"github.com/alexec/agents/Go/internal/agentsd/redact"
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/buildinfo"
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/machine"
-	"github.com/alexec/agents/Go/internal/rolllog"
-	"github.com/alexec/agents/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/redact"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
+	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 )
 
 // logLine writes each line as DaemonLog does: the time in UTC to the second, then the words,
@@ -108,6 +108,7 @@ func main() {
 	// events/raise, as a debug build on a scratch root has it: never on a root a person
 	// uses, nor in a release.
 	d.RaiseByHand = buildinfo.Version == "dev" && !ordinaryRoot(cl.root)
+	d.DiskOverride = d.RaiseByHand
 	if home := personalHome(cl); home != "" {
 		// The person's settings are in their home: a server's
 		// (Daemon.swift's --serve), and the ordinary root's (StoreLocations.personalHome).
@@ -133,6 +134,8 @@ func main() {
 	// No secrets.env (#4177): one found here, from before the update or written by hand, is
 	// sealed into sealed.json and removed, before any call can read it.
 	d.MoveSecretsFile()
+	// The old sign-up passwords in the Keychain (#5043), copied into the store for fill_secret.
+	safe.Go("signup-keychain", d.MoveSignupKeychain)
 	safe.Go("socket", func() {
 		if err := d.ServeSocket(ctx, loc.Socket()); err != nil && ctx.Err() == nil {
 			log.Printf("socket: %v", err)
@@ -142,6 +145,7 @@ func main() {
 		join(ctx, cl, d)
 	}
 	log.Printf("agentsd %s on %s, root %s", buildinfo.String(), platform(), cl.root)
+	d.WaitForMembership()
 	// The restart itself, for a wait or a workflow that names it (#1219), and from now on
 	// a word once a minute that this host is alive.
 	d.SayRestarted()
@@ -152,6 +156,8 @@ func main() {
 	d.StartProjects()
 	d.StartMCPHealth()
 	d.StartMCPEvents()
+	d.StartRepoAliases()
+	d.StartCITimings()
 	d.StartMachineWatch()
 	<-ctx.Done()
 	log.Printf("shutting down")
@@ -386,6 +392,7 @@ func join(ctx context.Context, cl commandLine, d *agentsd.Daemon) {
 	// The needs it shows nowhere go to the control plane, offered again on each return (#1367).
 	up.OnChange = func(connected bool, problem string) {
 		writeJoinStatus(loc.Root, connected, problem)
+		d.ControlAnswered(connected, false)
 		safe.Go("attention uplink", func() { d.ControlUplinkChanged(connected) })
 		if connected {
 			d.ShareBotKey()
@@ -394,6 +401,7 @@ func join(ctx context.Context, cl commandLine, d *agentsd.Daemon) {
 	// A machine the person removed keeps no key of their bot's (#3950).
 	up.OnRefused = func(reason string) {
 		if reason == controllink.Forgotten {
+			d.ControlAnswered(false, true)
 			d.BotMachineRemoved()
 		}
 	}
@@ -408,6 +416,9 @@ func join(ctx context.Context, cl commandLine, d *agentsd.Daemon) {
 	d.SetControl(up.Tell)
 	d.SetControlAsk(up.Ask)
 	d.SetControlCapabilities(up.ControlCapabilities)
+	// Its agents and workflows wait for the first answer: a host the control plane forgot
+	// starts none (#4985). The last run's answer counts until then.
+	d.AwaitMembership(strings.HasSuffix(joinProblem(loc.Root), controllink.Refuse(controllink.Forgotten).Error()))
 	safe.Go("uplink", func() {
 		// A panic in the uplink would leave the host up but offline: dial again.
 		for ctx.Err() == nil && safe.Catch("uplink", func() { up.Run(ctx) }) != nil {

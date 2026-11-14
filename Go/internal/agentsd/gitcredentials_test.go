@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // lastEnv is name's value in env, the last one as exec takes it.

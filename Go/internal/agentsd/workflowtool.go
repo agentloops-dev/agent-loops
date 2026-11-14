@@ -8,9 +8,10 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // manage_workflows, and the words a workflow is listed in, as DaemonCore+AppTools and
@@ -121,6 +122,9 @@ func triggerSummary(t wire.WorkflowTrigger) string {
 	}
 	if mt, ok := serverTrigger(t); ok {
 		return mt.summary()
+	}
+	if a, ok := alarmOf(t); ok {
+		return a.summary()
 	}
 	name := triggerName(t)
 	guess := ""
@@ -397,13 +401,19 @@ func (d *Daemon) manageWorkflows(caller wire.UUID, args map[string]json.RawMessa
 			return id + " is already turned off.", nil
 		}
 		if on && s.OffReason != nil {
+			// The person's to turn on: asked by a Needs you card (#4538), refused only where
+			// nobody answers.
+			var refusal error
 			switch *s.OffReason {
 			case wire.WorkflowOffReasonFile:
-				return "", &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + "'s file says `enabled: false`, so it stays off until the person turns it on from the folder page. Ask them to if it should run."}
+				refusal = &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + "'s file says `enabled: false`, so it stays off until the person turns it on from the folder page. Ask them to if it should run."}
 			case wire.WorkflowOffReasonWrittenByAgent:
-				return "", &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + " was written by an agent, so it starts off until the person turns it on from its page. Ask them to if it should run."}
+				refusal = &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + " was written by an agent, so it starts off until the person turns it on from its page. Ask them to if it should run."}
 			case wire.WorkflowOffReasonPerson:
-				return "", &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + " was turned off by the person, so only they can turn it back on, from the folder page. Ask them to if it should run again."}
+				refusal = &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + " was turned off by the person, so only they can turn it back on, from the folder page. Ask them to if it should run again."}
+			}
+			if refusal != nil {
+				return d.enableForPerson(a.ID, folder, id, refusal)
 			}
 		}
 		got, err := d.enableWorkflow(wire.WorkflowEnableRequest{Folder: store.FolderURL(folder), WorkflowID: id, Enabled: on}, "agent")
@@ -492,13 +502,19 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 			return "", &Error{Code: wire.FailureWorkflowUnreadable, Message: "\"" + name + "\" is not a trigger" + guess + " Under on: go schedule and event names. Nothing was written."}
 		}
 	}
+	if words := alarmWriteWords(parsed, d.personZone(), time.Now()); words != "" {
+		return "", Invalid("%s", words)
+	}
 	d.workflowMu.Lock()
 	d.scanLocked()
 	existing := d.fileLocked(folder, id)
 	archived := existing != nil && isArchived(existing.wf)
 	text := content
 	var err error
-	off := existing == nil || isOff(existing.wf)
+	// A one-time workflow is on as soon as the person approves it (Alex, 2026-11-12, #4966):
+	// it runs once, so a second step to turn it on would only make it miss its time.
+	alarm := onceOnly(parsed)
+	off := (existing == nil && !alarm) || (existing != nil && isOff(existing.wf))
 	if isOff(parsed) != off {
 		if off {
 			text, err = setFrontMatter("enabled", strPtr("false"), text)
@@ -524,7 +540,7 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 	}
 	digest := sha256Hex(text)
 	st := d.stateLocked(folder, id, true)
-	if existing == nil {
+	if existing == nil && !alarm {
 		st.OffBy, st.OffDigest, st.HeldFire = strPtr("writtenByAgent"), &digest, nil
 	} else if st.OffDigest != nil && *st.OffDigest == existing.digest {
 		st.OffDigest = &digest
@@ -553,7 +569,10 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 		return verb + " " + id + ". " + summary + ". It is archived, though, so it will not run until they bring it back from the folder page. Tell them it is there." + warning, nil
 	case awaiting != nil:
 		startsOff := ""
-		if existing == nil {
+		if alarm {
+			startsOff = " It is a one-time workflow, so it is on as soon as they approve it: approved after its time but inside its grace, it runs at once; " +
+				"past its grace it is archived as missed. After it runs it archives itself."
+		} else if existing == nil {
 			startsOff = " It starts turned off (the app wrote `enabled: false` into it): once they have approved it, they turn it on from its page when they are ready, and you cannot."
 		}
 		return verb + " " + id + ". " + summary + ". It will not run until they approve it on the folder page, so tell them it is waiting for their OK and what it does." +

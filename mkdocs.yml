@@ -1,9 +1,9 @@
 # The docs site (044). Built by Zensical, which reads this file; Material for MkDocs reads it too.
 # Preview: scripts/docs.sh serve   Check: scripts/docs.sh check
-site_name: Agents
+site_name: Agent Loops
 site_description: Run coding agents on your Mac, and follow them from your iPhone and iPad.
 site_url: https://docs.agentloops.dev/
-repo_url: https://github.com/alexec/Agents
+repo_url: https://github.com/agentloops-dev/agent-loops
 docs_dir: docs
 # The footer on every page: the privacy and terms pages (#1856).
 copyright: <a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a>
@@ -52,6 +52,7 @@ plugins:
   # A page that moves leaves its old path here, pointing at the new one: old.md: new.md
   - redirects:
       redirect_maps:
+        reference/get-started-checklist.md: reference/achievements.md
         how-to/add-an-mcp-server-by-hand.md: how-to/add-a-connector-by-hand.md
         how-to/add-an-mcp-server-from-the-registry.md: how-to/add-a-connector-from-the-registry.md
         how-to/share-one-copy-of-a-local-mcp-server.md: how-to/share-one-copy-of-a-local-connector.md
@@ -84,6 +85,7 @@ nav:
   - How-to guides:
       - how-to/index.md
       - how-to/set-up-on-this-mac.md
+      - how-to/build-your-first-app.md
       - how-to/connect-a-window-or-phone.md
       - how-to/sign-in-with-google-apple-or-github.md
       - how-to/sign-in-with-your-organisation.md
@@ -191,7 +193,7 @@ nav:
       - reference/integrations.md
       - reference/sign-in.md
       - reference/ssh-options.md
-      - reference/get-started-checklist.md
+      - reference/achievements.md
       - reference/charts-and-diagrams.md
       - reference/design-system.md
       - reference/remote-gestures.md
@@ -201,6 +203,7 @@ nav:
       - explanation/index.md
       - explanation/direction.md
       - explanation/planning.md
+      - explanation/deploys.md
       - explanation/why-agents.md
       - explanation/control-plane.md
       - explanation/org-keys-and-gateways.md

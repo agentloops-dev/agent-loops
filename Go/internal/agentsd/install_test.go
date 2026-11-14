@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/ulikunitz/xz"
 )
 

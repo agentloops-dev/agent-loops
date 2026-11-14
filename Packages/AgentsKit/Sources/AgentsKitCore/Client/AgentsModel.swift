@@ -204,7 +204,16 @@ public final class AgentsModel {
 
     /// The machines whose folders and sessions on screen are this device's copy (#4791),
     /// drawn before their host answered. A host's own list takes its machine out.
-    public private(set) var drawnFromCopy: Set<MachineRef> = []
+    public private(set) var drawnFromCopy: Set<MachineRef> = [] {
+        didSet { copyReads = copyReads.filter { drawnFromCopy.contains($0.key) } }
+    }
+    /// When each machine drawn from the copy was read from its host (#5141).
+    @ObservationIgnored private var copyReads: [MachineRef: Date] = [:]
+    /// The oldest read of what is on screen from this device's copy, for the "Last update"
+    /// line (#5141): nil once every host drawn from it has answered.
+    public var copyReadAt: Date? {
+        drawnFromCopy.compactMap { copyReads[$0] }.min()
+    }
     /// Each host's point in its order of changes, as its last catch-up said (#4794).
     @ObservationIgnored private var listPoints: [MachineRef: DaemonAPI.ListRevision] = [:]
     /// How many entries the open chat's host had when it last gave a page of it (#4794):
@@ -363,6 +372,8 @@ public final class AgentsModel {
     /// consult its own clock: it may be in a different time zone from the daemon's,
     /// and the daemon's is the one the limit uses.
     public private(set) var costState: DaemonAPI.CostState?
+    /// When `costState` was last read or heard (#5144), for Cost's and Tokens' "Last update".
+    public private(set) var costStateReadAt: Date?
     /// How long archived agents are kept and what the archive holds (051). Nil until the
     /// daemon has said, which leaves the settings section out.
     /// Every runtime's state on the Mac (065, US4): Agent Runtimes, the prompt bar's
@@ -372,6 +383,8 @@ public final class AgentsModel {
     /// This machine's backups and their settings (#1810). Nil until the host has said, or
     /// from a host too old to keep backups, which leaves the section out.
     public private(set) var backupState: DaemonAPI.BackupState?
+    /// When `backupState` was last read or told (#5146), for its "Last update" line.
+    public private(set) var backupStateAt: Date?
     /// Every resource an agent can lease, who holds it and who is waiting (036), as
     /// the daemon last said. Replaced whole by each `resources/changed`, never merged. Nil
     /// from a daemon too old to have leases, which draws nothing.
@@ -414,6 +427,9 @@ public final class AgentsModel {
     }
     /// Where the bus log's next page back starts; nil when there is none.
     public private(set) var busNext: String?
+    /// When the bus log's newest page was last read (#5146): it is read every 30 s, so the
+    /// Events page says how old other machines' events are.
+    public private(set) var busReadAt: Date?
     /// This machine's producer ref, as `events/list` last said it (#4732).
     public private(set) var eventsProducer: String?
     /// What `recentEvents` is narrowed to. Set by whoever asks for a page, before it
@@ -432,6 +448,7 @@ public final class AgentsModel {
         moreEvents = false
         busEvents = []
         busNext = nil
+        busReadAt = nil
         lastEventAt = nil
         eventsLoaded = false
     }
@@ -452,6 +469,8 @@ public final class AgentsModel {
     /// The Multiplier (#3903), for the hero page (#3904); nil until the host has said, or
     /// from a host that predates it.
     public private(set) var multiplier: DaemonAPI.Multiplier?
+    /// When `multiplier` was last read or heard (#5144), for the Multiplier page's "Last update".
+    public private(set) var multiplierReadAt: Date?
 
     /// What each command the agent on screen ran has printed (033, #203).
     ///
@@ -848,13 +867,14 @@ public final class AgentsModel {
             replacePlugins(list)
 
         case .costChanged(let state):
-            costState = state
+            replaceCostState(state)
 
         case .retentionChanged(let state):
             retentionState = state
 
         case .backupsChanged(let state):
             backupState = state
+            backupStateAt = Date()
 
         case .runtimeAllowancesChanged(let allowances):
             runtimeAllowances = allowances
@@ -901,7 +921,7 @@ public final class AgentsModel {
             self.achievements = achievements
 
         case .multiplierChanged(let multiplier):
-            self.multiplier = multiplier
+            replaceMultiplier(multiplier)
 
         case .showFile(let notification):
             filesToShow[notification.agentID] = notification.file
@@ -1302,13 +1322,14 @@ public final class AgentsModel {
 
     /// A machine as this device last kept it (#4791), drawn before its host answers: taken
     /// only when nothing of that machine is held, so a host's own list always wins.
-    public func takeCopy(_ machine: LocalCopy.Machine) {
+    public func takeCopy(_ machine: LocalCopy.Machine, readAt: Date? = nil) {
         guard !holdsFolders(of: machine.host), !agents.contains(where: { $0.host == machine.host }) else { return }
         let listed = onListed
         onListed = nil
         defer { onListed = listed }
         replaceFolders(machine.folders, from: machine.host)
         replaceAgents(machine.agents, from: machine.host)
+        if let readAt { copyReads[machine.host] = readAt }
         drawnFromCopy.insert(machine.host)
         // The host's first catch-up asks only for what changed since the copy (#4794).
         listPoints[machine.host] = machine.point
@@ -1364,9 +1385,15 @@ public final class AgentsModel {
         }
     }
 
-    public func replaceCostState(_ state: DaemonAPI.CostState) { costState = state }
+    public func replaceCostState(_ state: DaemonAPI.CostState, at read: Date = Date()) {
+        costState = state
+        costStateReadAt = read
+    }
     public func replaceRetentionState(_ state: DaemonAPI.RetentionState) { retentionState = state }
-    public func replaceBackupState(_ state: DaemonAPI.BackupState) { backupState = state }
+    public func replaceBackupState(_ state: DaemonAPI.BackupState) {
+        backupState = state
+        backupStateAt = Date()
+    }
     public func replaceRuntimeAllowances(_ allowances: RuntimeAllowances) { runtimeAllowances = allowances }
     public func replaceHostedMCP(_ snapshot: DaemonAPI.HostedMCPSnapshot) { hostedMCP = snapshot }
     public func replaceMCPHealth(_ snapshot: DaemonAPI.MCPHealthSnapshot, from host: MachineRef = .mac) {
@@ -1490,6 +1517,7 @@ public final class AgentsModel {
         if events.count > Self.eventsPagedMost { events.removeLast(events.count - Self.eventsPagedMost) }
         busEvents = events
         busNext = page.hasMore && events.count < Self.eventsPagedMost ? page.next : nil
+        if !appending { busReadAt = Date() }
     }
 
     /// Whether the Events page has older events to page in, from this machine's log or the bus's.
@@ -1551,6 +1579,9 @@ public final class AgentsModel {
     /// The most events paging back brings in (#3650), as on the web page.
     static let eventsPagedMost = 5_000
 
+    /// What kind of wait an agent's mark draws (#5022).
+    public func waitKind(of agent: Agent) -> WaitKind { WaitKind.of(agent) }
+
     /// What an agent is waiting on, in the words its row, card and capsule use.
     public func waitStatus(of agent: Agent) -> WaitStatus? {
         WaitStatus.of(agent, names: { self.agentTitles[$0] }, lease: leaseStatus(of: agent.id))
@@ -1588,7 +1619,10 @@ public final class AgentsModel {
     public func replaceWakeState(_ state: DaemonAPI.WakeState) { wakeState = state }
     public func replaceStoreNotes(_ notes: DaemonAPI.StoreNotes) { storeNotes = notes.notes }
     public func replaceAchievements(_ achievements: Achievements) { self.achievements = achievements }
-    public func replaceMultiplier(_ multiplier: DaemonAPI.Multiplier) { self.multiplier = multiplier }
+    public func replaceMultiplier(_ multiplier: DaemonAPI.Multiplier, at read: Date = Date()) {
+        self.multiplier = multiplier
+        multiplierReadAt = read
+    }
 
     // MARK: Choices in flight
 
@@ -2200,12 +2234,12 @@ public final class AgentsModel {
     }
 
     /// The lines under a blocked agent's message: whether it waits on any or all of
-    /// several (#152), one per agent it waits on, and when it will check again. The same on the Mac's row and the phone's card (FR-011).
+    /// several (#152), one per agent it waits on, and its deadline. The same on the Mac's row and the phone's card (FR-011).
     public func blockLines(_ agent: Agent) -> [String] {
         guard let (_, block) = openBlock(agent) else { return [] }
         return [block.wakeLine()].compactMap { $0 }
             + block.waits.map { Block.waitLine(name: waitName($0), ending: $0.ending) }
-            + [block.checkAgainLine()].compactMap { $0 }
+            + [block.deadlineLine()].compactMap { $0 }
     }
 
     /// A waiting agent's one row line (#582): the agents its block still waits on, what its wait
@@ -2231,7 +2265,7 @@ public final class AgentsModel {
             things += lease.waiting.map(\.shortName)
             detail += lease.waitingLines
         }
-        guard let line = WaitStatus.rowLine(things) ?? detail.first.map({ "\(WaitStatus.symbol) \($0)" })
+        guard let line = WaitStatus.rowLine(things) ?? detail.first
         else { return nil }
         return WaitMark(line: line, detail: detail.joined(separator: "\n"))
     }
@@ -2656,6 +2690,14 @@ public final class AgentsModel {
     public func permission(for agentID: UUID?) -> PermissionRequest? {
         guard let agentID else { return nil }
         return permissions.first { $0.agentID == agentID }
+    }
+
+    /// The uses of a secret with Ask before use that this agent waits on (#4918), oldest first,
+    /// Later's too: each is a card in its chat as well as a row in Needs You. A terminal's
+    /// (#4179) has no session, so it is in none.
+    public func secretUses(askedBy agentID: UUID?) -> [NeedRequest] {
+        guard let agentID else { return [] }
+        return requests.filter { $0.askedBy == agentID && $0.secretUse != nil }
     }
 
     /// The form this agent is waiting on, if there is one.

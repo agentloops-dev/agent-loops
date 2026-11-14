@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/azureboardsmcp"
-	"github.com/alexec/agents/Go/internal/azuredevopsmcp"
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/azureboardsmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Azure Boards on the Work pages (#3815, after Jira's #3260): the work items of the projects

@@ -1,13 +1,13 @@
 ---
 name: dev-speed
-description: Find out where this folder's recent agent sessions spent their time (builds, tests, lint, the build lease's line, waits, CI, questions, the model's own time) from the app's session records, find the causes of the largest costs, and make development faster with one change on a pull request of its own and at most three issues for the rest. Never weaken a check. Use when Alex asks why development is slow, how to make lanes faster, or for a dev-speed check.
+description: Find out where this folder's recent agent sessions spent their time (builds, tests, lint, the build lease's line, waits, CI, questions, the model's own time) from the app's session records, add a line to the trend, find the causes of the largest costs, and, when a limit is crossed, make development faster with one change on a pull request of its own and at most three issues for the rest. Never weaken a check. Use when the Dev speed check workflow runs, when Alex asks why development is slow, how to make lanes faster, or for a dev-speed check.
 ---
 
 # Dev speed check
 
 Lanes spend their time in five places: the model's own work (reading, thinking,
 writing), tools (builds, tests, lint, walks, `gh`, `git`), waits (from the
-`wait_for_event`, `check_again` or question call to the wake; not running time), the
+`wait_for_event` or question call to the wake; not running time), the
 line for the `build` lease, and the time between turns (CI, merges, reviews, timers). This skill measures each from the app's own records and removes the
 largest cost that a change in this repo can remove.
 
@@ -71,7 +71,7 @@ to `ci-speed`; do not change `ci.yml` here.
      and failures;
    - **between turns, by what woke the session:** `event: checks.passed`,
      `event: lease.granted (build)` (the line for the lease), `wait timed out`,
-     `check_again timer`, `person or agent message`, and the rest;
+     `time reached`, `person or agent message`, and the rest;
    - **the slowest calls, the commands run 3 or more times in one session,** and the
      longest-running sessions, with tokens and cost.
 
@@ -82,6 +82,29 @@ to `ci-speed`; do not change `ci.yml` here.
    of the top 10 categories, the total per session then and now. A category that grew
    by more than half is a regression; look for the merge that started it
    (`git log --since=<last report> -- <the script or skill>`).
+
+3. Add one line to the trend file and read the limits (#4833):
+
+   ```sh
+   python3 -I .agents/skills/dev-speed/trend.py "$D/$T.json"
+   ```
+
+   It appends to `~/.agents/reviews/dev-speed/trend.jsonl` one line: the date, the
+   running hours, the PRs merged in the window (`gh`), the running hours per merged
+   PR, and the top 5 categories that are not waits, with their share of running time
+   and p90. Then it prints one line for each limit crossed:
+   - **(a)** running hours per merged PR is 20% or more above the median of the last
+     14 trend lines. A ratio to merged work, so a busy week is not a slow one. The
+     first run has no earlier line and checks only (b);
+   - **(b)** one category that is not a wait (`wait: …`) takes more than 10% of
+     running time, or its p90 is twice its median p90 in the last 14 lines: one slow
+     script.
+
+   **When it prints nothing, the run ends here,** after the report and the trend line:
+   no pull request, no issue, no question. A run that the Dev speed check workflow
+   (`.agents/workflows/dev-speed.md`) started then archives at once. When it prints a
+   limit, go on, and start step 2 with the categories it names. When Alex asked for
+   the check, go on in either case.
 
 ## 2. Find the causes
 
@@ -109,7 +132,7 @@ Look first for these causes, in this order. Each names the place a fix goes.
    notes). A lease held while reading, editing or waiting, held for a whole walk, or
    taken for work that needs no lease (`gh`, `git`, reading a log) makes the line.
 4. **Polling instead of an event.** `sleep` loops, `gh pr checks` or `gh run view`
-   again and again, `check_again` with no event that would do: each poll is a turn of
+   again and again, `time.reached` with no event that would do: each poll is a turn of
    model time. The fix is the event (`checks.passed`, `pr.merged`, `agent.ended`) in the
    skill or persona that polls.
 5. **Retries.** The "run 3 or more times" table and the failed counts: a flaky test run

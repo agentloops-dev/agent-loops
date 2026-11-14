@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/mac"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/mac"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 func percent(n int) *int { return &n }

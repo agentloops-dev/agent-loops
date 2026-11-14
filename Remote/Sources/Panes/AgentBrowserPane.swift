@@ -23,7 +23,7 @@ struct AgentBrowserPane: View {
         if let browser = model.machineBrowser(for: agent.id) {
             content(browser)
         } else {
-            ContentUnavailableView("The machine can't be reached", systemImage: "wifi.slash",
+            ContentUnavailableView("The machine can't be reached", icon: "wifi.slash",
                                    description: Text("The browser shows here when the machine is back."))
         }
     }
@@ -40,15 +40,18 @@ struct AgentBrowserPane: View {
                 page(browser)
                     .onChange(of: geometry.size, initial: true) { _, size in area = size }
             }
-            if let problem = browser.problem {
-                Divider()
-                Text(problem)
-                    .appText(.fine)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-            }
+            // Always on, one line high: a line that came and went changed the page's height,
+            // and each new height laid the page out again, so the page flickered.
+            Divider()
+            Text(browser.problem ?? " ")
+                .appText(.fine)
+                .foregroundStyle(Paper.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .accessibilityHidden(browser.problem == nil)
         }
         // Inactive is still on screen (a notification over it, the app switcher): only the
         // background stops the frames.
@@ -83,14 +86,14 @@ struct AgentBrowserPane: View {
     /// session's own tab stays below, to look at and use.
     private func holderLine(_ browser: MachineBrowser, _ holder: UUID) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: "cursorarrow.rays")
-                .foregroundStyle(.secondary)
+            Image(icon: "cursorarrow.rays")
+                .foregroundStyle(Paper.secondary)
             Button { model.open(holder) } label: {
                 Text(browser.state.holderTitle ?? "Another session").truncationMode(.middle)
             }
             .accessibilityHint("Goes to this session")
             Text("is using the browser")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Paper.secondary)
                 .fixedSize()
             Spacer(minLength: 0)
         }
@@ -104,15 +107,15 @@ struct AgentBrowserPane: View {
         let running = browser.state.status == .running && !browser.state.sessionHasNoTab
         return HStack(spacing: 12) {
             Button { Task { await browser.navigate(.back) } } label: {
-                Label("Back", systemImage: "chevron.left").labelStyle(.iconOnly)
+                Label("Back", icon: "chevron.left").labelStyle(.iconOnly)
             }
             .disabled(!running)
             Button { Task { await browser.navigate(.forward) } } label: {
-                Label("Forward", systemImage: "chevron.right").labelStyle(.iconOnly)
+                Label("Forward", icon: "chevron.right").labelStyle(.iconOnly)
             }
             .disabled(!running)
             Button { Task { await browser.navigate(.reload) } } label: {
-                Label("Reload", systemImage: "arrow.clockwise").labelStyle(.iconOnly)
+                Label("Reload", icon: "arrow.clockwise").labelStyle(.iconOnly)
             }
             .disabled(!running)
             TextField("Address", text: $typed)
@@ -131,7 +134,7 @@ struct AgentBrowserPane: View {
                 }
             Button { typing.toggle() } label: {
                 Label(typing ? "Hide Keyboard" : "Type in the Page",
-                      systemImage: typing ? "keyboard.chevron.compact.down" : "keyboard")
+                      icon: typing ? "keyboard.chevron.compact.down" : "keyboard")
                     .labelStyle(.iconOnly)
             }
             .disabled(!running)
@@ -146,7 +149,7 @@ struct AgentBrowserPane: View {
     private func page(_ browser: MachineBrowser) -> some View {
         switch browser.state.status {
         case .running where browser.state.sessionHasNoTab:
-            ContentUnavailableView("This session's agent has not used the browser", systemImage: "cursorarrow.rays",
+            ContentUnavailableView("This session's agent has not used the browser", icon: "cursorarrow.rays",
                                    description: Text("When it opens a page, you see it here and can use it. To open one yourself, type an address above."))
         case .running:
             if let frame = browser.frame {
@@ -158,7 +161,8 @@ struct AgentBrowserPane: View {
                             .aspectRatio(contentMode: .fit)
                             .accessibilityLabel("The page in the machine's browser")
                     }
-                    TouchInput(pageSize: CGSize(width: frame.width, height: frame.height), typing: $typing) {
+                    TouchInput(pageSize: CGSize(width: frame.width, height: frame.height), typing: $typing,
+                               edits: model.host(agent.host, has: Capability.browser2)) {
                         browser.send($0)
                     }
                 }
@@ -168,10 +172,10 @@ struct AgentBrowserPane: View {
         case .starting:
             BrowserWaiting(words: browser.state.detail ?? "Starting the browser")
         case .failed:
-            ContentUnavailableView("The browser didn't start", systemImage: "exclamationmark.triangle",
+            ContentUnavailableView("The browser didn't start", icon: "exclamationmark.triangle",
                                    description: Text(browser.state.detail ?? "Try the address again."))
         case .stopped:
-            ContentUnavailableView("The browser isn't running", systemImage: "cursorarrow.rays",
+            ContentUnavailableView("The browser isn't running", icon: "cursorarrow.rays",
                                    description: Text("When an agent opens a page on this machine, you see it here and can use it. To open one yourself, type an address above."))
         }
     }
@@ -192,7 +196,7 @@ private struct BrowserWaiting: View {
             ProgressView()
             Text(words)
                 .appText(.fine)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Paper.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Paper.ground)
@@ -203,6 +207,8 @@ private struct BrowserWaiting: View {
 private struct TouchInput: UIViewRepresentable {
     let pageSize: CGSize
     @Binding var typing: Bool
+    /// The host takes editing commands (browser/2, #5119).
+    let edits: Bool
     let send: (DaemonAPI.BrowserInputRequest) -> Void
 
     func makeUIView(context: Context) -> TouchInputView {
@@ -223,6 +229,7 @@ private struct TouchInput: UIViewRepresentable {
     private func update(_ view: TouchInputView) {
         view.send = send
         view.pageSize = pageSize
+        view.edits = edits
         view.keyboardWent = { typing = false }
     }
 }
@@ -230,6 +237,7 @@ private struct TouchInput: UIViewRepresentable {
 final class TouchInputView: UIView, UIKeyInput {
     var send: (DaemonAPI.BrowserInputRequest) -> Void = { _ in }
     var pageSize: CGSize = .zero
+    var edits = false
     var keyboardWent: () -> Void = {}
     /// Where the last scroll step left the finger, so each step sends only what it moved.
     private var lastPan: CGPoint = .zero
@@ -334,9 +342,32 @@ final class TouchInputView: UIView, UIKeyInput {
     ]
 
     /// Paste from the edit menu, or ⌘V on an iPad's keyboard, sends the pasteboard's text.
+    /// Copy, Cut and Select All (⌘C, ⌘X, ⌘A) act in the page, and a copy comes back to
+    /// this device's pasteboard (#5119), when the host takes them.
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        action == #selector(paste(_:)) ? UIPasteboard.general.hasStrings : super.canPerformAction(action, withSender: sender)
+        switch action {
+        case #selector(paste(_:)): UIPasteboard.general.hasStrings
+        case #selector(copy(_:)), #selector(cut(_:)), #selector(selectAll(_:)), #selector(undoInPage),
+             #selector(redoInPage): edits
+        default: super.canPerformAction(action, withSender: sender)
+        }
     }
+
+    override func copy(_ sender: Any?) { send(DaemonAPI.BrowserInputRequest(kind: .edit, command: .copy)) }
+    override func cut(_ sender: Any?) { send(DaemonAPI.BrowserInputRequest(kind: .edit, command: .cut)) }
+    override func selectAll(_ sender: Any?) { send(DaemonAPI.BrowserInputRequest(kind: .edit, command: .selectAll)) }
+
+    /// ⌘Z and ⇧⌘Z on an iPad's keyboard undo and redo in the page's field.
+    override var keyCommands: [UIKeyCommand]? {
+        guard edits else { return super.keyCommands }
+        let undo = UIKeyCommand(input: "z", modifierFlags: .command, action: #selector(undoInPage))
+        let redo = UIKeyCommand(input: "z", modifierFlags: [.command, .shift], action: #selector(redoInPage))
+        for command in [undo, redo] { command.wantsPriorityOverSystemBehavior = true }
+        return [undo, redo]
+    }
+
+    @objc private func undoInPage() { send(DaemonAPI.BrowserInputRequest(kind: .edit, command: .undo)) }
+    @objc private func redoInPage() { send(DaemonAPI.BrowserInputRequest(kind: .edit, command: .redo)) }
 
     override func paste(_ sender: Any?) {
         if let text = UIPasteboard.general.string, !text.isEmpty {

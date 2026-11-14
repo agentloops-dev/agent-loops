@@ -17,8 +17,9 @@ import { ReportsPane } from "./Reports";
 import { BackToList } from "./BackToList";
 import { Modal } from "./Modal";
 import { folderKey, folderPath } from "../model/groups";
-import { accountChoices, accountRows, accountState, agentsHolding, allowanceLine, allowancePace, allowancePaceLine, pastWeeksLine, defaultAccountName, isOrgRow, orgAllowanceLine, ownRow, ownSignInID, reachesFoot, reachesTheModelBy, machineSignInLine, offersMachineSignIn, removeMessage, rowTitle, runtimeTime, runtimesHint, machinesSummary, machinesWords, setupRuntimes, signInOnTheMac, type MachinesPart, type SetupRuntime } from "../model/runtimes";
-import { RuntimeSignInDialog } from "./RuntimeSignInDialog";
+import { accountChoices, accountRows, accountState, agentsHolding, allowanceLine, allowancePace, allowancePaceLine, pastWeeksLine, defaultAccountName, isOrgRow, orgAllowanceLine, ownRow, ownSignInID, reachesFoot, reachesTheModelBy, machineSignInLine, offersMachineSignIn, removeMessage, rowTitle, runtimeTime, runtimesHint, runtimesReadAt, machinesSummary, machinesWords, setupRuntimes, signInOnTheMac, type MachinesPart, type SetupRuntime } from "../model/runtimes";
+import { LastUpdate } from "./LastUpdate";
+import { signInRuntime } from "./RuntimeSignInDialog";
 import { limitsHint } from "../model/onTheMac";
 import { fromOrganisation } from "../model/orgAccounts";
 import { setBy as setByWords } from "../model/orgPolicy";
@@ -34,6 +35,7 @@ import { velocityHere } from "../model/velocity";
 import { TimeCharts } from "./TimeCharts";
 import { VelocityCharts } from "./VelocityCharts";
 import { pageHost } from "./Multiplier";
+import { oldestRead } from "../model/lastUpdate";
 import { Capability } from "../protocol/capabilities.generated";
 import { OrgBudget, OrgPolicyLine, PassThroughList } from "./OrgPolicyLine";
 import { PageTitle } from "./TopBar";
@@ -353,8 +355,6 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
   const pane = useSignal<"events" | "audit">("events");
   // Cost, or Reports: every person's machines, from the control plane (#1811).
   const costPane = useSignal<"cost" | "reports">("cost");
-  // The runtime whose sign-in sheet is open (#3349).
-  const signingIn = useSignal<{ host: string; status: RuntimeStatus } | null>(null);
   return (
     <section class={`chat activity-page ${page}-page`} aria-label={pageTitles[page]}>
       <header class="column-head page-head"><BackToList />
@@ -362,6 +362,11 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
       </header>
       <div class="scroll">
         <div class="activity-body">
+          {/* How old the usage figures are (#5144): the oldest read of the page's parts. */}
+          {(() => {
+            const at = usageReadAt(store, page, costPane.value);
+            return at !== undefined && <p class="page-fresh"><LastUpdate at={at} /></p>;
+          })()}
           {page === "events" && (
             <div class="tabs events-panes" role="tablist" aria-label="Show">
               {(["events", "audit"] as const).map((p) => (
@@ -377,10 +382,16 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
           {page === "runtimes" && (
             <section>
               {(() => {
+                // The oldest read on the page (#5145): an offline machine's runtimes stay, from before it went.
+                const readAt = runtimesReadAt(store.hosts.value.map((h) => store.runtimes.value[h.id] ?? []),
+                  store.hosts.value.flatMap((h) => store.runtimeAllowances.value[h.id] ?? []));
+                return readAt !== undefined && <p><LastUpdate at={readAt} /></p>;
+              })()}
+              {(() => {
                 const all = setupRuntimes(store.hosts.value, store.macHostID.value, store.runtimes.value)
                   .map((r) => ({ ...r, summary: machinesSummary(r.machines, (h) => onlineIDs.has(h)) }));
                 const row = (r: (typeof all)[number]) => <SetupRuntimeRows key={r.status.runtime.id} store={store} runtime={r}
-                  parts={r.summary.parts} hostName={hostName} signIn={(host, status) => { signingIn.value = { host, status }; }} />;
+                  parts={r.summary.parts} hostName={hostName} signIn={(host, status) => signInRuntime(store, { host, runtimeID: status.runtime.id, runtimeName: status.runtime.name, machine: hostName(host) })} />;
                 const inUse = all.filter((r) => r.summary.inUse);
                 const others = all.filter((r) => !r.summary.inUse);
                 return <>
@@ -434,13 +445,26 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
           {page === "velocity" && <VelocityPage store={store} />}
         </div>
       </div>
-      {signingIn.value && (
-        <RuntimeSignInDialog store={store} host={signingIn.value.host} runtimeID={signingIn.value.status.runtime.id}
-          runtimeName={signingIn.value.status.runtime.name} machine={hostName(signingIn.value.host)}
-          close={() => { signingIn.value = null; }} />
-      )}
     </section>
   );
+}
+
+/**
+ * When the usage page last read what it shows (#5144), the oldest of its parts: Cost and Tokens
+ * each machine's day and the charts; Time every chart host's; Velocity the Mac's. Undefined for
+ * the other pages, and for Cost's Reports, which says its own.
+ */
+function usageReadAt(store: Store, page: ActivityPage, costPane: "cost" | "reports"): number | undefined {
+  const reads = store.usageReadAt.value;
+  if (page === "spending" && costPane === "reports") return undefined;
+  if (page === "spending" || page === "tokens") {
+    const parts = [oldestRead(reads, Object.keys(store.costs.value), ["cost"]), oldestRead(reads, chartHosts(store), ["usage"])]
+      .filter((at): at is number => at !== undefined);
+    return parts.length > 0 ? Math.min(...parts) : undefined;
+  }
+  if (page === "time") return oldestRead(reads, chartHosts(store), ["time"]);
+  if (page === "velocity") { const host = pageHost(store); return host ? oldestRead(reads, [host], ["velocity"]) : undefined; }
+  return undefined;
 }
 
 /**
@@ -586,6 +610,8 @@ function EventsList({ store, hostName }: { store: Store; hostName: (host: string
         {envelopeMenu("provider", "All providers", (event) => event.provider)}
         {envelopeMenu("type", "All types", (event) => event.type ?? event.name)}
         {envelopeMenu("topic", "All topics", (event) => event.topic)}
+        {/* Other machines' events are read every 30 s (#5146): how old the last read is. */}
+        {where.value === "all" && store.busLog.value && <LastUpdate at={store.busLog.value.at} />}
       </div>
       {events.length === 0 && <p class="hint">{where.value === "all" && filterKey === "{}" ? "Nothing yet." : "Nothing has happened there yet."}</p>}
       {[...days.entries()].map(([key, day]) => <section key={key}>

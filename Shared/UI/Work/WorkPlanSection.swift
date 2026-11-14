@@ -26,11 +26,25 @@ struct WorkPlanSection: View {
     /// A phone: the header's bar and words stack, and the rows are the phone rows.
     var compact = false
     let writes: Bool
+    /// The page is this device's copy (#4930): no changes, and no words on why, until the machine answers.
+    var waiting = false
     let wrote: () -> Void
 
     @Environment(\.openURL) private var openURL
     @State private var plan: DaemonAPI.ForgePlan?
     @State private var problem: String?
+    /// The plan on screen came from this device's copy (#4930): no changes until its machine answers.
+    @State private var fromDevice = false
+    /// When the plan on screen was read from its machine (#5142): this device's copy's time, or
+    /// the last read that worked. The "Last update" line of a plan from the copy or a failed read.
+    @State private var planRead: Date?
+
+    /// When the plan drawn from the copy was read, until the machine answers: the page's one
+    /// "From this device" strip says the oldest of it and the item's (#5142). A failed read
+    /// says it in its own strip instead.
+    private var copyRead: Date? { fromDevice && problem == nil ? planRead : nil }
+    /// Told `copyRead` each time it changes, and nil when the plan goes.
+    var fromCopy: (Date?) -> Void = { _ in }
     @State private var rollups: [DaemonAPI.LineageNode: DaemonAPI.LineageCostRollup] = [:]
     @State private var links: [DaemonAPI.LineageNode: [DaemonAPI.LineageLink]] = [:]
     @State private var said: (words: String, failed: Bool)?
@@ -57,7 +71,7 @@ struct WorkPlanSection: View {
 
     /// Add child and Blocked by: an open epic, not a standing one, on a machine that writes.
     private func changes(_ plan: DaemonAPI.ForgePlan) -> Bool {
-        writes && plan.item.state == "open" && plan.standing == nil
+        writes && !fromDevice && plan.item.state == "open" && plan.standing == nil
     }
 
     var body: some View {
@@ -65,7 +79,7 @@ struct WorkPlanSection: View {
             if let plan {
                 header(plan)
                 if let problem {
-                    WorkErrorStrip(lines: [problem]) { changed += 1 }
+                    WorkErrorStrip(lines: [problem], read: planRead) { changed += 1 }
                         .padding(.horizontal, 12).padding(.bottom, 10)
                 }
                 Group {
@@ -85,6 +99,8 @@ struct WorkPlanSection: View {
         .clipShape(RoundedRectangle(cornerRadius: Paper.Radius.card))
         .overlay(RoundedRectangle(cornerRadius: Paper.Radius.card).strokeBorder(Paper.rule))
         .workTask(id: ask) { await load() }
+        .onChange(of: copyRead, initial: true) { fromCopy(copyRead) }
+        .onDisappear { fromCopy(nil) }
         .onChange(of: asked) { folded = [:] }
     }
 
@@ -93,7 +109,7 @@ struct WorkPlanSection: View {
     /// The glyph and *Plan*; a standing epic's says *never closes* at its end.
     private func title(standing: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: standing ? "arrow.trianglehead.2.clockwise" : "square.stack.3d.up")
+            Image(icon: standing ? "arrow.trianglehead.2.clockwise" : "square.stack.3d.up")
                 .foregroundStyle(.secondary).accessibilityHidden(true)
             Text("Plan").appText(.reading).fontWeight(.semibold)
             if standing {
@@ -141,7 +157,7 @@ struct WorkPlanSection: View {
             let state = model.workSessionState(lead.session) ?? lead.state
             HStack(spacing: 6) {
                 Circle().fill(WorkLook.Tone.purple.color).frame(width: 18, height: 18)
-                    .overlay(Image(systemName: "sparkle").imageScale(.small).foregroundStyle(.white))
+                    .overlay(Image(icon: "sparkle").imageScale(.small).foregroundStyle(.white))
                     .accessibilityHidden(true)
                 Text("Lead")
                 Button(title.map { "“\($0)”" } ?? "A session") { model.openWorkSession(lead.session) }
@@ -153,7 +169,7 @@ struct WorkPlanSection: View {
             .appText(.supporting)
             .lineLimit(1)
         } else {
-            Label("No lead", systemImage: "person").appText(.supporting).foregroundStyle(.secondary)
+            Label("No lead", icon: "person").appText(.supporting).foregroundStyle(.secondary)
         }
     }
 
@@ -163,7 +179,7 @@ struct WorkPlanSection: View {
     private func query(_ standing: DaemonAPI.ForgeStanding) -> some View {
         if let error = standing.error {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "exclamationmark.octagon").accessibilityHidden(true)
+                Image(icon: "exclamationmark.octagon").accessibilityHidden(true)
                 Text(error).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 if let url = detail.item.url.flatMap(URL.init(string:)) {
                     Button("Edit on \(WorkList.forgeName(detail.item.node.ref))") { openURL(url) }.linkStyle()
@@ -201,7 +217,7 @@ struct WorkPlanSection: View {
                 title(standing: false).fixedSize()
                 RoundedRectangle(cornerRadius: 3).fill(Paper.wash).frame(width: 200, height: 8)
             }
-            Label("No lead", systemImage: "person").appText(.supporting).foregroundStyle(.secondary)
+            Label("No lead", icon: "person").appText(.supporting).foregroundStyle(.secondary)
                 .redacted(reason: .placeholder)
             Divider()
             WorkPlaceholderRows(count: 4)
@@ -213,7 +229,7 @@ struct WorkPlanSection: View {
     /// forge's words and Try again. The rest of the page still shows.
     private func couldNotRead(_ words: String) -> some View {
         VStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle")
+            Image(icon: "exclamationmark.triangle")
                 // The state's own glyph, larger than any text step: a marked decorative glyph.
                 .font(.system(size: 22))
                 .foregroundStyle(Paper.forgeWaiting)
@@ -259,7 +275,7 @@ struct WorkPlanSection: View {
             if changes(plan) {
                 Divider()
                 addChild(open: plan.children.isEmpty)
-            } else if !writes, plan.item.state == "open", plan.standing == nil {
+            } else if !writes, !waiting, !fromDevice, plan.item.state == "open", plan.standing == nil {
                 Divider()
                 Text("No machine of yours can write to \(WorkList.forgeName(plan.item.node.ref)).")
                     .appText(.supporting).foregroundStyle(.secondary)
@@ -302,7 +318,7 @@ struct WorkPlanSection: View {
             withAnimation(ResponseMotion.response) { folded[step.step] = !isFolded }
         } label: {
             band {
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .imageScale(.small)
                     .rotationEffect(.degrees(isFolded ? 0 : 90))
                     .frame(width: 12)
@@ -390,7 +406,7 @@ struct WorkPlanSection: View {
                 addField(closes: !open)
             } else {
                 Button { adding = true; childFocused = true } label: {
-                    Label("Add child", systemImage: "plus").foregroundStyle(.tint).contentShape(Rectangle())
+                    Label("Add child", icon: "plus").foregroundStyle(.tint).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Open a new issue as a child of the epic, or make an issue that is there one")
@@ -425,7 +441,7 @@ struct WorkPlanSection: View {
             .disabled(names)
             .help(names ? "An issue that is there keeps its labels" : "The new child's level")
             Button("Add", action: add)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.paperProminent)
                 .disabled(busy || newChild.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .help(names ? "Make this issue a child of the epic" : "Open a new issue as a child of the epic, in its feature")
             if busy { ProgressView().controlSize(.small) }
@@ -462,6 +478,12 @@ struct WorkPlanSection: View {
     private func load() async {
         let mine = ask
         if mine.changed == 0 { said = nil }
+        // Seen before: this device's copy at once, until the machine answers (#4930).
+        if plan == nil, case let (kept, at)? = await model.keptWorkRead(DaemonAPI.ForgePlan.self, .plan, mine.node.ref), ask == mine, plan == nil {
+            plan = kept
+            planRead = at
+            fromDevice = true
+        }
         let got: DaemonAPI.ForgePlan
         do {
             got = try await model.forge(DaemonAPI.Method.forgePlan, DaemonAPI.ForgePlanRequest(node: mine.node),
@@ -473,7 +495,10 @@ struct WorkPlanSection: View {
         }
         guard ask == mine else { return }
         plan = got
+        planRead = Date()
+        fromDevice = false
         problem = nil
+        model.keepWork(got, .plan, mine.node.ref)
         guard let lineageHost else { rollups = [:]; links = [:]; return }
         // Each child's cost and links: the links name a lane at once, the cost once it banked a turn.
         var found: [DaemonAPI.LineageNode: DaemonAPI.LineageCostRollup] = [:]
@@ -535,7 +560,7 @@ private struct WorkPlanRow<BlockedBy: View>: View {
             .focused($focused)
             .help("Open \(ref)'s page")
             if !compact {
-                Menu { menu } label: { Image(systemName: "ellipsis") }
+                Menu { menu } label: { Image(icon: "ellipsis") }
                     .menuStyle(.button)
                     .buttonStyle(.borderless)
                     .menuIndicator(.hidden)
@@ -601,7 +626,7 @@ private struct WorkPlanRow<BlockedBy: View>: View {
             if let words {
                 Text("·").foregroundStyle(.secondary)
                 Group {
-                    if let glyph = glyph { Image(systemName: glyph).imageScale(.small) }
+                    if let glyph = glyph { Image(icon: glyph).imageScale(.small) }
                     Text(words).lineLimit(1).truncationMode(.tail)
                 }
                 .foregroundStyle(tint)

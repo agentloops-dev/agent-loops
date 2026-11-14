@@ -27,7 +27,12 @@ struct AutoSettingsView: View {
                     Task { await model.setAutoSettings(s) }
                 }
             } header: {
-                Text(LevelWords.runtimesTitle)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(LevelWords.runtimesTitle)
+                    Spacer(minLength: 16)
+                    // The states are from the last runtimes/list (#5145).
+                    if let read = model.runtimes.map(\.checkedAt).min() { LastUpdateText(read: read) }
+                }
             } footer: {
                 Text(LevelWords.runtimesFooter)
             }
@@ -55,7 +60,7 @@ struct AutoSettingsView: View {
         let status = model.runtimes.first { $0.id == runtimeID }
         let included = !model.autoSettings.excluded.contains(runtimeID)
         return HStack(spacing: 10) {
-            Image(systemName: "line.3.horizontal")
+            Image(icon: "line.3.horizontal")
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
             Toggle(isOn: Binding(get: { included }, set: { on in
@@ -135,7 +140,7 @@ private struct MappingCell: View {
                             set(choice.native)
                         } label: {
                             if choice.native == cell.native {
-                                Label(choice.words, systemImage: "checkmark")
+                                Label(choice.words, icon: "checkmark")
                             } else {
                                 Text(choice.words)
                             }
@@ -159,7 +164,7 @@ private struct MappingCell: View {
             if let cell {
                 Text(LevelWords.markLine(cell))
                     .appText(.fine)
-                    .foregroundStyle((cell.mark == .dropped ? StateTint.attention : .none).style(or: .secondary))
+                    .foregroundStyle((cell.mark == .dropped ? StateTint.warning : .none).style(or: .secondary))
                     .lineLimit(2)
                     .help(cell.note ?? "")
             }

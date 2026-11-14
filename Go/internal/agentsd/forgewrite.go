@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/githubmcp"
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The forge writes (#3130): the actions of the GitHub, GitLab, Forgejo (#3753), Bitbucket (#3786), Azure DevOps (#3803), Linear, Jira (#3260) and Azure
@@ -63,6 +63,8 @@ type forgeGitHubWrites interface {
 	SetEnvironmentGate(ctx context.Context, repo, environment string, reviewers []string) error
 	// A new app's repository (#3708).
 	MakeRepository(ctx context.Context, owner, name, description string) (githubmcp.Repository, bool, error)
+	// A public repository, after the person's yes (#4921).
+	MakePublicRepository(ctx context.Context, owner, name, description string, template bool) (githubmcp.Repository, bool, error)
 	// A forge request's answer (#3865).
 	SetBody(ctx context.Context, repo string, number int, body string) error
 	Unassign(ctx context.Context, repo string, number int, logins []string) error

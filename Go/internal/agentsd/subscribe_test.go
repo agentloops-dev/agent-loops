@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/yamlnode"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // #4730: provider, topic, subject and debounce, as a wait and a trigger read them.

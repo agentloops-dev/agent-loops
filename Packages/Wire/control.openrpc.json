@@ -20,6 +20,11 @@
       "name": "attention/1",
       "by": "control",
       "description": "The control plane still reads attention/need as 0.18.0 sent it. attention/2 (#4095): a host may send the NeedKind `request`, which an older control plane does not know."
+    },
+    {
+      "name": "machine.accounts/1",
+      "by": "control",
+      "description": "The control plane still answers machine/accounts with add and ops (#3967). machine.accounts/2 (#5253): it also takes remove, which an older control plane does not know."
     }
   ],
   "methods": [
@@ -33,14 +38,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/AttentionNeed"
+            "$ref": "schema/connections.schema.json#/definitions/AttentionNeed"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -54,14 +59,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/AttentionTurn"
+            "$ref": "schema/connections.schema.json#/definitions/AttentionTurn"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -79,14 +84,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/AuditQuery"
+            "$ref": "schema/org.schema.json#/definitions/AuditQuery"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/AuditExport"
+          "$ref": "schema/org.schema.json#/definitions/AuditExport"
         }
       }
     },
@@ -104,14 +109,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/AuditQuery"
+            "$ref": "schema/org.schema.json#/definitions/AuditQuery"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/AuditList"
+          "$ref": "schema/org.schema.json#/definitions/AuditList"
         }
       }
     },
@@ -129,14 +134,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/AuditSinks"
+            "$ref": "schema/org.schema.json#/definitions/AuditSinks"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/AuditSinksState"
+          "$ref": "schema/org.schema.json#/definitions/AuditSinksState"
         }
       }
     },
@@ -154,14 +159,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/AuditSinksState"
+          "$ref": "schema/org.schema.json#/definitions/AuditSinksState"
         }
       }
     },
@@ -175,14 +180,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BackupStoreCommit"
+            "$ref": "schema/machines.schema.json#/definitions/BackupStoreCommit"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Backup"
+          "$ref": "schema/machines.schema.json#/definitions/Backup"
         }
       }
     },
@@ -196,14 +201,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BackupStorePartRequest"
+            "$ref": "schema/machines.schema.json#/definitions/BackupStorePartRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BackupStorePart"
+          "$ref": "schema/machines.schema.json#/definitions/BackupStorePart"
         }
       }
     },
@@ -217,14 +222,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BackupStoreList"
+          "$ref": "schema/machines.schema.json#/definitions/BackupStoreList"
         }
       }
     },
@@ -238,14 +243,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BackupStorePart"
+            "$ref": "schema/machines.schema.json#/definitions/BackupStorePart"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -263,14 +268,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BotMake"
+            "$ref": "schema/connections.schema.json#/definitions/BotMake"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BotMade"
+          "$ref": "schema/connections.schema.json#/definitions/BotMade"
         }
       }
     },
@@ -288,14 +293,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BotCaps"
+            "$ref": "schema/connections.schema.json#/definitions/BotCaps"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -313,14 +318,87 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BotStopRun"
+            "$ref": "schema/connections.schema.json#/definitions/BotStopRun"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "builds/historyAll",
+      "x-capability": "builds.read/1",
+      "description": "builds/history over the control plane's copy (#5232): the runs of every machine in the scope that sends the repository's build timings, one for each ci-run ref and attempt, so a machine that sleeps is still in it.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/BuildsHistoryRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/BuildsHistory"
+        }
+      }
+    },
+    {
+      "name": "builds/runAll",
+      "x-capability": "builds.read/1",
+      "description": "builds/run over the control plane's copy (#5232), as builds/historyAll reads it.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/BuildsRunRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/BuildsRunAnswer"
+        }
+      }
+    },
+    {
+      "name": "builds/sync",
+      "x-capability": "builds.copy/1",
+      "description": "A host, on its channel 0 (#5232): one repository's build timings that changed since its last send, a few seconds after a change, for the control plane's copy, so the Builds page works while the machine sleeps. The copy keeps the machine store's bounds.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/BuildsSync"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/BuildsSyncAnswer"
         }
       }
     },
@@ -335,7 +413,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BusDelivery"
+            "$ref": "schema/workflows.schema.json#/definitions/BusDelivery"
           }
         }
       ]
@@ -350,14 +428,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BusLease"
+            "$ref": "schema/workflows.schema.json#/definitions/BusLease"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BusLeased"
+          "$ref": "schema/workflows.schema.json#/definitions/BusLeased"
         }
       }
     },
@@ -376,14 +454,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BusLogQuery"
+            "$ref": "schema/workflows.schema.json#/definitions/BusLogQuery"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BusLogPage"
+          "$ref": "schema/workflows.schema.json#/definitions/BusLogPage"
         }
       }
     },
@@ -397,14 +475,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BusPublish"
+            "$ref": "schema/workflows.schema.json#/definitions/BusPublish"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BusPublished"
+          "$ref": "schema/workflows.schema.json#/definitions/BusPublished"
         }
       }
     },
@@ -418,14 +496,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BusSubscribe"
+            "$ref": "schema/workflows.schema.json#/definitions/BusSubscribe"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BusSubscribed"
+          "$ref": "schema/workflows.schema.json#/definitions/BusSubscribed"
         }
       }
     },
@@ -439,14 +517,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ClientAnnounce"
+            "$ref": "schema/machines.schema.json#/definitions/ClientAnnounce"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Admitted"
+          "$ref": "schema/core.schema.json#/definitions/Admitted"
         }
       }
     },
@@ -459,7 +537,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
@@ -468,7 +546,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/ClientConnection"
+            "$ref": "schema/connections.schema.json#/definitions/ClientConnection"
           }
         }
       }
@@ -482,14 +560,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ClientRequest"
+            "$ref": "schema/machines.schema.json#/definitions/ClientRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -507,14 +585,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -533,7 +611,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
@@ -542,7 +620,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/ClientRecord"
+            "$ref": "schema/machines.schema.json#/definitions/ClientRecord"
           }
         }
       }
@@ -557,14 +635,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ActivityToken"
+            "$ref": "schema/core.schema.json#/definitions/ActivityToken"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -578,14 +656,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/JSONValue"
+            "$ref": "schema/core.schema.json#/definitions/JSONValue"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -599,14 +677,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PushToken"
+            "$ref": "schema/connections.schema.json#/definitions/PushToken"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -625,14 +703,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/WebPushSubscription"
+            "$ref": "schema/connections.schema.json#/definitions/WebPushSubscription"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -650,14 +728,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ClientPairingRequest"
+            "$ref": "schema/machines.schema.json#/definitions/ClientPairingRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ControlCodeShown"
+          "$ref": "schema/org.schema.json#/definitions/ControlCodeShown"
         }
       }
     },
@@ -675,14 +753,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -701,14 +779,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/WebPushKey"
+          "$ref": "schema/connections.schema.json#/definitions/WebPushKey"
         }
       }
     },
@@ -727,14 +805,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/FleetBoard"
+          "$ref": "schema/machines.schema.json#/definitions/FleetBoard"
         }
       }
     },
@@ -753,14 +831,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/LiveBoard"
+          "$ref": "schema/files.schema.json#/definitions/LiveBoard"
         }
       }
     },
@@ -779,14 +857,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ConsoleStopAgent"
+            "$ref": "schema/sessions.schema.json#/definitions/ConsoleStopAgent"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -805,14 +883,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/TeamWorkflows"
+          "$ref": "schema/workflows.schema.json#/definitions/TeamWorkflows"
         }
       }
     },
@@ -832,7 +910,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/BudgetRequest"
+            "$ref": "schema/reports.schema.json#/definitions/BudgetRequest"
           }
         }
       ]
@@ -852,7 +930,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/CapReached"
+            "$ref": "schema/core.schema.json#/definitions/CapReached"
           }
         }
       ]
@@ -872,7 +950,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ControlClientChanged"
+            "$ref": "schema/org.schema.json#/definitions/ControlClientChanged"
           }
         }
       ]
@@ -892,14 +970,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ConnectAnotherRequest"
+            "$ref": "schema/connections.schema.json#/definitions/ConnectAnotherRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -913,14 +991,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ConnectReport"
+            "$ref": "schema/reports.schema.json#/definitions/ConnectReport"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -940,7 +1018,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ConnectReport"
+            "$ref": "schema/reports.schema.json#/definitions/ConnectReport"
           }
         }
       ]
@@ -956,7 +1034,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ConnectAnotherRequest"
+            "$ref": "schema/connections.schema.json#/definitions/ConnectAnotherRequest"
           }
         }
       ]
@@ -972,7 +1050,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ControlCutOff"
+            "$ref": "schema/org.schema.json#/definitions/ControlCutOff"
           }
         }
       ]
@@ -993,7 +1071,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/CatalogRequest"
+            "$ref": "schema/mcp.schema.json#/definitions/CatalogRequest"
           }
         }
       ]
@@ -1013,7 +1091,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/GroupsChanged"
+            "$ref": "schema/org.schema.json#/definitions/GroupsChanged"
           }
         }
       ]
@@ -1033,7 +1111,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/JSONValue"
+            "$ref": "schema/core.schema.json#/definitions/JSONValue"
           }
         }
       ]
@@ -1048,7 +1126,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ControlInstallProgress"
+            "$ref": "schema/org.schema.json#/definitions/ControlInstallProgress"
           }
         }
       ]
@@ -1068,7 +1146,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/JoinDecided"
+            "$ref": "schema/org.schema.json#/definitions/JoinDecided"
           }
         }
       ]
@@ -1088,7 +1166,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/JoinRequest"
+            "$ref": "schema/org.schema.json#/definitions/JoinRequest"
           }
         }
       ]
@@ -1108,7 +1186,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/KeptList"
+            "$ref": "schema/workflows.schema.json#/definitions/KeptList"
           }
         }
       ]
@@ -1128,7 +1206,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/KeptDelivered"
+            "$ref": "schema/workflows.schema.json#/definitions/KeptDelivered"
           }
         }
       ]
@@ -1149,7 +1227,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LineageChanged"
+            "$ref": "schema/lineage.schema.json#/definitions/LineageChanged"
           }
         }
       ]
@@ -1169,7 +1247,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ChannelLinkDecided"
+            "$ref": "schema/connections.schema.json#/definitions/ChannelLinkDecided"
           }
         }
       ]
@@ -1189,7 +1267,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ChannelLinkRequest"
+            "$ref": "schema/connections.schema.json#/definitions/ChannelLinkRequest"
           }
         }
       ]
@@ -1209,7 +1287,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ]
@@ -1230,7 +1308,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockHead"
+            "$ref": "schema/org.schema.json#/definitions/LockHead"
           }
         }
       ]
@@ -1251,7 +1329,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockJoinDecided"
+            "$ref": "schema/org.schema.json#/definitions/LockJoinDecided"
           }
         }
       ]
@@ -1272,7 +1350,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockJoinRequest"
+            "$ref": "schema/org.schema.json#/definitions/LockJoinRequest"
           }
         }
       ]
@@ -1287,7 +1365,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ControlMoved"
+            "$ref": "schema/org.schema.json#/definitions/ControlMoved"
           }
         }
       ]
@@ -1303,7 +1381,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ControlNotice"
+            "$ref": "schema/connections.schema.json#/definitions/ControlNotice"
           }
         }
       ]
@@ -1324,7 +1402,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ]
@@ -1340,7 +1418,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRoutesLeft"
+            "$ref": "schema/org.schema.json#/definitions/OrgRoutesLeft"
           }
         }
       ]
@@ -1360,7 +1438,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PeopleChanged"
+            "$ref": "schema/files.schema.json#/definitions/PeopleChanged"
           }
         }
       ]
@@ -1375,14 +1453,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -1401,14 +1479,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PlaneMoveAsk"
+            "$ref": "schema/machines.schema.json#/definitions/PlaneMoveAsk"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -1422,14 +1500,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PlaneMoveReport"
+            "$ref": "schema/reports.schema.json#/definitions/PlaneMoveReport"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -1449,7 +1527,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PlaneMoveReport"
+            "$ref": "schema/reports.schema.json#/definitions/PlaneMoveReport"
           }
         }
       ]
@@ -1465,7 +1543,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PlaneMoveAsk"
+            "$ref": "schema/machines.schema.json#/definitions/PlaneMoveAsk"
           }
         }
       ]
@@ -1486,7 +1564,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PolicyView"
+            "$ref": "schema/org.schema.json#/definitions/PolicyView"
           }
         }
       ]
@@ -1506,7 +1584,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProjectsChanged"
+            "$ref": "schema/files.schema.json#/definitions/ProjectsChanged"
           }
         }
       ]
@@ -1521,7 +1599,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderDraftUpdate"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftUpdate"
           }
         }
       ]
@@ -1541,7 +1619,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderList"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderList"
           }
         }
       ]
@@ -1561,14 +1639,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -1587,14 +1665,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/WebRemoteStatus"
+          "$ref": "schema/machines.schema.json#/definitions/WebRemoteStatus"
         }
       }
     },
@@ -1613,14 +1691,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -1640,7 +1718,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ]
@@ -1660,7 +1738,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SecretsLeft"
+            "$ref": "schema/org.schema.json#/definitions/SecretsLeft"
           }
         }
       ]
@@ -1679,14 +1757,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/AuditDays"
+            "$ref": "schema/org.schema.json#/definitions/AuditDays"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/AuditDays"
+          "$ref": "schema/org.schema.json#/definitions/AuditDays"
         }
       }
     },
@@ -1699,14 +1777,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/FolderDetection"
+            "$ref": "schema/files.schema.json#/definitions/FolderDetection"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/FolderDetection"
+          "$ref": "schema/files.schema.json#/definitions/FolderDetection"
         }
       }
     },
@@ -1725,14 +1803,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/WebServe"
+            "$ref": "schema/machines.schema.json#/definitions/WebServe"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/WebRemoteStatus"
+          "$ref": "schema/machines.schema.json#/definitions/WebRemoteStatus"
         }
       }
     },
@@ -1751,7 +1829,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInDecided"
+            "$ref": "schema/org.schema.json#/definitions/SignInDecided"
           }
         }
       ],
@@ -1772,7 +1850,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInRequest"
+            "$ref": "schema/org.schema.json#/definitions/SignInRequest"
           }
         }
       ],
@@ -1788,7 +1866,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInWaiting"
+            "$ref": "schema/org.schema.json#/definitions/SignInWaiting"
           }
         }
       ],
@@ -1808,14 +1886,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ControlStatus"
+          "$ref": "schema/org.schema.json#/definitions/ControlStatus"
         }
       }
     },
@@ -1835,7 +1913,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PolicyView"
+            "$ref": "schema/org.schema.json#/definitions/PolicyView"
           }
         }
       ]
@@ -1850,7 +1928,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineJoinStatus"
+            "$ref": "schema/org.schema.json#/definitions/MachineJoinStatus"
           }
         }
       ]
@@ -1865,7 +1943,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineTunnelChanged"
+            "$ref": "schema/machines.schema.json#/definitions/MachineTunnelChanged"
           }
         }
       ]
@@ -1885,7 +1963,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/UserSettingsChanged"
+            "$ref": "schema/org.schema.json#/definitions/UserSettingsChanged"
           }
         }
       ]
@@ -1900,7 +1978,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/WebRemoteStatus"
+            "$ref": "schema/machines.schema.json#/definitions/WebRemoteStatus"
           }
         }
       ]
@@ -1916,7 +1994,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/FolderDetection"
+            "$ref": "schema/files.schema.json#/definitions/FolderDetection"
           }
         }
       ]
@@ -1931,14 +2009,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/JSONValue"
+            "$ref": "schema/core.schema.json#/definitions/JSONValue"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -1952,14 +2030,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/GitCredentialRequest"
+            "$ref": "schema/org.schema.json#/definitions/GitCredentialRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/GitCredential"
+          "$ref": "schema/org.schema.json#/definitions/GitCredential"
         }
       }
     },
@@ -1978,14 +2056,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/CatalogApprovalList"
+          "$ref": "schema/mcp.schema.json#/definitions/CatalogApprovalList"
         }
       }
     },
@@ -2004,14 +2082,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/CatalogDecide"
+            "$ref": "schema/mcp.schema.json#/definitions/CatalogDecide"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/CatalogRequest"
+          "$ref": "schema/mcp.schema.json#/definitions/CatalogRequest"
         }
       }
     },
@@ -2025,14 +2103,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineCatalog"
+            "$ref": "schema/mcp.schema.json#/definitions/MachineCatalog"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2051,14 +2129,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/CatalogAsk"
+            "$ref": "schema/mcp.schema.json#/definitions/CatalogAsk"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/CatalogRequest"
+          "$ref": "schema/mcp.schema.json#/definitions/CatalogRequest"
         }
       }
     },
@@ -2077,14 +2155,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/CatalogRequestList"
+          "$ref": "schema/mcp.schema.json#/definitions/CatalogRequestList"
         }
       }
     },
@@ -2103,14 +2181,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/CatalogRevoke"
+            "$ref": "schema/mcp.schema.json#/definitions/CatalogRevoke"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/CatalogApprovalList"
+          "$ref": "schema/mcp.schema.json#/definitions/CatalogApprovalList"
         }
       }
     },
@@ -2129,14 +2207,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/CatalogUsage"
+          "$ref": "schema/reports.schema.json#/definitions/CatalogUsage"
         }
       }
     },
@@ -2154,14 +2232,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/GroupList"
+          "$ref": "schema/org.schema.json#/definitions/GroupList"
         }
       }
     },
@@ -2179,14 +2257,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/GroupRequest"
+            "$ref": "schema/org.schema.json#/definitions/GroupRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2204,14 +2282,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/GroupSet"
+            "$ref": "schema/org.schema.json#/definitions/GroupSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Group"
+          "$ref": "schema/org.schema.json#/definitions/Group"
         }
       }
     },
@@ -2225,14 +2303,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/GroupRoleSet"
+            "$ref": "schema/org.schema.json#/definitions/GroupRoleSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Group"
+          "$ref": "schema/org.schema.json#/definitions/Group"
         }
       },
       "tags": [
@@ -2251,14 +2329,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/HandoverStatus"
+          "$ref": "schema/org.schema.json#/definitions/HandoverStatus"
         }
       }
     },
@@ -2277,14 +2355,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LineageSessionsOnRequest"
+            "$ref": "schema/lineage.schema.json#/definitions/LineageSessionsOnRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/LineageSessionsOn"
+          "$ref": "schema/lineage.schema.json#/definitions/LineageSessionsOn"
         }
       }
     },
@@ -2298,14 +2376,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LineageSync"
+            "$ref": "schema/lineage.schema.json#/definitions/LineageSync"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/LineageSyncAnswer"
+          "$ref": "schema/lineage.schema.json#/definitions/LineageSyncAnswer"
         }
       }
     },
@@ -2324,14 +2402,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LineageWalkAllRequest"
+            "$ref": "schema/lineage.schema.json#/definitions/LineageWalkAllRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/LineageGraph"
+          "$ref": "schema/lineage.schema.json#/definitions/LineageGraph"
         }
       }
     },
@@ -2349,14 +2427,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ChannelLinkDecide"
+            "$ref": "schema/connections.schema.json#/definitions/ChannelLinkDecide"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2370,14 +2448,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ChannelSender"
+            "$ref": "schema/connections.schema.json#/definitions/ChannelSender"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ChannelLinkChecked"
+          "$ref": "schema/connections.schema.json#/definitions/ChannelLinkChecked"
         }
       }
     },
@@ -2395,14 +2473,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ChannelLinkDecide"
+            "$ref": "schema/connections.schema.json#/definitions/ChannelLinkDecide"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2420,7 +2498,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
@@ -2429,7 +2507,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/ChannelLink"
+            "$ref": "schema/connections.schema.json#/definitions/ChannelLink"
           }
         }
       }
@@ -2448,14 +2526,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ChannelLinkRemove"
+            "$ref": "schema/connections.schema.json#/definitions/ChannelLinkRemove"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2473,7 +2551,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
@@ -2482,7 +2560,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/ChannelLinkRequest"
+            "$ref": "schema/connections.schema.json#/definitions/ChannelLinkRequest"
           }
         }
       }
@@ -2502,14 +2580,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockAdd"
+            "$ref": "schema/org.schema.json#/definitions/LockAdd"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/LockHead"
+          "$ref": "schema/org.schema.json#/definitions/LockHead"
         }
       }
     },
@@ -2528,14 +2606,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockGet"
+            "$ref": "schema/org.schema.json#/definitions/LockGet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Lock"
+          "$ref": "schema/org.schema.json#/definitions/Lock"
         }
       }
     },
@@ -2554,14 +2632,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockJoin"
+            "$ref": "schema/org.schema.json#/definitions/LockJoin"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/LockJoinStarted"
+          "$ref": "schema/org.schema.json#/definitions/LockJoinStarted"
         }
       }
     },
@@ -2580,14 +2658,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockJoinNonce"
+            "$ref": "schema/org.schema.json#/definitions/LockJoinNonce"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2606,14 +2684,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockJoinEnd"
+            "$ref": "schema/org.schema.json#/definitions/LockJoinEnd"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2632,7 +2710,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
@@ -2641,7 +2719,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/LockJoinRequest"
+            "$ref": "schema/org.schema.json#/definitions/LockJoinRequest"
           }
         }
       }
@@ -2661,14 +2739,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockJoinNonce"
+            "$ref": "schema/org.schema.json#/definitions/LockJoinNonce"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2687,35 +2765,35 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
     {
       "name": "machine/accounts",
-      "x-capability": "machine.accounts/1",
-      "description": "A host, for an agent there (#3967): its person's outside accounts, with add added.",
+      "x-capability": "machine.accounts/2",
+      "description": "A host, for an agent there (#3967): its person's outside accounts, with add added and remove taken out (#5253).",
       "paramStructure": "by-name",
       "params": [
         {
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineAccountsCall"
+            "$ref": "schema/org.schema.json#/definitions/MachineAccountsCall"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OutsideAccounts"
+          "$ref": "schema/org.schema.json#/definitions/OutsideAccounts"
         }
       }
     },
@@ -2730,7 +2808,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineClients"
+            "$ref": "schema/machines.schema.json#/definitions/MachineClients"
           }
         }
       ]
@@ -2745,14 +2823,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineHello"
+            "$ref": "schema/machines.schema.json#/definitions/MachineHello"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/MachineHelloAnswer"
+          "$ref": "schema/machines.schema.json#/definitions/MachineHelloAnswer"
         }
       }
     },
@@ -2767,7 +2845,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ControlInstallProgress"
+            "$ref": "schema/org.schema.json#/definitions/ControlInstallProgress"
           }
         }
       ]
@@ -2783,7 +2861,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Lock"
+            "$ref": "schema/org.schema.json#/definitions/Lock"
           }
         }
       ]
@@ -2798,14 +2876,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockAdd"
+            "$ref": "schema/org.schema.json#/definitions/LockAdd"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/LockHead"
+          "$ref": "schema/org.schema.json#/definitions/LockHead"
         }
       }
     },
@@ -2819,14 +2897,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2840,14 +2918,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockJoin"
+            "$ref": "schema/org.schema.json#/definitions/LockJoin"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/LockJoinStarted"
+          "$ref": "schema/org.schema.json#/definitions/LockJoinStarted"
         }
       }
     },
@@ -2862,7 +2940,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockJoinRequest"
+            "$ref": "schema/org.schema.json#/definitions/LockJoinRequest"
           }
         }
       ]
@@ -2877,14 +2955,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LockJoinNonce"
+            "$ref": "schema/org.schema.json#/definitions/LockJoinNonce"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2898,14 +2976,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineWorkspaceCall"
+            "$ref": "schema/reports.schema.json#/definitions/MachineWorkspaceCall"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/JSONValue"
+          "$ref": "schema/core.schema.json#/definitions/JSONValue"
         }
       }
     },
@@ -2919,14 +2997,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRouteRequest"
+            "$ref": "schema/org.schema.json#/definitions/OrgRouteRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgRouteCheck"
+          "$ref": "schema/org.schema.json#/definitions/OrgRouteCheck"
         }
       }
     },
@@ -2941,7 +3019,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRouteDelivery"
+            "$ref": "schema/org.schema.json#/definitions/OrgRouteDelivery"
           }
         }
       ]
@@ -2956,14 +3034,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2977,14 +3055,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRoutesApplied"
+            "$ref": "schema/org.schema.json#/definitions/OrgRoutesApplied"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -2998,14 +3076,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/WebPagePairing"
+          "$ref": "schema/machines.schema.json#/definitions/WebPagePairing"
         }
       }
     },
@@ -3020,7 +3098,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachinePolicy"
+            "$ref": "schema/org.schema.json#/definitions/MachinePolicy"
           }
         }
       ]
@@ -3035,14 +3113,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PolicyApplied"
+            "$ref": "schema/org.schema.json#/definitions/PolicyApplied"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3057,7 +3135,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineProjects"
+            "$ref": "schema/machines.schema.json#/definitions/MachineProjects"
           }
         }
       ]
@@ -3072,14 +3150,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineProviderDraftCall"
+            "$ref": "schema/machines.schema.json#/definitions/MachineProviderDraftCall"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/JSONValue"
+          "$ref": "schema/core.schema.json#/definitions/JSONValue"
         }
       }
     },
@@ -3094,7 +3172,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineRelease"
+            "$ref": "schema/machines.schema.json#/definitions/MachineRelease"
           }
         }
       ]
@@ -3109,14 +3187,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SecretReleaseKey"
+          "$ref": "schema/org.schema.json#/definitions/SecretReleaseKey"
         }
       }
     },
@@ -3130,14 +3208,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineSecretOpsCall"
+            "$ref": "schema/org.schema.json#/definitions/MachineSecretOpsCall"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3151,14 +3229,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SecretRelease"
+            "$ref": "schema/org.schema.json#/definitions/SecretRelease"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SecretReleased"
+          "$ref": "schema/org.schema.json#/definitions/SecretReleased"
         }
       }
     },
@@ -3172,14 +3250,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineStatus"
+            "$ref": "schema/machines.schema.json#/definitions/MachineStatus"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3194,7 +3272,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineUser"
+            "$ref": "schema/org.schema.json#/definitions/MachineUser"
           }
         }
       ]
@@ -3210,7 +3288,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineUserSettings"
+            "$ref": "schema/org.schema.json#/definitions/MachineUserSettings"
           }
         }
       ]
@@ -3225,14 +3303,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineAnnounce"
+            "$ref": "schema/machines.schema.json#/definitions/MachineAnnounce"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Admitted"
+          "$ref": "schema/core.schema.json#/definitions/Admitted"
         }
       }
     },
@@ -3250,14 +3328,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/JoinRequestDecide"
+            "$ref": "schema/org.schema.json#/definitions/JoinRequestDecide"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/JoinApproved"
+          "$ref": "schema/org.schema.json#/definitions/JoinApproved"
         }
       }
     },
@@ -3271,14 +3349,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineBotKey"
+            "$ref": "schema/connections.schema.json#/definitions/MachineBotKey"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3296,14 +3374,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineRequest"
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3321,14 +3399,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineRequest"
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3347,14 +3425,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineRequest"
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/StartedMachinePreview"
+          "$ref": "schema/machines.schema.json#/definitions/StartedMachinePreview"
         }
       }
     },
@@ -3372,14 +3450,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/JoinRequestDecide"
+            "$ref": "schema/org.schema.json#/definitions/JoinRequestDecide"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3392,7 +3470,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
@@ -3401,7 +3479,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/DetectedServer"
+            "$ref": "schema/machines.schema.json#/definitions/DetectedServer"
           }
         }
       }
@@ -3420,14 +3498,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/KeptRequestID"
+            "$ref": "schema/workflows.schema.json#/definitions/KeptRequestID"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3441,14 +3519,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/AgentMachines"
+          "$ref": "schema/machines.schema.json#/definitions/AgentMachines"
         }
       }
     },
@@ -3466,14 +3544,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineInstall"
+            "$ref": "schema/machines.schema.json#/definitions/MachineInstall"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/JSONValue"
+          "$ref": "schema/core.schema.json#/definitions/JSONValue"
         }
       }
     },
@@ -3491,7 +3569,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
@@ -3500,7 +3578,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/JoinRequest"
+            "$ref": "schema/org.schema.json#/definitions/JoinRequest"
           }
         }
       }
@@ -3514,14 +3592,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/KeepRequest"
+            "$ref": "schema/workflows.schema.json#/definitions/KeepRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/JSONValue"
+          "$ref": "schema/core.schema.json#/definitions/JSONValue"
         }
       }
     },
@@ -3539,14 +3617,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineRequest"
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/MachineLastHeard"
+          "$ref": "schema/machines.schema.json#/definitions/MachineLastHeard"
         }
       }
     },
@@ -3564,14 +3642,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LendGit"
+            "$ref": "schema/org.schema.json#/definitions/LendGit"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3584,14 +3662,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/LendSignIn"
+            "$ref": "schema/org.schema.json#/definitions/LendSignIn"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3609,14 +3687,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineLink"
+            "$ref": "schema/machines.schema.json#/definitions/MachineLink"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ControlMachine"
+          "$ref": "schema/org.schema.json#/definitions/ControlMachine"
         }
       }
     },
@@ -3634,7 +3712,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
@@ -3643,7 +3721,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/ControlMachine"
+            "$ref": "schema/org.schema.json#/definitions/ControlMachine"
           }
         }
       }
@@ -3662,14 +3740,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/KeptList"
+          "$ref": "schema/workflows.schema.json#/definitions/KeptList"
         }
       }
     },
@@ -3683,14 +3761,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProjectFoldersRequest"
+            "$ref": "schema/files.schema.json#/definitions/ProjectFoldersRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProjectFolders"
+          "$ref": "schema/files.schema.json#/definitions/ProjectFolders"
         }
       }
     },
@@ -3704,14 +3782,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProjectSessionsRequest"
+            "$ref": "schema/files.schema.json#/definitions/ProjectSessionsRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProjectSessions"
+          "$ref": "schema/files.schema.json#/definitions/ProjectSessions"
         }
       }
     },
@@ -3729,14 +3807,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineRequest"
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3754,14 +3832,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/KeptRequestID"
+            "$ref": "schema/workflows.schema.json#/definitions/KeptRequestID"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3775,14 +3853,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineFolderSend"
+            "$ref": "schema/machines.schema.json#/definitions/MachineFolderSend"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/MachineFolderSent"
+          "$ref": "schema/machines.schema.json#/definitions/MachineFolderSent"
         }
       }
     },
@@ -3796,14 +3874,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineSessionCall"
+            "$ref": "schema/machines.schema.json#/definitions/MachineSessionCall"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SessionCallReply"
+          "$ref": "schema/sessions.schema.json#/definitions/SessionCallReply"
         }
       }
     },
@@ -3817,14 +3895,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SessionEnded"
+            "$ref": "schema/sessions.schema.json#/definitions/SessionEnded"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3842,14 +3920,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineOptions"
+            "$ref": "schema/machines.schema.json#/definitions/MachineOptions"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ControlMachine"
+          "$ref": "schema/org.schema.json#/definitions/ControlMachine"
         }
       }
     },
@@ -3862,7 +3940,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SSHHostsRequest"
+            "$ref": "schema/machines.schema.json#/definitions/SSHHostsRequest"
           }
         }
       ],
@@ -3871,7 +3949,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/SSHHost"
+            "$ref": "schema/machines.schema.json#/definitions/SSHHost"
           }
         }
       }
@@ -3890,14 +3968,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineRequest"
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ControlMachine"
+          "$ref": "schema/org.schema.json#/definitions/ControlMachine"
         }
       }
     },
@@ -3915,14 +3993,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineEnroll"
+            "$ref": "schema/machines.schema.json#/definitions/MachineEnroll"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ControlCodeShown"
+          "$ref": "schema/org.schema.json#/definitions/ControlCodeShown"
         }
       }
     },
@@ -3936,14 +4014,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineSessionStart"
+            "$ref": "schema/machines.schema.json#/definitions/MachineSessionStart"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/UUID"
+          "$ref": "schema/core.schema.json#/definitions/UUID"
         }
       }
     },
@@ -3961,14 +4039,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineStop"
+            "$ref": "schema/machines.schema.json#/definitions/MachineStop"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ControlMachine"
+          "$ref": "schema/org.schema.json#/definitions/ControlMachine"
         }
       }
     },
@@ -3982,14 +4060,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SummaryFactsRequest"
+            "$ref": "schema/core.schema.json#/definitions/SummaryFactsRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/MachinesSummaryFacts"
+          "$ref": "schema/machines.schema.json#/definitions/MachinesSummaryFacts"
         }
       }
     },
@@ -4007,14 +4085,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineRequest"
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ControlMachine"
+          "$ref": "schema/org.schema.json#/definitions/ControlMachine"
         }
       }
     },
@@ -4032,14 +4110,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MachineUpdate"
+            "$ref": "schema/machines.schema.json#/definitions/MachineUpdate"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/JSONValue"
+          "$ref": "schema/core.schema.json#/definitions/JSONValue"
         }
       },
       "description": "Update a server's host over ssh (#1766): its server and key given again, the host key checked as at an install, the server's root checked to be this host's, then the control plane's agentsd, MCP servers and toolsets copied and the host started again. The answer is an install's: {needsTrust, name} first for a key not yet trusted, then {updated: true, name}."
@@ -4054,14 +4132,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/MultiplierCountParams"
+            "$ref": "schema/reports.schema.json#/definitions/MultiplierCountParams"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Multiplier"
+          "$ref": "schema/reports.schema.json#/definitions/Multiplier"
         }
       }
     },
@@ -4076,7 +4154,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/NoticeDelivered"
+            "$ref": "schema/connections.schema.json#/definitions/NoticeDelivered"
           }
         }
       ]
@@ -4091,14 +4169,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/NoticeLimits"
+            "$ref": "schema/connections.schema.json#/definitions/NoticeLimits"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/NoticeTaken"
+          "$ref": "schema/connections.schema.json#/definitions/NoticeTaken"
         }
       }
     },
@@ -4117,14 +4195,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRouteRequest"
+            "$ref": "schema/org.schema.json#/definitions/OrgRouteRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgRouteCheck"
+          "$ref": "schema/org.schema.json#/definitions/OrgRouteCheck"
         }
       }
     },
@@ -4143,14 +4221,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgRouteList"
+          "$ref": "schema/org.schema.json#/definitions/OrgRouteList"
         }
       }
     },
@@ -4169,14 +4247,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgRoutesMine"
+          "$ref": "schema/org.schema.json#/definitions/OrgRoutesMine"
         }
       }
     },
@@ -4195,14 +4273,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRouteRecipientsRequest"
+            "$ref": "schema/org.schema.json#/definitions/OrgRouteRecipientsRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SealRecipients"
+          "$ref": "schema/org.schema.json#/definitions/SealRecipients"
         }
       }
     },
@@ -4221,14 +4299,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRouteRequest"
+            "$ref": "schema/org.schema.json#/definitions/OrgRouteRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -4247,14 +4325,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRouteReplaceKey"
+            "$ref": "schema/org.schema.json#/definitions/OrgRouteReplaceKey"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgRouteKept"
+          "$ref": "schema/org.schema.json#/definitions/OrgRouteKept"
         }
       }
     },
@@ -4273,14 +4351,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRouteRequest"
+            "$ref": "schema/org.schema.json#/definitions/OrgRouteRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SealingItem"
+          "$ref": "schema/org.schema.json#/definitions/SealingItem"
         }
       }
     },
@@ -4299,14 +4377,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgRouteSet"
+            "$ref": "schema/org.schema.json#/definitions/OrgRouteSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgRouteKept"
+          "$ref": "schema/org.schema.json#/definitions/OrgRouteKept"
         }
       }
     },
@@ -4325,14 +4403,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/PeopleForViews"
+          "$ref": "schema/files.schema.json#/definitions/PeopleForViews"
         }
       }
     },
@@ -4350,14 +4428,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PersonInvite"
+            "$ref": "schema/org.schema.json#/definitions/PersonInvite"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/PersonInvited"
+          "$ref": "schema/org.schema.json#/definitions/PersonInvited"
         }
       }
     },
@@ -4375,14 +4453,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/PeopleList"
+          "$ref": "schema/sessions.schema.json#/definitions/PeopleList"
         }
       }
     },
@@ -4400,14 +4478,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PersonRequest"
+            "$ref": "schema/org.schema.json#/definitions/PersonRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -4425,14 +4503,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PersonRequest"
+            "$ref": "schema/org.schema.json#/definitions/PersonRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/PersonRemovePreview"
+          "$ref": "schema/org.schema.json#/definitions/PersonRemovePreview"
         }
       }
     },
@@ -4446,14 +4524,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/RemoveRequestList"
+          "$ref": "schema/workflows.schema.json#/definitions/RemoveRequestList"
         }
       },
       "tags": [
@@ -4477,14 +4555,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ForgeLogins"
+            "$ref": "schema/forge.schema.json#/definitions/ForgeLogins"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -4502,14 +4580,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PersonRoleRequest"
+            "$ref": "schema/org.schema.json#/definitions/PersonRoleRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -4528,14 +4606,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PolicyAskForMore"
+            "$ref": "schema/org.schema.json#/definitions/PolicyAskForMore"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BudgetRequest"
+          "$ref": "schema/reports.schema.json#/definitions/BudgetRequest"
         }
       }
     },
@@ -4554,14 +4632,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/PolicyKept"
+          "$ref": "schema/org.schema.json#/definitions/PolicyKept"
         }
       }
     },
@@ -4580,14 +4658,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/PolicyView"
+          "$ref": "schema/org.schema.json#/definitions/PolicyView"
         }
       }
     },
@@ -4606,14 +4684,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PolicyRaiseRequest"
+            "$ref": "schema/org.schema.json#/definitions/PolicyRaiseRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/PolicyKept"
+          "$ref": "schema/org.schema.json#/definitions/PolicyKept"
         }
       }
     },
@@ -4632,14 +4710,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PolicyRefuseMore"
+            "$ref": "schema/org.schema.json#/definitions/PolicyRefuseMore"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BudgetRequest"
+          "$ref": "schema/reports.schema.json#/definitions/BudgetRequest"
         }
       }
     },
@@ -4658,14 +4736,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/BudgetRequestList"
+          "$ref": "schema/reports.schema.json#/definitions/BudgetRequestList"
         }
       }
     },
@@ -4684,14 +4762,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PolicySet"
+            "$ref": "schema/org.schema.json#/definitions/PolicySet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/PolicyKept"
+          "$ref": "schema/org.schema.json#/definitions/PolicyKept"
         }
       }
     },
@@ -4710,14 +4788,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/PolicyStopAllRequest"
+            "$ref": "schema/org.schema.json#/definitions/PolicyStopAllRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/PolicyKept"
+          "$ref": "schema/org.schema.json#/definitions/PolicyKept"
         }
       }
     },
@@ -4731,14 +4809,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProjectsJoined"
+            "$ref": "schema/org.schema.json#/definitions/ProjectsJoined"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/MachineProjects"
+          "$ref": "schema/machines.schema.json#/definitions/MachineProjects"
         }
       }
     },
@@ -4756,14 +4834,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProjectList"
+          "$ref": "schema/files.schema.json#/definitions/ProjectList"
         }
       }
     },
@@ -4781,14 +4859,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProjectRequest"
+            "$ref": "schema/files.schema.json#/definitions/ProjectRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -4801,14 +4879,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProjectSessionsRequest"
+            "$ref": "schema/files.schema.json#/definitions/ProjectSessionsRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProjectSessions"
+          "$ref": "schema/files.schema.json#/definitions/ProjectSessions"
         }
       }
     },
@@ -4826,14 +4904,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProjectSet"
+            "$ref": "schema/files.schema.json#/definitions/ProjectSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Project"
+          "$ref": "schema/files.schema.json#/definitions/Project"
         }
       }
     },
@@ -4851,14 +4929,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProjectBoardsSet"
+            "$ref": "schema/files.schema.json#/definitions/ProjectBoardsSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Project"
+          "$ref": "schema/files.schema.json#/definitions/Project"
         }
       }
     },
@@ -4876,14 +4954,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProjectSlotSet"
+            "$ref": "schema/files.schema.json#/definitions/ProjectSlotSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Project"
+          "$ref": "schema/files.schema.json#/definitions/Project"
         }
       }
     },
@@ -4901,14 +4979,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderAdd"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderAdd"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProviderSummary"
+          "$ref": "schema/machines.schema.json#/definitions/ProviderSummary"
         }
       }
     },
@@ -4926,14 +5004,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderCreate"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderCreate"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProviderCreated"
+          "$ref": "schema/machines.schema.json#/definitions/ProviderCreated"
         }
       }
     },
@@ -4952,14 +5030,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderWorkspaceRequest"
+            "$ref": "schema/reports.schema.json#/definitions/ProviderWorkspaceRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -4972,14 +5050,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderDraftAnswer"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftAnswer"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -4992,14 +5070,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderDraftRequest"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -5012,14 +5090,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderDraftSigned"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftSigned"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -5032,14 +5110,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderDraftStart"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftStart"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProviderDraftStarted"
+          "$ref": "schema/machines.schema.json#/definitions/ProviderDraftStarted"
         }
       }
     },
@@ -5057,14 +5135,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProviderList"
+          "$ref": "schema/machines.schema.json#/definitions/ProviderList"
         }
       }
     },
@@ -5083,14 +5161,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderRequest"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -5108,14 +5186,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderRequest"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProviderOptions"
+          "$ref": "schema/machines.schema.json#/definitions/ProviderOptions"
         }
       }
     },
@@ -5133,14 +5211,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderRequest"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -5158,14 +5236,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderRequest"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -5178,14 +5256,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProviderRuntimes"
+          "$ref": "schema/machines.schema.json#/definitions/ProviderRuntimes"
         }
       }
     },
@@ -5203,14 +5281,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderGroup"
+            "$ref": "schema/org.schema.json#/definitions/ProviderGroup"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -5228,14 +5306,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ProviderAdd"
+            "$ref": "schema/machines.schema.json#/definitions/ProviderAdd"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ProviderSummary"
+          "$ref": "schema/machines.schema.json#/definitions/ProviderSummary"
         }
       }
     },
@@ -5249,14 +5327,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReadAPI"
+          "$ref": "schema/org.schema.json#/definitions/ReadAPI"
         }
       },
       "tags": [
@@ -5275,14 +5353,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ReadTokenMake"
+            "$ref": "schema/org.schema.json#/definitions/ReadTokenMake"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReadTokenMade"
+          "$ref": "schema/org.schema.json#/definitions/ReadTokenMade"
         }
       },
       "tags": [
@@ -5301,14 +5379,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ReadTokenRevoke"
+            "$ref": "schema/org.schema.json#/definitions/ReadTokenRevoke"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReadAPI"
+          "$ref": "schema/org.schema.json#/definitions/ReadAPI"
         }
       },
       "tags": [
@@ -5332,14 +5410,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ReportViewID"
+            "$ref": "schema/reports.schema.json#/definitions/ReportViewID"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReportViews"
+          "$ref": "schema/reports.schema.json#/definitions/ReportViews"
         }
       }
     },
@@ -5357,14 +5435,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ReportQuery"
+            "$ref": "schema/reports.schema.json#/definitions/ReportQuery"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReportExport"
+          "$ref": "schema/reports.schema.json#/definitions/ReportExport"
         }
       }
     },
@@ -5383,14 +5461,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ReportNodesQuery"
+            "$ref": "schema/reports.schema.json#/definitions/ReportNodesQuery"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReportNodes"
+          "$ref": "schema/reports.schema.json#/definitions/ReportNodes"
         }
       }
     },
@@ -5409,14 +5487,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReportPolicy"
+          "$ref": "schema/reports.schema.json#/definitions/ReportPolicy"
         }
       }
     },
@@ -5435,14 +5513,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ReportView"
+            "$ref": "schema/reports.schema.json#/definitions/ReportView"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReportViews"
+          "$ref": "schema/reports.schema.json#/definitions/ReportViews"
         }
       }
     },
@@ -5461,14 +5539,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReportScopes"
+          "$ref": "schema/reports.schema.json#/definitions/ReportScopes"
         }
       }
     },
@@ -5487,14 +5565,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ReportPolicy"
+            "$ref": "schema/reports.schema.json#/definitions/ReportPolicy"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReportPolicy"
+          "$ref": "schema/reports.schema.json#/definitions/ReportPolicy"
         }
       }
     },
@@ -5512,14 +5590,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ReportQuery"
+            "$ref": "schema/reports.schema.json#/definitions/ReportQuery"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/UsageReport"
+          "$ref": "schema/reports.schema.json#/definitions/UsageReport"
         }
       }
     },
@@ -5538,14 +5616,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/ReportQuery"
+            "$ref": "schema/reports.schema.json#/definitions/ReportQuery"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReportValue"
+          "$ref": "schema/reports.schema.json#/definitions/ReportValue"
         }
       }
     },
@@ -5564,14 +5642,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/ReportViews"
+          "$ref": "schema/reports.schema.json#/definitions/ReportViews"
         }
       }
     },
@@ -5585,14 +5663,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SCIMSet"
+            "$ref": "schema/org.schema.json#/definitions/SCIMSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgProviderKept"
+          "$ref": "schema/org.schema.json#/definitions/OrgProviderKept"
         }
       },
       "tags": [
@@ -5611,14 +5689,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SCIMTokensRequest"
+            "$ref": "schema/org.schema.json#/definitions/SCIMTokensRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SCIMTokenList"
+          "$ref": "schema/org.schema.json#/definitions/SCIMTokenList"
         }
       },
       "tags": [
@@ -5637,14 +5715,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SCIMTokenMake"
+            "$ref": "schema/org.schema.json#/definitions/SCIMTokenMake"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SCIMTokenMade"
+          "$ref": "schema/org.schema.json#/definitions/SCIMTokenMade"
         }
       },
       "tags": [
@@ -5663,14 +5741,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SCIMTokenRequest"
+            "$ref": "schema/org.schema.json#/definitions/SCIMTokenRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       },
       "tags": [
@@ -5694,14 +5772,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SealingAdd"
+            "$ref": "schema/org.schema.json#/definitions/SealingAdd"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -5720,14 +5798,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SealingWork"
+          "$ref": "schema/reports.schema.json#/definitions/SealingWork"
         }
       }
     },
@@ -5740,14 +5818,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInAdd"
+            "$ref": "schema/org.schema.json#/definitions/SignInAdd"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SignIn"
+          "$ref": "schema/org.schema.json#/definitions/SignIn"
         }
       },
       "description": "Add a Google, Apple or GitHub sign-in to the caller's person (#995, FR-005): an ID token whose nonce is made from signIn/providers' challenge. Refused when it is another person's."
@@ -5766,14 +5844,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInDecide"
+            "$ref": "schema/org.schema.json#/definitions/SignInDecide"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       },
       "description": "Approve a waiting GitHub sign-in: the new client pairs as the caller's person (#995). A browser's needs the code it shows (#2097)."
@@ -5787,14 +5865,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInAsk"
+            "$ref": "schema/org.schema.json#/definitions/SignInAsk"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Admitted"
+          "$ref": "schema/core.schema.json#/definitions/Admitted"
         }
       },
       "description": "On an `s:` connection only (#2097): a browser asks to pair as the person with this sign-in's email or GitHub login. It gets control/signInWaiting with a code, and is answered when the person types that code and approves on one of their clients. The same for an account nobody has: it waits, and nothing approves it."
@@ -5813,14 +5891,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInConfigure"
+            "$ref": "schema/org.schema.json#/definitions/SignInConfigure"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SignInProviders"
+          "$ref": "schema/org.schema.json#/definitions/SignInProviders"
         }
       },
       "description": "Admins (#995, FR-004, FR-006): turn a provider on or off, and allow Google Workspace domains or GitHub organisations."
@@ -5839,14 +5917,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInDecide"
+            "$ref": "schema/org.schema.json#/definitions/SignInDecide"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       },
       "description": "Deny a waiting GitHub sign-in (#995)."
@@ -5861,14 +5939,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInDiscover"
+            "$ref": "schema/org.schema.json#/definitions/SignInDiscover"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SignInDiscovered"
+          "$ref": "schema/org.schema.json#/definitions/SignInDiscovered"
         }
       }
     },
@@ -5882,14 +5960,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInDomainRequest"
+            "$ref": "schema/org.schema.json#/definitions/SignInDomainRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/DomainClaim"
+          "$ref": "schema/org.schema.json#/definitions/DomainClaim"
         }
       },
       "tags": [
@@ -5908,14 +5986,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInDomainClaim"
+            "$ref": "schema/org.schema.json#/definitions/SignInDomainClaim"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/DomainClaim"
+          "$ref": "schema/org.schema.json#/definitions/DomainClaim"
         }
       },
       "tags": [
@@ -5934,14 +6012,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SignInDomainList"
+          "$ref": "schema/org.schema.json#/definitions/SignInDomainList"
         }
       },
       "tags": [
@@ -5960,14 +6038,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInDomainRequest"
+            "$ref": "schema/org.schema.json#/definitions/SignInDomainRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SignInDomainPreview"
+          "$ref": "schema/org.schema.json#/definitions/SignInDomainPreview"
         }
       },
       "tags": [
@@ -5986,14 +6064,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInDomainRequest"
+            "$ref": "schema/org.schema.json#/definitions/SignInDomainRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       },
       "tags": [
@@ -6012,14 +6090,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInDomainSet"
+            "$ref": "schema/org.schema.json#/definitions/SignInDomainSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/DomainClaim"
+          "$ref": "schema/org.schema.json#/definitions/DomainClaim"
         }
       },
       "tags": [
@@ -6038,14 +6116,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgProviderRequest"
+            "$ref": "schema/org.schema.json#/definitions/OrgProviderRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgProviderCheck"
+          "$ref": "schema/org.schema.json#/definitions/OrgProviderCheck"
         }
       },
       "tags": [
@@ -6064,14 +6142,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgProviderList"
+          "$ref": "schema/org.schema.json#/definitions/OrgProviderList"
         }
       },
       "tags": [
@@ -6090,14 +6168,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgProviderRequest"
+            "$ref": "schema/org.schema.json#/definitions/OrgProviderRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       },
       "tags": [
@@ -6116,14 +6194,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/OrgProviderSet"
+            "$ref": "schema/org.schema.json#/definitions/OrgProviderSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/OrgProviderKept"
+          "$ref": "schema/org.schema.json#/definitions/OrgProviderKept"
         }
       },
       "tags": [
@@ -6142,14 +6220,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInOrgStart"
+            "$ref": "schema/org.schema.json#/definitions/SignInOrgStart"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SignInOrgStarted"
+          "$ref": "schema/org.schema.json#/definitions/SignInOrgStarted"
         }
       }
     },
@@ -6162,14 +6240,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInPair"
+            "$ref": "schema/org.schema.json#/definitions/SignInPair"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Admitted"
+          "$ref": "schema/core.schema.json#/definitions/Admitted"
         }
       },
       "description": "On an `s:` connection only (#995): sign in with Google or Apple (an ID token with the nonce) or GitHub (a user token), and pair as the person it names. A person not known joins only through an allowed Google Workspace domain; anyone else joins by an invite first. A GitHub sign-in waits for Approve on another client of the person (control/signInWaiting) before it is answered."
@@ -6188,14 +6266,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SignInProviders"
+          "$ref": "schema/org.schema.json#/definitions/SignInProviders"
         }
       },
       "description": "The sign-in providers, and the challenge a client makes its nonce from on this connection (#995): on an `s:` connection before signIn/pair, or on a paired client's before signIn/addToMe."
@@ -6214,14 +6292,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInRemove"
+            "$ref": "schema/org.schema.json#/definitions/SignInRemove"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       },
       "description": "Take an outside sign-in off the caller's person (#995)."
@@ -6240,7 +6318,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
@@ -6249,7 +6327,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "$ref": "daemon.schema.json#/definitions/SignInRequest"
+            "$ref": "schema/org.schema.json#/definitions/SignInRequest"
           }
         }
       },
@@ -6265,14 +6343,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignInTicket"
+            "$ref": "schema/org.schema.json#/definitions/SignInTicket"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SignInTicketResult"
+          "$ref": "schema/org.schema.json#/definitions/SignInTicketResult"
         }
       }
     },
@@ -6286,14 +6364,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/TunnelOpen"
+            "$ref": "schema/machines.schema.json#/definitions/TunnelOpen"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -6307,14 +6385,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/UsageRollup"
+            "$ref": "schema/reports.schema.json#/definitions/UsageRollup"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -6332,14 +6410,40 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/UserSecretRequest"
+            "$ref": "schema/org.schema.json#/definitions/UserSecretRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "user/sealedSecret",
+      "x-capability": "user/4",
+      "description": "A person's own client: its own sealed copy of one of the person's secrets, to reveal or copy (#5112, #5114). Only the person's paired clients with a key reach it; a bot's is refused notPermitted. The audit entry (Revealed secret NAME, Copied the CVC of card NAME, … of account SERVICE (ADDRESS)) is written first, with the name and never the value, and nothing is given back when it is not written. noSuchSecret when there is no such secret; noClientCopy when the control plane keeps no copy for this client yet. No agent, machine or MCP tool gets it.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/UserSealedSecretRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/UserSealedSecret"
         }
       }
     },
@@ -6357,14 +6461,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/UserSecretNames"
+          "$ref": "schema/org.schema.json#/definitions/UserSecretNames"
         }
       }
     },
@@ -6383,14 +6487,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/SealRecipients"
+          "$ref": "schema/org.schema.json#/definitions/SealRecipients"
         }
       }
     },
@@ -6404,14 +6508,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/AgentConfigFileRequest"
+            "$ref": "schema/files.schema.json#/definitions/AgentConfigFileRequest"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -6425,14 +6529,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/SignedYourPolicy"
+            "$ref": "schema/org.schema.json#/definitions/SignedYourPolicy"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -6450,14 +6554,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/UserSecretSet"
+            "$ref": "schema/org.schema.json#/definitions/UserSecretSet"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       },
       "description": "A person's secret, sealed by their client to each recipient of user/secretRecipients; the control plane keeps the envelopes and never opens them (#1760, #3397)."
@@ -6476,14 +6580,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/UserSettingsPart"
+            "$ref": "schema/org.schema.json#/definitions/UserSettingsPart"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/Empty"
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -6501,14 +6605,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/Empty"
+            "$ref": "schema/core.schema.json#/definitions/Empty"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/UserSettings"
+          "$ref": "schema/org.schema.json#/definitions/UserSettings"
         }
       }
     },
@@ -6523,7 +6627,7 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/UserSuspended"
+            "$ref": "schema/org.schema.json#/definitions/UserSuspended"
           }
         }
       ]
@@ -6538,14 +6642,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/WorkflowClaim"
+            "$ref": "schema/workflows.schema.json#/definitions/WorkflowClaim"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/WorkflowClaimed"
+          "$ref": "schema/workflows.schema.json#/definitions/WorkflowClaimed"
         }
       }
     },
@@ -6559,14 +6663,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/TeamTrigger"
+            "$ref": "schema/workflows.schema.json#/definitions/TeamTrigger"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/TeamTriggerFired"
+          "$ref": "schema/workflows.schema.json#/definitions/TeamTriggerFired"
         }
       }
     },
@@ -6580,14 +6684,14 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "daemon.schema.json#/definitions/TeamTrigger"
+            "$ref": "schema/workflows.schema.json#/definitions/TeamTrigger"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "daemon.schema.json#/definitions/TeamTriggerSent"
+          "$ref": "schema/workflows.schema.json#/definitions/TeamTriggerSent"
         }
       }
     }

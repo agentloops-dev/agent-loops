@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/internal/githubmcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Waiting deploys (#3587): a GitHub Actions run held by an environment with required
@@ -29,8 +29,8 @@ const (
 	// deployCommitsShown bounds the commits a deploy's reading lists.
 	deployCommitsShown = 200
 	// deployApproved and deployRejected are the comments GitHub keeps with an answer.
-	deployApproved = "Approved in Agents"
-	deployRejected = "Rejected in Agents"
+	deployApproved = "Approved in Agent Loops"
+	deployRejected = "Rejected in Agent Loops"
 )
 
 // deployEvery is the poll; deployFirst is how long after the start the first one is.

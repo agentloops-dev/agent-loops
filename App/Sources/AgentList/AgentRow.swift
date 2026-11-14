@@ -80,7 +80,7 @@ struct AgentRow: View {
         // In the sidebar, the icon column every row there has (#495): 16 wide, 6 to the title.
         HStack(alignment: .top, spacing: isCompact ? 6 : 12) {
             if isCompact, agent.state == .archived {
-                Image(systemName: "archivebox")
+                Image(icon: "archivebox")
                     .glyph(size: 13)
                     .sidebarMark(.secondary)
                     .frame(width: 16)
@@ -98,7 +98,8 @@ struct AgentRow: View {
                        isUnread: agent.isUnread,
                        isWaitingForPerson: agent.isWaitingForPerson,
                        personLine: agent.eventWait?.personLine,
-                       tool: RunningToolWords.tool(agent))
+                       tool: RunningToolWords.tool(agent),
+                       waitKind: WaitKind.of(agent))
                 .frame(width: isCompact ? 16 : nil)
                 .padding(.top, 1)
             }
@@ -130,7 +131,7 @@ struct AgentRow: View {
                         if let place {
                             Text(place)
                                 .appText(.fine)
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(Paper.tertiary)
                                 .lineLimit(1)
                         }
                     }
@@ -140,7 +141,7 @@ struct AgentRow: View {
                     if let progress = model.leadProgress[agent.id] {
                         Text("· \(progress)")
                             .appText(isCompact ? .supporting : .reading)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Paper.secondary)
                             .lineLimit(1)
                             .fixedSize()
                             .accessibilityLabel(LeadProgress.spoken(progress))
@@ -149,7 +150,7 @@ struct AgentRow: View {
                     // an agent's origin worth a mark, because it is the difference
                     // between something you asked for and something that ran itself.
                     if let workflowName = startedByWorkflowName {
-                        Image(systemName: "flowchart")
+                        Image(icon: "flowchart")
                             .appText(.fine)
                             .sidebarMark(.tertiary)
                             .help("Started by the workflow \(workflowName)")
@@ -157,7 +158,7 @@ struct AgentRow: View {
                     }
                     // Mute Notifications (#2003): a bell with a slash, as Messages marks it.
                     if agent.isMuted {
-                        Image(systemName: MuteWords.symbol)
+                        Image(icon: MuteWords.symbol)
                             .appText(.fine)
                             .sidebarMark(.tertiary)
                             .help(MuteWords.mutedHelp)
@@ -171,7 +172,7 @@ struct AgentRow: View {
                     // Started by another agent (028): the same kind of mark, for the
                     // same reason — this is not something the person typed for.
                     if let starter = model.startedByAgentLabel(agent) {
-                        Image(systemName: AgentsModel.startedByAgentSymbol)
+                        Image(icon: AgentsModel.startedByAgentSymbol)
                             .appText(.fine)
                             .sidebarMark(.tertiary)
                             .help(starter)
@@ -180,7 +181,7 @@ struct AgentRow: View {
                     // A file it showed that the person has not looked at (#1802): ending 2,
                     // "I have something for you", a mark and never Needs you.
                     if let file = FileToSeeWords.line(agent) {
-                        Image(systemName: FileToSeeWords.symbol)
+                        Image(icon: FileToSeeWords.symbol)
                             .appText(.fine)
                             .sidebarMark(.secondary)
                             .help(file)
@@ -210,12 +211,12 @@ struct AgentRow: View {
                     // has said nothing yet, and starts by itself when a place frees.
                     Text(queued)
                         .appText(isCompact ? .fine : .supporting)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Paper.secondary)
                         .help("Starts by itself when this folder has a place free for another helper")
                 } else if let reason = needsYouLine {
                     Text(reason)
                         .appText(isCompact ? .fine : .supporting)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Paper.secondary)
                         .lineLimit(isCompact ? 1 : 2)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if agent.missingFolder != nil, agent.state != .archived {
@@ -223,7 +224,7 @@ struct AgentRow: View {
                     // row says it, in the report's place.
                     Text(MissingFolderWords.label)
                         .appText(isCompact ? .fine : .supporting)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Paper.secondary)
                         .help(agent.folderGoneMessage)
                 } else if isCompact, let said = model.work.saidLines[agent.id] {
                     // While the sidebar searches: the line it said that matches, in the
@@ -231,7 +232,7 @@ struct AgentRow: View {
                     // The page's row has it on a line of its own, below.
                     Text(said)
                         .appText(.fine)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Paper.secondary)
                         .lineLimit(1)
                         .help(said)
                 } else if let report = FileToSeeWords.reportLine(agent) {
@@ -239,7 +240,7 @@ struct AgentRow: View {
                     // file to see is named here first (#1873).
                     Text(report)
                         .appText(isCompact ? .fine : .supporting)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Paper.secondary)
                         .lineLimit(isCompact ? 1 : 2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -272,9 +273,9 @@ struct AgentRow: View {
 
                     // What it has running in the background (057), on the same kind of line.
                     if let running = BackgroundWords.mark(agent.background) {
-                        Label(running, systemImage: "apple.terminal")
+                        Label(running, icon: "apple.terminal")
                             .appText(.fine)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Paper.secondary)
                             .lineLimit(1)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(running)
@@ -287,7 +288,7 @@ struct AgentRow: View {
                     if let wait = model.work.waitMark(of: agent) {
                         Text(wait.line)
                             .appText(.fine)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Paper.secondary)
                             .lineLimit(1)
                             .help(wait.detail)
                     }
@@ -295,7 +296,7 @@ struct AgentRow: View {
                     if let said = model.work.saidLines[agent.id] {
                         Text(said)
                             .appText(.fine)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Paper.secondary)
                             .lineLimit(1)
                             .help(said)
                     }
@@ -303,9 +304,9 @@ struct AgentRow: View {
                     // click that agrees. In the sidebar the leading mark says it instead.
                     if let line = ArchiveRequestWords.line(agent) {
                         HStack(spacing: 6) {
-                            Label(line, systemImage: ArchiveRequestWords.symbol)
+                            Label(line, icon: ArchiveRequestWords.symbol)
                                 .appText(.fine)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Paper.secondary)
                             Button(ArchiveRequestWords.archive) {
                                 Task { await model.archive(agent.id, andLeave: true) }
                             }
@@ -342,6 +343,12 @@ struct AgentRow: View {
             if model.isBlocked(agent) {
                 Button(AgentsModel.carryOnLabel) { Task { await model.carryOn(agent.id) } }
             }
+            // Ahead of the queue and past the running limit, by the person's own click (#5156).
+            if model.canStartNow(agent) {
+                Button(HelperLimit.startNowLabel) { Task { await model.startNow(agent.id) } }
+                    .help(HelperLimit.startNowHelp)
+                    .disabled(isActing)
+            }
             if model.canStop(agent) {
                 Button("Stop") { Task { await model.stop(agent.id) } }
                     .disabled(isActing)
@@ -360,18 +367,18 @@ struct AgentRow: View {
                 // clear it without opening it.
                 if agent.state == .finished {
                     if agent.isUnread {
-                        Button("Mark as Read", systemImage: "envelope.open") {
+                        Button("Mark as Read", icon: "envelope.open") {
                             Task { await model.setUnread(agent.id, false) }
                         }
                     } else {
-                        Button("Mark as Unread", systemImage: "envelope.badge") {
+                        Button("Mark as Unread", icon: "envelope.badge") {
                             Task { await model.setUnread(agent.id, true) }
                         }
                     }
                 }
                 // No push, banner or Mac notification, and still in Needs You (#2003).
                 if model.canMute(agent) {
-                    Button(MuteWords.label(muted: agent.isMuted), systemImage: MuteWords.symbol(muted: agent.isMuted)) {
+                    Button(MuteWords.label(muted: agent.isMuted), icon: MuteWords.symbol(muted: agent.isMuted)) {
                         Task { await model.setMuted(agent.id, !agent.isMuted) }
                     }
                     .help(MuteWords.help(muted: agent.isMuted))
@@ -461,11 +468,11 @@ private struct FoldCount: View {
         Button(action: toggle) {
             HStack(spacing: 3) {
                 Text("\(count)")
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .rotationEffect(.degrees(isUnfolded ? 90 : 0))
             }
             .appText(.fine)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Paper.secondary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -527,22 +534,24 @@ private struct SessionMark: View {
         Group {
             switch kind {
             case .needsYou:
-                Image(systemName: "hand.raised.fill").sidebarMark(StateTint.attention.style(or: .secondary))
+                Image(icon: "hand.raised.fill").sidebarMark(StateTint.attention.style(or: .secondary))
             case .working:
                 // In the accent as the other marks, and in step with every one (#1558, #2044).
                 // One case for both activities, so a tool tips the same ring (#2332).
                 WorkingRing(size: 12 * scale, color: onAccent ? Paper.ground : Paper.accent, doing: tool != nil)
             case .queued:
-                Image(systemName: "list.number").sidebarMark(Paper.accent)
+                Image(icon: "list.number").sidebarMark(Paper.accent)
             case .waiting:
-                // The waiting card's beacon, breathing in step with every other (#2456, #2657).
-                WaitingBeacon(size: 12 * scale, color: onAccent ? Paper.ground : Paper.accent)
+                // The waiting card's beacon, breathing in step with every other (#2456, #2657),
+                // drawn as what it waits on (#5022).
+                WaitingBeacon(size: 12 * scale, color: onAccent ? Paper.ground : Paper.accent,
+                              kind: WaitKind.of(agent))
             case .paused:
-                Image(systemName: "pause.circle").sidebarMark(Paper.accent)
+                Image(icon: "pause.circle").sidebarMark(Paper.accent)
             case .done:
-                Image(systemName: "checkmark").sidebarMark(Paper.accent)
+                Image(icon: "checkmark").sidebarMark(Paper.accent)
             case .asksToArchive:
-                Image(systemName: ArchiveRequestWords.symbol).sidebarMark(StateTint.attention.style(or: .secondary))
+                Image(icon: ArchiveRequestWords.symbol).sidebarMark(StateTint.attention.style(or: .secondary))
             }
         }
         .frame(width: 16 * scale, height: 16 * scale)
@@ -590,6 +599,8 @@ struct StatusIcon: View {
     var personLine: String?
     /// The tool it runs, which tips the working ring (#2044, #2332).
     var tool: String?
+    /// What it waits on (#5022), which the waiting beacon draws.
+    var waitKind: WaitKind = .other
     /// The well grows with the text beside it (#750), so the row keeps its shape.
     @ScaledMetric private var scale: CGFloat = 1
     /// On a row filled with the accent, the dot is the ground as the other marks (#2382).
@@ -608,9 +619,9 @@ struct StatusIcon: View {
             if shape == .waiting {
                 // The beacon breathes in the accent, where the unread dot before the title is grey,
                 // round and still (#2456, #2657).
-                WaitingBeacon(size: 12 * scale, color: onAccent ? Paper.ground : Paper.accent)
+                WaitingBeacon(size: 12 * scale, color: onAccent ? Paper.ground : Paper.accent, kind: waitKind)
             } else if let symbol = shape.symbol {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     // Decorative: a glyph filling an 18-point well, not text (FR-015).
                     .glyph(size: 15)
                     .sidebarMark((StatusShape.isTinted(shape, isWaitingForAllowance: isWaitingForAllowance)
@@ -655,13 +666,13 @@ struct WorktreeBadge: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: "arrow.triangle.branch")
+            Image(icon: "arrow.triangle.branch")
             Text(worktree.name)
                 .lineLimit(1)
                 .strikethrough(isGone)
         }
         .appText(.fine)
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(Paper.tertiary)
         .help(help)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(isGone ? "in worktree \(worktree.name), which is gone" : "in worktree \(worktree.name)")
@@ -681,7 +692,7 @@ struct PinSessionButton: View {
 
     var body: some View {
         let pinned = model.isPinned(agent)
-        Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") {
+        Button(pinned ? "Unpin" : "Pin", icon: pinned ? "pin.slash" : "pin") {
             Task { await model.setPinned(agent, !pinned) }
         }
         .help(pinned ? "Put this session back among the others"

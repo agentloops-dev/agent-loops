@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/azuredevopsmcp"
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Azure DevOps (#3802): a personal access token is checked with its organization, kept with
@@ -77,11 +77,17 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 	if list.Connections[0].ByToken == nil || !*list.Connections[0].ByToken {
 		t.Fatalf("a personal access token's row: %+v", list.Connections[0])
 	}
-	// No Entra app on this machine (#3921): the sign-in says to use a token.
+	// No Entra app in the machine's secrets (#4873): the sign-in uses the Agents app, in any
+	// work or school tenant; one in the secrets goes first.
 	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
 	t.Setenv("AGENTS_"+connections.AzureDevOpsClientIDName, "")
-	if msg := c.callErr(t, 5, "connections/sign-in", map[string]any{"provider": "azuredevops", "url": ado.URL + "/acme"}); !strings.Contains(msg, "personal access token") {
-		t.Fatalf("an Azure DevOps sign-in with no Entra app: %s", msg)
+	if f := d.deviceFlow(wire.ConnectionProviderAzuredevops); f.ClientID != connections.AzureDevOpsClientID ||
+		!strings.HasSuffix(f.Base, "/"+connections.EntraTenant+"/") {
+		t.Fatalf("the Agents app: %q %q", f.ClientID, f.Base)
+	}
+	t.Setenv("AGENTS_"+connections.AzureDevOpsClientIDName, "own-app")
+	if f := d.deviceFlow(wire.ConnectionProviderAzuredevops); f.ClientID != "own-app" {
+		t.Fatalf("the machine's own app: %q", f.ClientID)
 	}
 	// A token with no refresh is not renewed, and stays.
 	d.renewConnections()
@@ -284,7 +290,7 @@ func TestAnAzureDevOpsFoldersConnectorSetUp(t *testing.T) {
 		review.State != wire.ConnectorSlotStateRead || review.Choice != "Azure Repos pull requests" || ci.Choice != "Azure Pipelines" {
 		t.Fatalf("tasks %+v review %+v", tasks, review)
 	}
-	if ci.State != wire.ConnectorSlotStateRefused || ci.Message == nil || *ci.Message != "Azure DevOps refused: Agents can't see builds in acme/Web/app." {
+	if ci.State != wire.ConnectorSlotStateRefused || ci.Message == nil || *ci.Message != "Azure DevOps refused: Agent Loops can't see builds in acme/Web/app." {
 		t.Fatalf("ci: %+v", ci)
 	}
 	if setup.Connection == nil || setup.Connection.Provider != wire.ConnectionProviderAzuredevops {

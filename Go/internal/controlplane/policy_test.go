@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/controlplane/kms"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/kms"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // policyLine is machine/policy as a machine reads it: the document's own bytes, to check.
@@ -528,4 +528,27 @@ func TestAStoredModeCeilingIsReadOnceIntoPermissionMode(t *testing.T) {
 	if again.Policy == nil || again.Policy.Version != 2 {
 		t.Fatalf("reading the migrated policy again migrated it a second time: %+v", again.Policy)
 	}
+}
+
+// #5069: the sends to one machine go one at a time, and the book keeps no lock for a
+// machine with no send.
+func TestPolicySendsToOneMachineGoInOrder(t *testing.T) {
+	t.Parallel()
+	var book policyBook
+	unlock := book.lockSend("MACHINE-2")
+	other := book.lockSend("MACHINE-3") // another machine does not wait
+	second := make(chan struct{})
+	go func() {
+		defer book.lockSend("MACHINE-2")()
+		close(second)
+	}()
+	select {
+	case <-second:
+		t.Fatal("a second send went before the first ended")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unlock()
+	<-second
+	other()
+	waitFor(t, func() bool { return book.sending.inUse() == 0 })
 }

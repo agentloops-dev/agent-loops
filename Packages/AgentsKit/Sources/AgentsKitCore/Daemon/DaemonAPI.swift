@@ -145,6 +145,14 @@ public enum DaemonAPI {
         public static let lineageEstimate = "lineage/estimate"
         /// When an epic lands, its estimate to complete, the spend, the burn and service levels (#4526).
         public static let lineageForecast = "lineage/forecast"
+        /// Build trends (#5177, spec 5166): a repository's CI timings, figures and change points,
+        /// and one run with its jobs and steps. The web page reads them; the Mac has only a link
+        /// (tier web+link), so Swift has no types for them.
+        public static let buildsHistory = "builds/history"
+        public static let buildsRun = "builds/run"
+        /// The same over the control plane's copy (#5232), while the machine sleeps.
+        public static let buildsHistoryAll = "builds/historyAll"
+        public static let buildsRunAll = "builds/runAll"
         public static let simulatorsList = "simulators/list"
         public static let simulatorsBoot = "simulators/boot"
         public static let simulatorsShutdown = "simulators/shutdown"
@@ -178,6 +186,9 @@ public enum DaemonAPI {
         public static let filesWatch = "files/watch"
         public static let filesUnwatch = "files/unwatch"
         public static let agentsStop = "agents/stop"
+        /// A queued session started at once by the person, past the running limit and
+        /// never past the total (#5156). Takes an `AgentRequest`. No agent's role may call it.
+        public static let agentsStartNow = "agents/startNow"
         public static let agentsArchive = "agents/archive"
         public static let agentsUnarchive = "agents/unarchive"
         /// Delete one archived agent: its conversation, record and clean worktree (#398).
@@ -234,6 +245,9 @@ public enum DaemonAPI {
         // A folder is a directory. These five are everything that can be done to one,
         // which is to say: notice it, put it away, and forget it.
         public static let foldersList = "folders/list"
+        /// The first build (#5056): the newcomer's idea starts one agent with the
+        /// start-a-new-app skill, in the folder the host makes for it.
+        public static let firstBuildStart = "firstBuild/start"
         public static let foldersAdd = "folders/add"
         public static let foldersArchive = "folders/archive"
         public static let foldersUnarchive = "folders/unarchive"
@@ -504,6 +518,9 @@ public enum DaemonAPI {
         public static let secretsSessionRemove = "secrets/sessionRemove"
         /// Ask before use on or off (#4014, #4016). The person's own clients only.
         public static let secretsSetNeedsApproval = "secrets/setNeedsApproval"
+        /// Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): the secrets a machine keeps for itself,
+        /// which agents saved there. The person's own clients only.
+        public static let secretsLocalList = "secrets/localList"
         public static let desktopControlState = "desktopControl/state"
         public static let desktopControlSet = "desktopControl/set"
         public static let desktopControlResume = "desktopControl/resume"
@@ -1058,6 +1075,31 @@ public enum DaemonAPI {
             options = try c.decodeIfPresent([ConfigOption].self, forKey: .options) ?? []
             commands = try c.decodeIfPresent([SlashCommand].self, forKey: .commands) ?? []
             failure = try c.decodeIfPresent(String.self, forKey: .failure)
+        }
+    }
+
+    /// `firstBuild/start` (#5056, spec 5048 §7): the idea as typed, the starter the plan page
+    /// shows, and the runtime its first task set up. The host makes the folder, writes the
+    /// prompt and labels the session `first-build`; it answers with the session's id, or
+    /// refuses with `firstBuildRunning` and the id of the one that is there.
+    public struct FirstBuildStartRequest: Codable, Sendable, Hashable {
+        public enum Starter: String, Codable, Sendable, Hashable {
+            case iphoneApp = "iphone-app"
+            case webService = "web-service"
+        }
+
+        public var idea: String
+        public var starter: Starter
+        public var runtimeID: String
+        /// New App… (#5132): one more first build, also while one is there. Nil (left out of
+        /// the JSON) keeps the newcomer's rule.
+        public var another: Bool?
+
+        public init(idea: String, starter: Starter, runtimeID: String, another: Bool? = nil) {
+            self.idea = idea
+            self.starter = starter
+            self.runtimeID = runtimeID
+            self.another = another
         }
     }
 
@@ -1646,15 +1688,13 @@ public enum DaemonAPI {
         /// Only with `blocked` (039): the agents it waits on, as it wrote them — ids or
         /// titles, resolved by the daemon. Optional, so an older helper still relays.
         public var waitingOn: [String]?
-        public var checkAgainInMinutes: Int?
 
         public init(token: String, outcome: String, message: String,
-                    waitingOn: [String]? = nil, checkAgainInMinutes: Int? = nil) {
+                    waitingOn: [String]? = nil) {
             self.token = token
             self.outcome = outcome
             self.message = message
             self.waitingOn = waitingOn
-            self.checkAgainInMinutes = checkAgainInMinutes
         }
     }
 
@@ -1681,7 +1721,6 @@ public enum DaemonAPI {
         public var prompts: [SuggestedPrompt]
         /// Only with `blocked` (039). See `ReportOutcomeRequest`.
         public var waitingOn: [String]?
-        public var checkAgainInMinutes: Int?
         /// `any` or `all` (#152): whether the first of `waitingOn` to finish resumes it.
         /// A string, checked at the daemon; left out is `all`.
         public var wakeOn: String?
@@ -1699,7 +1738,7 @@ public enum DaemonAPI {
 
         public init(token: String, outcome: String, message: String,
                     prompts: [SuggestedPrompt],
-                    waitingOn: [String]? = nil, checkAgainInMinutes: Int? = nil,
+                    waitingOn: [String]? = nil,
                     wakeOn: String? = nil, afterwards: String? = nil,
                     addLabels: [String] = [], removeLabels: [String] = [],
                     move: MoveAsk? = nil) {
@@ -1708,7 +1747,6 @@ public enum DaemonAPI {
             self.message = message
             self.prompts = prompts
             self.waitingOn = waitingOn
-            self.checkAgainInMinutes = checkAgainInMinutes
             self.wakeOn = wakeOn
             self.afterwards = afterwards
             self.addLabels = addLabels
@@ -1723,7 +1761,6 @@ public enum DaemonAPI {
             message = try c.decode(String.self, forKey: .message)
             prompts = try c.decode([SuggestedPrompt].self, forKey: .prompts)
             waitingOn = try c.decodeIfPresent([String].self, forKey: .waitingOn)
-            checkAgainInMinutes = try c.decodeIfPresent(Int.self, forKey: .checkAgainInMinutes)
             wakeOn = try c.decodeIfPresent(String.self, forKey: .wakeOn)
             afterwards = try c.decodeIfPresent(String.self, forKey: .afterwards)
             addLabels = try c.decodeIfPresent([String].self, forKey: .addLabels) ?? []
@@ -3015,6 +3052,14 @@ public enum DaemonAPI {
         /// `agents/list` with a `changedSince` this host cannot vouch for (#4785): too old,
         /// or of another epoch. Ask for the whole list.
         public static let revisionGone = -32105
+        /// `firstBuild/start` while a first-build session that is not archived is there
+        /// (#5056): the error's data has its `agentID`, so the client opens it.
+        public static let firstBuildRunning = -32106
+        /// `user/sealedSecret` for a name the person has no secret under (#5114).
+        public static let noSuchSecret = -32107
+        /// `user/sealedSecret` from a client the control plane keeps no copy for yet (#5114):
+        /// it gets one when another of the person's clients is online (`sealing/work`).
+        public static let noClientCopy = -32108
     }
 
     // MARK: Workflows
@@ -3325,7 +3370,7 @@ public enum DaemonAPI {
         }
     }
 
-    /// A wait on sessions (`wait_for_event` on `agent.ended`, #3799) or `check_again` (#481, #1915): the block `finish_turn` used to carry.
+    /// A wait on sessions (`wait_for_event` on `agent.ended`, #3799): the block `finish_turn` used to carry.
     public struct WaitOnRequest: Codable, Sendable {
         public var token: String
         /// By id or exact title, as `waiting_on` took them.
@@ -4001,22 +4046,13 @@ public enum DaemonAPI {
         public init(id: UUID) { self.id = id }
     }
 
-    /// What `devices/announce` answers: the device's record, as it always was. The one
-    /// object is the record's own fields, flat. Kept past the #58 cut-off: the flat shape
-    /// is the protocol now.
+    /// What `devices/announce` answers: the device's record, under `device`, as
+    /// `Packages/Wire/schema` and the Go host have it (#4905).
     public struct AnnounceReply: Codable, Sendable, Hashable {
         public var device: Device
 
         public init(device: Device) {
             self.device = device
-        }
-
-        public init(from decoder: any Decoder) throws {
-            device = try Device(from: decoder)
-        }
-
-        public func encode(to encoder: any Encoder) throws {
-            try device.encode(to: encoder)
         }
     }
 

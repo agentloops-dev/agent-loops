@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 func TestPersonIsKeptAsGiven(t *testing.T) {

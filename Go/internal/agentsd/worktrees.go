@@ -15,9 +15,9 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Worktrees, as DaemonCore+Worktrees makes, lists and removes them: the app's own under
@@ -121,7 +121,7 @@ type sizedAt struct {
 
 // ensureExcluded keeps the worktrees folder out of the repository's view of the folder.
 func ensureExcluded(commonDir string) error {
-	if err := excludeLine(commonDir, "# Worktrees the Agents app makes for its agents.", "/.agents/worktrees/"); err != nil {
+	if err := excludeLine(commonDir, "# Worktrees the Agent Loops app makes for its agents.", "/.agents/worktrees/"); err != nil {
 		return worktreeFailed("Could not keep the worktrees out of the folder: " + err.Error())
 	}
 	return nil

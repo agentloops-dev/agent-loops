@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/forgepages"
-	"github.com/alexec/agents/Go/internal/richtext"
+	"github.com/agentloops-dev/agent-loops/Go/internal/forgepages"
+	"github.com/agentloops-dev/agent-loops/Go/internal/richtext"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

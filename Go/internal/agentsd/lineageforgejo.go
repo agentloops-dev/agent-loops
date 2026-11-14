@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Lineage asks Forgejo (#3844) what it asks gh and glab of GitHub and GitLab: a node's title

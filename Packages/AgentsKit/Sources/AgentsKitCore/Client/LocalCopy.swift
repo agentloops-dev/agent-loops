@@ -102,25 +102,34 @@ public actor LocalCopy {
     }
 
     /// The file's form: the ref beside what it holds, so a file is read back only for its ref.
-    private struct Record<Value: Codable & Sendable>: Codable, Sendable {
+    struct Record<Value: Codable & Sendable>: Codable, Sendable {
         var ref: WireRef
         var value: Value
+        /// When the client read `value` from its host (#5141), for the "Last update" line.
+        /// Nil in a file written before it: the file's own time is used then.
+        var at: Date?
     }
 
     // MARK: Machines
 
     /// Every machine held, in no order.
-    public func allMachines() -> [Machine] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: machines, includingPropertiesForKeys: nil)) ?? []
-        return files.compactMap { url -> Machine? in
-            guard url.pathExtension == "json", var machine = read(Machine.self, at: url)?.value else { return nil }
+    public func allMachines() -> [Machine] { machinesRead().map(\.machine) }
+
+    /// Every machine held, in no order, with when it was read from its host (#5141).
+    public func machinesRead() -> [(machine: Machine, at: Date)] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: machines, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        return files.compactMap { url -> (machine: Machine, at: Date)? in
+            guard url.pathExtension == "json", let record = read(Machine.self, at: url) else { return nil }
+            var machine = record.value
             // The host is the copy's to say, whatever a record's own coding keeps of it.
             machine.agents = machine.agents.map { var agent = $0; agent.host = machine.host; return agent }
-            return machine
+            let written = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            return (machine, record.at ?? written ?? .distantPast)
         }
     }
 
-    public func keep(_ machine: Machine) {
+    /// `at` is when the client read the machine from its host; now when not given.
+    public func keep(_ machine: Machine, readAt at: Date = Date()) {
         var machine = machine
         // The live ones whole, and the archived ones newest first, at most a page of them.
         let live = machine.agents.filter { $0.state != .archived }
@@ -129,7 +138,7 @@ public actor LocalCopy {
             .prefix(Self.archivedKept)
         machine.agents = live + archived
         let ref = Self.machineRef(machine.host)
-        write(Record(ref: ref, value: machine), to: machines.appendingPathComponent(Self.fileName(ref)))
+        write(Record(ref: ref, value: machine, at: at), to: machines.appendingPathComponent(Self.fileName(ref)))
     }
 
     // MARK: Transcripts
@@ -151,27 +160,30 @@ public actor LocalCopy {
             transcript.page.firstIndex += drop
         }
         let ref = Self.sessionRef(transcript.session)
-        write(Record(ref: ref, value: transcript), to: transcripts.appendingPathComponent(Self.fileName(ref)))
+        write(Record(ref: ref, value: transcript, at: Date()), to: transcripts.appendingPathComponent(Self.fileName(ref)))
         trim()
     }
 
-    /// Transcripts past the newest `transcriptsKept`, then the oldest while the whole copy
-    /// is over `cap`. Machines are never dropped: all of them are well under a megabyte.
-    private func trim() {
-        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
+    /// Transcripts past the newest `transcriptsKept`, then, while the whole copy is over `cap`,
+    /// the oldest Work entry (#4930) and, with none left, the oldest transcript. Machines are
+    /// never dropped: all of them are well under a megabyte.
+    func trim() {
         let fm = FileManager.default
-        func files(_ in: URL) -> [(url: URL, at: Date, bytes: Int)] {
-            ((try? fm.contentsOfDirectory(at: `in`, includingPropertiesForKeys: keys)) ?? []).map { url in
-                let values = try? url.resourceValues(forKeys: Set(keys))
-                return (url, values?.contentModificationDate ?? .distantPast, values?.fileSize ?? 0)
-            }
-        }
-        var held = files(transcripts).sorted { $0.at > $1.at }
-        var total = (held + files(machines)).reduce(0) { $0 + $1.bytes }
-        while let oldest = held.last, held.count > transcriptsKept || total > cap {
+        var held = Self.files(transcripts).sorted { $0.at > $1.at }
+        while held.count > transcriptsKept, let oldest = held.popLast() { try? fm.removeItem(at: oldest.url) }
+        var work = trimWork().sorted { $0.at > $1.at }
+        var total = (held + work + Self.files(machines)).reduce(0) { $0 + $1.bytes }
+        while total > cap, let oldest = work.popLast() ?? held.popLast() {
             try? fm.removeItem(at: oldest.url)
             total -= oldest.bytes
-            held.removeLast()
+        }
+    }
+
+    static func files(_ in: URL) -> [(url: URL, at: Date, bytes: Int)] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
+        return ((try? FileManager.default.contentsOfDirectory(at: `in`, includingPropertiesForKeys: keys)) ?? []).map { url in
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            return (url, values?.contentModificationDate ?? .distantPast, values?.fileSize ?? 0)
         }
     }
 
@@ -182,13 +194,13 @@ public actor LocalCopy {
 
     // MARK: Files
 
-    private func read<Value: Codable & Sendable>(_: Value.Type, at url: URL) -> Record<Value>? {
+    func read<Value: Codable & Sendable>(_: Value.Type, at url: URL) -> Record<Value>? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         // A file that does not read (an older form, cut short) is only a copy missing.
         return try? JSONDecoder().decode(Record<Value>.self, from: data)
     }
 
-    private func write<Value: Codable & Sendable>(_ record: Record<Value>, to url: URL) {
+    func write<Value: Codable & Sendable>(_ record: Record<Value>, to url: URL) {
         guard let data = try? JSONEncoder().encode(record) else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         // Atomic, so a reader never finds half a file.

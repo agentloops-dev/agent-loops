@@ -26,12 +26,12 @@ struct PairDeviceSheet: View {
             Text("Pair a Device")
                 .appText(.title)
             if let paired {
-                Label("\(paired.name) is paired", systemImage: "checkmark.circle")
+                Label("\(paired.name) is paired", icon: "checkmark.circle")
                     .appText(.reading)
                 Text("It reaches your agents through the control plane, as a Device.")
                     .foregroundStyle(.secondary)
             } else if let shown {
-                Text("Open Agents on your iPhone or iPad and scan this code.")
+                Text("Open Agent Loops on your iPhone or iPad and scan this code.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     // Wrapped, not cut short: the sheet is narrow and this is the instruction.

@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/controlplane/audit"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/scim"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/audit"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/scim"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // SCIM users as people (#1002, spec 1002 slice 2a, FR-015 to FR-017): the SCIM id is the
@@ -635,7 +635,7 @@ func (s *Service) refuseSuspendedHost(host string, capabilities []string) error 
 	if !s.suspended(s.ownerOf(host)) || slices.Contains(capabilities, wire.CapHostSuspend1) {
 		return nil
 	}
-	return fail(personSuspended, "This machine's person was suspended by their organisation, and this machine cannot stop their work. Update Agents on it.")
+	return fail(personSuspended, "This machine's person was suspended by their organisation, and this machine cannot stop their work. Update Agent Loops on it.")
 }
 
 // MARK: Remove requests (D13, FR-017)

@@ -17,6 +17,8 @@ struct MachinePage: View {
 
     @State private var usage: DaemonAPI.MachineUsageState?
     @State private var failure: String?
+    /// When the last `machine/usage` read worked (#5146): a read that fails then says how old the page is.
+    @State private var readAt: Date?
 
     private var name: String { model.hosts.label(host) }
     private var offline: Bool { model.hosts.isOffline(host) }
@@ -52,7 +54,7 @@ struct MachinePage: View {
                         }
                     } else if !answersUsage {
                         Section {
-                            Text("Update Agents on \(name) to see its CPU, memory and disks here.")
+                            Text("Update Agent Loops on \(name) to see its CPU, memory and disks here.")
                                 .foregroundStyle(.secondary)
                         }
                     } else {
@@ -85,6 +87,7 @@ struct MachinePage: View {
         .task(id: host) {
             usage = nil
             failure = nil
+            readAt = nil
             guard answersUsage else { return }
             while !Task.isCancelled {
                 if !offline { await read() }
@@ -144,6 +147,12 @@ struct MachinePage: View {
                 if !waits.isEmpty {
                     Text(waits.joined(separator: " · ")).foregroundStyle(.secondary)
                 }
+                // A read every 3 s says no age while it works; one that fails says how old this is (#5146).
+                if let failure {
+                    LastUpdateTimeline(read: readAt ?? .distantPast) { now in
+                        Text(LastUpdate.banner(failure, read: readAt, now: now)).foregroundStyle(.secondary)
+                    }
+                }
             } else if let failure {
                 Text(failure).foregroundStyle(.secondary)
             } else {
@@ -192,7 +201,7 @@ struct MachinePage: View {
     static func tint(_ level: DaemonAPI.CapacityLevel?) -> StateTint {
         switch level {
         case .ok, nil: .none
-        case .near: .attention
+        case .near: .warning
         case .full: .failure
         }
     }
@@ -200,7 +209,7 @@ struct MachinePage: View {
     static func tint(_ level: DiskLevel) -> StateTint {
         switch level {
         case .ok: .none
-        case .low: .attention
+        case .low: .warning
         case .critical: .failure
         }
     }
@@ -224,6 +233,7 @@ struct MachinePage: View {
             usage = try await model.client(for: host).call(DaemonAPI.Method.machineUsage, DaemonAPI.Empty(),
                                                              returning: DaemonAPI.MachineUsageState.self)
             failure = nil
+            readAt = Date()
         } catch let error as JSONRPCError {
             failure = error.message
         } catch {
@@ -363,9 +373,9 @@ struct MachineRow: View {
         // A full swipe never deletes: Delete and Remove ask first.
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if actions.delete {
-                Button("Delete", systemImage: "trash", role: .destructive) { askDelete() }
+                Button("Delete", icon: "trash", role: .destructive) { askDelete() }
             } else if actions.remove {
-                Button("Remove", systemImage: "minus.circle") { removing = true }.tint(.gray)
+                Button("Remove", icon: "minus.circle") { removing = true }.tint(.gray)
             }
         }
         .contextMenu {
@@ -525,42 +535,72 @@ extension AppModel {
 /// A machine New Machine made that has not joined yet (#4610), as the web page's MakingRow:
 /// an amber, pulsing cloud and *Making…* while the control plane waits for it; red with the
 /// reason, and Delete, once the control plane gave up. Nil while providers/create has not
-/// answered yet: a row at once, named once the provider names it.
+/// answered yet: a row at once, named once the provider names it. A machine of the person's that
+/// never joined, such as a codespace made on github.com (#4978), is grey and *Not joined*: a
+/// click joins it, and the line says each step and why it failed.
 struct MakingMachineRow: View {
     @Environment(AppModel.self) private var model
     let making: MachineMaking?
     @State private var deleting = false
 
     var body: some View {
+        let joined = making.flatMap { model.machineJoins[$0.id] }
         let name = making?.name ?? "New machine"
-        let line = making?.line ?? "Making…"
-        let gaveUp = making?.notJoined != nil
+        let line = making?.line(joined) ?? "Making…"
+        let failed = making?.failed(joined) ?? false
+        let canDelete = making?.canDelete(joined) ?? false
+        let hint = joined?.isJoining == true ? nil : making?.joinHint
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            MachineIconView(symbol: "cloud", icon: gaveUp ? .failure : .busy)
+            MachineIconView(symbol: "cloud", icon: making?.icon(joined) ?? .busy)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).foregroundStyle(.primary).lineLimit(1)
+                Text(name).foregroundStyle(making?.joinable == true && joined == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .lineLimit(1)
                 Text(line)
                     .appText(.fine)
-                    .foregroundStyle(gaveUp ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(failed ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(.secondary))
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 4)
         }
-        .help("\(name): \(line)")
+        .contentShape(Rectangle())
+        // A click on one that never joined joins it (#4978).
+        .onTapGesture { join(trust: nil) }
+        .help(hint.map { "\(name): \(line). Click: \($0)." } ?? "\(name): \(line)")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(name), \(line)")
+        .accessibilityHint(hint ?? "")
+        .accessibilityAction { join(trust: nil) }
+        // A swipe to the right joins it, as a click does.
+        .swipeActions(edge: .leading) {
+            if hint != nil {
+                Button(failed ? "Join Again" : "Join", icon: "arrow.right.circle") { join(trust: nil) }.tint(Paper.accent)
+            }
+        }
         // A full swipe never deletes: Delete asks first.
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if gaveUp {
-                Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }
+            if canDelete {
+                Button("Delete", icon: "trash", role: .destructive) { deleting = true }
             }
         }
         .contextMenu {
-            if gaveUp {
+            if hint != nil {
+                Button(failed ? "Join \(name) Again" : "Join \(name)") { join(trust: nil) }
+            }
+            if canDelete {
+                if hint != nil { Divider() }
                 Button("Delete \(name)…", role: .destructive) { deleting = true }
             }
+        }
+        .confirmationDialog("Trust \(name)’s host key?",
+                            isPresented: Binding(get: { joined?.fingerprint != nil },
+                                                 set: { if !$0, let making, joined?.fingerprint != nil { model.cancelJoin(making) } }),
+                            titleVisibility: .visible) {
+            Button("Trust and Join") { join(trust: joined?.fingerprint) }
+            Button("Cancel", role: .cancel) { if let making { model.cancelJoin(making) } }
+        } message: {
+            Text("The control plane has not seen this key before: \(joined?.fingerprint ?? ""). Join only if it is \(name)’s.")
         }
         .confirmationDialog("Delete \(name)?", isPresented: $deleting, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -570,5 +610,10 @@ struct MakingMachineRow: View {
         } message: {
             Text(making?.deleteMessage ?? "")
         }
+    }
+
+    private func join(trust: String?) {
+        guard let making, making.canJoin else { return }
+        Task { await model.joinMachine(making, trust: trust) }
     }
 }

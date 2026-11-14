@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/internal/githubmcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // An agent's gh and git as the GitHub App (#3926, spec 3856 §2 and §3). The github MCP
@@ -335,7 +335,7 @@ func writeGHShim(bin, agentsd, gh string) error {
 		return err
 	}
 	script := "#!/bin/sh\n" +
-		"# gh as the GitHub App (#3926, #4077): Agents writes this file. The token is asked at each call, never kept.\n" +
+		"# gh as the GitHub App (#3926, #4077): Agent Loops writes this file. The token is asked at each call, never kept.\n" +
 		"if [ -x " + shellQuote(agentsd) + " ]; then\n" +
 		"\texec " + shellQuote(agentsd) + " credential gh " + shellQuote(gh) + " \"$@\"\n" +
 		"fi\n" +

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/azuredevopsmcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Lineage asks Azure Repos (#3952) what it asks Bitbucket (lineagebitbucket.go), by the

@@ -1,24 +1,30 @@
-"""U1 Your first agent (Tutorials ▸ First agent): the Get started card, add a folder, New
+"""U1 Your first agent (Tutorials ▸ First agent): add a folder, New
 Session, say what you want, answer the agent, watch its steps, its reply and its Changes.
 The script is section 2.1 of specs/4832-videos/spec.md (#4835)."""
 GROUP = "usage"
 LAYOUT = "mac"
 TITLE = "Your first agent"
 WINDOW = (1360, 820)
-# The card is the story here: make.py and v.tidy() leave it showing.
-GET_STARTED = True
 DOCS = "tutorials/first-agent/"  # the docs page, on docs.agentloops.dev (upload.py)
 
+# Directed lines (voice.py, #4964): pauses, pace and tone, as Alex heard them on 2026-11-12.
 LINES = {
-    "intro": "This is Agents. Here's how to start your first agent.",
-    "folder": "A folder is a directory you work in. Add one, and it appears in the sidebar.",
-    "new": "Click New Session. The agent works in this folder, with Claude as its runtime.",
-    "prompt": "Say what you want done. Here: fix the Celsius conversion, and run the tests.",
-    "send": "Send it, and the agent starts at once.",
-    "ask": "Before it changes a file or runs a command, it asks. Click Yes.",
-    "steps": "Its steps appear as it works: what it read, the edit, and the tests it ran.",
-    "reply": "When it's done, its reply says what it changed, and Changes shows the edit.",
-    "end": "That's your first agent.",
+    "intro": '<speak style="warm">This is Agents.<break time="500ms"/>'
+             'Here\'s how to start your <emphasis>first</emphasis> agent.</speak>',
+    "folder": '<speak style="calm">A folder is a directory you work in.<break time="450ms"/>'
+              'Add one,<break time="200ms"/>and it appears in the sidebar.</speak>',
+    "new": '<speak style="calm">Click <emphasis>New Session</emphasis>.<break time="450ms"/>'
+           'The agent works in this folder,<break time="150ms"/>with Claude as its runtime.</speak>',
+    "prompt": '<speak style="calm">Say what you want done.<break time="500ms"/>'
+              '<prosody rate="92%">Here: fix the Celsius conversion,<break time="200ms"/>and run the tests.</prosody></speak>',
+    "send": '<speak style="bright">Send it,<break time="250ms"/>and the agent starts at once.</speak>',
+    "ask": '<speak style="calm">Before it changes a file or runs a command,<break time="200ms"/>'
+           'it asks.<break time="500ms"/>Click <emphasis>Yes</emphasis>.</speak>',
+    "steps": '<speak style="calm">Its steps appear as it works:<break time="350ms"/>what it read,'
+             '<break time="200ms"/>the edit,<break time="200ms"/>and the tests it ran.</speak>',
+    "reply": '<speak style="calm">When it\'s done,<break time="200ms"/>its reply says what it changed,'
+             '<break time="350ms"/>and Changes shows the edit.</speak>',
+    "end": '<speak style="warm"><prosody rate="90%">That\'s your first agent.</prosody></speak>',
 }
 
 FORECAST = '''public struct Forecast {
@@ -73,8 +79,8 @@ PROMPT = "Fix the Celsius conversion and run the tests."
 
 
 def setup(v):
-    # Nothing added yet: the window is empty but for the Get started card.
-    v.wait_until(lambda: v.find("Get started"), timeout=30, what="the Get started card")
+    # Nothing added yet: the window is empty but for the empty folder list (#5057).
+    v.wait_until(lambda: v.find("Add Folder…"), timeout=30, what="the empty folder list")
 
 
 def rest_of(v, key, spent):
@@ -86,7 +92,7 @@ def run(v):
     v.sleep(1.0)
     v.say("intro")
 
-    # 2. Add a folder: the card's step, then the folder in the sidebar and the step ticked.
+    # 2. Add a folder, then the folder in the sidebar.
     v.say("folder", wait=False)
     v.sleep(1.5)
     v.add_folder("weather", FILES)
@@ -140,6 +146,6 @@ def run(v):
     v.press("Forecast.swift, changed", wait=3)
     rest_of(v, "reply", 4.1)
 
-    # 9. Done, and the card ticks Start your first agent.
+    # 9. Done.
     v.say("end")
     v.sleep(1.5)

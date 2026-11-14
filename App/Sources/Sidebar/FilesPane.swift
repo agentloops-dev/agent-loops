@@ -159,7 +159,7 @@ struct FilesPane: View {
                     fileProblem = nil
                     fileGone = false
                 } label: {
-                    Label("Back", systemImage: "chevron.left")
+                    Label("Back", icon: "chevron.left")
                         .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.borderless)
@@ -167,7 +167,7 @@ struct FilesPane: View {
                 Button {
                     state.folder = nil
                 } label: {
-                    Label("The agent's folder", systemImage: "house")
+                    Label("The agent's folder", icon: "house")
                         .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.borderless)
@@ -206,14 +206,14 @@ struct FilesPane: View {
         let pins = model.pins(in: folder.folder)
         if pins.contains(where: { $0.path == path }) {
             Button { Task { await model.unpin(path, in: folder) } } label: {
-                Label("Unpin", systemImage: "pin.fill").labelStyle(.iconOnly)
+                Label("Unpin", icon: "pin.fill").labelStyle(.iconOnly)
             }
             .buttonStyle(.borderless)
             .help("Pinned under the folder. Click to unpin it.")
         } else {
             let full = pins.count >= PinLimits.perFolder
             Button { Task { await model.pin(path, in: folder) } } label: {
-                Label("Pin to Folder", systemImage: "pin").labelStyle(.iconOnly)
+                Label("Pin to Folder", icon: "pin").labelStyle(.iconOnly)
             }
             .buttonStyle(.borderless)
             .disabled(full)
@@ -233,7 +233,7 @@ struct FilesPane: View {
                                  set: { allowed in
                                      if allowed { state.scriptsAllowed.insert(path) } else { state.scriptsAllowed.remove(path) }
                                  })) {
-                Label("Allow scripts", systemImage: "curlybraces")
+                Label("Allow scripts", icon: "curlybraces")
                     .labelStyle(.iconOnly)
             }
             .toggleStyle(.button)
@@ -258,6 +258,16 @@ struct FilesPane: View {
     private func canDrawPage(_ url: URL) -> Bool {
         guard HTMLPageScope.isHTML(url), fileProblem == nil, let probe else { return false }
         return probe.kind.isText && !probe.isTruncated
+    }
+
+    /// The Mac's side of a Markdown page: a file a link names opens here, in the pane.
+    private var pageActions: PageActions {
+        var actions = MacPageActions.make(model: model, agentID: agent.id)
+        actions.openFile = { file in
+            open(file: file)
+            return true
+        }
+        return actions
     }
 
     /// Where a link the person clicked on a page goes. Never into the file view itself.
@@ -429,7 +439,7 @@ struct FilesPane: View {
                          folderEvent: folderEvents)
                     // The page is shared with the phone (034); where it saves and how it
                     // reads a picture are the Mac's.
-                    .environment(\.pageActions, MacPageActions.make(model: model, agentID: agent.id))
+                    .environment(\.pageActions, pageActions)
                 if let probe, probe.isTruncated {
                     Divider()
                     Text("Showing the first \(ByteCountFormatter.string(fromByteCount: Int64(probe.prefix.count), countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: Int64(probe.size), countStyle: .file)).")
@@ -662,7 +672,7 @@ private struct Gone: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: "questionmark.folder")
+            Image(icon: "questionmark.folder")
                 .appText(.title)
                 .foregroundStyle(.tertiary)
             Text(message)

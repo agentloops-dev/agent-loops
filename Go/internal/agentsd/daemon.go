@@ -8,11 +8,11 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/browser"
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Daemon is one host: its root, the clients connected to it, and what it serves them.
@@ -89,6 +89,7 @@ type Daemon struct {
 	appToolsState
 	gitCredentialState
 	screenDriveState
+	handOffWindowState
 	browserDriveState
 	browserTabState
 	hostUserState
@@ -107,6 +108,7 @@ type Daemon struct {
 	allowanceBook
 	accountBook
 	mcpBook
+	readyMadeFetching
 	viewBook
 	mcpHealthBook
 	mcpEventsBook
@@ -123,6 +125,9 @@ type Daemon struct {
 	timeBook
 	reportBook
 	lineageBook
+	// The build timings (#5177).
+	ciTimingsBook
+	ciSyncBook
 	// The events this machine publishes on the bus (#4729).
 	busBook
 	// Subscriptions on the bus, and the bursts debounce holds (#4730).
@@ -136,6 +141,7 @@ type Daemon struct {
 	liveTileState
 	worktreeState
 	recoveryState
+	forgottenState
 	backupState
 	folderState
 	installBook
@@ -164,6 +170,9 @@ type Daemon struct {
 	SettingsDir string
 	// RaiseByHand lets events/raise make an event: an unreleased build on a scratch root.
 	RaiseByHand bool
+	// DiskOverride lets the root's disk-free-override say each volume's free space
+	// (#195, #4851): an unreleased build on a scratch root, as RaiseByHand.
+	DiskOverride bool
 	// HostKey keeps this machine's private key: control-host-key in the root unless the
 	// command sets the platform's store (controllink.HostKeyFor, the Keychain on a Mac).
 	HostKey controllink.HostKeyStore
@@ -194,6 +203,7 @@ func New(ctx context.Context, root string) (*Daemon, error) {
 	d.register()
 	d.startBrowser()
 	d.loadAttention()
+	d.loadRepoAliases()
 	d.loadEvents()
 	d.loadRequests()
 	d.beginMCPApprovals()

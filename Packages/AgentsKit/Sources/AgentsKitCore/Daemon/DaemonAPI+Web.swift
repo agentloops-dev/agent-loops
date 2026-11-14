@@ -74,6 +74,8 @@ public extension DaemonAPI {
                 Row(Method.secretsSessionSet, params: SessionSecretSetRequest.self, result: SessionSecrets.self, kind: .hostRequest),
                 Row(Method.secretsSessionRemove, params: SessionSecretRemoveRequest.self, result: SessionSecrets.self, kind: .hostRequest),
                 Row(Method.secretsSetNeedsApproval, params: SecretNeedsApprovalRequest.self, result: Empty.self, kind: .hostRequest),
+                // Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): what agents saved on the machine.
+                Row(Method.secretsLocalList, params: Empty.self, result: LocalSecrets.self, kind: .hostRequest),
                 Row(Method.desktopControlSet, params: DesktopControlSettings.self, result: DesktopControlSettings.self,
                     kind: .hostRequest),
                 // Pause on touch's two answers (#3004, US3).
@@ -311,6 +313,7 @@ public extension DaemonAPI {
                     kind: .hostRequest),
                 Row(Method.messagesRead, params: MessagesReadRequest.self, result: MessagesRead.self, kind: .hostRequest),
                 Row(Method.messagesReply, params: MessagesReplyRequest.self, result: MessagesReplied.self, kind: .hostRequest),
+                Row(Method.messagesMarkAllRead, params: MessagesMarkAllReadRequest.self, result: MessagesMarkedAllRead.self, kind: .hostRequest),
                 // Work ▸ Timeline on the web page (#4206).
                 Row(Method.workTimeline, params: WorkTimelineRequest.self, result: WorkTimeline.self, kind: .hostRequest),
                 // Work ▸ Features as a delivery view (#4586).
@@ -332,6 +335,9 @@ public extension DaemonAPI {
                 // A release's Lineage panel on the web page (#4423).
                 Row(Method.lineageFigures, params: LineageNodeRequest.self, result: LineageFigures.self,
                     kind: .hostRequest),
+                // Build trends on the web page (#5177): Web + Mac link, so no Swift types.
+                Row(Method.buildsHistory, params: JSONValue.self, result: JSONValue.self, kind: .hostRequest),
+                Row(Method.buildsRun, params: JSONValue.self, result: JSONValue.self, kind: .hostRequest),
                 Row(Method.simulatorsList, params: Empty.self, result: SimulatorList.self, kind: .hostRequest),
                 Row(Method.simulatorsBoot, params: SimulatorRequest.self, result: Empty.self, kind: .hostRequest),
                 Row(Method.simulatorsShutdown, params: SimulatorRequest.self, result: Empty.self, kind: .hostRequest),
@@ -369,6 +375,8 @@ public extension DaemonAPI {
                 Row(Method.agentsBranchFrom, params: BranchFromRequest.self, result: UUID.self, kind: .hostRequest),
                 Row(Method.agentsPrewarm, params: PrewarmRequest.self, result: Empty.self, kind: .hostRequest),
                 Row(Method.agentsUnarchive, params: AgentRequest.self, result: Empty.self, kind: .hostRequest),
+                // Start now (#5156): a queued session, at once, by the person's click.
+                Row(Method.agentsStartNow, params: AgentRequest.self, result: Empty.self, kind: .hostRequest),
                 Row(Method.agentsSetLabels, params: SetLabelsRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsSetCeiling, params: SetCeilingRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsSetSandbox, params: SetSandboxRequest.self, result: Agent.self, kind: .hostRequest),
@@ -435,6 +443,8 @@ public extension DaemonAPI {
                 // as the window's folders column has them.
                 Row(Method.filesBrowse, params: FilesBrowseRequest.self, result: DirectoryListing.self, kind: .hostRequest),
                 Row(Method.foldersAdd, params: AddFolderRequest.self, result: FolderSummary.self, kind: .hostRequest),
+                // The plan page's Submit (#5056): the first-build agent, in its own folder.
+                Row(Method.firstBuildStart, params: FirstBuildStartRequest.self, result: UUID.self, kind: .hostRequest),
                 // Choose Folders… on a machine's row (#4122): the git repositories under its auto-detect paths.
                 Row(Method.foldersFind, params: FoldersFindRequest.self, result: [FoundFolder].self, kind: .hostRequest),
                 Row(Method.foldersClone, params: CloneRequest.self, result: FolderSummary.self, kind: .hostRequest),
@@ -562,6 +572,8 @@ public extension DaemonAPI {
                 Row(Method.reportsScopes, params: Empty.self, result: ReportScopes.self, kind: .controlRequest),
                 // Lineage over every machine's copy (#4276): Work ▸ Timeline's sessions.
                 Row(Method.lineageWalkAll, params: LineageWalkAllRequest.self, result: LineageGraph.self, kind: .controlRequest),
+                Row(Method.buildsHistoryAll, params: JSONValue.self, result: JSONValue.self, kind: .controlRequest),
+                Row(Method.buildsRunAll, params: JSONValue.self, result: JSONValue.self, kind: .controlRequest),
                 Row(Method.lineageSessionsOn, params: LineageSessionsOnRequest.self, result: LineageSessionsOn.self,
                     kind: .controlRequest),
                 Row(Method.reportsPolicy, params: Empty.self, result: ReportPolicy.self, kind: .controlRequest),
@@ -628,6 +640,7 @@ public extension DaemonAPI {
                 Row(Method.sealingWork, params: Empty.self, result: SealingWork.self, kind: .controlRequest),
                 Row(Method.sealingAdd, params: SealingAdd.self, result: Empty.self, kind: .controlRequest),
                 Row(Method.userSecretRecipients, params: Empty.self, result: SealRecipients.self, kind: .controlRequest),
+                Row(Method.userSealedSecret, params: UserSealedSecretRequest.self, result: UserSealedSecret.self, kind: .controlRequest),
                 // The machine lock (#3399, #3490): the chain, and a client asking to join it.
                 Row(Method.lockGet, params: Empty.self, result: Lock.self, kind: .controlRequest),
                 Row(Method.lockAdd, params: LockAdd.self, result: LockHead.self, kind: .controlRequest),
@@ -743,6 +756,7 @@ public extension DaemonAPI {
                 Row(Notification.mcpHealthChanged, params: MCPHealthSnapshot.self, result: Empty.self,
                     kind: .hostNotification),
                 Row(Notification.diskChanged, params: DiskState.self, result: Empty.self, kind: .hostNotification),
+                Row(Notification.eventsChanged, params: EventsChange.self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.capacityChanged, params: CapacityState.self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.backupsChanged, params: BackupState.self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.worktreesSized, params: WorktreesSized.self, result: Empty.self, kind: .hostNotification),

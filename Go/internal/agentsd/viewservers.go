@@ -11,7 +11,7 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 )
 
 // Which of a person's MCP servers a view may come from, and what views it has
@@ -527,7 +527,7 @@ func withViewSession(ctx context.Context, s viewServer, body func(*viewSession) 
 		return err
 	}
 	init, err := m.call("initialize", map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
-		"clientInfo": map[string]any{"name": "Agents", "version": "1"}})
+		"clientInfo": map[string]any{"name": "Agent Loops", "version": "1"}})
 	if err != nil {
 		return timedOut(err)
 	}

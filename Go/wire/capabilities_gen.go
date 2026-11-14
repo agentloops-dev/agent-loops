@@ -10,6 +10,7 @@ const CapAgentsExport1 = "agents.export/1"
 const CapAgentsFind1 = "agents.find/1"
 const CapAgentsMoveWorktree1 = "agents.move-worktree/1"
 const CapAgentsSaid1 = "agents.said/1"
+const CapAgentsStartNow1 = "agents.start-now/1"
 const CapAgents1 = "agents/1"
 const CapApprovals1 = "approvals/1"
 const CapArtifact1 = "artifact/1"
@@ -22,6 +23,10 @@ const CapBackups1 = "backups/1"
 const CapBots1 = "bots/1"
 const CapBringBack1 = "bring.back/1"
 const CapBrowser1 = "browser/1"
+const CapBrowser2 = "browser/2"
+const CapBuildsCopy1 = "builds.copy/1"
+const CapBuildsRead1 = "builds.read/1"
+const CapBuildsTrends1 = "builds.trends/1"
 const CapCapacity1 = "capacity/1"
 const CapCatalog1 = "catalog/1"
 const CapChangesUndo1 = "changes.undo/1"
@@ -65,6 +70,7 @@ const CapFeatures1 = "features/1"
 const CapFilesComplete1 = "files.complete/1"
 const CapFilesDiagnostics1 = "files.diagnostics/1"
 const CapFiles1 = "files/1"
+const CapFirstBuild1 = "first-build/1"
 const CapFolder1 = "folder/1"
 const CapFoldersNotCommitted1 = "folders.not-committed/1"
 const CapFoldersToMachine1 = "folders.to-machine/1"
@@ -85,6 +91,7 @@ const CapHandover1 = "handover/1"
 const CapHostBrowserSettings1 = "host.browser-settings/1"
 const CapHostDesktopControl1 = "host.desktop-control/1"
 const CapHostDriveApproval1 = "host.drive-approval/1"
+const CapHostLocalSecrets1 = "host.local-secrets/1"
 const CapHostLock1 = "host.lock/1"
 const CapHostLock2 = "host.lock/2"
 const CapHostLock3 = "host.lock/3"
@@ -123,6 +130,7 @@ const CapLockReset1 = "lock-reset/1"
 const CapLock1 = "lock/1"
 const CapMac1 = "mac/1"
 const CapMachineAccounts1 = "machine.accounts/1"
+const CapMachineAccounts2 = "machine.accounts/2"
 const CapMachineUsage1 = "machine.usage/1"
 const CapMachine1 = "machine/1"
 const CapMachines1 = "machines/1"
@@ -130,6 +138,7 @@ const CapMailbox1 = "mailbox/1"
 const CapMarketplaces1 = "marketplaces/1"
 const CapMcpToolLevels1 = "mcp.tool-levels/1"
 const CapMcp1 = "mcp/1"
+const CapMessagesMarkRead1 = "messages.mark-read/1"
 const CapMessagesReply1 = "messages.reply/1"
 const CapMessages1 = "messages/1"
 const CapModes1 = "modes/1"
@@ -207,6 +216,7 @@ const CapUsage1 = "usage/1"
 const CapUser1 = "user/1"
 const CapUser2 = "user/2"
 const CapUser3 = "user/3"
+const CapUser4 = "user/4"
 const CapVelocity1 = "velocity/1"
 const CapViews1 = "views/1"
 const CapWake1 = "wake/1"
@@ -262,6 +272,7 @@ var HostCapabilities = pairs([][2]string{
 	{"agents/setSandbox", "agents/1"},
 	{"agents/setUnread", "agents/1"},
 	{"agents/start", "agents/1"},
+	{"agents/startNow", "agents.start-now/1"},
 	{"agents/stop", "agents/1"},
 	{"agents/stopBackground", "agents/1"},
 	{"agents/summaryFacts", "summary.machines/1"},
@@ -284,13 +295,15 @@ var HostCapabilities = pairs([][2]string{
 	{"backups/state", "backups/1"},
 	{"browser/ack", "browser/1"},
 	{"browser/clear", "host.browser-settings/1"},
-	{"browser/input", "browser/1"},
+	{"browser/input", "browser/2"},
 	{"browser/navigate", "browser/1"},
 	{"browser/state", "host.browser-settings/1"},
 	{"browser/unwatch", "browser/1"},
 	{"browser/watch", "browser/1"},
 	{"browserControl/set", "host.drive-approval/1"},
 	{"browserControl/state", "host.drive-approval/1"},
+	{"builds/history", "builds.trends/1"},
+	{"builds/run", "builds.trends/1"},
 	{"capacity/state", "capacity/1"},
 	{"catalog/destination-state", "catalog/1"},
 	{"catalog/preview", "catalog/1"},
@@ -358,6 +371,7 @@ var HostCapabilities = pairs([][2]string{
 	{"files/unwatch", "files/1"},
 	{"files/watch", "files/1"},
 	{"files/write", "files/1"},
+	{"firstBuild/start", "first-build/1"},
 	{"folders/add", "folders/1"},
 	{"folders/archive", "folders/1"},
 	{"folders/bringBack", "folders/1"},
@@ -450,6 +464,7 @@ var HostCapabilities = pairs([][2]string{
 	{"mcp/tools", "mcp.tool-levels/1"},
 	{"mcp/verify", "mcp/1"},
 	{"messages/conversations", "messages/1"},
+	{"messages/markAllRead", "messages.mark-read/1"},
 	{"messages/read", "messages/1"},
 	{"messages/reply", "messages.reply/1"},
 	{"modes/remembered", "modes/1"},
@@ -544,6 +559,7 @@ var HostCapabilities = pairs([][2]string{
 	{"sandbox/state", "sandbox/1"},
 	{"secrets/addGrant", "host.secret-grants/1"},
 	{"secrets/grants", "host.secret-grants/1"},
+	{"secrets/localList", "host.local-secrets/1"},
 	{"secrets/removeGrant", "host.secret-grants/1"},
 	{"secrets/sessionList", "host.session-secrets/1"},
 	{"secrets/sessionRemove", "host.session-secrets/1"},
@@ -756,6 +772,9 @@ var ControlCapabilities = pairs([][2]string{
 	{"bots/make", "bots/1"},
 	{"bots/setCaps", "bots/1"},
 	{"bots/stopRun", "bots/1"},
+	{"builds/historyAll", "builds.read/1"},
+	{"builds/runAll", "builds.read/1"},
+	{"builds/sync", "builds.copy/1"},
 	{"bus/lease", "events.leases/1"},
 	{"bus/log", "events.bus/1"},
 	{"bus/publish", "events.bus/1"},
@@ -819,7 +838,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"lock/joinRequests", "lock-join/1"},
 	{"lock/joinReveal", "lock-join/1"},
 	{"lock/reset", "lock-reset/1"},
-	{"machine/accounts", "machine.accounts/1"},
+	{"machine/accounts", "machine.accounts/2"},
 	{"machine/hello", "machine/1"},
 	{"machine/lockAdd", "host.lock/2"},
 	{"machine/lockAgain", "host.lock/4"},
@@ -963,6 +982,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"tunnel/open", "tunnel/1"},
 	{"usage/rollup", "reports/1"},
 	{"user/removeSecret", "user/2"},
+	{"user/sealedSecret", "user/4"},
 	{"user/secretNames", "user/2"},
 	{"user/secretRecipients", "user/2"},
 	{"user/setAgentConfigFile", "user/1"},
@@ -1100,6 +1120,7 @@ var DeclaredCapabilities = map[string][]string{
 	},
 	"control": {
 		"attention/1",
+		"machine.accounts/1",
 	},
 	"host": {
 		"host.wire/1",

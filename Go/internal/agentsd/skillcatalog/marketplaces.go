@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The marketplaces a catalogue sheet can search (Marketplaces): the app's own list, then
@@ -53,8 +53,8 @@ func Provided(env func(string) string) []wire.Marketplace {
 			URL: registry("https://registry.modelcontextprotocol.io"), Origin: wire.MarketplaceOriginProvided,
 			About: about("The open registry: everything published, in its own order.")},
 		// The connectors Agents makes (#2155): a file carried inside agentsd (mcpcatalog's agents.json).
-		{ID: AgentsMarketplaceID, Name: "Agents", Format: wire.MarketplaceFormatFile, URL: AgentsMarketplaceFile,
-			Origin: wire.MarketplaceOriginProvided, About: about("The connectors Agents makes, carried by every host.")},
+		{ID: AgentsMarketplaceID, Name: "Agent Loops", Format: wire.MarketplaceFormatFile, URL: AgentsMarketplaceFile,
+			Origin: wire.MarketplaceOriginProvided, About: about("The connectors Agent Loops makes, carried by every host.")},
 		{ID: SkillsShID, Name: "skills.sh", Format: wire.MarketplaceFormatSkillsSh, URL: catalog,
 			Origin: wire.MarketplaceOriginProvided, About: about("Skills on GitHub, most installed first.")},
 		{ID: "provided:anthropic-skills", Name: "Anthropic skills", Format: wire.MarketplaceFormatGithubSkills,

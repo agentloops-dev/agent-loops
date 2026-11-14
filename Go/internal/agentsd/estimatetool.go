@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/lineage"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // estimate_issue (#3590): the app's tool over lineage/estimate (#3559), so an agent can say

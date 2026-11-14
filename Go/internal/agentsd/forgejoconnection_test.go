@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/internal/forgejomcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A Forgejo (#3752): an access token is checked with that Forgejo, kept with its address,
@@ -175,7 +175,7 @@ func TestAForgejoFoldersConnectorSetUp(t *testing.T) {
 		review.State != wire.ConnectorSlotStateRead || review.Choice != "Forgejo pull requests" {
 		t.Fatalf("tasks %+v review %+v", tasks, review)
 	}
-	if ci.State != wire.ConnectorSlotStateRefused || ci.Message == nil || *ci.Message != "Forgejo refused: Agents can't see checks in agentstest/agents-walk." {
+	if ci.State != wire.ConnectorSlotStateRefused || ci.Message == nil || *ci.Message != "Forgejo refused: Agent Loops can't see checks in agentstest/agents-walk." {
 		t.Fatalf("ci: %+v", ci)
 	}
 	if setup.Done != 5 || setup.Connection == nil || setup.Connection.Provider != wire.ConnectionProviderForgejo || setup.Installed != nil {

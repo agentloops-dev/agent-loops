@@ -60,7 +60,7 @@ Host's *Move to another machine* works with it.
 
 **Its wire is `Go/wire`'s** (#1313): every method's params and result, what it says to
 clients and hosts, the exchange's lines and a channel's open frame are the generated types,
-from `control.openrpc.json` and `daemon.schema.json`. A date is worked out as before
+from `control.openrpc.json` and `Packages/Wire/schema`. A date is worked out as before
 (`dateOf`), so no byte moved: `testdata/wire.golden` and each package's
 `testdata/wire-types.golden` were written by the hand-made types and still pass. What stays
 written by hand is not the wire: the store's records (ISO dates, and the fields a later
@@ -113,6 +113,10 @@ request for the run's check suite, and one for each job that has annotations.
 `environment: production`), once per run, attempt and set of environments, with the
 reviewers and `canApprove` (whether the connected account is one of them); `workflow` and
 `branch` filter it. Agents Host reads the same waits for Needs You (`agentsd/deploys.go`).
+`deploy.started`, `deploy.succeeded` and `deploy.failed` (#5240) are a GitHub Deployment's
+changes of state, read from `deployments` and each one's `statuses`, with the wire's
+`DeployEvent` as their details; `environment`, `tier` and `component` filter them
+(`githubmcp/deployments.go`, `docs/reference/events.md`, "Deploys").
 CodeRabbit's events are new here (#1344): `review.posted` (once per review of the head
 commit: each time its `CodeRabbit` status on it goes to success, or its review with no status) and `review.comment` (each
 review comment by it). Its tools `coderabbit_review`, `coderabbit_reply` and
@@ -385,8 +389,8 @@ the IMAP server, the user and an app password), or `EMAIL_IMAP_URL`, `EMAIL_USER
   most), so a quiet poll asks the server nothing and the pace is 10 s; with no IDLE, 60 s.
 - **Tools:** `list_folders`, `list_messages`, `search_messages`, `read_message` (its text
   inside `<untrusted-content source="email">`, as outside content), `mark_read` and
-  `move_message`; and the messaging contract's `list_conversations` and `read_messages`
-  (#4340, `docs/reference/messaging-contract.md`, `_meta` `"agents/messaging": 1`). A
+  `move_message`; and the messaging contract's `list_conversations`, `read_messages` and
+  `mark_conversation_read` (#5137: a thread's unread mail, or with `all` the folder's) (#4340, `docs/reference/messaging-contract.md`, `_meta` `"agents/messaging": 1`). A
   conversation is a thread, made from `References`, `In-Reply-To`, and the subject of a
   reply that has neither (`threads.go`): `list_conversations` groups a window of the folder's
   newest mail (ten for each conversation asked for, 500 at most) and leaves out a thread that

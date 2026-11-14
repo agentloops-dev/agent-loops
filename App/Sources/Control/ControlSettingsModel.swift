@@ -287,22 +287,8 @@ final class ControlSettingsModel {
         return nil
     }
 
-    /// A host stops using a Mac's git access for one git server (#1122).
-    func revokeGit(_ host: MachineRef, from: MachineRef, server: String) async {
-        await perform(DaemonAPI.Method.hostsLendGit, DaemonAPI.LendGit(host: host, from: from, server: server, allowed: false))
-    }
-
     func unlink(_ host: MachineRef) async {
         await perform(DaemonAPI.Method.hostsUnlink, DaemonAPI.MachineRequest(host: host))
-    }
-
-    /// `stopWhenIdleMinutes` 0 turns idle stopping off.
-    func setWorkspaceOptions(_ host: MachineRef, startWhenUsed: Bool? = nil, stopWhenIdleMinutes: Int? = nil,
-                             startForSchedules: Bool? = nil) async {
-        await perform(DaemonAPI.Method.hostsSetMachineOptions,
-                      DaemonAPI.MachineOptions(host: host, startWhenUsed: startWhenUsed,
-                                                     stopWhenIdleMinutes: stopWhenIdleMinutes,
-                                                     startForSchedules: startForSchedules))
     }
 
     func start(_ host: MachineRef) async {
@@ -382,12 +368,6 @@ final class ControlSettingsModel {
         await perform(DaemonAPI.Method.hostsDeleteMachine, DaemonAPI.MachineRequest(host: host))
     }
 
-    /// Whether the provider a host's workspace is at can delete it.
-    func canDeleteWorkspace(_ host: DaemonAPI.ControlMachine) -> Bool {
-        guard let workspace = host.workspace else { return false }
-        return providers.first { $0.id == workspace.provider }?.capabilities.contains("delete") == true
-    }
-
     /// Links a server added from a workspace once it joins under `name` (Add as Host…).
     /// `trust` is the host key's fingerprint the install trusted, which the link keeps (#3379).
     func linkWhenJoined(name: String, provider: ProviderID, workspace: String, trust: String? = nil) async {
@@ -410,11 +390,6 @@ final class ControlSettingsModel {
     func hostsThatMayBe(_ workspace: DaemonAPI.MachineInfo) -> [DaemonAPI.ControlMachine] {
         guard workspace.host == nil else { return [] }
         return hosts.filter { $0.workspace == nil && workspace.mayBe(hostNamed: $0.name) }
-    }
-
-    /// The workspaces no host is linked to yet, by provider, for Link to Machine….
-    var linkableWorkspaces: [(provider: DaemonAPI.ProviderSummary, workspaces: [DaemonAPI.MachineInfo])] {
-        providers.map { ($0, $0.workspaces) }.filter { !$0.1.isEmpty }
     }
 
     struct WorkspaceRefusal: Error {
@@ -573,22 +548,33 @@ final class ControlSettingsModel {
     /// **Open in Browser** (#109): the page in the default browser, pairing it in the same
     /// step if no browser of its kind is paired yet (`BrowserOpening`). Nil once opened, else
     /// why not, in words to show.
-    func openInBrowser() async -> String? {
+    ///
+    /// With a `place` (a link of the Web + Mac link tier, #4937, such as Cost's Open Reports), the
+    /// page opens there, also after it pairs. With the control plane on another machine, it opens
+    /// the page on the control plane's own domain, whose sign-in keeps the address (#4937).
+    func openInBrowser(place: String? = nil) async -> String? {
         await refresh()
         guard isReachable, let status else { return "The control plane can’t be reached." }
-        guard isOnThisMac else { return "The page is served only to a browser on the Mac that runs the control plane." }
+        guard isOnThisMac else {
+            if place != nil, let page = BrowserOpening.linkPage(status, onThisMac: false),
+               let url = BrowserOpening.pageURL(page, place: place) {
+                Self.open(url)
+                return nil
+            }
+            return "The page is served only to a browser on the Mac that runs the control plane."
+        }
         let browsers = clients.filter { $0.kind == .browser }.map(\.name)
         switch BrowserOpening.step(web: status.web, browsers: browsers, family: Self.defaultBrowserFamily) {
         case .notServed(let why):
             return why
         case .open(let url):
-            Self.open(url)
+            Self.open(place.flatMap { BrowserOpening.pageURL(url.absoluteString, place: $0) } ?? url)
             return nil
         case .pair:
             guard let web = status.web, let code = await startCode(forHost: false, browser: true) else {
                 return problem ?? "No code could be made."
             }
-            guard let url = BrowserOpening.pairingURL(web, code: code.text) else { return "No code could be made." }
+            guard let url = BrowserOpening.pairingURL(web, code: code.text, place: place) else { return "No code could be made." }
             Self.open(url)
             return nil
         }
@@ -616,7 +602,7 @@ final class ControlSettingsModel {
 
     func restart() async {
         // The control plane on this Mac is the host side's to restart (ControlSettingsView).
-        problem = "Restart the control plane from Agents on this Mac."
+        problem = "Restart the control plane from Agent Loops on this Mac."
         return
     }
 

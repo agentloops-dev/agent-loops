@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A new app's repository as an app tool (#3708, spec 3656): make_app_repository makes a
@@ -35,18 +35,13 @@ func (d *Daemon) makeAppRepository(caller wire.UUID, args map[string]json.RawMes
 		return "", Invalid("Nothing was made: name is the repository's name: letters, digits, '.', '-' and '_', e.g. tide-log.")
 	}
 	starter := strings.TrimSpace(argString(args, "starter"))
-	if !starterKnown(starter) {
-		return "", Invalid("Nothing was made: starter is one of %s.", strings.Join(starterIDs(), ", "))
+	starterRef, ok := starterRepo(starter)
+	if !ok {
+		return "", Invalid("Nothing was made: starter is a template repository, owner/name, or one of ours: %s.", starterShortList())
 	}
 	values := map[string]string{}
 	if raw, ok := args["values"]; ok && json.Unmarshal(raw, &values) != nil {
 		return "", Invalid("Nothing was made: values is an object of the starter's placeholders, e.g. {\"APP_NAME\": \"Tide Log\"}.")
-	}
-	// GITHUB_REPO is the repository's own name, which the app knows; the rest are the agent's.
-	values["GITHUB_REPO"] = "owner/" + name
-	if _, err := starterFiles(starter, values); err != nil {
-		names, _ := starterPlaceholders(starter)
-		return "", Invalid("Nothing was made: %v. The %s starter takes values for %s.", err, starter, strings.Join(withoutRepo(names), ", "))
 	}
 	owner := strings.TrimPrefix(strings.TrimSpace(argString(args, "owner")), "@")
 	if owner != "" && !ciRepoRef.MatchString(owner+"/r") {
@@ -62,6 +57,18 @@ func (d *Daemon) makeAppRepository(caller wire.UUID, args map[string]json.RawMes
 	c, _ := d.githubConnection()
 	token := c.Access
 
+	// The starter is fetched before anything is made, so its missing values are refused first.
+	// GITHUB_REPO is the repository's own name, which the app knows; the rest are the agent's.
+	raw, err := fetchStarter(starterRef, token)
+	if err != nil {
+		return "", Invalid("Nothing was made: %v.", err)
+	}
+	values["GITHUB_REPO"] = "owner/" + name
+	if missing := starterMissing(raw, values); len(missing) > 0 {
+		return "", Invalid("Nothing was made: the %s starter needs %s. It takes values for %s.", starter,
+			strings.Join(missing, ", "), strings.Join(withoutRepo(starterPlaceholders(raw)), ", "))
+	}
+
 	ctx, cancel := context.WithTimeout(d.ctx, ciToolTimeout)
 	repo, made, err := gh.MakeRepository(ctx, owner, name, values["APP_NAME"])
 	cancel()
@@ -75,7 +82,7 @@ func (d *Daemon) makeAppRepository(caller wire.UUID, args map[string]json.RawMes
 		done = append(done, repo.FullName+" was on GitHub already")
 	}
 	values["GITHUB_REPO"] = repo.FullName
-	files, err := starterFiles(starter, values)
+	files, err := fillStarter(raw, values)
 	if err != nil {
 		return "", Invalid("Nothing more was made: %v", err)
 	}
@@ -139,32 +146,13 @@ func (d *Daemon) cloneNewApp(cloneURL, dest, token, login string, userID int64, 
 		return false, err
 	}
 	staged := filepath.Join(staging, filepath.Base(dest))
-	auth := []string{"GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader",
-		"GIT_CONFIG_VALUE_0=AUTHORIZATION: basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))}
+	auth := gitTokenEnv(token)
 	if _, err := newAppGit(staging, auth, "clone", "--", cloneURL, staged); err != nil {
 		return false, fmt.Errorf("could not clone it: %v", err)
 	}
-	// A repository with no branch is new: the starter is its first commit.
-	pushed := false
-	if branches, err := newAppGit(staged, nil, "for-each-ref", "--count=1", "refs/remotes/origin"); err == nil && branches == "" {
-		if err := writeStarter(staged, files); err != nil {
-			return false, fmt.Errorf("could not write the starter: %v", err)
-		}
-		email := fmt.Sprintf("%d+%s@users.noreply.github.com", userID, login)
-		who := []string{"GIT_AUTHOR_NAME=" + login, "GIT_AUTHOR_EMAIL=" + email, "GIT_COMMITTER_NAME=" + login, "GIT_COMMITTER_EMAIL=" + email}
-		for _, step := range [][]string{
-			{"symbolic-ref", "HEAD", "refs/heads/main"},
-			{"add", "-A"},
-			{"-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", "The starter"},
-		} {
-			if _, err := newAppGit(staged, who, step...); err != nil {
-				return false, fmt.Errorf("could not commit the starter: %v", err)
-			}
-		}
-		if _, err := newAppGit(staged, auth, "push", "-u", "origin", "main"); err != nil {
-			return false, fmt.Errorf("could not push the starter: %v", err)
-		}
-		pushed = true
+	pushed, err := firstCommit(staged, auth, login, userID, "The starter", files, writeStarter)
+	if err != nil {
+		return false, err
 	}
 	if _, err := os.Stat(dest); err == nil {
 		return pushed, errors.New(shortPath(dest) + " appeared while the clone ran, and nothing in it was changed")
@@ -173,6 +161,40 @@ func (d *Daemon) cloneNewApp(cloneURL, dest, token, login string, userID int64, 
 		return pushed, fmt.Errorf("could not move the clone to %s: %v", shortPath(dest), err)
 	}
 	return pushed, nil
+}
+
+// gitTokenEnv is the environment that gives git the GitHub token for github.com: in a header,
+// so it is in neither git's arguments nor the clone's config.
+func gitTokenEnv(token string) []string {
+	return []string{"GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader",
+		"GIT_CONFIG_VALUE_0=AUTHORIZATION: basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))}
+}
+
+// firstCommit pushes files as the first commit on main, with message, of staged, a clone, when the repository
+// has no branch yet: write puts them in the clone. It says whether it pushed; a repository with
+// commits keeps them.
+func firstCommit(staged string, auth []string, login string, userID int64, message string, files map[string][]byte, write func(string, map[string][]byte) error) (bool, error) {
+	if branches, err := newAppGit(staged, nil, "for-each-ref", "--count=1", "refs/remotes/origin"); err != nil || branches != "" {
+		return false, nil
+	}
+	if err := write(staged, files); err != nil {
+		return false, fmt.Errorf("could not write the files: %v", err)
+	}
+	email := fmt.Sprintf("%d+%s@users.noreply.github.com", userID, login)
+	who := []string{"GIT_AUTHOR_NAME=" + login, "GIT_AUTHOR_EMAIL=" + email, "GIT_COMMITTER_NAME=" + login, "GIT_COMMITTER_EMAIL=" + email}
+	for _, step := range [][]string{
+		{"symbolic-ref", "HEAD", "refs/heads/main"},
+		{"add", "-A"},
+		{"-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", message},
+	} {
+		if _, err := newAppGit(staged, who, step...); err != nil {
+			return false, fmt.Errorf("could not commit the files: %v", err)
+		}
+	}
+	if _, err := newAppGit(staged, auth, "push", "-u", "origin", "main"); err != nil {
+		return false, fmt.Errorf("could not push the first commit: %v", err)
+	}
+	return true, nil
 }
 
 // writeStarter writes files under dir; a shell script can be run.

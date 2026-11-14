@@ -22,7 +22,7 @@ struct WorkStateIcon: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(glyph.accessibilityLabel)
         } else {
-            Image(systemName: WorkList.Kind(rawValue: kind)?.sidebarIcon ?? "circle")
+            Image(icon: WorkList.Kind(rawValue: kind)?.sidebarIcon ?? "circle")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
         }
@@ -31,16 +31,16 @@ struct WorkStateIcon: View {
     @ViewBuilder
     private func symbol(_ glyph: WorkLook.Glyph) -> some View {
         switch glyph {
-        case .issueOpen: Image(systemName: "smallcircle.filled.circle")
-        case .issueDone: Image(systemName: "checkmark.circle")
-        case .issueNotPlanned: Image(systemName: "slash.circle")
-        case .prOpen, .prDraft: Image(systemName: "arrow.triangle.pull")
-        case .prMerged: Image(systemName: "arrow.triangle.merge")
+        case .issueOpen: Image(icon: "smallcircle.filled.circle")
+        case .issueDone: Image(icon: "checkmark.circle")
+        case .issueNotPlanned: Image(icon: "slash.circle")
+        case .prOpen, .prDraft: Image(icon: "arrow.triangle.pull")
+        case .prMerged: Image(icon: "arrow.triangle.merge")
         case .prClosed:
             // The branch glyph with a cross: SF Symbols has no one glyph for it.
-            Image(systemName: "arrow.triangle.pull")
+            Image(icon: "arrow.triangle.pull")
                 .overlay(alignment: .bottomTrailing) {
-                    Image(systemName: "xmark").imageScale(.small).fontWeight(.bold)
+                    Image(icon: "xmark").imageScale(.small).fontWeight(.bold)
                         .padding(1)
                         .background(Circle().fill(Paper.raised))
                         .offset(x: 3, y: 2)
@@ -105,9 +105,9 @@ struct WorkPictures: Equatable {
     static func == (a: Self, b: Self) -> Bool { a.model === b.model && a.host == b.host }
 
     func read(_ url: String) async -> PlatformImage? {
-        guard let got = try? await model.forge(DaemonAPI.Method.forgeImage, DaemonAPI.ForgeImageRequest(url: url),
-                                               returning: DaemonAPI.ForgeImage.self, on: host) else { return nil }
-        return PlatformImage(data: got.data)
+        // From this device's copy when it holds it (#4930): a picture does not change at its URL.
+        guard let data = await model.forgeImage(url, on: host) else { return nil }
+        return PlatformImage(data: data)
     }
 }
 

@@ -2,7 +2,8 @@
 // A summary first (#3743): its CPU, load and capacity (#4582), memory and worst disk on one line. Then the detail, most of it closed until the
 // person opens it: the disk that matters with the others folded, a row per folder's worktrees (#3627), the runtimes
 // installed there (#3629), resources only when one is declared or held, and its processes (#3453). Read with
-// machine/usage when it opens and every few seconds while it is open and the tab is seen.
+// machine/usage when it opens and every few seconds while it is open and the tab is seen. A read that fails says when
+// the last one worked (#5146): the page reads every 3 s, so it shows no line while they work.
 import { useEffect, useState } from "preact/hooks";
 import type { Store } from "../model/store";
 import { hostAnswers, hostHas } from "../model/capabilities";
@@ -15,15 +16,15 @@ import { go } from "../route";
 import { MachineProcesses } from "./settings/Processes";
 import { chooseSettingsMachine } from "./settings/SettingsMachine";
 import { WorktreesList } from "./Worktrees";
+import { LastUpdate } from "./LastUpdate";
 import { Resources } from "./Resources";
-import { RuntimeSignInDialog } from "./RuntimeSignInDialog";
+import { signInRuntime } from "./RuntimeSignInDialog";
 import { isInstalled, machineRuntimeLine, offersMachineSignIn, offersUpdate, signInOnTheMac } from "../model/runtimes";
-import type { RuntimeStatus } from "../protocol/generated";
 import { forCleanup, pageLine, tally, worktreesIntro } from "../model/worktrees";
 
 const disksHelp = "Each disk its agents write to. Low and almost full are the lines set in Folder Settings ▸ Disk Space.";
 
-const levelClass = (disk: DiskAlarm) => disk.level === "critical" ? "failure" : disk.level === "low" ? "tinted" : "";
+const levelClass = (disk: DiskAlarm) => disk.level === "critical" ? "failure" : disk.level === "low" ? "warning" : "";
 
 export function MachinePage({ store, host }: { store: Store; host: string }) {
   const hosts = store.hosts.value;
@@ -33,13 +34,14 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
   const name = machine?.name ?? "This machine";
   const [usage, setUsage] = useState<MachineUsageState | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => {
     if (!asks) return;
     let gone = false;
     const read = () => {
       if (document.visibilityState !== "visible") return;
       store.link.call("machine/usage", {}, host).then(
-        (s) => { if (!gone) { setUsage(s); setFailure(null); } },
+        (s) => { if (!gone) { setUsage(s); setFailure(null); setReadAt(Date.now()); } },
         () => { if (!gone) setFailure(`${name} can’t be asked how it is doing now.`); });
     };
     read();
@@ -73,7 +75,7 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
           onClick={() => { chooseSettingsMachine(host); go({ nav: "settings" }); }}>Settings…</button>
       </div>
       {!answers ? <p class="hint">{name} is offline, so it can’t say how it is doing now.</p>
-        : !asks ? <p class="hint">Update Agents on {name} to see its CPU, memory and disks here.</p>
+        : !asks ? <p class="hint">Update Agent Loops on {name} to see its CPU, memory and disks here.</p>
         : (
           <>
             <section aria-labelledby="machine-summary">
@@ -94,7 +96,7 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
                     </span>
                   </div>
                   {queued && <p class="hint">{queued}</p>}
-                  {failure && <p class="hint">{failure}</p>}
+                  {failure && <p class="hint">{failure}{readAt !== null && <> <LastUpdate at={readAt} /></>}</p>}
                 </>
               )}
             </section>
@@ -144,7 +146,6 @@ function MachineWorktrees({ store, host }: { store: Store; host: string }) {
  * and the daemon takes a new install only from the Mac, so there is no Install here.
  * Accounts and allowances are the person’s: Status ▸ Runtimes. */
 function MachineRuntimes({ store, host, name }: { store: Store; host: string; name: string }) {
-  const [signingIn, setSigningIn] = useState<RuntimeStatus | null>(null);
   const runtimes = store.runtimes.value[host]?.filter(isInstalled);
   const signs = store.has(host, Capability.runtimesSignIn1);
   return (
@@ -158,7 +159,7 @@ function MachineRuntimes({ store, host, name }: { store: Store; host: string; na
               {((offersMachineSignIn(status) && signs) || offersUpdate(status)) && (
                 <span class="row-actions">
                   {offersMachineSignIn(status) && signs && (
-                    <button type="button" onClick={() => setSigningIn(status)}>Sign In…</button>
+                    <button type="button" onClick={() => signInRuntime(store, { host, runtimeID: status.runtime.id, runtimeName: status.runtime.name, machine: name })}>Sign In…</button>
                   )}
                   {offersUpdate(status) && (
                     <button type="button" onClick={() => void store.updateRuntime(host, status.runtime.id)}>Update</button>
@@ -172,10 +173,6 @@ function MachineRuntimes({ store, host, name }: { store: Store; host: string; na
       )}
       <p><button type="button" class="link small" onClick={() => go({ nav: "status", section: "runtimes" })}>
         Every runtime, your accounts and allowances, in Status</button></p>
-      {signingIn && (
-        <RuntimeSignInDialog store={store} host={host} runtimeID={signingIn.runtime.id} runtimeName={signingIn.runtime.name}
-          machine={name} close={() => setSigningIn(null)} />
-      )}
     </section>
   );
 }

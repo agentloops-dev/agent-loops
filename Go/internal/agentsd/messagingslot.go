@@ -13,7 +13,7 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The Messaging slot (#1787): where agents reach the person. Slack, email and Google Chat are
@@ -172,7 +172,7 @@ func readMessagingServer(ctx context.Context, s sdk.McpServer, cwd string, timeo
 		return docsSearchError(mcpFailureOf(err).sentence(timeout))
 	}
 	raw, err := c.call(ctx, 1, "initialize", map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
-		"clientInfo": map[string]any{"name": "Agents", "version": "1"}})
+		"clientInfo": map[string]any{"name": "Agent Loops", "version": "1"}})
 	if err != nil {
 		return nil, nil, failed(err)
 	}

@@ -1,11 +1,14 @@
-// A tool's view, inline in the chat where its call began (#187). The row holds the view's place,
-// its name and what it asks of the person; the frame itself is the chat's ViewLayer's. Pin, when
-// the host says the call can feed one, puts the view under the chat's folder (#189).
+// A tool's view, inline in the chat where its call began (#187), as an Object card (#5035). The card
+// holds the view's place, its name and its ⋯; what it asks of the person is an Ask (#5031); the frame
+// itself is the chat's ViewLayer's. Pin, when the host says the call can feed one, puts the view under
+// the chat's folder (#189).
 import { createContext } from "preact";
 import { useContext, useLayoutEffect, useRef } from "preact/hooks";
 import type { AppViewCall } from "../../protocol/generated";
 import { canPin, viewTitle } from "./appViewBridge";
-import type { ViewActions, ViewLayer } from "./viewLayer";
+import type { HostedView, ViewActions, ViewLayer } from "./viewLayer";
+import { Ask } from "../Ask";
+import { ObjectCard } from "./ObjectCard";
 
 export const ViewLayerContext = createContext<{ layer: ViewLayer; actions: ViewActions } | null>(null);
 
@@ -31,59 +34,43 @@ export function AppView({ call }: { call: AppViewCall }) {
   }
   const full = hosting.layer.fullscreen.value === call.id;
   const result = resultText(call);
+  const phase = view.phase.value;
+  const canOpen = phase === "ready" && !full;
+  const openFull = () => hosting.layer.setFullscreen(call.id);
+  const more = [
+    ...(canOpen ? [{ label: "Full Screen", title: "Show this view in the chat's place", run: openFull }] : []),
+    ...(hosting.actions.pin && canPin(call) && !view.pinned.value
+      ? [{ label: "Pin to Folder", title: "Pin this view under the folder", run: () => void view.pin() }] : []),
+  ];
+  const detail = ["View", call.state === "cancelled" ? "Cancelled" : null, view.pinned.value ? "Pinned" : null]
+    .filter(Boolean).join(" · ");
+  // The view is an Object card (#5035): the live view as its preview, then the row of its name, ⋯ (Full Screen,
+  // Pin to Folder) and › (full screen). Only the row opens: the view takes its own clicks.
   return (
     <div class="app-view">
-      <p class="view-caption">
-        <span class="faint">{view.title}</span>
-        {call.state === "cancelled" && <span class="faint">Cancelled</span>}
-        <span class="view-actions">
-          {hosting.actions.pin && canPin(call) && (view.pinned.value
-            ? <span class="faint">Pinned</span>
-            : <button class="plain" title="Pin this view under the folder" onClick={() => void view.pin()}>Pin</button>)}
-          {view.phase.value === "ready" && !full && (
-            <button class="plain" title="Show this view in the chat's place" onClick={() => hosting.layer.setFullscreen(call.id)}>
-              Full screen
-            </button>
-          )}
-        </span>
-      </p>
-      {view.phase.value === "loading" && <p class="quiet">Loading {view.title}…</p>}
-      {view.phase.value === "failed" && (
-        <>
-          <p class="quiet">{view.failure.value}{" "}
-            {view.canRetry.value && <button onClick={() => view.retry()}>Try Again</button>}
-          </p>
-          {result && <pre class="view-result">{result}</pre>}
-        </>
-      )}
-      {view.phase.value === "asking" && view.ask.value && (
-        <div class="view-ask">
-          <p>{view.ask.value.isNew ? `${view.ask.value.server} wants to show a view here.`
-            : `${view.ask.value.server}'s view has changed since you said Show.`}</p>
-          <p class="faint">It is drawn in a sandbox, and reaches only what it declared.</p>
-          <p class="buttons">
-            <button class="prominent" onClick={() => void view.answerShow(true)}>Show</button>
-            <button onClick={() => void view.answerShow(false)}>Don't Show</button>
-          </p>
-        </div>
-      )}
-      {view.phase.value === "gone" && <p class="quiet">This view was closed.</p>}
-      {full && (
-        <p class="quiet"><button class="plain" onClick={() => hosting.layer.setFullscreen(null)}>Showing full screen. Back to the chat</button></p>
-      )}
-      <div ref={slot} class="view-slot" style={{ height: full || view.phase.value !== "ready" ? 0 : `${view.height.value}px` }} />
-      {view.askedMessage.value !== null && (
-        <div class="view-ask">
-          <p class="faint">{view.askedRecipient.value
-            ? `The view asks to send this to “${view.askedRecipient.value.name}” as your message:`
-            : "The view asks to send this as your message:"}</p>
-          <p>{view.askedMessage.value}</p>
-          <p class="buttons">
-            <button class="prominent" onClick={() => view.answerMessage(true)}>Send</button>
-            <button onClick={() => view.answerMessage(false)}>Don't Send</button>
-          </p>
-        </div>
-      )}
+      <ObjectCard wide icon="layout-grid" title={view.title} detail={detail} more={more} tapAnywhere={false}
+        open={canOpen ? openFull : undefined} openTitle="Show this view in the chat's place"
+        preview={
+          <div class="view-frame">
+            {phase === "loading" && <p class="quiet">Loading {view.title}…</p>}
+            {phase === "failed" && (
+              <>
+                <p class="quiet">{view.failure.value}{" "}
+                  {view.canRetry.value && <button onClick={() => view.retry()}>Try Again</button>}
+                </p>
+                {result && <pre class="view-result">{result}</pre>}
+              </>
+            )}
+            {/* Its Show / Don't Show is an Ask under "Waiting for you" (#5031): the card says one line. */}
+            {phase === "asking" && view.ask.value && <p class="quiet">{viewWaitsWords}</p>}
+            {phase === "gone" && <p class="quiet">This view was closed.</p>}
+            {full && (
+              <p class="quiet"><button class="plain" onClick={() => hosting.layer.setFullscreen(null)}>Showing full screen. Back to the chat</button></p>
+            )}
+            <div ref={slot} class="view-slot" style={{ height: full || phase !== "ready" ? 0 : `${view.height.value}px` }} />
+          </div>
+        } />
+      {view.askedMessage.value !== null && <p class="quiet">{viewWaitsWords}</p>}
       {view.contextLine.value !== null && (
         <p class="view-context faint">
           With your next message the agent is told: {view.contextLine.value}{" "}
@@ -91,6 +78,35 @@ export function AppView({ call }: { call: AppViewCall }) {
         </p>
       )}
     </div>
+  );
+}
+
+/** What a view's row says while its ask waits at the end of the chat. */
+const viewWaitsWords = "Waiting for you, at the end of the chat.";
+
+/** A view's ask (#191, #837), as an Ask (#5031): Show / Don't Show, or Send / Don't Send. */
+export function ViewAsk({ view }: { view: HostedView }) {
+  const ask = view.ask.value;
+  if (view.phase.value === "asking" && ask) {
+    const title = ask.isNew ? `Show the view “${view.title}”?` : `${ask.server}'s view has changed. Show it again?`;
+    return (
+      <Ask glyph="layout-grid" title={title} asker={ask.server} label={title}
+        decline={<button class="link" onClick={() => void view.answerShow(false)}>Don't Show</button>}
+        buttons={<button class="prominent" data-default="" onClick={() => void view.answerShow(true)}>Show</button>}>
+        <p class="quiet small">It is drawn in a sandbox, and reaches only what it declared.</p>
+      </Ask>
+    );
+  }
+  const message = view.askedMessage.value;
+  if (message === null) return null;
+  const to = view.askedRecipient.value;
+  const title = to ? `Send this to “${to.name}” as your message?` : "Send this as your message?";
+  return (
+    <Ask glyph="layout-grid" title={title} asker={view.title} label={title}
+      decline={<button class="link" onClick={() => view.answerMessage(false)}>Don't Send</button>}
+      buttons={<button class="prominent" data-default="" onClick={() => view.answerMessage(true)}>Send</button>}>
+      <p>{message}</p>
+    </Ask>
   );
 }
 

@@ -146,7 +146,7 @@ struct SmartFold: View {
 }
 
 /// One request to the person under Needs You (#3864): a click opens the session that asked
-/// it, where its card takes the answer. A secret's use (#4017) has no card: its menu has Allow
+/// it, where its card takes the answer. A secret's use (#4017) has a card too (#4918); its menu has Allow
 /// Once, Approve for This Session, Always Approve and Deny, Approve is a leading swipe and Deny a
 /// trailing one, as an approval's row has (#3763). A terminal's agents-secret (#4179) has no
 /// session to open: its menu has Approve, Approve for 1 Hour and Deny, and its grey line says
@@ -199,7 +199,7 @@ private struct LaterRows: View {
     var body: some View {
         if !requests.isEmpty {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.right")
+                Image(icon: "chevron.right")
                     .imageScale(.small)
                     .rotationEffect(.degrees(open ? 90 : 0))
                     .foregroundStyle(.secondary)
@@ -240,7 +240,7 @@ private struct SecretUseAnswers: ViewModifier {
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                 if request.secretUse != nil {
                     SwipeAction { await model.answerSecretUse(request, .once) } label: {
-                        Label(NeedRequest.Action.once.word, systemImage: "checkmark")
+                        Label(NeedRequest.Action.once.word, icon: "checkmark")
                     }
                     .tint(Paper.accent)
                 }
@@ -248,7 +248,7 @@ private struct SecretUseAnswers: ViewModifier {
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if request.secretUse != nil {
                     SwipeAction { await model.answerSecretUse(request, .deny) } label: {
-                        Label(NeedRequest.Action.deny.word, systemImage: "xmark")
+                        Label(NeedRequest.Action.deny.word, icon: "xmark")
                     }
                     .tint(StateTint.failure.color)
                 }
@@ -294,7 +294,7 @@ private struct ApprovalListRow: View {
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                 if approval.actions.contains(.approve) {
                     SwipeAction { await answer(.approve) } label: {
-                        Label(approval.word(for: .approve), systemImage: "checkmark")
+                        Label(approval.word(for: .approve), icon: "checkmark")
                     }
                     .tint(Paper.accent)
                 }
@@ -302,7 +302,7 @@ private struct ApprovalListRow: View {
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if approval.actions.contains(.deny) {
                     SwipeAction { await answer(.deny) } label: {
-                        Label(approval.word(for: .deny), systemImage: "xmark")
+                        Label(approval.word(for: .deny), icon: "xmark")
                     }
                     .tint(StateTint.failure.color)
                 }
@@ -524,7 +524,7 @@ struct FolderPageRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: systemImage)
+            Image(icon: systemImage)
                 .sidebarMark(warns ? StateTint.failure.style(or: .primary) : AnyShapeStyle(Paper.accent))
                 .frame(width: 16)
                 .accessibilityHidden(true)
@@ -565,7 +565,7 @@ private struct ActivityIcon: ViewModifier {
 
     func body(content: Content) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: systemImage)
+            Image(icon: systemImage)
                 .sidebarMark(warns ? tint.style(or: .primary) : AnyShapeStyle(Paper.accent))
                 .frame(width: 16)
                 .accessibilityHidden(true)

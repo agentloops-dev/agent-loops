@@ -15,12 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/connections"
-	"github.com/alexec/agents/Go/internal/emailmcp"
-	"github.com/alexec/agents/Go/internal/jiramcp"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/emailmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/jiramcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Connections (#1335): the person's sign-ins to tools, kept by this host. A client starts a
@@ -64,7 +64,7 @@ import (
 // (connections/sign-in/token) and keeps it with its address. The token has no refresh: it ends
 // on the date the person gave it. On dev.azure.com it also signs in with Microsoft Entra
 // (#3921): Entra's device flow (connections/sign-in with the organization as url), with the
-// Entra app in the person's secrets (connections.AzureDevOpsClientIDName). The host checks the
+// Agents app on Entra, or one in the person's secrets (connections.AzureDevOpsClientIDName). The host checks the
 // access token with the organization, keeps the pair, and renews it, as GitHub's.
 
 var (
@@ -173,7 +173,7 @@ func (d *Daemon) registerConnections() {
 	})
 	On(d, wire.CallConnectionsDisconnect, func(ctx context.Context, c *Client, r wire.ConnectionProviderRequest) (wire.ConnectionDisconnectAnswer, error) {
 		if !knownProvider(r.Provider) {
-			return wire.ConnectionDisconnectAnswer{}, invalid("Agents does not connect to " + string(r.Provider) + ".")
+			return wire.ConnectionDisconnectAnswer{}, invalid("Agent Loops does not connect to " + string(r.Provider) + ".")
 		}
 		s, err := d.connectionStore()
 		if err == nil {
@@ -280,7 +280,7 @@ func (d *Daemon) atlassianApp() (id, secret string) {
 
 // azureDevOpsApp is the Entra app's client id and tenant for Azure DevOps's sign-in (#3921):
 // AGENTS_AZURE_DEVOPS_CLIENT_ID and AGENTS_AZURE_DEVOPS_TENANT in the host's environment (a
-// scratch root's), else the person's secrets.env. No id: Connect Azure DevOps takes a token only.
+// scratch root's), else the person's secrets.env, else the Agents app (#4873).
 func (d *Daemon) azureDevOpsApp() (id, tenant string) {
 	id, tenant = os.Getenv("AGENTS_"+connections.AzureDevOpsClientIDName), os.Getenv("AGENTS_"+connections.AzureDevOpsTenantName)
 	if id == "" {
@@ -290,7 +290,10 @@ func (d *Daemon) azureDevOpsApp() (id, tenant string) {
 			log.Printf("connections: the Entra app's %s has Ask before use, so Connect Azure DevOps does not use it: turn Ask before use off for it", connections.AzureDevOpsClientIDName)
 		}
 	}
-	return strings.TrimSpace(id), strings.TrimSpace(tenant)
+	if id = strings.TrimSpace(id); id == "" {
+		return connections.AzureDevOpsClientID, ""
+	}
+	return id, strings.TrimSpace(tenant)
 }
 
 // isLoopbackRoot is an http root on this machine: a fake Azure DevOps in a test or a walk.
@@ -378,7 +381,7 @@ func (d *Daemon) connectionFlowNamed(id wire.UUID) *connectionFlow {
 // clients that hand back the same way: the Mac and the Remote, or one web page's origin.
 func (d *Daemon) connectionSignIn(ctx context.Context, p wire.ConnectionProvider, origin, address string) (wire.ConnectionSignIn, error) {
 	if !knownProvider(p) {
-		return wire.ConnectionSignIn{}, invalid("Agents does not connect to " + string(p) + ".")
+		return wire.ConnectionSignIn{}, invalid("Agent Loops does not connect to " + string(p) + ".")
 	}
 	if p == wire.ConnectionProviderEmail {
 		return wire.ConnectionSignIn{}, invalid("Email has no sign-in page: connect it with its IMAP server, user and app password.")
@@ -435,12 +438,8 @@ func (d *Daemon) connectionSignIn(ctx context.Context, p wire.ConnectionProvider
 	}
 
 	flow := d.deviceFlow(p)
-	if flow.ClientID == "" && p == wire.ConnectionProviderAzuredevops {
-		return wire.ConnectionSignIn{}, invalid("This machine has no Entra app for Azure DevOps: connect with a personal access token, " +
-			"or set " + connections.AzureDevOpsClientIDName + " in its secrets to the client id of an Entra app that allows public client flows.")
-	}
 	if flow.ClientID == "" {
-		return wire.ConnectionSignIn{}, invalid("This build has no Agents application on " + flow.Name + ": connect with a personal access token.")
+		return wire.ConnectionSignIn{}, invalid("This build has no Agent Loops application on " + flow.Name + ": connect with a personal access token.")
 	}
 	code, err := flow.Start(ctx)
 	if err != nil {
@@ -526,7 +525,7 @@ func (d *Daemon) finishConnection(ctx context.Context, f *connectionFlow, flow *
 func (d *Daemon) startCodeFlow(p wire.ConnectionProvider, origin string, s connections.Store) (wire.ConnectionSignIn, error) {
 	flow := d.codeFlow(p)
 	if flow.ClientID == "" || (p == wire.ConnectionProviderAtlassian && flow.ClientSecret == "") {
-		return wire.ConnectionSignIn{}, invalid("This machine has no Agents app on " + flow.Name + ": connect with an API token, " +
+		return wire.ConnectionSignIn{}, invalid("This machine has no Agent Loops app on " + flow.Name + ": connect with an API token, " +
 			"or set " + connections.AtlassianClientIDName + " and " + connections.AtlassianClientSecretName + " in its secrets.")
 	}
 	pkce, err := connections.NewPKCE(origin)
@@ -650,7 +649,7 @@ func (d *Daemon) connectionSignInToken(ctx context.Context, r wire.ConnectionTok
 		return d.connectionSignInGitHubToken(ctx, r)
 	case wire.ConnectionProviderGitlab:
 	default:
-		return wire.ConnectionTokenAnswer{}, invalid("Agents takes an access token only for GitHub, GitLab, Forgejo, Bitbucket, Azure DevOps and Jira.")
+		return wire.ConnectionTokenAnswer{}, invalid("Agent Loops takes an access token only for GitHub, GitLab, Forgejo, Bitbucket, Azure DevOps and Jira.")
 	}
 	fail := func(why string) (wire.ConnectionTokenAnswer, error) {
 		log.Printf("connections: %s token not taken", r.Provider)
@@ -700,7 +699,7 @@ func (d *Daemon) connectionSignInGitHubToken(ctx context.Context, r wire.Connect
 		return wire.ConnectionTokenAnswer{Error: &why}, nil
 	}
 	if deref(r.URL) != "" {
-		return fail("Agents connects only github.com, not a GitHub Enterprise Server.")
+		return fail("Agent Loops connects only github.com, not a GitHub Enterprise Server.")
 	}
 	token := strings.TrimSpace(r.Token)
 	if token == "" || strings.ContainsAny(token, " \t\r\n") {
@@ -945,7 +944,7 @@ func (d *Daemon) connectionSignInEmail(ctx context.Context, r wire.ConnectionEma
 		return fail("Give the user to sign in as: usually the mail address.")
 	}
 	if password == "" {
-		return fail("Paste the app password you made for Agents.")
+		return fail("Paste the app password you made for Agent Loops.")
 	}
 	address, security, err := emailmcp.ParseServer(r.Server)
 	if err != nil {

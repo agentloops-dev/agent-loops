@@ -15,9 +15,9 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The app's own tools (mcp__agents__*), as AppToolsEndpoint and AppService serve them: one
@@ -73,7 +73,6 @@ func appToolCalls() []appTool {
 		{"release_resource", (*Daemon).releaseResource},
 		{"list_resources", (*Daemon).listResources},
 		{"wait_for_event", (*Daemon).waitForEvent},
-		{"check_again", (*Daemon).checkAgain},
 		{"cancel_wait", (*Daemon).cancelWait},
 		{"show_file", (*Daemon).showFile},
 		{"suggest_next_prompt", (*Daemon).suggestNextPrompt},
@@ -91,6 +90,7 @@ func appToolCalls() []appTool {
 		{"start_session", (*Daemon).startSession},
 		{"manage_workflows", (*Daemon).manageWorkflows},
 		{"manage_accounts", (*Daemon).manageAccounts},
+		{"manage_connectors", (*Daemon).manageConnectors},
 		{"list_machines", (*Daemon).listMachines},
 		{"start_machine", (*Daemon).startMachine},
 		{"stop_machine", (*Daemon).stopMachine},
@@ -109,6 +109,7 @@ func appToolCalls() []appTool {
 		{"set_ci_variable", (*Daemon).setCIVariable},
 		{"set_environment_gate", (*Daemon).setEnvironmentGate},
 		{"make_app_repository", (*Daemon).makeAppRepository},
+		{"make_public_repository", (*Daemon).makePublicRepository},
 	}
 }
 

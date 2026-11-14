@@ -27,6 +27,8 @@ struct RemoteApp: App {
     @State private var model = RemoteModel(link: RemoteApp.link())
 
     init() {
+        // Paper v2's faces (#4992), before the first view draws.
+        PaperFonts.register()
         #if DEBUG && targetEnvironment(simulator)
         // The walk simulator's socket (#1182), for run-app's `walk.py remote`; only with -walk.
         WalkServer.startIfWalking()
@@ -36,7 +38,10 @@ struct RemoteApp: App {
     static func link() -> any DaemonLink {
         // The canned daemon speaks bare JSON-RPC; the Remote wraps its lines for a control
         // plane (#3234), so one is put in front of it (#4126).
-        if ProcessInfo.processInfo.arguments.contains("-fake") { return OneHostPlane(FakeDaemon()) }
+        let arguments = ProcessInfo.processInfo.arguments
+        // The same, gone quiet after its first read, for a walk of the stale pages (#5147).
+        if arguments.contains("-fake-drop") { return OneHostPlane(DroppingLink(FakeDaemon())) }
+        if arguments.contains("-fake") { return OneHostPlane(FakeDaemon()) }
         return RemoteControl.link() ?? NotPairedLink()
     }
 
@@ -57,6 +62,7 @@ struct RemoteApp: App {
                 // the prompt bar.
                 .modifier(RemoteToasts())
                 .modifier(MoveToMachineAsk())
+                .modifier(RuntimeSignInAsk())
                 .modifier(ProjectSettingsAsk())
                 .environment(model)
                 // A new model on a new link once the phone pairs with a control plane.
@@ -372,7 +378,7 @@ struct RemoteView: View {
                         Button {
                             showsFolderTerminal = true
                         } label: {
-                            Label("Folder Terminal", systemImage: "apple.terminal")
+                            Label("Folder Terminal", icon: "apple.terminal")
                         }
                         .keyboardShortcut("`", modifiers: .control)
                     }
@@ -443,21 +449,22 @@ struct RemoteView: View {
     @ViewBuilder
     private func activityPage(_ item: SidebarItem) -> some View {
         switch item {
-        case .events: EventsListView().paperGround()
+        case .events: EventsListView().staleBanner().paperGround()
         // Resources are a section of This Mac's page (#4027).
-        case .resources: RemoteMachinePage(host: .mac).paperGround()
+        case .resources: RemoteMachinePage(host: .mac).staleBanner().paperGround()
         case .runtimes: RuntimesView().paperGround()
-        case .secretsStatus: RemoteStatusSecretsPage(kind: .secrets).paperGround()
-        case .accountsStatus: RemoteStatusSecretsPage(kind: .accounts).paperGround()
-        case .machine(let host): RemoteMachinePage(host: host).paperGround()
+        case .secretsStatus: RemoteStatusSecretsPage(kind: .secrets).staleBanner().paperGround()
+        case .accountsStatus: RemoteStatusSecretsPage(kind: .accounts).staleBanner().paperGround()
+        case .machine(let host): RemoteMachinePage(host: host).staleBanner().paperGround()
         case .multiplier: RemoteMultiplierPage().paperGround()
         case .velocity: RemoteVelocityPage().paperGround()
-        case .work: WorkView(model: model).paperGround()
+        case .work: WorkView(model: model).staleBanner().paperGround()
         case .summary:
             SummaryPageView(pages: model.summaryPages, settings: model.dailySummarySettings,
                             read: { await model.readSummaryPage($0) },
                             setSettings: { changed in Task { _ = await model.setDailySummarySettings(changed) } },
                             openAgent: { model.open($0) })
+                .staleBanner()
                 .paperGround()
         // Cost, Tokens, Time and connectors are Mac + web (#2798): nothing opens them here.
         default: NothingPickedPage()
@@ -540,6 +547,22 @@ private struct MoveToMachineAsk: ViewModifier {
     }
 }
 
+/// A server runtime's Sign In… (#4035), at the root and not on the machine's page (#5203): a
+/// sign-in waits on the browser for minutes, so the sheet stays while the person goes to other
+/// pages, and at its medium height the page under it takes taps.
+private struct RuntimeSignInAsk: ViewModifier {
+    @Environment(RemoteModel.self) private var model
+
+    func body(content: Content) -> some View {
+        content.sheet(item: Binding(get: { model.signingIn }, set: { model.signingIn = $0 })) { target in
+            RuntimeSignInSheet(host: target.host, runtime: target.runtime)
+                .environment(model)
+                .presentationDetents([.medium, .large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
+    }
+}
+
 /// The detail with nothing picked (#2090): the Multiplier page (#4116), as the Mac's window
 /// and the web page have it. Leaving a session comes here on an iPad, and never to New session.
 struct NothingPickedPage: View {
@@ -560,6 +583,7 @@ struct RemoteVelocityPage: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(sizeClass == .compact ? 16 : 24)
         }
+        .staleBanner()
         .navigationTitle("Velocity")
         .toolbarTitleDisplayMode(.inline)
     }
@@ -570,8 +594,9 @@ struct RemoteMultiplierPage: View {
     @Environment(RemoteModel.self) private var model
 
     var body: some View {
-        MultiplierPage(multiplier: model.work.multiplier, achievements: model.work.achievements,
+        MultiplierPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
                        agentsWorking: model.agentsWorking, refresh: { await model.refreshMultiplier() })
+            .staleBanner()
             .navigationTitle("Multiplier")
             .toolbarTitleDisplayMode(.inline)
     }

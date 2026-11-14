@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/agentsd/acp"
-	"github.com/alexec/agents/Go/internal/agentsd/diskjson"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // asNotWakingItself makes the fake runtime one that does not start itself again when its
@@ -242,7 +242,7 @@ func TestAdoptedBackgroundEndsAfterARestart(t *testing.T) {
 	}
 	waitFor(t, "the prompt's turn", func() bool {
 		for _, u := range userMessages(d, id) {
-			if strings.HasPrefix(u, "Your background commands ended while Agents restarted") {
+			if strings.HasPrefix(u, "Your background commands ended while Agent Loops restarted") {
 				return d.Store.Agent(id).State == wire.AgentStateFinished
 			}
 		}

@@ -2,7 +2,8 @@
 # The web remote (071): its generated types, its build, and the checks CI runs.
 #
 #   scripts/web.sh types   regenerate Web/src/protocol/generated.ts: scripts/wire.sh gen (#1135)
-#   scripts/web.sh build   install the pinned packages and build Web/dist (needs Node)
+#   scripts/web.sh build   install the pinned packages and build Web/dist (needs Node; with nvm
+#                          and another Node, nvm installs the pinned one: #4987)
 #   scripts/web.sh dist    what Agents Host's build runs first: build Web/dist when a source is
 #                          newer than it; with no Node (or another version), leave an empty one
 #                          and warn, so the app still builds and its web remote stays off
@@ -35,10 +36,55 @@ have_pinned_node() {
 	have_node && [ "$(node --version)" = "v$(cat Web/.node-version)" ]
 }
 
+# A host with nvm and another Node (a codespace's image has Node 24; #4987): put the pinned
+# Node first on PATH. With "install", nvm downloads it when it is missing; without, only a
+# Node that nvm already has is used, so an Xcode build phase never downloads. nvm is a bash
+# function that does not run under `set -u`, so it runs in a bash of its own.
+use_nvm_node() {
+	have_pinned_node && return 0
+	nvm_sh="${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+	[ -s "$nvm_sh" ] && command -v bash >/dev/null 2>&1 || return 0
+	version=$(cat Web/.node-version)
+	if [ "${1:-}" = install ]; then
+		node_bin=$(NVM_SH="$nvm_sh" V="$version" bash -c '. "$NVM_SH" >/dev/null 2>&1 &&
+			nvm install "$V" >&2 && nvm which "$V"') || return 0
+	else
+		node_bin=$(NVM_SH="$nvm_sh" V="$version" bash -c '. "$NVM_SH" >/dev/null 2>&1 &&
+			nvm which "$V"' 2>/dev/null) || return 0
+	fi
+	[ -x "$node_bin" ] || return 0
+	PATH="$(dirname -- "$node_bin"):$PATH"
+	export PATH
+}
+
+# A Mac whose first `node` on PATH is another version, but which has the pinned one installed as
+# well (an agent session puts its runtime's own Node first; #4904): put that one first. Homebrew
+# keeps each version under Cellar/node/<version>; its bin is checked last, as it may be a link
+# to another version.
+use_installed_node() {
+	have_pinned_node && return 0
+	version=$(cat Web/.node-version)
+	for dir in /opt/homebrew/Cellar/node/"$version"/bin /usr/local/Cellar/node/"$version"/bin \
+		/opt/homebrew/bin /usr/local/bin; do
+		[ -x "$dir/node" ] && [ -x "$dir/npm" ] || continue
+		[ "$("$dir/node" --version 2>/dev/null)" = "v$version" ] || continue
+		PATH="$dir:$PATH"
+		export PATH
+		return 0
+	done
+	return 0
+}
+
+# The pinned Node from nvm, or else from where it is usually installed.
+use_pinned_node() {
+	use_nvm_node "$@"
+	use_installed_node
+}
+
 # Web/dist is older than one of the inputs build.mjs hashes, or was never built.
 dist_stale() {
 	[ -f Web/dist/MANIFEST ] || return 0
-	[ -n "$(find Web/src Web/assets Web/index.html Web/sandbox.html Web/build.mjs Web/tsconfig.json \
+	[ -n "$(find Web/src Web/assets Web/index.html Web/sandbox.html Web/build.mjs Web/lucide.mjs Web/tsconfig.json \
 		Web/package.json Web/package-lock.json Web/.node-version -newer Web/dist/MANIFEST 2>/dev/null | head -1)" ]
 }
 
@@ -54,13 +100,14 @@ types)
 	exec scripts/wire.sh gen
 	;;
 build)
+	use_pinned_node install
 	need_node build
 	build
 	;;
 dist)
 	if ! dist_stale; then
 		exit 0
-	elif have_pinned_node; then
+	elif use_pinned_node && have_pinned_node; then
 		build
 	else
 		# "warning:" is how an Xcode script phase shows one in the build log.
@@ -69,6 +116,7 @@ dist)
 	fi
 	;;
 test)
+	use_pinned_node install
 	need_node test
 	cd Web
 	[ -d node_modules ] || npm ci --ignore-scripts --no-audit --no-fund
@@ -76,6 +124,7 @@ test)
 	;;
 check)
 	scripts/wire.sh check
+	use_pinned_node install
 	if have_node; then
 		build
 		scripts/build-cache.sh swift test --package-path Packages/AgentsKit --filter 'WebDistManifestTests|ControlAgreementVectorTests'

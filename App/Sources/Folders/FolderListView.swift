@@ -1,7 +1,8 @@
 import AgentsKitCore
+import AppKit
 import SwiftUI
 
-/// The window's one sidebar (#145): Status, Machines and Usage at the top, then every folder, each a row
+/// The window's one sidebar (#145): Status, Machines and Reports at the top, then every folder, each a row
 /// that folds open on its sessions and workflows, and at the foot what this Mac and its
 /// hosts are doing.
 ///
@@ -21,7 +22,7 @@ struct FolderListView: View {
     @AppStorage("showsStatus", store: WindowDefaults.store) private var showsStatus = true
     /// The Work group (#4004), open the first time: folded, it hides what the one Work row showed.
     @AppStorage("showsWork", store: WindowDefaults.store) private var showsWorkLists = true
-    /// Usage, open until folded, and kept so (#915).
+    /// Reports, open until folded, and kept so (#915): its key from when it was Usage.
     @AppStorage("showsUsage", store: WindowDefaults.store) private var showsUsage = true
     /// The smart groups turned off in Settings ▸ Sidebar (#846).
     @AppStorage(SidebarSmartRow.offDefaultsKey, store: WindowDefaults.store) private var smartOff = SidebarSmartRow.offAtFirst
@@ -161,14 +162,6 @@ struct FolderListView: View {
                     }
                 }
             }
-            // A newcomer's checklist (#982), above everything until it has gone.
-            if model.showsGetStarted {
-                Section {
-                    GetStartedCard(isChoosingFolder: $isChoosingFolder)
-                        .listRowSeparator(.hidden)
-                        .selectionDisabled()
-                }
-            }
             // An achievement just earned (#984): once, until closed or opened.
             if let achievement = model.achievementCard {
                 Section {
@@ -180,42 +173,29 @@ struct FolderListView: View {
                 }
             }
 
-            // What wants the person, across every folder and host (#495): Things'
-            // Inbox and Today, Mail's smart mailboxes, each drawn only with something in
-            // it (#507).
-            Section {
-                // One way to start a session (#495), in the folder last started in; the
-                // page it opens can switch folder.
-                NewSessionTopRow()
-                // Docs (#3321): the folders' docs and the docs connectors', beside New Session,
-                // so the rows with no header stay together (#4004).
+            // Work (#3119): a row per list (#4004), as the web's Work section has them; an item's
+            // page keeps its list's row picked. New Session is the first row of each folder's
+            // Sessions (#5267), so the rows with no header went: Docs and Messages are Work's first.
+            Section(isExpanded: $showsWorkLists) {
+                // Docs (#3321): the folders' docs and the docs connectors'.
                 HStack { Text("Docs").foregroundStyle(.primary); Spacer() }
                     .help("Every folder’s Markdown docs and your docs connectors’ pages, read only")
                     .activityIcon("doc.text")
                     .appText(.supporting).sidebarInk(.docs).tag(SidebarItem.docs)
-                // The daily summary's page (#3721), while the daily summary is on.
-                if model.dailySummarySettings?.mode.writesPages == true {
-                    SummaryRowLabel(newest: model.summaryPages.first)
-                        .help("Your daily summary: what landed, what failed and what waits on you")
-                        .activityIcon(SummaryRowLabel.systemImage)
-                        .appText(.supporting).sidebarInk(.summary).tag(SidebarItem.summary)
-                }
-                // Messages (#4344): the messaging connectors' conversations, the last row above Work.
-                HStack { Text(MessagesList.title).foregroundStyle(.primary); Spacer() }
+                // Messages (#4344): the messaging connectors' conversations. Under it in grey, the
+                // unread count and what the last message woke (#4934).
+                MessagesRow()
                     .help(MessagesList.sidebarHelp)
                     .activityIcon("bubble.left.and.bubble.right")
                     .appText(.supporting).sidebarInk(.messages).tag(SidebarItem.messages)
-            }
-
-            // Work (#3119): a row per list (#4004), as the web's Work section has them; an item's
-            // page keeps its list's row picked.
-            Section(isExpanded: $showsWorkLists) {
                 ForEach(WorkList.Kind.allCases) { kind in
                     HStack { Text(kind.title).foregroundStyle(.primary); Spacer() }
                         .help(kind.sidebarHelp)
                         .activityIcon(kind.sidebarIcon)
                         .appText(.supporting).sidebarInk(.work(kind)).tag(SidebarItem.work(kind))
                 }
+                // Work shown: its first list read ahead, so the page draws at once (#4930).
+                .task(id: model.forgeMachines.map(\.id)) { await model.prefetchWork() }
             } header: {
                 Text("Work").appText(.supporting)
             }
@@ -229,7 +209,7 @@ struct FolderListView: View {
             // person's connectors, secrets and outside accounts are in Settings ▸ You.
             Section(isExpanded: $showsStatus) {
                 RuntimesRow().activityIcon("cpu", warns: runtimesTally.map { $0.noneWorking || $0.isLow } ?? false,
-                                           tint: runtimesTally?.isLow == true ? .attention : .failure)
+                                           tint: runtimesTally?.isLow == true ? .warning : .failure)
                     .appText(.supporting).sidebarInk(.runtimes).tag(SidebarItem.runtimes)
                 EventsRow().activityIcon("list.bullet.rectangle")
                     .appText(.supporting).sidebarInk(.events).tag(SidebarItem.events)
@@ -254,12 +234,17 @@ struct FolderListView: View {
                             .appText(.supporting).sidebarInk(.machine(host)).tag(SidebarItem.machine(host))
                     }
                     // The machines New Machine is making, and the ones the control plane gave up
-                    // waiting for (#4610): a row each until a machine of the name joins.
+                    // waiting for (#4610), and every other machine of the person's that never
+                    // joined, a click to join it (#4978): a row each until a machine of the name joins.
                     ForEach(0..<model.machinesBeingMade, id: \.self) { _ in
                         MakingMachineRow(making: nil).appText(.supporting)
                     }
                     ForEach(model.machinesMaking) { making in
                         MakingMachineRow(making: making).appText(.supporting)
+                    }
+                    // + New Machine, the group's last row, as the Remote's (#4034, #5265).
+                    if ControlConfig.endpoint != nil {
+                        NewMachineRow().appText(.supporting)
                     }
                 } header: {
                     MachinesHeader()
@@ -279,9 +264,17 @@ struct FolderListView: View {
                     .appText(.supporting).sidebarInk(.time).tag(SidebarItem.time)
                 VelocityRow().activityIcon("arrow.triangle.merge")
                     .appText(.supporting).sidebarInk(.velocity).tag(SidebarItem.velocity)
+                // The daily summary's page (#3721), a report too, while the daily summary is on.
+                if model.dailySummarySettings?.mode.writesPages == true {
+                    SummaryRowLabel(newest: model.summaryPages.first)
+                        .help("Your daily summary: what landed, what failed and what waits on you")
+                        .activityIcon(SummaryRowLabel.systemImage)
+                        .appText(.supporting).sidebarInk(.summary).tag(SidebarItem.summary)
+                }
             } header: {
-                // The size of every other group's heading (#495).
-                Text("Usage").appText(.supporting)
+                // The size of every other group's heading (#495). Reports (Alex, 2026-11-12): every
+                // page that reports on the work, Multiplier and Velocity among them; was Usage.
+                Text("Reports").appText(.supporting)
             }
 
             // Pinned, Needs You (with everything waiting for an OK, #773), Working, Unread: a group each, headed and folding as a
@@ -367,6 +360,7 @@ struct FolderListView: View {
             outlineRebuilds &+= 1
         }
         .listStyle(.sidebar)
+        .background(SidebarHighlightOff())
         .focused($listFocused)
         .environment(\.sidebarPicks, SidebarPicks(items: picked, listFocused: listFocused))
         // Rows as tall as their lines (#104). Small also makes the sidebar's own text
@@ -670,7 +664,7 @@ struct FolderFold: View {
                 get: { isOpen },
                 set: { folds.set(key, open: $0) })) {
                 // Folded, nothing at all is under the heading (#356): see `isUnfolded`.
-                // A session starts from New Session at the top (#495), or the menu.
+                // A session starts from New Session, the first row of Sessions (#5267), or the menu.
                 // The folder's pinned pages (#159), before its sessions. Not while
                 // searching: the search is for sessions.
                 if fold.showsPinnedPages {
@@ -684,12 +678,18 @@ struct FolderFold: View {
                 // started it, folded (#835). Under a Sessions row, as the workflows are
                 // under theirs (#2312), the only layout (#2381); not in a folder's own
                 // window, whose group is headed Sessions already.
-                let grouped = !inWindow && !fold.sessions.isEmpty
+                // With New Session in it (#5267), a folder with no live session has the fold too.
+                let grouped = !inWindow && (!fold.sessions.isEmpty || fold.showsNewSession)
                 let sessionsOpen = !grouped || fold.isSearching || folds.isOpen(key, .sessions)
                 if grouped {
                     SidebarFoldRow(title: "Sessions", count: fold.sessions.count, isOpen: Binding(
                         get: { sessionsOpen },
                         set: { folds.set(key, .sessions, open: $0) }))
+                }
+                // New Session, the fold's first row (#5267), as the Remote's Machines group has New
+                // Machine. In a folder's own window, the Sessions group's first row.
+                if sessionsOpen && fold.showsNewSession {
+                    NewSessionRow(folder: key, isNested: grouped)
                 }
                 // A closed fold has no rows at all (#237).
                 ForEach(FoldedRow.rows(sessionsOpen ? SidebarTree.rows(fold.sessions, in: model.work, folds: folds) : [],
@@ -832,17 +832,19 @@ private struct ConnectorsRead: Equatable {
     var folders: [FolderKey]
 }
 
-/// The first row of the sidebar (#495): a new session, in the folder the last one was
-/// started in, as ⌘N starts one. The page it opens can switch folder. It carries that
+/// The first row of a folder's Sessions (#5267; was the sidebar's first row, #495): a new
+/// session in that folder, as ⌘N starts one, with the keyboard in the prompt. It carries the
 /// folder's own item, which the sidebar lights while its new session is open.
-private struct NewSessionTopRow: View {
+private struct NewSessionRow: View {
     @Environment(AppModel.self) private var model
     @Environment(WindowRequests.self) private var requests
+    let folder: FolderKey
+    /// In its folder's Sessions fold: one level in, under the word Sessions, as a session's row.
+    var isNested = false
 
     var body: some View {
-        let folder = model.newSessionFolder
         HStack(spacing: 6) {
-            Image(systemName: "square.and.pencil")
+            Image(icon: "square.and.pencil")
                 .sidebarMark(Paper.accent)
                 .frame(width: 16)
                 .accessibilityHidden(true)
@@ -850,32 +852,19 @@ private struct NewSessionTopRow: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
+        .padding(.leading, isNested ? 22 : 0)
         .appText(.supporting)
         .contentShape(Rectangle())
+        .help("Start a new session in this folder")
         // Every click, not only a changed selection: the row may already be the lit one
         // while the prompt has lost the keyboard. See `FolderRow` before #375.
         .simultaneousGesture(TapGesture().onEnded {
-            guard let folder else { return }
             model.showFolder(folder)
             requests.focusPrompt()
         })
-        .disabled(folder == nil)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("New Session")
-        .modifier(NewSessionTag(folder: folder))
-    }
-}
-
-/// The row's item while there is a folder to start in; none while there is not.
-private struct NewSessionTag: ViewModifier {
-    let folder: FolderKey?
-
-    func body(content: Content) -> some View {
-        if let folder {
-            content.sidebarInk(.folder(folder)).tag(SidebarItem.folder(folder))
-        } else {
-            content
-        }
+        .sidebarInk(.folder(folder)).tag(SidebarItem.folder(folder))
     }
 }
 
@@ -1099,47 +1088,23 @@ private extension FolderMenu {
     }
 }
 
-/// The sidebar's foot: the connection, then why the Mac is awake. Nothing at all when
-/// both have nothing to say.
-/// The Machines group's header (#3973): `+` on hover opens New Machine's sheet (#4634), and
-/// its menu has New Machine, Register a Machine… and Machine Providers….
+/// The Machines group's header (#3973): its menu has New Machine, Register a Machine… and
+/// Machine Providers…. New Machine itself is the group's last row (#5265), not a `+` here.
 private struct MachinesHeader: View {
     @Environment(AppModel.self) private var model
     @Environment(WindowRequests.self) private var requests
     @Environment(\.openSettings) private var openSettings
-    @State private var hovering = false
 
     var body: some View {
         HStack {
             Text("Machines").appText(.supporting)
             Spacer()
-            if hovering, ControlConfig.endpoint != nil {
-                Button { model.newMachine() } label: { Image(systemName: "plus") }
-                    .buttonStyle(.borderless)
-                    .help("New Machine: choose what the provider makes, starting from the options used last")
-                    .accessibilityLabel("New Machine")
-            }
         }
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
         .task { await model.loadMachineProviders() }
         .contextMenu {
             if ControlConfig.endpoint != nil {
-                let providers = model.machineProviders
-                // With two or more providers, New Machine names the default, and New Machine
-                // on ▸ picks another, which is then the default (#3979).
-                if providers.count > 1 {
-                    let chosen = providers.first { $0.default == true } ?? providers[0]
-                    Button("New Machine (\(chosen.name))…") { model.newMachine() }
-                    Menu("New Machine on") {
-                        ForEach(providers) { provider in
-                            Toggle(provider.name, isOn: Binding(get: { provider.id == chosen.id },
-                                                                set: { _ in model.newMachine(on: provider.id) }))
-                        }
-                    }
-                } else {
-                    Button("New Machine…") { model.newMachine() }
-                }
+                NewMachineItems()
                 Divider()
                 Button("Register a Machine…") { requests.folderSheet = .addMachine }
                 Button("Machine Providers…") {
@@ -1151,6 +1116,57 @@ private struct MachinesHeader: View {
     }
 }
 
+/// New Machine's menu items (#3979): with two or more providers, New Machine names the
+/// default, and New Machine on ▸ picks another, which is then the default.
+private struct NewMachineItems: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let providers = model.machineProviders
+        if providers.count > 1 {
+            let chosen = providers.first { $0.default == true } ?? providers[0]
+            Button("New Machine (\(chosen.name))…") { model.newMachine() }
+            Menu("New Machine on") {
+                ForEach(providers) { provider in
+                    Toggle(provider.name, isOn: Binding(get: { provider.id == chosen.id },
+                                                        set: { _ in model.newMachine(on: provider.id) }))
+                }
+            }
+        } else {
+            Button("New Machine…") { model.newMachine() }
+        }
+    }
+}
+
+/// + New Machine, the Machines group's last row (#5265), as the Remote's (#4034): a click
+/// opens New Machine's sheet on the default provider (#4634), with the options used last;
+/// its menu offers New Machine on ▸ when there are two or more providers.
+private struct NewMachineRow: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button { model.newMachine() } label: {
+            HStack(spacing: 6) {
+                Image(icon: "plus")
+                    .sidebarMark(Paper.accent)
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+                // Primary ink: a row with no tag in the sidebar's list draws grey, as if disabled.
+                Text("New Machine")
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("New Machine: choose what the provider makes, starting from the options used last")
+        .contextMenu { NewMachineItems() }
+    }
+}
+
+/// The sidebar's foot: the connection, then why the Mac is awake. Nothing at all when
+/// both have nothing to say.
 private struct SidebarFoot: View {
     @Environment(AppModel.self) private var model
     /// Machines' group open: its rows say why a server is quiet, so the foot does not (#3764).
@@ -1182,7 +1198,7 @@ private struct SidebarFoot: View {
                 let row = model.hosts.controlRows[host]
                 HStack(spacing: 8) {
                     Label(OfflineWords.footLine(name: model.hosts.label(host), row: row),
-                          systemImage: "bolt.horizontal.circle")
+                          icon: "bolt.horizontal.circle")
                         .appText(.fine)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1201,7 +1217,7 @@ private struct SidebarFoot: View {
             // A file this Mac keeps that could not be read (#205): why paired devices or
             // folders may have gone from view, and that what they held is kept.
             ForEach(model.storeNotes, id: \.self) { note in
-                Label(note, systemImage: "exclamationmark.triangle")
+                Label(note, icon: "exclamationmark.triangle")
                     .appText(.fine)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 14)
@@ -1226,7 +1242,7 @@ private struct EmptyFolderList: View {
             if model.macRuntimesAvailable.isEmpty {
                 Text("No agent runtime found")
                     .appText(.reading).fontWeight(.semibold)
-                Text("Agents runs the coding CLIs on this Mac. Install one here, or from its own page.")
+                Text("Agent Loops runs the coding CLIs on this Mac. Install one here, or from its own page.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(model.runtimes) { status in
@@ -1335,7 +1351,7 @@ private struct WakefulnessRow: View {
             // points over, so it broke mid-phrase and read as a mistake. Two lines on
             // purpose, left-aligned, survives a narrower sidebar too.
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: state.isHolding ? "sun.max" : "battery.25")
+                Image(icon: state.isHolding ? "sun.max" : "battery.25")
                     .foregroundStyle(state.isHolding ? AnyShapeStyle(.secondary)
                                                      : StateTint.attention.style(or: .secondary))
                 VStack(alignment: .leading, spacing: 1) {
@@ -1443,22 +1459,56 @@ extension EnvironmentValues {
     @Entry var sidebarPicks = SidebarPicks()
 }
 
-/// A picked row in the focused sidebar of the key window is filled with the accent, and
-/// macOS draws its text white: 2.2:1 on the dark cobalt. The ground is 7.7:1 there, and
-/// 5.6:1 on the light one, as on the prominent button (#156). The list tells no row it
-/// is drawn so (`backgroundProminence` stays standard in a macOS sidebar), so the row
-/// works it out from what is picked, the list's focus and the window's.
+/// A picked row is the selection grey with a 3px bar in the accent at its leading edge
+/// (Paper v2, #4977), drawn by the row itself: the system's accent fill under white text
+/// was 2.2:1 on the dark cobalt, and `SidebarHighlightOff` turns that fill off. The text
+/// stays ink, 13:1 or more on the selection in both appearances. The grey is the same
+/// whether or not the list has the keyboard, so a picked row reads alike in every window.
 private struct SidebarInk: ViewModifier {
     let item: SidebarItem
     @Environment(\.sidebarPicks) private var picks
-    @Environment(\.controlActiveState) private var windowState
 
     func body(content: Content) -> some View {
-        if picks.listFocused, windowState == .key, picks.items.contains(item) {
-            // The marks set their own colour, which wins over this one: they read it (#2382).
-            content.foregroundStyle(Paper.ground).environment(\.sidebarRowInked, true)
-        } else {
-            content
+        content.listRowBackground(Group {
+            if picks.items.contains(item) { PaperSelectionRow() }
+        })
+    }
+}
+
+/// Turns off the sidebar table's own selection fill, so the row's `PaperSelectionRow`
+/// shows. The table still keeps the selection, the keyboard and VoiceOver's "selected".
+struct SidebarHighlightOff: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Finder() }
+    func updateNSView(_ view: NSView, context: Context) { (view as? Finder)?.apply() }
+
+    final class Finder: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+            // SwiftUI makes the table after this view on a first draw.
+            DispatchQueue.main.async { [weak self] in self?.apply() }
+        }
+
+        func apply() {
+            var node: NSView? = superview
+            while let current = node {
+                if let table = Self.table(under: current) {
+                    if table.selectionHighlightStyle != .none { table.selectionHighlightStyle = .none }
+                    return
+                }
+                node = current.superview
+            }
+        }
+
+        /// The nearest table under a view, breadth first.
+        private static func table(under view: NSView) -> NSTableView? {
+            var queue = view.subviews
+            while !queue.isEmpty {
+                let next = queue.removeFirst()
+                if let table = next as? NSTableView { return table }
+                queue += next.subviews
+            }
+            return nil
         }
     }
 }

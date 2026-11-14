@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexec/agents/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 )
 
 // Ports ToolPolicyCatalogTests' levers (#1445): each runtime's tool policy rides on its
@@ -48,7 +48,7 @@ func TestGroksToolPolicy(t *testing.T) {
 	meta := sessionMeta("grok")
 	delete(meta, "rules") // grokRules, in brief_test.go
 	b, _ := json.Marshal(meta)
-	want := `{"agentProfile":{"description":"An agent hosted by the Agents app.","disallowedTools":["scheduler_create","scheduler_delete","scheduler_list","workflow","monitor","send_feedback"],"name":"agents-app"}}`
+	want := `{"agentProfile":{"description":"An agent hosted by the Agent Loops app.","disallowedTools":["scheduler_create","scheduler_delete","scheduler_list","workflow","monitor","send_feedback"],"name":"agents-app"}}`
 	if string(b) != want {
 		t.Fatalf("%s", b)
 	}

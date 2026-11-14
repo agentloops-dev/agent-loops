@@ -22,14 +22,15 @@ struct HandOffCard: View {
     @State private var note = ""
     @FocusState private var noteFocused: Bool
 
+    /// Said in place of Open the page for a step in one of the agents' own Chrome windows
+    /// (#5095): "Do it in the agents' Chrome (DevTools port 9233), … on your Mac."
+    static func inWindow(_ window: String, on host: String) -> String {
+        "Do it in \(window) on \(host)."
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label {
-                Text(handOff.step).fontWeight(.semibold)
-            } icon: {
-                Image(systemName: "hand.raised").foregroundStyle(.secondary)
-            }
-            .appText(.reading)
+            // The step or the name is the Ask's title (AskCard, #5031).
             if let reason = handOff.reason, !reason.isEmpty {
                 Text(reason).appText(.reading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -45,13 +46,18 @@ struct HandOffCard: View {
                     .onSubmit { send(false, note) }
                     .disabled(sending)
             }
+            // The Ask's foot (#5031): Can't do it as a link on the left, Done, and Open the
+            // page the primary on the right.
+            Divider().overlay(Paper.rule)
             HStack(spacing: 8) {
                 if sending { Telling(host: host) }
-                if let open, !cannot {
-                    Button("Open the page", action: open)
-                        .buttonStyle(.paperProminent)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(sending)
+                if !cannot {
+                    AskDecline("Can't do it") {
+                        cannot = true
+                        noteFocused = true
+                    }
+                    .appText(.fine)
+                    .disabled(sending)
                 }
                 Spacer(minLength: 0)
                 if cannot {
@@ -62,15 +68,19 @@ struct HandOffCard: View {
                         .buttonStyle(.paperProminent)
                         .disabled(sending)
                 } else {
-                    Button("Can't do it") {
-                        cannot = true
-                        noteFocused = true
+                    if let open {
+                        Button("Done") { send(true, "") }
+                            .buttonStyle(.paper)
+                            .disabled(sending)
+                        Button("Open the page", action: open)
+                            .buttonStyle(.paperProminent)
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(sending)
+                    } else {
+                        Button("Done") { send(true, "") }
+                            .buttonStyle(.paperProminent)
+                            .disabled(sending)
                     }
-                    .buttonStyle(.paper)
-                    .disabled(sending)
-                    Button("Done") { send(true, "") }
-                        .buttonStyle(.paper)
-                        .disabled(sending)
                 }
             }
         }

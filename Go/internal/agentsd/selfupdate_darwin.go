@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/buildinfo"
-	"github.com/alexec/agents/Go/internal/safe"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"golang.org/x/sys/unix"
 )
 
 // registerSelfUpdate serves selfUpdate/status and selfUpdate/set on a Mac whose host runs
-// from an Agents.app (#2178). A test's host serves neither: it is in no bundle a
+// from an Agent Loops.app (#2178). A test's host serves neither: it is in no bundle a
 // release could replace.
 func (d *Daemon) registerSelfUpdate() {
 	if testing.Testing() {
@@ -35,13 +35,13 @@ func (d *Daemon) registerSelfUpdate() {
 	if app == "" {
 		return
 	}
-	// A release's copy of Agents Host takes Agents' name once (#4225); a development
-	// build keeps the name ship.sh gave it. Every job runs from the old path until it
+	// A release's copy of Agents or Agents Host takes Agent Loops' name once (#5297,
+	// #4225); a development build keeps the name ship.sh gave it. Every job runs from the old path until it
 	// restarts, so all of them start again from the new one.
 	if _, release := releaseVersion(buildinfo.Version); release {
 		if _, moved := takeNewName(app, os.Rename); moved {
 			if err := restartLaunchAgents(); err != nil {
-				log.Printf("self-update: Agents has its new name; quit and open Agents to run it: %v", err)
+				log.Printf("self-update: Agent Loops has its new name; quit and open Agent Loops to run it: %v", err)
 			}
 			return
 		}
@@ -50,7 +50,7 @@ func (d *Daemon) registerSelfUpdate() {
 	keep, back := settleSelfUpdates(app, buildinfo.Version, file, exchangePaths)
 	if back {
 		if err := restartLaunchAgents(); err != nil {
-			log.Printf("self-update: the old copy is back; quit and open Agents to run it: %v", err)
+			log.Printf("self-update: the old copy is back; quit and open Agent Loops to run it: %v", err)
 		}
 		return
 	}
@@ -69,7 +69,7 @@ func (d *Daemon) registerSelfUpdate() {
 	u.unpack, u.verify, u.version, u.restart = dittoUnpack, verifyRelease, bundleVersion, restartLaunchAgents
 	if u.status.State != wire.SelfUpdateStateCannot {
 		if team, _ := signingOf(app); team == "" {
-			why := "This copy of Agents is not signed by a team, so it does not update itself."
+			why := "This copy of Agent Loops is not signed by a team, so it does not update itself."
 			u.status.State, u.status.Message = wire.SelfUpdateStateCannot, &why
 		}
 	}

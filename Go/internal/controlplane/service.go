@@ -8,6 +8,7 @@ package controlplane
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -24,21 +25,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/buildinfo"
-	"github.com/alexec/agents/Go/internal/controllink"
-	"github.com/alexec/agents/Go/internal/controlplane/audit"
-	"github.com/alexec/agents/Go/internal/controlplane/hostinstall"
-	"github.com/alexec/agents/Go/internal/controlplane/hosttunnels"
-	"github.com/alexec/agents/Go/internal/controlplane/locks"
-	"github.com/alexec/agents/Go/internal/controlplane/notices"
-	"github.com/alexec/agents/Go/internal/controlplane/providers"
-	"github.com/alexec/agents/Go/internal/controlplane/records"
-	"github.com/alexec/agents/Go/internal/controlplane/scim"
-	"github.com/alexec/agents/Go/internal/controlplane/signin"
-	"github.com/alexec/agents/Go/internal/controlplane/store"
-	"github.com/alexec/agents/Go/internal/controlplane/usersettings"
-	"github.com/alexec/agents/Go/internal/controlplane/web"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/audit"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/hostinstall"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/hosttunnels"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/locks"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/notices"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/scim"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/usersettings"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/coder/websocket"
 )
 
@@ -134,6 +135,9 @@ type Config struct {
 	// Posts this copy's own pushes through APNs (#1460). Nil, with no key on the machine,
 	// sends none.
 	Push Pusher
+	// The least time between two updates of one Live Activity (#4997); an end goes at once.
+	// Zero is liveActivityEvery.
+	ActivityEvery time.Duration
 	// Posts this copy's own Web Push to a browser (#1486). Nil, with no VAPID key on the
 	// machine, sends none.
 	WebPush WebPusher
@@ -242,6 +246,8 @@ type Service struct {
 	bus eventBus
 	// What Reports and the Console read from the store, by entity tag (#2054, #2056).
 	storeReads readCache
+	// buildsChanges is each repository's change points over the build timings' copy (#5232).
+	buildsChanges buildsChangesCache
 	// What each machine here was last sent of its projects (#2735).
 	toldProjects toldProjects
 
@@ -252,8 +258,11 @@ type Service struct {
 	// The TLS listener's sockets still in accept: Stop waits for them, so none logs
 	// after it returns (#3869).
 	accepting sync.WaitGroup
-	ready     bool
-	loopback  *web.Listener
+	// The writes a socket starts and does not wait for (a member's epoch): Stop waits for
+	// them too, so none writes into the store after it returns (#5001).
+	writing  sync.WaitGroup
+	ready    bool
+	loopback *web.Listener
 	// One control/setWeb at a time (#4252).
 	webSwitch sync.Mutex
 	// The page at this copy's own origin (#1459), or nil.
@@ -294,7 +303,7 @@ func New(cfg Config) (*Service, error) {
 	s.auditWriter = audit.NewWriter(s.auditLog(), s.log)
 	s.downloads, s.socketsMost, s.refusals = newAddressRates(), socketsMost, newRefusalLog(s.log)
 	if cfg.Push != nil {
-		s.pushes = newPushes(s, cfg.Push)
+		s.pushes = newPushes(s, cfg.Push, cmp.Or(cfg.ActivityEvery, liveActivityEvery))
 	}
 	if cfg.WebPush != nil {
 		s.webPush = newWebPushes(s, cfg.WebPush)
@@ -606,6 +615,7 @@ func (s *Service) Stop() {
 		c.Close()
 	}
 	s.accepting.Wait()
+	s.writing.Wait()
 	if tunnels != nil {
 		tunnels.Stop()
 	}
@@ -1126,6 +1136,24 @@ func (s *Service) startAccept(c *Conn) bool {
 	return true
 }
 
+// inBackground runs a write that a socket does not wait for, counted for Stop to wait
+// for (#5001), unless Stop has begun: then the write is let go. The count is taken under
+// the lock Stop closes s.stop with, so Stop waits for every write it lets start.
+func (s *Service) inBackground(write func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	select {
+	case <-s.stop:
+		return
+	default:
+	}
+	s.writing.Add(1)
+	go func() {
+		defer s.writing.Done()
+		write()
+	}()
+}
+
 // adopt keeps a socket so Stop can close it.
 func (s *Service) adopt(c *Conn) *Conn {
 	s.mu.Lock()
@@ -1384,7 +1412,7 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 		if settings != nil && settings.Epoch != nil && *settings.Epoch > epoch {
 			epoch = *settings.Epoch
 		}
-		go s.methods.NoteEpoch(context.Background(), id, epoch)
+		s.inBackground(func() { s.methods.NoteEpoch(context.Background(), id, epoch) })
 	}
 	// A forwarding copy's ok gave the new list; that is all it has to say.
 	if phase == phaseForwarding && (id.Kind == 'c' || id.Kind == 'h') {
@@ -1803,7 +1831,7 @@ func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin
 		browser := stored.Browser != nil && *stored.Browser
 		if browser != fromPage {
 			if browser {
-				return nil, fail(invalidParams, "That code is for a browser. Paste it in the Agents page.")
+				return nil, fail(invalidParams, "That code is for a browser. Paste it in the Agent Loops page.")
 			}
 			return nil, fail(invalidParams, "That code is for a window or a phone. Get one from Add a Browser….")
 		}

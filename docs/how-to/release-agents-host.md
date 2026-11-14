@@ -1,31 +1,33 @@
 ---
 diataxis: how-to
 devices: [mac]
-description: Publish Agents for the Mac on GitHub and the iPhone and iPad app on TestFlight by tagging main, and set up the signing secrets the release needs once.
+description: Publish Agent Loops for the Mac on GitHub and the iPhone and iPad app on TestFlight by tagging main, and set up the signing secrets the release needs once.
 ---
 
-# Release Agents
+# Release Agent Loops
 
-On a Mac, Agents is one app, a Developer ID download from the folder's GitHub releases. It
+On a Mac, Agent Loops is one app, a Developer ID download from the folder's GitHub releases. It
 is not in the Mac App Store. The iPhone and iPad app (the Remote) goes to TestFlight and
 the App Store. Pushing a version tag on main publishes a release. The tag starts the
 `release` workflow, which:
 
-- builds Agents, with agentsd and agents-control inside it;
-- signs it with Developer ID, notarizes it and staples it, as `Agents-<version>.dmg`;
-- staples the same app and zips it as `Agents-<version>.zip`, for Macs that cannot mount a
-  disk image;
-- zips the same signed app again under its old name, `Agents Host.app`, as
-  `Agents-Host-<version>.zip`. An install of the earlier Agents Host updates itself from
-  this zip. When it runs, agentsd renames it to `Agents.app`, one time (#4225);
+- builds Agent Loops, with agentsd and agents-control inside it;
+- signs it with Developer ID, notarizes it and staples it, as `Agent-Loops-<version>.dmg`;
+- staples the same app and zips it as `Agent-Loops-<version>.zip`, for Macs that cannot
+  mount a disk image;
+- zips the same signed app again under each old name: `Agents.app`, as
+  `Agents-<version>.zip`, and `Agents Host.app`, as `Agents-Host-<version>.zip`. An install
+  of the earlier Agents or Agents Host updates itself from its zip. When it runs, agentsd
+  renames it to `Agent Loops.app`, one time, so no second app stays (#5297, #4225);
 - builds the static Linux agentsd (Go) as `agentsd-linux-<arch>-<version>.tar.gz`;
-- creates the release, titled **Agents <version>**, with these files and a `SHA256SUMS`.
-  Agents on a Mac updates itself from them (#2178): agentsd downloads
-  `v<version>/SHA256SUMS` and `v<version>/Agents-<version>.zip`, checks the sum, then the
-  app's signature (the same team and identifier), its notarisation and its
-  `CFBundleShortVersionString`. Keep these names. Keep the app in `Agents-<version>.zip`
-  stapled and named `Agents.app`, and the app in `Agents-Host-<version>.zip` named
-  `Agents Host.app`;
+- creates the release, titled **Agent Loops <version>**, with these files and a
+  `SHA256SUMS`. Agent Loops on a Mac updates itself from them (#2178): agentsd downloads
+  `v<version>/SHA256SUMS` and `v<version>/Agent-Loops-<version>.zip`, checks the sum, then
+  the app's signature (the same team and identifier), its notarisation and its
+  `CFBundleShortVersionString`. Keep these names. Keep the app in
+  `Agent-Loops-<version>.zip` stapled and named `Agent Loops.app`, the app in
+  `Agents-<version>.zip` named `Agents.app`, and the app in `Agents-Host-<version>.zip`
+  named `Agents Host.app`;
 - in its `image` job, builds the control plane's image for `linux/amd64` and `linux/arm64`
   and pushes it to `ghcr.io/alexec/agents-control` as `<version>`, `<major>.<minor>` and
   `latest`, with an SBOM and provenance, and signs it with cosign, keyless (#2140). It uses
@@ -39,7 +41,7 @@ The program inside the app keeps the name `Agents Host` (`Contents/MacOS/Agents 
 because each login item was registered with that path. Do not rename it.
 
 Beside it, the **app-store** workflow (`app-store.yml`, #3657) waits at the `app-store`
-environment's gate for a person to approve the release for App Review. Approve it in Agents
+environment's gate for a person to approve the release for App Review. Approve it in Agent Loops
 (Needs You ▸ **Deploy**, see [Use GitHub](use-github.md#approve-a-waiting-deploy)) or on
 GitHub. Then it waits for the processed build, sets "What's New" to the tag's message and
 submits the iOS version for App Review. If you reject it, the release stays on TestFlight
@@ -70,9 +72,9 @@ You set this up once, as the Apple Developer account's Account Holder.
    | `ASC_KEY_ID`, `ASC_ISSUER_ID` | that key's ID and its issuer ID |
 
 3. **The TestFlight secrets.** Only the Remote is in the App Store (#4229). Export **Apple
-   Distribution: …** from Keychain Access as a `.p12` file. Install the three App Store
-   profiles: **Agents Remote App Store**, **Agents Remote Notify App Store** and **Agents
-   Remote Widget App Store**. Then run `scripts/release-secrets.sh --store Distribution.p12`
+   Distribution: …** from Keychain Access as a `.p12` file. Install the four App Store
+   profiles: **Agents Remote App Store**, **Agents Remote Notify App Store**, **Agents
+   Remote Widget App Store** and **Agents Remote Share App Store** (#4915). Then run `scripts/release-secrets.sh --store Distribution.p12`
    and delete the `.p12` file. It sets:
 
    | Secret | Value |
@@ -81,11 +83,12 @@ You set this up once, as the Apple Developer account's Account Holder.
    | `PROFILE_REMOTE` | `base64` of "Agents Remote App Store" |
    | `PROFILE_REMOTE_NOTIFY` | `base64` of "Agents Remote Notify App Store" |
    | `PROFILE_REMOTE_WIDGET` | `base64` of "Agents Remote Widget App Store" |
+   | `PROFILE_REMOTE_SHARE` | `base64` of "Agents Remote Share App Store" |
 
    Without these secrets the GitHub release still goes out, and the `testflight` job fails
    at its first step, naming the secrets that are missing.
 
-   Before it archives, the job runs `scripts/check-store-profiles.py` on the three decoded
+   Before it archives, the job runs `scripts/check-store-profiles.py` on the four decoded
    profiles (#2781). Each must allow every entitlement in the `.entitlements` file its target
    signs with in Release. The check names a missing entitlement and the secret, never a
    secret's value. `release-secrets.sh --store` runs the same check on the installed profiles
@@ -128,7 +131,7 @@ You set this up once, as the Apple Developer account's Account Holder.
 
 3. Follow the **release** run in the repository's Actions. The Linux job takes about ten
    minutes. The Mac job takes longer, mostly waiting for Apple's notary.
-4. When it finishes, the release is on the Releases page as **Agents 0.2.0**, and
+4. When it finishes, the release is on the Releases page as **Agent Loops 0.2.0**, and
    0.2.0 (the run number) is on TestFlight for iOS.
    `swift scripts/asc-builds.swift 0.2.0 <run number>` says each build's state.
 5. The **app-store** run waits for your approval. When you approve it, App Review gets
@@ -143,8 +146,8 @@ the **release** workflow by hand and give it the tag. It replaces the release's 
 Developer ID identity in your keychain, and `ASC_KEY_ID`,
 `ASC_ISSUER_ID` and `ASC_KEY_PATH` set. It needs the Linux agentsd in `App/Resources/servers`,
 from `scripts/build-linux-agentsd.sh`, and Go installed (`brew install go`) for the Go
-programs Agents carries. It writes `Agents-0.2.0.dmg`, `Agents-0.2.0.zip`,
-`Agents-Host-0.2.0.zip`, the Linux tarballs and `SHA256SUMS` into `build/release/`.
+programs Agent Loops carries. It writes `Agent-Loops-0.2.0.dmg`, `Agent-Loops-0.2.0.zip`,
+`Agents-0.2.0.zip`, `Agents-Host-0.2.0.zip`, the Linux tarballs and `SHA256SUMS` into `build/release/`.
 
 `scripts/release-host.sh --dry-run 0.2.0` needs none of that. It signs ad hoc and doesn't
 notarize, which proves the build and the packaging. Gatekeeper refuses the result.

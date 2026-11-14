@@ -6,8 +6,8 @@ import (
 	"log"
 	"syscall"
 
-	"github.com/alexec/agents/Go/internal/agentsd/store"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // MARK: chat lines the disk refused (#212, #3245)
@@ -44,7 +44,7 @@ func writeFailure(err error, what string) (wire.WriteFailure, bool) {
 	case wire.WriteFailureCauseDiskFull:
 		f.Message = machine + " is out of disk space, so " + what + " could not be saved. Free some space, then try again."
 	case wire.WriteFailureCauseNotAllowed:
-		f.Message = "Agents is not allowed to write to " + folder + ", so " + what + " could not be saved. Check who owns it and its permissions, then try again."
+		f.Message = "Agent Loops is not allowed to write to " + folder + ", so " + what + " could not be saved. Check who owns it and its permissions, then try again."
 	default:
 		f.Message = "The disk " + folder + " is on cannot be written to, so " + what + " could not be saved. Use a folder on another disk."
 	}

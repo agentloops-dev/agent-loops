@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexec/agents/Go/internal/githubmcp"
-	"github.com/alexec/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // #4586: work/features gives each feature with its open epics, each with the first step that has

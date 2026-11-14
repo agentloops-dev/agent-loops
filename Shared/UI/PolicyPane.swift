@@ -71,7 +71,7 @@ struct PolicyPane: View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
                 Label(PolicyLayersWords.banner(effective),
-                      systemImage: effective.organisation == nil ? "person" : OrgPolicyWords.symbol)
+                      icon: effective.organisation == nil ? "person" : OrgPolicyWords.symbol)
                     .appText(.reading).fontWeight(.semibold)
                 if effective.organisation != nil {
                     if let openOrganisationPolicy {
@@ -83,7 +83,7 @@ struct PolicyPane: View {
                         .appText(.fine).foregroundStyle(.secondary)
                 }
                 if let behind = PolicyLayersWords.behindLine(effective.behind) {
-                    Text(behind).appText(.fine).tinted(.attention)
+                    Text(behind).appText(.fine).tinted(.warning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let problem {
@@ -101,8 +101,8 @@ struct PolicyPane: View {
     private func untrustedSection(_ copy: DaemonAPI.UntrustedYourPolicy) -> some View {
         Section {
             VStack(alignment: .leading, spacing: 6) {
-                Label(PolicyLayersWords.untrustedTitle, systemImage: "exclamationmark.shield")
-                    .appText(.reading).fontWeight(.semibold).tinted(.attention)
+                Label(PolicyLayersWords.untrustedTitle, icon: "exclamationmark.shield")
+                    .appText(.reading).fontWeight(.semibold).tinted(.warning)
                 Text(PolicyLayersWords.untrustedLine(copy)).appText(.fine)
                     .fixedSize(horizontal: false, vertical: true)
                 if copy.lines.isEmpty {
@@ -114,7 +114,7 @@ struct PolicyPane: View {
                 }
                 HStack {
                     Button(PolicyLayersWords.signAgain) { Task { await settle(copy, sign: true) } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.paperProminent)
                     Button(PolicyLayersWords.setAside) { Task { await settle(copy, sign: false) } }
                 }
                 .disabled(isSaving)
