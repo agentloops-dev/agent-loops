@@ -37,6 +37,8 @@ type Options struct {
 	FromPool bool
 	// Executable is the running program, which becomes the host when none is installed.
 	Executable string
+	// Smoke runs step 8 after the others pass: one short session on this machine.
+	Smoke bool
 }
 
 // Deps are what the installer does outside itself, so a test can stand in for each.
@@ -53,7 +55,10 @@ type Deps struct {
 	JoinWait, RuntimeWait time.Duration
 	// ScriptTimeout bounds one project's script.
 	ScriptTimeout time.Duration
-	Out           io.Writer
+	// SignInWait bounds the wait for the first runtime to be signed in before step 8; SmokeWait
+	// bounds the smoke session's answer.
+	SignInWait, SmokeWait time.Duration
+	Out                   io.Writer
 }
 
 func (d *Deps) defaults() {
@@ -68,6 +73,12 @@ func (d *Deps) defaults() {
 	}
 	if d.ScriptTimeout == 0 {
 		d.ScriptTimeout = ScriptTimeout
+	}
+	if d.SignInWait == 0 {
+		d.SignInWait = 10 * time.Minute
+	}
+	if d.SmokeWait == 0 {
+		d.SmokeWait = SmokeTimeout
 	}
 	if d.Out == nil {
 		d.Out = io.Discard
@@ -88,7 +99,7 @@ func (l Layout) joined() bool {
 	return err == nil
 }
 
-// Run does steps 3 to 6 and says each. It returns the first step's error of those that
+// Run does steps 3 to 6, then 8 when o.Smoke, and says each. It returns the first step's error of those that
 // failed, or nil when all four are done. A step that failed does not stop the one beside it
 // (5 and 6 run together), but steps 5 and 6 do not start when 3 or 4 failed.
 func Run(ctx context.Context, o Options, d Deps) error {
@@ -152,7 +163,11 @@ func Run(ctx context.Context, o Options, d Deps) error {
 		}
 	}()
 	wg.Wait()
-	return first
+	if first != nil || !o.Smoke {
+		return first
+	}
+	// 8: Smoke session.
+	return Smoke(ctx, o, d, rep, say)
 }
 
 // installAgents is step 3. The host is this program's own copy, placed in ~/.agents-server/bin
