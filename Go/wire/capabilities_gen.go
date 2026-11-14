@@ -63,6 +63,7 @@ const CapDeploysTargets1 = "deploys.targets/1"
 const CapDevice1 = "device/1"
 const CapDevices1 = "devices/1"
 const CapDisk1 = "disk/1"
+const CapDocsAll1 = "docs.all/1"
 const CapDocs1 = "docs/1"
 const CapDropbox1 = "dropbox/1"
 const CapElicitations1 = "elicitations/1"
@@ -145,6 +146,7 @@ const CapMailbox1 = "mailbox/1"
 const CapMarketplaces1 = "marketplaces/1"
 const CapMcpToolLevels1 = "mcp.tool-levels/1"
 const CapMcp1 = "mcp/1"
+const CapMessagesAll1 = "messages.all/1"
 const CapMessagesMarkRead1 = "messages.mark-read/1"
 const CapMessagesReply1 = "messages.reply/1"
 const CapMessages1 = "messages/1"
@@ -826,6 +828,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"control/status", "control/1"},
 	{"deploys/deliveryAll", "deploys.read/1"},
 	{"deploys/sync", "deploys.copy/1"},
+	{"docs/listAll", "docs.all/1"},
 	{"folders/detected", "folders/1"},
 	{"git/credential", "git/1"},
 	{"governance/approvals", "governance/1"},
@@ -915,6 +918,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"machines/unlink", "machines/1"},
 	{"machines/update", "machines/1"},
 	{"machines/versions", "machines/1"},
+	{"messages/conversationsAll", "messages.all/1"},
 	{"multiplier/count", "multiplier/1"},
 	{"notices/take", "notices/1"},
 	{"orgRoutes/check", "org-routes/2"},

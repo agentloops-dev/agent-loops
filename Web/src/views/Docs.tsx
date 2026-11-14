@@ -12,7 +12,7 @@ import { hostAnswers } from "../model/capabilities";
 import { fileURL } from "../model/completions";
 import { folderKey } from "../model/groups";
 import {
-  docStartHelp, docStartLabels, docStartPrompt, docStarts, docStartTitle, docsGroups, docsProjects, docsSortTitle, isFolderDoc,
+  hostDocsOf, docStartHelp, docStartLabels, docStartPrompt, docStarts, docStartTitle, docsGroups, docsProjects, docsSortTitle, isFolderDoc,
   linkedRefs, mapItPrompt, mergeResults, mergeSources, noDocs, noDocsHere, noResults, relatedDocs, resultsIn, searchSources, searchWords,
   shortForm, sourceProblem, titleBeside, underShelf, updatedWords, vendorName, windowAddress, type DocStart, type DocsSort,
   type HostDocs, type ProjectOf,
@@ -62,16 +62,25 @@ function projectOfIn(store: Store): ProjectOf {
 
 const docsHosts = (store: Store) => store.hosts.value.filter((h) => hostAnswers(h.state) && store.has(h.id, Capability.docs1));
 
-async function readLists(store: Store, hosts: { id: string; name: string }[]): Promise<HostDocs[]> {
-  return Promise.all(hosts.map(async (h): Promise<HostDocs> => {
-    try {
-      const got = await store.link.call("docs/list", { limit: 500 }, h.id);
-      for (const d of got.docs) if (!listedOn.has(d.ref)) listedOn.set(d.ref, h.id);
-      return { host: h.id, name: h.name, docs: got.docs, sources: got.sources };
-    } catch (e) {
-      return { host: h.id, name: h.name, docs: [], sources: [], problem: describe(e) };
+/** Most pages of docs/listAll one read follows: the control plane asks the machines, at most 500 docs a page. */
+const mostDocPages = 4;
+
+/** Every machine's docs in one call to the control plane (#5571), the next pages while there are some, up to mostDocPages. */
+async function readLists(store: Store): Promise<HostDocs[]> {
+  let lists: HostDocs[] = [];
+  try {
+    let cursor: string | undefined;
+    for (let page = 0; page < mostDocPages; page++) {
+      const got = await store.link.call("docs/listAll", { limit: 500, ...cursor ? { cursor } : {} });
+      lists = hostDocsOf(got, lists);
+      for (const d of got.docs) if (!listedOn.has(d.doc.ref)) listedOn.set(d.doc.ref, d.machine);
+      cursor = got.cursor;
+      if (!cursor) break;
     }
-  }));
+  } catch (e) {
+    return [{ host: "", name: "Control plane", docs: [], sources: [], problem: describe(e) }];
+  }
+  return lists;
 }
 
 export function DocsList({ store }: { store: Store }) {
@@ -87,7 +96,7 @@ export function DocsList({ store }: { store: Store }) {
   useEffect(() => {
     let current = true;
     lists.value = null;
-    void readLists(store, hosts.map((h) => ({ id: h.id, name: h.name || h.id }))).then((l) => { if (current) lists.value = l; });
+    void readLists(store).then((l) => { if (current) lists.value = l; });
     return () => { current = false; };
   }, [hostKey, asked.value]);
   // A search waits for the typing to rest, and an older answer landing late is dropped.
