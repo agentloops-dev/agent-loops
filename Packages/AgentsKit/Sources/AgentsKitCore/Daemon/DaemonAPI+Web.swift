@@ -506,6 +506,8 @@ public extension DaemonAPI {
                     kind: .controlRequest),
                 Row(Method.hostsList, params: Empty.self, result: [ControlMachine].self, kind: .controlRequest),
                 Row(Method.hostsSetLabels, params: MachineLabelsRequest.self, result: MachineLabelsResult.self, kind: .controlRequest),
+                // Which machine Auto would pick (#5375).
+                Row(Method.sessionsPreviewStart, params: AutoMachineRequest.self, result: AutoMachinePick.self, kind: .controlRequest),
                 Row(Method.clientsForgetSelf, params: Empty.self, result: Empty.self, kind: .controlRequest),
                 // Settings ▸ Control plane ▸ Clients (#4253): who is paired, and a code for one more.
                 Row(Method.clientsList, params: Empty.self, result: [ClientRecord].self, kind: .controlRequest),

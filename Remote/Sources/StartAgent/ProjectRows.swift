@@ -41,22 +41,44 @@ struct ProjectRows: View {
     }
 
     private func machineRow(_ project: NewSessionProject.Choice, summary: DaemonAPI.FolderSummary) -> some View {
-        Menu {
+        let pick = model.startAutoMachine
+        let onAuto = model.startsOnAutoMachine(summary.key)
+        let shown = onAuto ? AutoMachine.rowWords(pick) : model.hostLabel(summary.host)
+        return Menu {
+            // Auto first, chosen at every start (#5375); greyed, with the control plane's
+            // words, when no machine fits.
+            if AutoMachine.offered(pick) {
+                Button {
+                    model.startNamedMachine = nil
+                } label: {
+                    choiceLabel(AutoMachine.rowWords(pick), chosen: onAuto)
+                    if let off = AutoMachine.offWords(pick) { Text(off) }
+                }
+                .disabled(!AutoMachine.usable(pick))
+                Divider()
+            }
             ForEach(project.folders, id: \.self) { key in
                 Button {
+                    // A machine named by hand starts there and is not remembered (#5375).
+                    model.startNamedMachine = key
                     model.sidebarItem = .folder(key)
                 } label: {
-                    choiceLabel(machine(key, in: project), chosen: key == summary.key)
+                    choiceLabel(machine(key, in: project), chosen: key == summary.key && !onAuto)
                     if let state = state(key.host) { Text(state) }
                 }
             }
         } label: {
             LabeledContent("On") {
-                Text(model.hostLabel(summary.host)).foregroundStyle(Paper.secondary)
+                Text(shown).foregroundStyle(Paper.secondary)
             }
             .appText(.reading)
         }
-        .accessibilityLabel("On, \(model.hostLabel(summary.host))")
+        .accessibilityLabel("On, \(shown)")
+        .accessibilityHint(AutoMachine.offWords(pick) ?? "")
+        // Asked again when the project, the machine or the runtime moves (#5375).
+        .task(id: "\(summary.key.stored)|\(summary.project ?? "")|\(model.startAutoMachineRuntime ?? "")") {
+            await model.refreshStartAutoMachine(summary.key)
+        }
     }
 
     /// A project with one folder is named as its folder is today: `server:Name` when the

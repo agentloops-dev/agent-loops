@@ -199,12 +199,32 @@ struct FolderAgentsView: View {
     @ViewBuilder private var machineMenu: some View {
         if let summary, let project = NewSessionProject.choice(of: summary.key, in: model.newSessionProjects),
            !project.hidesMachine {
+            let pick = model.draftAutoMachine
+            let onAuto = AutoMachine.chosen(summary.key, named: model.draftNamedMachine, pick: pick)
             Menu {
+                // Auto first, chosen at every start (#5375); greyed, with the control plane's
+                // words, when no machine fits.
+                if AutoMachine.offered(pick) {
+                    Button {
+                        model.draftNamedMachine = nil
+                    } label: {
+                        if onAuto {
+                            Label(AutoMachine.rowWords(pick), icon: "checkmark")
+                        } else {
+                            Text(AutoMachine.rowWords(pick))
+                        }
+                        if let off = AutoMachine.offWords(pick) { Text(off) }
+                    }
+                    .disabled(!AutoMachine.usable(pick))
+                    Divider()
+                }
                 ForEach(project.folders, id: \.self) { key in
                     Button {
+                        // A machine named by hand starts there and is not remembered (#5375).
+                        model.draftNamedMachine = key
                         model.showFolder(key)
                     } label: {
-                        if key == summary.key {
+                        if key == summary.key && !onAuto {
                             Label(machineLabel(key, in: project), icon: "checkmark")
                         } else {
                             Text(machineLabel(key, in: project))
@@ -226,7 +246,7 @@ struct FolderAgentsView: View {
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Text("On \(model.hosts.label(summary.host))")
+                    Text("On \(onAuto ? AutoMachine.rowWords(pick) : model.hosts.label(summary.host))")
                         .appText(.reading)
                         .lineLimit(1)
                     Image(icon: "chevron.up.chevron.down")
@@ -240,8 +260,12 @@ struct FolderAgentsView: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Start the session on another machine")
-            .accessibilityLabel("On: \(model.hosts.label(summary.host))")
+            .help(AutoMachine.offWords(pick) ?? "Start the session on another machine")
+            .accessibilityLabel("On: \(onAuto ? AutoMachine.rowWords(pick) : model.hosts.label(summary.host))")
+            // Asked again when the project, the machine or the runtime moves (#5375).
+            .task(id: "\(summary.key.stored)|\(model.draftProjectID ?? "")|\(model.draftAutoMachineRuntime ?? "")") {
+                await model.refreshDraftAutoMachine()
+            }
         }
     }
 

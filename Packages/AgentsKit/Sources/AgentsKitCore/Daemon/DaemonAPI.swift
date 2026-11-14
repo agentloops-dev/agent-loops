@@ -1145,6 +1145,9 @@ public enum DaemonAPI {
         /// The values in the shared words (#2658). With `runtimeID` "auto" the daemon picks
         /// the runtime.
         public var levels: Levels?
+        /// The line the control plane made when Auto picked this machine (#5375): the
+        /// session's chat says it first.
+        public var autoChose: String?
 
         public init(runtimeID: String, cwd: URL, prompt: String,
                     attachments: [Attachment] = [],
@@ -1153,8 +1156,9 @@ public enum DaemonAPI {
                     worktree: WorktreeChoice? = nil, requestID: UUID? = nil,
                     sandbox: SandboxChoice? = nil, labels: [String] = [], persona: String? = nil,
                     purpose: AgentPurpose? = nil, accountID: String? = nil, voice: Bool? = nil,
-                    levels: Levels? = nil) {
+                    levels: Levels? = nil, autoChose: String? = nil) {
             self.levels = levels
+            self.autoChose = autoChose
             self.accountID = accountID
             self.voice = voice
             self.persona = persona
@@ -1195,6 +1199,7 @@ public enum DaemonAPI {
             accountID = try c.decodeIfPresent(String.self, forKey: .accountID)
             voice = try c.decodeIfPresent(Bool.self, forKey: .voice)
             levels = try c.decodeIfPresent(Levels.self, forKey: .levels)
+            autoChose = try c.decodeIfPresent(String.self, forKey: .autoChose)
         }
 
         /// What goes to the runtime: the words, then whatever was attached.
