@@ -8,6 +8,7 @@ import { hostHas } from "../model/capabilities";
 import { describe } from "../model/errors";
 import { keepSuggestedHidden, moreWords, suggestedHidden, suggestionDetail } from "../model/suggestedLeads";
 import { go } from "../route";
+import { Icon } from "./Icon";
 import { LastUpdate } from "./LastUpdate";
 import { offerStart } from "./NewAgent";
 
@@ -63,8 +64,8 @@ export function Suggested({ store, host, down }: { store: Store; host: string; d
               <span class="suggested-title">{s.title}</span>
               <span class="quiet small">{suggestionDetail(s)}</span>
             </button>
-            <button type="button" class="link small suggested-dismiss" aria-label={`Dismiss ${s.title}`}
-              title="Hide this epic until it changes" onClick={() => void dismiss(i)}>Dismiss</button>
+            <button type="button" class="suggested-dismiss" aria-label={`Dismiss ${s.title}`}
+              title="Dismiss: hide this epic until it changes" onClick={() => void dismiss(i)}><Icon name="x" /></button>
           </li>
         ))}
       </ul>

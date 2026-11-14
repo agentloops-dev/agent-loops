@@ -133,3 +133,6 @@ button.remove:hover { opacity: 1; }
 .suggested-row { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
 .suggested-title, .suggested-row .quiet { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggested-show { align-self: center; margin-top: 8px; }
+.suggested-dismiss { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border-radius: 50%; background: none; border: 0; color: var(--paper-tertiary); cursor: pointer; }
+.suggested-dismiss:hover { color: var(--paper-secondary); background: var(--paper-hover, rgba(0,0,0,.06)); }
+.suggested-dismiss svg { width: 14px; height: 14px; }
