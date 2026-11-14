@@ -527,13 +527,13 @@ enum MachineSheet: String, Identifiable {
 }
 
 extension AppModel {
-    /// A machine's most urgent need, as its row says it (#3764). Sign-in is what its runtimes
-    /// last said: This Mac's are always read, a server's when its page was opened.
     /// The machine's sessions, counted once for its sidebar line and its page (#5489, #5488).
     func machineSessions(_ host: MachineRef) -> MachineSessions {
         MachineSessions(work.agents.filter { $0.host == host })
     }
 
+    /// A machine's most urgent need, as its row says it (#3764). Sign-in is what its runtimes
+    /// last said: This Mac's are always read, a server's when its page was opened.
     func need(of host: MachineRef) -> MachineNeed? {
         MachineNeed.most(row: hosts.controlRows[host], offline: hostUnreachable(host),
                          runtimes: runtimes(on: host), disks: diskAlarms(host), capacity: capacityLevel(host))
