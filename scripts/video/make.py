@@ -218,16 +218,19 @@ class Video:
         # an unreleased agentsd reads (#195, #4851).
         Path(self.root).mkdir(parents=True)
         (Path(self.root) / "disk-free-override").write_text("500GB\n")
-        args = [SKILL / "launch.sh", "--seeded", "--slug", f"vid-{self.scene.ID}", "--appearance", "light", "--outside-checkout", "--person", "Sam"]
-        if not build:
-            args.append("--no-build")
-        # The scratch machine's name is on camera (the machine lock's card, the machine
-        # list): never this Mac's own, which names the person (#3491, #4835).
-        out = run(*args, env={**os.environ, "HOST_NAME": "Sam's Mac"})
-        for line in out.splitlines():
-            if "=" in line and line.split("=", 1)[0].isupper():
-                key, value = line.split("=", 1)
-                self.env[key] = value.strip().strip("'\"")
+        if getattr(self.scene, "FIRST_OPEN", False):
+            self._launch_first_open(build)
+        else:
+            args = [SKILL / "launch.sh", "--seeded", "--slug", f"vid-{self.scene.ID}", "--appearance", "light", "--outside-checkout", "--person", "Sam"]
+            if not build:
+                args.append("--no-build")
+            # The scratch machine's name is on camera (the machine lock's card, the machine
+            # list): never this Mac's own, which names the person (#3491, #4835).
+            out = run(*args, env={**os.environ, "HOST_NAME": "Sam's Mac"})
+            for line in out.splitlines():
+                if "=" in line and line.split("=", 1)[0].isupper():
+                    key, value = line.split("=", 1)
+                    self.env[key] = value.strip().strip("'\"")
         self.pid = self.env["APP_PID"]
         self.walk = Walk(self.root)
         self.client = Client(self.root)
@@ -236,6 +239,52 @@ class Video:
         self.host_app = REPO / "build/DD/Build/Products/Debug/Agent Loops.app"
         self.stopping = False
         threading.Thread(target=self._permissions, daemon=True).start()
+
+    def _launch_first_open(self, build):
+        """A first-open scene (#5514): the one app's own first open on an empty root, as a
+        newcomer has it, so the window starts on "Let's build your idea." with the set-up
+        behind it (#5050). launch.sh cannot: it pairs the window beforehand, and then the
+        app has no first open (HostScenes.firstOpen). The run-app skill's way to walk the
+        first open: the build opened with --walk and AGENTS_ROOT, its ports off the real
+        app's; stop.sh boots out the root's jobs as for any other."""
+        slug = f"vid-{self.scene.ID}"
+        if build:
+            log("building…")
+            run("sh", "-c", "xcodegen generate >/dev/null && scripts/build-cache.sh xcodebuild -scheme AgentsHost "
+                "-destination 'platform=macOS' -configuration Debug -derivedDataPath build/DD "
+                "-skipPackagePluginValidation build", cwd=REPO)
+        built = REPO / "build/DD/Build/Products/Debug/Agent Loops.app"
+        if not built.is_dir():
+            raise RuntimeError(f"no build at {built}: run without --no-build")
+        # A copy outside the checkout, so the title names no worktree (as --outside-checkout).
+        app = Path(self.root) / "app/Agent Loops.app"
+        app.parent.mkdir(parents=True)
+        run("ditto", built, app)
+        # The window's own defaults: a fresh root starts with none, as a newcomer's window.
+        run("defaults", "delete", f"com.alexecollins.agents.host.walk.run-{slug}", check=False)
+
+        def free_port():
+            import socket
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                return str(s.getsockname()[1])
+        clean = ["env", "-i", f"HOME={os.environ['HOME']}", f"USER={os.environ['USER']}", f"LOGNAME={os.environ['USER']}",
+                 f"TMPDIR={os.environ.get('TMPDIR', '/tmp')}", "LANG=en_US.UTF-8",
+                 "PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin"]
+        flags = ["-n", "-g"]
+        for kv in (f"AGENTS_ROOT={self.root}", f"AGENTS_HOST_PORT={free_port()}", f"AGENTS_HOST_WEB_PORT={free_port()}",
+                   "AGENTS_PERSON_NAME=Sam", "HOST_NAME=Sam's Mac"):
+            flags += ["--env", kv]
+        run(*clean, "open", *flags, app, "--args", "--walk", f"run-{slug}", "--appearance", "light",
+            "-ApplePersistenceIgnoreState", "YES")
+        pattern = f"Agent Loops\\.app/Contents/MacOS/Agents( Host)? --walk run-{slug}( |$)"
+        self.wait_until(lambda: run("pgrep", "-f", pattern, check=False), timeout=20, what="the window's process")
+        self.env["APP_PID"] = run("pgrep", "-f", pattern).splitlines()[0]
+        # The host the first open sets up keeps its socket under host/; the scene's
+        # client looks for it at the root, as launch.sh puts it.
+        sock = Path(self.root) / "host/daemon.sock"
+        self.wait_until(sock.exists, timeout=60, what="the first open's host")
+        (Path(self.root) / "daemon.sock").symlink_to(sock)
 
     def _permissions(self):
         """A scene's agents get a yes to every permission, as rpc.py start gives, while
