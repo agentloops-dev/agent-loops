@@ -68,11 +68,11 @@ private struct SessionLine: View {
         .buttonStyle(.plain)
     }
 
-    private static func tint(_ agent: Agent) -> Color {
+    private static func tint(_ agent: Agent) -> AnyShapeStyle {
         switch MachineSessions.Group(agent.group()) {
-        case .working: Paper.accent
-        case .waiting: Color.orange
-        default: Color.secondary
+        case .working: AnyShapeStyle(Paper.accent)
+        case .waiting: StateTint.warning.style(or: .secondary)
+        default: AnyShapeStyle(.secondary)
         }
     }
 }
