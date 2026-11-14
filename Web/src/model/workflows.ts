@@ -1024,7 +1024,7 @@ export function workflowRunsOn(runsOn: readonly string[] | undefined, machineID:
 
 /** What Runs on means, on every client (#2064). */
 export const workflowRunsOnSentence =
-  "Every machine with this folder runs it, or each machine turned on here. The file stores each machine's id, so renaming one does not unpin it.";
+  "Every machine with this folder runs it, or each machine turned on here, or the machines with a label turned on here. The file stores each machine's id, so renaming one does not unpin it.";
 
 /**
  * A runs-on: list as the Runs on section shows it (#2064): the machines it names, any one of
