@@ -459,7 +459,8 @@ struct FolderListView: View {
         // New Machine (#4634): the defaults chosen, Make to confirm.
         .sheet(item: Binding(get: { model.newMachineAsk }, set: { model.newMachineAsk = $0 })) { ask in
             NewMachineSheet(providers: model.machineProviders, provider: ask.provider, again: ask.again,
-                            problem: ask.problem, load: { await model.newMachineForm($0) }) { draft in
+                            problem: ask.problem, choices: model.newMachineChoices,
+                            load: { await model.newMachineForm($0) }) { draft in
                 model.makeMachine(draft)
                 return nil
             }

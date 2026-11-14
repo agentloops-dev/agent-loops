@@ -14,6 +14,19 @@ struct NewMachineDraft: Equatable, Sendable {
     var values: [String: JSONValue]
     /// Clone these folders (#1122): git URLs. Only Settings' Add a Machine… asks for them.
     var clones: [String] = []
+    /// Stop when idle, in minutes (0 is never), for a sheet that asks (#5358); nil when it does not.
+    var stopWhenIdleMinutes: Int?
+    /// The project folders on this Mac to send to it once it has joined (#5358).
+    var projects: [URL] = []
+}
+
+/// What the Mac's New Machine asks besides the provider's size (#5358): a sleep time and
+/// the projects to send. The Remote's sheet has none of it and draws the provider's form.
+struct NewMachineChoices {
+    /// The project folders on this Mac.
+    var projects: [URL]
+    /// Whether a project has uncommitted changes, which go with it.
+    var hasChanges: @MainActor (URL) async -> Bool
 }
 
 /// The New Machine sheet up (#4634): for a provider (nil for the default one), or opened
@@ -39,6 +52,9 @@ struct NewMachineSheet: View {
     /// Clone these folders: Settings' Add a Machine… has it; the sidebar's New Machine does
     /// not (you add a folder later, the wireframe).
     var showsClones = false
+    /// The Mac's three choices (#5358): when set, the form shows only Size, Stop when idle and
+    /// Projects to send; name and every other field come from the provider's defaults.
+    var choices: NewMachineChoices?
     /// The provider's form, with the values to start with; nil for the default provider.
     let load: @MainActor (ProviderID?) async -> Result<DaemonAPI.ProviderOptions, Refusal>
     /// Makes it: nil when the sheet may close, or the provider's reason, shown in the sheet.
@@ -50,17 +66,21 @@ struct NewMachineSheet: View {
     @State private var name = ""
     @State private var values: [String: JSONValue] = [:]
     @State private var clones = ""
+    @State private var idleMinutes = WorkspaceLink.defaultIdleMinutes
+    @State private var sending: Set<URL> = []
+    @State private var changed: Set<URL> = []
     @State private var working = false
     @State private var problem: String?
     /// A make that failed opens the sheet again on its choices and its reason.
     private let again: NewMachineDraft?
 
     init(providers: [DaemonAPI.ProviderSummary], provider: ProviderID? = nil, again: NewMachineDraft? = nil,
-         problem: String? = nil, showsClones: Bool = false,
+         problem: String? = nil, showsClones: Bool = false, choices: NewMachineChoices? = nil,
          load: @escaping @MainActor (ProviderID?) async -> Result<DaemonAPI.ProviderOptions, Refusal>,
          make: @escaping @MainActor (NewMachineDraft) async -> String?) {
         self.providers = providers
         self.showsClones = showsClones
+        self.choices = choices
         self.load = load
         self.make = make
         self.again = again
@@ -112,17 +132,43 @@ struct NewMachineSheet: View {
                     }
                     .disabled(working)
                 }
-                labeled("Name") {
-                    TextField("Name", text: $name, prompt: Text("machine-1"))
-                        .autocorrectionDisabled()
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
+                if choices == nil {
+                    labeled("Name") {
+                        TextField("Name", text: $name, prompt: Text("machine-1"))
+                            .autocorrectionDisabled()
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                    }
                 }
                 if loading {
                     ProgressView().controlSize(.small)
                 } else {
-                    ForEach(schema) { field in fieldView(field) }
+                    ForEach(shownFields) { field in fieldView(field) }
+                }
+                if let choices {
+                    Picker("Stop when idle", selection: $idleMinutes) {
+                        ForEach(MachineProviderWords.idleChoices, id: \.minutes) { Text($0.label).tag($0.minutes) }
+                    }
+                    Section("Projects to send") {
+                        if choices.projects.isEmpty {
+                            Text("No projects on this Mac.").foregroundStyle(.secondary)
+                        }
+                        ForEach(choices.projects, id: \.self) { project in
+                            Toggle(isOn: Binding(get: { sending.contains(project) },
+                                                 set: { on in
+                                                     if on { sending.insert(project) } else { sending.remove(project) }
+                                                 })) {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(project.lastPathComponent)
+                                    if changed.contains(project) {
+                                        Text("Uncommitted changes go with it")
+                                            .appText(.fine).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 if showsClones {
                     TextField("Clone these folders", text: $clones,
@@ -165,6 +211,10 @@ struct NewMachineSheet: View {
         }
         #endif
         .task { await reload(keeping: again) }
+        .task {
+            guard let choices else { return }
+            for project in choices.projects where await choices.hasChanges(project) { changed.insert(project) }
+        }
     }
 
     /// The provider's refusal, what happens once it is made, and on iOS what it costs.
@@ -194,6 +244,14 @@ struct NewMachineSheet: View {
         #else
         field()
         #endif
+    }
+
+    /// The form's fields: all of the provider's, or with the Mac's choices only its size.
+    private var shownFields: [Field] {
+        guard choices != nil else { return schema }
+        let size = schema.first { $0.id.lowercased() == "size" || $0.title.lowercased() == "size" }
+            ?? schema.first { $0.kind == "enum" }
+        return size.map { [$0] } ?? []
     }
 
     private var title: String {
@@ -264,6 +322,8 @@ struct NewMachineSheet: View {
                 name = kept.name
                 values = kept.values
                 clones = kept.clones.joined(separator: "\n")
+                idleMinutes = kept.stopWhenIdleMinutes ?? idleMinutes
+                sending = Set(kept.projects)
             } else {
                 // A name typed already stays when the provider changes.
                 if name.isEmpty || name.hasPrefix("machine-") { name = options.name ?? name }
@@ -279,7 +339,11 @@ struct NewMachineSheet: View {
         working = true
         problem = nil
         let urls = clones.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        let draft = NewMachineDraft(provider: provider, name: trimmedName, values: chosen, clones: urls)
+        var draft = NewMachineDraft(provider: provider, name: trimmedName, values: chosen, clones: urls)
+        if let choices {
+            draft.stopWhenIdleMinutes = idleMinutes
+            draft.projects = choices.projects.filter(sending.contains)
+        }
         Task {
             let refused = await make(draft)
             working = false

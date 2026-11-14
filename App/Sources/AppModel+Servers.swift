@@ -302,6 +302,44 @@ extension AppModel {
         }
     }
 
+    /// What the Mac's New Machine asks besides the size (#5358): a sleep time and the projects
+    /// on this Mac to send, a project with uncommitted changes saying so.
+    var newMachineChoices: NewMachineChoices {
+        var seen = Set<URL>()
+        let projects = folders.filter { isOnThisMac($0.host) && $0.exists }.map(\.folder.folder).filter { seen.insert($0).inserted }
+        return NewMachineChoices(projects: projects) { [weak self] folder in
+            guard let self else { return false }
+            return (try? await self.sendFacts(folder, on: .mac))?.hasChanges ?? false
+        }
+    }
+
+    /// After a make that asked for a sleep time or projects (#5358): waits for the machine's
+    /// row, opens its page, sets Stop when idle, then sends each project once it is reachable.
+    private func finishNewMachine(_ draft: NewMachineDraft, made: DaemonAPI.ProviderCreated) async {
+        var host = made.workspace.host
+        for _ in 0..<300 where host == nil {
+            host = hosts.controlRows.first { $0.value.name == draft.name }?.key
+            if host == nil { try? await Task.sleep(for: .seconds(2)) }
+        }
+        guard let host else { return }
+        machinePage = host
+        if let minutes = draft.stopWhenIdleMinutes { await setMachineOptions(host, stopWhenIdleMinutes: minutes) }
+        guard !draft.projects.isEmpty else { return }
+        for _ in 0..<450 where hostUnreachable(host) { try? await Task.sleep(for: .seconds(2)) }
+        for project in draft.projects {
+            do {
+                let facts = try await sendFacts(project, on: .mac)
+                guard let branch = facts.current ?? facts.branches.first else { continue }
+                try await startSend(DaemonAPI.SendRequest(folder: project, machine: host.rawValue, machineName: draft.name,
+                                                          destination: "~/\(project.lastPathComponent)", branches: facts.branches,
+                                                          checkout: branch, includeChanges: facts.hasChanges && facts.current != nil,
+                                                          origin: facts.origin), from: .mac)
+            } catch {
+                problem = "\(project.lastPathComponent) was not sent to \(draft.name): \(describe(error))"
+            }
+        }
+    }
+
     /// Make on the New Machine sheet (#4634): the sheet closes at once and a *Making…* row
     /// takes over (#4610). A make the provider refuses opens the sheet again on the same
     /// choices, with the provider's reason, to change one and try again.
@@ -318,6 +356,10 @@ extension AppModel {
                     returning: DaemonAPI.ProviderCreated.self)
                 if made.workspace.state == "failed" {
                     refused = made.workspace.reason ?? "\(made.workspace.name) could not be made."
+                }
+                if refused == nil, draft.stopWhenIdleMinutes != nil || !draft.projects.isEmpty {
+                    if let host = made.workspace.host { machinePage = host }
+                    Task { await finishNewMachine(draft, made: made) }
                 }
             } catch let error as JSONRPCError {
                 refused = HostProblem.controlRefusal(error)
