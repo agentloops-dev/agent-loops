@@ -268,6 +268,7 @@ var writes = methodSet(
 	"machines/lendSignIn",
 	"machines/remove",
 	"machines/retrySetup",
+	"machines/setLabels",
 	"machines/startEnroll",
 	"machines/update",
 	"links/approve",
@@ -581,6 +582,18 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 			return nil, &RPCError{Code: wire.FailureNoSuchHost, Message: "There is no such host."}
 		}
 		return m.s.installer.Update(ctx, request, h.Name)
+	case "machines/setLabels":
+		request, err := require[wire.MachineLabelsRequest](params, "MachineLabelsRequest")
+		if err != nil {
+			return nil, err
+		}
+		answer, err := m.setLabels(ctx, request, from)
+		if answer.Changed > 0 {
+			for _, id := range request.Machines {
+				m.s.announce("hostEnrolled", string(id), from.Client)
+			}
+		}
+		return answer, err
 	case "machines/checkAgain":
 		request, err := require[wire.MachineRequest](params, "MachineRequest")
 		if err != nil {
@@ -923,6 +936,7 @@ func (m *Methods) hostRow(h records.MachineRecord) wire.ControlMachine {
 		level, at := n.level, wire.DateOf(n.at)
 		row.Capacity, row.LoadPerCore5, row.CapacityAt = &level, n.load5, &at
 	}
+	row.Labels, row.AutoLabels = machineLabels(h), autoLabels(h)
 	row.Workspace = m.router.Workspace(h.ID)
 	row.Setup = m.s.machineSetup(context.Background(), h.ID)
 	if m.s.tunnels != nil {

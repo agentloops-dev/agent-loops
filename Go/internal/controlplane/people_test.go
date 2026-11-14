@@ -295,7 +295,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 
 	// Methods that name no machine: answered for the caller alone.
 	namesNone := map[string]bool{
-		"daemon/ping": true, "control/status": true, "machines/list": true, "machines/startEnroll": true, "machines/install": true,
+		"daemon/ping": true, "control/status": true, "machines/list": true, "machines/setLabels": true, "machines/startEnroll": true, "machines/install": true,
 		"machines/detect": true, "machines/sshHosts": true, "control/setFolderDetection": true, "clients/list": true,
 		"clients/startPairing": true, "clients/stopPairing": true, "clients/setGrant": true, "clients/forget": true,
 		"clients/connections": true, "clients/forgetSelf": true, "clients/setPushToken": true, "clients/setActivityToken": true, "clients/setWebPush": true, "clients/webPushKey": true, "devices/list": true,

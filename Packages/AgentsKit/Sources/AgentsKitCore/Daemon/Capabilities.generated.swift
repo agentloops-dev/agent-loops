@@ -843,6 +843,7 @@ public enum Capability {
         "machines/sendFolder": "folders.to-machine/1",
         "machines/sessionCall": "sessions.elsewhere/1",
         "machines/sessionEnded": "sessions.elsewhere/1",
+        "machines/setLabels": "machines/2",
         "machines/setMachineOptions": "machines/1",
         "machines/sshHosts": "machines/1",
         "machines/start": "machines/1",
