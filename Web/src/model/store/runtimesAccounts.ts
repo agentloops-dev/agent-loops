@@ -1,7 +1,7 @@
 // Part of the Store (#5384): runtimesAccounts.
 import { folderPath as hostedFolderPath, healthTally, personalServers } from "../hostedMCP";
 import { batch } from "@preact/signals";
-import type { HelperLimits, DiskThresholds, NotCommittedResponse, AccountProfile, RuntimeAccount, RuntimeSignInStep, RuntimeStatus, UUID, AutoPreview, AutoPreviewRequest, AutoSettings, ClientPermissionMode, Levels, ModelLevel, PermissionLevel, DirectoryListing, MCPHealthSnapshot, MCPToolsAnswer, ConnectorToolLevel, WorkflowHours, ClientPermissionSettings, PRCostComment, Connection } from "../../protocol/generated";
+import type { HelperLimits, DiskThresholds, NotCommittedResponse, AccountProfile, RuntimeAccount, RuntimeSignInStep, RuntimeStatus, UUID, AutoMachinePick, AutoPreview, AutoPreviewRequest, AutoSettings, ClientPermissionMode, Levels, ModelLevel, PermissionLevel, DirectoryListing, MCPHealthSnapshot, MCPToolsAnswer, ConnectorToolLevel, WorkflowHours, ClientPermissionSettings, PRCostComment, Connection } from "../../protocol/generated";
 import { endedConnections, endedLine, hasEnded } from "../connectorSetup";
 import { describe } from "../errors";
 import { freeProjectName } from "../projectSettings";
@@ -141,6 +141,11 @@ export const runtimesAccountsMethods = {
       if (before) this.autoSettings.value = { ...this.autoSettings.value, [host]: before };
       this.say(describe(error));
     }
+  },
+  /** Which machine Auto would pick for a project and runtime, or why none fits (#5375); null from a control plane that does not know it. */
+  async previewAutoMachine(this: Store, project: string, runtimeID: string): Promise<AutoMachinePick | null> {
+    if (!this.planeHas("auto-machine/1")) return null;
+    return this.link.call("sessions/previewStart", { project, runtimeID }).catch(() => null);
   },
   /** What Auto would pick now for a folder and values, or null. */
   async autoPreview(this: Store, host: string, request: AutoPreviewRequest): Promise<AutoPreview | null> {
