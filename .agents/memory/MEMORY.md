@@ -83,3 +83,4 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Chrome port 0 sets webdriver](chrome-port-zero-sets-webdriver.md) — Chrome 157 with --remote-debugging-port=0 says navigator.webdriver true; pick a free port, read /json/version (#5207)
 - [Ink drops Enter in a long write](ink-drops-enter-in-a-long-write.md) — claude setup-token lost the Enter sent with a real code; write the code, wait, then \r alone (#5202)
 - [Reach a codespace agentsd socket](reach-a-codespace-agentsd-socket.md) — gh codespace ssh -- -N -L forwards daemon.sock as control; server log path; no strace (ptrace_scope 1)
+- [Scratch first-open take](scratch-first-open-take.md) — question page needs --walk + AGENTS_ROOT, not launch.sh; host env, own browser, Keychain connection, SecureField; #5563/#5564 block it
