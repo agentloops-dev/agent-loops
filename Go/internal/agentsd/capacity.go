@@ -10,13 +10,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
 
-	"github.com/agentloops-dev/agents/Go/internal/safe"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Capacity (#4578, epic #4584): the machine's level, ok, near or full, from its load per
@@ -47,8 +48,19 @@ type capacitySample struct {
 	swap     float64
 }
 
-// capacitySampler is the look; a test puts a fake here.
-var capacitySampler = sampleCapacity
+// capacitySampler is the look; a test puts a fake here with setCapacitySampler. It is an
+// atomic pointer because a test sets it while another test's daemon still looks (#5329).
+var capacitySampler atomic.Pointer[func(context.Context) capacitySample]
+
+func init() { setCapacitySampler(sampleCapacity) }
+
+// setCapacitySampler puts f as the look and returns the one it replaced.
+func setCapacitySampler(f func(context.Context) capacitySample) (was func(context.Context) capacitySample) {
+	if old := capacitySampler.Swap(&f); old != nil {
+		return *old
+	}
+	return nil
+}
 
 // sampleCapacity reads the load with gopsutil (getloadavg on a Mac, /proc/loadavg on
 // Linux), swap with gopsutil, and the kernel's pressure (kernelPressure). A read that fails
@@ -112,6 +124,8 @@ type capacityBook struct {
 	// higher target of them.
 	capBelow     int
 	capLastBelow wire.CapacityLevel
+	// What machine/capacity last told the control plane (#5374).
+	capSent capacitySent
 }
 
 // capacityLevel is the machine's level now: ok before the first look.
@@ -154,6 +168,7 @@ func (d *Daemon) checkCapacity(ctx context.Context) {
 	d.capLevel, d.capLastBelow, d.capBelow = level, lastBelow, below
 	d.capSample, d.capSampled = s, true
 	d.capMu.Unlock()
+	d.sendCapacitySoon(level, s.load5)
 	// The compute line is served one grant a look while the level is ok (#4579).
 	d.serveCapacityLine()
 	// While the machine is ok, each look lets the helper queues move (#4580).
@@ -235,7 +250,7 @@ func (d *Daemon) sampleNow(ctx context.Context) capacitySample {
 			return capacitySample{load1: v, load5: v}
 		}
 	}
-	return capacitySampler(ctx)
+	return (*capacitySampler.Load())(ctx)
 }
 
 // overriddenLoad is the walk's load from root, if it set one.

@@ -10,11 +10,12 @@ import SwiftUI
 @MainActor
 @Observable
 final class WorkTimelineState {
-    var range: WorkTimeline.Range = .twoDays
+    /// The range, the project and the board are kept for the next launch (#5451).
+    var range: WorkTimeline.Range = .twoDays { didSet { remember() } }
     /// The project, by id; "" until one is picked, then the first one.
-    var project = ""
+    var project = "" { didSet { remember() } }
     /// The board the epics are narrowed to (#3282), by its url; "" for every board.
-    var board = ""
+    var board = "" { didSet { remember() } }
     var boards: [DaemonAPI.ProjectBoard] = []
     /// Where the window is: Now, until the plot is scrolled past an edge.
     var anchor = Date.now
@@ -45,6 +46,17 @@ final class WorkTimelineState {
     }
 
     var ask: Ask { Ask(asked: asked, project: project, board: board, range: range, anchor: anchor) }
+
+    init() {
+        let kept = WorkRemembered.timeline(WorkRememberedStore.kept(.timeline))
+        range = kept.range
+        project = kept.project
+        board = kept.board
+    }
+
+    private func remember() {
+        WorkRememberedStore.keep(WorkRemembered.timeline(range: range, project: project, board: board), for: .timeline)
+    }
 
     /// The plot on screen came from this device's copy (#4930), until the machines answer.
     var fromDevice = false
@@ -97,9 +109,8 @@ final class WorkTimelineState {
             plotRead = at
             fromDevice = true
         }
-        let found = await model.workBoards()
-        guard ask == mine else { return }
-        boards = found
+        // The boards beside the timeline, not before it (#5450).
+        async let found = model.workBoards()
         let on = Set(project.folders.map { String($0.prefix { $0 != "|" }) })
         let machines = model.timelineMachines.filter { on.contains($0.id.rawValue) }
         let content = content
@@ -107,6 +118,39 @@ final class WorkTimelineState {
         var got: [DaemonAPI.WorkTimeline] = []
         var epics: Set<String>?
         var failed: [String] = []
+        func draw(all: Bool) async {
+            problem = all && got.isEmpty && !failed.isEmpty ? failed.joined(separator: "\n") : nil
+            // Every machine failed: the last plot stays, dimmed under the strip.
+            stale = all && got.isEmpty && !failed.isEmpty && timeline != nil
+            if stale { return }
+            var merged = WorkTimeline.merge(got)
+            if let epics { merged.epics = merged.epics.filter { epics.contains($0.item.node.ref) } }
+            // A child that closed since the last read of the same window lands: its dot pulses once.
+            if let before = timeline {
+                let was = Set(before.epics.flatMap(\.children).filter { $0.closedAt != nil }.map(\.item.node.ref))
+                let seen = Date.now
+                for child in merged.epics.flatMap(\.children) where child.closedAt != nil && !was.contains(child.item.node.ref)
+                    && before.epics.contains(where: { $0.children.contains { $0.item.node.ref == child.item.node.ref } }) {
+                    landed[child.item.node.ref] = seen
+                }
+            }
+            fromMachines = merged
+            // The plot draws now, with the sessions it had (#5450); the new ones start their children when they come.
+            timeline = WorkTimeline.started(merged, by: sessions)
+            plotRead = Date()
+            fromDevice = false
+            let on = await model.lineageSessionsOn(WorkTimeline.sessionNodes(merged))?.sessions ?? []
+            guard ask == mine, fromMachines == merged else { return }
+            sessions = on
+            let drawn = WorkTimeline.started(merged, by: on)
+            timeline = drawn
+            plotRead = Date()
+            fromDevice = false
+            // Kept for the window around now, read by every machine: a plot scrolled away is not the one a person opens on.
+            if all, failed.isEmpty, abs(anchor.timeIntervalSinceNow) < 3600 {
+                model.keepWork(Kept(timeline: drawn, boards: boards), .timeline, kept)
+            }
+        }
         await withTaskGroup(of: (DaemonAPI.WorkTimeline?, [String]?, String?).self) { group in
             for machine in machines {
                 group.addTask {
@@ -128,39 +172,21 @@ final class WorkTimelineState {
                     }
                 }
             }
+            // The first machine to answer draws the plot (#5449), and each one after adds its epics: a slow or offline
+            // machine does not hold it. A machine that failed says so only when no machine answered.
+            var answered = 0
             for await (t, refs, problem) in group {
+                answered += 1
                 if let t { got.append(t) }
                 if let refs { epics = (epics ?? []).union(refs) }
                 if let problem { failed.append(problem) }
+                if ask == mine, answered < machines.count, t != nil { await draw(all: false) }
             }
         }
+        let boardsFound = await found
         guard ask == mine else { return }
-        problem = failed.isEmpty ? nil : failed.joined(separator: "\n")
-        // Every machine failed: the last plot stays, dimmed under the strip.
-        stale = got.isEmpty && !failed.isEmpty && timeline != nil
-        if stale { return }
-        var merged = WorkTimeline.merge(got)
-        if let epics { merged.epics = merged.epics.filter { epics.contains($0.item.node.ref) } }
-        // A child that closed since the last read of the same window lands: its dot pulses once.
-        if let before = timeline {
-            let was = Set(before.epics.flatMap(\.children).filter { $0.closedAt != nil }.map(\.item.node.ref))
-            let seen = Date.now
-            for child in merged.epics.flatMap(\.children) where child.closedAt != nil && !was.contains(child.item.node.ref)
-                && before.epics.contains(where: { $0.children.contains { $0.item.node.ref == child.item.node.ref } }) {
-                landed[child.item.node.ref] = seen
-            }
-        }
-        fromMachines = merged
-        sessions = await model.lineageSessionsOn(WorkTimeline.sessionNodes(merged))?.sessions ?? []
-        guard ask == mine, fromMachines == merged else { return }
-        let drawn = WorkTimeline.started(merged, by: sessions)
-        timeline = drawn
-        plotRead = Date()
-        fromDevice = false
-        // Kept for the window around now, read by every machine: a plot scrolled away is not the one a person opens on.
-        if failed.isEmpty, abs(anchor.timeIntervalSinceNow) < 3600 {
-            model.keepWork(Kept(timeline: drawn, boards: boards), .timeline, kept)
-        }
+        boards = boardsFound
+        await draw(all: true)
     }
 
     /// The sessions again, on `control/lineageChanged` (#4276): a session that starts on a child on

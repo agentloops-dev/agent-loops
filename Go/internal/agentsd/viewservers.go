@@ -11,7 +11,7 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/agentloops-dev/agents/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 )
 
 // Which of a person's MCP servers a view may come from, and what views it has
@@ -125,6 +125,7 @@ func (d *Daemon) viewServerFor(name, folder string) (viewServer, viewTrouble) {
 		if e.name != name {
 			continue
 		}
+		d.adoptSharedMCPFolder(folder)
 		d.mcpMu.Lock()
 		approved, _, _ := d.mcpApprovalsLocked()
 		d.mcpMu.Unlock()

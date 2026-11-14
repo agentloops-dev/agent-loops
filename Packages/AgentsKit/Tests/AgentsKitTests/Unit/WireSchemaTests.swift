@@ -4,7 +4,7 @@ import Testing
 
 /// Today's Swift encoders against Packages/Wire, the schema every other language is made from
 /// (#1135). The Swift `Model` types stay written by hand; this is what keeps them and the
-/// schema the same. A change to a type on the wire changes `daemon.schema.json` first, then
+/// schema the same. A change to a type on the wire changes `Packages/Wire/schema` first, then
 /// `scripts/wire.sh gen` makes the Go and the TypeScript, and this test says what to change in
 /// Swift by hand.
 @Suite("Wire schema")
@@ -19,6 +19,32 @@ struct WireSchemaTests {
 
     static func read(_ name: String) throws -> JSONValue {
         try JSONValue.parse(Data(contentsOf: wire.appending(path: name)))
+    }
+
+    /// The methods of an OpenRPC document. The host's are in Packages/Wire/daemon/*.openrpc.json, one
+    /// file per group (#5381), and its own file has the rest.
+    static func readMethods(_ file: String) throws -> [JSONValue] {
+        var methods = try read(file)["methods"]?.arrayValue ?? []
+        guard file == "daemon.openrpc.json" else { return methods }
+        let directory = wire.appending(path: "daemon")
+        for part in try FileManager.default.contentsOfDirectory(atPath: directory.path()).sorted()
+        where part.hasSuffix(".openrpc.json") {
+            let document = try JSONValue.parse(Data(contentsOf: directory.appending(path: part)))
+            methods += document["methods"]?.arrayValue ?? []
+        }
+        return methods
+    }
+
+    /// The schema: the definitions of every file under Packages/Wire/schema, one per domain (#5380).
+    static func readSchema() throws -> JSONValue {
+        let directory = wire.appending(path: "schema")
+        var definitions: [String: JSONValue] = [:]
+        for file in try FileManager.default.contentsOfDirectory(atPath: directory.path()).sorted()
+        where file.hasSuffix(".schema.json") {
+            let document = try JSONValue.parse(Data(contentsOf: directory.appending(path: file)))
+            for (name, definition) in document["definitions"]?.objectValue ?? [:] { definitions[name] = definition }
+        }
+        return .object(["definitions": .object(definitions)])
     }
 
     /// The records in the web fixtures, told apart by their keys, and the Swift type each is.
@@ -75,7 +101,7 @@ struct WireSchemaTests {
     }
 
     @Test func todaysEncodersWriteWhatTheSchemaSays() throws {
-        let schema = try WireSchema(Self.read("daemon.schema.json"))
+        let schema = try WireSchema(Self.readSchema())
         var found: [String: Int] = [:]
         var failures: [String] = []
         let files = FileManager.default.enumerator(at: Self.fixtures, includingPropertiesForKeys: nil)?
@@ -114,7 +140,7 @@ struct WireSchemaTests {
     /// `personal/shared` (#1299): every reach and both skill sources, as the Swift host
     /// writes them, fit the schema the Go host is made from.
     @Test func sharedSnapshotFitsTheSchema() throws {
-        let schema = try WireSchema(Self.read("daemon.schema.json"))
+        let schema = try WireSchema(Self.readSchema())
         let reach: [String: DaemonAPI.Reach] = [
             "claude": .gets("sent at start"), "codex": .ownCopy("/h/.codex/config.toml"),
             "copilot": .leftOut("needs sign-in"), "cursor": .noWay("no way in"),
@@ -145,7 +171,7 @@ struct WireSchemaTests {
     /// Personas from a marketplace (#3665): what the window reads, written with today's
     /// encoder, fits the schema the Go host is made from.
     @Test func personaCatalogFitsTheSchema() throws {
-        let schema = try WireSchema(Self.read("daemon.schema.json"))
+        let schema = try WireSchema(Self.readSchema())
         let result = DaemonAPI.CatalogResult(id: "o/r/personas/reviewer.md", name: "reviewer", owner: "o", repo: "r",
                                              skillID: "reviewer", installs: 0, known: false,
                                              marketplace: "provided:anthropic-skills", skillPath: "personas/reviewer.md")
@@ -172,7 +198,7 @@ struct WireSchemaTests {
     /// with today's encoder, fits the schema and comes back whole, so neither has a field
     /// the other lacks.
     @Test func controlTypesFitTheSchema() throws {
-        let schema = try WireSchema(Self.read("daemon.schema.json"))
+        let schema = try WireSchema(Self.readSchema())
         let samples = try JSONValue.parse(Data(contentsOf: URL(filePath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .appending(path: "Fixtures/control-wire/samples.json")))
@@ -212,6 +238,10 @@ struct WireSchemaTests {
             "MachineWorkspaceCall": Self.through(DaemonAPI.MachineWorkspaceCall.self),
             "AgentMachines": Self.through(DaemonAPI.AgentMachines.self),
             "MachineSchedule": Self.through(DaemonAPI.MachineSchedule.self),
+            "MachineAgents": Self.through(DaemonAPI.MachineAgents.self),
+            "AgentsChanges": Self.through(DaemonAPI.AgentsChanges.self),
+            "AgentsChange": Self.through(DaemonAPI.AgentsChange.self),
+            "AgentsChangesRequest": Self.through(DaemonAPI.AgentsChangesRequest.self),
             "MachineStatus": Self.through(DaemonAPI.MachineStatus.self),
             "ProcessesState": Self.through(DaemonAPI.ProcessesState.self),
             "MachineUsageState": Self.through(DaemonAPI.MachineUsageState.self),
@@ -345,7 +375,7 @@ struct WireSchemaTests {
 
     /// The checker itself finds what is wrong, so a pass above means something.
     @Test func theCheckerRefusesWhatTheSchemaDoesNot() throws {
-        let schema = try WireSchema(Self.read("daemon.schema.json"))
+        let schema = try WireSchema(Self.readSchema())
         let entry: [String: JSONValue] = [
             "id": "00000000-0000-0000-0000-000000000001", "at": 812_500_000,
             "kind": ["agentMessage": ["text": "hello"]],
@@ -375,7 +405,7 @@ struct WireSchemaTests {
             ("daemon.openrpc.json", DaemonAPI.WebSignatures.Kind.hostRequest, DaemonAPI.WebSignatures.Kind.hostNotification),
             ("control.openrpc.json", .controlRequest, .controlNotification),
         ] {
-            for method in try Self.read(file)["methods"]?.arrayValue ?? [] {
+            for method in try Self.readMethods(file) {
                 let tags = method["tags"]?.arrayValue?.compactMap { $0["name"]?.stringValue } ?? []
                 guard tags.contains("web"), let name = method["name"]?.stringValue else { continue }
                 documented[name] = method["x-notification"]?.boolValue == true ? notification : request
@@ -394,7 +424,7 @@ struct WireSchemaTests {
     @Test func capabilitiesAreWhatTheMethodsName() throws {
         for (file, table) in [("daemon.openrpc.json", Capability.host), ("control.openrpc.json", Capability.control)] {
             var named: [String: String] = [:]
-            for method in try Self.read(file)["methods"]?.arrayValue ?? [] {
+            for method in try Self.readMethods(file) {
                 guard let name = method["name"]?.stringValue else { continue }
                 named[name] = method["x-capability"]?.stringValue
             }
@@ -407,7 +437,7 @@ struct WireSchemaTests {
     }
 }
 
-/// The part of JSON Schema draft-07 that daemon.schema.json uses, checked against a value.
+/// The part of JSON Schema draft-07 that Packages/Wire/schema uses, checked against a value.
 struct WireSchema {
     let definitions: [String: JSONValue]
 

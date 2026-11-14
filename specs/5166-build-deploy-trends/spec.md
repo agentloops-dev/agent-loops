@@ -89,7 +89,7 @@ A PR's run opens this page too: from its PR, or from a bar of Branch ▸ Pull re
 1. **Loading** is the Reports pages' own *Loading…*. An error is their hint line. There is no toast and no modal.
 2. **No runs in the range:** the tiles say –, and *No ci runs on main finished in the last 7 days. Try a longer range, or Branch ▸ Pull requests.*
 3. **No CI data from the forge:** *alexec/agents-walk has no GitHub Actions runs. Builds come from the forge's CI runs.*
-4. **A forge Agents does not read CI timings from:** CI outside the forge (CircleCI, Buildkite, Jenkins), or a forge whose timing reader is not built yet (the spike found a `run.completed` reader on all five forges and a timing reader on none; #5177 builds GitHub's). The board's example: *Forgejo: Agents does not read its CI runs yet, so there is nothing to draw for codeberg.org/scratch/app.*
+4. **A forge Agents does not read CI timings from:** CI outside the forge (CircleCI, Buildkite, Jenkins), or a forge whose timing reader is not built yet (the spike found a `run.completed` reader on all five forges and a timing reader on none; #5177 builds GitHub's). The board's example: *Bitbucket: Agents does not read its CI runs yet, so there is nothing to draw for bitbucket.org/scratch/app.*
 5. **The way in from Planning:** the Delivery row's *CI time to green* card (#4555) gets a link, *Build trends ›*, to this page, with the repository and the range of the card. Reports' left list also gets *Builds* under Planning (board 1). With no CI data in any repository of the scope, the card says so and the link still opens the page, where card 3 says why.
 
 ### Board 5: the Mac link
@@ -192,6 +192,18 @@ So **all five forge servers have a CI reader** (`run.completed`), and **none rea
 - **Backfill,** when a repository is first watched: the run list in 3-day windows (the list gives at most 1,000 runs for one query), newest first, then one jobs call a run. **Default-branch and tag runs for 90 days, PR runs for 14 days.** For alexec/Agents: about 100 list calls + 6,300 + 1,300 jobs calls ≈ 7,700 calls. **Paced at 10 % of the token's hourly limit** (500 an hour on GitHub), so that the forge's other events never wait: about 15 hours, the page filling from today backwards. The spec's own fetch (3,400 calls) took jobs for only each 4th PR run.
 - A run that the backfill and the live read both see is the same line (same `ci-run` ref and attempt).
 
+### GitLab (#5221)
+
+The daemon reads GitLab pipelines as it reads GitHub's (`Go/internal/citimings/gitlab.go`): the project's finished pipelines (`scope=finished`, windows by `created_after` and `created_before`), and each one's jobs with `include_retried=true`. A pipeline is a run, and a job's nth try is attempt n. A job is made at its `started_at` less its `queued_duration`, so "waiting its turn" is the stages before it and "waiting for a runner" is `queued_duration`. There are no steps. Decided: a pipeline the store has is not read again, so a retry after the first read is not seen, because GitLab's list does not say the attempt. Alex can overrule.
+
+### Bitbucket (#5223)
+
+The daemon reads Bitbucket Pipelines as it reads GitHub's (`Go/internal/citimings/bitbucket.go`, `Go/internal/agentsd/citimings_bitbucket.go`): the repository's completed pipelines, newest first, and each one's steps. A pipeline is a run, named by its build number; a Bitbucket step is a job, and there are no steps below it. "Rerun failed steps" is attempt n of the same pipeline, by each step's `run_number`; "Run again" is a new pipeline. Bitbucket says no time a step waited for a runner, so a step is made when it started. The runner is a self-hosted step's first `runs-on` label. The backfill takes a tenth of Bitbucket's 1,000 calls an hour. Decided: Bitbucket's list is paged and not windowed by time, so the backfill keeps the next page's number; a new pipeline moves the pages on, so a page is read again, never missed. Alex can overrule.
+
+### Forgejo (#5224)
+
+The daemon reads Forgejo and Gitea Actions (`Go/internal/citimings/forgejo.go`, `Go/internal/agentsd/citimings_forgejo.go`) for a folder on the connected Forgejo: the run list (`actions/runs`, newest first, 50 a page), each finished run's jobs (`actions/runs/{id}/jobs`), and a job's steps (`actions/jobs/{id}`) when the list gives none. Codeberg's swagger (Forgejo 17) has, for a run, `created`, `started`, `stopped`, `status` (its result), `workflow_id`, `prettyref`, `commit_sha` and `event_payload` (a pull request's number and head branch); for a job, `attempt`, `needs`, `runs_on` and `steps` with `started` and `stopped`, and **no time of the job's own**. So a job starts when its first step starts and ends when its last step stops; a job with no needs is made with its run, one with needs when the last job that ended before it started ended. Gitea's run and job are GitHub's (`created_at`, `started_at`, `completed_at`, `run_attempt`, `labels`). Forgejo 16 gives no steps, so its jobs have no time and only the counts fill. Forgejo keeps only a job's last try: a run whose job was run again is attempt 1 (a failure, with the times of the jobs that were not run again) and the highest attempt (the jobs as they ran last). Decided: the list has no time filter, so the backfill pages back by number, as Bitbucket's; a run the store has is not read again, so a job run again after the first read is not seen, as on GitLab. Alex can overrule.
+
 ### Where
 
 **Alex chose (2026-11-13, #5176): the machine reads and keeps the store, and sends a copy to the control plane, as lineage's merged copy does.**
@@ -199,6 +211,7 @@ So **all five forge servers have a CI reader** (`run.completed`), and **none rea
 - **The machine's daemon** reads the runs, jobs and steps, because only the machine has the forge's token (principle 6). Its store is the system of record.
 - **The control plane keeps a copy**, sent a few seconds after a change, as `lineage/sync` sends links (#4275): refs, times, attempts, conclusions, runner labels, and the names of workflows, jobs and steps. It keeps no commit or PR titles and no logs (principle 7). The copy has the store's bounds, and the hourly sweep applies them to a machine that stopped sending.
 - **The web page reads the copy,** so every board works while the Mac sleeps (principle 1). Two machines that watch one repository send the same runs; a read takes one line for each `ci-run` ref and attempt.
+- **How (#5232):** the machine sends `builds/sync`, one repository at a time: each UTC day of runs that changed, whole, as its store has it now (a day with no runs is gone), with the default branch, the last read and the backfill's reach. The control plane keeps it per machine under `v1/build-timings/<host>/<forge>/<path>/`, and answers `builds/historyAll` and `builds/runAll` with the same figures and change points as the machine's `builds/history` and `builds/run`, over the machines in a scope (as `reports/value`'s). Decided: new method names on the control plane, not the machine's names, because no method is answered by both a host and the control plane, and the web page says which it asks; Alex can overrule.
 - Board 2's commit list shows each commit's short hash and PR number from lineage's links. A title comes only from a client that can read the forge.
 
 ### Decisions
@@ -214,8 +227,8 @@ So **all five forge servers have a CI reader** (`run.completed`), and **none rea
 When the change finder finds a step up in a job's run time on the default branch, the daemon sends an event, **`ci.slowed`** (in the style of `checks.passed`), with:
 
 - `repo`, `workflow`, `job`, `branch`;
-- `firstSlowRun` (its `ci-run` ref and URL) and `lastFastRun`;
-- `medianBefore` and `medianAfter` in seconds, and the `score`.
+- `first_slow_run` (its `ci-run` ref) and `first_slow_run_url`, and `last_fast_run` and `last_fast_run_url`;
+- `median_before` and `median_after` in seconds, and the `score` (names settled in #5200: open question 5).
 
 A workflow can start on it (Alex makes the workflows), and the report marks it (board 2, note 6). A faster step makes no event. A change in queue time makes no event, because it is load, not a commit.
 
@@ -253,7 +266,7 @@ The stories add a new page, controls and a link, so each PR waits for Alex with 
 2. ~~Forge API or extend the `ci-run` nodes?~~ **Decided (Alex, 2026-11-13):** a timing store of its own, keyed by the `ci-run` ref (see "Where the timings live"). The spike (#5176) answered the data, the bounds and the fill (see "The data spike"); Alex chose where it lives: the machine, with a copy on the control plane.
 3. ~~What is a deploy?~~ **Out of this epic** (Alex, 2026-11-13): the later Release × Environment epic.
 4. ~~The detector's floor and its library?~~ **Answered (#5177):** no Go library fits AGENTS.md's rule (pgregory.net/changepoint was last updated in 2023, github.com/lytics/impact in 2015; Otava is Python), so `Go/internal/citimings/changes.go` has its own binary segmentation, as `derive.py`. The floor stays 30 s and 20 % with a score of 8: on the spike's cache it finds the same 8 changes in 90 days, `go-darwin` on 8 November among them, with its 6 runs between.
-5. ~~Should a change found on `main` tell someone?~~ **Yes (Alex, 2026-11-13):** the daemon sends `ci.slowed` (see "A slowdown makes an event"). Open: the event's final name and fields, in #5200.
+5. ~~Should a change found on `main` tell someone?~~ **Yes (Alex, 2026-11-13):** the daemon sends `ci.slowed` (see "A slowdown makes an event"). **Settled (#5200):** the name stays `ci.slowed`, an app event in `Packages/Wire/event-catalogue.json` (not a forge server's: the machine finds it in its own store). Its details are in the catalogue's own style, snake_case and all text: `repo` (owner/name), `workflow`, `job`, `branch`, `first_slow_run` and `last_fast_run` (`ci-run` refs) with their `_url`, `median_before`, `median_after` and `score`; `repo`, `workflow` and `job` narrow a wait. Two machines send it once on the bus: its envelope id is `<first_slow_run>@ci.slowed/<workflow>/<job>` on both. A change whose first slow run is more than 7 days old is not sent, so the first backfill sends no old change. `builds/history` says `slowedSent` on each change sent, for board 2's label (#5178).
 
 ## Sizes
 

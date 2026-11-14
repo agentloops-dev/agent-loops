@@ -550,6 +550,41 @@ type AgentWorktree struct {
 	Folder URL `json:"folder"`
 }
 
+// One change in Agents between two versions (#5273): a commit of agentloops-dev/agent-loops, its PR's number when its squash title says one, its title (the first line of its message) and when it was made.
+type AgentsChange struct {
+	Number *int64 `json:"number,omitzero"`
+
+	Title string `json:"title"`
+
+	Sha string `json:"sha"`
+
+	Date *Date `json:"date,omitzero"`
+}
+
+// The changes in Agents from version base to version head (#5273), from GitHub's compare of their commits: ahead is how many commits head has that base has not, behind how many base has that head has not (a machine behind another). changes are head's new commits, newest first, at most the request's limit (all, up to 1,000, with none); complete is false when there were more.
+type AgentsChanges struct {
+	Base string `json:"base"`
+
+	Head string `json:"head"`
+
+	Ahead int64 `json:"ahead"`
+
+	Behind int64 `json:"behind"`
+
+	Changes []AgentsChange `json:"changes"`
+
+	Complete bool `json:"complete"`
+}
+
+// machines/agentsChanges (#5273): the changes from one Agents version to another, as a machine says them (0.18.0, 0.18.1-dev.544+g8162a5a06). limit bounds the changes; with none, all, up to 1,000.
+type AgentsChangesRequest struct {
+	Base string `json:"base"`
+
+	Head string `json:"head"`
+
+	Limit *int64 `json:"limit,omitzero"`
+}
+
 // What agents/export made (#1001): a .tar.gz in the backup format, read in parts with agents/exportRead. `name` is a file name to save it as.
 type AgentsExport struct {
 	File SendFile `json:"file"`
@@ -1059,6 +1094,58 @@ const AutoFieldModel AutoField = "model"
 const AutoFieldPermission AutoField = "permission"
 const AutoFieldPermissionRequests AutoField = "permissionRequests"
 const AutoFieldSandbox AutoField = "sandbox"
+
+// Why no machine fits: none has the project, none has the runtime installed and signed in, or every machine with the project is offline.
+type AutoMachineNone string
+
+const AutoMachineNoneNoFolder AutoMachineNone = "noFolder"
+const AutoMachineNoneNoRuntime AutoMachineNone = "noRuntime"
+const AutoMachineNoneOffline AutoMachineNone = "offline"
+
+// The answer of sessions/previewStart (#5374): the pick, or why none fits. The control plane makes the reason line; a client draws what it is given. The pick at start may differ if the state moved.
+type AutoMachinePick struct {
+	// The machine chosen; absent when none fits.
+	Machine *MachineRef `json:"machine,omitzero"`
+
+	MachineName *string `json:"machineName,omitzero"`
+
+	// The tier the pick came from.
+	Tier *CapacityLevel `json:"tier,omitzero"`
+
+	Reason *AutoMachineReason `json:"reason,omitzero"`
+
+	// Its 5-minute load per core, when known.
+	LoadPerCore *float64 `json:"loadPerCore,omitzero"`
+
+	// The commit the session's fresh worktree starts from. Set by the host at start; absent in a preview.
+	Commit *string `json:"commit,omitzero"`
+
+	// The one-line reason, "Auto chose Mac mini: you last started here.", or the none-fits sentence.
+	Text *string `json:"text,omitzero"`
+
+	// Set when no machine fits.
+	None *AutoMachineNone `json:"none,omitzero"`
+
+	// With none offline: the names of the offline machines that have the project.
+	Offline []string `json:"offline,omitzero"`
+
+	// True when the project has one machine only: no Auto row and no line, the machine is just shown.
+	Single *bool `json:"single,omitzero"`
+}
+
+// Why Auto chose: the person last started this project there, or it was the least loaded by 5-minute load per core.
+type AutoMachineReason string
+
+const AutoMachineReasonLastUsed AutoMachineReason = "lastUsed"
+const AutoMachineReasonLeastLoaded AutoMachineReason = "leastLoaded"
+
+// sessions/previewStart and a start with machine auto (#5374, specs/5373-auto-machine): which machine Auto would pick for a project and a runtime.
+type AutoMachineRequest struct {
+	// The project id.
+	Project string `json:"project"`
+
+	RuntimeID string `json:"runtimeID"`
+}
 
 // One cell of Settings ▸ Agent Runtimes ▸ Auto ▸ Mappings (#2658): what a level is on one runtime. native is absent when the runtime cannot honour the level.
 type AutoMapping struct {
@@ -1775,6 +1862,9 @@ type BuildsChange struct {
 
 	Runner *string `json:"runner,omitzero"`
 
+	// When this machine sent ci.slowed for the change (#5200); absent when it sent none (a speed-up, or a change found too long after its first slow run).
+	SlowedSent *Date `json:"slowedSent,omitzero"`
+
 	Between []BuildsBetween `json:"between"`
 
 	Points []BuildsPoint `json:"points"`
@@ -1804,7 +1894,7 @@ type BuildsFigures struct {
 	Turn BuildsStat `json:"turn"`
 }
 
-// builds/history's answer (#5177): the filters' choices in the range (workflows, jobs, branches), the range's figures and each day's, the change points found in the range (on the default branch, whatever the branch filter), and the job that waited longest for a runner. readAt is when this machine last read the forge's runs (Last update); filledFrom is the oldest day the backfill reached, absent before it starts. reader is none when Agents does not read CI timings from the repository's forge.
+// builds/history's answer (#5177): the filters' choices in the range (workflows, jobs, branches), the range's figures and each day's, the change points found in the range (on the default branch, whatever the branch filter), and the job that waited longest for a runner. readAt is when this machine last read the forge's runs (Last update); filledFrom is the oldest day the backfill reached, absent before it starts. reader is github, gitlab, azuredevops, bitbucket or forgejo, or none when Agents does not read CI timings from the repository's forge.
 type BuildsHistory struct {
 	Repo string `json:"repo"`
 
@@ -1831,7 +1921,7 @@ type BuildsHistory struct {
 	FilledFrom *Date `json:"filledFrom,omitzero"`
 }
 
-// builds/history (#5177): a repository (github:alexec/agents), runs made in [from, to), and the filters: a workflow's file name (ci.yml), a job, and the default branch (no branch and no pullRequests), the pull requests' runs, or one branch. timeZone (an IANA name) says the days; UTC when not said.
+// builds/history (#5177): a repository (github:alexec/agents), runs made in [from, to), and the filters: a workflow's file name (ci.yml), a job, and the default branch (no branch and no pullRequests), the pull requests' runs, or one branch. timeZone (an IANA name) says the days; UTC when not said. scope is for builds/historyAll (#5232): whose machines' copies the control plane reads, as reports/value's; a machine leaves it out.
 type BuildsHistoryRequest struct {
 	Repo string `json:"repo"`
 
@@ -1848,6 +1938,8 @@ type BuildsHistoryRequest struct {
 	Branch *string `json:"branch,omitzero"`
 
 	PullRequests *bool `json:"pullRequests,omitzero"`
+
+	Scope *ReportScope `json:"scope,omitzero"`
 }
 
 // One job of a CI run attempt (#5177): made (waiting for a runner from then), started and ended, in seconds from the run's made time; runner is its first runner label. A forge with no steps has none.
@@ -1945,13 +2037,15 @@ type BuildsRunRef struct {
 	Conclusion *string `json:"conclusion,omitzero"`
 }
 
-// builds/run (#5177): a repository and a run's ci-run ref; its first attempt when attempt is not said.
+// builds/run (#5177): a repository and a run's ci-run ref; its first attempt when attempt is not said. scope is for builds/runAll (#5232), as builds/historyAll's.
 type BuildsRunRequest struct {
 	Repo string `json:"repo"`
 
 	Ref string `json:"ref"`
 
 	Attempt *int64 `json:"attempt,omitzero"`
+
+	Scope *ReportScope `json:"scope,omitzero"`
 }
 
 // The job of a range's passed runs that waited longest for a runner (#5177, board 3 note 4): its run, its name, the wait and its run time, in seconds.
@@ -1985,6 +2079,33 @@ type BuildsStep struct {
 	Ended float64 `json:"ended"`
 
 	Conclusion *string `json:"conclusion,omitzero"`
+}
+
+// builds/sync (#5232): what changed in one repository's build timings on a machine since its last send, for the control plane's copy. Each day is a UTC day the runs were made (YYYY-MM-DD) and all its runs as the machine has them now, so a day with no runs is gone; reset starts the copy of the repository again from this send, the first of a whole send. defaultBranch, readAt and filledFrom are as builds/history says them. Only refs, times, attempts, conclusions, runner labels and the names of workflows, jobs and steps: no titles, no logs (principle 7).
+type BuildsSync struct {
+	Repo string `json:"repo"`
+
+	Reset *bool `json:"reset,omitzero"`
+
+	DefaultBranch *string `json:"defaultBranch,omitzero"`
+
+	ReadAt *Date `json:"readAt,omitzero"`
+
+	FilledFrom *Date `json:"filledFrom,omitzero"`
+
+	Days []BuildsSyncDay `json:"days"`
+}
+
+// builds/sync's answer (#5232). full: the control plane has no copy of this repository from this machine (a new or moved control plane), so the machine sends all its days again, the first with reset.
+type BuildsSyncAnswer struct {
+	Full *bool `json:"full,omitzero"`
+}
+
+// One UTC day of a repository's build timings (#5232): its date (YYYY-MM-DD) and every run attempt made on it.
+type BuildsSyncDay struct {
+	Day string `json:"day"`
+
+	Runs []BuildsRun `json:"runs"`
 }
 
 // bus/deliver (#4729): one event on the bus that matched subscriptions of this machine, and which ones. Best effort: usually once, sometimes never, rarely twice.
@@ -2158,6 +2279,13 @@ type CapacityLevel string
 const CapacityLevelOk CapacityLevel = "ok"
 const CapacityLevelNear CapacityLevel = "near"
 const CapacityLevelFull CapacityLevel = "full"
+
+// machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per core, on connect and when either moves enough to matter.
+type CapacityReport struct {
+	Level CapacityLevel `json:"level"`
+
+	LoadPerCore5 *float64 `json:"loadPerCore5,omitzero"`
+}
 
 // capacity/state and capacity/changed (#4748): the machine's level, pushed when it moves, so a machine's row says it with no page open.
 type CapacityState struct {
@@ -3574,6 +3702,18 @@ type ControlMachine struct {
 
 	// The user who owns the machine (#994).
 	Owner *string `json:"owner,omitzero"`
+
+	// The machine's capacity level as it last pushed it (#4578, #5374). Absent from a host older than #4578 or before its first look: it counts as ok, last among the ok ones. It can be stale by the host's look interval (15 s) and the push; capacityAt says when it was heard.
+	Capacity *CapacityLevel `json:"capacity,omitzero"`
+
+	// Its 5-minute load per core when it last pushed (#5374).
+	LoadPerCore5 *float64 `json:"loadPerCore5,omitzero"`
+
+	// When the control plane last heard its capacity. A figure older than 2 minutes is never trusted by Auto (specs/5373-auto-machine).
+	CapacityAt *Date `json:"capacityAt,omitzero"`
+
+	// How its set-up stands, while it sets itself up and after (#5355). Absent for a machine that was not set up by the control plane.
+	Setup *MachineSetup `json:"setup,omitzero"`
 }
 
 // control/moved: where the control plane is now (T085).
@@ -3835,6 +3975,292 @@ type DeliveredRoute struct {
 	SealVersion int64 `json:"sealVersion"`
 
 	Waiting *bool `json:"waiting,omitzero"`
+}
+
+// One try to put a version into a target (#5262, spec 5239): GitHub's Deployment, GitLab's deployment, Argo CD's sync, Kargo's Promotion, Octopus's Deployment. system and id are the system that said it and its id there, as a re-run of the same job is the same deploy; ref is its lineage ref, <system>:deploy:<topic>#<id>, when the source makes one. state is the model's, rawState the system's own word (GitHub's in_progress, Kargo's Errored). started and finished are when it went running and when it ended. rollback is set when the system says it is one (GitOps Promoter's RestoreActiveCommit, helm rollback); otherwise a rollback is computed. share is the per cent of the target's traffic the version takes when it is less than 100 (a canary, a Cloud Run split). observed is true for a deploy made from a change in what the target reports it runs, not from a system's record.
+type Deploy struct {
+	System string `json:"system"`
+
+	ID string `json:"id"`
+
+	Ref *string `json:"ref,omitzero"`
+
+	Target DeployTarget `json:"target"`
+
+	Version DeployVersion `json:"version"`
+
+	State DeployState `json:"state"`
+
+	RawState string `json:"rawState"`
+
+	Started *Date `json:"started,omitzero"`
+
+	Finished *Date `json:"finished,omitzero"`
+
+	Rollback *bool `json:"rollback,omitzero"`
+
+	Share *float64 `json:"share,omitzero"`
+
+	Observed *bool `json:"observed,omitzero"`
+
+	URL *string `json:"url,omitzero"`
+
+	Checks []DeployCheck `json:"checks,omitzero"`
+}
+
+// One immutable thing that a build made or a deploy uses (#5262): a commit, an image digest, a Helm chart version, a package version, a mobile build, a hydrated commit. kind is an open string (commit, image, chart, package, build, hydrated-commit…); id is its digest or version in system (github, oci, testflight…); ref is its lineage ref, <system>:artifact:<topic>#<id>, when the source makes one. builtFrom are the refs of the changes it was built from (a commit's, a PR's); with none, the commit itself is the change.
+type DeployArtifact struct {
+	Kind string `json:"kind"`
+
+	System string `json:"system"`
+
+	ID string `json:"id"`
+
+	Ref *string `json:"ref,omitzero"`
+
+	Name *string `json:"name,omitzero"`
+
+	BuiltFrom []string `json:"builtFrom,omitzero"`
+}
+
+// A condition with a state on a deploy or a target (#5262): an approval, a test, a health status, a soak time, a window, an App Review. kind is an open string (approval, test, health, soak, window, review…). when is before (it can hold the deploy) or after (it says how what runs there is). state is the model's, rawState the system's own word. Checks are details and events, not lineage nodes.
+type DeployCheck struct {
+	Kind string `json:"kind"`
+
+	System string `json:"system"`
+
+	ID *string `json:"id,omitzero"`
+
+	Name *string `json:"name,omitzero"`
+
+	When DeployCheckWhen `json:"when"`
+
+	State DeployState `json:"state"`
+
+	RawState string `json:"rawState"`
+
+	URL *string `json:"url,omitzero"`
+}
+
+// check.changed's details (#5262): the check, and what it is on: the deploy's ref when it is a deploy's check, and the target either way. component, environment and tier are the target's, flat, so a wait or a trigger can narrow by them.
+type DeployCheckEvent struct {
+	Check DeployCheck `json:"check"`
+
+	Deploy *string `json:"deploy,omitzero"`
+
+	Target DeployTarget `json:"target"`
+
+	Component string `json:"component"`
+
+	Environment string `json:"environment"`
+
+	Tier EnvironmentTier `json:"tier"`
+}
+
+// Whether a check is before a deploy (it can hold it) or after it (on what runs there).
+type DeployCheckWhen string
+
+const DeployCheckWhenBefore DeployCheckWhen = "before"
+const DeployCheckWhenAfter DeployCheckWhen = "after"
+
+// What runs and has versions (#5262): a service, an app, a site. kind is an open string (service, app, site…); id is its id in system; with none, it is the repo. repo is the forge repo it is built from, owner/name, when there is one.
+type DeployComponent struct {
+	Kind *string `json:"kind,omitzero"`
+
+	System string `json:"system"`
+
+	ID string `json:"id"`
+
+	Name *string `json:"name,omitzero"`
+
+	Repo *string `json:"repo,omitzero"`
+}
+
+// One environment a deploy is part-of, in a DeployDeliveryFact (#5496): its name, its lineage ref and its tier.
+type DeployDeliveryEnvironment struct {
+	Name string `json:"name"`
+
+	Ref string `json:"ref"`
+
+	Tier EnvironmentTier `json:"tier"`
+}
+
+// One deploy a machine keeps (lineage-deploys.json, #5241), as deploys/delivery's figures need it (#5496): its lineage ref, its component (owner/name), its state, when it ended (its finish, else its start), whether a succeeded one is a rollback, the merge times of the PRs it brings (when the forge said them), the times health signals were seen in it, and its environments. Only refs, names, states and times (principle 7).
+type DeployDeliveryFact struct {
+	Ref string `json:"ref"`
+
+	Component string `json:"component"`
+
+	State DeployState `json:"state"`
+
+	At Date `json:"at"`
+
+	Rollback *bool `json:"rollback,omitzero"`
+
+	Merges []Date `json:"merges,omitzero"`
+
+	Health []Date `json:"health,omitzero"`
+
+	Environments []DeployDeliveryEnvironment `json:"environments"`
+}
+
+// One target's DORA figures in deploys/delivery (#5245, spec 5239-deploy-model): a component (the repo, by default) in one environment, from the deploys this machine keeps. ended is the deploys that succeeded or failed in the range (a cancelled one is neither), failed those that failed, rollbacks the succeeded ones that put an older release back. deploymentFrequency is the succeeded deploys a week; leadTime is a PR's merge to the first succeeded deploy that brings it, the median and p90; changeFailureRate is the failed deploys and rollbacks over the ended ones, 0 to 1; recoveryTime is a failed deploy's end, or a health signal seen in a deploy, to the next succeeded deploy, the median. Each has a series of its weeks and DORA 2024's band, as Planning's Delivery row has them.
+type DeployDeliveryTarget struct {
+	// The component's id: owner/name for a repo.
+	Component string `json:"component"`
+
+	// The environment's name: github-releases, app-store.
+	Environment string `json:"environment"`
+
+	// The environment's lineage ref, github:environment:<owner>/<repo>#<name>.
+	EnvironmentRef string `json:"environmentRef"`
+
+	Tier EnvironmentTier `json:"tier"`
+
+	Ended int64 `json:"ended"`
+
+	Failed int64 `json:"failed"`
+
+	Rollbacks int64 `json:"rollbacks"`
+
+	DeploymentFrequency LineageDeliveryFigure `json:"deploymentFrequency"`
+
+	LeadTime LineageDeliveryFigure `json:"leadTime"`
+
+	ChangeFailureRate LineageDeliveryFigure `json:"changeFailureRate"`
+
+	RecoveryTime LineageDeliveryFigure `json:"recoveryTime"`
+}
+
+// A place where components run (#5262), shared by many components and repos: GitHub's and GitLab's environments, Argo CD's destination, Kargo's Stage's place, TestFlight. name is its name in system; tier is GitLab's five, other when a system does not say. ephemeral is true for a preview for each PR (Vercel's previews, GitLab's review apps).
+type DeployEnvironment struct {
+	System string `json:"system"`
+
+	Name string `json:"name"`
+
+	Tier EnvironmentTier `json:"tier"`
+
+	Ephemeral *bool `json:"ephemeral,omitzero"`
+
+	URL *string `json:"url,omitzero"`
+}
+
+// deploy.started, deploy.succeeded and deploy.failed's details (#5262), and deploy.waiting's beside its own: the deploy, and its target's component, environment and tier, flat, so a wait or a trigger can narrow by them (tier: production). outcome is deploy.failed's: failed or cancelled.
+type DeployEvent struct {
+	Deploy Deploy `json:"deploy"`
+
+	Component string `json:"component"`
+
+	Environment string `json:"environment"`
+
+	Tier EnvironmentTier `json:"tier"`
+
+	Outcome *DeployOutcome `json:"outcome,omitzero"`
+}
+
+// A deploy as deploys/targets says it on its target (#5270): the deploy; release is the lineage ref of its release when a v* tag names its version, for the release's page. A live one has since (the first deploy of its newest unbroken run there) and share (its per cent of the traffic, 100 with no split).
+type DeployOnTarget struct {
+	Deploy Deploy `json:"deploy"`
+
+	Release *string `json:"release,omitzero"`
+
+	Since *Date `json:"since,omitzero"`
+
+	Share *float64 `json:"share,omitzero"`
+}
+
+// How a deploy that did not succeed ended, as deploy.failed says it.
+type DeployOutcome string
+
+const DeployOutcomeFailed DeployOutcome = "failed"
+const DeployOutcomeCancelled DeployOutcome = "cancelled"
+
+// A deploy's or a check's state (#5262). Every system's states map to these five, and its own word is kept beside it as rawState: GitHub's queued and in_progress are running, success is succeeded, failure and error are failed. A deploy that a newer one replaced, or a rollback, is computed, not a state.
+type DeployState string
+
+const DeployStateWaiting DeployState = "waiting"
+const DeployStateRunning DeployState = "running"
+const DeployStateSucceeded DeployState = "succeeded"
+const DeployStateFailed DeployState = "failed"
+const DeployStateCancelled DeployState = "cancelled"
+
+// One component in one environment (#5262), where a version runs: Argo CD's Application, Kargo's Stage, a Cloud Run service in a region. labels tell instances apart (region, cluster, namespace, tenant, machine); with none, it is component × environment. system and id are set when the system has a target of its own; ref is its lineage ref, <system>:target:<topic>#<component>@<environment>.
+type DeployTarget struct {
+	Component DeployComponent `json:"component"`
+
+	Environment DeployEnvironment `json:"environment"`
+
+	Labels map[string]string `json:"labels,omitzero"`
+
+	System *string `json:"system,omitzero"`
+
+	ID *string `json:"id,omitzero"`
+
+	Ref *string `json:"ref,omitzero"`
+}
+
+// One target in deploys/targets (#5270): its component, its environment (the environment node's name, with its tier) and its labels; live are the versions that run there now, the most traffic first; next are the deploys that wait or run to go there, oldest first (#5246).
+type DeployTargetNow struct {
+	Target DeployTarget `json:"target"`
+
+	Live []DeployOnTarget `json:"live"`
+
+	Next []DeployOnTarget `json:"next"`
+}
+
+// deploys/targets (#5270, Work ▸ Deploys): every target this host keeps deploys of, with its live and next versions, as lineage computes them (#5246). at is when it was read.
+type DeployTargets struct {
+	Targets []DeployTargetNow `json:"targets"`
+
+	At Date `json:"at"`
+}
+
+// deploys/targets (#5270): no parameters.
+type DeployTargetsRequest struct {
+}
+
+// The set of artifacts that go out together (#5262); one artifact is the simple case. name is set for a Release (v0.18.0), a Kargo alias, an Octopus release; system and id are set when the version is a thing of its own there (Kargo's Freight, Octopus's Release). ref is a Release's ref when it has a name, else its one artifact's.
+type DeployVersion struct {
+	Artifacts []DeployArtifact `json:"artifacts"`
+
+	Name *string `json:"name,omitzero"`
+
+	System *string `json:"system,omitzero"`
+
+	ID *string `json:"id,omitzero"`
+
+	Ref *string `json:"ref,omitzero"`
+}
+
+// deploys/delivery's answer (#5245): the targets with a deploy that ended in [since, at], production first, then by tier and the most deploys. resolving is true while what some deploys bring is still being asked of the forge, so lead time may grow on the next read. deploys is how many deploys this machine keeps, of every target and age, so a page can pick the machine that knows most. From deploys/deliveryAll (#5496), deploys is how many deploys the copies of the machines in the scope keep, each once.
+type DeploysDelivery struct {
+	Since Date `json:"since"`
+
+	At Date `json:"at"`
+
+	WindowDays int64 `json:"windowDays"`
+
+	Deploys int64 `json:"deploys"`
+
+	Targets []DeployDeliveryTarget `json:"targets"`
+
+	Resolving *bool `json:"resolving,omitzero"`
+}
+
+// deploys/delivery (#5245): the DORA figures of each target this machine keeps deploys of, over the range (day is the last 7 days, as week), of one tier or of every tier when none is said. scope is for deploys/deliveryAll (#5496): whose machines' copies the control plane reads, as reports/value's; a machine leaves it out.
+type DeploysDeliveryRequest struct {
+	Range ReportRange `json:"range"`
+
+	Tier *EnvironmentTier `json:"tier,omitzero"`
+
+	Scope *ReportScope `json:"scope,omitzero"`
+}
+
+// deploys/sync (#5496): every deploy a machine keeps, at most 1,000, in place of the control plane's copy of that machine's deploys. resolving is true while what some deploys bring is still being asked of the forge.
+type DeploysSync struct {
+	Deploys []DeployDeliveryFact `json:"deploys"`
+
+	Resolving *bool `json:"resolving,omitzero"`
 }
 
 // The live tile's latest look at the Mac's screen while an agent holds the screen lease (#3004, US4, FR-011): a downscaled JPEG of the whole screen, base64, or, while the screen is locked, locked and no image (FR-012). Sent only to the clients showing that agent, never recorded, never replayed (FR-016).
@@ -4586,6 +5012,34 @@ type EntryNotification struct {
 	Oversized *int64 `json:"oversized,omitzero"`
 }
 
+// An environment's tier, as GitLab's five (#5262). A tier this build does not know reads as `other`.
+type EnvironmentTier string
+
+const EnvironmentTierProduction EnvironmentTier = "production"
+const EnvironmentTierStaging EnvironmentTier = "staging"
+const EnvironmentTierTesting EnvironmentTier = "testing"
+const EnvironmentTierDevelopment EnvironmentTier = "development"
+const EnvironmentTierOther EnvironmentTier = "other"
+
+// UnmarshalJSON reads a value this build does not know as "other".
+func (v *EnvironmentTier) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	switch EnvironmentTier(s) {
+	case EnvironmentTierProduction,
+		EnvironmentTierStaging,
+		EnvironmentTierTesting,
+		EnvironmentTierDevelopment,
+		EnvironmentTierOther:
+		*v = EnvironmentTier(s)
+	default:
+		*v = EnvironmentTierOther
+	}
+	return nil
+}
+
 type Event struct {
 	Position int64 `json:"position"`
 
@@ -5094,6 +5548,9 @@ type FolderMCPServer struct {
 	SignIn *MCPSignInState `json:"signIn,omitzero"`
 
 	Views *string `json:"views,omitzero"`
+
+	// Where this machine's approval came from when it is another machine's of the same person (#5462).
+	ApprovedFrom *string `json:"approvedFrom,omitzero"`
 }
 
 type FolderPins struct {
@@ -6278,6 +6735,28 @@ type KeptDelivered struct {
 
 type KeptList struct {
 	Kept []KeptRequest `json:"kept"`
+
+	// The cursor of the next page; absent on the last (#5283).
+	Next *string `json:"next,omitzero"`
+
+	// For each kind, how many kept requests match the other filters (#5283).
+	Counts *KeptListCounts `json:"counts,omitzero"`
+}
+
+// For each kind, how many kept requests match the other filters (#5283).
+type KeptListCounts struct {
+	Kind map[string]int64 `json:"kind"`
+}
+
+// machines/listKept (#5283): optional. `query` matches the text, kind or machine; `kind` one kind; `limit` is 1 to 200 (default 200); `cursor` is the previous answer's `next`.
+type KeptListQuery struct {
+	Query *string `json:"query,omitzero"`
+
+	Kind *string `json:"kind,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
+
+	Cursor *string `json:"cursor,omitzero"`
 }
 
 type KeptRequest struct {
@@ -7030,6 +7509,9 @@ type LineageResolved struct {
 
 	// When the forge says the issue or PR was made (#4552): a bug's filing, for the change failure rate.
 	CreatedAt *Date `json:"createdAt,omitzero"`
+
+	// A deploy node's last event (#5243): its target (component, environment and tier), version, times and url, so a Work page's Deployed and Live in rows say them. Only on a deploy node.
+	Deploy *Deploy `json:"deploy,omitzero"`
 }
 
 // A runtime of lineage/figures' sessions, and how many of them it ran (#4427).
@@ -8175,6 +8657,47 @@ type MachineAccountsCall struct {
 	Remove []AccountKey `json:"remove,omitzero"`
 }
 
+// machines/agents (#5273, spec 5239 board 6): a machine page's Agents section. version is what the machine runs, since the first machine/hello at it; previous is the version before. changes are the changes since previous, the newest few (machines/agentsChanges gives all); absent when there is no previous or GitHub could not say, and changesError says why in the second case. history is the versions it ran, newest first, at most 20. others are the person's other machines, each with its version.
+type MachineAgents struct {
+	Host MachineRef `json:"host"`
+
+	Version string `json:"version"`
+
+	Since *Date `json:"since,omitzero"`
+
+	Previous *string `json:"previous,omitzero"`
+
+	Changes *AgentsChanges `json:"changes,omitzero"`
+
+	ChangesError *string `json:"changesError,omitzero"`
+
+	History []MachineAgentsVersion `json:"history"`
+
+	Others []MachineAgentsOther `json:"others"`
+}
+
+// Another of the person's machines on a machine's page (#5273): its version, since when, and how many changes it is ahead of and behind the page's machine. ahead and behind are absent when GitHub could not say (a version with no commit, GitHub not answering).
+type MachineAgentsOther struct {
+	Host MachineRef `json:"host"`
+
+	Name string `json:"name"`
+
+	Version string `json:"version"`
+
+	Since *Date `json:"since,omitzero"`
+
+	Ahead *int64 `json:"ahead,omitzero"`
+
+	Behind *int64 `json:"behind,omitzero"`
+}
+
+// One version a machine ran (#5273) and when it came: the first machine/hello at it.
+type MachineAgentsVersion struct {
+	Version string `json:"version"`
+
+	Since *Date `json:"since,omitzero"`
+}
+
 // machines/announce, on an enrolment connection.
 type MachineAnnounce struct {
 	PublicKey Data `json:"publicKey"`
@@ -8223,6 +8746,19 @@ type MachineClients struct {
 
 	// The user the host belongs to (#994). With it, the host lets in only a window whose person is that user (FR-020); without it (an older control plane), every window listed.
 	User *string `json:"user,omitzero"`
+}
+
+// For each filter, how many machines have each of its values, among those every other filter lets through (so a chip says what picking it would show). A machine with no value for a filter is not counted in it.
+type MachineCounts struct {
+	State map[string]int64 `json:"state"`
+
+	Labels map[string]int64 `json:"labels"`
+
+	Provider map[string]int64 `json:"provider"`
+
+	Os map[string]int64 `json:"os"`
+
+	Version map[string]int64 `json:"version"`
 }
 
 // machines/startEnroll (#1761): with as, a bot's machine code, an admin's only. Without, the caller's own, as before.
@@ -8407,6 +8943,38 @@ type MachineLink struct {
 	Trust *string `json:"trust,omitzero"`
 }
 
+// machines/list (#5283) when it was given a query: a page of machines, the cursor of the next page (absent on the last), how many match in all, and the counts for each filter's values.
+type MachineList struct {
+	Machines []ControlMachine `json:"machines"`
+
+	Next *string `json:"next,omitzero"`
+
+	Total int64 `json:"total"`
+
+	Counts MachineCounts `json:"counts"`
+}
+
+// machines/list (#5283): what to show, as the Machines page asks for it. Every field is optional; with none, the answer is the plain array of up to 200 machines, as before. `query` matches a name, id or label, any case. `state`, `provider`, `os` and `version` each match one value; `labels` matches a machine that has every one. `sort` is name (the default), state, lastSeen (latest first) or version. `limit` is 1 to 200 (default 200); `cursor` is the previous answer's `next`.
+type MachineListQuery struct {
+	Query *string `json:"query,omitzero"`
+
+	State *string `json:"state,omitzero"`
+
+	Labels []string `json:"labels,omitzero"`
+
+	Provider *string `json:"provider,omitzero"`
+
+	Os *string `json:"os,omitzero"`
+
+	Version *string `json:"version,omitzero"`
+
+	Sort *string `json:"sort,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
+
+	Cursor *string `json:"cursor,omitzero"`
+}
+
 // machines/setMachineOptions. stopWhenIdleMinutes 0 turns it off.
 type MachineOptions struct {
 	Host MachineRef `json:"host"`
@@ -8495,6 +9063,67 @@ type MachineSessionStart struct {
 
 	Start StartRequest `json:"start"`
 }
+
+// How a machine's set-up stands (#5355, epic #5353): the eight steps in order, and when it began and was ready. Steps 5 and 6 may run together.
+type MachineSetup struct {
+	Steps []MachineSetupStep `json:"steps"`
+
+	StartedAt Date `json:"startedAt"`
+
+	ReadyAt *Date `json:"readyAt,omitzero"`
+}
+
+// machine/setupStep: a step of the installer on the machine (agents-host install --join), as it starts, goes on and ends (#5355).
+type MachineSetupReport struct {
+	Step MachineSetupStepID `json:"step"`
+
+	State MachineSetupState `json:"state"`
+
+	Detail *string `json:"detail,omitzero"`
+
+	Error *string `json:"error,omitzero"`
+
+	FromPool *bool `json:"fromPool,omitzero"`
+}
+
+type MachineSetupState string
+
+const MachineSetupStateWaiting MachineSetupState = "waiting"
+const MachineSetupStateRunning MachineSetupState = "running"
+const MachineSetupStateNeedsYou MachineSetupState = "needs-you"
+const MachineSetupStateDone MachineSetupState = "done"
+const MachineSetupStateFailed MachineSetupState = "failed"
+
+// One step: detail is one line of what it is doing now or did; error is why it failed, in the words of the provider or the machine; fromPool says a warm pool did it before the machine was asked for; slower is true for a running step over 3 times its median (at least 2 minutes).
+type MachineSetupStep struct {
+	ID MachineSetupStepID `json:"id"`
+
+	State MachineSetupState `json:"state"`
+
+	StartedAt *Date `json:"startedAt,omitzero"`
+
+	EndedAt *Date `json:"endedAt,omitzero"`
+
+	Detail *string `json:"detail,omitzero"`
+
+	Error *string `json:"error,omitzero"`
+
+	FromPool *bool `json:"fromPool,omitzero"`
+
+	Slower *bool `json:"slower,omitzero"`
+}
+
+// The eight steps, in order: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session.
+type MachineSetupStepID string
+
+const MachineSetupStepIDCreate MachineSetupStepID = "create"
+const MachineSetupStepIDJoin MachineSetupStepID = "join"
+const MachineSetupStepIDInstall MachineSetupStepID = "install"
+const MachineSetupStepIDCompare MachineSetupStepID = "compare"
+const MachineSetupStepIDRuntimes MachineSetupStepID = "runtimes"
+const MachineSetupStepIDProjects MachineSetupStepID = "projects"
+const MachineSetupStepIDSignIn MachineSetupStepID = "signIn"
+const MachineSetupStepIDSmoke MachineSetupStepID = "smoke"
 
 // machine/status on channel 0 (#691 US4): each agent working or waiting on a person, and the next scheduled workflow.
 type MachineStatus struct {
@@ -8608,6 +9237,21 @@ type MachineUserSettings struct {
 
 	// The user's secrets that are not sealed to this machine yet (#4167): what list_secrets says of them. Never a value.
 	Waiting []UserSecretAbout `json:"waiting,omitzero"`
+}
+
+// machines/versions (#5272, spec 5239, "Alex's question"): the Agents versions a machine ran, from its machine/hello. version is the one it said last; firstSeen is the first time the control plane heard it at that version, and seen the last. deploys are the changes of version the control plane saw, newest first, at most 20: each an observed deploy (observed: true, state succeeded) of the component agents to the environment machines, its target labelled machine=<host>, from the last time the old version was seen (started) to the first machine/hello at the new one (finished). Each version's artifact is its commit: the tag vX.Y.Z for X.Y.Z, the sha after +g for X.Y.Z-dev.N+g<sha>. previous is the version it ran before version, when the control plane saw the change.
+type MachineVersions struct {
+	Host MachineRef `json:"host"`
+
+	Version string `json:"version"`
+
+	FirstSeen *Date `json:"firstSeen,omitzero"`
+
+	Seen *Date `json:"seen,omitzero"`
+
+	Previous *string `json:"previous,omitzero"`
+
+	Deploys []Deploy `json:"deploys"`
 }
 
 type MachineWorkspace struct {
@@ -9971,6 +10615,39 @@ type PermissionRequest struct {
 	AskedAt Date `json:"askedAt"`
 
 	Subagent *string `json:"subagent,omitzero"`
+}
+
+// A person's approval of one file's content (#5462, epic #5281), signed by the machine that approved it. kind is "workflow" (a workflow file with the skills it names) or "connector" (one entry of .agents/mcp.json); digest is the hash the approving machine saw, so a changed file has another digest and is not covered. sig is ECDSA P-256 (r then s) with SHA-256 over "agents-approval/1\n", the person, kind, digest, host and at, each ended by a newline but the last (at in decimal). A machine takes one only when the machine lock it pinned names key as one of the person's machines. The control plane keeps and sends them, and signs nothing.
+type PersonApproval struct {
+	Kind string `json:"kind"`
+
+	Digest string `json:"digest"`
+
+	// What the file is called, to say where an approval came from.
+	Name *string `json:"name,omitzero"`
+
+	// The approving machine's id.
+	Host string `json:"host"`
+
+	// The approving machine's name when it approved.
+	HostName *string `json:"hostName,omitzero"`
+
+	// Seconds since 1970.
+	At int64 `json:"at"`
+
+	Key Data `json:"key"`
+
+	Sig Data `json:"sig"`
+}
+
+// approvals/list (#5462): every approval kept for the caller's person, at most 2000.
+type PersonApprovals struct {
+	Approvals []PersonApproval `json:"approvals"`
+}
+
+// approvals/put (#5462): approvals a machine signed, at most 50 at a time. The control plane keeps the first of each kind and digest.
+type PersonApprovalsPut struct {
+	Approvals []PersonApproval `json:"approvals"`
 }
 
 type PersonClient struct {
@@ -11539,6 +12216,8 @@ type QueuedStart struct {
 
 	Model *string `json:"model,omitzero"`
 
+	Effort *string `json:"effort,omitzero"`
+
 	Worktree *WorktreeChoice `json:"worktree,omitzero"`
 
 	Labels []string `json:"labels"`
@@ -11912,7 +12591,7 @@ type ReportNodesQuery struct {
 
 	Limit *int64 `json:"limit,omitzero"`
 
-	// Me, a group or the organisation (#1804).
+	// Me or the organisation (#1804).
 	Scope *ReportScope `json:"scope,omitzero"`
 }
 
@@ -11935,15 +12614,9 @@ const ReportPageAdoption ReportPage = "adoption"
 const ReportPageWorkflows ReportPage = "workflows"
 const ReportPageValue ReportPage = "value"
 
-// Who sees what in Reports (#1804), set by an admin in Console ▸ Report Policy.
+// The organisation's budget in Reports (#1804), set by an admin in Console ▸ Report Policy.
 type ReportPolicy struct {
-	// A group lead sees the group's totals only, with no person or machine named. An admin always sees each person.
-	TotalsOnly bool `json:"totalsOnly"`
-
-	// Each group's leads, by group id: users who see the group's reports.
-	Leads map[string][]string `json:"leads"`
-
-	// A budget for a calendar month in US dollars, by group id, or "org" for the organisation.
+	// A budget for a calendar month in US dollars, by "org" for the organisation.
 	BudgetsUSD map[string]float64 `json:"budgetsUSD"`
 }
 
@@ -11954,7 +12627,7 @@ type ReportQuery struct {
 	// For reports/export; CSV when absent.
 	Format *ReportFormat `json:"format,omitzero"`
 
-	// Me, a group or the organisation (#1804).
+	// Me or the organisation (#1804).
 	Scope *ReportScope `json:"scope,omitzero"`
 }
 
@@ -12007,9 +12680,6 @@ type ReportRow struct {
 	// Waiting for the person: TimeBucket's person.
 	WaitingSeconds float64 `json:"waitingSeconds"`
 
-	// The groups the person is in (#1804), by id, for a group or organisation scope; absent when the person is hidden.
-	Groups []string `json:"groups,omitzero"`
-
 	// What the agents did (#2019): sessions, pull requests and waits.
 	Counts *ReportCounts `json:"counts,omitzero"`
 
@@ -12026,16 +12696,16 @@ type ReportRow struct {
 type ReportScope struct {
 	Kind ReportScopeKind `json:"kind"`
 
-	// The group's id, for kind group.
-	Group *string `json:"group,omitzero"`
+	// The project's id, for kind project (#5277): the rows whose folder is in the project, on every machine.
+	Project *string `json:"project,omitzero"`
 }
 
-// Me (the caller's own machines), a group's people, or every person (#1804).
+// Me (the caller's own machines), every person (#1804), or a project's folders on every machine (#5277). There is no group lens (#5278).
 type ReportScopeKind string
 
 const ReportScopeKindMe ReportScopeKind = "me"
-const ReportScopeKindGroup ReportScopeKind = "group"
 const ReportScopeKindOrg ReportScopeKind = "org"
+const ReportScopeKindProject ReportScopeKind = "project"
 
 // A scope the caller may see, with its name (#1804).
 type ReportScopeOption struct {
@@ -12044,7 +12714,7 @@ type ReportScopeOption struct {
 	Name string `json:"name"`
 }
 
-// reports/scopes' answer (#1804): Me, each group the caller leads (every group for an admin), and the organisation for an admin.
+// reports/scopes' answer (#1804): Me, every project (#5277), and the organisation for an admin.
 type ReportScopes struct {
 	Scopes []ReportScopeOption `json:"scopes"`
 
@@ -14990,6 +15660,12 @@ type TranscriptEntryKindPermissionAnswered struct {
 	OptionID string `json:"optionID"`
 
 	OptionName *string `json:"optionName,omitzero"`
+
+	// The session that answered it: the one that started this agent, with answer_permission (#5440). Absent when the person answered.
+	AnsweredBy *UUID `json:"answeredBy,omitzero"`
+
+	// That session's title when it answered, for "<title> chose …" (#5440).
+	AnsweredByTitle *string `json:"answeredByTitle,omitzero"`
 }
 
 type TranscriptEntryKindOptionChanged struct {
@@ -15300,12 +15976,6 @@ type UsageReport struct {
 
 	// The scope the rows are of (#1804).
 	Scope *ReportScope `json:"scope,omitzero"`
-
-	// The rows say no person and no machine (#1804): a group lead's view when the policy says totals only.
-	PersonsHidden *bool `json:"personsHidden,omitzero"`
-
-	// The name of each group the rows name (#1804).
-	GroupNames map[string]string `json:"groupNames,omitzero"`
 
 	// The scope's budget for a calendar month, in US dollars (#1804); absent when it has none.
 	BudgetUSD *float64 `json:"budgetUSD,omitzero"`
@@ -15884,6 +16554,11 @@ const WeekdayThu Weekday = "thu"
 const WeekdayFri Weekday = "fri"
 const WeekdaySat Weekday = "sat"
 
+// work/dismiss-lead (#5458): hide an epic from the suggestions until the epic changes or a lead of it ends. The list is the person's, kept on this machine.
+type WorkDismissLeadRequest struct {
+	Node LineageNode `json:"node"`
+}
+
 // A feature in work/features (#4586): feature is it as forge/features says it. epics are its open epics, the newest first, each with where it is in its plan and its children. loose are its open issues that are not epics and have no parent (of the newest 500 open issues), the newest update first, as children are: when each started, and whether it waits for a person.
 type WorkFeature struct {
 	Feature ForgeFeature `json:"feature"`
@@ -15925,6 +16600,33 @@ type WorkFeaturesRequest struct {
 	Board *string `json:"board,omitzero"`
 }
 
+// An open epic with no lead, as work/suggest-leads says it (#5458, epic #5457). node, title and url are the epic's; folder is a folder on this machine on its repo; milestone is its name and due its due date (YYYY-MM-DD) where the forge says them. done and total are its children closed and all (0 and 0 for a standing epic, whose plan is a query). high says an open child has the label priority:high, and ui that an open child is a story (a person can see or use it: a client changes); the order says why. start is the new-agent form Start lead fills: the prompt, the labels #<n> and lead, and no worktree. It starts nothing.
+type WorkLeadSuggestion struct {
+	Node LineageNode `json:"node"`
+
+	Title string `json:"title"`
+
+	URL *string `json:"url,omitzero"`
+
+	Folder *string `json:"folder,omitzero"`
+
+	Milestone *string `json:"milestone,omitzero"`
+
+	Due *string `json:"due,omitzero"`
+
+	Done int64 `json:"done"`
+
+	Total int64 `json:"total"`
+
+	High *bool `json:"high,omitzero"`
+
+	Ui *bool `json:"ui,omitzero"`
+
+	Standing *bool `json:"standing,omitzero"`
+
+	Start ForgeStart `json:"start"`
+}
+
 // How a turn ended (#1916): only a question needs the person. A value this build does not know, such as an old record's `blocked`, `stuck` or `partly_done`, reads as `done`.
 type WorkOutcome string
 
@@ -15959,6 +16661,20 @@ type WorkReport struct {
 	At Date `json:"at"`
 
 	Block *Block `json:"block,omitzero"`
+}
+
+// work/suggest-leads (#5458): New Session's Suggested section, from the forge's open epics and this machine's sessions. suggestions are at most 3 epics with no lead (no session that is not archived has both #<epic> and lead), ranked: an epic with priority:high children first, then one with UI children, then the earliest milestone due date, then the one nearest to done. more is how many more there are, for N more in Work. An epic the person dismissed is left out until it changes or a lead has ended. errors say a forge that could not be read.
+type WorkSuggestLeads struct {
+	Suggestions []WorkLeadSuggestion `json:"suggestions"`
+
+	More int64 `json:"more"`
+
+	Errors []ForgeListError `json:"errors,omitzero"`
+}
+
+// work/suggest-leads (#5458): the epics of every folder on this machine, or of one folder's repo.
+type WorkSuggestLeadsRequest struct {
+	Folder *string `json:"folder,omitzero"`
 }
 
 // work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project whose work overlaps from to to, each with its children, its segments and, while open, its forecast (M10); and the releases published in the window. timeZone is the working clock's: this host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at most once a day; absent when there are too few. errors are the forges that could not be read, as forge/issues says them.
@@ -16457,6 +17173,9 @@ type WorkflowSummary struct {
 	StandingAgentID *UUID `json:"standingAgentID,omitzero"`
 
 	McpTriggers []MCPTriggerStatus `json:"mcpTriggers,omitzero"`
+
+	// Where this machine's approval came from when it is another machine's of the same person (#5462), such as "Approved by you on Studio, 2026-11-14".
+	ApprovedFrom *string `json:"approvedFrom,omitzero"`
 }
 
 // UnmarshalJSON reads a field that is missing as its default.

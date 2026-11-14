@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agents/Go/internal/lineage"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Lineage reads over the merged copy (#4276): lineage/walkAll and lineage/sessionsOn read
@@ -90,7 +90,7 @@ func (m *Methods) lineageReadMethod(ctx context.Context, method string, params j
 
 // scopeLineageGraph is the merged copy of the machines whose people the scope takes.
 func (s *Service) scopeLineageGraph(ctx context.Context, scope *wire.ReportScope, user string) (*mergedLineage, error) {
-	_, keep, _, err := s.reportScope(ctx, scope, user, s.isAdmin(user))
+	_, keep, err := s.reportScope(ctx, scope, user, s.isAdmin(user))
 	if err != nil {
 		return nil, err
 	}

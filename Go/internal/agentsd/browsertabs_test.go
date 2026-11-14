@@ -9,8 +9,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/agentloops-dev/agents/Go/internal/browser"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Each session's own tab in the machine's browser (#3916): a tab that opens while an agent
@@ -192,4 +192,33 @@ func (p *tabsPlaywright) asked() []string {
 
 func browserFrameOf(jpeg string, ack int64) browser.Frame {
 	return browser.Frame{JPEG: []byte(jpeg), Ack: ack, Width: 800, Height: 600}
+}
+
+// A restart's stop can be heard after the next browser's tabs were followed (#5196): the
+// stop of the browser that went keeps the new one's tabs, owners and passkeys.
+func TestALateStopKeepsTheNextBrowsersTabs(t *testing.T) {
+	d, _ := start(t, t.TempDir())
+	a := wire.UUID("A")
+	d.tabsMu.Lock()
+	d.tabs, d.tabsEndpoint = &browser.Tabs{}, "ws://new"
+	d.ownTabLocked(a, "a1")
+	d.passkeys = map[wire.UUID]*sessionPasskey{sessionKey(a): {secret: "S", site: "github.com"}}
+	d.tabsMu.Unlock()
+
+	d.stopFollowingBrowserTabsOf("ws://old")
+	if d.sessionTab(a) != "a1" || !d.followsTabs() {
+		t.Fatal("the old browser's stop dropped the new one's tabs")
+	}
+	if d.passkeys[sessionKey(a)] == nil {
+		t.Fatal("the old browser's stop took the session's passkey")
+	}
+
+	// The browser that is followed stops: its tabs go.
+	d.tabsMu.Lock()
+	d.tabs = nil
+	d.tabsMu.Unlock()
+	d.stopFollowingBrowserTabsOf("ws://new")
+	if d.sessionTab(a) != "" || d.passkeys != nil {
+		t.Fatal("a tab outlived its browser")
+	}
 }

@@ -17,8 +17,8 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/agentloops-dev/agents/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The person's and the folder's MCP servers, as SessionServers hands them to a session on
@@ -346,6 +346,7 @@ func (d *Daemon) mcpApprovalsLocked() (approved map[string]string, begun, unread
 // waiting and those missing a secret.
 func (d *Daemon) folderMCP(folder string, secrets map[string]string, flagged func(string) bool) (servers []mcpEntry, waiting, missing []string, problem string) {
 	entries, problem := readMCPFile(filepath.Join(folder, ".agents", "mcp.json"))
+	d.adoptSharedMCPFolder(folder)
 	d.mcpMu.Lock()
 	approved, _, _ := d.mcpApprovalsLocked()
 	d.mcpMu.Unlock()

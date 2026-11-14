@@ -54,10 +54,10 @@ Use `forge/plan` when the daemon has it (#3267). Until then, read it with `gh`:
 ```zsh
 epic=<n>
 gh issue view $epic --json title,state,labels,milestone,body
-gh api repos/agentloops-dev/Agents/issues/$epic/sub_issues --paginate \
+gh api repos/agentloops-dev/agent-loops/issues/$epic/sub_issues --paginate \
   -q '.[] | "\(.number) \(.state) \([.labels[].name]|join(","))  \(.title)"'
 # for each open child:
-gh api repos/agentloops-dev/Agents/issues/<child>/dependencies/blocked_by \
+gh api repos/agentloops-dev/agent-loops/issues/<child>/dependencies/blocked_by \
   -q '.[] | "\(.number) \(.state)"'
 ```
 
@@ -75,6 +75,11 @@ For each ready child that is open and not taken, in the AGENTS.md order (`priori
 then UI changes, bugs before features, then the rest):
 
 1. Assign it: `gh issue edit <child> --add-assignee alexec`.
+   Before you start a lane on a child whose work is on a branch or an open PR, call
+   `conflict_risk_analysis` with `diff` the branch and `depends_on` the blocker PRs (#5473).
+   On `wait for #N`, hold the lane until #N lands (wait on its `pr.closed`); on `stack on
+   #N`, tell the lane to base on #N's branch (#1777). A child with no branch yet has nothing
+   to run: the lane runs it itself. It is advice, never a gate.
 2. Start its lane with `start_session`, with the prompt and labels from
    `.agents/personas/software-engineer.md`. The first line of the prompt is
    `#<child>: <title>`, then a blank line and the persona's instructions; put nothing
@@ -97,7 +102,7 @@ with a form for the rest), then close it. Otherwise give it a lane as above.
 ## 3. Wait
 
 End each pass with one `wait_for_event` call: `events: ["issue.closed", "pr.merged",
-"checks.failed", "pr.conflicted"]`, `where: {"issue": [<open children>], "fixes": ["#<child>",
+"pr.blocked"]`, `where: {"issue": [<open children>], "fixes": ["#<child>",
 …]}`, `until_minutes: 60`. Then end your turn. The wait names this epic's children (#3797):
 `issue` for `issue.closed`, and `fixes` for the PR events, which match a PR whose body
 closes one of them, so you know the child before its lane opens the PR. Each event takes
@@ -105,9 +110,15 @@ only the keys it has. A wait that names nothing is refused. When you start again
 
 - **`issue.closed` or `pr.merged`** of a child: read the plan again (step 1) and start
   the lanes of the children that are now ready (step 2).
-- **`checks.failed` or `pr.conflicted`** on a child's PR: its lane fixes it. If the lane
+- **`pr.blocked`** on a child's PR (#5321: a conflict, a failed required check, changes
+  requested, auto-merge off; its `reasons` say which): its lane fixes it. If the lane
   has ended or stopped, message it about its own PR (`message_session`), never to widen
   its work. Leave a PR labelled `needs-approval` alone: it waits for Alex.
+- **The wait is refused** with "No server here offers pr.blocked" (#5437: the
+  installed app is older than #5321): wait instead on `["issue.closed", "pr.merged",
+  "checks.failed", "pr.conflicted"]`, with the same `where`, and use that list for the
+  rest of this session. `checks.failed` and `pr.conflicted` on a child's PR are
+  `pr.blocked` above.
 - **An event that is not about this epic** (a PR that fixes a child and something else):
   wait again.
 - **The time limit:** run `scripts/rearm-automerge.sh --stalled`, read the plan again,
@@ -122,10 +133,10 @@ only the keys it has. A wait that names nothing is refused. When you start again
   the milestone's goal). Then add it to the epic and set what it waits for:
 
   ```zsh
-  id=$(gh api repos/agentloops-dev/Agents/issues/<new> -q .id)
-  gh api -X POST repos/agentloops-dev/Agents/issues/$epic/sub_issues -F sub_issue_id=$id
-  blocker=$(gh api repos/agentloops-dev/Agents/issues/<blocker> -q .id)
-  gh api -X POST repos/agentloops-dev/Agents/issues/<new>/dependencies/blocked_by -F issue_id=$blocker
+  id=$(gh api repos/agentloops-dev/agent-loops/issues/<new> -q .id)
+  gh api -X POST repos/agentloops-dev/agent-loops/issues/$epic/sub_issues -F sub_issue_id=$id
+  blocker=$(gh api repos/agentloops-dev/agent-loops/issues/<blocker> -q .id)
+  gh api -X POST repos/agentloops-dev/agent-loops/issues/<new>/dependencies/blocked_by -F issue_id=$blocker
   ```
 
 - **A child that is no longer needed:** close it as not planned, with one line that says
@@ -200,7 +211,7 @@ lanes' own issues. A wait takes one label, so the time limit catches the issues 
 other labels.
 
 ```json
-{"events": ["pr.merged", "checks.failed", "pr.conflicted",
+{"events": ["pr.merged", "pr.blocked",
             "issue.opened", "issue.labelled", "issue.closed"],
  "where": {"fixes": ["#<issue of a lane>", …], "label": "bug"},
  "until_minutes": 60}

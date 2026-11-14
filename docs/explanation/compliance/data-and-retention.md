@@ -1,12 +1,12 @@
 ---
 diataxis: explanation
 devices: [mac, iphone, ipad, web, server]
-description: "What each store of Agents keeps, how long and how large, when that bound is applied, how it is backed up and restored, and what is not backed up today."
+description: "What each store of Agent Loops keeps, how long and how large, when that bound is applied, how it is backed up and restored, and what is not backed up today."
 ---
 
 # Data and retention
 
-Agents keeps plain files, not a database. Most stores have a bound: a time, a count or a
+Agent Loops keeps plain files, not a database. Most stores have a bound: a time, a count or a
 size. Some have none. A conversation has none: it is kept until its agent is deleted. This
 page lists the stores, then says what a backup holds and what it does not.
 
@@ -54,6 +54,7 @@ Mac.
 | `lineage.jsonl` | Links between issues, PRs, sessions and deploys, and each session's changes of state (#4274) | Ended links 90 days, 20,000 links; changes of state 90 days (each session's latest kept), 20,000 | When it opens, when it grows by 2,000, and hourly (#3649) |
 | `lineage-cost.json` | Cost of each lineage node | 90 days, 5,000 nodes | On write |
 | `lineage-sync.json` | Lineage links and session states not yet sent to the control plane (#4275) | 2,000 links and 5,000 state changes; past that, it keeps only a note to send everything again from `lineage.jsonl` | On write |
+| `ci-timings/sync.json` | The days of build timings not yet sent to the control plane, for each repository (#5232) | 90 days of at most 20 repositories | On send |
 | `lineage-comments.json` | Cost comments on PRs | 500, 30 days | On write |
 | `release-tags.json` | Release tags already linked, for each repo | The newest 50 for each repo; an older tag counts as linked (#3652) | On write |
 | `achievements.json` | Milestones | A fixed set | — |
@@ -131,7 +132,7 @@ These are in `<folder>/.agents/`.
 
 ## Outside our folders
 
-Agents starts these tools. It does not own what they keep.
+Agent Loops starts these tools. It does not own what they keep.
 
 | Store | What it keeps | How long, how large |
 | --- | --- | --- |
@@ -143,7 +144,7 @@ Agents starts these tools. It does not own what they keep.
 | `~/.claude/history.jsonl`, Codex's history and indexes | Each runtime's own history | **Not erased** |
 | Docker images and named volumes | What Docker workspaces pulled and kept | **Delete Machine** removes the workspace's container, its volumes and its image, when no other container uses them (#3728). Docker keeps an image with a second tag or a child image. |
 | DigitalOcean, Codespaces, EC2 and GCP machines | Cloud machines | **No limit in count.** A linked machine stops after **2 hours** idle by default: no turn running, no answer waited on, no terminal open (#3729). Each machine's **Stop when idle** sets the time, or **Never**, on the Mac and the web. A stopped machine keeps its disk; only **Delete Machine** removes one. |
-| `~/.ssh/config` (or `AGENTS_SSH_CONFIG`) | A block for each codespace | A codespace's block goes when **Delete Machine** deletes it (#3746). A codespace deleted outside Agents keeps its block. The one block that agentsd keeps for all codespaces is written again each time it prepares ssh. |
+| `~/.ssh/config` (or `AGENTS_SSH_CONFIG`) | A block for each codespace | A codespace's block goes when **Delete Machine** deletes it (#3746). A codespace deleted outside Agent Loops keeps its block. The one block that agentsd keeps for all codespaces is written again each time it prepares ssh. |
 | `/tmp/agents-tunnels-<uid>-<pid>` | ssh control sockets | Removed at a clean stop; one whose process is gone goes when a control plane's tunnels start (#3649) |
 | `$TMPDIR/agents-output-*` | Output that the Mac window opened in TextEdit | 1 day: the Mac window removes older copies when it starts (#3747) |
 
@@ -200,6 +201,8 @@ the other copies of the control plane learn that it went.
 | Usage reports | Usage, cost and time by person, project, folder, machine and runtime | 7 days by the hour, 90 days by the day | Hourly |
 | Lineage | Cost of each issue, PR and session node | 5,000 nodes, 90 days | On write |
 | Lineage graph | Each machine's links and its sessions' changes of state (working, waiting, needs-you, stopped, archived, deleted), as refs, states and times, in `v1/lineage-graph/<machine>/` (#4275) | Links as on the machine: an ended link 90 days after its end, 20,000 a machine. States as on the machine: 90 days, and each session's last state whatever its age, 20,000 a machine. A removed machine's a day after its last send | On write, hourly |
+| Deploys | Each machine's deploys, as refs, names, states and times: the component, the environments and their tiers, the end, whether it is a rollback, the merge times of the PRs it brings and the health signals seen in it, in `v1/deploys/<machine>.json` (#5496). No titles, no logs | As on the machine: 1,000 deploys; each send replaces the last. A removed machine's goes a day after its last send | On write, hourly |
+| Build timings | Each machine's CI runs of a repository, with their jobs and steps, as refs, times, attempts, conclusions, runner labels and names, in `v1/build-timings/<machine>/` (#5232). No commit or PR titles, no logs | As on the machine: 90 days, 20,000 runs a repository, a pull request run's steps for 14 days. A machine that stopped sending is bounded once a day; a removed machine's goes a day after its last send | On write, hourly |
 | Workflow runs | Which machine took each workflow trigger | 7 days | Hourly |
 | Report views | Saved report views | 50 a person | When the person is removed |
 | Machine providers | Each provider | No count limit. A removed one's tombstone for 7 days (#3748) | Hourly |
@@ -242,7 +245,7 @@ The service keeps nothing for a signed-in browser: a session is a signed cookie 
 invites its sign-in used, the account and its sign-in link. It does not delete the
 account's machines. It leaves the operator's backups of it, and Stripe's own records.
 
-## Agents on the Mac
+## Agent Loops on the Mac
 
 | Store | What it keeps | How long, how large |
 | --- | --- | --- |

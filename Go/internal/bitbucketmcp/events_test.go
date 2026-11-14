@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentloops-dev/agents/Go/internal/gitlabmcp"
-	"github.com/agentloops-dev/agents/Go/internal/mcpevents"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/mcpevents"
 )
 
 // The events over the fake Bitbucket: the gitlab server's names, the trust filter (#728), and
@@ -363,7 +363,7 @@ func TestBaseURL(t *testing.T) {
 // #3797: every event about one pull request names it by pr, branch, fixes or mine, or takes
 // any; an issue event takes one issue or a list of them.
 func TestEventsListGivesWhichArgumentsNameOne(t *testing.T) {
-	named := map[string]bool{"checks.failed": true, "pr.merged": true, "pr.closed": true, "pr.conflicted": true, "review.comment": true}
+	named := map[string]bool{"checks.failed": true, "pr.merged": true, "pr.closed": true, "pr.conflicted": true, "pr.blocked": true, "review.comment": true}
 	for _, e := range eventsList()["events"].([]any) {
 		e := e.(map[string]any)
 		name := e["name"].(string)

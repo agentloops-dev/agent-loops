@@ -9,8 +9,7 @@ terminal tabs, and I spent a lot of my time finding out which one was stuck. One
 on a question I had not seen. Two were fighting over the iOS simulator. A third had finished
 an hour ago, and I had not noticed.
 
-So I built an app for it. On your Mac and your phone it is called Agents, and in the App Store
-it is **Loops: Agent Workflows**. Today it is open to everyone.
+So I built an app for it. It is called **Agent Loops**, on your Mac, your phone and in the App Store. Today it is open to everyone.
 
 ## What it does
 
@@ -61,6 +60,6 @@ Agents does not. Agents needs a Mac.
 - The site: [agentloops.dev](https://agentloops.dev/)
 - The docs, starting with [your first agent](https://docs.agentloops.dev/tutorials/first-agent/):
   [docs.agentloops.dev](https://docs.agentloops.dev/)
-- The source, visible for reference (all rights reserved): [github.com/agentloops-dev/Agents](https://github.com/agentloops-dev/Agents)
+- The source, visible for reference (all rights reserved): [github.com/agentloops-dev/agent-loops](https://github.com/agentloops-dev/agent-loops)
 
 If something does not work, open an issue on GitHub. I read every one.

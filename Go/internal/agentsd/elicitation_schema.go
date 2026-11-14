@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/agentloops-dev/agents/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Forms as Elicitation.swift reads, checks and words them: ElicitationRequest(wire:),
@@ -505,6 +505,29 @@ func outcomeSummary(action wire.AnswerElicitationRequestAction) string {
 		return "You declined the agent's form"
 	}
 	return "The form was closed"
+}
+
+// dismissedSummary is the record's Line for a card the person dismissed (#5295): the
+// wire's cancel, sent by a client, with no answer.
+const dismissedSummary = "You dismissed the question"
+
+// answeredSummary is outcomeSummary for an answer a person sent: their cancel is Dismiss.
+func answeredSummary(action wire.AnswerElicitationRequestAction) string {
+	if action == wire.AnswerElicitationRequestActionCancel {
+		return dismissedSummary
+	}
+	return outcomeSummary(action)
+}
+
+// dismissedWords is what ask_question says when the person dismissed its card (#5295): no
+// answer, and their next message is their reply.
+const dismissedWords = "They dismissed the question without an answer, and will reply in a message. " +
+	"End your turn to read it; it is their answer. Do not ask again."
+
+// dismissedSecretWords is dismissedWords for ask_secret.
+func dismissedSecretWords(name string) string {
+	return "They dismissed the card and gave no " + name + ". They will reply in a message: " +
+		"end your turn to read it. Do not ask again."
 }
 
 // answeredByMessage is what ask_question says when the person sent a message instead of

@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/agentloops-dev/agents/Go/internal/mcpevents"
+	"github.com/agentloops-dev/agent-loops/Go/internal/mcpevents"
 )
 
 // What the events read from Forgejo or Gitea (#1753), in the gitlab server's shape
@@ -69,6 +69,25 @@ type OpenPR struct {
 	Conflicts *bool
 	HeadSHA   string
 	Trusted   bool
+	// SkipsBlocked is a draft, or one labelled needs-approval: never pr.blocked (#5321).
+	// ChangesRequested is a reviewer asking its author for changes, where the forge says it.
+	SkipsBlocked     bool
+	ChangesRequested bool
+}
+
+// blocking is why it cannot merge until its author acts (pr.blocked, #5321): a conflict not
+// yet worked out keeps the state it had.
+func (o OpenPR) blocking() mcpevents.Blocking {
+	b := mcpevents.Blocking{HeadSHA: o.HeadSHA, ChangesRequested: o.ChangesRequested}
+	if o.Conflicts == nil {
+		b.Unknown = true
+	} else {
+		b.Conflict = *o.Conflicts
+	}
+	if b.ChangesRequested {
+		b.ReviewURL = o.PR.URL
+	}
+	return b
 }
 
 // MergedPR is a pull request that merged.

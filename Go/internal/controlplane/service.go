@@ -25,21 +25,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agents/Go/internal/buildinfo"
-	"github.com/agentloops-dev/agents/Go/internal/controllink"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/audit"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/hostinstall"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/hosttunnels"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/locks"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/notices"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/providers"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/records"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/scim"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/signin"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/usersettings"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/web"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/audit"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/hostinstall"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/hosttunnels"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/locks"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/notices"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/scim"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/usersettings"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/coder/websocket"
 )
 
@@ -163,6 +163,8 @@ type Service struct {
 	multiplierBook
 	// Each machine's hints and the newest operation on each secret (#4158): memory only.
 	secretInfoBook
+	// Each machine's capacity and each person's last start, for Auto (#5374): memory only.
+	autoBook
 	origin  string
 	copyID  string
 	records *records.Records
@@ -183,6 +185,8 @@ type Service struct {
 	pushes *pushes
 	// This copy's Web Push to browsers (#1486); nil with no VAPID key.
 	webPush *webPushes
+	// The compares of two Agents versions' commits (#5273).
+	agentsCompares agentsCompareBook
 	// What each host last listed (#962), for machines/lastHeard.
 	copies *hostCopies
 	// The reverse tunnels this copy holds for servers behind a bastion (#435): a single
@@ -246,6 +250,8 @@ type Service struct {
 	bus eventBus
 	// What Reports and the Console read from the store, by entity tag (#2054, #2056).
 	storeReads readCache
+	// buildsChanges is each repository's change points over the build timings' copy (#5232).
+	buildsChanges buildsChangesCache
 	// What each machine here was last sent of its projects (#2735).
 	toldProjects toldProjects
 
@@ -498,6 +504,10 @@ func (s *Service) Start(ctx context.Context) (int, error) {
 	}
 	if s.mesh != nil && s.phase.now() != phaseReceiving {
 		s.startMesh()
+	}
+	if s.mesh == nil {
+		// With copies, startMesh's own tells it too.
+		s.router.OnLocalEnded(s.uplinkEnded)
 	}
 	if s.providers != nil && s.phase.now() != phaseReceiving {
 		s.providers.Start()
@@ -817,6 +827,7 @@ func (s *Service) startMesh() {
 	m := s.mesh
 	s.router.OnLocalEnded(func(host string) {
 		s.log("host " + host + " disconnected")
+		s.uplinkEnded(host)
 		if epoch := m.leases.release(context.Background(), host); epoch != 0 {
 			m.released(host, epoch)
 		}

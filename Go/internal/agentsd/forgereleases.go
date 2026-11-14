@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/agentloops-dev/agents/Go/internal/forgejomcp"
-	"github.com/agentloops-dev/agents/Go/internal/gitlabmcp"
-	"github.com/agentloops-dev/agents/Go/internal/lineage"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The forge's releases (#4426, specs/4328-work-look/milestones.md, task 6): forge/releases lists
@@ -280,7 +280,7 @@ func (g githubForge) ReleaseCommits(ctx context.Context, repo, base, head string
 	}
 	out := make([]compareCommit, len(commits))
 	for i, c := range commits {
-		out[i] = compareCommit{c.SHA, c.Message}
+		out[i] = compareCommit{SHA: c.SHA, Message: c.Message}
 	}
 	return out, fmt.Sprintf("https://github.com/%s/compare/%s...%s", repo, url.PathEscape(base), url.PathEscape(head)), nil
 }
@@ -317,7 +317,7 @@ func (g gitlabForge) ReleaseCommits(ctx context.Context, repo, base, head string
 	}
 	out := make([]compareCommit, len(commits))
 	for i, c := range commits {
-		out[i] = compareCommit{c.SHA, c.Message}
+		out[i] = compareCommit{SHA: c.SHA, Message: c.Message}
 	}
 	page := ""
 	if gl, ok := g.d.gitlabConnection(); ok {
@@ -355,7 +355,7 @@ func (g forgejoForge) ReleaseCommits(ctx context.Context, repo, base, head strin
 	}
 	out := make([]compareCommit, len(commits))
 	for i, c := range commits {
-		out[i] = compareCommit{c.SHA, c.Message}
+		out[i] = compareCommit{SHA: c.SHA, Message: c.Message}
 	}
 	_, root := g.d.forgejoRoot()
 	page := ""

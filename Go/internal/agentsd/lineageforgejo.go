@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Lineage asks Forgejo (#3844) what it asks gh and glab of GitHub and GitLab: a node's title
@@ -54,7 +54,7 @@ func (d *Daemon) forgejoCompareCommits(ctx context.Context, _ string, repo forge
 	}
 	out := make([]compareCommit, 0, len(commits))
 	for _, c := range commits {
-		out = append(out, compareCommit{c.SHA, c.Message})
+		out = append(out, compareCommit{SHA: c.SHA, Message: c.Message})
 	}
 	return out, nil
 }

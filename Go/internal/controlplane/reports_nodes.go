@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/agentloops-dev/agents/Go/internal/lineage"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // reports/nodes (#3118): the lineage nodes of one kind in a scope, as Work ▸ Issues, Pull
@@ -87,11 +87,12 @@ func (s *Service) nodesReport(ctx context.Context, q wire.ReportNodesQuery, user
 		}
 		after = &c
 	}
-	_, keep, _, err := s.reportScope(ctx, q.Scope, user, s.isAdmin(user))
+	scope, keep, err := s.reportScope(ctx, q.Scope, user, s.isAdmin(user))
 	if err != nil {
 		return wire.ReportNodes{}, err
 	}
 	nodes, err := s.scopeLineage(ctx, keep)
+	nodes = s.projectNodes(ctx, nodes, scope)
 	if err != nil {
 		return wire.ReportNodes{}, err
 	}

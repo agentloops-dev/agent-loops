@@ -5,7 +5,8 @@ import SwiftUI
 /// first (#3743): its CPU, load and capacity (#4582), memory and worst disk on one line. Then the detail, most of it
 /// closed until the person opens it: the disk that matters with the others folded, a row
 /// per folder's worktrees (#3627), the runtimes installed there (#3629), resources only
-/// when one is declared or held, and its processes (#3453). Read with
+/// when one is declared or held, and its processes (#3453). The Agent Loops version it runs, since
+/// when and with what changes, comes after the summary (#5273). Read with
 /// `machine/usage` when it opens and every few seconds while it is open, never otherwise.
 /// A machine a provider made has its provider's options and Unlink here, and one that uses a Mac's
 /// git access has Stop Lending (#3975: Settings ▸ Machines lists no machines now). This Mac's own
@@ -29,9 +30,17 @@ struct MachinePage: View {
             HStack(alignment: .firstTextBaseline, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(name).appText(.reading)
-                    Text(offline ? "Offline" : "Online")
-                        .appText(.supporting)
-                        .foregroundStyle(offline ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(.secondary))
+                    if let setup = model.hosts.controlRows[host]?.setup, !MachineSetupWords.foldedAway(setup) {
+                        // The chip (#5357): Setting up · 7 of 8, Set-up failed, Ready · 3 min 42 s.
+                        Text(MachineSetupWords.chip(setup))
+                            .appText(.supporting)
+                            .foregroundStyle(MachineSetupWords.failedStep(setup) != nil
+                                             ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(.secondary))
+                    } else {
+                        Text(offline ? "Offline" : "Online")
+                            .appText(.supporting)
+                            .foregroundStyle(offline ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(.secondary))
+                    }
                 }
                 Spacer(minLength: 0)
                 if host == .mac {
@@ -47,6 +56,9 @@ struct MachinePage: View {
 
             ScrollViewReader { proxy in
                 Form {
+                    if let row = model.hosts.controlRows[host], let setup = row.setup {
+                        MachineSetupSection(host: host, row: row, setup: setup)
+                    }
                     if offline {
                         Section {
                             Text("\(name) is offline, so it can’t say how it is doing now.")
@@ -61,6 +73,8 @@ struct MachinePage: View {
                         summarySection
                         disksSection
                     }
+                    // What it runs, from the control plane, offline or not (#5273).
+                    MachineAgentsSections(host: host, read: model.machineAgentsReader, changes: model.agentsChanges)
                     if let row = model.hosts.controlRows[host] {
                         MachineLinkSections(row: row)
                     }

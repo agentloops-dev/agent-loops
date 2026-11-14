@@ -1,6 +1,6 @@
 // forgejo-mcp: the `forgejo` MCP server (#1753), on stdio, in the gitlab server's shape
 // (Go/cmd/gitlab-mcp): polled events of a Forgejo or Gitea folder's pull requests, their
-// checks and its issues (checks.failed, pr.opened, pr.merged, pr.closed, pr.conflicted,
+// checks and its issues (checks.failed, pr.opened, pr.merged, pr.closed, pr.conflicted, pr.blocked,
 // review.requested, review.comment, issue.opened, issue.labelled, issue.commented,
 // issue.closed, issue.assigned), and tools that read them and comment, over the REST API v1
 // that Forgejo and Gitea share. For codeberg.org and a Forgejo or Gitea of one's own alike. As
@@ -27,9 +27,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/agentloops-dev/agents/Go/internal/buildinfo"
-	"github.com/agentloops-dev/agents/Go/internal/connections"
-	"github.com/agentloops-dev/agents/Go/internal/forgejomcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
 )
 
 func main() {

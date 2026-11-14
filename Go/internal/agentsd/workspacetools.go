@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentloops-dev/agents/Go/internal/controllink"
-	"github.com/agentloops-dev/agents/Go/internal/safe"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The app's workspace tools for agents (#691 US6, #1444), as DaemonCore+WorkspaceTools: list,
@@ -55,6 +55,19 @@ func (d *Daemon) SetControlCapabilities(list func() []string) {
 func (d *Daemon) controlHas(capability string) bool {
 	list := d.controlCapabilities.Load()
 	return list != nil && wire.Has((*list)(), capability)
+}
+
+// ControlCapabilitiesKnown is told when the control plane said what it can do on a new link
+// (#5410). That answer comes after the link is up, so the sends that ControlUplinkChanged
+// starts found no capability yet: those that need one go again now.
+func (d *Daemon) ControlCapabilitiesKnown() {
+	d.sendBusSubscriptions(true)
+	d.sendLineage()
+	d.sendCITimings()
+	// The deploys go whole on each new link (#5496): a new control plane has no copy.
+	d.sendDeploys(true)
+	d.personApprovalsOn.Do(d.watchPersonApprovals)
+	go d.refreshPersonApprovals()
 }
 
 // askWorkspaces is one machine/machines call for an agent, named for the control plane's log.

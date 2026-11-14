@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/agentloops-dev/agents/Go/internal/lineage"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Lineage asks Bitbucket Cloud (#3879) what it asks Forgejo (lineageforgejo.go), by the
@@ -53,7 +53,7 @@ func (d *Daemon) bitbucketCompareCommits(ctx context.Context, _ string, repo for
 	}
 	out := make([]compareCommit, 0, len(commits))
 	for _, c := range commits {
-		out = append(out, compareCommit{c.SHA, c.Message})
+		out = append(out, compareCommit{SHA: c.SHA, Message: c.Message})
 	}
 	return out, nil
 }

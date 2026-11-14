@@ -41,8 +41,10 @@ transcript of 100,000 entries, a repository of 40,000 files), launches a scratch
 and measures against the `night` budgets:
 
 - the host's answers, with `scripts/perf-budgets.py`;
-- the Mac window's cold start, first list, project switch and chat open, with
-  `scripts/perf-window.sh`;
+- the Mac window's cold start, first list and chat open (sessions in two folders, so some
+  opens change the folder too; the separate project switch figure was retired, #5427), with
+  `scripts/perf-window.sh`, which opens the sidebar's rows through the window's walk socket
+  (#1172), so a locked screen does not stop it (#5427);
 - the web page's first list, session open, long transcript, send to echo and Work list,
   second open, from the page's own `performance` marks (`agents:first-list`,
   `agents:session-open`, `agents:send` to `agents:echo`, `agents:work-list-read` to
@@ -81,3 +83,16 @@ a release, on the iPhone:
 
 When a time is over, file an issue labelled `feature:performance` with the times, the
 network and the phone.
+
+## Many machines (#5282)
+
+`scripts/scale-fixture.sh STORE_DIR [N]` writes 1,000 fake machines into a scratch control
+plane's store, before `agents-control` starts on it. The fixture has no host behind a
+machine, so each lists as offline. The budgets are in `scripts/perf-budgets.json`, under
+`scale`:
+
+- `machines/list` with a limit of 50: under 50 ms at 1,000 machines. `Go/internal/controlplane/scalefixture_test.go` times the whole list now (a ceiling of 500 ms, measured at 95 ms under `-race`) and holds the time off CI (CI only logs it); the wire step that adds a limit switches it to a limit of 50 and 50 ms.
+- A web refresh makes a fixed count of calls, the same at 1 and at 1,000 machines, not a count for each machine.
+- The sidebar's Machines group shows at most 7 machine rows plus **All Machines**.
+
+The last two are proved by the children of epic #5281 that change the web store and the sidebar.

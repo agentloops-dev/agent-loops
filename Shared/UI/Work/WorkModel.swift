@@ -20,6 +20,9 @@ protocol WorkModel: AnyObject, Sendable {
     /// The machines that draw Work ▸ Timeline (`work/timeline`, #4173), the home one first. None on
     /// the Remote: the Timeline is the Mac's (remote: by design).
     var timelineMachines: [(id: MachineRef, name: String)] { get }
+    /// The machines that say their deploys' targets (`deploys/targets`, #5270), the home one first.
+    /// None on the Remote: Work ▸ Deploys is Mac + web.
+    var deploysMachines: [(id: MachineRef, name: String)] { get }
     /// The machines that give Work ▸ Features in one read (`work/features`, #4586), the home one
     /// first; the others are read with `forge/features`, `forge/issues` and `forge/plan`.
     var featuresMachines: [(id: MachineRef, name: String)] { get }
@@ -111,6 +114,7 @@ extension WorkModel {
         await keptWork([DaemonAPI.ProjectBoard].self, .boards, boardsAsked)
     }
     var timelineMachines: [(id: MachineRef, name: String)] { [] }
+    var deploysMachines: [(id: MachineRef, name: String)] { [] }
     var featuresMachines: [(id: MachineRef, name: String)] { [] }
     func lineageSessionsOn(_ nodes: [DaemonAPI.LineageNode]) async -> DaemonAPI.LineageSessionsOn? { nil }
     var lineageChanges: Int { 0 }
@@ -180,6 +184,20 @@ extension WorkModel {
         guard let to, workPlace == place else { return }
         list.opened = to
         workHistory.replace(WorkPlace(kind: place.kind, ref: to, fromList: true))
+    }
+
+    /// Open a part of a page's trail (#5452): a list, Work ▸ Features with a feature open and in
+    /// view, or an epic's page. Each is a new place, so Back comes back to the page.
+    func openTrail(_ target: WorkTrail.Target) {
+        switch target {
+        case .list(let kind):
+            showWork(WorkPlace(kind: kind))
+        case .feature(let name):
+            workLists.features.reveal(name, model: self)
+            showWork(WorkPlace(kind: .feature))
+        case .item(let kind, let ref):
+            showWork(WorkPlace(kind: kind, ref: ref))
+        }
     }
 }
 

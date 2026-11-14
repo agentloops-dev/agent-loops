@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agents/Go/internal/controllink"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/notices"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/providers"
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/records"
-	"github.com/agentloops-dev/agents/Go/internal/machinelock"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/notices"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/coder/websocket"
 )
 
@@ -277,6 +277,21 @@ func (r *Router) Described(host string) map[string]any {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.describedLocked(host)
+}
+
+// LastSeen is when a host was last seen (#5283): now while it is online, else when its state
+// last changed (offline since). The zero time for one never heard of.
+func (r *Router) LastSeen(host string) time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.states[host]
+	switch {
+	case !ok:
+		return time.Time{}
+	case s.online():
+		return time.Now()
+	}
+	return s.Since
 }
 
 func (r *Router) describedLocked(host string) map[string]any {

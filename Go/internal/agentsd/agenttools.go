@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentloops-dev/agents/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // show_file, suggest_next_prompt and ask_question, as DaemonCore+AppTools answers them on the
@@ -235,6 +235,9 @@ func (d *Daemon) askForm(id wire.UUID, args map[string]json.RawMessage, late fun
 	}
 	if r.byMessage {
 		return answeredByMessage, true, nil
+	}
+	if r.dismissed {
+		return dismissedWords, true, nil
 	}
 	var said []wire.ElicitationAnswer
 	if r.action == wire.AnswerElicitationRequestActionAccept {

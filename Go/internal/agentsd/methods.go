@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/agentloops-dev/agents/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // register is every method this host serves. One it does not answers -32601, which the
@@ -56,10 +56,13 @@ func (d *Daemon) register() {
 	d.registerLineageSessions()
 	d.registerLineageFigures()
 	d.registerBuilds()
+	d.registerDeploysDelivery()
 	d.registerForge()
 	d.registerMessages()
 	d.registerWorkTimeline()
+	d.registerDeployTargets()
 	d.registerWorkFeatures()
+	d.registerWorkSuggestLeads()
 	d.registerDocs()
 	d.registerDevices()
 	d.registerAllowances()

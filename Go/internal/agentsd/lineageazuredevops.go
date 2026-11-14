@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentloops-dev/agents/Go/internal/azuredevopsmcp"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Lineage asks Azure Repos (#3952) what it asks Bitbucket (lineagebitbucket.go), by the
@@ -53,7 +53,7 @@ func (d *Daemon) azureDevOpsCompareCommits(ctx context.Context, _ string, repo f
 	}
 	out := make([]compareCommit, 0, len(commits))
 	for _, c := range commits {
-		out = append(out, compareCommit{c.SHA, c.Message})
+		out = append(out, compareCommit{SHA: c.SHA, Message: c.Message})
 	}
 	return out, nil
 }

@@ -9,9 +9,9 @@ import (
 
 	"github.com/chromedp/cdproto/target"
 
-	"github.com/agentloops-dev/agents/Go/internal/browser"
-	"github.com/agentloops-dev/agents/Go/internal/safe"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Watching the machine's browser (#3528, spike #3527): a client that shows the page says
@@ -495,12 +495,12 @@ func (d *Daemon) browserCastEnded(gen int) {
 }
 
 // browserChanged is Chromium started or stopped, by anyone: an agent, the bar, or the
-// idle stop.
-func (d *Daemon) browserChanged(running bool) {
+// idle stop. endpoint is the address of the one that did.
+func (d *Daemon) browserChanged(running bool, endpoint string) {
 	w := &d.bw
 	if running {
-		if endpoint, err := d.browser.Endpoint(nil); err == nil {
-			d.followBrowserTabs(endpoint)
+		if now, err := d.browser.Endpoint(nil); err == nil {
+			d.followBrowserTabs(now)
 		}
 		w.mu.Lock()
 		var agents []wire.UUID
@@ -513,7 +513,7 @@ func (d *Daemon) browserChanged(running bool) {
 		}
 		return
 	}
-	d.stopFollowingBrowserTabs()
+	d.stopFollowingBrowserTabsOf(endpoint)
 	w.mu.Lock()
 	var casts []*browser.Cast
 	for _, sc := range w.screens {

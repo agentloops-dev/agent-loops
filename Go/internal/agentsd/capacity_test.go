@@ -6,16 +6,15 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // fakeCapacity puts a sampler that returns what set last gave it, for the life of t.
 func fakeCapacity(t *testing.T) (set func(capacitySample)) {
 	var mu sync.Mutex
 	var now capacitySample
-	was := capacitySampler
-	capacitySampler = func(context.Context) capacitySample { mu.Lock(); defer mu.Unlock(); return now }
-	t.Cleanup(func() { capacitySampler = was })
+	was := setCapacitySampler(func(context.Context) capacitySample { mu.Lock(); defer mu.Unlock(); return now })
+	t.Cleanup(func() { setCapacitySampler(was) })
 	return func(s capacitySample) { mu.Lock(); now = s; mu.Unlock() }
 }
 

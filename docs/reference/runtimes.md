@@ -38,7 +38,7 @@ In every column:
   needs signing in** or **Not asked yet**.
 - **App tools available**: the tools on [Tools the app gives agents](agent-tools.md).
 - **On a server**: an agent in a server folder is offered only the runtimes on that
-  server. Claude, Codex and OpenCode are the exceptions: Agents installs them on the
+  server. Claude, Codex and OpenCode are the exceptions: Agent Loops installs them on the
   server itself. Claude and Codex sign in there through this Mac's own sign-ins, and OpenCode
   borrows the provider keys it is signed in with on this Mac, for each run. With no Mac,
   the web page signs Claude and Codex in on the server itself, with a link and a code or
@@ -312,6 +312,7 @@ setting below can be set by the app for one agent without touching `~/.claude`.
 | --- | --- | --- | --- | --- | --- |
 | Effort | ACP `effort`; `effortLevel` in settings | default, low, medium, high, xhigh, max | Yes, under the prompt | Yes | Already shown |
 | Fast mode | ACP `fast`; `fastMode` | off | Yes, under the prompt; needs extra usage | Yes | Already shown |
+| Ultracode | ACP `ultracode`; `ultracode` | off | Yes, under the prompt; only on models with xhigh effort | Yes | Already shown |
 | Thinking on, off or budget | `alwaysThinkingEnabled`; `MAX_THINKING_TOKENS` | on, adaptive | Yes | Yes | Leave alone: effort covers it |
 | Fallback model | `fallbackModel` | none | Yes | Yes | Leave alone: overlaps the app's own fallback |
 | Cost and turn limits | `_meta…options.maxBudgetUsd`, `maxTurns` | none | Yes | Yes | Set, planned: an agent's cost ceiling, stopped by Claude itself |

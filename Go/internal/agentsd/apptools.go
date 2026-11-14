@@ -15,9 +15,9 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/agentloops-dev/agents/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agents/Go/internal/safe"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The app's own tools (mcp__agents__*), as AppToolsEndpoint and AppService serve them: one
@@ -84,6 +84,7 @@ func appToolCalls() []appTool {
 		{"list_sessions", (*Daemon).listSessions},
 		{"read_session", (*Daemon).readSession},
 		{"message_session", (*Daemon).messageSession},
+		{"answer_permission", (*Daemon).answerPermission},
 		{"cancel_message", (*Daemon).cancelMessage},
 		{"archive_session", (*Daemon).archiveSession},
 		{"stop_session", (*Daemon).stopSession},
@@ -105,6 +106,7 @@ func appToolCalls() []appTool {
 		{"docs_search", (*Daemon).docsSearchTool},
 		{"docs_read", (*Daemon).docsReadTool},
 		{"estimate_issue", (*Daemon).estimateIssueTool},
+		{"conflict_risk_analysis", (*Daemon).conflictRiskTool},
 		{"set_ci_secret", (*Daemon).setCISecret},
 		{"set_ci_variable", (*Daemon).setCIVariable},
 		{"set_environment_gate", (*Daemon).setEnvironmentGate},

@@ -4,6 +4,8 @@ import (
 	"context"
 	"regexp"
 	"strings"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/mcpevents"
 )
 
 // What the events read from GitHub, as CIWatcher's GitHub.swift has it (#383). RealGitHub
@@ -163,6 +165,15 @@ type ConflictPR struct {
 	Trusted   bool
 }
 
+// BlockedPR is an open pull request and why it cannot merge until its author acts (#5321).
+// Skip is a draft, or a PR that waits for a person's approval: never blocked.
+type BlockedPR struct {
+	PR       PR
+	Blocking mcpevents.Blocking
+	Skip     bool
+	Trusted  bool
+}
+
 // Issue is an issue as the issue events name it.
 type Issue struct {
 	Number    int
@@ -296,6 +307,14 @@ type GitHub interface {
 	// WaitingDeploys are runs waiting for an environment's required reviewers (#3587): only
 	// workflow's (a file name) when it is set, only branch's (a branch or a tag) when it is set.
 	WaitingDeploys(ctx context.Context, repo, workflow, branch string) ([]WaitingDeploy, error)
+	// Deployments are the repo's Deployments updated at or after since, with their statuses
+	// oldest first (#5240): only environment's when it is set.
+	Deployments(ctx context.Context, repo, environment, since string) ([]Deployment, error)
+	// JobConclusion is an Actions job's conclusion, as cancelled: what a failed deploy's job ended as.
+	JobConclusion(ctx context.Context, repo string, job int64) (string, error)
+	// JobDeploys are the deploy notices one Actions job wrote (#5241), as RunDeploys reads a run's:
+	// what an ended deploy's job says it deployed, and where.
+	JobDeploys(ctx context.Context, repo string, job int64) ([]string, error)
 	// PRBranch is the head branch of PR number pr. checks.failed and checks.passed with a pr and
 	// no branch list only that branch's runs, not the whole repo's (#3107).
 	PRBranch(ctx context.Context, repo string, pr int) (string, error)
@@ -305,6 +324,8 @@ type GitHub interface {
 	ClosedPRs(ctx context.Context, repo, since string) (merged []MergedPR, closed []ClosedPR, truncated bool, err error)
 	// ConflictPRs are the open PRs and whether each conflicts with its base.
 	ConflictPRs(ctx context.Context, repo string) ([]ConflictPR, error)
+	// BlockedPRs are the open PRs and why each cannot merge until its author acts (#5321).
+	BlockedPRs(ctx context.Context, repo string) ([]BlockedPR, error)
 	// OpenPRs are the open PRs, drafts too, with their authors.
 	OpenPRs(ctx context.Context, repo string) ([]OpenPR, error)
 	// IssueActivity is what happened to the repo's issues at or after since, of one kind.

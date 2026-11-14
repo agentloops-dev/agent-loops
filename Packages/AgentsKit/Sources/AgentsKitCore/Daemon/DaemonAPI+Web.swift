@@ -316,6 +316,8 @@ public extension DaemonAPI {
                 Row(Method.messagesMarkAllRead, params: MessagesMarkAllReadRequest.self, result: MessagesMarkedAllRead.self, kind: .hostRequest),
                 // Work ▸ Timeline on the web page (#4206).
                 Row(Method.workTimeline, params: WorkTimelineRequest.self, result: WorkTimeline.self, kind: .hostRequest),
+                // Work ▸ Deploys (#5270).
+                Row(Method.deploysTargets, params: DeployTargetsRequest.self, result: DeployTargets.self, kind: .hostRequest),
                 // Work ▸ Features as a delivery view (#4586).
                 Row(Method.workFeatures, params: WorkFeaturesRequest.self, result: WorkFeatures.self, kind: .hostRequest),
                 Row(Method.docsList, params: DocsListRequest.self, result: DocsList.self, kind: .hostRequest),
@@ -338,6 +340,8 @@ public extension DaemonAPI {
                 // Build trends on the web page (#5177): Web + Mac link, so no Swift types.
                 Row(Method.buildsHistory, params: JSONValue.self, result: JSONValue.self, kind: .hostRequest),
                 Row(Method.buildsRun, params: JSONValue.self, result: JSONValue.self, kind: .hostRequest),
+                // Reports ▸ Planning ▸ Delivery on the web page (#5245): Web + Mac link, so no Swift types.
+                Row(Method.deploysDelivery, params: JSONValue.self, result: JSONValue.self, kind: .hostRequest),
                 Row(Method.simulatorsList, params: Empty.self, result: SimulatorList.self, kind: .hostRequest),
                 Row(Method.simulatorsBoot, params: SimulatorRequest.self, result: Empty.self, kind: .hostRequest),
                 Row(Method.simulatorsShutdown, params: SimulatorRequest.self, result: Empty.self, kind: .hostRequest),
@@ -543,6 +547,10 @@ public extension DaemonAPI {
                 Row(Method.hostsRetryKept, params: KeptRequestID.self, result: Empty.self, kind: .controlRequest),
                 // What an offline host last listed (#962).
                 Row(Method.hostsLastHeard, params: MachineRequest.self, result: MachineLastHeard.self, kind: .controlRequest),
+                // A machine page's Agent Loops section (#5273).
+                Row(Method.machinesAgents, params: MachineRequest.self, result: MachineAgents.self, kind: .controlRequest),
+                Row(Method.machinesAgentsChanges, params: AgentsChangesRequest.self, result: AgentsChanges.self,
+                    kind: .controlRequest),
                 // Every machine's events (#4732): the Events page.
                 Row(Method.busLog, params: BusLogQuery.self, result: BusLogPage.self, kind: .controlRequest),
                 // Who did what (#996): Events ▸ Audit.
@@ -572,6 +580,9 @@ public extension DaemonAPI {
                 Row(Method.reportsScopes, params: Empty.self, result: ReportScopes.self, kind: .controlRequest),
                 // Lineage over every machine's copy (#4276): Work ▸ Timeline's sessions.
                 Row(Method.lineageWalkAll, params: LineageWalkAllRequest.self, result: LineageGraph.self, kind: .controlRequest),
+                Row(Method.buildsHistoryAll, params: JSONValue.self, result: JSONValue.self, kind: .controlRequest),
+                Row(Method.buildsRunAll, params: JSONValue.self, result: JSONValue.self, kind: .controlRequest),
+                Row(Method.deploysDeliveryAll, params: JSONValue.self, result: JSONValue.self, kind: .controlRequest),
                 Row(Method.lineageSessionsOn, params: LineageSessionsOnRequest.self, result: LineageSessionsOn.self,
                     kind: .controlRequest),
                 Row(Method.reportsPolicy, params: Empty.self, result: ReportPolicy.self, kind: .controlRequest),

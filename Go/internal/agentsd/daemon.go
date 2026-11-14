@@ -8,11 +8,12 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/agentloops-dev/agents/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agents/Go/internal/browser"
-	"github.com/agentloops-dev/agents/Go/internal/controllink"
-	"github.com/agentloops-dev/agents/Go/internal/safe"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
+	"golang.org/x/sync/singleflight"
 )
 
 // Daemon is one host: its root, the clients connected to it, and what it serves them.
@@ -32,6 +33,10 @@ type Daemon struct {
 
 	// erasures is the queue of runtime copies of deleted agents to erase (#1001).
 	erasures eraser
+
+	// featureReads shares one forge/features read between the calls that ask for it at once
+	// (#5450): the window asks forge/features and work/features together, to draw the rows first.
+	featureReads singleflight.Group
 
 	// Tunneler opens tunnels through the control plane, to a host that lends a sign-in;
 	// nil when this host has no control plane.
@@ -127,6 +132,9 @@ type Daemon struct {
 	lineageBook
 	// The build timings (#5177).
 	ciTimingsBook
+	ciSyncBook
+	// The control plane's copy of the deploys (#5496).
+	deploySyncBook
 	// The events this machine publishes on the bus (#4729).
 	busBook
 	// Subscriptions on the bus, and the bursts debounce holds (#4730).

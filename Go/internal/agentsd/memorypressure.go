@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync/atomic"
 
 	"github.com/shirou/gopsutil/v4/mem"
 
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Memory pressure (#4514): each warm runtime holds 90 to 200 MB (#4504), the wrong trade
@@ -20,8 +21,19 @@ import (
 const swapHighPercent = 50
 
 // pressureNow is the machine's memory pressure: why the pool keeps none, or "" when it
-// may keep its setting. A test puts a fake here.
-var pressureNow = machinePressure
+// may keep its setting. A test puts a fake here with setPressureNow. It is an atomic
+// pointer because a test sets it while another test's daemon still looks (#5345).
+var pressureNow atomic.Pointer[func() string]
+
+func init() { setPressureNow(machinePressure) }
+
+// setPressureNow puts f as the look and returns the one it replaced.
+func setPressureNow(f func() string) (was func() string) {
+	if old := pressureNow.Swap(&f); old != nil {
+		return *old
+	}
+	return nil
+}
 
 // machinePressure reads swap with gopsutil (vm.swapusage on a Mac, /proc/meminfo on
 // Linux) and, on a Mac, the kernel's pressure level (pressureLevel). A read that fails
@@ -39,7 +51,7 @@ func machinePressure() string {
 // warmCap is the pool's cap now: 0 under memory pressure, else the setting. why is the
 // pressure, "" with none. A change from the last look is logged.
 func (d *Daemon) warmCap(s wire.WakeSettings) (capacity int, why string) {
-	why = pressureNow()
+	why = (*pressureNow.Load())()
 	d.pressureMu.Lock()
 	was := d.pressure
 	d.pressure = why

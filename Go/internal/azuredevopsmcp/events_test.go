@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentloops-dev/agents/Go/internal/gitlabmcp"
-	"github.com/agentloops-dev/agents/Go/internal/mcpevents"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/mcpevents"
 )
 
 // The events over the fake Azure DevOps: the gitlab server's names, the trust filter (#728),
@@ -98,6 +98,33 @@ func TestConflictedOnceAzureDevOpsKnows(t *testing.T) {
 	ids, _ = p.poll()
 	if len(ids) != 1 {
 		t.Fatalf("conflicted anew: %v", ids)
+	}
+}
+
+func TestBlockedOnAConflictOrAVoteForChanges(t *testing.T) {
+	f := newFake(t)
+	f.pulls = []obj{pull(1, "feature", dev, nil), pull(2, "draft", dev, obj{"isDraft": true})}
+	p := newPoller(t, f, "pr.blocked", map[string]any{"any": true})
+	p.poll()
+	f.set(func() {
+		f.pulls[0]["reviewers"] = []any{obj{"id": "r1", "displayName": "Rev", "vote": -5}}
+		f.pulls[1]["mergeStatus"] = "conflicts"
+	})
+	ids, result := p.poll()
+	if len(ids) != 1 || !strings.HasPrefix(ids[0], "pr.blocked:acme/Web App/app:1:sha1:changes_requested:") {
+		t.Fatalf("blocked: %v", ids)
+	}
+	if d := data(t, result, 0); fmt.Sprint(d["reasons"]) != "[changes_requested]" || d["reviewUrl"] == nil || d["blockedAt"] == nil {
+		t.Fatalf("data: %v", d)
+	}
+	// Queued after a push on the same head keeps it; a conflict too is a new set of reasons.
+	f.set(func() { f.pulls[0]["mergeStatus"] = "queued" })
+	ids, _ = p.poll()
+	same(t, ids, []string(nil))
+	f.set(func() { f.pulls[0]["mergeStatus"] = "conflicts" })
+	ids, _ = p.poll()
+	if len(ids) != 1 || !strings.Contains(ids[0], ":sha1:conflict,changes_requested:") {
+		t.Fatalf("conflict too: %v", ids)
 	}
 }
 
@@ -545,7 +572,7 @@ func TestBuildServicesAndGroupsAreBots(t *testing.T) {
 // any; run.completed takes any too.
 func TestEventsListGivesWhichArgumentsNameOne(t *testing.T) {
 	named := map[string]bool{"checks.failed": true, "checks.passed": true, "pr.merged": true, "pr.closed": true,
-		"pr.conflicted": true, "review.comment": true}
+		"pr.conflicted": true, "pr.blocked": true, "review.comment": true}
 	for _, e := range eventsList()["events"].([]any) {
 		e := e.(map[string]any)
 		name := e["name"].(string)

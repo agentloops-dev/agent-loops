@@ -18,14 +18,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentloops-dev/agents/Go/internal/agentsd"
-	"github.com/agentloops-dev/agents/Go/internal/agentsd/redact"
-	"github.com/agentloops-dev/agents/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agents/Go/internal/buildinfo"
-	"github.com/agentloops-dev/agents/Go/internal/controllink"
-	"github.com/agentloops-dev/agents/Go/internal/machine"
-	"github.com/agentloops-dev/agents/Go/internal/rolllog"
-	"github.com/agentloops-dev/agents/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/redact"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
+	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 )
 
 // logLine writes each line as DaemonLog does: the time in UTC to the second, then the words,
@@ -60,6 +60,10 @@ func main() {
 	// terminal, with no session's grant, once a person allows it (#4179).
 	if len(os.Args) > 1 && os.Args[1] == "secret" {
 		os.Exit(agentsd.SecretCommand(os.Args[2:], os.Getenv, secretSocket(), os.Stdout, os.Stderr))
+	}
+	// The one installer (#5356): steps 3 to 6 of a machine's set-up, on this machine.
+	if len(os.Args) > 1 && os.Args[1] == "install" {
+		os.Exit(installCommand(os.Args[2:]))
 	}
 	if len(os.Args) > 1 && os.Args[1] == "lock" {
 		os.Exit(lockCommand(os.Args[2:]))
@@ -151,6 +155,7 @@ func main() {
 	d.SayRestarted()
 	d.PickUpAfterRestart()
 	d.StartConnections()
+	d.StartSetupReports()
 	d.StartRetention()
 	d.StartBackups()
 	d.StartProjects()
@@ -416,6 +421,8 @@ func join(ctx context.Context, cl commandLine, d *agentsd.Daemon) {
 	d.SetControl(up.Tell)
 	d.SetControlAsk(up.Ask)
 	d.SetControlCapabilities(up.ControlCapabilities)
+	// What a capability gates goes when the control plane says it, not an hour later (#5410).
+	up.OnCapabilities = func([]string) { safe.Go("control capabilities", d.ControlCapabilitiesKnown) }
 	// Its agents and workflows wait for the first answer: a host the control plane forgot
 	// starts none (#4985). The last run's answer counts until then.
 	d.AwaitMembership(strings.HasSuffix(joinProblem(loc.Root), controllink.Refuse(controllink.Forgotten).Error()))

@@ -6,7 +6,7 @@ description: Run the control plane on a machine you rent, at your own domain wit
 
 # Run the control plane in the cloud
 
-The control plane that Agents runs on your Mac can only be reached while the Mac is
+The control plane that Agent Loops runs on your Mac can only be reached while the Mac is
 awake and online. Run it on a machine you rent instead, at a domain of your own, and it is
 always there. Windows, phones and hosts reach it at one address from anywhere. Its
 certificate comes from Let's Encrypt, so it is trusted like any website's, and codes carry
@@ -18,8 +18,8 @@ copies](run-several-copies.md).
 
 ## Before you start
 
-- Nothing to build or clone. Each release of Agents publishes the control plane as a
-  signed image, `ghcr.io/alexec/agents-control:<version>`, for x86-64 and ARM64. It
+- Nothing to build or clone. Each release of Agent Loops publishes the control plane as a
+  signed image, `ghcr.io/agentloops-dev/agents-control:<version>`, for x86-64 and ARM64. It
   carries the Linux host that it hands to servers that join, and the files to run it
   with. See [The image](#the-image).
 - A Linux machine you rent, on x86-64 or ARM64, with Docker and Docker Compose. The
@@ -37,7 +37,7 @@ copies](run-several-copies.md).
 
 On Google Cloud, three scripts do most of the steps below for you: they make the machine,
 its firewall, its address, the Cloud KMS key and the DNS records, then build and start the
-control plane. They run from a clone of the Agents repository on your Mac. With no Mac, do
+control plane. They run from a clone of the Agent Loops repository on your Mac. With no Mac, do
 the [Steps](#steps) by hand instead: they need only a browser and the machine's own
 terminal. Each script looks first for what it makes, so you can run it again safely.
 Each takes `--dry-run`, which prints every command and runs none.
@@ -135,7 +135,7 @@ In the repository on your Mac:
 5. Get the first code with the command that `up.sh` prints, then go on at
    [Pair your first window](#pair-your-first-window).
 
-`up.sh` runs the release in `AGENTS_VERSION`, such as `0.11.0`. Without it,
+`up.sh` runs the release in `AGENTS_VERSION`, such as `0.19.0`. Without it,
 `scripts/version.sh` says, which is a release's version only in a checkout of its tag. For
 a commit that no release has, give `--build`: it builds the image on your Mac from the
 checkout, stamps that version on it, and copies it to the machine.
@@ -144,7 +144,7 @@ To upgrade, run `up.sh` again with the new version: the machine pulls the new im
 keeps the store, the APNs key and the snapshot schedule. At the end, `up.sh` checks that the
 control plane on the machine says that version, the one **Settings ▸ Control plane** shows.
 
-Every release of Agents deploys control.agentloops.dev this way (#2100). After the tag,
+Every release of Agent Loops deploys control.agentloops.dev this way (#2100). After the tag,
 and after the GitHub release and both TestFlight builds pass, the release runs, in a
 checkout of the tag:
 
@@ -248,10 +248,10 @@ On your computer, or in Google Cloud Shell, with `gcloud` (put your Google Cloud
 ### Get what it runs
 
 On the machine, in a folder of its own such as `~/agents`, take the files to run it with out
-of the release's image (here 0.11.0):
+of the release's image (here 0.19.0):
 
 ```sh
-docker create --name agents-files ghcr.io/alexec/agents-control:0.11.0
+docker create --name agents-files ghcr.io/agentloops-dev/agents-control:0.19.0
 docker cp agents-files:/deploy ./deploy
 docker rm agents-files
 ```
@@ -304,11 +304,11 @@ On the machine, in the folder you copied to:
    AGENTS_DOMAIN=agents.example.com
    AGENTS_VIEWS_DOMAIN=views.example.com
    ACME_EMAIL=you@example.com
-   AGENTS_VERSION=0.11.0
+   AGENTS_VERSION=0.19.0
    ```
 
    Caddy gets a certificate for each name. `AGENTS_VERSION` is the image's tag: a release
-   such as `0.11.0`, `0.11` for the newest 0.11 release, or `latest`. Without it, `latest`.
+   such as `0.19.0`, `0.19` for the newest 0.19 release, or `latest`. Without it, `latest`.
 
 2. Get the image, and start the control plane and Caddy:
 
@@ -346,7 +346,7 @@ The first code comes from the machine. After that, every code comes from a paire
 
    It prints a code, which works once, for five minutes. Its eighth field is `-`: it
    carries no pin, because the certificate is publicly trusted.
-2. In Agents on your Mac, open **Settings ▸ Control plane**, click **Connect to
+2. In Agent Loops on your Mac, open **Settings ▸ Control plane**, click **Connect to
    Another…**, then **Use a Code…**. Paste the code, click **Next**, and then **Connect**.
 
    The window is paired, and this Mac's host joins with it.
@@ -363,16 +363,16 @@ docker compose -f deploy/compose.public.yaml exec control /agents-control code -
 
 Open `https://agents.example.com/` in the browser, paste the code under **Connect this
 browser to your agents**, and click **Connect**. The code works once, for five minutes.
-See [Run Agents with no Mac](run-agents-with-no-mac.md) for the rest.
+See [Run Agent Loops with no Mac](run-agents-with-no-mac.md) for the rest.
 
-### Use Agents in a browser
+### Use Agent Loops in a browser
 
-The control plane serves the Agents page at its own address, `https://agents.example.com/`,
+The control plane serves the Agent Loops page at its own address, `https://agents.example.com/`,
 so a browser anywhere can use it. The first browser can pair by a code from the machine
 (see [Pair your first window](#pair-your-first-window)). After that, a browser pairs by a
 code from a window, phone or browser that is already paired:
 
-1. In Agents on your Mac, open **Settings ▸ Control plane ▸ Clients** and click
+1. In Agent Loops on your Mac, open **Settings ▸ Control plane ▸ Clients** and click
    **Add a Browser…**. On an iPhone or iPad, tap **Add a Browser…** at the foot of the
    sidebar.
 2. In the browser, open `https://agents.example.com/`, paste the code, and click
@@ -409,14 +409,14 @@ Your Mac becomes a host of the control plane in the cloud when you connect it, a
 [Pair your first window](#pair-your-first-window). The window pairs and this Mac's host
 joins in one step. The Mac's folders appear under its own heading in every window.
 
-If Agents already runs a control plane on this Mac with hosts and devices paired to
+If Agent Loops already runs a control plane on this Mac with hosts and devices paired to
 it, **Connect to Another…** starts afresh: those devices pair again, and the control plane
 on this Mac stops. **Use This Mac Only**, in the same place, starts it again as it was. To move an existing
 control plane across and keep what is paired, see the next section.
 
 ### Move the control plane from your Mac
 
-If Agents already runs the control plane on your Mac, you can move it to the machine
+If Agent Loops already runs the control plane on your Mac, you can move it to the machine
 and keep every window, phone and host paired. The machine gets this Mac's control plane
 key, so everything that is paired trusts it. Agents keep working while it moves.
 
@@ -440,7 +440,7 @@ first.
    AGENTS_CONTROL_RECEIVE=1
    ```
 
-3. In Agents on your Mac, open **Settings ▸ Control plane** and click **Move…** beside
+3. In Agent Loops on your Mac, open **Settings ▸ Control plane** and click **Move…** beside
    **Move to Another Machine**. The sheet opens at step 1.
 4. Click **Save Key…**, and save the key as `control-key`. Then seal the key in the
    machine's store, with the key piped in over ssh, so that it is never written on the
@@ -489,7 +489,7 @@ with this setting waits for a move and does not start a store of its own.
 
 #### Bring it back to your Mac
 
-1. In Agents, open **Settings ▸ Control plane** and click **Run It Here Again…**. The sheet checks both ends: the machine
+1. In Agent Loops, open **Settings ▸ Control plane** and click **Run It Here Again…**. The sheet checks both ends: the machine
    answers and holds this control plane's key, and this Mac's copy is ready and empty.
 2. Only if the machine made a key of its own (it started with an empty store and no key
    sealed), the sheet says so. Then write that key to a file on your Mac, piped out over
@@ -500,7 +500,7 @@ with this setting waits for a move and does not start a store of its own.
        run --rm -T control key export --key-fd 1' > control-key)
    ```
 
-   Click **Use Key…** in the sheet, choose the file, and then delete the file. Agents
+   Click **Use Key…** in the sheet, choose the file, and then delete the file. Agent Loops
    keeps the Mac's earlier key aside in the keychain. Only a shell on the machine can
    export the key: no request to the control plane gives it out. After a move from your
    Mac, the machine holds this Mac's key, and you do not do this step.
@@ -563,13 +563,13 @@ may write to about it; without it, the project's page.
 ## On a corporate network
 
 On a network where machines reach the internet through a proxy, and where the network may
-re-sign TLS with the organisation's own certificate authority (CA), every part of Agents
+re-sign TLS with the organisation's own certificate authority (CA), every part of Agent Loops
 can still reach the control plane:
 
 | What dials | Its proxy | The organisation's CA |
 | --- | --- | --- |
-| The Agents window on a Mac | The Mac's: System Settings ▸ Network ▸ Proxies, a PAC file too | The Mac's keychain |
-| Agents on iPhone and iPad | The device's | The device's trusted certificates |
+| The Agent Loops window on a Mac | The Mac's: System Settings ▸ Network ▸ Proxies, a PAC file too | The Mac's keychain |
+| Agent Loops on iPhone and iPad | The device's | The device's trusted certificates |
 | A browser | The browser's | The browser's |
 | The Mac's host (agentsd) | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` when set; otherwise the Mac's web proxies and their exceptions. A PAC file is not read | The Mac's keychain |
 | A Linux server's host | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` | The system's roots, and the PEM file in `AGENTS_CA_FILE`, or else `/etc/agents/ca.pem` |
@@ -747,8 +747,8 @@ Then make a machine there that starts from that disk, with the flags of `up.sh`'
 
 ## The image
 
-Each release pushes `ghcr.io/alexec/agents-control` from the release workflow (#2140), for
-`linux/amd64` and `linux/arm64`, with three tags: `0.11.0`, `0.11` and `latest`. All in it is
+Each release pushes `ghcr.io/agentloops-dev/agents-control` from the release workflow (#2140), for
+`linux/amd64` and `linux/arm64`, with three tags: `0.19.0`, `0.19` and `latest`. All in it is
 of the same version:
 
 | Path | What it is |
@@ -763,8 +763,8 @@ It is signed with cosign, keyless: the signature names the release workflow that
 it. Check it before you run it:
 
 ```sh
-cosign verify ghcr.io/alexec/agents-control:0.11.0 \
-    --certificate-identity-regexp '^https://github\.com/alexec/Agents/\.github/workflows/release\.yml@' \
+cosign verify ghcr.io/agentloops-dev/agents-control:0.19.0 \
+    --certificate-identity-regexp '^https://github\.com/agentloops-dev/agent-loops/\.github/workflows/release\.yml@' \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -772,8 +772,8 @@ The image also carries an SBOM (SPDX) and its build's provenance (SLSA), as Buil
 attestations. To read them:
 
 ```sh
-docker buildx imagetools inspect ghcr.io/alexec/agents-control:0.11.0 --format '{{ json .SBOM }}'
-docker buildx imagetools inspect ghcr.io/alexec/agents-control:0.11.0 --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/agentloops-dev/agents-control:0.19.0 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/agentloops-dev/agents-control:0.19.0 --format '{{ json .Provenance }}'
 ```
 
 The image is public, and pulling it needs no account. If the repository becomes private
@@ -786,7 +786,7 @@ one, and `apk add` them.
 ## If it doesn't work
 
 - **`docker compose pull` says `manifest unknown`.** No release has that
-  `AGENTS_VERSION`. Give a release's version, such as `0.11.0`, or `latest`.
+  `AGENTS_VERSION`. Give a release's version, such as `0.19.0`, or `latest`.
 
 - **The control plane stops at start with `could not find default credentials`.** It has no
   right to use the Cloud KMS key: `deploy/secrets/gcp-service-account` is empty and the
@@ -811,7 +811,7 @@ one, and `apk add` them.
 
 ## Related
 
-- [Run Agents with no Mac](run-agents-with-no-mac.md): this control plane, the web page
+- [Run Agent Loops with no Mac](run-agents-with-no-mac.md): this control plane, the web page
   and a codespace.
 - [Run the control plane as several copies](run-several-copies.md).
 - [The control plane](../explanation/control-plane.md).

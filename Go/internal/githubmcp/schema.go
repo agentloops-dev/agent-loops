@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/agentloops-dev/agents/Go/internal/mcpevents"
+	"github.com/agentloops-dev/agent-loops/Go/internal/mcpevents"
 )
 
 // issueRefPattern is an issue as fixes takes it: "#12", or "owner/repo#12" (#3797).
@@ -28,10 +28,13 @@ type schema = mcpevents.Schema
 // args are an event's checked arguments.
 type args struct {
 	repo, branch, label, workflow string
-	pr, run                       int
-	issues                        []int
-	fixes                         []string
-	anyone, mine, all             bool
+	// environment, tier and component narrow deploy.* (#5240).
+	environment, tier, component string
+	run                          int
+	prs                          []int
+	issues                       []int
+	fixes                        []string
+	anyone, mine, all            bool
 }
 
 // wantsIssue is whether the issue numbered n is one asked for: any, when none is.
@@ -85,6 +88,15 @@ func check(s schema, raw json.RawMessage) (args, *rpcError) {
 		return args{}, bad
 	}
 	return args{repo: v.String("repo"), branch: v.String("branch"), label: v.String("label"), workflow: v.String("workflow"),
-		pr: v.Int("pr"), run: v.Int("run"), issues: v.Ints("issue"), fixes: v.Strings("fixes"),
+		environment: v.String("environment"), tier: v.String("tier"), component: v.String("component"),
+		prs: v.Ints("pr"), run: v.Int("run"), issues: v.Ints("issue"), fixes: v.Strings("fixes"),
 		anyone: v.Bool("anyone"), mine: v.Bool("mine"), all: v.Bool("any")}, nil
 }
+
+// wantsPR is whether the pull request numbered n is one pr asks for (#5436): any, when pr is
+// not given.
+func (a args) wantsPR(n int) bool { return mcpevents.Wants(a.prs, n) }
+
+// onePR is the pull request pr names when it names one, so a read can ask the forge for only
+// it; 0 when it names none or several.
+func (a args) onePR() int { return mcpevents.One(a.prs) }

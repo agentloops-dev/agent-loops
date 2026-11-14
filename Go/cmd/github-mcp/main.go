@@ -1,6 +1,6 @@
 // github-mcp: the `github` MCP server (#1232), on stdio. The official GitHub MCP server's
 // tools (github/github-mcp-server, as a library) and the events the ci server had (#383):
-// checks.failed, run.completed (#3444), pr.opened, pr.merged, pr.closed, pr.conflicted, issue.opened,
+// checks.failed, run.completed (#3444), pr.opened, pr.merged, pr.closed, pr.conflicted, pr.blocked, issue.opened,
 // issue.labelled, issue.commented and issue.closed, polled; CodeRabbit's review.posted and
 // review.comment, with tools that ask it to review, answer and resolve (#1344); and views (#1341): Pull
 // requests, Issues and a pull request's page. As the person: its token is the host's GitHub
@@ -27,8 +27,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/agentloops-dev/agents/Go/internal/buildinfo"
-	"github.com/agentloops-dev/agents/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 )
 
 func main() {

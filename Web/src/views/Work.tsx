@@ -6,7 +6,7 @@ import { effect, useSignal } from "@preact/signals";
 import { Fragment, type ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import type {
-  ForgeCloseRequest, ForgeComment, ForgeDone, ForgeEvent, ForgeLinked, ForgeItemDetail, ForgeLabel, ForgeLabelRequest, LineageCostRollup, LineageEstimate, LineageForecast,
+  Agent, ForgeCloseRequest, ForgeComment, ForgeDone, ForgeEvent, ForgeLinked, ForgeItemDetail, ForgeLabel, ForgeLabelRequest, LineageCostRollup, LineageEstimate, LineageForecast, LineageGraph,
 } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { Capability } from "../protocol/capabilities.generated";
@@ -25,6 +25,8 @@ import { newSessionProjects } from "../model/projects";
 import { orderedFolders } from "./Sidebar";
 import { lineageUrl, sessionHost } from "../model/lineage";
 import { type PipelineStep, pipelineDepth, pipelineSteps } from "../model/pipeline";
+import { liveInRows, notLiveYet } from "../model/deployRows";
+import { DeployRows } from "./WorkDeploys";
 import { buildsRunLinkHelp, buildsRunLinkQuery } from "../model/builds";
 import { costWords, nodeName, spent } from "../model/value";
 import { actualWords, estimateLine, estimateRangeWords, estimateSpentWords, showsEstimate } from "../model/estimate";
@@ -45,12 +47,15 @@ import { branchWords, mergeBox, mergedStrip, offers, pullStateWords, reviewersWo
 import { WorkPlan } from "./WorkPlan";
 import { WorkDocs } from "./Docs";
 import { hasPlan, leadStart, leadWords, planSessions } from "../model/epicPlan";
-import { epicLead } from "../model/workFeatures";
+import { epicLead, workingSession, workingWords } from "../model/workFeatures";
 import { go, replace, route, routeHash } from "../route";
+import { type TrailTarget, trailHelp, workTrail } from "../model/workTrail";
+import { revealFeature } from "./WorkFeatures";
 import {
   allRows, askKey, boardHosts, boards, forgeHosts, fromList, hasMore, listProjects, loadBoards, loadList, loadMore, nextAfter, pageNeighbours,
   placeKey, shownRows, workList,
 } from "../model/workLists";
+import { Glyph, Icon } from "./Icon";
 
 /** The person's projects (#3283), New Session's, for the Project filter and an item's page: each folder by the
  * machine Work's lists read it on. */
@@ -108,6 +113,12 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
   const projects = workProjects(store);
   useEffect(() => { l.projects.value = projects; }, [projectsKey(projects)]);
   const offeredProjects = listProjects(l).map((p) => p.project);
+  // The sessions this page knows, of every machine (#5453): a row shows the one that works on its item now.
+  const agents = Object.values(store.agents.value).flat();
+  const openSession = (a: Agent) => {
+    const host = sessionHost(store.agents.value, a.id);
+    if (host) go({ host, folder: a.worktree?.folder || a.cwd, session: a.id });
+  };
   const rowsAt = useRef<HTMLUListElement>(null);
   const end = useRef<HTMLDivElement>(null);
   // Back from an item's page: the list at the row last opened, selected.
@@ -199,7 +210,7 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
           )}
           {narrowed && (
             <button type="button" class="work-menu-button work-clear" title="Clear the filters but State" onClick={clear}>
-              <span aria-hidden="true">✕</span>Clear</button>
+              <Icon name="x" />Clear</button>
           )}
           <span class="work-sort">
             <FilterMenu label="Sort" standard={defaultSort(kind)} value={sort.value} choices={sortChoices} onPick={(v) => { sort.value = v as WorkSort; }} />
@@ -225,6 +236,7 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
                 <ul class="work-rows work-item-rows" ref={rowsAt}>
                   {rows.map((r) => <WorkRowView key={r.node.ref} row={r} several={offered.repos.length > 1} dim={stale.has(r.node.ref)} pick={pick}
                     latest={newest?.has(r.node.ref) === true} read={pictureReader(store, r.host)}
+                    session={kind === "release" ? undefined : workingSession(r.node, agents)} openSession={openSession}
                     open={() => { l.opened.value = r.node.ref; fromList.value = placeKey(kind, r.node.ref); go({ nav: "work", section: kind, item: r.node.ref }); }} />)}
                 </ul>
               )}
@@ -262,8 +274,10 @@ export function StatePill({ state, draft, status }: { state: string; draft?: boo
 /** A row (#4392, parts.md section 2), a link to its page (#4395): the state icon, the title and at most three chips, the comment count and the
  * assignees; under it the number, the age, the author and what lineage knows. On a phone the CSS folds it: the
  * title on two lines, every chip under it, the short line and no avatars. */
-export function WorkRowView({ row, several, dim, pick, read, open, latest: isLatest = false }: {
+export function WorkRowView({ row, several, dim, pick, read, open, latest: isLatest = false, session, openSession }: {
   row: WorkRow; several: boolean; dim: boolean; pick: (label: string) => void; read: ReadPicture | undefined; open: () => void; latest?: boolean;
+  /** The session that works on the item now (#5453): its dot and words at the row's end open its chat. */
+  session?: Agent | undefined; openSession?: ((agent: Agent) => void) | undefined;
 }) {
   const line = rowLine(row, Date.now());
   const checks = row.node.kind === "pr" ? checksGlyph(row.checks) : undefined;
@@ -292,7 +306,15 @@ export function WorkRowView({ row, several, dim, pick, read, open, latest: isLat
           </span>
         </span>
         <span class="work-row-end small">
-          {checks && <span class={`work-checks ${checks.tone}`} title={checks.words} aria-label={checks.words}>{checks.mark}</span>}
+          {session && (
+            // In a row, which is one link, the mark takes the click itself, as a label chip does (#5453).
+            <span class={`work-row-session ${session.state === "waitingOnUser" ? "attention" : "working"}`}
+              title={`${session.title || "The session"}: ${workingWords(session.state).toLowerCase()}. Open its chat`}
+              aria-label={`Session ${workingWords(session.state).toLowerCase()}`}
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); openSession?.(session); }}>
+              <span class="dot" aria-hidden="true" />{workingWords(session.state)}</span>
+          )}
+          {checks && <span class={`work-checks ${checks.tone}`} title={checks.words} aria-label={checks.words}>{checks.tone === "running" ? <Icon name="loader-circle" /> : <Glyph of={checks.mark} />}</span>}
           {review && <span class={`work-review${row.review === "changes_requested" ? " bad" : ""}`}>{review}</span>}
           {comments > 0 && <span class="work-count" aria-label={`${comments} comment${comments === 1 ? "" : "s"}`}>
             <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" /></svg>{comments}</span>}
@@ -328,6 +350,8 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
   const estimate = useSignal<LineageEstimate | null>(null);
   const forecast = useSignal<LineageForecast | null>(null);
   const pipeline = useSignal<PipelineStep[]>([]);
+  /** The pipeline's walk, for a pull request's Live in (#5243); null until it comes. */
+  const walked = useSignal<LineageGraph | null>(null);
   const lineageGot = useSignal<{ cost?: LineageCostRollup | undefined; sessions: string[] } | null>(null);
   const said = useSignal<{ words: string; failed: boolean } | null>(null);
   const writing = useSignal(false);
@@ -362,20 +386,25 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
         const kept = await keptWorkRead<{ host: string; got: ForgeItemDetail }>("item", ref);
         if (current && kept && !detail.peek()) { detail.value = kept.value; detailAt.value = kept.at; fromDevice.value = true; }
       }
+      // Every machine at once, and the first that answers wins (#5449): a slow or offline machine does not hold the page,
+      // and an error shows only when no machine read it.
       let last: string | null = null;
-      for (const h of forgeHosts) {
-        try {
-          const got = await store.link.call(kind === "pr" ? "forge/pull" : "forge/issue", { node }, h.id);
-          if (current) {
-            detail.value = { host: h.id, got }; detailAt.value = Date.now(); fromDevice.value = false; forgeProblem.value = null;
-            keepWork("item", ref, { host: h.id, got });
+      try {
+        const won = await Promise.any(forgeHosts.map(async (h) => {
+          try {
+            return { host: h.id, got: await store.link.call(kind === "pr" ? "forge/pull" : "forge/issue", { node }, h.id) };
+          } catch (e) {
+            last = describe(e);
+            throw e;
           }
-          return;
-        } catch (e) {
-          last = describe(e);
+        }));
+        if (current) {
+          detail.value = won; detailAt.value = Date.now(); fromDevice.value = false; forgeProblem.value = null;
+          keepWork("item", ref, won);
         }
+      } catch {
+        if (current) forgeProblem.value = last ?? notReadHere;
       }
-      if (current) forgeProblem.value = last ?? notReadHere;
     })().finally(() => { if (current) reading.value = false; });
     return () => { current = false; };
   }, [kind, ref, forgeHosts.map((h) => h.id).join(","), asked.value]);
@@ -409,9 +438,10 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
   useEffect(() => {
     let current = true;
     pipeline.value = [];
+    walked.value = null;
     if (!lineageHost) return;
     void store.link.call("lineage/walk", { node, depth: pipelineDepth }, lineageHost)
-      .then((g) => { if (current) pipeline.value = pipelineSteps(node, g); }, () => {});
+      .then((g) => { if (current) { pipeline.value = pipelineSteps(node, g); walked.value = g; } }, () => {});
     return () => { current = false; };
   }, [kind, ref, lineageHost, asked.value]);
   // The cost and the sessions of an issue or a pull request (#4402 note 14), from the machine that keeps its links.
@@ -482,6 +512,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
 
   const got = detail.value?.got;
   const item = got?.item;
+  const trail = workTrail(kind, ref, item?.feature, item?.parent);
   // The row the page was opened from, while the read runs: its title, number and state show at once.
   const row = !item && fromForge(kind) ? allRows(workList(kind)).find((r) => r.node.ref === ref) : undefined;
   const title = item?.title ?? row?.title ?? (fromForge(kind) ? undefined : nodeName(node));
@@ -554,7 +585,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
   const loading = fromForge(kind) && !detail.value && !forgeProblem.value;
   const narrowStart = start ? (
     <button type="button" class="prominent work-start" disabled={writing.value} onClick={startAgent}
-      title="The new-agent form in this issue's folder, filled in for it"><span aria-hidden="true">✦</span>Start Agent</button>
+      title="The new-agent form in this issue's folder, filled in for it"><Icon name="sparkles" />Start Agent</button>
   ) : lead ? (
     // Open lead (bordered), with a dot for the lead's state: green while it works, the attention colour when it needs you.
     <button type="button" class="work-start work-open-lead" title="The lead's chat" aria-label={`Open lead, ${leadWords(lead.state)}`}
@@ -563,7 +594,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
     </button>
   ) : startsLead && (
     <button type="button" class="prominent work-start" onClick={startLead}
-      title="The new-session form in this epic's folder, filled in for a lead with the lead skill"><span aria-hidden="true">✦</span>Start lead</button>
+      title="The new-session form in this epic's folder, filled in for a lead with the lead skill"><Icon name="sparkles" />Start lead</button>
   );
 
   // The Checks page (note 17), pushed from the checks row of a page under 700 px.
@@ -580,14 +611,29 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
     <article class={`work-page work-item-page${loading ? " loading" : ""}`} aria-busy={loading}>
       <div class="work-item-grid">
       <div class="work-page-bar">
-        {/* The place (note 1): Issues / #4331, Issues a link to the list as it was; the browser's Back and Forward are
-            the page's. On a 390 px page: ‹ Issues. */}
+        {/* The place (note 1), the page's trail (#5452): Issues / #4331, or Features / Work / Epic #5448 / #5452 for an
+            issue in a feature's epic, each part a link to its place (a list as it was, Features with the feature open, the
+            epic's page); the browser's Back and Forward are the page's. On a 390 px page, the nearest part alone: ‹ Issues. */}
         <nav class="work-place" aria-label="Place">
-          <a href={routeHash({ nav: "work", section: kind })} title={`All ${workKindTitle[kind].toLowerCase()}`}
-            onClick={(e) => { if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); go({ nav: "work", section: kind }); }}>
-            <span class="back" aria-hidden="true">‹ </span>{workKindTitle[kind]}</a>
-          <span class="sep" aria-hidden="true">/</span>
-          <span class="here">{shortRef(ref)}</span>
+          {trail.map((part, i) => {
+            const target = part.target;
+            const near = i === trail.length - 2;
+            if (!target) return <span key={i} class="here">{part.words}</span>;
+            const to = trailRoute(target);
+            return (
+              <Fragment key={i}>
+                <a class={near ? undefined : "far"} href={routeHash(to)} title={trailHelp(part)}
+                  onClick={(e) => {
+                    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    if (target.kind === "feature") revealFeature(target.name);
+                    go(to);
+                  }}>
+                  {near && <Icon name="chevron-left" class="back" />}{part.words}</a>
+                <span class={`sep${near ? "" : " far"}`} aria-hidden="true">/</span>
+              </Fragment>
+            );
+          })}
         </nav>
         <Stepper store={store} kind={kind} at={ref} />
         {url && <a class="work-open-icon" href={url} target="_blank" rel="noopener noreferrer" title={openOn} aria-label={openOn}><OpenGlyph /></a>}
@@ -595,7 +641,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
       </div>
       {nothingRead ? (
         <div class="work-could-not" role="alert">
-          <span class="mark" aria-hidden="true">⚠</span>
+          <span class="mark" aria-hidden="true"><Icon name="triangle-alert" /></span>
           <p class="strong">Could not read {shortRef(ref)}</p>
           <p class="quiet">{forgeProblem.value}</p>
           <p class="buttons">
@@ -700,7 +746,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
               got.item.stateReason === "not_planned"
                 ? <div class="work-event"><span class="mark not-planned" aria-hidden="true"><StateIcon kind="issue" state="closed" stateReason="not_planned" size={12} /></span>
                   <span class="quiet small">Closed as not planned{atWords(got.item.closedAt)}</span></div>
-                : <div class="work-event"><span class="mark closed" aria-hidden="true">✓</span><span class="quiet small">Closed{atWords(got.item.closedAt)}</span></div>
+                : <div class="work-event"><span class="mark closed" aria-hidden="true"><Icon name="check" /></span><span class="quiet small">Closed{atWords(got.item.closedAt)}</span></div>
             )}
             {kind === "pr" && got.item.state === "merged" && (
               <>
@@ -713,7 +759,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
               </>
             )}
             {kind === "pr" && got.item.state === "closed" && (
-              <div class="work-event"><span class="mark pr-closed" aria-hidden="true">✕</span><span class="quiet small">Closed with unmerged commits{atWords(got.item.closedAt)}</span></div>
+              <div class="work-event"><span class="mark pr-closed" aria-hidden="true"><Icon name="x" /></span><span class="quiet small">Closed with unmerged commits{atWords(got.item.closedAt)}</span></div>
             )}
             {box && <div class="work-wide-only work-merge-end">{writeBox(false)}</div>}
           </section>
@@ -756,6 +802,15 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
               {pipeline.value.length > 0 && <PipelineLine steps={pipeline.value} kind={node.kind} />}
             </SideSection>
           )}
+          {/* Where a merged pull request's change is live (#5243, board 2): a row for each environment it reached. */}
+          {kind === "pr" && got?.item.state === "merged" && walked.value && (() => {
+            const rows = liveInRows(node, walked.value, new Date(), got.item.closedAt !== undefined ? fromWireDate(got.item.closedAt) : undefined);
+            return (
+              <SideSection title="Live in">
+                {rows.length === 0 ? <span class="quiet small">{notLiveYet}</span> : <DeployRows store={store} rows={rows} />}
+              </SideSection>
+            );
+          })()}
           {(kind === "issue" || kind === "pr") && (
             <WorkDocs store={store} itemRef={ref} title={item.title} body={got?.body ?? ""} asked={asked.value} />
           )}
@@ -818,7 +873,7 @@ function atWords(at: number | undefined) {
 function TimelineEvent({ event: e, words, stateReason }: { event: ForgeEvent; words: string; stateReason: string | undefined }) {
   const dropped = e.kind === "closed" && stateReason === "not_planned";
   const mark = e.kind === "closed" ? <span class={`mark ${dropped ? "not-planned" : "closed"}`} aria-hidden="true">
-      {dropped ? <StateIcon kind="issue" state="closed" stateReason="not_planned" size={12} /> : "✓"}</span>
+      {dropped ? <StateIcon kind="issue" state="closed" stateReason="not_planned" size={12} /> : <Icon name="check" />}</span>
     : e.kind === "reopened" ? <span class="mark" aria-hidden="true"><StateIcon kind="issue" state="open" size={12} /></span>
     : e.kind === "assigned" || e.kind === "unassigned" ? <span class="mark" aria-hidden="true"><PersonGlyph /></span>
     : e.kind === "labeled" || e.kind === "unlabeled" ? <span class="mark" aria-hidden="true"><TagGlyph /></span>
@@ -946,4 +1001,11 @@ export function Stepper({ store, kind, at }: { store: Store; kind: WorkKind; at:
         {l.more.value ? "…" : "↓"}</button>
     </span>
   );
+}
+
+/** Where a part of a page's trail goes (#5452): a list, Features (with the feature open), or the epic's page. */
+function trailRoute(t: TrailTarget) {
+  if (t.kind === "list") return { nav: "work", section: t.section } as const;
+  if (t.kind === "feature") return { nav: "work", section: "features" } as const;
+  return { nav: "work", section: t.section, item: t.ref } as const;
 }

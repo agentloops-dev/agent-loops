@@ -21,6 +21,10 @@ struct WorkView: View {
                 WorkItemPage(model: model, place: place).id(place)
             } else if place.kind == .feature {
                 WorkFeaturesPane(model: model, state: model.workLists.features)
+            } else if place.kind == .deploy {
+                #if os(macOS)
+                WorkDeploysPane(model: model, state: model.workLists.deploys)
+                #endif
             } else if place.kind == .timeline {
                 #if os(macOS)
                 WorkTimelinePane(model: model, state: model.workLists.timeline)
@@ -85,6 +89,7 @@ extension WorkList.Kind {
         case .pr: "arrow.triangle.pull"
         case .feature: "sparkles"
         case .release: "shippingbox"
+        case .deploy: "server.rack"
         case .timeline: "timeline.selection"
         }
     }
@@ -95,6 +100,7 @@ extension WorkList.Kind {
         case .pr: "Every pull request in your folders’ repos, and what agents spent on each"
         case .feature: "Each feature label on your epics, with its epics and their leads"
         case .release: "The releases lineage knows, and what went into each"
+        case .deploy: "Every component in every environment: what is live, since when, and what goes next"
         case .timeline: "Your epics in time: when each started, what closed, and when it is forecast to close"
         }
     }
@@ -297,6 +303,8 @@ private struct WorkListPane: View {
     private func rowsList(_ shown: [WorkList.Row], lines: [String]) -> some View {
         let several = Set(list.all.map(\.repo)).count > 1
         let latest = kind == .release ? WorkReleaseLook.latest(list.all) : []
+        // The sessions this app knows, of every machine (#5453): a row shows the one that works on its item now.
+        let agents = kind == .release ? [] : model.workAgents
         return ScrollViewReader { reader in
             selectable {
                 if list.fromDevice {
@@ -307,7 +315,9 @@ private struct WorkListPane: View {
                 }
                 ForEach(shown) { row in
                     Button { open(row.id) } label: {
-                        WorkItemRow(row: row, several: several, compact: compact, latest: latest.contains(row.id), pick: pick)
+                        WorkItemRow(row: row, several: several, compact: compact, latest: latest.contains(row.id), pick: pick,
+                                    session: kind == .release ? nil : WorkFeatures.workingSession(on: row.node, in: agents),
+                                    openSession: { model.openWorkSession($0) })
                     }
                     .buttonStyle(WorkRowButtonStyle())
                     .environment(\.workPictures, row.host.map { WorkPictures(model: model, host: $0) })

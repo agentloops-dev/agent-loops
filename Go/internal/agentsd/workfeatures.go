@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/agentloops-dev/agents/Go/internal/lineage"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Work ▸ Features as a delivery view (#4586, specs/4328-work-look/features-delivery.md): one read
@@ -42,7 +42,7 @@ func (d *Daemon) workFeatures(ctx context.Context, r wire.WorkFeaturesRequest) (
 		<-timelineRead
 		return wire.WorkFeatures{}, Invalid("work/features: %v", strings.TrimPrefix(err.Error(), "forge/features: "))
 	}
-	out := wire.WorkFeatures{Features: []wire.WorkFeature{}, Approvals: features.Approvals, Errors: features.Errors}
+	out := wire.WorkFeatures{Features: []wire.WorkFeature{}, Approvals: features.Approvals, Errors: slices.Clone(features.Errors)}
 	addError := func(e wire.ForgeListError) {
 		if !slices.Contains(out.Errors, e) {
 			out.Errors = append(out.Errors, e)

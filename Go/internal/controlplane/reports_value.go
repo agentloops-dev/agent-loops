@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentloops-dev/agents/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agents/Go/internal/lineage"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Reports ▸ Value (#2351): what the work in a scope cost and what it delivered, read from
@@ -43,11 +43,12 @@ func (s *Service) valueReport(ctx context.Context, r wire.ReportRange, scope *wi
 	if !ok {
 		return wire.ReportValue{}, fail(invalidParams, "Say a range: day, week, month or threeMonths.")
 	}
-	scope, keep, _, err := s.reportScope(ctx, scope, user, s.isAdmin(user))
+	scope, keep, err := s.reportScope(ctx, scope, user, s.isAdmin(user))
 	if err != nil {
 		return wire.ReportValue{}, err
 	}
 	nodes, err := s.scopeLineage(ctx, keep)
+	nodes = s.projectNodes(ctx, nodes, scope)
 	if err != nil {
 		return wire.ReportValue{}, err
 	}

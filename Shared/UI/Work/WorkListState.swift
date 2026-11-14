@@ -9,10 +9,11 @@ import Observation
 @Observable
 final class WorkListState {
     let kind: WorkList.Kind
-    var filter = WorkList.Filter()
+    /// The filters and the sort are kept for the next launch (#5451), and the list opens with them.
+    var filter = WorkList.Filter() { didSet { remember() } }
     /// The person's projects (#3283), as the model last said them, for the Project filter.
     var projects: [WorkList.Project] = []
-    var sort = WorkList.Sort.updated
+    var sort = WorkList.Sort.updated { didSet { remember() } }
     var lists: [(host: MachineRef, list: DaemonAPI.ForgeList)]?
     var lineage: [DaemonAPI.ReportNode] = []
     /// The boards the Board menu offers (#3282), read with the list.
@@ -46,7 +47,14 @@ final class WorkListState {
 
     init(kind: WorkList.Kind) {
         self.kind = kind
-        sort = kind.defaultSort
+        let kept = WorkRemembered.list(WorkRememberedStore.kept(kind), kind: kind)
+        filter = kept.filter
+        sort = kept.sort
+    }
+
+    /// Keeps what the list has now for the next launch; the defaults remove it.
+    private func remember() {
+        WorkRememberedStore.keep(WorkRemembered.words(filter, sort: sort, kind: kind), for: kind)
     }
 
     struct Ask: Equatable {
@@ -184,8 +192,9 @@ final class WorkListState {
             guard ask == mine else { return }
         }
         var got: [(host: MachineRef, list: DaemonAPI.ForgeList)] = []
+        let machines = model.workMachines(board: board)
         await withTaskGroup(of: (MachineRef, DaemonAPI.ForgeList).self) { group in
-            for machine in model.workMachines(board: board) {
+            for machine in machines {
                 group.addTask {
                     do {
                         return (machine.id, try await model.forgeList(kind, .init(state: state, limit: 100,
@@ -196,9 +205,30 @@ final class WorkListState {
                     }
                 }
             }
-            for await (host, list) in group { got.append((host, list)) }
+            // Each machine's rows draw as it answers (#5449): the first machine that answers for a forge is enough, and
+            // a slow or offline one does not hold the list. The others keep the rows they had; errors wait for all.
+            for await (host, list) in group {
+                got.append((host, list))
+                guard ask == mine, got.count < machines.count, !list.items.isEmpty else { continue }
+                var drawn = got.map { entry in
+                    var quiet = entry.list
+                    quiet.errors = nil
+                    return (host: entry.host, list: quiet)
+                }
+                drawn += (lists ?? []).filter { had in !got.contains { $0.host == had.host } }
+                lineage = known.nodes
+                lineageCursor = known.cursor
+                lists = drawn
+            }
         }
         guard ask == mine else { return }
+        // One machine's answer for a forge is enough: the others' errors for it go (#5449).
+        let shown = WorkList.shownErrors(got.map { ($0.list.items.map(\.node.ref), $0.list.errors ?? []) })
+        got = got.enumerated().map { i, entry in
+            var list = entry.list
+            list.errors = shown[i].isEmpty ? nil : shown[i]
+            return (entry.host, list)
+        }
         if kind == .issue, !readBoards.isEmpty || !fromDevice { boards = readBoards }
         // Every machine failed over this device's copy: its rows stay, dimmed under what the forges said, with no
         // next page (#4392, #4930), as the web page keeps them.
@@ -266,6 +296,8 @@ final class WorkLists {
     #if os(macOS)
     /// Work ▸ Timeline (#4173): the Mac's alone for now (remote: by design).
     let timeline = WorkTimelineState()
+    /// Work ▸ Deploys (#5270): Mac + web, so not on the Remote.
+    let deploys = WorkDeploysState()
     #endif
     private var byKind: [WorkList.Kind: WorkListState] = [:]
 
@@ -274,5 +306,16 @@ final class WorkLists {
         let state = WorkListState(kind: kind)
         byKind[kind] = state
         return state
+    }
+}
+
+/// Where the Work pages keep what they had when last left (#5451): this app's defaults.
+enum WorkRememberedStore {
+    static func kept(_ kind: WorkList.Kind) -> String? { WindowDefaults.store.string(forKey: WorkRemembered.key(kind)) }
+
+    static func keep(_ words: String, for kind: WorkList.Kind) {
+        let key = WorkRemembered.key(kind)
+        guard WindowDefaults.store.string(forKey: key) != words else { return }
+        if words.isEmpty { WindowDefaults.store.removeObject(forKey: key) } else { WindowDefaults.store.set(words, forKey: key) }
     }
 }

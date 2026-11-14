@@ -19,8 +19,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/agentloops-dev/agents/Go/internal/browser"
-	"github.com/agentloops-dev/agents/Go/wire"
+	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The browser tools (#3534, spike #3527): the `agents` server offers Playwright's tools
@@ -317,6 +317,9 @@ func (d *Daemon) driveBrowser(ctx context.Context, agent wire.UUID, name string,
 	drive, err := d.browserDriveFor(ctx, agent, folderPath(a))
 	if err != nil {
 		return failed("The browser did not start: " + browserWords(err))
+	}
+	if name != passkeyName {
+		d.keepSessionPasskey(agent)
 	}
 	if name == fillSecretName {
 		words, isError, site := d.approveFill(ctx, agent, drive, fill, args)
