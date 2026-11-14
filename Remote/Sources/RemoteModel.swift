@@ -609,6 +609,10 @@ final class RemoteModel {
 
     var offeredStart: OfferedStart?
 
+    /// New Session's Suggested section (#5460), by folder: the last read, when it was read, and
+    /// whether it is this showing's own (else it is the device's copy, with its "Last update").
+    var startSuggestions: [FolderKey: SuggestionsRead] = [:]
+
     /// The offered worktree's name, chosen once the page's repository has answered: before
     /// then the page has no Worktree row, and opening it puts the place back.
     @ObservationIgnored var offeredWorktree: (folder: FolderKey, choice: WorktreeChoice)?
