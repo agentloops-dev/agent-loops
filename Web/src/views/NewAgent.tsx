@@ -448,7 +448,7 @@ export function NewAgent({ store, host, folder, folderName, down }: {
       const row = pick?.machine ? (store.folders.value[pick.machine] ?? []).find((f) => f.project === project) : undefined;
       if (pick?.machine && row && pick.machine !== host) {
         // The draft and the account belong to the machine the form is on, not to this one.
-        target = { host: pick.machine, folder: row.folder.folder.folder };
+        target = { host: pick.machine, folder: row.folder.folder };
         request.cwd = target.folder as never;
         delete request.draftID;
         delete request.accountID;

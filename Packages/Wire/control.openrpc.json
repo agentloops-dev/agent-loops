@@ -6184,6 +6184,11 @@
     {
       "name": "sessions/previewStart",
       "x-capability": "auto-machine/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "description": "Which machine Auto picks for a project and runtime, or why none fits (#5374, specs/5373-auto-machine). Advisory: a start with machine auto uses the same rule at start.",
       "paramStructure": "by-name",
       "params": [
