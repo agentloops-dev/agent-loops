@@ -192,6 +192,8 @@ type Service struct {
 	tunnels *hosttunnels.Tunnels
 	// Machine providers (#691): only on a single copy with a home for their secrets.
 	providers *providers.Providers
+	// Warm pools (#5363): with the providers, on a single copy.
+	pools *warmPools
 	// The other copies over this store, and the leases (US3); nil for a single copy.
 	mesh *mesh
 	// The origin peers dial, which a copy's key exchange is bound to.
@@ -496,6 +498,7 @@ func (s *Service) Start(ctx context.Context) (int, error) {
 	}
 	go s.refreshEvery(15 * time.Second)
 	go s.sweepEveryHour()
+	s.startPools()
 	go s.signIns.checkEvery(time.Hour, s.stop)
 	if s.tunnels != nil {
 		s.tunnels.Start(0)

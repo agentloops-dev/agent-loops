@@ -164,6 +164,7 @@ public enum Capability {
     public static let policyAsk1 = "policy.ask/1"
     public static let policy1 = "policy/1"
     public static let pool1 = "pool/1"
+    public static let pools1 = "pools/1"
     public static let preferences1 = "preferences/1"
     public static let presence1 = "presence/1"
     public static let processes1 = "processes/1"
@@ -863,6 +864,9 @@ public enum Capability {
         "policy/requests": "policy.ask/1",
         "policy/set": "policy/1",
         "policy/stopAll": "policy/1",
+        "pool/delete": "pools/1",
+        "pool/list": "pools/1",
+        "pool/set": "pools/1",
         "projects/joined": "projects/1",
         "projects/list": "projects/1",
         "projects/remove": "projects/1",
