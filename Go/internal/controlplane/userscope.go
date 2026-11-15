@@ -39,10 +39,12 @@ const userDeliveryTimeout = 30 * time.Second
 const userDeliveryMost = controllink.MaxMessage - 1<<20
 
 // toldUsers is what each machine here was last sent, by a hash, so a change tells only the
-// machines whose delivery differs.
+// machines whose delivery differs. sending is a lock for each machine with a send in
+// progress, so the sends to one machine are in order (#5655).
 type toldUsers struct {
-	mu   sync.Mutex
-	last map[string][sha256.Size]byte
+	mu      sync.Mutex
+	last    map[string][sha256.Size]byte
+	sending keyLocks
 }
 
 func (m *Methods) userMethod(ctx context.Context, method string, params json.RawMessage, from Caller) (any, error) {
@@ -271,10 +273,16 @@ func (s *Service) takesUserSettings(host string) bool {
 
 // sendUserSettings sends a machine its person's settings and secrets, on its channel 0
 // and only there (FR-025). always sends even what it was sent last (a hello).
+//
+// The sends to one machine go one at a time, each reading the store after the one before
+// it sent: a secret and a setting changed close together start two sends, and without the
+// lock the one that read the older settings could reach the machine last, and nothing sent
+// the newer ones again (#5655, as #5069 for the policy).
 func (s *Service) sendUserSettings(host string, always bool) {
 	if s.users == nil || !s.takesUserSettings(host) {
 		return
 	}
+	defer s.toldUsers.sending.lock(host)()
 	user := s.ownerOf(host)
 	ctx, cancel := context.WithTimeout(context.Background(), userDeliveryTimeout)
 	defer cancel()
