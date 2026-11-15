@@ -206,7 +206,7 @@ func (d *Daemon) repoEnvFile(folder string) wire.EnvFile {
 // envUncommitted is whether git has changes to the folder's .agents/env that are not committed:
 // a new file not yet added counts. A folder that is not a git work tree has none.
 func envUncommitted(folder string) bool {
-	cmd := exec.Command("git", "-C", folder, "status", "--porcelain", "--", envRel)
+	cmd := exec.Command("git", "-C", folder, "status", "--porcelain", "--", envRel) //nolint:gosec // G702: git itself, with no shell: the folder is one argument and cannot start another command
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 	out, err := cmd.Output()
 	return err == nil && strings.TrimSpace(string(out)) != ""
@@ -344,7 +344,7 @@ func (d *Daemon) envWrite(r wire.EnvWriteRequest) error {
 	if len(next) > envfile.FileMost {
 		return Invalid("The file would be over %d KB.", envfile.FileMost>>10)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	if err := store.WriteAtomically(path, next, 0o644); err != nil {

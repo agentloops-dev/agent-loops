@@ -29,10 +29,10 @@ func checkEnvironment(value json.RawMessage) error {
 	}
 	for _, v := range f.Variables {
 		if len(v.Value) > envfile.ValueMost {
-			return fmt.Errorf("%w: The value of %s is over 4 KB.", ErrInvalid, v.Name)
+			return fmt.Errorf("%w: The value of %s is over 4 KB", ErrInvalid, v.Name)
 		}
 		if why := envfile.SecretWords(v.Name, v.Value); why != "" {
-			return fmt.Errorf("%w: %s Your variables are kept in clear: keep the value in Settings ▸ You ▸ Secrets instead.", ErrInvalid, why)
+			return fmt.Errorf("%w: %s Your variables are kept in clear: keep the value in Settings ▸ You ▸ Secrets instead", ErrInvalid, why)
 		}
 	}
 	return nil
