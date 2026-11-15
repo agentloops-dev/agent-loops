@@ -28,7 +28,7 @@ func TestWaitingDeploysAndTheirAnswer(t *testing.T) {
 			if r.URL.Query().Get("status") != "waiting" {
 				t.Errorf("listed %q", r.URL.RawQuery)
 			}
-			io.WriteString(w, `{"workflow_runs":[
+			_, _ = io.WriteString(w, `{"workflow_runs":[
 				{"id":1,"run_attempt":1,"name":"Release","path":".github/workflows/release.yml","event":"push","status":"waiting",
 				 "head_branch":"v0.17.0","head_sha":"abc","html_url":"https://github.com/o/r/actions/runs/1","updated_at":"2026-11-05T10:00:00Z",
 				 "actor":{"login":"alexec","type":"User"}},
@@ -36,18 +36,18 @@ func TestWaitingDeploysAndTheirAnswer(t *testing.T) {
 				 "head_branch":"main","head_sha":"def","html_url":"https://github.com/o/r/actions/runs/2","updated_at":"2026-11-05T10:00:00Z",
 				 "actor":{"login":"alexec","type":"User"}}]}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs/1/pending_deployments"):
-			io.WriteString(w, `[
+			_, _ = io.WriteString(w, `[
 				{"environment":{"id":11,"name":"production","html_url":"https://github.com/o/r/deployments/activity_log?environments_filter=production"},
 				 "current_user_can_approve":true,"reviewers":[{"type":"User","reviewer":{"login":"alexec"}},{"type":"Team","reviewer":{"slug":"release"}}]},
 				{"environment":{"id":12,"name":"soak"},"current_user_can_approve":false,"reviewers":[]}]`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs/2/pending_deployments"):
-			io.WriteString(w, `[{"environment":{"id":13,"name":"soak"},"current_user_can_approve":false,"reviewers":[]}]`)
+			_, _ = io.WriteString(w, `[{"environment":{"id":13,"name":"soak"},"current_user_can_approve":false,"reviewers":[]}]`)
 		case strings.HasSuffix(r.URL.Path, "/o/r/tags"):
-			io.WriteString(w, `[{"name":"v0.17.0"},{"name":"v0.16.0"}]`)
+			_, _ = io.WriteString(w, `[{"name":"v0.17.0"},{"name":"v0.16.0"}]`)
 		case strings.HasSuffix(r.URL.Path, "/o/r/compare/v0.16.0...v0.17.0"):
-			io.WriteString(w, `{"commits":[{"sha":"a1","commit":{"message":"One (#1)"}}]}`)
+			_, _ = io.WriteString(w, `{"commits":[{"sha":"a1","commit":{"message":"One (#1)"}}]}`)
 		default:
-			io.WriteString(w, `[]`)
+			_, _ = io.WriteString(w, `[]`)
 		}
 	}))
 	t.Cleanup(s.Close)
@@ -111,7 +111,7 @@ func TestApprovalDeploysAndTheirAnswer(t *testing.T) {
 			if r.URL.Query().Get("task") != ApprovalTask {
 				t.Errorf("listed %q", r.URL.RawQuery)
 			}
-			io.WriteString(w, `[
+			_, _ = io.WriteString(w, `[
 				{"id":7,"sha":"abc","ref":"v0.1.0","environment":"production","task":"deploy:approval","created_at":"`+now+`","updated_at":"`+now+`",
 				 "payload":"{\"workflow\":\"deploy.yml\",\"actor\":\"alexec\"}"},
 				{"id":8,"sha":"abc","ref":"v0.0.9","environment":"production","task":"deploy:approval","created_at":"`+now+`","updated_at":"`+now+`",
@@ -121,16 +121,16 @@ func TestApprovalDeploysAndTheirAnswer(t *testing.T) {
 				{"id":10,"sha":"abc","ref":"v0.0.7","environment":"production","task":"deploy:approval","created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",
 				 "payload":{"workflow":"deploy.yml"}}]`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/o/r/actions/runs"):
-			io.WriteString(w, `{"workflow_runs":[]}`)
+			_, _ = io.WriteString(w, `{"workflow_runs":[]}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/deployments/7/statuses"):
-			io.WriteString(w, `[{"id":70,"state":"pending","created_at":"`+now+`","log_url":"https://github.com/o/r/actions/runs/3"}]`)
+			_, _ = io.WriteString(w, `[{"id":70,"state":"pending","created_at":"`+now+`","log_url":"https://github.com/o/r/actions/runs/3"}]`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/deployments/8/statuses"):
-			io.WriteString(w, `[{"id":81,"state":"inactive","created_at":"`+now+`"},{"id":80,"state":"pending","created_at":"`+now+`"}]`)
+			_, _ = io.WriteString(w, `[{"id":81,"state":"inactive","created_at":"`+now+`"},{"id":80,"state":"pending","created_at":"`+now+`"}]`)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/dispatches") && refuse:
 			w.WriteHeader(http.StatusForbidden)
-			io.WriteString(w, `{"message":"Resource not accessible by integration"}`)
+			_, _ = io.WriteString(w, `{"message":"Resource not accessible by integration"}`)
 		case r.Method == http.MethodGet:
-			io.WriteString(w, `[]`)
+			_, _ = io.WriteString(w, `[]`)
 		default:
 			w.WriteHeader(http.StatusNoContent)
 		}
