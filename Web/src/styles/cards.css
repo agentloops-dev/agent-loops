@@ -20,7 +20,8 @@ dialog.sheet:has(.subagent-steps) { width: min(720px, calc(100vw - 32px)); max-h
    one body, a fixed foot (the ways to say no as links on the left, at most two buttons on the right,
    the primary last). The yellow left edge and the label over them are the one mark of needs you (#5016). */
 .waiting-label { margin: 4px 0 0; font-size: 0.6875rem; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tint-attention); }
-.card.ask { border-left: 3px solid var(--tint-attention); border-radius: var(--radius-floating); }
+/* The edge follows the corners (#5669; design-system.md, "Edges"): an inset shadow, as a banner's. */
+.card.ask { box-shadow: inset 3px 0 0 var(--tint-attention); border-radius: var(--radius-floating); }
 .ask-head { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .ask-glyph { flex: none; color: var(--tint-attention); margin-top: 0.2em; }
 .ask-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

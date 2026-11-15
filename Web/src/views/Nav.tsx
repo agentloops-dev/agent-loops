@@ -41,8 +41,8 @@ import { addMachineWords } from "../model/addMachine";
 import { SettingsPage } from "./Settings";
 import { SecretsPage } from "./SecretsPage";
 import { EnvironmentPage } from "./EnvironmentPage";
-import { AccountsSection } from "./Accounts";
-import { StatusListMark, StatusListLastLine, StatusSecretsPage, useUserScopeStatus } from "./StatusSecrets";
+import { AccountsPage } from "./AccountsPage";
+import { StatusListMark, StatusListLastLine, useUserScopeStatus } from "./StatusSecrets";
 import { WorkflowRow } from "./WorkflowRow";
 import { BackToList } from "./BackToList";
 import { PageTitle, PersonMenu, SearchBox } from "./TopBar";
@@ -150,8 +150,7 @@ const isRuntimesPage = (page: NavPage) => page.draw.kind === "activity" && page.
 /** A page's mark beside its row in the list: a count, or that it is not saved. */
 function PageMark({ store, page }: { store: Store; page: NavPage }) {
   // Status ▸ Secrets and Accounts (#4161): the newest operation's age.
-  if (page.draw.kind === "statusList") return <StatusListMark store={store} list={page.draw.list} />;
-  if (page.draw.kind === "secrets") return <StatusListMark store={store} list="secrets" />;
+  if (page.draw.kind === "secrets" || page.draw.kind === "accounts") return <StatusListMark store={store} list={page.draw.kind} />;
   // Status ▸ Runtimes (#3956): an allowance below 10% left or on course to run out (#5000), in the warning tint, as the window's orange Runtimes icon.
   if (isRuntimesPage(page)) {
     const low = runtimesLowWords(store);
@@ -256,8 +255,7 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
                   </button>
                   {isRuntimesPage(p) && <RuntimesLowLine store={store} />}
                   {isEventsPage(p) && <EventsWaitingLine store={store} />}
-                  {p.draw.kind === "statusList" && <StatusListLastLine store={store} list={p.draw.list} />}
-                  {p.draw.kind === "secrets" && <StatusListLastLine store={store} list="secrets" />}
+                  {(p.draw.kind === "secrets" || p.draw.kind === "accounts") && <StatusListLastLine store={store} list={p.draw.kind} />}
                 </Fragment>
               ))}
               {machinesHead(group) && makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value)
@@ -316,10 +314,10 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         // Every secret of the person's (#5257): theirs (#1760), a machine's for one session (#3548) and what agents saved
         // on that machine (#5122), in one list beside the selected one's detail. Settings ▸ You keeps a line to it.
         : page.draw.kind === "secrets" ? <SecretsPage store={store} down={down} />
+        // Every outside account of the person's (#5258), in one list beside the selected one's detail.
+        : page.draw.kind === "accounts" ? <AccountsPage store={store} down={down} />
         // The plain variables sessions get when their agent starts (#5260): ~/.agents/env and each repo's .agents/env.
         : page.draw.kind === "environment" ? <EnvironmentPage store={store} down={down} />
-        : page.draw.kind === "accounts" ? <AccountsSection store={store} down={down} />
-        : page.draw.kind === "statusList" ? <StatusSecretsPage store={store} list={page.draw.list} />
         : page.draw.kind === "docs" ? (route.value.item
           ? <DocPage key={route.value.item} store={store} docRef={route.value.item} />
           : <DocsList store={store} />)

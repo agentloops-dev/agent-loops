@@ -20,7 +20,7 @@ function planeLink(hosts, home) {
     asked,
     onNotification: () => {},
     onState: () => {},
-    call: async (method, params, host) => {
+    call: async (method, _params, host) => {
       asked.push({ method, host });
       if (method === "machines/list") return hosts;
       if (method === "control/status") return { name: "Plane", version: "0.5.0", machineID: "P", ...(home ? { homeHost: home } : {}) };

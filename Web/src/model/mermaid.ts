@@ -370,7 +370,7 @@ function layOutFlowchart(chart: Flowchart): MermaidDiagram {
   const ranks = ranksOf(chart);
   const rankCount = Math.max(0, ...ranks) + 1;
   const layers: number[][] = Array.from({ length: rankCount }, () => []);
-  nodes.forEach((_, node) => layers[ranks[node]!]!.push(node));
+  nodes.forEach((_, node) => { layers[ranks[node]!]!.push(node); });
   const place = nodes.map(() => 0);
   for (const layer of layers) layer.forEach((node, position) => { place[node] = position; });
 
@@ -464,7 +464,7 @@ function layOutFlowchart(chart: Flowchart): MermaidDiagram {
       labels.push(label(centreX, (a.y + b.y) / 2, edge.lines, true));
     }
   }
-  nodes.forEach((node, i) => labels.push(label(centres[i]!.x, centres[i]!.y, node.lines)));
+  nodes.forEach((node, i) => { labels.push(label(centres[i]!.x, centres[i]!.y, node.lines)); });
   return framed("flowchart", boxes, lines, labels, `Flowchart · ${nodes.length} ${nodes.length === 1 ? "box" : "boxes"}`);
 }
 

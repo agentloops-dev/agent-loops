@@ -1,0 +1,25 @@
+{
+  "name": "repo-lint",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "lint",
+  "implicitDependencies": ["*", "!swift-lint"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "scripts/lint.sh shell zsh checks dupes",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "{workspaceRoot}/**/*",
+        "!{workspaceRoot}/**/node_modules/**/*",
+        "!{workspaceRoot}/**/.build/**/*",
+        "!{workspaceRoot}/build/**/*",
+        "!{workspaceRoot}/Web/dist/**/*",
+        "!{workspaceRoot}/Go/out/**/*",
+        "!{workspaceRoot}/.agents/worktrees/**/*",
+        { "runtime": "uname -s" }
+      ]
+    }
+  }
+}

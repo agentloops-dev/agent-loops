@@ -645,6 +645,15 @@ final class AppModel {
         statusSecretsPage = .environment
     }
 
+    /// The Accounts page's selected account, by its id (`DaemonAPI.OutsideAccount.id`), so a link opens one (#5258).
+    var accountsSelection: String?
+
+    /// Status ▸ Accounts (#5258): the page, with `item` selected when given.
+    func showAccounts(item: String? = nil) {
+        if let item { accountsSelection = item }
+        statusSecretsPage = .accounts
+    }
+
     /// An agent's chat, from a machine's Resources or a capsule naming its holder: its
     /// own folder first, as a banner does, so the sidebar and the page agree.
     func openAgent(_ agentID: UUID) {

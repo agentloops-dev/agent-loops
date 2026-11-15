@@ -26,6 +26,7 @@ import { hostRowsMethods } from "./hostRows";
  * The reducer: what each notification does to what is held. Kept apart from the link so the
  * fixtures can drive it, as `AgentsModel` is driven in Swift.
  */
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: the interface Work below names the methods that the parts add to this class
 export class Work {
   readonly hosts = signal<ControlMachine[]>([]);
 

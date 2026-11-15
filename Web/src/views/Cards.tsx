@@ -355,7 +355,7 @@ function ElicitationCard({ request, asker, hold, answer, openBrowser }: {
     }}>{dismissWord}{dismissed.telling}</button>
   );
 
-  let body;
+  let body: ComponentChildren;
   if (request.handOff) {
     // A step on the page in the machine's browser (#3529): Open the page shows it in a tab of its own (#4141).
     body = <HandOffField handOff={request.handOff} inert={inert} open={openBrowser} recipient={hold.recipient}

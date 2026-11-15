@@ -1,7 +1,7 @@
 import AgentsKitCore
 import SwiftUI
 
-/// Which of the Status pages about the person's own set-up (#4161): Secrets, Accounts, and Environment (#5260).
+/// Which of the Status rows (#4161): each opens its page, Secrets (#5257), Accounts (#5258) or Environment (#5260).
 enum StatusSecretsKind: Hashable {
     case secrets, accounts, environment
 
@@ -87,73 +87,5 @@ struct StatusSecretsRow: View {
             .accessibilityValue(read.map { "\(StatusSecretsWords.lastLabel) \($0)" } ?? "")
         }
         .help(kind.help)
-    }
-}
-
-/// Status ▸ Secrets and Status ▸ Accounts (#4161, specs/secret-info §9): a list you only read, newest
-/// operation first: the name, the hint, the last operation in words and its age, and the warning
-/// under one that is not backed up. A press on a row, and the link at the foot, open Settings ▸ You.
-/// The window and the Remote draw it; the web page draws the same in `Web/src/views/StatusSecrets.tsx`.
-struct StatusSecretsPage: View {
-    let kind: StatusSecretsKind
-    /// The control plane, or nil while it cannot be reached.
-    let control: DaemonClient?
-    let state: UserScopeState
-    /// Opens the item (by its line's id) in Settings ▸ You; nil for the page itself.
-    let open: (String?) -> Void
-
-    var body: some View {
-        let lines = state.statusLines(kind)
-        Form {
-            if let problem = state.problem {
-                Section {
-                    Text(problem).appText(.supporting).tinted(.failure)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .paperListRow()
-            }
-            Section {
-                if lines.isEmpty {
-                    Text(kind == .secrets ? StatusSecretsWords.noSecrets : StatusSecretsWords.noAccounts)
-                        .appText(.supporting).foregroundStyle(.secondary)
-                } else {
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
-                        ForEach(lines) { line in row(line, now: context.date) }
-                    }
-                }
-            } header: {
-                Text(kind == .secrets ? StatusSecretsWords.secretsLead : StatusSecretsWords.accountsLead)
-                    .appText(.fine).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } footer: {
-                Button(kind == .secrets ? StatusSecretsWords.editSecrets : StatusSecretsWords.editAccounts) { open(nil) }
-                    .buttonStyle(.borderless)
-            }
-            .paperListRow()
-        }
-        .paperForm()
-        .task(id: control != nil) { await state.load(control) }
-        .refreshable { await state.load(control) }
-    }
-
-    private func row(_ line: StatusSecretsWords.Line, now: Date) -> some View {
-        Button { open(line.id) } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(line.title).foregroundStyle(.primary)
-                    Spacer()
-                    if let at = line.at {
-                        Text(StatusSecretsWords.ago(at, now: now)).foregroundStyle(.secondary).monospacedDigit()
-                    }
-                }
-                Text(StatusSecretsWords.summary(line)).appText(.supporting).foregroundStyle(.secondary)
-                if !line.backedUp {
-                    Text(StatusSecretsWords.notBackedUp).appText(.supporting).tinted(.warning)
-                }
-            }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }

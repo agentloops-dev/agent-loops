@@ -35,7 +35,6 @@ export type PageDraw =
   | { kind: "secrets" }
   | { kind: "environment" }
   | { kind: "accounts" }
-  | { kind: "statusList"; list: "secrets" | "accounts" }
   | { kind: "multiplier" }
   | { kind: "usage" | "machines" | "workflows" | "settings" };
 
@@ -111,10 +110,10 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   status: [
     { id: "runtimes", title: "Runtimes", group: "Status", draw: { kind: "activity", page: "runtimes" } },
     { id: "events", title: "Events", group: "Status", draw: { kind: "activity", page: "events" } },
-    // Every secret of the person's, to find, see, add, edit and remove (#5257), at #/secrets. Accounts is still what
-    // happened last to each (#4161), read only, until its own page (#5258).
+    // Every secret (#5257) and every outside account (#5258) of the person's, to find, see, add, edit and remove, at
+    // #/secrets and #/accounts.
     { id: "secrets", title: "Secrets", group: "Status", draw: { kind: "secrets" } },
-    { id: "accounts", title: "Accounts", group: "Status", draw: { kind: "statusList", list: "accounts" } },
+    { id: "accounts", title: "Accounts", group: "Status", draw: { kind: "accounts" } },
     // The plain variables sessions get when their agent starts (#5260): ~/.agents/env and each repo's .agents/env, at #/environment.
     { id: "environment", title: "Environment", group: "Status", draw: { kind: "environment" } },
   ],
@@ -125,6 +124,7 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
     { id: "mcp", title: "Connectors", group: "You", draw: { kind: "activity", page: "mcp" } },
     // Opens Status ▸ Secrets (#5257): #/settings/secrets is the Secrets page's address too, for people who look in Settings.
     { id: "secrets", title: "Secrets", group: "You", draw: { kind: "secrets" } },
+    // Opens Status ▸ Accounts (#5258), as Secrets does.
     { id: "accounts", title: "Accounts", group: "You", draw: { kind: "accounts" } },
     // Opens Status ▸ Environment (#5260), as Secrets opens its page: the window's Settings ▸ You has Open Environment.
     { id: "environment", title: "Environment", group: "You", draw: { kind: "environment" } },

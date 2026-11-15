@@ -14,6 +14,7 @@ import { about, cardKind, isSecretName, secretsLeft } from "../model/userScope";
 import { askBeforeUseHint, askBeforeUseWords } from "../model/askBeforeUse";
 import { machineNames, onlyMachine, onlyMachineLine } from "../model/secretInfo";
 import { removeQuestion, sessionSecretWords } from "../model/sessionSecrets";
+import { accountID } from "../model/accountsPage";
 import {
   ageLine, type Chip, chips, chipTitles, counts as chipCounts, groups as groupsOf, type Item, items as itemsOf, kindLabel, noMatch,
   projectsOf, recentLine, rowHint, shortAge, type Sort, sorts, sortTitles, subtitle, w, whereLine,
@@ -44,7 +45,7 @@ function open(item: Item | null): void {
   go(item ? { nav: "status", section: "secrets", item: itemRef(item) } : { nav: "status", section: "secrets" });
 }
 
-/** Under 720 px the list is alone (wireframes §2); the Environment page (#5260) uses it too. */
+/** Under 720 px the list is alone (wireframes §2). The Accounts page (#5258) and the Environment page (#5260) use it too. */
 export function useNarrow(): boolean {
   const query = "(max-width: 719px)";
   const narrow = useSignal(globalThis.matchMedia?.(query).matches ?? false);
@@ -388,7 +389,7 @@ function SecretDetail({ store, item, down, show, host, offersAsk, accounts, repl
                 <dd>
                   {accounts.map((a) => (
                     <button key={`${a.service}#${a.address ?? ""}`} type="button" class="link"
-                      onClick={() => go({ nav: "status", section: "accounts" })}>
+                      onClick={() => go({ nav: "status", section: "accounts", item: accountID(a) })}>
                       {a.address ? `${a.service} (${a.address})` : a.service}
                     </button>
                   ))}

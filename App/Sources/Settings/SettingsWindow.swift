@@ -181,7 +181,7 @@ struct SettingsWindow: View {
         // The person's own (#3998), from the sidebar's Your setup (#3632, #3967).
         case .connectors: MCPServersView()
         case .secrets: SecretsView()
-        case .accounts: FormColumn { AccountsView() }
+        case .accounts: AccountsView()
         case .appearance: FormColumn { Form { AppearanceSettingsView() }.paperForm() }
         // The archive switch is a rule of Agents ▸ Policy now (#2957, FR-023).
         case .sidebar: FormColumn { Form { SidebarSettingsSection() }.paperForm() }

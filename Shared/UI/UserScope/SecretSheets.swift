@@ -6,6 +6,8 @@ struct SecretShowButtons: View {
     let row: DaemonAPI.UserSecretRow
     let show: SecretShowState
     let control: DaemonClient?
+    /// The account it is opened from, for the audit entry (#5116, #5258).
+    var account: DaemonAPI.UserSealedSecretRequest.Account?
 
     var body: some View {
         let shown = show.shown?.name == row.name
@@ -14,7 +16,7 @@ struct SecretShowButtons: View {
             if show.fetching == row.name {
                 ProgressView().controlSize(.small).frame(width: 16, height: 16)
             } else {
-                Button { Task { await show.toggle(row, on: control) } } label: {
+                Button { Task { await show.toggle(row, account: account, on: control) } } label: {
                     Image(icon: shown ? "eye.slash" : "eye")
                 }
                 .buttonStyle(.borderless)
@@ -22,7 +24,7 @@ struct SecretShowButtons: View {
                 .accessibilityLabel("\(shown ? UserScopeWords.hide : UserScopeWords.reveal) \(row.name)")
                 .disabled(off)
             }
-            Button { Task { await show.copy(row, on: control) } } label: {
+            Button { Task { await show.copy(row, account: account, on: control) } } label: {
                 Image(icon: show.copied?.name == row.name && show.copied?.part == nil ? "checkmark" : "doc.on.doc")
             }
             .buttonStyle(.borderless)
@@ -40,6 +42,7 @@ struct SecretShownValue: View {
     let shown: SecretShowState.Shown
     let show: SecretShowState
     let control: DaemonClient?
+    var account: DaemonAPI.UserSealedSecretRequest.Account?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -50,7 +53,7 @@ struct SecretShownValue: View {
                             .frame(width: 96, alignment: .leading)
                         Text(part == .number ? card.spacedNumber : card.part(part)).appText(.code)
                         Spacer()
-                        Button { Task { await show.copy(row, part: part, on: control) } } label: {
+                        Button { Task { await show.copy(row, part: part, account: account, on: control) } } label: {
                             Image(icon: show.copied == .init(name: row.name, part: part) ? "checkmark" : "doc.on.doc")
                         }
                         .buttonStyle(.borderless)
