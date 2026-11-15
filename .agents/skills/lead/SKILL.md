@@ -113,7 +113,11 @@ only the keys it has. A wait that names nothing is refused. When you start again
 - **`pr.blocked`** on a child's PR (#5321: a conflict, a failed required check, changes
   requested, auto-merge off; its `reasons` say which): its lane fixes it. If the lane
   has ended or stopped, message it about its own PR (`message_session`), never to widen
-  its work. Leave a PR labelled `needs-approval` alone: it waits for Alex.
+  its work. Leave a PR labelled `needs-approval` alone: it waits for Alex. A failed
+  check that main also fails, with the same test, is not the lane's to fix: the lane
+  waits for main to go green, then runs its checks again (`fix-failed-checks`, step 2a,
+  #5589). Do not message the lane, and do not start a lane to fix main: the Fix main
+  lane does it (#5581, §6). Wait again.
 - **The wait is refused** with "No server here offers pr.blocked" (#5437: the
   installed app is older than #5321): wait instead on `["issue.closed", "pr.merged",
   "checks.failed", "pr.conflicted"]`, with the same `where`, and use that list for the
