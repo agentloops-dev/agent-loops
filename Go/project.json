@@ -67,7 +67,7 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "Go/scripts/go.sh test -race ./...",
+        "command": "Go/scripts/go-test.sh -race",
         "cwd": "{workspaceRoot}"
       },
       "inputs": [
