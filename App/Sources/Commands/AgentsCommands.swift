@@ -156,7 +156,7 @@ struct AgentsCommands: Commands {
         }
 
         // A Markdown page's text (#1419), as Safari and Preview have it. ⌘0 is Actual
-        // Size while a page is in front, and View ▸ Multiplier otherwise (#3986).
+        // Size while a page is in front, and View ▸ Achievements otherwise (#3986).
         CommandGroup(after: .toolbar) {
             Button("Actual Size") { pageZoom?.actualSize() }
                 .keyboardShortcut(pageZoom == nil ? nil : KeyboardShortcut("0"))
@@ -214,7 +214,7 @@ struct AgentsCommands: Commands {
             Button(MessagesList.title) { model.sidebarItem = .messages }
             // The page the window opens to (#3986). ⌘1…n are the inspector panes, so ⌘0 is
             // next to them; Actual Size keeps it while a Markdown page is in front.
-            Button("Multiplier") { model.showMultiplier() }
+            Button("Achievements") { model.showAchievements() }
                 .keyboardShortcut(pageZoom == nil ? KeyboardShortcut("0") : nil)
             Button("Cost") { model.showsSpending = true }
                 .keyboardShortcut(MenuKeys.cost)
@@ -596,7 +596,7 @@ struct AgentsCommands: Commands {
         for kind in WorkList.Kind.allCases {
             add("Work: \(kind.title)") { model.sidebarItem = .work(kind) }
         }
-        add("Multiplier") { model.showMultiplier() }
+        add("Achievements") { model.showAchievements() }
         add("Cost", MenuKeys.cost) { model.showsSpending = true }
         add("Docs") { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
         add("Settings…", KeyboardShortcut(","), keywords: ["preferences"]) { openSettings() }

@@ -34,7 +34,7 @@ import { approvalWaitWords, mergeTime } from "../model/time";
 import { velocityHere } from "../model/velocity";
 import { TimeCharts } from "./TimeCharts";
 import { VelocityCharts } from "./VelocityCharts";
-import { pageHost } from "./Multiplier";
+import { pageHost } from "./Achievements";
 import { oldestRead } from "../model/lastUpdate";
 import { Capability } from "../protocol/capabilities.generated";
 import { OrgBudget, OrgPolicyLine, PassThroughList } from "./OrgPolicyLine";

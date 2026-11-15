@@ -202,9 +202,9 @@ struct ContentView: View {
                                                  set: { model.selection = $0 }))
                 .paperGround()
         } else {
-            MultiplierPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
+            AchievementsPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
                            agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
-                           hints: "⌘0 Multiplier · ⌘N new session · ↑↓ move · ⌘K find",
+                           hints: "⌘0 Achievements · ⌘N new session · ↑↓ move · ⌘K find",
                            refresh: { await model.refreshMultiplier() })
                 .paperGround()
         }

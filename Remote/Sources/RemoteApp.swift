@@ -456,7 +456,7 @@ struct RemoteView: View {
         case .secretsStatus: RemoteStatusSecretsPage(kind: .secrets).staleBanner().paperGround()
         case .accountsStatus: RemoteStatusSecretsPage(kind: .accounts).staleBanner().paperGround()
         case .machine(let host): RemoteMachinePage(host: host).staleBanner().paperGround()
-        case .multiplier: RemoteMultiplierPage().paperGround()
+        case .achievements: RemoteAchievementsPage().paperGround()
         case .velocity: RemoteVelocityPage().paperGround()
         case .work: WorkView(model: model).staleBanner().paperGround()
         case .summary:
@@ -563,11 +563,11 @@ private struct RuntimeSignInAsk: ViewModifier {
     }
 }
 
-/// The detail with nothing picked (#2090): the Multiplier page (#4116), as the Mac's window
+/// The detail with nothing picked (#2090): the Achievements page (#4116), as the Mac's window
 /// and the web page have it. Leaving a session comes here on an iPad, and never to New session.
 struct NothingPickedPage: View {
     var body: some View {
-        RemoteMultiplierPage()
+        RemoteAchievementsPage()
     }
 }
 
@@ -589,15 +589,15 @@ struct RemoteVelocityPage: View {
     }
 }
 
-/// The shared Multiplier page (#4116) with the Remote's figures, from the Mac's host.
-struct RemoteMultiplierPage: View {
+/// The shared Achievements page (#4116) with the Remote's figures, from the Mac's host.
+struct RemoteAchievementsPage: View {
     @Environment(RemoteModel.self) private var model
 
     var body: some View {
-        MultiplierPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
+        AchievementsPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
                        agentsWorking: model.agentsWorking, refresh: { await model.refreshMultiplier() })
             .staleBanner()
-            .navigationTitle("Multiplier")
+            .navigationTitle("Achievements")
             .toolbarTitleDisplayMode(.inline)
     }
 }

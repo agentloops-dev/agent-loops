@@ -140,8 +140,8 @@ extension RemoteModel {
             case .machine:
                 // A machine's page (#4034), as the window's Machines group opens it.
                 openActivity = newValue
-            case .multiplier, .velocity:
-                // The Multiplier page (#4116) and Velocity (#4758), from their rows under Status.
+            case .achievements, .velocity:
+                // The Achievements page (#4116) and Velocity (#4758), from their rows under Status.
                 openActivity = newValue
             case .spending, .tokens, .time,
                  .folderMCPServers, .docs, .messages, .dashboard:

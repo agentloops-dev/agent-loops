@@ -24,7 +24,7 @@ export function AchievementCard({ store }: { store: Store }) {
         </span>
         <button class="link close" aria-label="Dismiss achievement" title="Dismiss" onClick={() => dismiss(id)}>✕</button>
       </div>
-      <button class="link small" onClick={() => { dismiss(id); go({ nav: "reports", section: "multiplier" }); }}>
+      <button class="link small" onClick={() => { dismiss(id); go({ nav: "reports", section: "achievements" }); }}>
         See Achievements
       </button>
     </aside>

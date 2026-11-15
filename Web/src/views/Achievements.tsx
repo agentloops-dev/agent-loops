@@ -1,4 +1,4 @@
-// The Multiplier page (#3990): the page's half of the window's MultiplierPage (#3904), with the crowd
+// The Achievements page (#3990, #5736): the page's half of the window's AchievementsPage (#3904), with the crowd
 // (#3985), the bests (#3988) and the earned badges (#3987), in place of the web's Achievements page. It
 // is Reports ▸ Multiplier, and Agents with nothing chosen, as the window's detail with nothing picked.
 //
@@ -95,7 +95,7 @@ function useNews(multiplier: Multiplier | undefined): { words: string; up: boole
   return news;
 }
 
-export function MultiplierPage({ store }: { store: Store }) {
+export function AchievementsPage({ store }: { store: Store }) {
   const host = pageHost(store);
   const multiplier = host ? store.multiplier.value[host] : undefined;
   const achievements = host ? store.achievements.value[host] : undefined;
@@ -116,7 +116,7 @@ export function MultiplierPage({ store }: { store: Store }) {
     </p>
   );
   return (
-    <section class="chat multiplier-page" aria-label="Multiplier">
+    <section class="chat multiplier-page" aria-label="Achievements">
       {/* How old the figures are (#5144): when this page last heard the host's Multiplier. */}
       {readAt !== undefined && <p class="page-fresh"><LastUpdate at={readAt} /></p>}
       <div class="multiplier-body">

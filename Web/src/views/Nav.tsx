@@ -46,7 +46,7 @@ import { WorkflowRow } from "./WorkflowRow";
 import { BackToList } from "./BackToList";
 import { PageTitle, PersonMenu, SearchBox } from "./TopBar";
 import { pageCrumbs, type Crumb } from "../model/crumbs";
-import { MultiplierPage } from "./Multiplier";
+import { AchievementsPage } from "./Achievements";
 import { lowDetail, lowWords, runtimeTally, setupRuntimes } from "../model/runtimes";
 import { eventsWaitingLine } from "../model/eventsWaiting";
 import type { Session } from "../session";
@@ -287,7 +287,7 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
   const admin = adminOf(store);
   if (!gated(page, admin) && page.draw.kind === "activity") return <ActivityPageView store={store} page={page.draw.page} />;
   if (!gated(page, admin) && page.draw.kind === "settings") return <SettingsPage store={store} down={down} />;
-  if (page.draw.kind === "multiplier") return <MultiplierPage store={store} />;
+  if (page.draw.kind === "achievements") return <AchievementsPage store={store} />;
   // A page under another (#5178) names that page in its breadcrumb: Reports › Planning › Builds.
   const parent = page.under ? navPages[section].find((p) => p.id === page.under) : undefined;
   return (

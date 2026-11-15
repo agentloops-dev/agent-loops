@@ -452,8 +452,9 @@ test("an Activity page is a page of Machines or Reports (#2141), and an unknown 
     assert.equal(routeHash({ nav: "status", section: "events", host: "mac", folder: "file:///w/a" }), "#/status/events");
     assert.deepEqual(parseRoute("#/a/spending"), { nav: "reports", section: "usage" });
     assert.deepEqual(parseRoute("#/a/time"), { nav: "reports", section: "usage" });
-    assert.deepEqual(parseRoute("#/a/achievements"), { nav: "reports", section: "multiplier" }, "the Multiplier page took its place (#3990)");
-    assert.deepEqual(parseRoute("#/reports/achievements"), { nav: "reports", section: "multiplier" });
+    assert.deepEqual(parseRoute("#/a/achievements"), { nav: "reports", section: "achievements" }, "the Achievements page (#3990, #5736)");
+    assert.deepEqual(parseRoute("#/reports/achievements"), { nav: "reports", section: "achievements" });
+    assert.deepEqual(parseRoute("#/reports/multiplier"), { nav: "reports", section: "achievements" }, "an old Multiplier link opens it (#5736)");
     assert.deepEqual(parseRoute("#/a/mcp"), { nav: "settings", section: "mcp" }, "Connectors has a page of its own (#589), in Settings ▸ You (#3998)");
     assert.deepEqual(parseRoute("#/h/mac/p/file%3A%2F%2F%2Fw%2Fa/m/1"), { host: "mac", folder: "file:///w/a", mcp: true },
       "a folder's Connectors has a page of its own (#753)");

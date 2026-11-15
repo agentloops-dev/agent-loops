@@ -34,7 +34,7 @@ import { ReviewPage } from "./Review";
 import { projectNameOf, Sidebar } from "./Sidebar";
 import { ContextMenu } from "./ContextMenu";
 import { AchievementCard } from "./AchievementCard";
-import { MultiplierPage } from "./Multiplier";
+import { AchievementsPage } from "./Achievements";
 import { NavBar, PageView, SectionPage } from "./Nav";
 import { Overview } from "./Overview";
 import { navPages } from "../model/nav";
@@ -125,7 +125,7 @@ export function Columns({ session, store }: { session: Session; store: Store }) 
           ) : r.host && r.folder && folder && r.compose ? (
             // Only when asked for: leaving a session shows nothing chosen, not New Session (#2090).
             <NewAgent store={store} host={r.host} folder={folder.folder.folder} folderName={folder.name} down={down} />
-          ) : <MultiplierPage store={store} />}
+          ) : <AchievementsPage store={store} />}
         {r.host && r.session && r.files && <FilesPane store={store} host={r.host} session={r.session} />}
       </div>}
       <NewFolderDialog store={store} />

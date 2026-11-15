@@ -105,8 +105,8 @@ export function parseRoute(hash: string): Route {
     if (nav === "reports" && section === "events") return { nav: "status", section };
     // Settings ▸ You ▸ Secrets and ▸ Accounts are pages of their own (#5257, #5258): an old link opens them.
     if (nav === "settings" && (section === "secrets" || section === "accounts")) return { nav: "status", section };
-    // The Multiplier page took the Achievements page's place (#3990): an old link opens it.
-    if (nav === "reports" && section === "achievements") return { nav, section: "multiplier" };
+    // The Multiplier page is the Achievements page again (#5736): an old link opens it.
+    if (nav === "reports" && section === "multiplier") return { nav, section: "achievements" };
     // An item keeps its own state after the "?" too: #/reports/value/builds?repo=… (#5178).
     if (item) return query ? { nav, section: decodeURIComponent(section), item: decodeURIComponent(item), query }
       : { nav, section: decodeURIComponent(section), item: decodeURIComponent(item) };

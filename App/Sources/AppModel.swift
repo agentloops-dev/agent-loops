@@ -741,7 +741,7 @@ final class AppModel {
             if showsSummary { return .summary }
             if showsDashboard { return .dashboard }
             // Nothing else open is the Multiplier page (#3986), as the detail draws it.
-            guard let key = selectedFolderKey else { return selection == nil && !composing ? .multiplier : nil }
+            guard let key = selectedFolderKey else { return selection == nil && !composing ? .achievements : nil }
             if let id = openWorkflow { return .workflow(id, in: key) }
             if case .review(let id)? = folderPage { return .review(id, in: key) }
             if folderPage == .archivedSessions { return .archivedSessions(key) }
@@ -749,7 +749,7 @@ final class AppModel {
             if folderPage == .mcpServers { return .folderMCPServers(key) }
             if let openPin { return .pin(openPin, in: key) }
             if let selection { return .session(selection) }
-            return composing ? .folder(key) : .multiplier
+            return composing ? .folder(key) : .achievements
         }
         set {
             // The person's own pick wins over a banner still waiting for its lists.
@@ -783,8 +783,8 @@ final class AppModel {
                 showFolderPage(.mcpServers, of: key)
             case .review(let id, let key):
                 showFolderPage(.review(id), of: key)
-            case .multiplier:
-                showMultiplier()
+            case .achievements:
+                showAchievements()
             case .spending:
                 showsSpending = true
             case .tokens:
@@ -841,9 +841,9 @@ final class AppModel {
         }
     }
 
-    /// The Multiplier page (#3986), from its row under Usage or View ▸ Multiplier (⌘0): every
+    /// The Achievements page (#3986), from its row under Usage or View ▸ Achievements (⌘0): every
     /// page, folder page, pin, workflow and chat closed, as the window opens.
-    func showMultiplier() {
+    func showAchievements() {
         showsSpending = false
         showsEvents = false
         showsRuntimes = false
