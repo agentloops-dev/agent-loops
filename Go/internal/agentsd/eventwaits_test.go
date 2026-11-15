@@ -172,8 +172,8 @@ func TestABranchWaitNamesTheBranchOrSetsAny(t *testing.T) {
 		if !strings.Contains(text, "branch.moved happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("any: true never woke")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "any: true never woke")
 	}
 }
 
