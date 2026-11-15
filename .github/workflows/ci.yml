@@ -28,514 +28,24 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Which jobs this run needs (#594), from Nx's project graph (#5631), on a runner that is never
-  # short. Most of a pull request's time to land was spent queued for a macOS runner, not
-  # building: in October 2026 `test` waited 3–31 minutes and `packages` 8–36 to run for a few
-  # seconds with nothing to do. A job skipped by its `if:` still satisfies a required check, so
-  # the macOS jobs start only when Nx says a project of theirs is affected. Each project.json
-  # names the projects whose files it reads (implicitDependencies), and a folder that only some
-  # task reads (Host/, Shared/, specs/, deploy/, scripts/, …) is a project with no targets
-  # (tag inputs-only), so a change to docs/ or a skill starts no macOS job. If this job fails,
-  # the jobs after it start anyway.
+  # The one Linux job (#5645), on every change. First it says which macOS work this change
+  # needs, from Nx's project graph (#5631): its outputs start `apps` and `test` only when a
+  # project of theirs is affected, so a change to docs/ or a skill boots no macOS runner. A job
+  # skipped by its `if:` satisfies a required check; a workflow-level `paths:` filter would
+  # leave it pending instead. Then Nx over the Go module, the web app, the Wire code generation
+  # and the design tokens (#5628, epic #5627): go:build, go:vet, go:test (-race), web:build,
+  # web:lint (tsc, the lint that keeps agent output inert, the licence list), web:test (which
+  # holds the build to its MANIFEST), wire:gen and design:gen. Then the linters (#1224) but
+  # SwiftLint, the Wire compat check and the mixed-versions test (#1767). Each project's
+  # project.json names the inputs of its tasks; a lane runs the same with scripts/nx.sh. The
+  # Xcode projects (tag xcode) are `apps` and `test`'s.
   #
-  # A push to main does not wait here (#595, #2218): this job is on Linux and takes about a
-  # minute.
-  affected:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      NX_NO_CLOUD: "true"
-      NX_DAEMON: "false"
-      NX_LOAD_DOT_ENV_FILES: "false"
-      NX_TUI: "false"
-    outputs:
-      apps: ${{ steps.nx.outputs.apps }}
-      swift: ${{ steps.nx.outputs.swift }}
-      go: ${{ steps.nx.outputs.go }}
-      marks: ${{ steps.marks.outputs.marks }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: Web/.node-version
-          package-manager-cache: false
-      - name: Install from the lockfile
-        timeout-minutes: 5
-        run: scripts/pnpm.sh install --frozen-lockfile
-      # The same base as the Nx jobs: on a pull request its merge base with main, on main the
-      # push before; with no base (a new branch, a run by hand), every job.
-      - name: Affected projects
-        id: nx
-        shell: bash
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          apps=run swift=run go=run
-          if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            projects=$(scripts/nx.sh show projects --affected --base="$BASE" --head=HEAD --json)
-            echo "Affected: $projects"
-            has() { jq -e --arg p "$1" 'index($p) != null' <<<"$projects" >/dev/null; }
-            has mac || has remote || apps=skip
-            has agentskit || has agentskit-repo || has codetext || swift=skip
-            has go || go=skip
-          fi
-          printf 'apps=%s\nswift=%s\ngo=%s\n' "$apps" "$swift" "$go" | tee -a "$GITHUB_OUTPUT"
-
-      # The `marks` job (#4615) starts only when a mark, its source or this file changed; with
-      # no base to compare against it starts anyway.
-      - name: Did a mark change
-        id: marks
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          marks=run
-          if [[ -n "$BASE_SHA" ]] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
-            git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(design/logo/blob/final/|scripts/design\.sh$|App/Resources/Assets\.xcassets/|Remote/Resources/Assets\.xcassets/AppIcon|Web/assets/|docs/assets/|docs/favicon\.ico$|www/assets/|\.github/workflows/ci\.yml$)' || marks=skip
-          fi
-          echo "marks=$marks" | tee -a "$GITHUB_OUTPUT"
-
-  # The Mac app and the Remote, as Nx's mac:build and remote:build (#5631): each an xcodebuild
-  # through scripts/build-cache.sh, as a lane runs it. They share nothing with the package tests,
-  # so `apps` and `swift` run side by side, and `test` below, the check main requires, is red
-  # unless both passed. Nx skips a build whose inputs (App/project.json, Remote/project.json)
-  # have a pass in the Nx cache; Xcode's DerivedData stays below it, in a cache of its own.
-  apps:
-    needs: affected
-    # `always()` so a failed `affected` still runs this job rather than skipping it, which
-    # would read as a pass.
-    if: ${{ always() && !cancelled() && (needs.affected.result != 'success' || needs.affected.outputs.apps != 'skip') }}
-    # The project targets the macOS and iOS 27 SDKs, which only this image has.
-    # A preview image while macOS 27 is new; move to macos-27 when it is GA.
-    runs-on: xcode-27
-    # Room for both schemes from cold. The "Time left for" step below reads the same number as
-    # JOB_MINUTES; change them together.
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: write
-    env:
-      NX_NO_CLOUD: "true"
-      NX_DAEMON: "false"
-      NX_LOAD_DOT_ENV_FILES: "false"
-      NX_TUI: "false"
-    steps:
-      # For the step budgets below (scripts/ci-time-left.sh, #5609).
-      - name: Start the clock
-        id: clock
-        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
-      # actions/cache refuses a path with '..', so the Nx cache is in the runner's temp folder,
-      # with its database (rule 5 of #5627).
-      - name: Nx's folders
-        run: |
-          echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
-          echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
-      # The pull request's own commit, as in `go` (#5584).
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      # The Xcode that .xcode-version names, which every Swift task's hash reads (rule 4 of
-      # #5627).
-      - name: Xcode
-        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
-      # A build graph is only good for the toolchain that wrote it. SwiftPM bakes absolute SDK
-      # and framework paths into the objects it produces, and the runner's Xcode moves under
-      # it: an image update left every restored cache pointing at an SDK that was no longer
-      # there, and the link failed with every AgentsKitCore symbol undefined. This is part of
-      # every cache key below, so a new image is a miss (a cold build that works) rather than a
-      # restore nobody can use.
-      - name: Toolchain fingerprint
-        id: toolchain
-        run: |
-          version="$(xcodebuild -version | tr -dc '0-9A-Za-z.')"
-          sdk="$(xcrun --sdk macosx --show-sdk-build-version)"
-          echo "fingerprint=${version}-sdk${sdk}" >> "$GITHUB_OUTPUT"
-      # The DerivedData key ends in a hash of the sources its builds read (#269), so new sources
-      # miss their exact key, start warm from the nearest restore-key, and save a key of their
-      # own. `git ls-tree` names each folder by its tree hash.
-      - name: Cache keys
-        id: keys
-        env:
-          MANIFESTS: ${{ hashFiles('project.yml', 'Packages/AgentsKit/Package.swift', 'Packages/AgentsKit/Package.resolved', 'Packages/CodeText/Package.swift', 'Packages/CodeText/Package.resolved') }}
-        run: |
-          xcode="$(git ls-tree HEAD -- project.yml App Host Packages Remote RemoteNotify RemoteShare RemoteWidget Shared Web | git hash-object --stdin)"
-          echo "base=${{ steps.toolchain.outputs.fingerprint }}-${MANIFESTS}" >> "$GITHUB_OUTPUT"
-          echo "xcode=${xcode}" >> "$GITHUB_OUTPUT"
-          agentskit="$(git ls-tree HEAD -- Packages/AgentsKit/Package.swift Packages/AgentsKit/Sources | git hash-object --stdin)"
-          echo "agentskit=${agentskit}" >> "$GITHUB_OUTPUT"
-      # DerivedData (build-cache.sh's build/DerivedData) and the packages it fetches. Each falls
-      # back to the newest built from the same manifests, then to the newest for this toolchain;
-      # there is deliberately no key that ignores the fingerprint.
-      - name: Restore Xcode build cache
-        id: xcode-cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            build/DerivedData
-            ~/Library/Caches/Agents-build/packages
-            ~/Library/Caches/Agents-build/checkouts
-          key: macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}
-          restore-keys: |
-            macos-xcode-27-dd-${{ steps.keys.outputs.base }}-
-            macos-xcode-27-dd-${{ steps.toolchain.outputs.fingerprint }}-
-      # A graph restored from another tree can hold an AgentsKit that Xcode will not rebuild
-      # (#679, #681, #683): when the recorded AgentsKit sources differ, only AgentsKit's own
-      # objects go, and the rest stays warm.
-      - name: Drop a stale AgentsKit from the Xcode build cache
-        if: steps.xcode-cache.outputs.cache-matched-key != '' && steps.xcode-cache.outputs.cache-hit != 'true'
-        env:
-          AGENTSKIT: ${{ steps.keys.outputs.agentskit }}
-        run: |
-          built="$(cat build/DerivedData/agentskit-sources 2>/dev/null || true)"
-          if [[ "$built" != "$AGENTSKIT" ]]; then
-            echo "AgentsKit sources differ from the restored graph's (${built:-unrecorded}); dropping its objects."
-            rm -rf build/DerivedData/Build/Intermediates.noindex/AgentsKit.build
-            find build/DerivedData/Build/Products -maxdepth 2 -name 'AgentsKit*' -exec rm -rf {} +
-          fi
-      - name: Tools
-        run: |
-          xcodebuild -version
-          brew install xcodegen &
-          xcodegen_pid=$!
-          # The runner's Xcode comes without it, and the app's build compiles Metal.
-          xcodebuild -downloadComponent MetalToolchain
-          wait "$xcodegen_pid"
-      # Agents Host's build makes Web/dist (#473) and carries agentsd, agents-control and the MCP
-      # servers, all Go (#1314).
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: Web/.node-version
-          package-manager-cache: false
-      # Not setup-go's cache (#2512): keyed on go.mod alone, it held none of this job's
-      # darwin/arm64 and darwin/amd64 `-trimpath` builds.
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: Go/go.mod
-          cache: false
-      - name: Restore Go build cache
-        id: go-cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/Library/Caches/go-build
-            ~/go/pkg/mod
-          key: go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
-          restore-keys: |
-            go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
-            go-apps-${{ runner.os }}-
-      - name: Restore the Nx cache
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ runner.temp }}/nx
-          key: nx-apps-${{ github.event.pull_request.head.sha || github.sha }}
-          restore-keys: nx-apps-
-      - name: Install from the lockfile
-        timeout-minutes: 5
-        run: |
-          scripts/pnpm.sh install --frozen-lockfile
-          scripts/pnpm.sh audit signatures
-      - name: Time left for Nx
-        id: budget
-        env:
-          START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 30
-          RESERVE: 3
-        run: bash scripts/ci-time-left.sh
-      # mac:build and remote:build, one at a time (they share build/DerivedData), and the tasks
-      # they depend on (wire:gen, design:gen, web:build). A build that fails on a restored
-      # DerivedData gets one more go from clean (scripts/ci-clean-retry.sh says why); a task that
-      # passed is in the Nx cache, so the retry runs only what failed.
-      - name: Nx affected
-        id: nx
-        timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
-        shell: bash
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          RESTORED: ${{ steps.xcode-cache.outputs.cache-matched-key }}
-        run: |
-          source scripts/ci-clean-retry.sh
-          nx_apps() {
-            if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-              scripts/nx.sh affected -t build --exclude='*,!mac,!remote' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
-            else
-              scripts/nx.sh run-many -t build --projects=mac,remote --parallel=1 --output-style=static
-            fi
-          }
-          clean_retry "$RESTORED" build/DerivedData -- nx_apps
-      - name: Save the Nx cache
-        if: ${{ always() && !cancelled() }}
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ runner.temp }}/nx
-          key: nx-apps-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
-      - name: Prune old Nx caches for this ref
-        if: ${{ always() && !cancelled() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh "nx-apps-" "nx-apps-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
-      # The Go helpers are built in Agents Host's build, so its outcome alone says whether the Go
-      # cache is complete. Each ref keeps only its newest.
-      - name: Save Go build cache
-        if: ${{ always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success' }}
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            ~/Library/Caches/go-build
-            ~/go/pkg/mod
-          key: go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
-      - name: Prune old Go build caches for this ref
-        if: ${{ always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh "go-apps-${{ runner.os }}-" "go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" "$GITHUB_REF"
-      # Only on a push to main, as the golangci-lint cache (2026-11-13): this graph is about 2 GB,
-      # and a pull request's own, under its merge ref, no other pull request can read. A pull
-      # request restores main's newest through the restore-keys above. Only when both schemes
-      # built in this run: an Nx cache hit builds nothing, and leaves DerivedData as it was.
-      - name: Did both schemes build here
-        id: built
-        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.xcode-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success' }}
-        run: |
-          if [[ -d build/DerivedData/Build/Products/Debug && -d build/DerivedData/Build/Products/Debug-iphonesimulator ]]; then
-            echo "${{ steps.keys.outputs.agentskit }}" > build/DerivedData/agentskit-sources
-            echo "save=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Save Xcode build cache
-        if: ${{ always() && steps.built.outputs.save == 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            build/DerivedData
-            ~/Library/Caches/Agents-build/packages
-            ~/Library/Caches/Agents-build/checkouts
-          key: macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}
-      - name: Prune old Xcode caches for this ref
-        if: ${{ always() && steps.built.outputs.save == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh macos-xcode-27-dd- 'macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}' "$GITHUB_REF"
-
-  # AgentsKit and CodeText, as Nx's tasks (#5631): agentskit:test-unit, test-control and
-  # test-integration, agentskit-repo:test (the suites that read files outside the package, so
-  # their inputs are the repo's), and codetext:test, each a `swift test` through
-  # scripts/build-cache.sh, beside `apps`. A target whose inputs did not change is a cache hit.
-  swift:
-    needs: affected
-    if: ${{ always() && !cancelled() && (needs.affected.result != 'success' || needs.affected.outputs.swift != 'skip') }}
-    runs-on: xcode-27
-    # Long enough for the package builds, CodeText and every AgentsKit target from cold
-    # (run 36642820605 was cancelled at ten minutes). The "Time left for" step below reads the
-    # same number as JOB_MINUTES; change them together.
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: write
-    env:
-      NX_NO_CLOUD: "true"
-      NX_DAEMON: "false"
-      NX_LOAD_DOT_ENV_FILES: "false"
-      NX_TUI: "false"
-    steps:
-      - name: Start the clock
-        id: clock
-        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
-      - name: Nx's folders
-        run: |
-          echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
-          echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Xcode
-        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
-      # As in `apps`: a new image is a miss, not a restore nobody can use.
-      - name: Toolchain fingerprint
-        id: toolchain
-        run: |
-          version="$(xcodebuild -version | tr -dc '0-9A-Za-z.')"
-          sdk="$(xcrun --sdk macosx --show-sdk-build-version)"
-          echo "fingerprint=${version}-sdk${sdk}" >> "$GITHUB_OUTPUT"
-      - name: Cache keys
-        id: keys
-        run: |
-          codetext="$(git ls-tree HEAD -- Packages/CodeText | git hash-object --stdin)"
-          agentskit="$(git ls-tree HEAD -- Packages/AgentsKit | git hash-object --stdin)"
-          sources="$(git ls-tree HEAD -- Packages/AgentsKit/Package.swift Packages/AgentsKit/Sources | git hash-object --stdin)"
-          {
-            echo "codetext=${codetext}"
-            echo "agentskit=${agentskit}"
-            echo "agentskit-sources=${sources}"
-          } >> "$GITHUB_OUTPUT"
-      - name: Restore CodeText build cache
-        id: codetext-cache
-        uses: actions/cache/restore@v5
-        with:
-          path: Packages/CodeText/.build
-          key: macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.codetext }}
-          restore-keys: macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-
-      - name: Restore AgentsKit build cache
-        id: agentskit-cache
-        uses: actions/cache/restore@v5
-        with:
-          path: Packages/AgentsKit/.build
-          key: macos-xcode-27-agentskit-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.agentskit }}
-          restore-keys: macos-xcode-27-agentskit-${{ steps.toolchain.outputs.fingerprint }}-
-      # The stale graph of #684 in SwiftPM's build: when the recorded AgentsKit sources differ,
-      # only the package's own targets go, and swift-nio, swift-nio-ssl and SwiftTerm stay warm.
-      - name: Drop a stale AgentsKit from the AgentsKit build cache
-        if: steps.agentskit-cache.outputs.cache-matched-key != '' && steps.agentskit-cache.outputs.cache-hit != 'true'
-        run: bash scripts/drop-stale-agentskit.sh Packages/AgentsKit/.build "${{ steps.keys.outputs.agentskit-sources }}"
-      - name: Tools
-        run: |
-          xcodebuild -version
-          # The runner's Xcode comes without it, and AgentsKit's build compiles Metal.
-          xcodebuild -downloadComponent MetalToolchain
-      # SwiftPM's build graph records the random cryptex mount name for MetalToolchain, and
-      # every absolute path of the Xcode and SDK that made it: rewrite the mount, or drop the
-      # graph when it names an Xcode or SDK this runner does not have.
-      - name: Normalize AgentsKit build cache
-        run: python3 scripts/normalize-metaltoolchain-cache.py Packages/AgentsKit/.build
-      # How long the runner's login shell takes to say its PATH. The app reads it once per
-      # process, synchronously, the first time anything looks a runtime up.
-      - name: Time the login shell
-        run: time zsh -lc 'printf %s "$PATH"' > /dev/null
-      # agentskit-repo:test depends on web:build, as WebDistManifestTests reads Web/dist.
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: Web/.node-version
-          package-manager-cache: false
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: Go/go.mod
-          cache: false
-      - name: Restore the Nx cache
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ runner.temp }}/nx
-          key: nx-swift-${{ github.event.pull_request.head.sha || github.sha }}
-          restore-keys: nx-swift-
-      - name: Install from the lockfile
-        timeout-minutes: 5
-        run: |
-          scripts/pnpm.sh install --frozen-lockfile
-          scripts/pnpm.sh audit signatures
-      # A job that reaches its timeout-minutes ends Cancelled, not Failed, and a pull request
-      # with auto-merge on waits for a check that never comes; a step's own timeout fails the
-      # step (scripts/ci-time-left.sh, #5609).
-      - name: Time left for Nx
-        id: budget
-        env:
-          START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 30
-          RESERVE: 3
-          MAX: 25
-        run: bash scripts/ci-time-left.sh
-      # One target at a time: they share each package's .build, and at most three tests at a
-      # time, one per core (#1320; each target's command). Nx's log says which target failed and
-      # how long each took, and a failing one does not stop the rest (--nx-bail is off). A run
-      # that fails on a restored .build gets one more go from clean; the targets that passed are
-      # in the Nx cache, so only the failed ones run again.
-      - name: Nx affected
-        id: nx
-        timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
-        shell: bash
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          RESTORED: ${{ steps.agentskit-cache.outputs.cache-matched-key }}${{ steps.codetext-cache.outputs.cache-matched-key }}
-        run: |
-          source scripts/ci-clean-retry.sh
-          nx_swift() {
-            if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-              scripts/nx.sh affected -t test --exclude='*,!agentskit,!agentskit-repo,!codetext' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
-            else
-              scripts/nx.sh run-many -t test --projects=agentskit,agentskit-repo,codetext --parallel=1 --output-style=static
-            fi
-          }
-          clean_retry "$RESTORED" Packages/AgentsKit/.build Packages/CodeText/.build -- nx_swift
-      - name: Save the Nx cache
-        if: ${{ always() && !cancelled() }}
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ runner.temp }}/nx
-          key: nx-swift-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
-      - name: Prune old Nx caches for this ref
-        if: ${{ always() && !cancelled() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh "nx-swift-" "nx-swift-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
-      # Only a .build that this run built. Never on a failure: a cancelled or failed run must not
-      # persist a partial cache that poisons a later restore.
-      - name: Did AgentsKit build here
-        id: agentskit-built
-        if: ${{ always() && !cancelled() && steps.nx.outcome == 'success' && steps.agentskit-cache.outputs.cache-hit != 'true' }}
-        run: |
-          if [[ -d Packages/AgentsKit/.build ]]; then
-            echo "${{ steps.keys.outputs.agentskit-sources }}" > Packages/AgentsKit/.build/agentskit-sources
-            echo "save=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Save AgentsKit build cache
-        if: ${{ always() && steps.agentskit-built.outputs.save == 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: Packages/AgentsKit/.build
-          key: macos-xcode-27-agentskit-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.agentskit }}
-      - name: Prune old AgentsKit caches for this ref
-        if: ${{ always() && steps.agentskit-built.outputs.save == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh macos-xcode-27-agentskit- 'macos-xcode-27-agentskit-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.agentskit }}' "$GITHUB_REF"
-      - name: Did CodeText build here
-        id: codetext-built
-        if: ${{ always() && !cancelled() && steps.nx.outcome == 'success' && steps.codetext-cache.outputs.cache-hit != 'true' }}
-        run: |
-          if [[ -d Packages/CodeText/.build ]]; then echo "save=true" >> "$GITHUB_OUTPUT"; fi
-      - name: Save CodeText build cache
-        if: ${{ always() && steps.codetext-built.outputs.save == 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: Packages/CodeText/.build
-          key: macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.codetext }}
-      - name: Prune old CodeText caches for this ref
-        if: ${{ always() && steps.codetext-built.outputs.save == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh macos-xcode-27-codetext- 'macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.codetext }}' "$GITHUB_REF"
-
-  # The check main requires. It reads the two macOS jobs: one that failed or was cancelled (at
-  # its cap) makes this red; one skipped for want of work passes, as a skipped `test` did.
-  # `always()` without `!cancelled()`: a skipped required check reads as a pass, so a cancelled
-  # run must end here red rather than skip it.
-  test:
-    needs: [affected, apps, swift]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Both macOS jobs passed or had nothing to do
-        env:
-          APPS: ${{ needs.apps.result }}
-          SWIFT: ${{ needs.swift.result }}
-        run: |
-          echo "apps: $APPS, swift: $SWIFT"
-          for result in "$APPS" "$SWIFT"; do
-            [[ $result == success || $result == skipped ]] || exit 1
-          done
-
-  # Nx over the Go module, the web app, the Wire code generation and the design tokens
-  # (#5628, epic #5627): go:build, go:vet, go:test (-race), web:build, web:lint (tsc, the lint
-  # that keeps agent output inert, the licence list), web:test (which holds the build to its
-  # MANIFEST), wire:gen and design:gen, on Linux. Each project's project.json names the
-  # inputs of its tasks; a lane runs the same with scripts/nx.sh. The Xcode projects (tag
-  # xcode) are `apps` and `swift`'s.
+  # The macOS jobs wait for this one (its outputs are there only when it ends): about two
+  # minutes for a change with no Go, more with Go (Alex, 2026-11-15, #5645).
   go:
     runs-on: ubuntu-latest
     # The "Time left for" step below reads the same number as JOB_MINUTES; change both.
-    timeout-minutes: 25
+    timeout-minutes: 30
     permissions:
       contents: read
       actions: write
@@ -545,6 +55,12 @@ jobs:
       NX_DAEMON: "false"
       NX_LOAD_DOT_ENV_FILES: "false"
       NX_TUI: "false"
+    outputs:
+      apps: ${{ steps.affected.outputs.apps }}
+      swift: ${{ steps.affected.outputs.swift }}
+      go: ${{ steps.affected.outputs.go }}
+      marks: ${{ steps.affected.outputs.marks }}
+      swiftlint: ${{ steps.affected.outputs.swiftlint }}
     steps:
       # For the step budgets below (scripts/ci-time-left.sh, #5609).
       - name: Start the clock
@@ -602,12 +118,39 @@ jobs:
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
+      # What each job runs, by what this change affects: on a pull request since its merge base
+      # with main, on main since the push before; with no base (a new branch, a run by hand),
+      # everything. Each later step, here and in the macOS jobs, reads these in its `if:`.
+      # #5585's skips for attested tasks go here too.
+      - name: Affected projects
+        id: affected
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          apps=run swift=run go=run marks=run swiftlint=run
+          if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            projects=$(scripts/nx.sh show projects --affected --base="$BASE" --head=HEAD --json)
+            echo "Affected: $projects"
+            has() { jq -e --arg p "$1" 'index($p) != null' <<<"$projects" >/dev/null; }
+            has mac || has remote || apps=skip
+            has agentskit || has agentskit-repo || has codetext || swift=skip
+            has go || go=skip
+            changed=$(git diff --name-only "$BASE" HEAD)
+            # The marks (#4615): a mark, its source or this file.
+            grep -qE '^(design/logo/blob/final/|scripts/design\.sh$|App/Resources/Assets\.xcassets/|Remote/Resources/Assets\.xcassets/AppIcon|Web/assets/|docs/assets/|docs/favicon\.ico$|www/assets/|\.github/workflows/ci\.yml$)' <<<"$changed" || marks=skip
+            # SwiftLint: any Swift file, its rules, its baseline or lint.sh.
+            grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^scripts/lint\.sh$)' <<<"$changed" || swiftlint=skip
+            # golangci-lint and govulncheck read Go/; a change to lint.sh runs them too.
+            grep -qE '^scripts/lint\.sh$' <<<"$changed" && go=run
+          fi
+          printf 'apps=%s\nswift=%s\ngo=%s\nmarks=%s\nswiftlint=%s\n' "$apps" "$swift" "$go" "$marks" "$swiftlint" | tee -a "$GITHUB_OUTPUT"
       - name: Time left for Nx
         id: budget
         env:
           START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 25
-          RESERVE: 3
+          JOB_MINUTES: 30
+          RESERVE: 8
         run: bash scripts/ci-time-left.sh
       # What the change affects, each task skipped when the cache has a pass at its hash: on a
       # pull request since its merge base with main, on main since the push before; with no
@@ -634,6 +177,66 @@ jobs:
             echo "::error::A generated file is not what its source makes: run scripts/wire.sh gen and scripts/design.sh gen, and commit what they write."
             exit 1
           fi
+      # The linters (#1224) but SwiftLint, which is `test`'s. shellcheck, zsh -n, our text checks
+      # (check-test-indexing.py among them, #94) and golangci-lint against its baseline (every rule
+      # in Go/.golangci.yml, #5645) fail the job; govulncheck, Biome and jscpd only report, in
+      # the job's summary, with which findings are in this change's files. golangci-lint and
+      # govulncheck run only when Go is affected. The pinned binaries are cached, and
+      # golangci-lint's analysis with them.
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/lint-tools
+          key: lint-tools-${{ hashFiles('scripts/lint.sh') }}
+      # golangci-lint's analysis, warm from main's newest; only a push to main that changed Go
+      # saves one.
+      - uses: actions/cache/restore@v5
+        id: golangci-cache
+        if: steps.affected.outputs.go != 'skip'
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ hashFiles('Go/**/*.go', 'Go/go.sum', 'Go/.golangci.yml') }}
+          restore-keys: golangci-lint-
+      - name: Lint
+        if: ${{ always() && !cancelled() }}
+        shell: bash
+        env:
+          GO: ${{ steps.affected.outputs.go }}
+          LINT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          linters=(shell zsh checks web dupes) tools=(shellcheck biome jscpd)
+          if [[ $GO != skip ]]; then
+            linters+=(go govulncheck) tools+=(golangci-lint govulncheck)
+          fi
+          scripts/lint.sh --tools ~/.cache/lint-tools "${tools[@]}"
+          export PATH="$HOME/.cache/lint-tools:$PATH"
+          git cat-file -e "$LINT_BASE^{commit}" 2>/dev/null || LINT_BASE=
+          scripts/lint.sh "${linters[@]}"
+      - if: ${{ always() && github.event_name == 'push' && steps.affected.outputs.go != 'skip' && steps.golangci-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ hashFiles('Go/**/*.go', 'Go/go.sum', 'Go/.golangci.yml') }}
+      # What a caller sends changed since the last release tag with the same capability
+      # number (#4095): an older server refuses it, and the caller cannot know.
+      - name: Wire compat
+        if: ${{ always() && !cancelled() }}
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null && git diff --quiet "$BASE" HEAD -- Packages/Wire; then
+            echo "Packages/Wire did not change."
+          else
+            scripts/wire.sh compat
+          fi
+      # Mixed versions (#1767): the last release's agentsd joined to this tree's control plane,
+      # and the last release's control plane with this tree's client, as a person meets them
+      # while an update rolls out (docs/explanation/versions.md). It needs the tags, which the
+      # checkout above fetched.
+      - name: Last release against this tree
+        if: ${{ always() && !cancelled() && steps.affected.outputs.go != 'skip' }}
+        timeout-minutes: 10
+        run: scripts/skew-test.sh
       # A failed task is not cached, so a failed run's cache is still good; a cancelled one may
       # not have finished writing. Each ref keeps only its newest.
       - name: Save the Nx cache
@@ -662,134 +265,449 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" "$GITHUB_REF"
 
-  # Mixed versions (#1767): the last release's agentsd joined to this tree's control plane,
-  # and the last release's control plane with this tree's client, as a person meets them
-  # while an update rolls out (docs/explanation/versions.md). It needs the tags.
-  skew:
-    needs: affected
-    if: ${{ always() && !cancelled() && (needs.affected.result != 'success' || needs.affected.outputs.go != 'skip') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: Go/go.mod
-          cache-dependency-path: Go/go.mod
-      - name: Last release against this tree
-        run: scripts/skew-test.sh
-
-  # The same on a Mac (#1138), so a Mac-only path (its root, its folders, a *_darwin.go file)
-  # is held as Linux's is: the Go module and what it reads. TMPDIR is resolved, because a Mac's
-  # temporary folder is reached through the /var link and the daemon keeps folders with their
-  # links resolved, as the Swift one does.
-  go-darwin:
-    runs-on: macos-latest
-    # The "Time left for" step below reads the same number as JOB_MINUTES; change both.
+  # The Mac app and the Remote, as Nx's mac:build and remote:build (#5631): each an xcodebuild
+  # through scripts/build-cache.sh, as a lane runs it, and the Blob's marks (#4615). A check main
+  # requires. They share nothing with the package tests, so `apps` and `test` run side by side.
+  # Nx skips a build whose inputs (App/project.json, Remote/project.json) have a pass in the Nx
+  # cache; Xcode's DerivedData stays below it, in a cache of its own. Each step's `if:` reads
+  # `go`'s outputs (APPS, MARKS), so a change to the marks alone builds no app.
+  apps:
+    needs: go
+    # `always()` so a failed `go` still runs this job rather than skipping it, which would read
+    # as a pass: an output that `go` did not reach is empty, not 'skip', so its steps run.
+    if: ${{ always() && !cancelled() && (needs.go.outputs.apps != 'skip' || needs.go.outputs.marks != 'skip') }}
+    # The project targets the macOS and iOS 27 SDKs, which only this image has.
+    # A preview image while macOS 27 is new; move to macos-27 when it is GA.
+    runs-on: xcode-27
+    # Room for both schemes from cold. The "Time left for" step below reads the same number as
+    # JOB_MINUTES; change them together.
     timeout-minutes: 30
     permissions:
       contents: read
       actions: write
     env:
-      # Rule 2 of #5627: never Nx Cloud; no .env file, which no hash reads.
       NX_NO_CLOUD: "true"
       NX_DAEMON: "false"
       NX_LOAD_DOT_ENV_FILES: "false"
       NX_TUI: "false"
+      APPS: ${{ needs.go.outputs.apps }}
+      MARKS: ${{ needs.go.outputs.marks }}
     steps:
       # For the step budgets below (scripts/ci-time-left.sh, #5609).
       - name: Start the clock
         id: clock
         run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
-      # actions/cache refuses a path with '..', so the Nx cache is in the runner's temp folder.
-      # Its index is a database in the workspace data, so both are saved, or a restore gets no
-      # hits (rule 5 of #5627).
+      # actions/cache refuses a path with '..', so the Nx cache is in the runner's temp folder,
+      # with its database (rule 5 of #5627).
       - name: Nx's folders
         run: |
           echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
           echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
-      # The pull request's own commit, not its merge with main: the hashes are then the lane's
-      # (#5584). The base for `nx affected` is its merge base with main.
+      # The pull request's own commit, as in `go` (#5584).
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # The Xcode that .xcode-version names, which every Swift task's hash reads (rule 4 of
+      # #5627).
+      - name: Xcode
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
+      # The Blob's marks (#4615): every icon, favicon and touch icon is what `scripts/design.sh
+      # marks` makes from the one source in design/logo/blob/final/. It renders with AppKit, so it
+      # runs on the macOS 27 image that a Mac renders the same as.
+      - name: Every mark is what the Blob source makes
+        if: env.MARKS != 'skip'
+        run: scripts/design.sh marks --check
+      # A build graph is only good for the toolchain that wrote it. SwiftPM bakes absolute SDK
+      # and framework paths into the objects it produces, and the runner's Xcode moves under
+      # it: an image update left every restored cache pointing at an SDK that was no longer
+      # there, and the link failed with every AgentsKitCore symbol undefined. This is part of
+      # every cache key below, so a new image is a miss (a cold build that works) rather than a
+      # restore nobody can use.
+      - name: Toolchain fingerprint
+        if: env.APPS != 'skip'
+        id: toolchain
+        run: |
+          version="$(xcodebuild -version | tr -dc '0-9A-Za-z.')"
+          sdk="$(xcrun --sdk macosx --show-sdk-build-version)"
+          echo "fingerprint=${version}-sdk${sdk}" >> "$GITHUB_OUTPUT"
+      # The DerivedData key ends in a hash of the sources its builds read (#269), so new sources
+      # miss their exact key, start warm from the nearest restore-key, and save a key of their
+      # own. `git ls-tree` names each folder by its tree hash.
+      - name: Cache keys
+        if: env.APPS != 'skip'
+        id: keys
+        env:
+          MANIFESTS: ${{ hashFiles('project.yml', 'Packages/AgentsKit/Package.swift', 'Packages/AgentsKit/Package.resolved', 'Packages/CodeText/Package.swift', 'Packages/CodeText/Package.resolved') }}
+        run: |
+          xcode="$(git ls-tree HEAD -- project.yml App Host Packages Remote RemoteNotify RemoteShare RemoteWidget Shared Web | git hash-object --stdin)"
+          echo "base=${{ steps.toolchain.outputs.fingerprint }}-${MANIFESTS}" >> "$GITHUB_OUTPUT"
+          echo "xcode=${xcode}" >> "$GITHUB_OUTPUT"
+          agentskit="$(git ls-tree HEAD -- Packages/AgentsKit/Package.swift Packages/AgentsKit/Sources | git hash-object --stdin)"
+          echo "agentskit=${agentskit}" >> "$GITHUB_OUTPUT"
+      # DerivedData (build-cache.sh's build/DerivedData) and the packages it fetches. Each falls
+      # back to the newest built from the same manifests, then to the newest for this toolchain;
+      # there is deliberately no key that ignores the fingerprint.
+      - name: Restore Xcode build cache
+        if: env.APPS != 'skip'
+        id: xcode-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            build/DerivedData
+            ~/Library/Caches/Agents-build/packages
+            ~/Library/Caches/Agents-build/checkouts
+          key: macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}
+          restore-keys: |
+            macos-xcode-27-dd-${{ steps.keys.outputs.base }}-
+            macos-xcode-27-dd-${{ steps.toolchain.outputs.fingerprint }}-
+      # A graph restored from another tree can hold an AgentsKit that Xcode will not rebuild
+      # (#679, #681, #683): when the recorded AgentsKit sources differ, only AgentsKit's own
+      # objects go, and the rest stays warm.
+      - name: Drop a stale AgentsKit from the Xcode build cache
+        if: ${{ env.APPS != 'skip' && (steps.xcode-cache.outputs.cache-matched-key != '' && steps.xcode-cache.outputs.cache-hit != 'true') }}
+        env:
+          AGENTSKIT: ${{ steps.keys.outputs.agentskit }}
+        run: |
+          built="$(cat build/DerivedData/agentskit-sources 2>/dev/null || true)"
+          if [[ "$built" != "$AGENTSKIT" ]]; then
+            echo "AgentsKit sources differ from the restored graph's (${built:-unrecorded}); dropping its objects."
+            rm -rf build/DerivedData/Build/Intermediates.noindex/AgentsKit.build
+            find build/DerivedData/Build/Products -maxdepth 2 -name 'AgentsKit*' -exec rm -rf {} +
+          fi
+      - name: Tools
+        if: env.APPS != 'skip'
+        run: |
+          xcodebuild -version
+          brew install xcodegen &
+          xcodegen_pid=$!
+          # The runner's Xcode comes without it, and the app's build compiles Metal.
+          xcodebuild -downloadComponent MetalToolchain
+          wait "$xcodegen_pid"
+      # Agents Host's build makes Web/dist (#473) and carries agentsd, agents-control and the MCP
+      # servers, all Go (#1314).
       - uses: actions/setup-node@v5
+        if: env.APPS != 'skip'
         with:
           node-version-file: Web/.node-version
           package-manager-cache: false
-      # The build cache is our own below, not setup-go's (#2512): keyed on go.mod alone, it held
-      # whatever the first run after a go.mod change compiled.
+      # Not setup-go's cache (#2512): keyed on go.mod alone, it held none of this job's
+      # darwin/arm64 and darwin/amd64 `-trimpath` builds.
       - uses: actions/setup-go@v6
+        if: env.APPS != 'skip'
         with:
           go-version-file: Go/go.mod
           cache: false
-      # Go's own caches, under Nx's: a go:test that Nx runs again still skips the packages
-      # whose inputs did not change. Content-addressed, so an older restore is only less warm.
       - name: Restore Go build cache
+        if: env.APPS != 'skip'
         id: go-cache
         uses: actions/cache/restore@v5
         with:
           path: |
-            ~/.cache/go-build
             ~/Library/Caches/go-build
             ~/go/pkg/mod
-          key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+          key: go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
           restore-keys: |
-            go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
-            go-race-${{ runner.os }}-
-      # A pull request starts from its own newest cache, else main's (it can read main's, not
-      # another pull request's).
+            go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
+            go-apps-${{ runner.os }}-
       - name: Restore the Nx cache
+        if: env.APPS != 'skip'
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/nx
-          key: nx-macos-${{ github.event.pull_request.head.sha || github.sha }}
-          restore-keys: nx-macos-
-      # The pinned pnpm (package.json's packageManager, its hash checked) and only what the
-      # lockfile says, with no install script (rule 1 of #5627).
+          key: nx-apps-${{ github.event.pull_request.head.sha || github.sha }}
+          restore-keys: nx-apps-
       - name: Install from the lockfile
+        if: env.APPS != 'skip'
         timeout-minutes: 5
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
       - name: Time left for Nx
+        if: env.APPS != 'skip'
         id: budget
         env:
           START: ${{ steps.clock.outputs.start }}
           JOB_MINUTES: 30
           RESERVE: 3
         run: bash scripts/ci-time-left.sh
-      # What the change affects, each task skipped when the cache has a pass at its hash: on a
-      # pull request since its merge base with main, on main since the push before; with no
-      # base (a new branch, a run by hand), every task.
+      # mac:build and remote:build, one at a time (they share build/DerivedData), and the tasks
+      # they depend on (wire:gen, design:gen, web:build). A build that fails on a restored
+      # DerivedData gets one more go from clean (scripts/ci-clean-retry.sh says why); a task that
+      # passed is in the Nx cache, so the retry runs only what failed.
       - name: Nx affected
+        if: env.APPS != 'skip'
+        id: nx
         timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          RESTORED: ${{ steps.xcode-cache.outputs.cache-matched-key }}
+        run: |
+          source scripts/ci-clean-retry.sh
+          nx_apps() {
+            if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+              scripts/nx.sh affected -t build --exclude='*,!mac,!remote' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+            else
+              scripts/nx.sh run-many -t build --projects=mac,remote --parallel=1 --output-style=static
+            fi
+          }
+          clean_retry "$RESTORED" build/DerivedData -- nx_apps
+      - name: Save the Nx cache
+        if: ${{ env.APPS != 'skip' && (always() && !cancelled()) }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/nx
+          key: nx-apps-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+      - name: Prune old Nx caches for this ref
+        if: ${{ env.APPS != 'skip' && (always() && !cancelled()) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh "nx-apps-" "nx-apps-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
+      # The Go helpers are built in Agents Host's build, so its outcome alone says whether the Go
+      # cache is complete. Each ref keeps only its newest.
+      - name: Save Go build cache
+        if: ${{ env.APPS != 'skip' && (always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success') }}
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ~/Library/Caches/go-build
+            ~/go/pkg/mod
+          key: go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+      - name: Prune old Go build caches for this ref
+        if: ${{ env.APPS != 'skip' && (always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh "go-apps-${{ runner.os }}-" "go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" "$GITHUB_REF"
+      # Only on a push to main, as the golangci-lint cache (2026-11-13): this graph is about 2 GB,
+      # and a pull request's own, under its merge ref, no other pull request can read. A pull
+      # request restores main's newest through the restore-keys above. Only when both schemes
+      # built in this run: an Nx cache hit builds nothing, and leaves DerivedData as it was.
+      - name: Did both schemes build here
+        id: built
+        if: ${{ env.APPS != 'skip' && (always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.xcode-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success') }}
+        run: |
+          if [[ -d build/DerivedData/Build/Products/Debug && -d build/DerivedData/Build/Products/Debug-iphonesimulator ]]; then
+            echo "${{ steps.keys.outputs.agentskit }}" > build/DerivedData/agentskit-sources
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save Xcode build cache
+        if: ${{ env.APPS != 'skip' && (always() && steps.built.outputs.save == 'true') }}
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            build/DerivedData
+            ~/Library/Caches/Agents-build/packages
+            ~/Library/Caches/Agents-build/checkouts
+          key: macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}
+      - name: Prune old Xcode caches for this ref
+        if: ${{ env.APPS != 'skip' && (always() && steps.built.outputs.save == 'true') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh macos-xcode-27-dd- 'macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}' "$GITHUB_REF"
+
+  # The check main requires for the Swift packages and Go on a Mac (#5645), beside `apps`:
+  #  - AgentsKit and CodeText, as Nx's tasks (#5631): agentskit:test-unit, test-control and
+  #    test-integration, agentskit-repo:test (the suites that read files outside the package,
+  #    so their inputs are the repo's), and codetext:test, each a `swift test` through
+  #    scripts/build-cache.sh. A target whose inputs did not change is a cache hit;
+  #  - the Go module on a Mac (#1138), so a Mac-only path (its root, its folders, a *_darwin.go
+  #    file) is held as Linux's is. TMPDIR is resolved, because a Mac's temporary folder is
+  #    reached through the /var link and the daemon keeps folders with their links resolved;
+  #  - SwiftLint against .swiftlint-baseline.json (#5645): a finding not in it fails.
+  # Each step's `if:` reads `go`'s outputs (SWIFT, GO, SWIFTLINT).
+  test:
+    needs: go
+    # `always()` so a failed `go` still runs this job rather than skipping it, which would read
+    # as a pass: an output that `go` did not reach is empty, not 'skip', so its steps run.
+    if: ${{ always() && !cancelled() && (needs.go.outputs.swift != 'skip' || needs.go.outputs.go != 'skip' || needs.go.outputs.swiftlint != 'skip') }}
+    runs-on: xcode-27
+    # Long enough for the package builds, CodeText and every AgentsKit target from cold (run
+    # 36642820605 was cancelled at ten minutes), then the Go tests (about 8 minutes). The "Time
+    # left for" steps below read the same number as JOB_MINUTES; change them together.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    env:
+      NX_NO_CLOUD: "true"
+      NX_DAEMON: "false"
+      NX_LOAD_DOT_ENV_FILES: "false"
+      NX_TUI: "false"
+      SWIFT: ${{ needs.go.outputs.swift }}
+      GO: ${{ needs.go.outputs.go }}
+      SWIFTLINT: ${{ needs.go.outputs.swiftlint }}
+    steps:
+      - name: Start the clock
+        id: clock
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - name: Nx's folders
+        run: |
+          echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
+          echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Xcode
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
+      # As in `apps`: a new image is a miss, not a restore nobody can use.
+      - name: Toolchain fingerprint
+        id: toolchain
+        run: |
+          version="$(xcodebuild -version | tr -dc '0-9A-Za-z.')"
+          sdk="$(xcrun --sdk macosx --show-sdk-build-version)"
+          echo "fingerprint=${version}-sdk${sdk}" >> "$GITHUB_OUTPUT"
+      - name: Cache keys
+        id: keys
+        run: |
+          codetext="$(git ls-tree HEAD -- Packages/CodeText | git hash-object --stdin)"
+          agentskit="$(git ls-tree HEAD -- Packages/AgentsKit | git hash-object --stdin)"
+          sources="$(git ls-tree HEAD -- Packages/AgentsKit/Package.swift Packages/AgentsKit/Sources | git hash-object --stdin)"
+          {
+            echo "codetext=${codetext}"
+            echo "agentskit=${agentskit}"
+            echo "agentskit-sources=${sources}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Restore CodeText build cache
+        if: env.SWIFT != 'skip'
+        id: codetext-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: Packages/CodeText/.build
+          key: macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.codetext }}
+          restore-keys: macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-
+      - name: Restore AgentsKit build cache
+        if: env.SWIFT != 'skip'
+        id: agentskit-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: Packages/AgentsKit/.build
+          key: macos-xcode-27-agentskit-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.agentskit }}
+          restore-keys: macos-xcode-27-agentskit-${{ steps.toolchain.outputs.fingerprint }}-
+      # The stale graph of #684 in SwiftPM's build: when the recorded AgentsKit sources differ,
+      # only the package's own targets go, and swift-nio, swift-nio-ssl and SwiftTerm stay warm.
+      - name: Drop a stale AgentsKit from the AgentsKit build cache
+        if: ${{ env.SWIFT != 'skip' && (steps.agentskit-cache.outputs.cache-matched-key != '' && steps.agentskit-cache.outputs.cache-hit != 'true') }}
+        run: bash scripts/drop-stale-agentskit.sh Packages/AgentsKit/.build "${{ steps.keys.outputs.agentskit-sources }}"
+      - name: Tools
+        if: env.SWIFT != 'skip'
+        run: |
+          xcodebuild -version
+          # The runner's Xcode comes without it, and AgentsKit's build compiles Metal.
+          xcodebuild -downloadComponent MetalToolchain
+      # SwiftPM's build graph records the random cryptex mount name for MetalToolchain, and
+      # every absolute path of the Xcode and SDK that made it: rewrite the mount, or drop the
+      # graph when it names an Xcode or SDK this runner does not have.
+      - name: Normalize AgentsKit build cache
+        if: env.SWIFT != 'skip'
+        run: python3 scripts/normalize-metaltoolchain-cache.py Packages/AgentsKit/.build
+      # How long the runner's login shell takes to say its PATH. The app reads it once per
+      # process, synchronously, the first time anything looks a runtime up.
+      - name: Time the login shell
+        if: env.SWIFT != 'skip'
+        run: time zsh -lc 'printf %s "$PATH"' > /dev/null
+      # agentskit-repo:test depends on web:build, as WebDistManifestTests reads Web/dist; the Go
+      # tests and web:build need Node, Go and the packages too; SwiftLint alone needs none.
+      - uses: actions/setup-node@v5
+        if: env.SWIFT != 'skip' || env.GO != 'skip'
+        with:
+          node-version-file: Web/.node-version
+          package-manager-cache: false
+      - uses: actions/setup-go@v6
+        if: env.SWIFT != 'skip' || env.GO != 'skip'
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+      - name: Restore the Nx cache
+        if: env.SWIFT != 'skip' || env.GO != 'skip'
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/nx
+          key: nx-macos-${{ github.event.pull_request.head.sha || github.sha }}
+          restore-keys: nx-macos-
+      - name: Install from the lockfile
+        if: env.SWIFT != 'skip' || env.GO != 'skip'
+        timeout-minutes: 5
+        run: |
+          scripts/pnpm.sh install --frozen-lockfile
+          scripts/pnpm.sh audit signatures
+      # A job that reaches its timeout-minutes ends Cancelled, not Failed, and a pull request
+      # with auto-merge on waits for a check that never comes; a step's own timeout fails the
+      # step (scripts/ci-time-left.sh, #5609).
+      - name: Time left for Nx
+        if: env.SWIFT != 'skip'
+        id: budget
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 45
+          RESERVE: 12
+          MAX: 25
+        run: bash scripts/ci-time-left.sh
+      # One target at a time: they share each package's .build, and at most three tests at a
+      # time, one per core (#1320; each target's command). Nx's log says which target failed and
+      # how long each took, and a failing one does not stop the rest (--nx-bail is off). A run
+      # that fails on a restored .build gets one more go from clean; the targets that passed are
+      # in the Nx cache, so only the failed ones run again.
+      - name: Nx affected, Swift
+        if: env.SWIFT != 'skip'
+        id: nx
+        timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          RESTORED: ${{ steps.agentskit-cache.outputs.cache-matched-key }}${{ steps.codetext-cache.outputs.cache-matched-key }}
+        run: |
+          source scripts/ci-clean-retry.sh
+          nx_swift() {
+            if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+              scripts/nx.sh affected -t test --exclude='*,!agentskit,!agentskit-repo,!codetext' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+            else
+              scripts/nx.sh run-many -t test --projects=agentskit,agentskit-repo,codetext --parallel=1 --output-style=static
+            fi
+          }
+          clean_retry "$RESTORED" Packages/AgentsKit/.build Packages/CodeText/.build -- nx_swift
+      # Go's own caches, under Nx's, as in `go`.
+      - name: Restore Go build cache
+        id: go-cache
+        if: ${{ always() && !cancelled() && env.GO != 'skip' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ~/Library/Caches/go-build
+            ~/go/pkg/mod
+          key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+          restore-keys: |
+            go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
+            go-race-${{ runner.os }}-
+      - name: Time left for Go
+        id: go-budget
+        if: ${{ always() && !cancelled() && env.GO != 'skip' }}
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 45
+          RESERVE: 3
+        run: bash scripts/ci-time-left.sh
+      # The Go tasks on a Mac, after the Swift ones (one task at a time, #5632). Its `always()`:
+      # a Swift failure does not hide a Go one.
+      - name: Nx affected, Go on a Mac
+        id: go-nx
+        if: ${{ always() && !cancelled() && env.GO != 'skip' }}
+        timeout-minutes: ${{ fromJSON(steps.go-budget.outputs.minutes) }}
         shell: bash
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
           targets=gen,build,vet,lint,test
-          # One task at a time: go:test -race beside web:test made both fail under load (#5632),
-          # as they did not when each had a job of its own.
           if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             scripts/nx.sh affected -t "$targets" --exclude='web,tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
           else
             scripts/nx.sh run-many -t "$targets" --exclude='web,tag:xcode' --parallel=1 --output-style=static
           fi
-      # wire:gen and design:gen ran before the tasks that read their files, so a change that
-      # did not commit what they write would pass the tests: it fails here.
-      - name: Generated files are committed
-        run: |
-          if ! git diff --exit-code --stat; then
-            echo "::error::A generated file is not what its source makes: run scripts/wire.sh gen and scripts/design.sh gen, and commit what they write."
-            exit 1
-          fi
-      # A failed task is not cached, so a failed run's cache is still good; a cancelled one may
-      # not have finished writing. Each ref keeps only its newest.
+      - name: SwiftLint
+        if: ${{ always() && !cancelled() && env.SWIFTLINT != 'skip' }}
+        run: scripts/lint.sh swift
       - name: Save the Nx cache
         if: ${{ always() && !cancelled() }}
         uses: actions/cache/save@v5
@@ -801,91 +719,53 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "nx-macos-" "nx-macos-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
+      # Only a .build that this run built. Never on a failure: a cancelled or failed run must not
+      # persist a partial cache that poisons a later restore.
+      - name: Did AgentsKit build here
+        id: agentskit-built
+        if: ${{ always() && !cancelled() && steps.nx.outcome == 'success' && steps.agentskit-cache.outputs.cache-hit != 'true' }}
+        run: |
+          if [[ -d Packages/AgentsKit/.build ]]; then
+            echo "${{ steps.keys.outputs.agentskit-sources }}" > Packages/AgentsKit/.build/agentskit-sources
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save AgentsKit build cache
+        if: ${{ always() && steps.agentskit-built.outputs.save == 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: Packages/AgentsKit/.build
+          key: macos-xcode-27-agentskit-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.agentskit }}
+      - name: Prune old AgentsKit caches for this ref
+        if: ${{ always() && steps.agentskit-built.outputs.save == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh macos-xcode-27-agentskit- 'macos-xcode-27-agentskit-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.agentskit }}' "$GITHUB_REF"
+      - name: Did CodeText build here
+        id: codetext-built
+        if: ${{ always() && !cancelled() && steps.nx.outcome == 'success' && steps.codetext-cache.outputs.cache-hit != 'true' }}
+        run: |
+          if [[ -d Packages/CodeText/.build ]]; then echo "save=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Save CodeText build cache
+        if: ${{ always() && steps.codetext-built.outputs.save == 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: Packages/CodeText/.build
+          key: macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.codetext }}
+      - name: Prune old CodeText caches for this ref
+        if: ${{ always() && steps.codetext-built.outputs.save == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh macos-xcode-27-codetext- 'macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.codetext }}' "$GITHUB_REF"
       - name: Save Go build cache
-        if: ${{ always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' }}
+        if: ${{ always() && !cancelled() && env.GO != 'skip' && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: |
-            ~/.cache/go-build
             ~/Library/Caches/go-build
             ~/go/pkg/mod
           key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
       - name: Prune old Go build caches for this ref
-        if: ${{ always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' }}
+        if: ${{ always() && !cancelled() && env.GO != 'skip' && steps.go-cache.outputs.cache-hit != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" "$GITHUB_REF"
-
-  # The Blob's marks (#4615): every icon, favicon and touch icon is what `scripts/design.sh
-  # marks` makes from the one source in design/logo/blob/final/. It renders with AppKit, so it
-  # runs on the macOS 27 image that a Mac renders the same as.
-  marks:
-    needs: affected
-    if: ${{ always() && !cancelled() && (needs.affected.result != 'success' || needs.affected.outputs.marks != 'skip') }}
-    runs-on: xcode-27
-    timeout-minutes: 10
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@v6
-      - name: Every mark is what the Blob source makes
-        run: scripts/design.sh marks --check
-
-  # The linters (#1224), through scripts/lint.sh, on every change: shellcheck, zsh -n, our
-  # own text checks, and golangci-lint's unused and ineffassign (#2162) are required (a
-  # finding fails the job). ruff, Biome, SwiftLint, jscpd, govulncheck and the other
-  # golangci-lint rules report findings in the job's summary, and which are in this
-  # change's files, without failing. Their old findings are listed in
-  # .agents/reviews/lint-2026-10-17.md; jscpd's first report is in
-  # .agents/reviews/lint-dupes-2026-10-23.md. The pinned binaries are cached, and golangci-lint's
-  # analysis with them. It runs beside the macOS jobs, which take longer, so it does not make a
-  # merge wait.
-  #
-  # The checks include check-test-indexing.py (#94): tests that index or force-unwrap after an
-  # #expect, where a failed check carries on and the trap after it ends the whole `swift test`.
-  lint:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 2
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: Go/go.mod
-          cache-dependency-path: Go/go.mod
-      - uses: actions/cache@v5
-        with:
-          path: ~/.cache/lint-tools
-          key: lint-tools-${{ hashFiles('scripts/lint.sh') }}
-      # golangci-lint's analysis, warm from main's newest; only a push to main that changed Go
-      # saves one.
-      - uses: actions/cache/restore@v5
-        id: golangci-cache
-        with:
-          path: ~/.cache/golangci-lint
-          key: golangci-lint-${{ hashFiles('Go/**/*.go', 'Go/go.sum', 'Go/.golangci.yml') }}
-          restore-keys: golangci-lint-
-      - name: Tools
-        run: |
-          scripts/lint.sh --tools ~/.cache/lint-tools shellcheck ruff biome swiftlint jscpd golangci-lint govulncheck
-          echo ~/.cache/lint-tools >> "$GITHUB_PATH"
-      - name: Lint
-        env:
-          # A pull request is checked out as its merge into the base: the first parent is the base.
-          LINT_BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || '' }}
-        run: scripts/lint.sh
-      # What a caller sends changed since the last release tag with the same capability
-      # number (#4095): an older server refuses it, and the caller cannot know.
-      - name: Wire compat
-        run: |
-          if git diff --quiet HEAD^1 HEAD -- Packages/Wire; then
-            echo "Packages/Wire did not change."
-          else
-            scripts/wire.sh compat
-          fi
-      - if: ${{ github.event_name == 'push' && steps.golangci-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: ~/.cache/golangci-lint
-          key: golangci-lint-${{ hashFiles('Go/**/*.go', 'Go/go.sum', 'Go/.golangci.yml') }}

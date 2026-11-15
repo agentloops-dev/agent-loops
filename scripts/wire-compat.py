@@ -14,7 +14,7 @@ x-capability:
 - a new required property or param, or a property's or param's type changes.
 
 What a server sends (results and notifications) keeps the rule that a new optional field or a
-new enum value keeps the number. Run by `scripts/wire.sh compat`, and by CI's lint job when
+new enum value keeps the number. Run by `scripts/wire.sh compat`, and by CI's go job when
 Packages/Wire changes.
 """
 import glob

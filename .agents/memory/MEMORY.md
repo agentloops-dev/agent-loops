@@ -12,7 +12,7 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Channels are MCP servers](channels-are-mcp-servers.md) — Alex 2026-10-16: no built-in Slack/Discord adapters; #1223 removed Slack + Need…
 - [Animated top inset loops AppKit layout](animated-top-inset-loops-appkit-layout.md) — #5189: no animated height in the Mac chat's top inset; repro at 1058x662, presses 0.3–0.6 s apart while working
 - [chat-transcript-scroll-geometry-lies](chat-transcript-scroll-geometry-lies.md) — ChatTranscript's LazyVStack re-measures every frame, so geometry can't tell a reader's scroll from the stack; 
-- [Check go-darwin before arming](check-go-darwin-before-arming.md) — auto-merge ignores non-required checks; #3503 broke main (#3517)
+- [Check every check before arming](check-go-darwin-before-arming.md) — auto-merge ignores non-required checks; #3503 broke main (#3517); go-darwin is in the required `test` since #5645
 - [Go tests on the Mac host](go-tests-on-the-mac-host.md) — #4709: go.sh clean env, go/tmp TMPDIR, go.mod toolchain, tests skip F_FULLFSYNC
 - [Scratch host dies on a reused slug](scratch-host-dies-on-a-reused-slug.md) — "Keychain did not let this program read" then a silent exit: the root path has an old key item; use a new --slug
 - [Clean up worktrees](clean-up-worktrees.md) — disk filled 2026-10-03 (80 GB worktrees); promp…
