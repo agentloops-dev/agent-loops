@@ -24,9 +24,11 @@ import (
 // another forge, or with no forge, leases plain ci, which nothing holds; so does a
 // repository whose CI cannot be read: CI must never stop work it cannot see.
 
+// ciResource is the name an agent leases.
+const ciResource wire.ResourceName = "ci"
+
 const (
-	ciResource    wire.ResourceName = "ci"
-	ciLeasePrefix                   = "ci:"
+	ciLeasePrefix = "ci:"
 	// ciQueueFresh is how old a read may be when an agent asks: older, and it reads again.
 	ciQueueFresh = 30 * time.Second
 	// ciQueueEvery is how often a waiting line's queue is read.
