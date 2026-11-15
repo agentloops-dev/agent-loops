@@ -49,11 +49,12 @@ jobs:
   # skipped by its `if:` satisfies a required check; a workflow-level `paths:` filter would
   # leave it pending instead. Then Nx over the Go module, the web app, the Wire code generation
   # and the design tokens (#5628, epic #5627): go:build, go:vet, go:test (-race), web:build,
-  # web:lint (tsc, the lint that keeps agent output inert, the licence list), web:test (which
-  # holds the build to its MANIFEST), wire:gen and design:gen. Then the linters (#1224) but
-  # SwiftLint, the Wire compat check and the mixed-versions test (#1767). Each project's
-  # project.json names the inputs of its tasks; a lane runs the same with scripts/nx.sh. The
-  # Xcode projects (tag xcode) are `apps` and `test`'s.
+  # web:lint (tsc, the lint that keeps agent output inert, the licence list, Biome), web:test
+  # (which holds the build to its MANIFEST), wire:gen, design:gen, go:lint (golangci-lint,
+  # govulncheck) and repo-lint:lint (shellcheck, zsh -n, our text checks, jscpd; #5672), each
+  # linter failing on a finding. Then the Wire compat check and the mixed-versions test (#1767).
+  # Each project's project.json names the inputs of its tasks; a lane runs the same with
+  # scripts/nx.sh. The Xcode projects (tag xcode) are `apps` and `test`'s.
   #
   # The macOS jobs wait for this one (its outputs are there only when it ends): about two
   # minutes for a change with no Go, more with Go (Alex, 2026-11-15, #5645).
@@ -173,14 +174,34 @@ jobs:
             changed=$(git diff --name-only "$BASE" HEAD)
             # The marks (#4615): a mark, its source or this file.
             grep -qE '^(design/logo/blob/final/|scripts/design\.sh$|App/Resources/Assets\.xcassets/|Remote/Resources/Assets\.xcassets/AppIcon|Web/assets/|docs/assets/|docs/favicon\.ico$|www/assets/|\.github/workflows/ci\.yml$)' <<<"$changed" || marks=skip
-            # SwiftLint: any Swift file, its rules, its baseline or lint.sh.
-            grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^scripts/lint\.sh$)' <<<"$changed" || swiftlint=skip
-            # golangci-lint and govulncheck read Go/; a change to lint.sh runs them too.
-            grep -qE '^scripts/lint\.sh$' <<<"$changed" && go=run
+            # SwiftLint (swift-lint:lint, in `test`): any Swift file, its rules, its baseline or
+            # lint.sh. swift-lint is affected by every change, so its own files say when.
+            grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^scripts/lint\.sh$|^lint/swift/)' <<<"$changed" || swiftlint=skip
           fi
           printf 'apps=%s\nswift=%s\ngo=%s\nmarks=%s\nswiftlint=%s\n' "$apps" "$swift" "$go" "$marks" "$swiftlint" | tee -a "$GITHUB_OUTPUT"
-      # The reserve is the steps after it: Lint (about a minute, more when its tools are not
-      # cached), the mixed-versions test (about a minute) and the cache saves.
+      # The pinned linters (scripts/lint.sh --tools), on the PATH for the lint targets in Nx
+      # (#5672): go:lint (golangci-lint, govulncheck), web:lint (Biome) and repo-lint:lint
+      # (shellcheck, zsh -n, our text checks, jscpd). Each fails on a finding. The binaries are
+      # cached, and golangci-lint's analysis with them.
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/lint-tools
+          key: lint-tools-${{ hashFiles('scripts/lint.sh') }}
+      # golangci-lint's analysis, warm from main's newest; only a push to main that changed Go
+      # saves one.
+      - uses: actions/cache/restore@v5
+        id: golangci-cache
+        if: steps.affected.outputs.go != 'skip'
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ hashFiles('Go/**/*.go', 'Go/go.sum', 'Go/.golangci.yml') }}
+          restore-keys: golangci-lint-
+      - name: Lint tools
+        run: |
+          scripts/lint.sh --tools ~/.cache/lint-tools shellcheck golangci-lint govulncheck biome jscpd
+          echo "$HOME/.cache/lint-tools" >> "$GITHUB_PATH"
+      # The reserve is the steps after it: the mixed-versions test (about a minute), the Wire
+      # compat check and the cache saves. The linters are Nx's lint targets, inside this budget.
       - name: Time left for Nx
         id: budget
         env:
@@ -196,7 +217,10 @@ jobs:
         shell: bash
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # A lint target says which of its findings are in this change's files.
+          LINT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
+          git cat-file -e "$LINT_BASE^{commit}" 2>/dev/null || LINT_BASE=
           targets=gen,build,vet,lint,test
           # One task at a time: go:test -race beside web:test made both fail under load (#5632),
           # as they did not when each had a job of its own.
@@ -213,49 +237,6 @@ jobs:
             echo "::error::A generated file is not what its source makes: run scripts/wire.sh gen and scripts/design.sh gen, and commit what they write."
             exit 1
           fi
-      # The linters (#1224) but SwiftLint, which is `test`'s. shellcheck, zsh -n, our text checks
-      # (check-test-indexing.py among them, #94) and golangci-lint against its baseline (every rule
-      # in Go/.golangci.yml, #5645) fail the job; govulncheck, Biome and jscpd only report, in
-      # the job's summary, with which findings are in this change's files. golangci-lint and
-      # govulncheck run only when Go is affected. The pinned binaries are cached, and
-      # golangci-lint's analysis with them.
-      - uses: actions/cache@v5
-        with:
-          path: ~/.cache/lint-tools
-          key: lint-tools-${{ hashFiles('scripts/lint.sh') }}
-      # golangci-lint's analysis, warm from main's newest; only a push to main that changed Go
-      # saves one.
-      - uses: actions/cache/restore@v5
-        id: golangci-cache
-        if: steps.affected.outputs.go != 'skip'
-        with:
-          path: ~/.cache/golangci-lint
-          key: golangci-lint-${{ hashFiles('Go/**/*.go', 'Go/go.sum', 'Go/.golangci.yml') }}
-          restore-keys: golangci-lint-
-      - name: Time left for Lint
-        id: lint-budget
-        if: ${{ always() && !cancelled() }}
-        env:
-          START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 20
-          RESERVE: 3
-        run: bash scripts/ci-time-left.sh
-      - name: Lint
-        if: ${{ always() && !cancelled() }}
-        timeout-minutes: ${{ fromJSON(steps.lint-budget.outputs.minutes) }}
-        shell: bash
-        env:
-          GO: ${{ steps.affected.outputs.go }}
-          LINT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          linters=(shell zsh checks web dupes) tools=(shellcheck biome jscpd)
-          if [[ $GO != skip ]]; then
-            linters+=(go govulncheck) tools+=(golangci-lint govulncheck)
-          fi
-          scripts/lint.sh --tools ~/.cache/lint-tools "${tools[@]}"
-          export PATH="$HOME/.cache/lint-tools:$PATH"
-          git cat-file -e "$LINT_BASE^{commit}" 2>/dev/null || LINT_BASE=
-          scripts/lint.sh "${linters[@]}"
       - if: ${{ (always() && github.event_name == 'push' && steps.affected.outputs.go != 'skip' && steps.golangci-cache.outputs.cache-hit != 'true') && !inputs.sha }}
         uses: actions/cache/save@v5
         with:
@@ -590,7 +571,8 @@ jobs:
   #  - the Go module on a Mac (#1138), so a Mac-only path (its root, its folders, a *_darwin.go
   #    file) is held as Linux's is. TMPDIR is resolved, because a Mac's temporary folder is
   #    reached through the /var link and the daemon keeps folders with their links resolved;
-  #  - SwiftLint against .swiftlint-baseline.json (#5645): a finding not in it fails.
+  #  - SwiftLint against .swiftlint-baseline.json (#5645), as Nx's swift-lint:lint (#5672): a
+  #    finding not in it fails.
   # Each step's `if:` reads `go`'s outputs (SWIFT, GO, SWIFTLINT).
   test:
     needs: go
@@ -685,9 +667,10 @@ jobs:
         if: env.SWIFT != 'skip'
         run: time zsh -lc 'printf %s "$PATH"' > /dev/null
       # agentskit-repo:test depends on web:build, as WebDistManifestTests reads Web/dist; the Go
-      # tests and web:build need Node, Go and the packages too; SwiftLint alone needs none.
+      # tests and web:build need Node, Go and the packages too; SwiftLint, a task of Nx, Node
+      # and the packages.
       - uses: actions/setup-node@v5
-        if: env.SWIFT != 'skip' || env.GO != 'skip'
+        if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
         with:
           node-version-file: Web/.node-version
           package-manager-cache: false
@@ -697,14 +680,14 @@ jobs:
           go-version-file: Go/go.mod
           cache: false
       - name: Restore the Nx cache
-        if: env.SWIFT != 'skip' || env.GO != 'skip'
+        if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/nx
           key: nx-macos-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
           restore-keys: nx-macos-
       - name: Install from the lockfile
-        if: env.SWIFT != 'skip' || env.GO != 'skip'
+        if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
         timeout-minutes: 5
         run: |
           scripts/pnpm.sh install --frozen-lockfile
@@ -786,7 +769,8 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
-          targets=gen,build,vet,lint,test
+          # No lint: go:lint and repo-lint:lint are the Linux job's, which reads Go as Linux.
+          targets=gen,build,vet,test
           if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             scripts/nx.sh affected -t "$targets" --exclude='web,tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
           else
@@ -794,7 +778,7 @@ jobs:
           fi
       - name: SwiftLint
         if: ${{ always() && !cancelled() && env.SWIFTLINT != 'skip' }}
-        run: scripts/lint.sh swift
+        run: scripts/nx.sh run swift-lint:lint --output-style=static
       - name: Save the Nx cache
         if: ${{ (always() && !cancelled()) && !inputs.sha }}
         uses: actions/cache/save@v5

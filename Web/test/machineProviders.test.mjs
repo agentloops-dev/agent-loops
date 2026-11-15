@@ -158,7 +158,7 @@ test("Link to Machine… shows a new host key first, then links with it trusted 
   assert.ok(w.callTimeoutFor("machines/link") >= 60_000);
   const asked = [];
   const p = new w.Providers({
-    call: async (method, params) => {
+    call: async (_method, params) => {
       asked.push(params);
       if (params.trust === "SHA256:abc") return {};
       throw new w.CallFailed(w.Failure.hostKeyToTrust, "This machine’s host key is new.", { fingerprint: "SHA256:abc" });
