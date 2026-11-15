@@ -197,7 +197,8 @@ struct AgentsCommands: Commands {
                 .keyboardShortcut(MenuKeys.runtimes)
             // The person's own, in Settings ▸ You (#3998).
             Button("Connectors") { model.settingsPaneAsked = .connectors; openSettings() }
-            Button("Secrets") { model.settingsPaneAsked = .secrets; openSettings() }
+            // Status ▸ Secrets, a page of its own (#5257).
+            Button("Secrets") { model.showSecrets() }
                 .disabled(ControlConfig.endpoint == nil)
             // A list each, as the sidebar's Work group (#4004).
             Menu("Work") {

@@ -590,6 +590,15 @@ final class AppModel {
         showsRuntimes = true
     }
 
+    /// The Secrets page's selected item, by its id (`SecretsPage.Item.id`), so a link opens one (#5257).
+    var secretsSelection: String?
+
+    /// Status ▸ Secrets (#5257): the page, with `item` selected when given.
+    func showSecrets(item: String? = nil) {
+        if let item { secretsSelection = item }
+        statusSecretsPage = .secrets
+    }
+
     /// An agent's chat, from a machine's Resources or a capsule naming its holder: its
     /// own folder first, as a banner does, so the sidebar and the page agree.
     func openAgent(_ agentID: UUID) {
