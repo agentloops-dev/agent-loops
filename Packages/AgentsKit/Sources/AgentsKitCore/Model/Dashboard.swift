@@ -38,9 +38,9 @@ public enum Dashboard {
         }
     }
 
-    /// The section a row is listed under.
+    /// The section a row is listed under. Finished work is not on the board (Alex, #5695).
     public enum Section: String, CaseIterable, Sendable, Hashable, Identifiable {
-        case needsYou, working, finished
+        case needsYou, working
 
         public var id: Self { self }
 
@@ -48,7 +48,6 @@ public enum Dashboard {
             switch self {
             case .needsYou: "Needs you"
             case .working: "Working"
-            case .finished: "Finished today"
             }
         }
     }
@@ -99,6 +98,9 @@ public enum Dashboard {
             guard node != nil, state == "open", !draft, review != "approved" else { return false }
             return labels.contains(Self.approvalLabel) || review == "review_required"
         }
+
+        /// Its checks fail on an open pull request the forge listed.
+        public var failsChecks: Bool { node != nil && state == "open" && checks == "failing" }
     }
 
     /// What a row is about.
@@ -109,7 +111,7 @@ public enum Dashboard {
         case session
     }
 
-    /// A row: a work item and its sessions.
+    /// A row: a work item and the sessions on it that have not finished.
     public struct Item: Sendable, Hashable, Identifiable {
         public var id: String
         public var subject: Subject
@@ -121,6 +123,9 @@ public enum Dashboard {
         public var sessions: [Session]
         public var mark: Mark
         public var lastActivity: Date
+        /// When its first session started: the board's order, which does not move while its sessions
+        /// work (#5695).
+        public var startedAt: Date
         /// The folder of its first session, for a row with no issue.
         public var folder: URL
 
@@ -163,8 +168,13 @@ public enum Dashboard {
     /// The board. `agents` are this Mac's sessions; `issues`, `pulls` and `epics` the forge's
     /// open ones as read (empty when not read yet: rows then show their labels alone). A
     /// session's first `#n` label names its issue, its first `P#n` its pull request; one with
-    /// neither is a row of its own. Archived sessions count only when archived today, so a row
-    /// whose work ended today is under Finished today; older done rows are left out.
+    /// neither is a row of its own.
+    ///
+    /// Finished work is not on the board (Alex, #5695): a session that is done, paused or archived
+    /// is left out, unless it failed or has a card for the person. A row whose sessions are all
+    /// left out stays only while its pull request needs something: an approval, or failing checks.
+    /// Rows and the sessions on them keep their order while they work: the oldest first, by when
+    /// they started, never by their state or last activity.
     ///
     /// `asks` says a session has a card for the person that its state does not show, such as a
     /// change to the folder's own files it made (#531): it needs the person all the same.
@@ -180,12 +190,14 @@ public enum Dashboard {
 
         for agent in agents {
             let g = group(agent)
+            // An archived session can still name a pull request that needs the person, but only for the day.
             if g == .archived {
                 guard let at = agent.archivedAt, calendar.isDate(at, inSameDayAs: now) else { continue }
             }
             // The daily summary has its own page; it is no work item.
             if agent.writesDailySummary { continue }
             let session = Session(agent: agent, mark: g != .archived && asks(agent) ? .needsYou : Mark.of(agent, group: g))
+            let shows = isLive(g) || session.mark == .needsYou || session.mark == .failed
             let repo = folders[path(agent.folderPath)]
             let issueN = agent.labels.lazy.filter { $0.kind == .issue }.compactMap { number($0.value) }.first
             let pullN = agent.labels.lazy.filter { $0.kind == .pullRequest }.compactMap { number($0.value) }.first
@@ -196,17 +208,20 @@ public enum Dashboard {
                 let forge = repo.flatMap { issueBy["\($0)#\(n)"] }
                 item = items[id] ?? Item(id: id, subject: .issue(number: n), node: forge?.node,
                                          title: forge?.title ?? "Issue #\(n)", epic: forge?.parent, pullRequest: nil,
-                                         sessions: [], mark: .done, lastActivity: .distantPast, folder: agent.folderPath)
+                                         sessions: [], mark: .done, lastActivity: .distantPast, startedAt: .distantFuture,
+                            folder: agent.folderPath)
             } else if let n = pullN {
                 id = "\(repo ?? path(agent.folderPath))!\(n)"
                 let forge = repo.flatMap { pullBy["\($0)#\(n)"] }
                 item = items[id] ?? Item(id: id, subject: .pullRequest(number: n), node: forge?.node,
                                          title: forge?.title ?? "Pull request #\(n)", epic: nil, pullRequest: nil,
-                                         sessions: [], mark: .done, lastActivity: .distantPast, folder: agent.folderPath)
+                                         sessions: [], mark: .done, lastActivity: .distantPast, startedAt: .distantFuture,
+                                         folder: agent.folderPath)
             } else {
                 id = "session:\(agent.id.uuidString)"
                 item = Item(id: id, subject: .session, node: nil, title: sessionTitle(agent), epic: nil, pullRequest: nil,
-                            sessions: [], mark: .done, lastActivity: .distantPast, folder: agent.folderPath)
+                            sessions: [], mark: .done, lastActivity: .distantPast, startedAt: .distantFuture,
+                                         folder: agent.folderPath)
             }
             if item.pullRequest == nil, let n = pullN {
                 let forge = repo.flatMap { pullBy["\($0)#\(n)"] }
@@ -214,8 +229,9 @@ public enum Dashboard {
                                                draft: forge?.draft ?? false, review: forge?.review,
                                                labels: forge?.labels.map(\.name) ?? [])
             }
-            item.sessions.append(session)
+            if shows { item.sessions.append(session) }
             item.lastActivity = max(item.lastActivity, agent.lastActivityAt)
+            item.startedAt = min(item.startedAt, agent.createdAt)
             if items[id] == nil { order.append(id) }
             items[id] = item
         }
@@ -223,39 +239,51 @@ public enum Dashboard {
         var rows: [Section: [Item]] = [:]
         for id in order {
             guard var item = items[id] else { continue }
-            item.sessions.sort { ($0.mark, $0.agent.lastActivityAt) > ($1.mark, $1.agent.lastActivityAt) }
-            item.mark = item.sessions.map(\.mark).max() ?? .done
+            item.sessions.sort { ($0.agent.createdAt, $0.id.uuidString) < ($1.agent.createdAt, $1.id.uuidString) }
+            if let mark = item.sessions.map(\.mark).max() {
+                item.mark = mark
+            } else if item.pullRequest?.failsChecks == true {
+                // Its sessions are done, but its pull request's checks fail: someone must look.
+                item.mark = .failed
+            } else if item.pullRequest?.waitsForApproval != true {
+                continue
+            }
             // A pull request that waits for the person's approval needs them, whatever its sessions do.
             if item.pullRequest?.waitsForApproval == true { item.mark = .needsYou }
-            let section: Section
-            switch item.mark {
-            case .needsYou: section = .needsYou
-            case .working, .failed, .idle: section = .working
-            case .done:
-                guard calendar.isDate(item.lastActivity, inSameDayAs: now) else { continue }
-                section = .finished
-            }
-            rows[section, default: []].append(item)
+            rows[item.mark == .needsYou ? .needsYou : .working, default: []].append(item)
         }
         for key in rows.keys {
-            rows[key]?.sort { ($0.mark, $0.lastActivity) > ($1.mark, $1.lastActivity) }
+            rows[key]?.sort(by: startsFirst)
         }
 
         // An epic card for each epic that a row on the board is a child of, the most urgent first.
         let epicBy = Dictionary(epics.map { ($0.node.ref, $0) }, uniquingKeysWith: { a, _ in a })
         var cards: [String: Epic] = [:]
-        for item in rows.values.joined() {
+        var cardOrder: [String] = []
+        for item in rows.values.joined().sorted(by: startsFirst) {
             guard let node = item.epic else { continue }
             let forge = epicBy[node.ref]
             var card = cards[node.ref] ?? Epic(node: node, title: forge?.title ?? "Epic \(WorkList.shortRef(node.ref))",
                                                progress: forge?.progress, items: 0, mark: .done)
             card.items += 1
             card.mark = max(card.mark, item.mark)
+            if cards[node.ref] == nil { cardOrder.append(node.ref) }
             cards[node.ref] = card
         }
-        let epicCards = cards.values.sorted { ($0.mark, $0.items, $1.number) > ($1.mark, $1.items, $0.number) }
-        return Board(epics: epicCards, rows: rows)
+        // In the order of their oldest row, so a card keeps its place as a row's state moves.
+        return Board(epics: cardOrder.compactMap { cards[$0] }, rows: rows)
     }
+
+    /// A session that has not finished: it works, waits on something, or needs the person.
+    static func isLive(_ group: AgentGroup) -> Bool {
+        switch group {
+        case .needsAttention, .blocked, .waiting, .running: true
+        case .finished, .stopped, .archived: false
+        }
+    }
+
+    /// The board's order: the row that started first, then by id, so it never moves with an update.
+    static func startsFirst(_ a: Item, _ b: Item) -> Bool { (a.startedAt, a.id) < (b.startedAt, b.id) }
 
     /// A session's own title, or what started it.
     static func sessionTitle(_ agent: Agent) -> String {
