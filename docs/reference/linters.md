@@ -13,7 +13,7 @@ is what each target runs.
 | Target | Linter | Fails on | Runs in CI |
 |---|---|---|---|
 | `go:lint` | golangci-lint, every rule in `Go/.golangci.yml` | a finding not in `Go/.golangci-baseline.txt` | `go` (Linux) |
-| `go:lint` | govulncheck | a known vulnerability that the code calls | `go` (Linux) |
+| `go:lint` | govulncheck | a known vulnerability that the code calls and that `Go/.govulncheck-excluded.txt` does not name | `go` (Linux) |
 | `web:lint` | tsc, `Web/test/lint.mjs`, the licence list | an error | `go` (Linux) |
 | `web:lint` | Biome, the rules in `Web/biome.json` | an error or a warning | `go` (Linux) |
 | `repo-lint:lint` | shellcheck (`-S warning`, `.shellcheckrc`) | a finding | `go` (Linux) |
@@ -42,6 +42,9 @@ clone, so a second clone between the same two files is new. Fix an old finding, 
 - **A finding that is right on purpose** has a `biome-ignore` comment on its line, with the
   reason: a control character in a path regex (refused on purpose), a class merged with an
   interface (the store's parts), and `${NAME}` in a string that a person reads.
+- **A vulnerability that stays for a while** is a line in `Go/.govulncheck-excluded.txt`: its
+  id, then why it stays and the issue that removes it. Two are there now, fixed by Go 1.26.11,
+  which #5704 brings in.
 - **govulncheck's database is outside the repository**, so `go:lint`'s inputs hold the date
   (UTC): a pass is good for that day only, and a vulnerability published since runs it again.
 

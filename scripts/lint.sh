@@ -40,7 +40,8 @@
 # its own --write-baseline; jscpd's is the pair of files of each clone, one line per clone
 # (scripts/jscpd-report.py). Fix an old finding, then run `scripts/lint.sh --baseline` to drop
 # it from the list; never add a new one to it by hand. go is one run (#2162): every package is
-# loaded once. govulncheck fails on a vulnerability that the code calls (its default mode), and
+# loaded once. govulncheck fails on a vulnerability that the code calls (its default mode) and
+# that Go/.govulncheck-excluded.txt does not name with its reason, and
 # web (Biome) on any finding of the rules in Web/biome.json.
 #
 # Every linter runs on the host, never in a container (#4709). On Linux a linter on the PATH
@@ -68,6 +69,7 @@ ALL="shell zsh go govulncheck web swift dupes checks"
 GO_BASELINE=Go/.golangci-baseline.txt
 SWIFT_BASELINE=.swiftlint-baseline.json
 DUPES_BASELINE=.jscpd-baseline.txt
+GOVULN_EXCLUDED=Go/.govulncheck-excluded.txt
 
 if [ "${1:-}" = --tools ]; then
 	dir=${2:?usage: scripts/lint.sh --tools DIR TOOL…}
@@ -301,8 +303,22 @@ go_key() {
 	sed -nE 's/^([^:[:space:]]+):[0-9]+(:[0-9]+)?: /\1: /p'
 }
 
+# govulncheck exits 3 for a vulnerability the code calls. One whose id is in
+# Go/.govulncheck-excluded.txt (the id, then why it stays and what removes it) does not fail.
 run_govulncheck() {
-	(cd Go && ${golinux[@]+"${golinux[@]}"} govulncheck ./...)
+	local out status id new=
+	out=$(cd Go && ${golinux[@]+"${golinux[@]}"} govulncheck ./... 2>&1)
+	status=$?
+	printf '%s\n' "$out"
+	[ "$status" = 3 ] || return "$status"
+	for id in $(printf '%s\n' "$out" | sed -nE 's/^Vulnerability #[0-9]+: (GO-[0-9]+-[0-9]+)$/\1/p'); do
+		grep -q "^$id " "$GOVULN_EXCLUDED" 2>/dev/null || new="$new $id"
+	done
+	if [ -n "$new" ]; then
+		echo "lint.sh: not in $GOVULN_EXCLUDED:$new"
+		return 3
+	fi
+	echo "lint.sh: each vulnerability above is in $GOVULN_EXCLUDED, with why"
 }
 
 # Biome's github reporter, turned into path:line:col: lines with the path from the root.
