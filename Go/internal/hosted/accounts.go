@@ -41,8 +41,6 @@ type Account struct {
 	ID string `json:"id"`
 	// Who signed up: their control plane's first person signs in with it too (#3386).
 	SignIn SignIn `json:"signIn"`
-	// The GitHub user of an account made before #3386, read as its SignIn.
-	GitHub *GitHubID `json:"github,omitempty"`
 	// The keyed hash of the email the provider verified (#3388), for one account per
 	// email and blocks by email; "" when there was none.
 	EmailMark string    `json:"emailMark,omitempty"`
@@ -125,19 +123,13 @@ func (si SignIn) valid() bool {
 	return true
 }
 
-// GitHubID is a GitHub user as records before #3386 say them: its numeric id, and its
-// login then.
-type GitHubID struct {
-	ID    int64  `json:"id"`
-	Login string `json:"login"`
-}
-
-// signInOf is a record's sign-in: the one it says, or its GitHub user's, from before #3386.
-func signInOf(si SignIn, legacy *GitHubID) SignIn {
-	if si.Provider == "" && legacy != nil && legacy.ID > 0 {
-		return gitHubSignIn(legacy.ID, legacy.Login)
+// oldGitHubSignIn is the sign-in of a GitHub id in an invite or waitlist record from
+// before #3386; none for no id.
+func oldGitHubSignIn(id int64) SignIn {
+	if id <= 0 {
+		return SignIn{}
 	}
-	return si
+	return gitHubSignIn(id, "")
 }
 
 type accounts struct {
@@ -204,7 +196,6 @@ func (a *accounts) get(ctx context.Context, id string) (*Account, error) {
 	if err := json.Unmarshal(o.Data, &acc); err != nil {
 		return nil, err
 	}
-	acc.SignIn = signInOf(acc.SignIn, acc.GitHub)
 	return &acc, nil
 }
 
@@ -261,7 +252,6 @@ func (a *accounts) update(ctx context.Context, id string, f func(*Account)) (*Ac
 		if err := json.Unmarshal(o.Data, &acc); err != nil {
 			return nil, err
 		}
-		acc.SignIn = signInOf(acc.SignIn, acc.GitHub)
 		f(&acc)
 		data, _ := json.MarshalIndent(acc, "", "  ")
 		if _, err := a.store.Put(ctx, accountKey(id), data, store.Matching(o.ETag)); err != nil {
@@ -356,7 +346,7 @@ func (u *Used) was(user SignIn) bool {
 	if u == nil {
 		return false
 	}
-	by := signInOf(SignIn{}, &GitHubID{ID: u.GitHub})
+	by := oldGitHubSignIn(u.GitHub)
 	if u.By != nil {
 		by = *u.By
 	}
