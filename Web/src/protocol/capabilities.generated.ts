@@ -120,6 +120,7 @@ export const Capability = {
   hostUserSettings1: "host.user-settings/1",
   hostUserSettings2: "host.user-settings/2",
   hostUserSettings3: "host.user-settings/3",
+  hostUserSettings4: "host.user-settings/4",
   hostWebPairing1: "host.web-pairing/1",
   hostWire1: "host.wire/1",
   hostsJoin1: "hosts.join/1",
@@ -233,6 +234,7 @@ export const Capability = {
   user2: "user/2",
   user3: "user/3",
   user4: "user/4",
+  user5: "user/5",
   velocity1: "velocity/1",
   views1: "views/1",
   wake1: "wake/1",
@@ -599,7 +601,7 @@ export const HostCapabilities: Readonly<Record<string, Capability>> = {
   "sessions/delete": "sessions/1",
   "sessions/list": "sessions/1",
   "settings/passThrough": "host.policy/1",
-  "settings/userPart": "host.user-settings/3",
+  "settings/userPart": "host.user-settings/4",
   "shell/attach": "shell/1",
   "shell/close": "shell/1",
   "shell/detach": "shell/1",
@@ -972,7 +974,7 @@ export const ControlCapabilities: Readonly<Record<string, Capability>> = {
   "user/setAgentConfigFile": "user/1",
   "user/setPolicy": "host.policy-layers/1",
   "user/setSecret": "user/2",
-  "user/setSettings": "user/3",
+  "user/setSettings": "user/5",
   "user/settings": "user/1",
   "workflows/claimRun": "bots/1",
   "workflows/fire": "events.team/1",
@@ -1044,6 +1046,7 @@ export const DeclaredCapabilities: Readonly<Record<string, readonly Capability[]
   control: [
     "attention/1",
     "machine.accounts/1",
+    "user/3",
   ],
   host: [
     "host.wire/1",
@@ -1062,5 +1065,6 @@ export const DeclaredCapabilities: Readonly<Record<string, readonly Capability[]
     "host.user-settings/2",
     "host.lock/1",
     "host.lock/2",
+    "host.user-settings/3",
   ],
 };

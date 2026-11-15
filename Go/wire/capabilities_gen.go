@@ -119,6 +119,7 @@ const CapHostUpdate1 = "host.update/1"
 const CapHostUserSettings1 = "host.user-settings/1"
 const CapHostUserSettings2 = "host.user-settings/2"
 const CapHostUserSettings3 = "host.user-settings/3"
+const CapHostUserSettings4 = "host.user-settings/4"
 const CapHostWebPairing1 = "host.web-pairing/1"
 const CapHostWire1 = "host.wire/1"
 const CapHostsJoin1 = "hosts.join/1"
@@ -232,6 +233,7 @@ const CapUser1 = "user/1"
 const CapUser2 = "user/2"
 const CapUser3 = "user/3"
 const CapUser4 = "user/4"
+const CapUser5 = "user/5"
 const CapVelocity1 = "velocity/1"
 const CapViews1 = "views/1"
 const CapWake1 = "wake/1"
@@ -595,7 +597,7 @@ var HostCapabilities = pairs([][2]string{
 	{"sessions/delete", "sessions/1"},
 	{"sessions/list", "sessions/1"},
 	{"settings/passThrough", "host.policy/1"},
-	{"settings/userPart", "host.user-settings/3"},
+	{"settings/userPart", "host.user-settings/4"},
 	{"shell/attach", "shell/1"},
 	{"shell/close", "shell/1"},
 	{"shell/detach", "shell/1"},
@@ -1032,7 +1034,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"user/setAgentConfigFile", "user/1"},
 	{"user/setPolicy", "host.policy-layers/1"},
 	{"user/setSecret", "user/2"},
-	{"user/setSettings", "user/3"},
+	{"user/setSettings", "user/5"},
 	{"user/settings", "user/1"},
 	{"workflows/claimRun", "bots/1"},
 	{"workflows/fire", "events.team/1"},
@@ -1165,6 +1167,7 @@ var DeclaredCapabilities = map[string][]string{
 	"control": {
 		"attention/1",
 		"machine.accounts/1",
+		"user/3",
 	},
 	"host": {
 		"host.wire/1",
@@ -1183,5 +1186,6 @@ var DeclaredCapabilities = map[string][]string{
 		"host.user-settings/2",
 		"host.lock/1",
 		"host.lock/2",
+		"host.user-settings/3",
 	},
 }

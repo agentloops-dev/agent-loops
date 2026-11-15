@@ -13,10 +13,10 @@ import (
 
 func writeEnv(t *testing.T, dir, text string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".agents", "env"), []byte(text), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".agents", "env"), []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -114,7 +114,9 @@ func TestEnvWriteKeepsTheFileAndRefusesSecrets(t *testing.T) {
 	c.call(t, 7, "env/write", map[string]any{"folder": folder, "name": "REGION"})
 
 	var list wire.EnvList
-	json.Unmarshal(c.call(t, 8, "env/list", map[string]any{}), &list)
+	if err := json.Unmarshal(c.call(t, 8, "env/list", map[string]any{}), &list); err != nil {
+		t.Fatal(err)
+	}
 	if len(list.Files) != 2 || list.Files[0].Layer != wire.EnvLayerYours || list.Files[0].Exists || list.Files[1].Layer != wire.EnvLayerRepo {
 		t.Fatalf("%+v", list.Files)
 	}
@@ -139,7 +141,9 @@ func TestEnvironmentPartAndAnEditByHand(t *testing.T) {
 	read := func() string { b, _ := os.ReadFile(path); return string(b) }
 	byHand := func() bool {
 		var list wire.EnvList
-		json.Unmarshal(c.call(t, 1, "env/list", map[string]any{}), &list)
+		if err := json.Unmarshal(c.call(t, 1, "env/list", map[string]any{}), &list); err != nil {
+			t.Fatal(err)
+		}
 		return list.Files[0].ChangedByHand != nil && *list.Files[0].ChangedByHand
 	}
 	send("REGION=eu\n")
@@ -150,7 +154,9 @@ func TestEnvironmentPartAndAnEditByHand(t *testing.T) {
 	if read() != "REGION=us\n" {
 		t.Fatalf("a new part is written: %q", read())
 	}
-	os.WriteFile(path, []byte("REGION=mine\n"), 0o600)
+	if err := os.WriteFile(path, []byte("REGION=mine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	send("REGION=ca\n")
 	if read() != "REGION=mine\n" || !byHand() {
 		t.Fatalf("an edit by hand is kept and marked: %q", read())

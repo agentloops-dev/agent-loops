@@ -120,6 +120,7 @@ public enum Capability {
     public static let hostUserSettings1 = "host.user-settings/1"
     public static let hostUserSettings2 = "host.user-settings/2"
     public static let hostUserSettings3 = "host.user-settings/3"
+    public static let hostUserSettings4 = "host.user-settings/4"
     public static let hostWebPairing1 = "host.web-pairing/1"
     public static let hostWire1 = "host.wire/1"
     public static let hostsJoin1 = "hosts.join/1"
@@ -233,6 +234,7 @@ public enum Capability {
     public static let user2 = "user/2"
     public static let user3 = "user/3"
     public static let user4 = "user/4"
+    public static let user5 = "user/5"
     public static let velocity1 = "velocity/1"
     public static let views1 = "views/1"
     public static let wake1 = "wake/1"
@@ -596,7 +598,7 @@ public enum Capability {
         "sessions/delete": "sessions/1",
         "sessions/list": "sessions/1",
         "settings/passThrough": "host.policy/1",
-        "settings/userPart": "host.user-settings/3",
+        "settings/userPart": "host.user-settings/4",
         "shell/attach": "shell/1",
         "shell/close": "shell/1",
         "shell/detach": "shell/1",
@@ -969,7 +971,7 @@ public enum Capability {
         "user/setAgentConfigFile": "user/1",
         "user/setPolicy": "host.policy-layers/1",
         "user/setSecret": "user/2",
-        "user/setSettings": "user/3",
+        "user/setSettings": "user/5",
         "user/settings": "user/1",
         "workflows/claimRun": "bots/1",
         "workflows/fire": "events.team/1",
@@ -1041,6 +1043,7 @@ public enum Capability {
         "control": [
             "attention/1",
             "machine.accounts/1",
+            "user/3",
         ],
         "host": [
             "host.wire/1",
@@ -1059,6 +1062,7 @@ public enum Capability {
             "host.user-settings/2",
             "host.lock/1",
             "host.lock/2",
+            "host.user-settings/3",
         ],
     ]
 }
