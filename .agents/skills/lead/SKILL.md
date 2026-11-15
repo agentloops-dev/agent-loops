@@ -192,7 +192,7 @@ gh issue list --limit 100 --json number,title,labels,assignees \
 
 - **The order:** `priority:high`, then `priority:medium`, then no priority, then
   `priority:low`; in each, the lowest number first (the spec's order, which the forge's
-  priority already holds; no RICE of your own).
+  priority already holds).
 - **Ready** is an issue with no open blocker (`dependencies/blocked_by`, as in step 1).
 - **No block, a second block or an unknown field** (`forge/plan` says it in
   `standing.error`): start no lanes. Say it in a comment on the epic once, and ask the
