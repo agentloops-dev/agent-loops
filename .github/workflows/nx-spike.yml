@@ -71,6 +71,7 @@ jobs:
           node scripts/nx-hashes.cjs --affected origin/${{ github.base_ref || 'main' }} ${TARGETS//,/ } > "$RUNNER_TEMP/hashes-${{ matrix.name }}.txt"
           echo "hash time: $(( $(date +%s) - start )) s"
           cat "$RUNNER_TEMP/hashes-${{ matrix.name }}.txt"
+          NX_HASH_DETAILS=1 node scripts/nx-hashes.cjs ${TARGETS//,/ } > "$RUNNER_TEMP/details-${{ matrix.name }}.txt"
       - name: Nx affected
         if: ${{ !inputs.full }}
         run: |

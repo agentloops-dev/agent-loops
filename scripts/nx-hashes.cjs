@@ -31,13 +31,16 @@ async function affectedProjects(graph, nxJson, base) {
   const graph = await createProjectGraphAsync({ exitOnError: true });
   const nxJson = readNxJson();
   const projects = base ? await affectedProjects(graph, nxJson, base) : Object.keys(graph.nodes);
-  const taskGraph = createTaskGraph(graph, {}, projects, args, undefined, {});
+  // createTaskGraph refuses a project that has none of the targets.
+  const withTargets = projects.filter((p) => args.some((t) => graph.nodes[p].data.targets?.[t]));
+  const taskGraph = createTaskGraph(graph, {}, withTargets, args, undefined, {});
   const hasher = createTaskHasher(graph, nxJson);
   const tasks = Object.values(taskGraph.tasks);
   const envs = Object.fromEntries(tasks.map((t) => [t.id, process.env]));
   await hashTasks(hasher, graph, taskGraph, envs, getTaskDetails());
   for (const task of tasks.sort((a, b) => (a.id < b.id ? -1 : 1))) {
     console.log(`${task.id} ${task.hash ?? "(not hashed)"}`);
+    if (process.env.NX_HASH_DETAILS) console.log(JSON.stringify(task.hashDetails, null, 1));
   }
   console.error(`nx-hashes: ${tasks.length} tasks in ${((Date.now() - started) / 1000).toFixed(1)} s`);
   process.exit(0);
