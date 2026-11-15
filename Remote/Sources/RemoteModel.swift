@@ -24,6 +24,9 @@ final class RemoteModel {
     /// drawn at launch before the Mac answers. The Mac always wins.
     @ObservationIgnored var localCopy: LocalCopyKeeper?
     var labelVocabularies: [URL: [String]] = [:]
+    /// The Secrets (#5257) and Accounts (#5258) pages' selected items, so a link from one opens an item on the other.
+    var secretsSelection: String?
+    var accountsSelection: String?
     @ObservationIgnored var attentionRefreshTask: Task<Void, Never>?
 
     /// Whether the Mac is answering, and when it last did.

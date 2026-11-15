@@ -58,9 +58,9 @@ export function WorkFilesPage({ store, host, detail, back }: { store: Store; hos
     measure();
     const seen = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
     if (el) seen?.observe(el);
-    const escape = (e: KeyboardEvent) => { if (e.key === "Escape" && !picking.value && !e.defaultPrevented) back(); };
-    addEventListener("keydown", escape);
-    return () => { seen?.disconnect(); removeEventListener("keydown", escape); };
+    const onEscape = (e: KeyboardEvent) => { if (e.key === "Escape" && !picking.value && !e.defaultPrevented) back(); };
+    addEventListener("keydown", onEscape);
+    return () => { seen?.disconnect(); removeEventListener("keydown", onEscape); };
   }, []);
 
   const files = read.value?.files ?? [];

@@ -85,7 +85,9 @@ then UI changes, bugs before features, then the rest):
    `#<child>: <title>`, then a blank line and the persona's instructions; put nothing
    before the issue number and title. Title `#<child>: <title>`, worktree
    `fix-github-issue-<child>` (a bug) or `work-github-issue-<child>` (anything else), no
-   runtime.
+   runtime. Add to the prompt: before you start and before each push, lease `ci`, do the
+   step, release it; on a conflict
+   with `main`, `git merge origin/main` and push without running the tests again (#5712).
 3. If `start_session` refuses (the folder's limits are full), unassign the child and
    start no more until a lane ends.
 4. After the epic's first lane starts, ask `estimate_issue` for the epic once. This keeps
@@ -192,7 +194,7 @@ gh issue list --limit 100 --json number,title,labels,assignees \
 
 - **The order:** `priority:high`, then `priority:medium`, then no priority, then
   `priority:low`; in each, the lowest number first (the spec's order, which the forge's
-  priority already holds; no RICE of your own).
+  priority already holds).
 - **Ready** is an issue with no open blocker (`dependencies/blocked_by`, as in step 1).
 - **No block, a second block or an unknown field** (`forge/plan` says it in
   `standing.error`): start no lanes. Say it in a comment on the epic once, and ask the

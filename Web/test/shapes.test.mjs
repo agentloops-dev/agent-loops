@@ -28,14 +28,14 @@ function typed() {
   const found = [];
   const add = (type, value, where) => found.push({ type, value, where });
   for (const c of cases("groups/agents.json")) add("Agent", c.input.agent, `groups/agents ${c.name}`);
-  for (const c of cases("groups/panels.json")) c.input.agents.forEach((a, i) => add("Agent", a, `groups/panels ${c.name} #${i}`));
+  for (const c of cases("groups/panels.json")) for (const [i, a] of c.input.agents.entries()) add("Agent", a, `groups/panels ${c.name} #${i}`);
   for (const c of cases("status/rows.json")) add("Agent", c.input.agent, `status/rows ${c.name}`);
   for (const c of cases("turns/transcripts.json")) {
-    c.input.entries.forEach((e, i) => add("TranscriptEntry", e, `turns/transcripts ${c.name} #${i}`));
+    for (const [i, e] of c.input.entries.entries()) add("TranscriptEntry", e, `turns/transcripts ${c.name} #${i}`);
   }
   for (const c of cases("turns/lines.json")) add("ToolCall", c.input.call, `turns/lines ${c.name}`);
   for (const c of cases("background/words.json")) {
-    c.input.items.forEach((item, i) => add("BackgroundItem", item, `background/words ${c.name} #${i}`));
+    for (const [i, item] of c.input.items.entries()) add("BackgroundItem", item, `background/words ${c.name} #${i}`);
   }
   for (const c of cases("labels/query.json")) add("Agent", c.input.agent, `labels/query ${c.name}`);
   for (const c of cases("reducer/streams.json")) {
@@ -45,7 +45,7 @@ function typed() {
     });
   }
   for (const c of cases("options/drawable.json")) {
-    [...c.input.agentOptions, ...c.input.draftOptions].forEach((x, i) => add("ConfigOption", x, `options ${c.name} #${i}`));
+    for (const [i, x] of [...c.input.agentOptions, ...c.input.draftOptions].entries()) add("ConfigOption", x, `options ${c.name} #${i}`);
   }
   for (const c of cases("workflows/summaries.json")) add("WorkflowSummary", c.input, `workflows ${c.name}`);
   for (const file of readdirSync(fixtures + "overrides").filter((f) => f.endsWith(".json"))) {

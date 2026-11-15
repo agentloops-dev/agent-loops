@@ -67,7 +67,7 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "Go/scripts/go.sh test -race ./...",
+        "command": "Go/scripts/go-test.sh -race",
         "cwd": "{workspaceRoot}"
       },
       "inputs": [
@@ -76,6 +76,27 @@
         "go-source",
         "go-test-reads",
         "{projectRoot}/project.json"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "scripts/lint.sh go govulncheck",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "go-source",
+        "{projectRoot}/project.json",
+        "{workspaceRoot}/scripts/lint.sh",
+        {
+          "runtime": "date -u +%Y-%m-%d"
+        }
       ],
       "dependsOn": [
         "wire:gen",

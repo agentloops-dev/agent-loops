@@ -63,7 +63,7 @@ func gitRawEnv(dir string, env []string, stdin []byte, args ...string) ([]byte, 
 	deadline := gitDeadline(args)
 	ctx, cancel := context.WithTimeout(context.Background(), deadline)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // git itself, with no shell: an argument cannot start another command
 	cmd.Dir = dir
 	cmd.Env = append(append(os.Environ(), "GIT_OPTIONAL_LOCKS=0"), env...)
 	if stdin != nil {

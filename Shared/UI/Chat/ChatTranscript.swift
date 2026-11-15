@@ -973,7 +973,7 @@ private struct LoadFailureLine: View {
     @State private var retrying = false
 
     var body: some View {
-        RecordLine(icon: LineGlyph.loadFailure, detail: sentence,
+        RecordLine(detail: sentence,
                    action: StripButton(title: "Try Again", disabled: retrying) {
                        retrying = true
                        Task {

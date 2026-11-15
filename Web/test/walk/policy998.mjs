@@ -103,8 +103,8 @@ try {
   await page.type(pageCode);
   await page.press("Connect");
   await page.waitFor(`document.querySelector(".sidebar .row.folder")`, 20_000);
-  const folder = `#/h/${host}/p/${encodeURIComponent(`file://${folder}`)}/n/1`;
-  await page.eval(`location.hash = ${JSON.stringify(folder)}`);
+  const address = `#/h/${host}/p/${encodeURIComponent(`file://${folder}`)}/n/1`;
+  await page.eval(`location.hash = ${JSON.stringify(address)}`);
   await sleep(2500);
   await page.shot(`${out}/web-new-agent.png`);
   console.log("runtime options:", await page.eval(`[...document.querySelectorAll('select[aria-label="Runtime"] option')].map((o) => (o.disabled ? "×" : "") + o.textContent).join(" | ")`));

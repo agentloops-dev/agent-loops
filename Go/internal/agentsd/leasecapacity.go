@@ -70,6 +70,10 @@ func (d *Daemon) computeHeld() string {
 // heldByCapacity is whether e's next grant waits for the machine, and notes that a line
 // waits when it does. Under leaseMu.
 func (d *Daemon) heldByCapacity(name wire.ResourceName, e *leaseEntry) bool {
+	// The ci lease waits for its repository's CI, not for the machine (#5678).
+	if isCI(name) {
+		return d.ciHeld(name) != ""
+	}
 	if !isCompute(name) || d.computeHeld() == "" {
 		return false
 	}

@@ -274,7 +274,9 @@ enum WalkCommands {
     private static func describe(_ window: NSWindow, index: Int) -> [String: Any] {
         ["index": index, "title": window.title, "frame": box(window.frame), "sheet": window.isSheet,
          "key": window.isKeyWindow, "class": window.className, "number": window.windowNumber,
-         "identifier": window.identifier?.rawValue ?? "", "visible": window.isVisible, "minimised": window.isMiniaturized]
+         "identifier": window.identifier?.rawValue ?? "", "visible": window.isVisible, "minimised": window.isMiniaturized,
+         // The least the window can be sized to: SwiftUI sets it from its content (#5739).
+         "minSize": ["width": window.contentMinSize.width, "height": window.contentMinSize.height]]
     }
 
     /// A window by words of its title, minimised or not; else as `target` finds one.
