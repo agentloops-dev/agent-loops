@@ -55,6 +55,7 @@ function inside(path: string, folder: string): boolean {
  */
 export function pageImagePath(source: string, documentPath: string): string | null {
   const raw = source.trim();
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: a control character in a path is refused on purpose
   if (!raw || !documentPath.startsWith("/") || /[\u0000-\u001f\\]/.test(raw)) return null;
   const lower = raw.toLowerCase();
   if (withScheme.test(raw) && !lower.startsWith("file:")) return null;
@@ -74,6 +75,7 @@ export function pageImagePath(source: string, documentPath: string): string | nu
   }
   // A `%2e%2e` survives the URL parser and only becomes `..` once decoded. Settle it
   // again, or a picture could name a file outside the document's folder.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: a control character in a path is refused on purpose
   if (/[\u0000-\u001f\\]/.test(path)) return null;
   path = settle(path) ?? "";
   if (!path || !inside(path, folder) || !mediaType(path)) return null;

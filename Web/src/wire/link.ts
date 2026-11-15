@@ -315,7 +315,10 @@ export class Link {
    * while the tab was hidden is checked at once, its heartbeat having rested meanwhile.
    */
   retryNow(): void {
-    if (!this.stopped && this.state.kind === "open") return this.check();
+    if (!this.stopped && this.state.kind === "open") {
+      this.check();
+      return;
+    }
     if (this.stopped || (this.state.kind !== "down" && this.state.kind !== "suspended")) return;
     if (this.retry) clearTimeout(this.retry);
     this.retry = null;
@@ -417,7 +420,7 @@ export class Link {
   private async dial(): Promise<void> {
     this.clearTimers();
     this.dials++;
-    let record;
+    let record: KeyRecord | null;
     try {
       record = await this.options.keys.load();
     } catch (error) {

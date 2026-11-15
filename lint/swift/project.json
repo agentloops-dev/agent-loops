@@ -1,0 +1,26 @@
+{
+  "name": "swift-lint",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "root": "lint/swift",
+  "tags": ["xcode"],
+  "implicitDependencies": ["*", "!repo-lint"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "scripts/lint.sh swift",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "{workspaceRoot}/**/*.swift",
+        "!{workspaceRoot}/**/.build/**/*",
+        "!{workspaceRoot}/build/**/*",
+        "!{workspaceRoot}/.agents/worktrees/**/*",
+        "{workspaceRoot}/.swiftlint.yml",
+        "{workspaceRoot}/.swiftlint-baseline.json",
+        "{workspaceRoot}/scripts/lint.sh",
+        "{projectRoot}/project.json"
+      ]
+    }
+  }
+}

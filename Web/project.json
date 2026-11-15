@@ -27,11 +27,11 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "commands": ["./node_modules/.bin/tsc --noEmit -p .", "node test/lint.mjs", "node test/licences.mjs"],
+        "commands": ["./node_modules/.bin/tsc --noEmit -p .", "node test/lint.mjs", "node test/licences.mjs", "../scripts/lint.sh web"],
         "parallel": false,
         "cwd": "{projectRoot}"
       },
-      "inputs": ["sharedGlobals", "web-source"],
+      "inputs": ["sharedGlobals", "web-source", "{workspaceRoot}/scripts/lint.sh"],
       "dependsOn": ["build"]
     },
     "test": {

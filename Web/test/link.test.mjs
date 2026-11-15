@@ -342,7 +342,7 @@ function refusedSockets() {
 
 test("a dial that closes before it opens is down at once, while /readyz never answers (#3111)", async (t) => {
   const asked = [];
-  t.mock.method(globalThis, "fetch", (url, init) => { asked.push(init?.signal); return new Promise(() => {}); });
+  t.mock.method(globalThis, "fetch", (_url, init) => { asked.push(init?.signal); return new Promise(() => {}); });
   const net = refusedSockets();
   const l = link(paired(), net);
   const states = await opened(l);

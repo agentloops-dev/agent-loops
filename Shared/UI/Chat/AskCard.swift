@@ -66,11 +66,7 @@ struct AskCard<Content: View, Decline: View, Buttons: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Paper.raised, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Paper.rule))
-        .overlay(alignment: .leading) {
-            UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16)
-                .fill(StateTint.attention.color ?? Paper.rule)
-                .frame(width: 3)
-        }
+        .paperEdge(StateTint.attention.color ?? Paper.rule, cornerRadius: 16)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)

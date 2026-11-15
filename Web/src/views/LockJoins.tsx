@@ -3,6 +3,7 @@
 // other device that asks to join, and for each machine that asks (#3491, D3). The words are the
 // window's and the Remote's, so the three clients match. A control plane without lock-join/1
 // shows nothing.
+import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import type { Store } from "../model/store";
 import { brokenWords, newLockWords, type RecoveryCard, type SignerCard, type ThisDevice } from "../model/machineLock";
@@ -47,7 +48,7 @@ function RecoveryForm({ store, down, close }: { store: Store; down: boolean; clo
 
 function OwnCard({ store, device, down }: { store: Store; device: ThisDevice; down: boolean }) {
   const [recovering, setRecovering] = useState(false);
-  let title;
+  let title: ComponentChildren;
   let subtitle = null;
   let action = null;
   switch (device.kind) {
@@ -131,7 +132,7 @@ function RequestCard({ store, card, down }: { store: Store; card: SignerCard; do
   const { request, view } = card;
   const lock = store.machineLock;
   const deny = <button type="button" disabled={down} onClick={() => void lock.deny(request.request)}>Deny</button>;
-  let title;
+  let title: ComponentChildren;
   let subtitle = null;
   let prominent = null;
   const machine = request.machine !== undefined;

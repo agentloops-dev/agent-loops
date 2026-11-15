@@ -92,13 +92,9 @@ struct PaneBanner<Words: View, Actions: View>: View {
         .padding(.vertical, 9)
         .padding(.leading, tone.tint.color == nil ? 0 : 3)
         .background(Paper.raised, in: RoundedRectangle(cornerRadius: Paper.Radius.card))
-        .overlay(alignment: .leading) {
-            // The tone's 3px bar, inset from the corners as the sheet draws it.
-            if let bar = tone.tint.color {
-                RoundedRectangle(cornerRadius: 1.5).fill(bar).frame(width: 3).padding(.vertical, 8).padding(.leading, 6)
-            }
-        }
         .overlay(RoundedRectangle(cornerRadius: Paper.Radius.card).strokeBorder(tone.line, lineWidth: 1))
+        // The tone's 3px edge follows the corners, as on the Ask card and the web's banner (#5669).
+        .paperEdge(tone.tint.color, cornerRadius: Paper.Radius.card)
         .accessibilityElement(children: .contain)
         .onAppear { AccessibilityNotification.Announcement(announcement).post() }
         .transition(.move(edge: .top).combined(with: .opacity))

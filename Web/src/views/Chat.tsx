@@ -72,7 +72,7 @@ import { autoHeader, cellOf } from "../model/levels";
 import { PageTitle, chatCrumbs } from "./TopBar";
 import { startLineWords } from "../model/capacity";
 import { Icon } from "./Icon";
-import { lineGlyph, RecordLine } from "./chat/RecordLine";
+import { RecordLine } from "./chat/RecordLine";
 
 /** One opened turn's entries, so an earlier page can be put in front and drawn again (#291). */
 interface HeldTurn {
@@ -699,8 +699,7 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
         {failure && (
           // The history, or its earlier turns, did not load: said, with the way to ask again (#400).
           <div class="load-failure" role="status">
-            <RecordLine icon={lineGlyph.loadFailure}
-              detail={`${failure.nothingLoaded ? "This chat's history did not load: " : "The earlier turns did not load: "}${failure.reason}`}
+            <RecordLine detail={`${failure.nothingLoaded ? "This chat's history did not load: " : "The earlier turns did not load: "}${failure.reason}`}
               action={{ label: "Try Again", run: () => { void store.reloadTranscript(); } }} />
           </div>
         )}

@@ -2,10 +2,10 @@ import AgentsKitCore
 import SwiftUI
 
 /// The Dashboard (#5511, PoC #5534): one place to see what is being worked on, on this Mac. The
-/// counts on top, the epics' cards with their progress, then a row per work item under Needs you,
-/// Working and Finished today, each with its sessions, its pull request and checks. What waits on
-/// the person is answered on its row, with the chat's own cards. A row's title opens its Work
-/// page; a session opens its chat. No releases and no cost (Alex, 2026-11-14).
+/// counts on top, the epics' cards with their progress, then a row per work item under Needs you
+/// and Working, each with its sessions, its pull request and checks; finished work leaves (#5695).
+/// What waits on the person is answered on its row, with the chat's own cards. A row's title
+/// opens its Work page; a session opens its chat. No releases and no cost (Alex, 2026-11-14).
 ///
 /// The sessions are the window's own, live. The forge's open issues, pull requests and epics are
 /// read when the page opens and each minute after, and "Last update" says when (#5139).
@@ -32,7 +32,13 @@ struct DashboardView: View {
                     empty
                 } else {
                     counts(board)
-                    if !board.epics.isEmpty { epics(board.epics) }
+                    if !board.epics.isEmpty {
+                        epics(board.epics)
+                    } else if !forge.answered {
+                        // The epics come with the forge's first read: a grey box keeps their place
+                        // so the rows below do not move when they arrive (#5697).
+                        DashboardEpicsLoading()
+                    }
                     sections(board)
                 }
             }
@@ -75,7 +81,7 @@ struct DashboardView: View {
         .padding(.top, 40)
     }
 
-    /// ✋ 2 need you · ● 5 working · ✓ 3 finished today: each one lists only its section.
+    /// ✋ 2 need you · ● 5 working: each one lists only its section.
     private func counts(_ board: Dashboard.Board) -> some View {
         HStack(spacing: 10) {
             ForEach(Dashboard.Section.allCases) { section in
@@ -155,6 +161,8 @@ final class DashboardForge {
     var readAt: Date?
     /// The last read failed: the rows keep what was read before, or their labels.
     var failed = false
+    /// The first read has answered, with or without the forge: until then the epics are not known.
+    var answered = false
 
     func read(_ model: AppModel) async {
         let open = DaemonAPI.ForgeListRequest(state: "open", limit: 100)
@@ -169,6 +177,7 @@ final class DashboardForge {
         if let pulls { self.pulls = pulls.items }
         if let epics { self.epics = epics.items }
         if !failed { readAt = Date() }
+        answered = true
     }
 }
 
@@ -178,7 +187,6 @@ extension Dashboard.Section {
         switch self {
         case .needsYou: .needsYou
         case .working: .working
-        case .finished: .done
         }
     }
 
@@ -186,7 +194,6 @@ extension Dashboard.Section {
         switch self {
         case .needsYou: n == 1 ? "needs you" : "need you"
         case .working: "working"
-        case .finished: "finished today"
         }
     }
 }
@@ -246,6 +253,28 @@ private struct DashboardEpicCard: View {
         }
         .buttonStyle(.plain)
         .help("Open epic #\(epic.number)")
+    }
+}
+
+/// The grey box in the epics' place until the forge's first read answers (#5697): an epic card's
+/// lines, hidden, so it is as tall as the band the cards take.
+private struct DashboardEpicsLoading: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                DashboardMark(mark: .idle)
+                Text("#0 Epic")
+            }
+            .appText(.supporting)
+            ProgressView(value: 0).progressViewStyle(.linear)
+            Text("0 of 0 done · 0 here").appText(.fine)
+        }
+        .hidden()
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Paper.wash, in: RoundedRectangle(cornerRadius: Paper.Radius.card))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading epics")
     }
 }
 

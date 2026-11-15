@@ -227,19 +227,11 @@ struct ServedRequestLine: View {
     var body: some View {
         switch request.outcome {
         case .served:
-            RecordLine(icon: icon, detail: request.summary)
+            RecordLine(detail: request.summary)
         case .refused(let reason):
-            RecordLine(icon: icon, head: request.summary, detail: reason, tone: .failure)
+            RecordLine(head: request.summary, detail: reason, tone: .failure)
         case .failed(let message):
-            RecordLine(icon: icon, head: request.summary, detail: message, tone: .failure)
-        }
-    }
-
-    private var icon: String {
-        switch request.kind {
-        case .readFile: return LineGlyph.tool("read")
-        case .writeFile: return LineGlyph.tool("edit")
-        case .runCommand: return LineGlyph.tool("execute")
+            RecordLine(head: request.summary, detail: message, tone: .failure)
         }
     }
 }

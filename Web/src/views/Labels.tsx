@@ -106,10 +106,10 @@ export function Labels({ store, host, agent, folder, disabled }: {
   useEffect(() => {
     if (!editing.value) return;
     const close = (e: Event) => { if (!anchor.current?.contains(e.target as Node)) editing.value = false; };
-    const escape = (e: KeyboardEvent) => { if (e.key === "Escape") editing.value = false; };
+    const onEscape = (e: KeyboardEvent) => { if (e.key === "Escape") editing.value = false; };
     addEventListener("pointerdown", close);
-    addEventListener("keydown", escape);
-    return () => { removeEventListener("pointerdown", close); removeEventListener("keydown", escape); };
+    addEventListener("keydown", onEscape);
+    return () => { removeEventListener("pointerdown", close); removeEventListener("keydown", onEscape); };
   }, [editing.value]);
   const field = (focusFirst: boolean) => (
     <LabelField store={store} host={host} folder={folder} labels={labels} disabled={disabled}

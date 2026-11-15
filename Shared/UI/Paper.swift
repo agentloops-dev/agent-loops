@@ -455,6 +455,36 @@ struct PaperSelectionRow: View {
     }
 }
 
+/// The tinted edge of a card (#5669; `docs/reference/design-system.md`, "Edges"): a 3 pt
+/// band of the card's own rounded shape at its leading side, so it follows the corners and
+/// thins to nothing round them. It is the card's shape less the same shape moved 3 pt in,
+/// which is what the web's `box-shadow: inset 3px 0 0` draws. A 3 pt bar cannot have the
+/// card's radius, so a bar was a straight line that stopped short of the curved border.
+struct PaperEdge: Shape {
+    var cornerRadius: CGFloat
+    var width: CGFloat = 3
+
+    func path(in rect: CGRect) -> Path {
+        let card = RoundedRectangle(cornerRadius: cornerRadius).path(in: rect)
+        return card.subtracting(card.offsetBy(dx: width, dy: 0))
+    }
+}
+
+extension View {
+    /// Draws `PaperEdge` in `color` over the card, on its leading side in either direction.
+    /// Put it after the card's border, so the edge is on top of it.
+    func paperEdge(_ color: Color?, cornerRadius: CGFloat) -> some View {
+        overlay {
+            if let color {
+                PaperEdge(cornerRadius: cornerRadius)
+                    .fill(color)
+                    .flipsForRightToLeftLayoutDirection(true)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
 /// A sheet laid out the same way every time: title, body, then Cancel / primary actions.
 struct PaperSheet<Content: View, Actions: View>: View {
     let title: String

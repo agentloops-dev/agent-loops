@@ -93,7 +93,9 @@ const allowedURLs = new Set([
   "http://www.w3.org/XML/1998/namespace",
   // The listener's own two origins (#187): the page at the name, and the views' sandbox proxy at
   // the address, which MCP Apps requires be another origin than the page's. Same port, same Mac.
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: the source text this lint looks for, not a template
   "http://localhost:${location.port}",
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: the source text this lint looks for, not a template
   "http://127.0.0.1:${location.port}",
 ]);
 const strings = [
