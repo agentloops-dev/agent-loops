@@ -82,7 +82,8 @@ starts lanes.
      and wait again:
      - `required_check_failed`: follow `.agents/skills/fix-failed-checks/SKILL.md` on
        your branch for each of `failedChecks`. You fix your own PR's checks, also when a
-       Fix failed checks workflow is on.
+       Fix failed checks workflow is on. When main fails the same test, do not fix it:
+       wait for main to go green, then run the checks again (its step 2a, #5589).
      - `conflict` or `behind`: rebase onto main, push, and run
        `scripts/rearm-automerge.sh <pr>`.
      - `changes_requested`: read the review (`reviewUrl`), make the changes, and say on
