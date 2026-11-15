@@ -37,10 +37,11 @@ jobs:
     env:
       NX_NO_CLOUD: "true"
       NX_DAEMON: "false"
-      NX_CACHE_DIRECTORY: ${{ github.workspace }}/../nx-cache
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
       TARGETS: test,test-unit,test-control,test-integration,test-repo,lint,build,vet
     steps:
+      # actions/cache refuses a path with '..': the cache is in the runner's temp folder.
+      - run: echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx-cache" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -62,7 +63,7 @@ jobs:
         id: restore
         uses: actions/cache/restore@v4
         with:
-          path: ${{ github.workspace }}/../nx-cache
+          path: ${{ runner.temp }}/nx-cache
           key: nx-${{ matrix.name }}-${{ github.sha }}
           restore-keys: nx-${{ matrix.name }}-
       - name: Hashes of the affected tasks, with no task run (criterion 11)
@@ -86,15 +87,18 @@ jobs:
         if: always()
         run: |
           grep -E "existing outputs match the cache|local cache|Successfully ran|tasks? .*succeeded|Cache:|failed" "$RUNNER_TEMP/nx.txt" || true
-          du -sh "$GITHUB_WORKSPACE/../nx-cache" || true
+          du -sh "$NX_CACHE_DIRECTORY" || true
       - name: Save the Nx cache
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: ${{ github.workspace }}/../nx-cache
+          path: ${{ runner.temp }}/nx-cache
           key: nx-${{ matrix.name }}-${{ github.sha }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: nx-${{ matrix.name }}
-          path: ${{ runner.temp }}/*.txt
+          path: |
+            ${{ runner.temp }}/hashes-*.txt
+            ${{ runner.temp }}/details-*.txt
+            ${{ runner.temp }}/nx.txt
