@@ -81,9 +81,22 @@ func (m *Methods) userMethod(ctx context.Context, method string, params json.Raw
 		}
 		var fields map[string]json.RawMessage
 		json.Unmarshal(params, &fields)
+		var envBefore json.RawMessage
+		if request.Part == wire.UserSettingsPartNameEnvironment {
+			if had, err := book.Settings(ctx, user); err == nil {
+				envBefore = had.Environment
+			}
+		}
 		changed, err := book.SetPart(ctx, user, request.Part, fields["value"])
 		if err != nil {
 			return nil, userFailure(err)
+		}
+		if changed && request.Part == wire.UserSettingsPartNameEnvironment {
+			// The audit keeps each variable changed (#5259), by name, never its value.
+			actor := m.s.actorFor(from.Client)
+			for _, name := range usersettings.EnvironmentChanges(envBefore, fields["value"]) {
+				m.s.auditTo(actor, "user/setSettings", "Changed an environment variable", name)
+			}
 		}
 		if changed {
 			m.s.userChanged(user, []wire.UserSettingsPartName{request.Part}, false, from.Client)

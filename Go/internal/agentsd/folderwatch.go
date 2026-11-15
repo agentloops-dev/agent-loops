@@ -227,7 +227,7 @@ func (d *Daemon) folderFilesChanged(folder string, paths []string) {
 	agents := filepath.Join(folder, ".agents")
 	workflows := workflowsFolder(folder)
 	under := func(p, dir string) bool { return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator)) }
-	var branches, rescan, approvals bool
+	var branches, rescan, approvals, env bool
 	guarded := map[string]bool{}
 	for _, p := range paths {
 		if isBranchPath(p) {
@@ -248,8 +248,15 @@ func (d *Daemon) folderFilesChanged(folder string, paths []string) {
 		if p == agents || p == filepath.Join(agents, "mcp.json") || under(p, filepath.Join(agents, "plugins")) {
 			approvals = true
 		}
+		if p == agents || p == repoEnvPath(folder) {
+			env = true
+		}
 	}
 	d.watchedFilesChanged(folder, paths)
+	// The Environment page reads the folder's .agents/env again (#5259).
+	if env {
+		d.tellEnvChanged(folder, false)
+	}
 	if branches {
 		d.scheduleBranchCheck(folder, branchSettle)
 	}

@@ -67,6 +67,7 @@ const CapDocsAll1 = "docs.all/1"
 const CapDocs1 = "docs/1"
 const CapDropbox1 = "dropbox/1"
 const CapElicitations1 = "elicitations/1"
+const CapEnv1 = "env/1"
 const CapEventsAudit1 = "events.audit/1"
 const CapEventsBus1 = "events.bus/1"
 const CapEventsLeases1 = "events.leases/1"
@@ -373,6 +374,10 @@ var HostCapabilities = pairs([][2]string{
 	{"dropbox/put", "dropbox/1"},
 	{"elicitations/answer", "elicitations/1"},
 	{"elicitations/pending", "elicitations/1"},
+	{"env/discard", "env/1"},
+	{"env/list", "env/1"},
+	{"env/resolve", "env/1"},
+	{"env/write", "env/1"},
 	{"events/cancelWait", "events/1"},
 	{"events/list", "events/1"},
 	{"events/raise", "events/1"},
@@ -677,6 +682,7 @@ var HostCapabilities = pairs([][2]string{
 	{"desktopControl/liveFrame", "host.desktop-control/1"},
 	{"device/changed", "device/1"},
 	{"disk/changed", "disk/1"},
+	{"env/changed", "env/1"},
 	{"events/changed", "events/1"},
 	{"files/changed", "files/1"},
 	{"folder/changed", "folder/1"},
@@ -740,6 +746,7 @@ var HostNotifications = set([]string{
 	"desktopControl/liveFrame",
 	"device/changed",
 	"disk/changed",
+	"env/changed",
 	"events/changed",
 	"files/changed",
 	"folder/changed",

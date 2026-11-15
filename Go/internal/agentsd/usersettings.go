@@ -19,6 +19,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/envfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -33,6 +34,7 @@ import (
 //	notifications <settings>/display.json's noticeBurst and noticeCooldownMinutes (#2859)
 //	resources     <root>/resources.json
 //	secrets       ~/.agents-secrets/sealed.json, sealed (#4177)
+//	environment   ~/.agents/env, unless it was changed by hand here (#5259, environment.go)
 //
 // <root>/user-settings-sync.json stores sync metadata: secret names and the agentConfig
 // files written. A machine does not send its own agent configuration files to the person's
@@ -59,6 +61,11 @@ type userSettingsSyncState struct {
 	// TimeZone is the person's timeZone part (#4818): the zone of a workflow's hours: with
 	// no time-zone:. "" is none, and this host's own zone.
 	TimeZone string `json:"timeZone,omitempty"`
+	// EnvDigest is the SHA-256 of what the environment part last wrote to ~/.agents/env
+	// (#5259), so an edit by hand is told from it; EnvText is that text, for Discard. A value
+	// that looks like a secret is refused by the control plane, so neither holds one.
+	EnvDigest string `json:"envDigest,omitempty"`
+	EnvText   string `json:"envText,omitempty"`
 }
 
 type userScopeState struct {
@@ -108,7 +115,11 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	// A person's Set, Replace… and Remove… in Settings ▸ Secrets (#4156), raised once the lock
 	// is let go. The control plane's audit has them already, from the person's own call.
 	var changes []secretChange
+	envChanged := false
 	defer func() {
+		if envChanged {
+			d.tellEnvChanged("", true)
+		}
 		for _, c := range changes {
 			d.secretChanged("", c.name, c.what, false)
 		}
@@ -148,6 +159,11 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	// your layer, sent in the part policy instead and applied by applyYoursFromControlPlane.
 	if partSent(s.Policy) {
 		note(wire.UserSettingsPartNamePolicy, d.applyYoursFromControlPlane(s.Policy))
+	}
+	if partSent(s.Environment) {
+		changed, err := d.writeYoursEnvLocked(home, s.Environment, before, &mark)
+		envChanged = changed
+		note(wire.UserSettingsPartNameEnvironment, err)
 	}
 	// timeZone (#4818): the zone of a workflow's hours: with no time-zone:.
 	mark.TimeZone = zoneOfPart(s.TimeZone)
@@ -193,6 +209,19 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
 	}
+	return nil
+}
+
+// saveUserMarkLocked writes the mark and keeps it. Called with userScopeMu held.
+func (d *Daemon) saveUserMarkLocked(mark userSettingsSyncState) error {
+	b, err := diskjson.Marshal(mark)
+	if err != nil {
+		return err
+	}
+	if err := store.WriteAtomically(d.userSettingsSyncPath(), b, 0o644); err != nil {
+		return err
+	}
+	d.userMark = &mark
 	return nil
 }
 
@@ -520,7 +549,7 @@ func (d *Daemon) userPartHere(part wire.UserSettingsPartName) (wire.UserPartHere
 }
 
 // secretLooking is a header or variable whose value is a secret by its name.
-var secretLooking = regexp.MustCompile(`(?i)(token|secret|key|password|passwd|auth|bearer|cookie|credential)`)
+var secretLooking = envfile.SecretLookingName
 
 // tokensInClear refuses servers with a secret written in clear in an env or a header: in
 // the user settings it would be kept unsealed. Its words name the server and the key,

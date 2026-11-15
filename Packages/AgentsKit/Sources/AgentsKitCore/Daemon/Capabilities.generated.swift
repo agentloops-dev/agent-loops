@@ -68,6 +68,7 @@ public enum Capability {
     public static let docs1 = "docs/1"
     public static let dropbox1 = "dropbox/1"
     public static let elicitations1 = "elicitations/1"
+    public static let env1 = "env/1"
     public static let eventsAudit1 = "events.audit/1"
     public static let eventsBus1 = "events.bus/1"
     public static let eventsLeases1 = "events.leases/1"
@@ -374,6 +375,10 @@ public enum Capability {
         "dropbox/put": "dropbox/1",
         "elicitations/answer": "elicitations/1",
         "elicitations/pending": "elicitations/1",
+        "env/discard": "env/1",
+        "env/list": "env/1",
+        "env/resolve": "env/1",
+        "env/write": "env/1",
         "events/cancelWait": "events/1",
         "events/list": "events/1",
         "events/raise": "events/1",
@@ -678,6 +683,7 @@ public enum Capability {
         "desktopControl/liveFrame": "host.desktop-control/1",
         "device/changed": "device/1",
         "disk/changed": "disk/1",
+        "env/changed": "env/1",
         "events/changed": "events/1",
         "files/changed": "files/1",
         "folder/changed": "folder/1",

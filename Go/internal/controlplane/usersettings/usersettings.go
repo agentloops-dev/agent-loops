@@ -186,7 +186,7 @@ func partKind(part wire.UserSettingsPartName) (string, bool) {
 	switch part {
 	case wire.UserSettingsPartNameMcpServers, wire.UserSettingsPartNameAgentConfig,
 		wire.UserSettingsPartNameRuntimes, wire.UserSettingsPartNameCostLimits, wire.UserSettingsPartNameNotifications,
-		wire.UserSettingsPartNameAccounts, wire.UserSettingsPartNameTimeZone:
+		wire.UserSettingsPartNameAccounts, wire.UserSettingsPartNameTimeZone, wire.UserSettingsPartNameEnvironment:
 		return "{", true
 	}
 	return "", false
@@ -219,6 +219,11 @@ func (b *Book) setPart(ctx context.Context, user string, part wire.UserSettingsP
 		}
 		if part == wire.UserSettingsPartNameAccounts {
 			if err := checkAccounts(value); err != nil {
+				return false, err
+			}
+		}
+		if part == wire.UserSettingsPartNameEnvironment {
+			if err := checkEnvironment(value); err != nil {
 				return false, err
 			}
 		}
@@ -281,6 +286,8 @@ func partOf(s *wire.UserSettings, part wire.UserSettingsPartName) *wire.JSONValu
 		return &s.Accounts
 	case wire.UserSettingsPartNameTimeZone:
 		return &s.TimeZone
+	case wire.UserSettingsPartNameEnvironment:
+		return &s.Environment
 	}
 	return nil
 }
