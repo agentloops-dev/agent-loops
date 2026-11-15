@@ -16,10 +16,11 @@ struct DashboardTests {
     }
 
     func agent(_ title: String, labels: [String] = [], state: AgentState = .running, ended: EndedReason? = nil,
-               at: Date? = nil, archivedAt: Date? = nil) -> Agent {
+               at: Date? = nil, archivedAt: Date? = nil, started: Date? = nil) -> Agent {
         Agent(runtimeID: "claude", cwd: folder, title: title,
               labels: labels.map { SessionLabel(value: $0, owner: .agent) }, state: state,
-              lastActivityAt: at ?? now, endedReason: ended, archivedAt: archivedAt)
+              createdAt: started ?? now.addingTimeInterval(-3600), lastActivityAt: at ?? now, endedReason: ended,
+              archivedAt: archivedAt)
     }
 
     func issue(_ n: Int, _ title: String, parent: Int? = nil, progress: DaemonAPI.ForgeProgress? = nil) -> DaemonAPI.ForgeItem {
@@ -51,13 +52,59 @@ struct DashboardTests {
     }
 
     @Test func aRowTakesItsWorstSessionsMarkAndWaitingGoesUnderNeedsYou() {
-        let b = board([agent("a", labels: ["#1"]), agent("b", labels: ["#1"], state: .waitingOnUser)])
+        let b = board([agent("b", labels: ["#1"], state: .waitingOnUser, started: now.addingTimeInterval(-60)),
+                       agent("a", labels: ["#1"], started: now.addingTimeInterval(-120))])
         #expect(b.count(.needsYou) == 1)
         #expect(b.count(.working) == 0)
         let row = b.rows[.needsYou]?.first
         #expect(row?.mark == .needsYou)
-        // The session that needs the person is listed first.
-        #expect(row?.sessions.first?.agent.title == "b")
+        #expect(row?.sessions.map(\.agent.title) == ["a", "b"])
+    }
+
+    /// Alex, #5695: rows that swapped places while they worked. The order is when each started, and
+    /// no state or activity moves it: in a section, or for the sessions on a row.
+    @Test func rowsAndSessionsKeepTheirOrderWhileTheyWork() {
+        let t0 = now.addingTimeInterval(-7200)
+        var a = agent("a", labels: ["#1"], started: t0)
+        let b = agent("b", labels: ["#2"], started: t0.addingTimeInterval(60))
+        var c = agent("c", labels: ["#3"], started: t0.addingTimeInterval(120))
+        var c2 = agent("c2", labels: ["#3"], started: t0.addingTimeInterval(180))
+        let order = { (agents: [Agent], groups: [String: AgentGroup]) in
+            let w = self.board(agents, groups: groups).rows[.working] ?? []
+            return (w.compactMap(\.refText), w.last?.sessions.compactMap(\.agent.title) ?? [])
+        }
+        let first = order([a, b, c, c2], [:])
+        #expect(first.0 == ["#1", "#2", "#3"])
+        #expect(first.1 == ["c", "c2"])
+        // The newest session does something, then the oldest; one goes idle and another fails.
+        c2.lastActivityAt = now.addingTimeInterval(30)
+        a.lastActivityAt = now.addingTimeInterval(60)
+        c.state = .finished
+        c.endedReason = .processDied
+        let second = order([c2, b, a, c], ["b": .waiting])
+        #expect(second.0 == first.0)
+        #expect(second.1 == first.1)
+    }
+
+    @Test func finishedPausedAndArchivedSessionsLeaveTheBoard() {
+        let b = board([agent("done", labels: ["#4"], state: .finished, ended: .endTurn),
+                       agent("working", labels: ["#4"]),
+                       agent("paused", labels: ["#5"]),
+                       agent("archived", labels: ["#6"], state: .archived, archivedAt: now)],
+                      groups: ["paused": .stopped])
+        #expect(b.rows[.working]?.map(\.refText) == ["#4"])
+        #expect(b.rows[.working]?.first?.sessions.map(\.agent.title) == ["working"])
+        #expect(b.count(.needsYou) == 0)
+    }
+
+    @Test func aDoneRowStaysWhileItsPullRequestsChecksFail() {
+        let b = board([agent("lane", labels: ["#8", "P#30"], state: .finished, ended: .endTurn)],
+                      pulls: [pull(30, checks: "failing")])
+        let row = b.rows[.working]?.first
+        #expect(row?.mark == .failed)
+        #expect(row?.sessions.isEmpty == true)
+        #expect(board([agent("lane", labels: ["#8", "P#30"], state: .finished, ended: .endTurn)],
+                      pulls: [pull(30, checks: "passing")]).isEmpty)
     }
 
     @Test func aSessionWithNoIssueIsARowOfItsOwnUnderItsTitle() {
@@ -78,15 +125,6 @@ struct DashboardTests {
     @Test func aCrashedSessionIsFailedAndStaysWithTheWorkingRows() {
         let b = board([agent("x", labels: ["#3"], state: .finished, ended: .processDied)])
         #expect(b.rows[.working]?.first?.mark == .failed)
-    }
-
-    @Test func doneTodayIsFinishedTodayAndDoneEarlierIsLeftOut() {
-        let yesterday = now.addingTimeInterval(-2 * 86_400)
-        let b = board([agent("today", labels: ["#4"], state: .finished, ended: .endTurn),
-                       agent("old", labels: ["#5"], state: .finished, ended: .endTurn, at: yesterday),
-                       agent("archived old", labels: ["#6"], state: .archived, at: yesterday, archivedAt: yesterday)])
-        #expect(b.rows[.finished]?.map(\.refText) == ["#4"])
-        #expect(b.count(.working) == 0)
     }
 
     @Test func anEpicCardForEachEpicOnTheBoardWithItsProgress() {
@@ -114,7 +152,8 @@ struct DashboardTests {
         let row = b.rows[.needsYou]?.first
         #expect(row?.mark == .needsYou)
         #expect(row?.pullRequest?.waitsForApproval == true)
-        #expect(row?.sessions.first?.mark == .done)
+        // Its session is done, so it is not listed.
+        #expect(row?.sessions.isEmpty == true)
     }
 
     @Test func anApprovedDraftOrUnlistedPullRequestDoesNotWait() {

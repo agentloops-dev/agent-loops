@@ -2,10 +2,10 @@ import AgentsKitCore
 import SwiftUI
 
 /// The Dashboard (#5511, PoC #5534): one place to see what is being worked on, on this Mac. The
-/// counts on top, the epics' cards with their progress, then a row per work item under Needs you,
-/// Working and Finished today, each with its sessions, its pull request and checks. What waits on
-/// the person is answered on its row, with the chat's own cards. A row's title opens its Work
-/// page; a session opens its chat. No releases and no cost (Alex, 2026-11-14).
+/// counts on top, the epics' cards with their progress, then a row per work item under Needs you
+/// and Working, each with its sessions, its pull request and checks; finished work leaves (#5695).
+/// What waits on the person is answered on its row, with the chat's own cards. A row's title
+/// opens its Work page; a session opens its chat. No releases and no cost (Alex, 2026-11-14).
 ///
 /// The sessions are the window's own, live. The forge's open issues, pull requests and epics are
 /// read when the page opens and each minute after, and "Last update" says when (#5139).
@@ -75,7 +75,7 @@ struct DashboardView: View {
         .padding(.top, 40)
     }
 
-    /// ✋ 2 need you · ● 5 working · ✓ 3 finished today: each one lists only its section.
+    /// ✋ 2 need you · ● 5 working: each one lists only its section.
     private func counts(_ board: Dashboard.Board) -> some View {
         HStack(spacing: 10) {
             ForEach(Dashboard.Section.allCases) { section in
@@ -178,7 +178,6 @@ extension Dashboard.Section {
         switch self {
         case .needsYou: .needsYou
         case .working: .working
-        case .finished: .done
         }
     }
 
@@ -186,7 +185,6 @@ extension Dashboard.Section {
         switch self {
         case .needsYou: n == 1 ? "needs you" : "need you"
         case .working: "working"
-        case .finished: "finished today"
         }
     }
 }
