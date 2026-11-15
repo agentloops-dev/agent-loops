@@ -4504,6 +4504,29 @@ type DocsList struct {
 	Cursor *string `json:"cursor,omitzero"`
 }
 
+// docs/listAll (#5571): a page of docs from the caller's machines, the last updated first, each with its machine. unreached is the machines that have docs but did not answer (offline or too slow); their docs are not in docs. sources are those of the machines that answered this page: the first page has every machine's. notAsked counts the machines past the most one call asks (50). cursor is the next page, absent at the end.
+type DocsListAll struct {
+	Docs []MachineDoc `json:"docs"`
+
+	Sources []MachineDocsSource `json:"sources"`
+
+	Unreached []ProjectMachine `json:"unreached"`
+
+	NotAsked int64 `json:"notAsked"`
+
+	Cursor *string `json:"cursor,omitzero"`
+}
+
+// docs/listAll (#5571): the docs of the caller's machines in one call. limit is 1 to 500, 200 when not said; it bounds the page, not each machine, and a cursor goes with the same limit. source narrows to one DocsSource id.
+type DocsListAllRequest struct {
+	Source *string `json:"source,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
+
+	// Opaque: the last page's cursor, as the answer gave it. Absent for the first page.
+	Cursor *string `json:"cursor,omitzero"`
+}
+
 // docs/list (#3319): the docs of every folder on this machine and of their docs connectors, or of one folder, or of one source (a DocsSource id). A connector lists its map's recent tool, else its search for nothing. limit is 1 to 500, 200 when not said; cursor is the last page's.
 type DocsListRequest struct {
 	Folder *string `json:"folder,omitzero"`
@@ -8748,6 +8771,15 @@ type MachineClients struct {
 	User *string `json:"user,omitzero"`
 }
 
+// A conversation of messages/conversationsAll (#5571) with the machine whose connector has it.
+type MachineConversation struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Conversation MessagesConversation `json:"conversation"`
+}
+
 // For each filter, how many machines have each of its values, among those every other filter lets through (so a chip says what picking it would show). A machine with no value for a filter is not counted in it.
 type MachineCounts struct {
 	State map[string]int64 `json:"state"`
@@ -8759,6 +8791,24 @@ type MachineCounts struct {
 	Os map[string]int64 `json:"os"`
 
 	Version map[string]int64 `json:"version"`
+}
+
+// A doc of docs/listAll (#5571) with the machine that has it.
+type MachineDoc struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Doc Doc `json:"doc"`
+}
+
+// A source of docs/listAll (#5571) with the machine whose folders or connectors it is.
+type MachineDocsSource struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Source DocsSource `json:"source"`
 }
 
 // machines/startEnroll (#1761): with as, a bot's machine code, an admin's only. Without, the caller's own, as before.
@@ -8973,6 +9023,15 @@ type MachineListQuery struct {
 	Limit *int64 `json:"limit,omitzero"`
 
 	Cursor *string `json:"cursor,omitzero"`
+}
+
+// A connector of messages/conversationsAll (#5571) that failed or did not answer in time, with its machine.
+type MachineMessagesError struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Error MessagesError `json:"error"`
 }
 
 // machines/setMachineOptions. stopWhenIdleMinutes 0 turns it off.
@@ -9478,6 +9537,29 @@ type MessagesConversations struct {
 	Cursor *string `json:"cursor,omitzero"`
 
 	Errors []MessagesError `json:"errors,omitzero"`
+}
+
+// messages/conversationsAll (#5571): a page of conversations from the caller's machines, the newest first, each with its machine. errors says a connector that failed. unreached and notAsked are as in DocsListAll. cursor is the next page, absent at the end.
+type MessagesConversationsAll struct {
+	Conversations []MachineConversation `json:"conversations"`
+
+	Errors []MachineMessagesError `json:"errors"`
+
+	Unreached []ProjectMachine `json:"unreached"`
+
+	NotAsked int64 `json:"notAsked"`
+
+	Cursor *string `json:"cursor,omitzero"`
+}
+
+// messages/conversationsAll (#5571): the conversations of the caller's machines in one call. limit is 1 to 100, 20 when not said; it bounds the page, not each machine, and a cursor goes with the same limit. unread: only the conversations with unread messages.
+type MessagesConversationsAllRequest struct {
+	Unread *bool `json:"unread,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
+
+	// Opaque: the last page's cursor, as the answer gave it. Absent for the first page.
+	Cursor *string `json:"cursor,omitzero"`
 }
 
 // messages/conversations (#4343): the conversations of every folder's messaging connectors on this machine, or of one folder's. limit is 1 to 100, 20 when not said; cursor is the last page's. unread: only the conversations with unread messages.

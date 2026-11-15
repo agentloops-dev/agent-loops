@@ -1,12 +1,26 @@
 // The Messages page (#4344), as the window's (AgentsKitCore's MessagesList): every machine's conversations
 // from messages/conversations in one list, each conversation once, the newest first, and its words; the
 // reply field's too (#4345).
-import type { ChannelSender, Event, MessagesConversation, MessagesError, MessagesMarkedAllRead, MessagingConversation } from "../protocol/generated";
+import type { ChannelSender, Event, MessagesConversation, MessagesConversationsAll, MessagesError, MessagesMarkedAllRead, MessagingConversation } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 import { channelName } from "./channelLinks";
 import { shortAgo } from "./statusSecrets";
 
 /** One machine's answer, or why it gave none. */
+/** messages/conversationsAll's page (#5571) as one HostConversations for each machine it names, added to `into` (the pages before). */
+export function hostConversationsOf(got: MessagesConversationsAll, into: HostConversations[] = []): HostConversations[] {
+  const by = new Map(into.map((h) => [h.host, { ...h, conversations: [...h.conversations], errors: [...h.errors] }]));
+  const of = (host: string, name: string) => {
+    let h = by.get(host);
+    if (!h) { h = { host, name, conversations: [], errors: [] }; by.set(host, h); }
+    return h;
+  };
+  for (const c of got.conversations) of(c.machine, c.machineName).conversations.push(c.conversation);
+  for (const e of got.errors) of(e.machine, e.machineName).errors.push(e.error);
+  for (const u of got.unreached) of(u.machine, u.machineName).problem = "It did not answer.";
+  return [...by.values()];
+}
+
 export interface HostConversations {
   host: string;
   name: string;

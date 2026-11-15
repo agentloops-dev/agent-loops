@@ -83,6 +83,71 @@ public extension DaemonAPI {
         }
     }
 
+    /// A machine that has an answer's kind of item but did not answer in time (#5571).
+    struct UnreachedMachine: Codable, Sendable, Hashable {
+        public var machine: MachineRef
+        public var machineName: String
+
+        public init(machine: MachineRef, machineName: String) {
+            self.machine = machine
+            self.machineName = machineName
+        }
+    }
+
+    struct DocsListAllRequest: Codable, Sendable, Hashable {
+        public var source: String?
+        public var limit: Int?
+        public var cursor: String?
+
+        public init(source: String? = nil, limit: Int? = nil, cursor: String? = nil) {
+            self.source = source
+            self.limit = limit
+            self.cursor = cursor
+        }
+    }
+
+    struct MachineDoc: Codable, Sendable, Hashable {
+        public var machine: MachineRef
+        public var machineName: String
+        public var doc: Doc
+
+        public init(machine: MachineRef, machineName: String, doc: Doc) {
+            self.machine = machine
+            self.machineName = machineName
+            self.doc = doc
+        }
+    }
+
+    struct MachineDocsSource: Codable, Sendable, Hashable {
+        public var machine: MachineRef
+        public var machineName: String
+        public var source: DocsSource
+
+        public init(machine: MachineRef, machineName: String, source: DocsSource) {
+            self.machine = machine
+            self.machineName = machineName
+            self.source = source
+        }
+    }
+
+    /// docs/listAll (#5571): a page of the caller's machines' docs, the last updated first.
+    struct DocsListAll: Codable, Sendable, Hashable {
+        public var docs: [MachineDoc]
+        public var sources: [MachineDocsSource]
+        public var unreached: [UnreachedMachine]
+        public var notAsked: Int
+        public var cursor: String?
+
+        public init(docs: [MachineDoc] = [], sources: [MachineDocsSource] = [], unreached: [UnreachedMachine] = [],
+                    notAsked: Int = 0, cursor: String? = nil) {
+            self.docs = docs
+            self.sources = sources
+            self.unreached = unreached
+            self.notAsked = notAsked
+            self.cursor = cursor
+        }
+    }
+
     struct DocsSearchRequest: Codable, Sendable, Hashable {
         public var query: String
         public var sources: [String]?
@@ -164,6 +229,8 @@ public extension DaemonAPI.Method {
     /// `DocsListRequest` → `DocsList`, `DocsSearchRequest` → `DocsSearch`,
     /// `DocsReadRequest` → `DocsReading` (#3319).
     static let docsList = "docs/list"
+    /// `DocsListAllRequest` → `DocsListAll`: the control plane asks every machine once (#5571).
+    static let docsListAll = "docs/listAll"
     static let docsSearch = "docs/search"
     static let docsRead = "docs/read"
 }

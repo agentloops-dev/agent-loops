@@ -103,3 +103,15 @@ test("next is the row after in the list as it is filtered now, and marking read 
     { name: "Box", problem: "Offline." },
   ]), ["This Mac ▸ mail: No answer.", "Box: Offline."]);
 });
+
+test("messages/conversationsAll's pages are one list for each machine, with its errors (#5571)", async () => {
+  const { hostConversationsOf } = m;
+  const c = (id) => ({ server: "slack", folder: "f", conversation: { source: "slack", id, title: id } });
+  const first = hostConversationsOf({
+    conversations: [{ machine: "a", machineName: "Mac", conversation: c("1") }], unreached: [{ machine: "b", machineName: "Box" }],
+    errors: [{ machine: "a", machineName: "Mac", error: { server: "email", folder: "f", message: "down" } }], notAsked: 0, cursor: "next",
+  });
+  assert.deepEqual(first.map((h) => [h.host, h.conversations.length, h.errors.length, h.problem !== undefined]), [["a", 1, 1, false], ["b", 0, 0, true]]);
+  const more = hostConversationsOf({ conversations: [{ machine: "a", machineName: "Mac", conversation: c("2") }], errors: [], unreached: [], notAsked: 0 }, first);
+  assert.equal(more.find((h) => h.host === "a").conversations.length, 2);
+});

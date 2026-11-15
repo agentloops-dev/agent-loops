@@ -1,13 +1,28 @@
 // Docs (#3321, spec 3319): every machine's docs (docs/list), grouped by source, a folder's by its
 // subfolders; search (docs/search) with each match's line and snippet; and a doc's page (docs/read).
 // As the window's DocsModel: the same groups, words and refs.
-import type { Doc, DocsSearchResult, DocsSource } from "../protocol/generated";
+import type { Doc, DocsListAll, DocsSearchResult, DocsSource } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 import { maximumLabelLength } from "./labels";
 import { legacyRef } from "../protocol/ref";
 
 export type DocsSort = "updated" | "title";
 export const docsSortTitle: Record<DocsSort, string> = { updated: "Last updated", title: "Title" };
+
+/** docs/listAll's page (#5571) as one HostDocs for each machine it names: the control plane asks the machines once, and a machine it
+ * could not reach has a line saying so. A later page of the same read is added to `into`. */
+export function hostDocsOf(got: DocsListAll, into: HostDocs[] = []): HostDocs[] {
+  const by = new Map(into.map((h) => [h.host, { ...h, docs: [...h.docs], sources: [...h.sources] }]));
+  const of = (host: string, name: string) => {
+    let h = by.get(host);
+    if (!h) { h = { host, name, docs: [], sources: [] }; by.set(host, h); }
+    return h;
+  };
+  for (const s of got.sources) of(s.machine, s.machineName).sources.push(s.source);
+  for (const d of got.docs) of(d.machine, d.machineName).docs.push(d.doc);
+  for (const u of got.unreached) of(u.machine, u.machineName).problem = "It did not answer.";
+  return [...by.values()];
+}
 
 /** One machine's docs/list, or why it could not be read. */
 export interface HostDocs {
