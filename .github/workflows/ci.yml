@@ -585,14 +585,25 @@ jobs:
           # had thousands in flight on this three-core runner: their `eventually` loops
           # took the CPU, trivial tests waited 60 s, and 189 to 331 failed in 14 to 23
           # minutes. Capped at 3 locally it takes the same two minutes on a tenth of the CPU.
+          # A full run takes the four test targets one at a time (#5630), so the log says
+          # which target failed and how long each took; a failing one does not stop the
+          # rest.
           run_agentskit_tests() {
             if [ "$TEST_MODE" = filter ]; then
               swift test --skip-build --package-path Packages/AgentsKit \
                 --experimental-maximum-parallelization-width 3 --filter "$TEST_FILTER"
-            else
-              swift test --skip-build --package-path Packages/AgentsKit \
-                --experimental-maximum-parallelization-width 3
+              return
             fi
+            local failed=0 target start
+            for target in AgentsKitTests AgentsKitRepoTests AgentsKitControlTests AgentsKitIntegrationTests; do
+              start=$SECONDS
+              echo "::group::$target"
+              swift test --skip-build --package-path Packages/AgentsKit \
+                --experimental-maximum-parallelization-width 3 --filter "^${target}\\." || failed=1
+              echo "::endgroup::"
+              echo "$target took $((SECONDS - start)) s"
+            done
+            return "$failed"
           }
 
           log="$RUNNER_TEMP/agentskit-tests.log"

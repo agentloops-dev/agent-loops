@@ -23,6 +23,13 @@
 # CI's macOS jobs are chosen here as well (#594): `apps` is skip only when every changed
 # path is prose or agent config that no build reads.
 #
+# AgentsKit's tests are in four targets (#5630): AgentsKitTests (unit), AgentsKitRepoTests
+# (the suites that read files outside the package; Package.swift lists what each reads),
+# AgentsKitControlTests and AgentsKitIntegrationTests. A test file in one target that is
+# not a named suite runs that whole target, not the package: the filter gets
+# `^<target>\.`. Support/ and Fixtures/ are in AgentsKitTests and linked from the other
+# three, so a change to them runs every target. AcceptProbe runs the integration target.
+#
 # Usage: scripts/select-test-suites.sh <base-commit> >> "$GITHUB_OUTPUT"
 set -euo pipefail
 
@@ -65,6 +72,7 @@ else
 		agentskit_only_tests=true
 		codetext_only_tests=true
 		agentskit_suites=()
+		agentskit_targets=()
 		codetext_suites=()
 		apps=skip
 
@@ -85,19 +93,31 @@ else
 				Packages/AgentsKit/Tests/AgentsKitTests/Support/FlakyUnderLoad.swift)
 					agentskit_touched=true
 					;;
-				Packages/AgentsKit/Tests/*)
+				# Linked from every test target (#5630): all four run.
+				Packages/AgentsKit/Tests/AgentsKitTests/Support/*|Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/*)
+					agentskit_touched=true
+					agentskit_only_tests=false
+					;;
+				Packages/AgentsKit/Tests/AcceptProbe/*)
+					agentskit_touched=true
+					agentskit_targets+=(AgentsKitIntegrationTests)
+					;;
+				Packages/AgentsKit/Tests/AgentsKit*Tests/*)
 					agentskit_touched=true
 					name=${path##*/}
-					if [[ "$name" == *Tests.swift ]]; then
-						suite=${name%.swift}
-						if [[ -f "$path" ]] && grep -Eq "(^|[[:space:]])(struct|class)[[:space:]]+${suite}([[:space:]<{:]|$)" "$path"; then
-							agentskit_suites+=("$suite")
-						else
-							agentskit_only_tests=false
-						fi
+					target=${path#Packages/AgentsKit/Tests/}
+					target=${target%%/*}
+					suite=${name%.swift}
+					if [[ "$name" == *Tests.swift ]] && [[ -f "$path" ]] && grep -Eq "(^|[[:space:]])(struct|class)[[:space:]]+${suite}([[:space:]<{:]|$)" "$path"; then
+						agentskit_suites+=("$suite")
 					else
-						agentskit_only_tests=false
+						# A helper, a removed suite or a file that is no suite: its target.
+						agentskit_targets+=("$target")
 					fi
+					;;
+				Packages/AgentsKit/Tests/*)
+					agentskit_touched=true
+					agentskit_only_tests=false
 					;;
 				Packages/AgentsKit/Sources/*)
 					agentskit_touched=true
@@ -186,11 +206,8 @@ else
 					agentskit=full
 				elif $agentskit_source_touched && ((${#agentskit_suites[@]} > 0)); then
 					agentskit=filter
-				elif ! $agentskit_source_touched && $agentskit_only_tests && ((${#agentskit_suites[@]} > 0)); then
+				elif ! $agentskit_source_touched && $agentskit_only_tests && ((${#agentskit_suites[@]} + ${#agentskit_targets[@]} > 0)); then
 					agentskit=filter
-					# SwiftPM treats --filter as a regular expression over the fully
-					# qualified test identifier. Suite names here are Swift identifiers.
-					agentskit_filter=$(IFS='|'; printf '%s' "${agentskit_suites[*]}")
 				else
 					agentskit=full
 				fi
@@ -198,6 +215,14 @@ else
 					# A filtered run for AgentsKitCore's source also holds it to the schema.
 					if $core_source_touched && ! $wire_touched; then
 						agentskit_suites+=(WireSchemaTests)
+					fi
+					# SwiftPM treats --filter as a regular expression over the fully
+					# qualified test identifier, `<target>.<suite>/<test>`. Suite names
+					# here are Swift identifiers; a whole target is `^<target>\.`.
+					if ((${#agentskit_targets[@]} > 0)); then
+						for target in $(printf '%s\n' "${agentskit_targets[@]}" | sort -u); do
+							agentskit_suites+=("^${target}\\.")
+						done
 					fi
 					agentskit_filter=$(IFS='|'; printf '%s' "${agentskit_suites[*]}")
 				fi

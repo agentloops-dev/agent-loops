@@ -47,12 +47,58 @@ let package = Package(
             name: "AgentsKit",
             dependencies: ["AgentsKitCore"],
             swiftSettings: [.treatAllWarnings(as: .error)]),
+        // The tests are in four targets (#5630), so a build tool can select, run and cache
+        // each one alone, and a change to one runs only it. `Support/` and `Fixtures/` are
+        // in AgentsKitTests; each other target has links to them. A suite in `Support/`
+        // runs in every target, so suites go in the targets' own folders.
+        //
+        // Unit: the model, the protocol and the client, with nothing outside this package.
         .testTarget(
             name: "AgentsKitTests",
-            dependencies: ["ControlDial", "AgentsKit", "AgentsKitCore", "accept-probe",
+            dependencies: ["AgentsKit", "AgentsKitCore"],
+            exclude: ["Fixtures"],
+            swiftSettings: [.treatAllWarnings(as: .error)]),
+        // Repo: the suites that read files outside this package, so their inputs are the
+        // repo's. What each reads (keep it in step with `scripts/select-test-suites.sh`):
+        //   ConsistencyTests       App/Sources, Remote/Sources, Remote/Info.plist, Shared/UI,
+        //                          Host/Sources, Host/Info.plist, project.yml
+        //   ControlAgreementVectorTests  Web/test/vectors.json
+        //   ControlPushTests       Go/internal/controlplane/apns/testdata/control-push.json
+        //   DesignTokensTests      design/tokens.json, Shared/UI/{Paper,StateTint,TypeScale}.swift,
+        //                          Packages/CodeText/Sources/CodeText/InkValues.swift, App, Remote
+        //   EventCatalogueTests    Go/ (the hosts' sources, less tests and Go/wire)
+        //   FrontMatterEditTests   .agents/workflows, project.yml
+        //   LucideIconsTests       design/icons.json, Shared/UI (Icons.xcassets, LucideIcons.swift,
+        //                          PaperIcon.swift, WorkingMarks.swift), App/Sources, Remote/Sources
+        //   MarkdownBlockTests, MarkdownStreamTests  specs/
+        //   OneGroupingTests       App/Sources, Remote/Sources
+        //   PassageTests           README.md
+        //   ToolsetTests           App/Resources/toolsets
+        //   WebDistManifestTests   Web/ (its build's inputs and Web/dist)
+        //   WireSchemaTests        Packages/Wire (schema, daemon, docs)
+        //   GovernanceWordsTests, MachineBrowserTests, MessagesListTests, MultiplierTests,
+        //   WebFixturesTests       Packages/Wire/schema, by WireSchemaTests' schema
+        .testTarget(
+            name: "AgentsKitRepoTests",
+            dependencies: ["AgentsKit", "AgentsKitCore"],
+            exclude: ["Fixtures"],
+            swiftSettings: [.treatAllWarnings(as: .error)]),
+        // Control: the control plane's link, sign-in and store, and replies that fail on it.
+        .testTarget(
+            name: "AgentsKitControlTests",
+            dependencies: ["ControlDial", "AgentsKit", "AgentsKitCore",
                            // A proxy and a server of the tests' own, for the dial (#2177).
                            .product(name: "NIOCore", package: "swift-nio"),
                            .product(name: "NIOPosix", package: "swift-nio")],
+            exclude: ["Fixtures"],
+            swiftSettings: [.treatAllWarnings(as: .error)]),
+        // Integration: real sockets and processes, and the live tests.
+        .testTarget(
+            name: "AgentsKitIntegrationTests",
+            dependencies: ["ControlDial", "AgentsKit", "AgentsKitCore", "accept-probe",
+                           .product(name: "NIOCore", package: "swift-nio"),
+                           .product(name: "NIOPosix", package: "swift-nio")],
+            exclude: ["Fixtures"],
             swiftSettings: [.treatAllWarnings(as: .error)]),
         // Tests only, and no product: a daemon socket in a process of its own with few
         // descriptors (#201). Out of descriptors is the whole process's state, so it
