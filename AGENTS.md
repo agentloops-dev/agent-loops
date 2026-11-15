@@ -65,7 +65,7 @@
 Alex answered these the same way every time (#601), so do them without asking and say so in your reply:
 
 - **Tests that fail on main too, or timing tests that fail under load:** accept them and go on. Mark one that keeps failing `.flakyUnderLoad` and file an issue; rerun a CI check that failed for something unrelated to your change.
-- **Main itself broken (a build, the Linux host):** fix main first, by its own PR, then carry on.
+- **Main itself broken (a build, the Linux host):** the **Fix main** workflow (`.agents/workflows/fix-main.md`, the `fix-main` skill, #5588) reruns once for a flake, bisects and reverts the PR that broke it. With that workflow off, fix main first, by its own PR, then carry on.
 - **Alex's uncommitted edits in the main checkout:** leave them alone. When a pull needs a clean tree, carry them across it: `git stash push -u -m <your-tag>`, pull, `git stash apply` that entry, then drop it. The stash is shared by every worktree, so never use a bare `git stash pop`. Never commit or discard Alex's edits.
 - **Your own scratch worktrees and /tmp folders:** discard them when your work is committed.
 - **A PR that goes stale in conflict:** rebase it and let auto-merge take it once it is green.
