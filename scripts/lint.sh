@@ -396,6 +396,7 @@ run_checks() {
 	bash scripts/build-cache-test.sh || status=1
 	node scripts/checks-attest.mjs --selftest || status=1
 	node scripts/ci-attested.mjs --selftest || status=1
+	node scripts/ci-sample.mjs --selftest || status=1
 	python3 .agents/skills/release/scripts/capability-changes.py --selftest || status=1
 	python3 .agents/skills/release/scripts/release-plan.py --selftest || status=1
 	python3 .agents/skills/release/scripts/advisory.py --selftest || status=1
