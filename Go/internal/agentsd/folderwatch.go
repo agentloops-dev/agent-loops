@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -85,7 +84,7 @@ func (d *Daemon) kickFolderWatches() {
 	}
 	d.pwKicked = true
 	d.pwMu.Unlock()
-	safe.Go("folder watches", func() {
+	d.goJob("folder watches", func() {
 		d.pwMu.Lock()
 		d.pwKicked = false
 		d.pwMu.Unlock()
@@ -227,7 +226,7 @@ func (d *Daemon) folderFilesChanged(folder string, paths []string) {
 	agents := filepath.Join(folder, ".agents")
 	workflows := workflowsFolder(folder)
 	under := func(p, dir string) bool { return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator)) }
-	var branches, rescan, approvals bool
+	var branches, rescan, approvals, env bool
 	guarded := map[string]bool{}
 	for _, p := range paths {
 		if isBranchPath(p) {
@@ -248,8 +247,15 @@ func (d *Daemon) folderFilesChanged(folder string, paths []string) {
 		if p == agents || p == filepath.Join(agents, "mcp.json") || under(p, filepath.Join(agents, "plugins")) {
 			approvals = true
 		}
+		if p == agents || p == repoEnvPath(folder) {
+			env = true
+		}
 	}
 	d.watchedFilesChanged(folder, paths)
+	// The Environment page reads the folder's .agents/env again (#5259).
+	if env {
+		d.tellEnvChanged(folder, false)
+	}
 	if branches {
 		d.scheduleBranchCheck(folder, branchSettle)
 	}
@@ -356,7 +362,7 @@ func (d *Daemon) scheduleBranchCheck(folder string, delay time.Duration) {
 	if t := d.branchTimers[folder]; t != nil {
 		t.Stop()
 	}
-	d.branchTimers[folder] = time.AfterFunc(delay, func() { d.checkBranches(folder) })
+	d.branchTimers[folder] = time.AfterFunc(delay, d.jobFunc("folderwatch timer", func() { d.checkBranches(folder) }))
 }
 
 // checkBranches is DaemonCore.checkBranches: the tips of the branches the folder's agents'

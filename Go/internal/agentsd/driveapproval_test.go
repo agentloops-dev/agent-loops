@@ -12,9 +12,7 @@ import (
 // askDrive turns the ask back on for one test: the package's tests start at Always Approve.
 func askDrive(t *testing.T) {
 	t.Helper()
-	was := askDriveByDefault
-	askDriveByDefault = true
-	t.Cleanup(func() { askDriveByDefault = was })
+	setFor(t, &askDriveByDefault, true)
 }
 
 // driveSetUp is a person's machine with the browser, and one agent's app client on it.

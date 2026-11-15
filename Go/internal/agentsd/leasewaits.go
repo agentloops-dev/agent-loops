@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -153,7 +152,7 @@ func (d *Daemon) reconcileLineWaits() {
 			a.QueuedPrompts = append(append([]wire.QueuedPrompt{}, a.QueuedPrompts...), prompt)
 		})
 		id := o.agent
-		safe.Go("lease line lost", func() { d.sendEventResume(id, prompt.ID, nil) })
+		d.goJob("lease line lost", func() { d.sendEventResume(id, prompt.ID, nil) })
 	}
 	if len(orphans) > 0 {
 		d.tellEvents(nil)

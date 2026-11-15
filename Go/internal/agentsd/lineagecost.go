@@ -593,7 +593,7 @@ func (d *Daemon) costChangedLocked() {
 		return
 	}
 	if d.workSave == nil {
-		d.workSave = time.AfterFunc(reportSaveAfter, d.flushCost)
+		d.workSave = time.AfterFunc(reportSaveAfter, d.jobFunc("lineagecost timer", d.flushCost))
 	}
 }
 

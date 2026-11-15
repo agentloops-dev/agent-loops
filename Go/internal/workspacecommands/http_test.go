@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -509,7 +510,6 @@ func TestAStartWaitsOutA429AndA503AndAsksLessOften(t *testing.T) {
 	f, text := fakeDigitalOcean(t)
 	powerOn := f.answer
 	lists := 0
-	var asked []time.Time
 	f.answer = func(w http.ResponseWriter, r *http.Request, body string) bool {
 		if r.Method != http.MethodGet {
 			// Powered on, it is "new" until the fifth list finds it active.
@@ -518,7 +518,6 @@ func TestAStartWaitsOutA429AndA503AndAsksLessOften(t *testing.T) {
 			return handled
 		}
 		lists++
-		asked = append(asked, time.Now())
 		switch lists {
 		case 1: // the find before the start
 			return false
@@ -536,7 +535,11 @@ func TestAStartWaitsOutA429AndA503AndAsksLessOften(t *testing.T) {
 		return false
 	}
 	p, _ := apiProvider(t, text, DigitalOceanSecret, token)
-	p.Timing = Timing{Quick: 5 * time.Second, Long: 5 * time.Second, PollEvery: 10 * time.Millisecond, PollMost: 40 * time.Millisecond}
+	// The waits asked for, not the time between lists (#5654): a loaded runner sleeps longer
+	// than it is asked to, so a measured gap says nothing of the wait.
+	var waits []time.Duration
+	p.Timing = Timing{Quick: 5 * time.Second, Long: 5 * time.Second, PollEvery: 10 * time.Millisecond, PollMost: 40 * time.Millisecond,
+		Sleep: func(d time.Duration) { waits = append(waits, d) }}
 	w, err := p.Start("3164494")
 	if err != nil || w.State != Running {
 		t.Fatalf("%v %+v", err, w)
@@ -544,14 +547,10 @@ func TestAStartWaitsOutA429AndA503AndAsksLessOften(t *testing.T) {
 	if lists != 5 {
 		t.Errorf("listed %d times, want 5: %q", lists, f.requests())
 	}
-	// 10, 20, 40, 40 ms between the waits' lists: growing, never past PollMost.
-	for i := 2; i < len(asked); i++ {
-		if gap := asked[i].Sub(asked[i-1]); gap < 8*time.Millisecond {
-			t.Errorf("list %d came %v after the one before", i+1, gap)
-		}
-	}
-	if first, last := asked[2].Sub(asked[1]), asked[4].Sub(asked[3]); last < first+15*time.Millisecond {
-		t.Errorf("the waits did not grow: %v then %v", first, last)
+	// A wait before each list after the first of the start: 10, 20, 40 ms, growing and never
+	// past PollMost; the 429's Retry-After of 0 asks for no longer.
+	if want := []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}; !slices.Equal(waits, want) {
+		t.Errorf("waited %v, want %v", waits, want)
 	}
 }
 

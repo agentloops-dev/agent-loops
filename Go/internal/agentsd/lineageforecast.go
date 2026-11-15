@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -125,7 +124,7 @@ func (d *Daemon) milestoneForecast(milestone, folder string, w lineage.WhatIf) w
 	}
 	f := d.milestoneForecastIn(milestone, repo, w)
 	if repo != "" && f.WhatIf == nil {
-		safe.Go("milestone due date", func() { d.tellMilestoneLate(milestoneOf{repo, milestone}, f) })
+		d.goJob("milestone due date", func() { d.tellMilestoneLate(milestoneOf{repo, milestone}, f) })
 	}
 	return f
 }

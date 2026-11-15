@@ -13,7 +13,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -129,7 +128,7 @@ func (d *Daemon) sharePersonApproval(kind, digest, name string) {
 	if d.askControl.Load() == nil {
 		return
 	}
-	safe.Go("share an approval", func() {
+	d.goJob("share an approval", func() {
 		if !d.controlHas(wire.CapApprovals1) {
 			return
 		}
@@ -191,7 +190,7 @@ func (d *Daemon) adoptPersonApprovals() {
 
 // watchPersonApprovals reads the person's approvals now and every few minutes.
 func (d *Daemon) watchPersonApprovals() {
-	safe.Go("person approvals", func() {
+	d.goJob("person approvals", func() {
 		t := time.NewTicker(approvalsPollEvery)
 		defer t.Stop()
 		for {

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"golang.org/x/sys/unix"
 )
@@ -55,7 +54,7 @@ func (d *Daemon) registerSelfUpdate() {
 		return
 	}
 	if len(keep) > 0 {
-		safe.Go("self-update-settle", func() {
+		d.goJob("self-update-settle", func() {
 			select {
 			case <-d.ctx.Done():
 			case <-time.After(selfUpdateHealthy):

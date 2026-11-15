@@ -41,6 +41,7 @@ Each setting has one scope:
 | Agent runtime choices | Chat prompt (permission); Agent Runtimes (sandbox) | `sandbox.json` and `client-permissions.json` in the settings folder |
 | Cost limits | Cost | `limits.json` |
 | Resources | Resources | `resources.json` |
+| Environment variables | Environment (#5260) | `~/.agents/env`, unless it was changed by hand there ([`env`](agents-folder.md#env)) |
 
 - Agent configuration, MCP servers, runtime choices and cost limits are **Yours, on every
   machine**. Their panes have no scope switch. An edit is sent to every machine of yours.

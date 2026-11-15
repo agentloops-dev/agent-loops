@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -132,7 +131,7 @@ func (d *Daemon) putInProject(folder, id string) bool {
 // StartProjects gives each folder with none a project id, at start-up, and then says
 // them to the control plane.
 func (d *Daemon) StartProjects() {
-	safe.Go("folder projects", func() {
+	d.goJob("folder projects", func() {
 		for _, p := range d.Store.Folders() {
 			folder := store.FolderPath(p.Folder)
 			if d.ensureProject(folder) {
@@ -165,7 +164,7 @@ func (d *Daemon) sendJoinedSoon() {
 	if d.askControl.Load() == nil || d.joinedQueued.Swap(true) {
 		return
 	}
-	safe.Go("projects/joined", d.sendJoined)
+	d.goJob("projects/joined", d.sendJoined)
 }
 
 // sendJoined tells the control plane, if this machine has one, which folder names which

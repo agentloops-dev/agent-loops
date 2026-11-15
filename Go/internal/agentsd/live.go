@@ -55,7 +55,7 @@ func (d *Daemon) drove(agent wire.UUID, source wire.LiveSource, ended func()) {
 		t.Stop()
 	}
 	var t *time.Timer
-	t = time.AfterFunc(window, func() {
+	t = time.AfterFunc(window, d.jobFunc("live timer", func() {
 		d.liveMu.Lock()
 		if d.driveEnds[k] != t {
 			d.liveMu.Unlock()
@@ -67,7 +67,7 @@ func (d *Daemon) drove(agent wire.UUID, source wire.LiveSource, ended func()) {
 		if ended != nil {
 			ended()
 		}
-	})
+	}))
 	d.driveEnds[k] = t
 }
 

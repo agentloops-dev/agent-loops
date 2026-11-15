@@ -15,7 +15,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 )
 
 // Repo aliases (#4957, spec 4929-github-organisation): when a repo's owner moves, such as
@@ -50,7 +49,7 @@ func (d *Daemon) loadRepoAliases() {
 
 // StartRepoAliases asks GitHub, a while after the start and then once a day, whether the
 // repos the folders and the lineage name moved.
-func (d *Daemon) StartRepoAliases() { safe.Go("repo aliases", d.repoAliasClock) }
+func (d *Daemon) StartRepoAliases() { d.goJob("repo aliases", d.repoAliasClock) }
 
 func (d *Daemon) repoAliasClock() {
 	wait := repoAliasFirstCheck

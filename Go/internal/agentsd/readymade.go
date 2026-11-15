@@ -108,29 +108,17 @@ func (d *Daemon) ensureReadyMadeUserWorkflowsLocked() {
 		wasRemoved[id] = true
 	}
 	set := d.readyMadeLocked(home)
+	madeSkills := madeReadyMadeSkills(home)
 	for _, id := range set.skillIDs() {
-		skillPath := filepath.Join(home, ".agents", "skills", id, "SKILL.md")
-		if !ownFolders(home, filepath.Join(".agents", "skills", id)) {
-			continue
-		}
-		if _, err := os.Lstat(skillPath); os.IsNotExist(err) && os.MkdirAll(filepath.Dir(skillPath), 0o755) == nil {
-			_ = store.WriteAtomically(skillPath, []byte(set.Skills[id]), 0o644)
-		}
+		ensureReadyMadeSkill(home, id, set.Skills[id], madeSkills[id])
 	}
 	made := madeReadyMade(home)
 	for _, id := range set.ids() {
 		if wasRemoved[id] {
 			continue
 		}
-		skillPath := filepath.Join(home, ".agents", "skills", id, "SKILL.md")
-		if ownFolders(home, filepath.Join(".agents", "skills", id)) {
-			if _, err := os.Lstat(skillPath); os.IsNotExist(err) {
-				if os.MkdirAll(filepath.Dir(skillPath), 0o755) == nil {
-					_, skill := set.text(id)
-					_ = store.WriteAtomically(skillPath, []byte(skill), 0o644)
-				}
-			}
-		}
+		_, skill := set.text(id)
+		ensureReadyMadeSkill(home, id, skill, madeSkills[id])
 		path, ok := workflowPath(home, id)
 		if !ok {
 			continue
