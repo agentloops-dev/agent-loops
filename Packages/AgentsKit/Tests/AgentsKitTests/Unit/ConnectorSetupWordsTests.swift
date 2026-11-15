@@ -9,7 +9,7 @@ struct ConnectorSetupWordsTests {
 
     static let answer = """
     {"folder":"/tmp/walk","repository":"alexec/agents-walk","installed":false,"repositories":3,
-     "installURL":"https://github.com/apps/agents-loops/installations/new",
+     "installURL":"https://github.com/apps/agent-loops-dev/installations/new",
      "connection":{"provider":"github","login":"alexec","state":"connected","connectedAt":782000000},
      "slots":[
       {"slot":"tasks","choice":"GitHub Issues","state":"read","proof":{"number":7,"title":"Fix the walk","url":"u"}},

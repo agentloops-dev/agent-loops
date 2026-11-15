@@ -68,7 +68,7 @@ func TestConnectingGitHubWithTheDeviceFlow(t *testing.T) {
 	if started.Status != wire.ConnectionSignInStatusWaiting || started.UserCode == nil || *started.UserCode != "ABCD-1234" ||
 		started.Grant != wire.ConnectionSignInGrantDeviceCode ||
 		started.VerificationURL != "https://github.com/login/device" || started.InstallURL == nil ||
-		*started.InstallURL != "https://github.com/apps/agents-loops/installations/new" {
+		*started.InstallURL != "https://github.com/apps/agent-loops-dev/installations/new" {
 		t.Fatalf("started: %+v", started)
 	}
 	var done wire.ConnectionSignIn

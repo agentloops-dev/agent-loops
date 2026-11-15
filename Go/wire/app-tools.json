@@ -1406,7 +1406,7 @@
       "destructiveHint": false,
       "openWorldHint": true
     },
-    "description": "Make a new app's GitHub repository from a starter, with the person's GitHub connection, and clone it on this machine as a folder, so it shows in the session list on every client. The repository is private. The app pushes the starter as its first commit on main, with the values filled in. A step that is done already is skipped: a repository that is there is used, one with commits keeps them, and a clone already in place becomes the folder. So after a step fails, call it again. For an iPhone app and a web service, make two repositories.",
+    "description": "Make a new app's GitHub repository from a starter, with the person's GitHub connection, and clone it on this machine as a folder, so it shows in the session list on every client. The repository is private. The app pushes the starter as its first commit on main, with the values filled in. When GitHub does not let the connection make it (the GitHub App cannot make repositories), nothing is made and the answer says the person's step: a hand_to_person card on github.com/new from the template, then the GitHub App installed on the new repository; call it again after that, and it fills in the values over the template's files. A step that is done already is skipped: a repository that is there is used, one with commits keeps them, and a clone already in place becomes the folder. So after a step fails, call it again. For an iPhone app and a web service, make two repositories.",
     "inputSchema": {
       "type": "object",
       "properties": {

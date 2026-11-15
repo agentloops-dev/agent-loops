@@ -170,7 +170,7 @@ func TestRefusedDeployAnswerSaysWhatGitHubNeeds(t *testing.T) {
 	}
 	e := c.callError(t, 1, "approvals/answer", wire.ApprovalAnswer{Folder: wire.URL("file://" + folder), Kind: wire.ApprovalKindDeploy,
 		Key: got[0].Key, Digest: got[0].Digest, Action: wire.ApprovalActionApprove})
-	if e == nil || !strings.Contains(e.Message, "agents-loops app needs the Deployments permission") {
+	if e == nil || !strings.Contains(e.Message, "agent-loops-dev app needs the Deployments permission") {
 		t.Fatalf("refused: %+v", e)
 	}
 	if left, _ := deployApprovalsIn(d, "alexec/agents"); len(left) != 1 {

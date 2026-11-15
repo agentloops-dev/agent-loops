@@ -130,7 +130,7 @@ MCP's SDKs have no events (a working-group draft), so `githubmcp.Front` reads st
 It answers `events/list` and `events/poll`, adds the `events` capability to `initialize`,
 and passes every other message to the official server unchanged. It calls GitHub as the
 person, with the token of the host's GitHub connection (#1335: the GitHub App
-`agents-loops`, device flow), read again each minute from the store `AGENTS_CONNECTIONS`
+`agent-loops-dev`, device flow), read again each minute from the store `AGENTS_CONNECTIONS`
 names. It has no account of its own and does not use `gh`.
 
 Agents Host carries it in `Contents/Helpers` (`scripts/go-github-mcp.sh`, a build phase,

@@ -20,7 +20,7 @@ is shown as not supported yet.
 
 - A folder with a connector that offers events. The github server (`github-mcp`) ships
   with Agent Loops on the Mac and the Linux host, and needs the host's GitHub connection: the GitHub
-  App `agents-loops`, signed in with a code on github.com (#1335), and installed on the
+  App `agent-loops-dev`, signed in with a code on github.com (#1335), and installed on the
   repository. On the folder's **Connectors** page, press **Connect GitHub…** and type the
   code on github.com (#1336). Once a slot has read from GitHub, the page adds the github
   connector to the folder's `.agents/mcp.json`, so its events reach the folder. It does

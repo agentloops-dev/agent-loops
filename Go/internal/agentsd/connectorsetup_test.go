@@ -52,7 +52,7 @@ func (f *fakeSetupGitHub) LastRun(ctx context.Context, repo string) (*githubmcp.
 }
 
 func (f *fakeSetupGitHub) AppReach(ctx context.Context, repo, slug string) (bool, int, error) {
-	return repo == "alexec/agents-walk" && slug == "agents-loops", 3, f.fail("reach")
+	return repo == "alexec/agents-walk" && slug == "agent-loops-dev", 3, f.fail("reach")
 }
 
 func (f *fakeSetupGitHub) AppPermissions(ctx context.Context, owner, slug string) (map[string]string, error) {

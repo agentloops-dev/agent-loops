@@ -32,7 +32,7 @@ import (
 //     host does not know the grant.
 //
 // The token is the bot's installation token when the person's bot is installed on the
-// repository's owner (#3858), else the person's user token of agents-loops. It is never in
+// repository's owner (#3858), else the person's user token of agent-loops-dev. It is never in
 // the agent's environment and never in a file: the environment holds only a grant, made
 // when the runtime starts and taken back when it ends, that can ask this endpoint and
 // nothing else. A session of any length gets a token that is good now, as the host renews
@@ -54,9 +54,9 @@ type gitCredentialState struct {
 	credGrants map[string]wire.UUID
 	// commandGrants is each agents-secret grant, by the agent it is for (#4178).
 	commandGrants map[string]wire.UUID
-	// appReach is whether agents-loops is installed on a repository, by repository.
+	// appReach is whether agent-loops-dev is installed on a repository, by repository.
 	appReach map[string]reachRead
-	// appPush is whether agents-loops may write code on an owner's install, by owner.
+	// appPush is whether agent-loops-dev may write code on an owner's install, by owner.
 	appPush map[string]reachRead
 	// pushTold is each owner whose notice that the App may not push is posted (#4079).
 	pushTold map[string]bool
@@ -98,7 +98,7 @@ func (d *Daemon) githubTokenFor(ctx context.Context, owner string) (token string
 	return c.Access, false
 }
 
-// appReaches is whether agents-loops is installed on repo for the person, kept a while: a
+// appReaches is whether agent-loops-dev is installed on repo for the person, kept a while: a
 // failed read is a no, so a session starts as before when GitHub is not reached.
 func (d *Daemon) appReaches(ctx context.Context, repo, token string) bool {
 	key := strings.ToLower(repo)
@@ -124,7 +124,7 @@ func (d *Daemon) appReaches(ctx context.Context, repo, token string) bool {
 	return installed
 }
 
-// appPushes is whether the person's agents-loops install on owner may write code, kept a
+// appPushes is whether the person's agent-loops-dev install on owner may write code, kept a
 // while (#4077): GitHub refuses a push with the App's user token when the App has no Contents
 // write, although the person has. A failed read is a yes: the push then says why it failed.
 func (d *Daemon) appPushes(ctx context.Context, owner, token string) bool {
