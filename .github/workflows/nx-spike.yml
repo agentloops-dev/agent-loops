@@ -1,0 +1,98 @@
+# Spike #5613 (do not merge): Nx over the native tools, on macOS and Linux. It restores the Nx
+# cache with actions/cache, calculates each affected task's hash with no task run (criterion
+# 11), then runs `nx affected`. No Nx Cloud: NX_NO_CLOUD and neverConnectToCloud in nx.json.
+name: nx-spike
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Run every task with no cache (the nightly run of criterion 10)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nx-spike-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nx:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            runs-on: xcode-27
+            exclude: ""
+          - name: linux
+            runs-on: ubuntu-latest
+            # AgentsKit's tests are Swift on macOS only.
+            exclude: "--exclude=agentskit"
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
+    env:
+      NX_NO_CLOUD: "true"
+      NX_DAEMON: "false"
+      NX_CACHE_DIRECTORY: ${{ github.workspace }}/../nx-cache
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      TARGETS: test,test-unit,test-control,test-integration,test-repo,lint,build,vet
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: Web/.node-version
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+      - name: pnpm, pinned
+        run: npm install -g --ignore-scripts pnpm@12.18.0
+      - name: Install from the lockfile only
+        run: pnpm install --frozen-lockfile
+      - name: Check registry signatures and provenance
+        run: pnpm audit signatures
+      - name: Restore the Nx cache
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/../nx-cache
+          key: nx-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: nx-${{ matrix.name }}-
+      - name: Hashes of the affected tasks, with no task run (criterion 11)
+        run: |
+          start=$(date +%s)
+          node scripts/nx-hashes.cjs --affected origin/${{ github.base_ref || 'main' }} ${TARGETS//,/ } > "$RUNNER_TEMP/hashes-${{ matrix.name }}.txt"
+          echo "hash time: $(( $(date +%s) - start )) s"
+          cat "$RUNNER_TEMP/hashes-${{ matrix.name }}.txt"
+      - name: Nx affected
+        if: ${{ !inputs.full }}
+        run: |
+          pnpm exec nx affected -t "$TARGETS" ${{ matrix.exclude }} --base=origin/${{ github.base_ref || 'main' }} \
+            --output-style=static 2>&1 | tee "$RUNNER_TEMP/nx.txt"
+      - name: Nx, every task, no cache (criterion 10)
+        if: ${{ inputs.full }}
+        run: |
+          pnpm exec nx run-many -t "$TARGETS" ${{ matrix.exclude }} --skip-nx-cache \
+            --output-style=static 2>&1 | tee "$RUNNER_TEMP/nx.txt"
+      - name: Cache hits
+        if: always()
+        run: |
+          grep -E "existing outputs match the cache|local cache|Successfully ran|tasks? .*succeeded|Cache:|failed" "$RUNNER_TEMP/nx.txt" || true
+          du -sh "$GITHUB_WORKSPACE/../nx-cache" || true
+      - name: Save the Nx cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/../nx-cache
+          key: nx-${{ matrix.name }}-${{ github.sha }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: nx-${{ matrix.name }}
+          path: ${{ runner.temp }}/*.txt

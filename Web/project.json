@@ -33,7 +33,7 @@
         "parallel": false,
         "cwd": "{projectRoot}"
       },
-      "inputs": ["sharedGlobals", "web-source", { "dependentTasksOutputFiles": "**/*" }],
+      "inputs": ["sharedGlobals", "web-source"],
       "dependsOn": ["build"]
     },
     "test": {

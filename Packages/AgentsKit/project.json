@@ -84,8 +84,7 @@
         "{workspaceRoot}/design/**/*",
         "{workspaceRoot}/www/**/*",
         "{workspaceRoot}/scripts/lint.sh",
-        "{workspaceRoot}/.agents/workflows/**/*",
-        { "dependentTasksOutputFiles": "**/*", "transitive": true }
+        "{workspaceRoot}/.agents/workflows/**/*"
       ],
       "dependsOn": ["wire:gen", "design:gen", "web:build"]
     }
