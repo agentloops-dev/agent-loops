@@ -170,6 +170,7 @@ const CapPlugins1 = "plugins/1"
 const CapPolicyAsk1 = "policy.ask/1"
 const CapPolicy1 = "policy/1"
 const CapPool1 = "pool/1"
+const CapPools1 = "pools/1"
 const CapPreferences1 = "preferences/1"
 const CapPresence1 = "presence/1"
 const CapProcesses1 = "processes/1"
@@ -946,6 +947,9 @@ var ControlCapabilities = pairs([][2]string{
 	{"policy/requests", "policy.ask/1"},
 	{"policy/set", "policy/1"},
 	{"policy/stopAll", "policy/1"},
+	{"pool/delete", "pools/1"},
+	{"pool/list", "pools/1"},
+	{"pool/set", "pools/1"},
 	{"projects/joined", "projects/1"},
 	{"projects/list", "projects/1"},
 	{"projects/remove", "projects/1"},

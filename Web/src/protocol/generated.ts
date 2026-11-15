@@ -15392,6 +15392,99 @@ export interface WakeState {
 }
 
 /**
+ * A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept
+ * made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in
+ * to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a
+ * claimed machine leaves the pool and does not count). target is written by the control plane and
+ * is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
+ */
+export interface WarmPool {
+  id: string;
+  name: string;
+  scope: WarmPoolScope;
+  /** The machine provider's id: only a provider can make machines. */
+  provider: string;
+  size?: string;
+  region?: string;
+  /** The runtimes to install; none means those of the pool's projects. */
+  runtimes?: string[];
+  /** The project folders to send, at their last commit. */
+  projects?: string[];
+  /** Machines kept ready (set up, unclaimed). 0 makes nothing. At most maxSize. */
+  minReady: number;
+  /** The most machines held at once, ready or being set up. At least 1. */
+  maxSize: number;
+  /** What the pool aims at: minReady, until auto-scale writes it. */
+  target: number;
+  /** Seconds after which a ready machine is replaced. Default 86400 (24 hours). */
+  replaceAfter?: number;
+  hours?: WarmPoolHours;
+  state: WarmPoolState;
+  ready?: number;
+  settingUp?: number;
+  /** Makes that failed in a row. Three stop the pool. */
+  failedMakes?: number;
+  /** Why the pool stopped making, in the provider's words. */
+  stoppedBecause?: string;
+}
+
+/**
+ * When a pool runs: on these weekdays (0 Sunday to 6 Saturday) from `from` to `to`, as HH:MM in
+ * `timezone` (an IANA name; UTC when absent). Outside them the ready machines are deleted and none
+ * are made. A pool with no hours runs every day.
+ */
+export interface WarmPoolHours {
+  days: number[];
+  from: string;
+  to: string;
+  timezone?: string;
+}
+
+export interface WarmPoolRequest {
+  id: string;
+}
+
+/** Whose pool it is. Only user is built (#5353). */
+export type WarmPoolScope =
+  | "user"
+  | "project"
+  | "org";
+
+/**
+ * pool/set: makes a pool, or changes the one with this id. The control plane writes target, state
+ * and the counts. Min must not be above max, and max is at least 1.
+ */
+export interface WarmPoolSet {
+  /** Absent makes a new pool. */
+  id?: string;
+  name: string;
+  scope?: WarmPoolScope;
+  provider: string;
+  size?: string;
+  region?: string;
+  runtimes?: string[];
+  projects?: string[];
+  minReady: number;
+  maxSize: number;
+  replaceAfter?: number;
+  hours?: WarmPoolHours;
+}
+
+/**
+ * keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed
+ * in a row, see stoppedBecause. empty: minReady is 0.
+ */
+export type WarmPoolState =
+  | "keeping"
+  | "off-hours"
+  | "stopped"
+  | "empty";
+
+export interface WarmPools {
+  pools: WarmPool[];
+}
+
+/**
  * machine/pairWebPage (#4214): the web page's address with a one-time browser code after #code=,
  * for the agent browser to open.
  */
@@ -18303,6 +18396,11 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitingAgent: { required: ["agentID", "title", "folder", "status"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
+  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause"] },
+  WarmPoolHours: { required: ["days", "from", "to"], optional: ["timezone"] },
+  WarmPoolRequest: { required: ["id"], optional: [] },
+  WarmPoolSet: { required: ["name", "provider", "minReady", "maxSize"], optional: ["id", "scope", "size", "region", "runtimes", "projects", "replaceAfter", "hours"] },
+  WarmPools: { required: ["pools"], optional: [] },
   WebPagePairing: { required: ["url"], optional: [] },
   WebPushKey: { required: [], optional: ["publicKey"] },
   WebPushSubscription: { required: [], optional: ["endpoint", "p256dh", "auth"] },

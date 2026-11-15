@@ -1,0 +1,572 @@
+package controlplane
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
+)
+
+// Warm pools (#5363, epic #5353, "Part 2: warm pools" of the machine set-up spec): a pool
+// keeps min ready machines made, joined, with Agents, runtimes and the pool's projects, signed
+// in to nothing, up to max size. A reconcile loop counts the pool's machines by state and
+// makes or deletes to reach the target (= min ready) within max size and the pool's hours,
+// making a new machine before it deletes an old one when there is room.
+//
+// A pool is one person's now (scope user); the wire says project and org already. One object
+// a pool, v1/warm-pools/<id>.json, with the machines it holds. A machine that is claimed
+// leaves the pool (the claim, #5364, takes it out), so max counts only ready machines and
+// machines being set up. A machine that failed to set itself up is kept, as any failed
+// machine is, and counts for neither.
+
+const (
+	warmPoolPrefix = "v1/warm-pools/"
+	// defaultReplaceAfter: a ready machine is replaced after a day.
+	defaultReplaceAfter = 24 * time.Hour
+	// poolFailuresStop: this many makes that fail in a row stop the pool.
+	poolFailuresStop = 3
+	// poolJoinGiveUp: a made machine that has not set itself up by then has failed.
+	poolJoinGiveUp = 30 * time.Minute
+	// poolEvery is how often every pool is looked at.
+	poolEvery = 30 * time.Second
+)
+
+type poolStage int
+
+const (
+	stageSettingUp poolStage = iota
+	stageReady
+	stageFailed
+)
+
+// poolBackend is what a pool needs of the machines: the providers and the set-up record.
+type poolBackend interface {
+	// Make makes a machine called name and returns the provider's id of its workspace.
+	Make(person, provider, name, size, region string) (string, error)
+	// Delete deletes a machine, joined or not.
+	Delete(person, provider, workspace string) error
+	// Stage says how far a machine's set-up has come: steps 1 to 6 done is ready.
+	Stage(provider, workspace string, madeAt time.Time, now time.Time) poolStage
+	// HasProvider says the provider is here and may make machines.
+	HasProvider(provider string) bool
+	// Version is the Agents release a new machine gets; Pins is a mark of the runtime pins.
+	// A ready machine that was made with others is replaced at once.
+	Version() string
+	Pins() string
+	// Stopped tells a person that a pool stopped making, and why.
+	Stopped(person, pool, why string)
+}
+
+type storedPoolMachine struct {
+	Name      string    `json:"name"`
+	Workspace string    `json:"workspace"`
+	MadeAt    time.Time `json:"madeAt"`
+	Version   string    `json:"version,omitempty"`
+	Pins      string    `json:"pins,omitempty"`
+}
+
+type storedPool struct {
+	ID           string              `json:"id"`
+	Owner        string              `json:"owner"`
+	Name         string              `json:"name"`
+	Scope        wire.WarmPoolScope  `json:"scope"`
+	Provider     string              `json:"provider"`
+	Size         string              `json:"size,omitempty"`
+	Region       string              `json:"region,omitempty"`
+	Runtimes     []string            `json:"runtimes,omitempty"`
+	Projects     []string            `json:"projects,omitempty"`
+	MinReady     int                 `json:"minReady"`
+	MaxSize      int                 `json:"maxSize"`
+	ReplaceAfter float64             `json:"replaceAfter,omitempty"`
+	Hours        *wire.WarmPoolHours `json:"hours,omitempty"`
+	Failures     int                 `json:"failures,omitempty"`
+	Stopped      string              `json:"stopped,omitempty"`
+	Machines     []storedPoolMachine `json:"machines,omitempty"`
+	LastMade     *time.Time          `json:"lastMade,omitempty"`
+}
+
+func warmPoolKey(id string) string { return warmPoolPrefix + id + ".json" }
+
+var hhmm = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
+
+func (p *storedPool) replaceAfter() time.Duration {
+	if p.ReplaceAfter > 0 {
+		return time.Duration(p.ReplaceAfter * float64(time.Second))
+	}
+	return defaultReplaceAfter
+}
+
+// target is what the pool aims at: min ready, which max size bounds. Auto-scale moves it later.
+func (p *storedPool) target() int { return min(p.MinReady, p.MaxSize) }
+
+// minutesOf is "HH:MM" as minutes into the day.
+func minutesOf(s string) int {
+	h, _ := strconv.Atoi(s[:2])
+	m, _ := strconv.Atoi(s[3:])
+	return h*60 + m
+}
+
+// inHours says the pool runs at now: a pool with no hours runs every day. Hours from later to
+// earlier cross midnight and belong to the day they began.
+func (p *storedPool) inHours(now time.Time) bool {
+	h := p.Hours
+	if h == nil {
+		return true
+	}
+	loc := time.UTC
+	if h.Timezone != nil && *h.Timezone != "" {
+		if l, err := time.LoadLocation(*h.Timezone); err == nil {
+			loc = l
+		}
+	}
+	local := now.In(loc)
+	at, from, to := local.Hour()*60+local.Minute(), minutesOf(h.From), minutesOf(h.To)
+	day := func(d time.Weekday) bool {
+		for _, x := range h.Days {
+			if int64(d) == x {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case from == to:
+		return day(local.Weekday())
+	case from < to:
+		return day(local.Weekday()) && at >= from && at < to
+	default:
+		if at >= from {
+			return day(local.Weekday())
+		}
+		return at < to && day((local.Weekday()+6)%7)
+	}
+}
+
+// poolMachine is a stored machine with how far it has come.
+type poolMachine struct {
+	storedPoolMachine
+	stage poolStage
+}
+
+// poolPlan is what a pass does: how many machines to make, and which to delete (by index
+// into the machines given).
+type poolPlan struct {
+	makes   int
+	deletes []int
+}
+
+// planPool is the reconcile rule, with no side effects (#5363).
+func planPool(p *storedPool, machines []poolMachine, now time.Time, version, pins string) poolPlan {
+	var ready, settingUp []int
+	for i, m := range machines {
+		switch m.stage {
+		case stageReady:
+			ready = append(ready, i)
+		case stageSettingUp:
+			settingUp = append(settingUp, i)
+		}
+	}
+	byAge := func(list []int) {
+		sort.SliceStable(list, func(a, b int) bool { return machines[list[a]].MadeAt.Before(machines[list[b]].MadeAt) })
+	}
+	byAge(ready)
+	if p.Stopped != "" {
+		return poolPlan{}
+	}
+	// Outside its hours, or with min 0, a pool holds no ready machine and makes none.
+	if !p.inHours(now) || p.target() == 0 {
+		return poolPlan{deletes: ready}
+	}
+	stale := func(m poolMachine) bool {
+		return now.Sub(m.MadeAt) >= p.replaceAfter() || m.Version != version || m.Pins != pins
+	}
+	var freshReady, staleReady []int
+	for _, i := range ready {
+		if stale(machines[i]) {
+			staleReady = append(staleReady, i)
+		} else {
+			freshReady = append(freshReady, i)
+		}
+	}
+	target := p.target()
+	held := len(ready) + len(settingUp)
+	fresh := len(freshReady) + len(settingUp)
+	plan := poolPlan{}
+	if need := target - fresh; need > 0 {
+		plan.makes = min(need, max(p.MaxSize-held, 0))
+		// No room to make the replacement first: delete the oldest old machine, so a
+		// pool at its max still refreshes. The pool is short until the new one is ready.
+		if plan.makes < need && len(staleReady) > 0 {
+			plan.deletes = append(plan.deletes, staleReady[0])
+			staleReady = staleReady[1:]
+			plan.makes = min(need, max(p.MaxSize-(held-1), 0))
+		}
+	}
+	// An old machine goes once enough new ones are ready to serve in its place.
+	if len(freshReady) >= target {
+		plan.deletes = append(plan.deletes, staleReady...)
+		staleReady = nil
+	}
+	// A pool whose min was lowered keeps only what it aims at: the oldest go.
+	if surplus := len(freshReady) - target; surplus > 0 {
+		plan.deletes = append(plan.deletes, freshReady[:surplus]...)
+	}
+	// A pool whose max was lowered holds no more than it.
+	gone := map[int]bool{}
+	for _, i := range plan.deletes {
+		gone[i] = true
+	}
+	for over := held - len(gone) + plan.makes - p.MaxSize; over > 0; {
+		cut := -1
+		for _, list := range [][]int{staleReady, freshReady} {
+			for _, i := range list {
+				if !gone[i] {
+					cut = i
+					break
+				}
+			}
+			if cut >= 0 {
+				break
+			}
+		}
+		if cut < 0 {
+			break
+		}
+		gone[cut] = true
+		plan.deletes = append(plan.deletes, cut)
+		over--
+	}
+	return plan
+}
+
+// warmPools is the pools' reconcile loop and store.
+type warmPools struct {
+	s       *Service
+	backend poolBackend
+	mu      sync.Mutex
+}
+
+func (w *warmPools) read(ctx context.Context, id string) (*storedPool, string, error) {
+	object, err := w.s.cfg.Store.Get(ctx, warmPoolKey(id))
+	if err != nil || object == nil {
+		return nil, "", err
+	}
+	var p storedPool
+	if json.Unmarshal(object.Data, &p) != nil {
+		return nil, object.ETag, nil
+	}
+	return &p, object.ETag, nil
+}
+
+func (w *warmPools) write(ctx context.Context, p *storedPool, tag string) error {
+	when := store.Absent
+	if tag != "" {
+		when = store.Matching(tag)
+	}
+	data, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	_, err = w.s.cfg.Store.Put(ctx, warmPoolKey(p.ID), data, when)
+	return err
+}
+
+// all is every pool, or the person's own when person is not "".
+func (w *warmPools) all(ctx context.Context, person string) ([]storedPool, error) {
+	keys, err := w.s.cfg.Store.List(ctx, warmPoolPrefix)
+	if err != nil {
+		return nil, err
+	}
+	var out []storedPool
+	for _, k := range keys {
+		id := strings.TrimSuffix(strings.TrimPrefix(k.Key, warmPoolPrefix), ".json")
+		p, _, err := w.read(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if p != nil && (person == "" || p.Owner == person) {
+			out = append(out, *p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (w *warmPools) machines(p *storedPool, now time.Time) []poolMachine {
+	out := make([]poolMachine, len(p.Machines))
+	for i, m := range p.Machines {
+		out[i] = poolMachine{m, w.backend.Stage(p.Provider, m.Workspace, m.MadeAt, now)}
+	}
+	return out
+}
+
+// wire is the pool as clients see it.
+func (w *warmPools) wire(p *storedPool, now time.Time) wire.WarmPool {
+	var ready, settingUp int64
+	for _, m := range w.machines(p, now) {
+		switch m.stage {
+		case stageReady:
+			ready++
+		case stageSettingUp:
+			settingUp++
+		}
+	}
+	state := wire.WarmPoolStateKeeping
+	switch {
+	case p.Stopped != "":
+		state = wire.WarmPoolStateStopped
+	case p.MinReady == 0:
+		state = wire.WarmPoolStateEmpty
+	case !p.inHours(now):
+		state = wire.WarmPoolStateOffHours
+	}
+	return wire.WarmPool{
+		ID: p.ID, Name: p.Name, Scope: p.Scope, Provider: p.Provider, Size: optional(p.Size), Region: optional(p.Region),
+		Runtimes: p.Runtimes, Projects: p.Projects, MinReady: int64(p.MinReady), MaxSize: int64(p.MaxSize),
+		Target: int64(p.target()), ReplaceAfter: optional(p.ReplaceAfter), Hours: p.Hours, State: state,
+		Ready: optional(ready), SettingUp: optional(settingUp), FailedMakes: optional(int64(p.Failures)),
+		StoppedBecause: optional(p.Stopped),
+	}
+}
+
+func poolID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+var poolSlug = regexp.MustCompile(`[^a-z0-9]+`)
+
+// machineName is a name for a new pool machine: letters, digits and dashes, starting with a
+// letter, and not another machine's.
+func machineName(pool string) string {
+	slug := strings.Trim(poolSlug.ReplaceAllString(strings.ToLower(pool), "-"), "-")
+	if slug == "" || slug[0] < 'a' || slug[0] > 'z' {
+		slug = "pool-" + slug
+	}
+	if len(slug) > 24 {
+		slug = strings.Trim(slug[:24], "-")
+	}
+	b := make([]byte, 3)
+	_, _ = rand.Read(b)
+	return slug + "-" + hex.EncodeToString(b)
+}
+
+// reconcile runs one pass over a pool: it drops what the plan says, makes what it says, and
+// keeps the outcome.
+func (w *warmPools) reconcile(ctx context.Context, id string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, tag, err := w.read(ctx, id)
+	if err != nil || p == nil {
+		return err
+	}
+	now := time.Now()
+	machines := w.machines(p, now)
+	plan := planPool(p, machines, now, w.backend.Version(), w.backend.Pins())
+	if !w.backend.HasProvider(p.Provider) {
+		plan.makes = 0
+	}
+	gone := map[string]bool{}
+	for _, i := range plan.deletes {
+		m := machines[i]
+		if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
+			w.s.log(fmt.Sprintf("warm pool %s: delete %s: %v", p.Name, m.Name, err))
+			continue
+		}
+		gone[m.Workspace] = true
+	}
+	kept := p.Machines[:0:0]
+	for _, m := range p.Machines {
+		if !gone[m.Workspace] {
+			kept = append(kept, m)
+		}
+	}
+	p.Machines = kept
+	for n := 0; n < plan.makes; n++ {
+		name := machineName(p.Name)
+		workspace, err := w.backend.Make(p.Owner, p.Provider, name, p.Size, p.Region)
+		if err != nil {
+			p.Failures++
+			w.s.log(fmt.Sprintf("warm pool %s: make failed (%d in a row): %v", p.Name, p.Failures, err))
+			if p.Failures >= poolFailuresStop {
+				p.Stopped = errorText(err)
+				w.backend.Stopped(p.Owner, p.Name, p.Stopped)
+			}
+			break
+		}
+		p.Failures = 0
+		made := time.Now()
+		p.LastMade = &made
+		p.Machines = append(p.Machines, storedPoolMachine{Name: name, Workspace: workspace, MadeAt: made,
+			Version: w.backend.Version(), Pins: w.backend.Pins()})
+	}
+	if err := w.write(ctx, p, tag); err != nil {
+		if isConflict(err) {
+			// Another write (a change of the pool) came between: the next pass sees it.
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// reconcileAll runs a pass over every pool.
+func (w *warmPools) reconcileAll(ctx context.Context) {
+	pools, err := w.all(ctx, "")
+	if err != nil {
+		w.s.log("warm pool: " + err.Error())
+		return
+	}
+	for _, p := range pools {
+		if err := w.reconcile(ctx, p.ID); err != nil {
+			w.s.log(fmt.Sprintf("warm pool %s: %v", p.Name, err))
+		}
+	}
+}
+
+// every runs a pass every poolEvery, until the service stops.
+func (w *warmPools) every(every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-w.s.stop:
+			return
+		case <-t.C:
+			if w.s.phase.now() == phaseServing {
+				w.reconcileAll(context.Background())
+			}
+		}
+	}
+}
+
+func (w *warmPools) list(ctx context.Context, person string) (wire.WarmPools, error) {
+	pools, err := w.all(ctx, person)
+	if err != nil {
+		return wire.WarmPools{}, fail(storeUnavailable, "The warm pools could not be read: %v", err)
+	}
+	now := time.Now()
+	out := wire.WarmPools{Pools: []wire.WarmPool{}}
+	for i := range pools {
+		out.Pools = append(out.Pools, w.wire(&pools[i], now))
+	}
+	return out, nil
+}
+
+func validatePoolSet(set wire.WarmPoolSet) error {
+	if strings.TrimSpace(set.Name) == "" {
+		return fail(invalidParams, "A warm pool needs a name.")
+	}
+	if set.Scope != nil && *set.Scope != wire.WarmPoolScopeUser {
+		return fail(invalidParams, "Only a pool of your own is built: a project or org pool comes later.")
+	}
+	if set.MaxSize < 1 {
+		return fail(invalidParams, "Max size is at least 1.")
+	}
+	if set.MinReady < 0 {
+		return fail(invalidParams, "Min ready is 0 or more.")
+	}
+	if set.MinReady > set.MaxSize {
+		return fail(invalidParams, "Min ready (%d) is above max size (%d).", set.MinReady, set.MaxSize)
+	}
+	if set.ReplaceAfter != nil && *set.ReplaceAfter <= 0 {
+		return fail(invalidParams, "Replace after is more than 0 seconds.")
+	}
+	if h := set.Hours; h != nil {
+		if !hhmm.MatchString(h.From) || !hhmm.MatchString(h.To) {
+			return fail(invalidParams, "Hours are from HH:MM to HH:MM.")
+		}
+		if len(h.Days) == 0 {
+			return fail(invalidParams, "Hours name at least one day.")
+		}
+		for _, d := range h.Days {
+			if d < 0 || d > 6 {
+				return fail(invalidParams, "A day is 0 (Sunday) to 6 (Saturday).")
+			}
+		}
+		if h.Timezone != nil && *h.Timezone != "" {
+			if _, err := time.LoadLocation(*h.Timezone); err != nil {
+				return fail(invalidParams, "There is no time zone called %s.", *h.Timezone)
+			}
+		}
+	}
+	return nil
+}
+
+// set is pool/set: it makes a pool or changes the person's own, and runs a pass at once.
+func (w *warmPools) set(ctx context.Context, person string, set wire.WarmPoolSet) (wire.WarmPool, error) {
+	if err := validatePoolSet(set); err != nil {
+		return wire.WarmPool{}, err
+	}
+	if !w.backend.HasProvider(set.Provider) {
+		return wire.WarmPool{}, fail(invalidParams, "There is no machine provider %q that can make machines.", set.Provider)
+	}
+	w.mu.Lock()
+	var p *storedPool
+	tag := ""
+	if set.ID != nil && *set.ID != "" {
+		var err error
+		if p, tag, err = w.read(ctx, *set.ID); err != nil {
+			w.mu.Unlock()
+			return wire.WarmPool{}, fail(storeUnavailable, "The warm pool could not be read: %v", err)
+		}
+		if p == nil || p.Owner != person {
+			w.mu.Unlock()
+			return wire.WarmPool{}, fail(invalidParams, "There is no warm pool of yours with that id.")
+		}
+	} else {
+		p = &storedPool{ID: poolID(), Owner: person, Scope: wire.WarmPoolScopeUser}
+	}
+	// A change is a fresh start: a pool that stopped on three failures tries again.
+	p.Name, p.Provider, p.Size, p.Region = strings.TrimSpace(set.Name), set.Provider, deref(set.Size), deref(set.Region)
+	p.Runtimes, p.Projects, p.Hours = set.Runtimes, set.Projects, set.Hours
+	p.MinReady, p.MaxSize, p.ReplaceAfter = int(set.MinReady), int(set.MaxSize), deref(set.ReplaceAfter)
+	p.Failures, p.Stopped = 0, ""
+	err := w.write(ctx, p, tag)
+	w.mu.Unlock()
+	if err != nil {
+		return wire.WarmPool{}, fail(storeUnavailable, "The warm pool could not be kept: %v", err)
+	}
+	if err := w.reconcile(ctx, p.ID); err != nil {
+		w.s.log(fmt.Sprintf("warm pool %s: %v", p.Name, err))
+	}
+	if again, _, err := w.read(ctx, p.ID); err == nil && again != nil {
+		p = again
+	}
+	return w.wire(p, time.Now()), nil
+}
+
+// delete is pool/delete: the pool and its machines that are not claimed.
+func (w *warmPools) delete(ctx context.Context, person, id string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, _, err := w.read(ctx, id)
+	if err != nil {
+		return fail(storeUnavailable, "The warm pool could not be read: %v", err)
+	}
+	if p == nil || p.Owner != person {
+		return fail(invalidParams, "There is no warm pool of yours with that id.")
+	}
+	var failed []string
+	for _, m := range p.Machines {
+		if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
+			failed = append(failed, m.Name)
+			w.s.log(fmt.Sprintf("warm pool %s: delete %s: %v", p.Name, m.Name, err))
+		}
+	}
+	if len(failed) > 0 {
+		return fail(internalError, "The pool was kept: %s could not be deleted. Try again.", strings.Join(failed, ", "))
+	}
+	return w.s.cfg.Store.Delete(ctx, warmPoolKey(id))
+}
