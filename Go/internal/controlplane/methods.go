@@ -1373,7 +1373,7 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		if err != nil {
 			return nil, err
 		}
-		return m.s.keepBuildsSync(ctx, host, sync, time.Now())
+		return m.s.keepBuildsSync(ctx, host, sync, m.s.now())
 	case wire.CallDeploysSync.Name:
 		sync, err := require[wire.DeploysSync](params, "DeploysSync")
 		if err != nil {
