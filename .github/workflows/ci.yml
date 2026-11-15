@@ -42,6 +42,13 @@ concurrency:
   group: ci-${{ github.ref }}${{ inputs.sha && format('-{0}', inputs.sha) || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Only a push to main saves the large caches: Go's build caches and the Swift .build and
+# DerivedData folders (#5740). A pull request's cache is under its merge ref, which only that
+# pull request can read, so its 1 to 2 GB each filled the 10 GB limit and GitHub evicted main's;
+# a pull request restores main's instead. A pull request still saves its small Nx cache.
+env:
+  MAIN_CACHE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.sha }}
+
 jobs:
   # The one Linux job (#5645), on every change. First it says which macOS work this change
   # needs, from Nx's project graph (#5631): its outputs start `apps` and `test` only when a
@@ -142,6 +149,11 @@ jobs:
             ${{ steps.go-key.outputs.prefix }}-
             go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
             go-race-${{ runner.os }}-
+      # Only a cache that grew in this run is saved (#5740): one that restored nothing and
+      # compiled nothing is empty.
+      - name: Go build cache size
+        if: env.MAIN_CACHE == 'true'
+        run: bash scripts/ci-cache-grew.sh mark go ~/.cache/go-build ~/Library/Caches/go-build ~/go/pkg/mod
       # A pull request starts from its own newest cache, else main's (it can read main's, not
       # another pull request's).
       - name: Restore the Nx cache
@@ -325,8 +337,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "nx-linux-" "nx-linux-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
+      - name: Did the Go build cache grow
+        id: go-grew
+        if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)) }}
+        run: bash scripts/ci-cache-grew.sh check go ~/.cache/go-build ~/Library/Caches/go-build ~/go/pkg/mod
       - name: Save Go build cache
-        if: ${{ (always() && !cancelled() && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix))) && !inputs.sha }}
+        if: ${{ (always() && !cancelled() && steps.go-grew.outputs.save == 'true') && !inputs.sha }}
         uses: actions/cache/save@v5
         with:
           path: |
@@ -335,7 +351,7 @@ jobs:
             ~/go/pkg/mod
           key: ${{ steps.go-key.outputs.prefix }}-${{ steps.nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Prune old Go build caches for this ref
-        if: ${{ (always() && !cancelled() && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix))) && !inputs.sha }}
+        if: ${{ (always() && !cancelled() && steps.go-grew.outputs.save == 'true') && !inputs.sha }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "${{ steps.go-key.outputs.prefix }}-${{ steps.nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}" "$GITHUB_REF"
@@ -551,6 +567,9 @@ jobs:
             ${{ steps.go-key.outputs.prefix }}-
             go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
             go-apps-${{ runner.os }}-
+      - name: Go build cache size
+        if: env.APPS != 'skip' && env.MAIN_CACHE == 'true'
+        run: bash scripts/ci-cache-grew.sh mark go ~/Library/Caches/go-build ~/go/pkg/mod
       - name: Restore the Nx cache
         if: env.APPS != 'skip'
         uses: actions/cache/restore@v5
@@ -606,10 +625,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "nx-apps-" "nx-apps-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
       # The Go helpers are built in Agents Host's build, so its outcome alone says whether the Go
-      # cache is full or part. A run that ran out of time saves a part (#5704). Each ref keeps
-      # only its newest.
+      # cache is full or part. A run that ran out of time saves a part (#5704). Only main saves,
+      # and only a cache that grew (#5740); it keeps its newest, and a part keeps the full one.
+      - name: Did the Go build cache grow
+        id: go-grew
+        if: ${{ env.APPS != 'skip' && always() && !cancelled() && env.MAIN_CACHE == 'true' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)) }}
+        run: bash scripts/ci-cache-grew.sh check go ~/Library/Caches/go-build ~/go/pkg/mod
       - name: Save Go build cache
-        if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)))) && !inputs.sha }}
+        if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && steps.go-grew.outputs.save == 'true')) && !inputs.sha }}
         uses: actions/cache/save@v5
         with:
           path: |
@@ -617,7 +640,7 @@ jobs:
             ~/go/pkg/mod
           key: ${{ steps.go-key.outputs.prefix }}-${{ steps.nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Prune old Go build caches for this ref
-        if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)))) && !inputs.sha }}
+        if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && steps.go-grew.outputs.save == 'true')) && !inputs.sha }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "go-apps-${{ runner.os }}-" "${{ steps.go-key.outputs.prefix }}-${{ steps.nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}" "$GITHUB_REF"
@@ -627,7 +650,7 @@ jobs:
       # built in this run: an Nx cache hit builds nothing, and leaves DerivedData as it was.
       - name: Did both schemes build here
         id: built
-        if: ${{ env.APPS != 'skip' && (always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.xcode-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success') }}
+        if: ${{ env.APPS != 'skip' && (always() && env.MAIN_CACHE == 'true' && steps.xcode-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success') }}
         run: |
           if [[ -d build/DerivedData/Build/Products/Debug && -d build/DerivedData/Build/Products/Debug-iphonesimulator ]]; then
             echo "${{ steps.keys.outputs.agentskit }}" > build/DerivedData/agentskit-sources
@@ -858,6 +881,9 @@ jobs:
             ${{ steps.go-key.outputs.prefix }}-
             go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
             go-race-${{ runner.os }}-
+      - name: Go build cache size
+        if: ${{ always() && !cancelled() && env.GO != 'skip' && env.MAIN_CACHE == 'true' }}
+        run: bash scripts/ci-cache-grew.sh mark go ~/Library/Caches/go-build ~/go/pkg/mod
       - name: Time left for Go
         id: go-budget
         if: ${{ always() && !cancelled() && env.GO != 'skip' }}
@@ -905,7 +931,7 @@ jobs:
       # persist a partial cache that poisons a later restore.
       - name: Did AgentsKit build here
         id: agentskit-built
-        if: ${{ always() && !cancelled() && steps.nx.outcome == 'success' && steps.agentskit-cache.outputs.cache-hit != 'true' }}
+        if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' && steps.nx.outcome == 'success' && steps.agentskit-cache.outputs.cache-hit != 'true' }}
         run: |
           if [[ -d Packages/AgentsKit/.build ]]; then
             echo "${{ steps.keys.outputs.agentskit-sources }}" > Packages/AgentsKit/.build/agentskit-sources
@@ -924,7 +950,7 @@ jobs:
         run: bash scripts/prune-ci-caches.sh macos-xcode-27-agentskit- 'macos-xcode-27-agentskit-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.agentskit }}' "$GITHUB_REF"
       - name: Did CodeText build here
         id: codetext-built
-        if: ${{ always() && !cancelled() && steps.nx.outcome == 'success' && steps.codetext-cache.outputs.cache-hit != 'true' }}
+        if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' && steps.nx.outcome == 'success' && steps.codetext-cache.outputs.cache-hit != 'true' }}
         run: |
           if [[ -d Packages/CodeText/.build ]]; then echo "save=true" >> "$GITHUB_OUTPUT"; fi
       - name: Save CodeText build cache
@@ -938,8 +964,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh macos-xcode-27-codetext- 'macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.codetext }}' "$GITHUB_REF"
+      - name: Did the Go build cache grow
+        id: go-grew
+        if: ${{ always() && !cancelled() && env.GO != 'skip' && env.MAIN_CACHE == 'true' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)) }}
+        run: bash scripts/ci-cache-grew.sh check go ~/Library/Caches/go-build ~/go/pkg/mod
       - name: Save Go build cache
-        if: ${{ (always() && !cancelled() && env.GO != 'skip' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix))) && !inputs.sha }}
+        if: ${{ (always() && !cancelled() && env.GO != 'skip' && steps.go-grew.outputs.save == 'true') && !inputs.sha }}
         uses: actions/cache/save@v5
         with:
           path: |
@@ -947,7 +977,7 @@ jobs:
             ~/go/pkg/mod
           key: ${{ steps.go-key.outputs.prefix }}-${{ steps.go-nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Prune old Go build caches for this ref
-        if: ${{ (always() && !cancelled() && env.GO != 'skip' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix))) && !inputs.sha }}
+        if: ${{ (always() && !cancelled() && env.GO != 'skip' && steps.go-grew.outputs.save == 'true') && !inputs.sha }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "${{ steps.go-key.outputs.prefix }}-${{ steps.go-nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}" "$GITHUB_REF"
