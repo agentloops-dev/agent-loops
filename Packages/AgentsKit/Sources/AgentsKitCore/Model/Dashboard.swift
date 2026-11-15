@@ -38,9 +38,12 @@ public enum Dashboard {
         }
     }
 
-    /// The section a row is listed under. Finished work is not on the board (Alex, #5695).
+    /// The section a row is listed under. Finished work is not on the board (Alex, #5695). Working
+    /// and Waiting are apart (Alex, #5698): a row is Working while one of its sessions runs a turn or
+    /// a tool, and Waiting when none does and none asks the person (idle, paused on an event, failed,
+    /// or done with a pull request that still needs something).
     public enum Section: String, CaseIterable, Sendable, Hashable, Identifiable {
-        case needsYou, working
+        case needsYou, working, waiting
 
         public var id: Self { self }
 
@@ -48,6 +51,7 @@ public enum Dashboard {
             switch self {
             case .needsYou: "Needs you"
             case .working: "Working"
+            case .waiting: "Waiting"
             }
         }
     }
@@ -250,7 +254,9 @@ public enum Dashboard {
             }
             // A pull request that waits for the person's approval needs them, whatever its sessions do.
             if item.pullRequest?.waitsForApproval == true { item.mark = .needsYou }
-            rows[item.mark == .needsYou ? .needsYou : .working, default: []].append(item)
+            let section: Section = item.mark == .needsYou ? .needsYou
+                : item.sessions.contains { $0.mark == .working } ? .working : .waiting
+            rows[section, default: []].append(item)
         }
         for key in rows.keys {
             rows[key]?.sort(by: startsFirst)
