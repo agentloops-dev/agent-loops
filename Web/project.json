@@ -61,7 +61,7 @@
       "executor": "nx:run-commands",
       "cache": true,
       "options": {
-        "command": "node --test --test-timeout=60000 test/*.test.mjs",
+        "command": "node --test --test-timeout=60000 --test-force-exit test/*.test.mjs",
         "cwd": "{projectRoot}"
       },
       "inputs": [
