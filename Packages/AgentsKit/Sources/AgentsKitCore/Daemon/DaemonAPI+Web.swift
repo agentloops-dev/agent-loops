@@ -502,6 +502,7 @@ public extension DaemonAPI {
                 Row(Method.messagesConversationsAll, params: MessagesConversationsAllRequest.self, result: MessagesConversationsAll.self,
                     kind: .controlRequest),
                 Row(Method.hostsList, params: Empty.self, result: [ControlMachine].self, kind: .controlRequest),
+                Row(Method.hostsSetLabels, params: MachineLabelsRequest.self, result: MachineLabelsResult.self, kind: .controlRequest),
                 Row(Method.clientsForgetSelf, params: Empty.self, result: Empty.self, kind: .controlRequest),
                 // Settings ▸ Control plane ▸ Clients (#4253): who is paired, and a code for one more.
                 Row(Method.clientsList, params: Empty.self, result: [ClientRecord].self, kind: .controlRequest),

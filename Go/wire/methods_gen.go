@@ -690,6 +690,7 @@ var CallMachinesRetrySetup = Method[MachineRequest, Empty]{"machines/retrySetup"
 var CallMachinesSendFolder = Method[MachineFolderSend, MachineFolderSent]{"machines/sendFolder"}
 var CallMachinesSessionCall = Method[MachineSessionCall, SessionCallReply]{"machines/sessionCall"}
 var CallMachinesSessionEnded = Method[SessionEnded, Empty]{"machines/sessionEnded"}
+var CallMachinesSetLabels = Method[MachineLabelsRequest, MachineLabelsResult]{"machines/setLabels"}
 var CallMachinesSetMachineOptions = Method[MachineOptions, ControlMachine]{"machines/setMachineOptions"}
 var CallMachinesSshHosts = Method[SSHHostsRequest, []SSHHost]{"machines/sshHosts"}
 var CallMachinesStart = Method[MachineRequest, ControlMachine]{"machines/start"}

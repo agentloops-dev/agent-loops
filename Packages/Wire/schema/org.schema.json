@@ -1100,6 +1100,20 @@
         "setup": {
           "$ref": "machines.schema.json#/definitions/MachineSetup",
           "description": "How its set-up stands, while it sets itself up and after (#5355). Absent for a machine that was not set up by the control plane."
+        },
+        "labels": {
+          "type": "array",
+          "description": "Its labels (#5284): key or key=value, sorted. The ones its provider sets (os=, arch=, provider=) come first in autoLabels and are here too; a person adds others with machines/setLabels.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "autoLabels": {
+          "type": "array",
+          "description": "The labels its provider sets itself (os=, arch=, provider=): a person cannot change them.",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
@@ -2871,6 +2885,53 @@
         "request",
         "code",
         "expires"
+      ],
+      "additionalProperties": false
+    },
+    "MachineLabelsRequest": {
+      "type": "object",
+      "description": "machines/setLabels (#5284): the person's labels on one or many machines. `set` replaces them; `add` and `remove` change them. A label is a key or key=value of letters, digits and . _ / -, at most 20 on a machine; os, arch and provider are the provider's. A machine that is not the caller's is left out.",
+      "properties": {
+        "machines": {
+          "type": "array",
+          "items": {
+            "$ref": "machines.schema.json#/definitions/MachineRef"
+          }
+        },
+        "set": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "add": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "remove": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "machines"
+      ],
+      "additionalProperties": false
+    },
+    "MachineLabelsResult": {
+      "type": "object",
+      "description": "machines/setLabels: how many machines changed.",
+      "properties": {
+        "changed": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "changed"
       ],
       "additionalProperties": false
     },

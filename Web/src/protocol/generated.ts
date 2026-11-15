@@ -3467,6 +3467,14 @@ export interface ControlMachine {
    * not set up by the control plane.
    */
   setup?: MachineSetup;
+  /**
+   * Its labels (#5284): key or key=value, sorted. The ones its provider sets (os=, arch=,
+   * provider=) come first in autoLabels and are here too; a person adds others with
+   * machines/setLabels.
+   */
+  labels?: string[];
+  /** The labels its provider sets itself (os=, arch=, provider=): a person cannot change them. */
+  autoLabels?: string[];
 }
 
 /** control/moved: where the control plane is now (T085). */
@@ -8334,6 +8342,24 @@ export interface MachineJoinTicket {
   request: string;
   code: string;
   expires: WireDate;
+}
+
+/**
+ * machines/setLabels (#5284): the person's labels on one or many machines. `set` replaces them;
+ * `add` and `remove` change them. A label is a key or key=value of letters, digits and . _ / -, at
+ * most 20 on a machine; os, arch and provider are the provider's. A machine that is not the
+ * caller's is left out.
+ */
+export interface MachineLabelsRequest {
+  machines: MachineRef[];
+  set?: string[];
+  add?: string[];
+  remove?: string[];
+}
+
+/** machines/setLabels: how many machines changed. */
+export interface MachineLabelsResult {
+  changed: number;
 }
 
 export interface MachineLastHeard {
@@ -16304,6 +16330,7 @@ export interface Methods {
   "machines/listKept": { params: KeptListQuery; result: KeptList };
   "machines/remove": { params: MachineRequest; result: Empty };
   "machines/retryKept": { params: KeptRequestID; result: Empty };
+  "machines/setLabels": { params: MachineLabelsRequest; result: MachineLabelsResult };
   "machines/setMachineOptions": { params: MachineOptions; result: ControlMachine };
   "machines/start": { params: MachineRequest; result: ControlMachine };
   "machines/startEnroll": { params: MachineEnroll; result: ControlCodeShown };
@@ -16759,6 +16786,7 @@ export const MethodTarget = {
   "machines/listKept": "control",
   "machines/remove": "control",
   "machines/retryKept": "control",
+  "machines/setLabels": "control",
   "machines/setMachineOptions": "control",
   "machines/start": "control",
   "machines/startEnroll": "control",
@@ -17294,7 +17322,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
   ControlNewKey: { required: ["key", "proof"], optional: [] },
   ControlNotice: { required: ["kind", "words"], optional: ["user", "group"] },
@@ -17678,6 +17706,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineJoinDecision: { required: ["result"], optional: ["host", "controlKey", "name"] },
   MachineJoinStatus: { required: ["member", "connected", "at"], optional: ["problem"] },
   MachineJoinTicket: { required: ["request", "code", "expires"], optional: [] },
+  MachineLabelsRequest: { required: ["machines"], optional: ["set", "add", "remove"] },
+  MachineLabelsResult: { required: ["changed"], optional: [] },
   MachineLastHeard: { required: ["host"], optional: ["folders", "agents", "heardAt"] },
   MachineLink: { required: ["host", "provider", "workspace"], optional: ["startWhenUsed", "stopWhenIdleMinutes", "trust"] },
   MachineList: { required: ["machines", "total", "counts"], optional: ["next"] },

@@ -19,6 +19,7 @@ import { chooseSettingsMachine } from "./settings/SettingsMachine";
 import { WorktreesList } from "./Worktrees";
 import { MachineSessionsSection } from "./MachineSessions";
 import { MachineAgents } from "./MachineAgents";
+import { MachineLabels } from "./MachineLabels";
 import { LastUpdate } from "./LastUpdate";
 import { Resources } from "./Resources";
 import { signInRuntime } from "./RuntimeSignInDialog";
@@ -78,6 +79,7 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
           onClick={() => { chooseSettingsMachine(host); go({ nav: "settings" }); }}>Settings…</button>
       </div>
       <MachineSessionsSection store={store} host={host} name={name} online={answers} />
+      <MachineLabels store={store} host={host} machine={machine} />
       {!answers ? <p class="hint">{name} is offline, so it can’t say how it is doing now.</p>
         : !asks ? <p class="hint">Update Agent Loops on {name} to see its CPU, memory and disks here.</p>
         : (

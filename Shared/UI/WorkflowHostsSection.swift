@@ -10,6 +10,8 @@ import SwiftUI
 /// it. A label that is no computer (a bot, an os) is shown under Also needs and kept.
 struct WorkflowHostsSection: View {
     let choices: [WorkflowHostChoice]
+    /// The labels on the machines (#5284): a toggle for each, so the workflow runs on the machines that have it.
+    var labelChoices: [String] = []
     let hosts: [String]
     var locked: Bool
     let onChange: ([String]) -> Void
@@ -39,6 +41,23 @@ struct WorkflowHostsSection: View {
                 set: { on in if on { onChange(parts.needs) } }))
                 .disabled(locked || parts.machines.isEmpty)
                 .hostPinStyle()
+            if !labelChoices.isEmpty {
+                Text("Machines with label")
+                    .appText(.fine)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+                ForEach(labelChoices, id: \.self) { label in
+                    Toggle(label, isOn: Binding(
+                        get: { parts.needs.contains { $0.caseInsensitiveCompare(label) == .orderedSame } },
+                        set: { on in
+                            let (machines, needs) = parts
+                            let rest = needs.filter { $0.caseInsensitiveCompare(label) != .orderedSame }
+                            onChange(machines + (on ? rest + [label] : rest))
+                        }))
+                        .disabled(locked)
+                        .hostPinStyle()
+                }
+            }
             ForEach(rows) { row in
                 Toggle(row.name, isOn: Binding(
                     get: { parts.machines.contains(row.machineID) },
@@ -50,8 +69,9 @@ struct WorkflowHostsSection: View {
                     .disabled(locked)
                     .hostPinStyle()
             }
-            if !parts.needs.isEmpty {
-                Text("Also needs: \(parts.needs.joined(separator: ", "))")
+            let others = parts.needs.filter { need in !labelChoices.contains { $0.caseInsensitiveCompare(need) == .orderedSame } }
+            if !others.isEmpty {
+                Text("Also needs: \(others.joined(separator: ", "))")
                     .appText(.fine)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

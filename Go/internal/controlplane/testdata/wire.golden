@@ -138,7 +138,15 @@ machines/list
     "reach": "dialOut",
     "machineID": "MACHINE-2",
     "implementation": "go",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=linux"
+    ],
+    "autoLabels": [
+      "os=linux",
+      "arch=arm64"
+    ]
   },
   {
     "id": "<host b>",
@@ -148,7 +156,15 @@ machines/list
     "state": "online",
     "reach": "dialOut",
     "machineID": "RAW-MAC",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=macos"
+    ],
+    "autoLabels": [
+      "os=macos",
+      "arch=arm64"
+    ]
   },
   {
     "id": "mac",
@@ -159,7 +175,15 @@ machines/list
     "reach": "dialOut",
     "machineID": "MACHINE-1",
     "implementation": "go",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=linux"
+    ],
+    "autoLabels": [
+      "os=linux",
+      "arch=arm64"
+    ]
   }
 ]
 
@@ -383,7 +407,15 @@ machines/list
       "github.com": "mac"
     },
     "implementation": "go",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=linux"
+    ],
+    "autoLabels": [
+      "os=linux",
+      "arch=arm64"
+    ]
   },
   {
     "id": "<host b>",
@@ -393,7 +425,15 @@ machines/list
     "state": "online",
     "reach": "dialOut",
     "machineID": "RAW-MAC",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=macos"
+    ],
+    "autoLabels": [
+      "os=macos",
+      "arch=arm64"
+    ]
   },
   {
     "id": "mac",
@@ -404,7 +444,15 @@ machines/list
     "reach": "dialOut",
     "machineID": "MACHINE-1",
     "implementation": "go",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=linux"
+    ],
+    "autoLabels": [
+      "os=linux",
+      "arch=arm64"
+    ]
   }
 ]
 

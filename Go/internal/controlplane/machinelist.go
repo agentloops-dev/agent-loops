@@ -34,9 +34,9 @@ func (m *Methods) machineFactsOf(h records.MachineRecord) machineFacts {
 	if fields := strings.Fields(h.Platform); len(fields) > 0 {
 		f.os = fields[0]
 	}
+	f.labels = machineLabels(h)
 	if link := providers.LinkOf(&h); link != nil && link.Provider != "" {
 		f.provider = link.Provider
-		f.labels = []string{link.Provider}
 	}
 	return f
 }

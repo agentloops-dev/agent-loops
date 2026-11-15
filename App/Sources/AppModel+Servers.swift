@@ -451,6 +451,11 @@ extension AppModel {
         await machineCall(DaemonAPI.Method.hostsCheckAgain, host)
     }
 
+    /// A person's labels on a machine's page (#5284), which replace the ones it had.
+    func setMachineLabels(_ host: MachineRef, _ labels: [String]) async {
+        await controlCall(DaemonAPI.Method.hostsSetLabels, DaemonAPI.MachineLabelsRequest(machines: [host], set: labels))
+    }
+
     /// Unlink on a machine's page (#3975): its provider can no longer start or stop it.
     func unlinkMachine(_ host: MachineRef) async {
         await machineCall(DaemonAPI.Method.hostsUnlink, host)

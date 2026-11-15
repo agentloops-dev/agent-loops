@@ -10,6 +10,7 @@ import { useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import type { Agent } from "../protocol/generated";
 import type { Store } from "../model/store";
+import { allMachineLabels } from "../model/machineLabels";
 import {
   cooldownSentence, labelsNote, mcpMissedWords, mcpTriggerWords, agentModeWords, unknownLines, isUnapproved, canBeApproved, canBeDenied, workflowStatusLines, takeReadyMadeTitle, takeReadyMadeHelp, keepEditedTitle, keepEditedHelp, isOn, isSupportedTrigger, switchesSentence, scopeSentence, lastRanLine, nextLine, resumedAgent, scopeLine, triggerFilters, triggerGlyph,
   runsOnParts, triggerSummary, workflowRunsOnSentence, workflowHostChoices, workflowSummary, alarmOf,
@@ -91,6 +92,8 @@ export function WorkflowPage({ store, host, folder, folderName, workflowID, down
   const choices = workflowHostChoices(store.hosts.value, store.macHostID.value);
   const knownHosts = new Set(choices.map((choice) => choice.machineID));
   const { machines: pinned, needs } = runsOnParts(workflow.runsOn, knownHosts);
+  const labelChoices = allMachineLabels(store.hosts.value);
+  const otherNeeds = needs.filter((need) => !labelChoices.some((label) => label.toLowerCase() === need.toLowerCase()));
   const rows = [...choices, ...pinned.filter((id) => !knownHosts.has(id)).map((id) => ({ machineID: id, name: id }))];
   // A file that could not be read has no settings to show, so a change would write the empty ones.
   const locked = down || workflow.problem !== undefined;
@@ -311,6 +314,18 @@ export function WorkflowPage({ store, host, folder, folderName, workflowID, down
                   onChange={() => change({ runsOn: needs })} />
                 Every machine
               </label>
+              {labelChoices.length > 0 && <p class="quiet small">Machines with label</p>}
+              {labelChoices.map((label) => (
+                <label class="switch" key={`label-${label}`}>
+                  <input type="checkbox" aria-label={`Machines with label ${label}`} checked={needs.some((n) => n.toLowerCase() === label.toLowerCase())} disabled={locked}
+                    onChange={(event) => {
+                      const on = (event.currentTarget as HTMLInputElement).checked;
+                      const rest = needs.filter((n) => n.toLowerCase() !== label.toLowerCase());
+                      change({ runsOn: [...pinned, ...(on ? [...rest, label] : rest)] });
+                    }} />
+                  {label}
+                </label>
+              ))}
               {rows.map((row) => (
                 <label class="switch" key={row.machineID}>
                   <input type="checkbox" aria-label={row.name} checked={pinned.includes(row.machineID)} disabled={locked}
@@ -323,7 +338,7 @@ export function WorkflowPage({ store, host, folder, folderName, workflowID, down
                 </label>
               ))}
             </div>
-            {needs.length > 0 && <p class="quiet small">Also needs: {needs.join(", ")}</p>}
+            {otherNeeds.length > 0 && <p class="quiet small">Also needs: {otherNeeds.join(", ")}</p>}
 
             {unknown.length > 0 && (
               <>

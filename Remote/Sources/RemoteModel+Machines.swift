@@ -115,6 +115,24 @@ extension RemoteModel {
         return nil
     }
 
+    /// A person's labels on a machine's page (#5284), which replace the ones it had.
+    func setMachineLabels(_ host: MachineRef, _ labels: [String]) async {
+        guard let control = controlPlane else {
+            problem = "The control plane isn’t answering, so the labels weren’t saved."
+            return
+        }
+        do {
+            _ = try await control.call(DaemonAPI.Method.hostsSetLabels,
+                                       DaemonAPI.MachineLabelsRequest(machines: [host], set: labels),
+                                       returning: DaemonAPI.MachineLabelsResult.self)
+            if let listed = try? await control.call(DaemonAPI.Method.hostsList, returning: [DaemonAPI.ControlMachine].self) {
+                controlHosts = listed
+            }
+        } catch {
+            problem = sentence(for: error)
+        }
+    }
+
     /// Delete… on a machine a provider made (#3973): the provider deletes it, then the host goes.
     func deleteMachine(_ host: MachineRef) async {
         await machineCall(DaemonAPI.Method.hostsDeleteMachine, host)

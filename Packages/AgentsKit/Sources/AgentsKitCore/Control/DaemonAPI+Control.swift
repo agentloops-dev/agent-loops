@@ -4,6 +4,8 @@ import Foundation
 public extension DaemonAPI.Method {
     static let controlStatus = "control/status"
     static let hostsList = "machines/list"
+    /// `{machines, set?, add?, remove?}`: a person's labels on one machine or many (#5284).
+    static let hostsSetLabels = "machines/setLabels"
     static let hostsStartEnroll = "machines/startEnroll"
     static let hostsInstall = "machines/install"
     static let hostsCheckAgain = "machines/checkAgain"
@@ -356,6 +358,16 @@ public extension DaemonAPI {
         public var missing: [String]?
         /// How its set-up stands: the eight steps (#5357); nil for a machine that was never set up by Agents.
         public var setup: MachineSetup?
+        /// Its labels (#5284): key or key=value, the provider's (`os=`, `arch=`, `provider=`) and a person's.
+        public var labels: [String]?
+        /// The labels its provider sets itself; a person cannot change them.
+        public var autoLabels: [String]?
+
+        /// The labels a person set: all of them but the provider's.
+        public var ownLabels: [String] {
+            let auto = Set((autoLabels ?? []).map { $0.lowercased() })
+            return (labels ?? []).filter { !auto.contains($0.lowercased()) }
+        }
 
         /// Whether the host answers calls: `online`, or `needsUpdate`, which is connected and
         /// serves what its list says (#1771). Its features are gated by `has(_:)`.
@@ -545,6 +557,24 @@ public extension DaemonAPI {
     struct ClientRequest: Codable, Sendable, Hashable {
         public var client: UUID
         public init(client: UUID) { self.client = client }
+    }
+
+    /// machines/setLabels (#5284). `set` replaces a machine's labels; `add` and `remove` change them.
+    struct MachineLabelsRequest: Codable, Sendable, Hashable {
+        public var machines: [MachineRef]
+        public var set: [String]?
+        public var add: [String]?
+        public var remove: [String]?
+        public init(machines: [MachineRef], set: [String]? = nil, add: [String]? = nil, remove: [String]? = nil) {
+            self.machines = machines
+            self.set = set
+            self.add = add
+            self.remove = remove
+        }
+    }
+
+    struct MachineLabelsResult: Codable, Sendable, Hashable {
+        public var changed: Int
     }
 
     struct MachineRequest: Codable, Sendable, Hashable {

@@ -3714,6 +3714,12 @@ type ControlMachine struct {
 
 	// How its set-up stands, while it sets itself up and after (#5355). Absent for a machine that was not set up by the control plane.
 	Setup *MachineSetup `json:"setup,omitzero"`
+
+	// Its labels (#5284): key or key=value, sorted. The ones its provider sets (os=, arch=, provider=) come first in autoLabels and are here too; a person adds others with machines/setLabels.
+	Labels []string `json:"labels,omitzero"`
+
+	// The labels its provider sets itself (os=, arch=, provider=): a person cannot change them.
+	AutoLabels []string `json:"autoLabels,omitzero"`
 }
 
 // control/moved: where the control plane is now (T085).
@@ -8966,6 +8972,22 @@ type MachineJoinTicket struct {
 	Code string `json:"code"`
 
 	Expires Date `json:"expires"`
+}
+
+// machines/setLabels (#5284): the person's labels on one or many machines. `set` replaces them; `add` and `remove` change them. A label is a key or key=value of letters, digits and . _ / -, at most 20 on a machine; os, arch and provider are the provider's. A machine that is not the caller's is left out.
+type MachineLabelsRequest struct {
+	Machines []MachineRef `json:"machines"`
+
+	Set []string `json:"set,omitzero"`
+
+	Add []string `json:"add,omitzero"`
+
+	Remove []string `json:"remove,omitzero"`
+}
+
+// machines/setLabels: how many machines changed.
+type MachineLabelsResult struct {
+	Changed int64 `json:"changed"`
 }
 
 type MachineLastHeard struct {
