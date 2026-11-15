@@ -32,7 +32,7 @@ private struct MachineSignInCard: View {
             if let step = card.step {
                 if let userCode = step.userCode {
                     Text(userCode)
-                        .font(.system(.title2, design: .monospaced))
+                        .appText(.code)
                         .textSelection(.enabled)
                 }
                 HStack {
