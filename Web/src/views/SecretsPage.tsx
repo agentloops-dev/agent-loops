@@ -358,7 +358,7 @@ function SecretDetail({ store, item, down, show, host, offersAsk, accounts, repl
         </form>
       ) : (
         <>
-          <p class="hint">{about(item.description)}</p>
+          <p class="secret-about">{about(item.description)}</p>
           <dl class="secret-facts">
             <dt>Value</dt>
             <dd>

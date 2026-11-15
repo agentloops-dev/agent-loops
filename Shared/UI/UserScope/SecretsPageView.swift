@@ -56,7 +56,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
         GeometryReader { geo in
             let wide = geo.size.width >= 720
             VStack(alignment: .leading, spacing: 0) {
-                header(items)
+                header(items, wide: wide)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                 Divider()
@@ -94,7 +94,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
 
     // MARK: Header
 
-    private func header(_ items: [SecretsPage.Item]) -> some View {
+    private func header(_ items: [SecretsPage.Item], wide: Bool) -> some View {
         let counts = SecretsPage.counts(items, search: search, project: project)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -119,6 +119,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
+                .frame(minWidth: 160)
                 .paperWell(in: RoundedRectangle(cornerRadius: Paper.Radius.control))
                 // ⌘F puts the cursor in the search (wireframes §2).
                 Button("") { searchFocused = true }
@@ -127,10 +128,12 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)
                 addMenu
-                if let read = state.readAt {
+                // A narrow page gives the search the room: the line goes under it, after the chips.
+                if wide, let read = state.readAt {
                     LastUpdateText(read: read)
                 }
             }
+            .frame(minHeight: 28)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(SecretsPage.Chip.allCases, id: \.self) { each in
@@ -159,6 +162,9 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                     .accessibilityLabel("\(SecretsPage.sortLabel): \(sort.title)")
+                    if !wide, let read = state.readAt {
+                        LastUpdateText(read: read)
+                    }
                 }
             }
         }
@@ -542,8 +548,9 @@ private struct SecretDetail: View {
             GridRow { label("Kind"); Text(SecretsPage.kind(item)) }
             GridRow { label("Where"); Text(SecretsPage.whereLine(item)).fixedSize(horizontal: false, vertical: true) }
             if asksOffered {
-                GridRow {
-                    label(AskBeforeUseWords.toggle)
+                // A switch has no text baseline: the row lines up at the top, or the label rides up into Where's.
+                GridRow(alignment: .top) {
+                    label(AskBeforeUseWords.toggle).padding(.top, 4)
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle(AskBeforeUseWords.toggle, isOn: Binding(get: { item.asksBeforeUse }, set: { on in
                             if item.place == .yours {
