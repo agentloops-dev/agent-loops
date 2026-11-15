@@ -36,7 +36,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STATEMENT = "https://in-toto.io/Statement/v1";
@@ -66,9 +66,10 @@ const ENV_INPUTS = ["CGO_ENABLED", "GOFLAGS", "GOEXPERIMENT", "AGENTS_QUARANTINE
 // ---- Pure parts (the selftest covers them) ----
 
 /**
- * A lane whose attestations CI no longer accepts. Revocation (#5586, epic §5) is not built yet:
- * until it is, the list is ATTEST_REVOKED_LANES (session ids or branches, space-separated),
- * which nothing sets. #5586 puts its list here.
+ * A lane whose attestations CI no longer accepts (#5586, epic §5). The list is the lines of
+ * `revoked.txt` on the orphan branch `attestation-revocations` (scripts/ci-sample.mjs adds a
+ * line when a sampled rerun shows a false attestation), and ATTEST_REVOKED_LANES (session ids
+ * or branches, space-separated) for a lane revoked by hand.
  */
 export function revoked(lane, list) {
   return Boolean(lane && list.has(lane));
@@ -121,7 +122,7 @@ export function accept(runs, { app, revokedLanes }) {
         refused.push({ run: where, reason: "a subject with no task or no nxTaskHash" });
         continue;
       }
-      accepted.push({ task, hash, run: { ...where, lane: lane.session || lane.branch || where.lane } });
+      accepted.push({ task, hash, platform: lane.platform ?? conf.find((c) => c?.name === "run")?.annotations?.platform ?? "", run: { ...where, lane: lane.session || lane.branch || where.lane } });
     }
   }
   return { accepted, refused };
@@ -213,12 +214,12 @@ function hashes(targets, base, platform) {
   }
 }
 
-function gh(args) {
+export function gh(args) {
   return execFileSync("gh", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], maxBuffer: 64 * 1024 * 1024 });
 }
 
 /** The pull request's commits now and every head it had before a force push, newest first. */
-function prShas(repo, pr) {
+export function prShas(repo, pr) {
   const [owner, name] = repo.split("/");
   const query = `query($owner:String!,$name:String!,$pr:Int!){repository(owner:$owner,name:$name){pullRequest(number:$pr){
     headRefOid
@@ -233,7 +234,7 @@ function prShas(repo, pr) {
   return [...new Set(shas.filter(Boolean))].slice(0, 60);
 }
 
-function checkRuns(repo, shas) {
+export function checkRuns(repo, shas) {
   const runs = [];
   for (const sha of shas) {
     const r = spawnSync("gh", ["api", `repos/${repo}/commits/${sha}/check-runs?per_page=100&filter=all`, "--jq", ".check_runs[] | select(.name | startswith(\"attestation/\"))"], {
@@ -246,6 +247,22 @@ function checkRuns(repo, shas) {
   return runs;
 }
 
+/** The revoked lanes: the first field of each line of revoked.txt on the revocation branch. */
+export const REVOCATION_BRANCH = "attestation-revocations";
+export function parseRevocations(text) {
+  return text.split("\n").map((l) => l.split("\t")[0].trim()).filter((l) => l && !l.startsWith("#"));
+}
+
+// A branch with no list yet (404) revokes nobody; any other failure throws, and select then
+// skips nothing (principle 11).
+function readRevocations(repo, fromFile) {
+  if (fromFile) return [];
+  const r = spawnSync("gh", ["api", `repos/${repo}/contents/revoked.txt?ref=${REVOCATION_BRANCH}`, "-H", "Accept: application/vnd.github.raw"], { cwd: root, encoding: "utf8" });
+  if (r.status === 0) return parseRevocations(r.stdout);
+  if (/404|Not Found/.test(r.stderr)) return [];
+  throw new Error(`the revocation list is not readable: ${r.stderr.trim()}`);
+}
+
 function select(argv) {
   const opt = flags(argv, ["base", "pr", "repo", "runs"]);
   const empty = () => {
@@ -254,7 +271,7 @@ function select(argv) {
   try {
     const repo = opt.repo ?? process.env.GITHUB_REPOSITORY;
     const runs = opt.runs ? JSON.parse(readFileSync(opt.runs, "utf8")) : checkRuns(repo, prShas(repo, Number(opt.pr)));
-    const revokedLanes = new Set((process.env.ATTEST_REVOKED_LANES ?? "").split(/\s+/).filter(Boolean));
+    const revokedLanes = new Set([...(process.env.ATTEST_REVOKED_LANES ?? "").split(/\s+/).filter(Boolean), ...readRevocations(repo, opt.runs)]);
     const { accepted, refused } = accept(runs, { app: process.env.ATTEST_APP || "alexec-agents", revokedLanes });
     const covered = {};
     if (accepted.length) {
@@ -400,16 +417,20 @@ function selftest() {
   const ids = hashesFor("swift", deps).map((t) => t.id).sort();
   assert(ids.join() === "agentskit-repo:test,agentskit:test,agentskit:test-unit", `the Swift step's tasks: ${ids}`);
 
+  assert(parseRevocations("# c\ns1\t12\tgo:test\t2026\n\nagents/x\n").join() === "s1,agents/x", "the revocation list");
   const text = summary({ linux: rows }, [{ run: { name: "attestation/macos-arm64", url: "u", sha: "b".repeat(40) }, reason: "posted by someone" }]);
   assert(text.includes("`go:test`") && text.includes("skipped: [attestation/macos-arm64]") && text.includes("posted by someone"), "the summary");
   console.log("ci-attested selftest: ok");
 }
 
-const [mode, ...rest] = process.argv.slice(2);
-if (mode === "--selftest") selftest();
-else if (mode === "select") process.exit(select(rest));
-else if (mode === "run") process.exit(run(rest));
-else {
-  console.error("usage: ci-attested.mjs select --base SHA --pr N [--repo R] [--runs FILE] | run --group G --base SHA --skip IDS | --selftest");
-  process.exit(2);
+// Run as a script, not when scripts/ci-sample.mjs imports it.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [mode, ...rest] = process.argv.slice(2);
+  if (mode === "--selftest") selftest();
+  else if (mode === "select") process.exit(select(rest));
+  else if (mode === "run") process.exit(run(rest));
+  else {
+    console.error("usage: ci-attested.mjs select --base SHA --pr N [--repo R] [--runs FILE] | run --group G --base SHA --skip IDS | --selftest");
+    process.exit(2);
+  }
 }
