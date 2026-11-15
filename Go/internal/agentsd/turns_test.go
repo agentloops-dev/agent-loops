@@ -450,9 +450,7 @@ func (f *fakeRuntime) form(ctx context.Context, session sdk.SessionId, withdraw 
 func fakeRuntimes(t *testing.T) {
 	self, _ := os.Executable()
 	t.Setenv("AGENTS_FAKE_ACP", "1")
-	old := locateFor
-	locateFor = func(*runtimeDef) (string, []string, []string) { return self, nil, nil }
-	t.Cleanup(func() { locateFor = old })
+	setFor(t, &locateFor, func(*runtimeDef) (string, []string, []string) { return self, nil, nil })
 }
 
 // notes collects the notifications a client hears.

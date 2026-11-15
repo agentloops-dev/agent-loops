@@ -13,9 +13,7 @@ import (
 // folder.idle (#1368), as DaemonCore+FolderIdle: once a busy period, after the settle,
 // with every agent that worked counted; the clean-up's own agents are not work.
 func TestAFolderThatStopsWorkingIsIdleOnce(t *testing.T) {
-	old := folderIdleSettle
-	folderIdleSettle = 100 * time.Millisecond
-	defer func() { folderIdleSettle = old }()
+	setFor(t, &folderIdleSettle, 100*time.Millisecond)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

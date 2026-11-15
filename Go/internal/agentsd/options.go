@@ -14,7 +14,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	sdk "github.com/coder/acp-go-sdk"
 )
@@ -153,7 +152,7 @@ func (d *Daemon) options(r wire.OptionsRequest) (wire.OptionsResponse, error) {
 	key := optionKey(r.RuntimeID, r.Cwd, r.McpServers)
 	if shown, ok := d.remembered(key); ok {
 		// Shown at once; the runtime is asked after, and a change is said (settleDraft).
-		safe.Go("draft options", func() { d.settleDraft(draft, key, rt, path, shown) })
+		d.goJob("draft options", func() { d.settleDraft(draft, key, rt, path, shown) })
 		return wire.OptionsResponse{DraftID: draft, Options: d.markOptions(r.RuntimeID, shown.Options), Commands: shown.Commands}, nil
 	}
 	e, err := d.whatItOffers(rt, path)

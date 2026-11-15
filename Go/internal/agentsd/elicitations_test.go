@@ -19,8 +19,8 @@ import (
 // It starts as answered. Set it only while no call is in flight.
 func formHolds(t *testing.T) (answered, left func()) {
 	t.Helper()
-	was := formHoldLimit
-	t.Cleanup(func() { formHoldLimit = was })
+	// Put back after the test's daemons are down, which read it (#5653).
+	setFor(t, &formHoldLimit, formHoldLimit)
 	answered = func() { formHoldLimit = time.Minute }
 	left = func() { formHoldLimit = 300 * time.Millisecond }
 	answered()

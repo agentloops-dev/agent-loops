@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -72,5 +71,5 @@ func (d *Daemon) sendLiveFrame(agent wire.UUID, image, said string) {
 // liveFrameAfter refreshes the tile once an action is done (FR-011's 2 seconds), without
 // holding up the tool call's reply.
 func (d *Daemon) liveFrameAfter(agent wire.UUID, image, said string) {
-	safe.Go("live frame", func() { d.sendLiveFrame(agent, image, said) })
+	d.goJob("live frame", func() { d.sendLiveFrame(agent, image, said) })
 }

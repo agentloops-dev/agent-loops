@@ -12,7 +12,6 @@ import (
 	"github.com/creack/pty"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -76,7 +75,7 @@ func (d *Daemon) startShell(agentID wire.UUID, number int64, folder string, rows
 		return nil, &Error{Code: wire.FailureShellWillNotStart, Message: "The shell would not start: " + err.Error()}
 	}
 	s := &shell{agentID: agentID, number: number, folder: folder, cmd: cmd, pty: f, started: now(), state: liveState()}
-	safe.Go("shell pump", func() { s.pump(d) })
+	d.goJob("shell pump", func() { s.pump(d) })
 	return s, nil
 }
 

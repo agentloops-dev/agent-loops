@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -25,7 +24,7 @@ const setupForwardTries = 5
 // root, #5356) to the control plane as machine/setupStep. The installer starts this host, so
 // what it said before the host had joined is sent when the host has.
 func (d *Daemon) StartSetupReports() {
-	safe.Go("setup reports", func() {
+	d.goJob("setup reports", func() {
 		d.forwardSetupReports(d.ctx, filepath.Join(d.Store.Loc.Root, hostsetup.ReportsFile), setupForwardEvery)
 	})
 }

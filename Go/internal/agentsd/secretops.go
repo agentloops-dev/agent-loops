@@ -214,7 +214,7 @@ func (d *Daemon) noteSecretOp(op wire.SecretOperation, audit bool) {
 	}
 	d.secretOps.mu.Unlock()
 	if len(now) > 0 {
-		go d.tellSecretOps(now)
+		d.goJob("tellSecretOps", func() { d.tellSecretOps(now) })
 	}
 }
 
@@ -237,7 +237,7 @@ func (d *Daemon) batchSecretOpLocked(op wire.SecretOperation) {
 	b.batch[key] = &op
 	b.order = append(b.order, key)
 	if b.timer == nil {
-		b.timer = time.AfterFunc(secretOpsBatch, d.flushSecretOps)
+		b.timer = time.AfterFunc(secretOpsBatch, d.jobFunc("secretops timer", d.flushSecretOps))
 	}
 }
 

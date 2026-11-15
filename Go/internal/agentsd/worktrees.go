@@ -16,7 +16,6 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -561,7 +560,7 @@ func (d *Daemon) wantSizes(roots []string) {
 	if len(todo) == 0 {
 		return
 	}
-	safe.Go("worktree sizes", func() {
+	d.goJob("worktree sizes", func() {
 		var notes []wire.WorktreeSizeNote
 		for _, r := range todo {
 			if !isDir(r) {

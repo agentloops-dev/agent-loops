@@ -604,9 +604,7 @@ func TestAWaitLooksBackForAServersEventItMissed(t *testing.T) {
 // #3797: a wait on a server's event about one PR names it, or sets any: true, when the
 // server offers any; one that names nothing is refused with the keys that would.
 func TestAWaitOnAServersEventNamesWhatItWaitsFor(t *testing.T) {
-	was := eventHoldLimit
-	eventHoldLimit = 300 * time.Millisecond
-	defer func() { eventHoldLimit = was }()
+	setFor(t, &eventHoldLimit, 300*time.Millisecond)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)

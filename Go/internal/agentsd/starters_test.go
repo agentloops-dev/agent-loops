@@ -40,9 +40,7 @@ func starterTemplate(t *testing.T, repo string, files map[string]string) {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	old := starterGitBase
-	starterGitBase = "file://" + base
-	t.Cleanup(func() { starterGitBase = old })
+	setFor(t, &starterGitBase, "file://"+base)
 }
 
 // A small web-service-like template: its own README and CI under .starterignore, a binary

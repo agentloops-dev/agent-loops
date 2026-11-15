@@ -166,7 +166,7 @@ func (d *Daemon) Accept(conn controllink.Conn) {
 		}
 		// In the order they come, before each runs on its own goroutine.
 		d.noteFirstList(c, m.Method, m.Params)
-		safe.Go("rpc "+m.Method, func() { d.dispatch(c, m) })
+		d.goJob("rpc "+m.Method, func() { d.dispatch(c, m) })
 	}
 }
 
@@ -322,13 +322,13 @@ func (d *Daemon) ServeSocket(ctx context.Context, path string) error {
 	os.Chmod(path, 0o600)
 	policy := d.socketPolicy()
 	log.Printf("socket: %s", policy.Summary())
-	safe.Go("socket close", func() { <-ctx.Done(); l.Close() })
+	d.goJob("socket close", func() { <-ctx.Done(); l.Close() })
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			return err
 		}
-		safe.Go("socket accept", func() { d.acceptSocket(c, policy) })
+		d.goJob("socket accept", func() { d.acceptSocket(c, policy) })
 	}
 }
 
@@ -344,7 +344,7 @@ func (d *Daemon) acceptSocket(c net.Conn, policy SocketPolicy) {
 // serveSockConn reads sc's lines from r, which may hold some already, and serves it until
 // it goes.
 func (d *Daemon) serveSockConn(sc *sockConn, r *bufio.Reader) {
-	safe.Go("socket read", func() {
+	d.goJob("socket read", func() {
 		// A client gone takes its writer with it.
 		defer sc.Close()
 		defer close(sc.in)

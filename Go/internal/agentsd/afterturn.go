@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 )
 
 // afterTurnLimit is how long Shutdown waits for the writes that follow a turn: long enough
@@ -21,7 +20,7 @@ type afterTurnState struct {
 	afterTurns      sync.WaitGroup
 }
 
-// goAfterTurn is safe.Go for a turn and what follows it. Once the host is going it starts
+// goAfterTurn is goJob for a turn and what follows it. Once the host is going it starts
 // nothing and is false.
 func (d *Daemon) goAfterTurn(what string, fn func()) bool {
 	d.afterTurnMu.Lock()
@@ -30,10 +29,13 @@ func (d *Daemon) goAfterTurn(what string, fn func()) bool {
 		return false
 	}
 	d.afterTurns.Add(1)
-	safe.Go(what, func() {
+	if !d.goJobAt(what, callerSite(1), func() {
 		defer d.afterTurns.Done()
 		fn()
-	})
+	}) {
+		d.afterTurns.Done()
+		return false
+	}
 	return true
 }
 

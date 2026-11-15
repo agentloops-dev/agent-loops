@@ -78,9 +78,7 @@ func TestMoveSignupKeychain(t *testing.T) {
 		"agents-signup:atlassian.com":     "",
 		"agents-signup:okta-integrator-1": "okta-5043-not-real",
 	}}
-	old := signupKeychain
-	signupKeychain = k
-	defer func() { signupKeychain = old }()
+	setFor[keychainItems](t, &signupKeychain, k)
 
 	n, err := d.moveSignupKeychain()
 	if err != nil || n != 2 {

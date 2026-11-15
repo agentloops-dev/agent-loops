@@ -323,7 +323,7 @@ func (d *Daemon) pinsChanged(folder string) {
 	if d.pinTimers[folder] != nil {
 		return
 	}
-	d.pinTimers[folder] = time.AfterFunc(time.Second, func() {
+	d.pinTimers[folder] = time.AfterFunc(time.Second, d.jobFunc("pins timer", func() {
 		d.pinMu.Lock()
 		delete(d.pinTimers, folder)
 		stopped := d.pinsStopped
@@ -334,7 +334,7 @@ func (d *Daemon) pinsChanged(folder string) {
 		pp := d.folderPins(folder)
 		Broadcast(d, wire.NotifyPinsChanged, wire.PinsChangedNotification{Folder: pp.Folder, Pins: pp.Pins,
 			Sessions: pp.Sessions, Workflows: pp.Workflows, Views: pp.Views, Reviews: pp.Reviews, Suggestions: pp.Suggestions})
-	})
+	}))
 }
 
 func defaultPinTitle(path string) string {

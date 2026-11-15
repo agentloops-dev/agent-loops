@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -87,7 +86,7 @@ func (d *Daemon) cancelContinue(id wire.UUID) (wire.Agent, error) {
 // armContinue sends the chat on at wait.At, unless by then it waits for another time or
 // not at all.
 func (d *Daemon) armContinue(id wire.UUID, wait wire.ContinueWhenBack) {
-	safe.Go("continue when back", func() {
+	d.goJob("continue when back", func() {
 		select {
 		case <-time.After(time.Until(wait.At.Time())):
 		case <-d.ctx.Done():
