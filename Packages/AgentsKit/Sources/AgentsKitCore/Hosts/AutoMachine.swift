@@ -115,6 +115,11 @@ public enum AutoMachine {
                               same: (MachineRef, MachineRef) -> Bool = { $0 == $1 }) -> Target? {
         guard let pick, let machine = pick.machine, pick.none == nil else { return nil }
         let text = pick.text.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        // The id as the control plane says it first: `same` only for a pick no folder names so.
+        if machine == folder.host { return Target(folder: folder, moved: false, autoChose: text) }
+        if let there = project.first(where: { $0.host == machine }) {
+            return Target(folder: there, moved: true, autoChose: text)
+        }
         if same(machine, folder.host) { return Target(folder: folder, moved: false, autoChose: text) }
         guard let there = project.first(where: { same(machine, $0.host) }) else { return nil }
         return Target(folder: there, moved: true, autoChose: text)

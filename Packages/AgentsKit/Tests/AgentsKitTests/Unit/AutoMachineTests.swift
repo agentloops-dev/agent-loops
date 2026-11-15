@@ -66,6 +66,13 @@ struct AutoMachineTests {
         #expect(target == AutoMachine.Target(folder: here, moved: false, autoChose: own.text))
     }
 
+    @Test func aFolderWithThePickedIdWinsOverThisMacsOtherName() {
+        // Two hosts on one Mac (a walk): `same` says both are this Mac, but a folder has the id.
+        let target = AutoMachine.target(from: here, project: [here, mini], pick: picked) { _, _ in true }
+        #expect(target?.folder == mini)
+        #expect(target?.moved == true)
+    }
+
     @Test func aPickWithNoFolderOfTheProjectOrNoneLeavesTheStartWhereItIs() {
         #expect(AutoMachine.target(from: here, project: [here], pick: picked) == nil)
         #expect(AutoMachine.target(from: here, project: [here, mini], pick: none) == nil)

@@ -263,7 +263,8 @@ struct FolderAgentsView: View {
             .help(AutoMachine.offWords(pick) ?? "Start the session on another machine")
             .accessibilityLabel("On: \(onAuto ? AutoMachine.rowWords(pick) : model.hosts.label(summary.host))")
             // Asked again when the project, the machine or the runtime moves (#5375).
-            .task(id: "\(summary.key.stored)|\(model.draftProjectID ?? "")|\(model.draftAutoMachineRuntime ?? "")") {
+            .task(id: "\(summary.key.stored)|\(model.draftProjectID ?? "")|\(model.draftAutoMachineRuntime ?? "")|"
+                  + project.folders.map { model.hostUnreachable($0.host) ? "0" : "1" }.joined()) {
                 await model.refreshDraftAutoMachine()
             }
         }

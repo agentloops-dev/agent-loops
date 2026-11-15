@@ -76,7 +76,8 @@ struct ProjectRows: View {
         .accessibilityLabel("On, \(shown)")
         .accessibilityHint(AutoMachine.offWords(pick) ?? "")
         // Asked again when the project, the machine or the runtime moves (#5375).
-        .task(id: "\(summary.key.stored)|\(summary.project ?? "")|\(model.startAutoMachineRuntime ?? "")") {
+        .task(id: "\(summary.key.stored)|\(summary.project ?? "")|\(model.startAutoMachineRuntime ?? "")|"
+              + project.folders.map { model.hostIsOffline($0.host) ? "0" : "1" }.joined()) {
             await model.refreshStartAutoMachine(summary.key)
         }
     }
