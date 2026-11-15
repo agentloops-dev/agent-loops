@@ -108,7 +108,7 @@ private struct SuggestedLeadRow: View {
             }
             .buttonStyle(.plain)
             .help("Fill the form to start a lead for this epic. Nothing starts until you send it.")
-            Button(action: dismiss) { Image(systemName: "xmark").imageScale(.small) }
+            Button(action: dismiss) { Image(icon: "xmark").imageScale(.small) }
                 .buttonStyle(.plain)
                 .foregroundStyle(Paper.secondary)
                 .help("Dismiss: leave this epic out until it changes")
