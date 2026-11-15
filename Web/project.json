@@ -39,7 +39,7 @@
     "test": {
       "executor": "nx:run-commands",
       "cache": true,
-      "options": { "command": "node --test test/*.test.mjs", "cwd": "{projectRoot}" },
+      "options": { "command": "node --test --test-timeout=60000 test/*.test.mjs", "cwd": "{projectRoot}" },
       "inputs": ["sharedGlobals", "web-source", "web-test-reads"],
       "dependsOn": ["wire:gen", "design:gen"]
     }
