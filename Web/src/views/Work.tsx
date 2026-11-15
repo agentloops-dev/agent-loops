@@ -43,6 +43,7 @@ import {
   Avatar, Avatars, EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, PlaceholderRows, RefreshButton, StateIcon, picture, type MenuChoice, type ReadPicture,
 } from "./WorkParts";
 import { WorkChecksPage, WorkCommentBox, WorkFilesChanged, WorkLabelsPicker, WorkMergeBox, WorkStatusMenu } from "./WorkActions";
+import { WorkFilesPage } from "./WorkFilesPage";
 import { branchWords, mergeBox, mergedStrip, offers, pullStateWords, reviewersWords } from "../model/workPull";
 import { WorkPlan } from "./WorkPlan";
 import { WorkDocs } from "./Docs";
@@ -357,6 +358,8 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
   const writing = useSignal(false);
   const pickingLabels = useSignal(false);
   const checksPage = useSignal(false);
+  /** The Files changed page (#5477), pushed from Files changed. */
+  const filesPage = useSignal(false);
   const forgeHosts = store.hosts.value.filter((h) => hostAnswers(h.state) && store.has(h.id, Capability.forge1));
   const lineageHosts = store.hosts.value.filter((h) => hostAnswers(h.state) && store.has(h.id, Capability.lineage1));
   // The page's images, read by the machine that read the page (#4011); without forge/image there, their words.
@@ -369,7 +372,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
   const lineageHost = lineageHosts.find((h) => h.id === detail.value?.host)?.id
     ?? lineageHosts.find((h) => h.id === store.macHostID.value)?.id ?? lineageHosts[0]?.id;
   // A new item starts empty; a refresh keeps the page, and Refresh spins, until the new read comes.
-  useEffect(() => { detail.value = null; fromDevice.value = false; forgeProblem.value = null; said.value = null; pickingLabels.value = false; checksPage.value = false; }, [kind, ref]);
+  useEffect(() => { detail.value = null; fromDevice.value = false; forgeProblem.value = null; said.value = null; pickingLabels.value = false; checksPage.value = false; filesPage.value = false; }, [kind, ref]);
   useEffect(() => {
     let current = true;
     if (!fromForge(kind)) return;
@@ -597,6 +600,15 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
       title="The new-session form in this epic's folder, filled in for a lead with the lead skill"><Icon name="sparkles" />Start lead</button>
   );
 
+  // The Files changed page (#5477), pushed from Files changed.
+  if (filesPage.value && detail.value && kind === "pr") {
+    return (
+      <article class="work-page work-item-page">
+        <WorkFilesPage store={store} host={detail.value.host} detail={detail.value.got} back={() => { filesPage.value = false; }} />
+      </article>
+    );
+  }
+
   // The Checks page (note 17), pushed from the checks row of a page under 700 px.
   if (checksPage.value && detail.value && kind === "pr") {
     return (
@@ -658,7 +670,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
               : <><span class="work-title"><ForgeTitle text={title} /></span> {!titleSaysRef({ title, node }) && <span class="work-ref">{shortRef(ref)}</span>}</>}
           </h2>
           {narrowStart && <span class="wide-only">{narrowStart}</span>}
-          {isPull && detail.value && <span class="work-wide-only"><WorkFilesChanged store={store} host={detail.value.host} detail={detail.value.got} /></span>}
+          {isPull && detail.value && <span class="work-wide-only"><WorkFilesChanged detail={detail.value.got} open={() => { filesPage.value = true; }} /></span>}
         </div>
         <p class="work-page-byline small">
           {got?.transitions && writes && item
@@ -679,7 +691,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
       {isPull && detail.value && (
         <div class="work-pull-top work-narrow-only">
           {writeBox(true)}
-          <WorkFilesChanged store={store} host={detail.value.host} detail={detail.value.got} row />
+          <WorkFilesChanged detail={detail.value.got} open={() => { filesPage.value = true; }} row />
         </div>
       )}
       {/* The side panel (parts.md section 5): a column on a page over 900 px; rows under the header on a narrower one,
