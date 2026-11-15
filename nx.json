@@ -30,7 +30,7 @@
         "env": "GOEXPERIMENT"
       },
       {
-        "runtime": "uname -s"
+        "runtime": "uname -sm"
       }
     ],
     "node-toolchain": [
@@ -47,6 +47,9 @@
       },
       {
         "env": "AGENTS_BUILD_CACHE"
+      },
+      {
+        "runtime": "uname -sm"
       }
     ],
     "wire-source": [

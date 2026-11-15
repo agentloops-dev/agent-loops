@@ -141,6 +141,17 @@ jobs:
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
+      # The Nx hash of each affected task at the pull request's own commit, with no task run
+      # (#5584): a lane's attestation/<platform> check run names its tasks by these. For
+      # information only, until #5585 reads them.
+      - name: Nx task hashes
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          { echo "### Nx task hashes, $(uname -sm)"; echo '```'; node scripts/nx-hashes.cjs --affected "$BASE" test vet lint; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
       # What each job runs, by what this change affects: on a pull request since its merge base
       # with main, on main since the push before; with no base (a new branch, a run by hand),
       # everything. Each later step, here and in the macOS jobs, reads these in its `if:`.
@@ -698,6 +709,15 @@ jobs:
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
+      # As in `go`, on macOS (#5584).
+      - name: Nx task hashes
+        if: github.event_name == 'pull_request' && (env.SWIFT != 'skip' || env.GO != 'skip')
+        continue-on-error: true
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          { echo "### Nx task hashes, $(uname -sm)"; echo '```'; node scripts/nx-hashes.cjs --affected "$BASE" test vet lint; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
       # A job that reaches its timeout-minutes ends Cancelled, not Failed, and a pull request
       # with auto-merge on waits for a check that never comes; a step's own timeout fails the
       # step (scripts/ci-time-left.sh, #5609).
