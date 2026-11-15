@@ -12,7 +12,7 @@ import { go, route, sectionOf, usageAsked } from "../route";
 import { gated, groupedPages, machinePages, navPages, navTitle, openPage, pagesShown, sectionKeys, sectionsShown, usagePaneTitle, usagePanes,
   type NavPage, type NavSection, pageRoute, routePageID } from "../model/nav";
 import { adminOf, adminsOnly } from "../model/console";
-import { hostAnswers, stateWords, versionWords } from "../model/capabilities";
+import { hostAnswers } from "../model/capabilities";
 import { needingYou, placedSessions } from "../model/overview";
 import { ActivityPageView } from "./Activity";
 import { ConsoleSection, MachinesPage, roleProblemOf } from "./ConsoleApp";
@@ -32,6 +32,7 @@ import { ConversationPage, MessagesList } from "./Messages";
 import { MachinePage } from "./MachinePage";
 import { machineSessions, runningLineOf } from "../model/machineSessions";
 import { machineNeed, machineNeedLine } from "./OfflineStrip";
+import { MachinesList } from "./MachinesList";
 import { MachineRow, MakingRow } from "./MachineRow";
 import { deleteMakingQuestion, joinTrustQuestion, type MachineMaking, makingRows, newMachineItems } from "../model/machineRow";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
@@ -45,7 +46,6 @@ import { SessionSecretsSection } from "./settings/SessionSecrets";
 import { LocalSecretsSection } from "./settings/LocalSecrets";
 import { WorkflowRow } from "./WorkflowRow";
 import { BackToList } from "./BackToList";
-import { DataTable } from "./DataTable";
 import { PageTitle, PersonMenu, SearchBox } from "./TopBar";
 import { pageCrumbs, type Crumb } from "../model/crumbs";
 import { MultiplierPage } from "./Multiplier";
@@ -299,7 +299,7 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         : page.draw.kind === "report" ? <ReportsPage store={store} section={page.draw.section} down={down} />
         : page.draw.kind === "builds" ? <BuildsPage store={store} down={down} />
         : page.draw.kind === "delivery" ? <DeliveryPage store={store} down={down} />
-        : page.draw.kind === "machines" ? (admin === true ? <MachinesPage store={store} down={down} /> : <YourMachines store={store} />)
+        : page.draw.kind === "machines" ? (admin === true ? <><MachinesList store={store} /><h2 class="section-head">Everyone’s machines</h2><MachinesPage store={store} down={down} /></> : <MachinesList store={store} />)
         : page.draw.kind === "workflows" ? <AllWorkflows store={store} down={down} />
         : page.draw.kind === "usage" ? <Usage store={store} />
         // An item of a list Work no longer has (#/work/milestone/<ref>, #3878) opens the Work default's list.
@@ -345,20 +345,6 @@ function Framed({ title, section, parent, children }: { title: string; section: 
         <div class="activity-body settings-body">{children}</div>
       </div>
     </section>
-  );
-}
-
-/** A member's Machines: the machines this page knows, theirs and the ones shared with them. */
-function YourMachines({ store }: { store: Store }) {
-  const hosts = store.hosts.value;
-  return (
-    <DataTable id="yourMachines" label="Machines" rows={hosts} rowKey={(h) => h.id} order={{ column: "name", dir: "asc" }}
-      empty="No machines yet. Add one under Machines in the sidebar." columns={[
-        { id: "name", title: "Machine", sort: (h) => h.name,
-          cell: (h) => <><span class="strong">{h.name}</span><br /><span class="quiet small">{h.workspace?.providerName || h.platform}</span></> },
-        { id: "state", title: "State", sort: stateWords, cell: (h) => <span class={`fleet-state ${h.state}`}>{stateWords(h)}</span> },
-        { id: "version", title: "Version", sort: (h) => h.version, cell: versionWords },
-      ]} />
   );
 }
 
