@@ -421,7 +421,9 @@ function AccountDetail({ store, item, rows, down, save, remove }: {
     );
   };
   const setAsk = async (on: boolean) => {
-    problem.value = await save({ ...account, ...(on ? { askBeforeUse: undefined } : { askBeforeUse: false }) });
+    // Absent is on, as agentsd reads it (#4163).
+    const { askBeforeUse: _, ...rest } = account;
+    problem.value = await save(on ? rest : { ...rest, askBeforeUse: false });
   };
   const submit = async () => {
     saving.value = true;

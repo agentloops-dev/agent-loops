@@ -3,7 +3,7 @@
 // page (#5257, #5258).
 import { useEffect } from "preact/hooks";
 import type { Store } from "../model/store";
-import { accountLines, newestAt, recentOperation, secretLines, shortAgo, type StatusLine } from "../model/statusSecrets";
+import { accountLines, newestAt, recentOperation, secretLines, shortAgo, statusSecretsWords as w, type StatusLine } from "../model/statusSecrets";
 
 type List = "secrets" | "accounts";
 
