@@ -413,6 +413,8 @@ final class AgentsAppDelegate: NSObject, NSApplicationDelegate {
     /// they left a blank row at its end (#2384).
     @MainActor func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        // A scratch copy's window sizes stay out of the person's window (#5636).
+        ScratchWindowFrames.start()
     }
 
     @MainActor func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
