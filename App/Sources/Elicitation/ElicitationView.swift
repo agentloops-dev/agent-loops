@@ -91,15 +91,15 @@ struct ElicitationView: View {
                                 if let link = URL(string: url) { NSWorkspace.shared.open(link) }
                             }
                             .buttonStyle(.paperProminent)
-                            .keyboardShortcut(.defaultAction)
+                            .cardKey(.defaultAction)
                             .modifier(Held(sending: sending))
                             Button { send("done", .accept) } label: { pending("Done", "done") }
                             .buttonStyle(.paper)
-                            .keyboardShortcut("1")
+                            .cardKey(KeyboardShortcut("1"))
                             .modifier(Held(sending: sending, key: "done"))
                             Button { send("gave up", .decline) } label: { pending("Gave up", "gave up") }
                             .buttonStyle(.paper)
-                            .keyboardShortcut("2")
+                            .cardKey(KeyboardShortcut("2"))
                             .modifier(Held(sending: sending, key: "gave up"))
                             Button(AskDecline.dismiss, action: dismiss)
                             .buttonStyle(.paper)
@@ -195,7 +195,7 @@ struct ElicitationView: View {
             if page == last {
                 Button { send("submit", .accept, content: values) } label: { pending("Submit", "submit") }
                 .buttonStyle(.paperProminent)
-                .keyboardShortcut(.defaultAction)
+                .cardKey(.defaultAction)
                 .disabled(!schema.problems(with: values).isEmpty)
                 .modifier(Held(sending: sending, key: "submit"))
             }
@@ -424,7 +424,7 @@ struct ElicitationView: View {
                 .background {
                     if index == 0 {
                         Button("") { choose() }
-                            .keyboardShortcut(.defaultAction)
+                            .cardKey(.defaultAction)
                             .opacity(0)
                             .accessibilityHidden(true)
                     }
@@ -646,7 +646,7 @@ private struct ElicitationNumberShortcut: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if index < 9 {
-            content.keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+            content.cardKey(KeyboardShortcut(KeyEquivalent(Character("\(index + 1)"))))
         } else {
             content
         }

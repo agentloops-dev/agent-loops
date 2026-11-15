@@ -177,6 +177,12 @@ struct FolderListView: View {
             // page keeps its list's row picked. New Session is the first row of each folder's
             // Sessions (#5267), so the rows with no header went: Docs and Messages are Work's first.
             Section(isExpanded: $showsWorkLists) {
+                // The Dashboard (#5534, a PoC): each work item on this Mac and its sessions, with
+                // what waits on the person answered in place. First, as the place to start from.
+                HStack { Text("Dashboard").foregroundStyle(.primary); Spacer() }
+                    .help("Each work item on this Mac, its sessions, pull request and checks, and what waits on you")
+                    .activityIcon("square.grid.2x2")
+                    .appText(.supporting).sidebarInk(.dashboard).tag(SidebarItem.dashboard)
                 // Docs (#3321): the folders' docs and the docs connectors'.
                 HStack { Text("Docs").foregroundStyle(.primary); Spacer() }
                     .help("Every folder’s Markdown docs and your docs connectors’ pages, read only")

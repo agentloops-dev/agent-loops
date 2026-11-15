@@ -256,6 +256,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsDashboard = false
             // The same rule as picking a folder: what you picked is what you see,
             // and a conversation or a workflow left open underneath would be waiting
             // to reappear when the bill is closed, which is a place nobody chose to
@@ -283,6 +284,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsDashboard = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -309,6 +311,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsDashboard = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -332,6 +335,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsDashboard = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -355,6 +359,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsDashboard = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -378,6 +383,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsDashboard = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -401,6 +407,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsDashboard = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -417,6 +424,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsDashboard = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -440,6 +448,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsDashboard = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -461,6 +470,7 @@ final class AppModel {
         didSet {
             guard showsDocs, showsDocs != oldValue else { return }
             showsSummary = false
+            showsDashboard = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -484,6 +494,7 @@ final class AppModel {
         didSet {
             guard showsMessages, showsMessages != oldValue else { return }
             showsSummary = false
+            showsDashboard = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -510,6 +521,7 @@ final class AppModel {
     var showsSummary = false {
         didSet {
             guard showsSummary, showsSummary != oldValue else { return }
+            showsDashboard = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -521,6 +533,31 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
+            selection = nil
+            openWorkflow = nil
+            folderPage = nil
+            composing = false
+        }
+    }
+
+    /// Whether the window is showing the Dashboard (#5534): each work item on this Mac with its
+    /// sessions, its pull request and checks, and what waits on the person answered in place. A
+    /// page like Velocity, and not persisted for the same reason.
+    var showsDashboard = false {
+        didSet {
+            guard showsDashboard, showsDashboard != oldValue else { return }
+            showsSpending = false
+            showsEvents = false
+            showsRuntimes = false
+            statusSecretsPage = nil
+            showsTime = false
+            showsVelocity = false
+            showsTokens = false
+            machinePage = nil
+            showsWork = false
+            showsDocs = false
+            showsMessages = false
+            showsSummary = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -605,6 +642,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsDashboard = false
         if let agent = agents.first(where: { $0.id == agentID }) {
             pendingOpen = nil
             select(FolderKey(host: agent.host, folder: agent.folderPath))
@@ -632,6 +670,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsDashboard = false
         // Not listed yet: settling the selection would pick another, so it waits (#1055).
         pendingOpen = liveFolders.contains { $0.key == key } ? nil : .folder(key)
         select(key)
@@ -682,6 +721,7 @@ final class AppModel {
             if showsDocs { return .docs }
             if showsMessages { return .messages }
             if showsSummary { return .summary }
+            if showsDashboard { return .dashboard }
             // Nothing else open is the Multiplier page (#3986), as the detail draws it.
             guard let key = selectedFolderKey else { return selection == nil && !composing ? .multiplier : nil }
             if let id = openWorkflow { return .workflow(id, in: key) }
@@ -712,6 +752,7 @@ final class AppModel {
                 showsDocs = false
                 showsMessages = false
                 showsSummary = false
+                showsDashboard = false
                 select(key)
                 openWorkflow = id
             case .pin(let path, let key):
@@ -734,6 +775,8 @@ final class AppModel {
                 showsTime = true
             case .velocity:
                 showsVelocity = true
+            case .dashboard:
+                showsDashboard = true
             case .work(let kind):
                 // The list's row: its list, or the place in it still open.
                 showWork(workPlace.kind == kind ? workPlace : WorkPlace(kind: kind))
@@ -769,6 +812,7 @@ final class AppModel {
                 showsDocs = false
                 showsMessages = false
                 showsSummary = false
+                showsDashboard = false
                 showFolder(key)
             case nil:
                 // A list that clears its own selection — which macOS does while rows
@@ -794,6 +838,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsDashboard = false
         showNothing()
     }
 
@@ -811,6 +856,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsDashboard = false
         select(key)
         folderPage = page
     }
@@ -843,6 +889,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsDashboard = false
         select(key)
         // A new session in it (#366): the folder's own page is where a session starts,
         // as New Session has it. The folder's row in the sidebar only folds (#375).
@@ -1084,6 +1131,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsDashboard = false
         select(key)
         openPin = path
     }

@@ -66,7 +66,7 @@ struct PermissionView: View {
             // Return for the first allowing option without stealing its ⌘n.
             if let option = request.options.first(where: \.kind.allows) {
                 Button("") { answer(option) }
-                    .keyboardShortcut(.defaultAction)
+                    .cardKey(.defaultAction)
                     .opacity(0)
                     .accessibilityHidden(true)
                     .disabled(chosen != nil)
@@ -213,7 +213,7 @@ private struct NumberShortcut: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if index < 9 {
-            content.keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+            content.cardKey(KeyboardShortcut(KeyEquivalent(Character("\(index + 1)"))))
         } else {
             content
         }

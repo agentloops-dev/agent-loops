@@ -199,6 +199,7 @@ struct AgentsCommands: Commands {
             Button("Connectors") { model.settingsPaneAsked = .connectors; openSettings() }
             Button("Secrets") { model.settingsPaneAsked = .secrets; openSettings() }
                 .disabled(ControlConfig.endpoint == nil)
+            Button("Dashboard") { model.showsDashboard = true }
             // A list each, as the sidebar's Work group (#4004).
             Menu("Work") {
                 ForEach(WorkList.Kind.allCases) { kind in
