@@ -719,11 +719,12 @@ func forgeItemOf(i githubmcp.Item, folder string) wire.ForgeItem {
 	out := wire.ForgeItem{Node: node, Title: i.Title, State: i.State, URL: optional(i.URL), Folder: optional(folder),
 		Author: optional(i.Author), AuthorAvatar: optional(i.AuthorAvatar), StateReason: optional(i.StateReason), Assignees: i.Assignees, Milestone: optional(i.Milestone),
 		Labels: forgeLabelsOf(i.Labels, i.LabelColors), UpdatedAt: forgeDate(i.UpdatedAt), Comments: int64(i.Comments),
-		CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt)}
+		CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), MilestoneDue: forgeDueOptional(i.MilestoneDue)}
 	if out.Assignees == nil {
 		out.Assignees = []string{}
 	}
 	if i.PR {
+		withPriorityLabels(&out)
 		out.Draft, out.AutoMerge = new(i.Draft), new(i.AutoMerge)
 		out.Checks, out.Review, out.Mergeable = optional(i.Checks), optional(i.Review), optional(i.Mergeable)
 		withPullRefs(&out, i.HeadRef, i.BaseRef, i.MergedBy, i.MergeCommit)
@@ -746,11 +747,13 @@ func gitlabItemOf(i gitlabmcp.Item, folder string) wire.ForgeItem {
 	}
 	out := wire.ForgeItem{Node: node, Title: i.Title, State: i.State, URL: optional(i.URL), Folder: optional(folder),
 		Labels: forgeLabelsOf(i.Labels, i.LabelColors), Author: optional(i.Author), AuthorAvatar: optional(i.AuthorAvatar), Assignees: i.Assignees,
-		Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), Comments: int64(i.Comments)}
+		Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), Comments: int64(i.Comments),
+		MilestoneDue: forgeDueOptional(i.MilestoneDue)}
 	if out.Assignees == nil {
 		out.Assignees = []string{}
 	}
 	if i.MR {
+		withPriorityLabels(&out)
 		out.Draft, out.AutoMerge = new(i.Draft), new(i.AutoMerge)
 		out.Checks, out.Review, out.Mergeable = optional(i.Checks), optional(i.Review), optional(i.Mergeable)
 		withPullRefs(&out, i.HeadRef, i.BaseRef, i.MergedBy, i.MergeCommit)
@@ -768,7 +771,8 @@ func gitlabItemOf(i gitlabmcp.Item, folder string) wire.ForgeItem {
 func linearItemOf(i linearmcp.Item, folder string) wire.ForgeItem {
 	out := wire.ForgeItem{Node: linearNode(i.Identifier), Title: i.Title, State: i.State,
 		URL: optional(i.URL), Folder: optional(folder), Labels: forgeLabelsOf(i.Labels, i.LabelColors), Author: optional(i.Author), AuthorAvatar: optional(i.AuthorAvatar), StateReason: optional(i.StateReason),
-		Assignees: i.Assignees, Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), Comments: int64(i.Comments)}
+		Assignees: i.Assignees, Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), Comments: int64(i.Comments),
+		MilestoneDue: forgeDueOptional(i.MilestoneDue), Priority: optional(i.Priority)}
 	if out.Assignees == nil {
 		out.Assignees = []string{}
 	}
@@ -785,7 +789,7 @@ func jiraItemOf(i jiramcp.Item, folder string) wire.ForgeItem {
 	out := wire.ForgeItem{Node: jiraNode(i.Key), Title: i.Title, State: i.State,
 		Status: optional(i.Status), URL: optional(i.URL), Folder: optional(folder), Labels: forgeLabelsOf(i.Labels, nil),
 		Author: optional(i.Author), AuthorAvatar: optional(i.AuthorAvatar), StateReason: optional(i.StateReason), Assignees: i.Assignees, Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt),
-		Comments: int64(i.Comments)}
+		Comments: int64(i.Comments), MilestoneDue: forgeDueOptional(i.MilestoneDue), Priority: optional(i.Priority)}
 	if out.Assignees == nil {
 		out.Assignees = []string{}
 	}
@@ -926,4 +930,14 @@ func optional(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// forgeDueOptional is a milestone's due date (#5688): a forge says it as a day (2026-12-01:
+// GitLab, Linear, Jira) or as a time (GitHub, Forgejo); nil for none or one it cannot read.
+func forgeDueOptional(s string) *wire.Date {
+	if t, err := time.Parse(time.DateOnly, s); err == nil {
+		d := wire.DateOf(t)
+		return &d
+	}
+	return forgeDateOptional(s)
 }

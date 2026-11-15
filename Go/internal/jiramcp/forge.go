@@ -49,9 +49,11 @@ type Item struct {
 	StateReason string
 	// Milestone is the first fix version: the closest Jira has to a release (#3260).
 	Milestone string
-	Labels    []string
-	Assignees []string
-	Comments  int
+	// MilestoneDue is that fix version's release date, "" for none; Priority is high, medium or low, "" for none (#5688).
+	MilestoneDue, Priority string
+	Labels                 []string
+	Assignees              []string
+	Comments               int
 	// Parent is the issue it is a sub-task or a child of, by key; SubTotal and SubDone are its
 	// sub-tasks and the done ones.
 	Parent            string
@@ -113,7 +115,7 @@ const forgeComments = 50
 
 // forgeFields are what a forge read asks for.
 var forgeFields = []string{"summary", "status", "labels", "assignee", "creator", "reporter", "updated", "project",
-	"fixVersions", "comment", "parent", "subtasks", "resolution", "created", "resolutiondate"}
+	"fixVersions", "comment", "parent", "subtasks", "resolution", "created", "resolutiondate", "priority"}
 
 type restIssueRef struct {
 	Key    string `json:"key"`
@@ -166,7 +168,17 @@ func (r restIssue) item(site string) Item {
 		i.Assignees = append(i.Assignees, base.Assignee)
 	}
 	if len(f.FixVersions) > 0 {
-		i.Milestone = f.FixVersions[0].Name
+		i.Milestone, i.MilestoneDue = f.FixVersions[0].Name, f.FixVersions[0].ReleaseDate
+	}
+	if f.Priority != nil {
+		switch strings.ToLower(strings.TrimSpace(f.Priority.Name)) {
+		case "highest", "high":
+			i.Priority = "high"
+		case "medium":
+			i.Priority = "medium"
+		case "low", "lowest":
+			i.Priority = "low"
+		}
 	}
 	if f.Comment != nil {
 		i.Comments = max(f.Comment.Total, len(f.Comment.Comments))

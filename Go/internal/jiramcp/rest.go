@@ -262,7 +262,8 @@ type restIssue struct {
 		} `json:"comment"`
 		// The forge reads' (forge.go): the milestone, the parent, the sub-tasks and the resolution.
 		FixVersions []struct {
-			Name string `json:"name"`
+			Name        string `json:"name"`
+			ReleaseDate string `json:"releaseDate"`
 		} `json:"fixVersions"`
 		Resolution *struct {
 			Name string `json:"name"`

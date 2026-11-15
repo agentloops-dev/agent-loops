@@ -149,14 +149,14 @@ func hasLabel(i wire.ForgeItem, name string) bool {
 	return slices.ContainsFunc(i.Labels, func(l wire.ForgeLabel) bool { return strings.EqualFold(strings.TrimSpace(l.Name), name) })
 }
 
-// standingRank is an issue's priority from its labels: high, medium, none, then low.
+// standingRank is an issue's priority (#5688): high, medium, none, then low.
 func standingRank(i wire.ForgeItem) int {
-	switch {
-	case hasLabel(i, "priority:high"):
+	switch deref(i.Priority) {
+	case "high":
 		return 0
-	case hasLabel(i, "priority:medium"):
+	case "medium":
 		return 1
-	case hasLabel(i, "priority:low"):
+	case "low":
 		return 3
 	}
 	return 2

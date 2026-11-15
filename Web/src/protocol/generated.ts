@@ -5688,7 +5688,11 @@ export interface ForgeImageRequest {
  * the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row
  * where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the
  * commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it
- * is open or closed unmerged.
+ * is open or closed unmerged. priority is high, medium or low, absent for none (#5688): from
+ * Linear's and Jira's priority field (Urgent and High, Highest and High → high; Low and Lowest →
+ * low), and on the other forges from the labels priority:high, priority:medium and priority:low
+ * (any case; the higher of two). milestoneDue is the due date of the item's milestone, where the
+ * forge says it; absent with no milestone or no due date.
  */
 export interface ForgeItem {
   node: LineageNode;
@@ -5703,6 +5707,8 @@ export interface ForgeItem {
   authorAvatar?: string;
   assignees: string[];
   milestone?: string;
+  milestoneDue?: WireDate;
+  priority?: "high" | "medium" | "low";
   createdAt?: WireDate;
   closedAt?: WireDate;
   updatedAt: WireDate;
@@ -17775,7 +17781,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeFeaturesRequest: { required: [], optional: ["folder", "board"] },
   ForgeImage: { required: ["mimeType", "data"], optional: [] },
   ForgeImageRequest: { required: ["url"], optional: [] },
-  ForgeItem: { required: ["node", "title", "state", "labels", "assignees", "updatedAt", "comments"], optional: ["stateReason", "status", "url", "folder", "author", "authorAvatar", "milestone", "createdAt", "closedAt", "draft", "checks", "review", "mergeable", "autoMerge", "headRef", "baseRef", "mergedBy", "mergeCommit", "parent", "level", "feature", "progress", "standing"] },
+  ForgeItem: { required: ["node", "title", "state", "labels", "assignees", "updatedAt", "comments"], optional: ["stateReason", "status", "url", "folder", "author", "authorAvatar", "milestone", "milestoneDue", "priority", "createdAt", "closedAt", "draft", "checks", "review", "mergeable", "autoMerge", "headRef", "baseRef", "mergedBy", "mergeCommit", "parent", "level", "feature", "progress", "standing"] },
   ForgeItemDetail: { required: ["item", "body", "comments"], optional: ["cursor", "checks", "reviewThreads", "filesChanged", "additions", "deletions", "commits", "reviewers", "closes", "head", "mergeMethods", "start", "transitions", "actions", "children", "linkedPulls", "events"] },
   ForgeItemRequest: { required: ["node"], optional: ["cursor"] },
   ForgeLabel: { required: ["name"], optional: ["color"] },
