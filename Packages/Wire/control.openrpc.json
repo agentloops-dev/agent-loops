@@ -2073,6 +2073,32 @@
       }
     },
     {
+      "name": "docs/listAll",
+      "description": "The docs of the caller's machines in one call, with a cap and a cursor (#5571).",
+      "x-capability": "docs.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/DocsListAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/DocsListAll"
+        }
+      }
+    },
+    {
       "name": "folders/detect",
       "x-capability": "folders/1",
       "description": "To a host just added, from a control plane before #656.",
@@ -4118,6 +4144,31 @@
       }
     },
     {
+      "name": "machines/setLabels",
+      "x-capability": "machines/2",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/MachineLabelsRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/MachineLabelsResult"
+        }
+      }
+    },
+    {
       "name": "machines/setMachineOptions",
       "x-capability": "machines/1",
       "tags": [
@@ -4351,6 +4402,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/machines.schema.json#/definitions/MachineVersions"
+        }
+      }
+    },
+    {
+      "name": "messages/conversationsAll",
+      "description": "The conversations of the caller's machines in one call, with a cap and a cursor (#5571).",
+      "x-capability": "messages.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/MessagesConversationsAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/MessagesConversationsAll"
         }
       }
     },

@@ -7,7 +7,9 @@ import SwiftUI
 /// `Packages/CodeText/Sources/CodeText/InkValues.swift`, where they are checked for contrast
 /// against `Paper.ground` and `Paper.well` and for anything that reads as red. Red stays
 /// `StateTint`'s, for something having gone wrong; code is never coloured to look like an
-/// error, and a change is never coloured at all (035 FR-013).
+/// error. A diff's added and removed lines are the one exception (#5474): green and red from
+/// `design/tokens.json`'s `color.diff`, always with their + and − signs, so colour is never
+/// the only mark.
 ///
 /// Quiet on purpose: code sits in a well on paper, and the colours are inks rather than a
 /// screen theme. Keywords carry weight as well as colour, and comments are set in italic, so
@@ -27,11 +29,24 @@ enum CodeInk {
         return container
     }
 
-    /// A removed line sits on this: a faint neutral wash, never a colour (035 FR-013).
-    static let removedWash = Paper.ink.opacity(0.06)
-    /// The words that changed within a changed line, on both sides: the same neutral,
-    /// stronger, so the change is found before the line is read (041 FR-009).
-    static let changedWash = Paper.ink.opacity(0.14)
+    /// A diff line's colours (#5474, `Paper.diff…`): the wash under the line, the bar at its
+    /// leading edge, and the stronger mark under the words that changed. Nil for context.
+    struct DiffTint {
+        let wash: Color
+        let bar: Color
+        let word: Color
+    }
+
+    static func diff(_ kind: DiffRow.Kind) -> DiffTint? {
+        switch kind {
+        case .added: DiffTint(wash: Paper.diffAddedWash, bar: Paper.diffAddedBar, word: Paper.diffAddedWord)
+        case .removed: DiffTint(wash: Paper.diffRemovedWash, bar: Paper.diffRemovedBar, word: Paper.diffRemovedWord)
+        case .context: nil
+        }
+    }
+
+    /// The width of a diff line's bar.
+    static let diffBar: CGFloat = 3
 
     private static let colors: [CodeRole: Color] = Dictionary(uniqueKeysWithValues:
         CodeRole.allCases.compactMap { role in

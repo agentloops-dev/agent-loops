@@ -1940,6 +1940,12 @@ func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin
 		s.router.Know(host)
 		s.router.HoldToOwners()
 		s.log("host " + a.Name + " enrolled as " + host)
+		// A machine the control plane made: its token's digits are what the host must show
+		// at the compare step (#5359).
+		if stored.Made {
+			private, _ := s.codes.keys()
+			s.expectDigits(ctx, host, controllink.TokenCode(controllink.CodeSecret(private, id)))
+		}
 		// A host an install made the code for a workspace for is linked to it (#3871): its
 		// name may not be the one the install asked for.
 		if w := stored.Workspace; w != nil && s.providers != nil {

@@ -8,7 +8,7 @@ struct SuggestedLeadsSection: View {
     @Environment(AppModel.self) private var model
     let host: MachineRef
     /// Hide is kept for the person, until they bring the section back by clearing it in Work.
-    @AppStorage("suggestedLeadsHidden") private var hidden = false
+    @AppStorage("suggestedLeadsHidden", store: WindowDefaults.store) private var hidden = false
     @State private var answer: DaemonAPI.WorkSuggestLeads?
     /// When `answer` was read; the "Last update" line shows while a later read has failed (#5139).
     @State private var readAt: Date?
@@ -31,7 +31,7 @@ struct SuggestedLeadsSection: View {
     private func section(_ answer: DaemonAPI.WorkSuggestLeads) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Suggested").appText(.supporting).fontWeight(.semibold).foregroundStyle(Paper.secondary)
+                Text(SuggestedLeads.heading).appText(.supporting).fontWeight(.semibold).foregroundStyle(Paper.secondary)
                 Spacer()
                 if stale, let readAt { LastUpdateText(read: readAt) }
                 Button("Hide") { hidden = true }
@@ -43,8 +43,8 @@ struct SuggestedLeadsSection: View {
             ForEach(answer.suggestions) { row in
                 SuggestedLeadRow(row: row, take: { take(row) }, dismiss: { Task { await dismiss(row) } })
             }
-            if answer.more > 0 {
-                Button("\(answer.more) more in Work") { model.showWork(WorkPlace(kind: .feature)) }
+            if let more = SuggestedLeads.more(answer.more) {
+                Button(more) { model.showWork(WorkPlace(kind: .feature)) }
                     .buttonStyle(.plain)
                     .appText(.supporting)
                     .foregroundStyle(Paper.secondary)
@@ -97,9 +97,10 @@ private struct SuggestedLeadRow: View {
         HStack(spacing: 8) {
             Button(action: take) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("#\(row.node.ref) \(row.title)").appText(.reading).lineLimit(1)
-                    if !row.detail.isEmpty {
-                        Text(row.detail).appText(.supporting).foregroundStyle(Paper.secondary).lineLimit(1)
+                    Text(SuggestedLeads.title(row)).appText(.reading).lineLimit(1)
+                    let detail = SuggestedLeads.detail(row)
+                    if !detail.isEmpty {
+                        Text(detail).appText(.supporting).foregroundStyle(Paper.secondary).lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -111,7 +112,7 @@ private struct SuggestedLeadRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Paper.secondary)
                 .help("Dismiss: leave this epic out until it changes")
-                .accessibilityLabel("Dismiss #\(row.node.ref)")
+                .accessibilityLabel("Dismiss \(SuggestedLeads.title(row))")
         }
         .padding(.vertical, 4)
     }

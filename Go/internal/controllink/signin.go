@@ -303,6 +303,13 @@ func JoinCode(hostPublic []byte) string {
 	return shortCode("agents-join-approve", hostPublic)
 }
 
+// TokenCode is the code a machine the control plane made shows for its join token (#5359):
+// made from the token's secret by the host and by the control plane each, so a machine that
+// joined with another token shows another code.
+func TokenCode(secret []byte) string {
+	return shortCode("agents-join-token", secret)
+}
+
 // shortCode is six letters of SHA-256(label ‖ parts), two bytes a letter: no letter is much
 // likelier.
 func shortCode(label string, parts ...[]byte) string {

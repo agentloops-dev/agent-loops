@@ -356,7 +356,9 @@ struct WorkMergeBox: View {
 }
 
 /// Files changed 6 (#4406, pull-request.md note 5): a bordered button at the title's trailing end
-/// (a full-width row on a narrow page) that opens the diff (`forge/diff`) as a sheet.
+/// (a full-width row on a narrow page). On the Mac it pushes the Files changed page in the pull
+/// request's place (#5478, `WorkFilesPage`); on the Remote it opens the diff (`forge/diff`) as a
+/// sheet until its page comes (#5479).
 struct WorkFilesChanged: View {
     let model: any WorkModel
     let host: MachineRef
@@ -393,7 +395,7 @@ struct WorkFilesChanged: View {
                     }
                 }
                 .buttonStyle(.bordered)
-                .help("The pull request's diff")
+                .help("The pull request's files changed")
             }
             if let problem {
                 Text(problem).appText(.supporting).foregroundStyle(StateTint.failure.style(or: .secondary))
@@ -406,6 +408,9 @@ struct WorkFilesChanged: View {
     }
 
     private func showDiff() async {
+        #if os(macOS)
+        model.showWork(WorkPlace(kind: .pr, ref: detail.item.node.ref, files: true))
+        #else
         loading = true
         problem = nil
         defer { loading = false }
@@ -417,6 +422,7 @@ struct WorkFilesChanged: View {
         } catch {
             problem = WorkList.failureWords(error)
         }
+        #endif
     }
 }
 

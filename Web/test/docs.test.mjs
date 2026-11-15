@@ -176,3 +176,18 @@ test("A title is searched by its longest uncommon words, and the docs most of th
   const got = d.relatedDocs([[r(a, 1), r(linked, 9)], [r(b, 5), r(a, 1)], [r(c, 1), r(b, 1)]], new Set([linked.ref]));
   assert.deepEqual(got.map((x) => x.ref), [b.ref, a.ref, c.ref]);
 });
+
+test("docs/listAll's page is one list for each machine it names, and says one it could not reach (#5571)", async () => {
+  const { hostDocsOf } = d;
+  const doc = (ref) => ({ ref, title: ref, source: "s" });
+  const got = {
+    docs: [{ machine: "a", machineName: "Mac", doc: doc("x") }, { machine: "b", machineName: "Box", doc: doc("y") }],
+    sources: [{ machine: "a", machineName: "Mac", source: { id: "s", kind: "folder", name: "S", state: "ok" } }],
+    unreached: [{ machine: "c", machineName: "Off" }], notAsked: 0,
+  };
+  const first = hostDocsOf(got);
+  assert.deepEqual(first.map((h) => [h.host, h.docs.length, h.sources.length, h.problem !== undefined]), [["a", 1, 1, false], ["b", 1, 0, false], ["c", 0, 0, true]]);
+  const next = hostDocsOf({ docs: [{ machine: "a", machineName: "Mac", doc: doc("z") }], sources: [], unreached: [], notAsked: 0 }, first);
+  assert.deepEqual(next.find((h) => h.host === "a").docs.map((d) => d.ref), ["x", "z"]);
+  assert.equal(first.find((h) => h.host === "a").docs.length, 1);
+});

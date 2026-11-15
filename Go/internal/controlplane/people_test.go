@@ -295,7 +295,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 
 	// Methods that name no machine: answered for the caller alone.
 	namesNone := map[string]bool{
-		"daemon/ping": true, "control/status": true, "machines/list": true, "machines/startEnroll": true, "machines/install": true,
+		"daemon/ping": true, "control/status": true, "machines/list": true, "machines/setLabels": true, "machines/startEnroll": true, "machines/install": true,
 		"machines/detect": true, "machines/sshHosts": true, "control/setFolderDetection": true, "clients/list": true,
 		"clients/startPairing": true, "clients/stopPairing": true, "clients/setGrant": true, "clients/forget": true,
 		"clients/connections": true, "clients/forgetSelf": true, "clients/setPushToken": true, "clients/setActivityToken": true, "clients/setWebPush": true, "clients/webPushKey": true, "devices/list": true,
@@ -328,7 +328,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 		"lock/joinReveal": true, "lock/joinDeny": true, "lock/reset": true,
 		"scim/set": true, "scim/tokens/list": true, "scim/tokens/make": true, "scim/tokens/revoke": true,
 		"groups/setRole": true, "people/removeRequests": true,
-		"projects/list": true, "projects/set": true, "projects/remove": true, "projects/setSlot": true, "projects/setBoards": true, "projects/sessions": true, "sessions/previewStart": true,
+		"projects/list": true, "projects/set": true, "projects/remove": true, "projects/setSlot": true, "projects/setBoards": true, "projects/sessions": true, "sessions/previewStart": true, "docs/listAll": true, "messages/conversationsAll": true,
 		"governance/usage": true, "governance/request": true, "governance/requests": true, "governance/decide": true,
 		"governance/approvals": true, "governance/revoke": true,
 		"readApi/list": true, "readApi/make": true, "readApi/revoke": true,

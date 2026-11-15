@@ -64,6 +64,7 @@ public enum Capability {
     public static let device1 = "device/1"
     public static let devices1 = "devices/1"
     public static let disk1 = "disk/1"
+    public static let docsAll1 = "docs.all/1"
     public static let docs1 = "docs/1"
     public static let dropbox1 = "dropbox/1"
     public static let elicitations1 = "elicitations/1"
@@ -146,6 +147,7 @@ public enum Capability {
     public static let marketplaces1 = "marketplaces/1"
     public static let mcpToolLevels1 = "mcp.tool-levels/1"
     public static let mcp1 = "mcp/1"
+    public static let messagesAll1 = "messages.all/1"
     public static let messagesMarkRead1 = "messages.mark-read/1"
     public static let messagesReply1 = "messages.reply/1"
     public static let messages1 = "messages/1"
@@ -764,6 +766,7 @@ public enum Capability {
         "control/status": "control/1",
         "deploys/deliveryAll": "deploys.read/1",
         "deploys/sync": "deploys.copy/1",
+        "docs/listAll": "docs.all/1",
         "folders/detected": "folders/1",
         "git/credential": "git/1",
         "governance/approvals": "governance/1",
@@ -843,6 +846,7 @@ public enum Capability {
         "machines/sendFolder": "folders.to-machine/1",
         "machines/sessionCall": "sessions.elsewhere/1",
         "machines/sessionEnded": "sessions.elsewhere/1",
+        "machines/setLabels": "machines/2",
         "machines/setMachineOptions": "machines/1",
         "machines/sshHosts": "machines/1",
         "machines/start": "machines/1",
@@ -853,6 +857,7 @@ public enum Capability {
         "machines/unlink": "machines/1",
         "machines/update": "machines/1",
         "machines/versions": "machines/1",
+        "messages/conversationsAll": "messages.all/1",
         "multiplier/count": "multiplier/1",
         "notices/take": "notices/1",
         "orgRoutes/check": "org-routes/2",

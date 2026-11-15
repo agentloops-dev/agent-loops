@@ -22,6 +22,8 @@ extension LocalCopy {
         case deploys
         /// The boards (`forge/boards`).
         case boards
+        /// New Session's Suggested section (`work/suggest-leads`, #5457), by folder.
+        case suggestions
         /// A forge's picture (`forge/image`), by URL: it does not change. Kept to its own cap.
         case image
 
@@ -34,6 +36,7 @@ extension LocalCopy {
             case .timeline: 20
             case .deploys: 5
             case .boards: 10
+            case .suggestions: 10
             case .image: 2000
             }
         }

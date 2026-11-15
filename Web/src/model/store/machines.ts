@@ -5,7 +5,7 @@ import { describe } from "../errors";
 import { log } from "../../log";
 import { canJoin, type MachineJoin, type MachineMaking } from "../machineRow";
 import type { Store } from "../store";
-import { type NewMachineDraft } from "./shared";
+import { machineRows, type NewMachineDraft } from "./shared";
 
 export const machinesMethods = {
   async startHost(this: Store, host: string): Promise<void> {
@@ -105,6 +105,17 @@ export const machinesMethods = {
       await this.link.call("providers/deleteWorkspace", { id: provider as ProviderID, workspace });
     } catch (error) {
       this.say(describe(error));
+    }
+  },
+  /** A person's labels on a machine's page (#5284), which replace the ones it had; the list is read again after. */
+  async setMachineLabels(this: Store, host: string, labels: string[]): Promise<boolean> {
+    try {
+      await this.link.call("machines/setLabels", { machines: [host as MachineRef], set: labels });
+      this.takeHosts(machineRows(await this.link.call("machines/list", {})));
+      return true;
+    } catch (error) {
+      this.say(describe(error));
+      return false;
     }
   },
   /** Check Again on a machine's row (#3979): the control plane asks it how it is now. */

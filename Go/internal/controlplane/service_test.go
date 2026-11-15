@@ -125,6 +125,8 @@ type fakeHost struct {
 	private []byte
 	// agents is its agents/list answer, as a function of the request; nil answers [].
 	agents func(params json.RawMessage) any
+	// answers is its answer to other methods, as a function of the request (#5571).
+	answers map[string]func(params json.RawMessage) any
 }
 
 func (p *plane) host(machine string) *fakeHost { return p.hostWith(machine, nil) }
@@ -187,7 +189,12 @@ func (p *plane) serveHost(root string, member *controllink.Membership, private [
 			json.Unmarshal([]byte(line), &m)
 			h.mu.Lock()
 			agents := h.agents
+			own := h.answers[m.Method]
 			h.mu.Unlock()
+			if own != nil {
+				c.Write(reply(m.ID, own(m.Params)))
+				continue
+			}
 			if m.Method == "agents/list" && agents != nil {
 				c.Write(reply(m.ID, agents(m.Params)))
 				continue

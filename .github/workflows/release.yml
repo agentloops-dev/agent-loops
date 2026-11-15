@@ -252,6 +252,27 @@ jobs:
               "${notes[@]}" --verify-tag
           fi
 
+      # The public download (#2145): the same files go to the releases-only repo, so the
+      # download works when this repo is private. It needs RELEASES_TOKEN (a fine-grained
+      # token with Contents: write on that repo) in the `release` environment; without it the
+      # step says so and the release still stands.
+      - name: Copy the release to the public releases repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          PUBLIC_REPO: agentloops-dev/agents-releases
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::warning::RELEASES_TOKEN is not set: $TAG is not copied to $PUBLIC_REPO (#2145)"
+            exit 0
+          fi
+          cd build/release
+          if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --clobber --repo "$PUBLIC_REPO"
+          else
+            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --repo "$PUBLIC_REPO" \
+              --title "Agent Loops ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
   # The Remote on TestFlight (#914). It needs nothing from the other jobs, and a
   # failure here leaves the GitHub release as it is.
   testflight:

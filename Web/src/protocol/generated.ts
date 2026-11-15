@@ -3467,6 +3467,14 @@ export interface ControlMachine {
    * not set up by the control plane.
    */
   setup?: MachineSetup;
+  /**
+   * Its labels (#5284): key or key=value, sorted. The ones its provider sets (os=, arch=,
+   * provider=) come first in autoLabels and are here too; a person adds others with
+   * machines/setLabels.
+   */
+  labels?: string[];
+  /** The labels its provider sets itself (os=, arch=, provider=): a person cannot change them. */
+  autoLabels?: string[];
 }
 
 /** control/moved: where the control plane is now (T085). */
@@ -4207,6 +4215,33 @@ export interface Doc {
 export interface DocsList {
   docs: Doc[];
   sources: DocsSource[];
+  cursor?: string;
+}
+
+/**
+ * docs/listAll (#5571): a page of docs from the caller's machines, the last updated first, each
+ * with its machine. unreached is the machines that have docs but did not answer (offline or too
+ * slow); their docs are not in docs. sources are those of the machines that answered this page: the
+ * first page has every machine's. notAsked counts the machines past the most one call asks (50).
+ * cursor is the next page, absent at the end.
+ */
+export interface DocsListAll {
+  docs: MachineDoc[];
+  sources: MachineDocsSource[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+  cursor?: string;
+}
+
+/**
+ * docs/listAll (#5571): the docs of the caller's machines in one call. limit is 1 to 500, 200 when
+ * not said; it bounds the page, not each machine, and a cursor goes with the same limit. source
+ * narrows to one DocsSource id.
+ */
+export interface DocsListAllRequest {
+  source?: string;
+  limit?: number;
+  /** Opaque: the last page's cursor, as the answer gave it. Absent for the first page. */
   cursor?: string;
 }
 
@@ -8119,6 +8154,13 @@ export interface MachineClients {
   user?: string;
 }
 
+/** A conversation of messages/conversationsAll (#5571) with the machine whose connector has it. */
+export interface MachineConversation {
+  machine: MachineRef;
+  machineName: string;
+  conversation: MessagesConversation;
+}
+
 /**
  * For each filter, how many machines have each of its values, among those every other filter lets
  * through (so a chip says what picking it would show). A machine with no value for a filter is not
@@ -8130,6 +8172,20 @@ export interface MachineCounts {
   provider: Record<string, number>;
   os: Record<string, number>;
   version: Record<string, number>;
+}
+
+/** A doc of docs/listAll (#5571) with the machine that has it. */
+export interface MachineDoc {
+  machine: MachineRef;
+  machineName: string;
+  doc: Doc;
+}
+
+/** A source of docs/listAll (#5571) with the machine whose folders or connectors it is. */
+export interface MachineDocsSource {
+  machine: MachineRef;
+  machineName: string;
+  source: DocsSource;
 }
 
 /**
@@ -8288,6 +8344,24 @@ export interface MachineJoinTicket {
   expires: WireDate;
 }
 
+/**
+ * machines/setLabels (#5284): the person's labels on one or many machines. `set` replaces them;
+ * `add` and `remove` change them. A label is a key or key=value of letters, digits and . _ / -, at
+ * most 20 on a machine; os, arch and provider are the provider's. A machine that is not the
+ * caller's is left out.
+ */
+export interface MachineLabelsRequest {
+  machines: MachineRef[];
+  set?: string[];
+  add?: string[];
+  remove?: string[];
+}
+
+/** machines/setLabels: how many machines changed. */
+export interface MachineLabelsResult {
+  changed: number;
+}
+
 export interface MachineLastHeard {
   host: MachineRef;
   folders?: FolderSummary[];
@@ -8338,6 +8412,16 @@ export interface MachineListQuery {
   sort?: "name" | "state" | "lastSeen" | "version";
   limit?: number;
   cursor?: string;
+}
+
+/**
+ * A connector of messages/conversationsAll (#5571) that failed or did not answer in time, with its
+ * machine.
+ */
+export interface MachineMessagesError {
+  machine: MachineRef;
+  machineName: string;
+  error: MessagesError;
 }
 
 /** machines/setMachineOptions. stopWhenIdleMinutes 0 turns it off. */
@@ -8457,6 +8541,11 @@ export interface MachineSetupReport {
   detail?: string;
   error?: string;
   fromPool?: boolean;
+  /**
+   * The digits the host shows for its join token (controllink.TokenCode), said with the compare
+   * step: the control plane compares them with the ones it made (#5359).
+   */
+  code?: string;
 }
 
 export type MachineSetupState =
@@ -8815,6 +8904,31 @@ export interface MessagesConversations {
   conversations: MessagesConversation[];
   cursor?: string;
   errors?: MessagesError[];
+}
+
+/**
+ * messages/conversationsAll (#5571): a page of conversations from the caller's machines, the newest
+ * first, each with its machine. errors says a connector that failed. unreached and notAsked are as
+ * in DocsListAll. cursor is the next page, absent at the end.
+ */
+export interface MessagesConversationsAll {
+  conversations: MachineConversation[];
+  errors: MachineMessagesError[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+  cursor?: string;
+}
+
+/**
+ * messages/conversationsAll (#5571): the conversations of the caller's machines in one call. limit
+ * is 1 to 100, 20 when not said; it bounds the page, not each machine, and a cursor goes with the
+ * same limit. unread: only the conversations with unread messages.
+ */
+export interface MessagesConversationsAllRequest {
+  unread?: boolean;
+  limit?: number;
+  /** Opaque: the last page's cursor, as the answer gave it. Absent for the first page. */
+  cursor?: string;
 }
 
 /**
@@ -16107,6 +16221,7 @@ export interface Methods {
   "desktopControl/takeOver": { params: AgentRequest; result: Empty };
   "disk/state": { params: Empty; result: DiskState };
   "docs/list": { params: DocsListRequest; result: DocsList };
+  "docs/listAll": { params: DocsListAllRequest; result: DocsListAll };
   "docs/read": { params: DocsReadRequest; result: DocsReading };
   "docs/search": { params: DocsSearchRequest; result: DocsSearch };
   "dropbox/put": { params: DropboxPutRequest; result: DropboxPutResponse };
@@ -16215,6 +16330,7 @@ export interface Methods {
   "machines/listKept": { params: KeptListQuery; result: KeptList };
   "machines/remove": { params: MachineRequest; result: Empty };
   "machines/retryKept": { params: KeptRequestID; result: Empty };
+  "machines/setLabels": { params: MachineLabelsRequest; result: MachineLabelsResult };
   "machines/setMachineOptions": { params: MachineOptions; result: ControlMachine };
   "machines/start": { params: MachineRequest; result: ControlMachine };
   "machines/startEnroll": { params: MachineEnroll; result: ControlCodeShown };
@@ -16229,6 +16345,7 @@ export interface Methods {
   "mcp/setToolLevel": { params: MCPSetToolLevelRequest; result: MCPToolsAnswer };
   "mcp/tools": { params: MCPToolsRequest; result: MCPToolsAnswer };
   "messages/conversations": { params: MessagesConversationsRequest; result: MessagesConversations };
+  "messages/conversationsAll": { params: MessagesConversationsAllRequest; result: MessagesConversationsAll };
   "messages/markAllRead": { params: MessagesMarkAllReadRequest; result: MessagesMarkedAllRead };
   "messages/read": { params: MessagesReadRequest; result: MessagesRead };
   "messages/reply": { params: MessagesReplyRequest; result: MessagesReplied };
@@ -16560,6 +16677,7 @@ export const MethodTarget = {
   "desktopControl/takeOver": "host",
   "disk/state": "host",
   "docs/list": "host",
+  "docs/listAll": "control",
   "docs/read": "host",
   "docs/search": "host",
   "dropbox/put": "host",
@@ -16668,6 +16786,7 @@ export const MethodTarget = {
   "machines/listKept": "control",
   "machines/remove": "control",
   "machines/retryKept": "control",
+  "machines/setLabels": "control",
   "machines/setMachineOptions": "control",
   "machines/start": "control",
   "machines/startEnroll": "control",
@@ -16682,6 +16801,7 @@ export const MethodTarget = {
   "mcp/setToolLevel": "host",
   "mcp/tools": "host",
   "messages/conversations": "host",
+  "messages/conversationsAll": "control",
   "messages/markAllRead": "host",
   "messages/read": "host",
   "messages/reply": "host",
@@ -17202,7 +17322,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
   ControlNewKey: { required: ["key", "proof"], optional: [] },
   ControlNotice: { required: ["kind", "words"], optional: ["user", "group"] },
@@ -17265,6 +17385,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   DiskWorktree: { required: ["name", "bytes", "partial"], optional: [] },
   Doc: { required: ["ref", "title", "source"], optional: ["folder", "path", "url", "updated"] },
   DocsList: { required: ["docs", "sources"], optional: ["cursor"] },
+  DocsListAll: { required: ["docs", "sources", "unreached", "notAsked"], optional: ["cursor"] },
+  DocsListAllRequest: { required: [], optional: ["source", "limit", "cursor"] },
   DocsListRequest: { required: [], optional: ["folder", "source", "cursor", "limit"] },
   DocsMatch: { required: ["snippet"], optional: ["line"] },
   DocsReadRequest: { required: ["ref"], optional: ["from", "to"] },
@@ -17569,7 +17691,10 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineCatalog: { required: ["items"], optional: [] },
   MachineClient: { required: ["id", "kind", "publicKey"], optional: ["person"] },
   MachineClients: { required: ["clients"], optional: ["user"] },
+  MachineConversation: { required: ["machine", "machineName", "conversation"], optional: [] },
   MachineCounts: { required: ["state", "labels", "provider", "os", "version"], optional: [] },
+  MachineDoc: { required: ["machine", "machineName", "doc"], optional: [] },
+  MachineDocsSource: { required: ["machine", "machineName", "source"], optional: [] },
   MachineEnroll: { required: [], optional: ["as"] },
   MachineFolderSend: { required: ["host"], optional: ["state", "upload", "receive", "facts", "pack", "read", "moveIn"] },
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read"] },
@@ -17581,10 +17706,13 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineJoinDecision: { required: ["result"], optional: ["host", "controlKey", "name"] },
   MachineJoinStatus: { required: ["member", "connected", "at"], optional: ["problem"] },
   MachineJoinTicket: { required: ["request", "code", "expires"], optional: [] },
+  MachineLabelsRequest: { required: ["machines"], optional: ["set", "add", "remove"] },
+  MachineLabelsResult: { required: ["changed"], optional: [] },
   MachineLastHeard: { required: ["host"], optional: ["folders", "agents", "heardAt"] },
   MachineLink: { required: ["host", "provider", "workspace"], optional: ["startWhenUsed", "stopWhenIdleMinutes", "trust"] },
   MachineList: { required: ["machines", "total", "counts"], optional: ["next"] },
   MachineListQuery: { required: [], optional: ["query", "state", "labels", "provider", "os", "version", "sort", "limit", "cursor"] },
+  MachineMessagesError: { required: ["machine", "machineName", "error"], optional: [] },
   MachineOptions: { required: ["host"], optional: ["startWhenUsed", "stopWhenIdleMinutes", "startForSchedules"] },
   MachinePolicy: { required: [], optional: ["policy", "signature", "none"] },
   MachineProjects: { required: ["projects"], optional: [] },
@@ -17597,7 +17725,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
-  MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool"] },
+  MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code"] },
   MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
@@ -17626,6 +17754,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MessageSender: { required: ["agentID", "title"], optional: [] },
   MessagesConversation: { required: ["server", "folder", "conversation"], optional: ["replyAs"] },
   MessagesConversations: { required: ["conversations"], optional: ["cursor", "errors"] },
+  MessagesConversationsAll: { required: ["conversations", "errors", "unreached", "notAsked"], optional: ["cursor"] },
+  MessagesConversationsAllRequest: { required: [], optional: ["unread", "limit", "cursor"] },
   MessagesConversationsRequest: { required: [], optional: ["folder", "cursor", "limit", "unread"] },
   MessagesError: { required: ["server", "folder", "message"], optional: [] },
   MessagesMarkAllReadRequest: { required: [], optional: ["folder"] },

@@ -1263,6 +1263,61 @@
       },
       "additionalProperties": false
     },
+    "DocsListAll": {
+      "type": "object",
+      "description": "docs/listAll (#5571): a page of docs from the caller's machines, the last updated first, each with its machine. unreached is the machines that have docs but did not answer (offline or too slow); their docs are not in docs. sources are those of the machines that answered this page: the first page has every machine's. notAsked counts the machines past the most one call asks (50). cursor is the next page, absent at the end.",
+      "properties": {
+        "docs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineDoc"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineDocsSource"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "docs",
+        "sources",
+        "unreached",
+        "notAsked"
+      ],
+      "additionalProperties": false
+    },
+    "DocsListAllRequest": {
+      "type": "object",
+      "description": "docs/listAll (#5571): the docs of the caller's machines in one call. limit is 1 to 500, 200 when not said; it bounds the page, not each machine, and a cursor goes with the same limit. source narrows to one DocsSource id.",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Opaque: the last page's cursor, as the answer gave it. Absent for the first page."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
     "DropboxPutRequest": {
       "type": "object",
       "properties": {
@@ -1599,6 +1654,69 @@
       ],
       "additionalProperties": false
     },
+    "MachineConversation": {
+      "type": "object",
+      "description": "A conversation of messages/conversationsAll (#5571) with the machine whose connector has it.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "conversation": {
+          "$ref": "connections.schema.json#/definitions/MessagesConversation"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "conversation"
+      ],
+      "additionalProperties": false
+    },
+    "MachineDoc": {
+      "type": "object",
+      "description": "A doc of docs/listAll (#5571) with the machine that has it.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "doc": {
+          "$ref": "files.schema.json#/definitions/Doc"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "doc"
+      ],
+      "additionalProperties": false
+    },
+    "MachineDocsSource": {
+      "type": "object",
+      "description": "A source of docs/listAll (#5571) with the machine whose folders or connectors it is.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "mcp.schema.json#/definitions/DocsSource"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "source"
+      ],
+      "additionalProperties": false
+    },
     "MachineEnroll": {
       "type": "object",
       "description": "machines/startEnroll (#1761): with as, a bot's machine code, an admin's only. Without, the caller's own, as before.",
@@ -1858,6 +1976,27 @@
       ],
       "additionalProperties": false
     },
+    "MachineMessagesError": {
+      "type": "object",
+      "description": "A connector of messages/conversationsAll (#5571) that failed or did not answer in time, with its machine.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "error": {
+          "$ref": "connections.schema.json#/definitions/MessagesError"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "error"
+      ],
+      "additionalProperties": false
+    },
     "MachineOptions": {
       "type": "object",
       "description": "machines/setMachineOptions. stopWhenIdleMinutes 0 turns it off.",
@@ -2040,6 +2179,10 @@
         },
         "fromPool": {
           "type": "boolean"
+        },
+        "code": {
+          "type": "string",
+          "description": "The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359)."
         }
       },
       "required": [
@@ -2294,6 +2437,61 @@
         "warn",
         "critical"
       ]
+    },
+    "MessagesConversationsAll": {
+      "type": "object",
+      "description": "messages/conversationsAll (#5571): a page of conversations from the caller's machines, the newest first, each with its machine. errors says a connector that failed. unreached and notAsked are as in DocsListAll. cursor is the next page, absent at the end.",
+      "properties": {
+        "conversations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineConversation"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineMessagesError"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversations",
+        "errors",
+        "unreached",
+        "notAsked"
+      ],
+      "additionalProperties": false
+    },
+    "MessagesConversationsAllRequest": {
+      "type": "object",
+      "description": "messages/conversationsAll (#5571): the conversations of the caller's machines in one call. limit is 1 to 100, 20 when not said; it bounds the page, not each machine, and a cursor goes with the same limit. unread: only the conversations with unread messages.",
+      "properties": {
+        "unread": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Opaque: the last page's cursor, as the answer gave it. Absent for the first page."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
     },
     "MissingFolder": {
       "type": "object",

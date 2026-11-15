@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -89,5 +90,47 @@ func TestMachineSetupSaysSlowerThanUsual(t *testing.T) {
 	}
 	if s := st.wire(now.Add(time.Hour), nil).Steps[0].Slower; s != nil {
 		t.Fatal("no past runs, no median")
+	}
+}
+
+// Compare digits (#5359): a machine the control plane made must show the digits the control
+// plane made from its token; another machine's stops the run, and it is kept.
+func TestCompareDigitsOfAMadeMachine(t *testing.T) {
+	now := time.Now()
+	token := controllink.TokenCode([]byte("the secret of the join token....."))
+	run := func(shown *string) *storedSetup {
+		st := newStoredSetup(now)
+		st.Expect = token
+		for _, id := range []wire.MachineSetupStepID{wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin, wire.MachineSetupStepIDInstall} {
+			st.report(rep(id, wire.MachineSetupStateRunning), now)
+			st.report(rep(id, wire.MachineSetupStateDone), now)
+		}
+		st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateRunning), now)
+		st.report(wire.MachineSetupReport{Step: wire.MachineSetupStepIDCompare, State: wire.MachineSetupStateDone, Code: shown}, now)
+		return st
+	}
+	if st := run(&token); st.Steps[3].State != wire.MachineSetupStateDone || st.Steps[3].Detail != "Both show "+token {
+		t.Fatalf("the same digits: %+v", st.Steps[3])
+	}
+	other := controllink.TokenCode([]byte("another token's secret.........."))
+	for name, shown := range map[string]*string{"other": &other, "none": nil} {
+		st := run(shown)
+		if st.Steps[3].State != wire.MachineSetupStateFailed || st.Steps[3].Error == "" || !st.failed() {
+			t.Fatalf("%s digits: %+v", name, st.Steps[3])
+		}
+		if _, _, err := st.report(rep(wire.MachineSetupStepIDRuntimes, wire.MachineSetupStateRunning), now); err == nil {
+			t.Fatalf("%s digits: the run went on", name)
+		}
+	}
+	// A machine that no digits were made for (a pasted code) is not compared here.
+	st := newStoredSetup(now)
+	for _, id := range setupSteps[:3] {
+		st.report(rep(id, wire.MachineSetupStateRunning), now)
+		st.report(rep(id, wire.MachineSetupStateDone), now)
+	}
+	st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateRunning), now)
+	st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateDone), now)
+	if st.Steps[3].State != wire.MachineSetupStateDone {
+		t.Fatalf("no digits made: %+v", st.Steps[3])
 	}
 }

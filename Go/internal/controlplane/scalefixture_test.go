@@ -139,3 +139,64 @@ func TestMachinesListFiltersSortsPagesAndCounts(t *testing.T) {
 		t.Fatal("a cursor that is not one was taken")
 	}
 }
+
+// Labels on machines (#5284): the provider's, a person's, set on one and on many, and what
+// machines/list filters by.
+func TestMachineLabelsAreSetByAPersonAndFiltered(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	if err := SeedFakeMachines(context.Background(), st, 30); err != nil {
+		t.Fatal(err)
+	}
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	_, window := p.client("Window")
+	list := func(q map[string]any) wire.MachineList {
+		t.Helper()
+		var page wire.MachineList
+		if err := json.Unmarshal(call(t, window, "", "machines/list", q), &page); err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+	all := list(map[string]any{"limit": 30})
+	var ids []string
+	for _, row := range all.Machines {
+		ids = append(ids, string(row.ID))
+		if len(row.AutoLabels) == 0 || row.AutoLabels[0][:3] != "os=" {
+			t.Fatalf("%s has no os label: %v", row.Name, row.AutoLabels)
+		}
+	}
+	set := func(params map[string]any) wire.MachineLabelsResult {
+		t.Helper()
+		var out wire.MachineLabelsResult
+		if err := json.Unmarshal(call(t, window, "", "machines/setLabels", params), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if got := set(map[string]any{"machines": ids[:10], "add": []string{"gpu", "team=a"}}); got.Changed != 10 {
+		t.Fatalf("changed %d", got.Changed)
+	}
+	if got := set(map[string]any{"machines": ids[:10], "add": []string{"GPU"}}); got.Changed != 0 {
+		t.Fatalf("adding a label it has changed %d", got.Changed)
+	}
+	if page := list(map[string]any{"labels": []string{"gpu", "team=a"}, "limit": 50}); page.Total != 10 {
+		t.Fatalf("total %d", page.Total)
+	}
+	set(map[string]any{"machines": ids[:3], "remove": []string{"gpu"}})
+	if page := list(map[string]any{"labels": []string{"gpu"}, "limit": 50}); page.Total != 7 {
+		t.Fatalf("total %d counts %v", page.Total, page.Counts.Labels)
+	}
+	set(map[string]any{"machines": ids[:1], "set": []string{"solo"}})
+	if page := list(map[string]any{"query": "solo"}); page.Total != 1 || len(page.Machines[0].Labels) < 2 {
+		t.Fatalf("total %d", page.Total)
+	}
+	for _, bad := range []string{"os=linux", "has space", "", "-x"} {
+		if bad == "" {
+			continue
+		}
+		if e := callError(t, window, "", "machines/setLabels", map[string]any{"machines": ids[:1], "add": []string{bad}}); e == "" {
+			t.Fatalf("%q was taken", bad)
+		}
+	}
+}

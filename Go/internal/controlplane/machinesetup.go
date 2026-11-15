@@ -53,6 +53,10 @@ type storedSetup struct {
 	Steps   []storedSetupStep `json:"steps"`
 	Started time.Time         `json:"startedAt"`
 	Ready   *time.Time        `json:"readyAt,omitempty"`
+	// Expect is the digits the control plane made from the join token of a machine it made
+	// (#5359). The compare step is done only when the host shows the same; "" for a machine
+	// that came by a code a person pasted, or asked to join, where a person compares.
+	Expect string `json:"expectedCode,omitempty"`
 }
 
 func machineSetupKey(host string) string {
@@ -105,6 +109,9 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 	if i < 0 {
 		return 0, false, fail(invalidParams, "There is no set-up step %q.", r.Step)
 	}
+	if r.Step == wire.MachineSetupStepIDCompare && r.State == wire.MachineSetupStateDone && st.Expect != "" {
+		r = st.compared(r)
+	}
 	step := &st.Steps[i]
 	detail, problem := "", ""
 	if r.Detail != nil {
@@ -156,6 +163,38 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 		st.Ready = &t
 	}
 	return took, finished, nil
+}
+
+// compared is a done compare step as the control plane judges it (#5359): the digits the
+// host shows against the ones it made. They differ, or the host showed none: the machine is
+// not the one that was made, so the step fails, and the machine is kept for the person to see.
+func (st *storedSetup) compared(r wire.MachineSetupReport) wire.MachineSetupReport {
+	shown := deref(r.Code)
+	if shown == st.Expect {
+		detail := "Both show " + shown
+		r.Detail = &detail
+		return r
+	}
+	problem := "The machine that joined shows the digits " + shown + ", not " + st.Expect + ", so it is not the one that was made. It is stopped and kept: look at it, then delete it."
+	if shown == "" {
+		problem = "The machine that joined showed no digits to compare with " + st.Expect + ", so it is not known to be the one that was made. It is stopped and kept: look at it, then delete it."
+	}
+	r.State, r.Error = wire.MachineSetupStateFailed, &problem
+	return r
+}
+
+// expectDigits keeps the digits a machine the control plane made must show, and makes its
+// set-up when it has none.
+func (s *Service) expectDigits(ctx context.Context, host, digits string) {
+	_, err := s.changeMachineSetup(ctx, host, true, func(st *storedSetup) error {
+		st.Expect = digits
+		return nil
+	})
+	if err != nil {
+		s.log("machine " + host + ": the digits to compare could not be kept: " + err.Error())
+		return
+	}
+	s.setupChanged(ctx, host)
 }
 
 // retry makes the first failed step, and every one after it, wait again.

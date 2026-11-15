@@ -862,6 +862,7 @@ struct WorkflowPage: View {
     /// Which computers run it (#317). The names are the ones already on screen.
     private func hostsSection(_ summary: WorkflowSummary) -> some View {
         WorkflowHostsSection(choices: model.workflowHostChoices,
+                             labelChoices: MachineLabels.all(model.controlPlaneHosts ?? []),
                              hosts: summary.workflow.runsOn ?? [],
                              locked: summary.workflow.settingsLocked) { next in
             Task { await model.setWorkflowSettings(summary, summary.workflow.settings, runsOn: next) }

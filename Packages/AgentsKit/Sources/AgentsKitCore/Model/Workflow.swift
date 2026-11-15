@@ -168,7 +168,7 @@ public struct Workflow: Codable, Hashable, Sendable, Identifiable {
     }
 
     /// What Runs on means, on every client (#2064).
-    public static let runsOnSentence = "Every machine with this folder runs it, or each machine turned on here. The file stores each machine's id, so renaming one does not unpin it."
+    public static let runsOnSentence = "Every machine with this folder runs it, or each machine turned on here, or the machines with a label turned on here. The file stores each machine's id, so renaming one does not unpin it."
 
     /// A `runs-on:` list as the Runs on section shows it (#2064): the machines it names, any
     /// one of which runs it, and the labels every one of them also needs (a bot, an os, a
