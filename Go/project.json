@@ -2,6 +2,11 @@
   "name": "go",
   "$schema": "../node_modules/nx/schemas/project-schema.json",
   "root": "Go",
+  "implicitDependencies": [
+    "deploy",
+    "scripts",
+    "host"
+  ],
   "namedInputs": {
     "go-source": [
       "{projectRoot}/**/*",
@@ -27,21 +32,55 @@
   "targets": {
     "build": {
       "executor": "nx:run-commands",
-      "options": { "command": "Go/scripts/go.sh build ./...", "cwd": "{workspaceRoot}" },
-      "inputs": ["sharedGlobals", "go-toolchain", "go-source", "{projectRoot}/project.json"],
-      "dependsOn": ["wire:gen", "design:gen"]
+      "options": {
+        "command": "Go/scripts/go.sh build ./...",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "go-source",
+        "{projectRoot}/project.json"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
     },
     "vet": {
       "executor": "nx:run-commands",
-      "options": { "command": "Go/scripts/go.sh vet ./...", "cwd": "{workspaceRoot}" },
-      "inputs": ["sharedGlobals", "go-toolchain", "go-source", "{projectRoot}/project.json"],
-      "dependsOn": ["wire:gen", "design:gen"]
+      "options": {
+        "command": "Go/scripts/go.sh vet ./...",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "go-source",
+        "{projectRoot}/project.json"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
     },
     "test": {
       "executor": "nx:run-commands",
-      "options": { "command": "Go/scripts/go.sh test -race ./...", "cwd": "{workspaceRoot}" },
-      "inputs": ["sharedGlobals", "go-toolchain", "go-source", "go-test-reads", "{projectRoot}/project.json"],
-      "dependsOn": ["wire:gen", "design:gen"]
+      "options": {
+        "command": "Go/scripts/go.sh test -race ./...",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "go-source",
+        "go-test-reads",
+        "{projectRoot}/project.json"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
     }
   }
 }

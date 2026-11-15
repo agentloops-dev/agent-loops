@@ -1,0 +1,7 @@
+{
+  "name": "remote-widget",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "RemoteWidget",
+  "tags": ["inputs-only"],
+  "targets": {}
+}
