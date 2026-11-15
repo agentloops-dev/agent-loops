@@ -25,6 +25,10 @@ public enum SidebarItem: Hashable, Sendable {
     /// The Multiplier page (#3986): what the window shows with nothing else open, first under
     /// Usage so there is a way back to it. The Mac window's only: the Remote never has it.
     case multiplier
+    /// The Dashboard (#5534, a PoC on the Mac first): each work item on this Mac, its sessions,
+    /// pull request and checks, with the questions and approvals answered in place. The Mac
+    /// window's for now: web #5536, Remote #5537.
+    case dashboard
     case spending
     /// The tokens the work used, and the token limits (#956): Cost's figures in tokens.
     case tokens

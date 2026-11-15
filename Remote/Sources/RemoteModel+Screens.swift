@@ -144,9 +144,9 @@ extension RemoteModel {
                 // The Multiplier page (#4116) and Velocity (#4758), from their rows under Status.
                 openActivity = newValue
             case .spending, .tokens, .time,
-                 .folderMCPServers, .docs, .messages:
+                 .folderMCPServers, .docs, .messages, .dashboard:
                 // Cost, Tokens, Time, a folder's connectors and Docs are Mac + web (#2798,
-                // #3321): the Remote opens none of them.
+                // #3321): the Remote opens none of them. The Dashboard is the Mac's PoC (#5534; #5537).
                 break
             }
         }

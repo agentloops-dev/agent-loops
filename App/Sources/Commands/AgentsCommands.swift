@@ -200,6 +200,7 @@ struct AgentsCommands: Commands {
             // Status ▸ Secrets, a page of its own (#5257).
             Button("Secrets") { model.showSecrets() }
                 .disabled(ControlConfig.endpoint == nil)
+            Button("Dashboard") { model.showsDashboard = true }
             // A list each, as the sidebar's Work group (#4004).
             Menu("Work") {
                 ForEach(WorkList.Kind.allCases) { kind in
