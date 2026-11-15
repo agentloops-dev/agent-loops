@@ -19,6 +19,7 @@ struct DashboardView: View {
 
     private var board: Dashboard.Board {
         Dashboard.board(agents: model.agents.filter { $0.host == .mac }, group: { model.work.group(of: $0) },
+                        asks: { hasCard($0.id) },
                         issues: forge.issues, pulls: forge.pulls, epics: forge.epics)
     }
 
@@ -129,15 +130,19 @@ struct DashboardView: View {
                         .appText(.fine)
                         .foregroundStyle(Paper.secondary)
                     ForEach(items) { item in
-                        DashboardRow(item: item, epicTitle: item.epic.flatMap { epicTitles[$0.ref] }, keysFor: keys)
+                        DashboardRow(item: item, epicTitle: item.epic.flatMap { epicTitles[$0.ref] }, keysFor: keys,
+                                     reread: { await forge.read(model) })
                     }
                 }
             }
         }
     }
 
+    /// Whether a session has a card for the person: a permission, a form, a change to the folder's
+    /// own files (#531) or a use of a secret (#4918).
     private func hasCard(_ id: UUID) -> Bool {
         !model.work.permissions(for: id).isEmpty || model.work.elicitation(for: id) != nil
+            || !model.work.guardedChanges(askedIn: id).isEmpty || !model.work.secretUses(askedBy: id).isEmpty
     }
 }
 
@@ -252,6 +257,8 @@ private struct DashboardRow: View {
     let epicTitle: String?
     /// The session whose card takes the keys, of the whole page.
     let keysFor: UUID?
+    /// Read the forge again: after an approval, so the row leaves Needs you.
+    let reread: () async -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -273,6 +280,11 @@ private struct DashboardRow: View {
                 ActivityTime(date: item.lastActivity)
             }
             .appText(.supporting)
+            // The pull request waits for the person's approval: approved here, or opened to read first.
+            if let pr = item.pullRequest, pr.waitsForApproval, let node = pr.node {
+                DashboardApprovalCard(pr: pr, node: node, title: item.title, open: { open(node) }, reread: reread)
+                    .padding(.leading, 24)
+            }
             ForEach(item.sessions) { session in
                 DashboardSessionLine(session: session)
                 if session.mark == .needsYou {
@@ -386,6 +398,9 @@ private struct DashboardSessionLine: View {
     private func line(_ agent: Agent) -> String {
         switch session.mark {
         case .needsYou:
+            if let change = model.work.guardedChanges(askedIn: agent.id).first {
+                return "changed \(change.path): review it"
+            }
             let question = model.work.permission(for: agent.id)?.toolCall.line
                 ?? model.work.elicitation(for: agent.id)?.message
             return StatusShape.needsYouLine(row: agent, isComingBack: model.isComingBack(agent), question: question)
@@ -425,6 +440,83 @@ private struct DashboardCards: View {
                 if let use = request.secretUse {
                     SecretUseCard(request: request, use: use, answer: { await model.answerSecretUse(request, $0) })
                 }
+            }
+        }
+    }
+}
+
+/// A pull request that waits for the person's approval (#5534), as a card like the chat's: what it
+/// is and where its checks and review stand, Open pull request on the left to read it first, and
+/// Approve on the right. Approve reads the pull request's head and approves that commit, as Work's
+/// own Approve does, so a push after the read is not approved unseen.
+private struct DashboardApprovalCard: View {
+    @Environment(AppModel.self) private var model
+    let pr: Dashboard.PullRequest
+    let node: DaemonAPI.LineageNode
+    let title: String
+    let open: () -> Void
+    let reread: () async -> Void
+
+    @State private var busy = false
+    @State private var failed: String?
+
+    var body: some View {
+        let writes = model.forgeWrites(on: .mac)
+        AskCard(icon: "arrow.triangle.pull", title: "Pull request #\(pr.number) waits for your approval",
+                asker: title) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(state).appText(.supporting).foregroundStyle(Paper.secondary)
+                if let failed { Text(failed).appText(.fine).foregroundStyle(StateTint.failure.style(or: .secondary)) }
+            }
+        } decline: {
+            AskDecline("Open pull request", action: open)
+        } buttons: {
+            Button { approve() } label: {
+                HStack(spacing: 6) {
+                    if busy { ProgressView().controlSize(.small) }
+                    Text("Approve")
+                }
+            }
+            .buttonStyle(.paperProminent)
+            .disabled(busy || !writes)
+            .help(writes ? "Approve pull request #\(pr.number) on its forge"
+                         : "This Mac's host cannot write to the forge: update Agent Loops")
+        }
+    }
+
+    /// "Checks pass · review required", as the forge says them.
+    private var state: String {
+        let checks = switch pr.checks {
+        case "passing": "Checks pass"
+        case "failing": "Checks fail"
+        case "running": "Checks running"
+        default: "No checks"
+        }
+        let review = switch pr.review {
+        case "changes_requested": "changes requested"
+        case "review_required": "review required"
+        default: "not reviewed yet"
+        }
+        return "\(checks) · \(review)"
+    }
+
+    private func approve() {
+        guard !busy else { return }
+        busy = true
+        failed = nil
+        Task {
+            defer { busy = false }
+            do {
+                let detail = try await model.forgeItem(node, cursor: nil, on: .mac)
+                guard let head = detail.head else {
+                    failed = "The forge did not say which commit to approve. Open the pull request to approve it there."
+                    return
+                }
+                _ = try await model.forge(DaemonAPI.Method.forgeApprove, DaemonAPI.ForgeApproveRequest(node: node, sha: head),
+                                          returning: DaemonAPI.ForgeDone.self, on: .mac)
+                await reread()
+            } catch {
+                failed = WorkList.failureWords(error)
             }
         }
     }

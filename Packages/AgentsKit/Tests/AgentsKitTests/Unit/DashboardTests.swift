@@ -27,9 +27,9 @@ struct DashboardTests {
               updatedAt: now, parent: parent.map { Node(kind: "issue", ref: "github:acme/app#\($0)") }, progress: progress)
     }
 
-    func pull(_ n: Int, checks: String) -> DaemonAPI.ForgeItem {
+    func pull(_ n: Int, checks: String, review: String? = nil, labels: [String] = [], draft: Bool = false) -> DaemonAPI.ForgeItem {
         .init(node: Node(kind: "pr", ref: "github:acme/app#\(n)"), title: "PR \(n)", state: "open", folder: folder.path,
-              updatedAt: now, checks: checks)
+              labels: labels.map { DaemonAPI.ForgeLabel(name: $0) }, updatedAt: now, draft: draft, checks: checks, review: review)
     }
 
     func board(_ agents: [Agent], issues: [DaemonAPI.ForgeItem] = [], pulls: [DaemonAPI.ForgeItem] = [],
@@ -105,6 +105,34 @@ struct DashboardTests {
         let b = board([agent("a", labels: ["#77"])])
         #expect(b.rows[.working]?.first?.title == "Issue #77")
         #expect(b.rows[.working]?.first?.node == nil)
+    }
+
+    @Test func aPullRequestThatWaitsForApprovalPutsItsRowUnderNeedsYou() {
+        // The session waits on the review with nothing to ask: the pull request is what needs the person.
+        let b = board([agent("lane", labels: ["#12", "P#20"], state: .finished, ended: .endTurn)],
+                      pulls: [pull(20, checks: "passing", review: "review_required", labels: ["needs-approval"])])
+        let row = b.rows[.needsYou]?.first
+        #expect(row?.mark == .needsYou)
+        #expect(row?.pullRequest?.waitsForApproval == true)
+        #expect(row?.sessions.first?.mark == .done)
+    }
+
+    @Test func anApprovedDraftOrUnlistedPullRequestDoesNotWait() {
+        #expect(board([agent("a", labels: ["P#20"])], pulls: [pull(20, checks: "passing", review: "approved",
+                                                                 labels: ["needs-approval"])]).count(.needsYou) == 0)
+        #expect(board([agent("a", labels: ["P#20"])], pulls: [pull(20, checks: "passing", review: "review_required",
+                                                                 draft: true)]).count(.needsYou) == 0)
+        // Not read from the forge: its labels alone never ask.
+        #expect(board([agent("a", labels: ["P#20"])]).count(.needsYou) == 0)
+        // A review required by the forge asks without the label.
+        #expect(board([agent("a", labels: ["P#20"])], pulls: [pull(20, checks: "running",
+                                                                 review: "review_required")]).count(.needsYou) == 1)
+    }
+
+    @Test func aSessionWithACardItsStateDoesNotShowNeedsYou() {
+        let a = agent("guarded", labels: ["#7"], state: .finished, ended: .endTurn)
+        let b = Dashboard.board(agents: [a], group: { $0.group() }, asks: { $0.id == a.id }, now: now, calendar: calendar)
+        #expect(b.rows[.needsYou]?.first?.sessions.first?.mark == .needsYou)
     }
 
     @Test func noSessionsIsAnEmptyBoard() {

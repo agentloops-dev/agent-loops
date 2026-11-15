@@ -65,21 +65,39 @@ public enum Dashboard {
         }
     }
 
-    /// A pull request on a row: its number, state (open, merged or closed) and checks (passing,
-    /// failing, running or none) as the forge says them.
+    /// A pull request on a row: its number, state (open, merged or closed), checks (passing,
+    /// failing, running or none), review (approved, changes_requested or review_required) and
+    /// labels, as the forge says them.
     public struct PullRequest: Sendable, Hashable {
         public var node: DaemonAPI.LineageNode?
         public var number: Int
         public var state: String?
         public var checks: String?
         public var draft: Bool
+        public var review: String?
+        public var labels: [String]
 
-        public init(node: DaemonAPI.LineageNode?, number: Int, state: String? = nil, checks: String? = nil, draft: Bool = false) {
+        public init(node: DaemonAPI.LineageNode?, number: Int, state: String? = nil, checks: String? = nil, draft: Bool = false,
+                    review: String? = nil, labels: [String] = []) {
             self.node = node
             self.number = number
             self.state = state
             self.checks = checks
             self.draft = draft
+            self.review = review
+            self.labels = labels
+        }
+
+        /// The label a pull request waits for a person's approval under (#2811): this repo's, and
+        /// any folder's that uses the same word.
+        public static let approvalLabel = "needs-approval"
+
+        /// It waits for the person to approve it (#5534): open, ready for review, not approved yet,
+        /// and labelled `needs-approval` or with a review required by the forge. Only a pull request
+        /// the forge listed can, so a row with labels alone never asks.
+        public var waitsForApproval: Bool {
+            guard node != nil, state == "open", !draft, review != "approved" else { return false }
+            return labels.contains(Self.approvalLabel) || review == "review_required"
         }
     }
 
@@ -147,7 +165,10 @@ public enum Dashboard {
     /// session's first `#n` label names its issue, its first `P#n` its pull request; one with
     /// neither is a row of its own. Archived sessions count only when archived today, so a row
     /// whose work ended today is under Finished today; older done rows are left out.
-    public static func board(agents: [Agent], group: (Agent) -> AgentGroup,
+    ///
+    /// `asks` says a session has a card for the person that its state does not show, such as a
+    /// change to the folder's own files it made (#531): it needs the person all the same.
+    public static func board(agents: [Agent], group: (Agent) -> AgentGroup, asks: (Agent) -> Bool = { _ in false },
                              issues: [DaemonAPI.ForgeItem] = [], pulls: [DaemonAPI.ForgeItem] = [],
                              epics: [DaemonAPI.ForgeItem] = [],
                              now: Date = Date(), calendar: Calendar = .current) -> Board {
@@ -164,7 +185,7 @@ public enum Dashboard {
             }
             // The daily summary has its own page; it is no work item.
             if agent.writesDailySummary { continue }
-            let session = Session(agent: agent, mark: Mark.of(agent, group: g))
+            let session = Session(agent: agent, mark: g != .archived && asks(agent) ? .needsYou : Mark.of(agent, group: g))
             let repo = folders[path(agent.folderPath)]
             let issueN = agent.labels.lazy.filter { $0.kind == .issue }.compactMap { number($0.value) }.first
             let pullN = agent.labels.lazy.filter { $0.kind == .pullRequest }.compactMap { number($0.value) }.first
@@ -190,7 +211,8 @@ public enum Dashboard {
             if item.pullRequest == nil, let n = pullN {
                 let forge = repo.flatMap { pullBy["\($0)#\(n)"] }
                 item.pullRequest = PullRequest(node: forge?.node, number: n, state: forge?.state, checks: forge?.checks,
-                                               draft: forge?.draft ?? false)
+                                               draft: forge?.draft ?? false, review: forge?.review,
+                                               labels: forge?.labels.map(\.name) ?? [])
             }
             item.sessions.append(session)
             item.lastActivity = max(item.lastActivity, agent.lastActivityAt)
@@ -203,6 +225,8 @@ public enum Dashboard {
             guard var item = items[id] else { continue }
             item.sessions.sort { ($0.mark, $0.agent.lastActivityAt) > ($1.mark, $1.agent.lastActivityAt) }
             item.mark = item.sessions.map(\.mark).max() ?? .done
+            // A pull request that waits for the person's approval needs them, whatever its sessions do.
+            if item.pullRequest?.waitsForApproval == true { item.mark = .needsYou }
             let section: Section
             switch item.mark {
             case .needsYou: section = .needsYou
