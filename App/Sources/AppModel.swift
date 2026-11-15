@@ -1161,6 +1161,12 @@ final class AppModel {
     var draftClientPermission: ClientPermissionMode?
     /// What Auto would pick now for the draft (#2658), for "Picks Claude now".
     private(set) var draftAutoPreview: AutoPreview?
+    /// Which machine Auto would pick for the draft's project (#5375), from the control plane;
+    /// nil with no control plane, one that does not know it, or no project.
+    var draftAutoMachine: DaemonAPI.AutoMachinePick?
+    /// The folder whose machine the person named by hand in On (#5375): Auto is off for that
+    /// form only, and is on again after the next start.
+    var draftNamedMachine: FolderKey?
     /// What the draft's attachments need its runtime to take (#3162): Auto's preview picks a
     /// runtime that takes them, as the start does.
     private(set) var draftAttachmentNeeds: ACP.PromptCapabilities?

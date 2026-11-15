@@ -356,6 +356,9 @@ struct WireSchemaTests {
             "LockHelloReply": Self.through(DaemonAPI.LockHelloReply.self),
             "LockSignature": Self.through(DaemonAPI.LockSignature.self),
             "LockDelivery": Self.through(DaemonAPI.LockDelivery.self),
+            // The Auto machine (#5375).
+            "AutoMachineRequest": Self.through(DaemonAPI.AutoMachineRequest.self),
+            "AutoMachinePick": Self.through(DaemonAPI.AutoMachinePick.self),
         ]
         let all = samples.objectValue ?? [:]
         #expect(Set(all.keys) == Set(types.keys), "a sample with no Swift type, or a type with no sample")

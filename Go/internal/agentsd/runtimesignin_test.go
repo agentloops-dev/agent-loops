@@ -283,3 +283,27 @@ func TestSignInTestsRunOnlyTheFakes(t *testing.T) {
 		}
 	}
 }
+
+// Auto's machine pick (#5375): the control plane asks each machine on channel 0 which
+// runtimes are installed and signed in, and gets the list a client gets.
+func TestTheControlPlaneAsksWhichRuntimesAreReady(t *testing.T) {
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	out, ok := d.Asked(wire.CallRuntimesList.Name, nil)
+	if !ok {
+		t.Fatal("runtimes/list was not answered on channel 0")
+	}
+	asked, _ := json.Marshal(out)
+	var fromAsk, fromClient []wire.RuntimeStatus
+	json.Unmarshal(asked, &fromAsk)
+	json.Unmarshal(c.call(t, 1, "runtimes/list", map[string]any{}), &fromClient)
+	if len(fromAsk) == 0 || len(fromAsk) != len(fromClient) {
+		t.Fatalf("asked %d, a client %d", len(fromAsk), len(fromClient))
+	}
+	for i := range fromAsk {
+		if fromAsk[i].Runtime.ID != fromClient[i].Runtime.ID {
+			t.Fatalf("%s != %s", fromAsk[i].Runtime.ID, fromClient[i].Runtime.ID)
+		}
+	}
+}

@@ -44,6 +44,8 @@ import { orderedFolders, folderLabel } from "./Sidebar";
 import { addFolderOn, hostLabel } from "./NewFolder";
 import { newSessionProjects, projectFolder, rememberProjectFolder, rememberedProjectFolders } from "../model/projects";
 import { hostAnswers } from "../model/capabilities";
+import { autoIsChosen, autoOffWords, autoOffered, autoRowWords, autoUsable, namedMachine } from "../model/autoMachine";
+import type { AutoMachinePick } from "../protocol/generated";
 import { GuardedChangeCards } from "./GuardedChange";
 import { KeptBubbles } from "./Kept";
 import { composerReason, line, markTitle } from "../model/orgPolicy";
@@ -197,6 +199,15 @@ export function NewAgent({ store, host, folder, folderName, down }: {
   // The project's draft (#5376): On ▾ moves the form to another machine and the words stay.
   const project = (store.folders.value[host] ?? []).find((p) => folderKey(p.folder.folder) === folderKey(folder))?.project;
   const draftKey = newSessionDraftKey(host, folderKey(folder), project);
+  // Which machine Auto would pick (#5375); the control plane decides, this draws what it says.
+  const autoMachine = useSignal<AutoMachinePick | null>(null);
+  const previewRuntime = (chosenRuntime === autoID ? autoPreview.value?.runtimeID : chosenRuntime) ?? undefined;
+  useEffect(() => {
+    if (!project || !previewRuntime) { autoMachine.value = null; return; }
+    let current = true;
+    void store.previewAutoMachine(project, previewRuntime).then((p) => { if (current) autoMachine.value = p; });
+    return () => { current = false; };
+  }, [project, previewRuntime, store.hosts.value]);
   store.drafts.move(newSessionDraftKey(host, folderKey(folder), undefined), draftKey);
   useEffect(() => {
     if (!offered || offered.host !== host || folderKey(offered.folder) !== folderKey(folder)) return;
@@ -430,7 +441,21 @@ export function NewAgent({ store, host, folder, folderName, down }: {
       // Kept until this start succeeds, so a retry after a timeout is the same start (#291).
       requestID: store.startRequestID(host, folder),
     };
-    const id = await store.start(host, request);
+    // Auto picks once, at start (#5375): the control plane says where, and the session says why.
+    let target = { host, folder };
+    if (project && autoIsChosen(`${host}|${folderKey(folder)}`, autoMachine.value) && previewRuntime) {
+      const pick = await store.previewAutoMachine(project, previewRuntime);
+      const row = pick?.machine ? (store.folders.value[pick.machine] ?? []).find((f) => f.project === project) : undefined;
+      if (pick?.machine && row && pick.machine !== host) {
+        // The draft and the account belong to the machine the form is on, not to this one.
+        target = { host: pick.machine, folder: row.folder.folder };
+        request.cwd = target.folder as never;
+        delete request.draftID;
+        delete request.accountID;
+        if (pick.text) request.autoChose = pick.text;
+      } else if (pick?.text && pick.machine) request.autoChose = pick.text;
+    }
+    const id = await store.start(target.host, request);
     if (!id) return false;
     // Kept for a stopped workspace (#691 US3): shown here until the agent it makes opens.
     if (typeof id === "object" && "kept" in id) {
@@ -453,7 +478,8 @@ export function NewAgent({ store, host, folder, folderName, down }: {
     // The runtime behind the form is the agent's now.
     const { draftID: _taken, ...rest } = form.value;
     form.value = rest;
-    go({ host, folder: folder, session: id });
+    namedMachine.value = undefined;
+    go({ host: target.host, folder: target.folder, session: id });
     return true;
   };
 
@@ -514,7 +540,7 @@ export function NewAgent({ store, host, folder, folderName, down }: {
       {!down && !store.hostIsOnline(host) && <div class="strips"><OfflineStrip store={store} host={host} /></div>}
       <div class="scroll new-heading">
         <Huddle focused={promptFocused.value} typed={typed.value} />
-        <ProjectSwitch store={store} host={host} folder={folder} folderName={folderName} down={down} />
+        <ProjectSwitch store={store} host={host} folder={folder} folderName={folderName} down={down} auto={autoMachine.value} />
         {personas.value.length > 0 && (
           <div class="persona-choice">
             {usablePersonas.length > 0 && (
@@ -857,8 +883,8 @@ function PersonaSwitch({ personas, picked, down, choose }: {
  * projects, and under it the machines with a folder of the one picked. A project with one folder
  * hides On and is named as its folder is today, so it looks as the folder's menu did.
  */
-function ProjectSwitch({ store, host, folder, folderName, down }: {
-  store: Store; host: string; folder: string; folderName: string; down: boolean;
+function ProjectSwitch({ store, host, folder, folderName, down, auto }: {
+  store: Store; host: string; folder: string; folderName: string; down: boolean; auto: AutoMachinePick | null;
 }) {
   const macID = store.macHostID.value;
   const projects = newSessionProjects(orderedFolders(store.hosts.value, store.folders.value, macID));
@@ -882,6 +908,7 @@ function ProjectSwitch({ store, host, folder, folderName, down }: {
     if (store.startsWhenUsed(id)) return `${name} (stopped, starts when used)`;
     return store.hostIsOnline(id) ? name : `${name} (offline)`;
   };
+  const onAuto = autoIsChosen(thisKey, auto);
   // Add Folder… on a machine that has none of the project's yet, as the last of On.
   const others = store.hosts.value.filter((h) => hostAnswers(h.state) && !current.folders.some((r) => r.host.id === h.id));
   return (
@@ -903,10 +930,14 @@ function ProjectSwitch({ store, host, folder, folderName, down }: {
       )}
       {current.folders.length > 1 && (
         <label class="persona-menu machine-switch" title="Start it on another machine">
-          <span aria-hidden="true">On {hostLabel(store, host)} <span class="caret">▾</span></span>
-          <select aria-label="On" disabled={down} value={String(here)}
+          <span aria-hidden="true">On {onAuto ? autoRowWords(auto) : hostLabel(store, host)} <span class="caret">▾</span></span>
+          <select aria-label="On" disabled={down} value={onAuto ? "auto" : String(here)}
             onChange={(e) => {
               const select = e.currentTarget as HTMLSelectElement;
+              if (select.value === "auto") {
+                namedMachine.value = undefined;
+                return;
+              }
               if (select.value.startsWith("add:")) {
                 const machineID = select.value.slice(4);
                 select.value = String(here);
@@ -914,8 +945,12 @@ function ProjectSwitch({ store, host, folder, folderName, down }: {
                 return;
               }
               const row = current.folders[Number(select.value)];
-              if (row) open(row);
+              // A machine named by hand is not remembered: the next start is Auto again (#5375).
+              if (row) { namedMachine.value = keyOf(row); open(row); }
             }}>
+            {autoOffered(auto) && (
+              <option value="auto" disabled={!autoUsable(auto)}>{autoUsable(auto) ? autoRowWords(auto) : `Auto (${autoOffWords(auto) ?? "no machine fits"})`}</option>
+            )}
             {current.folders.map((r, i) => <option key={keyOf(r)} value={String(i)}>{machine(r)}</option>)}
             {others.length > 0 && (
               <optgroup label="Add a folder on another machine">
