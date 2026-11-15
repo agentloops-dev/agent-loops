@@ -75,7 +75,7 @@ func TestConflictRiskAnalysisFromAWorktreeGivesAdvice(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	if err := os.WriteFile(filepath.Join(folder, "a.txt"), []byte("base\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(folder, "a.txt"), []byte("base\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	g(folder, "add", ".")
@@ -83,7 +83,7 @@ func TestConflictRiskAnalysisFromAWorktreeGivesAdvice(t *testing.T) {
 	g(folder, "update-ref", "refs/remotes/origin/main", "HEAD")
 	wt := filepath.Join(t.TempDir(), "lane")
 	g(folder, "worktree", "add", "-q", "-b", "agents/lane", wt, "origin/main")
-	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("lane\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("lane\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

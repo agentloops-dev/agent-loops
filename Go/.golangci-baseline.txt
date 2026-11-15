@@ -900,6 +900,7 @@ Go/internal/agentsd/forgewrite_test.go: Error return value of `json.Unmarshal` i
 Go/internal/agentsd/forgewrite_test.go: Error return value of `json.Unmarshal` is not checked (errcheck)
 Go/internal/agentsd/forgewrite_test.go: Error return value of `json.Unmarshal` is not checked (errcheck)
 Go/internal/agentsd/forgewrite_test.go: Error return value of `json.Unmarshal` is not checked (errcheck)
+Go/internal/agentsd/git.go: G702: Command injection via taint analysis (gosec)
 Go/internal/agentsd/gitcredentials.go: G101: Potential hardcoded credentials (gosec)
 Go/internal/agentsd/gitcredentials.go: G101: Potential hardcoded credentials (gosec)
 Go/internal/agentsd/gitcredentials.go: G306: Expect WriteFile permissions to be 0600 or less (gosec)
