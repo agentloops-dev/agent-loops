@@ -6,7 +6,8 @@
     "go-source": [
       "{projectRoot}/**/*",
       "!{projectRoot}/out/**/*",
-      "!{projectRoot}/internal/controlplane/walk/observability/run/**/*"
+      "!{projectRoot}/internal/controlplane/walk/observability/run/**/*",
+      "generator-sources"
     ],
     "go-test-reads": [
       "{workspaceRoot}/Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/**/*",
@@ -26,22 +27,40 @@
     "vet": {
       "executor": "nx:run-commands",
       "cache": true,
-      "options": { "command": "Go/scripts/go.sh vet ./...", "cwd": "{workspaceRoot}" },
-      "inputs": ["sharedGlobals", "go-toolchain", "go-source"],
-      "dependsOn": ["wire:gen", "design:gen"]
+      "options": {
+        "command": "Go/scripts/go.sh vet ./...",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "go-source"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
     },
     "test": {
       "executor": "nx:run-commands",
       "cache": true,
-      "options": { "command": "Go/scripts/go.sh test -race ./...", "cwd": "{workspaceRoot}" },
+      "options": {
+        "command": "Go/scripts/go.sh test -race ./...",
+        "cwd": "{workspaceRoot}"
+      },
       "inputs": [
         "sharedGlobals",
         "go-toolchain",
-        { "runtime": "xcrun swiftc --version 2>&1 || echo no-swift" },
+        {
+          "runtime": "xcrun swiftc --version 2>&1 || echo no-swift"
+        },
         "go-source",
         "go-test-reads"
       ],
-      "dependsOn": ["wire:gen", "design:gen"]
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
     }
   }
 }

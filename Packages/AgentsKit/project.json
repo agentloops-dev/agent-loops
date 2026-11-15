@@ -10,7 +10,8 @@
       "{projectRoot}/Tests/AcceptProbe/**/*",
       "{projectRoot}/Tests/AgentsKitTests/Support/**/*",
       "{projectRoot}/Tests/AgentsKitTests/Fixtures/**/*",
-      "swift-toolchain"
+      "swift-toolchain",
+      "generator-sources"
     ]
   },
   "targets": {
@@ -22,8 +23,14 @@
         "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --filter '^AgentsKitTests\\.'",
         "cwd": "{workspaceRoot}"
       },
-      "inputs": ["sharedGlobals", "swift-package", "{projectRoot}/Tests/AgentsKitTests/**/*"],
-      "dependsOn": ["wire:gen"]
+      "inputs": [
+        "sharedGlobals",
+        "swift-package",
+        "{projectRoot}/Tests/AgentsKitTests/**/*"
+      ],
+      "dependsOn": [
+        "wire:gen"
+      ]
     },
     "test-control": {
       "executor": "nx:run-commands",
@@ -39,7 +46,9 @@
         "{projectRoot}/Tests/AgentsKitControlTests/**/*",
         "{workspaceRoot}/Web/test/vectors.json"
       ],
-      "dependsOn": ["wire:gen"]
+      "dependsOn": [
+        "wire:gen"
+      ]
     },
     "test-integration": {
       "executor": "nx:run-commands",
@@ -49,8 +58,14 @@
         "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --filter '^AgentsKitIntegrationTests\\.'",
         "cwd": "{workspaceRoot}"
       },
-      "inputs": ["sharedGlobals", "swift-package", "{projectRoot}/Tests/AgentsKitIntegrationTests/**/*"],
-      "dependsOn": ["wire:gen"]
+      "inputs": [
+        "sharedGlobals",
+        "swift-package",
+        "{projectRoot}/Tests/AgentsKitIntegrationTests/**/*"
+      ],
+      "dependsOn": [
+        "wire:gen"
+      ]
     },
     "test-repo": {
       "executor": "nx:run-commands",
@@ -86,7 +101,11 @@
         "{workspaceRoot}/scripts/lint.sh",
         "{workspaceRoot}/.agents/workflows/**/*"
       ],
-      "dependsOn": ["wire:gen", "design:gen", "web:build"]
+      "dependsOn": [
+        "wire:gen",
+        "design:gen",
+        "web:build"
+      ]
     }
   }
 }

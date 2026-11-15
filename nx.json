@@ -10,33 +10,65 @@
       "{workspaceRoot}/nx.json",
       "{workspaceRoot}/package.json",
       "{workspaceRoot}/pnpm-lock.yaml",
-      { "env": "NX_SPIKE_SALT" }
+      {
+        "env": "NX_SPIKE_SALT"
+      }
     ],
     "go-toolchain": [
-      { "runtime": "go version" },
-      { "env": "CGO_ENABLED" },
-      { "env": "GOFLAGS" },
-      { "env": "GOEXPERIMENT" },
+      {
+        "runtime": "go version"
+      },
+      {
+        "env": "CGO_ENABLED"
+      },
+      {
+        "env": "GOFLAGS"
+      },
+      {
+        "env": "GOEXPERIMENT"
+      },
       "{workspaceRoot}/Go/scripts/go.sh"
     ],
     "swift-toolchain": [
-      { "runtime": "xcrun swift --version 2>&1" },
-      { "runtime": "xcodebuild -version" },
-      { "env": "AGENTS_QUARANTINE" },
-      { "env": "AGENTS_RUN_FLAKY" },
+      {
+        "runtime": "xcrun swift --version 2>&1"
+      },
+      {
+        "runtime": "xcodebuild -version"
+      },
+      {
+        "env": "AGENTS_QUARANTINE"
+      },
+      {
+        "env": "AGENTS_RUN_FLAKY"
+      },
       "{workspaceRoot}/scripts/build-cache.sh"
     ],
     "node-toolchain": [
-      { "runtime": "node --version" },
+      {
+        "runtime": "node --version"
+      },
       "{workspaceRoot}/Web/.node-version"
     ],
     "wire-source": [
       "{workspaceRoot}/Packages/Wire/**/*"
+    ],
+    "generator-sources": [
+      "wire-source",
+      "{workspaceRoot}/Go/cmd/wiregen/**/*",
+      "{workspaceRoot}/design/tokens.json",
+      "{workspaceRoot}/scripts/design.py"
     ]
   },
   "targetDefaults": {
-    "test": { "cache": true },
-    "build": { "cache": true },
-    "gen": { "cache": true }
+    "test": {
+      "cache": true
+    },
+    "build": {
+      "cache": true
+    },
+    "gen": {
+      "cache": true
+    }
   }
 }
