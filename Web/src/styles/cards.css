@@ -21,11 +21,12 @@ dialog.sheet:has(.subagent-steps) { width: min(720px, calc(100vw - 32px)); max-h
    the primary last). The yellow left edge and the label over them are the one mark of needs you (#5016). */
 .waiting-label { margin: 4px 0 0; font-size: 0.6875rem; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tint-attention); }
 .card.ask { border-left: 3px solid var(--tint-attention); border-radius: var(--radius-floating); }
-.ask-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.ask-glyph { flex: none; color: var(--tint-attention); align-self: center; }
-.ask-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ask-head { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.ask-glyph { flex: none; color: var(--tint-attention); margin-top: 0.2em; }
+.ask-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ask-title { min-width: 0; overflow-wrap: anywhere; }
 .ask-title p { margin: 0; }
-.ask-asker { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; color: var(--paper-secondary); }
+.ask-asker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; color: var(--paper-secondary); }
 .ask p { margin: 0; }
 .ask-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--paper-rule); padding-top: 8px; margin-top: 2px; }
 .ask-foot .spacer { flex: 1; }
