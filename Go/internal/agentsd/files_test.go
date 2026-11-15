@@ -174,7 +174,7 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 	c.send(string(b))
 	answered, heard := false, false
-	for deadline := time.After(20 * time.Second); !answered || !heard; {
+	for deadline := time.After(waitLimit(t)); !answered || !heard; {
 		select {
 		case line := <-c.out:
 			var m message
@@ -189,7 +189,7 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 				heard = ok(m.Method, m.Params)
 			}
 		case <-deadline:
-			t.Fatalf("%s: answered %v, heard %s %v", method, answered, what, heard)
+			waitFailed(t, "%s: answered %v, heard %s %v", method, answered, what, heard)
 		}
 	}
 }

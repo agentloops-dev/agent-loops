@@ -5,12 +5,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { load } from "./load.mjs";
+import { eventually } from "./eventually.mjs";
 
 delete globalThis.BroadcastChannel;
 const { Session } = await load("src/session.ts");
 const w = await load("test/wire.ts");
 const v = JSON.parse(readFileSync(new URL("./vectors.json", import.meta.url)));
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const origin = "https://agents.example.com";
 const control = w.unhex(v.control.public);
 
@@ -50,19 +50,22 @@ async function pendingKey(made = Date.now()) {
   return { privateKey: pair.privateKey, publicKey: pair.publicKey, client: w.newClientID(), made };
 }
 
-function session(net, pending) {
+/** A session whose link is stopped when the test ends, also when an assert fails first. */
+function session(t, net, pending) {
   const keys = new w.MemoryKeyStore();
   const store = new w.MemoryPendingStore();
   store.pending = pending;
-  return { keys, store, session: new Session(keys, origin, () => net.open(), store) };
+  const s = new Session(keys, origin, () => net.open(), store);
+  t.after(() => s.link.stop());
+  return { keys, store, session: s };
 }
 
-test("a ticket pairs the pending key as this browser's, and the link opens with it", async () => {
+test("a ticket pairs the pending key as this browser's, and the link opens with it", async (t) => {
   const pending = await pendingKey();
   const net = controlPlane(pending, (m) => m.method === "signIn/ticket" ? { result: { client: pending.client } } : { error: { code: -32601, message: "no" } });
-  const { keys, store, session: s } = session(net, pending);
+  const { keys, store, session: s } = session(t, net, pending);
   s.start(null, { ticket: "T1" });
-  await wait(100);
+  await eventually(() => s.state.value.kind === "open" && net.made[1]?.sent[0]);
   const signIn = net.made[0].sent;
   assert.equal(signIn[0].auth.id, "s:" + pending.client);
   assert.equal(typeof signIn[0].auth.publicKey, "string");
@@ -72,43 +75,41 @@ test("a ticket pairs the pending key as this browser's, and the link opens with 
   assert.equal(store.pending, null);
   assert.equal(net.made[1].sent[0].auth.id, "c:" + pending.client);
   assert.equal(s.state.value.kind, "open");
-  s.link.stop();
 });
 
-test("personSuspended on the ticket shows the suspended page, unpaired", async () => {
+test("personSuspended on the ticket shows the suspended page, unpaired", async (t) => {
   const pending = await pendingKey();
   const net = controlPlane(pending, () => ({ error: { code: -32078, message: "off" } }));
-  const { keys, session: s } = session(net, pending);
+  const { keys, session: s } = session(t, net, pending);
   s.start(null, { ticket: "T1" });
-  await wait(100);
+  await eventually(() => s.state.value.kind === "suspended");
   assert.deepEqual(s.state.value, { kind: "suspended", unpaired: true });
   assert.equal(keys.record, null);
 });
 
-test("orgSignInRequired asks for the provider it names", async () => {
+test("orgSignInRequired asks for the provider it names", async (t) => {
   const pending = await pendingKey();
   const net = controlPlane(pending, () => ({ error: { code: -32077, message: "use Okta", data: { provider: "okta", name: "Okta" } } }));
-  const { session: s } = session(net, pending);
+  const { session: s } = session(t, net, pending);
   s.start(null, { ticket: "T1" });
-  await wait(100);
+  await eventually(() => s.orgRequired.value);
   assert.deepEqual(s.orgRequired.value, { id: "okta", name: "Okta", order: 0 });
   assert.equal(s.pairingError.value, null);
   assert.equal(s.state.value.kind, "unpaired");
-  s.link.stop();
 });
 
-test("an old pending sign-in, or the provider's error, is said and nothing is dialled for it", async () => {
+test("an old pending sign-in, or the provider's error, is said and nothing is dialled for it", async (t) => {
   const old = await pendingKey(Date.now() - 11 * 60_000);
   const net = controlPlane(old, () => ({}));
-  const { session: s, store } = session(net, old);
+  const { session: s, store } = session(t, net, old);
   s.start(null, { ticket: "T1" });
-  await wait(30);
+  await eventually(() => s.pairingError.value);
   assert.match(s.pairingError.value, /took too long/);
   assert.equal(net.made.length, 0);
   assert.equal(store.pending, null);
   const fresh = await pendingKey();
-  const other = session(controlPlane(fresh, () => ({})), fresh);
+  const other = session(t, controlPlane(fresh, () => ({})), fresh);
   other.session.start(null, { error: "access_denied", message: "You said no." });
-  await wait(30);
+  await eventually(() => other.session.pairingError.value);
   assert.equal(other.session.pairingError.value, "You said no.");
 });

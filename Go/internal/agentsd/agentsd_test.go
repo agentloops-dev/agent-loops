@@ -39,7 +39,7 @@ func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMes
 	p, _ := json.Marshal(params)
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
 	c.in <- string(b)
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(waitLimit(t))
 	for {
 		select {
 		case line := <-c.out:
@@ -53,7 +53,7 @@ func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMes
 			}
 			return m.Result
 		case <-deadline:
-			t.Fatalf("%s: no answer", method)
+			waitFailed(t, "%s: no answer", method)
 		}
 	}
 }
