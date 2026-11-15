@@ -120,6 +120,8 @@ func TestApprovalDeploysAndTheirAnswer(t *testing.T) {
 				 "payload":{"workflow":"../evil"}},
 				{"id":10,"sha":"abc","ref":"v0.0.7","environment":"production","task":"deploy:approval","created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",
 				 "payload":{"workflow":"deploy.yml"}}]`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/o/r/actions/runs"):
+			io.WriteString(w, `{"workflow_runs":[]}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/deployments/7/statuses"):
 			io.WriteString(w, `[{"id":70,"state":"pending","created_at":"`+now+`","log_url":"https://github.com/o/r/actions/runs/3"}]`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/deployments/8/statuses"):
