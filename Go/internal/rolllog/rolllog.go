@@ -145,3 +145,4 @@ func (f *File) reopen() error {
 	f.out, f.info = out, info
 	return nil
 }
+// Spike #5613: a Go-only change (criterion 7).
