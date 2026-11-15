@@ -146,3 +146,4 @@ func (f *File) reopen() error {
 	return nil
 }
 // Spike #5613: a Go-only change (criterion 7).
+// Spike #5613: a second Go-only change (criterion 7).
