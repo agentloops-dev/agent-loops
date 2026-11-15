@@ -260,6 +260,28 @@ when you are one of its reviewers. The row says the tag or branch, and what it w
 - Agent Loops reads the waiting runs every two minutes. A workflow can wait on the github
   server's `deploy.waiting` event instead.
 
+### On any GitHub plan
+
+GitHub Free has required reviewers on public repositories only. So a private repository on
+GitHub Free can't hold a deploy for its reviewers (#5564). The starters (`make_app_repository`)
+hold a deploy in another way, which works on every plan:
+
+1. On a version tag, the starter's `release.yml` makes a GitHub Deployment of the task
+   `deploy:approval`, with the status `pending`. Its payload names the workflow that deploys,
+   for example `{"workflow": "deploy.yml"}`.
+2. The Deployment shows in **Needs You** as a **Deploy** row, as above: *deploy.yml to
+   production · v0.1.0 waits for your approval*. Its reading says the workflow that
+   **Approve** starts, and the run that asked.
+3. **Approve** sets the Deployment's status to `queued` and starts that workflow on the tag
+   (`workflow_dispatch`, with the input `deployment`). The workflow does nothing unless the
+   Deployment is `queued`; then it deploys and sets the status to `in_progress`, then
+   `success` or `failure`. **Reject** sets the status to `inactive`, and nothing deploys.
+
+Here the gate is Agent Loops': only a window or a device answers it, never an agent. The
+GitHub App needs the **Deployments** and **Actions** permissions, read and write. A
+repository of your own can use the same steps: copy `release.yml` and the check at the start
+of the starter's deploy workflow.
+
 A release to the App Store is one of these (#3657): the **app-store** workflow waits at its
 `app-store` environment, and Approve sends the version to App Review
 ([Release Agent Loops](release-agents-host.md)). The version is then on the release's Work

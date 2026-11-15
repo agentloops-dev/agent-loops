@@ -123,7 +123,10 @@ ready-made skill `start-a-new-app`, and ticks each task as it does it. See
   the GitHub App on it, and answer the card. The agent fills in the starter and adds the
   repository as a folder of its own. The first-build session stays in **First build**.
 - At the end, the agent sends the first build to TestFlight, or deploys the first version.
-  Approve it in **Needs You**. The last task then shows **Done**.
+  Approve it in **Needs You**. The last task then shows **Done**. This works on GitHub
+  Free too: the starter's deploy waits for your approval in Agent Loops, not for a GitHub
+  environment's reviewers, which GitHub Free has on public repositories only (#5564). See
+  [On any GitHub plan](use-github.md#on-any-github-plan).
 
 ## 5. Go to the usual window
 

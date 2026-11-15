@@ -1,5 +1,5 @@
-// Settings ▸ You ▸ Secrets (#1760, #3632), as the window's (Shared/UI/UserScope): the person's secrets
-// and cards, by name only, which go to every machine of theirs.
+// The person's secrets and cards (#1760, #3632), by name only, which go to every machine of theirs: the sheets, Reveal
+// and Copy, and the read, as the window's (Shared/UI/UserScope/SecretSheets.swift). The Secrets page (#5257) draws them.
 import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import type { Store } from "../model/store";
@@ -8,21 +8,14 @@ import { Capability } from "../protocol/capabilities.generated";
 import { CallFailed } from "../wire/link";
 import { openSealedSecret, sealSecret } from "../wire/sealing";
 import { describe, methodNotFound } from "../model/errors";
-import { about, addCard, addSecret, asksForAgents, type Card, cardConfirm, cardKind, cardKindLabel, type CardPart, cardParts,
-  cardProblem, cardRule, cardValue, clipboardSeconds, copiedLine, copiedSeconds, copyRefused, describedAs, didNotOpen,
-  isSecretName, leftOn, nameHint, nextVersion, noCopyYet, parseCard, partLabels, revealNeedsNewerPlane, secretsFoot,
-  secretsLeft, secretsTitle, shownFor, shownSeconds, spacedNumber, tidyCard, waitingOn } from "../model/userScope";
-import { askBeforeUseWords } from "../model/askBeforeUse";
-import { hint, machineNames, notBackedUp, onlyMachine, onlyMachineLine, rowLine } from "../model/secretInfo";
-import { SecretInfoLine } from "./SecretInfoLine";
+import { type Card, cardConfirm, cardKind, type CardPart, cardParts, cardProblem, cardRule, cardValue, clipboardSeconds, copiedSeconds,
+  copyRefused, describedAs, didNotOpen, isSecretName, nameHint, nextVersion, noCopyYet, parseCard, partLabels, revealNeedsNewerPlane,
+  shownSeconds, spacedNumber, tidyCard } from "../model/userScope";
 import { AskBeforeUseCheck } from "./AskBeforeUse";
 import { Modal } from "./Modal";
 import { SecretDescriptionField } from "./SecretDescription";
-import { ask } from "./MessageKinds";
-import { Icon } from "./Icon";
-import { HeadWithUpdate } from "./LastUpdate";
 
-function sentence(error: unknown): string {
+export function sentence(error: unknown): string {
   if (error instanceof CallFailed && error.code === methodNotFound) return "This control plane does not keep settings for you yet. Update it.";
   return describe(error);
 }
@@ -30,7 +23,7 @@ function sentence(error: unknown): string {
 /** Seals the value here to each of the person's machines and apps (#3397), and sends only the envelopes: the
  * control plane never has it. kind is "card" for a card (#3531). Ask before use (#4016) is sealed into every
  * copy's associated data, so it is set here, on Add and Replace: no client can read a value back to seal it again. */
-async function setSecret(store: Store, name: string, value: string, replacing: UserSecretRow | null, ask: boolean,
+export async function setSecret(store: Store, name: string, value: string, replacing: UserSecretRow | null, ask: boolean,
   description: string, kind?: UserSecretKind) {
   const version = nextVersion(replacing, Date.now());
   const { recipients, user } = await store.link.call("user/secretRecipients", {});
@@ -40,7 +33,9 @@ async function setSecret(store: Store, name: string, value: string, replacing: U
     ...(ask ? { needsApproval: true } : {}), ...describedAs(description) });
 }
 
-function SecretSheet({ store, replacing, close }: { store: Store; replacing: UserSecretRow | null; close: () => void }) {
+export function SecretSheet({ store, replacing, close, saved }: { store: Store; replacing: UserSecretRow | null; close: () => void;
+  /** After a save, with the name: the Secrets page selects it (#5257). */
+  saved?: (name: string) => void }) {
   const name = useSignal(replacing?.name ?? "");
   const value = useSignal("");
   // A new secret starts on (#4162); a replaced one keeps its own.
@@ -53,6 +48,7 @@ function SecretSheet({ store, replacing, close }: { store: Store; replacing: Use
     try {
       await setSecret(store, name.value.trim(), value.value, replacing, ask.value, description.value);
       value.value = "";
+      saved?.(name.value.trim());
       close();
     } catch (error) {
       problem.value = sentence(error);
@@ -84,7 +80,9 @@ function SecretSheet({ store, replacing, close }: { store: Store; replacing: Use
 }
 
 /** Add a Card… and a card's Replace… (#3531): only a card with a spend limit (a merchant or category lock is recommended). */
-function CardSheet({ store, replacing, close }: { store: Store; replacing: UserSecretRow | null; close: () => void }) {
+export function CardSheet({ store, replacing, close, saved }: { store: Store; replacing: UserSecretRow | null; close: () => void;
+  /** After a save, with the name: the Secrets page selects it (#5257). */
+  saved?: (name: string) => void }) {
   const name = useSignal(replacing?.name ?? "");
   const number = useSignal("");
   const expiry = useSignal("");
@@ -109,6 +107,7 @@ function CardSheet({ store, replacing, close }: { store: Store; replacing: UserS
       await setSecret(store, name.value.trim(), cardValue(card), replacing, ask.value, description.value, cardKind);
       number.value = "";
       cvc.value = "";
+      saved?.(name.value.trim());
       close();
     } catch (error) {
       problem.value = sentence(error);
@@ -155,7 +154,7 @@ function CardSheet({ store, replacing, close }: { store: Store; replacing: UserS
 }
 
 /** A value shown (#5115), and when it hides. */
-interface Shown { name: string; version: number; value: string; card: Card | null; until: number }
+export interface Shown { name: string; version: number; value: string; card: Card | null; until: number }
 /** What was just copied: the row, and a card's part. */
 interface Copied { name: string; part: CardPart | null }
 
@@ -165,7 +164,7 @@ interface Copied { name: string; part: CardPart | null }
  * entry first), opens it with its own key, and shows or copies the value. One value at a time, for 30 s, in memory
  * only; it hides when the tab is hidden, the section closes, or the secret changes.
  */
-function useSecretShow(store: Store, rows: UserSecretRow[]) {
+export function useSecretShow(store: Store, rows: UserSecretRow[]) {
   const shown = useSignal<Shown | null>(null);
   const copied = useSignal<Copied | null>(null);
   const fetching = useSignal<string | null>(null);
@@ -273,10 +272,10 @@ function useSecretShow(store: Store, rows: UserSecretRow[]) {
   return { can, shown, copied, fetching, problems, noCopy, now, toggle, copy };
 }
 
-type SecretShow = ReturnType<typeof useSecretShow>;
+export type SecretShow = ReturnType<typeof useSecretShow>;
 
 /** The value shown, in a well that a person cannot select: Copy is the only way to copy it, so each copy is audited. */
-function ShownValue({ row, shown, show }: { row: UserSecretRow; shown: Shown; show: SecretShow }) {
+export function ShownValue({ row, shown, show }: { row: UserSecretRow; shown: Shown; show: SecretShow }) {
   if (!shown.card) return <code class="secret-shown" aria-label={`${row.name} value`}>{shown.value}</code>;
   const card = shown.card;
   return (
@@ -297,52 +296,9 @@ function ShownValue({ row, shown, show }: { row: UserSecretRow; shown: Shown; sh
   );
 }
 
-function SecretItem({ row, replace, remove, down, names, oneMachine, show }: { row: UserSecretRow; replace: () => void;
-  remove: () => void; down: boolean; names: Record<string, string>; oneMachine: boolean; show: SecretShow }) {
-  const left = leftOn(row);
-  const waiting = waitingOn(row);
-  const warning = oneMachine ? null : notBackedUp(row, names);
-  const shown = show.shown.value?.name === row.name ? show.shown.value : null;
-  const copied = show.copied.value?.name === row.name ? show.copied.value : null;
-  const off = down || show.noCopy.value.has(row.name) || show.fetching.value === row.name;
-  const problem = show.problems.value[row.name];
-  return (
-    <li class="user-secret">
-      <code>{row.name}</code>
-      {row.kind === cardKind && <span class="hint">{cardKindLabel}</span>}
-      {!shown && <code class="hint secret-hint" aria-label={row.hint ? `Ends in ${row.hint}` : "Value hidden"}>{hint(row.hint)}</code>}
-      {shown && <ShownValue row={row} shown={shown} show={show} />}
-      <p class="hint">{about(row.description)}</p>
-      <SecretInfoLine parts={rowLine(row)} />
-      {shown && <p class="hint">{shownFor(Math.ceil((shown.until - show.now.value) / 1000), shown.card !== null)}</p>}
-      {copied && <p class="hint vouched" role="status"><span aria-hidden="true">✓ </span>{copiedLine(copied.part)}</p>}
-      {row.needsApproval && <span class="hint"><Icon name="hand" />{" "}{show.can ? asksForAgents : askBeforeUseWords.asks}</span>}
-      {show.noCopy.value.has(row.name) && <p class="hint attention">{noCopyYet}</p>}
-      {problem && <p class="failure" role="alert">{problem}</p>}
-      {waiting && <p class="hint attention">{waiting}</p>}
-      {left && <p class="hint attention">{left}</p>}
-      {warning && <p class="hint warning"><Icon name="triangle-alert" />{" "}{warning}</p>}
-      <span class="row-actions">
-        {show.can && (
-          <>
-            <button type="button" disabled={off} aria-label={`${shown ? "Hide" : "Reveal"} ${row.name}`} onClick={() => void show.toggle(row)}>
-              {show.fetching.value === row.name ? "…" : shown ? "Hide" : "Reveal"}
-            </button>
-            <button type="button" disabled={off} aria-label={`Copy ${row.name}`} onClick={() => void show.copy(row)}>
-              {copied && copied.part === null ? "Copied ✓" : "Copy"}
-            </button>
-          </>
-        )}
-        <button type="button" disabled={down} onClick={replace}>Replace…</button>
-        <button type="button" class="destructive" disabled={down} onClick={remove}>Remove…</button>
-      </span>
-    </li>
-  );
-}
-
 /** What the control plane keeps for the person, read again on each control/userSettingsChanged and on each
  * connection. */
-function useUserScope(store: Store, down: boolean) {
+export function useUserScope(store: Store, down: boolean) {
   const names = useSignal<UserSecretNames | null>(null);
   const problem = useSignal<string | null>(null);
   /** When the names were read (#5146), for the "Last update" line. */
@@ -359,52 +315,4 @@ function useUserScope(store: Store, down: boolean) {
   const changes = store.userScopeChanges.value;
   useEffect(() => { if (!down) void load(); }, [changes, down]);
   return { names, problem, load, readAt };
-}
-
-export function SecretsSection({ store, down }: { store: Store; down: boolean }) {
-  const { names, problem, load, readAt } = useUserScope(store, down);
-  const adding = useSignal(false);
-  const addingCard = useSignal(false);
-  const replacing = useSignal<UserSecretRow | null>(null);
-  const remove = async (name: string) => {
-    if (!await ask(`Remove ${name}? It is taken out of the sealed store on every machine of yours.`)) return;
-    try {
-      await store.link.call("user/removeSecret", { name });
-    } catch (error) {
-      store.say(sentence(error));
-    }
-    await load();
-  };
-  const left = store.secretsLeft.value;
-  const rows = names.value?.secrets ?? [];
-  const show = useSecretShow(store, rows);
-  const hostNames = machineNames(store.hosts.value);
-  const only = onlyMachine(rows);
-  return (
-    <section aria-labelledby="settings-secrets">
-      <HeadWithUpdate id="settings-secrets" title={secretsTitle} at={readAt.value} />
-      {problem.value && <p class="hint">{problem.value}</p>}
-      {left && (
-        <div class="banner attention" role="status">
-          <p>{secretsLeft(left)}</p>
-          <button type="button" onClick={() => { store.secretsLeft.value = null; }}>OK</button>
-        </div>
-      )}
-      {only && <p class="hint attention"><Icon name="triangle-alert" />{" "}{onlyMachineLine(only, hostNames)}</p>}
-      <ul class="user-secrets">
-        {rows.map((row) => (
-          <SecretItem key={row.name} row={row} down={down} names={hostNames} oneMachine={only !== null} show={show}
-            replace={() => { replacing.value = row; }} remove={() => void remove(row.name)} />
-        ))}
-      </ul>
-      <button type="button" disabled={down} onClick={() => { adding.value = true; }}>{addSecret}</button>
-      <button type="button" disabled={down} onClick={() => { addingCard.value = true; }}>{addCard}</button>
-      <p class="hint">{secretsFoot}</p>
-      {adding.value && <SecretSheet store={store} replacing={null} close={() => { adding.value = false; void load(); }} />}
-      {addingCard.value && <CardSheet store={store} replacing={null} close={() => { addingCard.value = false; void load(); }} />}
-      {replacing.value && (replacing.value.kind === cardKind
-        ? <CardSheet store={store} replacing={replacing.value} close={() => { replacing.value = null; void load(); }} />
-        : <SecretSheet store={store} replacing={replacing.value} close={() => { replacing.value = null; void load(); }} />)}
-    </section>
-  );
 }

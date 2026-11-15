@@ -217,3 +217,31 @@ func TestTheLanesOwnRequestIsLeftOut(t *testing.T) {
 		t.Errorf("%+v", rep)
 	}
 }
+
+// #5661: when git cannot find the default branch, the error says git's own words, so a folder
+// git cannot run in (a file URL, a cancelled call) is not taken for a repo with no main.
+func TestNoDefaultBranchSaysWhatGitSaid(t *testing.T) {
+	s := newScratch(t)
+	_, err := Analyse(context.Background(), Options{Repo: "file://" + s.repo})
+	if err == nil || !strings.Contains(err.Error(), "git rev-parse:") || !strings.Contains(err.Error(), "file://") {
+		t.Fatalf("a folder git cannot run in: %v", err)
+	}
+	empty := t.TempDir()
+	run(t, empty, "init", "-q", "-b", "main")
+	_, err = Analyse(context.Background(), Options{Repo: empty})
+	if err == nil || !strings.Contains(err.Error(), "git rev-parse: fatal:") {
+		t.Fatalf("a repo with no default branch: %v", err)
+	}
+}
+
+// A worktree of the clone finds the default branch, as a lane's worktree does.
+func TestAWorktreeFindsTheDefaultBranch(t *testing.T) {
+	s := newScratch(t)
+	wt := filepath.Join(t.TempDir(), "lane")
+	run(t, s.repo, "worktree", "add", "-q", "-b", "lane", wt, "origin/main")
+	write(t, wt, "a.txt", lots("lane"))
+	rep, err := Analyse(context.Background(), Options{Repo: wt})
+	if err != nil || rep.Main != run(t, s.repo, "rev-parse", "origin/main") || rep.Advice != Go {
+		t.Fatalf("%v %+v", err, rep)
+	}
+}

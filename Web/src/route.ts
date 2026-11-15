@@ -78,10 +78,14 @@ export function parseRoute(hash: string): Route {
     if (moved.section) r.section = moved.section;
     return r;
   }
-  // Your setup (#3630) went (#3998): Runtimes to Status, its connectors, secrets and accounts to Settings ▸ You.
+  // The Secrets page (#5257): #/secrets, and one secret at #/secrets/<name>; Status ▸ Secrets, which writes them.
+  if (first === "secrets") return section ? { nav: "status", section: "secrets", item: decodeURIComponent(path.slice("secrets/".length)) } : { nav: "status", section: "secrets" };
+  // Your setup (#3630) went (#3998): Runtimes to Status, its connectors and accounts to Settings ▸ You, and its secrets to
+  // the Secrets page (#5257).
   if (first === "setup") {
     const page = section === undefined ? undefined : decodeURIComponent(section);
-    return page === "mcp" || page === "secrets" || page === "accounts" ? { nav: "settings", section: page } : { nav: "status", section: "runtimes" };
+    if (page === "secrets") return { nav: "status", section: "secrets" };
+    return page === "mcp" || page === "accounts" ? { nav: "settings", section: page } : { nav: "status", section: "runtimes" };
   }
   // Docs and Messages went into Work (#5267): #/docs/<ref> and #/messages/<key> are Work's pages now.
   if (first === "docs" || first === "messages") {
@@ -97,6 +101,8 @@ export function parseRoute(hash: string): Route {
     if (nav === "machines" && section === "mcp") return { nav: "settings", section };
     // Events left Reports ▸ Records for Status (#3998).
     if (nav === "reports" && section === "events") return { nav: "status", section };
+    // Settings ▸ You ▸ Secrets is a page of its own (#5257): an old link opens it.
+    if (nav === "settings" && section === "secrets") return { nav: "status", section };
     // The Multiplier page took the Achievements page's place (#3990): an old link opens it.
     if (nav === "reports" && section === "achievements") return { nav, section: "multiplier" };
     // An item keeps its own state after the "?" too: #/reports/value/builds?repo=… (#5178).
@@ -166,6 +172,8 @@ export function aloneFolder(r: Route): AloneFolder | undefined {
 /** A section's page's address: #/reports/spend; #/ for the Overview. */
 function sectionHash(r: Route): string {
   if (!r.nav) return "#/";
+  // The Secrets page's own address (#5257); an item of the person's is its name, which may hold a "/" of another place's id.
+  if (r.nav === "status" && r.section === "secrets") return "#/secrets" + (r.item ? "/" + r.item.split("/").map(encodeURIComponent).join("/") : "");
   return `#/${r.nav}` + (r.section ? "/" + encodeURIComponent(r.section) + (r.item ? "/" + encodeURIComponent(r.item) : "")
     // A list's filters stay off an item's page, but Reports' pages under another keep theirs: #/reports/value/builds?… (#5178).
     + (r.query && (!r.item || r.nav === "reports") ? `?${r.query}` : "") : "");
@@ -175,7 +183,8 @@ function sectionHash(r: Route): string {
  * again as its new place. */
 export function isOldAddress(hash: string): boolean {
   return /^#\/?(console|a|setup)(\/|$)/.test(hash) || /^#\/?machines\/(runtimes|mcp)$/.test(hash)
-    || /^#\/?reports\/events$/.test(hash) || /^#\/?(docs|messages)(\/|$)/.test(hash);
+    || /^#\/?reports\/events$/.test(hash) || /^#\/?(docs|messages)(\/|$)/.test(hash)
+    || /^#\/?(settings|status)\/secrets$/.test(hash);
 }
 
 /** The section a route is in: Agents for a host's places, the Overview for none. */

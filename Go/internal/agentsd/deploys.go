@@ -24,6 +24,12 @@ import (
 // device answers an approval (Role.Allows), never an agent. Read on a poll of its own, as For
 // Review's pull requests are (reviews.go), each GitHub repo once; the github server's
 // deploy.waiting event is the same wait, for workflows and waits.
+//
+// On any GitHub plan (#5564), a starter's deploy waits on a GitHub Deployment of the task
+// deploy:approval instead (githubmcp/approvals.go): GitHub Free has required reviewers on public
+// repositories only. Approve dispatches the starter's deploy workflow and Reject closes the
+// Deployment, with the person's connection. GitHub holds no gate then; the gate is this one,
+// which only a window or a device answers.
 
 const (
 	// deployCommitsShown bounds the commits a deploy's reading lists.
@@ -46,11 +52,19 @@ type waitingDeploy struct {
 }
 
 // key is the approval's key: owner/name/<run id>.
-func (w waitingDeploy) key() string { return w.repo + "/" + strconv.Itoa(w.Run.Run.ID) }
+func (w waitingDeploy) key() string {
+	if w.Approval != nil {
+		return w.repo + "/deployment/" + strconv.FormatInt(w.Approval.Deployment.ID, 10)
+	}
+	return w.repo + "/" + strconv.Itoa(w.Run.Run.ID)
+}
 
 // digest is the wait the person was shown: its attempt and environments. An answer to an
 // earlier one is refused.
 func (w waitingDeploy) digest() string {
+	if a := w.Approval; a != nil {
+		return "deployment:" + strconv.FormatInt(a.Deployment.ID, 10) + ":" + strconv.FormatInt(a.Deployment.Statuses[len(a.Deployment.Statuses)-1].ID, 10)
+	}
 	ids := make([]string, len(w.Environments))
 	for i, id := range w.EnvironmentIDs() {
 		ids[i] = strconv.FormatInt(id, 10)
@@ -192,6 +206,15 @@ func (d *Daemon) readDeploy(ctx context.Context, folder, key string) (wire.Guard
 		same(fmt.Sprintf("Run: %s, attempt %d, %s", run.Name, run.Attempt, run.URL)),
 		same("Waits for: " + w.EnvironmentNames()),
 	}
+	if a := w.Approval; a != nil {
+		lines = []wire.GuardedDiffLine{
+			same("Approve starts: " + a.Workflow),
+			same("Waits for: " + w.EnvironmentNames()),
+		}
+		if run.URL != "" {
+			lines = append(lines, same("Asked by: "+run.URL))
+		}
+	}
 	if len(w.Reviewers) > 0 {
 		lines = append(lines, same("Reviewers: "+strings.Join(w.Reviewers, ", ")))
 	}
@@ -261,7 +284,13 @@ func (d *Daemon) answerDeploy(ctx context.Context, folder, key string, digest *s
 	if approve {
 		comment = deployApproved
 	}
-	if err := gh.ReviewDeployments(ctx, w.repo, w.Run.Run.ID, w.EnvironmentIDs(), approve, comment); err != nil {
+	answer := func() error {
+		return gh.ReviewDeployments(ctx, w.repo, w.Run.Run.ID, w.EnvironmentIDs(), approve, comment)
+	}
+	if w.Approval != nil {
+		answer = func() error { return gh.AnswerApproval(ctx, w.repo, *w.Approval, approve, comment) }
+	}
+	if err := answer(); err != nil {
 		log.Printf("deploys: %s of %s run %d (%s) failed: %v", comment, w.repo, w.Run.Run.ID, w.EnvironmentNames(), err)
 		return wire.FolderSummary{}, deployRefusal(err)
 	}
@@ -271,11 +300,12 @@ func (d *Daemon) answerDeploy(ctx context.Context, folder, key string, digest *s
 }
 
 // deployRefusal is a failed answer as the person reads it (#3932): GitHub's 403 is the App
-// without the Deployments permission, since GitHub already said the person is a reviewer.
+// without the Deployments permission, since GitHub already said the person is a reviewer, or,
+// for an approval in Agent Loops (#5564), without the Actions permission that dispatches.
 func deployRefusal(err error) error {
 	var ge *githubmcp.GitHubError
 	if errors.As(err, &ge) && ge.Kind == githubmcp.Failed && ge.Refused {
-		return Invalid("GitHub refused this: the %s app needs the Deployments permission (read and write). "+
+		return Invalid("GitHub refused this: the %s app needs the Deployments and Actions permissions (read and write). "+
 			"Your organisation or account owner sets it on the app and accepts it on the installation.", connections.GitHubAppSlug)
 	}
 	return err
