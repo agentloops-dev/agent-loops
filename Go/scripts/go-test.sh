@@ -38,13 +38,22 @@ start() { # log, then the go test arguments
 	logs+=("$log")
 }
 
+# The rest first, so its build and tests run while the slow packages' test binaries build for
+# `-list` (on CI's macOS runner that build took 1.5 to 4 minutes before a shard could start).
+start "$out/rest.log" "$@" "${rest[@]}"
+
 n=0
 for pkg in "${slow_pkgs[@]}"; do
 	# The test binary is built here, with the same flags, so the shards find it in the cache.
-	list=$("$go_sh" test "$@" -list '.*' "$pkg")
+	if ! list=$("$go_sh" test "$@" -list '.*' "$pkg"); then
+		wait
+		cat "${logs[@]}"
+		exit 1
+	fi
 	names=$(grep -E '^(Test|Example|Fuzz)' <<<"$list" || true)
 	if [[ -z $names ]]; then
 		echo "go-test.sh: $pkg lists no tests" >&2
+		wait
 		exit 1
 	fi
 	listed=$(wc -l <<<"$names" | tr -d ' ')
@@ -58,10 +67,10 @@ for pkg in "${slow_pkgs[@]}"; do
 	done
 	if ((dealt != listed)); then
 		echo "go-test.sh: $pkg listed $listed tests but dealt $dealt" >&2
+		wait
 		exit 1
 	fi
 done
-start "$out/rest.log" "$@" "${rest[@]}"
 
 failed=0
 for i in "${!pids[@]}"; do
