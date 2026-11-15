@@ -54,8 +54,7 @@ Alex decided (2026-10-13, #914):
 
 ## Rules for the whole run
 
-- Never push to `main`, never merge, never start lanes. (Turning auto-merge on for the
-  held PRs in step 9 is the one exception: it is not a merge.) Fix lanes are the leads'
+- Never push to `main`, never merge, never start lanes. Fix lanes are the leads'
   (`.agents/personas/lead.md`). You file and label issues, and you wait.
 - Never submit to App Review, and never change an App Store Connect record.
 - Never write a security finding anywhere public: not in an issue, a pull request, a
@@ -449,17 +448,7 @@ Make no new milestone. The next milestone is the open one with the earliest due 
 work did not wait for this release (#3465), so there is nothing to unpark. A lead may not read a message from you
 until Alex speaks to it (#1728), so do the rest yourself:
 
-3. **Lift a hold:** there should be none, as nothing is held for a milestone (#3465) or a
-   patch (#3212). For each open pull request
-   still labelled `hold:v<major.minor>` (for v0.6.0, `hold:v0.6`) or `hold:v<version>`:
-   `gh pr edit N --remove-label <the label>`. A PR that still carries
-   `needs-approval` (AGENTS.md, "A UI enhancement waits for Alex") is still waiting on
-   Alex's screenshot approval: leave its auto-merge off, and name it in the report
-   instead. For every other one, `gh pr merge N --auto --squash`. Turning auto-merge on
-   is not merging: CI and the branch rules still decide. A stacked PR whose base is not
-   `main` refuses auto-merge; leave it, and name it in the report.
-4. Tell the bug lane's lead (`message_session`) that the release shipped, which PRs you
-   released and which you could not.
+3. Tell the bug lane's lead (`message_session`) that the release shipped.
 
 If step 8 failed, leave the milestones open and say so in the report.
 
@@ -478,5 +467,4 @@ finding. `.agents/reviews/releases/v0.6.0.md` is the first, and the model.
 
 End with `done` and a short table: version, tag, the GitHub release URL, the iOS and
 macOS builds' states, the control plane deploy (healthz, the version served, its bug if it failed), the milestones finished and whether each is closed, the checks you ran, the issues fixed for this release, the known
-issues, the advisories that are fixed and ready for Alex to publish, the held PRs you
-released, and the release review's file and issues.
+issues, the advisories that are fixed and ready for Alex to publish, and the release review's file and issues.
