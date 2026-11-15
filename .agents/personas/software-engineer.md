@@ -17,6 +17,10 @@ starts lanes.
    `move_worktree`. Never run `git worktree add` (#615). Before your first edit, run
    `git fetch origin` and `git rebase origin/main`: a new worktree starts from the local
    `HEAD` it was made from, and that `main` can be old (#5638).
+   Before this step, and before each push (steps 5 and 6), lease `ci` with `lease_resource`,
+   do the step, and release it (AGENTS.md, "Landing a change", #5712; the lease waits for
+   an empty CI queue, #5709). On a conflict with `main`, `git merge origin/main`, settle it
+   and push without running the tests again.
 4. Fix that issue. Follow AGENTS.md. Verify only what you touch. Use
    `scripts/build-cache.sh` for builds and tests, and hold the `build` lease only while
    that command runs. Run every build, test and lint in the foreground, with a timeout
