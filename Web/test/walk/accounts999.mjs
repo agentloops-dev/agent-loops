@@ -102,8 +102,8 @@ try {
   check(JSON.stringify(reaches) === JSON.stringify(["Your Own Sign-In", "✓Fake Gateway"]), `Reaches the Model By: ${JSON.stringify(reaches)}`);
   await page.shot(`${out}/web-1-runtimes.png`);
 
-  const folder = `#/h/${host}/p/${encodeURIComponent(`file://${folder}`)}/n/1`;
-  await page.eval(`location.hash = ${JSON.stringify(folder)}`);
+  const address = `#/h/${host}/p/${encodeURIComponent(`file://${folder}`)}/n/1`;
+  await page.eval(`location.hash = ${JSON.stringify(address)}`);
   await page.waitFor(`document.querySelector("select[aria-label=Runtime]")`, 15_000);
   await page.eval(`(() => { const s = document.querySelector("select[aria-label=Runtime]"); s.value = "claude"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
   await page.waitFor(`document.querySelector("select[aria-label=Account]")`, 10_000);

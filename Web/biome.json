@@ -7,7 +7,7 @@
     "rules": {
       "recommended": false,
       "correctness": { "recommended": true },
-      "suspicious": { "recommended": true },
+      "suspicious": { "recommended": true, "noAssignInExpressions": "off" },
       "security": { "recommended": true }
     }
   }

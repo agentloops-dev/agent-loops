@@ -5,7 +5,7 @@
 #                                     Mac, those for the branch's files: below)
 #   scripts/lint.sh --all             every linter, on a Mac too
 #   scripts/lint.sh --fix [linter…]   run each linter's fix mode first, then lint
-#   scripts/lint.sh --baseline        write the go and swift baselines again (below)
+#   scripts/lint.sh --baseline        write the go, swift and dupes baselines again (below)
 #   scripts/lint.sh --tools DIR TOOL…  put the pinned binaries in DIR (CI): shellcheck,
 #                                     golangci-lint, govulncheck (needs Go), biome, swiftlint, jscpd;
 #                                     Linux x86_64 on Linux, macOS arm64 on a Mac
@@ -19,21 +19,30 @@
 # since its merge base with origin/main, committed or not, run (#4710): go and govulncheck for
 # Go/ or Packages/Wire/, swift for *.swift or .swiftlint.yml, web for Web/, shell and zsh for
 # a shell file or .shellcheckrc; checks and dupes always. A change to this script runs every
-# one. It says which it skipped. CI names the linters of each job: shell, zsh, checks, go,
-# govulncheck, web and dupes in `go` (Linux), swift in `test` (macOS).
+# one. It says which it skipped.
 #
-# A linter is "required" or "report". A required one is clean on main, and a finding fails
-# this script. A report one prints its findings and exits 0. With LINT_BASE set (CI: the pull
-# request's base), a report linter also says which of its findings are in the files changed
-# since LINT_BASE.
+# Nx runs the linters, one target per language (#5672), as `scripts/nx.sh affected -t lint`
+# does and CI does: go:lint (go, govulncheck), web:lint (web, beside tsc and its own checks),
+# repo-lint:lint (shell, zsh, checks, dupes; lint/project.json) and swift-lint:lint (swift,
+# in CI's macOS `test` job). Each is cached by its inputs, so a lint that passed at the same
+# files is not run again.
 #
-# go (golangci-lint, every rule in Go/.golangci.yml) and swift (SwiftLint) are required against
-# a baseline (#5645): the findings that main had when they were made required are listed in
-# Go/.golangci-baseline.txt and .swiftlint-baseline.json, and only a finding not in its
-# baseline fails. Go's baseline has no line numbers (path, message and rule, one line per
-# finding), so a finding that only moves stays in it; SwiftLint's is its own --write-baseline.
-# Fix an old finding, then run `scripts/lint.sh --baseline` to drop it from the list; never
-# add a new one to it by hand. go is one run (#2162): every package is loaded once.
+# Every linter fails on a finding (#5672): there is no linter that only reports. A linter
+# whose tool cannot be got fails too, rather than pass with nothing run. With LINT_BASE set
+# (CI: the pull request's base), a linter also says which of its findings are in the files
+# changed since LINT_BASE.
+#
+# go (golangci-lint, every rule in Go/.golangci.yml), swift (SwiftLint) and dupes (jscpd) fail
+# against a baseline (#5645, #5672): the findings that main had when they were made to fail are
+# listed in Go/.golangci-baseline.txt, .swiftlint-baseline.json and .jscpd-baseline.txt, and
+# only a finding not in its baseline fails. Go's baseline has no line numbers (path, message
+# and rule, one line per finding), so a finding that only moves stays in it; SwiftLint's is
+# its own --write-baseline; jscpd's is the pair of files of each clone, one line per clone
+# (scripts/jscpd-report.py). Fix an old finding, then run `scripts/lint.sh --baseline` to drop
+# it from the list; never add a new one to it by hand. go is one run (#2162): every package is
+# loaded once. govulncheck fails on a vulnerability that the code calls (its default mode) and
+# that Go/.govulncheck-excluded.txt does not name with its reason, and
+# web (Biome) on any finding of the rules in Web/biome.json.
 #
 # Every linter runs on the host, never in a container (#4709). On Linux a linter on the PATH
 # is run as it is (CI, after --tools). On a Mac each one is the pinned macOS binary in
@@ -56,10 +65,11 @@ JSCPD=5.4.2
 ZSH=5.9
 CACHE=${AGENTS_BUILD_CACHE:-$HOME/Library/Caches/Agents-build}
 
-REQUIRED=" shell zsh checks go swift "
 ALL="shell zsh go govulncheck web swift dupes checks"
 GO_BASELINE=Go/.golangci-baseline.txt
 SWIFT_BASELINE=.swiftlint-baseline.json
+DUPES_BASELINE=.jscpd-baseline.txt
+GOVULN_EXCLUDED=Go/.govulncheck-excluded.txt
 
 if [ "${1:-}" = --tools ]; then
 	dir=${2:?usage: scripts/lint.sh --tools DIR TOOL…}
@@ -145,7 +155,7 @@ changed_linters() {
 }
 
 if [ "$baseline" = 1 ]; then
-	linters=${*:-go swift}
+	linters=${*:-go swift dupes}
 elif [ $# -gt 0 ]; then
 	linters=$*
 elif [ "$all" = 0 ] && [ "$(uname -s)" = Darwin ] && [ -z "${CI:-}" ]; then
@@ -293,13 +303,27 @@ go_key() {
 	sed -nE 's/^([^:[:space:]]+):[0-9]+(:[0-9]+)?: /\1: /p'
 }
 
+# govulncheck exits 3 for a vulnerability the code calls. One whose id is in
+# Go/.govulncheck-excluded.txt (the id, then why it stays and what removes it) does not fail.
 run_govulncheck() {
-	(cd Go && ${golinux[@]+"${golinux[@]}"} govulncheck ./...)
+	local out status id new=
+	out=$(cd Go && ${golinux[@]+"${golinux[@]}"} govulncheck ./... 2>&1)
+	status=$?
+	printf '%s\n' "$out"
+	[ "$status" = 3 ] || return "$status"
+	for id in $(printf '%s\n' "$out" | sed -nE 's/^Vulnerability #[0-9]+: (GO-[0-9]+-[0-9]+)$/\1/p'); do
+		grep -q "^$id " "$GOVULN_EXCLUDED" 2>/dev/null || new="$new $id"
+	done
+	if [ -n "$new" ]; then
+		echo "lint.sh: not in $GOVULN_EXCLUDED:$new"
+		return 3
+	fi
+	echo "lint.sh: each vulnerability above is in $GOVULN_EXCLUDED, with why"
 }
 
 # Biome's github reporter, turned into path:line:col: lines with the path from the root.
 run_web() {
-	local args=(lint --max-diagnostics=none --reporter=github)
+	local args=(lint --max-diagnostics=none --error-on-warnings --reporter=github)
 	[ "$fix" = 1 ] && args=("${args[@]}" --write)
 	cd Web || return 1
 	biome "${args[@]}" . 2>&1 | sed -nE 's#^::(error|warning) title=([^,]*),file=([^,]*),line=([0-9]+)[^:]*,col=([0-9]+)[^:]*::(.*)#Web/\3:\4:\5: \1: \6 (\2)#p' |
@@ -328,9 +352,15 @@ run_dupes() {
 	jscpd --reporters json --output "$out" >"$log" 2>&1
 	status=$?
 	if [ -f "$out/jscpd-report.json" ]; then
-		python3 scripts/jscpd-report.py "$out/jscpd-report.json"
+		if [ "$baseline" = 1 ]; then
+			python3 scripts/jscpd-report.py --write-baseline "$DUPES_BASELINE" "$out/jscpd-report.json"
+		else
+			python3 scripts/jscpd-report.py --baseline "$DUPES_BASELINE" "$out/jscpd-report.json"
+		fi
+		status=$?
 	else
 		cat "$log"
+		[ "$status" = 0 ] && status=1
 	fi
 	rm -rf "$out"
 	return "$status"
@@ -353,6 +383,7 @@ run_checks() {
 	python3 scripts/check-deploy-bounds.py --selftest || status=1
 	python3 scripts/check-deploy-bounds.py || status=1
 	python3 scripts/wire-compat.py --selftest || status=1
+	python3 scripts/jscpd-report.py --selftest || status=1
 	python3 scripts/docs-parts.py --selftest || status=1
 	python3 scripts/docs-parts.py check || status=1
 	sh scripts/design.sh selftest || status=1
@@ -375,20 +406,19 @@ changed=$(mktemp)
 trap 'rm -f "$changed"' EXIT
 [ -n "${LINT_BASE:-}" ] && git diff --name-only "$LINT_BASE"...HEAD >"$changed" 2>/dev/null
 failed=
-printf '| Linter | Mode | Findings | In changed files | Seconds |\n|---|---|---|---|---|\n' >>"$summary"
+printf '| Linter | Findings | In changed files | Seconds |\n|---|---|---|---|\n' >>"$summary"
 for linter in $linters; do
 	case " $ALL " in *" $linter "*) ;; *)
 		echo "lint.sh: no linter $linter (one of: $ALL)" >&2
 		exit 2
 		;;
 	esac
-	mode=report
-	case "$REQUIRED" in *" $linter "*) mode=required ;; esac
 	if ! have "$(tool "$linter")"; then
-		echo "== $linter: skipped, as $(tool "$linter") is not on the PATH and could not be got"
+		echo "== $linter: failed, as $(tool "$linter") is not on the PATH and could not be got"
+		failed="$failed $linter"
 		continue
 	fi
-	echo "== $linter ($mode)"
+	echo "== $linter"
 	out=$(mktemp)
 	start=$(date +%s)
 	"run_$linter" >"$out" 2>&1
@@ -414,12 +444,12 @@ for linter in $linters; do
 		fi
 	fi
 	rm -f "$out"
-	printf '| %s | %s | %s | %s | %s |\n' "$linter" "$mode" "$count" "$mine" "$took" >>"$summary"
+	printf '| %s | %s | %s | %s |\n' "$linter" "$count" "$mine" "$took" >>"$summary"
 	echo "-- $linter: $count finding(s), ${took}s, exit $status"
-	[ "$mode" = required ] && [ "$status" != 0 ] && failed="$failed $linter"
+	[ "$status" != 0 ] && failed="$failed $linter"
 done
 
 if [ -n "$failed" ]; then
-	echo "lint.sh: required linters failed:$failed (scripts/lint.sh --fix fixes what it can)" >&2
+	echo "lint.sh: linters failed:$failed (scripts/lint.sh --fix fixes what it can)" >&2
 	exit 1
 fi

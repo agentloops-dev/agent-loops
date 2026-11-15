@@ -25,7 +25,7 @@ try {
   await page.eval(`(() => { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n; (n = w.nextNode());) n.nodeValue = n.nodeValue.split(${JSON.stringify(hostname())}).join("scratch-mac"); })()`);
   console.log(`ok   ${expected}`);
-} catch (e) {
+} catch {
   failed = true;
   console.log(`FAIL ${expected}: ${(await page.text()).replace(/\s+/g, " ").slice(0, 400)}`);
 }
