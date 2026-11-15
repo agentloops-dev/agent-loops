@@ -13113,6 +13113,26 @@ export interface SecretReleased {
 }
 
 /**
+ * secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask
+ * before use off, with its value; else none, and the names that were looked for. A name with Ask
+ * before use on is never read: it is in refused, so the step can say so.
+ */
+export interface SecretSignInKey {
+  name?: string;
+  value?: string;
+  looked: string[];
+  refused: string[];
+}
+
+/**
+ * secrets/signInKey (#5361): the key a person has in Secrets for a runtime, for step 7 of a
+ * machine's set-up.
+ */
+export interface SecretSignInKeyRequest {
+  runtimeID: string;
+}
+
+/**
  * secrets/terminalValue (#4179): agents-secret NAME with no session's grant, such as from a
  * terminal.
  */
@@ -18192,6 +18212,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SecretRelease: { required: ["name", "encapsulated", "approval"], optional: [] },
   SecretReleaseKey: { required: ["publicKey"], optional: [] },
   SecretReleased: { required: ["key"], optional: [] },
+  SecretSignInKey: { required: ["looked", "refused"], optional: ["name", "value"] },
+  SecretSignInKeyRequest: { required: ["runtimeID"], optional: [] },
   SecretTerminalRequest: { required: ["name"], optional: ["command"] },
   SecretTerminalValue: { required: [], optional: ["value", "request", "words"] },
   SecretsLeft: { required: ["host", "name", "secrets"], optional: [] },

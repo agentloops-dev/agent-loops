@@ -1348,6 +1348,8 @@ final class AppModel {
     private(set) var controlPlaneMoves = 0
     /// The servers (037). This Mac is `client`, as it always was.
     let hosts = HostSet(locations: .default)
+    /// Step 7 of a machine's set-up: a key from Secrets, or a device-code card (#5361).
+    let machineSignIn = MachineSignInDriver()
     /// The Export… or Import Agents… on its way, drawn as a busy sheet with Cancel (#2437).
     var exportImport: ExportImportProgress?
     /// A server asked for a sign-in this Mac relays; the window asks the person (T091).
@@ -3635,6 +3637,8 @@ final class AppModel {
             ($0.id, (label: $0.name, online: $0.answers && !MachineSetupWords.isSettingUp($0.setup)))
         })
         hosts.controlRows = Dictionary(uniqueKeysWithValues: others.map { ($0.id, $0) })
+        // Step 7 of a machine's set-up signs its runtimes in (#5361).
+        for host in others { machineSignIn.follow(host.id, model: self) }
         for host in others where host.answers {
             await reach(host, through: controlLink)
         }
