@@ -126,6 +126,22 @@ Mac window and the iPhone and iPad app hold the same value.
 | focus.gap | `--focus-gap` | `Paper.Focus.gap` | `2px` | The gap between the control and the ring. |
 <!-- /design.sh gen -->
 
+### Edges
+
+A card or banner that has a tint (the Ask card's yellow of needs you, a notice's tone) shows it
+as a 3px **edge** on its leading side (#5669). The edge is a band of the card's own rounded
+shape: it follows the corner radius and becomes thin to nothing round the corners, so it
+touches the border along all its length. Never draw it as a straight bar on a rounded card:
+a 3px bar cannot have the card's radius, so it stops before the corners.
+
+- **Web:** `box-shadow: inset 3px 0 0 var(--tint-…)` on the card, with its border radius.
+  Not `border-left`, which makes a diagonal join with the other borders at the corners.
+- **Swift:** `.paperEdge(color, cornerRadius:)` (`Shared/UI/Paper.swift`) after the card's
+  border.
+
+A picked row (`selection`) keeps its accent bar clipped to the row's shape (#5237): a row
+is not a card, and its radius is small.
+
 ## Depth and focus
 
 The `shadow` and `focus` rows are in the table above: `shadow.floating` for a menu, the
