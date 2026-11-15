@@ -93,8 +93,6 @@ type Used struct {
 // Waiting is a sign-in on the waitlist.
 type Waiting struct {
 	SignIn SignIn `json:"signIn"`
-	// The GitHub user of an entry made before #3386, read as its SignIn.
-	GitHub *GitHubID `json:"github,omitempty"`
 	At     time.Time `json:"at"`
 	Why    string    `json:"why"`
 	// Its key in the waitlist folder, whose order is the waitlist's.
@@ -111,7 +109,7 @@ func (l waitlistLink) signIn() SignIn {
 	if l.SignIn != nil {
 		return *l.SignIn
 	}
-	return signInOf(SignIn{}, &GitHubID{ID: l.GitHub})
+	return oldGitHubSignIn(l.GitHub)
 }
 
 // emailMark is an email's mark: HMAC-SHA256 of the address in lower case, under a key made
