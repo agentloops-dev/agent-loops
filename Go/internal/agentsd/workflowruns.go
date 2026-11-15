@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -207,7 +206,7 @@ func (d *Daemon) fireWorkflows(e wire.Event) {
 	}
 	for _, f := range sends {
 		f := f
-		safe.Go("workflow event sent", func() { d.sendOthers(f) })
+		d.goJob("workflow event sent", func() { d.sendOthers(f) })
 	}
 }
 
@@ -828,7 +827,7 @@ func (d *Daemon) releaseRun(id wire.UUID) *workflowRun {
 func (d *Daemon) workflowRunFinished(agent wire.UUID) {
 	// A bot's spend is sent as each run ends, not on the hour, so its cap holds (#1761).
 	if d.isBot() {
-		safe.Go("usage/rollup after a bot's run", d.sendReport)
+		d.goJob("usage/rollup after a bot's run", d.sendReport)
 	}
 	d.workflowMu.Lock()
 	var run *workflowRun
@@ -971,7 +970,7 @@ func (d *Daemon) startWorkflowClock() {
 	stop := make(chan struct{})
 	d.clockStop = stop
 	d.clockRunning.Add(1)
-	safe.Go("workflow clock", func() { defer d.clockRunning.Done(); d.workflowClock(stop) })
+	d.goJob("workflow clock", func() { defer d.clockRunning.Done(); d.workflowClock(stop) })
 }
 
 // stopWorkflowClock ends the clock and waits for a tick still going, which scans and so
@@ -1080,7 +1079,7 @@ func (d *Daemon) workflowTickOnce(at time.Time) {
 	d.workflowMu.Unlock()
 	for _, of := range alarms {
 		of := of
-		safe.Go("workflow alarm", func() { d.runAlarm(of) })
+		d.goJob("workflow alarm", func() { d.runAlarm(of) })
 	}
 	// A wait's timer does not count the time the Mac slept: the clock, which reads the
 	// wall, ends the waits whose time came meanwhile (#4966).
@@ -1102,11 +1101,11 @@ func (d *Daemon) workflowTickOnce(at time.Time) {
 	}
 	for _, fr := range fires {
 		fr := fr
-		safe.Go("workflow schedule", func() { d.fire(fr) })
+		d.goJob("workflow schedule", func() { d.fire(fr) })
 	}
 	for _, fr := range sends {
 		fr := fr
-		safe.Go("workflow schedule sent", func() { d.sendOthers(fr) })
+		d.goJob("workflow schedule sent", func() { d.sendOthers(fr) })
 	}
 }
 

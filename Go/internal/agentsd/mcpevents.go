@@ -17,7 +17,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -235,7 +234,7 @@ func (d *Daemon) StartMCPEvents() {
 	}
 	d.mcpEvMu.Unlock()
 	d.mcpRunning.Add(1)
-	safe.Go("mcp events", func() { defer d.mcpRunning.Done(); d.mcpEventsClock(ctx) })
+	d.goJob("mcp events", func() { defer d.mcpRunning.Done(); d.mcpEventsClock(ctx) })
 }
 
 // mcpEventsClock looks at the workflows now, when one moves, and once a minute for what
@@ -934,7 +933,7 @@ func (d *Daemon) applyMCPSubscriptionsLocked(ctx context.Context, wanted map[str
 		subCtx, cancel := context.WithCancel(ctx)
 		d.mcpCancels[id] = cancel
 		d.mcpRunning.Add(1)
-		safe.Go("mcp subscription", func() { defer d.mcpRunning.Done(); d.runMCPSubscription(subCtx, id) })
+		d.goJob("mcp subscription", func() { defer d.mcpRunning.Done(); d.runMCPSubscription(subCtx, id) })
 	}
 }
 

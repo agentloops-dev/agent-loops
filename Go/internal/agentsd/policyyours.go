@@ -15,7 +15,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/policylayers"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -242,7 +241,7 @@ func (d *Daemon) pushYoursAsync(kept keptYourPolicy) {
 		return
 	}
 	signed := wire.SignedYourPolicy{Policy: base64.StdEncoding.EncodeToString(kept.Policy), Signature: kept.Signature, Key: d.yoursPublicKeyLocked()}
-	safe.Go("user/setPolicy", func() {
+	d.goJob("user/setPolicy", func() {
 		ctx, cancel := context.WithTimeout(d.ctx, 15*time.Second)
 		defer cancel()
 		if _, err := (*ask)(ctx, wire.CallUserSetPolicy.Name, signed); err != nil {

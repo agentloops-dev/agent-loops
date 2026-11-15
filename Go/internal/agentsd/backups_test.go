@@ -476,9 +476,7 @@ func (f *fakeStore) askFor(host string) askControl {
 // leaves no archive behind; a new server of the same person lists it and restores it.
 func TestBackupToTheControlPlaneAndRestoreOnANewServer(t *testing.T) {
 	atTime(t, time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC))
-	was := backupPartBytes
-	backupPartBytes = 512
-	t.Cleanup(func() { backupPartBytes = was })
+	setFor(t, &backupPartBytes, 512)
 	fake := &fakeStore{parts: map[string]map[int64][]byte{}}
 
 	rootA, rootB := t.TempDir(), t.TempDir()
@@ -569,8 +567,7 @@ func TestABackupFolderOnTheSameDiskIsSaid(t *testing.T) {
 	if other == "" {
 		other = t.TempDir()
 		was := sameDevice
-		sameDevice = func(a, b string) bool { return !strings.HasPrefix(a, other) && was(a, b) }
-		t.Cleanup(func() { sameDevice = was })
+		setFor(t, &sameDevice, func(a, b string) bool { return !strings.HasPrefix(a, other) && was(a, b) })
 	}
 	ca.call(t, 4, "backups/configure", map[string]any{"every": "off", "keep": 3, "folder": other})
 	if s := backupsIn(t, ca, 5); s.SameDisk != nil {

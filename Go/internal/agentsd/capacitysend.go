@@ -6,7 +6,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -50,7 +49,7 @@ func (d *Daemon) sendCapacitySoon(level wire.CapacityLevel, load5 float64) {
 	d.capSent = capacitySent{level: level, load5: load5, at: now, sent: true}
 	d.capMu.Unlock()
 	report := wire.CapacityReport{Level: level, LoadPerCore5: &load5}
-	safe.Go("machine/capacity", func() {
+	d.goJob("machine/capacity", func() {
 		ctx, cancel := context.WithTimeout(d.ctx, reportPatience)
 		defer cancel()
 		if _, err := (*ask)(ctx, wire.CallMachineCapacity.Name, report); err != nil {

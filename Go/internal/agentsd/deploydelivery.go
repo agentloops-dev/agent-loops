@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -143,7 +142,7 @@ func (d *Daemon) deliveryFacts(since wire.Date) ([]wire.DeployDeliveryFact, bool
 		}
 		for _, a := range asks {
 			d.bringsAsking[a.ref] = true
-			safe.Go("deploy brings", func() { d.workOutBrings(a.ref, a.prev, a.repo, a.base, a.head) })
+			d.goJob("deploy brings", func() { d.workOutBrings(a.ref, a.prev, a.repo, a.base, a.head) })
 		}
 	}
 	d.deployBookMu.Unlock()

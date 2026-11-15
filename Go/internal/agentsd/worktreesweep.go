@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -32,7 +31,7 @@ func (d *Daemon) sweepWorktreeSoon(a wire.Agent, why worktreeSweep) {
 		return
 	}
 	d.sweeps.Add(1)
-	safe.Go("worktree sweep", func() {
+	d.goJob("worktree sweep", func() {
 		defer d.sweeps.Done()
 		d.sweepMu.Lock()
 		defer d.sweepMu.Unlock()

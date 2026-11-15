@@ -124,7 +124,7 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 			d.secretChanged("", c.name, c.what, false)
 		}
 		// What this machine holds now, with each hint and last operation (#4158).
-		go d.tellSecretsHeld()
+		d.goJob("tellSecretsHeld", func() { d.tellSecretsHeld() })
 	}()
 	d.userScopeMu.Lock()
 	defer d.userScopeMu.Unlock()

@@ -165,14 +165,12 @@ func TestGitFillStaysOffTheWindowAndAnswersTheControlPlane(t *testing.T) {
 	if line := <-c.out; !strings.Contains(line, "-32601") {
 		t.Fatalf("a window could read the password: %s", line)
 	}
-	old := fillGitCredential
-	fillGitCredential = func(attributes string) (string, error) {
+	setFor(t, &fillGitCredential, func(attributes string) (string, error) {
 		if attributes != "protocol=https\nhost=github.com\n\n" {
 			t.Errorf("asked git for %q", attributes)
 		}
 		return "username=alex\npassword=s3cret\n", nil
-	}
-	t.Cleanup(func() { fillGitCredential = old })
+	})
 	cred := d.fillGit(mustJSON(wire.GitCredentialRequest{Protocol: "https", Host: "github.com"}))
 	if cred.Username != "alex" || cred.Password != "s3cret" {
 		t.Fatal("credential mismatch")

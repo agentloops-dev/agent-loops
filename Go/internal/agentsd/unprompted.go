@@ -122,7 +122,7 @@ func (l *live) armQuiet(seq int) {
 	if l.quiet != nil {
 		l.quiet.Stop()
 	}
-	l.quiet = time.AfterFunc(unpromptedQuiet, func() { l.quietEnded(seq) })
+	l.quiet = time.AfterFunc(unpromptedQuiet, l.d.jobFunc("unprompted timer", func() { l.quietEnded(seq) }))
 }
 
 // quietEnded ends unprompted turn seq after a quiet stretch, unless a tool or a card is

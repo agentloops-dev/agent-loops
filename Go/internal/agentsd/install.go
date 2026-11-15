@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/ulikunitz/xz"
 )
@@ -368,7 +367,7 @@ func (d *Daemon) installRuntime(c *Client, id string) (wire.RuntimeStatus, error
 	d.instMu.Unlock()
 	log.Printf("installing %s", id)
 	d.setInstallState(r, wire.RuntimeAvailability{Installing: &wire.RuntimeAvailabilityInstalling{}})
-	safe.Go("install "+id, func() {
+	d.goJob("install "+id, func() {
 		result := d.install(r, *recipe, func(step string) {
 			d.instMu.Lock()
 			going := d.installs[id]

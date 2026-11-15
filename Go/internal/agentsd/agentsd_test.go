@@ -75,7 +75,18 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 	// Last of these cleanups, before the root goes: what a test sets off (a turn's
 	// ending, an assessment's score) writes into the root after the test has its answer.
 	// A test that shuts the daemon down itself shuts it down again here, which does nothing.
-	t.Cleanup(d.Shutdown)
+	// Then no goroutine the daemon started may still run (#5653): one that does would write
+	// into the root as it goes, or read a setting the next test changes. It fails here, by
+	// where it started, not at TempDir's RemoveAll.
+	hooks := testHooksOf(t)
+	hooks.started()
+	t.Cleanup(func() {
+		d.Shutdown()
+		if live := d.liveJobs(); len(live) > 0 {
+			t.Errorf("goroutines the daemon started still run after Shutdown:\n\t%s", strings.Join(live, "\n\t"))
+		}
+		hooks.stopped()
+	})
 	// As main does at each start (#4177): a fixture's secrets.env goes into sealed.json.
 	d.MoveSecretsFile()
 	c := newConn()

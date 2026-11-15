@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -85,7 +84,7 @@ func (d *Daemon) kickFolderWatches() {
 	}
 	d.pwKicked = true
 	d.pwMu.Unlock()
-	safe.Go("folder watches", func() {
+	d.goJob("folder watches", func() {
 		d.pwMu.Lock()
 		d.pwKicked = false
 		d.pwMu.Unlock()
@@ -363,7 +362,7 @@ func (d *Daemon) scheduleBranchCheck(folder string, delay time.Duration) {
 	if t := d.branchTimers[folder]; t != nil {
 		t.Stop()
 	}
-	d.branchTimers[folder] = time.AfterFunc(delay, func() { d.checkBranches(folder) })
+	d.branchTimers[folder] = time.AfterFunc(delay, d.jobFunc("folderwatch timer", func() { d.checkBranches(folder) }))
 }
 
 // checkBranches is DaemonCore.checkBranches: the tips of the branches the folder's agents'

@@ -324,11 +324,10 @@ func TestASweepStartsTheRuntimeOnce(t *testing.T) {
 	t.Setenv("AGENTS_FAKE_DELETED", deleted)
 	var writes atomic.Int64
 	old := writeErasureFile
-	writeErasureFile = func(file string, data []byte, mode os.FileMode) error {
+	setFor(t, &writeErasureFile, func(file string, data []byte, mode os.FileMode) error {
 		writes.Add(1)
 		return old(file, data, mode)
-	}
-	t.Cleanup(func() { writeErasureFile = old })
+	})
 	lines := func(file string) int {
 		b, _ := os.ReadFile(file)
 		return strings.Count(string(b), "\n")

@@ -191,9 +191,7 @@ func TestRequestsAreBounded(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(d.requestsDir(), string(old)+".json")); !os.IsNotExist(err) {
 		t.Fatalf("file kept: %v", err)
 	}
-	was := requestFileLimit
-	requestFileLimit = 3
-	defer func() { requestFileLimit = was }()
+	setFor(t, &requestFileLimit, 3)
 	older := put(wire.RequestStateAnswered, 2*time.Hour)
 	put(wire.RequestStateAnswered, time.Minute)
 	d.pruneRequests(at)
@@ -269,9 +267,7 @@ func TestARequestDeferredToATimeComesBack(t *testing.T) {
 
 func TestARequestDeferredAtTheMacComesBackWhenThePersonDoes(t *testing.T) {
 	fakeRuntimes(t)
-	was := macIdle
-	macIdle = 300 * time.Millisecond
-	defer func() { macIdle = was }()
+	setFor(t, &macIdle, 300*time.Millisecond)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := formRequest(t, d, c, t.TempDir())

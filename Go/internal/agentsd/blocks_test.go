@@ -163,9 +163,7 @@ func TestABlockOutlivesACardInTheSameTurn(t *testing.T) {
 // has come, not that it timed out.
 func TestTimeReachedIsTheWaitOnATime(t *testing.T) {
 	fakeRuntimes(t)
-	was := eventHoldLimit
-	eventHoldLimit = 300 * time.Millisecond
-	defer func() { eventHoldLimit = was }()
+	setFor(t, &eventHoldLimit, 300*time.Millisecond)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := func(s string) *string { return &s }
@@ -228,9 +226,7 @@ func TestTimeReachedIsTheWaitOnATime(t *testing.T) {
 // chat, not two.
 func TestOnlyOneWaitAtATime(t *testing.T) {
 	fakeRuntimes(t)
-	was := eventHoldLimit
-	eventHoldLimit = 300 * time.Millisecond
-	defer func() { eventHoldLimit = was }()
+	setFor(t, &eventHoldLimit, 300*time.Millisecond)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := func(s string) *string { return &s }

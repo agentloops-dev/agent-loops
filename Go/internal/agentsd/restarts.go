@@ -12,7 +12,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -267,7 +266,7 @@ func (d *Daemon) SayRestarted() {
 	if d.aliveStop == nil {
 		d.aliveStop = make(chan struct{})
 		stop := d.aliveStop
-		safe.Go("alive", func() {
+		d.goJob("alive", func() {
 			t := time.NewTicker(aliveInterval)
 			defer t.Stop()
 			for {

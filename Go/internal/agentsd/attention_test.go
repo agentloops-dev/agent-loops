@@ -16,9 +16,7 @@ import (
 // is told, watching silences it, a look reads it, and the notes outlive a restart.
 
 func shortPause(t *testing.T) {
-	old := settlingPause
-	settlingPause = 150 * time.Millisecond
-	t.Cleanup(func() { settlingPause = old })
+	setFor(t, &settlingPause, 150*time.Millisecond)
 }
 
 func attentionNote(want func(wire.AttentionNotification) bool) func(string, json.RawMessage) bool {

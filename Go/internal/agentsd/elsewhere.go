@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -417,7 +416,7 @@ func (d *Daemon) askThereWaits() {
 			}
 			caller, there := a.ID, *s
 			wg.Add(1)
-			safe.Go("status of a waited-on session elsewhere", func() {
+			d.goJob("status of a waited-on session elsewhere", func() {
 				defer wg.Done()
 				d.thereStatus(caller, there)
 			})
@@ -436,7 +435,7 @@ func (d *Daemon) listThere(caller wire.UUID) []string {
 	for i, s := range started {
 		i, s := i, s
 		wg.Add(1)
-		safe.Go("status of a session elsewhere", func() {
+		d.goJob("status of a session elsewhere", func() {
 			defer wg.Done()
 			lines[i] = "- " + string(s.Session) + ": " + quotedTitle(&s.Title) + " on " + s.Machine + ", in " + s.There + " — " + d.thereStatus(caller, s)
 		})
@@ -533,7 +532,7 @@ func (d *Daemon) tellStarter(id wire.UUID, how wire.WaitEndingHow) {
 	}
 	for _, from := range tell {
 		ended := wire.SessionEnded{Machine: from.Machine, Session: id, Starter: from.Agent, How: how, Title: title}
-		safe.Go("tell the starter", func() {
+		d.goJob("tell the starter", func() {
 			if _, err := d.askWorkspaces(id, sessionEndedMethod, ended); err != nil {
 				log.Printf("agent %s: tell %s it ended: %v", id, from.Machine, err)
 			}

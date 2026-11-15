@@ -228,7 +228,7 @@ func (d *Daemon) bargeIn(id wire.UUID, seq int) {
 		return
 	}
 	l.cancel()
-	go func() {
+	d.goJob("barge in", func() {
 		for range bargeInTries {
 			select {
 			case <-d.ctx.Done():
@@ -243,7 +243,7 @@ func (d *Daemon) bargeIn(id wire.UUID, seq int) {
 				return
 			}
 		}
-	}()
+	})
 }
 
 // How often, and how many times, a barge-in looks for the stopped turn to have ended:
