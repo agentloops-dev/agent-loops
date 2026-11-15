@@ -128,7 +128,7 @@ struct BackgroundEntryLine: View {
 
     var body: some View {
         // One action link (#5036): a subagent's Steps, or what a task printed.
-        RecordLine(icon: item.state == .failed ? LineGlyph.failed : LineGlyph.background, detail: line,
+        RecordLine(detail: line,
                    tone: item.state == .failed ? .failure : .plain, action: link)
     }
 

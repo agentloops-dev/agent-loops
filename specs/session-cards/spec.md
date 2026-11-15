@@ -19,7 +19,7 @@ Both pages use Paper v2 (#4926, `design/tokens.json`): Atkinson Hyperlegible Nex
 | Family | What it is for | Place | Shape | Replaces (wireframe numbers) |
 |---|---|---|---|---|
 | **Strip** | The session's place is not right: host, folder, account, allowance, limit | Top, one at a time, "+N more" | Well, orange glyph, one line, at most 2 buttons and ⋯ | 1–5, 36, H1 |
-| **Line** | The record: what happened | Transcript | No box: glyph, bold head, quiet detail, one action link | 9, 12–14, 16 (settled), 20–22, 34 |
+| **Line** | The record: what happened | Transcript | No box, no glyph (#5675): bold head, quiet detail, one action link | 9, 12–14, 16 (settled), 20–22, 34 |
 | **Object** | A thing the agent made, to open | Transcript | Raised box, preview, name, kind, ⋯, › | 17, 18, 19 (frame), H2 |
 | **Ask** | The person must answer before the agent goes on | End of chat, under "Waiting for you" | Raised card, yellow left edge, fixed head and foot, one body | 15, 16 (raisable), 19 (asks), 26–28g, 30, 31, 33p, and the secret-use card of #4918 |
 | **Now** | What the agent works towards (top) or does and waits on (foot) | Goal and plan at the top; one card above the prompt bar | Well, mark, line, meta, bar, chevron | 6, 7, 14, 25, 29, 32, 33, 35 |
@@ -28,7 +28,7 @@ Messages (bubbles) are not cards. Sheets and overlays (8, 38–40) are controls,
 
 ## Rules for every family
 
-1. **One colour, one meaning (#5016).** Yellow (`tint.attention`) is only on an Ask's left edge and the "Waiting for you" label. Orange (`tint.warning`) is a Strip's glyph. Red (`tint.failure`) is a failed Line's glyph and words. The accent is for links, bars and the primary button. Colour never fills a card (Paper v2): it is in the text, the icon and a line.
+1. **One colour, one meaning (#5016).** Yellow (`tint.attention`) is only on an Ask's left edge and the "Waiting for you" label. Orange (`tint.warning`) is a Strip's glyph. Red (`tint.failure`) is a failed Line's words. The accent is for links, bars and the primary button. Colour never fills a card (Paper v2): it is in the text, the icon and a line.
 2. **Buttons.** The primary button is filled, on the right. One more button is next to it. All other actions are in ⋯. Every Ask has the same two links: "No thanks" and "No, because…".
 3. **An answer becomes a Line.** An answered Ask leaves "Waiting for you". The transcript gets one Line: "You chose ‹option›", or "Answered on another device".
 4. **Keys.** Return presses the primary button of the first Ask. ⌘1–9 picks an option on the Mac and the Remote with a keyboard; ⌥1–9 on the web.

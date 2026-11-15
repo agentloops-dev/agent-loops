@@ -45,7 +45,7 @@ export function PolicyStopCard({ refusal, entryID }: { refusal: PolicyRefusal; e
   const action = stopAction(refusal);
   const asked = askedFor.value[entryID];
   return (
-    <RecordLine icon="hand" head={stoppedTitle} detail={asked ? askedWords(asked) : rule ?? undefined} extra="policy-stop"
+    <RecordLine head={stoppedTitle} detail={asked ? askedWords(asked) : rule ?? undefined} extra="policy-stop"
       action={{ label: action.label, run: () => open(action) }} openTitles={["Show why", "Hide why"]}
       more={<>
         {asked && rule && <p>{rule}</p>}
