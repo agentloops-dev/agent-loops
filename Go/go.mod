@@ -1,6 +1,6 @@
 module github.com/agentloops-dev/agent-loops/Go
 
-go 1.26.9
+go 1.26.11
 
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2

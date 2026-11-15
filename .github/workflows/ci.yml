@@ -79,6 +79,7 @@ jobs:
       go: ${{ steps.affected.outputs.go }}
       marks: ${{ steps.affected.outputs.marks }}
       swiftlint: ${{ steps.affected.outputs.swiftlint }}
+      toolchain: ${{ steps.affected.outputs.toolchain }}
     steps:
       # For the step budgets below (scripts/ci-time-left.sh, #5609).
       - name: Start the clock
@@ -163,7 +164,7 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          apps=run swift=run go=run marks=run swiftlint=run
+          apps=run swift=run go=run marks=run swiftlint=run toolchain=same
           if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             projects=$(scripts/nx.sh show projects --affected --base="$BASE" --head=HEAD --json)
             echo "Affected: $projects"
@@ -177,8 +178,12 @@ jobs:
             # SwiftLint (swift-lint:lint, in `test`): any Swift file, its rules, its baseline or
             # lint.sh. swift-lint is affected by every change, so its own files say when.
             grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^scripts/lint\.sh$|^lint/swift/)' <<<"$changed" || swiftlint=skip
+            # A new Go toolchain (#5704): Go's build cache is keyed by the toolchain, so every
+            # Go package builds again from cold, and the macOS jobs get more time for it.
+            gover() { git show "$1:Go/go.mod" 2>/dev/null | grep -E '^(go|toolchain) ' || true; }
+            [[ "$(gover "$BASE")" == "$(gover HEAD)" ]] || toolchain=new
           fi
-          printf 'apps=%s\nswift=%s\ngo=%s\nmarks=%s\nswiftlint=%s\n' "$apps" "$swift" "$go" "$marks" "$swiftlint" | tee -a "$GITHUB_OUTPUT"
+          printf 'apps=%s\nswift=%s\ngo=%s\nmarks=%s\nswiftlint=%s\ntoolchain=%s\n' "$apps" "$swift" "$go" "$marks" "$swiftlint" "$toolchain" | tee -a "$GITHUB_OUTPUT"
       # The pinned linters (scripts/lint.sh --tools), on the PATH for the lint targets in Nx
       # (#5672): go:lint (golangci-lint, govulncheck), web:lint (Biome) and repo-lint:lint
       # (shellcheck, zsh -n, our text checks, jscpd). Each fails on a finding. The binaries are
@@ -326,9 +331,10 @@ jobs:
     # A preview image while macOS 27 is new; move to macos-27 when it is GA.
     runs-on: xcode-27
     # The limit of every job, as in `go` (#5673). Both schemes from a cold DerivedData do not fit
-    # in it: such a run fails, and its Step times say so. The "Time left for" step below reads the
-    # same number as JOB_MINUTES; change them together.
-    timeout-minutes: 20
+    # in it: such a run fails, and its Step times say so. A change of the Go toolchain gets 40
+    # (#5704): every Go helper then builds from cold inside mac:build, which takes about 11.5
+    # minutes warm. The steps read the same number from JOB_MINUTES; change them together.
+    timeout-minutes: ${{ needs.go.outputs.toolchain == 'new' && 40 || 20 }}
     permissions:
       contents: read
       actions: write
@@ -337,6 +343,7 @@ jobs:
       NX_DAEMON: "false"
       NX_LOAD_DOT_ENV_FILES: "false"
       NX_TUI: "false"
+      JOB_MINUTES: ${{ needs.go.outputs.toolchain == 'new' && 40 || 20 }}
       APPS: ${{ needs.go.outputs.apps }}
       MARKS: ${{ needs.go.outputs.marks }}
     steps:
@@ -475,7 +482,6 @@ jobs:
         id: budget
         env:
           START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 20
           RESERVE: 3
         run: bash scripts/ci-time-left.sh
       # mac:build and remote:build, one at a time (they share build/DerivedData), and the tasks
@@ -559,7 +565,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 20
           STATUS: ${{ job.status }}
         run: bash scripts/ci-step-times.sh
 
@@ -582,9 +587,10 @@ jobs:
     runs-on: xcode-27
     # The limit of every job, as in `go` (#5673): warm, the Swift targets take about 5 minutes
     # and the Go tests on a Mac about 7. Every AgentsKit target from cold does not fit in it:
-    # such a run fails, and its Step times say so. The "Time left for" steps below read the same
-    # number as JOB_MINUTES; change them together.
-    timeout-minutes: 20
+    # such a run fails, and its Step times say so. A change of the Go toolchain gets 40, as in
+    # `apps` (#5704): the Go tests then build from cold (about 10 minutes on the 1.26.11 bump).
+    # The steps read the same number from JOB_MINUTES; change them together.
+    timeout-minutes: ${{ needs.go.outputs.toolchain == 'new' && 40 || 20 }}
     permissions:
       contents: read
       actions: write
@@ -593,6 +599,7 @@ jobs:
       NX_DAEMON: "false"
       NX_LOAD_DOT_ENV_FILES: "false"
       NX_TUI: "false"
+      JOB_MINUTES: ${{ needs.go.outputs.toolchain == 'new' && 40 || 20 }}
       SWIFT: ${{ needs.go.outputs.swift }}
       GO: ${{ needs.go.outputs.go }}
       SWIFTLINT: ${{ needs.go.outputs.swiftlint }}
@@ -711,7 +718,6 @@ jobs:
         id: budget
         env:
           START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 20
           RESERVE: ${{ env.GO != 'skip' && 10 || 3 }}
         run: bash scripts/ci-time-left.sh
       # One target at a time: they share each package's .build, and at most three tests at a
@@ -755,7 +761,6 @@ jobs:
         if: ${{ always() && !cancelled() && env.GO != 'skip' }}
         env:
           START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 20
           RESERVE: 3
         run: bash scripts/ci-time-left.sh
       # The Go tasks on a Mac, after the Swift ones (one task at a time, #5632). Its `always()`:
@@ -847,6 +852,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 20
           STATUS: ${{ job.status }}
         run: bash scripts/ci-step-times.sh
