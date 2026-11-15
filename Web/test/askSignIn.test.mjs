@@ -89,7 +89,7 @@ test("the code shows while it waits, and approved, the new key is this browser's
 });
 
 test("Cancel closes the wait and says nothing; running out says so", async (t) => {
-  const net = controlPlane((m, socket) => {
+  const net = controlPlane((_m, socket) => {
     socket.say({ jsonrpc: "2.0", method: "control/signInWaiting", params: { code: "K7Q2MX", expires: "2026-10-22T00:00:00Z" } });
   });
   const { keys, session: s } = session(t, net);

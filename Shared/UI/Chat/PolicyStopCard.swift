@@ -17,7 +17,7 @@ struct PolicyStopCard: View {
     private var asked: DaemonAPI.BudgetRequest? { PolicyStopAsks.shared.asked[entryID] }
 
     var body: some View {
-        RecordLine(icon: PolicyLayersWords.stopSymbol, head: PolicyLayersWords.stopTitle,
+        RecordLine(head: PolicyLayersWords.stopTitle,
                    detail: asked.map(PolicyLayersWords.asked) ?? refusal.rule.map(PolicyLayersWords.ruleTitle),
                    action: actions.openPolicy.map { open in
                        StripButton(title: PolicyLayersWords.stopActionTitle(action)) { open(action) }

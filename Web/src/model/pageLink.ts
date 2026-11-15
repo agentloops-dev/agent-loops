@@ -17,6 +17,7 @@ const withScheme = /^[a-z][a-z0-9+.-]*:/i;
  */
 export function pageLinkTarget(href: string, document: string): PageLink | null {
   const raw = href.trim();
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: a control character in a path is refused on purpose
   if (!raw || withScheme.test(raw) || raw.startsWith("/") || /[\u0000-\u001f\\]/.test(raw)) return null;
   let path: string;
   try {
@@ -25,6 +26,7 @@ export function pageLinkTarget(href: string, document: string): PageLink | null 
     return null;
   }
   if (!path) return { kind: "samePage" };
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: a control character in a path is refused on purpose
   if (/[\u0000-\u001f\\]/.test(path)) return null;
   const absolute = document.startsWith("/");
   const folder = document.slice(0, Math.max(0, document.lastIndexOf("/")));

@@ -33,8 +33,11 @@ export function Ask({ glyph, title, asker, label, alert = false, inert = false, 
       {...(alert ? { role: "alert" } : {})}>
       <header class="ask-head">
         <Icon name={glyph} class="ask-glyph" />
-        <span class="ask-title strong">{title}</span>
-        {asker && <span class="ask-asker">{asker}</span>}
+        {/* The question has the card's whole width (#5670): the asker is a line of its own under it. */}
+        <span class="ask-words">
+          <span class="ask-title strong">{title}</span>
+          {asker && <span class="ask-asker">{asker}</span>}
+        </span>
       </header>
       {children}
       {(decline || buttons) && (
