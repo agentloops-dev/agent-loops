@@ -32,8 +32,8 @@ var readyMadeRepo = "agentloops-dev/dotagents"
 // readyMadeTag and readyMadeCommit are the release's pin: the tag fetched, and the commit it
 // must be. A copy of another commit is refused, so a moved tag installs nothing.
 var (
-	readyMadeTag    = "v0.4.0"
-	readyMadeCommit = "fa257fe7e57f4e2b5219cd695b6c62c1202b11ae"
+	readyMadeTag    = "v0.5.0"
+	readyMadeCommit = "e068ae014ac45c2e9e06c5fa12577935159e7dc0"
 )
 
 // readyMadeGitBase is where the repository is cloned from: GitHub, or a folder of bare
