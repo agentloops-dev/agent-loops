@@ -4,7 +4,7 @@
 # Swift's Model types are written by hand and checked against it (WireSchemaTests).
 #
 #   scripts/wire.sh gen     write Go/wire/types_gen.go, Go/wire/methods_gen.go and
-#                           Web/src/protocol/generated.ts from Packages/Wire
+#                           Web/src/protocol/generated.ts from Packages/Wire: Nx's wire:gen
 #   scripts/wire.sh check   write nothing; fail when one of them is not what Packages/Wire makes
 #   scripts/wire.sh compat  fail when what a caller sends changed since the last release tag
 #                           with the same x-capability (#4095; scripts/wire-compat.py)
@@ -15,7 +15,14 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 case "${1:-}" in
-gen) exec "$root/Go/scripts/go.sh" run ./cmd/wiregen ;;
+gen)
+	# Through Nx (#5628): a cache hit writes what the same Packages/Wire made before. With no
+	# pinned Node here, the generator itself.
+	. "$root/scripts/node.sh"
+	use_pinned_node
+	if have_pinned_node; then exec "$root/scripts/nx.sh" run wire:gen; fi
+	exec "$root/Go/scripts/go.sh" run ./cmd/wiregen
+	;;
 check) exec "$root/Go/scripts/go.sh" run ./cmd/wiregen -check ;;
 compat)
 	shift

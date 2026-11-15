@@ -590,6 +590,15 @@ final class AppModel {
         showsRuntimes = true
     }
 
+    /// The Secrets page's selected item, by its id (`SecretsPage.Item.id`), so a link opens one (#5257).
+    var secretsSelection: String?
+
+    /// Status ▸ Secrets (#5257): the page, with `item` selected when given.
+    func showSecrets(item: String? = nil) {
+        if let item { secretsSelection = item }
+        statusSecretsPage = .secrets
+    }
+
     /// An agent's chat, from a machine's Resources or a capsule naming its holder: its
     /// own folder first, as a banner does, so the sidebar and the page agree.
     func openAgent(_ agentID: UUID) {
@@ -1161,6 +1170,12 @@ final class AppModel {
     var draftClientPermission: ClientPermissionMode?
     /// What Auto would pick now for the draft (#2658), for "Picks Claude now".
     private(set) var draftAutoPreview: AutoPreview?
+    /// Which machine Auto would pick for the draft's project (#5375), from the control plane;
+    /// nil with no control plane, one that does not know it, or no project.
+    var draftAutoMachine: DaemonAPI.AutoMachinePick?
+    /// The folder whose machine the person named by hand in On (#5375): Auto is off for that
+    /// form only, and is on again after the next start.
+    var draftNamedMachine: FolderKey?
     /// What the draft's attachments need its runtime to take (#3162): Auto's preview picks a
     /// runtime that takes them, as the start does.
     private(set) var draftAttachmentNeeds: ACP.PromptCapabilities?
@@ -1348,6 +1363,8 @@ final class AppModel {
     private(set) var controlPlaneMoves = 0
     /// The servers (037). This Mac is `client`, as it always was.
     let hosts = HostSet(locations: .default)
+    /// Step 7 of a machine's set-up: a key from Secrets, or a device-code card (#5361).
+    let machineSignIn = MachineSignInDriver()
     /// The Export… or Import Agents… on its way, drawn as a busy sheet with Cancel (#2437).
     var exportImport: ExportImportProgress?
     /// A server asked for a sign-in this Mac relays; the window asks the person (T091).
@@ -3635,6 +3652,8 @@ final class AppModel {
             ($0.id, (label: $0.name, online: $0.answers && !MachineSetupWords.isSettingUp($0.setup)))
         })
         hosts.controlRows = Dictionary(uniqueKeysWithValues: others.map { ($0.id, $0) })
+        // Step 7 of a machine's set-up signs its runtimes in (#5361).
+        for host in others { machineSignIn.follow(host.id, model: self) }
         for host in others where host.answers {
             await reach(host, through: controlLink)
         }

@@ -1,7 +1,7 @@
 #!/bin/sh
 # The performance check (#225): the tests marked `.perfBudget`, on their own, held to
 # their wall-clock budgets with AGENTS_RUN_PERF=1. Every other run of these tests (a plain
-# `swift test`, CI, a merge wave's test-agentskit and test-codetext) asserts what they
+# `swift test`, CI, Nx's agentskit and codetext tests) asserts what they
 # compute and prints the time, but holds no budget, because a budget measured beside
 # three builds measures the load.
 #

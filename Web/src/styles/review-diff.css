@@ -15,15 +15,19 @@
   border: 1px solid var(--paper-rule); border-radius: var(--radius-control); background: var(--paper-ground); }
 .review-page.empty { align-items: center; text-align: center; }
 /* The one diff of a page (FileDiff, #1472): numbers for the old file and the new, wrapped lines,
-   folds and breaks; marked by sign, weight, strike and a faint wash, as .diff-line is. */
+   folds and breaks. Added lines green and removed lines red, from the diff tokens (#5476, #5477): a wash, a bar
+   at the leading edge and the changed words in a stronger colour; the + and − signs stay, so colour is never
+   the only mark. */
 .file-diff { font: 0.75rem/1.5 var(--font-mono); border-radius: var(--radius-control); background: var(--paper-well); padding: 6px 0; }
-.file-diff .line { display: flex; align-items: baseline; padding-right: 10px; }
+.file-diff .line { display: flex; align-items: baseline; padding-right: 10px; box-shadow: inset 3px 0 0 transparent; }
 .file-diff .number { flex: none; width: 3.5em; padding-right: 0.5em; text-align: right; opacity: 0.4; user-select: none; font-variant-numeric: tabular-nums; }
 .file-diff .sign { flex: none; width: 1.4em; text-align: center; opacity: 0.6; user-select: none; }
 .file-diff .text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.file-diff .line.added { background: var(--paper-wash); font-weight: 500; }
-.file-diff .line.removed .text { opacity: 0.55; text-decoration: line-through; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
-.file-diff .line.removed { background: color-mix(in srgb, var(--paper-ink) 6%, transparent); }
+.file-diff .line.added { background: var(--paper-diff-added-wash); box-shadow: inset 3px 0 0 var(--paper-diff-added-bar); }
+.file-diff .line.removed { background: var(--paper-diff-removed-wash); box-shadow: inset 3px 0 0 var(--paper-diff-removed-bar); }
+.file-diff .line.added .sign, .file-diff .line.removed .sign { opacity: 1; }
+.file-diff .line.added .diff-word { background: var(--paper-diff-added-word); }
+.file-diff .line.removed .diff-word { background: var(--paper-diff-removed-word); }
 .file-diff .pair { display: grid; grid-template-columns: 1fr 1fr; }
 .file-diff .pair > :first-child { border-right: 1px solid var(--paper-rule); }
 .file-diff .pair .empty { background: color-mix(in srgb, var(--paper-ink) 4%, transparent); }

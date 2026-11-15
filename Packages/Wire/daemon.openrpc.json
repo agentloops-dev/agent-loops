@@ -85,6 +85,11 @@
       "name": "host.lock/2",
       "by": "host",
       "description": "The host joins its person's lock (#3491, specs/3399-machine-lock D3): with an invite key from its join code it signs its own addMachine (machine/lockAdd); with none it asks (machine/lockJoin), and shows the six digits once a signer answered (machine/lockJoinChanged). Declared: those methods are the control plane's (control.openrpc.json)."
+    },
+    {
+      "name": "host.user-settings/3",
+      "by": "host",
+      "description": "The host still answers settings/userPart as 0.19.0 asked it. host.user-settings/4 (#5259): a client may ask for the part environment, which an older host does not know."
     }
   ],
   "components": {

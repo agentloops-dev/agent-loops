@@ -355,9 +355,7 @@ func TestReleaseAfterMinutesClamped(t *testing.T) {
 // clock moved past the release.
 func waitIdle(t *testing.T, d *Daemon, id wire.UUID) {
 	t.Helper()
-	was := eventHoldLimit
-	eventHoldLimit = 200 * time.Millisecond
-	t.Cleanup(func() { eventHoldLimit = was })
+	setFor(t, &eventHoldLimit, 200*time.Millisecond)
 	m := appClient(t, d, id)
 	m.post("initialize", map[string]any{}, 1)
 	if text, _ := m.tool(2, "wait_for_event", map[string]any{"events": "branch.moved", "where": map[string]any{"branch": []string{"cd"}}, "until_minutes": 60}); !strings.HasPrefix(text, "Still waiting for ") {

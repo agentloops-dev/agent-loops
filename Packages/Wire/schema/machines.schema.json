@@ -5054,6 +5054,221 @@
       ],
       "additionalProperties": false
     },
+    "WarmPool": {
+      "type": "object",
+      "description": "A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/definitions/WarmPoolScope"
+        },
+        "provider": {
+          "type": "string",
+          "description": "The machine provider's id: only a provider can make machines."
+        },
+        "size": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The runtimes to install; none means those of the pool's projects."
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The project folders to send, at their last commit."
+        },
+        "minReady": {
+          "type": "integer",
+          "description": "Machines kept ready (set up, unclaimed). 0 makes nothing. At most maxSize."
+        },
+        "maxSize": {
+          "type": "integer",
+          "description": "The most machines held at once, ready or being set up. At least 1."
+        },
+        "target": {
+          "type": "integer",
+          "description": "What the pool aims at: minReady, until auto-scale writes it."
+        },
+        "replaceAfter": {
+          "type": "number",
+          "description": "Seconds after which a ready machine is replaced. Default 86400 (24 hours)."
+        },
+        "hours": {
+          "$ref": "#/definitions/WarmPoolHours"
+        },
+        "state": {
+          "$ref": "#/definitions/WarmPoolState"
+        },
+        "ready": {
+          "type": "integer"
+        },
+        "settingUp": {
+          "type": "integer"
+        },
+        "failedMakes": {
+          "type": "integer",
+          "description": "Makes that failed in a row. Three stop the pool."
+        },
+        "stoppedBecause": {
+          "type": "string",
+          "description": "Why the pool stopped making, in the provider's words."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "scope",
+        "provider",
+        "minReady",
+        "maxSize",
+        "target",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolHours": {
+      "type": "object",
+      "description": "When a pool runs: on these weekdays (0 Sunday to 6 Saturday) from `from` to `to`, as HH:MM in `timezone` (an IANA name; UTC when absent). Outside them the ready machines are deleted and none are made. A pool with no hours runs every day.",
+      "properties": {
+        "days": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "days",
+        "from",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolScope": {
+      "type": "string",
+      "description": "Whose pool it is. Only user is built (#5353).",
+      "enum": [
+        "user",
+        "project",
+        "org"
+      ]
+    },
+    "WarmPoolSet": {
+      "type": "object",
+      "description": "pool/set: makes a pool, or changes the one with this id. The control plane writes target, state and the counts. Min must not be above max, and max is at least 1.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Absent makes a new pool."
+        },
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/definitions/WarmPoolScope"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minReady": {
+          "type": "integer"
+        },
+        "maxSize": {
+          "type": "integer"
+        },
+        "replaceAfter": {
+          "type": "number"
+        },
+        "hours": {
+          "$ref": "#/definitions/WarmPoolHours"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "minReady",
+        "maxSize"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolState": {
+      "type": "string",
+      "description": "keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed in a row, see stoppedBecause. empty: minReady is 0.",
+      "enum": [
+        "keeping",
+        "off-hours",
+        "stopped",
+        "empty"
+      ]
+    },
+    "WarmPools": {
+      "type": "object",
+      "properties": {
+        "pools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WarmPool"
+          }
+        }
+      },
+      "required": [
+        "pools"
+      ],
+      "additionalProperties": false
+    },
     "WebPagePairing": {
       "type": "object",
       "description": "machine/pairWebPage (#4214): the web page's address with a one-time browser code after #code=, for the agent browser to open.",

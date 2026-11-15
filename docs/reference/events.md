@@ -573,7 +573,7 @@ and `pr.reviewed` stay as they are.
   | Reason | What it means | More data |
   | --- | --- | --- |
   | `conflict` | The PR conflicts with its base. | |
-  | `required_check_failed` | A check that the base's rule requires failed on the head. A check that is not required (as `go-darwin`) is not counted. | `failedChecks`: each one's `name` and `url` |
+  | `required_check_failed` | A check that the base's rule requires failed on the head. A check that is not required (as `docs-check`) is not counted. | `failedChecks`: each one's `name` and `url` |
   | `changes_requested` | A reviewer asked for changes. | `reviewUrl` |
   | `automerge_disabled` | The forge turned auto-merge off. A PR that never had it on is not blocked. | |
   | `behind` | The base's rule wants the branch up to date with its base, and it is not. Only under that rule. | |

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -145,7 +144,7 @@ func (d *Daemon) baselineChanged(change map[string]wire.JSONValue) {
 	if !prs && !line {
 		return
 	}
-	safe.Go("multiplier/changed", func() {
+	d.goJob("multiplier/changed", func() {
 		Broadcast(d, wire.NotifyMultiplierChanged, d.multiplierState(d.ctx))
 	})
 }
@@ -153,7 +152,7 @@ func (d *Daemon) baselineChanged(change map[string]wire.JSONValue) {
 // multiplierChanged tells every client the figure after pr merged, away from the caller.
 // With a control plane, the work goes to it first, so its count has the merge.
 func (d *Daemon) multiplierChanged(pr wire.LineageNode) {
-	safe.Go("multiplier/changed", func() {
+	d.goJob("multiplier/changed", func() {
 		if d.askControl.Load() != nil {
 			d.sendReport()
 		}

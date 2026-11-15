@@ -4661,6 +4661,143 @@ export interface EntryNotification {
 }
 
 /**
+ * env/changed (#5259): a file of variables changed on this machine, so the Environment page reads
+ * env/list again. folder is the folder whose .agents/env changed; yours is ~/.agents/env.
+ */
+export interface EnvChanged {
+  /** The folder, as a path, whose .agents/env changed. */
+  folder?: string;
+  /** ~/.agents/env changed. */
+  yours?: boolean;
+}
+
+/**
+ * One file of variables (#5259): ~/.agents/env (yours) or a folder's .agents/env (repo), as this
+ * machine reads it.
+ */
+export interface EnvFile {
+  layer: EnvLayer;
+  /** The file's path on this machine. */
+  path: string;
+  /** For repo: the folder, as a path. */
+  folder?: string;
+  /** The file is there. */
+  exists: boolean;
+  variables: EnvVariable[];
+  /**
+   * Why the file is not read, in words: it is over 64 KB or has over 500 variables. variables is
+   * then empty, and a session gets nothing from it.
+   */
+  problem?: string;
+  /** For repo: the file has changes that git has not committed. */
+  uncommitted?: boolean;
+  /**
+   * For yours: the file differs from what the person's settings last wrote to it, so this machine
+   * uses the edited file. The page offers Keep for All Machines (user/setSettings with the
+   * environment part) and Discard (env/discard).
+   */
+  changedByHand?: boolean;
+}
+
+/**
+ * Where a variable comes from (#5259), the lowest first: the login environment, the folder's
+ * .agents/env, then ~/.agents/env. The later wins. Agents' own variables come after all of them and
+ * are not listed.
+ */
+export type EnvLayer =
+  | "login"
+  | "repo"
+  | "yours";
+
+/**
+ * env/list's answer (#5259): ~/.agents/env first, then each known folder's .agents/env (one with no
+ * file is left out unless env/list named it).
+ */
+export interface EnvList {
+  files: EnvFile[];
+}
+
+/** env/list (#5259). With folder, only ~/.agents/env and that folder's file. */
+export interface EnvListRequest {
+  /** A folder, as a path or a file URL. */
+  folder?: string;
+}
+
+/** env/resolve (#5259): a folder, or a running session's folder. */
+export interface EnvResolveRequest {
+  /** A folder, as a path or a file URL. */
+  folder?: string;
+  agentID?: UUID;
+}
+
+/**
+ * env/resolve's answer (#5259), "As a session sees it": each name of the two files, the value a
+ * session in the folder gets, and the layer that wins. A name only the login environment has is not
+ * listed, nor any login value.
+ */
+export interface EnvResolved {
+  /** The folder, as a path. */
+  folder: string;
+  variables: EnvResolvedVariable[];
+}
+
+/** One name as a session sees it (#5259). */
+export interface EnvResolvedVariable {
+  name: string;
+  /** The value a session gets. Absent when no layer gives it (each is refused). */
+  value?: string;
+  /** The layer that wins. Absent when no layer gives it. */
+  layer?: EnvLayer;
+  /** The lower layers that also set it, and that it wins over. */
+  over?: EnvLayer[];
+  /** The state of the variable in the winning layer, or, when none gives it, in the highest. */
+  state: EnvVariableState;
+  /** Why it is not given, in words. */
+  reason?: string;
+}
+
+/** One variable of a file (#5259). */
+export interface EnvVariable {
+  name: string;
+  value: string;
+  /** The # comment line just above it, without the #. */
+  description?: string;
+  /** Its line in the file, from 1. */
+  line: number;
+  state: EnvVariableState;
+  /** Why it is refused or blocked, or why it looks like a secret, in words. */
+  reason?: string;
+}
+
+/**
+ * What a session gets of a variable (#5259): given; refused, a name Agents or the system own, or
+ * that a repo's file may not set; secretLooking, given, but its value looks like a secret, so the
+ * page shows it in Needs you (revoke it when it is in a repo's file, move it when it is in yours);
+ * policyBlocked, the organisation's environment rule does not allow it.
+ */
+export type EnvVariableState =
+  | "given"
+  | "refused"
+  | "secretLooking"
+  | "policyBlocked";
+
+/**
+ * env/write (#5259): add, change or remove one variable of a folder's .agents/env, keeping the
+ * other lines and comments. The file is left not committed. ~/.agents/env is the person's settings:
+ * a client changes it with user/setSettings, part environment. Refused when the name is not allowed
+ * in a repo's file or the value looks like a secret.
+ */
+export interface EnvWriteRequest {
+  /** The folder, as a path or a file URL. */
+  folder: string;
+  name: string;
+  /** The new value. Absent removes the variable and its description. */
+  value?: string;
+  /** The # comment line above it, one line. Absent keeps the one there; empty removes it. */
+  description?: string;
+}
+
+/**
  * An environment's tier, as GitLab's five (#5262). A tier this build does not know reads as
  * `other`.
  */
@@ -13113,6 +13250,26 @@ export interface SecretReleased {
 }
 
 /**
+ * secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask
+ * before use off, with its value; else none, and the names that were looked for. A name with Ask
+ * before use on is never read: it is in refused, so the step can say so.
+ */
+export interface SecretSignInKey {
+  name?: string;
+  value?: string;
+  looked: string[];
+  refused: string[];
+}
+
+/**
+ * secrets/signInKey (#5361): the key a person has in Secrets for a runtime, for step 7 of a
+ * machine's set-up.
+ */
+export interface SecretSignInKeyRequest {
+  runtimeID: string;
+}
+
+/**
  * secrets/terminalValue (#4179): agents-secret NAME with no session's grant, such as from a
  * terminal.
  */
@@ -14320,6 +14477,12 @@ export interface StartRequest {
    * An agent on another machine started it, through the control plane (#2887): its chat says who.
    */
   startedFrom?: StartedFrom;
+  /**
+   * The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini:
+   * you last started here.": the session's chat says it first. A client sends what
+   * sessions/previewStart gave in text.
+   */
+  autoChose?: string;
 }
 
 /**
@@ -14942,6 +15105,15 @@ export interface UserAgentConfig {
 }
 
 /**
+ * The environment part of user settings (#5259): ~/.agents/env, whole, as text, so its comments and
+ * order are kept. Written to that file on every machine of the person. Not sealed: the control
+ * plane refuses a value that looks like a secret.
+ */
+export interface UserEnvironment {
+  text: string;
+}
+
+/**
  * settings/userPart's answer (#1760): this machine's own part, for a client to set at the user
  * scope with Use This Mac's. An MCP server with a token in clear is refused, so no secret goes into
  * the user settings unsealed.
@@ -15155,6 +15327,11 @@ export interface UserSettings {
    */
   timeZone?: JSONValue;
   /**
+   * ~/.agents/env (#5259), as a UserEnvironment: written to that file on each of the person's
+   * machines. The control plane refuses a value that looks like a secret.
+   */
+  environment?: JSONValue;
+  /**
    * #2957, research R11: your layer, as a SignedYourPolicy. Only the keeper sets it
    * (user/setPolicy); a client cannot (user/setSettings refuses this part).
    */
@@ -15182,9 +15359,9 @@ export interface UserSettingsPart {
 
 /**
  * A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers,
- * agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) and the
- * time zone (#4818) follow the person. Resources belong to each machine. policy (#2957) is set only
- * by the keeper, through user/setPolicy; user/setSettings refuses it.
+ * agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time
+ * zone (#4818) and the environment (#5259) follow the person. Resources belong to each machine.
+ * policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
  */
 export type UserSettingsPartName =
   | "mcpServers"
@@ -15194,6 +15371,7 @@ export type UserSettingsPartName =
   | "notifications"
   | "accounts"
   | "timeZone"
+  | "environment"
   | "policy";
 
 /**
@@ -15389,6 +15567,99 @@ export interface WakeState {
   since?: WireDate;
   graceUntil?: WireDate;
   onPower: boolean;
+}
+
+/**
+ * A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept
+ * made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in
+ * to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a
+ * claimed machine leaves the pool and does not count). target is written by the control plane and
+ * is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
+ */
+export interface WarmPool {
+  id: string;
+  name: string;
+  scope: WarmPoolScope;
+  /** The machine provider's id: only a provider can make machines. */
+  provider: string;
+  size?: string;
+  region?: string;
+  /** The runtimes to install; none means those of the pool's projects. */
+  runtimes?: string[];
+  /** The project folders to send, at their last commit. */
+  projects?: string[];
+  /** Machines kept ready (set up, unclaimed). 0 makes nothing. At most maxSize. */
+  minReady: number;
+  /** The most machines held at once, ready or being set up. At least 1. */
+  maxSize: number;
+  /** What the pool aims at: minReady, until auto-scale writes it. */
+  target: number;
+  /** Seconds after which a ready machine is replaced. Default 86400 (24 hours). */
+  replaceAfter?: number;
+  hours?: WarmPoolHours;
+  state: WarmPoolState;
+  ready?: number;
+  settingUp?: number;
+  /** Makes that failed in a row. Three stop the pool. */
+  failedMakes?: number;
+  /** Why the pool stopped making, in the provider's words. */
+  stoppedBecause?: string;
+}
+
+/**
+ * When a pool runs: on these weekdays (0 Sunday to 6 Saturday) from `from` to `to`, as HH:MM in
+ * `timezone` (an IANA name; UTC when absent). Outside them the ready machines are deleted and none
+ * are made. A pool with no hours runs every day.
+ */
+export interface WarmPoolHours {
+  days: number[];
+  from: string;
+  to: string;
+  timezone?: string;
+}
+
+export interface WarmPoolRequest {
+  id: string;
+}
+
+/** Whose pool it is. Only user is built (#5353). */
+export type WarmPoolScope =
+  | "user"
+  | "project"
+  | "org";
+
+/**
+ * pool/set: makes a pool, or changes the one with this id. The control plane writes target, state
+ * and the counts. Min must not be above max, and max is at least 1.
+ */
+export interface WarmPoolSet {
+  /** Absent makes a new pool. */
+  id?: string;
+  name: string;
+  scope?: WarmPoolScope;
+  provider: string;
+  size?: string;
+  region?: string;
+  runtimes?: string[];
+  projects?: string[];
+  minReady: number;
+  maxSize: number;
+  replaceAfter?: number;
+  hours?: WarmPoolHours;
+}
+
+/**
+ * keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed
+ * in a row, see stoppedBecause. empty: minReady is 0.
+ */
+export type WarmPoolState =
+  | "keeping"
+  | "off-hours"
+  | "stopped"
+  | "empty";
+
+export interface WarmPools {
+  pools: WarmPool[];
 }
 
 /**
@@ -16472,6 +16743,7 @@ export interface Methods {
   "secrets/sessionRemove": { params: SessionSecretRemoveRequest; result: SessionSecrets };
   "secrets/sessionSet": { params: SessionSecretSetRequest; result: SessionSecrets };
   "secrets/setNeedsApproval": { params: SecretNeedsApprovalRequest; result: Empty };
+  "sessions/previewStart": { params: AutoMachineRequest; result: AutoMachinePick };
   "settings/passThrough": { params: Empty; result: PassThroughState };
   "signIn/approve": { params: SignInDecide; result: Empty };
   "signIn/configure": { params: SignInConfigure; result: SignInProviders };
@@ -16518,7 +16790,9 @@ export interface Methods {
   "views/show": { params: ViewShowRequest; result: Empty };
   "wake/set": { params: WakeSettings; result: WakeSettings };
   "wake/settings": { params: Empty; result: WakeSettings };
+  "work/dismiss-lead": { params: WorkDismissLeadRequest; result: ForgeDone };
   "work/features": { params: WorkFeaturesRequest; result: WorkFeatures };
+  "work/suggest-leads": { params: WorkSuggestLeadsRequest; result: WorkSuggestLeads };
   "work/timeline": { params: WorkTimelineRequest; result: WorkTimeline };
   "workflows/approve": { params: WorkflowApproveRequest; result: WorkflowSummary };
   "workflows/archive": { params: WorkflowArchiveRequest; result: WorkflowSummary };
@@ -16928,6 +17202,7 @@ export const MethodTarget = {
   "secrets/sessionRemove": "host",
   "secrets/sessionSet": "host",
   "secrets/setNeedsApproval": "host",
+  "sessions/previewStart": "control",
   "settings/passThrough": "host",
   "signIn/approve": "control",
   "signIn/configure": "control",
@@ -16974,7 +17249,9 @@ export const MethodTarget = {
   "views/show": "host",
   "wake/set": "host",
   "wake/settings": "host",
+  "work/dismiss-lead": "host",
   "work/features": "host",
+  "work/suggest-leads": "host",
   "work/timeline": "host",
   "workflows/approve": "host",
   "workflows/archive": "host",
@@ -17420,6 +17697,15 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ElicitationSecret: { required: ["name", "isSet"], optional: ["url", "canBeSessionOnly", "canAskBeforeUse", "description"] },
   Empty: { required: [], optional: [] },
   EntryNotification: { required: ["agentID", "entry"], optional: ["index", "oversized"] },
+  EnvChanged: { required: [], optional: ["folder", "yours"] },
+  EnvFile: { required: ["layer", "path", "exists", "variables"], optional: ["folder", "problem", "uncommitted", "changedByHand"] },
+  EnvList: { required: ["files"], optional: [] },
+  EnvListRequest: { required: [], optional: ["folder"] },
+  EnvResolveRequest: { required: [], optional: ["folder", "agentID"] },
+  EnvResolved: { required: ["folder", "variables"], optional: [] },
+  EnvResolvedVariable: { required: ["name", "state"], optional: ["value", "layer", "over", "reason"] },
+  EnvVariable: { required: ["name", "value", "line", "state"], optional: ["description", "reason"] },
+  EnvWriteRequest: { required: ["folder", "name"], optional: ["value", "description"] },
   Event: { required: ["position", "name", "at", "count", "scope", "sentence", "details", "chainDepth", "consequences"], optional: ["lastAt", "publisher", "message", "actor", "specversion", "id", "type", "provider", "topic", "subject", "source", "time", "producer", "data"] },
   EventDraft: { required: ["name", "at", "scope", "sentence", "details", "chainDepth"], optional: ["message"] },
   EventPattern: { required: ["name", "filters"], optional: ["anyOf", "provider", "topics", "subject", "debounce"] },
@@ -18095,6 +18381,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SecretRelease: { required: ["name", "encapsulated", "approval"], optional: [] },
   SecretReleaseKey: { required: ["publicKey"], optional: [] },
   SecretReleased: { required: ["key"], optional: [] },
+  SecretSignInKey: { required: ["looked", "refused"], optional: ["name", "value"] },
+  SecretSignInKeyRequest: { required: ["runtimeID"], optional: [] },
   SecretTerminalRequest: { required: ["name"], optional: ["command"] },
   SecretTerminalValue: { required: [], optional: ["value", "request", "words"] },
   SecretsLeft: { required: ["host", "name", "secrets"], optional: [] },
@@ -18217,7 +18505,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SlashCommand: { required: ["name"], optional: ["description", "inputHint"] },
   SpendCaps: { required: [], optional: ["dailyUSD"] },
   StartOptions: { required: ["values", "extraArguments"], optional: [] },
-  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "persona", "levels", "purpose", "accountID", "voice", "startedFrom"] },
+  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "autoChose"] },
   StartedFrom: { required: ["machine", "agent", "who"], optional: [] },
   StartedMachinePreview: { required: ["host", "name", "state", "unpushed"], optional: ["unknown"] },
   StartingPoint: { required: ["repository", "commit"], optional: [] },
@@ -18269,6 +18557,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   UsageRollupPeriod: { required: ["at", "rows"], optional: [] },
   UsageRollupRow: { required: ["runtime", "cost", "inputTokens", "outputTokens", "thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "turns", "unpricedTurns", "workingSeconds", "waitingSeconds", "folder"], optional: ["workflow", "counts", "limitTokens", "route"] },
   UserAgentConfig: { required: [], optional: ["instructions", "personas", "skills"] },
+  UserEnvironment: { required: ["text"], optional: [] },
   UserPartHere: { required: ["part", "value"], optional: ["leftOut"] },
   UserPartRequest: { required: ["part"], optional: [] },
   UserSealedSecret: { required: ["name", "version", "sealed"], optional: ["kind", "needsApproval"] },
@@ -18280,7 +18569,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   UserSecretRequest: { required: ["name"], optional: [] },
   UserSecretRow: { required: ["name", "updated", "machines"], optional: ["kind", "created", "hint", "lastOp", "backedUp", "leftOn", "version", "waiting", "needsApproval", "description"] },
   UserSecretSet: { required: ["name", "version", "values"], optional: ["kind", "needsApproval", "description"] },
-  UserSettings: { required: [], optional: ["mcpServers", "agentConfig", "agentConfigFiles", "runtimes", "costLimits", "notifications", "accounts", "timeZone", "policy", "updated"] },
+  UserSettings: { required: [], optional: ["mcpServers", "agentConfig", "agentConfigFiles", "runtimes", "costLimits", "notifications", "accounts", "timeZone", "environment", "policy", "updated"] },
   UserSettingsChanged: { required: [], optional: ["parts", "agentConfigFiles", "secrets"] },
   UserSettingsPart: { required: ["part", "value"], optional: [] },
   UserSuspended: { required: ["user", "provider", "at"], optional: ["off"] },
@@ -18303,6 +18592,11 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitingAgent: { required: ["agentID", "title", "folder", "status"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
+  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause"] },
+  WarmPoolHours: { required: ["days", "from", "to"], optional: ["timezone"] },
+  WarmPoolRequest: { required: ["id"], optional: [] },
+  WarmPoolSet: { required: ["name", "provider", "minReady", "maxSize"], optional: ["id", "scope", "size", "region", "runtimes", "projects", "replaceAfter", "hours"] },
+  WarmPools: { required: ["pools"], optional: [] },
   WebPagePairing: { required: ["url"], optional: [] },
   WebPushKey: { required: [], optional: ["publicKey"] },
   WebPushSubscription: { required: [], optional: ["endpoint", "p256dh", "auth"] },

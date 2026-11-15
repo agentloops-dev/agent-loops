@@ -165,6 +165,9 @@ var own = methodSet(
 	"policy/requests",
 	"policy/set",
 	"policy/stopAll",
+	"pool/delete",
+	"pool/list",
+	"pool/set",
 	"projects/list",
 	"projects/remove",
 	"projects/sessions",
@@ -294,6 +297,8 @@ var writes = methodSet(
 	"policy/refuseMore",
 	"policy/set",
 	"policy/stopAll",
+	"pool/delete",
+	"pool/set",
 	"projects/remove",
 	"projects/set",
 	"projects/setBoards",
@@ -420,6 +425,8 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.botsMethod(ctx, method, params, from)
 	case "policy/get", "policy/mine", "policy/set", "policy/stopAll", "policy/raise":
 		return m.policyMethod(ctx, method, params, from)
+	case "pool/list", "pool/set", "pool/delete":
+		return m.poolMethod(ctx, method, params, from)
 	case "policy/askForMore", "policy/requests", "policy/refuseMore":
 		return m.policyAskMethod(ctx, method, params, from)
 	case "orgRoutes/mine", "orgRoutes/list", "orgRoutes/set", "orgRoutes/replaceKey", "orgRoutes/check", "orgRoutes/remove",
@@ -1366,7 +1373,7 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		if err != nil {
 			return nil, err
 		}
-		return m.s.keepBuildsSync(ctx, host, sync, time.Now())
+		return m.s.keepBuildsSync(ctx, host, sync, m.s.now())
 	case wire.CallDeploysSync.Name:
 		sync, err := require[wire.DeploysSync](params, "DeploysSync")
 		if err != nil {

@@ -7,12 +7,12 @@ The github MCP server (`Go/internal/githubmcp`, `Go/cmd/github-mcp`) embeds the 
 `github-mcp-server` as a library, with the toolsets `context, repos, issues, pull_requests,
 actions, labels` (`upstream.go:26`), and adds its own tools and its events. It reads its
 token from the host's connections store (`githubmcp.Token()`, `rest.go:1142`). Today that
-token is a user token of the GitHub App `agents-loops`, from the device flow
+token is a user token of the GitHub App `agent-loops-dev`, from the device flow
 (`Go/internal/connections/github.go`).
 
 Two identities follow from the epic's design:
 
-- **User token** (design 1, the default): the `agents-loops` App, acting as the person.
+- **User token** (design 1, the default): the `agent-loops-dev` App, acting as the person.
 - **Bot** (design 2, optional): `<login>-agents[bot]`, an App that the person makes with the
   manifest flow, with installation tokens made from its private key on the person's machine.
 
@@ -75,7 +75,7 @@ Decided: **Checks: read, not write**, because no tool makes a check run. Alex ca
 Decided: the tools that need a forbidden permission (`set_ci_secret`, `set_ci_variable`,
 `set_environment_gate`, `make_app_repository`, deploy Approve and Reject, `merge_pr` and
 `review_pr` in the hosted views, teams) **keep the person's user token** of
-`agents-loops`, and never use the bot. They are person actions already, or tools that the app
+`agent-loops-dev`, and never use the bot. They are person actions already, or tools that the app
 gates. GitHub limits a user token to the person's rights (question 3), so this gives the
 agents no more than the person. Alex can overrule.
 
@@ -93,7 +93,7 @@ the bot. A bot's PR still merges only after a person approves it (`main`'s rules
 waits for a person. A bot made before #4291 gets the permission on github.com: on its App's
 **Permissions & events**, set Workflows to Read and write, then accept it on the install.
 
-### The `agents-loops` App (user tokens)
+### The `agent-loops-dev` App (user tokens)
 
 The user token can only do what the App also has. For every tool above to work, the App
 needs every permission in the table except Workflows (a lane pushes a workflow file with
@@ -140,7 +140,7 @@ never do more than the person, and can do less.
 
 **Badge: yes for comments, issues, pull requests and reviews; no for commits.** An issue, a
 comment, a pull request or a review made with a user token shows the person as the author and
-the App's badge ("with agents-loops"). The REST API gives it as `performed_via_github_app`
+the App's badge ("with agent-loops-dev"). The REST API gives it as `performed_via_github_app`
 on issues and issue comments. A commit has no badge: a commit made through the contents API
 names the person, and a git push keeps the local author. The epic's commit trailer is
 therefore necessary.

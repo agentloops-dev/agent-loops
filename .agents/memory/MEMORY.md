@@ -12,7 +12,7 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Channels are MCP servers](channels-are-mcp-servers.md) — Alex 2026-10-16: no built-in Slack/Discord adapters; #1223 removed Slack + Need…
 - [Animated top inset loops AppKit layout](animated-top-inset-loops-appkit-layout.md) — #5189: no animated height in the Mac chat's top inset; repro at 1058x662, presses 0.3–0.6 s apart while working
 - [chat-transcript-scroll-geometry-lies](chat-transcript-scroll-geometry-lies.md) — ChatTranscript's LazyVStack re-measures every frame, so geometry can't tell a reader's scroll from the stack; 
-- [Check go-darwin before arming](check-go-darwin-before-arming.md) — auto-merge ignores non-required checks; #3503 broke main (#3517)
+- [Check every check before arming](check-go-darwin-before-arming.md) — auto-merge ignores non-required checks; #3503 broke main (#3517); go-darwin is in the required `test` since #5645
 - [Go tests on the Mac host](go-tests-on-the-mac-host.md) — #4709: go.sh clean env, go/tmp TMPDIR, go.mod toolchain, tests skip F_FULLFSYNC
 - [Scratch host dies on a reused slug](scratch-host-dies-on-a-reused-slug.md) — "Keychain did not let this program read" then a silent exit: the root path has an old key item; use a new --slug
 - [Clean up worktrees](clean-up-worktrees.md) — disk filled 2026-10-03 (80 GB worktrees); promp…
@@ -36,7 +36,6 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Mac is for engineers, no reports](mac-is-for-engineers-no-reports.md) — Alex 2026-11-01: reports + other people's data are web only (#3224); Mac = personal usage
 - [mac-swipe-walk-needs-hid-and-a-wide-window](mac-swipe-walk-needs-hid-and-a-wide-window.md) — Walking a trackpad swipe on a scratch window needs HID-tap scroll events with the window in front, and a windo
 - [Machines and groups](machines-and-groups.md) — Alex 2026-10-15: one user per machine, scopes control plane/user/project, approve-to-join…
-- [Merge wave never waits for build](merge-wave-never-waits-for-build-lease.md) — Alex 2026-10-04: the merge agent builds at once…
 - [model-menu-comes-from-the-acp-adapter](model-menu-comes-from-the-acp-adapter.md) — A missing or mislabelled model in the app's start form is almost always the globally installed ACP adapter lag
 - [Never copy real agent records](never-copy-real-agent-records.md) — a scratch daemon resumes them live in the real…
 - [Never soft-reset to origin/main](never-soft-reset-to-origin-main.md) — another fetch moves it; the squash reverts landed PRs; reset to t…
@@ -79,8 +78,9 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Toolbar draws catalogue symbols empty](toolbar-draws-catalogue-symbols-empty.md) — macOS 27 toolbar items lose Image("lucide.x"); use Image(toolbarIcon:) there, Image(icon:) elsewhere (#4976)
 - [Outside code is not built here](outside-code-is-not-built-here.md) — cloning/building SwiftDraw or running picosvg was refused; data tarballs are fine; prefer platform libraries (#4976)
 - [The repo is agent-loops](repo-is-agent-loops.md) — agentloops-dev/agent-loops since 2026-11-13 (#5296); old names redirect; daemon alias learnt daily
-- [Never link node_modules into a worktree](never-link-node-modules-into-a-worktree.md) — the AgentsHost build's npm ci empties the link's target, the main checkout's packages (#5137)
+- [Never link node_modules into a worktree](never-link-node-modules-into-a-worktree.md) — the AgentsHost build's install empties the link's target, the main checkout's packages (#5137); install with scripts/pnpm.sh (#5628)
 - [Chrome port 0 sets webdriver](chrome-port-zero-sets-webdriver.md) — Chrome 157 with --remote-debugging-port=0 says navigator.webdriver true; pick a free port, read /json/version (#5207)
 - [Ink drops Enter in a long write](ink-drops-enter-in-a-long-write.md) — claude setup-token lost the Enter sent with a real code; write the code, wait, then \r alone (#5202)
 - [Reach a codespace agentsd socket](reach-a-codespace-agentsd-socket.md) — gh codespace ssh -- -N -L forwards daemon.sock as control; server log path; no strace (ptrace_scope 1)
 - [Scratch first-open take](scratch-first-open-take.md) — question page needs --walk + AGENTS_ROOT, not launch.sh; host env, own browser, Keychain connection, SecureField; #5563/#5564 block it
+- [agentsd goroutines go through goJob](agentsd-goroutines-go-through-gojob.md) — #5653: d.goJob/d.jobFunc so Shutdown waits; tests use setFor, not a deferred restore

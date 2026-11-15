@@ -6,13 +6,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { load } from "./load.mjs";
+import { eventually } from "./eventually.mjs";
 
 const w = await load("test/lockWire.ts");
 const v = JSON.parse(readFileSync(new URL("../../Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/lock/channel.json", import.meta.url)));
 const bytes = (text) => new Uint8Array(Buffer.from(text, "base64"));
 const b64 = (u) => Buffer.from(u).toString("base64");
 const b64url = (u) => Buffer.from(u).toString("base64url");
-const wait = (ms = 10) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** An ECDH private key from Go's raw scalar and its public key. */
 async function ecdhPrivate(raw, publicRaw) {
@@ -74,32 +74,34 @@ function socket() {
   return s;
 }
 
-async function openLink(source) {
+/** A link that is open, and stopped when the test ends, also when an assert fails first. */
+async function openLink(t, source) {
   const keys = new w.MemoryKeyStore();
   keys.record = { privateKey: {}, publicKey: {}, client: "C", control: "K", paired: "" };
   const s = socket();
   const l = new w.Link({ url: "ws://localhost:1/v1/connect", origin: "http://localhost:1", keys, open: () => { queueMicrotask(() => s.onopen?.({})); return s; },
     backoff: [0.01], heartbeat: { every: 60_000, within: 1_000 }, random: () => 0, authenticate: async () => ({ name: "test" }) });
   l.setLock(source);
+  t.after(() => l.stop());
   l.start();
-  await wait();
+  await eventually(() => l.state.kind === "open");
   return { l, s };
 }
 
 const messageOf = (line) => line.slice(line.indexOf(',"m":') + 5, -1);
 
-test("a call to a machine of the lock goes on a channel, with a MAC, and its answer is taken only with the machine's", async () => {
+test("a call to a machine of the lock goes on a channel, with a MAC, and its answer is taken only with the machine's", async (t) => {
   const lock = await lockWithMachine();
-  const { l, s } = await openLink(lock.source);
+  const { l, s } = await openLink(t, lock.source);
   const listed = l.call("folders/list", {}, "k3v9");
-  await wait();
+  await eventually(() => s.raw.length === 1);
   // First the hello, with no MAC.
   const hello = JSON.parse(s.raw[0]);
   assert.equal(hello.h, "k3v9");
   assert.equal(hello.m.method, "lock/hello");
   const { reply, channel } = await lock.answer(hello.m.params);
   s.line(JSON.stringify({ h: "k3v9", m: { jsonrpc: "2.0", id: hello.m.id, result: reply } }));
-  await wait();
+  await eventually(() => s.raw.length === 2);
   // Then the call, with the channel's MAC.
   const sent = messageOf(s.raw[1]);
   assert.ok(w.sealed(sent), sent);
@@ -110,26 +112,25 @@ test("a call to a machine of the lock goes on a channel, with a MAC, and its ans
   await assert.rejects(listed, (error) => error instanceof w.CallFailed && error.code === -32104);
   // The machine's own answer is.
   const second = l.call("folders/list", {}, "k3v9");
-  await wait();
+  await eventually(() => s.raw.length === 3);
   const next = JSON.parse(await channel.open(messageOf(s.raw[2])));
   s.line(`{"h":"k3v9","m":${await channel.seal(`{"jsonrpc":"2.0","id":${next.id},"result":[]}`)}}`);
   assert.deepEqual(await second, []);
   // The control plane's own refusal has no MAC, and is taken as it is.
   const third = l.call("folders/list", {}, "k3v9");
-  await wait();
+  await eventually(() => s.raw.length === 4);
   const last = JSON.parse(await channel.open(messageOf(s.raw[3])));
   s.line(JSON.stringify({ h: "k3v9", m: { jsonrpc: "2.0", id: last.id, error: { code: -32090, message: "That machine is offline." } } }));
   await assert.rejects(third, (error) => error instanceof w.CallFailed && error.code === -32090);
-  l.stop();
 });
 
-test("once the channel is open, what the machine says unasked is taken only with its MAC (#3541)", async () => {
+test("once the channel is open, what the machine says unasked is taken only with its MAC (#3541)", async (t) => {
   const lock = await lockWithMachine();
-  const { l, s } = await openLink(lock.source);
+  const { l, s } = await openLink(t, lock.source);
   const heard = [];
   l.onNotification((method, params, host) => heard.push({ method, params, host }));
   const listed = l.call("folders/list", {}, "k3v9");
-  await wait();
+  await eventually(() => s.raw.length === 1);
   // Before the hello is answered, a notification has no MAC, and is taken.
   s.line(JSON.stringify({ h: "k3v9", m: { jsonrpc: "2.0", method: "agent/changed", params: { id: "before" } } }));
   const hello = JSON.parse(s.raw[0]);
@@ -141,42 +142,39 @@ test("once the channel is open, what the machine says unasked is taken only with
   s.line(`{"h":"k3v9","m":${await channel.seal('{"jsonrpc":"2.0","method":"agent/changed","params":{"id":"real"}}')}}`);
   // One whose bytes were changed on the way: not taken.
   s.line(`{"h":"k3v9","m":${(await channel.seal('{"jsonrpc":"2.0","method":"agent/changed","params":{"id":"realer"}}')).replace("realer", "forged")}}`);
-  await wait(50);
+  // The call goes once the hello is answered, after the lines before it are read.
+  await eventually(() => s.raw.length === 2 && heard.length >= 2);
   assert.deepEqual(heard.map((n) => n.params.id), ["before", "real"]);
   assert.equal(heard[1].params.lock, undefined);
   // The call after them still opens in order.
   const sent = JSON.parse(await channel.open(messageOf(s.raw[1])));
   s.line(`{"h":"k3v9","m":${await channel.seal(`{"jsonrpc":"2.0","id":${sent.id},"result":[]}`)}}`);
   assert.deepEqual(await listed, []);
-  l.stop();
 });
 
-test("with no channel, a prompt goes signed for its machine, so it can be kept", async () => {
+test("with no channel, a prompt goes signed for its machine, so it can be kept", async (t) => {
   const lock = await lockWithMachine();
-  const { l, s } = await openLink(lock.source);
+  const { l, s } = await openLink(t, lock.source);
   const prompt = l.call("agents/prompt", { agentID: "A", text: "go <b>" }, "k3v9");
-  await wait();
+  await eventually(() => s.raw.length === 1);
   const hello = JSON.parse(s.raw[0]);
   // The machine is not there: the control plane says so.
   s.line(JSON.stringify({ h: "k3v9", m: { jsonrpc: "2.0", id: hello.m.id, error: { code: -32090, message: "That machine is offline." } } }));
-  await wait();
+  await eventually(() => s.raw.length === 2);
   const sent = JSON.parse(messageOf(s.raw[1]));
   assert.equal(sent.lock.to, "k3v9");
   assert.ok(await w.verifyRequest(sent.lock, "agents/prompt", JSON.stringify(sent.params)));
   s.line(JSON.stringify({ h: "k3v9", m: { jsonrpc: "2.0", id: sent.id, error: { code: -32093, message: "kept" } } }));
   await assert.rejects(prompt, (error) => error instanceof w.CallFailed);
-  l.stop();
 });
 
-test("a page that is not in its lock calls machines as before", async () => {
-  const { l, s } = await openLink(async () => null);
+test("a page that is not in its lock calls machines as before", async (t) => {
+  const { l, s } = await openLink(t, async () => null);
   const listed = l.call("folders/list", {}, "k3v9");
-  await wait();
-  assert.equal(s.raw.length, 1);
+  await eventually(() => s.raw.length === 1);
   const sent = JSON.parse(s.raw[0]);
   assert.equal(sent.m.method, "folders/list");
   assert.equal(sent.m.lock, undefined);
   s.line(JSON.stringify({ h: "k3v9", m: { jsonrpc: "2.0", id: sent.m.id, result: [] } }));
   assert.deepEqual(await listed, []);
-  l.stop();
 });

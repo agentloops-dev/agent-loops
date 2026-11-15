@@ -5041,6 +5041,134 @@ type EntryNotification struct {
 	Oversized *int64 `json:"oversized,omitzero"`
 }
 
+// env/changed (#5259): a file of variables changed on this machine, so the Environment page reads env/list again. folder is the folder whose .agents/env changed; yours is ~/.agents/env.
+type EnvChanged struct {
+	// The folder, as a path, whose .agents/env changed.
+	Folder *string `json:"folder,omitzero"`
+
+	// ~/.agents/env changed.
+	Yours *bool `json:"yours,omitzero"`
+}
+
+// One file of variables (#5259): ~/.agents/env (yours) or a folder's .agents/env (repo), as this machine reads it.
+type EnvFile struct {
+	Layer EnvLayer `json:"layer"`
+
+	// The file's path on this machine.
+	Path string `json:"path"`
+
+	// For repo: the folder, as a path.
+	Folder *string `json:"folder,omitzero"`
+
+	// The file is there.
+	Exists bool `json:"exists"`
+
+	Variables []EnvVariable `json:"variables"`
+
+	// Why the file is not read, in words: it is over 64 KB or has over 500 variables. variables is then empty, and a session gets nothing from it.
+	Problem *string `json:"problem,omitzero"`
+
+	// For repo: the file has changes that git has not committed.
+	Uncommitted *bool `json:"uncommitted,omitzero"`
+
+	// For yours: the file differs from what the person's settings last wrote to it, so this machine uses the edited file. The page offers Keep for All Machines (user/setSettings with the environment part) and Discard (env/discard).
+	ChangedByHand *bool `json:"changedByHand,omitzero"`
+}
+
+// Where a variable comes from (#5259), the lowest first: the login environment, the folder's .agents/env, then ~/.agents/env. The later wins. Agents' own variables come after all of them and are not listed.
+type EnvLayer string
+
+const EnvLayerLogin EnvLayer = "login"
+const EnvLayerRepo EnvLayer = "repo"
+const EnvLayerYours EnvLayer = "yours"
+
+// env/list's answer (#5259): ~/.agents/env first, then each known folder's .agents/env (one with no file is left out unless env/list named it).
+type EnvList struct {
+	Files []EnvFile `json:"files"`
+}
+
+// env/list (#5259). With folder, only ~/.agents/env and that folder's file.
+type EnvListRequest struct {
+	// A folder, as a path or a file URL.
+	Folder *string `json:"folder,omitzero"`
+}
+
+// env/resolve (#5259): a folder, or a running session's folder.
+type EnvResolveRequest struct {
+	// A folder, as a path or a file URL.
+	Folder *string `json:"folder,omitzero"`
+
+	AgentID *UUID `json:"agentID,omitzero"`
+}
+
+// env/resolve's answer (#5259), "As a session sees it": each name of the two files, the value a session in the folder gets, and the layer that wins. A name only the login environment has is not listed, nor any login value.
+type EnvResolved struct {
+	// The folder, as a path.
+	Folder string `json:"folder"`
+
+	Variables []EnvResolvedVariable `json:"variables"`
+}
+
+// One name as a session sees it (#5259).
+type EnvResolvedVariable struct {
+	Name string `json:"name"`
+
+	// The value a session gets. Absent when no layer gives it (each is refused).
+	Value *string `json:"value,omitzero"`
+
+	// The layer that wins. Absent when no layer gives it.
+	Layer *EnvLayer `json:"layer,omitzero"`
+
+	// The lower layers that also set it, and that it wins over.
+	Over []EnvLayer `json:"over,omitzero"`
+
+	// The state of the variable in the winning layer, or, when none gives it, in the highest.
+	State EnvVariableState `json:"state"`
+
+	// Why it is not given, in words.
+	Reason *string `json:"reason,omitzero"`
+}
+
+// One variable of a file (#5259).
+type EnvVariable struct {
+	Name string `json:"name"`
+
+	Value string `json:"value"`
+
+	// The # comment line just above it, without the #.
+	Description *string `json:"description,omitzero"`
+
+	// Its line in the file, from 1.
+	Line int64 `json:"line"`
+
+	State EnvVariableState `json:"state"`
+
+	// Why it is refused or blocked, or why it looks like a secret, in words.
+	Reason *string `json:"reason,omitzero"`
+}
+
+// What a session gets of a variable (#5259): given; refused, a name Agents or the system own, or that a repo's file may not set; secretLooking, given, but its value looks like a secret, so the page shows it in Needs you (revoke it when it is in a repo's file, move it when it is in yours); policyBlocked, the organisation's environment rule does not allow it.
+type EnvVariableState string
+
+const EnvVariableStateGiven EnvVariableState = "given"
+const EnvVariableStateRefused EnvVariableState = "refused"
+const EnvVariableStateSecretLooking EnvVariableState = "secretLooking"
+const EnvVariableStatePolicyBlocked EnvVariableState = "policyBlocked"
+
+// env/write (#5259): add, change or remove one variable of a folder's .agents/env, keeping the other lines and comments. The file is left not committed. ~/.agents/env is the person's settings: a client changes it with user/setSettings, part environment. Refused when the name is not allowed in a repo's file or the value looks like a secret.
+type EnvWriteRequest struct {
+	// The folder, as a path or a file URL.
+	Folder string `json:"folder"`
+
+	Name string `json:"name"`
+
+	// The new value. Absent removes the variable and its description.
+	Value *string `json:"value,omitzero"`
+
+	// The # comment line above it, one line. Absent keeps the one there; empty removes it.
+	Description *string `json:"description,omitzero"`
+}
+
 // An environment's tier, as GitLab's five (#5262). A tier this build does not know reads as `other`.
 type EnvironmentTier string
 
@@ -13970,6 +14098,22 @@ type SecretReleased struct {
 	Key Data `json:"key"`
 }
 
+// secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask before use off, with its value; else none, and the names that were looked for. A name with Ask before use on is never read: it is in refused, so the step can say so.
+type SecretSignInKey struct {
+	Name *string `json:"name,omitzero"`
+
+	Value *string `json:"value,omitzero"`
+
+	Looked []string `json:"looked"`
+
+	Refused []string `json:"refused"`
+}
+
+// secrets/signInKey (#5361): the key a person has in Secrets for a runtime, for step 7 of a machine's set-up.
+type SecretSignInKeyRequest struct {
+	RuntimeID string `json:"runtimeID"`
+}
+
 // secrets/terminalValue (#4179): agents-secret NAME with no session's grant, such as from a terminal.
 type SecretTerminalRequest struct {
 	Name string `json:"name"`
@@ -15284,6 +15428,9 @@ type StartRequest struct {
 
 	// An agent on another machine started it, through the control plane (#2887): its chat says who.
 	StartedFrom *StartedFrom `json:"startedFrom,omitzero"`
+
+	// The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini: you last started here.": the session's chat says it first. A client sends what sessions/previewStart gave in text.
+	AutoChose *string `json:"autoChose,omitzero"`
 }
 
 // The agent on another machine that started a session with start_session (#2887). The control plane writes machine and who; the asking host writes agent.
@@ -16163,6 +16310,11 @@ type UserAgentConfig struct {
 	Skills map[string]string `json:"skills,omitzero"`
 }
 
+// The environment part of user settings (#5259): ~/.agents/env, whole, as text, so its comments and order are kept. Written to that file on every machine of the person. Not sealed: the control plane refuses a value that looks like a secret.
+type UserEnvironment struct {
+	Text string `json:"text"`
+}
+
 // settings/userPart's answer (#1760): this machine's own part, for a client to set at the user scope with Use This Mac's. An MCP server with a token in clear is refused, so no secret goes into the user settings unsealed.
 type UserPartHere struct {
 	Part UserSettingsPartName `json:"part"`
@@ -16346,6 +16498,9 @@ type UserSettings struct {
 	// The person's time zone (#4818), as a UserTimeZone. Their Mac sets it from its own clock; a workflow's hours: with no time-zone: go by it.
 	TimeZone JSONValue `json:"timeZone,omitzero"`
 
+	// ~/.agents/env (#5259), as a UserEnvironment: written to that file on each of the person's machines. The control plane refuses a value that looks like a secret.
+	Environment JSONValue `json:"environment,omitzero"`
+
 	// #2957, research R11: your layer, as a SignedYourPolicy. Only the keeper sets it (user/setPolicy); a client cannot (user/setSettings refuses this part).
 	Policy JSONValue `json:"policy,omitzero"`
 
@@ -16370,7 +16525,7 @@ type UserSettingsPart struct {
 	Value JSONValue `json:"value"`
 }
 
-// A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers, agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) and the time zone (#4818) follow the person. Resources belong to each machine. policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
+// A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers, agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time zone (#4818) and the environment (#5259) follow the person. Resources belong to each machine. policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
 type UserSettingsPartName string
 
 const UserSettingsPartNameMcpServers UserSettingsPartName = "mcpServers"
@@ -16380,6 +16535,7 @@ const UserSettingsPartNameCostLimits UserSettingsPartName = "costLimits"
 const UserSettingsPartNameNotifications UserSettingsPartName = "notifications"
 const UserSettingsPartNameAccounts UserSettingsPartName = "accounts"
 const UserSettingsPartNameTimeZone UserSettingsPartName = "timeZone"
+const UserSettingsPartNameEnvironment UserSettingsPartName = "environment"
 const UserSettingsPartNamePolicy UserSettingsPartName = "policy"
 
 // user/suspended (#1002, FR-018): to each machine of a suspended person, at hello before its settings and within 5 seconds of a change; off: true ends it.
@@ -16615,6 +16771,116 @@ type WakeState struct {
 	GraceUntil *Date `json:"graceUntil,omitzero"`
 
 	OnPower bool `json:"onPower"`
+}
+
+// A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
+type WarmPool struct {
+	ID string `json:"id"`
+
+	Name string `json:"name"`
+
+	Scope WarmPoolScope `json:"scope"`
+
+	// The machine provider's id: only a provider can make machines.
+	Provider string `json:"provider"`
+
+	Size *string `json:"size,omitzero"`
+
+	Region *string `json:"region,omitzero"`
+
+	// The runtimes to install; none means those of the pool's projects.
+	Runtimes []string `json:"runtimes,omitzero"`
+
+	// The project folders to send, at their last commit.
+	Projects []string `json:"projects,omitzero"`
+
+	// Machines kept ready (set up, unclaimed). 0 makes nothing. At most maxSize.
+	MinReady int64 `json:"minReady"`
+
+	// The most machines held at once, ready or being set up. At least 1.
+	MaxSize int64 `json:"maxSize"`
+
+	// What the pool aims at: minReady, until auto-scale writes it.
+	Target int64 `json:"target"`
+
+	// Seconds after which a ready machine is replaced. Default 86400 (24 hours).
+	ReplaceAfter *float64 `json:"replaceAfter,omitzero"`
+
+	Hours *WarmPoolHours `json:"hours,omitzero"`
+
+	State WarmPoolState `json:"state"`
+
+	Ready *int64 `json:"ready,omitzero"`
+
+	SettingUp *int64 `json:"settingUp,omitzero"`
+
+	// Makes that failed in a row. Three stop the pool.
+	FailedMakes *int64 `json:"failedMakes,omitzero"`
+
+	// Why the pool stopped making, in the provider's words.
+	StoppedBecause *string `json:"stoppedBecause,omitzero"`
+}
+
+// When a pool runs: on these weekdays (0 Sunday to 6 Saturday) from `from` to `to`, as HH:MM in `timezone` (an IANA name; UTC when absent). Outside them the ready machines are deleted and none are made. A pool with no hours runs every day.
+type WarmPoolHours struct {
+	Days []int64 `json:"days"`
+
+	From string `json:"from"`
+
+	To string `json:"to"`
+
+	Timezone *string `json:"timezone,omitzero"`
+}
+
+type WarmPoolRequest struct {
+	ID string `json:"id"`
+}
+
+// Whose pool it is. Only user is built (#5353).
+type WarmPoolScope string
+
+const WarmPoolScopeUser WarmPoolScope = "user"
+const WarmPoolScopeProject WarmPoolScope = "project"
+const WarmPoolScopeOrg WarmPoolScope = "org"
+
+// pool/set: makes a pool, or changes the one with this id. The control plane writes target, state and the counts. Min must not be above max, and max is at least 1.
+type WarmPoolSet struct {
+	// Absent makes a new pool.
+	ID *string `json:"id,omitzero"`
+
+	Name string `json:"name"`
+
+	Scope *WarmPoolScope `json:"scope,omitzero"`
+
+	Provider string `json:"provider"`
+
+	Size *string `json:"size,omitzero"`
+
+	Region *string `json:"region,omitzero"`
+
+	Runtimes []string `json:"runtimes,omitzero"`
+
+	Projects []string `json:"projects,omitzero"`
+
+	MinReady int64 `json:"minReady"`
+
+	MaxSize int64 `json:"maxSize"`
+
+	ReplaceAfter *float64 `json:"replaceAfter,omitzero"`
+
+	Hours *WarmPoolHours `json:"hours,omitzero"`
+}
+
+// keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed in a row, see stoppedBecause. empty: minReady is 0.
+type WarmPoolState string
+
+const WarmPoolStateKeeping WarmPoolState = "keeping"
+const WarmPoolStateOffHours WarmPoolState = "off-hours"
+const WarmPoolStateStopped WarmPoolState = "stopped"
+const WarmPoolStateEmpty WarmPoolState = "empty"
+
+type WarmPools struct {
+	Pools []WarmPool `json:"pools"`
 }
 
 // machine/pairWebPage (#4214): the web page's address with a one-time browser code after #code=, for the agent browser to open.

@@ -22,6 +22,13 @@ func (f *fakeForgeGitHub) MakeRepository(_ context.Context, owner, name, _ strin
 		owner = "alexec"
 	}
 	full := owner + "/" + name
+	if f.cannotMake {
+		if slices.Contains(f.byPerson, full) {
+			return githubmcp.Repository{FullName: full, CloneURL: f.bare, Private: true, Login: "alexec", UserID: 1142830}, false, nil
+		}
+		return githubmcp.Repository{}, false, &githubmcp.CannotMakeError{FullName: full,
+			Err: &githubmcp.GitHubError{Kind: githubmcp.Failed, Message: "GitHub: Resource not accessible by integration", Refused: true}}
+	}
 	made := !slices.Contains(f.made, full)
 	if made {
 		f.made = append(f.made, full)
@@ -114,5 +121,94 @@ func TestMakeAppRepositoryPushesTheStarterAndAddsTheFolder(t *testing.T) {
 	kept, err := d.makeAppRepository(a.ID, ciArgs("name", "tide-log", "starter", "web-service", "values", values))
 	if err != nil || !strings.Contains(kept, "kept what was in it") {
 		t.Fatalf("kept: %q %v", kept, err)
+	}
+}
+
+// #5563: the GitHub App cannot make a repository, so make_app_repository says the person's
+// step (github.com/new from the template, private, then the App installed on it) and makes
+// nothing; once the person made it from the template, the call fills in the starter's values
+// over the template's files as one commit, clones it and adds it as a folder, and a third call
+// pushes nothing more.
+func TestMakeAppRepositoryHandsTheRepositoryToThePerson(t *testing.T) {
+	d, _, gh, _ := forgeDaemon(t)
+	parent := t.TempDir()
+	t.Setenv("AGENTS_CLONE_PARENT", parent)
+	starterTemplate(t, "agentloops-dev/web-service-starter", webTemplate)
+	gh.cannotMake = true
+	a := seeded(t, d, gitFolder(t, "git@github.com:alexec/agents.git"), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
+	values := map[string]string{"APP_NAME": "Tide Log", "SERVICE": "tidelog", "GCP_PROJECT": "tidelog-1", "GCP_REGION": "us-central1"}
+	args := ciArgs("name", "tide-log", "starter", "web-service", "values", values)
+
+	_, err := d.makeAppRepository(a.ID, args)
+	for _, want := range []string{
+		"Nothing was made", "hand_to_person", "browser_navigate",
+		"https://github.com/new?description=Tide+Log&name=tide-log&owner=alexec&template_name=web-service-starter&template_owner=agentloops-dev&visibility=private",
+		"https://github.com/apps/agent-loops-dev/installations/new", "make_app_repository again",
+	} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("refused: no %q in %v", want, err)
+		}
+	}
+	if entries, _ := os.ReadDir(parent); len(entries) != 0 {
+		t.Fatalf("something was cloned: %v", entries)
+	}
+
+	// The person makes it on github.com from the template: GitHub copies the template's
+	// files, placeholders and its own files too, as one commit.
+	bare := filepath.Join(t.TempDir(), "tide-log.git")
+	work := t.TempDir()
+	for p, body := range webTemplate {
+		full := filepath.Join(work, filepath.FromSlash(p))
+		os.MkdirAll(filepath.Dir(full), 0o755)
+		os.WriteFile(full, []byte(body), 0o644)
+	}
+	for _, args := range [][]string{
+		{"init", "-q", "--bare", "--initial-branch=main", bare},
+		{"-C", work, "init", "-q", "--initial-branch=main"},
+		{"-C", work, "add", "-A"},
+		{"-C", work, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "Initial commit"},
+		{"-C", work, "push", "-q", bare, "main"},
+	} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	gh.bare = "file://" + bare
+	gh.byPerson = append(gh.byPerson, "alexec/tide-log")
+
+	got, err := d.makeAppRepository(a.ID, args)
+	if err != nil || !strings.Contains(got, "was on GitHub already") || !strings.Contains(got, "filled in the web-service starter's values") ||
+		!strings.Contains(got, "added it as a folder") {
+		t.Fatalf("%q %v", got, err)
+	}
+	if log, err := exec.Command("git", "-C", bare, "log", "--format=%an %s", "main").CombinedOutput(); err != nil ||
+		strings.TrimSpace(string(log)) != "alexec Fill in the starter\nt Initial commit" {
+		t.Fatalf("pushed: %s %v", log, err)
+	}
+	dest := filepath.Join(parent, "tide-log")
+	for p := range webTemplate {
+		b, err := os.ReadFile(filepath.Join(dest, filepath.FromSlash(p)))
+		switch {
+		case p == ".starterignore" || strings.HasPrefix(p, ".github/README") || strings.HasPrefix(p, ".github/template") || p == ".github/workflows/template.yml":
+			if err == nil {
+				t.Errorf("the template's own %s is in the new app", p)
+			}
+		case p == "icon.bin":
+		case err != nil || strings.Contains(string(b), "__"):
+			t.Errorf("%s is not filled: %q %v", p, b, err)
+		}
+	}
+	if !slices.ContainsFunc(d.Store.Folders(), func(f wire.Folder) bool { return store.FolderPath(f.Folder) == canonical(dest) }) {
+		t.Fatalf("%s is not a folder", dest)
+	}
+
+	// The folder gone, the repository filled already: cloned again, nothing pushed.
+	os.RemoveAll(dest)
+	kept, err := d.makeAppRepository(a.ID, args)
+	if err != nil || !strings.Contains(kept, "kept what was in it") {
+		t.Fatalf("kept: %q %v", kept, err)
+	}
+	if n, _ := exec.Command("git", "-C", bare, "rev-list", "--count", "main").Output(); strings.TrimSpace(string(n)) != "2" {
+		t.Errorf("again pushed: %s commits", n)
 	}
 }

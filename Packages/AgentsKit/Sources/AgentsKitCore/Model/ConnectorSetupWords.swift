@@ -23,7 +23,7 @@ public enum ConnectorSetupWords {
     public static let sheetFoot = "The token is kept by the machine, never in a log."
     public static let continueButton = "Continue on github.com"
     /// Where the person installs the App on the folder's repository.
-    public static let installURL = "https://github.com/apps/agents-loops/installations/new"
+    public static let installURL = "https://github.com/apps/agent-loops-dev/installations/new"
     /// Where the person sees and changes which repositories the App reaches.
     public static let installationsURL = "https://github.com/settings/installations"
 
@@ -377,7 +377,7 @@ public enum ConnectorSetupWords {
         /// The Connect GitHub sheet's second way in (#3945), as GitLab's sheet has.
         public static let signInWay = "github.com"
         public static let tokenWay = "Personal access token"
-        public static let tokenIntro = "For an organisation that does not let the agents-loops App in: make a personal access token on github.com, and paste it here."
+        public static let tokenIntro = "For an organisation that does not let the agent-loops-dev App in: make a personal access token on github.com, and paste it here."
         /// What the person gives up with a token of their own, in place of the App's.
         public static let tokenCost = "The token has all the rights you give it, not only what the App can do. Agents' posts show no App badge, and the token does not renew: make a new one when it ends."
         public static let tokenLabel = "Access token"

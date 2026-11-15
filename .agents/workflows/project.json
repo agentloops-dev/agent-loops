@@ -1,0 +1,7 @@
+{
+  "name": "agent-workflows",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "root": ".agents/workflows",
+  "tags": ["inputs-only"],
+  "targets": {}
+}

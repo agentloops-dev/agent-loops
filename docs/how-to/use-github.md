@@ -23,7 +23,7 @@ the same set-up and the same pages, because the host keeps the state.
 ## Connect GitHub
 
 You connect once, and the connection is for every folder on that host. Agent Loops uses the
-GitHub App `agents-loops`. You choose on github.com which repositories it can see.
+GitHub App `agent-loops-dev`. You choose on github.com which repositories it can see.
 
 1. Open the connection sheet:
    - On a folder's **Connectors** page (the **Connectors** row under the folder in the
@@ -52,7 +52,7 @@ an error or an answer to a client. The host renews it by itself before it ends.
 The connection's row on **Connectors ▸ Connections** says which kind of token GitHub uses:
 
 - **App user token** (the default): the token from **Continue on github.com**. GitHub lets it
-  do only what both you and the `agents-loops` App can do, on the repositories where the App
+  do only what both you and the `agent-loops-dev` App can do, on the repositories where the App
   is installed. So an agent never has more rights than you. Each issue, comment, pull request
   and review that an agent makes through the github server shows the App's badge. The host
   renews the token before it ends, so a long session gets no error.
@@ -68,7 +68,7 @@ The connection's row on **Connectors ▸ Connections** says which kind of token 
 The token stays on the host. It never goes to the control plane.
 
 An agent's own `gh` and `git` use the same token (#3926), in a folder whose repository the
-App reaches: the `agents-loops` App is installed on it, or your bot is installed on its owner
+App reaches: the `agent-loops-dev` App is installed on it, or your bot is installed on its owner
 (then the bot's token). Agent Loops puts its own `gh` first on the agent's PATH, and makes
 `agentsd credential` git's only credential helper for `https://github.com`. Both ask the host
 for the current token at each call, so a session of any length gets no error. The agent's
@@ -77,7 +77,7 @@ session's runtime ends; no token is in the environment or in a file. In a folder
 does not reach, and with a personal access token, the agent's `gh` and `git` use your own
 login, as before. A push over SSH always uses your own key.
 
-GitHub lets the App's user token do only what the `agents-loops` App's install may do (#4077).
+GitHub lets the App's user token do only what the `agent-loops-dev` App's install may do (#4077).
 When the App may not do a thing that you may do, your own login does it:
 
 - When GitHub refuses the agent's `gh` with "Resource not accessible by integration" (for
@@ -95,11 +95,11 @@ When the App may not do a thing that you may do, your own login does it:
   and Pull requests when that is short too). The session's brief says it too. The notice goes
   when a new session finds the permission given.
 
-To make the agents' posts show the App's badge for these too, give the `agents-loops` App
+To make the agents' posts show the App's badge for these too, give the `agent-loops-dev` App
 **Contents**, **Pull requests** and **Actions** read and write on github.com, and accept the
 new permissions on its install.
 
-The `agents-loops` App has no Workflows permission, so GitHub refuses its push of a change to
+The `agent-loops-dev` App has no Workflows permission, so GitHub refuses its push of a change to
 `.github/workflows/`. The agents' bot has Workflows read and write (#4291), so a push as the
 bot works. A bot made before #4291 needs it on github.com: on its App's **Permissions &
 events**, set **Workflows** to **Read and write**, then accept the new permission on its
@@ -260,12 +260,34 @@ when you are one of its reviewers. The row says the tag or branch, and what it w
 - Agent Loops reads the waiting runs every two minutes. A workflow can wait on the github
   server's `deploy.waiting` event instead.
 
+### On any GitHub plan
+
+GitHub Free has required reviewers on public repositories only. So a private repository on
+GitHub Free can't hold a deploy for its reviewers (#5564). The starters (`make_app_repository`)
+hold a deploy in another way, which works on every plan:
+
+1. On a version tag, the starter's `release.yml` makes a GitHub Deployment of the task
+   `deploy:approval`, with the status `pending`. Its payload names the workflow that deploys,
+   for example `{"workflow": "deploy.yml"}`.
+2. The Deployment shows in **Needs You** as a **Deploy** row, as above: *deploy.yml to
+   production · v0.1.0 waits for your approval*. Its reading says the workflow that
+   **Approve** starts, and the run that asked.
+3. **Approve** sets the Deployment's status to `queued` and starts that workflow on the tag
+   (`workflow_dispatch`, with the input `deployment`). The workflow does nothing unless the
+   Deployment is `queued`; then it deploys and sets the status to `in_progress`, then
+   `success` or `failure`. **Reject** sets the status to `inactive`, and nothing deploys.
+
+Here the gate is Agent Loops': only a window or a device answers it, never an agent. The
+GitHub App needs the **Deployments** and **Actions** permissions, read and write. A
+repository of your own can use the same steps: copy `release.yml` and the check at the start
+of the starter's deploy workflow.
+
 A release to the App Store is one of these (#3657): the **app-store** workflow waits at its
 `app-store` environment, and Approve sends the version to App Review
 ([Release Agent Loops](release-agents-host.md)). The version is then on the release's Work
 page as **App Store 0.17.0**, after its TestFlight build.
 
-To approve here, the GitHub App `agents-loops` must have the **Deployments** permission
+To approve here, the GitHub App `agent-loops-dev` must have the **Deployments** permission
 (read and write), and the installation must accept it (github.com/settings/installations).
 Without it, the row still shows, but GitHub refuses Approve and the app shows an error (#3932
 makes the error say why).
@@ -289,9 +311,13 @@ into the repository's CI. Then it tags `v0.1.0`, and you approve the deploy in *
 You**. When you answer **Can't do it**, it stops and says what is left; ask again later,
 and it goes on from there.
 
-To make a repository, the GitHub App `agents-loops` must have the **Administration**
-permission (read and write), and be installed on **All repositories**, so that it can push
-to the new one. Without them, GitHub refuses, and the agent says so.
+The GitHub App `agent-loops-dev` cannot make a repository: it has no **Administration**
+permission (#5563). So you make it: the agent opens `github.com/new` from the starter's
+template, private, with the name filled in, and gives you a card. Choose **Create
+repository**, then install the App on the new repository (**Only select repositories**),
+and answer the card. The agent then fills in the starter's values, clones it and adds it as
+a folder. With a personal access token that has the `repo` scope, the agent makes the
+repository itself.
 
 ## Open a pull request
 

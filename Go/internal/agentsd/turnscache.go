@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -358,7 +357,7 @@ func (d *Daemon) fillTurnsSoon(id wire.UUID) {
 		return
 	}
 	d.filling[id] = true
-	safe.Go("fill turns", func() {
+	d.goJob("fill turns", func() {
 		defer func() {
 			d.turnMu.Lock()
 			delete(d.filling, id)

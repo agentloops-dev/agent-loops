@@ -134,12 +134,12 @@ func (d *Daemon) ciSyncSoon() {
 	d.ciSyncMu.Lock()
 	defer d.ciSyncMu.Unlock()
 	if d.ciSyncTimer == nil {
-		d.ciSyncTimer = time.AfterFunc(ciSyncAfter, func() {
+		d.ciSyncTimer = time.AfterFunc(ciSyncAfter, d.jobFunc("cisync timer", func() {
 			d.ciSyncMu.Lock()
 			d.ciSyncTimer = nil
 			d.ciSyncMu.Unlock()
 			d.sendCITimings()
-		})
+		}))
 	}
 }
 

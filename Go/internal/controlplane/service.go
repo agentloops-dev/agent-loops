@@ -116,6 +116,9 @@ type Config struct {
 	// Start empty, for a handover to fill (R16): no settings made, every member refused,
 	// only the copy handing over answered, until it says take over.
 	Receive bool
+	// The clock builds/sync bounds its days by (#5654); nil is time.Now. A test sets one
+	// fixed time for itself and the plane, so a run across midnight UTC sees one day.
+	Now func() time.Time
 	// Serve, even if this copy was forwarding when it stopped (--no-forwarding).
 	NoForwarding bool
 	// The proxies whose X-Forwarded-For names a socket's source (Caddy on a public
@@ -194,6 +197,8 @@ type Service struct {
 	tunnels *hosttunnels.Tunnels
 	// Machine providers (#691): only on a single copy with a home for their secrets.
 	providers *providers.Providers
+	// Warm pools (#5363): with the providers, on a single copy.
+	pools *warmPools
 	// The other copies over this store, and the leases (US3); nil for a single copy.
 	mesh *mesh
 	// The origin peers dial, which a copy's key exchange is bound to.
@@ -498,6 +503,7 @@ func (s *Service) Start(ctx context.Context) (int, error) {
 	}
 	go s.refreshEvery(15 * time.Second)
 	go s.sweepEveryHour()
+	s.startPools()
 	go s.signIns.checkEvery(time.Hour, s.stop)
 	if s.tunnels != nil {
 		s.tunnels.Start(0)

@@ -16,7 +16,7 @@ func TestTheSetUpsReads(t *testing.T) {
 			{"number": 8, "title": "Fix the walk", "html_url": "i8", "created_at": "2026-10-19T10:00:00Z"}]`,
 		"repos/" + repo + "/pulls":          `[]`,
 		"repos/" + repo + "/actions/runs":   `{"workflow_runs": [{"name": "CI", "head_branch": "main", "status": "completed", "conclusion": "success", "html_url": "r1"}]}`,
-		"user/installations":                `{"installations": [{"id": 1, "app_slug": "someone-else"}, {"id": 2, "app_slug": "agents-loops"}]}`,
+		"user/installations":                `{"installations": [{"id": 1, "app_slug": "someone-else"}, {"id": 2, "app_slug": "agent-loops-dev"}]}`,
 		"user/installations/2/repositories": `{"total_count": 2, "repositories": [{"full_name": "other/one"}, {"full_name": "` + repo + `"}]}`,
 	})
 	gh := api.github()
@@ -32,11 +32,11 @@ func TestTheSetUpsReads(t *testing.T) {
 	if err != nil || run.Title != "CI on main" || run.Outcome != "passed" {
 		t.Fatalf("run: %+v %v", run, err)
 	}
-	installed, count, err := gh.AppReach(ctx, repo, "agents-loops")
+	installed, count, err := gh.AppReach(ctx, repo, "agent-loops-dev")
 	if err != nil || !installed || count != 2 {
 		t.Fatalf("reach: %v %d %v", installed, count, err)
 	}
-	if installed, _, _ := gh.AppReach(ctx, "someone/else", "agents-loops"); installed {
+	if installed, _, _ := gh.AppReach(ctx, "someone/else", "agent-loops-dev"); installed {
 		t.Fatal("installed on a repository it is not on")
 	}
 

@@ -110,8 +110,9 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   status: [
     { id: "runtimes", title: "Runtimes", group: "Status", draw: { kind: "activity", page: "runtimes" } },
     { id: "events", title: "Events", group: "Status", draw: { kind: "activity", page: "events" } },
-    // What happened last to the person's secrets and accounts (#4161): read only, a press opens Settings ▸ You.
-    { id: "secrets", title: "Secrets", group: "Status", draw: { kind: "statusList", list: "secrets" } },
+    // Every secret of the person's, to find, see, add, edit and remove (#5257), at #/secrets. Accounts is still what
+    // happened last to each (#4161), read only, until its own page (#5258).
+    { id: "secrets", title: "Secrets", group: "Status", draw: { kind: "secrets" } },
     { id: "accounts", title: "Accounts", group: "Status", draw: { kind: "statusList", list: "accounts" } },
   ],
   // You first (#3998), as the window's Settings rail: the person's own connectors, their secrets and cards, which go to every
@@ -119,6 +120,7 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   // Settings itself is still the page the section opens on (settingsHome).
   settings: [
     { id: "mcp", title: "Connectors", group: "You", draw: { kind: "activity", page: "mcp" } },
+    // Opens Status ▸ Secrets (#5257): #/settings/secrets is the Secrets page's address too, for people who look in Settings.
     { id: "secrets", title: "Secrets", group: "You", draw: { kind: "secrets" } },
     { id: "accounts", title: "Accounts", group: "You", draw: { kind: "accounts" } },
     { id: "settings", title: "Settings", group: "Settings", draw: { kind: "settings" } },

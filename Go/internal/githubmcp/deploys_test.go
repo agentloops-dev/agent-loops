@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // #3587: the waiting runs are read with their pending deployments; an environment with only a
@@ -88,5 +89,94 @@ func TestWaitingDeploysAndTheirAnswer(t *testing.T) {
 		`POST /repos/o/r/actions/runs/1/pending_deployments {"comment":"Rejected in Agent Loops","environment_ids":[11],"state":"rejected"}`,
 	}) {
 		t.Fatalf("posts: %q", posts)
+	}
+}
+
+// #5564: a Deployment of the task deploy:approval whose newest status is pending waits for an
+// approval in Agent Loops; one answered, of another task or with no workflow does not. Approve
+// sets it queued and dispatches its workflow at its ref; a refused dispatch sets it pending
+// again; Reject sets it inactive.
+func TestApprovalDeploysAndTheirAnswer(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	refuse := false
+	now := time.Now().UTC().Format(time.RFC3339)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		got = append(got, strings.TrimSpace(r.Method+" "+r.URL.Path+" "+string(body)))
+		mu.Unlock()
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/o/r/deployments"):
+			if r.URL.Query().Get("task") != ApprovalTask {
+				t.Errorf("listed %q", r.URL.RawQuery)
+			}
+			io.WriteString(w, `[
+				{"id":7,"sha":"abc","ref":"v0.1.0","environment":"production","task":"deploy:approval","created_at":"`+now+`","updated_at":"`+now+`",
+				 "payload":"{\"workflow\":\"deploy.yml\",\"actor\":\"alexec\"}"},
+				{"id":8,"sha":"abc","ref":"v0.0.9","environment":"production","task":"deploy:approval","created_at":"`+now+`","updated_at":"`+now+`",
+				 "payload":{"workflow":"deploy.yml","actor":"alexec"}},
+				{"id":9,"sha":"abc","ref":"v0.0.8","environment":"production","task":"deploy:approval","created_at":"`+now+`","updated_at":"`+now+`",
+				 "payload":{"workflow":"../evil"}},
+				{"id":10,"sha":"abc","ref":"v0.0.7","environment":"production","task":"deploy:approval","created_at":"2020-01-01T00:00:00Z","updated_at":"2020-01-01T00:00:00Z",
+				 "payload":{"workflow":"deploy.yml"}}]`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/o/r/actions/runs"):
+			io.WriteString(w, `{"workflow_runs":[]}`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/deployments/7/statuses"):
+			io.WriteString(w, `[{"id":70,"state":"pending","created_at":"`+now+`","log_url":"https://github.com/o/r/actions/runs/3"}]`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/deployments/8/statuses"):
+			io.WriteString(w, `[{"id":81,"state":"inactive","created_at":"`+now+`"},{"id":80,"state":"pending","created_at":"`+now+`"}]`)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/dispatches") && refuse:
+			w.WriteHeader(http.StatusForbidden)
+			io.WriteString(w, `{"message":"Resource not accessible by integration"}`)
+		case r.Method == http.MethodGet:
+			io.WriteString(w, `[]`)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	t.Cleanup(s.Close)
+	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
+	ctx := context.Background()
+	waiting, err := g.WaitingDeploys(ctx, "o/r", "", "")
+	if err != nil || len(waiting) != 1 || waiting[0].Approval == nil {
+		t.Fatalf("waiting: %+v %v", waiting, err)
+	}
+	w := waiting[0]
+	if w.Approval.Deployment.ID != 7 || w.Approval.Workflow != "deploy.yml" || w.Run.Run.Branch != "v0.1.0" || !w.Run.Trusted ||
+		w.Run.Run.URL != "https://github.com/o/r/actions/runs/3" || w.EnvironmentNames() != "production" || w.key() != "deployment:7" {
+		t.Fatalf("approval: %+v", w)
+	}
+	if data := w.data(); data["approval"] == nil {
+		t.Fatalf("data: %+v", data)
+	}
+	if only, _ := g.WaitingDeploys(ctx, "o/r", "release.yml", ""); len(only) != 0 {
+		t.Fatalf("by workflow: %+v", only)
+	}
+	mu.Lock()
+	got = nil
+	mu.Unlock()
+	if err := g.AnswerApproval(ctx, "o/r", *w.Approval, true, "Approved in Agent Loops"); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.AnswerApproval(ctx, "o/r", *w.Approval, false, "Rejected in Agent Loops"); err != nil {
+		t.Fatal(err)
+	}
+	refuse = true
+	if err := g.AnswerApproval(ctx, "o/r", *w.Approval, true, "Approved in Agent Loops"); err == nil {
+		t.Fatal("a refused dispatch")
+	}
+	want := []string{
+		`POST /repos/o/r/deployments/7/statuses {"auto_inactive":false,"description":"Approved in Agent Loops","state":"queued"}`,
+		`POST /repos/o/r/actions/workflows/deploy.yml/dispatches {"inputs":{"deployment":"7"},"ref":"v0.1.0"}`,
+		`POST /repos/o/r/deployments/7/statuses {"auto_inactive":false,"description":"Rejected in Agent Loops","state":"inactive"}`,
+		`POST /repos/o/r/deployments/7/statuses {"auto_inactive":false,"description":"Approved in Agent Loops","state":"queued"}`,
+		`POST /repos/o/r/actions/workflows/deploy.yml/dispatches {"inputs":{"deployment":"7"},"ref":"v0.1.0"}`,
+		`POST /repos/o/r/deployments/7/statuses {"auto_inactive":false,"description":"Not started: deploy.yml could not be dispatched","state":"pending"}`,
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(got, want) {
+		t.Fatalf("writes:\n%s", strings.Join(got, "\n"))
 	}
 }

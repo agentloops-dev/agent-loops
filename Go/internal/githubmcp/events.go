@@ -101,7 +101,7 @@ var events = append([]event{
 		})},
 	// A deploy held by a GitHub environment with required reviewers (#3587).
 	{Name: "deploy.waiting", Title: "Deploy waiting for approval",
-		Description: "A GitHub Actions run is waiting for a reviewer of an environment with required reviewers, as a release.yml job with environment: production: one event per run, attempt and set of environments, so the next environment it waits on is a new one. canApprove says whether the GitHub account this server is connected as is one of its reviewers; Agents lists it in Needs You for them, with Approve and Reject. deploy, component, environment and tier are the wire's DeployEvent of the GitHub Deployment that waits (state waiting), as deploy.started says it, when GitHub has made it: the first of environments that has one. Only runs from the repo itself, started by a person, never a bot, unless anyone is true.",
+		Description: "A deploy is waiting for an approval: a GitHub Actions run waiting for a reviewer of an environment with required reviewers, as a release.yml job with environment: production, one event per run, attempt and set of environments, so the next environment it waits on is a new one; or, on any GitHub plan, a GitHub Deployment of the task deploy:approval whose status is pending, as a starter's release.yml makes on a tag (#5564), one event per Deployment: approval then names the Deployment and the workflow that Approve dispatches, and run is the Deployment's (id 0, workflow the one dispatched, url the run that asked). canApprove says whether the GitHub account this server is connected as is one of its reviewers; Agents lists it in Needs You for them, with Approve and Reject. deploy, component, environment and tier are the wire's DeployEvent of the GitHub Deployment that waits (state waiting), as deploy.started says it, when GitHub has made it: the first of environments that has one. Only runs from the repo itself, started by a person, never a bot, unless anyone is true.",
 		Input: schema{repoProperty,
 			property{Name: "workflow", Kind: "string", Description: "Only runs of this workflow, by its file name, as release.yml.",
 				Pattern: regexp.MustCompile(`^[A-Za-z0-9_.-]+\.ya?ml$`), LooksLike: "release.yml"},
@@ -113,6 +113,7 @@ var events = append([]event{
 			"reviewers":    map[string]any{"type": "array", "items": str},
 			"canApprove":   map[string]any{"type": "boolean"},
 			"waitingSince": str,
+			"approval":     object(map[string]any{"deployment": integer, "workflow": str}),
 			// The wire's DeployEvent of the Deployment that waits (#5407).
 			"deploy":    map[string]any{"type": "object"},
 			"component": str, "environment": str, "tier": tierSchema,
@@ -613,9 +614,13 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 			if at == "" || (!a.anyone && !w.Run.Trusted) {
 				continue
 			}
+			subject, key := runRef(repo, w.Run.Run.ID), strings.TrimPrefix(w.key(), fmt.Sprint(w.Run.Run.ID)+":")
+			if w.Approval != nil {
+				subject, key = deployRef(repo, w.Approval.Deployment.ID), "approval"
+			}
 			list = append(list, candidate{EventID: "deploy.waiting:" + repo + ":" + w.key(), Time: at,
 				Data:    func() (map[string]any, error) { return waitingData(ctx, gh, repo, w) },
-				Subject: runRef(repo, w.Run.Run.ID), Key: strings.TrimPrefix(w.key(), fmt.Sprint(w.Run.Run.ID)+":")})
+				Subject: subject, Key: key})
 		}
 		return list, false, nil
 	}

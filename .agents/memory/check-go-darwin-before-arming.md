@@ -1,6 +1,6 @@
 ---
 name: check-go-darwin-before-arming
-description: "before turning auto-merge on for an approved PR, check its non-required checks (go-darwin, web, docs-check); auto-merge ignores them"
+description: "before turning auto-merge on for an approved PR, check its non-required checks (docs-check and the other workflows); auto-merge ignores them. Since #5645 Go on a Mac is inside the required `test`"
 metadata:
   type: feedback
   modified: 2026-11-05T07:03:01.304Z
@@ -12,4 +12,6 @@ metadata:
 
 2026-11-06: armed #3616 with `go-darwin` still running (no failure yet); it merged within seconds. "No failures" is not enough.
 
-**How to apply:** arm only when every check, required or not, has COMPLETED and none failed; a PR with `go-darwin` still running waits (check again, or let its lane arm it). before `gh pr merge --auto` on a PR (above all an approved UI PR whose lane is parked), list its failed checks; if any failure is in the PR's own change, start a lane in its worktree to fix it first instead of arming. Rerun a failure that is unrelated (flaky on main). Related: [[approval-waits-hold-places]].
+2026-11-15 (#5645): `go-darwin` is gone; Go on a Mac runs inside the required macOS `test` job, so a red Mac Go test now blocks the merge. The required checks are `go`, `apps` and `test`. The other workflows' checks (docs-check, …) are still not required.
+
+**How to apply:** arm only when every check, required or not, has COMPLETED and none failed; a PR with a check still running waits (check again, or let its lane arm it). before `gh pr merge --auto` on a PR (above all an approved UI PR whose lane is parked), list its failed checks; if any failure is in the PR's own change, start a lane in its worktree to fix it first instead of arming. Rerun a failure that is unrelated (flaky on main). Related: [[approval-waits-hold-places]].

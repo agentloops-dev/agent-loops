@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -72,6 +75,10 @@ func (d *Daemon) makeAppRepository(caller wire.UUID, args map[string]json.RawMes
 	ctx, cancel := context.WithTimeout(d.ctx, ciToolTimeout)
 	repo, made, err := gh.MakeRepository(ctx, owner, name, values["APP_NAME"])
 	cancel()
+	var cannot *githubmcp.CannotMakeError
+	if errors.As(err, &cannot) {
+		return "", Invalid("%s", personMakesRepository(cannot.FullName, starterRef, values["APP_NAME"]))
+	}
 	if err != nil {
 		return "", ciWords(err, what, ownerOr(owner)+"/"+name)
 	}
@@ -104,9 +111,12 @@ func (d *Daemon) makeAppRepository(caller wire.UUID, args map[string]json.RawMes
 	if err != nil {
 		return "", Invalid("%s, but %v. Call make_app_repository again to go on from there.", capitalise(strings.Join(done, "; ")), err)
 	}
-	if pushed {
+	switch pushed {
+	case pushedFirst:
 		done = append(done, "pushed the "+starter+" starter as its first commit, on main")
-	} else {
+	case pushedFilled:
+		done = append(done, "filled in the "+starter+" starter's values and pushed them as a commit on its default branch")
+	default:
 		done = append(done, "kept what was in it already, with no starter")
 	}
 	s, err := d.addFolder(store.FolderURL(dest))
@@ -117,18 +127,57 @@ func (d *Daemon) makeAppRepository(caller wire.UUID, args map[string]json.RawMes
 	return newAppSaid(done), nil
 }
 
-// cloneNewApp clones cloneURL to dest with the GitHub connection's token, and when the
-// repository has no commit yet pushes files as its first, on main. The token goes to git in
-// its environment, not its arguments or the clone's config, so neither ps nor the folder has
-// it. It says whether it pushed.
-func (d *Daemon) cloneNewApp(cloneURL, dest, token, login string, userID int64, files map[string][]byte) (bool, error) {
+// starterPush is what cloneNewApp pushed.
+type starterPush int
+
+const (
+	// pushedNothing: the repository had the app's own commits, kept as they are.
+	pushedNothing starterPush = iota
+	// pushedFirst: the repository was empty, and the filled starter is its first commit.
+	pushedFirst
+	// pushedFilled: the person made the repository from the template on github.com (#5563),
+	// so it had the template's files with their placeholders; the filled starter is a commit
+	// on top of them.
+	pushedFilled
+)
+
+// personMakesRepository is what the agent is told when GitHub does not let the connection
+// make the repository (#5563): the GitHub App's user token has no Administration permission,
+// so the person makes it from the template on github.com, then installs the App on it, and
+// the agent calls make_app_repository again to go on.
+func personMakesRepository(full, template, appName string) string {
+	owner, name, _ := strings.Cut(full, "/")
+	tOwner, tName, _ := strings.Cut(template, "/")
+	q := url.Values{}
+	q.Set("template_owner", tOwner)
+	q.Set("template_name", tName)
+	q.Set("owner", owner)
+	q.Set("name", name)
+	q.Set("visibility", "private")
+	if appName != "" {
+		q.Set("description", appName)
+	}
+	newURL := "https://github.com/new?" + q.Encode()
+	return fmt.Sprintf("Nothing was made: GitHub does not let the GitHub connection make %s, so the person makes it. "+
+		"Open %s with browser_navigate, then call hand_to_person: ask them to choose Create repository there (private, from the template %s), "+
+		"then to install the GitHub App %s on it at %s (Only select repositories: %s). "+
+		"When they say it is done, call make_app_repository again with the same arguments: it fills in the starter's values, clones it and adds it as a folder.",
+		full, newURL, template, connections.GitHubAppSlug, connections.GitHubInstallURL, full)
+}
+
+// cloneNewApp clones cloneURL to dest with the GitHub connection's token, and pushes files:
+// as the first commit on main when the repository has none, or over the template's files when
+// the person made it from the template. The token goes to git in its environment, not its
+// arguments or the clone's config, so neither ps nor the folder has it. It says what it
+// pushed.
+func (d *Daemon) cloneNewApp(cloneURL, dest, token, login string, userID int64, files map[string][]byte) (starterPush, error) {
 	d.cloneMu.Lock()
 	if d.clones == nil {
 		d.clones = map[string]wire.CloneSummary{}
 	}
 	if _, busy := d.clones[dest]; busy {
 		d.cloneMu.Unlock()
-		return false, errors.New(shortPath(dest) + " is already being cloned")
+		return pushedNothing, errors.New(shortPath(dest) + " is already being cloned")
 	}
 	c := wire.CloneSummary{ID: store.NewUUID(), URL: cloneURL, Folder: store.FolderURL(dest), StartedAt: now()}
 	d.clones[dest] = c
@@ -143,16 +192,25 @@ func (d *Daemon) cloneNewApp(cloneURL, dest, token, login string, userID int64, 
 		Broadcast(d, wire.NotifyCloneChanged, wire.CloneNotification{Clone: c, Finished: true})
 	}()
 	if err := os.MkdirAll(staging, 0o755); err != nil {
-		return false, err
+		return pushedNothing, err
 	}
 	staged := filepath.Join(staging, filepath.Base(dest))
 	auth := gitTokenEnv(token)
 	if _, err := newAppGit(staging, auth, "clone", "--", cloneURL, staged); err != nil {
-		return false, fmt.Errorf("could not clone it: %v", err)
+		return pushedNothing, fmt.Errorf("could not clone it: %v", err)
 	}
-	pushed, err := firstCommit(staged, auth, login, userID, "The starter", files, writeStarter)
+	pushed := pushedNothing
+	first, err := firstCommit(staged, auth, login, userID, "The starter", files, writeStarter)
 	if err != nil {
-		return false, err
+		return pushedNothing, err
+	}
+	if first {
+		pushed = pushedFirst
+	} else if fromTemplate(staged, files) {
+		if err := fillTemplate(staged, auth, login, userID, files); err != nil {
+			return pushedNothing, err
+		}
+		pushed = pushedFilled
 	}
 	if _, err := os.Stat(dest); err == nil {
 		return pushed, errors.New(shortPath(dest) + " appeared while the clone ran, and nothing in it was changed")
@@ -195,6 +253,59 @@ func firstCommit(staged string, auth []string, login string, userID int64, messa
 		return false, fmt.Errorf("could not push the first commit: %v", err)
 	}
 	return true, nil
+}
+
+// fromTemplate is whether staged, a clone with commits, is the template's files as GitHub
+// copied them (#5563): it has the template's .starterignore, or a starter file that still has
+// a placeholder that files fills. A starter pushed by make_app_repository has neither.
+func fromTemplate(staged string, files map[string][]byte) bool {
+	if _, err := os.Stat(filepath.Join(staged, ".starterignore")); err == nil {
+		return true
+	}
+	for p, want := range files {
+		got, err := os.ReadFile(filepath.Join(staged, filepath.FromSlash(p)))
+		if err == nil && starterText(got) && !bytes.Equal(got, want) && starterPlaceholder.Match(got) {
+			return true
+		}
+	}
+	return false
+}
+
+// fillTemplate takes the template's own files (.starterignore and what it names) out of
+// staged, writes the filled starter over the rest, and pushes it as one commit on the branch
+// the clone is on, the repository's default.
+func fillTemplate(staged string, auth []string, login string, userID int64, files map[string][]byte) error {
+	if ignore, err := os.ReadFile(filepath.Join(staged, ".starterignore")); err == nil {
+		for _, line := range strings.Split(string(ignore), "\n") {
+			line = strings.Trim(strings.TrimSpace(line), "/")
+			if line == "" || strings.HasPrefix(line, "#") || strings.Contains(line, "..") || line == ".git" || strings.HasPrefix(line, ".git/") {
+				continue
+			}
+			if err := os.RemoveAll(filepath.Join(staged, filepath.FromSlash(line))); err != nil {
+				return fmt.Errorf("could not take out the template's %s: %v", line, err)
+			}
+		}
+		if err := os.Remove(filepath.Join(staged, ".starterignore")); err != nil {
+			return fmt.Errorf("could not take out the template's .starterignore: %v", err)
+		}
+	}
+	if err := writeStarter(staged, files); err != nil {
+		return fmt.Errorf("could not write the files: %v", err)
+	}
+	email := fmt.Sprintf("%d+%s@users.noreply.github.com", userID, login)
+	who := []string{"GIT_AUTHOR_NAME=" + login, "GIT_AUTHOR_EMAIL=" + email, "GIT_COMMITTER_NAME=" + login, "GIT_COMMITTER_EMAIL=" + email}
+	for _, step := range [][]string{
+		{"add", "-A"},
+		{"-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", "Fill in the starter"},
+	} {
+		if _, err := newAppGit(staged, who, step...); err != nil {
+			return fmt.Errorf("could not commit the filled starter: %v", err)
+		}
+	}
+	if _, err := newAppGit(staged, auth, "push", "origin", "HEAD"); err != nil {
+		return fmt.Errorf("could not push the filled starter: %v", err)
+	}
+	return nil
 }
 
 // writeStarter writes files under dir; a shell script can be run.

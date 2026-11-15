@@ -83,6 +83,7 @@ control/status
     "people/1",
     "policy.ask/1",
     "policy/1",
+    "pools/1",
     "projects.boards/1",
     "projects.sessions/1",
     "projects/1",
@@ -108,7 +109,8 @@ control/status
     "user/1",
     "user/2",
     "user/3",
-    "user/4"
+    "user/4",
+    "user/5"
   ],
   "required": {
     "host": [
@@ -346,6 +348,7 @@ control/status
     "people/1",
     "policy.ask/1",
     "policy/1",
+    "pools/1",
     "projects.boards/1",
     "projects.sessions/1",
     "projects/1",
@@ -371,7 +374,8 @@ control/status
     "user/1",
     "user/2",
     "user/3",
-    "user/4"
+    "user/4",
+    "user/5"
   ],
   "required": {
     "host": [

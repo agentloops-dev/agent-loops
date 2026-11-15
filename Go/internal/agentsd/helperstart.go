@@ -127,6 +127,10 @@ func (d *Daemon) heldMessage(q wire.QueuedPrompt, target *wire.Agent) bool {
 	if from := d.startedFromOf(target.ID); from != nil && from.Agent == q.Sender.AgentID {
 		return false
 	}
+	// An agent of its project on another machine: so do its words (#5618).
+	if d.messagedFromElsewhere(target.ID, q.Sender.AgentID) {
+		return false
+	}
 	sender := d.Store.Agent(q.Sender.AgentID)
 	return sender == nil || d.holdsMessageFrom(target, sender) != ""
 }

@@ -41,7 +41,5 @@ func prepareWatch(t *testing.T) {
 	if builtWatchErr != nil {
 		t.Skipf("no agents-watch to watch with: %v", builtWatchErr)
 	}
-	old := watchHelper
-	watchHelper = func() string { return builtWatch }
-	t.Cleanup(func() { watchHelper = old })
+	setFor(t, &watchHelper, func() string { return builtWatch })
 }

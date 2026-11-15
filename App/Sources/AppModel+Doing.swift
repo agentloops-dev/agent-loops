@@ -356,47 +356,57 @@ extension AppModel {
         guard !isStarting, let runtimeID = draftRuntimeID, let cwd = draftCwd else { return false }
         isStarting = true
         defer { isStarting = false }
-        let request = DaemonAPI.StartRequest(runtimeID: runtimeID,
-                                             cwd: cwd,
+        // Auto picks once, at start (#5375): the control plane says where, and the session says why.
+        let auto = await draftAutoMachineTarget()
+        let host = auto?.folder.host ?? draftHost
+        let startCwd = auto?.folder.folder ?? cwd
+        // The draft, the account, the worktree and the added folders belong to the machine the
+        // form is on, not to the one picked.
+        let moved = auto?.moved == true
+        var request = DaemonAPI.StartRequest(runtimeID: runtimeID,
+                                             cwd: startCwd,
                                              prompt: prompt,
                                              attachments: attachments,
                                              startOptions: StartOptions(values: draftChosen),
-                                             draftID: draftID,
-                                             additionalDirectories: draftFolders,
+                                             draftID: moved ? nil : draftID,
+                                             additionalDirectories: moved ? [] : draftFolders,
                                              mcpServers: draftServers,
-                                             worktree: draftWorktree,
+                                             worktree: moved ? nil : draftWorktree,
                                              sandbox: draftSandbox, labels: labels, persona: draftPersona,
-                                             accountID: isAutoDraft ? nil : draftAccountChoices?.sent(draftAccountID),
+                                             accountID: isAutoDraft || moved ? nil : draftAccountChoices?.sent(draftAccountID),
                                              voice: voice ? true : nil,
                                              levels: Levels(model: draftLevels.model, permission: draftLevels.permission,
                                                             permissionRequests: isAutoDraft ? nil : draftClientPermission))
+        request.autoChose = auto?.autoChose
         // A stopped workspace that starts when used: kept, and shown under this prompt (#691 US3).
-        if draftHost != .mac, hosts.isOffline(draftHost), startsWhenUsed(draftHost) {
+        if host != .mac, hosts.isOffline(host), startsWhenUsed(host) {
             var kept = request
             kept.draftID = nil
             kept.requestID = UUID()
-            guard let said = await keepThroughControl(draftHost, DaemonAPI.Method.agentsStart, kept) else { return false }
+            guard let said = await keepThroughControl(host, DaemonAPI.Method.agentsStart, kept) else { return false }
             keptStartsShown.insert(said.id)
             return true
         }
         do {
-            let id = try await draftHostClient.call(DaemonAPI.Method.agentsStart, request, returning: UUID.self)
+            let id = try await client(for: host).call(DaemonAPI.Method.agentsStart, request, returning: UUID.self)
             started(id)
-            draftID = nil
+            if !moved { draftID = nil }
+            // Auto again at the next start: a machine named by hand is not remembered (#5375).
+            draftNamedMachine = nil
             // The next draft starts live again (#4559, #4721).
             draftPersonaAuto = true
             draftPromptChanged("")
             // The last folder used is the one a session was started in, from any window (#2160).
-            rememberNewSessionFolder(FolderKey(host: draftHost, folder: cwd))
+            rememberNewSessionFolder(FolderKey(host: host, folder: startCwd))
             // Back to the folder, and the list fetched again: the start may
             // have made a worktree, and it has put an agent in one.
             draftWorktree = nil
             Task { await loadDraftWorktrees() }
-            if draftHost == .mac {
+            if host == .mac {
                 await refreshAgents()
                 await refreshFolders()
             } else {
-                await refreshServer(draftHost)
+                await refreshServer(host)
             }
             // Gone to, as the phone does: what you just asked for is what you want to
             // see start. Once the list has it, so the chat opens on a row that is there.
@@ -424,10 +434,10 @@ extension AppModel {
         } catch let error as JSONRPCError where error.code == DaemonAPI.Failure.sandboxWillNotStart {
             // Said over the prompt, which keeps what was typed, with the way on (064).
             draftSandboxRefusal = try? error.data?.decode(DaemonAPI.SandboxWillNotStart.self)
-            if draftSandboxRefusal == nil { fail(error, on: draftHost) }
+            if draftSandboxRefusal == nil { fail(error, on: host) }
             return false
         } catch {
-            fail(error, on: draftHost)
+            fail(error, on: host)
             return false
         }
     }

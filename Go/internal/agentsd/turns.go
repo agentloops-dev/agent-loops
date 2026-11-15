@@ -225,10 +225,10 @@ func (d *Daemon) changeAgent(id wire.UUID, moveOn bool, edit func(a *wire.Agent)
 	// A folder quiet after working says folder.idle (#1368).
 	if before.State != a.State {
 		folder := folderPath(a)
-		safe.Go("folder idle", func() { d.watchForIdle(folder) })
+		d.goJob("folder idle", func() { d.watchForIdle(folder) })
 	}
 	// Every place a need begins or ends moves the record (DaemonCore.move's reconsider).
-	safe.Go("reconsider", d.reconsider)
+	d.goJob("reconsider", d.reconsider)
 	return a
 }
 
@@ -408,6 +408,10 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 	d.tellChanged(a, nil)
 	d.noteLineage(nil, a)
 	d.folderChanged(folderPath(&a))
+	// Auto picked this machine (#5375): the line the control plane made is the chat's first.
+	if r.AutoChose != nil && strings.TrimSpace(*r.AutoChose) != "" {
+		d.record(a.ID, runtimeNote(strings.TrimSpace(*r.AutoChose)))
+	}
 	if r.StartedFrom != nil {
 		d.record(a.ID, runtimeNote(startedFromNote(r.StartedFrom)))
 	}
@@ -421,7 +425,7 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 		d.record(a.ID, runtimeNote(policyNote))
 	}
 	if r.Purpose == nil {
-		safe.Go("starting point", func() { d.takeStartingPoint(a.ID, path) })
+		d.goJob("starting point", func() { d.takeStartingPoint(a.ID, path) })
 	}
 	// Started from voice mode (#2375): its first reply is heard, as a voice prompt's is.
 	var preface *string
@@ -1602,7 +1606,7 @@ func (l *live) waitForToolCall(id string, most time.Duration) {
 	if id == "" {
 		return
 	}
-	timer := time.AfterFunc(most, func() { l.mu.Lock(); l.seen.Broadcast(); l.mu.Unlock() })
+	timer := time.AfterFunc(most, l.d.jobFunc("turns timer", func() { l.mu.Lock(); l.seen.Broadcast(); l.mu.Unlock() }))
 	defer timer.Stop()
 	deadline := time.Now().Add(most)
 	l.mu.Lock()
@@ -1698,7 +1702,7 @@ func (l *live) cancel() {
 		if err := s.Cancel(ctx); err != nil && stop != nil {
 			stop()
 		} else if stop != nil {
-			go l.cancelAgain(s, seq, stop)
+			l.d.goJob("cancelAgain", func() { l.cancelAgain(s, seq, stop) })
 		}
 	} else if stop != nil {
 		stop()
@@ -1966,7 +1970,7 @@ func (l *live) open(ctx context.Context, a *wire.Agent, quiet bool) bool {
 		}
 	}
 	if !d.goAfterTurn("session watch", watch) {
-		safe.Go("session watch", watch)
+		l.d.goJob("session watch", watch)
 	}
 	// The start options the window chose (model, mode) go first. What the runtime
 	// hands back replaces the handshake's own defaults above, so the mode pill shows

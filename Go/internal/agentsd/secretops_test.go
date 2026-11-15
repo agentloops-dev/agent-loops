@@ -51,9 +51,7 @@ func toldSecretOps(d *Daemon) func() []wire.SecretOperation {
 // secret's last operation, removed with the secret. Neither the value nor its last four
 // characters is in any of them.
 func TestEachUseOfASecretIsRecorded(t *testing.T) {
-	was := secretOpsBatch
-	secretOpsBatch = 100 * time.Millisecond
-	defer func() { secretOpsBatch = was }()
+	setFor(t, &secretOpsBatch, 100*time.Millisecond)
 	home := t.TempDir()
 	t.Setenv("AGENTS_PERSONAL_HOME", home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)

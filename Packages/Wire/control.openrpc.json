@@ -25,6 +25,11 @@
       "name": "machine.accounts/1",
       "by": "control",
       "description": "The control plane still answers machine/accounts with add and ops (#3967). machine.accounts/2 (#5253): it also takes remove, which an older control plane does not know."
+    },
+    {
+      "name": "user/3",
+      "by": "control",
+      "description": "The control plane still reads user/setSettings as 0.19.0 sent it. user/5 (#5259): a client may send the part environment, which an older control plane does not know (user/4, user/sealedSecret, shipped in 0.19.0 without it)."
     }
   ],
   "methods": [
@@ -5109,6 +5114,69 @@
       }
     },
     {
+      "name": "pool/delete",
+      "x-capability": "pools/1",
+      "description": "Deletes a warm pool and its ready machines (#5363). Machines already claimed are unaffected.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/WarmPoolRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "pool/list",
+      "x-capability": "pools/1",
+      "description": "The person's warm pools (#5363): each with how many machines are ready and being set up.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/WarmPools"
+        }
+      }
+    },
+    {
+      "name": "pool/set",
+      "x-capability": "pools/1",
+      "description": "Makes a warm pool or changes one (#5363). Min ready must not be above max size; max size is at least 1. A change takes effect at once: the pool's reconcile loop runs.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/WarmPoolSet"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/WarmPool"
+        }
+      }
+    },
+    {
       "name": "projects/joined",
       "x-capability": "projects/1",
       "description": "A host, on its channel 0 (#2317): every folder it has and the project id each names. The control plane adopts the ids it does not know, and answers with those projects' slots (#2669).",
@@ -6121,6 +6189,11 @@
     {
       "name": "sessions/previewStart",
       "x-capability": "auto-machine/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "description": "Which machine Auto picks for a project and runtime, or why none fits (#5374, specs/5373-auto-machine). Advisory: a start with machine auto uses the same rule at start.",
       "paramStructure": "by-name",
       "params": [
@@ -6898,7 +6971,7 @@
     },
     {
       "name": "user/setSettings",
-      "x-capability": "user/3",
+      "x-capability": "user/5",
       "tags": [
         {
           "name": "web"

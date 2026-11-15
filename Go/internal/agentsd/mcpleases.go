@@ -178,7 +178,7 @@ func (d *Daemon) mcpLetGo(id string) {
 	delete(d.mcpLeases.standing, id)
 	d.mcpLeases.mu.Unlock()
 	if key != "" && d.leasesOn() && d.ctx.Err() == nil {
-		go d.askLease(d.ctx, nil, []string{key})
+		d.goJob("askLease", func() { d.askLease(d.ctx, nil, []string{key}) })
 	}
 }
 

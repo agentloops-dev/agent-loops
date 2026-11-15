@@ -77,7 +77,7 @@ the slow steps against it. Look first for, in this order:
 2. **Work done twice**: the same package or scheme built in two jobs or two steps,
    tests that rebuild what a build step just built, a clean build after a warm one.
 3. **Work that need not run**: suites or schemes unrelated to the PR's diff
-   (`scripts/select-test-suites.sh` exists for this), steps that only matter on `main`.
+   (Nx's `affected` and its cache exist for this: a task's inputs are in its `project.json`), steps that only matter on `main`.
 4. **Serial work that could run side by side**: independent jobs that `needs:` each
    other, independent builds in one job that could be a matrix or separate jobs (weigh
    that each new macOS job pays its own checkout and cache restore).

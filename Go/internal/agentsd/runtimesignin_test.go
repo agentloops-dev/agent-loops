@@ -81,9 +81,7 @@ func fakeSignInTools(t *testing.T) string {
 // asAServer makes a daemon started on a Mac (CI's go-darwin) act as a server: a Mac signs
 // its runtimes in on the Mac.
 func asAServer(t *testing.T) {
-	old := macToolsHome
-	macToolsHome = ""
-	t.Cleanup(func() { macToolsHome = old })
+	setFor(t, &macToolsHome, "")
 }
 
 func statusFor(t *testing.T, c *conn, id int, runtimeID string) wire.RuntimeStatus {
@@ -203,9 +201,7 @@ func TestSigningClaudeInWithACodeAsLongAsARealOne(t *testing.T) {
 func TestSigningCodexInOnAServer(t *testing.T) {
 	fakeRuntimes(t)
 	home := fakeSignInTools(t)
-	old := codexFinishWait
-	codexFinishWait = 200 * time.Millisecond
-	t.Cleanup(func() { codexFinishWait = old })
+	setFor(t, &codexFinishWait, 200*time.Millisecond)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	asAServer(t)
@@ -280,6 +276,30 @@ func TestSignInTestsRunOnlyTheFakes(t *testing.T) {
 		}
 		if want := filepath.Join(home, ".local", "bin", id); cmd.Path != want || cmd.Dir != home {
 			t.Fatalf("%s runs %s in %s, not the fake %s in %s", id, cmd.Path, cmd.Dir, want, home)
+		}
+	}
+}
+
+// Auto's machine pick (#5375): the control plane asks each machine on channel 0 which
+// runtimes are installed and signed in, and gets the list a client gets.
+func TestTheControlPlaneAsksWhichRuntimesAreReady(t *testing.T) {
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	out, ok := d.Asked(wire.CallRuntimesList.Name, nil)
+	if !ok {
+		t.Fatal("runtimes/list was not answered on channel 0")
+	}
+	asked, _ := json.Marshal(out)
+	var fromAsk, fromClient []wire.RuntimeStatus
+	json.Unmarshal(asked, &fromAsk)
+	json.Unmarshal(c.call(t, 1, "runtimes/list", map[string]any{}), &fromClient)
+	if len(fromAsk) == 0 || len(fromAsk) != len(fromClient) {
+		t.Fatalf("asked %d, a client %d", len(fromAsk), len(fromClient))
+	}
+	for i := range fromAsk {
+		if fromAsk[i].Runtime.ID != fromClient[i].Runtime.ID {
+			t.Fatalf("%s != %s", fromAsk[i].Runtime.ID, fromClient[i].Runtime.ID)
 		}
 	}
 }

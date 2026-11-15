@@ -87,6 +87,7 @@ var hostActions = map[string]string{
 	"workflows/archive":        "Archived a workflow",
 	"workflows/delete":         "Deleted a workflow",
 	"plugins/approve":          "Approved a plugin",
+	"env/write":                "Changed an environment variable",
 	"mcp/approve":              "Approved an MCP server",
 	"mcp/add":                  "Added an MCP server",
 	"mcp/add-by-hand":          "Added an MCP server",

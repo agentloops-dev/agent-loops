@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="520" viewBox="0 0 640 520" font-family="'Atkinson Hyperlegible Next', -apple-system, 'SF Pro Text', Helvetica, Arial, sans-serif">
+<defs><filter id="sh" x="-5%" y="-5%" width="110%" height="110%"><feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000" flood-opacity="0.16"/></filter></defs>
+<rect x="0" y="0" width="640" height="520" rx="0" fill="#d9d6cf"/>
+<g filter="url(#sh)"><rect x="40" y="30" width="560" height="460" rx="12" fill="#fcfbf9"/></g>
+<text x="70" y="72" font-size="17" fill="#1a1918" font-weight="700">Add Variable</text>
+<text x="70" y="128" font-size="12.5" fill="#625e57">Name</text>
+<rect x="180" y="110" width="380" height="28" rx="6" fill="#ffffff" stroke="#d6d2c9"/>
+<text x="190" y="129" font-size="13" fill="#1a1918" font-family="'SF Mono', Menlo, monospace">DEPLOY_TOKEN</text>
+<text x="70" y="170" font-size="12.5" fill="#625e57">Value</text>
+<rect x="180" y="152" width="380" height="28" rx="6" fill="#ffffff" stroke="#e3d196"/>
+<text x="190" y="171" font-size="13" fill="#1a1918" font-family="'SF Mono', Menlo, monospace">ghp_9Xa2…c7Qk</text>
+<rect x="180" y="186" width="380" height="52" rx="6" fill="#fbf6e4" stroke="#e3d196"/>
+<text x="192" y="206" font-size="12" fill="#7a6200">⚠ This looks like a secret. Values here are not sealed.</text>
+<text x="192" y="226" font-size="12.5" fill="#1a52c0" font-weight="600">Save as a Secret Instead…</text>
+<text x="70" y="272" font-size="12.5" fill="#625e57">Description</text>
+<rect x="180" y="254" width="380" height="28" rx="6" fill="#ffffff" stroke="#d6d2c9"/>
+<text x="190" y="273" font-size="13" fill="#1a1918">Deploys to the shop.</text>
+<text x="70" y="310" font-size="12.5" fill="#625e57">Where</text>
+<circle cx="188" cy="306" r="6" fill="#ffffff" stroke="#d6d2c9"/>
+<text x="202" y="310" font-size="13" fill="#1a1918">Yours   ~/.agents/env, every machine</text>
+<circle cx="188" cy="332" r="6" fill="#1a52c0" stroke="#1a52c0"/>
+<circle cx="188" cy="332" r="2.4" fill="#fff"/>
+<text x="202" y="336" font-size="13" fill="#1a1918">A repo  .agents/env in</text>
+<text x="380" y="336" font-size="12.5" fill="#1a52c0">Agents ▾</text>
+<text x="202" y="372" font-size="12" fill="#625e57">Committed with the repo: anyone who can read</text>
+<text x="202" y="390" font-size="12" fill="#625e57">the repo can read it.</text>
+<text x="70" y="414" font-size="12" fill="#625e57">New sessions get it. Running sessions keep what they had.</text>
+<rect x="420" y="438" width="64.8" height="26" rx="6" fill="#ffffff" stroke="#d6d2c9"/>
+<text x="432" y="455" font-size="12.5" fill="#1a52c0">Cancel</text>
+<rect x="510" y="438" width="60" height="26" rx="6" fill="#b9c7e6"/>
+<text x="526" y="455" font-size="12.5" fill="#ffffff" font-weight="600">Add</text>
+</svg>

@@ -16,7 +16,6 @@ import (
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -182,7 +181,7 @@ func (d *Daemon) checkCapacity(ctx context.Context) {
 		level, was, s.load1, pressureWords(s.pressure), s.swap)
 	// The rows say the level with no page open (#4748), and a compute line's reason moves.
 	state := d.capacityState()
-	safe.Go("capacity/changed", func() { Broadcast(d, wire.NotifyCapacityChanged, state) })
+	d.goJob("capacity/changed", func() { Broadcast(d, wire.NotifyCapacityChanged, state) })
 	d.capacityWaitMoved()
 	switch {
 	case was == wire.CapacityLevelOk:

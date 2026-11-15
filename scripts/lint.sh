@@ -5,37 +5,42 @@
 #                                     Mac, those for the branch's files: below)
 #   scripts/lint.sh --all             every linter, on a Mac too
 #   scripts/lint.sh --fix [linter…]   run each linter's fix mode first, then lint
-#   scripts/lint.sh --tools DIR TOOL…  put the pinned binaries in DIR (CI): shellcheck, ruff,
+#   scripts/lint.sh --baseline        write the go and swift baselines again (below)
+#   scripts/lint.sh --tools DIR TOOL…  put the pinned binaries in DIR (CI): shellcheck,
 #                                     golangci-lint, govulncheck (needs Go), biome, swiftlint, jscpd;
 #                                     Linux x86_64 on Linux, macOS arm64 on a Mac
 #
-# Linters: shell (shellcheck), zsh (zsh -n), python (ruff), go (golangci-lint), govulncheck,
-# web (biome lint), swift (SwiftLint), dupes (jscpd), checks (our own text checks). Their rules are in
-# .shellcheckrc, ruff.toml, Go/.golangci.yml, Web/biome.json and .swiftlint.yml.
+# Linters: shell (shellcheck), zsh (zsh -n), go (golangci-lint), govulncheck, web (biome lint),
+# swift (SwiftLint), dupes (jscpd), checks (our own text checks). Their rules are in
+# .shellcheckrc, Go/.golangci.yml, Web/biome.json and .swiftlint.yml. There is no Python
+# linter (#5645).
 #
 # On a Mac (not CI) with no linter named, only the linters for the files the branch changes
 # since its merge base with origin/main, committed or not, run (#4710): go and govulncheck for
-# Go/ or Packages/Wire/, swift for *.swift or .swiftlint.yml, web for Web/, python for *.py or
-# ruff.toml, shell and zsh for a shell file or .shellcheckrc; checks and dupes always. A change
-# to this script runs every one. It says which it skipped. CI runs every linter.
+# Go/ or Packages/Wire/, swift for *.swift or .swiftlint.yml, web for Web/, shell and zsh for
+# a shell file or .shellcheckrc; checks and dupes always. A change to this script runs every
+# one. It says which it skipped. CI names the linters of each job: shell, zsh, checks, go,
+# govulncheck, web and dupes in `go` (Linux), swift in `test` (macOS).
 #
 # A linter is "required" or "report". A required one is clean on main, and a finding fails
-# this script. A report one prints its findings and exits 0: its old findings are listed in
-# .agents/reviews/lint-2026-10-17.md, to be fixed per language before it is made required.
-# With LINT_BASE set (CI: the pull request's base), a report linter also says which of its
-# findings are in the files changed since LINT_BASE.
+# this script. A report one prints its findings and exits 0. With LINT_BASE set (CI: the pull
+# request's base), a report linter also says which of its findings are in the files changed
+# since LINT_BASE.
 #
-# go (golangci-lint) is one run (#2162). unused and ineffassign are required: a finding
-# from them fails this script and CI's lint job. errcheck, gosec, staticcheck and govet
-# only report. One run, not a second with only those two: the second would load every
-# package again, which is the slow part even when the cache is warm.
+# go (golangci-lint, every rule in Go/.golangci.yml) and swift (SwiftLint) are required against
+# a baseline (#5645): the findings that main had when they were made required are listed in
+# Go/.golangci-baseline.txt and .swiftlint-baseline.json, and only a finding not in its
+# baseline fails. Go's baseline has no line numbers (path, message and rule, one line per
+# finding), so a finding that only moves stays in it; SwiftLint's is its own --write-baseline.
+# Fix an old finding, then run `scripts/lint.sh --baseline` to drop it from the list; never
+# add a new one to it by hand. go is one run (#2162): every package is loaded once.
 #
 # Every linter runs on the host, never in a container (#4709). On Linux a linter on the PATH
 # is run as it is (CI, after --tools). On a Mac each one is the pinned macOS binary in
 # ~/Library/Caches/Agents-build/lint-tools/<tool>-<version>/, which lint.sh gets with
 # --tools the first time; govulncheck is built with the Mac's Go, and zsh is the Mac's own.
 # Go's caches are Go/scripts/go.sh's, in ~/Library/Caches/Agents-build/go; golangci-lint's is
-# go/lint there. On a Mac, golangci-lint and govulncheck read the Go files as CI's lint job
+# go/lint there. On a Mac, golangci-lint and govulncheck read the Go files as CI's go job
 # does: GOOS=linux, GOARCH=amd64, cgo off.
 set -u
 
@@ -43,7 +48,6 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root" || exit 1
 
 SHELLCHECK=0.11.0
-RUFF=0.17.1
 GOLANGCI=2.15.0
 GOVULNCHECK=1.9.0
 BIOME=2.5.15
@@ -52,8 +56,10 @@ JSCPD=5.4.2
 ZSH=5.9
 CACHE=${AGENTS_BUILD_CACHE:-$HOME/Library/Caches/Agents-build}
 
-REQUIRED=" shell zsh checks "
-ALL="shell zsh python go govulncheck web swift dupes checks"
+REQUIRED=" shell zsh checks go swift "
+ALL="shell zsh go govulncheck web swift dupes checks"
+GO_BASELINE=Go/.golangci-baseline.txt
+SWIFT_BASELINE=.swiftlint-baseline.json
 
 if [ "${1:-}" = --tools ]; then
 	dir=${2:?usage: scripts/lint.sh --tools DIR TOOL…}
@@ -70,10 +76,6 @@ if [ "${1:-}" = --tools ]; then
 			a=linux.x86_64; [ $mac = 1 ] && a=darwin.aarch64
 			curl -sSfL "$gh/koalaman/shellcheck/releases/download/v$SHELLCHECK/shellcheck-v$SHELLCHECK.$a.tar.xz" |
 				tar -xJ --strip-components=1 "shellcheck-v$SHELLCHECK/shellcheck" ;;
-		ruff)
-			a=x86_64-unknown-linux-musl; [ $mac = 1 ] && a=aarch64-apple-darwin
-			curl -sSfL "$gh/astral-sh/ruff/releases/download/$RUFF/ruff-$a.tar.gz" |
-				tar -xz --strip-components=1 "ruff-$a/ruff" ;;
 		golangci-lint)
 			a=linux-amd64; [ $mac = 1 ] && a=darwin-arm64
 			curl -sSfL "$gh/golangci/golangci-lint/releases/download/v$GOLANGCI/golangci-lint-$GOLANGCI-$a.tar.gz" |
@@ -102,10 +104,12 @@ fi
 
 fix=0
 all=0
+baseline=0
 while [ $# -gt 0 ]; do
 	case $1 in
 	--fix) fix=1 ;;
 	--all) all=1 ;;
+	--baseline) baseline=1 ;;
 	*) break ;;
 	esac
 	shift
@@ -125,7 +129,6 @@ changed_linters() {
 		case $f in
 		*.swift | .swiftlint.yml) want="$want swift " ;;
 		Web/*) want="$want web " ;;
-		*.py | ruff.toml) want="$want python " ;;
 		*.sh | *.bash | *.zsh | .shellcheckrc) want="$want shell zsh " ;;
 		*)
 			# An executable script with no extension: its first line says sh or zsh.
@@ -141,7 +144,9 @@ changed_linters() {
 	echo "${out# }"
 }
 
-if [ $# -gt 0 ]; then
+if [ "$baseline" = 1 ]; then
+	linters=${*:-go swift}
+elif [ $# -gt 0 ]; then
 	linters=$*
 elif [ "$all" = 0 ] && [ "$(uname -s)" = Darwin ] && [ -z "${CI:-}" ]; then
 	linters=$(changed_linters)
@@ -157,7 +162,7 @@ fi
 # tool LINTER: the program it runs; zsh and checks need none of ours.
 tool() {
 	case $1 in
-	shell) echo shellcheck ;; python) echo ruff ;; go) echo golangci-lint ;;
+	shell) echo shellcheck ;; go) echo golangci-lint ;;
 	web) echo biome ;; swift) echo swiftlint ;; dupes) echo jscpd ;; govulncheck) echo govulncheck ;;
 	*) ;;
 	esac
@@ -166,7 +171,7 @@ tool() {
 # version TOOL: the version this script pins.
 version() {
 	case $1 in
-	shellcheck) echo "$SHELLCHECK" ;; ruff) echo "$RUFF" ;; golangci-lint) echo "$GOLANGCI" ;;
+	shellcheck) echo "$SHELLCHECK" ;; golangci-lint) echo "$GOLANGCI" ;;
 	govulncheck) echo "$GOVULNCHECK" ;; biome) echo "$BIOME" ;; swiftlint) echo "$SWIFTLINT" ;;
 	jscpd) echo "$JSCPD" ;;
 	esac
@@ -201,7 +206,7 @@ if [ "$(uname -s)" = Darwin ] && [ -z "${CI:-}" ]; then
 		GOCACHE="${GOCACHE:-$CACHE/go/gocache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-$CACHE/go/lint}" \
 		GOTOOLCHAIN="${GOTOOLCHAIN:-go$(awk '$1 == "go" { print $2; exit }' Go/go.mod)}" # as Go/scripts/go.sh
 	PATH="$PATH:/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin"
-	# The files CI's lint job reads, on Linux: not the _darwin.go ones in their place.
+	# The files CI's go job reads, on Linux: not the _darwin.go ones in their place.
 	golinux=(env GOOS=linux GOARCH=amd64 CGO_ENABLED=0)
 else
 	golinux=()
@@ -251,17 +256,41 @@ run_zsh() {
 		zsh -c 'rc=0; for f in "$@"; do zsh -n "$f" || rc=1; done; exit $rc' zsh $(tracked zsh)
 }
 
-run_python() {
-	[ "$fix" = 1 ] && ruff check --fix --quiet .
-	ruff check --no-cache --output-format concise .
-}
-
+# Every finding, then only those not in Go/.golangci-baseline.txt: a finding's key is its line
+# with the line and column taken out, and each key in the baseline covers one finding.
+# golangci-lint exits 1 for findings and something else when it could not finish.
 run_go() {
 	local args=(run --max-issues-per-linter 0 --max-same-issues 0 --show-stats=false
-		--output.text.print-issued-lines=false ./...)
+		--output.text.print-issued-lines=false ./...) all status
 	[ "$fix" = 1 ] && args=("${args[@]}" --fix)
-	(cd Go && ${golinux[@]+"${golinux[@]}"} golangci-lint "${args[@]}") | sed 's|^|Go/|'
-	return "${PIPESTATUS[0]}"
+	all=$(mktemp)
+	(cd Go && ${golinux[@]+"${golinux[@]}"} golangci-lint "${args[@]}") | sed 's|^|Go/|' >"$all"
+	status=${PIPESTATUS[0]}
+	if [ "$status" != 0 ] && [ "$status" != 1 ]; then
+		cat "$all"
+		rm -f "$all"
+		return "$status"
+	fi
+	if [ "$baseline" = 1 ]; then
+		go_key <"$all" | LC_ALL=C sort >"$GO_BASELINE"
+		echo "lint.sh: wrote $(wc -l <"$GO_BASELINE" | tr -d ' ') finding(s) to $GO_BASELINE" >&2
+		rm -f "$all"
+		return 0
+	fi
+	# Each key in the baseline covers one finding; lines that are not findings print as they are.
+	awk 'NR == FNR { n[$0]++; next }
+		!/^[^:[:space:]]+:[0-9]+(:[0-9]+)?: / { print; next }
+		{ k = $0; sub(/:[0-9]+(:[0-9]+)?: /, ": ", k); if (n[k] > 0) { n[k]--; old++ } else { print; new++ } }
+		END { if (old) printf "lint.sh: %d old finding(s) in the baseline not shown\n", old > "/dev/stderr"; exit new > 0 }' \
+		"$GO_BASELINE" "$all"
+	status=$?
+	rm -f "$all"
+	return "$status"
+}
+
+# go_key: each finding without its line and column, as Go/.golangci-baseline.txt holds it.
+go_key() {
+	sed -nE 's/^([^:[:space:]]+):[0-9]+(:[0-9]+)?: /\1: /p'
 }
 
 run_govulncheck() {
@@ -280,9 +309,15 @@ run_web() {
 	return "$status"
 }
 
+# Only the findings not in .swiftlint-baseline.json fail (SwiftLint's own baseline).
 run_swift() {
 	[ "$fix" = 1 ] && swiftlint --fix --quiet
-	swiftlint lint --quiet | sed -E "s#^(/repo/|$root/)##"
+	if [ "$baseline" = 1 ]; then
+		swiftlint lint --quiet --write-baseline "$SWIFT_BASELINE" >/dev/null
+		echo "lint.sh: wrote $SWIFT_BASELINE" >&2
+		return 0
+	fi
+	swiftlint lint --quiet --strict --baseline "$SWIFT_BASELINE" | sed -E "s#^(/repo/|$root/)##"
 	return "${PIPESTATUS[0]}"
 }
 
@@ -348,8 +383,6 @@ for linter in $linters; do
 	esac
 	mode=report
 	case "$REQUIRED" in *" $linter "*) mode=required ;; esac
-	# unused and ineffassign fail; the rest of this one run only reports (#2162).
-	[ "$linter" = go ] && mode="unused, ineffassign required"
 	if ! have "$(tool "$linter")"; then
 		echo "== $linter: skipped, as $(tool "$linter") is not on the PATH and could not be got"
 		continue
@@ -366,13 +399,7 @@ for linter in $linters; do
 	else
 		count=$(grep -cE '^[^:[:space:]]+:[0-9]+(:[0-9]+)?: ' "$out")
 	fi
-	raw=$count
 	[ "$status" != 0 ] && [ "$count" = 0 ] && count="failed ($status)"
-	# Lines whose linter, in the trailing parentheses, is one that fails the script.
-	go_required=
-	if [ "$linter" = go ]; then
-		go_required=$(grep -E ' \((unused|ineffassign)\)$' "$out" || true)
-	fi
 	mine=-
 	if [ -s "$changed" ] && [ "$linter" != govulncheck ]; then
 		# The findings whose path, before its first colon, this branch changed.
@@ -388,16 +415,6 @@ for linter in $linters; do
 	rm -f "$out"
 	printf '| %s | %s | %s | %s | %s |\n' "$linter" "$mode" "$count" "$mine" "$took" >>"$summary"
 	echo "-- $linter: $count finding(s), ${took}s, exit $status"
-	if [ "$linter" = go ]; then
-		if [ -n "$go_required" ]; then
-			echo "-- go: unused and ineffassign are required:"
-			printf '%s\n' "$go_required"
-			failed="$failed go"
-		elif [ "$status" != 0 ] && [ "$raw" = 0 ]; then
-			# The run did not finish, so those two rules were not checked.
-			failed="$failed go"
-		fi
-	fi
 	[ "$mode" = required ] && [ "$status" != 0 ] && failed="$failed $linter"
 done
 

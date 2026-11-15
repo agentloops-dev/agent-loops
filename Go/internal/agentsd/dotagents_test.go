@@ -83,9 +83,7 @@ func dotagentsRepo(t *testing.T, base, repo, tag string) string {
 func TestReadyMadeWorkflowsComeFromThePinnedTag(t *testing.T) {
 	base := t.TempDir()
 	commit := dotagentsRepo(t, base, "o/dotagents", "v9")
-	old := readyMadeGitBase
-	readyMadeGitBase = "file://" + base
-	defer func() { readyMadeGitBase = old }()
+	setFor(t, &readyMadeGitBase, "file://"+base)
 
 	set, err := fetchReadyMadeFromGit("o/dotagents", "v9", commit)
 	if err != nil {

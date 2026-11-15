@@ -16,7 +16,6 @@ import (
 	sdk "github.com/coder/acp-go-sdk"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -133,7 +132,7 @@ func (d *Daemon) startAppTools() (int, error) {
 	d.appPort = l.Addr().(*net.TCPAddr).Port
 	d.appStarted = true
 	srv := d.appServer
-	safe.Go("app tools", func() {
+	d.goJob("app tools", func() {
 		if err := srv.Serve(l); err != nil && err != http.ErrServerClosed {
 			log.Printf("app tools: %v", err)
 		}

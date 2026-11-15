@@ -1,0 +1,7 @@
+{
+  "name": "deploy",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "deploy",
+  "tags": ["inputs-only"],
+  "targets": {}
+}

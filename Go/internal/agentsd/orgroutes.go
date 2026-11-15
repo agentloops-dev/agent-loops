@@ -206,7 +206,7 @@ func (d *Daemon) orgRoutesLocked() map[string]heldRoute {
 		d.orgRoutesHeld[r.ID] = heldRoute{route: r, at: at}
 	}
 	if again {
-		go d.askOrgRoutesAgain()
+		d.goJob("askOrgRoutesAgain", func() { d.askOrgRoutesAgain() })
 	}
 	return d.orgRoutesHeld
 }

@@ -15,7 +15,7 @@ import (
 // The Agents GitHub App (#1335, registered by Alex 2026-10-18). The client ID is public:
 // the device flow needs no client secret, at sign-in or at refresh, so there is none.
 const (
-	GitHubAppSlug  = "agents-loops"
+	GitHubAppSlug  = "agent-loops-dev"
 	GitHubClientID = "Iv23liIROCArmZsCb0Y9"
 	// GitHubInstallURL is where the person installs the App: a user token reaches only the
 	// repositories where it is installed.
