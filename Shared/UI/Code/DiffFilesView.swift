@@ -48,6 +48,14 @@ struct DiffFilesView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                         summary(proxy).padding(.bottom, 12)
+                        // As the web page's empty state (#5477): a pull request with no files.
+                        if diff.files.isEmpty {
+                            Text("No files changed.")
+                                .appText(.reading)
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 40)
+                                .frame(maxWidth: .infinity)
+                        }
                         ForEach(diff.files) { file in
                             Section {
                                 if !collapsed.contains(file.path) { fileBody(file) }
@@ -180,6 +188,8 @@ struct DiffFilesView: View {
             }
         }
         .presentationDetents([.medium, .large])
+        // Solid, so the diff's colours do not show through the rows.
+        .presentationBackground(Paper.ground)
     }
     #endif
 
