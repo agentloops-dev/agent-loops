@@ -30,6 +30,9 @@ plane on this Mac is an option for a person who wants nothing remote.
 1. Download Agent Loops, a free download from us. It is not in the Mac App Store, because it
    runs programs for your agents.
 
+   Download it from the [releases page](https://github.com/agentloops-dev/agents-releases/releases/latest),
+   which stays public.
+
    The release has `Agent-Loops-<version>.dmg` and `Agent-Loops-<version>.zip`, with the same app in
    them. Neither needs admin rights. If your Mac does not open a disk image (because of a
    company policy, for example), download the `.zip` instead and double-click it.
