@@ -12,6 +12,10 @@
 # design:gen (each project's project.json). It installs the pinned packages first
 # (scripts/pnpm.sh install --frozen-lockfile; under a second when nothing changed).
 # Lease "build" first.
+#
+# A task's hash reads only the inputs its project.json names. Each night slow-tests.yml runs
+# every task on main with no cache, and files a bug for a task that fails at a hash where the
+# cache has a pass: it reads an input that nobody declared (#5629, scripts/nx-undeclared.mjs).
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
