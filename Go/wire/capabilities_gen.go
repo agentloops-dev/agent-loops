@@ -109,6 +109,7 @@ const CapHostPolicy1 = "host.policy/1"
 const CapHostSecretApproval1 = "host.secret-approval/1"
 const CapHostSecretGrants1 = "host.secret-grants/1"
 const CapHostSecretRelease1 = "host.secret-release/1"
+const CapHostSecretSignIn1 = "host.secret-sign-in/1"
 const CapHostSecretTerminal1 = "host.secret-terminal/1"
 const CapHostSessionSecrets1 = "host.session-secrets/1"
 const CapHostSuspend1 = "host.suspend/1"
@@ -170,6 +171,7 @@ const CapPlugins1 = "plugins/1"
 const CapPolicyAsk1 = "policy.ask/1"
 const CapPolicy1 = "policy/1"
 const CapPool1 = "pool/1"
+const CapPools1 = "pools/1"
 const CapPreferences1 = "preferences/1"
 const CapPresence1 = "presence/1"
 const CapProcesses1 = "processes/1"
@@ -580,6 +582,7 @@ var HostCapabilities = pairs([][2]string{
 	{"secrets/sessionRemove", "host.session-secrets/1"},
 	{"secrets/sessionSet", "host.session-secrets/1"},
 	{"secrets/setNeedsApproval", "host.secret-approval/1"},
+	{"secrets/signInKey", "host.secret-sign-in/1"},
 	{"secrets/terminalValue", "host.secret-terminal/1"},
 	{"selfUpdate/set", "host.update/1"},
 	{"selfUpdate/status", "host.update/1"},
@@ -946,6 +949,9 @@ var ControlCapabilities = pairs([][2]string{
 	{"policy/requests", "policy.ask/1"},
 	{"policy/set", "policy/1"},
 	{"policy/stopAll", "policy/1"},
+	{"pool/delete", "pools/1"},
+	{"pool/list", "pools/1"},
+	{"pool/set", "pools/1"},
 	{"projects/joined", "projects/1"},
 	{"projects/list", "projects/1"},
 	{"projects/remove", "projects/1"},

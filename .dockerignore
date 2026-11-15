@@ -4,6 +4,12 @@
 *
 !Go/
 !Web/
+!package.json
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!scripts/node.sh
+!scripts/pnpm.sh
 Go/out/
 Web/node_modules/
+node_modules/
 Web/dist/

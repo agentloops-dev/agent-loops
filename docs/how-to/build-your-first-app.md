@@ -118,8 +118,10 @@ ready-made skill `start-a-new-app`, and ticks each task as it does it. See
 - A task that needs you shows **Waits for you**: a card in the chat asks you to do a step
   (such as joining the Apple Developer Program), or to give a secret. A secret goes into
   the repository's CI, for this session only.
-- The agent makes the repository in your GitHub account and adds it as a folder of its
-  own. The first-build session stays in **First build**.
+- You make the repository in your GitHub account (#5563): a card opens `github.com/new`
+  from the starter, private, with the name filled in. Choose **Create repository**, install
+  the GitHub App on it, and answer the card. The agent fills in the starter and adds the
+  repository as a folder of its own. The first-build session stays in **First build**.
 - At the end, the agent sends the first build to TestFlight, or deploys the first version.
   Approve it in **Needs You**. The last task then shows **Done**.
 

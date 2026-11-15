@@ -110,6 +110,7 @@ public enum Capability {
     public static let hostSecretApproval1 = "host.secret-approval/1"
     public static let hostSecretGrants1 = "host.secret-grants/1"
     public static let hostSecretRelease1 = "host.secret-release/1"
+    public static let hostSecretSignIn1 = "host.secret-sign-in/1"
     public static let hostSecretTerminal1 = "host.secret-terminal/1"
     public static let hostSessionSecrets1 = "host.session-secrets/1"
     public static let hostSuspend1 = "host.suspend/1"
@@ -171,6 +172,7 @@ public enum Capability {
     public static let policyAsk1 = "policy.ask/1"
     public static let policy1 = "policy/1"
     public static let pool1 = "pool/1"
+    public static let pools1 = "pools/1"
     public static let preferences1 = "preferences/1"
     public static let presence1 = "presence/1"
     public static let processes1 = "processes/1"
@@ -581,6 +583,7 @@ public enum Capability {
         "secrets/sessionRemove": "host.session-secrets/1",
         "secrets/sessionSet": "host.session-secrets/1",
         "secrets/setNeedsApproval": "host.secret-approval/1",
+        "secrets/signInKey": "host.secret-sign-in/1",
         "secrets/terminalValue": "host.secret-terminal/1",
         "selfUpdate/set": "host.update/1",
         "selfUpdate/status": "host.update/1",
@@ -884,6 +887,9 @@ public enum Capability {
         "policy/requests": "policy.ask/1",
         "policy/set": "policy/1",
         "policy/stopAll": "policy/1",
+        "pool/delete": "pools/1",
+        "pool/list": "pools/1",
+        "pool/set": "pools/1",
         "projects/joined": "projects/1",
         "projects/list": "projects/1",
         "projects/remove": "projects/1",

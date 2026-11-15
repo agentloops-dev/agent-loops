@@ -3,7 +3,7 @@
 # and the Remote.
 #
 # The Mac install runs by default. Pass --no-mac to leave Agents and the login-item jobs
-# alone. A development run and a merge wave do not run this script.
+# alone. A development run does not run this script.
 #
 # Agent Loops is swapped in at ~/Applications/Agent Loops.app, where its Login Items point, and launchd
 # restarts both jobs from it. It is staged in ~/Applications/AgentsLive/<sha>-<time>/ first,
@@ -19,7 +19,7 @@
 #
 # Everything is built in the Live configuration (#220): optimised like Release, signed for
 # development like Debug. Release itself is the App Store archive's. Scratch walks
-# (run-app), merge-wave's checks and the tests stay on Debug.
+# (run-app), the Nx builds and the tests stay on Debug.
 #
 # Run from a worktree, it builds and installs that worktree, if clean and at origin/main
 # (#797); run from the main checkout, the main checkout.

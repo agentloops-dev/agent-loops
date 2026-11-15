@@ -316,6 +316,9 @@ public extension DaemonAPI {
                 Row(Method.messagesMarkAllRead, params: MessagesMarkAllReadRequest.self, result: MessagesMarkedAllRead.self, kind: .hostRequest),
                 // Work ▸ Timeline on the web page (#4206).
                 Row(Method.workTimeline, params: WorkTimelineRequest.self, result: WorkTimeline.self, kind: .hostRequest),
+                // New Session's Suggested section (#5457, #5461).
+                Row(Method.workSuggestLeads, params: WorkSuggestLeadsRequest.self, result: WorkSuggestLeads.self, kind: .hostRequest),
+                Row(Method.workDismissLead, params: WorkDismissLeadRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 // Work ▸ Deploys (#5270).
                 Row(Method.deploysTargets, params: DeployTargetsRequest.self, result: DeployTargets.self, kind: .hostRequest),
                 // Work ▸ Features as a delivery view (#4586).
@@ -503,6 +506,8 @@ public extension DaemonAPI {
                     kind: .controlRequest),
                 Row(Method.hostsList, params: Empty.self, result: [ControlMachine].self, kind: .controlRequest),
                 Row(Method.hostsSetLabels, params: MachineLabelsRequest.self, result: MachineLabelsResult.self, kind: .controlRequest),
+                // Which machine Auto would pick (#5375).
+                Row(Method.sessionsPreviewStart, params: AutoMachineRequest.self, result: AutoMachinePick.self, kind: .controlRequest),
                 Row(Method.clientsForgetSelf, params: Empty.self, result: Empty.self, kind: .controlRequest),
                 // Settings ▸ Control plane ▸ Clients (#4253): who is paired, and a code for one more.
                 Row(Method.clientsList, params: Empty.self, result: [ClientRecord].self, kind: .controlRequest),

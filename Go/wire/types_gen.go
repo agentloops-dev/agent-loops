@@ -13970,6 +13970,22 @@ type SecretReleased struct {
 	Key Data `json:"key"`
 }
 
+// secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask before use off, with its value; else none, and the names that were looked for. A name with Ask before use on is never read: it is in refused, so the step can say so.
+type SecretSignInKey struct {
+	Name *string `json:"name,omitzero"`
+
+	Value *string `json:"value,omitzero"`
+
+	Looked []string `json:"looked"`
+
+	Refused []string `json:"refused"`
+}
+
+// secrets/signInKey (#5361): the key a person has in Secrets for a runtime, for step 7 of a machine's set-up.
+type SecretSignInKeyRequest struct {
+	RuntimeID string `json:"runtimeID"`
+}
+
 // secrets/terminalValue (#4179): agents-secret NAME with no session's grant, such as from a terminal.
 type SecretTerminalRequest struct {
 	Name string `json:"name"`
@@ -15284,6 +15300,9 @@ type StartRequest struct {
 
 	// An agent on another machine started it, through the control plane (#2887): its chat says who.
 	StartedFrom *StartedFrom `json:"startedFrom,omitzero"`
+
+	// The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini: you last started here.": the session's chat says it first. A client sends what sessions/previewStart gave in text.
+	AutoChose *string `json:"autoChose,omitzero"`
 }
 
 // The agent on another machine that started a session with start_session (#2887). The control plane writes machine and who; the asking host writes agent.
@@ -16615,6 +16634,116 @@ type WakeState struct {
 	GraceUntil *Date `json:"graceUntil,omitzero"`
 
 	OnPower bool `json:"onPower"`
+}
+
+// A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
+type WarmPool struct {
+	ID string `json:"id"`
+
+	Name string `json:"name"`
+
+	Scope WarmPoolScope `json:"scope"`
+
+	// The machine provider's id: only a provider can make machines.
+	Provider string `json:"provider"`
+
+	Size *string `json:"size,omitzero"`
+
+	Region *string `json:"region,omitzero"`
+
+	// The runtimes to install; none means those of the pool's projects.
+	Runtimes []string `json:"runtimes,omitzero"`
+
+	// The project folders to send, at their last commit.
+	Projects []string `json:"projects,omitzero"`
+
+	// Machines kept ready (set up, unclaimed). 0 makes nothing. At most maxSize.
+	MinReady int64 `json:"minReady"`
+
+	// The most machines held at once, ready or being set up. At least 1.
+	MaxSize int64 `json:"maxSize"`
+
+	// What the pool aims at: minReady, until auto-scale writes it.
+	Target int64 `json:"target"`
+
+	// Seconds after which a ready machine is replaced. Default 86400 (24 hours).
+	ReplaceAfter *float64 `json:"replaceAfter,omitzero"`
+
+	Hours *WarmPoolHours `json:"hours,omitzero"`
+
+	State WarmPoolState `json:"state"`
+
+	Ready *int64 `json:"ready,omitzero"`
+
+	SettingUp *int64 `json:"settingUp,omitzero"`
+
+	// Makes that failed in a row. Three stop the pool.
+	FailedMakes *int64 `json:"failedMakes,omitzero"`
+
+	// Why the pool stopped making, in the provider's words.
+	StoppedBecause *string `json:"stoppedBecause,omitzero"`
+}
+
+// When a pool runs: on these weekdays (0 Sunday to 6 Saturday) from `from` to `to`, as HH:MM in `timezone` (an IANA name; UTC when absent). Outside them the ready machines are deleted and none are made. A pool with no hours runs every day.
+type WarmPoolHours struct {
+	Days []int64 `json:"days"`
+
+	From string `json:"from"`
+
+	To string `json:"to"`
+
+	Timezone *string `json:"timezone,omitzero"`
+}
+
+type WarmPoolRequest struct {
+	ID string `json:"id"`
+}
+
+// Whose pool it is. Only user is built (#5353).
+type WarmPoolScope string
+
+const WarmPoolScopeUser WarmPoolScope = "user"
+const WarmPoolScopeProject WarmPoolScope = "project"
+const WarmPoolScopeOrg WarmPoolScope = "org"
+
+// pool/set: makes a pool, or changes the one with this id. The control plane writes target, state and the counts. Min must not be above max, and max is at least 1.
+type WarmPoolSet struct {
+	// Absent makes a new pool.
+	ID *string `json:"id,omitzero"`
+
+	Name string `json:"name"`
+
+	Scope *WarmPoolScope `json:"scope,omitzero"`
+
+	Provider string `json:"provider"`
+
+	Size *string `json:"size,omitzero"`
+
+	Region *string `json:"region,omitzero"`
+
+	Runtimes []string `json:"runtimes,omitzero"`
+
+	Projects []string `json:"projects,omitzero"`
+
+	MinReady int64 `json:"minReady"`
+
+	MaxSize int64 `json:"maxSize"`
+
+	ReplaceAfter *float64 `json:"replaceAfter,omitzero"`
+
+	Hours *WarmPoolHours `json:"hours,omitzero"`
+}
+
+// keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed in a row, see stoppedBecause. empty: minReady is 0.
+type WarmPoolState string
+
+const WarmPoolStateKeeping WarmPoolState = "keeping"
+const WarmPoolStateOffHours WarmPoolState = "off-hours"
+const WarmPoolStateStopped WarmPoolState = "stopped"
+const WarmPoolStateEmpty WarmPoolState = "empty"
+
+type WarmPools struct {
+	Pools []WarmPool `json:"pools"`
 }
 
 // machine/pairWebPage (#4214): the web page's address with a one-time browser code after #code=, for the agent browser to open.

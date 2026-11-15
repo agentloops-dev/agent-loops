@@ -183,6 +183,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: Web/.node-version
+          # Not its pnpm cache: scripts/pnpm.sh installs pnpm (#5628).
+          package-manager-cache: false
 
       # Go for what Agents Host carries: agentsd, agents-control and the MCP servers (#1314).
       - uses: actions/setup-go@v6

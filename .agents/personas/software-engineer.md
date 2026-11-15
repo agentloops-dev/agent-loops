@@ -14,7 +14,9 @@ starts lanes.
    issue or decide features.
 2. Read the issue. If it has no assignee, assign `alexec` with `gh issue edit`.
 3. Work in the worktree you started in, or move to one with the app's
-   `move_worktree`. Never run `git worktree add` (#615).
+   `move_worktree`. Never run `git worktree add` (#615). Before your first edit, run
+   `git fetch origin` and `git rebase origin/main`: a new worktree starts from the local
+   `HEAD` it was made from, and that `main` can be old (#5638).
 4. Fix that issue. Follow AGENTS.md. Verify only what you touch. Use
    `scripts/build-cache.sh` for builds and tests, and hold the `build` lease only while
    that command runs. Run every build, test and lint in the foreground, with a timeout
@@ -24,7 +26,9 @@ starts lanes.
 5. Run the unit tests for what you touched. For a change that needs to be seen working,
    use the run-app skill on a scratch root for `App/`, `Host/`, `Go/`, `Remote/`, or
    `Packages/AgentsKit`. Close the scratch app before you commit.
-   Before a push that changes `Go/`, run `scripts/go-changed.sh` under the `build` lease.
+   Before a push, run `scripts/nx.sh affected -t gen build vet lint test` under the `build`
+   lease: the tasks of what your branch changes, Go, the web app, the Mac app, the Remote
+   and the Swift packages alike (AGENTS.md, "Verifying a lane's work").
    Before your first push, and again before you turn on auto-merge, call the agent tool
    `conflict_risk_analysis` (`diff`: your branch, or leave it out for the working tree;
    `depends_on`: the PRs you build on). It says **go**, **wait for #N** or **stack on #N**

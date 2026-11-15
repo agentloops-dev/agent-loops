@@ -95,11 +95,11 @@ CI checks, Starts agents from issues, Scheduled or triggered runs, Workflows as 
    - the labels `agent`, and CodeRabbit installed on the repository.
    - Before each take, the set-up closes the last take's pull request, deletes its branch,
      reopens #4 and takes `agent` off it.
-3. **The GitHub sign-in on the scratch host:** the device flow of the `agents-loops` App,
+3. **The GitHub sign-in on the scratch host:** the device flow of the `agent-loops-dev` App,
    as the demo account. The take's set-up opens github.com/login/device in the agents' own
    Chrome profile; the first time, the demo account's password and its two-factor code
    (`scripts/totp.sh`, seed in `~/.agents/secrets/`) go in by `fill_secret`. The demo
-   account installs `agents-loops` on `weather`. No step needs Alex's hands unless GitHub
+   account installs `agent-loops-dev` on `weather`. No step needs Alex's hands unless GitHub
    asks for a CAPTCHA at sign-up.
 4. **The cost comment's `gh`:** the host posts it with the person's own `gh`. The scratch
    host's `gh` must be signed in as the demo account (`GH_CONFIG_DIR` in the scratch root),

@@ -651,6 +651,12 @@ final class RemoteModel {
 
     /// What Auto would pick now for the page, for "Auto (Claude)".
     var startAutoPreview: AutoPreview?
+    /// Which machine Auto would pick for the page's project (#5375), from the control plane;
+    /// nil with no control plane, one that does not know it, or no project.
+    var startAutoMachine: DaemonAPI.AutoMachinePick?
+    /// The folder whose machine the person named by hand in On (#5375): Auto is off for that
+    /// page only, and is on again after the next start.
+    var startNamedMachine: FolderKey?
 
     /// What the page's attachments need its runtime to take (#3162): Auto's preview picks a
     /// runtime that takes them, as the start does.

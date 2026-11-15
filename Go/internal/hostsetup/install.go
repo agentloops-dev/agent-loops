@@ -58,6 +58,9 @@ type Deps struct {
 	// SignInWait bounds the wait for the first runtime to be signed in before step 8; SmokeWait
 	// bounds the smoke session's answer.
 	SignInWait, SmokeWait time.Duration
+	// KeyWait is how long step 7 is running, for a client to write a key it has, before it
+	// says it needs the person.
+	KeyWait time.Duration
 	Out                   io.Writer
 }
 
@@ -76,6 +79,9 @@ func (d *Deps) defaults() {
 	}
 	if d.SignInWait == 0 {
 		d.SignInWait = 10 * time.Minute
+	}
+	if d.KeyWait == 0 {
+		d.KeyWait = 15 * time.Second
 	}
 	if d.SmokeWait == 0 {
 		d.SmokeWait = SmokeTimeout
@@ -165,6 +171,10 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	wg.Wait()
 	if first != nil || !o.Smoke {
 		return first
+	}
+	// 7: Sign in to runtimes: a client's work, which this step waits on.
+	if err := SignIn(ctx, o, d, rep, say); err != nil {
+		return err
 	}
 	// 8: Smoke session.
 	return Smoke(ctx, o, d, rep, say)

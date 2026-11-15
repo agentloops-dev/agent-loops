@@ -17,7 +17,7 @@
 //	AGENTS_HOSTED_DOMAIN           where the sign-up and account pages are (agentloops.dev)
 //	AGENTS_HOSTED_ACCOUNTS_DOMAIN  where each account's control plane is, as <id>.<this>; the
 //	                               pages' domain when unset
-//	AGENTS_HOSTED_GITHUB_CLIENT_ID the GitHub App's client id (the agents-loops App's when unset)
+//	AGENTS_HOSTED_GITHUB_CLIENT_ID the GitHub App's client id (the agent-loops-dev App's when unset)
 //	AGENTS_HOSTED_GITHUB_SECRET    its client secret; with none, GitHub is not offered
 //	AGENTS_HOSTED_APPLE_SERVICES_ID  Sign in with Apple's Services ID; with the next three, Apple is offered
 //	AGENTS_HOSTED_APPLE_TEAM_ID      the Apple Developer team that has it

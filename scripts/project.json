@@ -1,0 +1,7 @@
+{
+  "name": "scripts",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "scripts",
+  "tags": ["inputs-only"],
+  "targets": {}
+}

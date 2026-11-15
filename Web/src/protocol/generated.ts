@@ -13113,6 +13113,26 @@ export interface SecretReleased {
 }
 
 /**
+ * secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask
+ * before use off, with its value; else none, and the names that were looked for. A name with Ask
+ * before use on is never read: it is in refused, so the step can say so.
+ */
+export interface SecretSignInKey {
+  name?: string;
+  value?: string;
+  looked: string[];
+  refused: string[];
+}
+
+/**
+ * secrets/signInKey (#5361): the key a person has in Secrets for a runtime, for step 7 of a
+ * machine's set-up.
+ */
+export interface SecretSignInKeyRequest {
+  runtimeID: string;
+}
+
+/**
  * secrets/terminalValue (#4179): agents-secret NAME with no session's grant, such as from a
  * terminal.
  */
@@ -14320,6 +14340,12 @@ export interface StartRequest {
    * An agent on another machine started it, through the control plane (#2887): its chat says who.
    */
   startedFrom?: StartedFrom;
+  /**
+   * The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini:
+   * you last started here.": the session's chat says it first. A client sends what
+   * sessions/previewStart gave in text.
+   */
+  autoChose?: string;
 }
 
 /**
@@ -15389,6 +15415,99 @@ export interface WakeState {
   since?: WireDate;
   graceUntil?: WireDate;
   onPower: boolean;
+}
+
+/**
+ * A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept
+ * made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in
+ * to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a
+ * claimed machine leaves the pool and does not count). target is written by the control plane and
+ * is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
+ */
+export interface WarmPool {
+  id: string;
+  name: string;
+  scope: WarmPoolScope;
+  /** The machine provider's id: only a provider can make machines. */
+  provider: string;
+  size?: string;
+  region?: string;
+  /** The runtimes to install; none means those of the pool's projects. */
+  runtimes?: string[];
+  /** The project folders to send, at their last commit. */
+  projects?: string[];
+  /** Machines kept ready (set up, unclaimed). 0 makes nothing. At most maxSize. */
+  minReady: number;
+  /** The most machines held at once, ready or being set up. At least 1. */
+  maxSize: number;
+  /** What the pool aims at: minReady, until auto-scale writes it. */
+  target: number;
+  /** Seconds after which a ready machine is replaced. Default 86400 (24 hours). */
+  replaceAfter?: number;
+  hours?: WarmPoolHours;
+  state: WarmPoolState;
+  ready?: number;
+  settingUp?: number;
+  /** Makes that failed in a row. Three stop the pool. */
+  failedMakes?: number;
+  /** Why the pool stopped making, in the provider's words. */
+  stoppedBecause?: string;
+}
+
+/**
+ * When a pool runs: on these weekdays (0 Sunday to 6 Saturday) from `from` to `to`, as HH:MM in
+ * `timezone` (an IANA name; UTC when absent). Outside them the ready machines are deleted and none
+ * are made. A pool with no hours runs every day.
+ */
+export interface WarmPoolHours {
+  days: number[];
+  from: string;
+  to: string;
+  timezone?: string;
+}
+
+export interface WarmPoolRequest {
+  id: string;
+}
+
+/** Whose pool it is. Only user is built (#5353). */
+export type WarmPoolScope =
+  | "user"
+  | "project"
+  | "org";
+
+/**
+ * pool/set: makes a pool, or changes the one with this id. The control plane writes target, state
+ * and the counts. Min must not be above max, and max is at least 1.
+ */
+export interface WarmPoolSet {
+  /** Absent makes a new pool. */
+  id?: string;
+  name: string;
+  scope?: WarmPoolScope;
+  provider: string;
+  size?: string;
+  region?: string;
+  runtimes?: string[];
+  projects?: string[];
+  minReady: number;
+  maxSize: number;
+  replaceAfter?: number;
+  hours?: WarmPoolHours;
+}
+
+/**
+ * keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed
+ * in a row, see stoppedBecause. empty: minReady is 0.
+ */
+export type WarmPoolState =
+  | "keeping"
+  | "off-hours"
+  | "stopped"
+  | "empty";
+
+export interface WarmPools {
+  pools: WarmPool[];
 }
 
 /**
@@ -16472,6 +16591,7 @@ export interface Methods {
   "secrets/sessionRemove": { params: SessionSecretRemoveRequest; result: SessionSecrets };
   "secrets/sessionSet": { params: SessionSecretSetRequest; result: SessionSecrets };
   "secrets/setNeedsApproval": { params: SecretNeedsApprovalRequest; result: Empty };
+  "sessions/previewStart": { params: AutoMachineRequest; result: AutoMachinePick };
   "settings/passThrough": { params: Empty; result: PassThroughState };
   "signIn/approve": { params: SignInDecide; result: Empty };
   "signIn/configure": { params: SignInConfigure; result: SignInProviders };
@@ -16518,7 +16638,9 @@ export interface Methods {
   "views/show": { params: ViewShowRequest; result: Empty };
   "wake/set": { params: WakeSettings; result: WakeSettings };
   "wake/settings": { params: Empty; result: WakeSettings };
+  "work/dismiss-lead": { params: WorkDismissLeadRequest; result: ForgeDone };
   "work/features": { params: WorkFeaturesRequest; result: WorkFeatures };
+  "work/suggest-leads": { params: WorkSuggestLeadsRequest; result: WorkSuggestLeads };
   "work/timeline": { params: WorkTimelineRequest; result: WorkTimeline };
   "workflows/approve": { params: WorkflowApproveRequest; result: WorkflowSummary };
   "workflows/archive": { params: WorkflowArchiveRequest; result: WorkflowSummary };
@@ -16928,6 +17050,7 @@ export const MethodTarget = {
   "secrets/sessionRemove": "host",
   "secrets/sessionSet": "host",
   "secrets/setNeedsApproval": "host",
+  "sessions/previewStart": "control",
   "settings/passThrough": "host",
   "signIn/approve": "control",
   "signIn/configure": "control",
@@ -16974,7 +17097,9 @@ export const MethodTarget = {
   "views/show": "host",
   "wake/set": "host",
   "wake/settings": "host",
+  "work/dismiss-lead": "host",
   "work/features": "host",
+  "work/suggest-leads": "host",
   "work/timeline": "host",
   "workflows/approve": "host",
   "workflows/archive": "host",
@@ -18095,6 +18220,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SecretRelease: { required: ["name", "encapsulated", "approval"], optional: [] },
   SecretReleaseKey: { required: ["publicKey"], optional: [] },
   SecretReleased: { required: ["key"], optional: [] },
+  SecretSignInKey: { required: ["looked", "refused"], optional: ["name", "value"] },
+  SecretSignInKeyRequest: { required: ["runtimeID"], optional: [] },
   SecretTerminalRequest: { required: ["name"], optional: ["command"] },
   SecretTerminalValue: { required: [], optional: ["value", "request", "words"] },
   SecretsLeft: { required: ["host", "name", "secrets"], optional: [] },
@@ -18217,7 +18344,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SlashCommand: { required: ["name"], optional: ["description", "inputHint"] },
   SpendCaps: { required: [], optional: ["dailyUSD"] },
   StartOptions: { required: ["values", "extraArguments"], optional: [] },
-  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "persona", "levels", "purpose", "accountID", "voice", "startedFrom"] },
+  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "autoChose"] },
   StartedFrom: { required: ["machine", "agent", "who"], optional: [] },
   StartedMachinePreview: { required: ["host", "name", "state", "unpushed"], optional: ["unknown"] },
   StartingPoint: { required: ["repository", "commit"], optional: [] },
@@ -18303,6 +18430,11 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitingAgent: { required: ["agentID", "title", "folder", "status"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
+  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause"] },
+  WarmPoolHours: { required: ["days", "from", "to"], optional: ["timezone"] },
+  WarmPoolRequest: { required: ["id"], optional: [] },
+  WarmPoolSet: { required: ["name", "provider", "minReady", "maxSize"], optional: ["id", "scope", "size", "region", "runtimes", "projects", "replaceAfter", "hours"] },
+  WarmPools: { required: ["pools"], optional: [] },
   WebPagePairing: { required: ["url"], optional: [] },
   WebPushKey: { required: [], optional: ["publicKey"] },
   WebPushSubscription: { required: [], optional: ["endpoint", "p256dh", "auth"] },

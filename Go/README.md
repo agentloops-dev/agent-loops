@@ -41,9 +41,10 @@ Go/scripts/go.sh vet ./...
 Go/scripts/go.sh test ./...
 ```
 
-CI's `go` job builds, vets and tests the module on Linux on any change under `Go/`, and
-`scripts/select-test-suites.sh` runs no Swift suite or macOS job for a change under `Go/`
-alone. The merge wave runs the same as `test-go`.
+CI's `go` job builds, vets and tests the module on Linux on any change under `Go/`
+(`go:build`, `go:vet` and `go:test` in Nx, `Go/project.json`). A change under `Go/` also
+builds the Mac app (`mac:build`), which carries agentsd, and runs the AgentsKit suites that
+read `Go/` (`agentskit-repo:test`), each skipped when its inputs have a pass in the Nx cache.
 
 The rules (#1134): no cloud login is ever required, plain files only (no SQLite or other
 embedded database), and today's file layout, so a change of language keeps every agent,
@@ -130,7 +131,7 @@ MCP's SDKs have no events (a working-group draft), so `githubmcp.Front` reads st
 It answers `events/list` and `events/poll`, adds the `events` capability to `initialize`,
 and passes every other message to the official server unchanged. It calls GitHub as the
 person, with the token of the host's GitHub connection (#1335: the GitHub App
-`agents-loops`, device flow), read again each minute from the store `AGENTS_CONNECTIONS`
+`agent-loops-dev`, device flow), read again each minute from the store `AGENTS_CONNECTIONS`
 names. It has no account of its own and does not use `gh`.
 
 Agents Host carries it in `Contents/Helpers` (`scripts/go-github-mcp.sh`, a build phase,

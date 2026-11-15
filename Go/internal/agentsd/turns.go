@@ -408,6 +408,10 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 	d.tellChanged(a, nil)
 	d.noteLineage(nil, a)
 	d.folderChanged(folderPath(&a))
+	// Auto picked this machine (#5375): the line the control plane made is the chat's first.
+	if r.AutoChose != nil && strings.TrimSpace(*r.AutoChose) != "" {
+		d.record(a.ID, runtimeNote(strings.TrimSpace(*r.AutoChose)))
+	}
 	if r.StartedFrom != nil {
 		d.record(a.ID, runtimeNote(startedFromNote(r.StartedFrom)))
 	}

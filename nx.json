@@ -1,0 +1,112 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "neverConnectToCloud": true,
+  "analytics": false,
+  "useDaemonProcess": false,
+  "maxCacheSize": "1GB",
+  "defaultBase": "origin/main",
+  "plugins": [],
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
+    "sharedGlobals": [
+      "{workspaceRoot}/nx.json",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/pnpm-lock.yaml",
+      "{workspaceRoot}/pnpm-workspace.yaml"
+    ],
+    "go-toolchain": [
+      "{workspaceRoot}/Go/go.mod",
+      "{workspaceRoot}/Go/scripts/go.sh",
+      {
+        "env": "CGO_ENABLED"
+      },
+      {
+        "env": "GOFLAGS"
+      },
+      {
+        "env": "GOEXPERIMENT"
+      },
+      {
+        "runtime": "uname -s"
+      }
+    ],
+    "node-toolchain": [
+      "{workspaceRoot}/Web/.node-version"
+    ],
+    "xcode-toolchain": [
+      "{workspaceRoot}/.xcode-version",
+      "{workspaceRoot}/scripts/build-cache.sh",
+      {
+        "env": "AGENTS_QUARANTINE"
+      },
+      {
+        "env": "AGENTS_RUN_FLAKY"
+      },
+      {
+        "env": "AGENTS_BUILD_CACHE"
+      }
+    ],
+    "wire-source": [
+      "{workspaceRoot}/Packages/Wire/**/*",
+      "{workspaceRoot}/Go/cmd/wiregen/**/*"
+    ],
+    "design-source": [
+      "{workspaceRoot}/design/tokens.json",
+      "{workspaceRoot}/scripts/design.py"
+    ],
+    "generator-sources": [
+      "wire-source",
+      "design-source"
+    ],
+    "agentskit-source": [
+      "{workspaceRoot}/Packages/AgentsKit/Package.swift",
+      "{workspaceRoot}/Packages/AgentsKit/Package.resolved",
+      "{workspaceRoot}/Packages/AgentsKit/Sources/**/*"
+    ],
+    "codetext-source": [
+      "{workspaceRoot}/Packages/CodeText/Package.swift",
+      "{workspaceRoot}/Packages/CodeText/Package.resolved",
+      "{workspaceRoot}/Packages/CodeText/Sources/**/*",
+      "{workspaceRoot}/Packages/CodeText/Grammars/**/*"
+    ],
+    "xcode-project": [
+      "xcode-toolchain",
+      "agentskit-source",
+      "codetext-source",
+      "generator-sources",
+      "{workspaceRoot}/project.yml",
+      "{workspaceRoot}/Shared/**/*",
+      "{workspaceRoot}/design/fonts/**/*",
+      "{workspaceRoot}/scripts/voice-models.sh"
+    ],
+    "agentskit-package": [
+      "xcode-toolchain",
+      "agentskit-source",
+      "generator-sources",
+      "{workspaceRoot}/Packages/AgentsKit/Tests/AcceptProbe/**/*",
+      "{workspaceRoot}/Packages/AgentsKit/Tests/AgentsKitTests/Support/**/*",
+      "{workspaceRoot}/Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/**/*",
+      "{workspaceRoot}/Packages/AgentsKit/project.json"
+    ]
+  },
+  "targetDefaults": {
+    "build": {
+      "cache": true
+    },
+    "vet": {
+      "cache": true
+    },
+    "test": {
+      "cache": true
+    },
+    "lint": {
+      "cache": true
+    },
+    "gen": {
+      "cache": true
+    }
+  }
+}
