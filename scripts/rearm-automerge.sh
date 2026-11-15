@@ -4,7 +4,9 @@
 #   scripts/rearm-automerge.sh PR...                re-arm these PRs now
 #   scripts/rearm-automerge.sh --stalled [MINUTES]  re-arm, once per head, every open PR that is
 #                                                   CLEAN with auto-merge on and has been for
-#                                                   MINUTES (default 10); says so in a PR comment
+#                                                   MINUTES (default 10); says so in a PR comment.
+#                                                   It also reruns, once per head, a cancelled ci
+#                                                   run (below)
 #
 # GitHub can leave auto-merge armed on a PR that is CLEAN and green and never merge it. On
 # 2026-10-20 it did so three times (#1638, #1642, #1735): auto-merge was turned on while the
@@ -16,6 +18,14 @@
 # turns auto-merge on for a PR whose base just moved. A landing lane runs `--stalled` to catch
 # the ones nobody re-armed. `--stalled` re-arms a PR only once per head commit; a PR it has
 # re-armed before at the same head is listed for a person to look at.
+#
+# A required check whose job reached its timeout-minutes, or lost its runner, ends Cancelled,
+# not Failed: no checks.failed, no red mark, and auto-merge waits with no message (#879, #895).
+# ci.yml gives its long steps a timeout under the job's (#5609), so a slow step fails instead.
+# For what is left, `--stalled` also reruns the failed and cancelled jobs of a PR's newest ci
+# run when that run is cancelled, no newer ci run replaced it, and it ran on the PR's head. It
+# does this once per head, and says so in a PR comment; a second cancel at the same head is
+# listed for a person to look at. This replaces the ci-cancelled workflow (#897, #5609).
 #
 # A PR labelled `hold:v*` waits for that release to ship (#2931): this script never arms it.
 # Only the release takes the label off and turns auto-merge on. Since #3212 there are no patch
@@ -45,8 +55,8 @@ rearm() {
 	echo "$me: re-armed auto-merge on #$pr"
 }
 
-# One line per open PR with auto-merge on: number, merge state, head sha, and the minutes
-# since the latest of: auto-merge turned on, any check on the head finishing.
+# One line per open PR with auto-merge on: number, merge state, head sha, the minutes since
+# the latest of: auto-merge turned on, any check on the head finishing; and the head branch.
 open_auto_prs() {
 	gh pr list --state open --limit 200 \
 		--json number,mergeStateStatus,headRefOid,autoMergeRequest,statusCheckRollup \
@@ -55,19 +65,55 @@ open_auto_prs() {
 				+ [.statusCheckRollup[]? | (.completedAt // .createdAt // empty)
 					| select(startswith("0001-") | not)]
 				| map(sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) | max) as $since
-			| [.number, .mergeStateStatus, .headRefOid, (((now - $since) / 60) | floor)]
+			| [.number, .mergeStateStatus, .headRefOid, (((now - $since) / 60) | floor), .headRefName]
 			| @tsv'
+}
+
+# True when a comment on the PR has this marker: how this script does a thing once per head.
+has_marker() {
+	gh pr view "$1" --json comments --jq '.comments[].body' | grep -qF -- "$2"
+}
+
+# Rerun the failed and cancelled jobs of the PR's newest ci run, once per head, when that run
+# is cancelled and ran on the PR's head. A new push starts a newer run, which replaces the
+# cancelled one, so only the newest run counts.
+rerun_cancelled() {
+	local pr=$1 head=$2 branch=$3 run marker
+	run=$(gh run list --workflow ci --branch "$branch" --event pull_request --limit 1 \
+		--json databaseId,headSha,status,conclusion \
+		--jq '.[] | select(.status == "completed" and .conclusion == "cancelled")
+			| [.databaseId, .headSha] | @tsv')
+	[[ -n $run && ${run#*$'\t'} == "$head" ]] || return 0
+	run=${run%%$'\t'*}
+	marker="<!-- rerun-cancelled-ci $head -->"
+	if has_marker "$pr" "$marker"; then
+		echo "$me: #$pr: ci run $run is cancelled again after a rerun at this head: a person should look"
+		return 0
+	fi
+	if ! gh run rerun "$run" --failed >/dev/null; then
+		echo "$me: #$pr: could not rerun ci run $run" >&2
+		return 0
+	fi
+	echo "$me: #$pr: started the cancelled jobs of ci run $run again"
+	gh pr comment "$pr" --body "The cancelled jobs of ci run $run were started again by \`scripts/rearm-automerge.sh --stalled\`. A cancelled required check does not fail, so auto-merge waits with no message (#5609). If it is cancelled again at this head, a person must look at it.
+
+$marker" >/dev/null
 }
 
 stalled() {
 	local minutes=${1:-10}
 	[[ $minutes =~ ^[0-9]+$ ]] || die "MINUTES must be a whole number, not '$minutes'"
-	local found=0 pr state head age marker
-	while IFS=$'\t' read -r pr state head age; do
-		[[ -n $pr && $state == CLEAN && $age -ge $minutes ]] || continue
+	local found=0 pr state head age branch marker
+	while IFS=$'\t' read -r pr state head age branch; do
+		[[ -n $pr ]] || continue
+		if [[ $state != CLEAN ]]; then
+			rerun_cancelled "$pr" "$head" "$branch"
+			continue
+		fi
+		[[ $age -ge $minutes ]] || continue
 		found=1
 		marker="<!-- rearm-automerge $head -->"
-		if gh pr view "$pr" --json comments --jq '.comments[].body' | grep -qF -- "$marker"; then
+		if has_marker "$pr" "$marker"; then
 			echo "$me: #$pr is still CLEAN and unmerged ${age}m on, after a re-arm at this head: a person should look"
 			continue
 		fi
