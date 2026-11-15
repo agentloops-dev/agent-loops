@@ -92,7 +92,7 @@ verified by its lane.
 |---|---|
 | `App/`, `Host/`, `Packages/` | `build-host` (Agent Loops, the one Mac app) |
 | `Remote*/`, `Shared/`, `Packages/AgentsKit` or `CodeText`, `folder.yml` | `build-remote` (generic iOS Simulator) |
-| `Web/` | `web`: a rebuild that must change nothing, `npm run check` and `npm test` |
+| `Web/` | `web`: Nx's `web:build`, `web:lint` and `web:test` (`scripts/nx.sh`, #5628) |
 | Swift packages | `test-*`: the suites `scripts/select-test-suites.sh` picks, as CI does (AgentsKit filtered) |
 | shippable and `build-host` | `smoke`: the run-app check below |
 | `docs/`, `specs/`, `.agents/` only | nothing, so straight to `finish` |

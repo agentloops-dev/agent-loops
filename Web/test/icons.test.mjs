@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { lock } from "./lockfile.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const spec = JSON.parse(read("../../design/icons.json"));
@@ -11,8 +12,7 @@ const meant = new Set(spec.icons.map((icon) => icon.lucide));
 test("lucide-static is the version design/icons.json pins, exactly", () => {
   const pkg = JSON.parse(read("../package.json"));
   assert.equal(pkg.dependencies["lucide-static"], spec.lucide.version);
-  const lock = JSON.parse(read("../package-lock.json"));
-  assert.equal(lock.packages["node_modules/lucide-static"].integrity, spec.lucide.integrity);
+  assert.equal(lock.packages[`lucide-static@${spec.lucide.version}`].resolution.integrity, spec.lucide.integrity);
 });
 
 test("every icon the page draws has its meaning in design/icons.json", () => {

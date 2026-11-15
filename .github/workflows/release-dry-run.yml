@@ -90,6 +90,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: Web/.node-version
+          # Not its pnpm cache: scripts/pnpm.sh installs pnpm (#5628).
+          package-manager-cache: false
 
       - uses: actions/setup-go@v6
         with:
