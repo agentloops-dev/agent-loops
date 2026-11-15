@@ -140,9 +140,13 @@ func TestOldSavesAreOfferedButNotPasskeysOrConnectorSecrets(t *testing.T) {
 	root, home := t.TempDir(), t.TempDir()
 	t.Setenv("AGENTS_PERSONAL_HOME", home)
 	machineKeys(t, root)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{
-		"linear":{"url":"https://mcp.linear.app/mcp","headers":{"Authorization":"Bearer ${LINEAR_TOKEN}"}}}}`), 0o600)
+	if err := os.MkdirAll(filepath.Join(home, ".agents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{
+		"linear":{"url":"https://mcp.linear.app/mcp","headers":{"Authorization":"Bearer ${LINEAR_TOKEN}"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	d, _ := start(t, root)
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

@@ -27,7 +27,9 @@ func offerDescribed(t *testing.T, box *fakeHost, offer, name, value, description
 		t.Fatal(err)
 	}
 	var clients wire.SealRecipients
-	json.Unmarshal(raw, &clients)
+	if err := json.Unmarshal(raw, &clients); err != nil {
+		t.Fatal(err)
+	}
 	if clients.User == nil || len(clients.Recipients) == 0 {
 		t.Fatalf("%s", raw)
 	}
@@ -74,7 +76,9 @@ func offerSet(t *testing.T, who *person, row wire.SecretOffer, user string, vers
 		t.Fatalf("this client's copy does not open: %v", err)
 	}
 	var recipients wire.SealRecipients
-	json.Unmarshal(call(t, who.window, "", "user/secretRecipients", nil), &recipients)
+	if err := json.Unmarshal(call(t, who.window, "", "user/secretRecipients", nil), &recipients); err != nil {
+		t.Fatal(err)
+	}
 	offer := row.Offer
 	set := wire.UserSecretSet{Name: row.Name, Version: version, Offer: &offer, Description: row.Description, Values: map[string]wire.SealedEnvelope{}}
 	for _, r := range recipients.Recipients {
@@ -90,7 +94,9 @@ func offerSet(t *testing.T, who *person, row wire.SecretOffer, user string, vers
 func offersOf(t *testing.T, window *controllink.Session) wire.SecretOffers {
 	t.Helper()
 	var offers wire.SecretOffers
-	json.Unmarshal(call(t, window, "", wire.CallUserSecretOffers.Name, wire.Empty{}), &offers)
+	if err := json.Unmarshal(call(t, window, "", wire.CallUserSecretOffers.Name, wire.Empty{}), &offers); err != nil {
+		t.Fatal(err)
+	}
 	return offers
 }
 
@@ -98,7 +104,9 @@ func auditActions(t *testing.T, window *controllink.Session) (map[string]wire.Au
 	t.Helper()
 	raw := call(t, window, "", "audit/list", wire.AuditQuery{})
 	var list wire.AuditList
-	json.Unmarshal(raw, &list)
+	if err := json.Unmarshal(raw, &list); err != nil {
+		t.Fatal(err)
+	}
 	out := map[string]wire.AuditEntry{}
 	for _, e := range list.Entries {
 		out[e.Action] = e
@@ -126,7 +134,9 @@ func TestAnAgentsSecretBecomesThePersonsThroughTheirClient(t *testing.T) {
 	// another machine.
 	const value = "glpat-agents-saved-this-4Kq9Zt"
 	var otherMachine wire.SealRecipients
-	json.Unmarshal(call(t, window, "", "user/secretRecipients", nil), &otherMachine)
+	if err := json.Unmarshal(call(t, window, "", "user/secretRecipients", nil), &otherMachine); err != nil {
+		t.Fatal(err)
+	}
 	var machineRecipient wire.SealRecipient
 	for _, r := range otherMachine.Recipients {
 		if r.ID == controllink.MachineRecipient(other.member.Host) {
@@ -167,7 +177,9 @@ func TestAnAgentsSecretBecomesThePersonsThroughTheirClient(t *testing.T) {
 		return secretsOf(devbox, u)["GITLAB_TOKEN"] == value && len(u.OffersWaiting) == 0
 	}, "devbox has the person's copy, and no offer waits")
 	var names wire.UserSecretNames
-	json.Unmarshal(call(t, window, "", "user/secretNames", nil), &names)
+	if err := json.Unmarshal(call(t, window, "", "user/secretNames", nil), &names); err != nil {
+		t.Fatal(err)
+	}
 	if len(names.Secrets) != 1 || names.Secrets[0].SavedBy == nil || names.Secrets[0].SavedBy.Name != row.MachineName ||
 		string(names.Secrets[0].SavedBy.Machine) != devbox.member.Host {
 		t.Fatalf("%+v", names)
@@ -186,7 +198,9 @@ func TestAnAgentsSecretBecomesThePersonsThroughTheirClient(t *testing.T) {
 	}
 	// An app that takes it as a new name, not as Use the Agent's at the kept version plus one, is
 	// refused: the person's value is never replaced on its own.
-	json.Unmarshal(call(t, window, "", "user/secretNames", nil), &names)
+	if err := json.Unmarshal(call(t, window, "", "user/secretNames", nil), &names); err != nil {
+		t.Fatal(err)
+	}
 	had := deref(names.Secrets[0].Version)
 	for _, version := range []int64{time.Now().UnixMilli() + 60_000, had + 2} {
 		set, _ := offerSet(t, alex, offers.Offers[0], alex.id, version)
@@ -197,7 +211,9 @@ func TestAnAgentsSecretBecomesThePersonsThroughTheirClient(t *testing.T) {
 	// Use the Agent's, at the kept version plus one: the agent's value, and the person's own
 	// description, which the agent's offer did not give.
 	takeOffer(t, alex, offers.Offers[0], alex.id, had+1)
-	json.Unmarshal(call(t, window, "", "user/secretNames", nil), &names)
+	if err := json.Unmarshal(call(t, window, "", "user/secretNames", nil), &names); err != nil {
+		t.Fatal(err)
+	}
 	if deref(names.Secrets[0].Description) != "gitlab.com, api" {
 		t.Fatalf("%+v", names.Secrets[0])
 	}
