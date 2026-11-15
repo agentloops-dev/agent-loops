@@ -133,7 +133,7 @@ tag of it (`readyMadeTag` and `readyMadeCommit` in `Go/internal/agentsd/dotagent
 
 1. Tag its main with the next tag (`v0.<n+1>.0`): `gh api repos/agentloops-dev/dotagents/git/refs -f ref=refs/tags/<tag> -f sha=<main's sha>`. Never move a tag that is there.
 2. On a branch `agents/dotagents-<tag>`, run `scripts/dotagents.sh pin <tag>`, then
-   `scripts/go-changed.sh` under the "build" lease: agentsd's tests check that each skill
+   `scripts/nx.sh run go:test` under the "build" lease: agentsd's tests check that each skill
    names only tools this release serves. Open its PR with auto-merge on; the gate (step 5)
    waits for it as for a fix. A failing test is a fix in `dotagents` and a new tag, not a
    change to the test.
@@ -273,7 +273,7 @@ open for item 2 and for the notes' known issues (`git merge-base --is-ancestor <
    `run.conclusion` is the result. However it woke, look again (run `--after` as above if
    main moved meanwhile; with `keep the pin`, the same run goes on). Never wait on a
    background shell or a timer alone: a background shell ends with the session's process. It runs release.yml's `mac` and `testflight` archives as dry runs on a
-   runner with an empty build cache, which no lane or merge wave does (#2773 spent
+   runner with an empty build cache, which no lane does (#2773 spent
    v0.12.0's tag). A run of it on a pull request does not count: run it on `<sha>`. If it
    failed, end with `partly_done`, naming the job and its first error; the fix goes through
    the bug lane's lead as for main broken.

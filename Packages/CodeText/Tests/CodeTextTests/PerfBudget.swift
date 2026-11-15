@@ -10,7 +10,7 @@ extension Trait where Self == Tag.List {
     /// and everything it asserts about the result is asserted everywhere; only the budget
     /// itself waits for `scripts/perf-tests.sh`, which runs these tests on their own with
     /// `AGENTS_RUN_PERF=1`. A budget held while three agents build beside it measures the
-    /// load, not the code, so a plain `swift test`, and a merge wave's `test-codetext`, print the
+    /// load, not the code, so a plain `swift test`, and Nx's `codetext:test`, print the
     /// time without holding it.
     ///
     /// Written on the same line as `@Test`, where `scripts/perf-tests.sh` finds them.

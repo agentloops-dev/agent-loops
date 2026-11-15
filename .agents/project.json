@@ -1,0 +1,7 @@
+{
+  "name": "agents",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": ".agents",
+  "tags": ["inputs-only"],
+  "targets": {}
+}

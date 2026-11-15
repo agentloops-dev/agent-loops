@@ -9,7 +9,7 @@
 #                                    tag is not the pinned commit
 #
 # DOTAGENTS_URL clones another repository (a fork, or a folder in a test). After `pin`, run
-# agentsd's tests (scripts/go-changed.sh, under the "build" lease): they check that each skill
+# agentsd's tests (scripts/nx.sh run go:test, under the "build" lease): they check that each skill
 # names only the tools this release serves.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

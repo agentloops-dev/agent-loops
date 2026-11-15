@@ -68,7 +68,7 @@ The script refuses to install a bundle holding a `*.debug.dylib` or `__preview.d
 
 Debug-only scratch hooks (`-open-agent`, `AGENTS_TEST_*`, `events/raise`,
 `disk-free-override`, the reconnect notification) are absent from the live app. Scratch
-walks (run-app), merge-wave's checks and the tests stay on Debug.
+walks (run-app), the Nx builds and the tests stay on Debug.
 
 ## What runs on the Mac
 

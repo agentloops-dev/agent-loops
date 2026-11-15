@@ -59,7 +59,8 @@ let package = Package(
             exclude: ["Fixtures"],
             swiftSettings: [.treatAllWarnings(as: .error)]),
         // Repo: the suites that read files outside this package, so their inputs are the
-        // repo's. What each reads (keep it in step with `scripts/select-test-suites.sh`):
+        // repo's. What each reads (keep it in step with this target's inputs in
+        // Tests/AgentsKitRepoTests/project.json, #5631):
         //   ConsistencyTests       App/Sources, Remote/Sources, Remote/Info.plist, Shared/UI,
         //                          Host/Sources, Host/Info.plist, project.yml
         //   ControlAgreementVectorTests  Web/test/vectors.json
@@ -81,7 +82,8 @@ let package = Package(
         .testTarget(
             name: "AgentsKitRepoTests",
             dependencies: ["AgentsKit", "AgentsKitCore"],
-            exclude: ["Fixtures"],
+            // project.json is Nx's: this target is a project of its own (#5631).
+            exclude: ["Fixtures", "project.json"],
             swiftSettings: [.treatAllWarnings(as: .error)]),
         // Control: the control plane's link, sign-in and store, and replies that fail on it.
         .testTarget(

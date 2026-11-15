@@ -1,0 +1,75 @@
+{
+  "name": "agentskit",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "root": "Packages/AgentsKit",
+  "tags": [
+    "xcode"
+  ],
+  "implicitDependencies": [
+    "wire",
+    "design",
+    "scripts",
+    "workspace"
+  ],
+  "targets": {
+    "test": {
+      "executor": "nx:noop",
+      "dependsOn": [
+        "test-unit",
+        "test-control",
+        "test-integration"
+      ]
+    },
+    "test-unit": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "parallelism": false,
+      "options": {
+        "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --experimental-maximum-parallelization-width 3 --filter '^AgentsKitTests\\.'",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "agentskit-package",
+        "{projectRoot}/Tests/AgentsKitTests/**/*"
+      ],
+      "dependsOn": [
+        "wire:gen"
+      ]
+    },
+    "test-control": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "parallelism": false,
+      "options": {
+        "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --experimental-maximum-parallelization-width 3 --filter '^AgentsKitControlTests\\.'",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "agentskit-package",
+        "{projectRoot}/Tests/AgentsKitControlTests/**/*"
+      ],
+      "dependsOn": [
+        "wire:gen"
+      ]
+    },
+    "test-integration": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "parallelism": false,
+      "options": {
+        "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --experimental-maximum-parallelization-width 3 --filter '^AgentsKitIntegrationTests\\.'",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "agentskit-package",
+        "{projectRoot}/Tests/AgentsKitIntegrationTests/**/*"
+      ],
+      "dependsOn": [
+        "wire:gen"
+      ]
+    }
+  }
+}
