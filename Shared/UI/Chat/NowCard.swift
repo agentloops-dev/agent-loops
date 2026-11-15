@@ -376,7 +376,7 @@ struct PlanLine: View {
     let plan: Plan
 
     var body: some View {
-        RecordLine(icon: LineGlyph.plan, detail: NowWords.plan(plan),
+        RecordLine(detail: NowWords.plan(plan),
                    openHelp: ("Show the plan's steps", "Hide the plan's steps")) {
             PlanView(plan: plan)
         }
