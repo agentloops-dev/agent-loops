@@ -148,6 +148,60 @@ public extension DaemonAPI {
         }
     }
 
+    struct MessagesConversationsAllRequest: Codable, Sendable, Hashable {
+        public var unread: Bool?
+        public var limit: Int?
+        public var cursor: String?
+
+        public init(unread: Bool? = nil, limit: Int? = nil, cursor: String? = nil) {
+            self.unread = unread
+            self.limit = limit
+            self.cursor = cursor
+        }
+    }
+
+    struct MachineConversation: Codable, Sendable, Hashable {
+        public var machine: MachineRef
+        public var machineName: String
+        public var conversation: MessagesConversation
+
+        public init(machine: MachineRef, machineName: String, conversation: MessagesConversation) {
+            self.machine = machine
+            self.machineName = machineName
+            self.conversation = conversation
+        }
+    }
+
+    struct MachineMessagesError: Codable, Sendable, Hashable {
+        public var machine: MachineRef
+        public var machineName: String
+        public var error: MessagesError
+
+        public init(machine: MachineRef, machineName: String, error: MessagesError) {
+            self.machine = machine
+            self.machineName = machineName
+            self.error = error
+        }
+    }
+
+    /// messages/conversationsAll (#5571): a page of the caller's machines' conversations, the newest first.
+    struct MessagesConversationsAll: Codable, Sendable, Hashable {
+        public var conversations: [MachineConversation]
+        public var errors: [MachineMessagesError]
+        public var unreached: [UnreachedMachine]
+        public var notAsked: Int
+        public var cursor: String?
+
+        public init(conversations: [MachineConversation] = [], errors: [MachineMessagesError] = [],
+                    unreached: [UnreachedMachine] = [], notAsked: Int = 0, cursor: String? = nil) {
+            self.conversations = conversations
+            self.errors = errors
+            self.unreached = unreached
+            self.notAsked = notAsked
+            self.cursor = cursor
+        }
+    }
+
     struct MessagesReadRequest: Codable, Sendable, Hashable {
         public var server: String
         public var folder: String
@@ -262,6 +316,8 @@ public extension DaemonAPI.Method {
     /// `MessagesConversationsRequest` → `MessagesConversations`, `MessagesReadRequest` → `MessagesRead` (#4343),
     /// `MessagesReplyRequest` → `MessagesReplied` (#4345).
     static let messagesConversations = "messages/conversations"
+    /// `MessagesConversationsAllRequest` → `MessagesConversationsAll`: the control plane asks every machine once (#5571).
+    static let messagesConversationsAll = "messages/conversationsAll"
     static let messagesRead = "messages/read"
     static let messagesReply = "messages/reply"
     /// `MessagesMarkAllReadRequest` → `MessagesMarkedAllRead` (#5137).
