@@ -196,6 +196,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: Web/.node-version
+          # Not its pnpm cache: scripts/pnpm.sh installs pnpm (#5628).
+          package-manager-cache: false
 
       # Agents Host carries agentsd, agents-control and the MCP servers, all Go (#1314): its
       # build fails without Go.
@@ -890,9 +892,9 @@ jobs:
           export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
           targets=gen,build,vet,lint,test
           if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            scripts/nx.sh affected -t "$targets" --projects=go,wire,design --base="$BASE" --head=HEAD --output-style=static
+            scripts/nx.sh affected -t "$targets" --exclude=web --base="$BASE" --head=HEAD --output-style=static
           else
-            scripts/nx.sh run-many -t "$targets" --projects=go,wire,design --output-style=static
+            scripts/nx.sh run-many -t "$targets" --exclude=web --output-style=static
           fi
       # wire:gen and design:gen ran before the tasks that read their files, so a change that
       # did not commit what they write would pass the tests: it fails here.
