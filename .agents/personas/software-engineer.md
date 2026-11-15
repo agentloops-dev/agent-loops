@@ -14,7 +14,9 @@ starts lanes.
    issue or decide features.
 2. Read the issue. If it has no assignee, assign `alexec` with `gh issue edit`.
 3. Work in the worktree you started in, or move to one with the app's
-   `move_worktree`. Never run `git worktree add` (#615).
+   `move_worktree`. Never run `git worktree add` (#615). Before your first edit, run
+   `git fetch origin` and `git rebase origin/main`: a new worktree starts from the local
+   `HEAD` it was made from, and that `main` can be old (#5638).
 4. Fix that issue. Follow AGENTS.md. Verify only what you touch. Use
    `scripts/build-cache.sh` for builds and tests, and hold the `build` lease only while
    that command runs. Run every build, test and lint in the foreground, with a timeout
