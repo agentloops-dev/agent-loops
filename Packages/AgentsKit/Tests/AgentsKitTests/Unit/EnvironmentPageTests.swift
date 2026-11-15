@@ -53,14 +53,15 @@ struct EnvironmentPageTests {
         ]
     }
 
-    @Test func groupsPutNeedsYouOnTop() {
+    @Test func groupsPutNeedsYouOnTop() throws {
         let groups = EnvironmentPage.groups(files, search: "", chip: .all)
-        #expect(groups.map(\.title) == ["Needs you", "Yours", "Repo · Agents", "Repo · shop"])
-        #expect(groups[0].items.map(\.name) == ["NODE_OPTIONS", "HTTP_PROXY"])
-        #expect(groups[0].items[0].needs == "A repo cannot set this. Not given.")
-        #expect(groups[0].items[1].needs == "Blocked by your organisation’s policy.")
-        #expect(groups[3].uncommitted)
-        #expect(groups[3].items.map(\.name) == ["PORT"])
+        try #require(groups.map(\.title) == ["Needs you", "Yours", "Repo · Agents", "Repo · shop"])
+        let needs = groups[0].items // index-ok: the #require above says there are four groups
+        try #require(needs.map(\.name) == ["NODE_OPTIONS", "HTTP_PROXY"])
+        #expect(needs.map(\.needs) == ["A repo cannot set this. Not given.", "Blocked by your organisation’s policy."])
+        let shop = groups[3] // index-ok: the #require above says there are four groups
+        #expect(shop.uncommitted)
+        #expect(shop.items.map(\.name) == ["PORT"])
         #expect(EnvironmentPage.groups(files, search: "", chip: .needsYou).map(\.title) == ["Needs you"])
         #expect(EnvironmentPage.groups(files, search: "", chip: .yours).map(\.title) == ["Yours"])
     }

@@ -186,22 +186,7 @@ struct EnvironmentPageView<Source: EnvironmentSource>: View {
 
     private func chipButton(_ each: EnvironmentPage.Chip, count: Int) -> some View {
         let on = chip == each
-        return Button { chip = on && each != .all ? .all : each } label: {
-            HStack(spacing: 4) {
-                if each == .needsYou { Image(icon: "exclamationmark.triangle") }
-                Text("\(each.title) \(count)")
-            }
-            .appText(.fine)
-            .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(on ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear), in: Capsule())
-            .paperRaised(in: Capsule())
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(each.title), \(count)")
-        .accessibilityAddTraits(on ? .isSelected : [])
+        return PageChip(title: each.title, count: count, warns: each == .needsYou, on: on) { chip = on && each != .all ? .all : each }
     }
 
     // MARK: List
@@ -420,9 +405,8 @@ struct EnvironmentPageView<Source: EnvironmentSource>: View {
         if let value, let refused = EnvironmentPage.refusal(name: name, value: value) { return refused }
         if layer == .yours {
             let text = EnvFileText.edit(yoursText, name: name, value: value, description: description)
-            if let problem = await state.set(.environment, to: try! JSONValue.encoding(UserEnvironment(text: text)), on: control) {
-                return problem
-            }
+            guard let part = try? JSONValue.encoding(UserEnvironment(text: text)) else { return EnvironmentPage.cannotReach("") }
+            if let problem = await state.set(.environment, to: part, on: control) { return problem }
         } else {
             guard let folder, let host = shown?.id, let client = source.environmentClient(host) else {
                 return EnvironmentPage.cannotReach(shown?.name ?? "")
@@ -446,7 +430,8 @@ struct EnvironmentPageView<Source: EnvironmentSource>: View {
     /// Keep for All Machines: this machine's edited file becomes the person's settings, so every machine gets it.
     private func keepForAll(_ file: EnvFile) async {
         let text = EnvFileText.text(of: file.variables)
-        problem = await state.set(.environment, to: try! JSONValue.encoding(UserEnvironment(text: text)), on: control)
+        guard let part = try? JSONValue.encoding(UserEnvironment(text: text)) else { return }
+        problem = await state.set(.environment, to: part, on: control)
         await reload()
     }
 
@@ -563,20 +548,12 @@ private struct EnvironmentDetail: View {
                     }
                 }
             }
-            if let warning = item.needs {
-                GridRow {
-                    label("Needs you")
-                    Label(warning, icon: "exclamationmark.triangle").tinted(.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            PageNeedsYouRow(warning: item.needs)
         }
         .appText(.supporting)
     }
 
-    private func label(_ text: String) -> some View {
-        Text(text).foregroundStyle(.secondary).gridColumnAlignment(.leading)
-    }
+    private func label(_ text: String) -> some View { PageGridLabel(text) }
 
     private var editor: some View {
         VStack(alignment: .leading, spacing: 10) {
