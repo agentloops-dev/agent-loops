@@ -9,7 +9,9 @@ import SwiftUI
 /// The one diff of a page: the Review page of a change waiting for an OK, and the pull
 /// request page (#1341). Its input is rows (`LineDiff.rows(hunks:)`), not what they came
 /// from. It does not scroll: the page does. Long lines wrap, so prose reads as prose.
-/// Marks, strike and weight say what changed, as everywhere else (041 FR-011, FR-013).
+/// An added line is green and a removed one red (#5474, `CodeInk.diff`), with a bar at its
+/// edge and a stronger mark on the words that changed; the + and − signs stay, so colour is
+/// never the only mark.
 struct FileDiffView: View {
     enum Layout: String, CaseIterable, Identifiable {
         case unified, sideBySide
@@ -164,20 +166,22 @@ private struct DiffLineRow: View {
             if side != .new { number(row.oldLine) }
             if side != .old { number(row.newLine) }
             Text(mark)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(tint.map { AnyShapeStyle($0.bar) } ?? AnyShapeStyle(.tertiary))
+                .fontWeight(.semibold)
                 .frame(width: 16)
             CodeLine(text: row.text, spans: index.flatMap { document?.spans(line: $0) } ?? [],
-                     changed: row.changed)
-                .strikethrough(row.kind == .removed)
-                .opacity(row.kind == .removed ? 0.62 : 1)
-                .fontWeight(row.kind == .added ? .semibold : nil)
+                     changed: row.changed, mark: tint?.word ?? .clear)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .appText(.code)
         .padding(.trailing, 8)
         .padding(.vertical, 1)
-        .background(wash)
+        .padding(.leading, CodeInk.diffBar)
+        .background(tint?.wash ?? .clear)
+        .overlay(alignment: .leading) {
+            if let tint { tint.bar.frame(width: CodeInk.diffBar) }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityAddTraits(.isStaticText)
@@ -195,13 +199,7 @@ private struct DiffLineRow: View {
             .padding(.trailing, 4)
     }
 
-    private var wash: AnyShapeStyle {
-        switch row.kind {
-        case .removed: AnyShapeStyle(CodeInk.removedWash)
-        case .added: AnyShapeStyle(CodeInk.changedWash.opacity(0.35))
-        case .context: AnyShapeStyle(.clear)
-        }
-    }
+    private var tint: CodeInk.DiffTint? { CodeInk.diff(row.kind) }
 
     private var mark: String {
         switch row.kind {

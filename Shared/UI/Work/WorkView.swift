@@ -15,7 +15,9 @@ struct WorkView: View {
     var body: some View {
         let place = model.workPlace
         Group {
-            if place.ref != nil, place.kind == .release {
+            if place.files {
+                WorkFilesPage(model: model, place: place).id(place)
+            } else if place.ref != nil, place.kind == .release {
                 WorkReleasePage(model: model, place: place).id(place)
             } else if place.ref != nil {
                 WorkItemPage(model: model, place: place).id(place)

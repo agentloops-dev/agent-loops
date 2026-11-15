@@ -36,7 +36,7 @@ Notes 1 to 3, 4, 6 to 9 and 11 are as on the issue page (issue.md); the differen
 2. **Previous and Next** in the list of pull requests the page was opened from.
 3. **Refresh:** as issue.md. A pull request's checks change while the page is open, so a refresh also runs when a `checks.passed` or `checks.failed` event names it, if the forge sends one.
 4. **The title**, as issue.md. A pull request has no **Start Agent**.
-5. **Files changed 6:** a bordered button with the `files` glyph at the title's trailing end. It opens today's diff (`AppViewDiffPage`, `ViewDiff`, the `forge/diff` read) as a sheet; the number is `filesChanged`. On a phone it is a full-width row under the merge box: *Files changed · 6 ›*.
+5. **Files changed 6:** a bordered button with the `files` glyph at the title's trailing end. It pushes the Files changed page (`specs/pr-files-changed-page/spec.md`, #5474; it was a sheet); the number is `filesChanged`. On a phone it is a full-width row under the merge box: *Files changed · 6 ›*.
 6. **The state line:** the pill (parts.md §1: *Open*, *Draft*, *Merged*, *Closed*), then *claude-agent wants to merge 3 commits into `main` from `agents/4332-work-look-wireframe` · 4 comments*. The branch names are in monospace. Merged: *alexec merged 3 commits into main 10 min ago*. On a phone: *claude-agent · 2 h · 4 comments*. Until the wire has the branches (missing fields, below), the line is *claude-agent opened 2 h ago · 4 comments*, as on an issue.
 7. **Open on GitHub**, as issue.md.
 8. **The body**, as issue.md. Screenshots for Alex (#2811) are images in the body and show there.
@@ -85,7 +85,7 @@ The boards show them on the Mac window. The Remote and the web page show the sam
 
 - Decided: **a merge box at the end of the timeline, as on GitHub**, with the review, the checks and conflicts as rows and the buttons under them, because the person reads why it can or cannot merge right above the button that merges. Alex can overrule.
 - Decided: **on a phone, the merge box goes to the top**, because a pull request's page is long and Merge is the one action a person opens it for. Alex can overrule.
-- Decided: **Files changed is a button that opens today's diff sheet, not a tab**, because the app has a diff view already (#1341), and tabs (Conversation, Commits, Checks, Files) would be a second navigation on top of Back. Alex can overrule.
+- Decided: **Files changed is a button, not a tab** (it opens a page since #5474, not a sheet), because the app has a diff view already (#1341), and tabs (Conversation, Commits, Checks, Files) would be a second navigation on top of Back. Alex can overrule.
 - Decided: **no line comments in the diff in the first stories**; the review's strip says how many and opens them on the forge, because the wire has only their count (`reviewThreads`). Alex can overrule.
 - Decided: **the checks list opens by itself when a check failed**, and stays closed (*Show all*) when they all passed, because a failure is what the person must read. Alex can overrule.
 - Decided: **no Request changes button in the first stories**, because no forge write sends one today; Approve stays as it is. Alex can overrule.

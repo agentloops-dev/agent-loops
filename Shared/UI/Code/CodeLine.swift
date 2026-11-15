@@ -6,8 +6,8 @@ import SwiftUI
 /// Only the text is here. Line numbers and change marks are drawn beside it as views of
 /// their own, so selecting and copying lines gives the code and nothing else (FR-006).
 ///
-/// In a diff, `changed` ranges sit on a neutral wash, stronger than the line's own, over
-/// the syntax colour rather than instead of it (FR-009, FR-011).
+/// In a diff, `changed` ranges sit on `mark`, the line's word colour (#5474), stronger than
+/// the line's own wash, over the syntax colour rather than instead of it (FR-009, FR-011).
 ///
 /// No accessibility label of its own: the row it sits in is the one element, and says
 /// what the line is. A label here, on a `Text` that selectable text backs with an AppKit
@@ -17,6 +17,8 @@ struct CodeLine: View {
     let text: Substring
     let spans: [CodeSpan]
     var changed: [Range<Int>] = []
+    /// What the changed words sit on.
+    var mark: Color = .clear
 
     var body: some View {
         Text(text.isEmpty ? AttributedString(" ") : styled)
@@ -24,9 +26,9 @@ struct CodeLine: View {
     }
 
     private var styled: AttributedString {
-        var mark = AttributeContainer()
-        mark.backgroundColor = CodeInk.changedWash
+        var container = AttributeContainer()
+        container.backgroundColor = mark
         return CodeText.attributed(text, spans: spans, style: { CodeInk.attributes(for: $0) },
-                                   marks: changed, mark: mark)
+                                   marks: changed, mark: container)
     }
 }
