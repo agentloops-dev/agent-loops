@@ -84,7 +84,7 @@ Two kinds, so the PR is safe to merge at any time:
 ## Transfer the agents' GitHub App (#5065)
 
 The runbook for step 3 of the order. It is for the bot App `alexec-agents` (#3858, #3926)
-only, not for `agents-loops`, the App of the GitHub connection (#1335): that one stays
+only, not for `agent-loops-dev`, the App of the GitHub connection (#1335): that one stays
 with `alexec`, and #5091 asks about it separately. GitHub has no API that transfers an App
 or installs one, so an agent does it in the agents' browser (`browser_*`), signed in as
 `alexec`.

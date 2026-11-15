@@ -91,7 +91,7 @@ The folder has 7 lanes and 6 open PRs. Proposed use:
 
 These are one-time steps. They unblock root A and the Fastmail trial.
 
-- [ ] GitHub App `agents-loops`: set **Actions**, **Contents** and **Pull requests** to Read and write (#4079).
+- [ ] GitHub App `agent-loops-dev`: set **Actions**, **Contents** and **Pull requests** to Read and write (#4079).
 - [ ] GitHub App `alexec-agents`: set **Workflows** to Read and write, and accept it (#4291).
 - [ ] Decide: may an agent pay the Fastmail plan ($6 a month) by a form, once #4272 works (#1780)? Otherwise Alex pays it before 2026-12-07.
 

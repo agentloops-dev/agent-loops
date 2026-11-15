@@ -50,6 +50,10 @@ type fakeForgeGitHub struct {
 	// bare is the repository MakeRepository gives as the clone address, and made the ones it made (#3708).
 	bare string
 	made []string
+	// cannotMake, when set, is GitHub refusing to make a repository as the person: the GitHub
+	// App has no Administration permission (#5563). byPerson are the ones the person made.
+	cannotMake bool
+	byPerson   []string
 	// public are the repositories MakePublicRepository was asked for, and private the ones
 	// there already that are private (#4921).
 	public  []string

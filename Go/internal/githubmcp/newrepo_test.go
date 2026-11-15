@@ -3,6 +3,7 @@ package githubmcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -65,6 +66,30 @@ func TestMakeRepository(t *testing.T) {
 	}
 	if _, _, err := g.MakeRepository(ctx, "", "a/b", ""); err == nil {
 		t.Error("a/b was taken as a name")
+	}
+}
+
+// #5563: GitHub refuses the GitHub App's user token a new repository (no Administration
+// permission), so MakeRepository says the person must make it, with GitHub's own error inside.
+func TestMakeRepositoryRefusedIsThePersonsStep(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/user":
+			io.WriteString(w, `{"login":"someone","id":42}`)
+		case r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusForbidden)
+			io.WriteString(w, `{"message":"Resource not accessible by integration"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(s.Close)
+	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
+	_, made, err := g.MakeRepository(context.Background(), "", "tidelog", "")
+	var cannot *CannotMakeError
+	var ge *GitHubError
+	if made || !errors.As(err, &cannot) || cannot.FullName != "someone/tidelog" || !errors.As(err, &ge) || !ge.Refused {
+		t.Fatalf("%v %v", made, err)
 	}
 }
 
