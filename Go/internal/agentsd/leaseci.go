@@ -16,8 +16,9 @@ import (
 // queued, wait. Once no jobs are queued, continue." An agent leases ci, and releases it at
 // once, before it starts work on an issue and before it pushes or opens a pull request. A
 // grant goes in line while the repository the agent's folder pushes to has any CI job
-// queued, and the whole line is granted when none is. Many may hold it at once: only the
-// queue holds it.
+// queued. When none is, it goes to one agent at a time (Alex, 2026-11-15): the next gets it
+// when the holder releases it and the queue is still empty, so one push's jobs queue before
+// the next agent pushes.
 //
 // The agent says ci; the book keeps one entry per repository, ci:github:<owner>/<repo>, as
 // one repository's queue says nothing about another's. Only GitHub is read. A folder on
@@ -244,8 +245,8 @@ func (d *Daemon) ciWait(name wire.ResourceName, e *leaseEntry) string {
 	return ciDisplay(name) + " has jobs queued"
 }
 
-// ciQueueClock reads the queue of each repository whose ci line waits, and grants the line
-// when no job is queued.
+// ciQueueClock reads the queue of each repository whose ci line waits, and grants the next
+// in line when no job is queued and nobody holds it.
 func (d *Daemon) ciQueueClock(ctx context.Context) {
 	for {
 		select {

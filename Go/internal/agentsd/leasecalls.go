@@ -223,7 +223,7 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 	e := d.book.Entries[name]
 	if e == nil {
 		e = &leaseEntry{Kind: kind, DisplayName: display, Rules: standardRules, Line: []waiter{}, Leases: []wire.Lease{}}
-		if name == capacityResource || isCI(name) {
+		if name == capacityResource {
 			e.Rules = capacityRules
 		}
 		for _, r := range d.declared {

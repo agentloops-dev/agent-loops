@@ -12,7 +12,7 @@ import (
 )
 
 // The ci lease (#5678): in line while the folder's repository has a CI job queued, with the
-// reason; granted, the whole line, once none is. A queued run with no jobs (a ghost, #5676)
+// reason; once none is, granted to one agent at a time. A queued run with no jobs (a ghost, #5676)
 // does not count, and is not read again. A folder not on GitHub is never held.
 func TestTheCILeaseWaitsWhileAJobIsQueued(t *testing.T) {
 	fakeRuntimes(t)
@@ -76,13 +76,20 @@ func TestTheCILeaseWaitsWhileAJobIsQueued(t *testing.T) {
 		t.Fatalf("the ghost was read %d times", n)
 	}
 
-	// No job queued: the next look grants the whole line.
+	// No job queued: the next look grants the first in line, and only the first.
 	queued.Store(false)
 	d.serveCILines(context.Background())
-	if !holds(d, name, a.ID) || !holds(d, name, b.ID) {
-		t.Fatal("the line was not granted when no job was queued")
+	if !holds(d, name, a.ID) || holds(d, name, b.ID) {
+		t.Fatal("no job queued did not grant the first in line alone")
 	}
-	if text, _ := ma.tool(3, "release_resource", map[string]any{"name": "ci"}); text != "Released CI of alexec/agents." {
+	// Its release hands it on while the queue is still empty.
+	if text, _ := ma.tool(3, "release_resource", map[string]any{"name": "ci"}); !strings.HasPrefix(text, "Released CI of alexec/agents. It has gone to ") {
+		t.Fatal(text)
+	}
+	if !holds(d, name, b.ID) {
+		t.Fatal("the release did not hand it on")
+	}
+	if text, _ := mb.tool(3, "release_resource", map[string]any{"name": "ci"}); text != "Released CI of alexec/agents." {
 		t.Fatal(text)
 	}
 
