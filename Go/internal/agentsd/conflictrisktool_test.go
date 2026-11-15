@@ -69,19 +69,23 @@ func TestConflictRiskAnalysisFromAWorktreeGivesAdvice(t *testing.T) {
 	}
 	g := func(dir string, args ...string) string {
 		t.Helper()
-		out, err := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)...).CombinedOutput()
+		out, err := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)...).CombinedOutput() //nolint:gosec // a test runs git with its own arguments
 		if err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 		return strings.TrimSpace(string(out))
 	}
-	os.WriteFile(filepath.Join(folder, "a.txt"), []byte("base\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(folder, "a.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	g(folder, "add", ".")
 	g(folder, "commit", "-qm", "base")
 	g(folder, "update-ref", "refs/remotes/origin/main", "HEAD")
 	wt := filepath.Join(t.TempDir(), "lane")
 	g(folder, "worktree", "add", "-q", "-b", "agents/lane", wt, "origin/main")
-	os.WriteFile(filepath.Join(wt, "b.txt"), []byte("lane\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(wt, "b.txt"), []byte("lane\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	branch := "agents/lane"
 	a := seeded(t, d, wt, func(a *wire.Agent) {
