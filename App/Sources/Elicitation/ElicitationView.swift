@@ -43,7 +43,7 @@ struct ElicitationView: View {
     }
 
     var body: some View {
-        // Who is asking, by title and runtime (#121); Later at the head's end (#4234), on a
+        // Who is asking, by title and runtime (#121), under the question; Later at the foot (#4234, #5670), on a
         // card that is a request to the person.
         let needRequest = model.work.requests.first { $0.id == request.id }
         AskCard(icon: glyph, title: headTitle, asker: model.work.askerLine(request.agentID),

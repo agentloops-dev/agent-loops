@@ -23,7 +23,7 @@ struct SandboxFailureCard: View {
         if hasMore {
             line
         } else {
-            RecordLine(icon: LineGlyph.failed, head: SandboxWords.cardTitle(name), detail: words, tone: .failure)
+            RecordLine(head: SandboxWords.cardTitle(name), detail: words, tone: .failure)
         }
     }
 
@@ -32,7 +32,7 @@ struct SandboxFailureCard: View {
     }
 
     private var line: some View {
-        RecordLine(icon: LineGlyph.failed, head: SandboxWords.cardTitle(name), detail: words,
+        RecordLine(head: SandboxWords.cardTitle(name), detail: words,
                    tone: .failure, openHelp: ("Show error details", "Hide error details")) {
             VStack(alignment: .leading, spacing: 6) {
                 if !record.detail.isEmpty {

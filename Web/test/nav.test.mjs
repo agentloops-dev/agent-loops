@@ -59,7 +59,7 @@ test("each section is its own address, and #/ is the Overview", async () => {
     assert.deepEqual(r.parseRoute("#/setup"), { nav: "status", section: "runtimes" });
     assert.deepEqual(r.parseRoute("#/setup/mcp"), { nav: "settings", section: "mcp" });
     assert.deepEqual(r.parseRoute("#/setup/secrets"), { nav: "status", section: "secrets" }, "the Secrets page (#5257)");
-    assert.deepEqual(r.parseRoute("#/setup/accounts"), { nav: "settings", section: "accounts" });
+    assert.deepEqual(r.parseRoute("#/setup/accounts"), { nav: "status", section: "accounts" }, "the Accounts page (#5258)");
     assert.deepEqual(r.parseRoute("#/reports/events"), { nav: "status", section: "events" }, "Events left Reports ▸ Records (#3998)");
     assert.deepEqual(r.parseRoute("#/reports/spend"), { nav: "reports", section: "spend" });
     assert.equal(r.routeHash({ nav: "settings", section: "policy" }, undefined), "#/settings/policy");
@@ -157,4 +157,18 @@ test("the Secrets page has its own address, and one secret's (#5257)", async () 
   const id = "session/11111111-2222-3333-4444-555555555555/SHOP_PW";
   assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "secrets", item: id }, undefined)),
     { nav: "status", section: "secrets", item: id });
+});
+
+test("the Accounts page has its own address, and one account's (#5258)", async () => {
+  const r = await load("src/route.ts");
+  assert.deepEqual(r.parseRoute("#/accounts"), { nav: "status", section: "accounts" });
+  assert.deepEqual(r.parseRoute("#/settings/accounts"), { nav: "status", section: "accounts" });
+  assert.deepEqual(r.parseRoute("#/status/accounts"), { nav: "status", section: "accounts" });
+  assert.equal(r.isOldAddress("#/settings/accounts"), true);
+  assert.equal(r.isOldAddress("#/accounts"), false);
+  assert.equal(r.routeHash({ nav: "status", section: "accounts" }, undefined), "#/accounts");
+  const id = "github#alex@example.com";
+  assert.equal(r.routeHash({ nav: "status", section: "accounts", item: id }, undefined), "#/accounts/github%23alex%40example.com");
+  assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "accounts", item: id }, undefined)),
+    { nav: "status", section: "accounts", item: id });
 });

@@ -9,7 +9,8 @@
 #   scripts/nx.sh run-many -t test                        every project's
 #   scripts/nx.sh show projects                           the projects
 #
-# The tasks: go:build, go:vet, go:test (with -race), web:build, web:test, web:lint, wire:gen,
+# The tasks: go:build, go:vet, go:test (with -race), go:lint, web:build, web:test, web:lint,
+# repo-lint:lint, swift-lint:lint (the linters, docs/reference/linters.md; #5672), wire:gen,
 # design:gen, mac:build (AgentsHost), remote:build (the Remote), agentskit:test (test-unit,
 # test-control, test-integration), agentskit-repo:test and codetext:test (each project's
 # project.json; #5631). The Swift ones run through scripts/build-cache.sh, one at a time. A

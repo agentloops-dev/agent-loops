@@ -378,7 +378,7 @@ test("a search asks each host for a capped page of matches and holds one search'
 });
 
 test("a search's reply for words no longer asked is dropped (#193)", async () => {
-  const link = heldLink((method, params) => [agent(`for-${params.query}`, "p", 1, { state: "archived" })]);
+  const link = heldLink((_method, params) => [agent(`for-${params.query}`, "p", 1, { state: "archived" })]);
   const store = new Store(link);
   store.hosts.value = [{ id: "mac", state: "online" }];
   const first = store.searchSessions("ab");
@@ -515,7 +515,7 @@ test("one start keeps its request until it succeeds (#291)", () => {
 });
 
 test("an opened turn asks for its last page, and a miss reports the turn's start (#291)", async () => {
-  const link = heldLink((method, params) => ({
+  const link = heldLink((_method, params) => ({
     entries: [said(params.before - 1)], firstIndex: Math.max(params.from, params.before - params.limit), total: params.before,
   }));
   const store = new Store(link);
