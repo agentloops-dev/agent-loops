@@ -483,6 +483,9 @@ func (d *Daemon) leaseSnapshot() wire.LeaseSnapshot {
 		if why := d.capacityWait(name, e); why != "" {
 			r.CapacityWait = &why
 		}
+		if why := d.ciWait(name, e); why != "" {
+			r.CapacityWait = &why
+		}
 		if len(r.Holds) > 0 {
 			first := r.Holds[0]
 			r.Lease = &first
@@ -543,7 +546,7 @@ func declaredProblem(r wire.DeclaredResource) string {
 	case strings.TrimSpace(r.DisplayName) == "":
 		return "Give it a name."
 	case r.Name == "screen" || strings.HasPrefix(string(r.Name), "simulator:") || strings.HasPrefix(string(r.Name), "browser:") ||
-		r.Name == capacityResource:
+		r.Name == capacityResource || isCI(r.Name):
 		return r.DisplayName + " is found on the Mac by itself; choose another name."
 	case strings.TrimSpace(r.Description) == "":
 		return "Say what it is for, so agents know when to take it."

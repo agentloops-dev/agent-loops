@@ -164,6 +164,9 @@ func (d *Daemon) resolveResource(given string) (wire.ResourceName, wire.Resource
 	if name == capacityResource {
 		return name, "named", capacityDisplay(), true
 	}
+	if isCI(name) {
+		return name, "named", ciDisplay(name), true
+	}
 	if udid := simulatorLease(name); udid != "" {
 		// One lease for each simulator, whether the agent names it with simulator: or not.
 		return wire.ResourceName(simulatorLeasePrefix + strings.ToLower(udid)), "simulator", "Simulator " + udid, true
@@ -201,6 +204,11 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 
 	// A simulator by its name, found before the lock: simctl takes a moment.
 	simulator := simulatorDisplay(given)
+	// ci is its folder's repository's, and its queue is read before the lock (#5678).
+	given = d.ciLeaseName(agent, given)
+	if n, _ := resourceName(given); isCI(n) {
+		d.ciQueueNow(n)
+	}
 	d.leaseMu.Lock()
 	loaded := d.loadLeases()
 	name, kind, display, ok := d.resolveResource(given)
@@ -215,7 +223,7 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 	e := d.book.Entries[name]
 	if e == nil {
 		e = &leaseEntry{Kind: kind, DisplayName: display, Rules: standardRules, Line: []waiter{}, Leases: []wire.Lease{}}
-		if name == capacityResource {
+		if name == capacityResource || isCI(name) {
 			e.Rules = capacityRules
 		}
 		for _, r := range d.declared {
@@ -274,6 +282,10 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 		if queued {
 			d.capDraining = true
 		}
+	}
+	// A free place held back by the repository's CI says why (#5678).
+	if why := d.ciHeld(name); reply == "" && !e.full() && why != "" {
+		held = why
 	}
 	switch {
 	case reply != "":
@@ -349,6 +361,7 @@ func (d *Daemon) releaseResource(agent wire.UUID, args map[string]json.RawMessag
 	if d.Store.Agent(agent) == nil {
 		return "", &Error{Code: CodeNoSuchAgent, Message: leaseNoCall}
 	}
+	given = d.ciLeaseName(agent, given)
 	d.leaseMu.Lock()
 	loaded := d.loadLeases()
 	name, _, display, _ := d.resolveResource(given)
