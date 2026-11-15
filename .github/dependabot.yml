@@ -17,3 +17,21 @@ updates:
       - integration
     commit-message:
       prefix: "toolsets:"
+
+  # The workspace (#5628): Nx at the root and the web app in Web/, one pnpm lockfile
+  # (pnpm-lock.yaml) and the pnpm pin (package.json's packageManager). Dependabot's npm
+  # ecosystem reads pnpm's lockfile. A release waits 7 days first, as pnpm-workspace.yaml's
+  # minimumReleaseAge does (rule 1 of epic #5627). A pnpm bump also changes the SHA-512 in
+  # packageManager, which scripts/pnpm.sh checks: its PR fails until that hash is the new one.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    versioning-strategy: increase
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "workspace:"

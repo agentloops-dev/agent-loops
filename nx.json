@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "neverConnectToCloud": true,
+  "analytics": false,
+  "useDaemonProcess": false,
+  "maxCacheSize": "1GB",
+  "defaultBase": "origin/main",
+  "plugins": [],
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "sharedGlobals": [
+      "{workspaceRoot}/nx.json",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/pnpm-lock.yaml",
+      "{workspaceRoot}/pnpm-workspace.yaml"
+    ],
+    "go-toolchain": [
+      "{workspaceRoot}/Go/go.mod",
+      "{workspaceRoot}/Go/scripts/go.sh",
+      { "env": "CGO_ENABLED" },
+      { "env": "GOFLAGS" },
+      { "env": "GOEXPERIMENT" },
+      { "runtime": "uname -s" }
+    ],
+    "node-toolchain": ["{workspaceRoot}/Web/.node-version"],
+    "wire-source": ["{workspaceRoot}/Packages/Wire/**/*", "{workspaceRoot}/Go/cmd/wiregen/**/*"],
+    "design-source": ["{workspaceRoot}/design/tokens.json", "{workspaceRoot}/scripts/design.py"],
+    "generator-sources": ["wire-source", "design-source"]
+  },
+  "targetDefaults": {
+    "build": { "cache": true },
+    "vet": { "cache": true },
+    "test": { "cache": true },
+    "lint": { "cache": true },
+    "gen": { "cache": true }
+  }
+}

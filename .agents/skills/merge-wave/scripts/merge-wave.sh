@@ -56,8 +56,8 @@ check_command() { # name [filter]
 	# build/DD, as run-app's launch.sh builds, so the smoke check after them is incremental.
 	build-host) echo "xcodegen generate >/dev/null && $CACHED xcodebuild -scheme AgentsHost -configuration Debug -destination 'platform=macOS' -derivedDataPath build/DD $XFLAGS build" ;;
 	build-remote) echo "xcodegen generate >/dev/null && $CACHED xcodebuild -scheme Remote -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath build/DD-sim $XFLAGS build" ;;
-	# What CI's web job runs: a build (Web/dist is not checked in, #473), check and tests.
-	web) echo "scripts/web.sh build && cd Web && npm run check && npm test" ;;
+	# What CI's go job runs for Web/ (#5628): a build (Web/dist is not checked in, #473), web:lint and web:test.
+	web) echo "scripts/nx.sh run-many -p web -t build lint test" ;;
 	test-agentskit) echo "$CACHED swift test --package-path Packages/AgentsKit${2:+ --filter '$2'}" ;;
 	test-codetext) echo "$CACHED swift test --package-path Packages/CodeText${2:+ --filter '$2'}" ;;
 	test-go) echo "Go/scripts/go.sh vet ./... && Go/scripts/go.sh test ./..." ;;

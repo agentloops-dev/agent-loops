@@ -1,7 +1,8 @@
 #!/bin/sh
 # The design system (#4600; specs/4600-design-system/spec.md).
 #
-#   scripts/design.sh gen             write the CSS token files from design/tokens.json (#4602):
+#   scripts/design.sh gen             write the CSS token files from design/tokens.json (#4602;
+#                                     Nx's design:gen, #5628):
 #                                     Web/src/theme/tokens.css, www/tokens.css,
 #                                     docs/stylesheets/tokens.css, Go/internal/forgepages/tokens.css,
 #                                     Go/internal/paperpage/tokens.css, deploy/site/www/oauth/tokens.css,
@@ -164,7 +165,15 @@ marks() {
 }
 
 case "${1:-} ${2:-}" in
-"gen " | "check ") exec python3 "$root/scripts/design.py" "$1" ;;
+"gen ")
+	# Through Nx (#5628): a cache hit writes what the same tokens made before. With no pinned
+	# Node here, the generator itself.
+	. "$root/scripts/node.sh"
+	use_pinned_node
+	if have_pinned_node; then exec "$root/scripts/nx.sh" run design:gen; fi
+	exec python3 "$root/scripts/design.py" gen
+	;;
+"check ") exec python3 "$root/scripts/design.py" check ;;
 "selftest ") exec python3 "$root/scripts/design.py" --selftest ;;
 "marks ")
 	marks "$root"

@@ -645,119 +645,135 @@ jobs:
           done
 
 
-  # The Go module at Go/ (#1135): the daemon and the control plane as they move to Go
-  # (#1134). Built, vetted and tested on Linux with the Go its go.mod names. Its wiregen test
-  # holds Go/wire and Web/src/protocol/generated.ts to Packages/Wire, the wire's schema.
+  # Nx over the Go module, the web app, the Wire code generation and the design tokens
+  # (#5628, epic #5627): go:build, go:vet, go:test (-race), web:build, web:lint (tsc, the lint
+  # that keeps agent output inert, the licence list), web:test (which holds the build to its
+  # MANIFEST), wire:gen and design:gen, on Linux. Each project's project.json names the
+  # inputs of its tasks; a lane runs the same with scripts/nx.sh.
   go:
-    needs: select
-    if: ${{ always() && !cancelled() && (needs.select.result != 'success' || needs.select.outputs.go != 'skip') }}
     runs-on: ubuntu-latest
     # The "Time left for" step below reads the same number as JOB_MINUTES; change both.
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
       actions: write
-    defaults:
-      run:
-        working-directory: Go
+    env:
+      # Rule 2 of #5627: never Nx Cloud; no .env file, which no hash reads.
+      NX_NO_CLOUD: "true"
+      NX_DAEMON: "false"
+      NX_LOAD_DOT_ENV_FILES: "false"
+      NX_TUI: "false"
     steps:
       # For the step budgets below (scripts/ci-time-left.sh, #5609).
       - name: Start the clock
         id: clock
-        working-directory: .
         run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
-
+      # actions/cache refuses a path with '..', so the Nx cache is in the runner's temp folder.
+      # Its index is a database in the workspace data, so both are saved, or a restore gets no
+      # hits (rule 5 of #5627).
+      - name: Nx's folders
+        run: |
+          echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
+          echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
+      # The pull request's own commit, not its merge with main: the hashes are then the lane's
+      # (#5584). The base for `nx affected` is its merge base with main.
       - uses: actions/checkout@v6
-      # The build cache is our own below, not setup-go's (#2512). setup-go keys it on go.mod
-      # alone, so it held whatever the first run after a go.mod change compiled: by the
-      # afternoon `go test -race` spent 98 s compiling before its first result (run
-      # 39980533674), the job's second-longest part after the controlplane tests.
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: Web/.node-version
+          package-manager-cache: false
+      # The build cache is our own below, not setup-go's (#2512): keyed on go.mod alone, it held
+      # whatever the first run after a go.mod change compiled.
       - uses: actions/setup-go@v6
         with:
           go-version-file: Go/go.mod
           cache: false
-      # Keyed on the Go sources, so each run that changes them saves a key of its own, and a
-      # pull request starts from its own newest, else main's (it can read main's caches, not
-      # another PR's). Go's build cache is content-addressed: an old entry is never used
-      # for new sources, so a restore from an older tree is only less warm, never wrong.
-      # go.mod names the toolchain, so a new Go misses the first prefix.
+      # Go's own caches, under Nx's: a go:test that Nx runs again still skips the packages
+      # whose inputs did not change. Content-addressed, so an older restore is only less warm.
       - name: Restore Go build cache
         id: go-cache
         uses: actions/cache/restore@v5
         with:
           path: |
             ~/.cache/go-build
+            ~/Library/Caches/go-build
             ~/go/pkg/mod
           key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
           restore-keys: |
             go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
             go-race-${{ runner.os }}-
-      # Build and Vet take under a minute each; their caps leave the tests most of the job.
-      - name: Build
+      # A pull request starts from its own newest cache, else main's (it can read main's, not
+      # another pull request's).
+      - name: Restore the Nx cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/nx
+          key: nx-linux-${{ github.event.pull_request.head.sha || github.sha }}
+          restore-keys: nx-linux-
+      # The pinned pnpm (package.json's packageManager, its hash checked) and only what the
+      # lockfile says, with no install script (rule 1 of #5627).
+      - name: Install from the lockfile
         timeout-minutes: 5
-        run: go build ./...
-      - name: Vet
-        timeout-minutes: 4
-        run: go vet ./...
-      - name: Time left for the Go tests
+        run: |
+          scripts/pnpm.sh install --frozen-lockfile
+          scripts/pnpm.sh audit signatures
+      - name: Time left for Nx
         id: budget
-        working-directory: .
         env:
           START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 20
+          JOB_MINUTES: 25
           RESERVE: 3
         run: bash scripts/ci-time-left.sh
-      - name: Test
+      # What the change affects, each task skipped when the cache has a pass at its hash: on a
+      # pull request since its merge base with main, on main since the push before; with no
+      # base (a new branch, a run by hand), every task.
+      - name: Nx affected
         timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
-        # `shell: bash` adds `-o pipefail`, so main's `go test` into `tee` still fails (#4385).
         shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
-            go test -race -coverprofile=coverage.out ./... | tee "$RUNNER_TEMP/go-coverage-tests.txt"
+          targets=gen,build,vet,lint,test
+          if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            scripts/nx.sh affected -t "$targets" --base="$BASE" --head=HEAD --output-style=static
           else
-            go test -race ./...
+            scripts/nx.sh run-many -t "$targets" --output-style=static
           fi
-      - name: Report Go coverage
-        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        continue-on-error: true
-        shell: bash
+      # wire:gen and design:gen ran before the tasks that read their files, so a change that
+      # did not commit what they write would pass the tests: it fails here.
+      - name: Generated files are committed
         run: |
-          {
-            echo '### Go coverage by package'
-            echo '| Package | Coverage |'
-            echo '|---|---:|'
-            awk '/coverage:/ { print "| " $2 " | " $(NF - 2) " |" }' \
-              "$RUNNER_TEMP/go-coverage-tests.txt"
-            if [[ -f coverage.out ]]; then
-              echo
-              echo '### Go coverage total'
-              go tool cover -func=coverage.out | tail -n 1
-            else
-              echo 'Coverage profile not available (tests may have been skipped or failed before producing one).'
-            fi
-          } | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Upload Go coverage profile
-        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        continue-on-error: true
-        uses: actions/upload-artifact@v5
+          if ! git diff --exit-code --stat; then
+            echo "::error::A generated file is not what its source makes: run scripts/wire.sh gen and scripts/design.sh gen, and commit what they write."
+            exit 1
+          fi
+      # A failed task is not cached, so a failed run's cache is still good; a cancelled one may
+      # not have finished writing. Each ref keeps only its newest.
+      - name: Save the Nx cache
+        if: ${{ always() && !cancelled() }}
+        uses: actions/cache/save@v5
         with:
-          name: go-coverage
-          path: Go/coverage.out
-          if-no-files-found: ignore
-          retention-days: 14
-      # A failed test still leaves good compiled packages; a cancelled run may not finish
-      # writing, so it saves nothing. Each ref keeps only its newest, as the Xcode caches do.
+          path: ${{ runner.temp }}/nx
+          key: nx-linux-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+      - name: Prune old Nx caches for this ref
+        if: ${{ always() && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh "nx-linux-" "nx-linux-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
       - name: Save Go build cache
         if: ${{ always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: |
             ~/.cache/go-build
+            ~/Library/Caches/go-build
             ~/go/pkg/mod
           key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
       - name: Prune old Go build caches for this ref
         if: ${{ always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' }}
-        working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" "$GITHUB_REF"
@@ -781,46 +797,138 @@ jobs:
       - name: Last release against this tree
         run: scripts/skew-test.sh
 
-  # The Go agentsd on a Mac (#1138): the same module built and tested on macOS, so a
-  # Mac-only path (its root, its folders, a *_darwin.go file) is held as Linux's is. TMPDIR
-  # is resolved, because a Mac's temporary folder is reached through the /var link and the
-  # daemon keeps folders with their links resolved, as the Swift one does.
+  # The same on a Mac (#1138), so a Mac-only path (its root, its folders, a *_darwin.go file)
+  # is held as Linux's is: the Go module and what it reads. TMPDIR is resolved, because a Mac's
+  # temporary folder is reached through the /var link and the daemon keeps folders with their
+  # links resolved, as the Swift one does.
   go-darwin:
-    needs: select
-    if: ${{ always() && !cancelled() && (needs.select.result != 'success' || needs.select.outputs.go != 'skip') }}
     runs-on: macos-latest
     # The "Time left for" step below reads the same number as JOB_MINUTES; change both.
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: Go
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+    env:
+      # Rule 2 of #5627: never Nx Cloud; no .env file, which no hash reads.
+      NX_NO_CLOUD: "true"
+      NX_DAEMON: "false"
+      NX_LOAD_DOT_ENV_FILES: "false"
+      NX_TUI: "false"
     steps:
       # For the step budgets below (scripts/ci-time-left.sh, #5609).
       - name: Start the clock
         id: clock
-        working-directory: .
         run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
-
+      # actions/cache refuses a path with '..', so the Nx cache is in the runner's temp folder.
+      # Its index is a database in the workspace data, so both are saved, or a restore gets no
+      # hits (rule 5 of #5627).
+      - name: Nx's folders
+        run: |
+          echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
+          echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
+      # The pull request's own commit, not its merge with main: the hashes are then the lane's
+      # (#5584). The base for `nx affected` is its merge base with main.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: Web/.node-version
+          package-manager-cache: false
+      # The build cache is our own below, not setup-go's (#2512): keyed on go.mod alone, it held
+      # whatever the first run after a go.mod change compiled.
       - uses: actions/setup-go@v6
         with:
           go-version-file: Go/go.mod
-          cache-dependency-path: Go/go.mod
-      # Vet takes about a minute here, with the module downloads.
-      - name: Vet
-        timeout-minutes: 6
-        run: go vet ./...
-      - name: Time left for the Go tests
+          cache: false
+      # Go's own caches, under Nx's: a go:test that Nx runs again still skips the packages
+      # whose inputs did not change. Content-addressed, so an older restore is only less warm.
+      - name: Restore Go build cache
+        id: go-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/Library/Caches/go-build
+            ~/go/pkg/mod
+          key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+          restore-keys: |
+            go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
+            go-race-${{ runner.os }}-
+      # A pull request starts from its own newest cache, else main's (it can read main's, not
+      # another pull request's).
+      - name: Restore the Nx cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/nx
+          key: nx-macos-${{ github.event.pull_request.head.sha || github.sha }}
+          restore-keys: nx-macos-
+      # The pinned pnpm (package.json's packageManager, its hash checked) and only what the
+      # lockfile says, with no install script (rule 1 of #5627).
+      - name: Install from the lockfile
+        timeout-minutes: 5
+        run: |
+          scripts/pnpm.sh install --frozen-lockfile
+          scripts/pnpm.sh audit signatures
+      - name: Time left for Nx
         id: budget
-        working-directory: .
         env:
           START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 20
-          RESERVE: 1
+          JOB_MINUTES: 30
+          RESERVE: 3
         run: bash scripts/ci-time-left.sh
-      - name: Test
+      # What the change affects, each task skipped when the cache has a pass at its hash: on a
+      # pull request since its merge base with main, on main since the push before; with no
+      # base (a new branch, a run by hand), every task.
+      - name: Nx affected
         timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
-        run: TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P) go test ./...
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
+          targets=gen,build,vet,lint,test
+          if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            scripts/nx.sh affected -t "$targets" --projects=go,wire,design --base="$BASE" --head=HEAD --output-style=static
+          else
+            scripts/nx.sh run-many -t "$targets" --projects=go,wire,design --output-style=static
+          fi
+      # wire:gen and design:gen ran before the tasks that read their files, so a change that
+      # did not commit what they write would pass the tests: it fails here.
+      - name: Generated files are committed
+        run: |
+          if ! git diff --exit-code --stat; then
+            echo "::error::A generated file is not what its source makes: run scripts/wire.sh gen and scripts/design.sh gen, and commit what they write."
+            exit 1
+          fi
+      # A failed task is not cached, so a failed run's cache is still good; a cancelled one may
+      # not have finished writing. Each ref keeps only its newest.
+      - name: Save the Nx cache
+        if: ${{ always() && !cancelled() }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/nx
+          key: nx-macos-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+      - name: Prune old Nx caches for this ref
+        if: ${{ always() && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh "nx-macos-" "nx-macos-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
+      - name: Save Go build cache
+        if: ${{ always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/Library/Caches/go-build
+            ~/go/pkg/mod
+          key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+      - name: Prune old Go build caches for this ref
+        if: ${{ always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" "$GITHUB_REF"
 
   # The Blob's marks (#4615): every icon, favicon and touch icon is what `scripts/design.sh
   # marks` makes from the one source in design/logo/blob/final/. It renders with AppKit, so it
@@ -836,53 +944,6 @@ jobs:
       - uses: actions/checkout@v6
       - name: Every mark is what the Blob source makes
         run: scripts/design.sh marks --check
-
-  # The web remote (071, D7, research R8): a build with the pinned Node, then tsc, the lint
-  # that keeps agent output inert, the licence list and the web tests, which hold the build to
-  # its MANIFEST. Web/dist is not checked in (#473), so there is no committed copy to compare.
-  web:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: Web
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: Web/.node-version
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run build
-      - run: npm run check
-      - name: Test with coverage
-        # `shell: bash` adds `-o pipefail`: without it the step took `tee`'s exit, and a
-        # failing web test left the job green (#4385).
-        shell: bash
-        run: |
-          mkdir -p coverage/v8
-          NODE_V8_COVERAGE=coverage/v8 node --experimental-test-coverage \
-            --test test/*.test.mjs 2>&1 | tee "$RUNNER_TEMP/web-coverage.txt"
-      - name: Report web coverage
-        if: always()
-        continue-on-error: true
-        run: |
-          {
-            echo '### Web coverage'
-            if [[ -f "$RUNNER_TEMP/web-coverage.txt" ]]; then
-              sed -n '/^ℹ file /,$p' "$RUNNER_TEMP/web-coverage.txt" || cat "$RUNNER_TEMP/web-coverage.txt"
-            else
-              echo 'Coverage report not available (tests did not start).'
-            fi
-          } | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Upload web coverage profiles
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v5
-        with:
-          name: web-coverage
-          path: Web/coverage/v8/*.json
-          if-no-files-found: ignore
-          retention-days: 14
 
   # The linters (#1224), through scripts/lint.sh, on every change: shellcheck, zsh -n, our
   # own text checks, and golangci-lint's unused and ineffassign (#2162) are required (a
