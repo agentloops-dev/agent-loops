@@ -739,10 +739,12 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           targets=gen,build,vet,lint,test
+          # One task at a time: go:test -race beside web:test made both fail under load (#5632),
+          # as they did not when each had a job of its own.
           if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            scripts/nx.sh affected -t "$targets" --base="$BASE" --head=HEAD --output-style=static
+            scripts/nx.sh affected -t "$targets" --base="$BASE" --head=HEAD --parallel=1 --output-style=static
           else
-            scripts/nx.sh run-many -t "$targets" --output-style=static
+            scripts/nx.sh run-many -t "$targets" --parallel=1 --output-style=static
           fi
       # wire:gen and design:gen ran before the tasks that read their files, so a change that
       # did not commit what they write would pass the tests: it fails here.
@@ -891,10 +893,12 @@ jobs:
         run: |
           export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
           targets=gen,build,vet,lint,test
+          # One task at a time: go:test -race beside web:test made both fail under load (#5632),
+          # as they did not when each had a job of its own.
           if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            scripts/nx.sh affected -t "$targets" --exclude=web --base="$BASE" --head=HEAD --output-style=static
+            scripts/nx.sh affected -t "$targets" --exclude=web --base="$BASE" --head=HEAD --parallel=1 --output-style=static
           else
-            scripts/nx.sh run-many -t "$targets" --exclude=web --output-style=static
+            scripts/nx.sh run-many -t "$targets" --exclude=web --parallel=1 --output-style=static
           fi
       # wire:gen and design:gen ran before the tasks that read their files, so a change that
       # did not commit what they write would pass the tests: it fails here.
