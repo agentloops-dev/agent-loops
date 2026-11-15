@@ -4,15 +4,15 @@
 // has a scope, Me or the organisation, and names it.
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import { signal, useSignal } from "@preact/signals";
-import { go, route, routeHash } from "../route";
+import { go, replace, route, routeHash } from "../route";
 import { hasPage } from "../model/work";
 import type { Store } from "../model/store";
 import type { FeatureUsage, LineageForecast, ReportDelivery, LineageForecastAssumes, LineageForecastWhatIfEffect, LineageNode, MachineRef, ReportFormat, ReportPage, ReportRange, ReportRow, ReportScope, ReportScopeOption, ReportValue, ReportValueRow, ReportView,
   UsageReport } from "../protocol/generated";
 import { CallFailed } from "../wire/link";
-import { adoption, adoptionLine, rangeAsked, barCaption, adoptionNote, budgetWords, dimensionTitle, dimensions, empty, exportName, groupViewNote, isGroupView, line, meNote,
+import { adoption, adoptionLine, rangeAsked, barCaption, adoptionNote, budgetWords, dimensionTitle, empty, exportName, groupViewNote, isGroupView, line, meNote,
   memberNote, noOutcomes, noWorkflows, outcomeLine, outcomeTotals, outcomesNote, rangeSpan, ranges, reportTotals, runtimeLine,
-  runtimesNote, sameScope, spendBarCaption, scopeKey, scopeNote, share, timeLine, timeNote, utcNote, waitingShare, weekTitle, workflowLine,
+  runtimesNote, sameScope, spendBarCaption, scopeKey, lensAsked, lensQuery, dimensionsFor, scopeNote, share, timeLine, timeNote, utcNote, waitingShare, weekTitle, workflowLine,
   workflowRows, workflowsNote, deleteViewWords, digestText, noCopy, noViews, noViewsHere, viewBy, viewWords, viewsNote } from "../model/reports";
 import type { OutcomeGroup, OutcomeOrder, ReportDimension, ReportGroup } from "../model/reports";
 import { featureLine, featureUnused, featuresNote, mergeFeatures, noFeatures } from "../model/features";
@@ -94,7 +94,7 @@ export function ReportsPane({ store, runtimeName, scope, seesMore, initial }: { 
       problem.value = sentence(error);
     }
   };
-  const ways = dimensions;
+  const ways = dimensionsFor(scope);
   const way = ways.includes(by.value) ? by.value : ways[0]!;
   // Added up once per report and way, not at each draw (#2057).
   const names = store.runtimes.value;
@@ -286,7 +286,7 @@ function CountsPane({ store, runtimeName, scope, kind, initial }: { store: Store
   const range = useSignal<ReportRange>(initial?.range ?? "week");
   const by = useSignal<ReportDimension>(initial?.by ?? page.by);
   const { problem, shown } = useReport(store, range.value, scope);
-  const ways = kind === "workflows" ? ["workflow" as const, ...dimensions] : dimensions;
+  const ways = kind === "workflows" ? ["workflow" as const, ...dimensionsFor(scope)] : dimensionsFor(scope);
   const way = ways.includes(by.value) ? by.value : ways[0]!;
   const names = store.runtimes.value;
   const totals = useMemo(() => shown ? outcomeTotals(page.rows(shown.rows), way, page.order, runtimeName) : null,
@@ -643,11 +643,46 @@ function Budget({ spent, budget }: { spent: number; budget: number }) {
   );
 }
 
-/** A page of Reports (#1804), the control plane's app beside the Workspace and the Console: Me or the
- * organisation, as reports/scopes offers them. */
+/** The lens bar's lens, named for the page's title: "Spend · Project Agents" (#5279). Set by the page, read by the frame. */
+export const lensName = signal<string | undefined>(undefined);
+/** The lens the person last chose, which stays when they go to another page (#5279). */
+const lastLens = signal<ReportScope>({ kind: "me" });
+
+/** One lens bar at the top of every page of Reports (#5279): Me · Project ▾ · Organisation. Below 760 it is one menu. */
+function LensBar({ options, current, onPick }: { options: readonly ReportScopeOption[]; current: string; onPick: (scope: ReportScope) => void }) {
+  const at = (key: string) => options.find((o) => scopeKey(o.scope) === key)?.scope;
+  const projects = options.filter((o) => o.scope.kind === "project");
+  const me = options.find((o) => o.scope.kind === "me");
+  const org = options.find((o) => o.scope.kind === "org");
+  const onProject = current.startsWith("project:");
+  const words = options.find((o) => scopeKey(o.scope) === current);
+  return (
+    <div class="lens-bar" role="group" aria-label="Lens">
+      <span class="lens-wide">
+        <span class="choice-name">Lens</span>
+        {me && <button class={`lens-seg${current === "me" ? " on" : ""}`} aria-pressed={current === "me"} onClick={() => onPick(me.scope)}>Me</button>}
+        {projects.length > 0 && (
+          <label class={`lens-seg lens-project${onProject ? " on" : ""}`}>
+            <select aria-label="Project" value={onProject ? current : ""} onChange={(e) => { const next = at((e.currentTarget as HTMLSelectElement).value); if (next) onPick(next); }}>
+              {!onProject && <option value="" disabled>Project ▾</option>}
+              {projects.map((o) => <option key={scopeKey(o.scope)} value={scopeKey(o.scope)}>{onProject ? `Project: ${o.name}` : o.name}</option>)}
+            </select>
+          </label>
+        )}
+        {org && <button class={`lens-seg${current === "org" ? " on" : ""}`} aria-pressed={current === "org"} onClick={() => onPick(org.scope)}>Organisation</button>}
+      </span>
+      <span class="lens-narrow">
+        <Choice label="Lens" value={current} options={options.map((o) => [scopeKey(o.scope), o.scope.kind === "project" ? `Project ${o.name}` : o.name] as const)}
+          {...(words ? { title: words.name } : {})} onPick={(k) => { const next = at(k); if (next) onPick(next); }} />
+      </span>
+    </div>
+  );
+}
+
+/** A page of Reports (#1804), the control plane's app beside the Workspace and the Console: Me, a project
+ * or the organisation, as reports/scopes offers them (#5279). */
 export function ReportsPage({ store, section, down }: { store: Store; section: Section; down: boolean }) {
   const scopes = useSignal<ReportScopeOption[] | null>(null);
-  const picked = useSignal<string>("me");
   // The runtimes' names, from each machine that answers.
   useEffect(() => { if (!down) for (const host of store.hosts.value) void store.loadRuntimes(host.id); }, [down]);
   const changes = store.peopleChanges.value;
@@ -656,32 +691,42 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
     // A control plane before scopes: Me, as Cost ▸ Reports has it.
     void store.link.call("reports/scopes", {}).then((r) => { scopes.value = r.scopes; }, () => { scopes.value = []; });
   }, [down, changes]);
+  const setLens = (lens: ReportScope) => {
+    lastLens.value = lens;
+    const r = route.value;
+    replace({ ...r, query: lensQuery(r.query, lens) || undefined });
+  };
   // A saved view opens its page on its scope, range and way (#2019); the next page opens as before.
   const view = opened.value && opened.value.page === section.id ? opened.value : null;
   useEffect(() => {
-    if (view) picked.value = scopeKey(view.scope);
+    if (view) setLens(isGroupView(view) ? { kind: "me" } : view.scope);
     else if (opened.value && opened.value.page !== section.id) opened.value = null;
   }, [view?.id, section.id]);
+  // The lens stays when the person goes to another page: an address with none takes the last one chosen (#5279).
+  const named = new URLSearchParams(route.value.query ?? "").has("lens");
+  useEffect(() => { if (!named && !view && lastLens.value.kind !== "me") setLens(lastLens.value); }, [section.id]);
   // Cost's Open Reports on the Mac (#4938) names the range in the address: #/reports/spend?range=month.
   const asked = rangeAsked(route.value.query);
   const initial = view ? { range: view.range, by: viewBy(view) } : asked ? { range: asked } : undefined;
   const list = scopes.value ?? [];
-  const option = list.find((o) => scopeKey(o.scope) === picked.value) ?? list[0];
+  const wanted = scopeKey(lensAsked(route.value.query));
+  // A lens the person cannot see is not offered: the page shows Me.
+  const option = list.find((o) => scopeKey(o.scope) === wanted) ?? list.find((o) => o.scope.kind === "me") ?? list[0];
+  useEffect(() => { lensName.value = option?.scope.kind === "project" ? option.name : undefined; return () => { lensName.value = undefined; }; }, [option?.name, option && scopeKey(option.scope)]);
+  const bar = section.id !== "saved" && section.id !== "features" && list.length > 0;
+  const lens = option?.scope;
   return (
     <>
-      {list.length > 1 && section.id !== "saved" && section.id !== "features" && (
-        <Choice label="Scope" class="report-scopes" value={option ? scopeKey(option.scope) : picked.value}
-          options={list.map((o) => [scopeKey(o.scope), o.name] as const)} onPick={(k) => { picked.value = k; }} />
-      )}
+      {bar && <LensBar options={list} current={option ? scopeKey(option.scope) : "me"} onPick={setLens} />}
       {view && isGroupView(view) && <p class="quiet small" role="status">{groupViewNote}</p>}
       {section.id === "features" ? <FeaturesPane store={store} />
         : scopes.value !== null && (section.id === "saved" ? <SavedPage store={store} scopes={list} />
         : section.id in countsPages
-        ? <CountsPane key={`${section.id}:${view?.id ?? ""}`} store={store} runtimeName={runtimeNameIn(store)} scope={option?.scope}
+        ? <CountsPane key={`${section.id}:${view?.id ?? ""}:${wanted}`} store={store} runtimeName={runtimeNameIn(store)} scope={lens}
           kind={section.id as CountsKind} initial={initial} />
-        : section.id === "value" ? <PlanningPane key={view?.id ?? ""} store={store} scope={option?.scope} initial={initial} />
-        : section.id === "adoption" ? <AdoptionPane key={view?.id ?? ""} store={store} scope={option?.scope} initial={initial} />
-        : <ReportsPane key={view?.id ?? asked ?? ""} store={store} runtimeName={runtimeNameIn(store)} scope={option?.scope} seesMore={list.length > 1} initial={initial} />)}
+        : section.id === "value" ? <PlanningPane key={`${view?.id ?? ""}:${wanted}`} store={store} scope={lens} initial={initial} />
+        : section.id === "adoption" ? <AdoptionPane key={`${view?.id ?? ""}:${wanted}`} store={store} scope={lens} initial={initial} />
+        : <ReportsPane key={`${view?.id ?? asked ?? ""}:${wanted}`} store={store} runtimeName={runtimeNameIn(store)} scope={lens} seesMore={list.length > 1} initial={initial} />)}
     </>
   );
 }

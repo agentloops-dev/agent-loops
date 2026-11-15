@@ -19,7 +19,8 @@ import { ConsoleSection, MachinesPage, roleProblemOf } from "./ConsoleApp";
 import { requestCount } from "./ConsoleRecords";
 import { policyNotSaved } from "./ConsolePolicy";
 import { orgPolicyNotSaved } from "./ConsoleOrgPolicy";
-import { ReportsPage } from "./Reports";
+import { ReportsPage, lensName } from "./Reports";
+import { lensAsked, lensTitle } from "../model/reports";
 import { BuildsPage } from "./Builds";
 import { DeliveryPage } from "./Delivery";
 import { WorkList, WorkPage } from "./Work";
@@ -293,7 +294,7 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
   // A page under another (#5178) names that page in its breadcrumb: Reports › Planning › Builds.
   const parent = page.under ? navPages[section].find((p) => p.id === page.under) : undefined;
   return (
-    <Framed title={page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
+    <Framed title={page.draw.kind === "report" ? lensTitle(page.title, lensAsked(route.value.query), lensName.value) : page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
       {gated(page, admin) ? <p class="hint">{admin === null ? "Loading…" : roleProblemOf(store) ?? adminsOnly}</p>
         : page.draw.kind === "console" ? <ConsoleSection store={store} id={page.draw.id} down={down} />
         : page.draw.kind === "report" ? <ReportsPage store={store} section={page.draw.section} down={down} />
