@@ -13,7 +13,7 @@
 #                                       origin/main)
 #
 # Commit and push first: the statements name each task by its Nx hash at the head commit, and
-# the check run goes on the pull request's head. CI does not read it yet (#5585). The rules and
+# the check run goes on the pull request's head. CI skips the tasks it covers (#5585). The rules and
 # the statement's shape are in scripts/checks-attest.mjs. Lease "build" first (not for --plan).
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
