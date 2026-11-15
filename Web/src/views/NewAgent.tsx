@@ -49,6 +49,7 @@ import { KeptBubbles } from "./Kept";
 import { composerReason, line, markTitle } from "../model/orgPolicy";
 import { optionLabel } from "./OrgPolicyLine";
 import { fileURL } from "../model/completions";
+import { Suggested } from "./Suggested";
 
 type Where = { kind: "folder" } | { kind: "new" } | { kind: "existing"; root: string } | { kind: "branch"; name: string }
   | { kind: "named"; name: string };
@@ -527,6 +528,7 @@ export function NewAgent({ store, host, folder, folderName, down }: {
         )}
         <p class="quiet" title={path}>{path} · {machine}</p>
         <KeptBubbles store={store} kept={keptStarts} />
+        <Suggested store={store} host={host} down={down} />
       </div>
       <footer class="foot"
         onFocusIn={(e) => { if (isPrompt(e.target)) { promptFocused.value = true; typed.value = e.target.value.length; } }}
