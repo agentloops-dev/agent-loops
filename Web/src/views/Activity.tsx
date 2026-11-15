@@ -17,6 +17,7 @@ import { ReportsPane } from "./Reports";
 import { BackToList } from "./BackToList";
 import { Modal } from "./Modal";
 import { folderKey, folderPath } from "../model/groups";
+import { filteredTo, nameLimit } from "../model/machineNames";
 import { accountChoices, accountRows, accountState, agentsHolding, allowanceLine, allowancePace, allowancePaceLine, pastWeeksLine, defaultAccountName, isOrgRow, orgAllowanceLine, ownRow, ownSignInID, reachesFoot, reachesTheModelBy, machineSignInLine, offersMachineSignIn, removeMessage, rowTitle, runtimeTime, runtimesHint, runtimesReadAt, machinesSummary, machinesWords, setupRuntimes, signInOnTheMac, type MachinesPart, type SetupRuntime } from "../model/runtimes";
 import { LastUpdate } from "./LastUpdate";
 import { signInRuntime } from "./RuntimeSignInDialog";
@@ -327,7 +328,8 @@ function SetupRuntimeRows({ store, runtime: { status, home: hostID, machines }, 
         {/* With one machine alone, the row's own line says it already. */}
         {several && <span aria-label={`${status.runtime.name}: ${machinesWords(parts, hostName)}`}>{parts.map((part, i) => <Fragment key={part.words}>
           {i > 0 && " · "}{part.words}
-          {part.hosts.map((h, n) => <Fragment key={h}>{n === 0 ? " " : ", "}<a href={routeHash({ nav: "machines", section: `machine-${h}` })}>{hostName(h)}</a></Fragment>)}
+          {part.hosts.slice(0, nameLimit).map((h, n) => <Fragment key={h}>{n === 0 ? " " : ", "}<a href={routeHash({ nav: "machines", section: `machine-${h}` })}>{hostName(h)}</a></Fragment>)}
+          {part.hosts.length > nameLimit && <>{" and "}<a href={routeHash(filteredTo(part.hosts))}>{part.hosts.length - nameLimit} more</a></>}
         </Fragment>)}</span>}
         {detailed && <>{" "}<button class="link" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Hide Details" : "Details"}</button></>}
       </p>

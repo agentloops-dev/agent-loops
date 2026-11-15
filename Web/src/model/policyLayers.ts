@@ -6,6 +6,8 @@ import type {
   BudgetRequest, EffectivePolicy, EffectiveRule, GuardedChangePolicy, JSONValue, PolicyBehindMachine, PolicyLayerRef, PolicyRefusal,
   PolicyRuleLine, PolicyRules, UntrustedYourPolicy,
 } from "../protocol/generated";
+import { moreOf, namesWords } from "./machineNames";
+import type { Route } from "../route";
 import { fromWireDate } from "../protocol/dates";
 import { absolutePath } from "./fileWatch";
 import { dollars } from "./orgPolicy";
@@ -35,6 +37,11 @@ export function foldersLine(count: number): string {
   return `${count} folders have their own rules.`;
 }
 
+/** Where "and N more" of the behind line goes: the Machines page with those machines; null when the names are all said. */
+export function behindMore(machines: PolicyBehindMachine[]): { count: number; to: Route } | null {
+  return moreOf(machines.map((m) => ({ id: m.host, name: m.name })));
+}
+
 /** How many rules a folder in the banner's list sets. */
 export function rulesCount(count: number): string {
   return count === 1 ? "1 rule" : `${count} rules`;
@@ -43,7 +50,7 @@ export function rulesCount(count: number): string {
 /** The machines that do not follow the layers yet; null with none. */
 export function behindLine(machines: PolicyBehindMachine[]): string | null {
   if (machines.length === 0) return null;
-  const names = machines.map((m) => m.name).sort().join(", ");
+  const names = namesWords(machines.map((m) => m.name).sort());
   const one = machines.length === 1;
   return `${names} ${one ? "does" : "do"} not follow your policy yet. Update ${one ? "it" : "them"} to the newest version.`;
 }

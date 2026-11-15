@@ -13,7 +13,8 @@ import { botLine, botWords, capReachedWords, dollars, readCap } from "../model/t
 import { CallFailed } from "../wire/link";
 import { describe, methodNotFound } from "../model/errors";
 import { editInPeople } from "../model/orgPolicy";
-import { go, route } from "../route";
+import { go, route, routeHash } from "../route";
+import { filteredTo, nameLimit } from "../model/machineNames";
 import { askingLine, badges, checkFailedLine, canRemove, orgLines, providerManaged, roleSetBy, joinCommandNote, joinCommandTitle, canSetRole, clientLine, inviteNote, machineLine, memberNote, noPeople, ordered, removeLines,
   removeTitle, roleNote, roleWord, roles, rotateFoot, rotateMessage, rotateTitle, rotated } from "../model/people";
 import { JoinRequests } from "./JoinRequest";
@@ -303,7 +304,12 @@ function PersonItem({ person, list, groups, names, joinCommand, setRole, askRemo
       <div class="person-things">
         <span class="faint small">Machines</span>
         {person.machines.length === 0 ? <span class="quiet small">None</span>
-          : person.machines.map((m) => <span key={m.id} class="small">{machineLine(m)}</span>)}
+          : <>
+            {person.machines.slice(0, nameLimit).map((m) => <span key={m.id} class="small">{machineLine(m)}</span>)}
+            {person.machines.length > nameLimit && (
+              <a class="small" href={routeHash(filteredTo(person.machines.map((m) => m.id)))}>and {person.machines.length - nameLimit} more</a>
+            )}
+          </>}
         {bot ? (
           <>
             {/* A bot has no role, clients or sign-in: its group, cap and spend (#1761). */}
