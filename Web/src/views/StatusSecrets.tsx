@@ -1,10 +1,9 @@
-// Status ▸ Secrets and Status ▸ Accounts (#4161, specs/secret-info §9), as the window's (Shared/UI/UserScope/
-// StatusSecretsPage.swift): a list you only read, newest operation first, with the warning under one that is not
-// backed up. A press on a row, and the link at the foot, open Settings ▸ You.
+// The sidebar's Status ▸ Secrets and Status ▸ Accounts rows (#4161, #4931), as the window's StatusSecretsRow
+// (Shared/UI/UserScope/StatusSecretsPage.swift): the newest operation's age, and the line under it. Each row opens its
+// page (#5257, #5258).
 import { useEffect } from "preact/hooks";
 import type { Store } from "../model/store";
-import { go } from "../route";
-import { accountLines, newestAt, recentOperation, secretLines, shortAgo, statusSecretsWords as w, summary, type StatusLine } from "../model/statusSecrets";
+import { accountLines, newestAt, recentOperation, secretLines, shortAgo, type StatusLine } from "../model/statusSecrets";
 
 type List = "secrets" | "accounts";
 
@@ -33,29 +32,4 @@ export function StatusListLastLine({ store, list }: { store: Store; list: List }
   const title = (id: string) => Object.values(store.agents.value).flat().find((a) => a.id === id)?.title;
   const last = recentOperation(statusLines(store, list), Date.now(), title);
   return last ? <p class="page-need quiet small" aria-label={`${w.lastLabel} ${last}`}>{last}</p> : null;
-}
-
-export function StatusSecretsPage({ store, list }: { store: Store; list: List }) {
-  const lines = statusLines(store, list);
-  const open = () => go({ nav: "settings", section: list });
-  const now = Date.now();
-  return (
-    <section aria-label={list === "secrets" ? "Secrets" : "Accounts"}>
-      <p class="hint">{list === "secrets" ? w.secretsLead : w.accountsLead}</p>
-      {lines.length === 0 && <p class="hint">{list === "secrets" ? w.noSecrets : w.noAccounts}</p>}
-      <ul class="user-secrets status-list">
-        {lines.map((line) => (
-          <li key={line.id} class="user-secret">
-            <button type="button" class="status-list-row" onClick={open}>
-              <span>{line.title}</span>
-              {line.at !== null && <span class="quiet small" title={new Date(line.at).toLocaleString()}>{shortAgo(line.at, now)}</span>}
-              <span class="hint">{summary(line)}</span>
-              {!line.backedUp && <span class="hint attention">{w.notBackedUp}</span>}
-            </button>
-          </li>
-        ))}
-      </ul>
-      <button type="button" class="link" onClick={open}>{list === "secrets" ? w.editSecrets : w.editAccounts}</button>
-    </section>
-  );
 }

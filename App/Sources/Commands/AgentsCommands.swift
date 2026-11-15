@@ -200,6 +200,9 @@ struct AgentsCommands: Commands {
             // Status ▸ Secrets, a page of its own (#5257).
             Button("Secrets") { model.showSecrets() }
                 .disabled(ControlConfig.endpoint == nil)
+            // Status ▸ Accounts, a page of its own (#5258).
+            Button("Accounts") { model.showAccounts() }
+                .disabled(ControlConfig.endpoint == nil)
             Button("Dashboard") { model.showsDashboard = true }
             // A list each, as the sidebar's Work group (#4004).
             Menu("Work") {
