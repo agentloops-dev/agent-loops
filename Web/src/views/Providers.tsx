@@ -11,6 +11,7 @@ import {
   kindOfPreset, kindTitle, linkableHosts, mayBe, movesTo, noHostLine, providerKinds, providerLine, providerRequest, providerWords as words, sshDestination, workspaceLine, type ProviderKind,
 } from "../model/machineProviders";
 import { Modal } from "./Modal";
+import { MachinePicker } from "./MachinePicker";
 import { MachineDialog } from "./MachineDialog";
 import { makers } from "../model/machineFromRepository";
 import { adminsOnly, providerLine as groupLine } from "../model/teamGroups";
@@ -291,9 +292,8 @@ function LinkDialog({ store, provider, workspace, close }: {
         {hosts.length === 0 ? <p class="small">{words.noHosts}</p> : (
           <form class="token-form" onSubmit={(e) => { e.preventDefault(); void link(); }}>
             <label>Machine
-              <select value={host} disabled={working || !!fingerprint} onChange={(e) => setHost((e.target as HTMLSelectElement).value)}>
-                {hosts.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-              </select>
+              <MachinePicker store={store} label="Machine" value={host || null} disabled={working || !!fingerprint}
+                skip={(h) => !hosts.some((o) => o.id === h.id)} onPick={(id) => setHost(id ?? "")} />
             </label>
             <label class="setting">
               <span>Start when used</span>
