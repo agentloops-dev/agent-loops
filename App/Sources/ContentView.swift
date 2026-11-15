@@ -364,6 +364,9 @@ struct ContentView: View {
             }
         }
         }
+        // No part of the window, the sidebar's foot or a page that does not scroll, can
+        // make the window taller than the person made it, or than the screen (#5739).
+        .windowFloor(height: 420)
         // A label's chip, in a row or the chat, filters the sidebar by it (#3898), and
         // shows the sidebar if it was hidden.
         .environment(\.labelFilter, LabelFilter(query: model.sidebarSearch) { query in
