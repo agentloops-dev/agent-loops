@@ -20,8 +20,12 @@ import (
 
 func projectFolder(t *testing.T, project string) string {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), []byte(`{"project": "`+project+`"}`), 0o644)
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), []byte(`{"project": "`+project+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	return dir
 }
 
@@ -79,7 +83,9 @@ func TestSessionToolsReachTheProjectOnOtherMachines(t *testing.T) {
 		switch call.Method {
 		case "machines/projectSessions":
 			var r wire.ProjectSessionsRequest
-			json.Unmarshal(b, &r)
+			if err := json.Unmarshal(b, &r); err != nil {
+				t.Error(err)
+			}
 			if r.Project != "p-agents" {
 				t.Errorf("%+v", r)
 			}
@@ -94,7 +100,9 @@ func TestSessionToolsReachTheProjectOnOtherMachines(t *testing.T) {
 				{Machine: "h-laptop", MachineName: "laptop", Folders: []string{"/a", "/b"}}}})
 		case "machines/sessionCall":
 			var s wire.MachineSessionCall
-			json.Unmarshal(b, &s)
+			if err := json.Unmarshal(b, &s); err != nil {
+				t.Error(err)
+			}
 			mu.Lock()
 			calls = append(calls, s)
 			mu.Unlock()
@@ -162,7 +170,9 @@ func TestAProjectMemberOnAnotherMachineReadsButCannotStop(t *testing.T) {
 		if call.Method == "machines/sessionEnded" {
 			var e wire.SessionEnded
 			b, _ := json.Marshal(call.Params)
-			json.Unmarshal(b, &e)
+			if err := json.Unmarshal(b, &e); err != nil {
+				t.Error(err)
+			}
 			mu.Lock()
 			ended = append(ended, e)
 			mu.Unlock()
@@ -188,7 +198,9 @@ func TestAProjectMemberOnAnotherMachineReadsButCannotStop(t *testing.T) {
 	watch := params("status", "p-agents")
 	watch["watch"] = true
 	var reply wire.SessionCallReply
-	json.Unmarshal(c.call(t, 4, "agents/fromStarter", watch), &reply)
+	if err := json.Unmarshal(c.call(t, 4, "agents/fromStarter", watch), &reply); err != nil {
+		t.Fatal(err)
+	}
 	if deref(reply.Title) != "lane" {
 		t.Fatalf("%+v", reply)
 	}
@@ -220,8 +232,10 @@ func TestAProjectMemberOnAnotherMachineMessagesAWaitingSession(t *testing.T) {
 	lead := seeded(t, d, projectFolder(t, "p-agents"), titledAs("lead"))
 	from := map[string]any{"machine": "mac", "agent": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "who": "Director"}
 	var reply wire.SessionCallReply
-	json.Unmarshal(c.call(t, 1, "agents/fromStarter", map[string]any{"from": from, "session": string(lead.ID), "op": "message",
-		"message": "Pause: start no new lanes.", "project": "p-agents"}), &reply)
+	if err := json.Unmarshal(c.call(t, 1, "agents/fromStarter", map[string]any{"from": from, "session": string(lead.ID), "op": "message",
+		"message": "Pause: start no new lanes.", "project": "p-agents"}), &reply); err != nil {
+		t.Fatal(err)
+	}
 	if !strings.HasPrefix(reply.Said, "Sent to “lead”, which is working on it now.") {
 		t.Fatalf("%+v", reply)
 	}
