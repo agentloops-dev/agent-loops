@@ -4182,8 +4182,9 @@ final class AppModel {
         }
     }
 
-    func mcpServers(at destination: DaemonAPI.SkillDestination) async -> DaemonAPI.MCPListAnswer? {
-        try? await macClient.call(DaemonAPI.Method.mcpList,
+    /// A folder's connectors as `host` reads them: a server folder's on its own host (#5717).
+    func mcpServers(at destination: DaemonAPI.SkillDestination, on host: MachineRef = .mac) async -> DaemonAPI.MCPListAnswer? {
+        try? await (host == .mac ? macClient : client(for: host)).call(DaemonAPI.Method.mcpList,
                                DaemonAPI.MCPListRequest(destination: destination),
                                returning: DaemonAPI.MCPListAnswer.self)
     }
@@ -4253,14 +4254,20 @@ final class AppModel {
         }
     }
 
-    /// Approve the entry the row showed. A digest that no longer matches comes back as an error.
-    func approveFolderMCP(_ name: String, digest: String, in folder: URL) async -> DaemonAPI.MCPCatalogError? {
+    /// Approve the entry the row showed, on the folder's own machine, as Remove does (#2199,
+    /// #5717). A digest that no longer matches comes back as an error.
+    func approveFolderMCP(_ name: String, digest: String, in folder: URL,
+                          on host: MachineRef = .mac) async -> DaemonAPI.MCPCatalogError? {
         do {
-            _ = try await macClient.call(DaemonAPI.Method.mcpApprove,
+            _ = try await (host == .mac ? macClient : client(for: host)).call(DaemonAPI.Method.mcpApprove,
                                       DaemonAPI.MCPApproveRequest(destination: .folder(folder: folder.path),
                                                                   name: name, digest: digest),
                                       returning: DaemonAPI.MCPListAnswer.self)
             return nil
+        } catch HostProblem.offline {
+            return .failed("\(hosts.label(host)) is offline")
+        } catch let rpc as JSONRPCError where rpc.code == DaemonAPI.Failure.hostOffline {
+            return .failed("\(hosts.label(host)) is offline")
         } catch {
             return Self.mcpError(error)
         }

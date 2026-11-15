@@ -248,6 +248,23 @@ export const runtimesAccountsMethods = {
     if (why === undefined) await this.checkMCPHealth(host, folder);
     return why;
   },
+  /**
+   * Approve a folder's connector that waits (#5717), on the folder's own host, as the window's
+   * Approve: the entry that host reads now, by its digest. Undefined when done, else the refusal's words.
+   */
+  async approveConnector(this: Store, host: string, name: string, folder: string): Promise<string | undefined> {
+    const destination = { kind: "folder", folder: hostedFolderPath(folder) } as never;
+    const why = await this.link.call("mcp/list", { destination }, host)
+      .then(async (list) => {
+        const row = list.servers.find((s) => s.name === name);
+        if (!row?.approval.waiting) return undefined;
+        await this.link.call("mcp/approve", { destination, name, digest: row.approval.waiting.digest }, host);
+        return undefined;
+      }, (error: unknown) => describe(error))
+      .catch((error: unknown) => describe(error));
+    if (why === undefined) await this.checkMCPHealth(host, folder);
+    return why;
+  },
   /** A connector's tools with Allow, Ask or Off for each (#4099); its refusal's words when the host refuses. */
   async connectorTools(this: Store, host: string, name: string, folder?: string): Promise<MCPToolsAnswer | string> {
     const destination = folder === undefined ? { kind: "personal" } : { kind: "folder", folder: hostedFolderPath(folder) };
