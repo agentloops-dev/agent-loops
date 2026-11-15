@@ -97,7 +97,9 @@ func TestWaitingDeployIsAnApprovalAnsweredOnGitHub(t *testing.T) {
 
 	url := wire.URL("file://" + folder)
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 1, "approvals/read", wire.ApprovalReadRequest{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key}), &reading)
+	if err := json.Unmarshal(c.call(t, 1, "approvals/read", wire.ApprovalReadRequest{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key}), &reading); err != nil {
+		t.Fatal(err)
+	}
 	var texts []string
 	for _, l := range reading.Lines {
 		texts = append(texts, string(l.Kind)+" "+l.Text)
@@ -213,7 +215,9 @@ func TestApprovalDeployIsAnsweredWithItsWorkflow(t *testing.T) {
 	}
 	url := wire.URL("file://" + folder)
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 1, "approvals/read", wire.ApprovalReadRequest{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key}), &reading)
+	if err := json.Unmarshal(c.call(t, 1, "approvals/read", wire.ApprovalReadRequest{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key}), &reading); err != nil {
+		t.Fatal(err)
+	}
 	var texts []string
 	for _, l := range reading.Lines {
 		texts = append(texts, l.Text)
@@ -222,8 +226,10 @@ func TestApprovalDeployIsAnsweredWithItsWorkflow(t *testing.T) {
 		"Asked by: https://github.com/alexec/agents/actions/runs/5", "Commit: abc"}) {
 		t.Fatalf("reading: %q", texts)
 	}
-	json.Unmarshal(c.call(t, 2, "approvals/answer", wire.ApprovalAnswer{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key,
-		Digest: a.Digest, Action: wire.ApprovalActionApprove}), &wire.FolderSummary{})
+	if err := json.Unmarshal(c.call(t, 2, "approvals/answer", wire.ApprovalAnswer{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key,
+		Digest: a.Digest, Action: wire.ApprovalActionApprove}), &wire.FolderSummary{}); err != nil {
+		t.Fatal(err)
+	}
 	if w := gh.writes(); !slices.Equal(w, []string{"approval alexec/agents 4242 deploy.yml v0.1.0 true Approved in Agent Loops"}) {
 		t.Fatalf("writes: %q", w)
 	}

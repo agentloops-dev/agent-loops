@@ -137,6 +137,8 @@ struct ContentView: View {
             TimeView().paperGround()
         } else if model.showsVelocity {
             VelocityView().paperGround()
+        } else if model.showsDashboard {
+            DashboardView().paperGround()
         } else if model.showsWork {
             // Build trends ↗ on the Pipeline line opens the web page (#5180).
             WorkView(model: model).webPlaceLinks().paperGround()
@@ -215,7 +217,7 @@ struct ContentView: View {
         guard terminal.isOpen, !model.showsEvents, !model.showsRuntimes, model.statusSecretsPage == nil,
               model.machinePage == nil,
               !model.showsSpending, !model.showsTokens, !model.showsTime, !model.showsVelocity,
-              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsSummary, let folder = model.selectedFolderSummary, folder.exists else { return nil }
+              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsSummary, !model.showsDashboard, let folder = model.selectedFolderSummary, folder.exists else { return nil }
         return folder
     }
 
@@ -230,7 +232,7 @@ struct ContentView: View {
         model.selection != nil && !model.showsEvents
             && !model.showsRuntimes && model.statusSecretsPage == nil && model.machinePage == nil
             && !model.showsSpending && !model.showsTime && !model.showsVelocity && !model.showsWork && !model.showsDocs && !model.showsMessages
-            && !model.showsSummary && model.openWorkflow == nil
+            && !model.showsSummary && !model.showsDashboard && model.openWorkflow == nil
             && model.folderPage == nil && model.openPin == nil
     }
 
