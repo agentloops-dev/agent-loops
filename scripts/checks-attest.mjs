@@ -3,7 +3,8 @@
 // tasks of this branch with Nx and no cache hits, then post one check run
 // `attestation/<platform>` on the pull request's head commit, as the agents' bot. Its output
 // holds one in-toto Statement v1 for each task that passed on its first run, with the
-// test-result predicate. CI ignores it until #5585.
+// test-result predicate. On the pull request, CI skips each task it covers (#5585,
+// scripts/ci-attested.mjs).
 //
 //   node scripts/checks-attest.mjs [--base REF] [--plan] [--no-post]
 //   node scripts/checks-attest.mjs --selftest
@@ -132,7 +133,7 @@ export function checkRun(verdicts, statements, ctx) {
     (v) => `| \`${v.task.id}\` | \`${v.task.hash}\` | ${v.attested ? "attested" : "not attested"} | ${v.reason} | ${changedInputs(v.task, ctx.changedFiles).length} |`,
   );
   const summary = [
-    `${statements.length} of ${verdicts.length} tasks attested on ${ctx.platform}, at the inputs of \`${ctx.headSha.slice(0, 12)}\` (#5584). CI does not read this yet (#5585).`,
+    `${statements.length} of ${verdicts.length} tasks attested on ${ctx.platform}, at the inputs of \`${ctx.headSha.slice(0, 12)}\` (#5584). CI skips each attested task whose hash it calculates again at the head (#5585).`,
     "",
     "| Task | Nx hash | | Why | Inputs changed |",
     "|---|---|---|---|---|",
