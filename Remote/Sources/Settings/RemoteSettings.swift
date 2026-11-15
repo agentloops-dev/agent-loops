@@ -97,8 +97,7 @@ struct RemoteStatusSecretsPage: View {
                             machineNames: names, hostName: "the Mac",
                             selection: $model.secretsSelection, agentTitle: { model.work.agent($0)?.title },
                             openAccount: { account in
-                                model.accountsSelection = account.id
-                                model.sidebarItem = .accountsStatus
+                                model.openStatusPage(.accountsStatus, from: \.secretsSelection, select: \.accountsSelection, account.id)
                             })
                 .navigationTitle(SecretsPage.title)
                 .navigationBarTitleDisplayMode(.inline)
@@ -106,11 +105,25 @@ struct RemoteStatusSecretsPage: View {
             AccountsPageView(control: model.controlPlane, state: model.userScope, machineNames: names,
                              selection: $model.accountsSelection,
                              openSecret: { name in
-                                 model.secretsSelection = "yours/\(name)"
-                                 model.sidebarItem = .secretsStatus
+                                 model.openStatusPage(.secretsStatus, from: \.accountsSelection, select: \.secretsSelection, "yours/\(name)")
                              })
                 .navigationTitle(AccountsPage.title)
                 .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+extension RemoteModel {
+    /// From one Status page's pushed detail to an item on the other (#5258): the detail goes back first, and the other
+    /// page opens a moment later with its item selected. On iPhone, a page changed under a pushed detail drops back to
+    /// the sidebar.
+    func openStatusPage(_ page: SidebarItem, from: ReferenceWritableKeyPath<RemoteModel, String?>,
+                        select: ReferenceWritableKeyPath<RemoteModel, String?>, _ id: String) {
+        self[keyPath: from] = nil
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            self[keyPath: select] = id
+            sidebarItem = page
         }
     }
 }
