@@ -176,8 +176,8 @@ importers:
         specifier: 1.10.0
         version: 1.10.0
       '@preact/signals':
-        specifier: 2.11.3
-        version: 2.11.3(preact@11.0.0)
+        specifier: 2.11.4
+        version: 2.11.4(preact@11.0.0)
       lucide-static:
         specifier: 1.72.0
         version: 1.72.0
@@ -451,8 +451,8 @@ packages:
   '@preact/signals-core@1.14.5':
     resolution: {integrity: sha512-vcRv7Ityz5JVmeiVqIluLFzT/PDS/AlhHUpw3/aUWqcVUs6bDGIPXE/6RSC4evBNWYvnniozg5Syfj33al3gkg==}
 
-  '@preact/signals@2.11.3':
-    resolution: {integrity: sha512-mttwFM98G/JiriTgMwU+UWygL6sfVmYEiNcPSKkUnv4PxPpZhmP2ugGC4qi360+ZIHyQ8NY05bfJT3b4RUIGlw==}
+  '@preact/signals@2.11.4':
+    resolution: {integrity: sha512-Rb+5RPo9gWSaHtzJeauhHxiC8KP/IF2DEPkHPEOGOnuy2wnJzRqyeLRankUCYd6ADqtxS6GnWGv6Ie343d8aYw==}
     peerDependencies:
       preact: '>= 10.25.0 || >=11.0.0-0'
 
@@ -1101,7 +1101,7 @@ snapshots:
 
   '@preact/signals-core@1.14.5': {}
 
-  '@preact/signals@2.11.3(preact@11.0.0)':
+  '@preact/signals@2.11.4(preact@11.0.0)':
     dependencies:
       '@preact/signals-core': 1.14.5
       preact: 11.0.0
