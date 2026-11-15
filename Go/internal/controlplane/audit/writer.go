@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
@@ -46,7 +47,23 @@ type Writer struct {
 	giveUp     chan struct{}
 	once       sync.Once
 	giveUpOnce sync.Once
+	// live is the goroutines this writer runs now, and mostLive the most at once (#5654):
+	// a test reads them, not the process's count, which the other tests move.
+	live, mostLive atomic.Int64
 }
+
+// started and ended count one of the writer's goroutines.
+func (w *Writer) started() {
+	n := w.live.Add(1)
+	for {
+		most := w.mostLive.Load()
+		if n <= most || w.mostLive.CompareAndSwap(most, n) {
+			return
+		}
+	}
+}
+
+func (w *Writer) ended() { w.live.Add(-1) }
 
 // NewWriter starts the writer of l's entries; logf hears what it could not keep.
 func NewWriter(l *Log, logf func(string)) *Writer {
@@ -54,6 +71,7 @@ func NewWriter(l *Log, logf func(string)) *Writer {
 		log: l, logf: logf, queue: make(chan Pending, WriterQueue),
 		stop: make(chan struct{}), done: make(chan struct{}), giveUp: make(chan struct{}),
 	}
+	w.started()
 	go w.run()
 	return w
 }
@@ -89,6 +107,7 @@ func (w *Writer) Close(ctx context.Context) {
 
 func (w *Writer) run() {
 	defer close(w.done)
+	defer w.ended()
 	for {
 		select {
 		case p := <-w.queue:
@@ -148,8 +167,10 @@ func (w *Writer) keep(batch []Pending) {
 	gate := make(chan struct{}, writerPuts)
 	for i, one := range linked {
 		gate <- struct{}{}
+		w.started()
 		wg.Go(func() {
 			defer func() { <-gate }()
+			defer w.ended()
 			kept[i] = w.put(one)
 		})
 	}

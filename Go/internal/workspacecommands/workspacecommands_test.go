@@ -14,8 +14,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -430,14 +432,24 @@ func TestAStartThatNeverComesUpTimesOut(t *testing.T) {
 }
 
 func TestACommandPastItsDeadlineIsStopped(t *testing.T) {
-	s := server(t, `{"workspaces":[{"name":"devbox","start":"sleep 30","stop":"true"}]}`,
+	// The command says its pid, then sleeps as that process: once the start answers, the
+	// process is gone, not waited on (#5654: the process, not the time the call took).
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	s := server(t, `{"workspaces":[{"name":"devbox","start":"echo $$ > `+pidFile+`; exec sleep 30","stop":"true"}]}`,
 		Timing{Quick: 5 * time.Second, Long: 300 * time.Millisecond, PollEvery: 50 * time.Millisecond}, Shell)
-	began := time.Now()
 	if got := text(call(t, s, "workspace_start", `{"id":"devbox"}`)); got != "Starting devbox took longer than 0 seconds." {
 		t.Error(got)
 	}
-	if time.Since(began) > 10*time.Second {
-		t.Error("the stopped command was waited on")
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Errorf("the stopped command %d is still there: %v", pid, err)
 	}
 }
 
