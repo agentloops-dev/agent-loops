@@ -19,6 +19,10 @@ struct DiffFilesView: View {
     @State private var collapsed: Set<String> = []
     @State private var chosen: String?
     @State private var width: CGFloat = 0
+    #if os(iOS)
+    /// The Remote's *Files ▾* (#5479): the file list in a sheet, as a menu of long paths is cut.
+    @State private var filesSheet = false
+    #endif
 
     /// The file list's width, and the page's width from which it shows.
     static let listWidth: CGFloat = 260
@@ -29,6 +33,9 @@ struct DiffFilesView: View {
     private var showsList: Bool { width >= Self.listFrom && diff.files.count > 1 }
     private var diffWidth: CGFloat { showsList ? width - Self.listWidth : width }
     private var sideBySide: Bool { diffWidth >= Self.sideBySideFrom }
+    /// Under this, the line at the top takes two lines: a phone's width.
+    static let narrowUnder: CGFloat = 600
+    private var narrow: Bool { width > 0 && width < Self.narrowUnder }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -56,6 +63,9 @@ struct DiffFilesView: View {
                 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            #if os(iOS)
+            .sheet(isPresented: $filesSheet) { filesSheetPage(proxy) }
+            #endif
             .task {
                 rows = Dictionary(diff.files.map { ($0.path, AppViewDiffPage.rows($0)) }, uniquingKeysWith: { a, _ in a })
                 if let path = diff.path {
@@ -76,14 +86,18 @@ struct DiffFilesView: View {
 
     private func summary(_ proxy: ScrollViewProxy) -> some View {
         let added = diff.files.reduce(0) { $0 + $1.additions }, removed = diff.files.reduce(0) { $0 + $1.deletions }
+        let changed = HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("\(diff.files.count) \(diff.files.count == 1 ? "file" : "files") changed")
+                .appText(.supporting)
+            Self.counts(added: added, removed: removed)
+        }
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if !showsList, diff.files.count > 1 {
                     filesMenu(proxy)
                 }
-                Text("\(diff.files.count) \(diff.files.count == 1 ? "file" : "files") changed")
-                    .appText(.supporting)
-                Self.counts(added: added, removed: removed)
+                // A phone's width (#5479): what changed goes on a line of its own, so Open on GitHub keeps one line.
+                if !narrow { changed }
                 Spacer(minLength: 0)
                 if sideBySide {
                     Picker("Show", selection: $layout) {
@@ -94,9 +108,10 @@ struct DiffFilesView: View {
                     .fixedSize()
                 }
                 if let url = diff.url {
-                    Button("Open on \(diff.site)") { openLink(url) }.buttonStyle(.paper).appText(.fine)
+                    Button("Open on \(diff.site)") { openLink(url) }.buttonStyle(.paper).appText(.fine).fixedSize()
                 }
             }
+            if narrow { changed }
             if diff.cut {
                 Text("The diff is too long to show every file here. A file with no lines below is on \(diff.site).")
                     .appText(.fine)
@@ -106,8 +121,21 @@ struct DiffFilesView: View {
         }
     }
 
-    /// *Files ▾* on a narrow page: each file, to go to it.
+    /// *Files ▾* on a narrow page: each file, to go to it. A menu on the Mac; on the Remote a
+    /// sheet with the file list's rows (#5479).
     private func filesMenu(_ proxy: ScrollViewProxy) -> some View {
+        #if os(iOS)
+        Button { filesSheet = true } label: {
+            HStack(spacing: 3) {
+                Text("Files")
+                Image(icon: "chevron.down").appText(.fine).accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(.paper)
+        .fixedSize()
+        .accessibilityLabel("Files")
+        .accessibilityHint("Shows the files, to go to one")
+        #else
         Menu {
             ForEach(diff.files) { file in
                 Button {
@@ -121,7 +149,39 @@ struct DiffFilesView: View {
         }
         .fixedSize()
         .help("Go to a file")
+        #endif
     }
+
+    #if os(iOS)
+    /// The sheet of *Files ▾*: a row per file, as the wide page's list; a tap closes the sheet
+    /// and goes to the file.
+    private func filesSheetPage(_ proxy: ScrollViewProxy) -> some View {
+        NavigationStack {
+            List(diff.files) { file in
+                Button {
+                    filesSheet = false
+                    Task {
+                        // After the sheet has gone, so the scroll is seen.
+                        try? await Task.sleep(for: .milliseconds(350))
+                        go(to: file.path, proxy)
+                    }
+                } label: { listRow(file) }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
+                .accessibilityLabel("\(file.path), \(file.change), \(file.additions) added, \(file.deletions) removed")
+            }
+            .listStyle(.plain)
+            .navigationTitle("\(diff.files.count) files")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { filesSheet = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+    #endif
 
     /// *+12 −3*: the signs and the numbers, in the forge's green and red.
     static func counts(added: Int, removed: Int) -> some View {
