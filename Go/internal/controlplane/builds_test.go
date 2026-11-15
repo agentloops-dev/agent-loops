@@ -26,6 +26,12 @@ func buildsRunAt(id int64, at time.Time, onDefault bool) citimings.Run {
 	return r
 }
 
+// buildsNoon is yesterday at 12:00 UTC (#5603): the tests put runs hours and a minute
+// around it, and from midnight they would fall on one day, or on two.
+func buildsNoon() time.Time {
+	return time.Now().UTC().Truncate(24 * time.Hour).Add(-12 * time.Hour)
+}
+
 func buildsDay(runs ...citimings.Run) wire.BuildsSyncDay {
 	d := wire.BuildsSyncDay{Day: citimings.DayOf(runs[0].MadeAt())}
 	for _, r := range runs {
@@ -58,7 +64,7 @@ func TestBuildsCopyAnswersOverEveryMachine(t *testing.T) {
 		_ = json.Unmarshal(b, &answer)
 		return answer
 	}
-	now := time.Now().UTC().Truncate(time.Second)
+	now := buildsNoon()
 	yesterday := now.Add(-24 * time.Hour)
 	one, two, pr := buildsRunAt(1, yesterday, true), buildsRunAt(2, now.Add(-time.Hour), true), buildsRunAt(3, now.Add(-30*time.Minute), false)
 	repo := "github:alexec/agents"
@@ -143,7 +149,7 @@ func TestBuildsSweepBoundsAStoppedMachine(t *testing.T) {
 	p := startPlane(t, mem, controllink.NewPrivateKey())
 	host := p.host("OWNERS-MAC").member.Host
 	ctx := context.Background()
-	now := time.Now().UTC().Truncate(time.Second)
+	now := buildsNoon()
 	old := buildsRunAt(1, now.AddDate(0, 0, -citimings.KeepDays-1), true)
 	pr20 := buildsRunAt(2, now.AddDate(0, 0, -20), false)
 	main20 := buildsRunAt(3, now.AddDate(0, 0, -20).Add(time.Minute), true)
