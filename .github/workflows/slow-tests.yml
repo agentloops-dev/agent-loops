@@ -154,7 +154,7 @@ jobs:
   # something else gets a cached pass when that thing changes (the spike's false pass, #5613).
   # Here the task runs, and when it fails at a hash where main's cache has a pass, an input is
   # missing: this files a bug that names the task. The tasks and the runners are the ci.yml go
-  # and go-darwin jobs'. It saves no cache.
+  # and test jobs'. It saves no cache.
   nx-no-cache:
     if: github.event_name == 'schedule' || inputs.nx
     strategy:

@@ -17,7 +17,7 @@
 #                                     icons, the Dock moods, the menu bar template, and the icons,
 #                                     favicons and touch icons of the web page, the docs site and www
 #   scripts/design.sh marks --check   write nothing; fail when a mark is not what `marks` makes
-#                                     (CI's `marks` job, #4615): the same bytes, or for a PNG the
+#                                     (CI's `apps` job, #4615): the same bytes, or for a PNG the
 #                                     same size and every channel within 8/255
 #   scripts/design.sh icons           make the Lucide symbols (#4976): fetch lucide-static at the
 #                                     version and integrity design/icons.json pins, and write
