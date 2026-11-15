@@ -1,0 +1,65 @@
+/* The Files changed page (#5477, specs/pr-files-changed-page/spec.md): the header, the file list beside the diff on a
+   page 700 px wide or more (Files ▾ in a sheet on a narrower one), and a card per file with a sticky header. */
+.work-files-page .files-head { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin: 4px 0 2px; }
+.work-files-page .files-head h2 { margin: 0; }
+.files-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto; }
+.work-files-page:not(.wide) .files-tools { width: 100%; margin-left: 0; }
+.files-open-on { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+.work-files-page:not(.wide) .files-open-on { margin-left: auto; }
+.work-files-page .files-head .tabs { margin: 0; border-bottom: none; }
+.work-files-page .files-head .tabs button { padding: 4px 10px 6px; }
+.files-pick { display: inline-flex; gap: 4px; align-items: center; }
+.work-files-page .files-fresh { margin: 0 0 12px; }
+.work-files-page .plus { color: var(--forge-open); font-variant-numeric: tabular-nums; }
+.work-files-page .minus { color: var(--forge-closed); font-variant-numeric: tabular-nums; }
+.work-files-page .change, .files-sheet .change { font-size: 0.75rem; color: var(--paper-tertiary); }
+.files-empty { padding: 40px 0; text-align: center; }
+
+.files-body { display: block; }
+.work-files-page.wide .files-body { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.files-side { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; }
+
+/* The list: the filter, then a row per file, its name, its folder under it, and its counts. */
+.files-list { display: flex; flex-direction: column; gap: 8px; }
+.files-list input[type="search"] { width: 100%; box-sizing: border-box; }
+.files-list ul { list-style: none; margin: 0; padding: 0; }
+.files-list li button { display: flex; gap: 8px; align-items: center; width: 100%; padding: 5px 8px; border: none; border-radius: var(--radius-control);
+  background: none; color: inherit; font: inherit; text-align: left; }
+.files-list li button:hover { background: var(--paper-wash); }
+.files-list .words { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+.files-list .name, .files-list .folder { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files-list .name { font-size: 0.8125rem; }
+.files-list .counts { flex: none; }
+.files-list.placeholder .bar { display: block; height: 12px; margin: 6px 0; border-radius: 6px; background: var(--paper-wash); }
+.files-list.placeholder .bar.short { width: 60%; }
+
+/* The cards: a bordered card per file, its header sticky while its lines scroll; a click on it collapses the card. */
+.files-cards { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.files-cards > p { margin: 0; }
+.work-files-page .files-card { margin: 0; }
+.files-card { border: 1px solid var(--paper-rule); border-radius: var(--radius-card); background: var(--paper-raised); }
+.files-card-head { box-sizing: border-box; position: sticky; top: 0; z-index: 1; display: flex; gap: 8px; align-items: center; width: 100%; padding: 8px 12px;
+  border: none; border-bottom: 1px solid var(--paper-rule); border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: var(--paper-well); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.files-card.collapsed .files-card-head { border-bottom: none; border-radius: var(--radius-card); }
+.files-card-head .path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 0.8125rem/1.4 var(--font-mono); }
+.files-card-head .spacer { flex: 1; }
+.files-card-head .counts { flex: none; }
+.files-card .file-diff { border-radius: 0 0 var(--radius-card) var(--radius-card); background: var(--paper-raised); }
+.files-note { margin: 0; padding: 10px 12px; }
+.files-cards.placeholder .files-card-head { cursor: default; }
+.files-cards.placeholder .bar { display: block; height: 12px; width: 40%; border-radius: 6px; background: var(--paper-wash); }
+.files-cards.placeholder .files-card-lines { height: 120px; }
+@media (prefers-reduced-motion: no-preference) {
+  .files-cards.placeholder .bar, .files-list.placeholder .bar { animation: work-shimmer 1.6s ease-in-out infinite alternate; }
+}
+
+/* Files ▾'s sheet, on a page under 700 px. */
+dialog.sheet:has(.files-sheet) { width: min(420px, calc(100vw - 32px)); box-sizing: border-box; }
+.files-sheet { display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 120px); min-width: 0; }
+.files-sheet > * { min-width: 0; }
+.files-sheet header { display: flex; align-items: center; gap: 8px; }
+.files-sheet header .spacer { flex: 1; }
+.files-sheet .files-list { overflow-y: auto; }
+.files-sheet .plus { color: var(--forge-open); }
+.files-sheet .minus { color: var(--forge-closed); }

@@ -2,8 +2,8 @@
 // status menu (#3260) and the labels picker on any item; on a pull request the merge box (Merge, Approve, Rerun
 // failed and the failed checks' logs), Files changed and the Checks page (#4408). Each goes to the machine that read the
 // item (forge/*), as the person: their own click, so no approval card. `wrote` reads the page again.
-import { signal, useSignal } from "@preact/signals";
-import { useEffect, useMemo, useRef } from "preact/hooks";
+import { useSignal } from "@preact/signals";
+import { useEffect, useRef } from "preact/hooks";
 import type { ForgeCheck, ForgeDone, ForgeItemDetail, ForgeLabel, ForgeMergeMethod, LineageNode } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
@@ -12,8 +12,6 @@ import {
   checkSign, checksInOrder, checksPageWords, filesChangedWords, mergeMain, noWriter, offers, readyOnForge, resolveOnForge,
   type MergeBox, type MergeRow,
 } from "../model/workPull";
-import type { Diff } from "./chat/appViewBridge";
-import { ViewDiff } from "./chat/ViewDiff";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
 import { Modal } from "./Modal";
 import { StateIcon } from "./WorkParts";
@@ -178,38 +176,20 @@ export function WorkMergeBox({ store, host, detail, box, writes, waiting = false
 }
 
 /** Files changed 6 (pull-request.md note 5), as the window's WorkFilesChanged: a bordered button at the title's
- * trailing end, or (`row`, a page under 700 px) a full-width row, Files changed · 6 ›. It opens the diff (forge/diff)
- * as a sheet. */
-export function WorkFilesChanged({ store, host, detail, row = false }: { store: Store; host: string; detail: ForgeItemDetail; row?: boolean }) {
-  const loading = useSignal(false);
-  const problem = useSignal<string | null>(null);
-  const diff = useMemo(() => signal<Diff | null>(null), []);
-  const node = detail.item.node;
+ * trailing end, or (`row`, a page under 700 px) a full-width row, Files changed · 6 ›. It pushes the Files changed page
+ * (WorkFilesPage, #5477) in the pull request's place. */
+export function WorkFilesChanged({ detail, open, row = false }: { detail: ForgeItemDetail; open: () => void; row?: boolean }) {
   if (!offers(detail, "diff")) return null;
-  const show = async () => {
-    loading.value = true;
-    problem.value = null;
-    try {
-      const d = await store.link.call("forge/diff", { node }, host);
-      diff.value = { title: `${shortRef(node.ref)} ${detail.item.title}`, url: d.url, files: d.files, cut: d.cut, site: forgeName(node.ref) };
-    } catch (e) {
-      problem.value = describe(e);
-    } finally {
-      loading.value = false;
-    }
-  };
   const n = detail.filesChanged;
   return (
     <span class={row ? "work-files-row" : "work-files"}>
-      <button type="button" disabled={loading.value} onClick={() => void show()} title="The pull request's diff">
+      <button type="button" onClick={open} title="The pull request's diff">
         <svg class="work-files-glyph" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M5.5 1.75h5.25l3 3v7.5a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1v-9.5a1 1 0 0 1 1-1ZM2.25 4.5v9.25a1 1 0 0 0 1 1h7" /></svg>
-        {row ? <><span class="words">Files changed</span>{loading.value && <span class="work-spinner" aria-label="Loading" />}
+        {row ? <><span class="words">Files changed</span>
           {n !== undefined && <span class="quiet">{n}</span>}<Icon name="chevron-right" class="quiet" /></>
-          : <>{filesChangedWords(n)}{loading.value && <span class="work-spinner" aria-label="Loading" />}</>}
+          : <>{filesChangedWords(n)}</>}
       </button>
-      {problem.value && <span class="hint failure small">{problem.value}</span>}
-      <ViewDiff layer={{ diff }} openLink={openLink} />
     </span>
   );
 }

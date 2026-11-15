@@ -66,3 +66,23 @@ People expect what GitHub gives: a full page, and green and red lines.
 Core: Mac, Remote and web. No wire change: `forge/diff` already returns files and hunks. The
 page's views are in `Shared/UI` (`DiffFilesView`, `WorkFilesPage`), so the Remote (#5479) draws
 the same page; until it does, the Remote keeps the sheet, which already draws `DiffFilesView`.
+
+## The web page (#5477)
+
+`Web/src/views/WorkFilesPage.tsx`, words in `Web/src/model/filesPage.ts`. Where it differs from
+the page above, and why:
+
+- **Back:** ‹ *#21* above the header, or Escape, as the web's Checks page. The page is not in the
+  address yet (no `#/work/pr/<ref>/files`): it is a state of the pull request's page, as the
+  Checks page is.
+- **The top line:** *Files changed*, *6 files · +11 −6*, then **Unified | Split**, **Collapse all**
+  (**Expand all** when every file is folded) and **On GitHub**.
+- **The file list from 700 px**, not 900, with a **filter** at its top (every word in the path, any
+  case; *No file matches*). It stays in view as the diff scrolls.
+- **Files ▾ under 700 px** opens the same list, with the filter, in a sheet; a file closes the
+  sheet and goes to its card.
+- **States:** placeholder cards while it reads, *No files changed.* when there are none, and
+  *Last update* under the header: the web page says when the diff was read (#5139).
+- Decided (web, #5477): the list from 700 px, the width the Work page already changes at, and
+  the filter, because a long pull request's list needs one. Alex approved the page's screenshots
+  on #5602.
