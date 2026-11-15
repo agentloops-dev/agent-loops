@@ -72,7 +72,6 @@ struct DashboardView: View {
                 .appText(.supporting).foregroundStyle(Paper.secondary)
             if model.selectedFolderKey != nil {
                 Button("New Session") {
-                    model.showsDashboard = false
                     model.composing = true
                 }
                 .buttonStyle(.paperProminent)
