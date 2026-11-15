@@ -1511,6 +1511,10 @@
         "startedFrom": {
           "$ref": "#/definitions/StartedFrom",
           "description": "An agent on another machine started it, through the control plane (#2887): its chat says who."
+        },
+        "autoChose": {
+          "type": "string",
+          "description": "The line the control plane made when Auto picked this machine (#5375), \"Auto chose Mac mini: you last started here.\": the session's chat says it first. A client sends what sessions/previewStart gave in text."
         }
       },
       "required": [

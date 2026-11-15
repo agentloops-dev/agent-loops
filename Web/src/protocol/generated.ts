@@ -13113,6 +13113,26 @@ export interface SecretReleased {
 }
 
 /**
+ * secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask
+ * before use off, with its value; else none, and the names that were looked for. A name with Ask
+ * before use on is never read: it is in refused, so the step can say so.
+ */
+export interface SecretSignInKey {
+  name?: string;
+  value?: string;
+  looked: string[];
+  refused: string[];
+}
+
+/**
+ * secrets/signInKey (#5361): the key a person has in Secrets for a runtime, for step 7 of a
+ * machine's set-up.
+ */
+export interface SecretSignInKeyRequest {
+  runtimeID: string;
+}
+
+/**
  * secrets/terminalValue (#4179): agents-secret NAME with no session's grant, such as from a
  * terminal.
  */
@@ -14320,6 +14340,12 @@ export interface StartRequest {
    * An agent on another machine started it, through the control plane (#2887): its chat says who.
    */
   startedFrom?: StartedFrom;
+  /**
+   * The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini:
+   * you last started here.": the session's chat says it first. A client sends what
+   * sessions/previewStart gave in text.
+   */
+  autoChose?: string;
 }
 
 /**
@@ -16565,6 +16591,7 @@ export interface Methods {
   "secrets/sessionRemove": { params: SessionSecretRemoveRequest; result: SessionSecrets };
   "secrets/sessionSet": { params: SessionSecretSetRequest; result: SessionSecrets };
   "secrets/setNeedsApproval": { params: SecretNeedsApprovalRequest; result: Empty };
+  "sessions/previewStart": { params: AutoMachineRequest; result: AutoMachinePick };
   "settings/passThrough": { params: Empty; result: PassThroughState };
   "signIn/approve": { params: SignInDecide; result: Empty };
   "signIn/configure": { params: SignInConfigure; result: SignInProviders };
@@ -16611,7 +16638,9 @@ export interface Methods {
   "views/show": { params: ViewShowRequest; result: Empty };
   "wake/set": { params: WakeSettings; result: WakeSettings };
   "wake/settings": { params: Empty; result: WakeSettings };
+  "work/dismiss-lead": { params: WorkDismissLeadRequest; result: ForgeDone };
   "work/features": { params: WorkFeaturesRequest; result: WorkFeatures };
+  "work/suggest-leads": { params: WorkSuggestLeadsRequest; result: WorkSuggestLeads };
   "work/timeline": { params: WorkTimelineRequest; result: WorkTimeline };
   "workflows/approve": { params: WorkflowApproveRequest; result: WorkflowSummary };
   "workflows/archive": { params: WorkflowArchiveRequest; result: WorkflowSummary };
@@ -17021,6 +17050,7 @@ export const MethodTarget = {
   "secrets/sessionRemove": "host",
   "secrets/sessionSet": "host",
   "secrets/setNeedsApproval": "host",
+  "sessions/previewStart": "control",
   "settings/passThrough": "host",
   "signIn/approve": "control",
   "signIn/configure": "control",
@@ -17067,7 +17097,9 @@ export const MethodTarget = {
   "views/show": "host",
   "wake/set": "host",
   "wake/settings": "host",
+  "work/dismiss-lead": "host",
   "work/features": "host",
+  "work/suggest-leads": "host",
   "work/timeline": "host",
   "workflows/approve": "host",
   "workflows/archive": "host",
@@ -18188,6 +18220,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SecretRelease: { required: ["name", "encapsulated", "approval"], optional: [] },
   SecretReleaseKey: { required: ["publicKey"], optional: [] },
   SecretReleased: { required: ["key"], optional: [] },
+  SecretSignInKey: { required: ["looked", "refused"], optional: ["name", "value"] },
+  SecretSignInKeyRequest: { required: ["runtimeID"], optional: [] },
   SecretTerminalRequest: { required: ["name"], optional: ["command"] },
   SecretTerminalValue: { required: [], optional: ["value", "request", "words"] },
   SecretsLeft: { required: ["host", "name", "secrets"], optional: [] },
@@ -18310,7 +18344,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SlashCommand: { required: ["name"], optional: ["description", "inputHint"] },
   SpendCaps: { required: [], optional: ["dailyUSD"] },
   StartOptions: { required: ["values", "extraArguments"], optional: [] },
-  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "persona", "levels", "purpose", "accountID", "voice", "startedFrom"] },
+  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "autoChose"] },
   StartedFrom: { required: ["machine", "agent", "who"], optional: [] },
   StartedMachinePreview: { required: ["host", "name", "state", "unpushed"], optional: ["unknown"] },
   StartingPoint: { required: ["repository", "commit"], optional: [] },

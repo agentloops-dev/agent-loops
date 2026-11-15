@@ -26,6 +26,9 @@ public enum DaemonAPI {
         public static let runtimesSignInStart = "runtimes/signInStart"
         public static let runtimesSignInFinish = "runtimes/signInFinish"
         public static let runtimesSignInKey = "runtimes/signInKey"
+        /// The key a person has in Secrets for a runtime, to sign it in on a machine being set up
+        /// (#5361): `SecretSignInKeyRequest` → `SecretSignInKey`. Asked of this Mac's host.
+        public static let secretsSignInKey = "secrets/signInKey"
         public static let sessionsList = "sessions/list"
         public static let sessionsAdopt = "sessions/adopt"
         public static let sessionsDelete = "sessions/delete"
@@ -1145,6 +1148,9 @@ public enum DaemonAPI {
         /// The values in the shared words (#2658). With `runtimeID` "auto" the daemon picks
         /// the runtime.
         public var levels: Levels?
+        /// The line the control plane made when Auto picked this machine (#5375): the
+        /// session's chat says it first.
+        public var autoChose: String?
 
         public init(runtimeID: String, cwd: URL, prompt: String,
                     attachments: [Attachment] = [],
@@ -1153,8 +1159,9 @@ public enum DaemonAPI {
                     worktree: WorktreeChoice? = nil, requestID: UUID? = nil,
                     sandbox: SandboxChoice? = nil, labels: [String] = [], persona: String? = nil,
                     purpose: AgentPurpose? = nil, accountID: String? = nil, voice: Bool? = nil,
-                    levels: Levels? = nil) {
+                    levels: Levels? = nil, autoChose: String? = nil) {
             self.levels = levels
+            self.autoChose = autoChose
             self.accountID = accountID
             self.voice = voice
             self.persona = persona
@@ -1195,6 +1202,7 @@ public enum DaemonAPI {
             accountID = try c.decodeIfPresent(String.self, forKey: .accountID)
             voice = try c.decodeIfPresent(Bool.self, forKey: .voice)
             levels = try c.decodeIfPresent(Levels.self, forKey: .levels)
+            autoChose = try c.decodeIfPresent(String.self, forKey: .autoChose)
         }
 
         /// What goes to the runtime: the words, then whatever was attached.
@@ -2511,6 +2519,27 @@ public enum DaemonAPI {
         public init(runtimeID: String, key: String) {
             self.runtimeID = runtimeID
             self.key = key
+        }
+    }
+
+    /// `secrets/signInKey` (#5361): the runtime to find a key for.
+    public struct SecretSignInKeyRequest: Codable, Sendable {
+        public var runtimeID: String
+        public init(runtimeID: String) { self.runtimeID = runtimeID }
+    }
+
+    /// The first of the runtime's secret names that is set with Ask before use off, with its value; else
+    /// none. A name with Ask before use on is never given: it is in `refused`.
+    public struct SecretSignInKey: Codable, Sendable, Equatable {
+        public var name: String?
+        public var value: String?
+        public var looked: [String]
+        public var refused: [String]
+        public init(name: String? = nil, value: String? = nil, looked: [String] = [], refused: [String] = []) {
+            self.name = name
+            self.value = value
+            self.looked = looked
+            self.refused = refused
         }
     }
 

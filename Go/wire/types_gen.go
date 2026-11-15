@@ -13970,6 +13970,22 @@ type SecretReleased struct {
 	Key Data `json:"key"`
 }
 
+// secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask before use off, with its value; else none, and the names that were looked for. A name with Ask before use on is never read: it is in refused, so the step can say so.
+type SecretSignInKey struct {
+	Name *string `json:"name,omitzero"`
+
+	Value *string `json:"value,omitzero"`
+
+	Looked []string `json:"looked"`
+
+	Refused []string `json:"refused"`
+}
+
+// secrets/signInKey (#5361): the key a person has in Secrets for a runtime, for step 7 of a machine's set-up.
+type SecretSignInKeyRequest struct {
+	RuntimeID string `json:"runtimeID"`
+}
+
 // secrets/terminalValue (#4179): agents-secret NAME with no session's grant, such as from a terminal.
 type SecretTerminalRequest struct {
 	Name string `json:"name"`
@@ -15284,6 +15300,9 @@ type StartRequest struct {
 
 	// An agent on another machine started it, through the control plane (#2887): its chat says who.
 	StartedFrom *StartedFrom `json:"startedFrom,omitzero"`
+
+	// The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini: you last started here.": the session's chat says it first. A client sends what sessions/previewStart gave in text.
+	AutoChose *string `json:"autoChose,omitzero"`
 }
 
 // The agent on another machine that started a session with start_session (#2887). The control plane writes machine and who; the asking host writes agent.

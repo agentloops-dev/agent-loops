@@ -94,7 +94,8 @@ jobs:
     # The project targets the macOS and iOS 27 SDKs, which only this image has.
     # A preview image while macOS 27 is new; move to macos-27 when it is GA.
     runs-on: xcode-27
-    # Room for both schemes and the Remote from cold.
+    # Room for both schemes and the Remote from cold. The "Time left for" steps below read
+    # the same number as JOB_MINUTES; change them together.
     timeout-minutes: 30
     permissions:
       contents: read
@@ -102,6 +103,11 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
     steps:
+      # For the step budgets below (scripts/ci-time-left.sh, #5609).
+      - name: Start the clock
+        id: clock
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       # The cache keys read the tree, not the history, and nothing here selects suites.
       - uses: actions/checkout@v6
       # A build graph is only good for the toolchain that wrote it. SwiftPM bakes
@@ -230,8 +236,16 @@ jobs:
       # One scheme after the other, and with plug-in validation skipped: without it
       # SwiftTerm's plug-in fails and says nothing. No signing on a runner. Agents, the one
       # Mac app (#4224), carries agentsd and agents-control (Go).
+      - name: Time left for the Mac build
+        id: budget-mac
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 30
+          RESERVE: 4
+        run: bash scripts/ci-time-left.sh
       - name: Build Agents (macOS)
         id: build-mac
+        timeout-minutes: ${{ fromJSON(steps.budget-mac.outputs.minutes) }}
         env:
           RESTORED: ${{ steps.xcode-cache.outputs.cache-matched-key }}
         run: |
@@ -265,8 +279,16 @@ jobs:
       # slice nothing runs on these Apple Silicon runners and nothing ships: in October
       # 2026 that was about half of this step's 3–6.5 minutes, the longest pole of a
       # pull request's run. The sources compiled are the same either way.
+      - name: Time left for the Remote build
+        id: budget-remote
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 30
+          RESERVE: 2
+        run: bash scripts/ci-time-left.sh
       - name: Build Remote (iOS Simulator)
         id: build-remote
+        timeout-minutes: ${{ fromJSON(steps.budget-remote.outputs.minutes) }}
         env:
           RESTORED: ${{ steps.xcode-cache.outputs.cache-matched-key }}
         run: |
@@ -315,8 +337,8 @@ jobs:
     # ten minutes, and a run the selector chose as `full` takes longer than that on this
     # runner: the job was cancelled at the cap with every test before it passing, on
     # main as well as on a branch (run 36642820605). The selection is what keeps this
-    # small; the cap has to fit the run it lets through. "Time left for the AgentsKit
-    # tests" below reads the same number as JOB_MINUTES; change both together.
+    # small; the cap has to fit the run it lets through. The "Time left for" steps below
+    # read the same number as JOB_MINUTES; change them together.
     timeout-minutes: 30
     permissions:
       contents: read
@@ -324,7 +346,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
     steps:
-      # For the AgentsKit tests' budget below.
+      # For the step budgets below (scripts/ci-time-left.sh, #5609).
       - name: Start the clock
         id: clock
         run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
@@ -431,9 +453,18 @@ jobs:
       # Every build below that starts from a restored cache gets one more go from clean
       # when it fails (scripts/ci-clean-retry.sh says why). The step only fails, and so
       # is only kept from the cache, when the clean build fails as well.
+      - name: Time left for the AgentsKit build
+        id: budget-build-agentskit
+        if: steps.test-selection.outputs.agentskit != 'skip'
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 30
+          RESERVE: 4
+        run: bash scripts/ci-time-left.sh
       - name: Build AgentsKit tests
         id: build-agentskit
         if: steps.test-selection.outputs.agentskit != 'skip'
+        timeout-minutes: ${{ fromJSON(steps.budget-build-agentskit.outputs.minutes) }}
         env:
           RESTORED: ${{ steps.agentskit-cache.outputs.cache-matched-key }}
         run: |
@@ -467,9 +498,18 @@ jobs:
         run: time zsh -lc 'printf %s "$PATH"' > /dev/null
 
       # Build CodeText tests before execution so the cache can be saved before tests.
+      - name: Time left for the CodeText build
+        id: budget-build-codetext
+        if: steps.test-selection.outputs.codetext != 'skip'
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 30
+          RESERVE: 3
+        run: bash scripts/ci-time-left.sh
       - name: Build CodeText tests
         id: build-codetext
         if: steps.test-selection.outputs.codetext != 'skip'
+        timeout-minutes: ${{ fromJSON(steps.budget-build-codetext.outputs.minutes) }}
         env:
           RESTORED: ${{ steps.swiftpm-cache.outputs.cache-matched-key }}
         run: |
@@ -491,8 +531,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh macos-xcode-27-swiftpm- 'macos-xcode-27-swiftpm-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.swiftpm }}' "$GITHUB_REF"
 
+      - name: Time left for the CodeText tests
+        id: budget-test-codetext
+        if: steps.test-selection.outputs.codetext != 'skip'
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 30
+          RESERVE: 3
+        run: bash scripts/ci-time-left.sh
       - name: Test CodeText
         if: steps.test-selection.outputs.codetext != 'skip'
+        timeout-minutes: ${{ fromJSON(steps.budget-test-codetext.outputs.minutes) }}
         env:
           TEST_FILTER: ${{ steps.test-selection.outputs.codetext_filter }}
           TEST_MODE: ${{ steps.test-selection.outputs.codetext }}
@@ -503,23 +552,20 @@ jobs:
             swift test --skip-build --package-path Packages/CodeText
           fi
 
-      # A job that reaches its timeout-minutes ends Cancelled, not Failed (#897): no
-      # checks.failed, no red mark, and a pull request with auto-merge on waits for a
-      # required check that will never come. A step's own timeout fails the step, so the
-      # tests get what the job has left, less two minutes for the steps after them, and a
-      # slow run ends red before the job's cap can cancel it.
+      # A job that reaches its timeout-minutes ends Cancelled, not Failed: no checks.failed,
+      # no red mark, and a pull request with auto-merge on waits for a required check that
+      # will never come. A step's own timeout fails the step, so each long step gets what
+      # the job has left, less a reserve for the steps after it, and a slow run ends red
+      # before the job's cap can cancel it (scripts/ci-time-left.sh, #5609).
       - name: Time left for the AgentsKit tests
         id: budget
         if: steps.test-selection.outputs.agentskit != 'skip'
         env:
           START: ${{ steps.clock.outputs.start }}
           JOB_MINUTES: 30
-        run: |
-          left=$(( JOB_MINUTES - 2 - ($(date +%s) - START) / 60 ))
-          (( left > 25 )) && left=25
-          (( left < 1 )) && left=1
-          echo "The AgentsKit tests have ${left} minutes."
-          echo "minutes=${left}" >> "$GITHUB_OUTPUT"
+          RESERVE: 2
+          MAX: 25
+        run: bash scripts/ci-time-left.sh
 
       - name: Test AgentsKit
         if: steps.test-selection.outputs.agentskit != 'skip'
@@ -567,7 +613,7 @@ jobs:
           run_agentskit_tests
 
   # The check main requires. It used to be the whole macOS job; now it reads the two that
-  # replaced it. A job that failed or was cancelled (at its cap, #897) makes this red; a job
+  # replaced it. A job that failed or was cancelled (at its cap) makes this red; a job
   # skipped for want of work passes, as a skipped `test` did. `always()` without
   # `!cancelled()`: a skipped required check reads as a pass, so a cancelled run must end
   # here red rather than skip it.
@@ -595,6 +641,7 @@ jobs:
     needs: select
     if: ${{ always() && !cancelled() && (needs.select.result != 'success' || needs.select.outputs.go != 'skip') }}
     runs-on: ubuntu-latest
+    # The "Time left for" step below reads the same number as JOB_MINUTES; change both.
     timeout-minutes: 20
     permissions:
       contents: read
@@ -603,6 +650,12 @@ jobs:
       run:
         working-directory: Go
     steps:
+      # For the step budgets below (scripts/ci-time-left.sh, #5609).
+      - name: Start the clock
+        id: clock
+        working-directory: .
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
       # The build cache is our own below, not setup-go's (#2512). setup-go keys it on go.mod
       # alone, so it held whatever the first run after a go.mod change compiled: by the
@@ -628,11 +681,23 @@ jobs:
           restore-keys: |
             go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
             go-race-${{ runner.os }}-
+      # Build and Vet take under a minute each; their caps leave the tests most of the job.
       - name: Build
+        timeout-minutes: 5
         run: go build ./...
       - name: Vet
+        timeout-minutes: 4
         run: go vet ./...
+      - name: Time left for the Go tests
+        id: budget
+        working-directory: .
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 20
+          RESERVE: 3
+        run: bash scripts/ci-time-left.sh
       - name: Test
+        timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
         # `shell: bash` adds `-o pipefail`, so main's `go test` into `tee` still fails (#4385).
         shell: bash
         run: |
@@ -713,19 +778,37 @@ jobs:
     needs: select
     if: ${{ always() && !cancelled() && (needs.select.result != 'success' || needs.select.outputs.go != 'skip') }}
     runs-on: macos-latest
+    # The "Time left for" step below reads the same number as JOB_MINUTES; change both.
     timeout-minutes: 20
     defaults:
       run:
         working-directory: Go
     steps:
+      # For the step budgets below (scripts/ci-time-left.sh, #5609).
+      - name: Start the clock
+        id: clock
+        working-directory: .
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version-file: Go/go.mod
           cache-dependency-path: Go/go.mod
+      # Vet takes about a minute here, with the module downloads.
       - name: Vet
+        timeout-minutes: 6
         run: go vet ./...
+      - name: Time left for the Go tests
+        id: budget
+        working-directory: .
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 20
+          RESERVE: 1
+        run: bash scripts/ci-time-left.sh
       - name: Test
+        timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
         run: TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P) go test ./...
 
   # The Blob's marks (#4615): every icon, favicon and touch icon is what `scripts/design.sh

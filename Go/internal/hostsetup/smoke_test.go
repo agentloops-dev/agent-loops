@@ -110,3 +110,38 @@ func TestSmokeSaysNothingWhileTheRuntimeNeedsASignIn(t *testing.T) {
 		t.Fatalf("err=%v report=%+v started=%v", err, r, h.started)
 	}
 }
+
+// #5361: step 7 is running while a client writes a key, needs you after that, and done when
+// every runtime says it is available; a runtime nobody signed in fails it.
+func TestSignInWaitsForTheClientThenNeedsYouThenFails(t *testing.T) {
+	h := &smokeHost{}
+	o, l := options(t)
+	o.Runtimes = []string{"claude"}
+	rep, err := NewReporter(l.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Deps{Call: h.call, Poll: time.Millisecond, KeyWait: 5 * time.Millisecond, SignInWait: 40 * time.Millisecond}
+	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err == nil {
+		t.Fatal("a runtime nobody signed in passed")
+	}
+	var states []wire.MachineSetupState
+	for _, r := range reports(t, l) {
+		if r.Step == wire.MachineSetupStepIDSignIn {
+			states = append(states, r.State)
+		}
+	}
+	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateFailed}
+	if fmt.Sprint(states) != fmt.Sprint(want) {
+		t.Fatalf("states %v, want %v", states, want)
+	}
+
+	h.signedIn = true
+	rep, _ = NewReporter(l.Root)
+	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err != nil {
+		t.Fatal(err)
+	}
+	if r := lastOf(reports(t, l), wire.MachineSetupStepIDSignIn); r == nil || r.State != wire.MachineSetupStateDone {
+		t.Fatalf("report %+v", r)
+	}
+}

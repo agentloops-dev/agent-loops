@@ -1426,5 +1426,21 @@
     "changes": {"base": "0.18.0", "head": "0.18.1-dev.544+g8162a5a06", "ahead": 544, "behind": 0,
       "changes": [{"number": 5250, "title": "toolsets: bump codex-acp", "sha": "8162a5a06"}], "complete": false},
     "changesError": "changesError", "history": [{"version": "0.18.0", "since": 812345678.5}],
-    "others": [{"host": "other", "name": "linux-server", "version": "0.18.0", "since": 812345678.5, "ahead": 0, "behind": 544}]}
+    "others": [{"host": "other", "name": "linux-server", "version": "0.18.0", "since": 812345678.5, "ahead": 0, "behind": 544}]},
+  "AutoMachineRequest": {
+    "project": "p-1",
+    "runtimeID": "claude"
+  },
+  "AutoMachinePick": {
+    "machine": "mini",
+    "machineName": "Mac mini",
+    "tier": "ok",
+    "reason": "leastLoaded",
+    "loadPerCore": 0.4,
+    "commit": "abc1234",
+    "text": "Auto chose Mac mini: least busy, load 0.4 per core.",
+    "none": "offline",
+    "offline": ["devbox"],
+    "single": false
+  }
 }

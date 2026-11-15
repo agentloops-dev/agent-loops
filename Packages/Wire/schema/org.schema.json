@@ -6192,6 +6192,48 @@
       ],
       "additionalProperties": false
     },
+    "SecretSignInKey": {
+      "type": "object",
+      "description": "secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask before use off, with its value; else none, and the names that were looked for. A name with Ask before use on is never read: it is in refused, so the step can say so.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "looked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "refused": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "looked",
+        "refused"
+      ],
+      "additionalProperties": false
+    },
+    "SecretSignInKeyRequest": {
+      "type": "object",
+      "description": "secrets/signInKey (#5361): the key a person has in Secrets for a runtime, for step 7 of a machine's set-up.",
+      "properties": {
+        "runtimeID": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtimeID"
+      ],
+      "additionalProperties": false
+    },
     "SecretTerminalRequest": {
       "type": "object",
       "description": "secrets/terminalValue (#4179): agents-secret NAME with no session's grant, such as from a terminal.",
