@@ -267,6 +267,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
                     Text(item.name).appText(.code).lineLimit(1)
                     Spacer(minLength: 8)
                     Text(SecretsPage.rowHint(item)).appText(.code).foregroundStyle(.secondary)
+                        .accessibilityElement(children: .ignore)
                         .accessibilityLabel(item.isCard ? "Card" : item.hint.map { "Ends in \($0)" } ?? "Value hidden")
                     if let age = SecretsPage.shortAge(item, now: context.date) {
                         Text(age).appText(.fine).foregroundStyle(.secondary).monospacedDigit()
@@ -540,6 +541,7 @@ private struct SecretDetail: View {
                         SecretShownValue(row: row, shown: shown, show: show, control: control)
                     } else {
                         Text(item.isCard ? "Card" : SecretInfoWords.hint(item.hint)).appText(.code)
+                            .accessibilityElement(children: .ignore)
                             .accessibilityLabel(item.hint.map { "Ends in \($0)" } ?? "Value hidden")
                     }
                     if let show, let row { SecretShowLines(row: row, show: show) }
