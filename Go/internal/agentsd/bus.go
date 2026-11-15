@@ -92,12 +92,12 @@ func (d *Daemon) publishSoon(e wire.Event) {
 	d.busPendingData += len(data)
 	d.busPending = append(d.busPending, busPending{event: b, data: data})
 	if d.busTimer == nil {
-		d.busTimer = time.AfterFunc(busPublishAfter, func() {
+		d.busTimer = time.AfterFunc(busPublishAfter, d.jobFunc("bus timer", func() {
 			d.busMu.Lock()
 			d.busTimer = nil
 			d.busMu.Unlock()
 			d.publishBus()
-		})
+		}))
 	}
 }
 

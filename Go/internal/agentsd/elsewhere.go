@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -58,6 +57,9 @@ type elsewhereFile struct {
 	// Watchers is who on other machines waits on a session here, not its starter (#3277);
 	// told once when it ends.
 	Watchers []startedHere `json:"watchers,omitempty"`
+	// Messengers is who on other machines sent a session here a message as an agent of its
+	// project (#3277), not its starter: those words go at once, as a starter's do (#5618).
+	Messengers []startedHere `json:"messengers,omitempty"`
 }
 
 type startedThere struct {
@@ -115,9 +117,17 @@ func (d *Daemon) saveElsewhereLocked() {
 		}
 	}
 	f.Started, f.From = started[max(0, len(started)-elsewhereKept):], from[max(0, len(from)-elsewhereKept):]
+	var messengers []startedHere
+	for _, h := range f.Messengers {
+		if d.Store.Agent(h.Session) != nil {
+			messengers = append(messengers, h)
+		}
+	}
 	f.Watched, f.Watchers = watched[max(0, len(watched)-elsewhereKept):], watchers[max(0, len(watchers)-elsewhereKept):]
+	f.Messengers = messengers[max(0, len(messengers)-elsewhereKept):]
 	writeStore(d.elsewherePath(), elsewhereFile{Started: append([]startedThere{}, f.Started...), From: append([]startedHere{}, f.From...),
-		Watched: append([]startedThere{}, f.Watched...), Watchers: append([]startedHere{}, f.Watchers...)})
+		Watched: append([]startedThere{}, f.Watched...), Watchers: append([]startedHere{}, f.Watchers...),
+		Messengers: append([]startedHere{}, f.Messengers...)})
 }
 
 // noteWatched keeps a session of the project on another machine that an agent here waits
@@ -147,6 +157,34 @@ func (d *Daemon) noteWatcher(id wire.UUID, from wire.StartedFrom) {
 	}
 	f.Watchers = append(f.Watchers, startedHere{Session: id, From: from})
 	d.saveElsewhereLocked()
+}
+
+// noteMessenger keeps who on another machine sent a session here a message as an agent of
+// its project (#5618), once each.
+func (d *Daemon) noteMessenger(id wire.UUID, from wire.StartedFrom) {
+	d.elsewhereMu.Lock()
+	defer d.elsewhereMu.Unlock()
+	f := d.elsewhereLocked()
+	for _, h := range f.Messengers {
+		if h.Session == id && h.From.Agent == from.Agent && strings.EqualFold(h.From.Machine, from.Machine) {
+			return
+		}
+	}
+	f.Messengers = append(f.Messengers, startedHere{Session: id, From: from})
+	d.saveElsewhereLocked()
+}
+
+// messagedFromElsewhere is whether sender is a session on another machine that sent the
+// session here a message as an agent of its project (#5618).
+func (d *Daemon) messagedFromElsewhere(id, sender wire.UUID) bool {
+	d.elsewhereMu.Lock()
+	defer d.elsewhereMu.Unlock()
+	for _, h := range d.elsewhereLocked().Messengers {
+		if h.Session == id && h.From.Agent == sender {
+			return true
+		}
+	}
+	return false
 }
 
 // takeWatchers is who on other machines waits on a session here, each told only once.
@@ -378,7 +416,7 @@ func (d *Daemon) askThereWaits() {
 			}
 			caller, there := a.ID, *s
 			wg.Add(1)
-			safe.Go("status of a waited-on session elsewhere", func() {
+			d.goJob("status of a waited-on session elsewhere", func() {
 				defer wg.Done()
 				d.thereStatus(caller, there)
 			})
@@ -397,7 +435,7 @@ func (d *Daemon) listThere(caller wire.UUID) []string {
 	for i, s := range started {
 		i, s := i, s
 		wg.Add(1)
-		safe.Go("status of a session elsewhere", func() {
+		d.goJob("status of a session elsewhere", func() {
 			defer wg.Done()
 			lines[i] = "- " + string(s.Session) + ": " + quotedTitle(&s.Title) + " on " + s.Machine + ", in " + s.There + " — " + d.thereStatus(caller, s)
 		})
@@ -494,7 +532,7 @@ func (d *Daemon) tellStarter(id wire.UUID, how wire.WaitEndingHow) {
 	}
 	for _, from := range tell {
 		ended := wire.SessionEnded{Machine: from.Machine, Session: id, Starter: from.Agent, How: how, Title: title}
-		safe.Go("tell the starter", func() {
+		d.goJob("tell the starter", func() {
 			if _, err := d.askWorkspaces(id, sessionEndedMethod, ended); err != nil {
 				log.Printf("agent %s: tell %s it ended: %v", id, from.Machine, err)
 			}
@@ -632,6 +670,11 @@ func (d *Daemon) messageFromStarter(t *wire.Agent, from wire.StartedFrom, text s
 	}
 	prompt := wire.QueuedPrompt{ID: store.NewUUID(), Text: text, QueuedAt: now(), From: wire.PromptOriginAgent, Preface: &preface,
 		Sender: &sender, Attachments: []wire.Attachment{}}
+	// Its sender is in no Store here, so its turns would pass it over as from a session
+	// gone (heldMessage) without this record (#5618).
+	if member {
+		d.noteMessenger(t.ID, from)
+	}
 	l := d.live(t.ID)
 	l.mu.Lock()
 	busy := l.running || l.inTurn

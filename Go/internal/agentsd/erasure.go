@@ -17,7 +17,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -117,7 +116,7 @@ func (d *Daemon) startErasures() {
 	if !erasing {
 		return
 	}
-	safe.Go("erasures", d.eraseLoop)
+	d.goJob("erasures", d.eraseLoop)
 	d.erasures.kick <- struct{}{}
 }
 

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -230,7 +229,7 @@ func (d *Daemon) tellAllowances() {
 	wait := time.Until(d.allowTold.Add(time.Second))
 	d.allowPending = true
 	d.allowMu.Unlock()
-	safe.Go("allowances changed", func() {
+	d.goJob("allowances changed", func() {
 		if wait > 0 {
 			time.Sleep(wait)
 		}

@@ -19,8 +19,8 @@ import (
 // It starts as answered. Set it only while no call is in flight.
 func formHolds(t *testing.T) (answered, left func()) {
 	t.Helper()
-	was := formHoldLimit
-	t.Cleanup(func() { formHoldLimit = was })
+	// Put back after the test's daemons are down, which read it (#5653).
+	setFor(t, &formHoldLimit, formHoldLimit)
 	answered = func() { formHoldLimit = time.Minute }
 	left = func() { formHoldLimit = 300 * time.Millisecond }
 	answered()
@@ -33,7 +33,7 @@ func (c *conn) callError(t *testing.T, id int, method string, params any) *Error
 	p, _ := json.Marshal(params)
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
 	c.in <- string(b)
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(waitLimit(t))
 	for {
 		select {
 		case line := <-c.out:
@@ -47,7 +47,7 @@ func (c *conn) callError(t *testing.T, id int, method string, params any) *Error
 			}
 			return m.Error
 		case <-deadline:
-			t.Fatalf("%s: no answer", method)
+			waitFailed(t, "%s: no answer", method)
 		}
 	}
 }
@@ -317,9 +317,9 @@ func TestAFormIsReadAsSwiftReadsIt(t *testing.T) {
 
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(waitLimit(t)); !ok(); time.Sleep(20 * time.Millisecond) {
 		if time.Now().After(deadline) {
-			t.Fatalf("never %s", what)
+			waitFailed(t, "never %s", what)
 		}
 	}
 }

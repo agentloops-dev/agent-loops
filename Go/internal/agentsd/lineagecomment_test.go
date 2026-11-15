@@ -135,9 +135,7 @@ func TestAMergeSaysNothingWhenOff(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	fake := &fakeCommenter{}
-	was := prCommenter
-	prCommenter = fake.comment
-	defer func() { prCommenter = was }()
+	setFor(t, &prCommenter, fake.comment)
 	dir := folder(t, c, 1)
 	d.repos = map[string]forgeRepo{dir: {"github", "alexec/agents"}}
 	d.lineageEvent(wire.Event{Name: "pr.merged", Details: map[string]string{"payload": `{"pr":{"url":"https://github.com/alexec/Agents/pull/3"}}`}})

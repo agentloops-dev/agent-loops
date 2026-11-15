@@ -61,7 +61,7 @@ func (d *Daemon) askPRFacts(repo forgeRepo, n int, pr wire.LineageNode) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	go func() {
+	d.goJob("pr facts", func() {
 		slots <- struct{}{}
 		defer func() { <-slots }()
 		facts, err := ask(ctx, folder, repo, n)
@@ -70,7 +70,7 @@ func (d *Daemon) askPRFacts(repo forgeRepo, n int, pr wire.LineageNode) {
 			return
 		}
 		d.notePRFacts(pr, repo, facts)
-	}()
+	})
 }
 
 // notePRFacts keeps a merged PR's files and the PR it reverts on its node.

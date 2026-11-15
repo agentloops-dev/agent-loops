@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/creack/pty"
 )
@@ -149,7 +148,7 @@ func (d *Daemon) startHeadlessSignIn(ctx context.Context, runtimeID string) (wir
 		if err == nil {
 			copied := make(chan struct{})
 			s.copied = copied
-			safe.Go("claude sign-in output", func() { _, _ = io.Copy(s.out, s.tty); close(copied) })
+			d.goJob("claude sign-in output", func() { _, _ = io.Copy(s.out, s.tty); close(copied) })
 		}
 	} else {
 		cmd.Stdout, cmd.Stderr = s.out, s.out
@@ -159,7 +158,7 @@ func (d *Daemon) startHeadlessSignIn(ctx context.Context, runtimeID string) (wir
 		stop()
 		return wire.RuntimeSignInStep{}, &Error{Code: CodeRuntimeWillNotStart, Message: rt.Name + "'s sign-in did not start: " + err.Error()}
 	}
-	safe.Go("runtime sign-in", func() {
+	d.goJob("runtime sign-in", func() {
 		err := cmd.Wait()
 		// What it printed last is read from its terminal after it has gone.
 		if s.copied != nil {
@@ -171,7 +170,7 @@ func (d *Daemon) startHeadlessSignIn(ctx context.Context, runtimeID string) (wir
 		s.waitErr = err
 		close(s.done)
 	})
-	safe.Go("runtime sign-in time", func() {
+	d.goJob("runtime sign-in time", func() {
 		<-life.Done()
 		s.end()
 		d.dropHeadless(s)

@@ -115,6 +115,7 @@ func (d *Daemon) register() {
 	d.registerHostedMCP()
 	d.registerViews()
 	d.registerPolicy()
+	d.registerEnvironment()
 	d.registerPolicyYours()
 	d.registerPolicyFolder()
 	d.registerMCPTools()

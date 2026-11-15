@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	sdk "github.com/coder/acp-go-sdk"
 )
@@ -618,7 +617,7 @@ func (l *live) retryLater(at time.Time) {
 	if sent == nil {
 		return
 	}
-	safe.Go("rate limit retry", func() {
+	l.d.goJob("rate limit retry", func() {
 		select {
 		case <-time.After(time.Until(at)):
 		case <-l.d.ctx.Done():

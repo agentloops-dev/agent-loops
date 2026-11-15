@@ -87,9 +87,7 @@ func TestACycleBegunAsThePromptEndsIsATurnOfItsOwn(t *testing.T) {
 }
 
 func TestATurnTheRuntimeBeganEndsWhenItGoesQuiet(t *testing.T) {
-	was := unpromptedQuiet
-	unpromptedQuiet = 300 * time.Millisecond
-	defer func() { unpromptedQuiet = was }()
+	setFor(t, &unpromptedQuiet, 300*time.Millisecond)
 	d, c, id, release := backgroundBuild(t, "Quietly run the build in the background, then wait for ")
 	os.WriteFile(release, nil, 0o600)
 	c.until(t, "the quiet end", ended(id, wire.AgentStateFinished))

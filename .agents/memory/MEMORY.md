@@ -83,3 +83,4 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Ink drops Enter in a long write](ink-drops-enter-in-a-long-write.md) — claude setup-token lost the Enter sent with a real code; write the code, wait, then \r alone (#5202)
 - [Reach a codespace agentsd socket](reach-a-codespace-agentsd-socket.md) — gh codespace ssh -- -N -L forwards daemon.sock as control; server log path; no strace (ptrace_scope 1)
 - [Scratch first-open take](scratch-first-open-take.md) — question page needs --walk + AGENTS_ROOT, not launch.sh; host env, own browser, Keychain connection, SecureField; #5563/#5564 block it
+- [agentsd goroutines go through goJob](agentsd-goroutines-go-through-gojob.md) — #5653: d.goJob/d.jobFunc so Shutdown waits; tests use setFor, not a deferred restore

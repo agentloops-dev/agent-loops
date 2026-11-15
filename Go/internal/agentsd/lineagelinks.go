@@ -17,7 +17,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -549,7 +548,7 @@ func (d *Daemon) lineageDo(f func()) bool {
 	if d.linkerJobs == nil {
 		d.linkerJobs = make(chan func(), lineageJobsHeld)
 		jobs := d.linkerJobs
-		safe.Go("lineage links", func() {
+		d.goJob("lineage links", func() {
 			for job := range jobs {
 				job()
 			}
