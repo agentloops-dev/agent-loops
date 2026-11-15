@@ -83,7 +83,6 @@ jobs:
       go: ${{ steps.affected.outputs.go }}
       marks: ${{ steps.affected.outputs.marks }}
       swiftlint: ${{ steps.affected.outputs.swiftlint }}
-      toolchain: ${{ steps.affected.outputs.toolchain }}
       gomac: ${{ steps.affected.outputs.gomac }}
       skip-swift: ${{ steps.affected.outputs.skip-swift }}
       skip-gomac: ${{ steps.affected.outputs.skip-gomac }}
@@ -123,6 +122,12 @@ jobs:
           cache: false
       # Go's own caches, under Nx's: a go:test that Nx runs again still skips the packages
       # whose inputs did not change. Content-addressed, so an older restore is only less warm.
+      # Its key ends in full (the Go tasks passed) or part (they failed or ran out of time), then
+      # the run (#5704): a part restores by prefix, so a rerun and the next run start warm, and
+      # it never hits the exact key that would stop a full one from being saved.
+      - name: Go build cache key
+        id: go-key
+        run: echo "prefix=go-race-$RUNNER_OS-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" >> "$GITHUB_OUTPUT"
       - name: Restore Go build cache
         id: go-cache
         uses: actions/cache/restore@v5
@@ -131,8 +136,10 @@ jobs:
             ~/.cache/go-build
             ~/Library/Caches/go-build
             ~/go/pkg/mod
-          key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+          key: ${{ steps.go-key.outputs.prefix }}-full
           restore-keys: |
+            ${{ steps.go-key.outputs.prefix }}-full-
+            ${{ steps.go-key.outputs.prefix }}-
             go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
             go-race-${{ runner.os }}-
       # A pull request starts from its own newest cache, else main's (it can read main's, not
@@ -181,7 +188,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          apps=run swift=run go=run marks=run swiftlint=run toolchain=same
+          apps=run swift=run go=run marks=run swiftlint=run
           if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             projects=$(scripts/nx.sh show projects --affected --base="$BASE" --head=HEAD --json)
             echo "Affected: $projects"
@@ -195,10 +202,6 @@ jobs:
             # SwiftLint (swift-lint:lint, in `test`): any Swift file, its rules, its baseline or
             # lint.sh. swift-lint is affected by every change, so its own files say when.
             grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^scripts/lint\.sh$|^lint/swift/)' <<<"$changed" || swiftlint=skip
-            # A new Go toolchain (#5704): Go's build cache is keyed by the toolchain, so every
-            # Go package builds again from cold, and the macOS jobs get more time for it.
-            gover() { git show "$1:Go/go.mod" 2>/dev/null | grep -E '^(go|toolchain) ' || true; }
-            [[ "$(gover "$BASE")" == "$(gover HEAD)" ]] || toolchain=new
           fi
           # gomac is `test`'s Go on a Mac: go, but skip when an attestation covers all of it.
           gomac=$go
@@ -210,7 +213,7 @@ jobs:
             grep -qx 'all-gomac=true' <<<"$attested" && gomac=skip
             grep -qx 'all-swiftlint=true' <<<"$attested" && swiftlint=skip
           fi
-          printf 'apps=%s\nswift=%s\ngo=%s\ngomac=%s\nmarks=%s\nswiftlint=%s\ntoolchain=%s\n' "$apps" "$swift" "$go" "$gomac" "$marks" "$swiftlint" "$toolchain" | tee -a "$GITHUB_OUTPUT"
+          printf 'apps=%s\nswift=%s\ngo=%s\ngomac=%s\nmarks=%s\nswiftlint=%s\n' "$apps" "$swift" "$go" "$gomac" "$marks" "$swiftlint" | tee -a "$GITHUB_OUTPUT"
       # The pinned linters (scripts/lint.sh --tools), on the PATH for the lint targets in Nx
       # (#5672): go:lint (golangci-lint, govulncheck), web:lint (Biome) and repo-lint:lint
       # (shellcheck, zsh -n, our text checks, jscpd). Each fails on a finding. The binaries are
@@ -246,6 +249,7 @@ jobs:
       # base (a new branch, a run by hand), every task. On a pull request, not the tasks that an
       # attestation covers (SKIP, from "Affected projects"; #5585).
       - name: Nx affected
+        id: nx
         timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
         shell: bash
         env:
@@ -322,19 +326,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "nx-linux-" "nx-linux-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
       - name: Save Go build cache
-        if: ${{ (always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true') && !inputs.sha }}
+        if: ${{ (always() && !cancelled() && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix))) && !inputs.sha }}
         uses: actions/cache/save@v5
         with:
           path: |
             ~/.cache/go-build
             ~/Library/Caches/go-build
             ~/go/pkg/mod
-          key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+          key: ${{ steps.go-key.outputs.prefix }}-${{ steps.nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Prune old Go build caches for this ref
-        if: ${{ (always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true') && !inputs.sha }}
+        if: ${{ (always() && !cancelled() && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix))) && !inputs.sha }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" "$GITHUB_REF"
+        run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "${{ steps.go-key.outputs.prefix }}-${{ steps.nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}" "$GITHUB_REF"
       # Where this job's minutes went, in its summary; on a failure near the limit, an error that
       # names the slowest step (#5673).
       - name: Step times
@@ -362,10 +366,9 @@ jobs:
     # A preview image while macOS 27 is new; move to macos-27 when it is GA.
     runs-on: xcode-27
     # The limit of every job, as in `go` (#5673). Both schemes from a cold DerivedData do not fit
-    # in it: such a run fails, and its Step times say so. A change of the Go toolchain gets 40
-    # (#5704): every Go helper then builds from cold inside mac:build, which takes about 11.5
-    # minutes warm. The steps read the same number from JOB_MINUTES; change them together.
-    timeout-minutes: ${{ needs.go.outputs.toolchain == 'new' && 40 || 20 }}
+    # in it: such a run fails, and its Step times say so. The "Time left for" step below reads the
+    # same number as JOB_MINUTES; change them together.
+    timeout-minutes: 20
     permissions:
       contents: read
       actions: write
@@ -374,7 +377,6 @@ jobs:
       NX_DAEMON: "false"
       NX_LOAD_DOT_ENV_FILES: "false"
       NX_TUI: "false"
-      JOB_MINUTES: ${{ needs.go.outputs.toolchain == 'new' && 40 || 20 }}
       APPS: ${{ needs.go.outputs.apps }}
       MARKS: ${{ needs.go.outputs.marks }}
     steps:
@@ -483,6 +485,13 @@ jobs:
         with:
           go-version-file: Go/go.mod
           cache: false
+      # Its key ends in full (the Go tasks passed) or part (they failed or ran out of time), then
+      # the run (#5704): a part restores by prefix, so a rerun and the next run start warm, and
+      # it never hits the exact key that would stop a full one from being saved.
+      - name: Go build cache key
+        id: go-key
+        if: env.APPS != 'skip'
+        run: echo "prefix=go-apps-$RUNNER_OS-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" >> "$GITHUB_OUTPUT"
       - name: Restore Go build cache
         if: env.APPS != 'skip'
         id: go-cache
@@ -491,8 +500,10 @@ jobs:
           path: |
             ~/Library/Caches/go-build
             ~/go/pkg/mod
-          key: go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+          key: ${{ steps.go-key.outputs.prefix }}-full
           restore-keys: |
+            ${{ steps.go-key.outputs.prefix }}-full-
+            ${{ steps.go-key.outputs.prefix }}-
             go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
             go-apps-${{ runner.os }}-
       - name: Restore the Nx cache
@@ -513,6 +524,7 @@ jobs:
         id: budget
         env:
           START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 20
           RESERVE: 3
         run: bash scripts/ci-time-left.sh
       # mac:build and remote:build, one at a time (they share build/DerivedData), and the tasks
@@ -549,20 +561,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh "nx-apps-" "nx-apps-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
       # The Go helpers are built in Agents Host's build, so its outcome alone says whether the Go
-      # cache is complete. Each ref keeps only its newest.
+      # cache is full or part. A run that ran out of time saves a part (#5704). Each ref keeps
+      # only its newest.
       - name: Save Go build cache
-        if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success')) && !inputs.sha }}
+        if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)))) && !inputs.sha }}
         uses: actions/cache/save@v5
         with:
           path: |
             ~/Library/Caches/go-build
             ~/go/pkg/mod
-          key: go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+          key: ${{ steps.go-key.outputs.prefix }}-${{ steps.nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Prune old Go build caches for this ref
-        if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && steps.go-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success')) && !inputs.sha }}
+        if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)))) && !inputs.sha }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh "go-apps-${{ runner.os }}-" "go-apps-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" "$GITHUB_REF"
+        run: bash scripts/prune-ci-caches.sh "go-apps-${{ runner.os }}-" "${{ steps.go-key.outputs.prefix }}-${{ steps.nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}" "$GITHUB_REF"
       # Only on a push to main, as the golangci-lint cache (2026-11-13): this graph is about 2 GB,
       # and a pull request's own, under its merge ref, no other pull request can read. A pull
       # request restores main's newest through the restore-keys above. Only when both schemes
@@ -596,6 +609,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 20
           STATUS: ${{ job.status }}
         run: bash scripts/ci-step-times.sh
 
@@ -618,10 +632,9 @@ jobs:
     runs-on: xcode-27
     # The limit of every job, as in `go` (#5673): warm, the Swift targets take about 5 minutes
     # and the Go tests on a Mac about 7. Every AgentsKit target from cold does not fit in it:
-    # such a run fails, and its Step times say so. A change of the Go toolchain gets 40, as in
-    # `apps` (#5704): the Go tests then build from cold (about 10 minutes on the 1.26.11 bump).
-    # The steps read the same number from JOB_MINUTES; change them together.
-    timeout-minutes: ${{ needs.go.outputs.toolchain == 'new' && 40 || 20 }}
+    # such a run fails, and its Step times say so. The "Time left for" steps below read the same
+    # number as JOB_MINUTES; change them together.
+    timeout-minutes: 20
     permissions:
       contents: read
       actions: write
@@ -630,7 +643,6 @@ jobs:
       NX_DAEMON: "false"
       NX_LOAD_DOT_ENV_FILES: "false"
       NX_TUI: "false"
-      JOB_MINUTES: ${{ needs.go.outputs.toolchain == 'new' && 40 || 20 }}
       SWIFT: ${{ needs.go.outputs.swift }}
       # Go on a Mac: `go`'s go, or skip when an attestation covers all of it (#5585).
       GO: ${{ needs.go.outputs.gomac }}
@@ -750,6 +762,7 @@ jobs:
         id: budget
         env:
           START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 20
           RESERVE: ${{ env.GO != 'skip' && 10 || 3 }}
         run: bash scripts/ci-time-left.sh
       # One target at a time: they share each package's .build, and at most three tests at a
@@ -779,6 +792,13 @@ jobs:
           }
           clean_retry "$RESTORED" Packages/AgentsKit/.build Packages/CodeText/.build -- nx_swift
       # Go's own caches, under Nx's, as in `go`.
+      # Its key ends in full (the Go tasks passed) or part (they failed or ran out of time), then
+      # the run (#5704): a part restores by prefix, so a rerun and the next run start warm, and
+      # it never hits the exact key that would stop a full one from being saved.
+      - name: Go build cache key
+        id: go-key
+        if: ${{ always() && !cancelled() && env.GO != 'skip' }}
+        run: echo "prefix=go-race-$RUNNER_OS-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" >> "$GITHUB_OUTPUT"
       - name: Restore Go build cache
         id: go-cache
         if: ${{ always() && !cancelled() && env.GO != 'skip' }}
@@ -787,8 +807,10 @@ jobs:
           path: |
             ~/Library/Caches/go-build
             ~/go/pkg/mod
-          key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+          key: ${{ steps.go-key.outputs.prefix }}-full
           restore-keys: |
+            ${{ steps.go-key.outputs.prefix }}-full-
+            ${{ steps.go-key.outputs.prefix }}-
             go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
             go-race-${{ runner.os }}-
       - name: Time left for Go
@@ -796,6 +818,7 @@ jobs:
         if: ${{ always() && !cancelled() && env.GO != 'skip' }}
         env:
           START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 20
           RESERVE: 3
         run: bash scripts/ci-time-left.sh
       # The Go tasks on a Mac, after the Swift ones (one task at a time, #5632). Its `always()`:
@@ -871,18 +894,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh macos-xcode-27-codetext- 'macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.codetext }}' "$GITHUB_REF"
       - name: Save Go build cache
-        if: ${{ (always() && !cancelled() && env.GO != 'skip' && steps.go-cache.outputs.cache-hit != 'true') && !inputs.sha }}
+        if: ${{ (always() && !cancelled() && env.GO != 'skip' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix))) && !inputs.sha }}
         uses: actions/cache/save@v5
         with:
           path: |
             ~/Library/Caches/go-build
             ~/go/pkg/mod
-          key: go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}
+          key: ${{ steps.go-key.outputs.prefix }}-${{ steps.go-nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Prune old Go build caches for this ref
-        if: ${{ (always() && !cancelled() && env.GO != 'skip' && steps.go-cache.outputs.cache-hit != 'true') && !inputs.sha }}
+        if: ${{ (always() && !cancelled() && env.GO != 'skip' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix))) && !inputs.sha }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" "$GITHUB_REF"
+        run: bash scripts/prune-ci-caches.sh "go-race-${{ runner.os }}-" "${{ steps.go-key.outputs.prefix }}-${{ steps.go-nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}" "$GITHUB_REF"
       # Where this job's minutes went, in its summary; on a failure near the limit, an error that
       # names the slowest step (#5673).
       - name: Step times
@@ -890,5 +913,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 20
           STATUS: ${{ job.status }}
         run: bash scripts/ci-step-times.sh
