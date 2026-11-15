@@ -1,3 +1,8 @@
+---
+diataxis: reference
+description: Each linter of this repository, its Nx target, what it fails on, its baseline and where CI runs it.
+---
+
 # Linters
 
 Each linter in this repository is an Nx target of its language (#5672), and each one fails on a
