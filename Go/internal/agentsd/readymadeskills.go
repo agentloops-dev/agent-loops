@@ -44,7 +44,7 @@ func markReadyMadeSkillMade(home, id, digest string) {
 	}
 	made[id] = digest
 	data, err := json.Marshal(made)
-	if err == nil && os.MkdirAll(filepath.Dir(madeReadyMadeSkillsPath(home)), 0o755) == nil {
+	if err == nil && os.MkdirAll(filepath.Dir(madeReadyMadeSkillsPath(home)), 0o750) == nil {
 		_ = store.WriteAtomically(madeReadyMadeSkillsPath(home), data, 0o600)
 	}
 }
@@ -61,7 +61,7 @@ func ensureReadyMadeSkill(home, id, skill, madeDigest string) {
 	update := err == nil
 	switch {
 	case os.IsNotExist(err):
-		if os.MkdirAll(filepath.Dir(path), 0o755) != nil {
+		if os.MkdirAll(filepath.Dir(path), 0o750) != nil {
 			return
 		}
 	case err != nil || !fi.Mode().IsRegular() || fi.Size() > readyMadeMaxBytes:
