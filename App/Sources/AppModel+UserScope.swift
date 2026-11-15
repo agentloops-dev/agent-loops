@@ -13,6 +13,11 @@ extension AppModel {
         return await userScope.set(part, to: encoded, on: controlRequests)
     }
 
+    /// Use the Agent's or Keep Yours for an agent's secret whose name the person has (#5308).
+    func chooseSecretOffer(_ offer: DaemonAPI.SecretOffer, useTheAgents: Bool) async {
+        await userScope.choose(offer, useTheAgents: useTheAgents, on: controlRequests)
+    }
+
     /// The person's time zone (#4818): this Mac's, set at the user scope when it differs, so
     /// a workflow's `hours:` with no `time-zone:` go by it on a server too. It has no control.
     func keepTimeZone() async {

@@ -203,6 +203,7 @@ export class Store extends Work {
       }
       if (method === "control/userSettingsChanged") {
         this.userScopeChanges.value += 1;
+        void this.loadSecretOffers();
         return;
       }
       if (method === "control/secretsLeft") {

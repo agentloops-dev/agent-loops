@@ -21,6 +21,14 @@ final class UserScopeState {
     private(set) var problem: String?
     /// The machine lock, so a secret is sealed only to the machines it names (#3491, D8).
     @ObservationIgnored weak var lock: LockState?
+    /// The secrets agents saved on the person's machines that are not theirs yet (#5308).
+    private(set) var offers: [DaemonAPI.SecretOffer] = []
+    /// The offers answered from here and not done yet, and why one failed.
+    private(set) var answeringOffers: Set<String> = []
+    private(set) var offerFailures: [String: String] = [:]
+    /// This client's key, to take an offer (the Mac window). Nil on the Remote, which does not
+    /// seal: it shows the offers only.
+    @ObservationIgnored var sealing: (() -> (DeviceKey, UUID)?)?
 
     func load(_ control: DaemonClient?) async {
         guard let control else {
@@ -36,6 +44,46 @@ final class UserScopeState {
             problem = nil
         } catch {
             problem = UserScopeWords.refusal(error)
+        }
+        await loadOffers(control)
+    }
+
+    /// The agents' secrets (#5308): read, and each with no conflict taken at once when this
+    /// client seals. On `control/sealingWanted` and with each load.
+    func loadOffers(_ control: DaemonClient) async {
+        let keyed = sealing?()
+        let lock = lock
+        guard let listed = await ClientSealing.takeOffers(on: control, key: keyed?.0, client: keyed?.1, take: keyed != nil,
+                                                          signed: { recipients in
+                                                              if let lock { await lock.signed(recipients, on: control) } else { recipients }
+                                                          }) else { return }
+        offers = listed.offers.sorted { $0.savedAt < $1.savedAt }
+    }
+
+    /// Use the Agent's (true) or Keep Yours (false) for an offer whose name the person has (#5308).
+    func choose(_ offer: DaemonAPI.SecretOffer, useTheAgents: Bool, on control: DaemonClient?) async {
+        guard let control else { return }
+        answeringOffers.insert(offer.offer)
+        defer { answeringOffers.remove(offer.offer) }
+        offerFailures[offer.offer] = nil
+        do {
+            if useTheAgents {
+                guard let (key, client) = sealing?() else { return }
+                let names = try await control.call(DaemonAPI.Method.userSecretNames, DaemonAPI.Empty(),
+                                                   returning: DaemonAPI.UserSecretNames.self)
+                let lock = lock
+                let user = try await control.call(DaemonAPI.Method.userSecretRecipients, DaemonAPI.Empty(),
+                                                  returning: DaemonAPI.SealRecipients.self).user ?? ""
+                try await ClientSealing.take(offer, user: user, kept: names.secrets.first { $0.name == offer.name }?.version,
+                                             on: control, key: key, client: client) { recipients in
+                    if let lock { await lock.signed(recipients, on: control) } else { recipients }
+                }
+            } else {
+                _ = try await control.call(DaemonAPI.Method.userDropSecretOffer, DaemonAPI.SecretOfferRequest(offer: offer.offer))
+            }
+            await load(control)
+        } catch {
+            offerFailures[offer.offer] = UserScopeWords.refusal(error)
         }
     }
 

@@ -120,6 +120,18 @@ struct FolderListView: View {
                     }
                 }
             }
+            // A secret an agent saved on a machine of the person's, until it is theirs (#5308).
+            if !model.userScope.offers.isEmpty {
+                Section {
+                    ForEach(model.userScope.offers) { offer in
+                        SecretOfferCard(offer: offer, isAnswering: model.userScope.answeringOffers.contains(offer.offer),
+                                        failure: model.userScope.offerFailures[offer.offer],
+                                        choose: { use in Task { await model.chooseSecretOffer(offer, useTheAgents: use) } })
+                            .listRowSeparator(.hidden)
+                            .selectionDisabled()
+                    }
+                }
+            }
             // A new client that signed in with GitHub as this person (#995), beside them.
             let signingIn = model.signIn.open()
             if !signingIn.isEmpty {

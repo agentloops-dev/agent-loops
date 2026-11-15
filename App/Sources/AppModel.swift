@@ -1284,6 +1284,8 @@ final class AppModel {
 
     init() {
         userScope.lock = lock
+        // The window takes an agent's secret for the person (#5308): it seals, as Add a Secret does.
+        userScope.sealing = { ControlConfig.sealing().map { ($0.key, $0.client) } }
         let localCopy = LocalCopyKeeper(copy: Self.windowCopy(), work: work)
         self.localCopy = localCopy
         // At once, so the sidebar and a chat restored at launch draw before the host answers.
