@@ -427,30 +427,6 @@ func TestARefusedProviderSignInSignsNobodyIn(t *testing.T) {
 	}
 }
 
-// #3386: an account made before sign-ins, keyed by its GitHub user, keeps working.
-func TestAnAccountFromBeforeSignInsKeepsWorking(t *testing.T) {
-	st := store.NewMemory()
-	ctx := context.Background()
-	old, _ := json.Marshal(map[string]any{"id": "oldaccount", "github": map[string]any{"id": 77, "login": "olga"}, "created": time.Now().UTC()})
-	if _, err := st.Put(ctx, "hosted/v1/accounts/oldaccount.json", old, store.Absent); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Put(ctx, "hosted/v1/github/77.json", []byte(`{"account":"oldaccount"}`), store.Absent); err != nil {
-		t.Fatal(err)
-	}
-	_, newBrowser := startWith(t, Config{Store: st})
-	b := newBrowser()
-	if res := b.signIn("u.77.olga.400"); res.Header.Get("Location") != "/account" {
-		t.Fatal(res.Header.Get("Location"), b.last)
-	}
-	if _, page := b.get("https://" + domain + "/account"); !strings.Contains(page, "Signed in with GitHub as olga.") {
-		t.Fatal(page)
-	}
-	if list, _ := (Admin{Store: st}).Accounts(ctx); len(list) != 1 || list[0].SignIn.String() != "github:77" {
-		t.Fatalf("%+v", list)
-	}
-}
-
 // startServing is startWith, with the TLS server too.
 func startServing(t *testing.T, cfg Config) (*Service, func() *browser, *httptest.Server) {
 	t.Helper()

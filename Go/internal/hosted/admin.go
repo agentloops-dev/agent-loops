@@ -105,7 +105,6 @@ func (a Admin) Waitlist(ctx context.Context) ([]Waiting, error) {
 		}
 		var entry Waiting
 		if json.Unmarshal(w.Data, &entry) == nil {
-			entry.SignIn = signInOf(entry.SignIn, entry.GitHub)
 			list = append(list, entry)
 		}
 	}
