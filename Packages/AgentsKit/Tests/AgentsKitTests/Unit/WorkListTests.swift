@@ -331,6 +331,19 @@ struct WorkPageTests {
         #expect(!WorkPlace(kind: .pr, fromList: true).fromList)
     }
 
+    @Test func onlyAPullRequestHasAFilesChangedPageAndBackGoesToIt() {
+        let files = WorkPlace(kind: .pr, ref: pr.ref, files: true)
+        #expect(files.files)
+        #expect(files != WorkPlace(kind: .pr, ref: pr.ref))
+        #expect(!WorkPlace(kind: .issue, ref: pr.ref, files: true).files)
+        #expect(!WorkPlace(kind: .pr, files: true).files)
+        var h = LineageHistory<WorkPlace>()
+        h.go(WorkPlace(kind: .pr, ref: pr.ref))
+        h.go(files)
+        h.back()
+        #expect(h.current == WorkPlace(kind: .pr, ref: pr.ref))
+    }
+
     @Test func previousAndNextReplaceThePlaceSoBackGoesToTheList() {
         var h = LineageHistory<WorkPlace>()
         h.go(WorkPlace(kind: .issue))

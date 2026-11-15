@@ -555,11 +555,15 @@ public struct WorkPlace: Hashable, Sendable {
     /// The page was opened from its kind's list (#3257), so it has Previous and Next through it.
     /// A page opened from a lineage link or an address has not.
     public var fromList: Bool
+    /// A pull request's Files changed page (#5474), pushed in the place of its page: Back goes
+    /// to the pull request.
+    public var files: Bool
 
-    public init(kind: WorkList.Kind, ref: String? = nil, fromList: Bool = false) {
+    public init(kind: WorkList.Kind, ref: String? = nil, fromList: Bool = false, files: Bool = false) {
         self.kind = kind
         self.ref = ref
         self.fromList = fromList && ref != nil
+        self.files = files && kind == .pr && ref != nil
     }
 
     public var node: DaemonAPI.LineageNode? { ref.map { DaemonAPI.LineageNode(kind: kind.rawValue, ref: $0) } }

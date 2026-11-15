@@ -115,6 +115,7 @@ private struct DiffRowView: View {
     let document: CodeDocument?
 
     private var index: Int? { row.kind == .removed ? row.oldIndex : row.newIndex }
+    private var tint: CodeInk.DiffTint? { CodeInk.diff(row.kind) }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -126,13 +127,11 @@ private struct DiffRowView: View {
                     .foregroundStyle(.quaternary)
             }
             Text(mark)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(tint.map { AnyShapeStyle($0.bar) } ?? AnyShapeStyle(.tertiary))
+                .fontWeight(.semibold)
+            // Green and red with the + and − signs, as the pull request's diff (#5474).
             CodeLine(text: row.text, spans: index.flatMap { document?.spans(line: $0) } ?? [],
-                     changed: row.changed)
-                // By mark, strike and weight, never by red and green (035 FR-013).
-                .strikethrough(row.kind == .removed)
-                .opacity(row.kind == .removed ? 0.62 : 1)
-                .fontWeight(row.kind == .added ? .semibold : nil)
+                     changed: row.changed, mark: tint?.word ?? .clear)
         }
         // One element per line, read as "Added: …" or "Removed: …". A label laid over one
         // `CodeLine` used to carry sent AppKit's accessibility into a stack overflow when
@@ -144,7 +143,10 @@ private struct DiffRowView: View {
         .fixedSize()
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(row.kind == .removed ? AnyShapeStyle(CodeInk.removedWash) : AnyShapeStyle(.clear))
+        .background(tint?.wash ?? .clear)
+        .overlay(alignment: .leading) {
+            if let tint { tint.bar.frame(width: CodeInk.diffBar) }
+        }
         // On appearing, and again when the document arrives: a row drawn before its
         // colour existed would otherwise never ask for it (walked 2026-09-25: Whole file
         // lost its colour past line 200).
