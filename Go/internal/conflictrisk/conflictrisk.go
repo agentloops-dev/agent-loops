@@ -126,7 +126,7 @@ func (r runner) git(ctx context.Context, args ...string) ([]byte, int, error) {
 		return out.Bytes(), ee.ExitCode(), fmt.Errorf("git %s: %s", args[0], strings.TrimSpace(errb.String()))
 	}
 	if err != nil {
-		return nil, -1, err
+		return nil, -1, fmt.Errorf("git %s: %w", args[0], err)
 	}
 	return out.Bytes(), 0, nil
 }
@@ -317,15 +317,23 @@ func mainOf(ctx context.Context, r runner, given, remote string) (string, error)
 		}
 		cands = append(cands, remote+"/main", remote+"/master", "main", "master")
 	}
+	var last error
 	for _, c := range cands {
 		if c == "" {
 			continue
 		}
-		if sha, err := r.text(ctx, "rev-parse", "--verify", c+"^{commit}"); err == nil {
+		sha, err := r.text(ctx, "rev-parse", "--verify", c+"^{commit}")
+		if err == nil {
 			return sha, nil
 		}
+		last = err
 	}
-	return "", errors.New("conflictRiskAnalysis: the default branch is not in this repository; name it in main")
+	// git's own words (#5661): a folder git cannot run in, or a context that ended, is not
+	// a repository with no default branch.
+	if last == nil {
+		last = errors.New("no ref to try")
+	}
+	return "", fmt.Errorf("conflictRiskAnalysis: the default branch is not in %s; name it in main (%w)", r.dir, last)
 }
 
 // headOf is the diff's head commit; the working tree is committed to an object nothing

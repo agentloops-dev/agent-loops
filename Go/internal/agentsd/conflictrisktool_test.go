@@ -1,9 +1,13 @@
 package agentsd
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -45,5 +49,48 @@ func TestConflictRiskAnalysisIsListedAndAnswersWhereThereIsNoForge(t *testing.T)
 	text, isErr := m.tool(2, "conflict_risk_analysis", map[string]any{})
 	if !isErr || !strings.Contains(text, "not on a forge") {
 		t.Errorf("%v %q", isErr, text)
+	}
+}
+
+// #5661: the tool, called from a lane's worktree of a GitHub folder whose default branch is
+// main, gives advice. The agent's cwd is a file URL; git ran in that URL as a folder and every
+// call failed, which read as "the default branch is not in this repository".
+func TestConflictRiskAnalysisFromAWorktreeGivesAdvice(t *testing.T) {
+	t.Setenv("GIT_SSH_COMMAND", "false") // the requests' heads are not fetched from github.com
+	d, _, _, _ := forgeDaemon(t)
+	var folder string
+	for _, f := range d.folderPaths() {
+		if out, _ := git(f, "remote", "get-url", "origin"); out == "git@github.com:alexec/agents.git" {
+			folder = f
+		}
+	}
+	if folder == "" {
+		t.Fatal("no folder on alexec/agents")
+	}
+	g := func(dir string, args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	os.WriteFile(filepath.Join(folder, "a.txt"), []byte("base\n"), 0o644)
+	g(folder, "add", ".")
+	g(folder, "commit", "-qm", "base")
+	g(folder, "update-ref", "refs/remotes/origin/main", "HEAD")
+	wt := filepath.Join(t.TempDir(), "lane")
+	g(folder, "worktree", "add", "-q", "-b", "agents/lane", wt, "origin/main")
+	os.WriteFile(filepath.Join(wt, "b.txt"), []byte("lane\n"), 0o644)
+
+	branch := "agents/lane"
+	a := seeded(t, d, wt, func(a *wire.Agent) {
+		a.Worktree = &wire.AgentWorktree{Name: "lane", Root: store.FolderURL(wt), Branch: &branch, MadeByApp: true, Folder: store.FolderURL(folder)}
+	})
+	m := appClient(t, d, a.ID)
+	m.post("initialize", map[string]any{}, 1)
+	text, isErr := m.tool(2, "conflict_risk_analysis", map[string]any{})
+	if isErr || strings.Contains(text, "default branch") || !strings.Contains(text, `"main":"`+g(folder, "rev-parse", "origin/main")+`"`) {
+		t.Fatalf("%v %q", isErr, text)
 	}
 }
