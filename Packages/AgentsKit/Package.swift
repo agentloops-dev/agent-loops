@@ -47,12 +47,34 @@ let package = Package(
             name: "AgentsKit",
             dependencies: ["AgentsKitCore"],
             swiftSettings: [.treatAllWarnings(as: .error)]),
+        // Spike #5613: the tests are split in four targets, so a build tool can run and cache
+        // each one alone. Support/ and Fixtures/ are in AgentsKitTests; the others link them.
         .testTarget(
             name: "AgentsKitTests",
+            dependencies: ["AgentsKit", "AgentsKitCore"],
+            exclude: ["Fixtures"],
+            swiftSettings: [.treatAllWarnings(as: .error)]),
+        // The tests that read files outside the package (App/, Shared/UI, Web/, Go/, design/,
+        // docs/, specs/, Packages/Wire): their inputs are the repo's, not the package's.
+        .testTarget(
+            name: "AgentsKitRepoTests",
+            dependencies: ["AgentsKit", "AgentsKitCore"],
+            exclude: ["Fixtures"],
+            swiftSettings: [.treatAllWarnings(as: .error)]),
+        .testTarget(
+            name: "AgentsKitControlTests",
+            dependencies: ["ControlDial", "AgentsKit", "AgentsKitCore",
+                           .product(name: "NIOCore", package: "swift-nio"),
+                           .product(name: "NIOPosix", package: "swift-nio")],
+            exclude: ["Fixtures"],
+            swiftSettings: [.treatAllWarnings(as: .error)]),
+        .testTarget(
+            name: "AgentsKitIntegrationTests",
             dependencies: ["ControlDial", "AgentsKit", "AgentsKitCore", "accept-probe",
                            // A proxy and a server of the tests' own, for the dial (#2177).
                            .product(name: "NIOCore", package: "swift-nio"),
                            .product(name: "NIOPosix", package: "swift-nio")],
+            exclude: ["Fixtures"],
             swiftSettings: [.treatAllWarnings(as: .error)]),
         // Tests only, and no product: a daemon socket in a process of its own with few
         // descriptors (#201). Out of descriptors is the whole process's state, so it

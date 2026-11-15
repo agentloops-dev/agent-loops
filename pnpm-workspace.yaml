@@ -1,0 +1,12 @@
+# Spike #5613. One pnpm workspace: Nx at the root, the web app in Web/.
+packages:
+  - Web
+# A release must be on npm for 7 days before pnpm installs it (Nx was compromised in Aug 2025).
+minimumReleaseAge: 10080
+# Already pinned on main before this policy (design/icons.json pins its integrity too).
+minimumReleaseAgeExclude:
+  - lucide-static@1.72.0
+# No install script runs (as npm ci --ignore-scripts did before): esbuild and Nx work without theirs.
+allowBuilds:
+  esbuild: false
+  nx: false

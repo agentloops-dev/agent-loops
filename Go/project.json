@@ -1,0 +1,47 @@
+{
+  "name": "go",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "Go",
+  "namedInputs": {
+    "go-source": [
+      "{projectRoot}/**/*",
+      "!{projectRoot}/out/**/*",
+      "!{projectRoot}/internal/controlplane/walk/observability/run/**/*"
+    ],
+    "go-test-reads": [
+      "{workspaceRoot}/Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/**/*",
+      "{workspaceRoot}/Web/test/vectors.json",
+      "{workspaceRoot}/deploy/**/*",
+      "{workspaceRoot}/scripts/host-install.sh",
+      "{workspaceRoot}/scripts/perf-budgets.json",
+      "{workspaceRoot}/App/Resources/toolsets/**/*",
+      "{workspaceRoot}/Host/AgentsWatch/**/*",
+      "{workspaceRoot}/Web/src/protocol/generated.ts",
+      "{workspaceRoot}/Web/src/protocol/capabilities.generated.ts",
+      "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Daemon/Capabilities.generated.swift",
+      "wire-source"
+    ]
+  },
+  "targets": {
+    "vet": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "options": { "command": "Go/scripts/go.sh vet ./...", "cwd": "{workspaceRoot}" },
+      "inputs": ["sharedGlobals", "go-toolchain", "go-source"],
+      "dependsOn": ["wire:gen", "design:gen"]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "options": { "command": "Go/scripts/go.sh test -race ./...", "cwd": "{workspaceRoot}" },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        { "runtime": "xcrun swiftc --version 2>&1" },
+        "go-source",
+        "go-test-reads"
+      ],
+      "dependsOn": ["wire:gen", "design:gen"]
+    }
+  }
+}

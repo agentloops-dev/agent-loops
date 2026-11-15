@@ -34,3 +34,7 @@ Go/out/
 Go/internal/controlplane/walk/observability/run/
 __pycache__/
 scripts/totp/node_modules/
+
+# Spike #5613: Nx and pnpm.
+node_modules/
+.nx/

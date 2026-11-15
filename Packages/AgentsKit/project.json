@@ -1,0 +1,93 @@
+{
+  "name": "agentskit",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "root": "Packages/AgentsKit",
+  "namedInputs": {
+    "swift-package": [
+      "{projectRoot}/Package.swift",
+      "{projectRoot}/Package.resolved",
+      "{projectRoot}/Sources/**/*",
+      "{projectRoot}/Tests/AcceptProbe/**/*",
+      "{projectRoot}/Tests/AgentsKitTests/Support/**/*",
+      "{projectRoot}/Tests/AgentsKitTests/Fixtures/**/*",
+      "swift-toolchain"
+    ]
+  },
+  "targets": {
+    "test-unit": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "parallelism": false,
+      "options": {
+        "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --filter '^AgentsKitTests\\.'",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": ["sharedGlobals", "swift-package", "{projectRoot}/Tests/AgentsKitTests/**/*"],
+      "dependsOn": ["wire:gen"]
+    },
+    "test-control": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "parallelism": false,
+      "options": {
+        "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --filter '^AgentsKitControlTests\\.'",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "swift-package",
+        "{projectRoot}/Tests/AgentsKitControlTests/**/*",
+        "{workspaceRoot}/Web/test/vectors.json"
+      ],
+      "dependsOn": ["wire:gen"]
+    },
+    "test-integration": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "parallelism": false,
+      "options": {
+        "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --filter '^AgentsKitIntegrationTests\\.'",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": ["sharedGlobals", "swift-package", "{projectRoot}/Tests/AgentsKitIntegrationTests/**/*"],
+      "dependsOn": ["wire:gen"]
+    },
+    "test-repo": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "parallelism": false,
+      "options": {
+        "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --filter '^AgentsKitRepoTests\\.' --skip 'viewsDrawThroughTheSet'",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "swift-package",
+        "{projectRoot}/Tests/AgentsKitRepoTests/**/*",
+        "{workspaceRoot}/README.md",
+        "{workspaceRoot}/project.yml",
+        "{workspaceRoot}/App/Sources/**/*",
+        "{workspaceRoot}/App/Resources/toolsets/**/*",
+        "{workspaceRoot}/Remote/**/*",
+        "{workspaceRoot}/Shared/UI/**/*",
+        "{workspaceRoot}/Host/Sources/**/*",
+        "{workspaceRoot}/Host/Info.plist",
+        "{workspaceRoot}/Packages/CodeText/Sources/**/*",
+        "{workspaceRoot}/Packages/Wire/**/*",
+        "{workspaceRoot}/Go/**/*",
+        "{workspaceRoot}/Web/src/**/*",
+        "{workspaceRoot}/Web/test/**/*",
+        "{workspaceRoot}/Web/*",
+        "{workspaceRoot}/deploy/**/*",
+        "{workspaceRoot}/docs/**/*",
+        "{workspaceRoot}/specs/**/*",
+        "{workspaceRoot}/design/**/*",
+        "{workspaceRoot}/www/**/*",
+        "{workspaceRoot}/scripts/lint.sh",
+        "{workspaceRoot}/.agents/workflows/**/*",
+        { "dependentTasksOutputFiles": "**/*", "transitive": true }
+      ],
+      "dependsOn": ["wire:gen", "design:gen", "web:build"]
+    }
+  }
+}

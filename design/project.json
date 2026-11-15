@@ -1,0 +1,28 @@
+{
+  "name": "design",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "design",
+  "targets": {
+    "gen": {
+      "executor": "nx:run-commands",
+      "options": { "command": "scripts/design.sh gen", "cwd": "{workspaceRoot}" },
+      "inputs": [
+        "sharedGlobals",
+        { "runtime": "python3 --version" },
+        "{projectRoot}/tokens.json",
+        "{workspaceRoot}/scripts/design.sh",
+        "{workspaceRoot}/scripts/design.py",
+        "{workspaceRoot}/docs/reference/design-system.md"
+      ],
+      "outputs": [
+        "{workspaceRoot}/Web/src/theme/tokens.css",
+        "{workspaceRoot}/www/tokens.css",
+        "{workspaceRoot}/docs/stylesheets/tokens.css",
+        "{workspaceRoot}/Go/internal/forgepages/tokens.css",
+        "{workspaceRoot}/Go/internal/paperpage/tokens.css",
+        "{workspaceRoot}/deploy/site/www/oauth/tokens.css",
+        "{workspaceRoot}/docs/reference/design-system.md"
+      ]
+    }
+  }
+}

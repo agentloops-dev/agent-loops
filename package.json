@@ -1,0 +1,10 @@
+{
+  "name": "agents-workspace",
+  "private": true,
+  "description": "Spike #5613: Nx over the native tools (do not merge).",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@12.18.0",
+  "devDependencies": {
+    "nx": "24.0.5"
+  }
+}
