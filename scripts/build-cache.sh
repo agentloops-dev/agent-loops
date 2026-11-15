@@ -35,8 +35,11 @@
 #   linux/<k>/      what the Swift Linux agentsd builds left (#856) before #1314; prune
 #                   takes it away
 #   go/             Go/scripts/go.sh's and scripts/lint.sh's: gopath/ (modules), gocache/
-#                   (Go's build cache) and lint/ (golangci-lint's). Bounded by prune on its
-#                   own, so a large Go cache never costs the Swift one (#1796).
+#                   (Go's build cache), lint/ (golangci-lint's) and tmp/ (go.sh's TMPDIR).
+#                   Bounded by prune on its own, so a large Go cache never costs the Swift
+#                   one (#1796). A go test or build that is killed leaves its folders in
+#                   tmp/ (go-build*, a test's t.TempDir): prune removes each one in which
+#                   nothing changed for AGENTS_GO_TMP_HOURS (6), also while Go runs (#5722).
 #   npm/            npm's cache for a Node tool run by hand (Knip); lint.sh's once
 #   lint-tools/<t>-<v>/  scripts/lint.sh's pinned macOS linters (#4709); prune takes a
 #                   version not used in a week
@@ -224,6 +227,26 @@ going() { pgrep -qf 'Go/scripts/go.sh|golang:|golangci'; }
 
 kb_of() { local t=0 d k; for d in "$@"; do [ -e "$d" ] || continue; k=$(du -sk "$d" | cut -f1); t=$((t + k)); done; echo "$t"; }
 go_kb() { kb_of "$CACHE/go"; }
+
+# go.sh's TMPDIR: each folder in it that nothing changed in for AGENTS_GO_TMP_HOURS (6)
+# hours. A running go test or build writes in its own folders all the time, so a folder
+# with no change for hours is one that a killed run left (#5722).
+go_tmp() {
+	local tmp="$CACHE/go/tmp" mins d k n=0 freed=0
+	[ -d "$tmp" ] || return 0
+	mins=$((${AGENTS_GO_TMP_HOURS:-6} * 60))
+	while IFS= read -r d; do
+		[ -z "$(find "$d" -mmin -"$mins" -print -quit 2>/dev/null)" ] || continue
+		k=$(du -sk "$d" 2>/dev/null | cut -f1)
+		# Go and some tests make files read-only.
+		chmod -R u+w "$d" 2>/dev/null || true
+		if rm -rf -- "$d" 2>/dev/null; then
+			n=$((n + 1))
+			freed=$((freed + ${k:-0}))
+		fi
+	done < <(find "$tmp" -mindepth 1 -maxdepth 1 -mmin +"$mins")
+	echo "removed $n folder(s) from $tmp that nothing changed in for $((mins / 60)) hours ($(kb_gb "$freed") GB)"
+}
 mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
 
 # The Swift part's folders, the oldest used first: each checkouts/<k>, the package
@@ -270,6 +293,7 @@ prune() {
 	done
 	unused_week "$CACHE/linux" | while IFS= read -r d; do echo "removing $d (unused a week)"; rm -rf "$d"; done
 	unused_week "$CACHE/lint-tools" | while IFS= read -r d; do echo "removing $d (unused a week)"; rm -rf "$d"; done
+	go_tmp
 	total=$(swift_kb)
 	while IFS= read -r d; do
 		[ "$total" -gt "$kb" ] || break
@@ -297,7 +321,11 @@ prune() {
 			[ "$(go_kb)" -gt "$gokb" ] && [ -d "$CACHE/go/gocache" ] || break
 			if [ "$days" = 0 ]; then
 				echo "removing $CACHE/go/gocache ($(gb "$CACHE/go/gocache") GB)"
-				rm -rf "$CACHE/go/gocache"
+				# A Go run that started after the check above writes in it: what it has
+				# open stays, and the prune goes on (#5722).
+				chmod -R u+w "$CACHE/go/gocache" 2>/dev/null || true
+				rm -rf "$CACHE/go/gocache" 2>/dev/null ||
+					echo "kept part of $CACHE/go/gocache ($(gb "$CACHE/go/gocache") GB): a Go run started during the prune"
 			else
 				echo "removing Go build cache entries unused for $days days"
 				find "$CACHE/go/gocache" -type f -mtime +"$days" -delete 2>/dev/null || true

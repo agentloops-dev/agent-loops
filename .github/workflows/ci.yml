@@ -174,7 +174,7 @@ jobs:
       #
       # Then, on a pull request only, the tasks that a lane's attestation covers (#5585, epic
       # #5581 §3; scripts/ci-attested.mjs): a statement from the agents' bot, from a lane that is
-      # not revoked (#5586 adds the list), whose task and Nx hash are the ones CI calculates now
+      # not revoked (#5586: the revocation branch), whose task and Nx hash are the ones CI calculates now
       # at the head, PASSED. skip-<step> lists them and that step runs only the others; a macOS
       # step with every task covered gets `skip` (swift, gomac, swiftlint), so `test` may not start at all.
       # A push to main and a run by hand skip nothing. With no accepted attestation, or when
@@ -349,6 +349,51 @@ jobs:
           JOB_MINUTES: 20
           STATUS: ${{ job.status }}
         run: bash scripts/ci-step-times.sh
+
+  # On main, 10% of the attested tasks of the batch run again at their merge commits (#5586, epic
+  # #5581 §5; scripts/ci-sample.mjs). A task that fails there and passes at the merge commit's
+  # parent was attested falsely: its lane goes on the revocation list (`revoked.txt` on the
+  # orphan branch attestation-revocations, which `select` reads) and a bug is filed. A task that
+  # fails at the parent too is a break of main, for Fix main. It waits for `go`, so it adds no
+  # load while the checks of the batch run, and it is not a required check.
+  sample:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.sha }}
+    needs: go
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # contents: the revocation branch. issues: the bug. checks, pull-requests: the statements
+      # and the pull request of each commit.
+      contents: write
+      issues: write
+      checks: read
+      pull-requests: read
+      actions: read
+    env:
+      NX_NO_CLOUD: "true"
+      NX_DAEMON: "false"
+      NX_LOAD_DOT_ENV_FILES: "false"
+      NX_TUI: "false"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: Web/.node-version
+          package-manager-cache: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+      - name: Sample the attested tasks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # The batch is from the last green run on main, as `go`'s "Batch" step says.
+          green=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json headSha --jq '.[0].headSha // empty' 2>/dev/null) || green=
+          node scripts/ci-sample.mjs run --before "${green:-$BEFORE}" --after "$GITHUB_SHA"
 
   # The Mac app and the Remote, as Nx's mac:build and remote:build (#5631): each an xcodebuild
   # through scripts/build-cache.sh, as a lane runs it, and the Blob's marks (#4615). A check main

@@ -107,7 +107,8 @@ struct FolderWindow: View {
             }
         }
         .paperGround()
-        .frame(minWidth: 640, minHeight: 420)
+        // Its content cannot make it taller than the screen (#5739).
+        .windowFloor(width: 640, height: 420)
         .navigationTitle(AppCheckout.windowTitle(summary?.name))
         .navigationSubtitle(summary.map(place) ?? "")
         .focusedSceneValue(\.folderWindow, window)
