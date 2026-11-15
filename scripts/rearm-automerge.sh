@@ -27,29 +27,15 @@
 # does this once per head, and says so in a PR comment; a second cancel at the same head is
 # listed for a person to look at. This replaces the ci-cancelled workflow (#897, #5609).
 #
-# A PR labelled `hold:v*` waits for that release to ship (#2931): this script never arms it.
-# Only the release takes the label off and turns auto-merge on. Since #3212 there are no patch
-# milestones, so nothing labels a PR this way as a rule; a hold set by hand still works.
-#
 # GH_REPO picks the repository, as for gh; by default it is this checkout's.
 set -euo pipefail
 
 me=$(basename "$0")
 die() { echo "$me: $*" >&2; exit 1; }
 
-# The labels on a PR that start with `hold:v`, one per line.
-holds() {
-	gh pr view "$1" --json labels --jq '.labels[].name | select(startswith("hold:v"))'
-}
-
 # The repository only allows squash merges.
 rearm() {
-	local pr=$1 held
-	held=$(holds "$pr")
-	if [[ -n $held ]]; then
-		echo "$me: #$pr is labelled ${held//$'\n'/, }: it waits for that release, so it is not armed (#2931)" >&2
-		return 1
-	fi
+	local pr=$1
 	gh pr merge "$pr" --disable-auto >/dev/null 2>&1 || true
 	gh pr merge "$pr" --auto --squash >/dev/null || die "could not turn auto-merge on again for #$pr"
 	echo "$me: re-armed auto-merge on #$pr"
