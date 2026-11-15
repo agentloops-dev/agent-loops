@@ -26,7 +26,11 @@ starts lanes.
 5. Run the unit tests for what you touched. For a change that needs to be seen working,
    use the run-app skill on a scratch root for `App/`, `Host/`, `Go/`, `Remote/`, or
    `Packages/AgentsKit`. Close the scratch app before you commit.
-   Before a push, run `scripts/nx.sh affected -t gen build vet lint test` under the `build`
+   Before your first push, run `git fetch origin` and `git rebase origin/main` again,
+   and settle any conflict on your branch (#5668). `main` moves while you work: a PR
+   that opens in conflict runs CI for nothing, and `affected` compares with a stale
+   `origin/main`. Do it again before a later push when `main` has moved.
+   Then, before a push, run `scripts/nx.sh affected -t gen build vet lint test` under the `build`
    lease: the tasks of what your branch changes, Go, the web app, the Mac app, the Remote
    and the Swift packages alike (AGENTS.md, "Verifying a lane's work").
    Before your first push, and again before you turn on auto-merge, call the agent tool
