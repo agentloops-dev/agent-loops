@@ -44,8 +44,8 @@ function open(item: Item | null): void {
   go(item ? { nav: "status", section: "secrets", item: itemRef(item) } : { nav: "status", section: "secrets" });
 }
 
-/** Under 720 px the list is alone (wireframes §2). */
-function useNarrow(): boolean {
+/** Under 720 px the list is alone (wireframes §2); the Environment page (#5260) uses it too. */
+export function useNarrow(): boolean {
   const query = "(max-width: 719px)";
   const narrow = useSignal(globalThis.matchMedia?.(query).matches ?? false);
   useEffect(() => {

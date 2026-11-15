@@ -80,6 +80,8 @@ export function parseRoute(hash: string): Route {
   }
   // The Secrets page (#5257): #/secrets, and one secret at #/secrets/<name>; Status ▸ Secrets, which writes them.
   if (first === "secrets") return section ? { nav: "status", section: "secrets", item: decodeURIComponent(path.slice("secrets/".length)) } : { nav: "status", section: "secrets" };
+  // The Environment page (#5260): #/environment, and one variable at #/environment/<item id> (yours/NAME, repo/<folder>/NAME).
+  if (first === "environment") return section ? { nav: "status", section: "environment", item: decodeURIComponent(path.slice("environment/".length)) } : { nav: "status", section: "environment" };
   // Your setup (#3630) went (#3998): Runtimes to Status, its connectors and accounts to Settings ▸ You, and its secrets to
   // the Secrets page (#5257).
   if (first === "setup") {
@@ -103,6 +105,8 @@ export function parseRoute(hash: string): Route {
     if (nav === "reports" && section === "events") return { nav: "status", section };
     // Settings ▸ You ▸ Secrets is a page of its own (#5257): an old link opens it.
     if (nav === "settings" && section === "secrets") return { nav: "status", section };
+    // Settings ▸ You ▸ Environment opens Status ▸ Environment (#5260), as Secrets does.
+    if (nav === "settings" && section === "environment") return { nav: "status", section };
     // The Multiplier page took the Achievements page's place (#3990): an old link opens it.
     if (nav === "reports" && section === "achievements") return { nav, section: "multiplier" };
     // An item keeps its own state after the "?" too: #/reports/value/builds?repo=… (#5178).
@@ -174,6 +178,8 @@ function sectionHash(r: Route): string {
   if (!r.nav) return "#/";
   // The Secrets page's own address (#5257); an item of the person's is its name, which may hold a "/" of another place's id.
   if (r.nav === "status" && r.section === "secrets") return "#/secrets" + (r.item ? "/" + r.item.split("/").map(encodeURIComponent).join("/") : "");
+  // The Environment page's (#5260); a repo's item holds its folder's path.
+  if (r.nav === "status" && r.section === "environment") return "#/environment" + (r.item ? "/" + r.item.split("/").map(encodeURIComponent).join("/") : "");
   return `#/${r.nav}` + (r.section ? "/" + encodeURIComponent(r.section) + (r.item ? "/" + encodeURIComponent(r.item) : "")
     // A list's filters stay off an item's page, but Reports' pages under another keep theirs: #/reports/value/builds?… (#5178).
     + (r.query && (!r.item || r.nav === "reports") ? `?${r.query}` : "") : "");
@@ -184,7 +190,7 @@ function sectionHash(r: Route): string {
 export function isOldAddress(hash: string): boolean {
   return /^#\/?(console|a|setup)(\/|$)/.test(hash) || /^#\/?machines\/(runtimes|mcp)$/.test(hash)
     || /^#\/?reports\/events$/.test(hash) || /^#\/?(docs|messages)(\/|$)/.test(hash)
-    || /^#\/?(settings|status)\/secrets$/.test(hash);
+    || /^#\/?(settings|status)\/(secrets|environment)$/.test(hash);
 }
 
 /** The section a route is in: Agents for a host's places, the Overview for none. */

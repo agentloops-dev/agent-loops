@@ -13,7 +13,13 @@ struct StatusSecretsView: View {
 
     var body: some View {
         @Bindable var model = model
-        if kind == .secrets {
+        if kind == .environment {
+            // Status ▸ Environment (#5260): Yours through the control plane, each repo's through its machine's host.
+            EnvironmentPageView(control: model.controlRequests, state: model.userScope, source: model,
+                                selection: $model.environmentSelection,
+                                openSecret: { model.showSecrets(item: "yours/\($0)") })
+                .navigationTitle(EnvironmentPage.title)
+        } else if kind == .secrets {
             // Through the window's own connection, which hears when they change (#1760).
             SecretsPageView(control: model.controlRequests, state: model.userScope, source: model,
                             machineNames: SecretInfoWords.names(model.controlPlaneHosts ?? [], thisMac: model.thisMacHostID),

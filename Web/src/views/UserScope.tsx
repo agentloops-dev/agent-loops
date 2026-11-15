@@ -33,10 +33,12 @@ export async function setSecret(store: Store, name: string, value: string, repla
     ...(ask ? { needsApproval: true } : {}), ...describedAs(description) });
 }
 
-export function SecretSheet({ store, replacing, close, saved }: { store: Store; replacing: UserSecretRow | null; close: () => void;
+export function SecretSheet({ store, replacing, close, saved, suggested }: { store: Store; replacing: UserSecretRow | null; close: () => void;
   /** After a save, with the name: the Secrets page selects it (#5257). */
-  saved?: (name: string) => void }) {
-  const name = useSignal(replacing?.name ?? "");
+  saved?: (name: string) => void;
+  /** The name to start with: Save as a Secret Instead… on the Environment page (#5260). */
+  suggested?: string }) {
+  const name = useSignal(replacing?.name ?? suggested?.toUpperCase() ?? "");
   const value = useSignal("");
   // A new secret starts on (#4162); a replaced one keeps its own.
   const ask = useSignal(replacing ? replacing.needsApproval === true : true);

@@ -143,9 +143,12 @@ struct SecretSheet: View {
 
     /// `asks`: Ask before use as the toggle starts: the replaced secret's, on for a new one (#4162).
     /// `description`: the replaced secret's, to change (#4167).
-    init(name: String?, asks: Bool, description: String?, save: @escaping (String, String, Bool, String?) async -> String?) {
+    /// `suggested`: a new secret's name, filled in (Save as a Secret Instead… on the Environment page, #5260).
+    init(name: String?, asks: Bool, description: String?, suggested: String = "",
+         save: @escaping (String, String, Bool, String?) async -> String?) {
         self.name = name
         self.save = save
+        _typedName = State(initialValue: suggested)
         _askBeforeUse = State(initialValue: asks)
         _about = State(initialValue: description ?? "")
     }
@@ -218,9 +221,12 @@ struct CardSheet: View {
 
     /// `asks`: Ask before use as the toggle starts: the replaced card's, on for a new one (#4162).
     /// `description`: the replaced card's, to change (#4167).
-    init(name: String?, asks: Bool, description: String?, save: @escaping (String, String, Bool, String?) async -> String?) {
+    /// `suggested`: a new secret's name, filled in (Save as a Secret Instead… on the Environment page, #5260).
+    init(name: String?, asks: Bool, description: String?, suggested: String = "",
+         save: @escaping (String, String, Bool, String?) async -> String?) {
         self.name = name
         self.save = save
+        _typedName = State(initialValue: suggested)
         _askBeforeUse = State(initialValue: asks)
         _about = State(initialValue: description ?? "")
     }

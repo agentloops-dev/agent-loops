@@ -7,7 +7,7 @@ import Foundation
 public extension DaemonAPI {
     /// A part of the user settings. Each keeps the shape its file has on a machine.
     enum UserSettingsPartName: String, Codable, Sendable, Hashable, CaseIterable {
-        case mcpServers, agentConfig, runtimes, costLimits, notifications, accounts, timeZone
+        case mcpServers, agentConfig, runtimes, costLimits, notifications, accounts, timeZone, environment
     }
 
     /// The timeZone part (#4818): the person's time zone, which their Mac sets from its own
@@ -66,12 +66,15 @@ public extension DaemonAPI {
         public var accounts: JSONValue?
         /// The person's time zone (#4818), as a `UserTimeZone`.
         public var timeZone: JSONValue?
+        /// `~/.agents/env` (#5259), as a `UserEnvironment`: written to that file on each of the person's machines.
+        public var environment: JSONValue?
         public var updated: String?
 
         public init(mcpServers: JSONValue? = nil, agentConfig: JSONValue? = nil, agentConfigFiles: AgentConfigFiles? = nil, runtimes: JSONValue? = nil,
                     costLimits: JSONValue? = nil, notifications: JSONValue? = nil, accounts: JSONValue? = nil, timeZone: JSONValue? = nil,
-                    updated: String? = nil) {
+                    environment: JSONValue? = nil, updated: String? = nil) {
             self.timeZone = timeZone
+            self.environment = environment
             self.mcpServers = mcpServers
             self.agentConfig = agentConfig
             self.agentConfigFiles = agentConfigFiles
@@ -91,6 +94,7 @@ public extension DaemonAPI {
             case .notifications: notifications
             case .accounts: accounts
             case .timeZone: timeZone
+            case .environment: environment
             }
         }
     }

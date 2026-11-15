@@ -40,6 +40,7 @@ import { AddMachineDialog } from "./AddMachineDialog";
 import { addMachineWords } from "../model/addMachine";
 import { SettingsPage } from "./Settings";
 import { SecretsPage } from "./SecretsPage";
+import { EnvironmentPage } from "./EnvironmentPage";
 import { AccountsSection } from "./Accounts";
 import { StatusListMark, StatusListLastLine, StatusSecretsPage, useUserScopeStatus } from "./StatusSecrets";
 import { WorkflowRow } from "./WorkflowRow";
@@ -315,6 +316,8 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         // Every secret of the person's (#5257): theirs (#1760), a machine's for one session (#3548) and what agents saved
         // on that machine (#5122), in one list beside the selected one's detail. Settings ▸ You keeps a line to it.
         : page.draw.kind === "secrets" ? <SecretsPage store={store} down={down} />
+        // The plain variables sessions get when their agent starts (#5260): ~/.agents/env and each repo's .agents/env.
+        : page.draw.kind === "environment" ? <EnvironmentPage store={store} down={down} />
         : page.draw.kind === "accounts" ? <AccountsSection store={store} down={down} />
         : page.draw.kind === "statusList" ? <StatusSecretsPage store={store} list={page.draw.list} />
         : page.draw.kind === "docs" ? (route.value.item
