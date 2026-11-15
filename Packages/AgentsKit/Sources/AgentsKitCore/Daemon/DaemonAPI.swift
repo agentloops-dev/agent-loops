@@ -26,6 +26,9 @@ public enum DaemonAPI {
         public static let runtimesSignInStart = "runtimes/signInStart"
         public static let runtimesSignInFinish = "runtimes/signInFinish"
         public static let runtimesSignInKey = "runtimes/signInKey"
+        /// The key a person has in Secrets for a runtime, to sign it in on a machine being set up
+        /// (#5361): `SecretSignInKeyRequest` → `SecretSignInKey`. Asked of this Mac's host.
+        public static let secretsSignInKey = "secrets/signInKey"
         public static let sessionsList = "sessions/list"
         public static let sessionsAdopt = "sessions/adopt"
         public static let sessionsDelete = "sessions/delete"
@@ -2511,6 +2514,27 @@ public enum DaemonAPI {
         public init(runtimeID: String, key: String) {
             self.runtimeID = runtimeID
             self.key = key
+        }
+    }
+
+    /// `secrets/signInKey` (#5361): the runtime to find a key for.
+    public struct SecretSignInKeyRequest: Codable, Sendable {
+        public var runtimeID: String
+        public init(runtimeID: String) { self.runtimeID = runtimeID }
+    }
+
+    /// The first of the runtime's secret names that is set with Ask before use off, with its value; else
+    /// none. A name with Ask before use on is never given: it is in `refused`.
+    public struct SecretSignInKey: Codable, Sendable, Equatable {
+        public var name: String?
+        public var value: String?
+        public var looked: [String]
+        public var refused: [String]
+        public init(name: String? = nil, value: String? = nil, looked: [String] = [], refused: [String] = []) {
+            self.name = name
+            self.value = value
+            self.looked = looked
+            self.refused = refused
         }
     }
 

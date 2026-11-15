@@ -110,6 +110,7 @@ public enum Capability {
     public static let hostSecretApproval1 = "host.secret-approval/1"
     public static let hostSecretGrants1 = "host.secret-grants/1"
     public static let hostSecretRelease1 = "host.secret-release/1"
+    public static let hostSecretSignIn1 = "host.secret-sign-in/1"
     public static let hostSecretTerminal1 = "host.secret-terminal/1"
     public static let hostSessionSecrets1 = "host.session-secrets/1"
     public static let hostSuspend1 = "host.suspend/1"
@@ -582,6 +583,7 @@ public enum Capability {
         "secrets/sessionRemove": "host.session-secrets/1",
         "secrets/sessionSet": "host.session-secrets/1",
         "secrets/setNeedsApproval": "host.secret-approval/1",
+        "secrets/signInKey": "host.secret-sign-in/1",
         "secrets/terminalValue": "host.secret-terminal/1",
         "selfUpdate/set": "host.update/1",
         "selfUpdate/status": "host.update/1",
