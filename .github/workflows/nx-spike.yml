@@ -41,7 +41,10 @@ jobs:
       TARGETS: test,test-unit,test-control,test-integration,test-repo,lint,build,vet
     steps:
       # actions/cache refuses a path with '..': the cache is in the runner's temp folder.
-      - run: echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx-cache" >> "$GITHUB_ENV"
+      # The cache's index is a database in the workspace data, so both are saved (criterion 7).
+      - run: |
+          echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
+          echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
       # The PR's own commit, not the merge with main: the hashes must be the lane's (criterion 11).
       - uses: actions/checkout@v6
         with:
@@ -65,7 +68,7 @@ jobs:
         id: restore
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/nx-cache
+          path: ${{ runner.temp }}/nx
           key: nx-${{ matrix.name }}-${{ github.event.pull_request.head.sha || github.sha }}
           restore-keys: nx-${{ matrix.name }}-
       - name: Hashes of the affected tasks, with no task run (criterion 11)
@@ -89,12 +92,12 @@ jobs:
         if: always()
         run: |
           grep -E "existing outputs match the cache|local cache|Successfully ran|tasks? .*succeeded|Cache:|failed" "$RUNNER_TEMP/nx.txt" || true
-          du -sh "$NX_CACHE_DIRECTORY" || true
+          du -sh "$RUNNER_TEMP/nx"/* || true
       - name: Save the Nx cache
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: ${{ runner.temp }}/nx-cache
+          path: ${{ runner.temp }}/nx
           key: nx-${{ matrix.name }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v5
         if: always()
