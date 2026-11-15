@@ -343,7 +343,13 @@ async function main(argv) {
     cwd: root, encoding: "utf8", input: JSON.stringify(body),
   });
   if (posted.status !== 0) {
-    console.error(`attest: could not post the check run (it needs the agents' bot, with checks: write):\n${posted.stderr}${posted.stdout}`);
+    const said = `${posted.stdout ?? ""}${posted.stderr ?? ""}`.trim() || `gh exited ${posted.status ?? posted.signal}`;
+    const why = /not accessible by integration|HTTP 403/.test(said)
+      ? "the agents' bot has no Checks: write (a bot made before #5584 has Checks: read: its owner accepts the new permission on GitHub)"
+      : "it needs gh as the agents' bot, with Checks: write";
+    console.error(`attest: could not post the check run: ${why}:\n${said}`);
+    // The run's statements, so a lane can still see them.
+    console.log(JSON.stringify(body, null, 1));
     return 1;
   }
   const run = JSON.parse(posted.stdout);
