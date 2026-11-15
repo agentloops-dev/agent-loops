@@ -69,7 +69,8 @@ func (d *Daemon) startShell(agentID wire.UUID, number int64, folder string, rows
 	}
 	cmd := exec.Command(sh, "-l")
 	cmd.Dir = folder
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "TERM_PROGRAM=Agents")
+	// The same variables as a session in this folder (#5259), so the person sees what the agent sees.
+	cmd.Env = append(d.withPersonEnv(os.Environ(), folder), "TERM=xterm-256color", "TERM_PROGRAM=Agents")
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
 	if err != nil {
 		return nil, &Error{Code: wire.FailureShellWillNotStart, Message: "The shell would not start: " + err.Error()}
