@@ -32,7 +32,13 @@ struct DashboardView: View {
                     empty
                 } else {
                     counts(board)
-                    if !board.epics.isEmpty { epics(board.epics) }
+                    if !board.epics.isEmpty {
+                        epics(board.epics)
+                    } else if !forge.answered {
+                        // The epics come with the forge's first read: a grey box keeps their place
+                        // so the rows below do not move when they arrive (#5697).
+                        DashboardEpicsLoading()
+                    }
                     sections(board)
                 }
             }
@@ -155,6 +161,8 @@ final class DashboardForge {
     var readAt: Date?
     /// The last read failed: the rows keep what was read before, or their labels.
     var failed = false
+    /// The first read has answered, with or without the forge: until then the epics are not known.
+    var answered = false
 
     func read(_ model: AppModel) async {
         let open = DaemonAPI.ForgeListRequest(state: "open", limit: 100)
@@ -169,6 +177,7 @@ final class DashboardForge {
         if let pulls { self.pulls = pulls.items }
         if let epics { self.epics = epics.items }
         if !failed { readAt = Date() }
+        answered = true
     }
 }
 
@@ -244,6 +253,28 @@ private struct DashboardEpicCard: View {
         }
         .buttonStyle(.plain)
         .help("Open epic #\(epic.number)")
+    }
+}
+
+/// The grey box in the epics' place until the forge's first read answers (#5697): an epic card's
+/// lines, hidden, so it is as tall as the band the cards take.
+private struct DashboardEpicsLoading: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                DashboardMark(mark: .idle)
+                Text("#0 Epic")
+            }
+            .appText(.supporting)
+            ProgressView(value: 0).progressViewStyle(.linear)
+            Text("0 of 0 done · 0 here").appText(.fine)
+        }
+        .hidden()
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Paper.wash, in: RoundedRectangle(cornerRadius: Paper.Radius.card))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading epics")
     }
 }
 
