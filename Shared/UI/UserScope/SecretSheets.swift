@@ -1,202 +1,8 @@
 import AgentsKitCore
 import SwiftUI
 
-/// Settings ▸ You ▸ Secrets (#1760, #3632): the person’s secrets, by name only, kept by the control
-/// plane and sent to each machine of theirs. The window draws it; the web page
-/// draws the same in `Web/src/views/UserScope.tsx`. A card (#3531) is a secret of its own kind.
-/// Ask before use (#4016) is sealed with the value, so it is set on Add and Replace, which seal it
-/// again: no client can read a value back to seal it with a new flag.
-/// `extra` is what a client draws after them: the Mac's secrets for one session (#3548). The window
-/// and the Remote (#4032) draw it. Each row has its last 4, when it was added and last used, and
-/// a warning when it is not backed up (#4159).
-struct SecretsPane<Extra: View>: View {
-    /// The control plane, or nil while it cannot be reached.
-    let control: DaemonClient?
-    let state: UserScopeState
-    /// Each of the person's machines' names, by id, for the not-backed-up warning.
-    let machineNames: [String: String]
-    /// Reveal and Copy (#5115): the window's; nil on the Remote (tier Mac + web), which draws neither.
-    let show: SecretShowState?
-    let extra: Extra
-
-    init(control: DaemonClient?, state: UserScopeState, machineNames: [String: String] = [:], show: SecretShowState? = nil,
-         @ViewBuilder extra: () -> Extra) {
-        self.control = control
-        self.state = state
-        self.machineNames = machineNames
-        self.show = show
-        self.extra = extra()
-    }
-
-    @State private var problem: String?
-    @State private var isAdding = false
-    @State private var isAddingCard = false
-    @State private var replacing: DaemonAPI.UserSecretRow?
-    @State private var removing: DaemonAPI.UserSecretRow?
-
-    var body: some View {
-        Form {
-            // Read when it opens and on each change (#5146): how old the names are, at the top.
-            if let readAt = state.readAt {
-                Section {} header: { LastUpdateText(read: readAt) }
-            }
-            if let problem = problem ?? state.problem {
-                Section {
-                    Text(problem).appText(.supporting).tinted(.failure)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .paperListRow()
-            }
-            if let left = state.left {
-                Section {
-                    Text(UserScopeWords.secretsLeft(left)).appText(.supporting).tinted(.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("OK") { state.left = nil }
-                }
-                .paperListRow()
-            }
-            if let only = SecretInfoWords.onlyMachine(state.secrets?.secrets ?? []) {
-                Section {
-                    Label(SecretInfoWords.onlyMachineLine(only, names: machineNames), icon: "exclamationmark.triangle")
-                        .appText(.supporting).tinted(.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .paperListRow()
-            }
-            secretsSection
-            extra
-        }
-        .paperForm()
-        .task(id: control != nil) { await state.load(control) }
-        .refreshable { await state.load(control) }
-        // A value shown hides when the pane closes, the window goes to the back, or its secret changes.
-        .onDisappear { show?.hide() }
-        .onChange(of: state.secrets) { _, names in show?.secretsChanged(names?.secrets ?? []) }
-        #if os(macOS)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in show?.hide() }
-        #endif
-        .sheet(isPresented: $isAdding) {
-            SecretSheet(name: nil, asks: true, description: nil) { name, value, ask, description in
-                await state.setSecret(name, value: value, askBeforeUse: ask, description: description, on: control)
-            }
-            .paperSheet()
-        }
-        .sheet(isPresented: $isAddingCard) {
-            CardSheet(name: nil, asks: true, description: nil) { name, value, ask, description in
-                await state.setSecret(name, value: value, kind: CardSecret.kind, askBeforeUse: ask, description: description, on: control)
-            }
-            .paperSheet()
-        }
-        .sheet(item: $replacing) { row in
-            if row.isCard {
-                CardSheet(name: row.name, asks: row.asksBeforeUse, description: row.description) { name, value, ask, description in
-                    await state.setSecret(name, value: value, kind: CardSecret.kind, replacing: row, askBeforeUse: ask,
-                                          description: description, on: control)
-                }
-                .paperSheet()
-            } else {
-                SecretSheet(name: row.name, asks: row.asksBeforeUse, description: row.description) { name, value, ask, description in
-                    await state.setSecret(name, value: value, replacing: row, askBeforeUse: ask, description: description, on: control)
-                }
-                .paperSheet()
-            }
-        }
-        .confirmationDialog(removing.map { "Remove \($0.name)?" } ?? "",
-                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-                            titleVisibility: .visible, presenting: removing) { row in
-            Button("Remove", role: .destructive) {
-                Task { problem = await state.removeSecret(row.name, on: control) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("It is taken out of the sealed store on every machine of yours.")
-        }
-    }
-
-    private var secretsSection: some View {
-        let rows: [DaemonAPI.UserSecretRow] = state.secrets?.secrets ?? []
-        let oneMachine = SecretInfoWords.onlyMachine(rows) != nil
-        return Section {
-            ForEach(rows) { row in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(row.name).appText(.code)
-                        if row.isCard {
-                            Text(UserScopeWords.cardKind).appText(.fine).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if show?.shown?.name != row.name {
-                            Text(SecretInfoWords.hint(row.hint)).appText(.code).foregroundStyle(.secondary)
-                                .accessibilityLabel(row.hint.map { "Ends in \($0)" } ?? "Value hidden")
-                        }
-                        if let show {
-                            SecretShowButtons(row: row, show: show, control: control)
-                        }
-                        Menu {
-                            if let show {
-                                let off = control == nil || show.noCopy.contains(row.name)
-                                Button(show.shown?.name == row.name ? UserScopeWords.hide : UserScopeWords.reveal) {
-                                    Task { await show.toggle(row, on: control) }
-                                }
-                                .disabled(off)
-                                Button(UserScopeWords.copyValue) { Task { await show.copy(row, on: control) } }
-                                    .disabled(off)
-                                Divider()
-                            }
-                            Button("Replace…") { replacing = row }
-                            Button("Remove…", role: .destructive) { removing = row }
-                        } label: {
-                            Image(icon: "ellipsis.circle")
-                        }
-                        .fixedSize()
-                        .accessibilityLabel("\(row.name) actions")
-                    }
-                    if let show, let shown = show.shown, shown.name == row.name {
-                        SecretShownValue(row: row, shown: shown, show: show, control: control)
-                    }
-                    Text(UserScopeWords.about(row.description)).appText(.fine).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    SecretInfoLine(parts: SecretInfoWords.line(row))
-                    if let show {
-                        SecretShowLines(row: row, show: show)
-                    }
-                    if row.asksBeforeUse {
-                        Label(show == nil ? AskBeforeUseWords.asks : UserScopeWords.asksForAgents, icon: "hand.raised")
-                            .appText(.fine).foregroundStyle(.secondary)
-                    }
-                    if let waiting = UserScopeWords.waiting(row) {
-                        Text(waiting).appText(.fine).tinted(.attention)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if let left = UserScopeWords.leftOn(row) {
-                        Text(left).appText(.fine).tinted(.warning)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if !oneMachine, let warning = SecretInfoWords.notBackedUp(row, names: machineNames) {
-                        Text("⚠ " + warning).appText(.fine).tinted(.warning)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            Button(UserScopeWords.addSecret) { isAdding = true }
-                .disabled(control == nil)
-            Button(UserScopeWords.addCard) { isAddingCard = true }
-                .disabled(control == nil)
-        } footer: {
-            Text(UserScopeWords.secretsFoot).appText(.fine).foregroundStyle(.secondary)
-        }
-        .paperListRow()
-    }
-}
-
-extension SecretsPane where Extra == EmptyView {
-    init(control: DaemonClient?, state: UserScopeState, machineNames: [String: String] = [:], show: SecretShowState? = nil) {
-        self.init(control: control, state: state, machineNames: machineNames, show: show) { EmptyView() }
-    }
-}
-
 /// A row's Reveal (an eye; a spinner while its copy is fetched) and Copy (a check for 2 s once copied), #5115.
-private struct SecretShowButtons: View {
+struct SecretShowButtons: View {
     let row: DaemonAPI.UserSecretRow
     let show: SecretShowState
     let control: DaemonClient?
@@ -229,7 +35,7 @@ private struct SecretShowButtons: View {
 
 /// The value shown, in a well, in the code font, that a person cannot select: Copy is the only
 /// way to copy it, so each copy is in the audit log. A card shows each part with its own Copy.
-private struct SecretShownValue: View {
+struct SecretShownValue: View {
     let row: DaemonAPI.UserSecretRow
     let shown: SecretShowState.Shown
     let show: SecretShowState
@@ -268,7 +74,7 @@ private struct SecretShownValue: View {
 }
 
 /// Under a row: how long the value still shows, that it was copied, or why it cannot.
-private struct SecretShowLines: View {
+struct SecretShowLines: View {
     let row: DaemonAPI.UserSecretRow
     let show: SecretShowState
 
@@ -321,7 +127,7 @@ struct SecretInfoLine: View {
 }
 
 /// Add a Secret… and Replace…: a name and a value. The value is never shown again.
-private struct SecretSheet: View {
+struct SecretSheet: View {
     /// The secret replaced, or nil for a new one.
     let name: String?
     /// Save, with the name, the value, Ask before use and the description (#4167).
@@ -391,7 +197,7 @@ private struct SecretSheet: View {
 
 /// Add a Card… and a card's Replace… (#3531): a payment card for agents to fill into a page,
 /// only one with a spend limit (a merchant or category lock is recommended). Its parts are one secret; none is shown again.
-private struct CardSheet: View {
+struct CardSheet: View {
     /// The card replaced, or nil for a new one.
     let name: String?
     /// Save, with the name, the card's parts as one value, Ask before use and the description (#4167).
