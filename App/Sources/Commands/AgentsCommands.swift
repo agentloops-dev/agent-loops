@@ -203,7 +203,8 @@ struct AgentsCommands: Commands {
             // Status ▸ Accounts, a page of its own (#5258).
             Button("Accounts") { model.showAccounts() }
                 .disabled(ControlConfig.endpoint == nil)
-            Button("Dashboard") { model.showsDashboard = true }
+            // The page the window opens to (#5696).
+            Button("Dashboard") { model.showDashboard() }
             // A list each, as the sidebar's Work group (#4004).
             Menu("Work") {
                 ForEach(WorkList.Kind.allCases) { kind in
@@ -212,8 +213,8 @@ struct AgentsCommands: Commands {
             }
             Button("Docs") { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
             Button(MessagesList.title) { model.sidebarItem = .messages }
-            // The page the window opens to (#3986). ⌘1…n are the inspector panes, so ⌘0 is
-            // next to them; Actual Size keeps it while a Markdown page is in front.
+            // ⌘1…n are the inspector panes, so ⌘0 is next to them (#3986); Actual Size keeps it
+            // while a Markdown page is in front.
             Button("Multiplier") { model.showMultiplier() }
                 .keyboardShortcut(pageZoom == nil ? KeyboardShortcut("0") : nil)
             Button("Cost") { model.showsSpending = true }
