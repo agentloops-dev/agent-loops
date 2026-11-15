@@ -178,7 +178,8 @@ struct FolderListView: View {
             // Sessions (#5267), so the rows with no header went: Docs and Messages are Work's first.
             Section(isExpanded: $showsWorkLists) {
                 // The Dashboard (#5534, a PoC): each work item on this Mac and its sessions, with
-                // what waits on the person answered in place. First, as the place to start from.
+                // what waits on the person answered in place. First, as the page the window opens
+                // to and the way back to it (#5696).
                 HStack { Text("Dashboard").foregroundStyle(.primary); Spacer() }
                     .help("Each work item on this Mac, its sessions, pull request and checks, and what waits on you")
                     .activityIcon("square.grid.2x2")
@@ -258,7 +259,7 @@ struct FolderListView: View {
             }
 
             Section(isExpanded: $showsUsage) {
-                // The way back to the page the window opens to (#3986), always first.
+                // The Multiplier (#3986), always first.
                 MultiplierRow().activityIcon("multiply.circle")
                     .appText(.supporting).sidebarInk(.multiplier).tag(SidebarItem.multiplier)
                 SpendingRow(selection: $selection).activityIcon("dollarsign.circle",
