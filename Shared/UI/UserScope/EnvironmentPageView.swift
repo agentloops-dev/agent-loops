@@ -606,7 +606,7 @@ private struct EnvironmentAddSheet: View {
     var body: some View {
         Form {
             Section {
-                TextField("Name", text: $name, prompt: Text("AWS_REGION"))
+                TextField("Name", text: $name, prompt: Text("DEPLOY_REGION"))
                     .autocorrectionDisabled()
                     #if os(iOS)
                     .textInputAutocapitalization(.characters)
@@ -720,6 +720,8 @@ private struct EnvironmentSessionSheet: View {
             }
         }
         .paperForm()
+        // It opens on the first folder, as the web page's does, so it shows a result at once.
+        .onAppear { if pick == nil, let first = folders.first { pick = .folder(first) } }
         .task(id: pick) { await resolve() }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }

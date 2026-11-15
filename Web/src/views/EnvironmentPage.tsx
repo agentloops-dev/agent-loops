@@ -387,7 +387,7 @@ function AddVariableSheet({ files, known, write, close, asSecret, added }: {
       <form method="dialog" class="sheet-body env-add" onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <h2>{w.add}</h2>
         <label>Name
-          <input type="text" placeholder="AWS_REGION" autofocus autocomplete="off" spellcheck={false} value={name.value}
+          <input type="text" placeholder="DEPLOY_REGION" autofocus autocomplete="off" spellcheck={false} value={name.value}
             onInput={(e) => { name.value = (e.currentTarget as HTMLInputElement).value; problem.value = null; }} />
         </label>
         <label>Value
