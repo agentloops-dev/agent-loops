@@ -67,31 +67,39 @@ starts lanes.
    - Not needed (copy, colour, spacing, fonts, icons, the look or state of an existing
      control, empty states, polish): turn on squash auto-merge at once and go on to
      step 7, as for a bug fix.
-   - Needed: open the PR with auto-merge **off** and the label `needs-approval`.
+   - Needed: open the PR with auto-merge **off**, as the agents' bot, and request Alex's
+     review: `gh pr edit <n> --add-reviewer alexec` (epic #5802). Add no label.
    - Needed: fix nothing until Alex answers: no CI fixes, rebases or conflict fixes. Wait with
      `wait_for_event` on `pr.reviewed`, `pr.commented` and `pr.closed`, `where: {"pr": <n>}`,
      and end your turn (#2838, #3860): each wakes you with the review or the comment itself
      (author, state, url, body), so there is no timer to re-check on and no need to re-read
      the PR by hand. A comment you write as `alexec` starts with `<!-- agent -->`
      (AGENTS.md, "Who an agent posts as"): `pr.commented` leaves those out, and a bot's,
-     so a comment it raises is always Alex's.
-   - Alex approves: a review with **Approve** (`pr.reviewed`, state `approved`) on the
-     bot's PR, or a comment such as "I approve these screenshots, ship it" on a PR posted
-     as `alexec`, who cannot review their own. Add `approved`, remove `needs-approval`,
-     write `Alex approved (<review or comment link>)` in the PR body, fix the checks,
-     rebase, turn on squash auto-merge and go on to step 7.
+     so a comment it raises is always Alex's. Do not add `pr.blocked` to this wait: a PR
+     with a review requested from a person is never blocked (#5803), so it cannot fire.
+   - Alex approves: only Alex's own review with **Approve** (`pr.reviewed`, state
+     `approved`), from github.com or from Approve in the app, which makes the same review.
+     Write `Alex approved (<review link>)` in the PR body, fix the checks, merge main in
+     (`git merge origin/main`, never a rebase), turn on squash auto-merge and go on to step 7. A comment, a message in chat or a label does
+     not approve: when Alex says "approved" that way, ask on the PR for a review with
+     Approve, and wait again.
    - Alex asks for changes: a review with **Request changes** (state `changes_requested`)
-     or any other comment. Add `changes-wanted`, make the changes, take a new set of
-     screenshots, remove `changes-wanted`, say on the PR what you changed and wait again.
-     A review with only words (state `commented`) is a comment. When you cannot tell which
-     one Alex means, ask on the PR.
+     or any other comment. Make the changes, take a new set of screenshots, say on the PR
+     what you changed, request Alex's review again (`gh pr edit <n> --add-reviewer
+     alexec`) and wait again. A review with only words (state `commented`) is a comment.
+     When you cannot tell what Alex wants changed, ask on the PR.
    - Closed: Alex dropped it. Go to step 9.
 7. Wait for the pull request to merge. Use one `wait_for_event` call with
-   `events: ["pr.merged", "pr.closed", "pr.blocked", "checks.passed"]`,
+   `events: ["pr.merged", "pr.closed", "pr.blocked", "pr.commented", "checks.passed"]`,
    `where: {"pr": <n>}` and `until_minutes: 60`, and end your turn. Any one of the
    events starts you again. Then do what the event says:
    - `pr.merged`: go on to step 8.
    - `pr.closed` (closed without a merge): go to step 9.
+   - `pr.commented`: a comment from Alex (`pr.commented` leaves out the agents' own). A
+     comment does not block the PR, so `pr.blocked` does not fire for it. Read it. When it
+     asks for a change, turn off auto-merge (`gh pr merge --disable-auto <n>`), make the
+     change, say on the PR what you changed, turn auto-merge on again, and wait again.
+     When it asks for nothing, wait again.
    - `pr.blocked` (#5321): the PR cannot merge until you act. Do what each of its
      `reasons` says (`docs/reference/events.md`, "Blocked pull requests"), push once,
      and wait again:
@@ -99,8 +107,9 @@ starts lanes.
        your branch for each of `failedChecks`. You fix your own PR's checks, also when a
        Fix failed checks workflow is on. When main fails the same test, do not fix it:
        wait for main to go green, then run the checks again (its step 2a, #5589).
-     - `conflict` or `behind`: rebase onto main, push, and run
-       `scripts/rearm-automerge.sh <pr>`.
+     - `conflict` or `behind`: `git merge origin/main` (never a rebase, so no
+       force-push), settle the conflict, push without running the tests again (AGENTS.md,
+       "Lease `ci`…"), and run `scripts/rearm-automerge.sh <pr>`.
      - `changes_requested`: read the review (`reviewUrl`), make the changes, and say on
        the PR what you changed.
      - `automerge_disabled`: find out why (`gh pr view <n>`), fix that, and turn on
@@ -110,7 +119,7 @@ starts lanes.
      (#1741), so this wakes for that without waiting for the time limit.
    - **The wait is refused** with "No server here offers pr.blocked" (#5437: the
      installed app is older than #5321): wait instead on
-     `["pr.merged", "pr.closed", "checks.failed", "checks.passed", "pr.conflicted"]`,
+     `["pr.merged", "pr.closed", "pr.commented", "checks.failed", "checks.passed", "pr.conflicted"]`,
      with the same `where` and `until_minutes`, and use that list for the rest of this
      session. `checks.failed` is `required_check_failed` above, and `pr.conflicted` is
      `conflict`.

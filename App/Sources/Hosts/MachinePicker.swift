@@ -183,12 +183,7 @@ struct MachinePickerList: View {
             .accessibilityLabel(label)
         }
         .onAppear { searching = true }
-        // Typing waits a moment; a machine joining, leaving or changing state reads again.
-        .task(id: "\(search)|\(machinesKey)") {
-            if !search.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
-            guard !Task.isCancelled else { return }
-            await read(search)
-        }
+        .machinePickerReads(search, machines: machinesKey) { await read($0) }
     }
 
     private func anyRow(_ any: AnyRow) -> some View {
@@ -274,26 +269,6 @@ struct MachinePickerList: View {
             if mine == serial { problem = HostProblem.controlRefusal(error) }
         } catch {
             if mine == serial { problem = "The control plane can’t be reached." }
-        }
-    }
-}
-
-/// A machine's state dot: green online, amber needing an update, grey stopped, red anything else that does not answer.
-struct MachinePickerDot: View {
-    let dot: MachinePickerChoice.Dot
-
-    init(_ machine: DaemonAPI.ControlMachine) { dot = MachinePickerChoice.dot(machine) }
-
-    var body: some View {
-        Circle().fill(tint).frame(width: 7, height: 7).accessibilityHidden(true)
-    }
-
-    private var tint: AnyShapeStyle {
-        switch dot {
-        case .online: StateTint.vouched.style(or: .secondary)
-        case .attention: StateTint.attention.style(or: .secondary)
-        case .stopped: AnyShapeStyle(.tertiary)
-        case .offline: StateTint.failure.style(or: .secondary)
         }
     }
 }

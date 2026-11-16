@@ -15927,8 +15927,9 @@ export interface WorkReport {
  * machine's sessions. suggestions are at most 3 epics with no lead (no session that is not archived
  * has both #<epic> and lead), ranked: an epic with priority:high children first, then one with UI
  * children, then the earliest milestone due date, then the one nearest to done. more is how many
- * more there are, for N more in Work. An epic the person dismissed is left out until it changes or
- * a lead has ended. errors say a forge that could not be read.
+ * more there are, for N more in Work. An epic the person dismissed is left out until its progress
+ * changes (done or total children; not its update time, #5731) or a lead of it has ended. errors
+ * say a forge that could not be read.
  */
 export interface WorkSuggestLeads {
   suggestions: WorkLeadSuggestion[];

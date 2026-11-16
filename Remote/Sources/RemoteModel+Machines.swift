@@ -47,6 +47,14 @@ extension RemoteModel {
         }
     }
 
+    /// Whether the Machines group shows the machine before the rest (#5286), as the window's:
+    /// it needs something, it is starting, or sessions work or wait for the person there.
+    func machineIsActive(_ host: MachineRef) -> Bool {
+        if need(of: host) != nil || hostsBeingStarted.contains(host) { return true }
+        let sessions = MachineSessions(work.agents.filter { $0.host == host })
+        return !sessions.agents(.working).isEmpty || !sessions.agents(.waiting).isEmpty
+    }
+
     /// A machine's most urgent need, as its row says it (#3764).
     func need(of host: MachineRef) -> MachineNeed? {
         MachineNeed.most(row: machineRow(host), offline: machineOffline(host),
@@ -745,5 +753,44 @@ extension RemoteModel {
         parts.connectionLost()
         listening = nil
         await connect()
+    }
+}
+
+// MARK: The one machine picker (#5622, the Mac's #5621, the web's #5287)
+
+extension RemoteModel {
+    /// A page of the picker: the machines that `search` matches, by name, and how many match in all.
+    struct MachinePickerPage {
+        var machines: [DaemonAPI.ControlMachine]
+        var total: Int
+    }
+
+    /// The picker's page for `search`, from `machines/list` with the words (#5283), so a person with many
+    /// machines never loads them all. A control plane before `machines/2` answers every machine, and the
+    /// picker filters them here; with no control plane to ask, the machines the watch last heard. This
+    /// Mac's row carries `.mac`, the id its folders are stamped with.
+    func machinePickerPage(_ search: String) async throws -> MachinePickerPage {
+        let all: [DaemonAPI.ControlMachine]
+        if let control = controlPlane {
+            let answer = try await control.call(DaemonAPI.Method.hostsList, MachinePickerChoice.query(search))
+            if answer.arrayValue == nil {
+                let list = try answer.decode(DaemonAPI.MachineList.self)
+                return MachinePickerPage(machines: list.machines.map(asPickerRow), total: list.total)
+            }
+            all = try answer.decode([DaemonAPI.ControlMachine].self)
+        } else {
+            all = controlHosts
+        }
+        let found = MachinePickerChoice.filtered(all.map(asPickerRow), search: search)
+        return MachinePickerPage(machines: Array(found.prefix(MachinePickerChoice.limit)), total: found.count)
+    }
+
+    /// The home host's row as `.mac`, named This Mac, as the Machines group names it.
+    private func asPickerRow(_ machine: DaemonAPI.ControlMachine) -> DaemonAPI.ControlMachine {
+        guard machine.id == controlHome else { return machine }
+        var mac = machine
+        mac.id = .mac
+        mac.name = machineName(.mac)
+        return mac
     }
 }

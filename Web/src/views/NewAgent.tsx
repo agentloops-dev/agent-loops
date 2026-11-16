@@ -68,8 +68,16 @@ interface Form {
   state: "loading" | "ready" | { failed: string };
 }
 
-export function NewAgent({ store, host, folder, folderName, down }: {
-  store: Store; host: string; folder: string; folderName: string; down: boolean;
+/** New Session in Background's dialog (#5798): what a start and a folder pick do there, in place of going to them. */
+export interface InBackground {
+  /** The session started: the dialog closes, and the page under it stays. */
+  started: () => void;
+  /** A folder picked in Project or On: the dialog's folder changes, not the page's. */
+  move: (host: string, folder: string) => void;
+}
+
+export function NewAgent({ store, host, folder, folderName, down, inBackground }: {
+  store: Store; host: string; folder: string; folderName: string; down: boolean; inBackground?: InBackground | undefined;
 }) {
   const listed = store.runtimes.value[host] ?? [];
   const runs = runtimeRuns(listed);
@@ -480,7 +488,9 @@ export function NewAgent({ store, host, folder, folderName, down }: {
     const { draftID: _taken, ...rest } = form.value;
     form.value = rest;
     namedMachine.value = undefined;
-    go({ host: target.host, folder: target.folder, session: id });
+    // From New Session in Background (#5798): nothing opens it; the new row in the sidebar says it started.
+    if (inBackground) inBackground.started();
+    else go({ host: target.host, folder: target.folder, session: id });
     return true;
   };
 
@@ -488,7 +498,7 @@ export function NewAgent({ store, host, folder, folderName, down }: {
   const keptStarts = store.keptStarts(host, folder);
   const delivered = store.keptDelivered.value;
   useEffect(() => {
-    if (delivered?.agentID && delivered.host === host && keptShown.current.has(delivered.id)) {
+    if (!inBackground && delivered?.agentID && delivered.host === host && keptShown.current.has(delivered.id)) {
       go({ host, folder: folder, session: delivered.agentID });
     }
   }, [delivered]);
@@ -533,15 +543,18 @@ export function NewAgent({ store, host, folder, folderName, down }: {
     : !form.value.options.length ? <p class="quiet small">This runtime has no settings to choose.</p>
     : null;
   return (
-    <section class="chat new-agent" aria-label="New session">
-      <header class="column-head narrow-only">
-        <BackToList />
-      </header>
+    <section class={inBackground ? "chat new-agent in-background" : "chat new-agent"} aria-label="New session">
+      {!inBackground && (
+        <header class="column-head narrow-only">
+          <BackToList />
+        </header>
+      )}
       {/* The same strip as over a chat: a prompt here goes to that host too (#83). */}
       {!down && !store.hostIsOnline(host) && <div class="strips"><OfflineStrip store={store} host={host} /></div>}
       <div class="scroll new-heading">
-        <Huddle focused={promptFocused.value} typed={typed.value} />
-        <ProjectSwitch store={store} host={host} folder={folder} folderName={folderName} down={down} auto={autoMachine.value} />
+        {!inBackground && <Huddle focused={promptFocused.value} typed={typed.value} />}
+        <ProjectSwitch store={store} host={host} folder={folder} folderName={folderName} down={down} auto={autoMachine.value}
+          move={inBackground?.move} />
         {personas.value.length > 0 && (
           <div class="persona-choice">
             {usablePersonas.length > 0 && (
@@ -555,7 +568,7 @@ export function NewAgent({ store, host, folder, folderName, down }: {
         )}
         <p class="quiet" title={path}>{path} · {machine}</p>
         <KeptBubbles store={store} kept={keptStarts} />
-        <Suggested store={store} host={host} down={down} />
+        {!inBackground && <Suggested store={store} host={host} down={down} />}
       </div>
       <footer class="foot"
         onFocusIn={(e) => { if (isPrompt(e.target)) { promptFocused.value = true; typed.value = e.target.value.length; } }}
@@ -884,8 +897,9 @@ function PersonaSwitch({ personas, picked, down, choose }: {
  * projects, and under it the machines with a folder of the one picked. A project with one folder
  * hides On and is named as its folder is today, so it looks as the folder's menu did.
  */
-function ProjectSwitch({ store, host, folder, folderName, down, auto }: {
+function ProjectSwitch({ store, host, folder, folderName, down, auto, move }: {
   store: Store; host: string; folder: string; folderName: string; down: boolean; auto: AutoMachinePick | null;
+  move?: ((host: string, folder: string) => void) | undefined;
 }) {
   const macID = store.macHostID.value;
   const projects = newSessionProjects(orderedFolders(store.hosts.value, store.folders.value, macID));
@@ -901,7 +915,8 @@ function ProjectSwitch({ store, host, folder, folderName, down, auto }: {
   }, [current?.id, thisKey]);
   if (!current || here < 0) return <h1>{folderName}</h1>;
   const label = (p: typeof current) => p.folders.length === 1 ? folderLabel(p.folders[0]!.host, p.folders[0]!.folder, macID) : p.name;
-  const open = (r: Row) => go({ host: r.host.id, folder: r.folder.folder.folder, compose: true });
+  const open = (r: Row) => move ? move(r.host.id, r.folder.folder.folder)
+    : go({ host: r.host.id, folder: r.folder.folder.folder, compose: true });
   const onAuto = autoIsChosen(thisKey, auto);
   // Add Folder… on a machine that has none of the project's yet, as the last of On.
   const others = store.hosts.value.filter((h) => hostAnswers(h.state) && !current.folders.some((r) => r.host.id === h.id));

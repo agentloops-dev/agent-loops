@@ -16,6 +16,7 @@ import { Banner } from "./Banner";
 import { Chat } from "./Chat";
 import { NewAgent } from "./NewAgent";
 import { NewFolderDialog } from "./NewFolder";
+import { BackgroundStartDialog } from "./BackgroundStart";
 import { DropboxDialog } from "./DropboxDialog";
 import { ReportProblemDialog } from "./ReportProblemDialog";
 import { MoveToMachineDialog } from "./MoveToMachineDialog";
@@ -125,6 +126,7 @@ export function Columns({ session, store }: { session: Session; store: Store }) 
         {r.host && r.session && r.files && <FilesPane store={store} host={r.host} session={r.session} />}
       </div>}
       <NewFolderDialog store={store} />
+      <BackgroundStartDialog store={store} />
       <DropboxDialog store={store} />
       <ReportProblemDialog store={store} />
       <MoveToMachineDialog store={store} />
