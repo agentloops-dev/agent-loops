@@ -115,6 +115,8 @@ extension AppModel {
                     for await note in control.notifications() {
                         if note.method == DaemonAPI.Notification.controlSealingWanted {
                             await Self.sealWaiting(on: control, lock: self?.lock)
+                            // An agent's secret to take for the person (#5308).
+                            await self?.userScope.loadOffers(control)
                             continue
                         }
                         if await self?.people.heard(note.method, note.params, on: control) == true { continue }

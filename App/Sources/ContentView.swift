@@ -117,7 +117,7 @@ struct ContentView: View {
     }
 
     /// What the right-hand column shows: a page about all the work, a workflow, a
-    /// pinned page, a chat, a new session, or — with nothing picked — what to do.
+    /// pinned page, a chat, a new session, or — with nothing picked — the Dashboard (#5696).
     @ViewBuilder
     private func detail(inPaneOf width: CGFloat) -> some View {
         if model.showsEvents {
@@ -137,8 +137,12 @@ struct ContentView: View {
             TimeView().paperGround()
         } else if model.showsVelocity {
             VelocityView().paperGround()
-        } else if model.showsDashboard {
-            DashboardView().paperGround()
+        } else if model.showsMultiplier {
+            MultiplierPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
+                           agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
+                           hints: "⌘N new session · ↑↓ move · ⌘K find",
+                           refresh: { await model.refreshMultiplier() })
+                .paperGround()
         } else if model.showsWork {
             // Build trends ↗ on the Pipeline line opens the web page (#5180).
             WorkView(model: model).webPlaceLinks().paperGround()
@@ -202,11 +206,9 @@ struct ContentView: View {
                                                  set: { model.selection = $0 }))
                 .paperGround()
         } else {
-            MultiplierPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
-                           agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
-                           hints: "⌘0 Multiplier · ⌘N new session · ↑↓ move · ⌘K find",
-                           refresh: { await model.refreshMultiplier() })
-                .paperGround()
+            // The home page (#5696): where the window opens and where it goes when the
+            // selection clears.
+            DashboardView().paperGround()
         }
     }
 
@@ -217,7 +219,7 @@ struct ContentView: View {
         guard terminal.isOpen, !model.showsEvents, !model.showsRuntimes, model.statusSecretsPage == nil,
               model.machinePage == nil,
               !model.showsSpending, !model.showsTokens, !model.showsTime, !model.showsVelocity,
-              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsSummary, !model.showsDashboard, let folder = model.selectedFolderSummary, folder.exists else { return nil }
+              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsSummary, !model.showsMultiplier, let folder = model.selectedFolderSummary, folder.exists else { return nil }
         return folder
     }
 
@@ -232,7 +234,7 @@ struct ContentView: View {
         model.selection != nil && !model.showsEvents
             && !model.showsRuntimes && model.statusSecretsPage == nil && model.machinePage == nil
             && !model.showsSpending && !model.showsTime && !model.showsVelocity && !model.showsWork && !model.showsDocs && !model.showsMessages
-            && !model.showsSummary && !model.showsDashboard && model.openWorkflow == nil
+            && !model.showsSummary && !model.showsMultiplier && model.openWorkflow == nil
             && model.folderPage == nil && model.openPin == nil
     }
 
@@ -362,6 +364,9 @@ struct ContentView: View {
             }
         }
         }
+        // No part of the window, the sidebar's foot or a page that does not scroll, can
+        // make the window taller than the person made it, or than the screen (#5739).
+        .windowFloor(height: 420)
         // A label's chip, in a row or the chat, filters the sidebar by it (#3898), and
         // shows the sidebar if it was hidden.
         .environment(\.labelFilter, LabelFilter(query: model.sidebarSearch) { query in

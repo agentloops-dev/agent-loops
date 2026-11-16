@@ -16,10 +16,10 @@ func TestReadyMadeSkillsFollowThePin(t *testing.T) {
 	skillPath := func(id string) string { return filepath.Join(home, ".agents", "skills", id, "SKILL.md") }
 	write := func(id, text string) {
 		t.Helper()
-		if err := os.MkdirAll(filepath.Dir(skillPath(id)), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(skillPath(id)), 0o750); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(skillPath(id), []byte(text), 0o644); err != nil {
+		if err := os.WriteFile(skillPath(id), []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -48,10 +48,10 @@ func TestReadyMadeSkillsFollowThePin(t *testing.T) {
 	write("daily-checks", edited)
 	// A link the person made: it stays a link.
 	mine := filepath.Join(t.TempDir(), "SKILL.md")
-	if err := os.WriteFile(mine, []byte("mine\n"), 0o644); err != nil {
+	if err := os.WriteFile(mine, []byte("mine\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(skillPath("daily-summary")), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(skillPath("daily-summary")), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(mine, skillPath("daily-summary")); err != nil {

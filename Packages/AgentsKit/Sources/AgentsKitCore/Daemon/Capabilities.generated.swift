@@ -142,6 +142,7 @@ public enum Capability {
     public static let mac1 = "mac/1"
     public static let machineAccounts1 = "machine.accounts/1"
     public static let machineAccounts2 = "machine.accounts/2"
+    public static let machineAgentSecrets1 = "machine.agent-secrets/1"
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
     public static let machines1 = "machines/1"
@@ -817,12 +818,14 @@ public enum Capability {
         "machine/lockJoin": "host.lock/2",
         "machine/lockJoinReveal": "host.lock/2",
         "machine/machines": "machine/1",
+        "machine/offerSecret": "machine.agent-secrets/1",
         "machine/orgRouteCheck": "host.org-routes/2",
         "machine/orgRoutesAgain": "host.org-routes/2",
         "machine/orgRoutesApplied": "host.org-routes/2",
         "machine/pairWebPage": "host.web-pairing/1",
         "machine/policyApplied": "host.policy/1",
         "machine/providerDraft": "machine/1",
+        "machine/secretClients": "machine.agent-secrets/1",
         "machine/secretKey": "host.secret-release/1",
         "machine/secretOps": "machine/1",
         "machine/secretRelease": "host.secret-release/1",
@@ -964,9 +967,11 @@ public enum Capability {
         "signIn/ticket": "org-identity/1",
         "tunnel/open": "tunnel/1",
         "usage/rollup": "reports/1",
+        "user/dropSecretOffer": "user/5",
         "user/removeSecret": "user/2",
         "user/sealedSecret": "user/4",
         "user/secretNames": "user/2",
+        "user/secretOffers": "user/5",
         "user/secretRecipients": "user/2",
         "user/setAgentConfigFile": "user/1",
         "user/setPolicy": "host.policy-layers/1",

@@ -141,6 +141,7 @@ const CapLock1 = "lock/1"
 const CapMac1 = "mac/1"
 const CapMachineAccounts1 = "machine.accounts/1"
 const CapMachineAccounts2 = "machine.accounts/2"
+const CapMachineAgentSecrets1 = "machine.agent-secrets/1"
 const CapMachineUsage1 = "machine.usage/1"
 const CapMachine1 = "machine/1"
 const CapMachines1 = "machines/1"
@@ -880,12 +881,14 @@ var ControlCapabilities = pairs([][2]string{
 	{"machine/lockJoin", "host.lock/2"},
 	{"machine/lockJoinReveal", "host.lock/2"},
 	{"machine/machines", "machine/1"},
+	{"machine/offerSecret", "machine.agent-secrets/1"},
 	{"machine/orgRouteCheck", "host.org-routes/2"},
 	{"machine/orgRoutesAgain", "host.org-routes/2"},
 	{"machine/orgRoutesApplied", "host.org-routes/2"},
 	{"machine/pairWebPage", "host.web-pairing/1"},
 	{"machine/policyApplied", "host.policy/1"},
 	{"machine/providerDraft", "machine/1"},
+	{"machine/secretClients", "machine.agent-secrets/1"},
 	{"machine/secretKey", "host.secret-release/1"},
 	{"machine/secretOps", "machine/1"},
 	{"machine/secretRelease", "host.secret-release/1"},
@@ -1027,9 +1030,11 @@ var ControlCapabilities = pairs([][2]string{
 	{"signIn/ticket", "org-identity/1"},
 	{"tunnel/open", "tunnel/1"},
 	{"usage/rollup", "reports/1"},
+	{"user/dropSecretOffer", "user/5"},
 	{"user/removeSecret", "user/2"},
 	{"user/sealedSecret", "user/4"},
 	{"user/secretNames", "user/2"},
+	{"user/secretOffers", "user/5"},
 	{"user/secretRecipients", "user/2"},
 	{"user/setAgentConfigFile", "user/1"},
 	{"user/setPolicy", "host.policy-layers/1"},

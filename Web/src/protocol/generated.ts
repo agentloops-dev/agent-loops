@@ -539,6 +539,34 @@ export interface AgentRequest {
 }
 
 /**
+ * machine/offerSecret (#5308, specs/5308-agent-secrets-sync): a secret an agent saved on this
+ * machine, sealed by the machine to each of its person's clients (machine/secretClients) and to
+ * nothing else, info com.alexecollins.agents.agentsecret.v1, associated data agentsecret.v1|<person
+ * id>|<machine id>|<recipient>|<name>|<offer>, with |ask at the end when needsApproval is on. A
+ * client of the person's opens it and sets it as one of theirs (user/setSecret with offer). The
+ * control plane never has the value. A newer offer of the same name from the same machine replaces
+ * it.
+ */
+export interface AgentSecretOffer {
+  /** The machine's own id for this offer, new for each save. */
+  offer: UUID;
+  name: UserSecretName;
+  /** Ask before use (#4014), as the machine keeps it: bound into the associated data. */
+  needsApproval?: boolean;
+  /**
+   * A secret's description (#4167): one or two sentences on what it is and what it is for, such as
+   * which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a
+   * value. Left out when it has none.
+   */
+  description?: string;
+  /** The session whose agent saved it, for the audit and the row. */
+  agent?: UUID;
+  savedAt: string;
+  /** By client recipient (c:<CLIENT UUID>). */
+  sealed: Record<string, SealedEnvelope>;
+}
+
+/**
  * A state this build does not know reads as `stopped` (Agent's init(from:)), with endedReason
  * `unrecognised`.
  */
@@ -8846,6 +8874,11 @@ export interface MachineUserSettings {
    * them. Never a value.
    */
   waiting?: UserSecretAbout[];
+  /**
+   * This machine's offers (machine/offerSecret, #5308) that still wait for the person's client.
+   * Left out when none waits.
+   */
+  offersWaiting?: WaitingOffer[];
 }
 
 /**
@@ -13179,6 +13212,42 @@ export interface SecretNeedsApprovalRequest {
 }
 
 /**
+ * One row of user/secretOffers (#5308): a secret an agent saved on one of the person's machines
+ * that is not one of theirs yet. mine is this client's copy, to open and set with user/setSecret
+ * and offer; left out when the machine did not seal one to this client. conflict is true when the
+ * person already has a secret of that name: then it waits for Keep Yours (user/dropSecretOffer) or
+ * Use the Agent's, and is never set on its own. Never a value.
+ */
+export interface SecretOffer {
+  offer: UUID;
+  name: UserSecretName;
+  machine: MachineRef;
+  machineName: string;
+  agent?: UUID;
+  savedAt: string;
+  needsApproval?: boolean;
+  /**
+   * A secret's description (#4167): one or two sentences on what it is and what it is for, such as
+   * which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a
+   * value. Left out when it has none.
+   */
+  description?: string;
+  conflict?: boolean;
+  mine?: SealedEnvelope;
+}
+
+/** user/dropSecretOffer (#5308): Keep Yours. The offer goes; the person's secret stays as it is. */
+export interface SecretOfferRequest {
+  offer: UUID;
+}
+
+/** user/secretOffers (#5308). user is the person, as the associated data names them. */
+export interface SecretOffers {
+  user?: string;
+  offers: SecretOffer[];
+}
+
+/**
  * One read or change of a secret on a machine (#4156). Never the value, never its hint: only the
  * name, and where it went.
  */
@@ -13253,6 +13322,18 @@ export interface SecretReleaseKey {
  */
 export interface SecretReleased {
   key: Base64;
+}
+
+/**
+ * Where a person's secret came from (#5308): an agent saved it on this machine, and a client of the
+ * person's took it. Kept until the secret is set again without an offer.
+ */
+export interface SecretSavedBy {
+  machine: MachineRef;
+  /** The machine's name when it was saved. */
+  name: string;
+  agent?: UUID;
+  at: string;
 }
 
 /**
@@ -15279,6 +15360,7 @@ export interface UserSecretRow {
    * value. Left out when it has none.
    */
   description?: string;
+  savedBy?: SecretSavedBy;
 }
 
 /**
@@ -15306,6 +15388,11 @@ export interface UserSecretSet {
    * value. Left out when it has none.
    */
   description?: string;
+  /**
+   * An offer this secret takes (#5308): an agent saved it on a machine, and this client opened it
+   * and sealed it to every machine and client. The offer then goes.
+   */
+  offer?: UUID;
 }
 
 /**
@@ -15530,6 +15617,15 @@ export interface WaitingAgent {
   title: string;
   folder: URLString;
   status: WaitStatus;
+}
+
+/**
+ * An offer of this machine's that waits for the person's client (#5308): the machine keeps its own
+ * copy of the name until it is gone from offersWaiting.
+ */
+export interface WaitingOffer {
+  name: UserSecretName;
+  offer: UUID;
 }
 
 /**
@@ -16781,9 +16877,11 @@ export interface Methods {
   "surface/identify": { params: SurfaceIdentification; result: Empty };
   "time/history": { params: Empty; result: TimeHistory };
   "usage/history": { params: Empty; result: UsageHistory };
+  "user/dropSecretOffer": { params: SecretOfferRequest; result: Empty };
   "user/removeSecret": { params: UserSecretRequest; result: Empty };
   "user/sealedSecret": { params: UserSealedSecretRequest; result: UserSealedSecret };
   "user/secretNames": { params: Empty; result: UserSecretNames };
+  "user/secretOffers": { params: Empty; result: SecretOffers };
   "user/secretRecipients": { params: Empty; result: SealRecipients };
   "user/setSecret": { params: UserSecretSet; result: Empty };
   "user/setSettings": { params: UserSettingsPart; result: Empty };
@@ -17240,9 +17338,11 @@ export const MethodTarget = {
   "surface/identify": "host",
   "time/history": "host",
   "usage/history": "host",
+  "user/dropSecretOffer": "control",
   "user/removeSecret": "control",
   "user/sealedSecret": "control",
   "user/secretNames": "control",
+  "user/secretOffers": "control",
   "user/secretRecipients": "control",
   "user/setSecret": "control",
   "user/setSettings": "control",
@@ -17387,6 +17487,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AgentMachinesProvider: { required: ["id", "name", "canMake", "canDelete", "workspaces"], optional: ["options"] },
   AgentRemovedNotification: { required: ["agentID"], optional: [] },
   AgentRequest: { required: ["agentID"], optional: [] },
+  AgentSecretOffer: { required: ["offer", "name", "savedAt", "sealed"], optional: ["needsApproval", "description", "agent"] },
   AgentStopRequest: { required: ["agentID"], optional: ["byAdmin"] },
   AgentWorktree: { required: ["name", "root", "madeByApp", "folder"], optional: ["branch", "base"] },
   AgentsChange: { required: ["title", "sha"], optional: ["number", "date"] },
@@ -18028,7 +18129,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineUsage: { required: ["cpuPercent", "cpuCount", "memoryUsed", "memoryTotal"], optional: ["loadPerCore", "loadPerCore5", "memoryPressure", "swapUsedPercent", "capacity"] },
   MachineUsageState: { required: ["machine", "disks"], optional: [] },
   MachineUser: { required: ["user", "kind", "name", "labels"], optional: ["capReachedUntil", "bots"] },
-  MachineUserSettings: { required: ["user", "settings", "secrets"], optional: ["waiting"] },
+  MachineUserSettings: { required: ["user", "settings", "secrets"], optional: ["waiting", "offersWaiting"] },
   MachineVersions: { required: ["host", "version", "deploys"], optional: ["firstSeen", "seen", "previous"] },
   MachineWorkspace: { required: ["provider", "providerName", "workspace", "workspaceName", "workspaceState", "canStart", "canStop", "startWhenUsed", "current"], optional: ["hostState", "phase", "since", "problem", "stoppedBy", "stopWhenIdleMinutes", "cost", "idleTimeoutMinutes", "startForSchedules", "tellsSchedule", "nextWorkflow", "nextWorkflowAt", "wakeAt"] },
   MachineWorkspaceCall: { required: ["agent", "method", "params"], optional: ["deliver"] },
@@ -18383,10 +18484,14 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SecretLastOp: { required: ["what", "at"], optional: ["agent"] },
   SecretLeftOn: { required: ["host", "name", "at"], optional: [] },
   SecretNeedsApprovalRequest: { required: ["name", "needsApproval"], optional: ["agentID"] },
+  SecretOffer: { required: ["offer", "name", "machine", "machineName", "savedAt"], optional: ["agent", "needsApproval", "description", "conflict", "mine"] },
+  SecretOfferRequest: { required: ["offer"], optional: [] },
+  SecretOffers: { required: ["offers"], optional: ["user"] },
   SecretOperation: { required: ["name", "what", "at"], optional: ["use", "place", "agent", "count"] },
   SecretRelease: { required: ["name", "encapsulated", "approval"], optional: [] },
   SecretReleaseKey: { required: ["publicKey"], optional: [] },
   SecretReleased: { required: ["key"], optional: [] },
+  SecretSavedBy: { required: ["machine", "name", "at"], optional: ["agent"] },
   SecretSignInKey: { required: ["looked", "refused"], optional: ["name", "value"] },
   SecretSignInKeyRequest: { required: ["runtimeID"], optional: [] },
   SecretTerminalRequest: { required: ["name"], optional: ["command"] },
@@ -18573,8 +18678,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   UserSecretAbout: { required: ["name"], optional: ["kind", "description", "needsApproval"] },
   UserSecretNames: { required: ["secrets"], optional: [] },
   UserSecretRequest: { required: ["name"], optional: [] },
-  UserSecretRow: { required: ["name", "updated", "machines"], optional: ["kind", "created", "hint", "lastOp", "backedUp", "leftOn", "version", "waiting", "needsApproval", "description"] },
-  UserSecretSet: { required: ["name", "version", "values"], optional: ["kind", "needsApproval", "description"] },
+  UserSecretRow: { required: ["name", "updated", "machines"], optional: ["kind", "created", "hint", "lastOp", "backedUp", "leftOn", "version", "waiting", "needsApproval", "description", "savedBy"] },
+  UserSecretSet: { required: ["name", "version", "values"], optional: ["kind", "needsApproval", "description", "offer"] },
   UserSettings: { required: [], optional: ["mcpServers", "agentConfig", "agentConfigFiles", "runtimes", "costLimits", "notifications", "accounts", "timeZone", "environment", "policy", "updated"] },
   UserSettingsChanged: { required: [], optional: ["parts", "agentConfigFiles", "secrets"] },
   UserSettingsPart: { required: ["part", "value"], optional: [] },
@@ -18596,6 +18701,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitServerEvent: { required: ["trigger", "servers"], optional: [] },
   WaitStatus: { required: ["line", "mark", "cancellable"], optional: [] },
   WaitingAgent: { required: ["agentID", "title", "folder", "status"], optional: [] },
+  WaitingOffer: { required: ["name", "offer"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
   WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause"] },

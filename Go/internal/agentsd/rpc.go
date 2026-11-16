@@ -362,6 +362,6 @@ func (d *Daemon) serveSockConn(sc *sockConn, r *bufio.Reader) {
 }
 
 func isDir(p string) bool {
-	fi, err := os.Stat(p)
+	fi, err := os.Stat(p) //nolint:gosec // G703: only a Stat, to say whether the path is a folder; it reads and writes nothing there
 	return err == nil && fi.IsDir()
 }

@@ -10,6 +10,14 @@
 #   free-disk.sh worktrees [--dry-run] [--committed-hours N] [--uncommitted-hours N]
 #                                      worktrees nobody has changed for a while
 #   free-disk.sh coredevice [--dry-run]   the app install deltas CoreDevice keeps
+#   free-disk.sh buildoutput [--dry-run] [--hours N]
+#                                      build output in worktrees nobody builds in
+#   free-disk.sh simulators [--dry-run]   erase the walk simulators that are shut down
+#   free-disk.sh colima [--dry-run] [--days N]  Colima data disks no instance has
+#   free-disk.sh caches [--dry-run]    uv's and npm's package caches
+#
+# None of them needs the app or its session list (#5722): each decides by what is on disk
+# and what runs, so a person or any agent can run it.
 #
 # status: the target is 20% of the disk (AGENTS_FREE_TARGET_PCT moves it; #4699), twice
 # the 10% line machine.disk_low fires at, so a run ends well past the line and not on it.
@@ -26,6 +34,27 @@
 # It keeps a worktree any process has as its working folder, a detached HEAD with commits
 # that are on no branch, a locked one, and anything that is not a linked worktree of the
 # main checkout. The branch stays, with every commit. --dry-run says what it would remove.
+#
+# buildoutput: the build output (build, .build, DerivedData, node_modules) of each
+# worktree under <main checkout>/.agents/worktrees that the worktrees checks below keep
+# for no other reason, when no process works in it and no file in it, build output too,
+# changed for N hours (--hours, 1). A folder goes only when git ignores it and tracks
+# nothing in it: the worktree's own .gitignore says it is build output (#5722).
+#
+# simulators: the run-app skill's walk simulators ("Agents Walk", "Agents Walk (<type>)",
+# #1182) are kept (#2400), and their data grows with each walk. Each one that is shut
+# down and uses 1 GB or more is erased (`simctl erase`): it keeps its name and id, and
+# the next walk installs the Remote again. A booted one is in use and is kept, and none is erased while a walk
+# script (remote.sh, walk.py) runs.
+#
+# colima: `colima delete` keeps the instance's data disk (~/.colima/_lima/_disks/<name>,
+# up to 100 GB sparse) for the next `colima start`. When `colima list` names no instance
+# and no limactl or colima process runs, a disk that nothing changed for N days
+# (--days, 1) is removed. The next `colima start` makes a new one, and its images are
+# pulled or built again.
+#
+# caches: `uv cache prune` (the entries no package uses) and `npm cache clean --force`.
+# Both caches are filled again by the next install.
 #
 # coredevice: CoreDevice keeps a delta of each app it installs on a device
 # (AppInstallationBinaryDeltas, 15 GB here on 2026-11-11), so the next install sends only
@@ -197,6 +226,41 @@ last_change() {
 		-o -type f -exec stat -f '%m' {} + 2>/dev/null | awk '$1 > m { m = $1 } END { if (m) print m }'
 }
 
+main_checkout() {
+	local m
+	m=$(dirname "$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)")
+	cd "$m" && pwd -P
+}
+
+# Every process's working folder: a session or a build in a worktree keeps it.
+working_folders() { lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' || true; }
+
+# The checks a worktree must pass before anything in it goes. It sets W (the path with
+# its links resolved) and NAME; when the worktree is kept, it says why and fails.
+# $1 is the folder, $2 the main checkout, $3 `git worktree list --porcelain` and $4 every
+# process's working folder.
+movable() {
+	W=$(cd "$1" && pwd -P) || return 1
+	NAME=$(basename "$W")
+	if [ "$W" = "$2" ] || ! grep -qxF "worktree $W" <<<"$3"; then
+		echo "kept $NAME: not a linked worktree of $2"
+		return 1
+	fi
+	if [ "$(git -C "$W" rev-parse --path-format=absolute --git-dir)" = \
+		"$(git -C "$W" rev-parse --path-format=absolute --git-common-dir)" ]; then
+		echo "kept $NAME: a main checkout"
+		return 1
+	fi
+	if awk -v w="worktree $W" '$0 == w { f = 1; next } /^worktree / { f = 0 } f && /^locked/ { found = 1 } END { exit !found }' <<<"$3"; then
+		echo "kept $NAME: locked"
+		return 1
+	fi
+	if awk -v w="$W" '$0 == w || index($0, w "/") == 1 { found = 1 } END { exit !found }' <<<"$4"; then
+		echo "kept $NAME: a process works in it"
+		return 1
+	fi
+}
+
 worktrees() {
 	local dry=0 committed=4 uncommitted=8
 	while [ $# -gt 0 ]; do
@@ -209,38 +273,19 @@ worktrees() {
 		shift
 	done
 	local main
-	main=$(dirname "$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)")
-	main=$(cd "$main" && pwd -P)
+	main=$(main_checkout)
 	[ -d "$main/.agents/worktrees" ] || { echo "no worktrees"; return 0; }
-	local listed cwds now w name last hours dirty limit k freed=0 removed=0 verb=removing
+	local listed cwds now w last hours dirty limit k freed=0 removed=0 verb=removing
 	[ "$dry" = 0 ] || verb="would remove"
 	listed=$(git -C "$main" worktree list --porcelain)
-	# Every process's working folder: a session or a build in a worktree keeps it.
-	cwds=$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' || true)
+	cwds=$(working_folders)
 	now=$(date +%s)
 	for w in "$main"/.agents/worktrees/*/; do
-		w=$(cd "$w" && pwd -P) || continue
-		name=$(basename "$w")
-		if [ "$w" = "$main" ] || ! grep -qxF "worktree $w" <<<"$listed"; then
-			echo "kept $name: not a linked worktree of $main"
-			continue
-		fi
-		if [ "$(git -C "$w" rev-parse --path-format=absolute --git-dir)" = \
-			"$(git -C "$w" rev-parse --path-format=absolute --git-common-dir)" ]; then
-			echo "kept $name: a main checkout"
-			continue
-		fi
-		if awk -v w="worktree $w" '$0 == w { f = 1; next } /^worktree / { f = 0 } f && /^locked/ { found = 1 } END { exit !found }' <<<"$listed"; then
-			echo "kept $name: locked"
-			continue
-		fi
-		if awk -v w="$w" '$0 == w || index($0, w "/") == 1 { found = 1 } END { exit !found }' <<<"$cwds"; then
-			echo "kept $name: a process works in it"
-			continue
-		fi
+		movable "$w" "$main" "$listed" "$cwds" || continue
+		w=$W
 		if ! git -C "$w" symbolic-ref -q HEAD >/dev/null &&
 			[ -n "$(git -C "$w" rev-list -n 1 HEAD --not --branches --remotes)" ]; then
-			echo "kept $name: detached, with commits on no branch"
+			echo "kept $NAME: detached, with commits on no branch"
 			continue
 		fi
 		last=$(last_change "$w")
@@ -248,13 +293,13 @@ worktrees() {
 		dirty=$(git -C "$w" status --porcelain --untracked-files=all | wc -l | tr -d ' ')
 		if [ "$dirty" -gt 0 ]; then limit=$uncommitted; else limit=$committed; fi
 		if [ "$hours" -lt "$limit" ]; then
-			echo "kept $name: changed ${hours}h ago, under ${limit}h ($dirty uncommitted)"
+			echo "kept $NAME: changed ${hours}h ago, under ${limit}h ($dirty uncommitted)"
 			continue
 		fi
 		k=$(du -sk "$w" | cut -f1)
-		echo "$verb $name ($(gb "$k") GB): unchanged for ${hours}h, $dirty uncommitted, branch $(git -C "$w" symbolic-ref -q --short HEAD || echo detached) kept"
+		echo "$verb $NAME ($(gb "$k") GB): unchanged for ${hours}h, $dirty uncommitted, branch $(git -C "$w" symbolic-ref -q --short HEAD || echo detached) kept"
 		if [ "$dry" = 0 ] && ! git -C "$main" worktree remove --force "$w"; then
-			echo "kept $name: git worktree remove failed"
+			echo "kept $NAME: git worktree remove failed"
 			continue
 		fi
 		freed=$((freed + k))
@@ -265,6 +310,158 @@ worktrees() {
 		echo "would remove $removed worktree(s), $(gb "$freed") GB"
 	else
 		echo "removed $removed worktree(s), $(gb "$freed") GB"
+	fi
+}
+
+buildoutput() {
+	local dry=0 hours=1
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--dry-run) dry=1 ;;
+		--hours) hours=$2; shift ;;
+		*) die "buildoutput [--dry-run] [--hours N]" ;;
+		esac
+		shift
+	done
+	local main
+	main=$(main_checkout)
+	[ -d "$main/.agents/worktrees" ] || { echo "no worktrees"; return 0; }
+	local listed cwds w d r k freed=0 verb=freed
+	[ "$dry" = 0 ] || verb="would free"
+	listed=$(git -C "$main" worktree list --porcelain)
+	cwds=$(working_folders)
+	for w in "$main"/.agents/worktrees/*/; do
+		movable "$w" "$main" "$listed" "$cwds" || continue
+		w=$W
+		# Build output counts here: a build started from another folder writes in it.
+		if [ -n "$(find "$w" -name .git -prune -o -mmin -$((hours * 60)) -print -quit 2>/dev/null)" ]; then
+			echo "kept $NAME: a file changed in the last ${hours}h"
+			continue
+		fi
+		while IFS= read -r d; do
+			r=${d#"$w"/}
+			if git -C "$w" check-ignore -q -- "$r/" && [ -z "$(git -C "$w" ls-files -- "$r" | head -n 1)" ]; then
+				k=$(du -sk "$d" | cut -f1)
+				echo "$verb $(gb "$k") GB: $NAME/$r"
+				[ "$dry" = 1 ] || rm -rf -- "$d"
+				freed=$((freed + k))
+			else
+				echo "kept $NAME/$r: tracked or not ignored"
+			fi
+		done < <(find "$w" -name .git -prune -o -type d \
+			\( -name build -o -name .build -o -name DerivedData -o -name node_modules \) -print -prune)
+	done
+	echo "$verb $(gb "$freed") GB of build output"
+}
+
+simulators() {
+	local dry=0
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--dry-run) dry=1 ;;
+		*) die "simulators [--dry-run]" ;;
+		esac
+		shift
+	done
+	if pgrep -qf 'run-app/scripts/(remote\.sh|walk\.py)'; then
+		echo "kept the walk simulators: a walk runs"
+		return 0
+	fi
+	local dev="$HOME/Library/Developer/CoreSimulator/Devices" udid state name k n=0
+	while IFS=$'\t' read -r udid state name; do
+		if [ "$state" != Shutdown ]; then
+			echo "kept $name: $state"
+			continue
+		fi
+		k=$(du -sk "$dev/$udid" 2>/dev/null | cut -f1)
+		if [ "${k:-0}" -lt 1048576 ]; then
+			echo "kept $name: under 1 GB"
+			continue
+		fi
+		if [ "$dry" = 1 ]; then
+			echo "would erase $name ($(gb "${k:-0}") GB apparent)"
+		elif xcrun simctl erase "$udid"; then
+			echo "erased $name ($(gb "${k:-0}") GB apparent; much of it shares blocks with the runtime)"
+			n=$((n + 1))
+		else
+			echo "kept $name: simctl erase failed"
+		fi
+	done < <(xcrun simctl list devices -j | python3 -c '
+import json, sys
+for devices in json.load(sys.stdin)["devices"].values():
+    for d in devices:
+        if d["name"] == "Agents Walk" or d["name"].startswith("Agents Walk ("):
+            print(d["udid"], d["state"], d["name"], sep="\t")')
+	[ "$dry" = 1 ] || echo "erased $n walk simulator(s)"
+}
+
+colima() {
+	local dry=0 days=1
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--dry-run) dry=1 ;;
+		--days) days=$2; shift ;;
+		*) die "colima [--dry-run] [--days N]" ;;
+		esac
+		shift
+	done
+	local disks="${COLIMA_HOME:-$HOME/.colima}/_lima/_disks" d k
+	[ -d "$disks" ] || { echo "no Colima data disks"; return 0; }
+	if ! command -v colima >/dev/null 2>&1; then
+		echo "kept the Colima data disks: no colima command to ask which are in use"
+		return 0
+	fi
+	if [ -n "$(command colima list --json 2>/dev/null)" ]; then
+		echo "kept the Colima data disks: colima lists an instance"
+		return 0
+	fi
+	if pgrep -qx limactl || pgrep -qf '(^|/)colima( |$)'; then
+		echo "kept the Colima data disks: limactl or colima runs"
+		return 0
+	fi
+	while IFS= read -r d; do
+		if [ -n "$(find "$d" -mtime -"$days" -print -quit)" ]; then
+			echo "kept $d: changed in the last $days day(s)"
+			continue
+		fi
+		k=$(du -sk "$d" | cut -f1)
+		if [ "$dry" = 1 ]; then
+			echo "would remove $d ($(gb "$k") GB): no Colima instance uses it"
+		else
+			rm -rf -- "$d"
+			echo "removed $d ($(gb "$k") GB): no Colima instance used it"
+		fi
+	done < <(find "$disks" -mindepth 1 -maxdepth 1 -type d)
+}
+
+caches() {
+	local dry=0 k
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--dry-run) dry=1 ;;
+		*) die "caches [--dry-run]" ;;
+		esac
+		shift
+	done
+	if command -v uv >/dev/null 2>&1; then
+		if pgrep -qx uv; then
+			echo "kept uv's cache: uv runs"
+		elif [ "$dry" = 1 ]; then
+			echo "would prune uv's cache ($(uv cache dir 2>/dev/null))"
+		else
+			uv cache prune 2>&1 | tail -n 1
+		fi
+	fi
+	if command -v npm >/dev/null 2>&1 && [ -d "$HOME/.npm/_cacache" ]; then
+		k=$(du -sk "$HOME/.npm/_cacache" | cut -f1)
+		if pgrep -qx npm || pgrep -qx npx; then
+			echo "kept npm's cache: npm runs"
+		elif [ "$dry" = 1 ]; then
+			echo "would clean npm's cache ($(gb "$k") GB)"
+		else
+			npm cache clean --force 2>/dev/null
+			echo "cleaned npm's cache ($(gb "$k") GB)"
+		fi
 	fi
 }
 
@@ -299,5 +496,9 @@ xcode) xcode ;;
 deriveddata) shift; deriveddata "$@" ;;
 worktrees) shift; worktrees "$@" ;;
 coredevice) shift; coredevice "$@" ;;
-*) sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+buildoutput) shift; buildoutput "$@" ;;
+simulators) shift; simulators "$@" ;;
+colima) shift; colima "$@" ;;
+caches) shift; caches "$@" ;;
+*) awk 'NR > 1 && /^set -euo/ { exit } NR > 1' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

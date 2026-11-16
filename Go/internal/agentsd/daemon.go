@@ -131,6 +131,8 @@ type Daemon struct {
 	lineageBook
 	// The build timings (#5177).
 	ciTimingsBook
+	// The queue of each repository's CI, for the ci lease (#5678).
+	ciQueueBook
 	ciSyncBook
 	// The control plane's copy of the deploys (#5496).
 	deploySyncBook
