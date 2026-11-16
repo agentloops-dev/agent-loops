@@ -165,12 +165,7 @@ struct RemoteMachinePickerList: View {
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: MachinePickerChoice.searchWords)
         .onSubmit(of: .search) { if let first = shown.first?.machines.first { pick(first.id) } }
-        // Typing waits a moment; a machine joining, leaving or changing state reads again.
-        .task(id: "\(search)|\(machinesKey)") {
-            if !search.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
-            guard !Task.isCancelled else { return }
-            await read(search)
-        }
+        .machinePickerReads(search, machines: machinesKey) { await read($0) }
     }
 
     private func anyRow(_ any: AnyRow) -> some View {

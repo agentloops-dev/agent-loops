@@ -183,12 +183,7 @@ struct MachinePickerList: View {
             .accessibilityLabel(label)
         }
         .onAppear { searching = true }
-        // Typing waits a moment; a machine joining, leaving or changing state reads again.
-        .task(id: "\(search)|\(machinesKey)") {
-            if !search.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
-            guard !Task.isCancelled else { return }
-            await read(search)
-        }
+        .machinePickerReads(search, machines: machinesKey) { await read($0) }
     }
 
     private func anyRow(_ any: AnyRow) -> some View {
