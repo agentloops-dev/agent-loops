@@ -420,6 +420,30 @@ func TestReadingAServerEventTrigger(t *testing.T) {
 	}
 }
 
+// A server event's arguments keep the types the file wrote (#5748): Fix main's
+// `anyone: true` reached github as "true", and its schema said "should be true or false".
+func TestAServerEventTriggerKeepsItsArgumentsTypes(t *testing.T) {
+	w := parseWorkflow("---\non:\n  - run.completed:\n      server: github\n      workflow: ci.yml\n      branch: main\n"+
+		"      anyone: true\n      any: false\n      pr: 12\n      quoted: \"true\"\n      name: '7'\n      none: ~\n"+
+		"      labels: [bug, true, 3]\n---\nGo.\n", "w", "/p")
+	if w.Problem != nil || len(w.Triggers) != 1 {
+		t.Fatalf("%+v", w)
+	}
+	mt, ok := serverTrigger(w.Triggers[0])
+	if !ok {
+		t.Fatalf("%+v", w.Triggers[0])
+	}
+	want := `{"any":false,"anyone":true,"branch":"main","labels":["bug",true,3],"name":"7","none":null,"pr":12,"quoted":"true","workflow":"ci.yml"}`
+	if got := canonicalJSON(mustRaw(mt.arguments)); got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	schema := json.RawMessage(`{"type":"object","properties":{"anyone":{"type":"boolean"},"any":{"type":"boolean"},"pr":{"type":"integer"}}}`)
+	args := map[string]json.RawMessage{"anyone": mt.arguments["anyone"], "any": mt.arguments["any"], "pr": mt.arguments["pr"]}
+	if p := jsonSchemaProblem(mustRaw(args), schema, "github's run.completed"); p != "" {
+		t.Fatal(p)
+	}
+}
+
 func TestAWaitOnAServersEvent(t *testing.T) {
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()

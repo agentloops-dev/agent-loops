@@ -1,10 +1,11 @@
 // Package yamlnode reads the front matter of a workflow or a persona as the Swift host's
 // YAMLNode does: block mappings and sequences by indentation, inline lists, quoted
-// scalars, comments; every value a string. It is not YAML: it is the app's own small part
+// scalars, comments; every value a string, save in TypedJSON. It is not YAML: it is the app's own small part
 // of it, so a file reads the same on either host (#1134).
 package yamlnode
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -15,9 +16,19 @@ type Node struct {
 	Sequence []Node
 	Mapping  map[string]Node
 	isSeq    bool
+	// quoted is whether the file wrote the scalar in quotes: `"true"` is text, where a
+	// plain `true` is a boolean to TypedJSON (#5748).
+	quoted bool
 }
 
 func scalar(s string) Node { return Node{Scalar: &s} }
+
+// scalarOf is a scalar as the file wrote it, quotes removed and remembered.
+func scalarOf(text string) Node {
+	n := scalar(unquote(text))
+	n.quoted = unquote(text) != text
+	return n
+}
 
 // Text is the scalar, and false for anything else.
 func (n Node) Text() (string, bool) {
@@ -258,7 +269,7 @@ func split(text string) (string, string, bool) {
 
 func inline(text string, number int) (Node, error) {
 	if !strings.HasPrefix(text, "[") {
-		return scalar(unquote(text)), nil
+		return scalarOf(text), nil
 	}
 	if !strings.HasSuffix(text, "]") {
 		return Node{}, fail("Line %d: \"%s\" opens a list and never closes it", number, text)
@@ -269,7 +280,7 @@ func inline(text string, number int) (Node, error) {
 	}
 	var items []Node
 	for _, p := range splitInline(inner) {
-		items = append(items, scalar(unquote(p)))
+		items = append(items, scalarOf(p))
 	}
 	return Node{Sequence: items, isSeq: true}, nil
 }
@@ -331,4 +342,59 @@ func (n Node) JSON() any {
 		return *n.Scalar
 	}
 	return nil
+}
+
+// TypedJSON is JSON with a plain scalar's type kept, as YAML reads it: `true` and
+// `false` are booleans, `null` and `~` null, and a number a json.Number. A quoted scalar
+// stays text, as does anything else. It is for a server event's arguments, which go to
+// the server as the file wrote them and which its schema checks by type (#5748).
+func (n Node) TypedJSON() any {
+	switch {
+	case n.isSeq:
+		out := []any{}
+		for _, e := range n.Sequence {
+			out = append(out, e.TypedJSON())
+		}
+		return out
+	case n.Mapping != nil:
+		out := map[string]any{}
+		for k, v := range n.Mapping {
+			out[k] = v.TypedJSON()
+		}
+		return out
+	case n.Scalar != nil:
+		if n.quoted {
+			return *n.Scalar
+		}
+		return typedScalar(*n.Scalar)
+	}
+	return nil
+}
+
+func typedScalar(text string) any {
+	switch text {
+	case "true", "True", "TRUE":
+		return true
+	case "false", "False", "FALSE":
+		return false
+	case "null", "Null", "NULL", "~":
+		return nil
+	}
+	if isJSONNumber(text) {
+		return json.Number(text)
+	}
+	return text
+}
+
+// isJSONNumber is whether text is a number as JSON writes one, so json.Number holds it
+// as it is: no leading `+`, no leading zeros, no `.5`.
+func isJSONNumber(text string) bool {
+	var v any
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber()
+	if dec.Decode(&v) != nil || dec.More() {
+		return false
+	}
+	_, ok := v.(json.Number)
+	return ok
 }

@@ -647,8 +647,14 @@ func triggerNamedOwn(name string, keys map[string]yamlnode.Node) (wire.WorkflowT
 	if isServerEventName(name) {
 		// A server's event (#383): `noun.verbed`, not the app's, its keys the subscription's
 		// arguments rather than details matched here. Whether a server offers it is known
-		// only once one is asked, so that is said on the page, not here.
-		t := unrecognisedTrigger(name, raw)
+		// only once one is asked, so that is said on the page, not here. Its arguments keep
+		// the types the file wrote, `anyone: true` a boolean and `pr: 12` a number, since
+		// the server's schema checks them by type (#5748).
+		typed := map[string]any{}
+		for k, v := range keys {
+			typed[k] = v.TypedJSON()
+		}
+		t := unrecognisedTrigger(name, typed)
 		mt, ok := serverTrigger(t)
 		if !ok {
 			return wire.WorkflowTrigger{}, failure("`server:` under \"" + name + "\" is a server's name, or a list of them")
