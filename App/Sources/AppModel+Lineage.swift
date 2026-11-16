@@ -162,6 +162,19 @@ extension AppModel {
         try await client(for: host).call(method, params, returning: R.self)
     }
 
+    /// No control plane to ask yet: a read across machines says so.
+    struct ControlPlaneMissing: LocalizedError {
+        var errorDescription: String? { "There is no control plane to ask." }
+    }
+
+    /// A page of every machine's conversations in one call to the control plane (#5571), for Messages and its
+    /// sidebar row.
+    func messagesAll(_ request: DaemonAPI.MessagesConversationsAllRequest) async throws -> DaemonAPI.MessagesConversationsAll {
+        guard let controlRequests else { throw ControlPlaneMissing() }
+        return try await controlRequests.call(DaemonAPI.Method.messagesConversationsAll, request,
+                                              returning: DaemonAPI.MessagesConversationsAll.self)
+    }
+
     /// A page of a machine's issues or pull requests (#3129), as Work lists them.
     func forgeList(_ kind: WorkList.Kind, _ request: DaemonAPI.ForgeListRequest,
                    on host: MachineRef) async throws -> DaemonAPI.ForgeList {

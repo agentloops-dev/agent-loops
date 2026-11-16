@@ -29,6 +29,30 @@ struct MessagesListTests {
         #expect(MessagesList.sources(lists) == ["email", "slack"])
     }
 
+    /// messages/conversationsAll (#5571): one answer for every machine, as Web/test/messages.test.mjs's hostConversationsOf.
+    @Test func everyMachinesConversationsComeInOneAnswerThisMacFirst() throws {
+        let lost = MachineRef(rawValue: "lost")
+        let first = DaemonAPI.MessagesConversationsAll(
+            conversations: [.init(machine: Self.box, machineName: "Box", conversation: Self.item("slack", "C1", at: 100, unread: 2)),
+                            .init(machine: Self.mac, machineName: "alex-mac", conversation: Self.item("slack", "C1", at: 100, unread: 2))],
+            errors: [.init(machine: Self.box, machineName: "Box", error: .init(server: "mail", folder: "/p", message: "No token."))],
+            unreached: [.init(machine: lost, machineName: "Lost")], cursor: "next")
+        let page = MessagesList.hostConversations(first, thisMac: Self.mac)
+        try #require(page.count == 3)
+        #expect(page.map(\.name) == ["This Mac", "Box", "Lost"])
+        #expect(page.allSatisfy { $0.cursor == nil })
+        #expect(page[2].problem == MessagesList.didNotAnswer)
+        // This Mac's copy is the one kept, and counted once.
+        #expect(MessagesList.merged(page).map(\.host) == [Self.mac])
+        #expect(MessagesList.unreadTotal(page) == 2)
+        let second = DaemonAPI.MessagesConversationsAll(
+            conversations: [.init(machine: Self.box, machineName: "Box", conversation: Self.item("slack", "C2", at: 300))])
+        let both = MessagesList.hostConversations(second, into: page, thisMac: Self.mac)
+        try #require(both.count == 3)
+        #expect(both[1].conversations.map(\.conversation.id) == ["C1", "C2"])
+        #expect(both[1].errors.count == 1)
+    }
+
     @Test func noConnectorIsNoConversationAndNoError() {
         #expect(MessagesList.noConnector([.init(host: Self.mac, name: "This Mac")]))
         let failed = MessagesList.HostConversations(host: Self.box, name: "Box",

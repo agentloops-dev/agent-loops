@@ -383,6 +383,15 @@ jobs:
         id: go-grew
         if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)) }}
         run: bash scripts/ci-cache-grew.sh check go ~/.cache/go-build ~/Library/Caches/go-build ~/go/pkg/mod
+      # Only what a run used in the last 6 hours, under a cap, and no module zips (#5837): the
+      # cache grew by every run's dead entries, and the Go caches then pushed the Xcode
+      # DerivedData cache out of the repo's 10 GB. After the grow check, which reads the size
+      # before the trim.
+      - name: Trim the Go caches
+        if: ${{ (always() && !cancelled() && steps.go-grew.outputs.save == 'true') && !inputs.sha }}
+        env:
+          GO_CACHE_MAX_MB: 8192
+        run: bash scripts/ci-go-cache-trim.sh ~/.cache/go-build ~/go/pkg/mod
       - name: Save Go build cache
         if: ${{ (always() && !cancelled() && steps.go-grew.outputs.save == 'true') && !inputs.sha }}
         uses: actions/cache/save@v5
@@ -681,6 +690,15 @@ jobs:
         id: go-grew
         if: ${{ env.APPS != 'skip' && always() && !cancelled() && env.MAIN_CACHE == 'true' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)) }}
         run: bash scripts/ci-cache-grew.sh check go ~/Library/Caches/go-build ~/go/pkg/mod
+      # Only what a run used in the last 6 hours, under a cap, and no module zips (#5837): the
+      # cache grew by every run's dead entries, and the Go caches then pushed the Xcode
+      # DerivedData cache out of the repo's 10 GB. After the grow check, which reads the size
+      # before the trim.
+      - name: Trim the Go caches
+        if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && steps.go-grew.outputs.save == 'true')) && !inputs.sha }}
+        env:
+          GO_CACHE_MAX_MB: 6144
+        run: bash scripts/ci-go-cache-trim.sh ~/Library/Caches/go-build ~/go/pkg/mod
       - name: Save Go build cache
         if: ${{ (env.APPS != 'skip' && (always() && !cancelled() && steps.go-grew.outputs.save == 'true')) && !inputs.sha }}
         uses: actions/cache/save@v5
@@ -1047,6 +1065,15 @@ jobs:
         id: go-grew
         if: ${{ always() && !cancelled() && env.GO != 'skip' && env.MAIN_CACHE == 'true' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)) }}
         run: bash scripts/ci-cache-grew.sh check go ~/Library/Caches/go-build ~/go/pkg/mod
+      # Only what a run used in the last 6 hours, under a cap, and no module zips (#5837): the
+      # cache grew by every run's dead entries, and the Go caches then pushed the Xcode
+      # DerivedData cache out of the repo's 10 GB. After the grow check, which reads the size
+      # before the trim.
+      - name: Trim the Go caches
+        if: ${{ (always() && !cancelled() && env.GO != 'skip' && steps.go-grew.outputs.save == 'true') && !inputs.sha }}
+        env:
+          GO_CACHE_MAX_MB: 6144
+        run: bash scripts/ci-go-cache-trim.sh ~/Library/Caches/go-build ~/go/pkg/mod
       - name: Save Go build cache
         if: ${{ (always() && !cancelled() && env.GO != 'skip' && steps.go-grew.outputs.save == 'true') && !inputs.sha }}
         uses: actions/cache/save@v5

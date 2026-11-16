@@ -348,6 +348,29 @@ public enum MessagesList {
         }
     }
 
+    /// What a machine that did not answer messages/conversationsAll says (#5571).
+    public static let didNotAnswer = "It did not answer."
+
+    /// messages/conversationsAll's page (#5571) as one HostConversations for each machine it names, added to `into` (the
+    /// pages before), as the web page's `hostConversationsOf`. The page's cursor is the read's, not a machine's, so each
+    /// list's own is nil. `thisMac` is named "This Mac" and comes first, so its copy of a conversation is the one kept;
+    /// then the others by name.
+    public static func hostConversations(_ got: DaemonAPI.MessagesConversationsAll, into: [HostConversations] = [],
+                                         thisMac: MachineRef? = nil) -> [HostConversations] {
+        var by = Dictionary(into.map { ($0.host, $0) }, uniquingKeysWith: { a, _ in a })
+        func add(_ host: MachineRef, _ name: String, _ change: (inout HostConversations) -> Void) {
+            var list = by[host] ?? HostConversations(host: host, name: host == thisMac ? "This Mac" : name)
+            change(&list)
+            by[host] = list
+        }
+        for c in got.conversations { add(c.machine, c.machineName) { $0.conversations.append(c.conversation) } }
+        for e in got.errors { add(e.machine, e.machineName) { $0.errors.append(e.error) } }
+        for u in got.unreached { add(u.machine, u.machineName) { $0.problem = didNotAnswer } }
+        return by.values.sorted {
+            ($0.host == thisMac ? 0 : 1, $0.name, $0.host.rawValue) < ($1.host == thisMac ? 0 : 1, $1.name, $1.host.rawValue)
+        }
+    }
+
     /// One row: a conversation and the machine to read it on.
     public struct Row: Sendable, Hashable, Identifiable {
         public var host: MachineRef
