@@ -180,8 +180,8 @@ struct StartAgentView: View {
                     if !usable.isEmpty {
                         // Centred under the folder when it fits; a menu of them when it does not (#2795).
                         ViewThatFits(in: .horizontal) {
-                            personaPicker(usable, picked: picked)
-                            personaPicker(usable, picked: picked, menu: true)
+                            PersonaPicker(usable, picked: model.startPersona) { pickPersona($0) }
+                            PersonaPicker(usable, picked: model.startPersona, menu: true) { pickPersona($0) }
                         }
                     }
                     // What the live pick picked and the word, so the person sees what to change (#4559).
@@ -209,46 +209,10 @@ struct StartAgentView: View {
         }
     }
 
-    static let noPersona = "No persona"
-
     /// What the Suggested read waits on: the folder, and whether its host can answer now.
     private struct SuggestionsAsk: Equatable {
         let key: FolderKey
         let can: Bool
-    }
-
-    /// Segments, or a menu: the picked one's name and a chevron, where they do not fit (#2795).
-    /// No Auto segment (#4721): the prompt's words pick one live until one is picked by hand.
-    @ViewBuilder
-    private func personaPicker(_ usable: [Persona], picked: Persona?, menu: Bool = false) -> some View {
-        let picker = Picker("Persona", selection: Binding<Persona.Segment>(
-            get: { Persona.Segment(picked: model.startPersona) },
-            set: { segment in
-                switch segment {
-                case .none: pickPersona(nil)
-                case .persona(let id): pickPersona(usable.first { $0.id == id })
-                }
-            }
-        )) {
-            Text(Self.noPersona).tag(Persona.Segment.none)
-            ForEach(usable) { persona in
-                Text(persona.name).tag(Persona.Segment.persona(persona.id))
-            }
-        }
-        let shown = picked?.name ?? Self.noPersona
-        if menu {
-            picker
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityLabel("Persona: \(shown)")
-        } else {
-            picker
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize(horizontal: true, vertical: false)
-                .accessibilityLabel("Persona: \(shown)")
-        }
     }
 
     /// Every setting the persona names, and its labels beside any already there, in place
