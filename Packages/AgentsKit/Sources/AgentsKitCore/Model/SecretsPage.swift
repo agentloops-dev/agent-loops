@@ -252,7 +252,7 @@ public enum SecretsPage {
     /// a machine waits for a copy, it was on a removed machine, or it is not used in 90 days.
     static func needs(_ row: DaemonAPI.UserSecretRow, item: Item, names: [String: String], oneMachine: Bool, noCopy: Bool,
                       didNotOpen: Bool, clientName: String, now: Date) -> String? {
-        if let left = row.leftOn, !left.isEmpty { return "It was on \(left.map(\.name).joined(separator: ", ")), which was removed." }
+        if let left = row.leftOn, !left.isEmpty { return "It was on \(MachineNames.words(left.map(\.name))), which was removed." }
         if didNotOpen { return "This \(clientName == "this Mac" ? "Mac" : "browser")’s copy did not open." }
         if noCopy { return "No copy for \(clientName) yet." }
         if !oneMachine, row.backedUp == false, row.waiting?.isEmpty ?? true, let id = row.machines.first {

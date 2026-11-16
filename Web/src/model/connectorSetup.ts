@@ -4,6 +4,7 @@ import type {
   Connection, ConnectionBot, ConnectionBotCompleteRequest, ConnectionProvider, ConnectionSignIn, ConnectionSignInCompleteRequest, UUID, ConnectorEvents, ConnectorProof, ConnectorSetup, ConnectorSlot, ConnectorSlotKind, DocsServer, MessagingServer,
 } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
+import { namesAnd } from "./machineNames";
 
 export const connectTitle = "Connect GitHub once: issues, pull requests and Actions.";
 export const connectNote = "Your connection, for every folder. You choose on github.com which repositories Agent Loops can see.";
@@ -859,11 +860,8 @@ export function botNote(bot: ConnectionBot): string {
   return `${name}, on ${list.map((i) => `${i.account} (${i.all ? "all" : "chosen"} repositories)`).join(", ")}.`;
 }
 
-/** a, b and c. */
-function both(names: string[]): string {
-  if (names.length < 2) return names[0] ?? "";
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
+/** a, b and c; past three, "a, b, c and 97 more" (#5620). */
+const both = namesAnd;
 
 /** Which of the person's machines hold the bot's key (#3950); undefined before it is made. */
 export function botKeyOn(bot: ConnectionBot): string | undefined {

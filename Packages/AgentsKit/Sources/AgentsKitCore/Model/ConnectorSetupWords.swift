@@ -537,11 +537,8 @@ public enum ConnectorSetupWords {
             return words
         }
 
-        /// a, b and c.
-        static func both(_ names: [String]) -> String {
-            guard let last = names.last, names.count > 1 else { return names.first ?? "" }
-            return names.dropLast().joined(separator: ", ") + " and " + last
-        }
+        /// a, b and c; past three, "a, b, c and 97 more" (#5620).
+        static func both(_ names: [String]) -> String { MachineNames.and(names) }
     }
 
     public enum Linear {

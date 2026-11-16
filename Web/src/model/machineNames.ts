@@ -12,6 +12,22 @@ export function namesWords(names: readonly string[]): string {
   return `${names.slice(0, nameLimit).join(", ")} and ${names.length - nameLimit} more`;
 }
 
+/** "a, b and c" for up to three names, then "a, b, c and 97 more", for a line that says "and" before the last (#5620). */
+export function namesAnd(names: readonly string[]): string {
+  if (names.length > nameLimit) return namesWords(names);
+  if (names.length < 2) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** The items a per-machine section shows (#5620): all of them when `all` or when there are at most three, else the
+ * first three (the order of the list says which matter most) and the one that is open, so opening one never hides it. */
+export function firstOf<T extends { id: string }>(items: readonly T[], all: boolean, open?: string | null): T[] {
+  if (all || items.length <= nameLimit) return [...items];
+  const shown = items.slice(0, nameLimit);
+  const opened = open ? items.find((i) => i.id === open) : undefined;
+  return opened && !shown.includes(opened) ? [...shown, opened] : shown;
+}
+
 /** The names left out, and where "and N more" goes: the Machines page filtered to these machines. */
 export function moreOf(machines: readonly NamedMachine[]): { count: number; to: Route } | null {
   if (machines.length <= nameLimit) return null;

@@ -42,7 +42,7 @@ public enum PolicyLayersWords {
     /// version"); nil with none.
     public static func behindLine(_ machines: [DaemonAPI.PolicyBehindMachine]) -> String? {
         guard !machines.isEmpty else { return nil }
-        let names = machines.map(\.name).sorted().joined(separator: ", ")
+        let names = MachineNames.words(machines.map(\.name).sorted())
         return "\(names) \(machines.count == 1 ? "does" : "do") not follow your policy yet. Update \(machines.count == 1 ? "it" : "them") to the newest version."
     }
 
