@@ -636,6 +636,15 @@ final class AppModel {
         statusSecretsPage = .secrets
     }
 
+    /// The Environment page's selected item, by its id (`EnvironmentPage.Item.id`), so a link opens one (#5260).
+    var environmentSelection: String?
+
+    /// Status ▸ Environment (#5260): the page, with `item` selected when given.
+    func showEnvironment(item: String? = nil) {
+        if let item { environmentSelection = item }
+        statusSecretsPage = .environment
+    }
+
     /// The Accounts page's selected account, by its id (`DaemonAPI.OutsideAccount.id`), so a link opens one (#5258).
     var accountsSelection: String?
 
@@ -729,7 +738,7 @@ final class AppModel {
         get {
             if showsEvents { return .events }
             if showsRuntimes { return .runtimes }
-            if let statusSecretsPage { return statusSecretsPage == .secrets ? .secretsStatus : .accountsStatus }
+            if let statusSecretsPage { return statusSecretsPage.sidebarItem }
             if let machinePage { return .machine(machinePage) }
             if showsSpending { return .spending }
             if showsTokens { return .tokens }
@@ -815,6 +824,8 @@ final class AppModel {
                 statusSecretsPage = .secrets
             case .accountsStatus:
                 statusSecretsPage = .accounts
+            case .environmentStatus:
+                statusSecretsPage = .environment
             case .machine(let host):
                 machinePage = host
             case .folder(let key):

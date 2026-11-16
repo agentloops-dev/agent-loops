@@ -76,6 +76,11 @@ public extension DaemonAPI {
                 Row(Method.secretsSetNeedsApproval, params: SecretNeedsApprovalRequest.self, result: Empty.self, kind: .hostRequest),
                 // Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): what agents saved on the machine.
                 Row(Method.secretsLocalList, params: Empty.self, result: LocalSecrets.self, kind: .hostRequest),
+                // Status ▸ Environment (#5260): the files of variables, one written, and As a session sees it.
+                Row(Method.envList, params: EnvListRequest.self, result: EnvList.self, kind: .hostRequest),
+                Row(Method.envWrite, params: EnvWriteRequest.self, result: Empty.self, kind: .hostRequest),
+                Row(Method.envResolve, params: EnvResolveRequest.self, result: EnvResolved.self, kind: .hostRequest),
+                Row(Method.envDiscard, params: Empty.self, result: Empty.self, kind: .hostRequest),
                 Row(Method.desktopControlSet, params: DesktopControlSettings.self, result: DesktopControlSettings.self,
                     kind: .hostRequest),
                 // Pause on touch's two answers (#3004, US3).
@@ -725,6 +730,7 @@ public extension DaemonAPI {
                 Row(Method.signInDeny, params: SignInDecide.self, result: Empty.self, kind: .controlRequest),
                 // Heard
                 Row(Notification.agentChanged, params: Agent.self, result: Empty.self, kind: .hostNotification),
+                Row(Notification.envChanged, params: EnvChanged.self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.clientPermissionsChanged, params: ClientPermissionSettings.self, result: Empty.self,
                     kind: .hostNotification),
                 Row(Notification.autoChanged, params: AutoSettings.self, result: Empty.self, kind: .hostNotification),

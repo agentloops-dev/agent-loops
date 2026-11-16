@@ -16,11 +16,11 @@ test("a member's bar has eight sections, an admin's ten (Docs and Messages are i
 });
 
 test("a member sees no admin page in a list, and opens the first they may use", () => {
-  assert.deepEqual(n.pagesShown("settings", false).map((p) => p.id), ["mcp", "secrets", "accounts", "settings"]);
+  assert.deepEqual(n.pagesShown("settings", false).map((p) => p.id), ["mcp", "secrets", "accounts", "environment", "settings"]);
   assert.deepEqual(n.pagesShown("workflows", false).map((p) => p.id), ["workflows"]);
   assert.deepEqual(n.pagesShown("agents", false).map((p) => p.id), ["projects"]);
   assert.ok(n.pagesShown("reports", false).every((p) => p.id !== "audit"));
-  assert.deepEqual(n.pagesShown("settings", false, "policy").map((p) => p.id), ["mcp", "secrets", "accounts", "settings", "policy"], "and the one open");
+  assert.deepEqual(n.pagesShown("settings", false, "policy").map((p) => p.id), ["mcp", "secrets", "accounts", "environment", "settings", "policy"], "and the one open");
   assert.equal(n.openPage("people", undefined, false).id, "people");
   assert.equal(n.gated(n.openPage("people", undefined, false), false), true);
   assert.equal(n.gated(n.openPage("people", undefined, true), true), false);
@@ -32,11 +32,11 @@ test("every page has a title, and its group headings come in order", () => {
   for (const s of n.navSections) for (const p of n.navPages[s]) assert.ok(p.title, `${s}/${p.id}`);
   assert.deepEqual(n.groupedPages(n.navPages.reports).map(([g]) => g), ["Reports", "Saved", "Yours", "Records"]);
   assert.deepEqual(n.groupedPages(n.navPages.machines).map(([g]) => g), ["Machines"]);
-  assert.deepEqual(n.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts"],
-    "Status is status only (#3998), with Secrets and Accounts after Events (#4161)");
+  assert.deepEqual(n.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts", "environment"],
+    "Status is status only (#3998), with Secrets and Accounts after Events (#4161), then Environment (#5260)");
   assert.ok(n.navPages.reports.every((p) => p.id !== "events"), "Events left Reports ▸ Records (#3998)");
   assert.deepEqual(n.groupedPages(n.navPages.settings).map(([g]) => g), ["You", "Settings", "Organisation"], "You first (#3998)");
-  assert.deepEqual(n.navPages.settings.filter((p) => p.group === "You").map((p) => p.id), ["mcp", "secrets", "accounts"],
+  assert.deepEqual(n.navPages.settings.filter((p) => p.group === "You").map((p) => p.id), ["mcp", "secrets", "accounts", "environment"],
     "Connectors, Secrets (#3632) and Accounts (#3967) are the person's own settings (#3998)");
   assert.equal(n.openPage("settings", undefined, false).id, "settings", "Settings still opens on Settings");
   assert.ok(n.navPages.machines.every((p) => p.id !== "runtimes" && p.id !== "mcp"));
@@ -157,6 +157,19 @@ test("the Secrets page has its own address, and one secret's (#5257)", async () 
   const id = "session/11111111-2222-3333-4444-555555555555/SHOP_PW";
   assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "secrets", item: id }, undefined)),
     { nav: "status", section: "secrets", item: id });
+});
+
+test("the Environment page has its own address, and one variable's (#5260)", async () => {
+  const r = await load("src/route.ts");
+  assert.deepEqual(r.parseRoute("#/environment"), { nav: "status", section: "environment" });
+  assert.deepEqual(r.parseRoute("#/environment/yours/AWS_REGION"), { nav: "status", section: "environment", item: "yours/AWS_REGION" });
+  assert.deepEqual(r.parseRoute("#/settings/environment"), { nav: "status", section: "environment" });
+  assert.equal(r.isOldAddress("#/settings/environment"), true);
+  assert.equal(r.isOldAddress("#/environment"), false);
+  assert.equal(r.routeHash({ nav: "status", section: "environment" }, undefined), "#/environment");
+  const id = "repo//Users/me/My Repo/AWS_REGION";
+  assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "environment", item: id }, undefined)),
+    { nav: "status", section: "environment", item: id });
 });
 
 test("the Accounts page has its own address, and one account's (#5258)", async () => {
