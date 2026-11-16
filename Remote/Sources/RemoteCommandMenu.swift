@@ -61,7 +61,8 @@ enum RemoteCommandMenu {
     }
 
     /// The menu's items: the open folder's sessions, the actions, each other folder's sessions,
-    /// the folders, and the Work lists' issues and pull requests, the nearest first.
+    /// the folders, the person's secrets, accounts and environment variables (#5261), and the Work
+    /// lists' issues and pull requests, the nearest first.
     static func items(_ model: RemoteModel, actions: [Action]) -> [CommandFinder.Item] {
         let servers = model.hostSections.map(\.id).filter { $0 != .mac }
         let folders = SidebarOrder.folders(model.folders, servers: servers)
@@ -80,7 +81,7 @@ enum RemoteCommandMenu {
                                detail: servers.isEmpty ? "" : model.machineName(summary.host))
         }
         return sessions(folders.filter { $0.key == here }) + actions.map(\.item)
-            + sessions(folders.filter { $0.key != here }) + folderItems
+            + sessions(folders.filter { $0.key != here }) + folderItems + model.userScope.commandMenuItems
             + CommandMenuWork.items(model.workLists, .issue) + CommandMenuWork.items(model.workLists, .pr)
     }
 
@@ -90,6 +91,16 @@ enum RemoteCommandMenu {
     static func open(_ item: CommandFinder.Item, _ model: RemoteModel) {
         if let place = CommandMenuWork.place(of: item) {
             model.showWork(place)
+            return
+        }
+        // A secret, an account or a variable opens on its page, selected (#5261), as a link between the pages does.
+        if let place = CommandMenuSetup.place(of: item) {
+            switch place.page {
+            case .secrets: model.openStatusPage(.secretsStatus, from: \.secretsSelection, select: \.secretsSelection, place.id)
+            case .accounts: model.openStatusPage(.accountsStatus, from: \.accountsSelection, select: \.accountsSelection, place.id)
+            case .environment:
+                model.openStatusPage(.environmentStatus, from: \.environmentSelection, select: \.environmentSelection, place.id)
+            }
             return
         }
         let (prefix, rest) = CommandMenuID.split(item.id)
@@ -135,6 +146,8 @@ struct RemoteCommandMenuOverlay: ViewModifier {
                                         }
                                     },
                                     dismiss: { [model] in model.commandMenu = nil })
+                        // The Mac's files of variables, so the menu finds a repo's too (#5261).
+                        .task { await model.userScope.readMenuFiles(model) }
                 }
             }
     }

@@ -22,9 +22,9 @@ public enum SidebarItem: Hashable, Sendable {
     case archivedSessions(FolderKey)
     /// A folder's archived workflows, as a page (#4448), by name.
     case archivedWorkflows(FolderKey)
-    /// The Multiplier page (#3986): what the window shows with nothing else open, first under
+    /// The Achievements page (#3986): what the window shows with nothing else open, first under
     /// Usage so there is a way back to it. The Mac window's only: the Remote never has it.
-    case multiplier
+    case achievements
     /// The Dashboard (#5534, a PoC on the Mac first): each work item on this Mac, its sessions,
     /// pull request and checks, with the questions and approvals answered in place. The Mac
     /// window's for now: web #5536, Remote #5537.
@@ -65,6 +65,9 @@ public enum SidebarItem: Hashable, Sendable {
     case secretsStatus
     /// Status ▸ Accounts (#4161): the same for the person's outside accounts.
     case accountsStatus
+    /// Status ▸ Environment (#5260): the plain variables sessions get when their agent starts, Yours and each
+    /// repo's, on a page to find, add and edit them. Core: every client.
+    case environmentStatus
     /// One machine's page (#3626): its CPU, memory and disks, from its row under Machines.
     /// Mac + web: the Remote has no row for it (#2796).
     case machine(MachineRef)

@@ -275,7 +275,7 @@ function FolderDialog({ store, host, close }: { store: Store; host: string; clos
         <input type="text" aria-label="Folder" placeholder="~/src" value={path.value} spellcheck={false}
           onInput={(e) => (path.value = (e.currentTarget as HTMLInputElement).value)} />
       </form>
-      <div class="folder-list" role="listbox" aria-label={`Folders on ${label}`}>
+      <div class="folder-choices" role="listbox" aria-label={`Folders on ${label}`}>
         {parent !== null && (
           <button type="button" class="folder-row up" role="option" aria-selected={false}
             onClick={() => void load(parent)}>‹ {parent === "/" ? "/" : parent.slice(parent.lastIndexOf("/") + 1)}</button>

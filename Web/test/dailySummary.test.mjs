@@ -37,3 +37,9 @@ test("Settings ▸ Workflows draws it, and dailySummary/changed keeps it", () =>
   assert.ok(store.includes('case "dailySummary/changed":'));
   assert.ok(store.includes('"dailySummary/setSettings"'));
 });
+
+test("the Summary page is a report: Reports draws it, and the Agents sidebar has no Summary row (#5729)", () => {
+  assert.ok(!read("Web/src/views/Sidebar.tsx").includes("SummaryRow"));
+  assert.ok(!read("Web/src/views/Columns.tsx").includes("SummaryPage"));
+  assert.ok(read("Web/src/views/Nav.tsx").includes('page.draw.kind === "summary" ? <SummaryPage'));
+});

@@ -103,7 +103,7 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
   const runtimes = figures.value ? runtimesWords(figures.value, runtimeName) : undefined;
   const sessions = planSessions(node, g?.links ?? [], rollup.value);
   const stages = g ? pipeline(node, g) : [];
-  // Build trends at the release's CI run, on Reports ▸ Planning ▸ Builds (#5180).
+  // Build trends at the release's CI run, on Reports ▸ Delivery ▸ Builds (#5180).
   const run = g?.links.find((l) => l.rel === "builds" && l.to.kind === node.kind && l.to.ref === node.ref && l.from.kind === "ci-run")?.from;
   const trends = stages.length > 0 && run ? buildsRunLinkQuery(run.ref) : undefined;
 
@@ -205,7 +205,7 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
                 <span key={i} class="work-release-stage"><span class="tick" role="img" aria-label="Done"><Icon name="check" /></span>
                   {s.url ? <a href={s.url} target="_blank" rel="noopener noreferrer">{s.words}</a> : <span>{s.words}</span>}</span>
               ))}
-            {trends && <a href={routeHash({ nav: "reports", section: "value", item: "builds", query: trends })}
+            {trends && <a href={routeHash({ nav: "reports", section: "delivery", item: "builds", query: trends })}
               title={buildsRunLinkHelp("release")}>Build trends ›</a>}
           </SideSection>
           <SideSection title={deployed && deployed.length > 0 ? `Deployed · ${targetsWords(deployed.length)}` : "Deployed"}>

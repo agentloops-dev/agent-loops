@@ -12,7 +12,7 @@
 // to that folder until ‹ All.
 // Every step is a history entry, so the browser's own Back moves between columns (US6).
 import { signal } from "@preact/signals";
-import { movedPage, navSections, type NavSection, type UsagePane } from "./model/nav";
+import { movedPage, movedReport, navSections, type NavSection, type UsagePane } from "./model/nav";
 
 export type ActivityPage = "events" | "runtimes" | "mcp" | "spending" | "tokens" | "time" | "velocity";
 
@@ -76,12 +76,15 @@ export function parseRoute(hash: string): Route {
     const r: Route = {};
     if (moved.nav && moved.nav !== "overview") r.nav = moved.nav;
     if (moved.section) r.section = moved.section;
+    if (moved.query) r.query = moved.query;
     return r;
   }
   // The Secrets page (#5257): #/secrets, and one secret at #/secrets/<name>; Status ▸ Secrets, which writes them.
   if (first === "secrets") return section ? { nav: "status", section: "secrets", item: decodeURIComponent(path.slice("secrets/".length)) } : { nav: "status", section: "secrets" };
   // The Accounts page (#5258): #/accounts, and one account at #/accounts/<id>; Status ▸ Accounts, which writes them.
   if (first === "accounts") return section ? { nav: "status", section: "accounts", item: decodeURIComponent(section) } : { nav: "status", section: "accounts" };
+  // The Environment page (#5260): #/environment, and one variable at #/environment/<item id> (yours/NAME, repo/<folder>/NAME).
+  if (first === "environment") return section ? { nav: "status", section: "environment", item: decodeURIComponent(path.slice("environment/".length)) } : { nav: "status", section: "environment" };
   // Your setup (#3630) went (#3998): Runtimes to Status, its connectors to Settings ▸ You, and its secrets and accounts to
   // their pages (#5257, #5258).
   if (first === "setup") {
@@ -101,13 +104,15 @@ export function parseRoute(hash: string): Route {
     // still opens them.
     if (nav === "machines" && section === "runtimes") return { nav: "status", section };
     if (nav === "machines" && section === "mcp") return { nav: "settings", section };
-    // Events left Reports ▸ Records for Status (#3998).
-    if (nav === "reports" && section === "events") return { nav: "status", section };
-    // Settings ▸ You ▸ Secrets and ▸ Accounts are pages of their own (#5257, #5258): an old link opens them.
-    if (nav === "settings" && (section === "secrets" || section === "accounts")) return { nav: "status", section };
-    // The Multiplier page took the Achievements page's place (#3990): an old link opens it.
-    if (nav === "reports" && section === "achievements") return { nav, section: "multiplier" };
-    // An item keeps its own state after the "?" too: #/reports/value/builds?repo=… (#5178).
+    // The Summary page went from the Agents sidebar to Reports (#5729): #/agents/summary opens it there.
+    if (nav === "agents" && section === "summary") return { nav: "reports", section };
+    // Reports' pages that moved (#5280): Planning, Usage, Multiplier and Features, and Events (#3998). The query stays, so
+    // #/reports/value/builds?repo=… keeps its filters.
+    const moved = nav === "reports" ? movedReport(decodeURIComponent(section), item === undefined ? undefined : decodeURIComponent(item)) : undefined;
+    if (moved) return query && moved.nav === "reports" ? { ...moved, query: moved.query ? `${moved.query}&${query}` : query } : moved;
+    // Settings ▸ You ▸ Secrets, ▸ Accounts and ▸ Environment are pages of their own (#5257, #5258, #5260): an old link opens them.
+    if (nav === "settings" && (section === "secrets" || section === "accounts" || section === "environment")) return { nav: "status", section };
+    // An item keeps its own state after the "?" too: #/reports/delivery/builds?repo=… (#5178).
     if (item) return query ? { nav, section: decodeURIComponent(section), item: decodeURIComponent(item), query }
       : { nav, section: decodeURIComponent(section), item: decodeURIComponent(item) };
     return query ? { nav, section: decodeURIComponent(section), query } : { nav, section: decodeURIComponent(section) };
@@ -178,8 +183,10 @@ function sectionHash(r: Route): string {
   if (r.nav === "status" && r.section === "secrets") return "#/secrets" + (r.item ? "/" + r.item.split("/").map(encodeURIComponent).join("/") : "");
   // The Accounts page's own address (#5258): an account's id is its service and address, "github#alex@example.com".
   if (r.nav === "status" && r.section === "accounts") return "#/accounts" + (r.item ? "/" + encodeURIComponent(r.item) : "");
+  // The Environment page's (#5260); a repo's item holds its folder's path.
+  if (r.nav === "status" && r.section === "environment") return "#/environment" + (r.item ? "/" + r.item.split("/").map(encodeURIComponent).join("/") : "");
   return `#/${r.nav}` + (r.section ? "/" + encodeURIComponent(r.section) + (r.item ? "/" + encodeURIComponent(r.item) : "")
-    // A list's filters stay off an item's page, but Reports' pages under another keep theirs: #/reports/value/builds?… (#5178).
+    // A list's filters stay off an item's page, but Reports' pages under another keep theirs: #/reports/delivery/builds?… (#5178).
     + (r.query && (!r.item || r.nav === "reports") ? `?${r.query}` : "") : "");
 }
 
@@ -187,8 +194,8 @@ function sectionHash(r: Route): string {
  * again as its new place. */
 export function isOldAddress(hash: string): boolean {
   return /^#\/?(console|a|setup)(\/|$)/.test(hash) || /^#\/?machines\/(runtimes|mcp)$/.test(hash)
-    || /^#\/?reports\/events$/.test(hash) || /^#\/?(docs|messages)(\/|$)/.test(hash)
-    || /^#\/?(settings|status)\/(secrets|accounts)$/.test(hash);
+    || /^#\/?reports\/(events|value|usage|multiplier|achievements|features)(\/|\?|$)/.test(hash) || /^#\/?(docs|messages)(\/|$)/.test(hash)
+    || /^#\/?(settings|status)\/(secrets|accounts|environment)$/.test(hash);
 }
 
 /** The section a route is in: Agents for a host's places, the Overview for none. */

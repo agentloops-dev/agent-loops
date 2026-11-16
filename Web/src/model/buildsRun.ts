@@ -1,4 +1,4 @@
-// Reports ▸ Planning ▸ Builds ▸ one run (#5179, spec 5166, board 3): a CI run's jobs and steps as a Gantt chart,
+// Reports ▸ Delivery ▸ Builds ▸ one run (#5179, spec 5166, board 3): a CI run's jobs and steps as a Gantt chart,
 // against the run before, and the steps that changed most. The run comes from builds/run (#5177); times are seconds
 // from each run's made time, so the run before lines up from its own start. This file has the shapes and the words;
 // views/BuildsRun.tsx draws them.

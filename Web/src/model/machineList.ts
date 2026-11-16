@@ -25,13 +25,15 @@ export interface MachineChoice {
   version?: string;
   labels: readonly string[];
   sort: MachineSort;
+  /** Only these machines, from "and N more" (#5289): a link's `?hosts=`. */
+  only?: readonly string[];
 }
 
 export const noChoice: MachineChoice = { search: "", labels: [], sort: "name" };
 
 /** Whether any search or filter narrows the list. */
 export function narrowed(c: MachineChoice): boolean {
-  return c.search.trim() !== "" || !!c.state || !!c.provider || !!c.os || !!c.version || c.labels.length > 0;
+  return (c.only?.length ?? 0) > 0 || c.search.trim() !== "" || !!c.state || !!c.provider || !!c.os || !!c.version || c.labels.length > 0;
 }
 
 /** The query of one page; `cursor` is the previous page's `next`. */
@@ -93,7 +95,7 @@ export function countsOf(all: readonly ControlMachine[]): MachineCounts {
 /** A plain array filtered, sorted and cut as machines/list would, for a control plane before machines/2. */
 export function localList(all: readonly ControlMachine[], c: MachineChoice): ControlMachine[] {
   const words = c.search.trim().toLowerCase();
-  const rows = all.filter((h) => (!words || h.name.toLowerCase().includes(words) || h.id.toLowerCase().includes(words))
+  const rows = all.filter((h) => (!c.only?.length || c.only.includes(h.id)) && (!words || h.name.toLowerCase().includes(words) || h.id.toLowerCase().includes(words))
     && (!c.state || h.state === c.state) && (!c.provider || h.workspace?.providerName === c.provider)
     && (!c.os || h.platform === c.os) && (!c.version || h.version === c.version));
   const by = (h: ControlMachine) => c.sort === "state" ? h.state : c.sort === "version" ? h.version : h.name;

@@ -9,6 +9,15 @@ enum AgentsPlace: Equatable {
     case you
     case folder(URL)
 
+    /// The machine whose files these are: the person's own on this Mac, a folder's on the
+    /// machine it is on (#5717).
+    @MainActor func host(_ model: AppModel) -> MachineRef {
+        switch self {
+        case .you: .mac
+        case .folder: model.selectedFolderHost
+        }
+    }
+
     var destination: DaemonAPI.SkillDestination {
         switch self {
         case .you: .personal

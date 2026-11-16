@@ -178,7 +178,7 @@ struct FolderListView: View {
             if let achievement = model.achievementCard {
                 Section {
                     AchievementCard(achievement: achievement,
-                                  open: { model.dismissAchievement(achievement); picked = [.multiplier] },
+                                  open: { model.dismissAchievement(achievement); picked = [.achievements] },
                                   dismiss: { model.dismissAchievement(achievement) })
                         .listRowSeparator(.hidden)
                         .selectionDisabled()
@@ -235,11 +235,15 @@ struct FolderListView: View {
                 // What happened last to the person's secrets and accounts (#4161): the newest's age, and
                 // the one read last in grey. The mark keeps its plain tint; "not backed up" is on the page.
                 ForEach([StatusSecretsKind.secrets, .accounts], id: \.self) { kind in
-                    let item: SidebarItem = kind == .secrets ? .secretsStatus : .accountsStatus
+                    let item = kind.sidebarItem
                     StatusSecretsRow(kind: kind, state: model.userScope) { model.work.agent($0)?.title }
                         .activityIcon(kind.systemImage)
                         .appText(.supporting).sidebarInk(item).tag(item)
                 }
+                // The plain variables sessions get (#5260): a page to find, add and edit them.
+                StatusSecretsRow(kind: .environment, state: model.userScope)
+                    .activityIcon(StatusSecretsKind.environment.systemImage)
+                    .appText(.supporting).sidebarInk(.environmentStatus).tag(SidebarItem.environmentStatus)
             } header: {
                 Text("Status").appText(.supporting)
             }
@@ -267,9 +271,9 @@ struct FolderListView: View {
             }
 
             Section(isExpanded: $showsUsage) {
-                // The Multiplier (#3986), always first.
-                MultiplierRow().activityIcon("multiply.circle")
-                    .appText(.supporting).sidebarInk(.multiplier).tag(SidebarItem.multiplier)
+                // The Achievements page (#3986), always first.
+                AchievementsRow().activityIcon("multiply.circle")
+                    .appText(.supporting).sidebarInk(.achievements).tag(SidebarItem.achievements)
                 SpendingRow(selection: $selection).activityIcon("dollarsign.circle",
                                                                 warns: model.costState?.daySpendIsCloseToFull == true)
                     .appText(.supporting).sidebarInk(.spending).tag(SidebarItem.spending)

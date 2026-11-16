@@ -161,7 +161,7 @@ struct CommandMenuView: View {
 enum CommandMenuWords {
     /// The Go menu's item, ⌘K.
     static let menuItem = "Command Menu…"
-    static let prompt = "Find a session, folder, issue or action"
+    static let prompt = "Find a session, folder, issue, secret or action"
     static let label = "Command menu"
     /// The row at the top of the Remote's sidebar search (#4792): the menu, with no keyboard.
     static func searchRow(_ term: String) -> String {
