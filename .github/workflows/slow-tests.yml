@@ -240,6 +240,6 @@ jobs:
 
           Run: $RUN_URL
           BODY
-            gh issue create --title "$title" --label bug --label size:S --label feature:attested-checks \
+            gh issue create --title "$title" --label bug --label size:S --label feature:build \
               --body-file "$RUNNER_TEMP/body.md"
           done 3< "$RUNNER_TEMP/undeclared.txt"
