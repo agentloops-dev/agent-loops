@@ -1,10 +1,12 @@
 package controlplane
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -132,5 +134,91 @@ func TestCompareDigitsOfAMadeMachine(t *testing.T) {
 	st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateDone), now)
 	if st.Steps[3].State != wire.MachineSetupStateDone {
 		t.Fatalf("no digits made: %+v", st.Steps[3])
+	}
+}
+
+// #5765: a machine the control plane makes has its set-up from the press of Make, under the
+// host id its code joins it as: step 1 while the provider makes it, step 2 until it joins.
+// Its join makes step 2 done and keeps the digits, and the host's own "steps 1 and 2 are
+// done" keeps the provider's words. Steps 3 on come from the installer.
+func TestAMadeMachinesSetUpBeginsAtMakeAndJoinsUnderItsID(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	const made = "madehost"
+	shown, err := p.s.Codes().Issue(withMadeMachine(ctx, made), true, false, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := controllink.ParseCode(shown.Text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := "Made at Stand-in in 3s"
+	p.s.madeStep(made, rep(wire.MachineSetupStepIDCreate, wire.MachineSetupStateRunning))
+	p.s.madeStep(made, wire.MachineSetupReport{Step: wire.MachineSetupStepIDCreate, State: wire.MachineSetupStateDone, Detail: &words})
+	p.s.madeStep(made, rep(wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning))
+	if setup := p.s.machineSetup(ctx, made); setup == nil || setup.Steps[0].State != wire.MachineSetupStateDone ||
+		setup.Steps[1].State != wire.MachineSetupStateRunning {
+		t.Fatalf("before the join: %+v", setup)
+	}
+
+	host, _, _ := p.rawHostWith("made-1", code)
+	if host != made {
+		t.Fatalf("joined as %q, not the id its set-up is kept under", host)
+	}
+	stored, _, err := p.s.readMachineSetup(ctx, made)
+	if err != nil || stored == nil {
+		t.Fatalf("%v %+v", err, stored)
+	}
+	if stored.Steps[1].State != wire.MachineSetupStateDone || stored.Expect != code.Digits() {
+		t.Fatalf("after the join: %+v", stored)
+	}
+	// The host says steps 1 and 2 are done as it forwards the installer's first report.
+	for _, id := range []wire.MachineSetupStepID{wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin} {
+		if err := p.s.setupStep(ctx, made, rep(id, wire.MachineSetupStateDone)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The installer's compare, with the digits its code shows.
+	digits := code.Digits()
+	for _, r := range []wire.MachineSetupReport{rep(wire.MachineSetupStepIDInstall, wire.MachineSetupStateRunning),
+		rep(wire.MachineSetupStepIDInstall, wire.MachineSetupStateDone),
+		{Step: wire.MachineSetupStepIDCompare, State: wire.MachineSetupStateDone, Code: &digits}} {
+		if err := p.s.setupStep(ctx, made, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setup := p.s.machineSetup(ctx, made)
+	if deref(setup.Steps[0].Detail) != words {
+		t.Errorf("the provider's words went: %+v", setup.Steps[0])
+	}
+	if setup.Steps[3].State != wire.MachineSetupStateDone {
+		t.Errorf("compare: %+v", setup.Steps[3])
+	}
+}
+
+// A made machine whose join wait ran out (step 2 failed) that joins after all has step 2 done.
+func TestALateJoinMakesAFailedJoinStepDone(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	const made = "latehost"
+	shown, err := p.s.Codes().Issue(withMadeMachine(ctx, made), true, false, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _ := controllink.ParseCode(shown.Text)
+	problem := "It didn't join in 10 minutes."
+	p.s.madeStep(made, rep(wire.MachineSetupStepIDCreate, wire.MachineSetupStateRunning))
+	p.s.madeStep(made, rep(wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone))
+	p.s.madeStep(made, rep(wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning))
+	p.s.madeStep(made, wire.MachineSetupReport{Step: wire.MachineSetupStepIDJoin, State: wire.MachineSetupStateFailed, Error: &problem})
+	if host, _, _ := p.rawHostWith("late-1", code); host != made {
+		t.Fatalf("joined as %q", host)
+	}
+	setup := p.s.machineSetup(ctx, made)
+	if setup.Steps[1].State != wire.MachineSetupStateDone || setup.Steps[1].Error != nil {
+		t.Fatalf("join: %+v", setup.Steps[1])
 	}
 }

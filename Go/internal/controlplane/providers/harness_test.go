@@ -363,6 +363,25 @@ type harness struct {
 	home      string
 	ssh       *sshStarts
 	caller    Caller
+	// The set-up steps of made machines the providers said (#5765).
+	setupMu    sync.Mutex
+	setupSteps []madeStep
+}
+
+type madeStep struct {
+	host   string
+	report wire.MachineSetupReport
+}
+
+// madeSteps is what the providers said of made machines' set-up, as "host step state".
+func (h *harness) madeSteps() []string {
+	h.setupMu.Lock()
+	defer h.setupMu.Unlock()
+	var out []string
+	for _, s := range h.setupSteps {
+		out = append(out, s.host+" "+string(s.report.Step)+" "+string(s.report.State))
+	}
+	return out
 }
 
 const devbox, other = "devbox01", "other001"
@@ -418,8 +437,13 @@ func newHarness(t *testing.T, opts ...func(*harnessOptions)) *harness {
 				h.router.mu.Unlock()
 				h.router.setOnline(host, false)
 			},
-			HostCommand: func(string) (string, error) {
-				return "curl -fsSL https://cp.local/v1/install.sh | sh -s -- 'agents-control:2:h:secret'", nil
+			HostCommand: func(string) (string, string, error) {
+				return "curl -fsSL https://cp.local/v1/install.sh | sh -s -- 'agents-control:2:h:secret'", "h-made", nil
+			},
+			SetupStep: func(host string, r wire.MachineSetupReport) {
+				h.setupMu.Lock()
+				h.setupSteps = append(h.setupSteps, madeStep{host, r})
+				h.setupMu.Unlock()
 			},
 			Connect: func(ProviderRecord, map[string]string) (Provider, error) { return provider, nil },
 			BackUp:  o.backUp,

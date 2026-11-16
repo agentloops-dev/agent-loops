@@ -759,8 +759,12 @@ func (p *plane) rawHost(name string) (string, *controllink.Lines) {
 
 // rawHostKey is rawHost, with the key the host proves itself with.
 func (p *plane) rawHostKey(name string) (string, *controllink.Lines, []byte) {
+	return p.rawHostWith(name, p.code(true))
+}
+
+// rawHostWith is rawHostKey with a host code the test made.
+func (p *plane) rawHostWith(name string, code *controllink.Code) (string, *controllink.Lines, []byte) {
 	ctx := context.Background()
-	code := p.code(true)
 	private := controllink.NewPrivateKey()
 	public, _ := controllink.PublicKey(private)
 	l, _, err := controllink.Join(ctx, code.URL, "", controllink.Credentials{Identity: "e:" + code.ID(),
