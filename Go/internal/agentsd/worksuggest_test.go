@@ -58,7 +58,7 @@ func TestSuggestableOfReadsOpenChildren(t *testing.T) {
 
 // #5458: an epic with a lead (a session not archived labelled #<epic> and lead) is left out; the
 // others come at most 3, with the rest counted; Start lead's form is filled; a dismissed epic
-// stays out until it changes; and an epic with a lead has no dismissal.
+// stays out until its progress changes, not its update time (#5731); and an epic with a lead has no dismissal.
 func TestWorkSuggestLeads(t *testing.T) {
 	d, c, gh, _ := forgeDaemon(t)
 	epic := func(n int, title string) githubmcp.Item {
@@ -111,14 +111,24 @@ func TestWorkSuggestLeads(t *testing.T) {
 		t.Fatalf("after dismiss: %+v", out)
 	}
 
-	// The epic changes: it is back.
+	read := func(id int) wire.WorkSuggestLeads {
+		d.forgeMu.Lock()
+		d.forgeCache = nil
+		d.forgeMu.Unlock()
+		var out wire.WorkSuggestLeads
+		json.Unmarshal(c.call(t, id, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
+		return out
+	}
+
+	// #5731: only its update time changes (a comment, a label): it stays dismissed.
 	gh.epics[1].UpdatedAt = "2026-11-05T10:00:00Z"
-	d.forgeMu.Lock()
-	d.forgeCache = nil
-	d.forgeMu.Unlock()
-	out = wire.WorkSuggestLeads{}
-	json.Unmarshal(c.call(t, 4, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
-	if len(out.Suggestions) != 3 || out.Suggestions[0].Node.Ref != "github:issue:alexec/agents#2" || out.More != 1 {
-		t.Fatalf("after a change: %+v", out)
+	if out = read(4); len(out.Suggestions) != 3 || out.Suggestions[0].Node.Ref != "github:issue:alexec/agents#3" || out.More != 0 {
+		t.Fatalf("after an update time change: %+v", out)
+	}
+
+	// Its progress changes (a child closes): it is back.
+	gh.epics[1].SubTotal, gh.epics[1].SubDone = 2, 1
+	if out = read(5); len(out.Suggestions) != 3 || out.Suggestions[0].Node.Ref != "github:issue:alexec/agents#2" || out.More != 1 {
+		t.Fatalf("after a progress change: %+v", out)
 	}
 }
