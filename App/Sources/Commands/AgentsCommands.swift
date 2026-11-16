@@ -126,6 +126,9 @@ struct AgentsCommands: Commands {
             Button("New Session in a Worktree") { newSession(inWorktree: true) }
                 .keyboardShortcut(MenuKeys.newWorktreeSession)
                 .disabled(keyFolder == nil || !model.draftWorktrees.canMakeNew)
+            Button(BackgroundStartScene.title) { openWindow(id: BackgroundStartScene.id) }
+                .keyboardShortcut(MenuKeys.newBackgroundSession)
+                .disabled(model.foldersInListOrder.isEmpty)
             Divider()
             Button("Add Folder…") { requests.folderSheet = .chooseFolder() }
                 .keyboardShortcut(MenuKeys.addFolder)
@@ -545,6 +548,8 @@ struct AgentsCommands: Commands {
         add("New Session", MenuKeys.newSession, when: folder != nil) { newSession() }
         add("New Session in a Worktree", MenuKeys.newWorktreeSession,
             when: folder != nil && model.draftWorktrees.canMakeNew) { newSession(inWorktree: true) }
+        add(BackgroundStartScene.title, MenuKeys.newBackgroundSession, keywords: ["start", "window"],
+            when: !model.foldersInListOrder.isEmpty) { openWindow(id: BackgroundStartScene.id) }
         for summary in foldersInListOrder where summary.key != folder?.key {
             add("New Session in \(summary.name)", keywords: ["start"]) {
                 model.showFolder(summary.key)

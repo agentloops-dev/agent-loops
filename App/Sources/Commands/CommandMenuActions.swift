@@ -7,6 +7,8 @@ enum MenuKeys {
     static let commandMenu = KeyboardShortcut("k")
     static let newSession = KeyboardShortcut("n")
     static let newWorktreeSession = KeyboardShortcut("n", modifiers: [.command, .option])
+    /// New Session in Background (#5798): a window of its own, and the main window stays.
+    static let newBackgroundSession = KeyboardShortcut("n", modifiers: [.command, .shift])
     static let addFolder = KeyboardShortcut("o")
     static let cloneFolder = KeyboardShortcut("o", modifiers: [.command, .shift])
     /// New App… (#5132): Let's build your idea, again.

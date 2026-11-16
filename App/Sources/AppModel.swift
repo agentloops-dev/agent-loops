@@ -1087,6 +1087,8 @@ final class AppModel {
     /// The sessions open in windows of their own (#826), each with its own page of its
     /// transcript. See `AppModel+Popouts`.
     var popouts: [UUID: PoppedChat] = [:]
+    /// New Session in Background's own form (#5798), apart from the main window's draft.
+    let backgroundStart = BackgroundStartDraft()
     /// The one of them in the key window, if one is: what the person is watching.
     @ObservationIgnored var popoutInFront: UUID?
     /// The folders open in windows of their own (#1089), each with what it shows.

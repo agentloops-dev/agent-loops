@@ -19,6 +19,7 @@ import {
   appleKeys, commandFound, commandKey, commandKindWord, commandMenuWords, isCommandMenuKey, type CommandItem,
 } from "../model/commandMenu";
 import { orderedFolders } from "./Sidebar";
+import { backgroundStartTitle, openBackgroundStart } from "./BackgroundStart";
 import { firstBuild, newAppItem } from "../model/firstBuild";
 import { archiveAndLeave, runSessionAction } from "./SessionMenu";
 import { laterRequestOf } from "./ListKeys";
@@ -82,6 +83,8 @@ export function commandItems(store: Store, apple: boolean, setup: MenuSetup = no
     add(several ? `New Session in ${f.folder.name} · ${f.host.name}` : `New Session in ${f.folder.name}`,
       () => go({ host: f.host.id, folder: f.folder.folder.folder, compose: true }), undefined, ["start"]);
   }
+  // The window's ⇧⌘N (#5798); the browser keeps that key for its private window, so it has none here.
+  if (folders.length) add(backgroundStartTitle, openBackgroundStart, undefined, ["start", "window"]);
   const agent: Agent | undefined = r.host && r.session ? store.agent(r.host, r.session) : undefined;
   if (r.host && agent) {
     const host = r.host;
