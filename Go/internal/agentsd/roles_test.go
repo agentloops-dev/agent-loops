@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 // fixedPolicy gives every caller one role, or closes it.
@@ -115,7 +113,6 @@ func TestSocketRefusesWhatTheRoleMayNotCall(t *testing.T) {
 }
 
 func TestSocketControlMayCallEverything(t *testing.T) {
-	flaky.UnderLoad(t, "#5812")
 	_, path := serveWith(t, fixedPolicy{role: RoleControl, ok: true})
 	if m := socketCall(t, path, "agents/list"); m == nil || m.Error != nil {
 		t.Fatalf("a window's agents/list: %+v", m)
