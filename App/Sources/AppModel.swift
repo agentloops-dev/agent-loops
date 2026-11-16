@@ -256,6 +256,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsMultiplier = false
             // The same rule as picking a folder: what you picked is what you see,
             // and a conversation or a workflow left open underneath would be waiting
             // to reappear when the bill is closed, which is a place nobody chose to
@@ -283,6 +284,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsMultiplier = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -309,6 +311,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsMultiplier = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -332,6 +335,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsMultiplier = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -355,6 +359,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsMultiplier = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -378,6 +383,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsMultiplier = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -401,6 +407,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsMultiplier = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -417,6 +424,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsMultiplier = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -440,6 +448,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
+            showsMultiplier = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -461,6 +470,7 @@ final class AppModel {
         didSet {
             guard showsDocs, showsDocs != oldValue else { return }
             showsSummary = false
+            showsMultiplier = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -484,6 +494,7 @@ final class AppModel {
         didSet {
             guard showsMessages, showsMessages != oldValue else { return }
             showsSummary = false
+            showsMultiplier = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -510,6 +521,7 @@ final class AppModel {
     var showsSummary = false {
         didSet {
             guard showsSummary, showsSummary != oldValue else { return }
+            showsMultiplier = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -521,6 +533,31 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
+            selection = nil
+            openWorkflow = nil
+            folderPage = nil
+            composing = false
+        }
+    }
+
+    /// Whether the window is showing the Multiplier page (#3986), from its row under Usage or
+    /// View ▸ Multiplier (⌘0). A page like Velocity, and not persisted for the same reason. The
+    /// window opens to the Dashboard instead (#5696).
+    var showsMultiplier = false {
+        didSet {
+            guard showsMultiplier, showsMultiplier != oldValue else { return }
+            showsSpending = false
+            showsEvents = false
+            showsRuntimes = false
+            statusSecretsPage = nil
+            showsTime = false
+            showsVelocity = false
+            showsTokens = false
+            machinePage = nil
+            showsWork = false
+            showsDocs = false
+            showsMessages = false
+            showsSummary = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -590,6 +627,24 @@ final class AppModel {
         showsRuntimes = true
     }
 
+    /// The Secrets page's selected item, by its id (`SecretsPage.Item.id`), so a link opens one (#5257).
+    var secretsSelection: String?
+
+    /// Status ▸ Secrets (#5257): the page, with `item` selected when given.
+    func showSecrets(item: String? = nil) {
+        if let item { secretsSelection = item }
+        statusSecretsPage = .secrets
+    }
+
+    /// The Accounts page's selected account, by its id (`DaemonAPI.OutsideAccount.id`), so a link opens one (#5258).
+    var accountsSelection: String?
+
+    /// Status ▸ Accounts (#5258): the page, with `item` selected when given.
+    func showAccounts(item: String? = nil) {
+        if let item { accountsSelection = item }
+        statusSecretsPage = .accounts
+    }
+
     /// An agent's chat, from a machine's Resources or a capsule naming its holder: its
     /// own folder first, as a banner does, so the sidebar and the page agree.
     func openAgent(_ agentID: UUID) {
@@ -605,6 +660,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsMultiplier = false
         if let agent = agents.first(where: { $0.id == agentID }) {
             pendingOpen = nil
             select(FolderKey(host: agent.host, folder: agent.folderPath))
@@ -632,6 +688,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsMultiplier = false
         // Not listed yet: settling the selection would pick another, so it waits (#1055).
         pendingOpen = liveFolders.contains { $0.key == key } ? nil : .folder(key)
         select(key)
@@ -682,8 +739,9 @@ final class AppModel {
             if showsDocs { return .docs }
             if showsMessages { return .messages }
             if showsSummary { return .summary }
-            // Nothing else open is the Multiplier page (#3986), as the detail draws it.
-            guard let key = selectedFolderKey else { return selection == nil && !composing ? .multiplier : nil }
+            if showsMultiplier { return .multiplier }
+            // Nothing else open is the Dashboard (#5696), as the detail draws it.
+            guard let key = selectedFolderKey else { return selection == nil && !composing ? .dashboard : nil }
             if let id = openWorkflow { return .workflow(id, in: key) }
             if case .review(let id)? = folderPage { return .review(id, in: key) }
             if folderPage == .archivedSessions { return .archivedSessions(key) }
@@ -691,7 +749,7 @@ final class AppModel {
             if folderPage == .mcpServers { return .folderMCPServers(key) }
             if let openPin { return .pin(openPin, in: key) }
             if let selection { return .session(selection) }
-            return composing ? .folder(key) : .multiplier
+            return composing ? .folder(key) : .dashboard
         }
         set {
             // The person's own pick wins over a banner still waiting for its lists.
@@ -712,6 +770,7 @@ final class AppModel {
                 showsDocs = false
                 showsMessages = false
                 showsSummary = false
+                showsMultiplier = false
                 select(key)
                 openWorkflow = id
             case .pin(let path, let key):
@@ -734,6 +793,8 @@ final class AppModel {
                 showsTime = true
             case .velocity:
                 showsVelocity = true
+            case .dashboard:
+                showDashboard()
             case .work(let kind):
                 // The list's row: its list, or the place in it still open.
                 showWork(workPlace.kind == kind ? workPlace : WorkPlace(kind: kind))
@@ -769,6 +830,7 @@ final class AppModel {
                 showsDocs = false
                 showsMessages = false
                 showsSummary = false
+                showsMultiplier = false
                 showFolder(key)
             case nil:
                 // A list that clears its own selection — which macOS does while rows
@@ -779,9 +841,16 @@ final class AppModel {
         }
     }
 
-    /// The Multiplier page (#3986), from its row under Usage or View ▸ Multiplier (⌘0): every
-    /// page, folder page, pin, workflow and chat closed, as the window opens.
+    /// The Multiplier page (#3986), from its row under Usage or View ▸ Multiplier (⌘0).
     func showMultiplier() {
+        showsMultiplier = true
+    }
+
+    /// The Dashboard (#5534), the home page (#5696): each work item on this Mac with its sessions,
+    /// its pull request and checks, and what waits on the person answered in place. Every page,
+    /// folder page, pin, workflow and chat closed, as the window opens and as it is when the
+    /// selection clears. From its row under Work or View ▸ Dashboard.
+    func showDashboard() {
         showsSpending = false
         showsEvents = false
         showsRuntimes = false
@@ -794,6 +863,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsMultiplier = false
         showNothing()
     }
 
@@ -811,6 +881,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsMultiplier = false
         select(key)
         folderPage = page
     }
@@ -843,6 +914,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsMultiplier = false
         select(key)
         // A new session in it (#366): the folder's own page is where a session starts,
         // as New Session has it. The folder's row in the sidebar only folds (#375).
@@ -1084,6 +1156,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
+        showsMultiplier = false
         select(key)
         openPin = path
     }
@@ -1227,6 +1300,8 @@ final class AppModel {
 
     init() {
         userScope.lock = lock
+        // The window takes an agent's secret for the person (#5308): it seals, as Add a Secret does.
+        userScope.sealing = { ControlConfig.sealing().map { ($0.key, $0.client) } }
         let localCopy = LocalCopyKeeper(copy: Self.windowCopy(), work: work)
         self.localCopy = localCopy
         // At once, so the sidebar and a chat restored at launch draw before the host answers.

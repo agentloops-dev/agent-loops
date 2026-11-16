@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -62,7 +61,7 @@ func (d *Daemon) machineFirstLookDone() {
 // folder to hear.
 func (d *Daemon) machineChanged(c machineChange) {
 	if c.kind == "wake" {
-		safe.Go("disk check", d.checkDisk)
+		d.goJob("disk check", d.checkDisk)
 	}
 	// Kept, so the next host's first look is against it (#1219).
 	if c.kind == "away" || c.kind == "back" {

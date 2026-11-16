@@ -356,73 +356,39 @@ struct WorkMergeBox: View {
 }
 
 /// Files changed 6 (#4406, pull-request.md note 5): a bordered button at the title's trailing end
-/// (a full-width row on a narrow page). On the Mac it pushes the Files changed page in the pull
-/// request's place (#5478, `WorkFilesPage`); on the Remote it opens the diff (`forge/diff`) as a
-/// sheet until its page comes (#5479).
+/// (a full-width row on a narrow page) that pushes the Files changed page in the pull request's
+/// place (`WorkFilesPage`), which reads the diff (`forge/diff`): the Mac (#5478) and the Remote (#5479).
 struct WorkFilesChanged: View {
     let model: any WorkModel
-    let host: MachineRef
     let detail: DaemonAPI.ForgeItemDetail
     var compact = false
 
-    @Environment(\.openURL) private var openURL
-    @State private var diff: AppViewDiff?
-    @State private var loading = false
-    @State private var problem: String?
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if compact {
-                Button { Task { await showDiff() } } label: {
-                    HStack {
-                        Label("Files changed", icon: "doc.on.doc")
-                        Spacer()
-                        if loading { ProgressView().controlSize(.small) }
-                        if let n = detail.filesChanged { Text("\(n)").foregroundStyle(.secondary).monospacedDigit() }
-                        Image(icon: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
-                    }
-                    .appText(.supporting)
-                    .padding(.horizontal, 12).padding(.vertical, 10)
-                    .contentShape(Rectangle())
+        if compact {
+            Button { showFiles() } label: {
+                HStack {
+                    Label("Files changed", icon: "doc.on.doc")
+                    Spacer()
+                    if let n = detail.filesChanged { Text("\(n)").foregroundStyle(.secondary).monospacedDigit() }
+                    Image(icon: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
                 }
-                .buttonStyle(.plain)
-                .background(RoundedRectangle(cornerRadius: Paper.Radius.card).fill(Paper.well))
-            } else {
-                Button { Task { await showDiff() } } label: {
-                    HStack(spacing: 6) {
-                        Label(WorkLook.filesChanged(detail.filesChanged), icon: "doc.on.doc")
-                        if loading { ProgressView().controlSize(.small) }
-                    }
-                }
-                .buttonStyle(.bordered)
-                .help("The pull request's files changed")
+                .appText(.supporting)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .contentShape(Rectangle())
             }
-            if let problem {
-                Text(problem).appText(.supporting).foregroundStyle(StateTint.failure.style(or: .secondary))
+            .buttonStyle(.plain)
+            .background(RoundedRectangle(cornerRadius: Paper.Radius.card).fill(Paper.well))
+        } else {
+            Button { showFiles() } label: {
+                Label(WorkLook.filesChanged(detail.filesChanged), icon: "doc.on.doc")
             }
-        }
-        .disabled(loading)
-        .sheet(item: $diff) { diff in
-            AppViewDiffPage(diff: diff, openLink: { openURL($0) })
+            .buttonStyle(.bordered)
+            .help("The pull request's files changed")
         }
     }
 
-    private func showDiff() async {
-        #if os(macOS)
+    private func showFiles() {
         model.showWork(WorkPlace(kind: .pr, ref: detail.item.node.ref, files: true))
-        #else
-        loading = true
-        problem = nil
-        defer { loading = false }
-        let item = detail.item
-        do {
-            let got = try await model.forge(DaemonAPI.Method.forgeDiff, DaemonAPI.ForgeNodeRequest(node: item.node),
-                                            returning: DaemonAPI.ForgeDiff.self, on: host)
-            diff = got.appViewDiff(title: "\(WorkList.shortRef(item.node.ref)) \(item.title)", site: WorkList.forgeName(item.node.ref))
-        } catch {
-            problem = WorkList.failureWords(error)
-        }
-        #endif
     }
 }
 

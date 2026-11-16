@@ -22,7 +22,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -338,7 +337,7 @@ func (d *Daemon) readBackup(id string) (wire.Backup, bool) {
 
 // StartBackups makes a backup when the last one of this machine is older than the
 // schedule says, checked a few minutes after the start, out of its way, and every hour.
-func (d *Daemon) StartBackups() { safe.Go("backups", d.backupClock) }
+func (d *Daemon) StartBackups() { d.goJob("backups", d.backupClock) }
 
 func (d *Daemon) backupClock() {
 	wait := backupFirstCheck
@@ -380,7 +379,7 @@ func (d *Daemon) startBackup() bool {
 	if !d.claimBackup() {
 		return false
 	}
-	safe.Go("backup", func() { d.runBackup() })
+	d.goJob("backup", func() { d.runBackup() })
 	return true
 }
 

@@ -38,12 +38,12 @@ func (d *Daemon) hostedViewConnect(server sdk.McpServerStdio, folder *string, cw
 		if t := d.hostedViewTimers[user]; t != nil {
 			t.Stop()
 		}
-		d.hostedViewTimers[user] = time.AfterFunc(viewLinger, func() {
+		d.hostedViewTimers[user] = time.AfterFunc(viewLinger, d.jobFunc("hostedviews timer", func() {
 			d.hostedMu.Lock()
 			delete(d.hostedViewTimers, user)
 			d.hostedMu.Unlock()
 			d.hostedRelease(user)
-		})
+		}))
 		d.hostedMu.Unlock()
 		if h == nil {
 			return nil, &mcpCheckFailure{kind: "stopped", message: server.Name + " stopped."}

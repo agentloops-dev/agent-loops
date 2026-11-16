@@ -13,7 +13,6 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -210,7 +209,7 @@ func (d *Daemon) kickFileWatches() {
 	}
 	d.fileKicked = true
 	d.fileMu.Unlock()
-	safe.Go("file watches", func() {
+	d.goJob("file watches", func() {
 		if !d.pwEnter("") {
 			return
 		}
@@ -343,7 +342,7 @@ func (d *Daemon) scheduleFileCheckLocked(folder string, st *watchedFiles) {
 	if st.timer != nil {
 		return
 	}
-	st.timer = time.AfterFunc(fileSettle, func() { d.checkWatchedFiles(folder) })
+	st.timer = time.AfterFunc(fileSettle, d.jobFunc("filewatch timer", func() { d.checkWatchedFiles(folder) }))
 }
 
 // checkWatchedFiles is one look at the paths heard since the last: a matching file that

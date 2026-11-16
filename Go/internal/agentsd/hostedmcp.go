@@ -25,7 +25,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -132,7 +131,7 @@ func (d *Daemon) hostedChangedLocked() {
 	if d.hostedTell == nil {
 		d.hostedTell = make(chan struct{}, 1)
 		tell := d.hostedTell
-		safe.Go("hosted mcp", func() {
+		d.goJob("hosted mcp", func() {
 			for {
 				select {
 				case <-tell:
@@ -548,7 +547,7 @@ func (d *Daemon) hostedStart(h *hostedServer) (json.RawMessage, *Error) {
 	h.cmd, h.in = cmd, in
 	log.Printf("hosted mcp: %s started (pid %d)", h.key.name, cmd.Process.Pid)
 	d.hostedMu.Unlock()
-	safe.Go("hosted mcp", func() {
+	d.goJob("hosted mcp", func() {
 		r := bufio.NewReaderSize(out, 64*1024)
 		for {
 			line, err := r.ReadBytes('\n')
@@ -702,7 +701,7 @@ func (d *Daemon) hostedHeard(h *hostedServer, generation int, line []byte) {
 			return
 		}
 		for _, heard := range h.heard {
-			safe.Go("hosted mcp", func() { heard(m.Method) })
+			d.goJob("hosted mcp", func() { heard(m.Method) })
 		}
 		return
 	}
@@ -769,7 +768,7 @@ func (d *Daemon) hostedStoppedLocked(h *hostedServer, why string) {
 	if h.retry != nil {
 		h.retry.Stop()
 	}
-	h.retry = time.AfterFunc(wait, func() { d.hostedRestart(h) })
+	h.retry = time.AfterFunc(wait, d.jobFunc("hostedmcp timer", func() { d.hostedRestart(h) }))
 	d.hostedChangedLocked()
 }
 

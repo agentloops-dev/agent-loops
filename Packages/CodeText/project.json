@@ -1,0 +1,29 @@
+{
+  "name": "codetext",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "root": "Packages/CodeText",
+  "tags": [
+    "xcode"
+  ],
+  "implicitDependencies": [
+    "scripts",
+    "workspace"
+  ],
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "parallelism": false,
+      "options": {
+        "command": "scripts/build-cache.sh swift test --package-path Packages/CodeText --experimental-maximum-parallelization-width 3",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "xcode-toolchain",
+        "codetext-source",
+        "{projectRoot}/Tests/**/*",
+        "{projectRoot}/project.json"
+      ]
+    }
+  }
+}

@@ -61,7 +61,7 @@ against. It is never Alex's personal account.
 
 ## Is there already an account?
 
-Before anything else, find the person's outside accounts (Settings ▸ You ▸ Accounts, #3967):
+Before anything else, find the person's outside accounts (Status ▸ Accounts, #3967, #5258):
 `manage_accounts` with `service` (for example `gitlab`). It gives each account's id, service
 and description only (#4164). When the description says one is for this work, use that account
 and do not sign up again: `get` with its id gives the whole account. Its `secret` says which
@@ -155,7 +155,7 @@ agentloops@fastmail.com where the site lets you, or ask Alex with `ask_question`
   When a new account replaces an old one (a new address, a closed account), remove the old
   record: `manage_accounts` with action `remove` and its `ids` (#5253). One an agent added
   goes at once; one the person added asks them on a card first.
-- **Tracker:** the account's row in Settings ▸ You ▸ Accounts (`manage_accounts`) and its notes.
+- **Tracker:** the account's row in Status ▸ Accounts (`manage_accounts`) and its notes.
   No secrets.
 
 ## Finish

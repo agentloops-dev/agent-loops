@@ -450,15 +450,13 @@ func (f *fakeRuntime) form(ctx context.Context, session sdk.SessionId, withdraw 
 func fakeRuntimes(t *testing.T) {
 	self, _ := os.Executable()
 	t.Setenv("AGENTS_FAKE_ACP", "1")
-	old := locateFor
-	locateFor = func(*runtimeDef) (string, []string, []string) { return self, nil, nil }
-	t.Cleanup(func() { locateFor = old })
+	setFor(t, &locateFor, func(*runtimeDef) (string, []string, []string) { return self, nil, nil })
 }
 
 // notes collects the notifications a client hears.
 func (c *conn) until(t *testing.T, what string, ok func(method string, params json.RawMessage) bool) {
 	t.Helper()
-	deadline := time.After(20 * time.Second)
+	deadline := time.After(waitLimit(t))
 	for {
 		select {
 		case line := <-c.out:
@@ -468,7 +466,7 @@ func (c *conn) until(t *testing.T, what string, ok func(method string, params js
 				return
 			}
 		case <-deadline:
-			t.Fatalf("never heard %s", what)
+			waitFailed(t, "never heard %s", what)
 		}
 	}
 }

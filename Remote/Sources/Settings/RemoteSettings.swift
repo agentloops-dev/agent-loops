@@ -1,8 +1,8 @@
 import AgentsKitCore
 import SwiftUI
 
-/// Settings (#846): You first, as on the Mac (#3998): Secrets and For One Session, and Accounts,
-/// which are Core (#4032, #4033); this app alone (Voice; Live Activities, which only a phone or an iPad has
+/// Settings (#846): You first, as on the Mac (#3998): lines that open Status ▸ Secrets (#5257) and Status ▸ Accounts
+/// (#5258), which are Core (#4032, #4033); this app alone (Voice; Live Activities, which only a phone or an iPad has
 /// (#1657); and Sidebar, kept on the Mac's host and the same on every client: #1033, #2079), and
 /// Help. Control plane, machine, user and agent configuration settings are Mac + web (#2796,
 /// #2798): the Remote does not have them, but for Agents ▸ Policy (#2957) and the daily
@@ -15,17 +15,24 @@ struct RemoteSettings: View {
         NavigationStack {
             Form {
                 // The person's own, on every machine of theirs (#3998), as the Mac's Settings ▸ You.
-                Section(SettingsScope.you.title) {
-                    NavigationLink {
-                        RemoteSecretsPage()
+                Section {
+                    // The secrets and the accounts have pages of their own, under Status (#5257, #5258): a line each here.
+                    Button {
+                        model.sidebarItem = .secretsStatus
+                        dismiss()
                     } label: {
-                        Label(UserScopeWords.secretsTitle, icon: "key")
+                        Label(SecretsPage.openSecrets, icon: "key")
                     }
-                    NavigationLink {
-                        RemoteAccountsPage()
+                    Button {
+                        model.sidebarItem = .accountsStatus
+                        dismiss()
                     } label: {
-                        Label(AccountsWords.title, icon: "person.crop.rectangle.stack")
+                        Label(AccountsPage.openAccounts, icon: "person.crop.rectangle.stack")
                     }
+                } header: {
+                    Text(SettingsScope.you.title)
+                } footer: {
+                    Text(SecretsPage.settingsLine + " " + AccountsPage.settingsLine)
                 }
                 .paperListRow()
                 Section(SettingsScope.thisApp.title) {
@@ -76,59 +83,47 @@ struct RemoteSettings: View {
     }
 }
 
-/// Settings ▸ You ▸ Secrets (#4032): the person's secrets through the control plane, then the
-/// Mac's secrets for one session through its host, as the window's `SecretsView`.
-private struct RemoteSecretsPage: View {
-    @Environment(RemoteModel.self) private var model
-
-    var body: some View {
-        // Read when the page opens: the control plane's client is not observed.
-        SecretsPane(control: model.controlPlane, state: model.userScope,
-                    machineNames: SecretInfoWords.names(model.controlHosts)) {
-                        SessionSecretsSection(model: model)
-                        LocalSecretsSection(model: model)
-                    }
-            .staleBanner()
-            .navigationTitle(UserScopeWords.secretsTitle)
-            .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-/// Settings ▸ You ▸ Accounts (#4033): the person's outside accounts through the control plane, as
-/// the window's `AccountsView`.
-private struct RemoteAccountsPage: View {
-    @Environment(RemoteModel.self) private var model
-
-    var body: some View {
-        AccountsPane(control: model.controlPlane, state: model.userScope,
-                     machineNames: SecretInfoWords.names(model.controlHosts))
-            .staleBanner()
-            .navigationTitle(AccountsWords.title)
-            .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-/// Status ▸ Secrets and Status ▸ Accounts (#4161), as the window's: what happened last to each of the
-/// person's secrets or outside accounts, read only. A tap opens Settings ▸ You ▸ Secrets or Accounts
-/// over it.
+/// Status ▸ Secrets (#5257) and Status ▸ Accounts (#5258), as the window's: a page each, with no Reveal or Copy
+/// (tier Mac + web, #5112).
 struct RemoteStatusSecretsPage: View {
     let kind: StatusSecretsKind
     @Environment(RemoteModel.self) private var model
-    @State private var editing = false
 
     var body: some View {
-        StatusSecretsPage(kind: kind, control: model.controlPlane, state: model.userScope) { _ in editing = true }
-            .navigationTitle(kind.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $editing) {
-                NavigationStack {
-                    Group {
-                        if kind == .secrets { RemoteSecretsPage() } else { RemoteAccountsPage() }
-                    }
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) { Button("Done") { editing = false } }
-                    }
-                }
-            }
+        @Bindable var model = model
+        let names = SecretInfoWords.names(model.controlHosts)
+        if kind == .secrets {
+            SecretsPageView(control: model.controlPlane, state: model.userScope, source: model,
+                            machineNames: names, hostName: "the Mac",
+                            selection: $model.secretsSelection, agentTitle: { model.work.agent($0)?.title },
+                            openAccount: { account in
+                                model.openStatusPage(.accountsStatus, from: \.secretsSelection, select: \.accountsSelection, account.id)
+                            })
+                .navigationTitle(SecretsPage.title)
+                .navigationBarTitleDisplayMode(.inline)
+        } else {
+            AccountsPageView(control: model.controlPlane, state: model.userScope, machineNames: names,
+                             selection: $model.accountsSelection,
+                             openSecret: { name in
+                                 model.openStatusPage(.secretsStatus, from: \.accountsSelection, select: \.secretsSelection, "yours/\(name)")
+                             })
+                .navigationTitle(AccountsPage.title)
+                .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+extension RemoteModel {
+    /// From one Status page's pushed detail to an item on the other (#5258): the detail goes back first, and the other
+    /// page opens a moment later with its item selected. On iPhone, a page changed under a pushed detail drops back to
+    /// the sidebar.
+    func openStatusPage(_ page: SidebarItem, from: ReferenceWritableKeyPath<RemoteModel, String?>,
+                        select: ReferenceWritableKeyPath<RemoteModel, String?>, _ id: String) {
+        self[keyPath: from] = nil
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            self[keyPath: select] = id
+            sidebarItem = page
+        }
     }
 }

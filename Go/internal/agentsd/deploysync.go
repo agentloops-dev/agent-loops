@@ -47,12 +47,12 @@ func (d *Daemon) deploySyncSoon() {
 	d.deploySyncMu.Lock()
 	defer d.deploySyncMu.Unlock()
 	if d.deploySyncTimer == nil {
-		d.deploySyncTimer = time.AfterFunc(deploySyncAfter, func() {
+		d.deploySyncTimer = time.AfterFunc(deploySyncAfter, d.jobFunc("deploysync timer", func() {
 			d.deploySyncMu.Lock()
 			d.deploySyncTimer = nil
 			d.deploySyncMu.Unlock()
 			d.sendDeploys(false)
-		})
+		}))
 	}
 }
 

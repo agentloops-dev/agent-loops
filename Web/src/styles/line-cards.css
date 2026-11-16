@@ -11,14 +11,11 @@
 .time-swatch.person { background: var(--tint-attention); }
 .usage-axis { fill: currentColor; opacity: 0.6; font-size: 0.6875rem; font-variant-numeric: tabular-nums; }
 
-/* The Line (#5036, specs/session-cards/spec.md, family 2): the record of what happened, with no box. A glyph, a bold
-   head, a quiet detail and one action link; a click on the words opens more in place. Red only on a failure's glyph
-   and its main words. Shared/UI/Chat/RecordLine.swift draws the same. */
+/* The Line (#5036, specs/session-cards/spec.md, family 2): the record of what happened, with no box and no glyph
+   (#5675): a bold head, a quiet detail and one action link; a click on the words opens more in place. Red only on a failure's main
+   words. Shared/UI/Chat/RecordLine.swift draws the same. */
 .record-line { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .record-line-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.record-line-glyph { flex: none; width: 16px; display: inline-flex; justify-content: center; color: var(--paper-secondary); }
-.record-line-glyph .lucide { transform: translateY(2px); }
-.record-line.failure .record-line-glyph { color: var(--tint-failure); }
 .record-line-open { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; flex: 0 1 auto; margin: 0; padding: 0;
   border: none; background: none; font: inherit; color: inherit; text-align: left; }
 button.record-line-open { cursor: pointer; }
@@ -32,7 +29,7 @@ button.record-line-open:hover .record-line-detail:not(.failed) { color: var(--pa
 .record-line-chevron { flex: none; font-size: 0.6875rem; color: var(--paper-tertiary); transition: transform 0.15s ease-out; }
 .record-line-chevron.open { transform: rotate(90deg); }
 .record-line-action { flex: none; margin-left: auto; white-space: nowrap; }
-.record-line-more { padding-left: 24px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.record-line-more { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .record-line-more p { margin: 0; }
 .record-line-more pre { white-space: pre-wrap; margin: 0; }
 .thought .record-line-more > p { white-space: pre-wrap; }

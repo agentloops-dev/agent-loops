@@ -19,7 +19,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/agentloops-dev/agent-loops/Go/internal/emailmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/jiramcp"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -460,7 +459,7 @@ func (d *Daemon) connectionSignIn(ctx context.Context, p wire.ConnectionProvider
 	d.connFlows[f.state.FlowID] = f
 	d.connMu.Unlock()
 	log.Printf("connections: %s sign-in started", p)
-	safe.Go("connection sign-in", func() {
+	d.goJob("connection sign-in", func() {
 		defer cancel()
 		d.finishConnection(run, f, flow, s, code)
 	})
@@ -543,7 +542,7 @@ func (d *Daemon) startCodeFlow(p wire.ConnectionProvider, origin string, s conne
 	d.connFlows[f.state.FlowID] = f
 	d.connMu.Unlock()
 	log.Printf("connections: %s sign-in started", p)
-	safe.Go("connection sign-in", func() {
+	d.goJob("connection sign-in", func() {
 		<-run.Done()
 		if d.ctx.Err() == nil && errors.Is(run.Err(), context.DeadlineExceeded) {
 			f.mu.Lock()
@@ -1014,7 +1013,7 @@ func (d *Daemon) connectionSignInWait(ctx context.Context, id wire.UUID) (wire.C
 // never a secret), and renews each connection before its token ends.
 func (d *Daemon) StartConnections() {
 	_ = os.Setenv(connections.EnvName, string(d.connectionLocator()))
-	safe.Go("connections", d.connectionClock)
+	d.goJob("connections", d.connectionClock)
 }
 
 func (d *Daemon) connectionClock() {

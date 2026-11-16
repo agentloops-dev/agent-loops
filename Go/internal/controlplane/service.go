@@ -116,6 +116,9 @@ type Config struct {
 	// Start empty, for a handover to fill (R16): no settings made, every member refused,
 	// only the copy handing over answered, until it says take over.
 	Receive bool
+	// The clock builds/sync bounds its days by (#5654); nil is time.Now. A test sets one
+	// fixed time for itself and the plane, so a run across midnight UTC sees one day.
+	Now func() time.Time
 	// Serve, even if this copy was forwarding when it stopped (--no-forwarding).
 	NoForwarding bool
 	// The proxies whose X-Forwarded-For names a socket's source (Caddy on a public

@@ -106,7 +106,7 @@ func (d *Daemon) moveSignupKeychain() (int, error) {
 			log.Printf("sign-up passwords: %s was not read, and is tried again at the next start", service)
 			continue
 		}
-		if err := d.saveSecret(name, value, true); err != nil {
+		if err := d.saveAgentSecret("", name, value, true); err != nil {
 			log.Printf("sign-up passwords: %s was not saved: %v", name, err)
 			continue
 		}

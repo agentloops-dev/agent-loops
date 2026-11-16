@@ -35,6 +35,11 @@ func (f *fakeForgeGitHub) ReviewDeployments(_ context.Context, repo string, runI
 	return f.deployErr
 }
 
+func (f *fakeForgeGitHub) AnswerApproval(_ context.Context, repo string, a githubmcp.DeployApproval, approve bool, comment string) error {
+	f.note("approval %s %d %s %s %t %s", repo, a.Deployment.ID, a.Workflow, a.Deployment.Ref, approve, comment)
+	return f.deployErr
+}
+
 // waitingRelease is a tag's release.yml run waiting for production's reviewers.
 func waitingRelease(id int, canApprove bool) githubmcp.WaitingDeploy {
 	return githubmcp.WaitingDeploy{
@@ -92,7 +97,9 @@ func TestWaitingDeployIsAnApprovalAnsweredOnGitHub(t *testing.T) {
 
 	url := wire.URL("file://" + folder)
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 1, "approvals/read", wire.ApprovalReadRequest{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key}), &reading)
+	if err := json.Unmarshal(c.call(t, 1, "approvals/read", wire.ApprovalReadRequest{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key}), &reading); err != nil {
+		t.Fatal(err)
+	}
 	var texts []string
 	for _, l := range reading.Lines {
 		texts = append(texts, string(l.Kind)+" "+l.Text)
@@ -170,10 +177,63 @@ func TestRefusedDeployAnswerSaysWhatGitHubNeeds(t *testing.T) {
 	}
 	e := c.callError(t, 1, "approvals/answer", wire.ApprovalAnswer{Folder: wire.URL("file://" + folder), Kind: wire.ApprovalKindDeploy,
 		Key: got[0].Key, Digest: got[0].Digest, Action: wire.ApprovalActionApprove})
-	if e == nil || !strings.Contains(e.Message, "agent-loops-dev app needs the Deployments permission") {
+	if e == nil || !strings.Contains(e.Message, "agent-loops-dev app needs the Deployments and Actions permissions") {
 		t.Fatalf("refused: %+v", e)
 	}
 	if left, _ := deployApprovalsIn(d, "alexec/agents"); len(left) != 1 {
 		t.Fatalf("dropped: %+v", left)
+	}
+}
+
+// waitingApproval is a starter's Deployment waiting for an approval in Agent Loops (#5564).
+func waitingApproval(id int64) githubmcp.WaitingDeploy {
+	dep := githubmcp.Deployment{ID: id, SHA: "abc", Ref: "v0.1.0", Environment: "production",
+		Statuses: []githubmcp.DeploymentStatus{{ID: 900, State: "pending", At: "2026-11-15T10:00:00Z", URL: "https://github.com/alexec/agents/actions/runs/5"}}}
+	return githubmcp.WaitingDeploy{
+		Run: githubmcp.CompletedRun{Run: githubmcp.RunRef{Name: "deploy.yml", Branch: "v0.1.0", HeadSHA: "abc",
+			URL: "https://github.com/alexec/agents/actions/runs/5", UpdatedAt: "2026-11-15T10:00:00Z"}, Workflow: "deploy.yml", Trusted: true},
+		Environments: []githubmcp.Environment{{Name: "production"}}, CanApprove: true,
+		Approval: &githubmcp.DeployApproval{Deployment: dep, Workflow: "deploy.yml"},
+	}
+}
+
+// #5564: on GitHub Free, a starter's deploy waits on a Deployment, not on required reviewers. It
+// is a Needs You approval of its folder as a reviewers' wait is; its reading says the workflow
+// Approve starts; Approve and Reject answer the Deployment, not a run's pending deployments.
+func TestApprovalDeployIsAnsweredWithItsWorkflow(t *testing.T) {
+	d, c, gh, _ := forgeDaemon(t)
+	gh.waiting = map[string][]githubmcp.WaitingDeploy{"alexec/agents": {waitingApproval(4242)}}
+	d.readDeploys(d.ctx)
+	got, folder := deployApprovalsIn(d, "alexec/agents")
+	if len(got) != 1 {
+		t.Fatalf("approvals: %+v", got)
+	}
+	a := got[0]
+	if a.Key != "alexec/agents/deployment/4242" || a.Title != "deploy.yml to production" || a.Line != "v0.1.0 waits for your approval" ||
+		deref(a.Digest) != "deployment:4242:900" {
+		t.Fatalf("approval: %+v", a)
+	}
+	url := wire.URL("file://" + folder)
+	var reading wire.GuardedChangeReading
+	if err := json.Unmarshal(c.call(t, 1, "approvals/read", wire.ApprovalReadRequest{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key}), &reading); err != nil {
+		t.Fatal(err)
+	}
+	var texts []string
+	for _, l := range reading.Lines {
+		texts = append(texts, l.Text)
+	}
+	if !slices.Equal(texts[:4], []string{"Approve starts: deploy.yml", "Waits for: production",
+		"Asked by: https://github.com/alexec/agents/actions/runs/5", "Commit: abc"}) {
+		t.Fatalf("reading: %q", texts)
+	}
+	if err := json.Unmarshal(c.call(t, 2, "approvals/answer", wire.ApprovalAnswer{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key,
+		Digest: a.Digest, Action: wire.ApprovalActionApprove}), &wire.FolderSummary{}); err != nil {
+		t.Fatal(err)
+	}
+	if w := gh.writes(); !slices.Equal(w, []string{"approval alexec/agents 4242 deploy.yml v0.1.0 true Approved in Agent Loops"}) {
+		t.Fatalf("writes: %q", w)
+	}
+	if left, _ := deployApprovalsIn(d, "alexec/agents"); len(left) != 0 {
+		t.Fatalf("still listed: %+v", left)
 	}
 }

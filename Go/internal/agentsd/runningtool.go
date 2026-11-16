@@ -90,7 +90,7 @@ func (l *live) settleToolLocked() {
 	if (want == "") != (t.shown == "") {
 		wait = max(wait, time.Until(t.markAt.Add(markHold)))
 	}
-	t.timer = time.AfterFunc(wait, l.showTool)
+	t.timer = time.AfterFunc(wait, l.d.jobFunc("runningtool timer", l.showTool))
 }
 
 // showTool puts what has held for toolSettle on the record, while the turn runs.

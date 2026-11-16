@@ -67,6 +67,7 @@ const CapDocsAll1 = "docs.all/1"
 const CapDocs1 = "docs/1"
 const CapDropbox1 = "dropbox/1"
 const CapElicitations1 = "elicitations/1"
+const CapEnv1 = "env/1"
 const CapEventsAudit1 = "events.audit/1"
 const CapEventsBus1 = "events.bus/1"
 const CapEventsLeases1 = "events.leases/1"
@@ -118,6 +119,7 @@ const CapHostUpdate1 = "host.update/1"
 const CapHostUserSettings1 = "host.user-settings/1"
 const CapHostUserSettings2 = "host.user-settings/2"
 const CapHostUserSettings3 = "host.user-settings/3"
+const CapHostUserSettings4 = "host.user-settings/4"
 const CapHostWebPairing1 = "host.web-pairing/1"
 const CapHostWire1 = "host.wire/1"
 const CapHostsJoin1 = "hosts.join/1"
@@ -139,6 +141,7 @@ const CapLock1 = "lock/1"
 const CapMac1 = "mac/1"
 const CapMachineAccounts1 = "machine.accounts/1"
 const CapMachineAccounts2 = "machine.accounts/2"
+const CapMachineAgentSecrets1 = "machine.agent-secrets/1"
 const CapMachineUsage1 = "machine.usage/1"
 const CapMachine1 = "machine/1"
 const CapMachines1 = "machines/1"
@@ -231,6 +234,7 @@ const CapUser1 = "user/1"
 const CapUser2 = "user/2"
 const CapUser3 = "user/3"
 const CapUser4 = "user/4"
+const CapUser5 = "user/5"
 const CapVelocity1 = "velocity/1"
 const CapViews1 = "views/1"
 const CapWake1 = "wake/1"
@@ -373,6 +377,10 @@ var HostCapabilities = pairs([][2]string{
 	{"dropbox/put", "dropbox/1"},
 	{"elicitations/answer", "elicitations/1"},
 	{"elicitations/pending", "elicitations/1"},
+	{"env/discard", "env/1"},
+	{"env/list", "env/1"},
+	{"env/resolve", "env/1"},
+	{"env/write", "env/1"},
 	{"events/cancelWait", "events/1"},
 	{"events/list", "events/1"},
 	{"events/raise", "events/1"},
@@ -590,7 +598,7 @@ var HostCapabilities = pairs([][2]string{
 	{"sessions/delete", "sessions/1"},
 	{"sessions/list", "sessions/1"},
 	{"settings/passThrough", "host.policy/1"},
-	{"settings/userPart", "host.user-settings/3"},
+	{"settings/userPart", "host.user-settings/4"},
 	{"shell/attach", "shell/1"},
 	{"shell/close", "shell/1"},
 	{"shell/detach", "shell/1"},
@@ -677,6 +685,7 @@ var HostCapabilities = pairs([][2]string{
 	{"desktopControl/liveFrame", "host.desktop-control/1"},
 	{"device/changed", "device/1"},
 	{"disk/changed", "disk/1"},
+	{"env/changed", "env/1"},
 	{"events/changed", "events/1"},
 	{"files/changed", "files/1"},
 	{"folder/changed", "folder/1"},
@@ -740,6 +749,7 @@ var HostNotifications = set([]string{
 	"desktopControl/liveFrame",
 	"device/changed",
 	"disk/changed",
+	"env/changed",
 	"events/changed",
 	"files/changed",
 	"folder/changed",
@@ -871,12 +881,14 @@ var ControlCapabilities = pairs([][2]string{
 	{"machine/lockJoin", "host.lock/2"},
 	{"machine/lockJoinReveal", "host.lock/2"},
 	{"machine/machines", "machine/1"},
+	{"machine/offerSecret", "machine.agent-secrets/1"},
 	{"machine/orgRouteCheck", "host.org-routes/2"},
 	{"machine/orgRoutesAgain", "host.org-routes/2"},
 	{"machine/orgRoutesApplied", "host.org-routes/2"},
 	{"machine/pairWebPage", "host.web-pairing/1"},
 	{"machine/policyApplied", "host.policy/1"},
 	{"machine/providerDraft", "machine/1"},
+	{"machine/secretClients", "machine.agent-secrets/1"},
 	{"machine/secretKey", "host.secret-release/1"},
 	{"machine/secretOps", "machine/1"},
 	{"machine/secretRelease", "host.secret-release/1"},
@@ -1018,14 +1030,16 @@ var ControlCapabilities = pairs([][2]string{
 	{"signIn/ticket", "org-identity/1"},
 	{"tunnel/open", "tunnel/1"},
 	{"usage/rollup", "reports/1"},
+	{"user/dropSecretOffer", "user/5"},
 	{"user/removeSecret", "user/2"},
 	{"user/sealedSecret", "user/4"},
 	{"user/secretNames", "user/2"},
+	{"user/secretOffers", "user/5"},
 	{"user/secretRecipients", "user/2"},
 	{"user/setAgentConfigFile", "user/1"},
 	{"user/setPolicy", "host.policy-layers/1"},
 	{"user/setSecret", "user/2"},
-	{"user/setSettings", "user/3"},
+	{"user/setSettings", "user/5"},
 	{"user/settings", "user/1"},
 	{"workflows/claimRun", "bots/1"},
 	{"workflows/fire", "events.team/1"},
@@ -1158,6 +1172,7 @@ var DeclaredCapabilities = map[string][]string{
 	"control": {
 		"attention/1",
 		"machine.accounts/1",
+		"user/3",
 	},
 	"host": {
 		"host.wire/1",
@@ -1176,5 +1191,6 @@ var DeclaredCapabilities = map[string][]string{
 		"host.user-settings/2",
 		"host.lock/1",
 		"host.lock/2",
+		"host.user-settings/3",
 	},
 }

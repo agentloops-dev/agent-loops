@@ -135,7 +135,7 @@ func (d *Daemon) askResolveLocked(ask []wire.LineageNode) {
 	}
 	for _, n := range ask {
 		d.resolveAsking[n] = true
-		go d.resolveInBackground(n)
+		d.goJob("resolveInBackground", func() { d.resolveInBackground(n) })
 	}
 }
 

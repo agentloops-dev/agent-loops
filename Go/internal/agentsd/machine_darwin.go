@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 )
 
 // StartMachineWatch hears the Mac (#1368) through agents-watch --machine, beside this
@@ -25,7 +24,7 @@ func (d *Daemon) StartMachineWatch() {
 	d.machineMu.Lock()
 	d.machineStop = func() { close(stop) }
 	d.machineMu.Unlock()
-	safe.Go("machine watch", func() {
+	d.goJob("machine watch", func() {
 		for {
 			began := time.Now()
 			d.runMachineWatch(helper, stop)
@@ -70,7 +69,7 @@ func (d *Daemon) runMachineWatch(helper string, stop chan struct{}) {
 		return
 	}
 	ended := make(chan struct{})
-	safe.Go("machine watch stop", func() {
+	d.goJob("machine watch stop", func() {
 		select {
 		case <-stop:
 		case <-d.ctx.Done():

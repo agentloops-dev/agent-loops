@@ -17,7 +17,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -90,7 +89,7 @@ func healthID(folder *string, name string) string {
 
 // StartMCPHealth checks the servers now, then looks again every minute: once, after the
 // host knows its personal home.
-func (d *Daemon) StartMCPHealth() { safe.Go("mcp health", d.mcpHealthClock) }
+func (d *Daemon) StartMCPHealth() { d.goJob("mcp health", d.mcpHealthClock) }
 
 func (d *Daemon) mcpHealthClock() {
 	d.reconcileMCPHealth()
@@ -161,7 +160,7 @@ func (d *Daemon) reconcileMCPHealth() {
 					snap.Servers[i].Check = wire.MCPCheckStateChecking
 				}
 			}
-			safe.Go("mcp health check", func() { d.checkMCPServer(item) })
+			d.goJob("mcp health check", func() { d.checkMCPServer(item) })
 		}
 		changed := d.told == nil || !reflect.DeepEqual(d.told.Servers, snap.Servers) || !reflect.DeepEqual(d.told.Problems, snap.Problems)
 		d.told = &snap

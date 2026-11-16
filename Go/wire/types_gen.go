@@ -497,6 +497,28 @@ type AgentRequest struct {
 	AgentID UUID `json:"agentID"`
 }
 
+// machine/offerSecret (#5308, specs/5308-agent-secrets-sync): a secret an agent saved on this machine, sealed by the machine to each of its person's clients (machine/secretClients) and to nothing else, info com.alexecollins.agents.agentsecret.v1, associated data agentsecret.v1|<person id>|<machine id>|<recipient>|<name>|<offer>, with |ask at the end when needsApproval is on. A client of the person's opens it and sets it as one of theirs (user/setSecret with offer). The control plane never has the value. A newer offer of the same name from the same machine replaces it.
+type AgentSecretOffer struct {
+	// The machine's own id for this offer, new for each save.
+	Offer UUID `json:"offer"`
+
+	Name UserSecretName `json:"name"`
+
+	// Ask before use (#4014), as the machine keeps it: bound into the associated data.
+	NeedsApproval *bool `json:"needsApproval,omitzero"`
+
+	// A secret's description (#4167): one or two sentences on what it is and what it is for, such as which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a value. Left out when it has none.
+	Description *string `json:"description,omitzero"`
+
+	// The session whose agent saved it, for the audit and the row.
+	Agent *UUID `json:"agent,omitzero"`
+
+	SavedAt string `json:"savedAt"`
+
+	// By client recipient (c:<CLIENT UUID>).
+	Sealed map[string]SealedEnvelope `json:"sealed"`
+}
+
 // A state this build does not know reads as `stopped` (Agent's init(from:)), with endedReason `unrecognised`.
 type AgentState string
 
@@ -5041,6 +5063,134 @@ type EntryNotification struct {
 	Oversized *int64 `json:"oversized,omitzero"`
 }
 
+// env/changed (#5259): a file of variables changed on this machine, so the Environment page reads env/list again. folder is the folder whose .agents/env changed; yours is ~/.agents/env.
+type EnvChanged struct {
+	// The folder, as a path, whose .agents/env changed.
+	Folder *string `json:"folder,omitzero"`
+
+	// ~/.agents/env changed.
+	Yours *bool `json:"yours,omitzero"`
+}
+
+// One file of variables (#5259): ~/.agents/env (yours) or a folder's .agents/env (repo), as this machine reads it.
+type EnvFile struct {
+	Layer EnvLayer `json:"layer"`
+
+	// The file's path on this machine.
+	Path string `json:"path"`
+
+	// For repo: the folder, as a path.
+	Folder *string `json:"folder,omitzero"`
+
+	// The file is there.
+	Exists bool `json:"exists"`
+
+	Variables []EnvVariable `json:"variables"`
+
+	// Why the file is not read, in words: it is over 64 KB or has over 500 variables. variables is then empty, and a session gets nothing from it.
+	Problem *string `json:"problem,omitzero"`
+
+	// For repo: the file has changes that git has not committed.
+	Uncommitted *bool `json:"uncommitted,omitzero"`
+
+	// For yours: the file differs from what the person's settings last wrote to it, so this machine uses the edited file. The page offers Keep for All Machines (user/setSettings with the environment part) and Discard (env/discard).
+	ChangedByHand *bool `json:"changedByHand,omitzero"`
+}
+
+// Where a variable comes from (#5259), the lowest first: the login environment, the folder's .agents/env, then ~/.agents/env. The later wins. Agents' own variables come after all of them and are not listed.
+type EnvLayer string
+
+const EnvLayerLogin EnvLayer = "login"
+const EnvLayerRepo EnvLayer = "repo"
+const EnvLayerYours EnvLayer = "yours"
+
+// env/list's answer (#5259): ~/.agents/env first, then each known folder's .agents/env (one with no file is left out unless env/list named it).
+type EnvList struct {
+	Files []EnvFile `json:"files"`
+}
+
+// env/list (#5259). With folder, only ~/.agents/env and that folder's file.
+type EnvListRequest struct {
+	// A folder, as a path or a file URL.
+	Folder *string `json:"folder,omitzero"`
+}
+
+// env/resolve (#5259): a folder, or a running session's folder.
+type EnvResolveRequest struct {
+	// A folder, as a path or a file URL.
+	Folder *string `json:"folder,omitzero"`
+
+	AgentID *UUID `json:"agentID,omitzero"`
+}
+
+// env/resolve's answer (#5259), "As a session sees it": each name of the two files, the value a session in the folder gets, and the layer that wins. A name only the login environment has is not listed, nor any login value.
+type EnvResolved struct {
+	// The folder, as a path.
+	Folder string `json:"folder"`
+
+	Variables []EnvResolvedVariable `json:"variables"`
+}
+
+// One name as a session sees it (#5259).
+type EnvResolvedVariable struct {
+	Name string `json:"name"`
+
+	// The value a session gets. Absent when no layer gives it (each is refused).
+	Value *string `json:"value,omitzero"`
+
+	// The layer that wins. Absent when no layer gives it.
+	Layer *EnvLayer `json:"layer,omitzero"`
+
+	// The lower layers that also set it, and that it wins over.
+	Over []EnvLayer `json:"over,omitzero"`
+
+	// The state of the variable in the winning layer, or, when none gives it, in the highest.
+	State EnvVariableState `json:"state"`
+
+	// Why it is not given, in words.
+	Reason *string `json:"reason,omitzero"`
+}
+
+// One variable of a file (#5259).
+type EnvVariable struct {
+	Name string `json:"name"`
+
+	Value string `json:"value"`
+
+	// The # comment line just above it, without the #.
+	Description *string `json:"description,omitzero"`
+
+	// Its line in the file, from 1.
+	Line int64 `json:"line"`
+
+	State EnvVariableState `json:"state"`
+
+	// Why it is refused or blocked, or why it looks like a secret, in words.
+	Reason *string `json:"reason,omitzero"`
+}
+
+// What a session gets of a variable (#5259): given; refused, a name Agents or the system own, or that a repo's file may not set; secretLooking, given, but its value looks like a secret, so the page shows it in Needs you (revoke it when it is in a repo's file, move it when it is in yours); policyBlocked, the organisation's environment rule does not allow it.
+type EnvVariableState string
+
+const EnvVariableStateGiven EnvVariableState = "given"
+const EnvVariableStateRefused EnvVariableState = "refused"
+const EnvVariableStateSecretLooking EnvVariableState = "secretLooking"
+const EnvVariableStatePolicyBlocked EnvVariableState = "policyBlocked"
+
+// env/write (#5259): add, change or remove one variable of a folder's .agents/env, keeping the other lines and comments. The file is left not committed. ~/.agents/env is the person's settings: a client changes it with user/setSettings, part environment. Refused when the name is not allowed in a repo's file or the value looks like a secret.
+type EnvWriteRequest struct {
+	// The folder, as a path or a file URL.
+	Folder string `json:"folder"`
+
+	Name string `json:"name"`
+
+	// The new value. Absent removes the variable and its description.
+	Value *string `json:"value,omitzero"`
+
+	// The # comment line above it, one line. Absent keeps the one there; empty removes it.
+	Description *string `json:"description,omitzero"`
+}
+
 // An environment's tier, as GitLab's five (#5262). A tier this build does not know reads as `other`.
 type EnvironmentTier string
 
@@ -9321,6 +9471,9 @@ type MachineUserSettings struct {
 
 	// The user's secrets that are not sealed to this machine yet (#4167): what list_secrets says of them. Never a value.
 	Waiting []UserSecretAbout `json:"waiting,omitzero"`
+
+	// This machine's offers (machine/offerSecret, #5308) that still wait for the person's client. Left out when none waits.
+	OffersWaiting []WaitingOffer `json:"offersWaiting,omitzero"`
 }
 
 // machines/versions (#5272, spec 5239, "Alex's question"): the Agents versions a machine ran, from its machine/hello. version is the one it said last; firstSeen is the first time the control plane heard it at that version, and seen the last. deploys are the changes of version the control plane saw, newest first, at most 20: each an observed deploy (observed: true, state succeeded) of the component agents to the environment machines, its target labelled machine=<host>, from the last time the old version was seen (started) to the first machine/hello at the new one (finished). Each version's artifact is its commit: the tag vX.Y.Z for X.Y.Z, the sha after +g for X.Y.Z-dev.N+g<sha>. previous is the version it ran before version, when the control plane saw the change.
@@ -13912,6 +14065,42 @@ type SecretNeedsApprovalRequest struct {
 	NeedsApproval bool `json:"needsApproval"`
 }
 
+// One row of user/secretOffers (#5308): a secret an agent saved on one of the person's machines that is not one of theirs yet. mine is this client's copy, to open and set with user/setSecret and offer; left out when the machine did not seal one to this client. conflict is true when the person already has a secret of that name: then it waits for Keep Yours (user/dropSecretOffer) or Use the Agent's, and is never set on its own. Never a value.
+type SecretOffer struct {
+	Offer UUID `json:"offer"`
+
+	Name UserSecretName `json:"name"`
+
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Agent *UUID `json:"agent,omitzero"`
+
+	SavedAt string `json:"savedAt"`
+
+	NeedsApproval *bool `json:"needsApproval,omitzero"`
+
+	// A secret's description (#4167): one or two sentences on what it is and what it is for, such as which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a value. Left out when it has none.
+	Description *string `json:"description,omitzero"`
+
+	Conflict *bool `json:"conflict,omitzero"`
+
+	Mine *SealedEnvelope `json:"mine,omitzero"`
+}
+
+// user/dropSecretOffer (#5308): Keep Yours. The offer goes; the person's secret stays as it is.
+type SecretOfferRequest struct {
+	Offer UUID `json:"offer"`
+}
+
+// user/secretOffers (#5308). user is the person, as the associated data names them.
+type SecretOffers struct {
+	User *string `json:"user,omitzero"`
+
+	Offers []SecretOffer `json:"offers"`
+}
+
 // One read or change of a secret on a machine (#4156). Never the value, never its hint: only the name, and where it went.
 type SecretOperation struct {
 	Name string `json:"name"`
@@ -13968,6 +14157,18 @@ type SecretReleaseKey struct {
 // The answer to machine/secretRelease (#4058): the key that opens the release layer of one value, which the machine uses once and does not keep.
 type SecretReleased struct {
 	Key Data `json:"key"`
+}
+
+// Where a person's secret came from (#5308): an agent saved it on this machine, and a client of the person's took it. Kept until the secret is set again without an offer.
+type SecretSavedBy struct {
+	Machine MachineRef `json:"machine"`
+
+	// The machine's name when it was saved.
+	Name string `json:"name"`
+
+	Agent *UUID `json:"agent,omitzero"`
+
+	At string `json:"at"`
 }
 
 // secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask before use off, with its value; else none, and the names that were looked for. A name with Ask before use on is never read: it is in refused, so the step can say so.
@@ -16182,6 +16383,11 @@ type UserAgentConfig struct {
 	Skills map[string]string `json:"skills,omitzero"`
 }
 
+// The environment part of user settings (#5259): ~/.agents/env, whole, as text, so its comments and order are kept. Written to that file on every machine of the person. Not sealed: the control plane refuses a value that looks like a secret.
+type UserEnvironment struct {
+	Text string `json:"text"`
+}
+
 // settings/userPart's answer (#1760): this machine's own part, for a client to set at the user scope with Use This Mac's. An MCP server with a token in clear is refused, so no secret goes into the user settings unsealed.
 type UserPartHere struct {
 	Part UserSettingsPartName `json:"part"`
@@ -16323,6 +16529,8 @@ type UserSecretRow struct {
 
 	// A secret's description (#4167): one or two sentences on what it is and what it is for, such as which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a value. Left out when it has none.
 	Description *string `json:"description,omitzero"`
+
+	SavedBy *SecretSavedBy `json:"savedBy,omitzero"`
 }
 
 // user/setSecret (#1760, FR-025, #3397): a secret as the person's client sealed it to each recipient of user/secretRecipients, info com.alexecollins.agents.usersecret.v1, associated data usersecret.v1|<person id>|<recipient>|<name>|<version>. version is above the kept one: the kept one plus one, or for a name the client has none of, the time in milliseconds, above a removed one's. The control plane never has the value.
@@ -16341,6 +16549,9 @@ type UserSecretSet struct {
 
 	// A secret's description (#4167): one or two sentences on what it is and what it is for, such as which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a value. Left out when it has none.
 	Description *string `json:"description,omitzero"`
+
+	// An offer this secret takes (#5308): an agent saved it on a machine, and this client opened it and sealed it to every machine and client. The offer then goes.
+	Offer *UUID `json:"offer,omitzero"`
 }
 
 // user/settings (#1760, #2410): the person's settings that follow them to each of their machines. An omitted part has no value yet, but does not make that setting machine-local. The control plane does not read inside a part.
@@ -16364,6 +16575,9 @@ type UserSettings struct {
 
 	// The person's time zone (#4818), as a UserTimeZone. Their Mac sets it from its own clock; a workflow's hours: with no time-zone: go by it.
 	TimeZone JSONValue `json:"timeZone,omitzero"`
+
+	// ~/.agents/env (#5259), as a UserEnvironment: written to that file on each of the person's machines. The control plane refuses a value that looks like a secret.
+	Environment JSONValue `json:"environment,omitzero"`
 
 	// #2957, research R11: your layer, as a SignedYourPolicy. Only the keeper sets it (user/setPolicy); a client cannot (user/setSettings refuses this part).
 	Policy JSONValue `json:"policy,omitzero"`
@@ -16389,7 +16603,7 @@ type UserSettingsPart struct {
 	Value JSONValue `json:"value"`
 }
 
-// A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers, agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) and the time zone (#4818) follow the person. Resources belong to each machine. policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
+// A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers, agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time zone (#4818) and the environment (#5259) follow the person. Resources belong to each machine. policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
 type UserSettingsPartName string
 
 const UserSettingsPartNameMcpServers UserSettingsPartName = "mcpServers"
@@ -16399,6 +16613,7 @@ const UserSettingsPartNameCostLimits UserSettingsPartName = "costLimits"
 const UserSettingsPartNameNotifications UserSettingsPartName = "notifications"
 const UserSettingsPartNameAccounts UserSettingsPartName = "accounts"
 const UserSettingsPartNameTimeZone UserSettingsPartName = "timeZone"
+const UserSettingsPartNameEnvironment UserSettingsPartName = "environment"
 const UserSettingsPartNamePolicy UserSettingsPartName = "policy"
 
 // user/suspended (#1002, FR-018): to each machine of a suspended person, at hello before its settings and within 5 seconds of a change; off: true ends it.
@@ -16599,6 +16814,13 @@ type WaitingAgent struct {
 	Folder URL `json:"folder"`
 
 	Status WaitStatus `json:"status"`
+}
+
+// An offer of this machine's that waits for the person's client (#5308): the machine keeps its own copy of the name until it is gone from offersWaiting.
+type WaitingOffer struct {
+	Name UserSecretName `json:"name"`
+
+	Offer UUID `json:"offer"`
 }
 
 // Whether this Mac is kept awake for agents, and for how long after they stop (024), as wake.json in the root.

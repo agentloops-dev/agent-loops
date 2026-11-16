@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/conflictrisk"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -34,7 +35,9 @@ func (d *Daemon) conflictRiskTool(caller wire.UUID, args map[string]json.RawMess
 	if a == nil {
 		return "", &Error{Code: CodeNoSuchAgent, Message: "That conversation is not open any more, so nothing was analysed."}
 	}
-	o := conflictrisk.Options{Repo: string(a.Cwd), Head: strings.TrimSpace(argString(args, "diff")), Ignore: d.folderKeysRaw(folderPath(a), "regeneratedFiles")}
+	// a.Cwd is a file URL (file:///…): git runs in its path, or every git call fails (#5661).
+	cwd := store.FolderPath(a.Cwd)
+	o := conflictrisk.Options{Repo: cwd, Head: strings.TrimSpace(argString(args, "diff")), Ignore: d.folderKeysRaw(folderPath(a), "regeneratedFiles")}
 	if o.Head == "working-tree" || o.Head == "working tree" {
 		o.Head = ""
 	}
@@ -61,7 +64,7 @@ func (d *Daemon) conflictRiskTool(caller wire.UUID, args map[string]json.RawMess
 	}
 	branch := ""
 	if o.Head == "" {
-		branch, _ = git(string(a.Cwd), "rev-parse", "--abbrev-ref", "HEAD")
+		branch, _ = git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
 	} else {
 		branch = strings.TrimPrefix(o.Head, "origin/")
 	}

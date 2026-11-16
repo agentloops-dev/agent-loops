@@ -56,7 +56,10 @@ const leasesBrief = "Lease a shared resource with lease_resource before using it
 	// The machine's capacity (#4579).
 	"A lease or a start can wait for the machine, not only for a holder: before heavy work " +
 	"that no declared resource names (a long test suite, a Chromium, a simulator, a script that " +
-	"builds), lease capacity, which goes in line while the machine is near or at capacity."
+	"builds), lease capacity, which goes in line while the machine is near or at capacity. " +
+	// The repository's CI (#5678).
+	"Before you start work on an issue, and before you push or open a pull request, lease ci " +
+	"and release it at once: it goes in line while the repository's CI has any job queued."
 
 // endingBrief names the three ways a turn ends (#1801). Without it an agent learnt about
 // archiving only from archive_session's description, and one that had finished with

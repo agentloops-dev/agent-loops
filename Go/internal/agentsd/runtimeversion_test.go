@@ -52,9 +52,7 @@ func TestToolsetVersion(t *testing.T) {
 // there changes.
 func TestCachedVersionAsksOncePerFile(t *testing.T) {
 	asked := 0
-	old := runtimeVersion
-	runtimeVersion = func(string) string { asked++; return "1.0." + string(rune('0'+asked)) }
-	t.Cleanup(func() { runtimeVersion = old })
+	setFor(t, &runtimeVersion, func(string) string { asked++; return "1.0." + string(rune('0'+asked)) })
 
 	path := filepath.Join(t.TempDir(), "grok")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {

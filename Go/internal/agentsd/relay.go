@@ -13,7 +13,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -72,13 +71,13 @@ func (d *Daemon) offerRelay(o wire.RelayOffer) error {
 			return err
 		}
 	}
-	safe.Go("relay gate", func() {
+	d.goJob("relay gate", func() {
 		for {
 			c, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			safe.Go("relay pump", func() { d.pump(o.Runtime, c) })
+			d.goJob("relay pump", func() { d.pump(o.Runtime, c) })
 		}
 	})
 	return nil
@@ -94,7 +93,7 @@ func (d *Daemon) pump(runtime string, c net.Conn) {
 	}
 	var once sync.Once
 	done := func() { once.Do(func() { t.Close(); c.Close() }) }
-	safe.Go("relay tunnel", func() {
+	d.goJob("relay tunnel", func() {
 		defer done()
 		for line := range t.In() {
 			var s string

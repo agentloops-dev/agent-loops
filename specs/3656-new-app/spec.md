@@ -22,8 +22,8 @@ The outer loop works for a repository that is already set up (#3579):
   `::notice title=deploy::testflight:<bundle id>/<build>` (#3584). For Agents itself,
   that needs nine signing secrets and the `PROFILE_*` profiles (`release.yml`,
   `scripts/release-secrets.sh`).
-- **App Store:** `app-store.yml` waits at the `app-store` environment's gate, then submits
-  (#3657).
+- **App Store:** `app-store.yml` waits for the person's approval of the `app-store`
+  Deployment, then submits (#3657, #5564).
 - **Cloud Run:** `deploy.yml` signs in to Google Cloud with Workload Identity Federation:
   no key, only the repository variables `GCP_WIF_PROVIDER` and `GCP_DEPLOY_SA`
   (`docs/how-to/deploy-to-cloud-run.md`, #3654).
@@ -70,9 +70,11 @@ person's machines, never on the control plane (principle 1, principle 5).
 2. **The repository.** The agent makes a private GitHub repository from a starter, with
    the person's own GitHub connection. The repository is cloned on the machine and shows
    as a folder.
-3. **The gates.** The agent makes the environments that hold a deploy (`testflight`,
-   `app-store`, `production`) with the person as the required reviewer, so that nothing
-   deploys before they approve it (#3587).
+3. **The gates.** Nothing deploys before the person approves it. The starter holds each
+   deploy (`testflight`, `app-store`, `production`) as a GitHub Deployment that waits for an
+   approval in Agent Loops, on any GitHub plan (#5564). It replaced environments with the
+   person as the required reviewer (#3587), which GitHub Free has on public repositories
+   only.
 4. **The accounts, one card at a time.** For each account the app needs, in this order:
    Apple, then Google Cloud, then Sentry. Each step the person must do is a
    `hand_to_person` card. Each secret is an `ask_secret` form, for this session only,
@@ -110,6 +112,16 @@ The person can start again later: each step checks what is already there and ski
 
 ## Decisions
 
+- **The deploy waits for Agent Loops' approval, not for required reviewers (Alex,
+  2026-11-14, #5564).** GitHub Free has an environment's required reviewers on public
+  repositories only, and the repository stays private. So on a version tag the starter's
+  `release.yml` makes a GitHub Deployment of the task `deploy:approval`, status `pending`,
+  that names its deploy workflow. **Approve** in Needs You sets it `queued` and starts that
+  workflow (`workflow_dispatch`, input `deployment`); the workflow refuses to deploy a
+  Deployment that is not `queued`. **Reject** sets it `inactive`. The Deployments API and
+  `workflow_dispatch` are on every plan. The gate is then Agent Loops' (only a window or a
+  device answers), not GitHub's; an agent with the person's own `gh` could already approve a
+  required reviewers' wait, so this does not weaken it.
 - **Decided: GitHub first.** Because the outer loop's deploys and gates are GitHub's
   (#3581, #3587), and GitHub's API makes repositories, secrets, variables and
   environments. GitLab (CI/CD variables, protected environments) is a later child. Alex

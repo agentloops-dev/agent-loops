@@ -1,0 +1,44 @@
+{
+  "name": "web",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "Web",
+  "namedInputs": {
+    "web-source": [
+      "{projectRoot}/**/*",
+      "!{projectRoot}/dist/**/*",
+      "!{projectRoot}/coverage/**/*",
+      "!{projectRoot}/node_modules/**/*",
+      "node-toolchain",
+      "generator-sources"
+    ],
+    "web-test-reads": [
+      "{workspaceRoot}/Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/**/*",
+      "{workspaceRoot}/design/icons.json"
+    ]
+  },
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": { "command": "node build.mjs", "cwd": "{projectRoot}" },
+      "inputs": ["sharedGlobals", "web-source"],
+      "outputs": ["{projectRoot}/dist"],
+      "dependsOn": ["wire:gen", "design:gen"]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["./node_modules/.bin/tsc --noEmit -p .", "node test/lint.mjs", "node test/licences.mjs", "../scripts/lint.sh web"],
+        "parallel": false,
+        "cwd": "{projectRoot}"
+      },
+      "inputs": ["sharedGlobals", "web-source", "{workspaceRoot}/scripts/lint.sh"],
+      "dependsOn": ["build"]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": { "command": "node --test --test-timeout=60000 --test-force-exit test/*.test.mjs", "cwd": "{projectRoot}" },
+      "inputs": ["sharedGlobals", "web-source", "web-test-reads"],
+      "dependsOn": ["build"]
+    }
+  }
+}

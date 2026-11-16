@@ -163,12 +163,12 @@ func (d *Daemon) lineageSyncSoon() {
 	d.syncMu.Lock()
 	defer d.syncMu.Unlock()
 	if d.syncTimer == nil {
-		d.syncTimer = time.AfterFunc(lineageSyncAfter, func() {
+		d.syncTimer = time.AfterFunc(lineageSyncAfter, d.jobFunc("lineagesync timer", func() {
 			d.syncMu.Lock()
 			d.syncTimer = nil
 			d.syncMu.Unlock()
 			d.sendLineage()
-		})
+		}))
 	}
 }
 

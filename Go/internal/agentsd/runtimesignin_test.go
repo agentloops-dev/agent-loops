@@ -81,9 +81,7 @@ func fakeSignInTools(t *testing.T) string {
 // asAServer makes a daemon started on a Mac (CI's go-darwin) act as a server: a Mac signs
 // its runtimes in on the Mac.
 func asAServer(t *testing.T) {
-	old := macToolsHome
-	macToolsHome = ""
-	t.Cleanup(func() { macToolsHome = old })
+	setFor(t, &macToolsHome, "")
 }
 
 func statusFor(t *testing.T, c *conn, id int, runtimeID string) wire.RuntimeStatus {
@@ -203,9 +201,7 @@ func TestSigningClaudeInWithACodeAsLongAsARealOne(t *testing.T) {
 func TestSigningCodexInOnAServer(t *testing.T) {
 	fakeRuntimes(t)
 	home := fakeSignInTools(t)
-	old := codexFinishWait
-	codexFinishWait = 200 * time.Millisecond
-	t.Cleanup(func() { codexFinishWait = old })
+	setFor(t, &codexFinishWait, 200*time.Millisecond)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	asAServer(t)

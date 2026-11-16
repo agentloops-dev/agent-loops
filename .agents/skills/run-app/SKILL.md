@@ -74,13 +74,15 @@ so its first build is no longer a cold one. Build the same way by hand:
 worktree's own `build/` and `.build` is still the clean-up, and leaves the cache alone;
 `scripts/build-cache.sh du` shows its size and `prune` bounds it.
 
-Verify only what you touched: the schemes and tests for the paths your branch changes, as
-`.agents/skills/merge-wave/scripts/merge-wave.sh plan <your branch>`, run in your
-worktree, lists them with their commands (#2685): an `App/` or `Host/` change needs
-`AgentsHost` (Agent Loops, the one Mac app), not the Remote or the web page, so no iOS simulator
-build; a `Remote/` change needs only the Remote; a `Shared/`, `Packages/` or `project.yml`
-change needs both; a `Packages/AgentsKit` change needs its tests filtered by
-`scripts/select-test-suites.sh`. The full suite and every scheme run once, in the wave.
+Verify only what you touched: `scripts/nx.sh affected -t gen build vet lint test`, run in
+your worktree under the "build" lease, runs the builds and tests of the projects your branch
+changes (#5631): an `App/` or `Host/` change builds `AgentsHost` (`mac:build`, Agent Loops,
+the one Mac app), not the Remote, so no iOS simulator build; a `Remote/` change builds only
+the Remote (`remote:build`); a `Shared/`, `Packages/` or `project.yml` change builds both; a
+`Packages/AgentsKit` change runs its test targets, and Nx skips each one whose inputs have a
+pass in its cache. After you push, `scripts/checks.sh attest` runs the test, vet and lint
+tasks again with no cache and posts the attestation that lets CI skip them (#5674, #5710;
+AGENTS.md, "Verifying a lane's work"). A scratch app is no part of it: close it first.
 
 Then it:
 1. starts `agents-control serve --home $ROOT/control` on a free loopback port, with

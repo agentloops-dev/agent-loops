@@ -25,6 +25,11 @@
       "name": "machine.accounts/1",
       "by": "control",
       "description": "The control plane still answers machine/accounts with add and ops (#3967). machine.accounts/2 (#5253): it also takes remove, which an older control plane does not know."
+    },
+    {
+      "name": "user/3",
+      "by": "control",
+      "description": "The control plane still reads user/setSettings as 0.19.0 sent it. user/5 (#5259): a client may send the part environment, which an older control plane does not know (user/4, user/sealedSecret, shipped in 0.19.0 without it)."
     }
   ],
   "methods": [
@@ -3124,6 +3129,27 @@
       }
     },
     {
+      "name": "machine/offerSecret",
+      "x-capability": "machine.agent-secrets/1",
+      "description": "A machine, on its channel 0 (#5308): a secret an agent saved on it, sealed to its person's clients only. The control plane keeps the envelopes, writes an audit entry (An agent saved a secret: the name, the machine and the session, never the value), and tells the person's clients (control/sealingWanted). A client of the person's makes it one of theirs.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/AgentSecretOffer"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "machine/orgRouteCheck",
       "x-capability": "host.org-routes/2",
       "description": "To a machine that holds the route, on its channel 0: orgRoutes/check with the machine's own copy (#3397).",
@@ -3312,6 +3338,27 @@
           }
         }
       ]
+    },
+    {
+      "name": "machine/secretClients",
+      "x-capability": "machine.agent-secrets/1",
+      "description": "A machine, on its channel 0 (#5308): its person's clients that have a key, each {id, name, publicKey}, and user, the person's id, to seal an agent's secret to (machine/offerSecret). Never another machine: a machine only receives from machines.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/SealRecipients"
+        }
+      }
     },
     {
       "name": "machine/secretKey",
@@ -6795,6 +6842,32 @@
       }
     },
     {
+      "name": "user/dropSecretOffer",
+      "x-capability": "user/5",
+      "description": "A person's: Keep Yours (#5308). The agent's offer goes, and the person's secret of that name stays as it is on every machine.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/SecretOfferRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "user/removeSecret",
       "x-capability": "user/2",
       "tags": [
@@ -6867,6 +6940,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/org.schema.json#/definitions/UserSecretNames"
+        }
+      }
+    },
+    {
+      "name": "user/secretOffers",
+      "x-capability": "user/5",
+      "description": "A person's: the secrets agents saved on their machines that are not theirs yet (#5308), each with this client's copy. A Mac window or a web page sets each one with no conflict (user/setSecret with offer); a conflict waits for the person.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/SecretOffers"
         }
       }
     },
@@ -6966,7 +7065,7 @@
     },
     {
       "name": "user/setSettings",
-      "x-capability": "user/3",
+      "x-capability": "user/5",
       "tags": [
         {
           "name": "web"

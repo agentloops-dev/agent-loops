@@ -58,8 +58,8 @@ test("each section is its own address, and #/ is the Overview", async () => {
     assert.deepEqual(r.parseRoute("#/setup/runtimes"), { nav: "status", section: "runtimes" });
     assert.deepEqual(r.parseRoute("#/setup"), { nav: "status", section: "runtimes" });
     assert.deepEqual(r.parseRoute("#/setup/mcp"), { nav: "settings", section: "mcp" });
-    assert.deepEqual(r.parseRoute("#/setup/secrets"), { nav: "settings", section: "secrets" });
-    assert.deepEqual(r.parseRoute("#/setup/accounts"), { nav: "settings", section: "accounts" });
+    assert.deepEqual(r.parseRoute("#/setup/secrets"), { nav: "status", section: "secrets" }, "the Secrets page (#5257)");
+    assert.deepEqual(r.parseRoute("#/setup/accounts"), { nav: "status", section: "accounts" }, "the Accounts page (#5258)");
     assert.deepEqual(r.parseRoute("#/reports/events"), { nav: "status", section: "events" }, "Events left Reports ▸ Records (#3998)");
     assert.deepEqual(r.parseRoute("#/reports/spend"), { nav: "reports", section: "spend" });
     assert.equal(r.routeHash({ nav: "settings", section: "policy" }, undefined), "#/settings/policy");
@@ -113,7 +113,8 @@ test("an address from before #2141 opens its page's new place", async () => {
     assert.equal(r.isOldAddress("#/machines/mcp"), true, "Connectors went to Settings ▸ You (#3632, #3998)");
     assert.equal(r.isOldAddress("#/setup/secrets"), true, "Your setup went (#3998)");
     assert.equal(r.isOldAddress("#/reports/events"), true, "Events went to Status (#3998)");
-    assert.equal(r.isOldAddress("#/settings/secrets"), false);
+    assert.equal(r.isOldAddress("#/settings/secrets"), true, "Secrets is a page of its own (#5257)");
+    assert.equal(r.isOldAddress("#/secrets"), false);
     assert.equal(r.isOldAddress("#/machines/machines"), false);
     assert.equal(r.isOldAddress("#/h/mac/p/x"), false);
     // Every page an old address names is a page of its section.
@@ -144,4 +145,30 @@ test("worktrees are on each machine's page, and the old address goes to Machines
 test("resources are on each machine's page, and the old address goes to Machines (#3629)", () => {
   assert.ok(n.navPages.machines.every((p) => p.id !== "resources"));
   assert.deepEqual(n.movedPage("a", "resources"), { nav: "machines", section: "machines" });
+});
+
+test("the Secrets page has its own address, and one secret's (#5257)", async () => {
+  const r = await load("src/route.ts");
+  assert.deepEqual(r.parseRoute("#/secrets"), { nav: "status", section: "secrets" });
+  assert.deepEqual(r.parseRoute("#/secrets/GITHUB_TOKEN"), { nav: "status", section: "secrets", item: "GITHUB_TOKEN" });
+  assert.deepEqual(r.parseRoute("#/settings/secrets"), { nav: "status", section: "secrets" });
+  assert.equal(r.routeHash({ nav: "status", section: "secrets" }, undefined), "#/secrets");
+  assert.equal(r.routeHash({ nav: "status", section: "secrets", item: "GITHUB_TOKEN" }, undefined), "#/secrets/GITHUB_TOKEN");
+  const id = "session/11111111-2222-3333-4444-555555555555/SHOP_PW";
+  assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "secrets", item: id }, undefined)),
+    { nav: "status", section: "secrets", item: id });
+});
+
+test("the Accounts page has its own address, and one account's (#5258)", async () => {
+  const r = await load("src/route.ts");
+  assert.deepEqual(r.parseRoute("#/accounts"), { nav: "status", section: "accounts" });
+  assert.deepEqual(r.parseRoute("#/settings/accounts"), { nav: "status", section: "accounts" });
+  assert.deepEqual(r.parseRoute("#/status/accounts"), { nav: "status", section: "accounts" });
+  assert.equal(r.isOldAddress("#/settings/accounts"), true);
+  assert.equal(r.isOldAddress("#/accounts"), false);
+  assert.equal(r.routeHash({ nav: "status", section: "accounts" }, undefined), "#/accounts");
+  const id = "github#alex@example.com";
+  assert.equal(r.routeHash({ nav: "status", section: "accounts", item: id }, undefined), "#/accounts/github%23alex%40example.com");
+  assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "accounts", item: id }, undefined)),
+    { nav: "status", section: "accounts", item: id });
 });

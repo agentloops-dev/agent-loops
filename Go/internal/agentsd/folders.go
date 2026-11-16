@@ -16,7 +16,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -414,7 +413,7 @@ func (d *Daemon) setDiskSpace(r wire.SetDiskSpaceRequest) (wire.FolderSummary, e
 		return wire.FolderSummary{}, configWriteError(err)
 	}
 	s, err := d.sendFolder(folder)
-	safe.Go("disk", d.checkDisk)
+	d.goJob("disk", d.checkDisk)
 	return s, err
 }
 

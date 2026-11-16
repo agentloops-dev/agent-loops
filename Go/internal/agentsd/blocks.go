@@ -676,7 +676,7 @@ func (d *Daemon) armBlockTimer() {
 	if next == nil || d.ctx.Err() != nil {
 		return
 	}
-	d.blockTimer = time.AfterFunc(max(0, time.Until(*next))+20*time.Millisecond, func() {
+	d.blockTimer = time.AfterFunc(max(0, time.Until(*next))+20*time.Millisecond, d.jobFunc("blocks timer", func() {
 		d.blockFires.Add(1)
 		for _, a := range d.Store.LiveAgents() {
 			if isOpenBlock(a.Report) {
@@ -684,7 +684,7 @@ func (d *Daemon) armBlockTimer() {
 			}
 		}
 		d.armBlockTimer()
-	})
+	}))
 }
 
 // mayResume is whether resumeIfCleared could resume a's block now: finished, nothing

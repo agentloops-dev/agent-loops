@@ -47,8 +47,8 @@ func replyOf(t *testing.T, done chan browserReply) browserReply {
 	select {
 	case r := <-done:
 		return r
-	case <-time.After(10 * time.Second):
-		t.Fatal("the call was never answered")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the call was never answered")
 	}
 	return browserReply{}
 }

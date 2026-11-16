@@ -222,9 +222,9 @@ export function WorkChecksPage({ store, host, detail, writes, back, wrote }: {
     else if (c.url) openLink(c.url);
   };
   useEffect(() => {
-    const escape = (e: KeyboardEvent) => { if (e.key === "Escape" && !log.value) back(); };
-    addEventListener("keydown", escape);
-    return () => removeEventListener("keydown", escape);
+    const onEscape = (e: KeyboardEvent) => { if (e.key === "Escape" && !log.value) back(); };
+    addEventListener("keydown", onEscape);
+    return () => removeEventListener("keydown", onEscape);
   }, []);
   return (
     <section class="work-checks-page" aria-label="Checks">
@@ -358,14 +358,14 @@ export function WorkLabelsPicker({ store, host, node, has, close, pick }: {
   const at = useRef<HTMLDivElement>(null);
   // Escape, or a click outside it and its gear, closes it.
   useEffect(() => {
-    const escape = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    const onEscape = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
     const away = (e: Event) => {
       const t = e.target as Element | null;
       if (!at.current?.contains(t) && !t?.closest?.(".work-gear")) close();
     };
-    addEventListener("keydown", escape);
+    addEventListener("keydown", onEscape);
     addEventListener("pointerdown", away);
-    return () => { removeEventListener("keydown", escape); removeEventListener("pointerdown", away); };
+    return () => { removeEventListener("keydown", onEscape); removeEventListener("pointerdown", away); };
   }, []);
   const words = text.value.trim().toLowerCase();
   const shown = (choices.value ?? []).filter((l) => !words || l.name.toLowerCase().includes(words));

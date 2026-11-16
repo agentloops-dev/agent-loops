@@ -1,0 +1,46 @@
+{
+  "name": "remote",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "Remote",
+  "tags": [
+    "xcode"
+  ],
+  "implicitDependencies": [
+    "agentskit",
+    "codetext",
+    "wire",
+    "design",
+    "shared-ui",
+    "remote-notify",
+    "remote-share",
+    "remote-widget",
+    "scripts",
+    "workspace"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "parallelism": false,
+      "options": {
+        "commands": [
+          "xcodegen generate --quiet",
+          "scripts/build-cache.sh xcodebuild build -project Agents.xcodeproj -scheme Remote -destination 'generic/platform=iOS Simulator' -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO ARCHS=arm64"
+        ],
+        "parallel": false,
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "xcode-project",
+        "{projectRoot}/**/*",
+        "{workspaceRoot}/RemoteNotify/**/*",
+        "{workspaceRoot}/RemoteShare/**/*",
+        "{workspaceRoot}/RemoteWidget/**/*"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
+    }
+  }
+}

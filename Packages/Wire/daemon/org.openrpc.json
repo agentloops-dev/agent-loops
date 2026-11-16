@@ -694,7 +694,7 @@
     },
     {
       "name": "settings/userPart",
-      "x-capability": "host.user-settings/3",
+      "x-capability": "host.user-settings/4",
       "description": "A part of the user settings as this machine has it (#1760), for Use This Mac's under You. This machine also writes machine/userSettings into its files.",
       "paramStructure": "by-name",
       "params": [

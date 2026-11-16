@@ -92,9 +92,7 @@ func prepareDrive(t *testing.T) {
 	if builtDriveErr != nil {
 		t.Skipf("no agents-drive to drive with: %v", builtDriveErr)
 	}
-	old := driveHelper
-	driveHelper = func() string { return builtDrive }
-	t.Cleanup(func() { driveHelper = old })
+	setFor(t, &driveHelper, func() string { return builtDrive })
 }
 
 // enableDesktopControl turns the switch on directly, the way setDesktopControl's own
@@ -232,9 +230,7 @@ func TestDriveScreenRefusesAccessibilityNotGrantedUntilTrusted(t *testing.T) {
 	agent := seeded(t, d, dir, func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
 
 	notTrusted := buildFakeDrive(t, notTrustedDriveSource)
-	old := driveHelper
-	driveHelper = func() string { return notTrusted }
-	t.Cleanup(func() { driveHelper = old })
+	setFor(t, &driveHelper, func() string { return notTrusted })
 
 	text, err := d.driveScreen(agent.ID, map[string]json.RawMessage{"app": json.RawMessage(`"TextEdit"`), "action": json.RawMessage(`"screenshot"`)})
 	if err == nil || !strings.Contains(err.Error(), "Accessibility") || !strings.Contains(err.Error(), "System Settings") {

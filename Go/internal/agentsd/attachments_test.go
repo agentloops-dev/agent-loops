@@ -79,9 +79,7 @@ func TestAttachmentsAreWrittenWholeAndBound(t *testing.T) {
 	}
 
 	// Over the folder's size, the oldest go first, named or not; the new one stays.
-	old := attachmentFolderBytes
-	attachmentFolderBytes = 25
-	t.Cleanup(func() { attachmentFolderBytes = old })
+	setFor(t, &attachmentFolderBytes, 25)
 	newest := write("big.png", 30)
 	if !exists(newest) || exists(named) || exists(young) || exists(first) {
 		t.Fatalf("by size: newest %v named %v young %v first %v", exists(newest), exists(named), exists(young), exists(first))
