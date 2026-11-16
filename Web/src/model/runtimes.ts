@@ -2,6 +2,7 @@
 // alphabetical by the name shown, case-insensitive and as the person's language would, the id
 // breaking a tie. A host on an older build still answers in its catalog's order.
 import type { AccountProfile, Agent, AllowanceReading, AllowanceState, OrgPolicy, PolicySetBy, RuntimeAllowances, RuntimeAllowancesRow, RuntimeStatus } from "../protocol/generated";
+import { namesWords } from "./machineNames";
 import { line, runtimeName, tokens } from "./orgPolicy";
 import { fromWireDate } from "../protocol/dates";
 import { fromOrganisation, noPlanLimit, requires, routeMissing, routeRemoved } from "./orgAccounts";
@@ -333,7 +334,7 @@ export function machinesSummary(machines: readonly { host: string; status?: Runt
 
 /** The machines line as plain words: "On This Mac, devbox · Not on build-box". */
 export function machinesWords(parts: readonly MachinesPart[], name: (host: string) => string): string {
-  return parts.map((p) => [p.words, p.hosts.map(name).join(", ")].filter(Boolean).join(" ")).join(" · ");
+  return parts.map((p) => [p.words, namesWords(p.hosts.map(name))].filter(Boolean).join(" ")).join(" · ");
 }
 
 /** The words of the sheet that signs a runtime in on a machine with no browser. */

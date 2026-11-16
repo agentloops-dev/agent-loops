@@ -2,6 +2,7 @@
 // Remote have them: each client belongs to a person, each machine to one person. With one person,
 // the local owner, nothing changes.
 import type { ClientKind, Group, JoinRequest, PersonClient, PersonInvited, PersonMachine, PersonRemovePreview, PersonRow, UnpushedWork, UserRole } from "../protocol/generated";
+import { namesWords } from "./machineNames";
 import { fromWireDate } from "../protocol/dates";
 import { managedBy, orgName, setBy, suspendedBy, waitingFirstSignIn } from "./signIn";
 
@@ -82,7 +83,7 @@ export function removeLines(person: Pick<PersonRow, "name" | "clients" | "machin
   if (preview) {
     const started = preview.startedMachines;
     if (started.length > 0) {
-      lines.push(`${counted(started.length, "machine")} ${started.length === 1 ? "is" : "are"} stopped and deleted: ${started.map((m) => m.name).join(", ")}.`);
+      lines.push(`${counted(started.length, "machine")} ${started.length === 1 ? "is" : "are"} stopped and deleted: ${namesWords(started.map((m) => m.name))}.`);
     }
     for (const machine of started) {
       if (machine.unknown) lines.push(machine.unknown);
@@ -92,10 +93,10 @@ export function removeLines(person: Pick<PersonRow, "name" | "clients" | "machin
     }
     const registered = preview.registeredMachines;
     if (registered.length > 0) {
-      lines.push(`${counted(registered.length, "machine")} ${registered.length === 1 ? "is" : "are"} taken off: ${registered.map((m) => m.name).join(", ")}.`);
+      lines.push(`${counted(registered.length, "machine")} ${registered.length === 1 ? "is" : "are"} taken off: ${namesWords(registered.map((m) => m.name))}.`);
     }
   } else if (person.machines.length > 0) {
-    lines.push(`${counted(person.machines.length, "machine")} ${person.machines.length === 1 ? "is" : "are"} taken off: ${person.machines.map((m) => m.name).join(", ")}.`);
+    lines.push(`${counted(person.machines.length, "machine")} ${person.machines.length === 1 ? "is" : "are"} taken off: ${namesWords(person.machines.map((m) => m.name))}.`);
   }
   if (lines.length === 0) lines.push(`${person.name} has no clients or machines.`);
   return lines;
