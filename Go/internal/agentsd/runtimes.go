@@ -375,6 +375,17 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		env = append(env, "GEMINI_HOME="+d.appHomes()["antigravity"], "AGY_ACP_DISABLE_WORKSPACE_TRUST=1",
 			"AGY_ACP_FORCE_FILE_STORAGE=1")
 		excludeAntigravitySkills(dir)
+	case "opencode":
+		// This copy opens its own database. A newer OpenCode on the PATH migrates
+		// ~/.local/share/opencode, and 1.18 then exits on initialize with
+		// "no such column: project_id". The person's sign-in stays in that directory.
+		// This process does not copy it. A value from the login shell or ~/.agents/env
+		// would point this copy at that database, so it is dropped.
+		data := d.appHomes()["opencode"]
+		if err := os.MkdirAll(data, 0o700); err != nil {
+			return acp.Launch{}, err
+		}
+		env = append(without(env, "XDG_DATA_HOME"), "XDG_DATA_HOME="+data)
 	}
 	if isOrgAccount(account) {
 		var err error
