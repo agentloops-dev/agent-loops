@@ -34,6 +34,7 @@ type args struct {
 	prs                          []int
 	issues                       []int
 	fixes                        []string
+	conclusions                  []string // run.completed's, as failure (#5775)
 	anyone, mine, all            bool
 }
 
@@ -90,7 +91,7 @@ func check(s schema, raw json.RawMessage) (args, *rpcError) {
 	return args{repo: v.String("repo"), branch: v.String("branch"), label: v.String("label"), workflow: v.String("workflow"),
 		environment: v.String("environment"), tier: v.String("tier"), component: v.String("component"),
 		prs: v.Ints("pr"), run: v.Int("run"), issues: v.Ints("issue"), fixes: v.Strings("fixes"),
-		anyone: v.Bool("anyone"), mine: v.Bool("mine"), all: v.Bool("any")}, nil
+		conclusions: v.Strings("conclusion"), anyone: v.Bool("anyone"), mine: v.Bool("mine"), all: v.Bool("any")}, nil
 }
 
 // wantsPR is whether the pull request numbered n is one pr asks for (#5436): any, when pr is
