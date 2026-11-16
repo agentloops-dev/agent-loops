@@ -65,6 +65,13 @@ type poolBackend interface {
 	Pins() string
 	// Stopped tells a person that a pool stopped making, and why.
 	Stopped(person, pool, why string)
+	// Ping says a ready machine can be claimed: its host answers and the provider still
+	// lists it (#5365).
+	Ping(provider, workspace string) bool
+	// Bind makes the machine the person's, with the person's Stop when idle (minutes; nil
+	// keeps the machine's), and sets steps 6 to 8 of its set-up to run again as a catch-up
+	// (steps 1 to 5 are marked as done in the pool). It returns the machine's host id.
+	Bind(person, provider, workspace string, stopWhenIdle *int) (host string, err error)
 }
 
 type storedPoolMachine struct {
@@ -569,4 +576,157 @@ func (w *warmPools) delete(ctx context.Context, person, id string) error {
 		return fail(internalError, "The pool was kept: %s could not be deleted. Try again.", strings.Join(failed, ", "))
 	}
 	return w.s.cfg.Store.Delete(ctx, warmPoolKey(id))
+}
+
+// claim is what a person asks of a pool (#5365): a machine of a provider and size, and the
+// person's Stop when idle.
+type claim struct {
+	Provider     string
+	Size         string
+	Region       string
+	StopWhenIdle *int
+}
+
+// claimed is the machine a claim gave. Host is "" for a new machine, which joins on its own
+// first boot; FromPool says it came from a pool, and Note is what the machine's page says
+// when it did not.
+type claimed struct {
+	Host      string
+	Workspace string
+	Name      string
+	Pool      string
+	FromPool  bool
+	Note      string
+}
+
+// matchPools orders the person's pools that a claim matches: the provider and size are the
+// pool's. A pool with a ready machine goes first, then the order the pools are in.
+func matchPools(pools []storedPool, c claim, ready func(*storedPool) int) []storedPool {
+	var with, without []storedPool
+	for _, p := range pools {
+		if p.Stopped != "" || p.Provider != c.Provider || p.Size != c.Size {
+			continue
+		}
+		if ready(&p) > 0 {
+			with = append(with, p)
+		} else {
+			without = append(without, p)
+		}
+	}
+	return append(with, without...)
+}
+
+// takeMachine removes a machine from its pool in one write that holds only while the pool is
+// as it was read, so two claims cannot take the same one (#5365). False when the machine is
+// not the pool's any more; a conflict is an error to read again from.
+func (w *warmPools) takeMachine(ctx context.Context, id, workspace string) (bool, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, tag, err := w.read(ctx, id)
+	if err != nil || p == nil {
+		return false, err
+	}
+	kept := make([]storedPoolMachine, 0, len(p.Machines))
+	found := false
+	for _, m := range p.Machines {
+		if m.Workspace == workspace {
+			found = true
+			continue
+		}
+		kept = append(kept, m)
+	}
+	if !found {
+		return false, nil
+	}
+	p.Machines = kept
+	return true, w.write(ctx, p, tag)
+}
+
+// oldestReady is the pool's oldest ready machine, if any.
+func (w *warmPools) oldestReady(ctx context.Context, id string) (*storedPool, *storedPoolMachine) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, _, err := w.read(ctx, id)
+	if err != nil || p == nil {
+		return nil, nil
+	}
+	var best *storedPoolMachine
+	for _, m := range w.machines(p, time.Now()) {
+		if m.stage == stageReady && (best == nil || m.MadeAt.Before(best.MadeAt)) {
+			m := m.storedPoolMachine
+			best = &m
+		}
+	}
+	return p, best
+}
+
+// claim gives the person a machine (#5365, "A claim" of the spec): the oldest ready machine of
+// a matching pool that answers, taken in one write, bound to the person, with the pool making
+// its replacement. A machine that does not answer is deleted and the next is tried. With no
+// ready machine it makes a new one and says so: a claim never waits on a pool.
+func (w *warmPools) claim(ctx context.Context, person string, c claim) (claimed, error) {
+	if !w.backend.HasProvider(c.Provider) {
+		return claimed{}, fail(invalidParams, "There is no machine provider %q that can make machines.", c.Provider)
+	}
+	pools, err := w.all(ctx, person)
+	if err != nil {
+		return claimed{}, fail(storeUnavailable, "The warm pools could not be read: %v", err)
+	}
+	now := time.Now()
+	ready := func(p *storedPool) int {
+		n := 0
+		for _, m := range w.machines(p, now) {
+			if m.stage == stageReady {
+				n++
+			}
+		}
+		return n
+	}
+	for _, match := range matchPools(pools, c, ready) {
+		// Each pass takes or deletes one machine, so the pool's size bounds the passes.
+		for pass := 0; pass <= len(match.Machines); pass++ {
+			p, m := w.oldestReady(ctx, match.ID)
+			if m == nil {
+				break
+			}
+			alive := w.backend.Ping(p.Provider, m.Workspace)
+			took, err := w.takeMachine(ctx, p.ID, m.Workspace)
+			if err != nil {
+				if isConflict(err) {
+					continue
+				}
+				return claimed{}, fail(storeUnavailable, "The warm pool could not be kept: %v", err)
+			}
+			if !took {
+				continue
+			}
+			if !alive {
+				w.s.log(fmt.Sprintf("warm pool %s: %s did not answer a claim and is deleted", p.Name, m.Name))
+				if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
+					w.s.log(fmt.Sprintf("warm pool %s: delete %s: %v", p.Name, m.Name, err))
+				}
+				continue
+			}
+			host, err := w.backend.Bind(person, p.Provider, m.Workspace, c.StopWhenIdle)
+			if err != nil {
+				w.s.log(fmt.Sprintf("warm pool %s: %s could not be given: %v", p.Name, m.Name, err))
+				if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
+					w.s.log(fmt.Sprintf("warm pool %s: delete %s: %v", p.Name, m.Name, err))
+				}
+				continue
+			}
+			// The machine is the person's and never goes back. The pool makes another.
+			if err := w.reconcile(ctx, p.ID); err != nil {
+				w.s.log(fmt.Sprintf("warm pool %s: %v", p.Name, err))
+			}
+			return claimed{Host: host, Workspace: m.Workspace, Name: m.Name, Pool: p.Name, FromPool: true}, nil
+		}
+	}
+	name := machineName("machine")
+	workspace, err := w.backend.Make(person, c.Provider, name, c.Size, c.Region)
+	if err != nil {
+		return claimed{}, fail(internalError, "No machine in a warm pool was ready, and a new one could not be made: %s", errorText(err))
+	}
+	return claimed{Workspace: workspace, Name: name,
+		Note: "No warm pool machine was ready, so a new machine is being made."}, nil
 }

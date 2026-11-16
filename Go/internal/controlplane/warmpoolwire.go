@@ -58,6 +58,41 @@ func (b poolsBackend) Stage(provider, workspace string, madeAt, now time.Time) p
 	return stageReady
 }
 
+// Ping: the host answers and the provider still lists the machine (#5365).
+func (b poolsBackend) Ping(provider, workspace string) bool {
+	host := b.s.providers.PoolHost(provider, workspace)
+	return host != nil && b.s.providers.PoolOnline(host.ID) && b.s.providers.PoolListed(provider, workspace)
+}
+
+// Bind gives a pool machine to a person: its owner and Stop when idle, then the catch-up (#5365).
+// Steps 1 to 5 were done in the pool; 6 (projects), 7 (sign in) and 8 (smoke) wait to run again
+// on the machine, as Try Again would run them.
+func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int) (string, error) {
+	host := b.s.providers.PoolHost(provider, workspace)
+	if host == nil {
+		return "", fmt.Errorf("the machine has not joined")
+	}
+	if err := b.s.providers.PoolBind(host.ID, person, stopWhenIdle); err != nil {
+		return "", err
+	}
+	_, err := b.s.changeMachineSetup(context.Background(), host.ID, true, func(st *storedSetup) error {
+		for i := range st.Steps {
+			if i < 5 {
+				st.Steps[i].FromPool = true
+				continue
+			}
+			st.Steps[i] = storedSetupStep{ID: st.Steps[i].ID, State: wire.MachineSetupStateWaiting}
+		}
+		st.Ready = nil
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	b.s.setupChanged(context.Background(), host.ID)
+	return host.ID, nil
+}
+
 // Version is the Agents release a new machine installs: the one this control plane is.
 func (b poolsBackend) Version() string { return b.s.cfg.Version }
 
