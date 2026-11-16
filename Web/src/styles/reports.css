@@ -112,3 +112,7 @@
 .builds-queue-track { display: flex; height: 8px; }
 .builds-queue-wait { background: repeating-linear-gradient(45deg, var(--paper-edge) 0 1.5px, var(--paper-wash) 1.5px 4px); }
 .builds-queue-ran { background: var(--accent); border-radius: 0 2px 2px 0; }
+/* The Me lens's own part of Spend, Time and Outcomes (#5280): what were Usage and the Multiplier page. */
+.report-yours { margin-top: 20px; }
+.report-yours .tabs { margin-bottom: 8px; }
+.multiplier-page.in-reports { flex: none; min-height: 0; padding: 12px 0; overflow: visible; }

@@ -54,7 +54,7 @@ test("status secrets: short ages, as the window's", () => {
 });
 
 test("status secrets: two pages under Status, after Events", () => {
-  assert.deepEqual(nav.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts", "environment"]);
+  assert.deepEqual(nav.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts", "environment", "features"]);
 });
 
 test("status sidebar: the grey line names the newest operation", () => {

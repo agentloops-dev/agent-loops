@@ -30,10 +30,11 @@ test("a member sees no admin page in a list, and opens the first they may use", 
 
 test("every page has a title, and its group headings come in order", () => {
   for (const s of n.navSections) for (const p of n.navPages[s]) assert.ok(p.title, `${s}/${p.id}`);
-  assert.deepEqual(n.groupedPages(n.navPages.reports).map(([g]) => g), ["Reports", "Saved", "Yours", "Records"]);
+  assert.deepEqual(n.groupedPages(n.navPages.reports).map(([g]) => g), ["Cost", "Output", "Time", "Plan", "Use", "Saved", "Records"],
+    "grouped by the question each page answers (#5280)");
   assert.deepEqual(n.groupedPages(n.navPages.machines).map(([g]) => g), ["Machines"]);
-  assert.deepEqual(n.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts", "environment"],
-    "Status is status only (#3998), with Secrets and Accounts after Events (#4161), then Environment (#5260)");
+  assert.deepEqual(n.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts", "environment", "features"],
+    "Status is status only (#3998), with Secrets and Accounts after Events (#4161), then Environment (#5260), then Features (#5280)");
   assert.ok(n.navPages.reports.every((p) => p.id !== "events"), "Events left Reports ▸ Records (#3998)");
   assert.deepEqual(n.groupedPages(n.navPages.settings).map(([g]) => g), ["You", "Settings", "Organisation"], "You first (#3998)");
   assert.deepEqual(n.navPages.settings.filter((p) => p.group === "You").map((p) => p.id), ["mcp", "secrets", "accounts", "environment"],
@@ -97,17 +98,17 @@ test("an address from before #2141 opens its page's new place", async () => {
       "#/console/people": { nav: "people", section: "people" }, "#/console/signIn": { nav: "people", section: "signIn" },
       "#/console/policy": { nav: "settings", section: "policy" }, "#/console/readApi": { nav: "settings", section: "readApi" },
       "#/a/runtimes": { nav: "status", section: "runtimes" }, "#/a/mcp": { nav: "settings", section: "mcp" },
-      "#/a/events": { nav: "status", section: "events" }, "#/a/achievements": { nav: "reports", section: "multiplier" },
-      "#/a/velocity": { nav: "reports", section: "usage" },
-      "#/a/tokens": { nav: "reports", section: "usage" },
+      "#/a/events": { nav: "status", section: "events" }, "#/a/achievements": { nav: "reports", section: "outcomes", query: "lens=me" },
+      "#/a/velocity": { nav: "reports", section: "outcomes", query: "lens=me" },
+      "#/a/tokens": { nav: "reports", section: "spend", query: "lens=me" },
     };
     for (const [old, now] of Object.entries(moved)) {
       assert.deepEqual(r.parseRoute(old), now, old);
       assert.equal(r.isOldAddress(old), true, old);
     }
-    assert.equal(r.usageAsked.value, "tokens", "Usage opens on the pane the old address named");
+    assert.equal(r.usageAsked.value, "tokens", "Spend's Me lens opens on the pane the old address named");
     r.parseRoute("#/a/velocity");
-    assert.equal(r.usageAsked.value, "velocity", "#/a/velocity opens Usage on Velocity (#4598)");
+    assert.equal(r.usageAsked.value, "velocity", "#/a/velocity opens Outcomes' Me lens on Velocity (#4598, #5280)");
     assert.equal(r.isOldAddress("#/reports/spend"), false);
     assert.equal(r.isOldAddress("#/machines/runtimes"), true, "Runtimes went to Status (#3631, #3998)");
     assert.equal(r.isOldAddress("#/machines/mcp"), true, "Connectors went to Settings ▸ You (#3632, #3998)");

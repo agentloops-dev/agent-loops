@@ -221,7 +221,7 @@ The deploy events make the lineage nodes (#5241). The code is
 
 ## The DORA figures of each environment
 
-Reports ▸ Planning ▸ Delivery on the web page (#5245) shows the four DORA figures for each
+Reports ▸ Delivery ▸ Environments on the web page (#5245) shows the four DORA figures for each
 target: a component (its repo) in one environment. A host answers `deploys/delivery` from
 the deploys it keeps (`Go/internal/agentsd/deploydelivery.go`).
 

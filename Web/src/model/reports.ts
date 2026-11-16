@@ -433,7 +433,7 @@ export const adoptionNote = "A person is active in a week when one of their mach
 // control plane for the person who saved it, and its numbers as a few lines to paste.
 
 export const pageTitle: Record<ReportPage, string> = { spend: "Spend", outcomes: "Outcomes", time: "Time", runtimes: "Runtimes",
-  adoption: "Adoption", workflows: "Workflows", value: "Planning" };
+  adoption: "Adoption", workflows: "Workflows", value: "Delivery" };
 
 const isDimension = (by: string | undefined): by is ReportDimension =>
   by !== undefined && ["person", "project", "folder", "machine", "runtime", "workflow"].includes(by);
