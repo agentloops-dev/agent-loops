@@ -31,8 +31,9 @@ import (
 //     commit) to the last of that commit's runs passing. Median and P90. The ci-speed skill's
 //     figure, and the lane-count rule's (more than 15 minutes means fewer lanes).
 //   - Failed rounds: a merged PR's failed CI runs and attempts. Mean.
-//   - Approval wait (#4553): from a PR's needs-approval label (its opening when the label is
-//     unknown) to its first answer by a person. Median and P90; and the share of merged PRs
+//   - Approval wait (#4553): from the first review requested from the person on a PR
+//     (review.requested, #5803; its opening when no request is known) to its first answer by a
+//     person. Median and P90; and the share of merged PRs
 //     that had one before their merge.
 //
 // Each is over the DeliveryWindow before now, with a series of its weeks, 7 days each back
@@ -308,8 +309,8 @@ func DeliveryOf(nodes []wire.LineageCostNode, repo string, releases map[string]w
 	return out
 }
 
-// ApprovalWait is the seconds a PR waited for a person's answer (#4553): from its
-// needs-approval label, else its opening, to its first answer. Not ok with no answer, no
+// ApprovalWait is the seconds a PR waited for a person's answer (#4553): from the review
+// requested from the person (#5803), else its opening, to its first answer. Not ok with no answer, no
 // start, or an answer before the start.
 func ApprovalWait(n wire.LineageCostNode) (float64, bool) {
 	if n.Node.Kind != KindPR || n.AnsweredAt == nil {

@@ -765,7 +765,7 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 	case "health.incident_started":
 		d.lineageIncidentEvent(e)
 		return
-	case "pr.labelled", "pr.reviewed", "pr.commented":
+	case "review.requested", "pr.reviewed", "pr.commented":
 		d.lineageApprovalEvent(e)
 		return
 	}

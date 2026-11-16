@@ -19,8 +19,6 @@ import (
 // made one of them goes under its line as its link, not as a line of its own.
 
 const (
-	// approvalLabel is the label of a pull request that waits for the person's approval.
-	approvalLabel = "needs-approval"
 	// otherSessionLines is the most sessions with no outcome that "Landed" lists: the rest is a count.
 	otherSessionLines = 10
 )
@@ -33,7 +31,9 @@ const (
 	issueLine    = "Issue closed at "
 	releaseLine  = "Release published at "
 	assignedLine = "Issue assigned to you: "
-	reviewLine   = "Review asked of you: "
+	reviewLine = "Review asked of you: "
+	// approvalLine is a line of a machine from before #5803, when a needs-approval label asked
+	// for the person's approval; a requested review asks for it now, as reviewLine.
 	approvalLine = "Approval asked of you: "
 )
 
@@ -99,8 +99,8 @@ type forgeItem struct {
 }
 
 // forgeWaits is what waits on the person on GitHub, oldest first: the open issues assigned
-// to them, the pull requests whose review is asked of them, and the open pull requests
-// labelled needs-approval. A pull request asked both ways is one line.
+// to them, and the pull requests whose review is asked of them, which is how a pull request
+// waits for their approval (#5803).
 func (d *Daemon) forgeWaits(gh string, repos []summaryRepo) []string {
 	if len(repos) == 0 {
 		return nil
@@ -119,7 +119,6 @@ func (d *Daemon) forgeWaits(gh string, repos []summaryRepo) []string {
 		start string
 		args  []string
 	}{
-		{approvalLine, []string{"search", "prs", "--label", approvalLabel}},
 		{reviewLine, []string{"search", "prs", "--review-requested", "@me"}},
 		{assignedLine, []string{"search", "issues", "--assignee", "@me"}},
 	} {
