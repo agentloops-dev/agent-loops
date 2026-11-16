@@ -30,6 +30,9 @@ enum MenuKeys {
     static let nextNeedingAttention = KeyboardShortcut("j")
     static let nextSession = KeyboardShortcut(.downArrow, modifiers: [.command, .option])
     static let previousSession = KeyboardShortcut(.upArrow, modifiers: [.command, .option])
+    /// Go ▸ Back and Forward along every page (#5784), as Finder and Safari.
+    static let back = KeyboardShortcut("[")
+    static let forward = KeyboardShortcut("]")
 
     /// A folder's key in Go, ⌃⌘1 to ⌃⌘9, by its place in the list; nil after the ninth.
     static func folder(at index: Int) -> KeyboardShortcut? {
