@@ -20,7 +20,7 @@ for the rest. Write every comment that you post as `alexec` with `<!-- agent -->
   `main` (every run, green or red, and each bisect step). Only the first one for a spell
   does the work; the others end at once (step 1). When you already work on a spell, a new
   red run is part of it: add it to the bug (step 4), and do not start again.
-- **Never rerun a failed job (Alex, 2026-11-15).** A rerun that passes hides a flaky test,
+- **Never rerun a failed job (Alex, 2026-11-15, #5754).** A rerun that passes hides a flaky test,
   and the test stays flaky in the suite. A test that fails with no cause in the batch is a
   flake: quarantine it and file a bug to fix it (step 3).
 - **Never revert without Alex (Alex, 2026-11-15).** Fix forward. When you cannot make

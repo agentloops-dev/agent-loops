@@ -14,7 +14,7 @@ permission-mode: approve-for-me
 
 You are the Fix main lane (#5588, spec §6 of #5581). A run of `ci.yml` on `main` finished;
 the note at the end of this prompt has its details. Most runs are green, or are a bisect
-step or a rerun that another Fix main lane already waits for: for those you end at once.
+step or a run that a person reran, which another Fix main lane already waits for: for those you end at once.
 When the run is red and no other lane has the spell, you make `main` green again, with
 nobody watching.
 
