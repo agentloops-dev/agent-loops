@@ -50,6 +50,10 @@ struct WorkItemRow: View {
             HStack(spacing: 6) {
                 title.lineLimit(1).truncationMode(.tail).layoutPriority(1)
                 if latest { WorkReleaseChip.latest.fixedSize() }
+                #if os(macOS)
+                // The Remote's Work lists have no priority chip: only its Features rows do (#5690, tier).
+                WorkPriorityChip(priority: row.priority)
+                #endif
                 // As many chips as fit whole, the rest as "+2", so a narrow window never squeezes one.
                 ViewThatFits(in: .horizontal) {
                     ForEach((0 ... WorkLook.rowChips).reversed(), id: \.self) { chips($0) }
