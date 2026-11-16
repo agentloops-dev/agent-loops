@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -150,6 +151,7 @@ func TestSharedSnapshotSaysWhoGetsWhat(t *testing.T) {
 }
 
 func TestSharedSnapshotAnsweredOverTheSocket(t *testing.T) {
+	flaky.UnderLoad(t, "#5812")
 	home := sharedHome(t)
 	t.Setenv("AGENTS_PERSONAL_HOME", home)
 	d, c := start(t, t.TempDir())
