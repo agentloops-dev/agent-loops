@@ -4,6 +4,11 @@
 *
 !Go/
 !Web/
+!package.json
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!scripts/node.sh
+!scripts/pnpm.sh
 !App/Resources/toolsets/
 !deploy/compose.public.yaml
 !deploy/compose.hosted.yaml
@@ -12,4 +17,5 @@
 !deploy/make-secrets.sh
 Go/out/
 Web/node_modules/
+node_modules/
 Web/dist/

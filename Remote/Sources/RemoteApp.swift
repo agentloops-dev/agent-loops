@@ -455,6 +455,7 @@ struct RemoteView: View {
         case .runtimes: RuntimesView().paperGround()
         case .secretsStatus: RemoteStatusSecretsPage(kind: .secrets).staleBanner().paperGround()
         case .accountsStatus: RemoteStatusSecretsPage(kind: .accounts).staleBanner().paperGround()
+        case .environmentStatus: RemoteEnvironmentPage().staleBanner().paperGround()
         case .machine(let host): RemoteMachinePage(host: host).staleBanner().paperGround()
         case .multiplier: RemoteMultiplierPage().paperGround()
         case .velocity: RemoteVelocityPage().paperGround()

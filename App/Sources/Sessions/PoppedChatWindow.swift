@@ -43,7 +43,8 @@ struct PoppedChatWindow: View {
             }
         }
         .paperGround()
-        .frame(minWidth: 420, minHeight: 360)
+        // Its content cannot make it taller than the screen (#5739).
+        .windowFloor(width: 420, height: 360)
         .toolbar { toolbar }
         .navigationTitle(AppCheckout.windowTitle(agent?.title))
         .navigationSubtitle(agent.flatMap { model.work.folder(FolderKey(host: $0.host, folder: $0.folderPath))?.name } ?? "")

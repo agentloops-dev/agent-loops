@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,10 +23,16 @@ type slowStore struct {
 	refuses int
 	puts    atomic.Int64
 	seen    sync.Map
+	// putting is the Puts in the store now, and mostPutting the most at once.
+	putting, mostPutting atomic.Int64
 }
 
 func (s *slowStore) Put(ctx context.Context, key string, data []byte, when store.Condition) (string, error) {
 	s.puts.Add(1)
+	n := s.putting.Add(1)
+	defer s.putting.Add(-1)
+	for most := s.mostPutting.Load(); n > most && !s.mostPutting.CompareAndSwap(most, n); most = s.mostPutting.Load() {
+	}
 	select {
 	case <-time.After(s.pause):
 	case <-ctx.Done():
@@ -49,29 +54,14 @@ func pending(i int) Pending {
 	}}
 }
 
-// 1,000 entries in a second on a bucket whose Put takes 100 ms (#2433): kept in a few
-// seconds by one writer, not one Put at a time (100 s), and with no goroutine each; the
-// chain and its seal verify.
+// 1,000 entries in a second on a bucket whose Put takes 100 ms (#2433): kept by one writer
+// that puts many at once, not one Put at a time (100 s), and with no goroutine each; the
+// chain and its seal verify. What is counted is the Puts at once in the store and the
+// writer's own goroutines, never the wall time or the process's goroutines (#5654).
 func TestAWriterKeepsABurstInOrder(t *testing.T) {
 	s := &slowStore{Store: store.NewMemory(), pause: 100 * time.Millisecond}
 	c := NewChain("copy1")
 	w := NewWriter(&Log{Store: s, Chain: c}, func(line string) { t.Log(line) })
-	before := runtime.NumGoroutine()
-	peak := atomic.Int64{}
-	sampling := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-sampling:
-				return
-			case <-time.After(5 * time.Millisecond):
-				if n := int64(runtime.NumGoroutine()); n > peak.Load() {
-					peak.Store(n)
-				}
-			}
-		}
-	}()
-	start := time.Now()
 	for i := range 1000 {
 		if !w.Add(pending(i)) {
 			t.Fatalf("entry %d was refused", i)
@@ -80,11 +70,9 @@ func TestAWriterKeepsABurstInOrder(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	w.Close(ctx)
-	took := time.Since(start)
-	close(sampling)
 	if err := c.Seal(context.Background(), s, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -95,13 +83,17 @@ func TestAWriterKeepsABurstInOrder(t *testing.T) {
 	if !r.OK() || r.Entries != 1000 || r.Chains != 1 || r.Seals != 1 {
 		t.Fatalf("verify %+v", r)
 	}
-	extra := peak.Load() - int64(before)
-	t.Logf("1000 entries, Put 100 ms: kept in %v, %d Puts, peak %d goroutines over the %d before", took.Round(time.Millisecond), s.puts.Load(), extra, before)
-	if took > 15*time.Second {
-		t.Fatalf("took %v", took)
+	atOnce, most := s.mostPutting.Load(), w.mostLive.Load()
+	t.Logf("1000 entries, Put 100 ms: %d Puts, at most %d at once, at most %d goroutines of the writer", s.puts.Load(), atOnce, most)
+	if atOnce < 2 {
+		t.Fatalf("one Put at a time: at most %d at once", atOnce)
 	}
-	if extra > writerPuts+8 {
-		t.Fatalf("peak %d goroutines over the %d before", extra, before)
+	// At most writerPuts Puts, and the run goroutine besides.
+	if atOnce > writerPuts || most > writerPuts+1 {
+		t.Fatalf("%d Puts at once (most %d), %d goroutines of the writer (most %d)", atOnce, writerPuts, most, writerPuts+1)
+	}
+	if n := w.live.Load(); n != 0 {
+		t.Fatalf("%d goroutines of the writer after Close", n)
 	}
 }
 

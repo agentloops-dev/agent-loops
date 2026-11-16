@@ -202,7 +202,6 @@ func (a Admin) Restore(ctx context.Context, dir, id string) (int, error) {
 	if err := json.Unmarshal(data, &backed); err != nil || backed.ID != id {
 		return 0, fmt.Errorf("%s/account.json is not %s's record", from, id)
 	}
-	backed.SignIn = signInOf(backed.SignIn, backed.GitHub)
 	now, err := a.accounts().get(ctx, id)
 	if err != nil {
 		return 0, err

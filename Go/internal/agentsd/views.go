@@ -153,7 +153,7 @@ func (d *Daemon) noteViewToolCall(agentID wire.UUID, folder string, incoming wir
 		}
 	}
 	d.viewMu.Unlock()
-	go d.writeThirdPartyView(id, agentID, folder)
+	d.goJob("writeThirdPartyView", func() { d.writeThirdPartyView(id, agentID, folder) })
 }
 
 // noteAgentViewCall is noteViewToolCall for a call in agentID's turn, in its folder.

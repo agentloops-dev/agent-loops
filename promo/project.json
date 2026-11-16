@@ -1,0 +1,7 @@
+{
+  "name": "promo",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "promo",
+  "tags": ["inputs-only"],
+  "targets": {}
+}

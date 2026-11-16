@@ -43,6 +43,7 @@ export { Work } from "./store/work";
 export { folderKey } from "./groups";
 
 /** The reducer, fed by the link: everything loaded on each connection, then kept by notifications. */
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: the interface Store below names the methods that the store's parts add to this class
 export class Store extends Work {
   /** The control plane's workspace providers (#1808), for Settings ▸ Control plane. */
   readonly providers: Providers;
@@ -203,6 +204,7 @@ export class Store extends Work {
       }
       if (method === "control/userSettingsChanged") {
         this.userScopeChanges.value += 1;
+        void this.loadSecretOffers();
         return;
       }
       if (method === "control/secretsLeft") {

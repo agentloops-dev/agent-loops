@@ -287,6 +287,17 @@ func waitingDeployment(deps []Deployment, run RunRef, environment string) (Deplo
 // waits for an approval is its target's next version.
 func waitingData(ctx context.Context, gh GitHub, repo string, w WaitingDeploy) (map[string]any, error) {
 	data := w.data()
+	if a := w.Approval; a != nil {
+		d := a.Deployment
+		event, err := deployData(repo, d, deployChange{Event: "deploy.waiting", State: wire.DeployStateWaiting, Status: d.Statuses[len(d.Statuses)-1]}, "")
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range event {
+			data[k] = v
+		}
+		return data, nil
+	}
 	since := mcpevents.Normalized(w.Run.Run.CreatedAt)
 	for _, e := range w.Environments {
 		deps, err := gh.Deployments(ctx, repo, e.Name, since)

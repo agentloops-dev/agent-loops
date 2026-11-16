@@ -25,7 +25,7 @@ if (process.versions.node !== wanted) {
 }
 
 // The files whose bytes decide dist's. Keep in step with WebDistManifestTests.inputs.
-const fixedInputs = ["index.html", "sandbox.html", "build.mjs", "lucide.mjs", "tsconfig.json", "package.json", "package-lock.json", ".node-version"];
+const fixedInputs = ["index.html", "sandbox.html", "build.mjs", "lucide.mjs", "tsconfig.json", "package.json", ".node-version"];
 const inputFolders = ["src", "assets"];
 
 function files(folder) {

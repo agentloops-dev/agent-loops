@@ -213,3 +213,16 @@ func TestTheFolderSwitchStartsOnAnotherMachineWithoutAsking(t *testing.T) {
 	}
 	mu.Unlock()
 }
+
+func TestASessionAutoPickedSaysSoFirst(t *testing.T) {
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := folder(t, c, 1)
+	var id wire.UUID
+	json.Unmarshal(c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir, "prompt": "Check it",
+		"labels": []string{}, "autoChose": "Auto chose Mac mini: you last started here."}), &id)
+	if n := notes(d, id); len(n) == 0 || n[0] != "Auto chose Mac mini: you last started here." {
+		t.Fatalf("%q", n)
+	}
+}

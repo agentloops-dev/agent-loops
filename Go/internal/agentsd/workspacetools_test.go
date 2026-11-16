@@ -254,8 +254,7 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 	_, left := formHolds(t)
 	left()
 	formHoldLimit = time.Second
-	patience := cardCheckPatience
-	t.Cleanup(func() { cardCheckPatience = patience })
+	setFor(t, &cardCheckPatience, cardCheckPatience)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := "fix-login"

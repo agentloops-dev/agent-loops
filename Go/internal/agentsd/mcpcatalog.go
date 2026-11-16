@@ -19,7 +19,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -76,7 +75,7 @@ func mcpWhy(err error) wire.MCPCatalogError {
 // make a server answer or stop, and says every folder's pins again, whose server views
 // (#2032) may have come or gone.
 func (d *Daemon) mcpChanged() {
-	safe.Go("mcp health", d.reconcileMCPHealth)
+	d.goJob("mcp health", d.reconcileMCPHealth)
 	for _, s := range d.folders(false) {
 		d.pinsChanged(store.FolderPath(s.Folder.Folder))
 	}
@@ -672,6 +671,10 @@ func (d *Daemon) mcpApprove(r wire.MCPApproveRequest) (wire.MCPListAnswer, error
 	d.mcpChanged()
 	// A pinned page of this server waited for the approval: its clients draw it now (#1780).
 	d.pinsChanged(folder)
+	// Needs You lists it no more (#5717).
+	if _, err := d.sendFolder(folder); err != nil {
+		log.Printf("mcp: folder summary after approve: %v", err)
+	}
 	return d.mcpList(r.Destination)
 }
 

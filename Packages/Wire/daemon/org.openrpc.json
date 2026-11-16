@@ -625,6 +625,27 @@
       }
     },
     {
+      "name": "secrets/signInKey",
+      "x-capability": "host.secret-sign-in/1",
+      "description": "Step 7 of a machine's set-up (#5361): the key the person has put in Secrets for a runtime, to sign it in on the machine being set up. Reads the runtime's names in order (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN, OPENAI_API_KEY, COPILOT_GITHUB_TOKEN, CURSOR_API_KEY, XAI_API_KEY) and gives the first that is set with Ask before use off, with its read recorded. A secret with Ask before use is never given: it is named in refused. The person's own clients only (the control and device roles).",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/SecretSignInKeyRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/SecretSignInKey"
+        }
+      }
+    },
+    {
       "name": "secrets/terminalValue",
       "x-capability": "host.secret-terminal/1",
       "description": "agents-secret NAME with no session's grant, such as from a terminal (#4179): the value of this machine's secret with Ask before use off, once a person allowed it. A call with no allow opens a Needs you request (secretUse, use terminal) and is held up to 45 seconds on it; while it stays open the answer names it, and the same call again waits on the same request. Approve for 1 Hour is kept in agentsd's memory only. A secret with Ask before use is refused. Any process of this machine's account may call it on daemon.sock: agentsd cannot tell a terminal from an agent that dropped its grant, which the request's words say.",
@@ -673,7 +694,7 @@
     },
     {
       "name": "settings/userPart",
-      "x-capability": "host.user-settings/3",
+      "x-capability": "host.user-settings/4",
       "description": "A part of the user settings as this machine has it (#1760), for Use This Mac's under You. This machine also writes machine/userSettings into its files.",
       "paramStructure": "by-name",
       "params": [

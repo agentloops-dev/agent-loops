@@ -27,10 +27,10 @@ export function Reach({ folders, change, disabled }: {
   useEffect(() => {
     if (!open.value) return;
     const close = (e: Event) => { if (!anchor.current?.contains(e.target as Node)) open.value = false; };
-    const escape = (e: KeyboardEvent) => { if (e.key === "Escape") open.value = false; };
+    const onEscape = (e: KeyboardEvent) => { if (e.key === "Escape") open.value = false; };
     addEventListener("pointerdown", close);
-    addEventListener("keydown", escape);
-    return () => { removeEventListener("pointerdown", close); removeEventListener("keydown", escape); };
+    addEventListener("keydown", onEscape);
+    return () => { removeEventListener("pointerdown", close); removeEventListener("keydown", onEscape); };
   }, [open.value]);
 
   const add = () => {

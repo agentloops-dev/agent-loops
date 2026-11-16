@@ -16,11 +16,11 @@ test("a member's bar has eight sections, an admin's ten (Docs and Messages are i
 });
 
 test("a member sees no admin page in a list, and opens the first they may use", () => {
-  assert.deepEqual(n.pagesShown("settings", false).map((p) => p.id), ["mcp", "secrets", "accounts", "settings"]);
+  assert.deepEqual(n.pagesShown("settings", false).map((p) => p.id), ["mcp", "secrets", "accounts", "environment", "settings"]);
   assert.deepEqual(n.pagesShown("workflows", false).map((p) => p.id), ["workflows"]);
   assert.deepEqual(n.pagesShown("agents", false).map((p) => p.id), ["projects"]);
   assert.ok(n.pagesShown("reports", false).every((p) => p.id !== "audit"));
-  assert.deepEqual(n.pagesShown("settings", false, "policy").map((p) => p.id), ["mcp", "secrets", "accounts", "settings", "policy"], "and the one open");
+  assert.deepEqual(n.pagesShown("settings", false, "policy").map((p) => p.id), ["mcp", "secrets", "accounts", "environment", "settings", "policy"], "and the one open");
   assert.equal(n.openPage("people", undefined, false).id, "people");
   assert.equal(n.gated(n.openPage("people", undefined, false), false), true);
   assert.equal(n.gated(n.openPage("people", undefined, true), true), false);
@@ -30,13 +30,14 @@ test("a member sees no admin page in a list, and opens the first they may use", 
 
 test("every page has a title, and its group headings come in order", () => {
   for (const s of n.navSections) for (const p of n.navPages[s]) assert.ok(p.title, `${s}/${p.id}`);
-  assert.deepEqual(n.groupedPages(n.navPages.reports).map(([g]) => g), ["Reports", "Saved", "Yours", "Records"]);
+  assert.deepEqual(n.groupedPages(n.navPages.reports).map(([g]) => g), ["Cost", "Output", "Time", "Plan", "Use", "Saved", "Records"],
+    "grouped by the question each page answers (#5280)");
   assert.deepEqual(n.groupedPages(n.navPages.machines).map(([g]) => g), ["Machines"]);
-  assert.deepEqual(n.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts"],
-    "Status is status only (#3998), with Secrets and Accounts after Events (#4161)");
+  assert.deepEqual(n.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts", "environment", "features"],
+    "Status is status only (#3998), with Secrets and Accounts after Events (#4161), then Environment (#5260), then Features (#5280)");
   assert.ok(n.navPages.reports.every((p) => p.id !== "events"), "Events left Reports ▸ Records (#3998)");
   assert.deepEqual(n.groupedPages(n.navPages.settings).map(([g]) => g), ["You", "Settings", "Organisation"], "You first (#3998)");
-  assert.deepEqual(n.navPages.settings.filter((p) => p.group === "You").map((p) => p.id), ["mcp", "secrets", "accounts"],
+  assert.deepEqual(n.navPages.settings.filter((p) => p.group === "You").map((p) => p.id), ["mcp", "secrets", "accounts", "environment"],
     "Connectors, Secrets (#3632) and Accounts (#3967) are the person's own settings (#3998)");
   assert.equal(n.openPage("settings", undefined, false).id, "settings", "Settings still opens on Settings");
   assert.ok(n.navPages.machines.every((p) => p.id !== "runtimes" && p.id !== "mcp"));
@@ -58,8 +59,8 @@ test("each section is its own address, and #/ is the Overview", async () => {
     assert.deepEqual(r.parseRoute("#/setup/runtimes"), { nav: "status", section: "runtimes" });
     assert.deepEqual(r.parseRoute("#/setup"), { nav: "status", section: "runtimes" });
     assert.deepEqual(r.parseRoute("#/setup/mcp"), { nav: "settings", section: "mcp" });
-    assert.deepEqual(r.parseRoute("#/setup/secrets"), { nav: "settings", section: "secrets" });
-    assert.deepEqual(r.parseRoute("#/setup/accounts"), { nav: "settings", section: "accounts" });
+    assert.deepEqual(r.parseRoute("#/setup/secrets"), { nav: "status", section: "secrets" }, "the Secrets page (#5257)");
+    assert.deepEqual(r.parseRoute("#/setup/accounts"), { nav: "status", section: "accounts" }, "the Accounts page (#5258)");
     assert.deepEqual(r.parseRoute("#/reports/events"), { nav: "status", section: "events" }, "Events left Reports ▸ Records (#3998)");
     assert.deepEqual(r.parseRoute("#/reports/spend"), { nav: "reports", section: "spend" });
     assert.equal(r.routeHash({ nav: "settings", section: "policy" }, undefined), "#/settings/policy");
@@ -97,23 +98,24 @@ test("an address from before #2141 opens its page's new place", async () => {
       "#/console/people": { nav: "people", section: "people" }, "#/console/signIn": { nav: "people", section: "signIn" },
       "#/console/policy": { nav: "settings", section: "policy" }, "#/console/readApi": { nav: "settings", section: "readApi" },
       "#/a/runtimes": { nav: "status", section: "runtimes" }, "#/a/mcp": { nav: "settings", section: "mcp" },
-      "#/a/events": { nav: "status", section: "events" }, "#/a/achievements": { nav: "reports", section: "multiplier" },
-      "#/a/velocity": { nav: "reports", section: "usage" },
-      "#/a/tokens": { nav: "reports", section: "usage" },
+      "#/a/events": { nav: "status", section: "events" }, "#/a/achievements": { nav: "reports", section: "outcomes", query: "lens=me" },
+      "#/a/velocity": { nav: "reports", section: "outcomes", query: "lens=me" },
+      "#/a/tokens": { nav: "reports", section: "spend", query: "lens=me" },
     };
     for (const [old, now] of Object.entries(moved)) {
       assert.deepEqual(r.parseRoute(old), now, old);
       assert.equal(r.isOldAddress(old), true, old);
     }
-    assert.equal(r.usageAsked.value, "tokens", "Usage opens on the pane the old address named");
+    assert.equal(r.usageAsked.value, "tokens", "Spend's Me lens opens on the pane the old address named");
     r.parseRoute("#/a/velocity");
-    assert.equal(r.usageAsked.value, "velocity", "#/a/velocity opens Usage on Velocity (#4598)");
+    assert.equal(r.usageAsked.value, "velocity", "#/a/velocity opens Outcomes' Me lens on Velocity (#4598, #5280)");
     assert.equal(r.isOldAddress("#/reports/spend"), false);
     assert.equal(r.isOldAddress("#/machines/runtimes"), true, "Runtimes went to Status (#3631, #3998)");
     assert.equal(r.isOldAddress("#/machines/mcp"), true, "Connectors went to Settings ▸ You (#3632, #3998)");
     assert.equal(r.isOldAddress("#/setup/secrets"), true, "Your setup went (#3998)");
     assert.equal(r.isOldAddress("#/reports/events"), true, "Events went to Status (#3998)");
-    assert.equal(r.isOldAddress("#/settings/secrets"), false);
+    assert.equal(r.isOldAddress("#/settings/secrets"), true, "Secrets is a page of its own (#5257)");
+    assert.equal(r.isOldAddress("#/secrets"), false);
     assert.equal(r.isOldAddress("#/machines/machines"), false);
     assert.equal(r.isOldAddress("#/h/mac/p/x"), false);
     // Every page an old address names is a page of its section.
@@ -144,4 +146,43 @@ test("worktrees are on each machine's page, and the old address goes to Machines
 test("resources are on each machine's page, and the old address goes to Machines (#3629)", () => {
   assert.ok(n.navPages.machines.every((p) => p.id !== "resources"));
   assert.deepEqual(n.movedPage("a", "resources"), { nav: "machines", section: "machines" });
+});
+
+test("the Secrets page has its own address, and one secret's (#5257)", async () => {
+  const r = await load("src/route.ts");
+  assert.deepEqual(r.parseRoute("#/secrets"), { nav: "status", section: "secrets" });
+  assert.deepEqual(r.parseRoute("#/secrets/GITHUB_TOKEN"), { nav: "status", section: "secrets", item: "GITHUB_TOKEN" });
+  assert.deepEqual(r.parseRoute("#/settings/secrets"), { nav: "status", section: "secrets" });
+  assert.equal(r.routeHash({ nav: "status", section: "secrets" }, undefined), "#/secrets");
+  assert.equal(r.routeHash({ nav: "status", section: "secrets", item: "GITHUB_TOKEN" }, undefined), "#/secrets/GITHUB_TOKEN");
+  const id = "session/11111111-2222-3333-4444-555555555555/SHOP_PW";
+  assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "secrets", item: id }, undefined)),
+    { nav: "status", section: "secrets", item: id });
+});
+
+test("the Environment page has its own address, and one variable's (#5260)", async () => {
+  const r = await load("src/route.ts");
+  assert.deepEqual(r.parseRoute("#/environment"), { nav: "status", section: "environment" });
+  assert.deepEqual(r.parseRoute("#/environment/yours/AWS_REGION"), { nav: "status", section: "environment", item: "yours/AWS_REGION" });
+  assert.deepEqual(r.parseRoute("#/settings/environment"), { nav: "status", section: "environment" });
+  assert.equal(r.isOldAddress("#/settings/environment"), true);
+  assert.equal(r.isOldAddress("#/environment"), false);
+  assert.equal(r.routeHash({ nav: "status", section: "environment" }, undefined), "#/environment");
+  const id = "repo//Users/me/My Repo/AWS_REGION";
+  assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "environment", item: id }, undefined)),
+    { nav: "status", section: "environment", item: id });
+});
+
+test("the Accounts page has its own address, and one account's (#5258)", async () => {
+  const r = await load("src/route.ts");
+  assert.deepEqual(r.parseRoute("#/accounts"), { nav: "status", section: "accounts" });
+  assert.deepEqual(r.parseRoute("#/settings/accounts"), { nav: "status", section: "accounts" });
+  assert.deepEqual(r.parseRoute("#/status/accounts"), { nav: "status", section: "accounts" });
+  assert.equal(r.isOldAddress("#/settings/accounts"), true);
+  assert.equal(r.isOldAddress("#/accounts"), false);
+  assert.equal(r.routeHash({ nav: "status", section: "accounts" }, undefined), "#/accounts");
+  const id = "github#alex@example.com";
+  assert.equal(r.routeHash({ nav: "status", section: "accounts", item: id }, undefined), "#/accounts/github%23alex%40example.com");
+  assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "accounts", item: id }, undefined)),
+    { nav: "status", section: "accounts", item: id });
 });

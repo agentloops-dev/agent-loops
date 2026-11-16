@@ -122,7 +122,7 @@ extension RemoteModel {
                 openWorkflow = nil
                 openArchive = nil
                 openReview = id
-            case .resources, .events, .runtimes, .summary, .secretsStatus, .accountsStatus:
+            case .resources, .events, .runtimes, .summary, .secretsStatus, .accountsStatus, .environmentStatus:
                 openActivity = newValue
             case .work(let kind):
                 // The list's row: its list, or the place in it still open (#4004).
@@ -144,9 +144,9 @@ extension RemoteModel {
                 // The Multiplier page (#4116) and Velocity (#4758), from their rows under Status.
                 openActivity = newValue
             case .spending, .tokens, .time,
-                 .folderMCPServers, .docs, .messages:
+                 .folderMCPServers, .docs, .messages, .dashboard:
                 // Cost, Tokens, Time, a folder's connectors and Docs are Mac + web (#2798,
-                // #3321): the Remote opens none of them.
+                // #3321): the Remote opens none of them. The Dashboard is the Mac's PoC (#5534; #5537).
                 break
             }
         }

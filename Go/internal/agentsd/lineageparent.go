@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -93,9 +92,15 @@ func (d *Daemon) noteIssueParent(folder string, repo forgeRepo, n int) {
 	d.issueOnce.Do(func() {
 		d.issueJobs = make(chan parentJob, parentLookupsHeld)
 		jobs := d.issueJobs
-		safe.Go("lineage parents", func() {
-			for j := range jobs {
-				d.askIssueParent(j)
+		// It ends with the host (#5653): nothing closes jobs.
+		d.goJob("lineage parents", func() {
+			for {
+				select {
+				case <-d.hostCtx().Done():
+					return
+				case j := <-jobs:
+					d.askIssueParent(j)
+				}
 			}
 		})
 	})
@@ -116,7 +121,7 @@ func (d *Daemon) askIssueParent(j parentJob) {
 	if d.issueLookup != nil {
 		ask = d.issueLookup
 	}
-	got, err := ask(context.Background(), j.folder, j.repo, j.n)
+	got, err := ask(d.hostCtx(), j.folder, j.repo, j.n)
 	if err != nil {
 		log.Printf("lineage: the parent of %s: %v", issue.Ref, err)
 	} else {

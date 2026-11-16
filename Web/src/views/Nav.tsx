@@ -8,8 +8,8 @@ import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { Fragment, type ComponentChildren } from "preact";
 import type { Store } from "../model/store";
-import { go, route, sectionOf, usageAsked } from "../route";
-import { gated, groupedPages, machinePages, navPages, navTitle, openPage, pagesShown, sectionKeys, sectionsShown, usagePaneTitle, usagePanes,
+import { go, route, sectionOf } from "../route";
+import { gated, groupedPages, machinePages, navPages, navTitle, openPage, pagesShown, sectionKeys, sectionsShown,
   type NavPage, type NavSection, pageRoute, routePageID } from "../model/nav";
 import { adminOf, adminsOnly } from "../model/console";
 import { hostAnswers } from "../model/capabilities";
@@ -19,7 +19,8 @@ import { ConsoleSection, MachinesPage, roleProblemOf } from "./ConsoleApp";
 import { requestCount } from "./ConsoleRecords";
 import { policyNotSaved } from "./ConsolePolicy";
 import { orgPolicyNotSaved } from "./ConsoleOrgPolicy";
-import { ReportsPage } from "./Reports";
+import { ReportsPage, lensName } from "./Reports";
+import { lensAsked, lensTitle } from "../model/reports";
 import { BuildsPage } from "./Builds";
 import { DeliveryPage } from "./Delivery";
 import { WorkList, WorkPage } from "./Work";
@@ -39,16 +40,14 @@ import { openContextMenu, type MenuItem } from "./ContextMenu";
 import { AddMachineDialog } from "./AddMachineDialog";
 import { addMachineWords } from "../model/addMachine";
 import { SettingsPage } from "./Settings";
-import { SecretsSection } from "./UserScope";
-import { AccountsSection } from "./Accounts";
-import { StatusListMark, StatusListLastLine, StatusSecretsPage, useUserScopeStatus } from "./StatusSecrets";
-import { SessionSecretsSection } from "./settings/SessionSecrets";
-import { LocalSecretsSection } from "./settings/LocalSecrets";
+import { SecretsPage } from "./SecretsPage";
+import { EnvironmentPage } from "./EnvironmentPage";
+import { AccountsPage } from "./AccountsPage";
+import { StatusListMark, StatusListLastLine, useUserScopeStatus } from "./StatusSecrets";
 import { WorkflowRow } from "./WorkflowRow";
 import { BackToList } from "./BackToList";
 import { PageTitle, PersonMenu, SearchBox } from "./TopBar";
 import { pageCrumbs, type Crumb } from "../model/crumbs";
-import { MultiplierPage } from "./Multiplier";
 import { lowDetail, lowWords, runtimeTally, setupRuntimes } from "../model/runtimes";
 import { eventsWaitingLine } from "../model/eventsWaiting";
 import type { Session } from "../session";
@@ -151,7 +150,7 @@ const isRuntimesPage = (page: NavPage) => page.draw.kind === "activity" && page.
 /** A page's mark beside its row in the list: a count, or that it is not saved. */
 function PageMark({ store, page }: { store: Store; page: NavPage }) {
   // Status ▸ Secrets and Accounts (#4161): the newest operation's age.
-  if (page.draw.kind === "statusList") return <StatusListMark store={store} list={page.draw.list} />;
+  if (page.draw.kind === "secrets" || page.draw.kind === "accounts") return <StatusListMark store={store} list={page.draw.kind} />;
   // Status ▸ Runtimes (#3956): an allowance below 10% left or on course to run out (#5000), in the warning tint, as the window's orange Runtimes icon.
   if (isRuntimesPage(page)) {
     const low = runtimesLowWords(store);
@@ -256,7 +255,7 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
                   </button>
                   {isRuntimesPage(p) && <RuntimesLowLine store={store} />}
                   {isEventsPage(p) && <EventsWaitingLine store={store} />}
-                  {p.draw.kind === "statusList" && <StatusListLastLine store={store} list={p.draw.list} />}
+                  {(p.draw.kind === "secrets" || p.draw.kind === "accounts") && <StatusListLastLine store={store} list={p.draw.kind} />}
                 </Fragment>
               ))}
               {machinesHead(group) && makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value)
@@ -289,11 +288,10 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
   const admin = adminOf(store);
   if (!gated(page, admin) && page.draw.kind === "activity") return <ActivityPageView store={store} page={page.draw.page} />;
   if (!gated(page, admin) && page.draw.kind === "settings") return <SettingsPage store={store} down={down} />;
-  if (page.draw.kind === "multiplier") return <MultiplierPage store={store} />;
-  // A page under another (#5178) names that page in its breadcrumb: Reports › Planning › Builds.
+  // A page under another (#5178) names that page in its breadcrumb: Reports › Delivery › Builds.
   const parent = page.under ? navPages[section].find((p) => p.id === page.under) : undefined;
   return (
-    <Framed title={page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
+    <Framed title={page.draw.kind === "report" ? lensTitle(page.title, lensAsked(route.value.query), lensName.value) : page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
       {gated(page, admin) ? <p class="hint">{admin === null ? "Loading…" : roleProblemOf(store) ?? adminsOnly}</p>
         : page.draw.kind === "console" ? <ConsoleSection store={store} id={page.draw.id} down={down} />
         : page.draw.kind === "report" ? <ReportsPage store={store} section={page.draw.section} down={down} />
@@ -301,7 +299,6 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         : page.draw.kind === "delivery" ? <DeliveryPage store={store} down={down} />
         : page.draw.kind === "machines" ? (admin === true ? <><MachinesList store={store} /><h2 class="section-head">Everyone’s machines</h2><MachinesPage store={store} down={down} /></> : <MachinesList store={store} />)
         : page.draw.kind === "workflows" ? <AllWorkflows store={store} down={down} />
-        : page.draw.kind === "usage" ? <Usage store={store} />
         // An item of a list Work no longer has (#/work/milestone/<ref>, #3878) opens the Work default's list.
         : page.draw.kind === "work" ? (route.value.item && route.value.section === page.id
           ? page.draw.work === "release"
@@ -312,12 +309,13 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         : page.draw.kind === "features" ? <WorkFeatures store={store} />
         : page.draw.kind === "timeline" ? <WorkTimeline store={store} />
         : page.draw.kind === "deploys" ? <WorkDeploysPage store={store} />
-        // The person's secrets and cards (#1760), then a machine's for one session (#3548), then what agents saved
-        // on that machine (#5122); were in Settings ▸ Machines.
-        : page.draw.kind === "secrets" ? <><SecretsSection store={store} down={down} /><SessionSecretsSection store={store} down={down} />
-          <LocalSecretsSection store={store} down={down} /></>
-        : page.draw.kind === "accounts" ? <AccountsSection store={store} down={down} />
-        : page.draw.kind === "statusList" ? <StatusSecretsPage store={store} list={page.draw.list} />
+        // Every secret of the person's (#5257): theirs (#1760), a machine's for one session (#3548) and what agents saved
+        // on that machine (#5122), in one list beside the selected one's detail. Settings ▸ You keeps a line to it.
+        : page.draw.kind === "secrets" ? <SecretsPage store={store} down={down} />
+        // Every outside account of the person's (#5258), in one list beside the selected one's detail.
+        : page.draw.kind === "accounts" ? <AccountsPage store={store} down={down} />
+        // The plain variables sessions get when their agent starts (#5260): ~/.agents/env and each repo's .agents/env.
+        : page.draw.kind === "environment" ? <EnvironmentPage store={store} down={down} />
         : page.draw.kind === "docs" ? (route.value.item
           ? <DocPage key={route.value.item} store={store} docRef={route.value.item} />
           : <DocsList store={store} />)
@@ -380,18 +378,3 @@ function AllWorkflows({ store, down }: { store: Store; down: boolean }) {
   );
 }
 
-/** Usage: what was Activity's Cost, Tokens and Time, your own machines' (#956). */
-function Usage({ store }: { store: Store }) {
-  const pane = useSignal(usageAsked.peek() ?? "spending");
-  return (
-    <>
-      <div class="tabs" role="tablist" aria-label="Show">
-        {usagePanes.map((p) => (
-          <button key={p} role="tab" aria-selected={pane.value === p} class={pane.value === p ? "on" : ""}
-            onClick={() => { pane.value = p; usageAsked.value = undefined; }}>{usagePaneTitle[p]}</button>
-        ))}
-      </div>
-      <div class="usage-pane"><ActivityPageView key={pane.value} store={store} page={pane.value} /></div>
-    </>
-  );
-}

@@ -20,6 +20,10 @@ import (
 // polls from now: nothing from before is raised, and nothing is raised twice. Stopping lets
 // the lease go.
 func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) {
+	// Quarantined: it waits for states that can pass by ("the second wait stands by",
+	// "the cursor gone") and failed under load on a PR and on main. #5742 fixes it and
+	// removes this skip.
+	t.Skip("flaky under load (#5742)")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -105,8 +109,8 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 		if !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the wait was never answered")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the wait was never answered")
 	}
 	n := 0
 	for _, e := range d.eventsPage(wire.EventsListRequest{Limit: 200}).Events {
@@ -163,8 +167,8 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 		if !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the second wait was never answered")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the second wait was never answered")
 	}
 
 	// The subscription ends with its waits, or the host stops: either lets the lease go.

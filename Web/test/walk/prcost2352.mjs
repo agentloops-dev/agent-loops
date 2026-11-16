@@ -32,7 +32,7 @@ try {
   check(items.includes("Project Settings…"), `folder menu: ${js(items)}`);
   await page.shot(`${out}/web-menu.png`);
   await page.eval(`[...document.querySelectorAll(".context-menu [role=menuitem]")].find((b) => b.textContent === "Project Settings…").click()`);
-  await page.waitFor(`document.querySelector("dialog.sheet[open] select[aria-label^=\"Cost\"]")`);
+  await page.waitFor(`document.querySelector("dialog.sheet[open] select[aria-label^=Cost]")`);
   await sleep(500);
   const selected = () => page.eval(`(() => { const s = document.querySelector("dialog.sheet select[aria-label^=Cost]"); return s.options[s.selectedIndex].text; })()`);
   check((await selected()) === "Cost, tokens and time", `shown: ${await selected()}`);

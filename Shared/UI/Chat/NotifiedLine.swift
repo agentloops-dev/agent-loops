@@ -18,7 +18,7 @@ struct NotifiedLine: View {
 
     var body: some View {
         // A Line (#5036): the title, then the body, the time and what became of it.
-        RecordLine(icon: LineGlyph.notified, head: notice.title,
+        RecordLine(head: notice.title,
                    detail: ([notice.body].compactMap { $0 }
                             + [at.formatted(date: .omitted, time: .shortened), notice.outcomeText()])
                        .joined(separator: " \u{00B7} "))

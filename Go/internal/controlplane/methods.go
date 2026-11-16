@@ -210,9 +210,11 @@ var own = methodSet(
 	"signIn/removeFromMe",
 	"signIn/requests",
 	"signIn/ticket",
+	"user/dropSecretOffer",
 	"user/removeSecret",
 	"user/sealedSecret",
 	"user/secretNames",
+	"user/secretOffers",
 	"user/secretRecipients",
 	"user/setAgentConfigFile",
 	"user/setSecret",
@@ -324,6 +326,7 @@ var writes = methodSet(
 	"signIn/orgStart",
 	"signIn/removeFromMe",
 	"signIn/ticket",
+	"user/dropSecretOffer",
 	"user/removeSecret",
 	"user/setAgentConfigFile",
 	"user/setSecret",
@@ -459,7 +462,7 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 	case "reports/usage", "reports/export", "reports/value", "reports/nodes":
 		return m.reportMethod(ctx, method, params, from)
 	case "user/settings", "user/setAgentConfigFile", "user/setSettings", "user/setSecret", "user/removeSecret", "user/secretNames",
-		"user/secretRecipients", "user/sealedSecret":
+		"user/secretRecipients", "user/sealedSecret", "user/secretOffers", "user/dropSecretOffer":
 		return m.userMethod(ctx, method, params, from)
 	case "machines/joinRequests":
 		return m.s.joins.list(ctx, m.callerPerson(from))
@@ -1230,6 +1233,7 @@ var startsWork = methodSet(
 	"backups/upload",
 	"git/credential",
 	"links/check",
+	"machine/offerSecret",
 	"machine/pairWebPage",
 	"tunnel/open",
 	"workflows/claimRun",
@@ -1373,7 +1377,7 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		if err != nil {
 			return nil, err
 		}
-		return m.s.keepBuildsSync(ctx, host, sync, time.Now())
+		return m.s.keepBuildsSync(ctx, host, sync, m.s.now())
 	case wire.CallDeploysSync.Name:
 		sync, err := require[wire.DeploysSync](params, "DeploysSync")
 		if err != nil {
@@ -1477,6 +1481,10 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 			m.s.userChanged(user, []wire.UserSettingsPartName{wire.UserSettingsPartNameAccounts}, false, host)
 		}
 		return listed, nil
+	case wire.CallMachineOfferSecret.Name:
+		return m.offerSecret(ctx, host, params)
+	case wire.CallMachineSecretClients.Name:
+		return m.secretClients(host)
 	case "machine/secretOps":
 		// What the machine's agents did with its person's secrets (#4156): the audit keeps each.
 		request, err := require[wire.MachineSecretOpsCall](params, "MachineSecretOpsCall")

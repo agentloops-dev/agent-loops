@@ -128,6 +128,18 @@ struct RemoteSidebar: View {
                     }
                 }
             }
+            // A secret an agent saved on a machine of the person's, until it is theirs (#5308). The
+            // Remote does not seal, so it shows the card and the choice is made on the Mac or the web.
+            if !model.userScope.offers.isEmpty {
+                Section {
+                    ForEach(model.userScope.offers) { offer in
+                        SecretOfferCard(offer: offer, isAnswering: false, failure: nil, choose: nil)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    }
+                }
+            }
             // A new client that signed in with GitHub as this person (#995), beside them.
             let signingIn = model.signIn.open()
             if !signingIn.isEmpty {
@@ -186,8 +198,12 @@ struct RemoteSidebar: View {
                     ForEach([StatusSecretsKind.secrets, .accounts], id: \.self) { kind in
                         StatusSecretsRow(kind: kind, state: model.userScope) { model.work.agent($0)?.title }
                             .activityIcon(kind.systemImage)
-                            .appText(.supporting).paperTag(kind == .secrets ? SidebarItem.secretsStatus : .accountsStatus)
+                            .appText(.supporting).paperTag(kind.sidebarItem)
                     }
+                    // The plain variables sessions get (#5260), as the window's.
+                    StatusSecretsRow(kind: .environment, state: model.userScope)
+                        .activityIcon(StatusSecretsKind.environment.systemImage)
+                        .appText(.supporting).paperTag(SidebarItem.environmentStatus)
                 } header: {
                     Text("Status")
                 }
@@ -345,7 +361,8 @@ struct RemoteSidebar: View {
             // Not over a machine's ask to join (#994): the card is the list's, and the
             // waiting view in the middle would lie over the rows under it.
             if model.folders.isEmpty, model.people.open().isEmpty, model.people.openLinks().isEmpty, model.signIn.open().isEmpty,
-               model.lock.open().isEmpty, !model.lock.showsThisDevice, model.lock.recoveryCard == .none {
+               model.lock.open().isEmpty, !model.lock.showsThisDevice, model.lock.recoveryCard == .none,
+               model.userScope.offers.isEmpty {
                 Waiting()
             }
         }

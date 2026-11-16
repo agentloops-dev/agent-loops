@@ -78,9 +78,7 @@ func TestTheBrowserToolsetIsCarried(t *testing.T) {
 func TestTheBrowserNeedsAToolsHome(t *testing.T) {
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
-	old := toolsHome
-	toolsHome = ""
-	t.Cleanup(func() { toolsHome = old })
+	setFor(t, &toolsHome, "")
 	if _, err := d.browser.Endpoint(nil); err == nil || err.Error() != "The browser can't be installed on this Mac." && err.Error() != "The browser can't be installed on this server." {
 		t.Fatal(err)
 	}

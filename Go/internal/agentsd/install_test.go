@@ -55,9 +55,7 @@ func TestTheBundlesToolsetsLoad(t *testing.T) {
 		t.Fatal("kinds")
 	}
 	// A Mac's recipes: on Linux, every test host's start made the switch a server's.
-	old := serverToolsets
-	serverToolsets = false
-	t.Cleanup(func() { serverToolsets = old })
+	setFor(t, &serverToolsets, false)
 	d := &Daemon{}
 	d.toolsets = ts
 	if d.recipe("claude") == nil || d.recipe("opencode") == nil || d.recipe("grok").Script == nil || d.recipe("nothing") != nil {

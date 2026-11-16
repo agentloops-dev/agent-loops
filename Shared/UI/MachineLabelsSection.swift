@@ -27,7 +27,7 @@ struct MachineLabelsSection: View {
                     Button {
                         onSet(row.ownLabels.filter { $0 != label })
                     } label: {
-                        Image(systemName: "xmark.circle").accessibilityLabel("Remove \(label)")
+                        Image(icon: "xmark.circle").accessibilityLabel("Remove \(label)")
                     }
                     .buttonStyle(.plain)
                 }

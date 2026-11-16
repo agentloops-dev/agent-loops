@@ -59,7 +59,7 @@ needs). "Landing a change" is for the lanes that build, not for you.
   `dependencies/blocked_by` endpoints. After that, the epic's lead owns the plan.
 - **Assign only claimed work.** Do not assign an issue when filing or discussing it.
   Assign it only when a session has claimed it and will work on it.
-- **Rank the backlog** with RICE (reach, impact, confidence, effort), and say why.
+- **Set each issue's `priority:` label** and say why in the issue.
 - **Write decisions down** in the issue. When it needs a wireframe or a spec, write it
   in the issue; otherwise say in the issue that it needs one and leave it to the lane
   that builds it.

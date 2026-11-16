@@ -120,7 +120,7 @@
 .machine-picker .dot.offline { background: var(--tint-failure, var(--tint-attention)); }
 .machine-picker .caret { font-size: 0.8125rem; opacity: 0.5; }
 .machine-picker-panel { position: absolute; z-index: 20; top: 100%; left: 0; min-width: 18rem; max-width: 24rem; margin-top: 0.25rem; padding: 0.5rem;
-  background: var(--paper); border: 1px solid var(--paper-rule); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.15); }
+  background: var(--paper); border: 1px solid var(--paper-rule); border-radius: 8px; box-shadow: var(--shadow-floating); }
 .machine-picker-panel input[type="search"] { width: 100%; box-sizing: border-box; margin-bottom: 0.25rem; }
 .machine-picker-list { max-height: 20rem; overflow-y: auto; }
 .machine-picker-title { margin: 0.5rem 0 0.125rem; font-size: 0.75rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.04em; }

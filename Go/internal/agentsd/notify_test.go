@@ -105,9 +105,7 @@ func TestNotifyingThePerson(t *testing.T) {
 // says where it went: the computer once the window has it, then the device the control
 // plane says, each once.
 func TestNoticeLineSaysWhereItWent(t *testing.T) {
-	was := settlingPause
-	settlingPause = 0
-	defer func() { settlingPause = was }()
+	setFor(t, &settlingPause, 0)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)

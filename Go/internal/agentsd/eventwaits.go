@@ -16,7 +16,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -1198,7 +1197,7 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	if prev != nil {
 		prefix += replacedWords(prev)
 	}
-	hold := time.AfterFunc(eventHoldLimit, func() { d.eventHoldReached(agent, wait.ID) })
+	hold := time.AfterFunc(eventHoldLimit, d.jobFunc("eventwaits timer", func() { d.eventHoldReached(agent, wait.ID) }))
 	defer hold.Stop()
 	select {
 	case text := <-call.answer:
@@ -1426,7 +1425,7 @@ func (d *Daemon) wakeWait(a wire.Agent, w *wire.EventWait, e wire.Event, burst s
 			a.QueuedPrompts = append(append([]wire.QueuedPrompt{}, a.QueuedPrompts...), prompt)
 		})
 		id, pos := a.ID, e.Position
-		safe.Go("event wake", func() { d.sendEventResume(id, prompt.ID, &pos) })
+		d.goJob("event wake", func() { d.sendEventResume(id, prompt.ID, &pos) })
 	}
 	d.addConsequence(wire.Consequence{Woke: &wire.ConsequenceWoke{AgentID: a.ID, Title: title}}, e.Position)
 	d.tellEvents(nil)
@@ -1534,7 +1533,7 @@ func (d *Daemon) armWaitTimer() {
 	if next == nil || d.ctx.Err() != nil {
 		return
 	}
-	d.waitTimer = time.AfterFunc(max(0, time.Until(*next))+20*time.Millisecond, d.waitDeadlinesPassed)
+	d.waitTimer = time.AfterFunc(max(0, time.Until(*next))+20*time.Millisecond, d.jobFunc("eventwaits timer", d.waitDeadlinesPassed))
 }
 
 // waitDeadlineDue says an open wait's deadline has come by at.
@@ -1579,7 +1578,7 @@ func (d *Daemon) endWaitWithNoMatch(id wire.UUID, w *wire.EventWait, words strin
 		a.EventWait = &ended
 		a.QueuedPrompts = append(append([]wire.QueuedPrompt{}, a.QueuedPrompts...), prompt)
 	})
-	safe.Go("event timeout", func() { d.sendEventResume(id, prompt.ID, nil) })
+	d.goJob("event timeout", func() { d.sendEventResume(id, prompt.ID, nil) })
 }
 
 // resumeEventWaits is resumeEventWaitsAfterRestart: no call survives a restart, so every

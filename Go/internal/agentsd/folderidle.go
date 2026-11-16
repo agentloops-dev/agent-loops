@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -67,9 +66,9 @@ func (d *Daemon) watchForIdle(folder string) {
 		return
 	}
 	generation := period.generation
-	period.settling = time.AfterFunc(folderIdleSettle, func() {
-		safe.Go("folder idle", func() { d.idleSettled(folder, generation) })
-	})
+	period.settling = time.AfterFunc(folderIdleSettle, d.jobFunc("folderidle timer", func() {
+		d.goJob("folder idle", func() { d.idleSettled(folder, generation) })
+	}))
 }
 
 // workingIn is the agents starting or running in a folder, less the clean-up's own.

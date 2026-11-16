@@ -15,12 +15,12 @@ import type {
 import { describe } from "../../model/errors";
 import { absolutePath } from "../../model/fileWatch";
 import {
-  backToYours, banner, behindLine, cappedByYours, choice, count, folderFile, folderIsKept, folderName, foldersLine, folderWaits, foot,
+  backToYours, banner, behindLine, behindMore, cappedByYours, choice, count, folderFile, folderIsKept, folderName, foldersLine, folderWaits, foot,
   isLooser, keptNotUsed, layerLine, moneyValue, notSet, openFolder, organisationItem, organisationTitle, policyFolderOf, policyItem,
   rowsIn, rulesCount, sameAsYoursLine, sections, sectionTitles, setAside, setting, signAgain, title, tokensValue, toolsFoot, ruleValue,
   untrustedLine, untrustedNone, untrustedRule, untrustedTitle, whereFrom, yoursIsKept, type Row,
 } from "../../model/policyLayers";
-import { go, route } from "../../route";
+import { go, route, routeHash } from "../../route";
 import { PolicySource } from "./PolicySource";
 import { GuardedChangeCard } from "../GuardedChange";
 import { useSettingsMachine } from "./SettingsMachine";
@@ -121,7 +121,7 @@ function Layer({ store, host, down, folder }: { store: Store; host: string; down
                 <button type="button" class="link" onClick={() => document.getElementById("settings-policy")?.scrollIntoView()}>{organisationTitle}</button>
               )}
               <FolderList store={store} host={host} folders={eff.foldersWithRules} />
-              {behindLine(eff.behind) && <p class="hint" role="status">{behindLine(eff.behind)}</p>}
+              {behindLine(eff.behind) && <p class="hint" role="status">{behindLine(eff.behind)}{behindMore(eff.behind) && <>{" "}<a href={routeHash(behindMore(eff.behind)!.to)}>Show all {eff.behind.length}</a></>}</p>}
             </MessageBanner>
           ) : (
             <MessageBanner tone="neutral" name="policy-banner">

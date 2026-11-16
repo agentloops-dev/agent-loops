@@ -76,6 +76,11 @@ public extension DaemonAPI {
                 Row(Method.secretsSetNeedsApproval, params: SecretNeedsApprovalRequest.self, result: Empty.self, kind: .hostRequest),
                 // Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): what agents saved on the machine.
                 Row(Method.secretsLocalList, params: Empty.self, result: LocalSecrets.self, kind: .hostRequest),
+                // Status ▸ Environment (#5260): the files of variables, one written, and As a session sees it.
+                Row(Method.envList, params: EnvListRequest.self, result: EnvList.self, kind: .hostRequest),
+                Row(Method.envWrite, params: EnvWriteRequest.self, result: Empty.self, kind: .hostRequest),
+                Row(Method.envResolve, params: EnvResolveRequest.self, result: EnvResolved.self, kind: .hostRequest),
+                Row(Method.envDiscard, params: Empty.self, result: Empty.self, kind: .hostRequest),
                 Row(Method.desktopControlSet, params: DesktopControlSettings.self, result: DesktopControlSettings.self,
                     kind: .hostRequest),
                 // Pause on touch's two answers (#3004, US3).
@@ -185,6 +190,9 @@ public extension DaemonAPI {
                     kind: .hostRequest),
                 // Remove… on a Connectors page (#2154).
                 Row(Method.mcpRemove, params: MCPRemoveRequest.self, result: MCPRemoveAnswer.self, kind: .hostRequest),
+                // Approve on a folder's connector that waits, on the folder's own host (#5717).
+                Row(Method.mcpList, params: MCPListRequest.self, result: MCPListAnswer.self, kind: .hostRequest),
+                Row(Method.mcpApprove, params: MCPApproveRequest.self, result: MCPListAnswer.self, kind: .hostRequest),
                 // Allow, Ask or Off for each tool of a connector (#4099).
                 Row(Method.mcpTools, params: MCPToolsRequest.self, result: MCPToolsAnswer.self, kind: .hostRequest),
                 Row(Method.mcpSetToolLevel, params: MCPSetToolLevelRequest.self, result: MCPToolsAnswer.self, kind: .hostRequest),
@@ -316,6 +324,9 @@ public extension DaemonAPI {
                 Row(Method.messagesMarkAllRead, params: MessagesMarkAllReadRequest.self, result: MessagesMarkedAllRead.self, kind: .hostRequest),
                 // Work ▸ Timeline on the web page (#4206).
                 Row(Method.workTimeline, params: WorkTimelineRequest.self, result: WorkTimeline.self, kind: .hostRequest),
+                // New Session's Suggested section (#5457, #5461).
+                Row(Method.workSuggestLeads, params: WorkSuggestLeadsRequest.self, result: WorkSuggestLeads.self, kind: .hostRequest),
+                Row(Method.workDismissLead, params: WorkDismissLeadRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 // Work ▸ Deploys (#5270).
                 Row(Method.deploysTargets, params: DeployTargetsRequest.self, result: DeployTargets.self, kind: .hostRequest),
                 // Work ▸ Features as a delivery view (#4586).
@@ -503,6 +514,8 @@ public extension DaemonAPI {
                     kind: .controlRequest),
                 Row(Method.hostsList, params: Empty.self, result: [ControlMachine].self, kind: .controlRequest),
                 Row(Method.hostsSetLabels, params: MachineLabelsRequest.self, result: MachineLabelsResult.self, kind: .controlRequest),
+                // Which machine Auto would pick (#5375).
+                Row(Method.sessionsPreviewStart, params: AutoMachineRequest.self, result: AutoMachinePick.self, kind: .controlRequest),
                 Row(Method.clientsForgetSelf, params: Empty.self, result: Empty.self, kind: .controlRequest),
                 // Settings ▸ Control plane ▸ Clients (#4253): who is paired, and a code for one more.
                 Row(Method.clientsList, params: Empty.self, result: [ClientRecord].self, kind: .controlRequest),
@@ -655,6 +668,8 @@ public extension DaemonAPI {
                 Row(Method.sealingAdd, params: SealingAdd.self, result: Empty.self, kind: .controlRequest),
                 Row(Method.userSecretRecipients, params: Empty.self, result: SealRecipients.self, kind: .controlRequest),
                 Row(Method.userSealedSecret, params: UserSealedSecretRequest.self, result: UserSealedSecret.self, kind: .controlRequest),
+                Row(Method.userSecretOffers, params: Empty.self, result: SecretOffers.self, kind: .controlRequest),
+                Row(Method.userDropSecretOffer, params: SecretOfferRequest.self, result: Empty.self, kind: .controlRequest),
                 // The machine lock (#3399, #3490): the chain, and a client asking to join it.
                 Row(Method.lockGet, params: Empty.self, result: Lock.self, kind: .controlRequest),
                 Row(Method.lockAdd, params: LockAdd.self, result: LockHead.self, kind: .controlRequest),
@@ -718,6 +733,7 @@ public extension DaemonAPI {
                 Row(Method.signInDeny, params: SignInDecide.self, result: Empty.self, kind: .controlRequest),
                 // Heard
                 Row(Notification.agentChanged, params: Agent.self, result: Empty.self, kind: .hostNotification),
+                Row(Notification.envChanged, params: EnvChanged.self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.clientPermissionsChanged, params: ClientPermissionSettings.self, result: Empty.self,
                     kind: .hostNotification),
                 Row(Notification.autoChanged, params: AutoSettings.self, result: Empty.self, kind: .hostNotification),

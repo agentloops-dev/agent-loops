@@ -81,10 +81,10 @@ export function NewFolderMenu({ store, newSession }: { store: Store; newSession?
   useEffect(() => {
     if (!open.value) return;
     const close = (e: Event) => { if (!anchor.current?.contains(e.target as Node)) open.value = false; };
-    const escape = (e: KeyboardEvent) => { if (e.key === "Escape") open.value = false; };
+    const onEscape = (e: KeyboardEvent) => { if (e.key === "Escape") open.value = false; };
     addEventListener("pointerdown", close);
-    addEventListener("keydown", escape);
-    return () => { removeEventListener("pointerdown", close); removeEventListener("keydown", escape); };
+    addEventListener("keydown", onEscape);
+    return () => { removeEventListener("pointerdown", close); removeEventListener("keydown", onEscape); };
   }, [open.value]);
   return (
     <span class="menu-anchor new-folder" ref={anchor}>
@@ -275,7 +275,7 @@ function FolderDialog({ store, host, close }: { store: Store; host: string; clos
         <input type="text" aria-label="Folder" placeholder="~/src" value={path.value} spellcheck={false}
           onInput={(e) => (path.value = (e.currentTarget as HTMLInputElement).value)} />
       </form>
-      <div class="folder-list" role="listbox" aria-label={`Folders on ${label}`}>
+      <div class="folder-choices" role="listbox" aria-label={`Folders on ${label}`}>
         {parent !== null && (
           <button type="button" class="folder-row up" role="option" aria-selected={false}
             onClick={() => void load(parent)}>‹ {parent === "/" ? "/" : parent.slice(parent.lastIndexOf("/") + 1)}</button>

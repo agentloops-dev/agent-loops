@@ -166,6 +166,7 @@ func (d *Daemon) ciRepoLocked(repo string) *ciRepoState {
 func (d *Daemon) StartCITimings() {
 	d.ciTimings()
 	d.goLoop("build timings", d.ciTimingsClock)
+	d.goLoop("ci queue", d.ciQueueClock)
 }
 
 // kickCITimings reads the timings soon: a run finished.

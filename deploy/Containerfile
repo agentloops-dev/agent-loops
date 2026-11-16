@@ -64,20 +64,25 @@ RUN mkdir -p /out/servers && for arch in x86_64:amd64 aarch64:arm64; do \
     done && printf '%s' "$VERSION" > /out/servers/VERSION
 
 # The web remote, built here as it is not checked in (#473), as scripts/web.sh build makes it
-# (npm ci, then build.mjs, which writes the MANIFEST the control plane checks), so the page and
+# (the pinned pnpm installs from the lockfile, then build.mjs writes the MANIFEST the control
+# plane checks; #5628), so the page and
 # the control plane are one version. Off unless asked for: AGENTS_CONTROL_PUBLIC_WEB=/web
 # serves it at the control plane's own address (compose.public.yaml, #1459); `--web /web
 # --web-port <port>` on the container's loopback. Its output is static files, so it also runs
 # on the machine that builds.
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS web
+WORKDIR /src
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY Web/package.json Web/.node-version Web/
+COPY scripts/node.sh scripts/pnpm.sh scripts/
+# The web app's packages only, not Nx's (no install script runs: pnpm-workspace.yaml).
+RUN scripts/pnpm.sh install --frozen-lockfile --filter ./Web
+COPY Web/ Web/
 WORKDIR /src/Web
-COPY Web/package.json Web/package-lock.json ./
-RUN npm ci --ignore-scripts --no-audit --no-fund
-COPY Web/ ./
 # Readable by every user (#4756): the build context is the build machine's checkout, whose
 # files can be 0600 where git has 0644, and cpSync keeps the mode. agents-control runs as
 # control, and a /web file it cannot read turns the whole page off.
-RUN npm run build && chmod -R a+rX dist
+RUN node build.mjs && chmod -R a+rX dist
 
 # Named base: deploy/demo builds its codes job from it.
 FROM alpine:3.24 AS base

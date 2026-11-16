@@ -34,3 +34,7 @@ Go/out/
 Go/internal/controlplane/walk/observability/run/
 __pycache__/
 scripts/totp/node_modules/
+
+# The workspace (#5628): pnpm's packages, and Nx's workspace data (its cache is ~/.nx).
+/node_modules/
+/.nx/

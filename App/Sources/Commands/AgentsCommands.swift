@@ -197,8 +197,14 @@ struct AgentsCommands: Commands {
                 .keyboardShortcut(MenuKeys.runtimes)
             // The person's own, in Settings ▸ You (#3998).
             Button("Connectors") { model.settingsPaneAsked = .connectors; openSettings() }
-            Button("Secrets") { model.settingsPaneAsked = .secrets; openSettings() }
+            // Status ▸ Secrets, a page of its own (#5257).
+            Button("Secrets") { model.showSecrets() }
                 .disabled(ControlConfig.endpoint == nil)
+            // Status ▸ Accounts, a page of its own (#5258).
+            Button("Accounts") { model.showAccounts() }
+                .disabled(ControlConfig.endpoint == nil)
+            // The page the window opens to (#5696).
+            Button("Dashboard") { model.showDashboard() }
             // A list each, as the sidebar's Work group (#4004).
             Menu("Work") {
                 ForEach(WorkList.Kind.allCases) { kind in
@@ -207,8 +213,8 @@ struct AgentsCommands: Commands {
             }
             Button("Docs") { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
             Button(MessagesList.title) { model.sidebarItem = .messages }
-            // The page the window opens to (#3986). ⌘1…n are the inspector panes, so ⌘0 is
-            // next to them; Actual Size keeps it while a Markdown page is in front.
+            // ⌘1…n are the inspector panes, so ⌘0 is next to them (#3986); Actual Size keeps it
+            // while a Markdown page is in front.
             Button("Multiplier") { model.showMultiplier() }
                 .keyboardShortcut(pageZoom == nil ? KeyboardShortcut("0") : nil)
             Button("Cost") { model.showsSpending = true }

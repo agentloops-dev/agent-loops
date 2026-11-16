@@ -95,7 +95,7 @@ struct WorkItemPage: View {
                                 mergeBox(box, detail.got, on: detail.host)
                             }
                             if let detail, detail.got.item.node.kind == "pr" {
-                                WorkFilesChanged(model: model, host: detail.host, detail: detail.got, compact: true)
+                                WorkFilesChanged(model: model, detail: detail.got, compact: true)
                             }
                             // An epic's Plan before the panel's rows: it is what a person opens an epic for (epic.md note 15).
                             plan
@@ -256,7 +256,7 @@ struct WorkItemPage: View {
                     if isEpic { leadButton }
                     if let start = startOffer { startButton(start) }
                     if let detail, detail.got.item.node.kind == "pr" {
-                        WorkFilesChanged(model: model, host: detail.host, detail: detail.got)
+                        WorkFilesChanged(model: model, detail: detail.got)
                     }
                 }
                 stateLine

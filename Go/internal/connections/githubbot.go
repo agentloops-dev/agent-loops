@@ -40,7 +40,7 @@ var BotPermissions = map[string]string{
 	"contents":      "write",
 	"pull_requests": "write",
 	"issues":        "write",
-	"checks":        "read",
+	"checks":        "write",
 	"statuses":      "read",
 	"actions":       "write",
 	"workflows":     "write",

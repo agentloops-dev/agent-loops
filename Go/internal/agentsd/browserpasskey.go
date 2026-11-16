@@ -289,7 +289,7 @@ func (d *Daemon) giveTabPasskey(owner wire.UUID, tab target.ID) {
 		return
 	}
 	// Away from the browser's own events, which must not wait on a call to it.
-	go d.putPasskey(owner, t, p, tab)
+	d.goJob("putPasskey", func() { d.putPasskey(owner, t, p, tab) })
 }
 
 // keepSessionPasskey gives each of agent's tabs that has no software passkey its session's,

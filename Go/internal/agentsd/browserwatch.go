@@ -10,7 +10,6 @@ import (
 	"github.com/chromedp/cdproto/target"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -163,7 +162,7 @@ func (d *Daemon) watchBrowser(c *Client, agent wire.UUID, width, height int64) w
 		go dropped.Close()
 	}
 	if !again {
-		go d.tellBrowserHolder()
+		d.goJob("tellBrowserHolder", func() { d.tellBrowserHolder() })
 	}
 	if last != nil && (!again || moved) {
 		// Its ack is answered by the next frame's; this one asks Chromium for nothing.
@@ -176,7 +175,7 @@ func (d *Daemon) watchBrowser(c *Client, agent wire.UUID, width, height int64) w
 			}
 		}()
 	} else if state.Status == wire.BrowserStatusRunning {
-		go d.startBrowserCast(agent)
+		d.goJob("startBrowserCast", func() { d.startBrowserCast(agent) })
 	}
 	return state
 }
@@ -412,7 +411,7 @@ func (d *Daemon) browserFrame(gen int, f browser.Frame) {
 			wait = browserTilePace
 		}
 	}
-	time.AfterFunc(wait, func() { d.ackBrowserFrame(agent, f.Ack) })
+	time.AfterFunc(wait, d.jobFunc("browserwatch timer", func() { d.ackBrowserFrame(agent, f.Ack) }))
 }
 
 // browserDrove is a browser_* call of agent's (#4139): its session's tab is cast for the
@@ -428,7 +427,7 @@ func (d *Daemon) browserDrove(agent wire.UUID) {
 	w.mu.Lock()
 	w.screenLocked(key).driver = agent
 	w.mu.Unlock()
-	safe.Go("browser tile", func() { d.startBrowserCast(key) })
+	d.goJob("browser tile", func() { d.startBrowserCast(key) })
 }
 
 // browserDriveEnded is liveDriveWindow since agent's last browser call: its tab's cast ends
@@ -509,7 +508,7 @@ func (d *Daemon) browserChanged(running bool, endpoint string) {
 		}
 		w.mu.Unlock()
 		for _, agent := range agents {
-			go d.startBrowserCast(agent)
+			d.goJob("startBrowserCast", func() { d.startBrowserCast(agent) })
 		}
 		return
 	}
@@ -587,7 +586,7 @@ func (d *Daemon) navigateBrowser(c *Client, r wire.BrowserNavigateRequest) error
 		w.state = wire.BrowserPageState{Status: wire.BrowserStatusStarting}
 		d.tellEveryBrowserWatcherLocked()
 		w.mu.Unlock()
-		go d.startBrowserFor(agent, address)
+		d.goJob("startBrowserFor", func() { d.startBrowserFor(agent, address) })
 		return nil
 	}
 	w.mu.Unlock()

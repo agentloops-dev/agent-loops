@@ -10,7 +10,7 @@ import { machineRows } from "../model/store/shared";
 import { describe } from "../model/errors";
 import { pickerDot, pickerLimit, pickerQuery, pickerWords, pinnedMachines, recentMachines, rememberMachine, sections, togglePin } from "../model/machinePicker";
 
-export function MachinePicker({ store, value, onPick, label, skip, any, placeholder = "Choose a machine", disabled, class: className }: {
+export function MachinePicker({ store, value, onPick, label, skip, any, anyDisabled, placeholder = "Choose a machine", disabled, class: className }: {
   store: Store;
   /** The machine chosen, or null for none (or `any`). */
   value: string | null;
@@ -21,6 +21,8 @@ export function MachinePicker({ store, value, onPick, label, skip, any, placehol
   skip?: (h: ControlMachine) => boolean;
   /** A first row that picks no machine, as "Every machine". */
   any?: string;
+  /** The `any` row is shown but cannot be picked, as an Auto with no machine that fits. */
+  anyDisabled?: boolean;
   placeholder?: string;
   disabled?: boolean;
   class?: string;
@@ -92,7 +94,7 @@ export function MachinePicker({ store, value, onPick, label, skip, any, placehol
             onInput={(e) => setSearch((e.currentTarget as HTMLInputElement).value)} />
           <div class="machine-picker-list" role="listbox" aria-label={label}>
             {any && !search && (
-              <button type="button" role="option" aria-selected={value === null} class="machine-picker-row" onClick={() => pick(null)}>
+              <button type="button" role="option" aria-selected={value === null} class="machine-picker-row" disabled={anyDisabled} onClick={() => pick(null)}>
                 <span class="name">{any}</span>
               </button>
             )}

@@ -9,7 +9,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -99,7 +98,7 @@ func keepDays(keep wire.RetentionKeepFor) (time.Duration, bool) {
 // crash left is swept once, at start.
 func (d *Daemon) StartRetention() {
 	started := time.Now()
-	safe.Go("retention", func() { d.retentionClock(started) })
+	d.goJob("retention", func() { d.retentionClock(started) })
 }
 
 func (d *Daemon) retentionClock(started time.Time) {

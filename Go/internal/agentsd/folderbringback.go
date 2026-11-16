@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -110,7 +109,7 @@ func (d *Daemon) startBringBack(r wire.BringBackFromRequest) (wire.BringBackSumm
 	Broadcast(d, wire.NotifyBringBackChanged, *n)
 
 	branches := slices.Clone(r.Branches)
-	safe.Go("bring back "+path+" from "+name, func() {
+	d.goJob("bring back "+path+" from "+name, func() {
 		result, err := d.bringPack(personSending, machine, source, path, branches, changes, patchOn, func(done, total int64) {
 			d.bringMu.Lock()
 			n.Read, n.Total = done, total

@@ -16,9 +16,9 @@
 # GOOS, GOARCH, GOFLAGS, GOBIN, CGO_ENABLED and DEVELOPER_DIR pass through, with HOME, USER, the
 # caches and a PATH of Go and the system. A session's own PATH (a real codex before a test's
 # fake one) and variables then do not reach the tests. TMPDIR is go/tmp in the cache: a
-# folder with no symlink in its path and not under /private, as CI's go-darwin has
+# folder with no symlink in its path and not under /private, as CI's macOS `test` job has
 # ($RUNNER_TEMP); agentsd's tests fail under /var/folders, /tmp or /private/tmp. Cgo is off for `build` and `install`, as the binaries ship, except with
-# -race, which needs it (#1505); for the rest it is Go's default, as in CI's go-darwin.
+# -race, which needs it (#1505); for the rest it is Go's default, as in CI's macOS `test` job.
 # CGO_ENABLED set by the caller wins.
 set -e
 mod=$(cd "$(dirname "$0")/.." && pwd)

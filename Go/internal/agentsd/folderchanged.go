@@ -45,7 +45,7 @@ func (d *Daemon) folderChanged(folder string) {
 		after(folderChangedWindow, send)
 		return
 	}
-	time.AfterFunc(folderChangedWindow, send)
+	time.AfterFunc(folderChangedWindow, d.jobFunc("folderchanged timer", send))
 }
 
 // sendFolderChanged is the window's end: the folder's summary as it is now.

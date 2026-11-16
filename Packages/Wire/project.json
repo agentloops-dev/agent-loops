@@ -1,0 +1,27 @@
+{
+  "name": "wire",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "root": "Packages/Wire",
+  "targets": {
+    "gen": {
+      "executor": "nx:run-commands",
+      "options": { "command": "Go/scripts/go.sh run ./cmd/wiregen", "cwd": "{workspaceRoot}" },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "wire-source",
+        "{workspaceRoot}/Go/go.sum"
+      ],
+      "outputs": [
+        "{workspaceRoot}/Go/wire/types_gen.go",
+        "{workspaceRoot}/Go/wire/methods_gen.go",
+        "{workspaceRoot}/Go/wire/app-tools.json",
+        "{workspaceRoot}/Go/wire/event-catalogue.json",
+        "{workspaceRoot}/Go/wire/capabilities_gen.go",
+        "{workspaceRoot}/Web/src/protocol/generated.ts",
+        "{workspaceRoot}/Web/src/protocol/capabilities.generated.ts",
+        "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Daemon/Capabilities.generated.swift"
+      ]
+    }
+  }
+}

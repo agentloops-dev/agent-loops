@@ -1,7 +1,7 @@
 // Part of the Store (#5384): runtimesAccounts.
 import { folderPath as hostedFolderPath, healthTally, personalServers } from "../hostedMCP";
 import { batch } from "@preact/signals";
-import type { HelperLimits, DiskThresholds, NotCommittedResponse, AccountProfile, RuntimeAccount, RuntimeSignInStep, RuntimeStatus, UUID, AutoPreview, AutoPreviewRequest, AutoSettings, ClientPermissionMode, Levels, ModelLevel, PermissionLevel, DirectoryListing, MCPHealthSnapshot, MCPToolsAnswer, ConnectorToolLevel, WorkflowHours, ClientPermissionSettings, PRCostComment, Connection } from "../../protocol/generated";
+import type { HelperLimits, DiskThresholds, NotCommittedResponse, AccountProfile, RuntimeAccount, RuntimeSignInStep, RuntimeStatus, UUID, AutoMachinePick, AutoPreview, AutoPreviewRequest, AutoSettings, ClientPermissionMode, Levels, ModelLevel, PermissionLevel, DirectoryListing, MCPHealthSnapshot, MCPToolsAnswer, ConnectorToolLevel, WorkflowHours, ClientPermissionSettings, PRCostComment, Connection } from "../../protocol/generated";
 import { endedConnections, endedLine, hasEnded } from "../connectorSetup";
 import { describe } from "../errors";
 import { freeProjectName } from "../projectSettings";
@@ -142,6 +142,11 @@ export const runtimesAccountsMethods = {
       this.say(describe(error));
     }
   },
+  /** Which machine Auto would pick for a project and runtime, or why none fits (#5375); null from a control plane that does not know it. */
+  async previewAutoMachine(this: Store, project: string, runtimeID: string): Promise<AutoMachinePick | null> {
+    if (!this.planeHas("auto-machine/1")) return null;
+    return this.link.call("sessions/previewStart", { project, runtimeID }).catch(() => null);
+  },
   /** What Auto would pick now for a folder and values, or null. */
   async autoPreview(this: Store, host: string, request: AutoPreviewRequest): Promise<AutoPreview | null> {
     return this.link.call("auto/preview", request, host).catch(() => null);
@@ -240,6 +245,24 @@ export const runtimesAccountsMethods = {
     const destination = folder === undefined ? { kind: "personal" } : { kind: "folder", folder: hostedFolderPath(folder) };
     const why = await this.link.call("mcp/remove", { destination: destination as never, name }, host)
       .then(() => undefined, (error: unknown) => describe(error));
+    if (why === undefined) await this.checkMCPHealth(host, folder);
+    return why;
+  },
+  /**
+   * Approve a folder's connector that waits (#5717), on the folder's own host, as the window's
+   * Approve: the entry that host reads now, by its digest. Undefined when done, else the refusal's words.
+   */
+  async approveConnector(this: Store, host: string, name: string, folder: string): Promise<string | undefined> {
+    const destination = { kind: "folder", folder: hostedFolderPath(folder) } as never;
+    const why = await this.link.call("mcp/list", { destination }, host)
+      .then(async (list) => {
+        const row = list.servers.find((s) => s.name === name);
+        const approval = row?.approval;
+        if (approval === undefined || !("waiting" in approval)) return undefined;
+        await this.link.call("mcp/approve", { destination, name, digest: approval.waiting.digest }, host);
+        return undefined;
+      }, (error: unknown) => describe(error))
+      .catch((error: unknown) => describe(error));
     if (why === undefined) await this.checkMCPHealth(host, folder);
     return why;
   },

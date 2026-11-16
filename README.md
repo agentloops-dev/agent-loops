@@ -290,15 +290,16 @@ schedule; **Run now** tries one.
 
 **Free disk space** (`.agents/workflows/free-disk-space.md`, #199) runs on `machine.disk_low`. It
 deletes build output (the folders `.gitignore` ignores and git tracks nothing in, such as
-`build/`, `.build`, `DerivedData` and `Web/node_modules`) from the worktrees of agents that are
-Done or Archived and hold no lease. It also removes archived agents' worktrees that have
-nothing uncommitted, keeping the branch, bounds the shared build cache (Swift and Go), ends
-headless walk Chromes left running over 6 hours, and removes older Xcode device support
-and CoreDevice's install deltas (`scripts/free-disk.sh`, #1796). It also removes any
-worktree nobody has changed for 4 hours with all its work committed, or for 8 hours with
-uncommitted work, which is lost; the branch stays (#4699). It goes on until 20% of the
-disk is free or the steps run out. It never touches the folder, or a worktree a process
-works in.
+`build/`, `.build`, `DerivedData` and `Web/node_modules`) from the worktrees that no process
+works in and in which nothing changed for an hour. It bounds the shared build cache (Swift,
+Go, and the Go temp folders that killed runs leave), ends headless walk Chromes left
+running over 6 hours, removes older Xcode device support and CoreDevice's install deltas,
+and erases the walk simulators that are shut down (`scripts/free-disk.sh`, #1796, #5722).
+It also removes any worktree nobody has changed for 4 hours with all its work committed,
+or for 8 hours with uncommitted work, which is lost; the branch stays (#4699). When the
+disk is critical, it also removes Colima data disks that no instance has and prunes uv's
+and npm's caches. It needs no app tools, and goes on until 20% of the disk is free or the
+steps run out. It never touches the folder, or a worktree a process works in.
 It too arrives turned off.
 
 **Crash reports** (`.agents/workflows/crash-reports.md`, #392) runs once a day at 07:00. It

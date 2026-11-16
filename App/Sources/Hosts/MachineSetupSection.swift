@@ -20,7 +20,10 @@ struct MachineSetupSection: View {
             // A second's tick, so a running step's time moves.
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Section("Set-up") {
-                    ForEach(setup.steps) { step in stepRow(step, now: context.date) }
+                    ForEach(setup.steps) { step in
+                        stepRow(step, now: context.date)
+                        if step.id == "signIn" { MachineSignInCards(host: host) }
+                    }
                     if let failed = MachineSetupWords.failedStep(setup) {
                         Text(failed.error ?? "\(MachineSetupWords.name(failed)) failed.")
                             .foregroundStyle(StateTint.failure.style(or: .primary))

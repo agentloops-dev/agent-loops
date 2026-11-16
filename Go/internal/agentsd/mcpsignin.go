@@ -316,8 +316,8 @@ func (d *Daemon) mcpSignIn(ctx context.Context, r wire.MCPSignInRequest) wire.MC
 	st.mu.Lock()
 	st.flows[flow.id] = flow
 	st.mu.Unlock()
-	time.AfterFunc(mcpSignInLifetime, redirect.stop)
-	safe.Go("mcp sign-in", func() {
+	time.AfterFunc(mcpSignInLifetime, d.jobFunc("mcpsignin timer", redirect.stop))
+	d.goJob("mcp sign-in", func() {
 		flow.complete(d.finishSignIn(flow, redirect, plan, registered, verifier, personsOwn))
 	})
 	log.Printf("mcp sign-in: %s waiting for the browser", name)

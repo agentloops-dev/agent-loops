@@ -1,0 +1,10 @@
+{
+  "name": "agent-loops",
+  "private": true,
+  "description": "The workspace: Nx over the native build tools (epic #5627), and the web app in Web/. scripts/nx.sh runs it.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@12.18.0+sha512.9d7882d5dc82147ecfc4e062aa34834e0ad0296710a1837a1115ae012127d36b7109e321ac1598a1dd0a65597681b1e99917e12ed0d749eae91187943363beb3",
+  "devDependencies": {
+    "nx": "24.0.5"
+  }
+}

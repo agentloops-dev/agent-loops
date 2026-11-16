@@ -719,6 +719,131 @@
       }
     },
     {
+      "name": "env/changed",
+      "x-capability": "env/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/EnvChanged"
+          }
+        }
+      ],
+      "description": "A file of variables changed on this machine (#5259): a folder's .agents/env, or ~/.agents/env when the person's settings wrote it. To the person's own clients."
+    },
+    {
+      "name": "env/discard",
+      "x-capability": "env/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      },
+      "description": "Discard (#5259): write ~/.agents/env again from the person's settings, when it was changed by hand on this machine. The person's own clients only."
+    },
+    {
+      "name": "env/list",
+      "x-capability": "env/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/EnvListRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/EnvList"
+        }
+      },
+      "description": "This machine's ~/.agents/env and each known folder's .agents/env (#5259), each variable with its name, value, description, line and state. The person's own clients only."
+    },
+    {
+      "name": "env/resolve",
+      "x-capability": "env/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/EnvResolveRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/EnvResolved"
+        }
+      },
+      "description": "For a folder or a running session, each variable a session there gets and the layer that wins it (#5259), \"As a session sees it\". The person's own clients only."
+    },
+    {
+      "name": "env/write",
+      "x-capability": "env/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/EnvWriteRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      },
+      "description": "Add, change or remove one variable of a folder's .agents/env (#5259), keeping the other lines; the file is left not committed. The person's own clients only; the audit keeps it, with the name."
+    },
+    {
       "name": "files/browse",
       "x-capability": "files/1",
       "tags": [

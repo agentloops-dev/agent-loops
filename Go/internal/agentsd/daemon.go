@@ -11,7 +11,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"golang.org/x/sync/singleflight"
 )
@@ -132,6 +131,8 @@ type Daemon struct {
 	lineageBook
 	// The build timings (#5177).
 	ciTimingsBook
+	// The queue of each repository's CI, for the ci lease (#5678).
+	ciQueueBook
 	ciSyncBook
 	// The control plane's copy of the deploys (#5496).
 	deploySyncBook
@@ -188,6 +189,7 @@ type Daemon struct {
 	// Only the keeper signs with it.
 	PersonKey controllink.PersonKeyStore
 	yourPolicyBook
+	jobBook
 }
 
 // New opens the root and registers every method this host serves.
@@ -196,11 +198,14 @@ func New(ctx context.Context, root string) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Shutdown ends this ctx last, so a goroutine that waits on d.ctx ends with the host (#5653).
+	ctx, cancel := context.WithCancel(ctx)
 	d := &Daemon{ctx: ctx, Store: st, handlers: map[string]Handler{}, clients: map[int64]*Client{}, unknown: map[string]int{},
 		lives: map[wire.UUID]*live{}, relays: map[string]*relay{}, sent: map[wire.UUID]bool{},
 		watches: map[string]*folderWatch{}, interests: map[string][]interest{}, shells: map[shellKey]*shell{},
 		SettingsDir: filepath.Join(st.Loc.Root, "settings"), HostKey: controllink.HostKeyFile{Root: st.Loc.Root},
 		PersonKey: controllink.PersonKeyFile{Root: st.Loc.Root}}
+	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
 	// The sweep of roots that are gone finds this root's own folders by this (#3746).
 	if err := store.MarkOwnFolders(st.Loc); err != nil {
@@ -235,9 +240,7 @@ func New(ctx context.Context, root string) (*Daemon, error) {
 	d.startWorkflowClock()
 	// Each folder's one watch (#173), which the first workflow scan starts too.
 	d.kickFolderWatches()
-	if done := ctx.Done(); done != nil {
-		safe.Go("folder watches end", func() { <-done; d.stopFolderWatches() })
-	}
+	d.goJob("folder watches end", func() { <-ctx.Done(); d.stopFolderWatches() })
 	d.checkAchievementsSoon()
 	d.countMergedPRsEveryHour()
 	d.checkReleaseTagsEveryHour()
@@ -417,6 +420,9 @@ func (d *Daemon) Shutdown() {
 	d.writeHeld()
 	// The archived agents' summaries, so the next start trusts them all (#4653).
 	d.Store.FlushSummaries()
+	// Last: every goroutine the host started has ended, so none writes into the root or
+	// reads a setting after this returns (#5653).
+	d.waitJobs(jobLimit)
 }
 
 // once is true the first time a sendID is seen: a window sends a prompt again for 30 s

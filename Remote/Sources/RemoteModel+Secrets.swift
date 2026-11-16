@@ -309,18 +309,29 @@ extension RemoteModel {
         // start, and reusing the id would be answered with the other folder's agent.
         let retrying = unsettledStart?.cwd == folder.folder && unsettledStartOn == folder.host
             ? unsettledStart?.requestID : nil
-        let request = DaemonAPI.StartRequest(
-            runtimeID: runtimeID, cwd: folder.folder, prompt: words, attachments: attachments,
-            startOptions: StartOptions(values: startChosen), draftID: startDraftID,
-            additionalDirectories: startFolders, worktree: startWorktree, requestID: retrying ?? UUID(), sandbox: startSandbox,
+        // Auto picks once, at start (#5375): the control plane says where, and the session says why.
+        // The draft, the account, the worktree and the added folders belong to the machine the
+        // page is on, so a start that moves leaves them out.
+        let auto = await startAutoMachineTarget(from: folder)
+        let target = auto?.folder ?? folder
+        let moved = auto?.moved == true
+        var request = DaemonAPI.StartRequest(
+            runtimeID: runtimeID, cwd: target.folder, prompt: words, attachments: attachments,
+            startOptions: StartOptions(values: startChosen), draftID: moved ? nil : startDraftID,
+            additionalDirectories: moved ? [] : startFolders, worktree: moved ? nil : startWorktree,
+            requestID: retrying ?? UUID(), sandbox: startSandbox,
             labels: labels, persona: startPersona,
-            accountID: isAutoStart ? nil : startAccountChoices?.sent(startAccountID),
+            accountID: isAutoStart || moved ? nil : startAccountChoices?.sent(startAccountID),
             voice: voice ? true : nil,
             levels: Levels(model: startLevels.model, permission: startLevels.permission,
                            permissionRequests: isAutoStart ? nil : startClientPermission))
+        request.autoChose = auto?.autoChose
         startingPage = page
         defer { startingPage = nil }
-        return await send(start: request, on: folder.host, told: started)
+        let sent = await send(start: request, on: target.host, told: started)
+        // Auto again at the next start: a machine named by hand is not remembered (#5375).
+        if sent { startNamedMachine = nil }
+        return sent
     }
 
     func setLabels(on id: UUID, add: [String] = [], remove: [String] = [], offeringUndo: Bool = true) async -> Bool {

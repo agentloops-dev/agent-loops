@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -194,12 +193,12 @@ func (d *Daemon) PickUpAfterRestart() {
 		Broadcast(d, wire.NotifyAgentResuming, wire.ResumingNotification{AgentID: id, IsResuming: true})
 	}
 	lanes := make(chan struct{}, 2)
-	safe.Go("pick up", func() {
+	d.goJob("pick up", func() {
 		var wg sync.WaitGroup
 		for _, id := range ids {
 			lanes <- struct{}{}
 			wg.Add(1)
-			safe.Go("pick up "+string(id), func() {
+			d.goJob("pick up "+string(id), func() {
 				defer func() { <-lanes; wg.Done() }()
 				d.pickUp(id)
 				d.leaveTheQueue(id)

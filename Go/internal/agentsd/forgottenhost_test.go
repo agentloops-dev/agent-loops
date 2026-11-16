@@ -44,9 +44,7 @@ func TestAHostRefusedLastRunStartsAsForgotten(t *testing.T) {
 	root := t.TempDir()
 	d, _ := start(t, root)
 	defer d.Shutdown()
-	was := memberAnswerWait
-	memberAnswerWait = 10 * time.Millisecond
-	defer func() { memberAnswerWait = was }()
+	setFor(t, &memberAnswerWait, 10*time.Millisecond)
 	d.AwaitMembership(true)
 	// A failed dial says nothing about the membership.
 	d.ControlAnswered(false, false)

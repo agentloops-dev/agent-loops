@@ -107,7 +107,8 @@ struct FolderWindow: View {
             }
         }
         .paperGround()
-        .frame(minWidth: 640, minHeight: 420)
+        // Its content cannot make it taller than the screen (#5739).
+        .windowFloor(width: 640, height: 420)
         .navigationTitle(AppCheckout.windowTitle(summary?.name))
         .navigationSubtitle(summary.map(place) ?? "")
         .focusedSceneValue(\.folderWindow, window)
@@ -413,6 +414,8 @@ final class AgentsAppDelegate: NSObject, NSApplicationDelegate {
     /// they left a blank row at its end (#2384).
     @MainActor func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        // A scratch copy's window sizes stay out of the person's window (#5636).
+        ScratchWindowFrames.start()
     }
 
     @MainActor func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {

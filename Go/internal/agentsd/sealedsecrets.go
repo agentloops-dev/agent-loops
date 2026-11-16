@@ -110,8 +110,11 @@ type sealedValue struct {
 	Release bool `json:"release,omitempty"`
 	// NoAsk is the flag off (#4176): it opens with no approval, and has no grants and no
 	// release layer.
-	NoAsk bool      `json:"noAsk,omitempty"`
-	From  string    `json:"from,omitempty"`
+	NoAsk bool   `json:"noAsk,omitempty"`
+	From  string `json:"from,omitempty"`
+	// Offer is the id of an agent's secret's offer to the person's clients (#5308), once the
+	// control plane took it. Not bound into the associated data: it says only where it went.
+	Offer string    `json:"offer,omitempty"`
 	SetAt wire.Date `json:"setAt"`
 }
 
@@ -578,8 +581,13 @@ func removePlainSecrets(home string, names ...string) error {
 // goes. kept are names whose newer version here stays as it is. A secret the person set here
 // by hand, under a name the control plane never sent, is left alone. It gives the names now
 // from the control plane.
-func (d *Daemon) syncUserSecrets(home string, plain, flagged []wire.UserSecret, before, kept []string) ([]string, error) {
-	if len(plain) == 0 && len(flagged) == 0 && len(before) == 0 && len(kept) == 0 {
+//
+// An agent's secret here whose offer waits, or that was not offered yet (#5308), keeps this
+// machine's copy: the person's of that name is not written over it. One whose offer was taken
+// or dropped takes the person's copy; with none sent and none coming, it goes.
+func (d *Daemon) syncUserSecrets(home string, plain, flagged []wire.UserSecret, before, kept []string, offers []wire.WaitingOffer,
+	coming map[string]bool) ([]string, error) {
+	if len(plain) == 0 && len(flagged) == 0 && len(before) == 0 && len(kept) == 0 && !hasOfferedSecrets(home) {
 		return []string{}, nil
 	}
 	if home == "" {
@@ -593,9 +601,10 @@ func (d *Daemon) syncUserSecrets(home string, plain, flagged []wire.UserSecret, 
 	}
 	names := []string{}
 	sent := map[string]bool{}
+	keep, done := keptForOffers(f, offers)
 	seal := func(s wire.UserSecret, ask bool) error {
 		name := string(s.Name)
-		if !secretNameHere.MatchString(name) || strings.ContainsAny(s.Value, "\n\r\x00") {
+		if !secretNameHere.MatchString(name) || strings.ContainsAny(s.Value, "\n\r\x00") || keep[name] {
 			return nil
 		}
 		var sealed sealedValue
@@ -637,8 +646,14 @@ func (d *Daemon) syncUserSecrets(home string, plain, flagged []wire.UserSecret, 
 		}
 	}
 	for _, name := range gone {
-		if !sent[name] {
+		if !sent[name] && !keep[name] {
 			delete(f.Secrets, name)
+		}
+	}
+	for name := range done {
+		if !sent[name] && !coming[name] {
+			delete(f.Secrets, name)
+			log.Printf("agent secrets: %s was dropped by the person, and went from this machine", name)
 		}
 	}
 	if err := writeSealedSecrets(home, f); err != nil {
@@ -650,6 +665,20 @@ func (d *Daemon) syncUserSecrets(home string, plain, flagged []wire.UserSecret, 
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// hasOfferedSecrets is whether sealed.json holds an agent's secret that was offered (#5308):
+// a delivery may end its offer.
+func hasOfferedSecrets(home string) bool {
+	if home == "" {
+		return false
+	}
+	for _, s := range readSealedSecrets(home).Secrets {
+		if s.From == sealedFromAgent && s.Offer != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // setNeedsApproval is secrets/setNeedsApproval: a person's client turns the flag on or off.

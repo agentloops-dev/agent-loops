@@ -9,6 +9,7 @@ import { askedWords, askForMoreHelp, askForMoreTitle, askRefusal, canAskForMore,
   stopLayerLine, stopRuleTitle, type StopAction } from "../../model/policyLayers";
 import { failedWords } from "../../model/console";
 import { go, usageAsked } from "../../route";
+import { meLens } from "../../model/nav";
 import { Ask } from "../Ask";
 import { RecordLine } from "./RecordLine";
 
@@ -21,9 +22,9 @@ function open(action: StopAction): void {
       go({ nav: "settings", section: "settings", item: policyItem(action.folder) });
       break;
     case "spending":
-      // Usage's Cost pane, the web page's Spending.
+      // Usage's Cost pane, the web page's Spending: in Reports ▸ Spend's Me lens since #5280.
       usageAsked.value = "spending";
-      go({ nav: "reports", section: "usage" });
+      go({ nav: "reports", section: "spend", query: meLens });
       break;
     case "organisation":
       go({ nav: "settings", section: "settings", item: organisationItem });
@@ -45,7 +46,7 @@ export function PolicyStopCard({ refusal, entryID }: { refusal: PolicyRefusal; e
   const action = stopAction(refusal);
   const asked = askedFor.value[entryID];
   return (
-    <RecordLine icon="hand" head={stoppedTitle} detail={asked ? askedWords(asked) : rule ?? undefined} extra="policy-stop"
+    <RecordLine head={stoppedTitle} detail={asked ? askedWords(asked) : rule ?? undefined} extra="policy-stop"
       action={{ label: action.label, run: () => open(action) }} openTitles={["Show why", "Hide why"]}
       more={<>
         {asked && rule && <p>{rule}</p>}

@@ -1,0 +1,66 @@
+{
+  "name": "agentskit-repo",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "root": "Packages/AgentsKit/Tests/AgentsKitRepoTests",
+  "tags": [
+    "xcode"
+  ],
+  "implicitDependencies": [
+    "agentskit",
+    "codetext",
+    "wire",
+    "design",
+    "web",
+    "go",
+    "mac",
+    "remote",
+    "host",
+    "shared-ui",
+    "specs",
+    "agent-workflows",
+    "scripts",
+    "workspace"
+  ],
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "parallelism": false,
+      "options": {
+        "command": "scripts/build-cache.sh swift test --package-path Packages/AgentsKit --experimental-maximum-parallelization-width 3 --filter '^AgentsKitRepoTests\\.'",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "agentskit-package",
+        "{projectRoot}/**/*",
+        "{workspaceRoot}/README.md",
+        "{workspaceRoot}/project.yml",
+        "{workspaceRoot}/App/Sources/**/*",
+        "{workspaceRoot}/App/Resources/toolsets/**/*",
+        "{workspaceRoot}/Remote/**/*",
+        "{workspaceRoot}/Shared/UI/**/*",
+        "{workspaceRoot}/Host/Sources/**/*",
+        "{workspaceRoot}/Host/Info.plist",
+        "{workspaceRoot}/Packages/CodeText/Sources/**/*",
+        "{workspaceRoot}/Go/**/*",
+        "!{workspaceRoot}/Go/out/**/*",
+        "!{workspaceRoot}/Go/coverage.out",
+        "!{workspaceRoot}/Go/internal/controlplane/walk/observability/run/**/*",
+        "{workspaceRoot}/Web/**/*",
+        "!{workspaceRoot}/Web/dist/**/*",
+        "!{workspaceRoot}/Web/node_modules/**/*",
+        "!{workspaceRoot}/Web/coverage/**/*",
+        "{workspaceRoot}/specs/**/*",
+        "{workspaceRoot}/design/**/*",
+        "{workspaceRoot}/.agents/workflows/**/*",
+        "{workspaceRoot}/scripts/lint.sh",
+        "{projectRoot}/project.json"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen",
+        "web:build"
+      ]
+    }
+  }
+}

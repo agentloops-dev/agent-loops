@@ -15,7 +15,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -298,21 +297,21 @@ func (d *Daemon) nextDeadline() (time.Time, bool) {
 func (d *Daemon) leasesChanged() {
 	d.saveLeases()
 	snap := d.leaseSnapshot()
-	safe.Go("resources/changed", func() { Broadcast(d, wire.NotifyResourcesChanged, snap) })
+	d.goJob("resources/changed", func() { Broadcast(d, wire.NotifyResourcesChanged, snap) })
 	// The Agent Browser panes say which session holds the browser (#3916).
-	safe.Go("browser holder", d.tellBrowserHolder)
+	d.goJob("browser holder", d.tellBrowserHolder)
 	if d.leaseTick != nil {
 		d.leaseTick.Stop()
 		d.leaseTick = nil
 	}
 	if at, ok := d.nextDeadline(); ok {
-		d.leaseTick = time.AfterFunc(max(0, time.Until(at))+50*time.Millisecond, func() {
+		d.leaseTick = time.AfterFunc(max(0, time.Until(at))+50*time.Millisecond, d.jobFunc("leases timer", func() {
 			d.leaseMu.Lock()
 			events := d.lapse(now().Time())
 			d.leasesChanged()
 			d.leaseMu.Unlock()
 			d.settle(events)
-		})
+		}))
 	}
 }
 
@@ -338,7 +337,7 @@ func (d *Daemon) settle(events []leaseEvent) {
 		case e.granted && e.waiter != nil && !waited && raised != nil:
 			d.record(l.Holder, runtimeNote("Leased "+l.DisplayName+" until "+clock(l.ExpiresAt)+"."))
 			ev := *raised
-			safe.Go("lease wake", func() { d.wake(l, ev) })
+			d.goJob("lease wake", func() { d.wake(l, ev) })
 		case e.extended:
 			d.record(l.Holder, runtimeNote("Extended the lease on "+l.DisplayName+" to "+clock(l.ExpiresAt)+"."))
 		case e.granted:
@@ -484,6 +483,9 @@ func (d *Daemon) leaseSnapshot() wire.LeaseSnapshot {
 		if why := d.capacityWait(name, e); why != "" {
 			r.CapacityWait = &why
 		}
+		if why := d.ciWait(name, e); why != "" {
+			r.CapacityWait = &why
+		}
 		if len(r.Holds) > 0 {
 			first := r.Holds[0]
 			r.Lease = &first
@@ -544,7 +546,7 @@ func declaredProblem(r wire.DeclaredResource) string {
 	case strings.TrimSpace(r.DisplayName) == "":
 		return "Give it a name."
 	case r.Name == "screen" || strings.HasPrefix(string(r.Name), "simulator:") || strings.HasPrefix(string(r.Name), "browser:") ||
-		r.Name == capacityResource:
+		r.Name == capacityResource || isCI(r.Name):
 		return r.DisplayName + " is found on the Mac by itself; choose another name."
 	case strings.TrimSpace(r.Description) == "":
 		return "Say what it is for, so agents know when to take it."

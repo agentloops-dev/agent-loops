@@ -131,6 +131,9 @@ type secretRecord struct {
 	Created  string              `json:"created,omitempty"`
 	Machines []string            `json:"machines,omitempty"`
 	LeftOn   []wire.SecretLeftOn `json:"leftOn,omitempty"`
+	// SavedBy is where it came from (#5308): an agent saved it on a machine, and a client of
+	// the person's took it. A set that takes no offer forgets it.
+	SavedBy *wire.SecretSavedBy `json:"savedBy,omitempty"`
 }
 
 func checkUser(user string) error {
@@ -186,7 +189,7 @@ func partKind(part wire.UserSettingsPartName) (string, bool) {
 	switch part {
 	case wire.UserSettingsPartNameMcpServers, wire.UserSettingsPartNameAgentConfig,
 		wire.UserSettingsPartNameRuntimes, wire.UserSettingsPartNameCostLimits, wire.UserSettingsPartNameNotifications,
-		wire.UserSettingsPartNameAccounts, wire.UserSettingsPartNameTimeZone:
+		wire.UserSettingsPartNameAccounts, wire.UserSettingsPartNameTimeZone, wire.UserSettingsPartNameEnvironment:
 		return "{", true
 	}
 	return "", false
@@ -219,6 +222,11 @@ func (b *Book) setPart(ctx context.Context, user string, part wire.UserSettingsP
 		}
 		if part == wire.UserSettingsPartNameAccounts {
 			if err := checkAccounts(value); err != nil {
+				return false, err
+			}
+		}
+		if part == wire.UserSettingsPartNameEnvironment {
+			if err := checkEnvironment(value); err != nil {
 				return false, err
 			}
 		}
@@ -281,6 +289,8 @@ func partOf(s *wire.UserSettings, part wire.UserSettingsPartName) *wire.JSONValu
 		return &s.Accounts
 	case wire.UserSettingsPartNameTimeZone:
 		return &s.TimeZone
+	case wire.UserSettingsPartNameEnvironment:
+		return &s.Environment
 	}
 	return nil
 }
@@ -440,6 +450,12 @@ func checkEnvelopes(values map[string]wire.SealedEnvelope) error {
 // it cannot see. A secret set again forgets
 // the machines that were removed with the old value on them: the person has changed it.
 func (b *Book) SetSecret(ctx context.Context, user string, set wire.UserSecretSet, allowed map[string]bool) error {
+	return b.SetSecretFrom(ctx, user, set, allowed, nil)
+}
+
+// SetSecretFrom is SetSecret for a secret that takes an agent's offer (#5308): savedBy is
+// where it came from (TakeOffer), kept for its row. Nil is SetSecret.
+func (b *Book) SetSecretFrom(ctx context.Context, user string, set wire.UserSecretSet, allowed map[string]bool, savedBy *wire.SecretSavedBy) error {
 	if err := checkUser(user); err != nil {
 		return err
 	}
@@ -482,6 +498,16 @@ func (b *Book) SetSecret(ctx context.Context, user string, set wire.UserSecretSe
 		if set.Version <= r.Version {
 			return nil, fmt.Errorf("%w: the secret changed in another app; load it again, then set it", ErrInvalid)
 		}
+		// An agent's secret never replaces one of the person's on its own (#5308): over a name
+		// the person has, an offer is taken only by Use the Agent's, at the version the person
+		// saw plus one. An app that takes it as a new name is refused.
+		if savedBy != nil && r.Sealed != nil && set.Version != r.Version+1 {
+			return nil, fmt.Errorf("%w: you have a secret with this name; choose Keep Yours or Use the Agent's", ErrInvalid)
+		}
+		if savedBy != nil && description == "" {
+			// Use the Agent's changes the value; the person's own description stays.
+			description = r.Description
+		}
 		var kind string
 		if set.Kind != nil {
 			kind = string(*set.Kind)
@@ -491,7 +517,7 @@ func (b *Book) SetSecret(ctx context.Context, user string, set wire.UserSecretSe
 			created = b.stamp()
 		}
 		r = secretRecord{Name: name, Version: set.Version, Kind: kind, NeedsApproval: set.NeedsApproval != nil && *set.NeedsApproval,
-			Description: description, Sealed: sealed, Updated: b.stamp(), Created: created, Machines: r.Machines}
+			Description: description, Sealed: sealed, Updated: b.stamp(), Created: created, Machines: r.Machines, SavedBy: savedBy}
 		return records.Encode(r)
 	})
 }
@@ -641,6 +667,7 @@ func (b *Book) Names(ctx context.Context, user string, machines []string) ([]wir
 		if r.Created != "" {
 			row.Created = new(r.Created)
 		}
+		row.SavedBy = r.SavedBy
 		for _, m := range r.Machines {
 			row.Machines = append(row.Machines, wire.MachineRef(m))
 		}

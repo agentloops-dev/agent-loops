@@ -26,7 +26,7 @@ import (
 // change to BotPermissions that adds a key, or makes one stronger, fails this test.
 var allowedBotPermissions = map[string]string{
 	"contents": "write", "pull_requests": "write", "issues": "write",
-	"checks": "read", "statuses": "read", "actions": "write", "workflows": "write",
+	"checks": "write", "statuses": "read", "actions": "write", "workflows": "write",
 }
 
 // The manifest asks for the fixed permissions only (#3858 acceptance 1).

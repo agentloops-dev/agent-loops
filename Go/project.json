@@ -1,0 +1,107 @@
+{
+  "name": "go",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "Go",
+  "implicitDependencies": [
+    "deploy",
+    "scripts",
+    "host"
+  ],
+  "namedInputs": {
+    "go-source": [
+      "{projectRoot}/**/*",
+      "!{projectRoot}/out/**/*",
+      "!{projectRoot}/coverage.out",
+      "!{projectRoot}/project.json",
+      "!{projectRoot}/internal/controlplane/walk/observability/run/**/*",
+      "generator-sources"
+    ],
+    "go-test-reads": [
+      "{workspaceRoot}/Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/**/*",
+      "{workspaceRoot}/Web/test/vectors.json",
+      "{workspaceRoot}/deploy/**/*",
+      "{workspaceRoot}/scripts/host-install.sh",
+      "{workspaceRoot}/scripts/perf-budgets.json",
+      "{workspaceRoot}/App/Resources/toolsets/**/*",
+      "{workspaceRoot}/Host/AgentsWatch/**/*",
+      "{workspaceRoot}/Web/src/protocol/generated.ts",
+      "{workspaceRoot}/Web/src/protocol/capabilities.generated.ts",
+      "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Daemon/Capabilities.generated.swift"
+    ]
+  },
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "Go/scripts/go.sh build ./...",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "go-source",
+        "{projectRoot}/project.json"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
+    },
+    "vet": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "Go/scripts/go.sh vet ./...",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "go-source",
+        "{projectRoot}/project.json"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "Go/scripts/go-test.sh -race",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "go-source",
+        "go-test-reads",
+        "{projectRoot}/project.json"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "scripts/lint.sh go govulncheck",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "go-toolchain",
+        "go-source",
+        "{projectRoot}/project.json",
+        "{workspaceRoot}/scripts/lint.sh",
+        {
+          "runtime": "date -u +%Y-%m-%d"
+        }
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen"
+      ]
+    }
+  }
+}

@@ -1,13 +1,13 @@
-// The one Line (#5036; specs/session-cards/spec.md, family 2): the record of what happened, with no box. A glyph,
-// a bold head, a quiet detail and at most one action link at the end. When it has more to show, a click on the
-// words opens it in place, under the words, and a small chevron says so. Red only on a failure's glyph and words
+// The one Line (#5036; specs/session-cards/spec.md, family 2): the record of what happened, with no box and no glyph
+// (#5675): a bold head, a quiet detail and at most one action link at the end. When it has more to show, a click on the
+// words opens it in place, under the words, and a small chevron says so. Red only on a failure's words
 // (#5016): the head, or the detail of a line with no head. Tool lines, thoughts, the plan line, notes, notified, a
 // report, the answered Ask's "You chose", and the sandbox and policy records are all drawn with it. The window and
 // the Remote draw the same in Shared/UI/Chat/RecordLine.swift.
 import { useSignal } from "@preact/signals";
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect } from "preact/hooks";
-import { Icon, type IconName } from "../Icon";
+import { Icon } from "../Icon";
 
 export interface LineAction {
   label: string;
@@ -16,10 +16,8 @@ export interface LineAction {
   run: () => void;
 }
 
-export function RecordLine({ icon, lead, head, detail, failure = false, oneLine = false, action, onClick, clickTitle,
+export function RecordLine({ lead, head, detail, failure = false, oneLine = false, action, onClick, clickTitle,
   openTitles = ["Show more", "Show less"], focused = false, extra, more }: {
-  /** Nil leaves the glyph's place empty. */
-  icon?: IconName | undefined;
   /** Plain words before the head: "You chose". */
   lead?: string | undefined;
   /** In bold; none for a line that is all detail (a tool line, a thought). */
@@ -62,7 +60,6 @@ export function RecordLine({ icon, lead, head, detail, failure = false, oneLine 
   return (
     <div class={`record-line${failure ? " failure" : ""}${extra ? ` ${extra}` : ""}`}>
       <div class="record-line-row">
-        <span class="record-line-glyph">{icon && <Icon name={icon} />}</span>
         {onClick
           ? <button type="button" class="record-line-open" title={clickTitle} onClick={onClick}>{words}</button>
           : opens
@@ -76,43 +73,3 @@ export function RecordLine({ icon, lead, head, detail, failure = false, oneLine 
     </div>
   );
 }
-
-/** Each line's glyph, by its Lucide name (design/icons.json); the window's are LineGlyph in RecordLine.swift. */
-export const lineGlyph = {
-  /** A tool call by its ACP kind: what it did, not which tool did it. */
-  tool(kind: string | undefined): IconName {
-    switch (kind?.toLowerCase()) {
-      case "read": return "file-text";
-      case "edit": return "pencil";
-      case "delete": return "trash-2";
-      case "move": return "square-arrow-right";
-      case "search": return "search";
-      case "execute": return "square-terminal";
-      case "fetch": return "globe";
-      case "think": return "brain";
-      default: return "hammer";
-    }
-  },
-  report(outcome: string): IconName {
-    switch (outcome) {
-      case "done": return "circle-check";
-      case "nothing_to_do": return "circle-dashed";
-      case "needs_answer": return "circle-help";
-      default: return "circle-pause";
-    }
-  },
-  notice(severity: string | undefined): IconName {
-    return severity === "error" ? "circle-alert" : severity === "warning" ? "triangle-alert" : "info";
-  },
-  thought: "brain",
-  plan: "square-check",
-  notified: "bell",
-  compaction: "scroll-text",
-  asked: "message-circle-question-mark",
-  answered: "undo-2",
-  note: "info",
-  background: "clock-fading",
-  failed: "circle-x",
-  stopped: "circle-stop",
-  loadFailure: "triangle-alert",
-} as const;

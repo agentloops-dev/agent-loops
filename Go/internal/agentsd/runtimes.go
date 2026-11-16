@@ -327,6 +327,10 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 	if account == nil && d.signInRefusedHere(r.ID) {
 		env = withoutRuntimeVariables(env)
 	}
+	// The repo's .agents/env, then the person's ~/.agents/env (#5259): after the login
+	// environment, before Agents' own, which come after and win. A name Agents sets is refused
+	// in both files, so this never sets what follows.
+	env = d.withPersonEnv(env, dir)
 	// The shipped MCP servers sit beside agentsd (~/.agents-server/bin), last on PATH.
 	if self, err := os.Executable(); err == nil {
 		env = appendPath(env, filepath.Dir(self))

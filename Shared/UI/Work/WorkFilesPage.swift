@@ -6,7 +6,8 @@ import SwiftUI
 /// request. The diff (`forge/diff`) is read from the machine that read the pull request, else
 /// from the first machine that answers, and drawn by `DiffFilesView`: the file list beside the
 /// diff on a wide page, *Files ▾* on a narrow one, headers that stay and fold. On the Mac the
-/// place, *Pull requests › #12 › Files changed*, and Refresh are the toolbar's. The diff is read
+/// place, *Pull requests › #12 › Files changed*, and Refresh are the toolbar's; on the Remote
+/// (#5479) the bar has ‹ *#12* and the page pulls to refresh, and *Files ▾* opens a sheet. The diff is read
 /// each time the page opens and is never kept, so it has no "Last update" line.
 struct WorkFilesPage: View {
     let model: any WorkModel
@@ -39,7 +40,12 @@ struct WorkFilesPage: View {
         .toolbar { toolbar }
         .toolbar(removing: .title)
         #else
+        .refreshable { asked += 1 }
         .navigationTitle("Files changed")
+        .navigationBarTitleDisplayMode(.inline)
+        // ‹ #12 takes the split view's own back, as on the pull request's page.
+        .navigationBarBackButtonHidden(true)
+        .toolbar { barItems }
         #endif
         .workTask(id: asked) { await load() }
     }
@@ -54,6 +60,29 @@ struct WorkFilesPage: View {
         ToolbarItemGroup(placement: .primaryAction) {
             WorkRefreshButton(running: reading) { asked += 1 }
         }
+    }
+    #endif
+
+    #if os(iOS)
+    /// ‹ *#12*: back to the pull request, the place before (#4402, as the Checks page).
+    @ToolbarContentBuilder
+    private var barItems: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            // An HStack, not a Label: the bar draws a Label's icon alone.
+            Button { back() } label: {
+                HStack(spacing: 4) {
+                    Image(icon: "chevron.left").fontWeight(.semibold)
+                    Text(WorkList.shortRef(ref))
+                }
+            }
+            .accessibilityLabel(WorkList.shortRef(ref))
+        }
+    }
+
+    private func back() {
+        let pull = WorkPlace(kind: .pr, ref: ref)
+        let history = model.workHistory
+        if history.canGoBack, history.places[history.at - 1] == pull { model.workHistory.back() } else { model.showWork(pull) }
     }
     #endif
 

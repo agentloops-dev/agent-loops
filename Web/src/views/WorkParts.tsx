@@ -132,17 +132,17 @@ export function FilterMenu({ label, value, choices, any, always, standard, onPic
   useEffect(() => {
     if (!open.value) return;
     const close = (e: Event) => { if (!anchor.current?.contains(e.target as Node)) open.value = null; };
-    const escape = (e: KeyboardEvent) => { if (e.key === "Escape") { open.value = null; anchor.current?.querySelector("button")?.focus(); } };
+    const onEscape = (e: KeyboardEvent) => { if (e.key === "Escape") { open.value = null; anchor.current?.querySelector("button")?.focus(); } };
     const away = () => { open.value = null; };
     addEventListener("pointerdown", close);
-    addEventListener("keydown", escape);
+    addEventListener("keydown", onEscape);
     addEventListener("resize", away);
     // A scroll of the page moves the button from under the list; the list's own scroll does not.
     const scrolled = (e: Event) => { if (!menu.current?.contains(e.target as Node)) away(); };
     addEventListener("scroll", scrolled, true);
     menu.current?.querySelector<HTMLElement>("[aria-checked=true], [role=menuitemradio]")?.focus();
     return () => {
-      removeEventListener("pointerdown", close); removeEventListener("keydown", escape);
+      removeEventListener("pointerdown", close); removeEventListener("keydown", onEscape);
       removeEventListener("resize", away); removeEventListener("scroll", scrolled, true);
     };
   }, [open.value !== null]);

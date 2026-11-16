@@ -12,7 +12,7 @@ that were active in the last N days, and prints:
 - waits, call to wake: each wait from its call to what woke the session, by
   event, and the share answered inside the call; with --forge, the lost waits
   (a wait on pr.merged or pr.closed that timed out after its PR merged or closed);
-- tool time by category (xcodebuild, swift test, go-changed, lint, gh, git,
+- tool time by category (nx.sh, xcodebuild, swift test, lint, gh, git,
   run-app, lease_resource, ...), with count, median, p90 and failures;
 - the slowest single calls, the commands run again and again in one session,
   and the sessions that ran longest.
@@ -71,10 +71,13 @@ def command_of(title: str) -> str:
 
 
 RULES: list[tuple[str, str]] = [
+    # Nx runs the builds and tests since #5631: its own category, before the tools it runs.
+    (r"nx\.sh", "check: nx.sh"),
     (r"xcodebuild\b.*\btest\b", "build: xcodebuild test"),
     (r"xcodebuild", "build: xcodebuild"),
     (r"swift\s+test", "test: swift test"),
     (r"swift\s+build", "build: swift build"),
+    # go-changed.sh and merge-wave.sh went in #5631; older sessions in the record ran them.
     (r"go-changed\.sh", "test: go-changed.sh"),
     (r"\bgo\s+(test|vet)\b|go\.sh\s+(test|vet)", "test: go test/vet"),
     (r"\bgo\s+build\b|go\.sh\s+build", "build: go build"),

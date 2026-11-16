@@ -166,7 +166,7 @@ struct ControlOverviewPage: View {
             SharedSectionLabel("Machines")
             ControlCard {
                 ControlRow(dot: .none, title: "\(count(control.hosts.count, "machine")) · \(control.onlineCount) online",
-                           detail: control.hosts.map(hostName).joined(separator: ", ")) { EmptyView() }
+                           detail: MachineNames.words(control.hosts.map(hostName))) { EmptyView() }
                 // Installed over a tunnel and not joined yet (#660): no machine in the sidebar
                 // yet, so this is where ssh's reason shows once Add a Machine is closed.
                 ForEach(control.status?.unjoinedTunnels ?? [], id: \.name) { pending in

@@ -294,13 +294,13 @@ func (d *Daemon) ShareBotKey() { d.goShareBotKey(false) }
 // goShareBotKey gives the key to the machines waiting for it (all: to every machine) in the
 // background, once at a time.
 func (d *Daemon) goShareBotKey(all bool) {
-	go func() {
+	d.goJob("share bot key", func() {
 		if !d.botRound.TryLock() {
 			return
 		}
 		defer d.botRound.Unlock()
 		d.shareBotKey(all, time.Now())
-	}()
+	})
 }
 
 // shareBotKeyDue is the clock's turn: the waiting machines every 15 minutes, all every 6 hours.
