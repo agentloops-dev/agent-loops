@@ -169,21 +169,9 @@ struct FolderAgentsView: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                Text(current?.name ?? summary?.name ?? "Project")
-                    .appText(.title).fontWeight(.semibold)
-                    .lineLimit(1)
-                Image(icon: "chevron.up.chevron.down")
-                    .imageScale(.small)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-            .contentShape(Rectangle())
+            TitleMenuLabel(title: current?.name ?? summary?.name ?? "Project")
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .titleMenu()
         .help("Start the session in another project")
         .accessibilityLabel("Project: \(current?.name ?? summary?.name ?? "none")")
     }
@@ -321,10 +309,41 @@ struct FolderAgentsView: View {
         SidebarOrder.label(folder) { model.hosts.label($0) }
     }
 
-    /// `~/Agents · this Mac`, or the path and the server's name.
-    private func place(_ summary: DaemonAPI.FolderSummary) -> String {
-        let machine = summary.host == .mac ? "this Mac" : model.hosts.label(summary.host)
+    private func place(_ summary: DaemonAPI.FolderSummary) -> String { Self.place(summary, hosts: model.hosts) }
+
+    /// `~/Agents · this Mac`, or the path and the server's name; New Session in Background's too (#5798).
+    static func place(_ summary: DaemonAPI.FolderSummary, hosts: HostSet) -> String {
+        let machine = summary.host == .mac ? "this Mac" : hosts.label(summary.host)
         return "\(FolderPlace.path(summary.folder.folder, on: summary.host)) · \(machine)"
+    }
+}
+
+/// New Session's title as a menu: the name, large, and a small chevron (#3279); New Session in
+/// Background's folder menu too (#5798).
+struct TitleMenuLabel: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .appText(.title).fontWeight(.semibold)
+                .lineLimit(1)
+            Image(icon: "chevron.up.chevron.down")
+                .imageScale(.small)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// A `Menu` drawn as New Session's title: no button frame, no indicator, its own size.
+    func titleMenu() -> some View {
+        menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
     }
 }
 

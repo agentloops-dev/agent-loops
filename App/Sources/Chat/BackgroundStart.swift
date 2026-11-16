@@ -49,7 +49,7 @@ struct BackgroundStartWindow: View {
         VStack(spacing: 6) {
             if let summary {
                 folderMenu(summary)
-                Text(place(summary))
+                Text(FolderAgentsView.place(summary, hosts: model.hosts))
                     .appText(.supporting)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -100,21 +100,9 @@ struct BackgroundStartWindow: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                Text(label(summary))
-                    .appText(.title).fontWeight(.semibold)
-                    .lineLimit(1)
-                Image(icon: "chevron.up.chevron.down")
-                    .imageScale(.small)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-            .contentShape(Rectangle())
+            TitleMenuLabel(title: label(summary))
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .titleMenu()
         .help("Start the session in another folder")
         .accessibilityLabel("Folder: \(label(summary))")
     }
@@ -143,11 +131,5 @@ struct BackgroundStartWindow: View {
 
     private func label(_ folder: DaemonAPI.FolderSummary) -> String {
         SidebarOrder.label(folder) { model.hosts.label($0) }
-    }
-
-    /// `~/Agents · this Mac`, or the path and the server's name, as New Session's.
-    private func place(_ summary: DaemonAPI.FolderSummary) -> String {
-        let machine = summary.host == .mac ? "this Mac" : model.hosts.label(summary.host)
-        return "\(FolderPlace.path(summary.folder.folder, on: summary.host)) · \(machine)"
     }
 }
