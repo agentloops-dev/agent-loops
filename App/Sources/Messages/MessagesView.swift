@@ -21,17 +21,17 @@ final class MessagesListState {
 
     var ask: [String] { [String(asked), String(unreadOnly)] }
     var rows: [MessagesList.Row] { MessagesList.merged(lists ?? [], source: source) }
-    var hasMore: Bool { lists?.contains { $0.cursor != nil } ?? false }
+    /// Where the next page of messages/conversationsAll starts (#5571); none at the end.
+    var nextCursor: String?
+    var hasMore: Bool { lists != nil && nextCursor != nil }
 
     func load(model: AppModel) async {
         let asked = asked
         let unread = unreadOnly
         lists = nil
-        let read = await Self.read(model.messagesMachines, model: model) { _ in
-            DaemonAPI.MessagesConversationsRequest(limit: 50, unread: unread ? true : nil)
-        }
+        let (read, cursor) = await Self.read(model: model, unread: unread)
         // A newer Refresh wins.
-        if asked == self.asked, unread == unreadOnly { lists = read }
+        if asked == self.asked, unread == unreadOnly { lists = read; nextCursor = cursor }
     }
 
     /// A read marked the conversation `key` read (#5137): its count goes to 0 here, and the sidebar's is read again.
@@ -71,55 +71,32 @@ final class MessagesListState {
         asked += 1
     }
 
-    /// The next page of each machine that has one, after its own.
+    /// The read's next page, after the pages before.
     func more(model: AppModel) async {
-        guard let lists, !loadingMore else { return }
+        guard let lists, let cursor = nextCursor, !loadingMore else { return }
         loadingMore = true
         defer { loadingMore = false }
         let unread = unreadOnly
-        let machines = model.messagesMachines.filter { m in lists.contains { $0.host == m.id && $0.cursor != nil } }
-        let cursors = Dictionary(lists.map { ($0.host, $0.cursor) }, uniquingKeysWith: { a, _ in a })
-        let got = await Self.read(machines, model: model) { host in
-            DaemonAPI.MessagesConversationsRequest(cursor: cursors[host] ?? nil, limit: 50, unread: unread ? true : nil)
-        }
-        self.lists = lists.map { list in
-            guard let next = got.first(where: { $0.host == list.host }) else { return list }
-            var list = list
-            list.conversations += next.conversations
-            list.cursor = next.cursor
-            list.errors = next.errors
-            list.problem = next.problem
-            return list
-        }
+        let (read, next) = await Self.read(model: model, unread: unread, cursor: cursor, into: lists)
+        guard unread == unreadOnly else { return }
+        self.lists = read
+        nextCursor = next
     }
 
-    private static func read(_ machines: [(id: MachineRef, name: String)], model: AppModel,
-                             request: (MachineRef) -> DaemonAPI.MessagesConversationsRequest)
-        async -> [MessagesList.HostConversations] {
-        var got: [(host: MachineRef, list: DaemonAPI.MessagesConversations?, problem: String?)] = []
-        await withTaskGroup(of: (MachineRef, DaemonAPI.MessagesConversations?, String?).self) { group in
-            for machine in machines {
-                let asked = request(machine.id)
-                group.addTask {
-                    do {
-                        return (machine.id, try await model.messages(DaemonAPI.Method.messagesConversations, asked,
-                                                                     returning: DaemonAPI.MessagesConversations.self,
-                                                                     on: machine.id), nil)
-                    } catch {
-                        return (machine.id, nil, error.localizedDescription)
-                    }
-                }
-            }
-            for await (host, list, problem) in group { got.append((host, list, problem)) }
+    /// Every machine's conversations in one call to the control plane (#5571): the first page, or the one after
+    /// `cursor`, added to `into`; and where the next page starts. A failed call is a line of its own.
+    private static func read(model: AppModel, unread: Bool, cursor: String? = nil,
+                             into: [MessagesList.HostConversations] = [])
+        async -> (lists: [MessagesList.HostConversations], cursor: String?) {
+        guard !model.messagesMachines.isEmpty else { return (into, nil) }
+        do {
+            let got = try await model.messagesAll(DaemonAPI.MessagesConversationsAllRequest(unread: unread ? true : nil,
+                                                                                         limit: 50, cursor: cursor))
+            return (MessagesList.hostConversations(got, into: into, thisMac: model.thisMacHostID), got.cursor)
+        } catch {
+            return (into + [.init(host: MachineRef(rawValue: ""), name: "Control plane", problem: error.localizedDescription)],
+                    nil)
         }
-        let read = machines.compactMap { m -> MessagesList.HostConversations? in
-            guard let one = got.first(where: { $0.host == m.id }) else { return nil }
-            guard let list = one.list else { return .init(host: m.id, name: m.name, problem: one.problem) }
-            return .init(host: m.id, name: m.name, conversations: list.conversations, cursor: list.cursor,
-                         errors: list.errors ?? [])
-        }
-        // The machines' own order: this Mac first, so its copy of a conversation is the one kept.
-        return read
     }
 }
 
@@ -187,7 +164,7 @@ private struct MessagesListPane: View {
                     Task { await list.markAllRead(model: model) }
                 }
                 .linkStyle()
-                .disabled(list.markingAll || !MessagesList.hasUnread(list.lists ?? []))
+                .disabled(list.markingAll || !(MessagesList.hasUnread(list.lists ?? []) || list.hasMore))
                 .help(MessagesList.markAllHelp)
             }
             Button("Refresh") { list.asked += 1 }
@@ -501,32 +478,23 @@ struct MessagesRow: View {
     private func read(_ machines: [(id: MachineRef, name: String)]) async {
         guard !machines.isEmpty else { unread = nil; last = nil; return }
         let model = model
-        var lists: [MessagesList.HostConversations] = []
+        // One call for every machine's count (#5571); a failed one leaves the count out. This Mac first, so its copy
+        // of a conversation is the one counted, as the page keeps it.
+        async let all = try? model.messagesAll(DaemonAPI.MessagesConversationsAllRequest(unread: true, limit: 50))
         var events: [Event] = []
-        await withTaskGroup(of: (MessagesList.HostConversations?, [Event]).self) { group in
+        await withTaskGroup(of: [Event].self) { group in
             for machine in machines {
                 group.addTask {
-                    async let list = try? model.messages(DaemonAPI.Method.messagesConversations,
-                                                         DaemonAPI.MessagesConversationsRequest(limit: 50, unread: true),
-                                                         returning: DaemonAPI.MessagesConversations.self, on: machine.id)
-                    async let page = try? model.client(for: machine.id).call(DaemonAPI.Method.eventsList,
-                                                                              DaemonAPI.EventsListRequest(),
-                                                                              returning: DaemonAPI.EventsPage.self)
-                    let conversations = await list
-                    return (conversations.map { .init(host: machine.id, name: machine.name, conversations: $0.conversations) },
-                            await page?.events ?? [])
+                    let page = try? await model.client(for: machine.id).call(DaemonAPI.Method.eventsList,
+                                                                             DaemonAPI.EventsListRequest(),
+                                                                             returning: DaemonAPI.EventsPage.self)
+                    return page?.events ?? []
                 }
             }
-            for await (list, page) in group {
-                if let list { lists.append(list) }
-                events += page
-            }
+            for await page in group { events += page }
         }
-        // This Mac first, so its copy of a conversation is the one counted, as the page keeps it.
-        lists.sort { a, b in
-            (machines.firstIndex { $0.id == a.host } ?? 0) < (machines.firstIndex { $0.id == b.host } ?? 0)
-        }
-        unread = lists.isEmpty ? nil : MessagesList.unreadTotal(lists) ?? 0
+        let lists = await all.map { MessagesList.hostConversations($0, thisMac: model.thisMacHostID) }
+        unread = lists.map { $0.isEmpty ? 0 : MessagesList.unreadTotal($0) ?? 0 }
         last = MessagesList.lastConsequence(events)
     }
 }
