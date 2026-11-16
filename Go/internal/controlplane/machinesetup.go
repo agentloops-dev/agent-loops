@@ -124,9 +124,12 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 		step.FromPool = true
 	}
 	if step.State == r.State {
-		// Said again, as a progress line.
-		step.Detail = detail
-		step.Error = problem
+		// Said again, as a progress line. One with no words (the host says steps 1 and 2 are
+		// done when it has joined) keeps the words the step has.
+		if r.Detail != nil || r.Error != nil {
+			step.Detail = detail
+			step.Error = problem
+		}
 		return 0, false, nil
 	}
 	if step.State == wire.MachineSetupStateDone {
@@ -183,18 +186,55 @@ func (st *storedSetup) compared(r wire.MachineSetupReport) wire.MachineSetupRepo
 	return r
 }
 
-// expectDigits keeps the digits a machine the control plane made must show, and makes its
-// set-up when it has none.
-func (s *Service) expectDigits(ctx context.Context, host, digits string) {
+// madeMachineJoined is a machine the control plane made, as it enrols: steps 1 and 2 are done
+// (step 1 is, by now, when the control plane that made it went away before it said so), and
+// the digits it must show at step 4 are kept. It makes the set-up when there is none.
+func (s *Service) madeMachineJoined(ctx context.Context, host, digits string) {
+	var took time.Duration
+	var finished bool
 	_, err := s.changeMachineSetup(ctx, host, true, func(st *storedSetup) error {
 		st.Expect = digits
+		now := time.Now()
+		for _, id := range []wire.MachineSetupStepID{wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin} {
+			step := st.Steps[stepIndex(id)]
+			if step.State == wire.MachineSetupStateDone {
+				continue
+			}
+			detail := "Joined the control plane"
+			if id == wire.MachineSetupStepIDCreate {
+				detail = "Made"
+			}
+			// A failed step (the wait for it ran out) is done after all: it joined.
+			if step.State == wire.MachineSetupStateFailed {
+				st.Steps[stepIndex(id)].State = wire.MachineSetupStateRunning
+				st.Steps[stepIndex(id)].Error = ""
+			}
+			d, done, err := st.report(wire.MachineSetupReport{Step: id, State: wire.MachineSetupStateDone, Detail: &detail}, now)
+			if err != nil {
+				return err
+			}
+			if id == wire.MachineSetupStepIDJoin {
+				took, finished = d, done
+			}
+		}
 		return nil
 	})
 	if err != nil {
-		s.log("machine " + host + ": the digits to compare could not be kept: " + err.Error())
+		s.log("machine " + host + ": its set-up could not be kept as it joined: " + err.Error())
 		return
 	}
+	if finished {
+		s.noteSetupTime(ctx, wire.MachineSetupStepIDJoin, took)
+	}
 	s.setupChanged(ctx, host)
+}
+
+// madeStep is the providers' SetupStep hook (#5765): a step of a machine the control plane is
+// making (1, create machine, and 2 until it joins), before the machine is a host.
+func (s *Service) madeStep(host string, report wire.MachineSetupReport) {
+	if err := s.setupStep(context.Background(), host, report); err != nil {
+		s.log("machine " + host + ": set-up step " + string(report.Step) + " could not be kept: " + err.Error())
+	}
 }
 
 // retry makes the first failed step, and every one after it, wait again.
@@ -396,6 +436,10 @@ func (s *Service) machineSetup(ctx context.Context, host string) *wire.MachineSe
 
 // setupChanged tells the clients, as any change of a machine is told.
 func (s *Service) setupChanged(ctx context.Context, host string) {
+	if s.records.Host(host) == nil {
+		// A machine being made has not joined yet (#5765): its row comes with its join.
+		return
+	}
 	described := map[string]any{}
 	for k, v := range s.router.Described(host) {
 		described[k] = v
