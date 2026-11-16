@@ -35,7 +35,8 @@
   font: inherit; opacity: 0.6; padding: 2px 10px; cursor: pointer; }
 .file-diff .fold:hover { opacity: 1; background: var(--paper-wash); }
 .file-diff .gap { padding: 2px 10px; opacity: 0.5; }
-.folder-list {
+/* The New Folder sheet's chooser; not the sidebar's .folder-list, which fills its height (#5728). */
+.folder-choices {
   display: flex;
   flex-direction: column;
   height: 260px;
