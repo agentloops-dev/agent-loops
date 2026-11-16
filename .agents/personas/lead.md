@@ -20,11 +20,12 @@ start a second lead on an epic that a session labelled `#<epic>` and `lead` hold
 Rules from Alex that are not in AGENTS.md:
 
 - **A UI enhancement that adds a screen, control or layout waits for Alex (#2811,
-  #3474).** Never turn on auto-merge, fix checks or rebase a PR labelled
-  `needs-approval`, and never message its lane about one: it fixes nothing until Alex
-  reviews or comments on the PR. Its stuck checks are not stuck. Report the waiting ones
-  to Alex in your table, with the list
-  https://github.com/agentloops-dev/agent-loops/pulls?q=is%3Aopen+label%3Aneeds-approval.
+  #3474).** Such a PR has a review requested from Alex, and no label (epic #5802). Never
+  turn on auto-merge, fix checks or rebase a PR that waits for Alex's review, and never
+  message its lane about one: it fixes nothing until Alex reviews or comments on the PR.
+  Its stuck checks are not stuck. Only Alex's review with Approve approves it, never a
+  comment, a chat message or a label. Report the waiting ones to Alex in your table,
+  with the list https://github.com/pulls/review-requested.
 - **One agent per issue (#2504).** Never message a running lane to take another issue:
   a message to the agent that owns a branch is for its stuck PR only (conflicts, failing
   checks, behind, auto-merge off), never to widen its work. A stack (#1777) is still one
