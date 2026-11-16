@@ -730,7 +730,7 @@ func forgeItemOf(i githubmcp.Item, folder string) wire.ForgeItem {
 		out.Assignees = []string{}
 	}
 	if i.PR {
-		withPriorityLabels(&out)
+		withPlanLabels(&out, forgeOwn{})
 		out.Draft, out.AutoMerge = new(i.Draft), new(i.AutoMerge)
 		out.Checks, out.Review, out.Mergeable = optional(i.Checks), optional(i.Review), optional(i.Mergeable)
 		withPullRefs(&out, i.HeadRef, i.BaseRef, i.MergedBy, i.MergeCommit)
@@ -741,6 +741,8 @@ func forgeItemOf(i githubmcp.Item, folder string) wire.ForgeItem {
 		parent = new(forgeRepo{"github", strings.ToLower(i.ParentRepo)}.issue(i.ParentNumber))
 	}
 	withHierarchy(&out, parent, i.SubTotal, i.SubDone)
+	out.Priority = optional(i.Priority)
+	withPlanLabels(&out, forgeOwn{priority: i.PriorityField})
 	return out
 }
 
@@ -759,7 +761,7 @@ func gitlabItemOf(i gitlabmcp.Item, folder string) wire.ForgeItem {
 		out.Assignees = []string{}
 	}
 	if i.MR {
-		withPriorityLabels(&out)
+		withPlanLabels(&out, forgeOwn{})
 		out.Draft, out.AutoMerge = new(i.Draft), new(i.AutoMerge)
 		out.Checks, out.Review, out.Mergeable = optional(i.Checks), optional(i.Review), optional(i.Mergeable)
 		withPullRefs(&out, i.HeadRef, i.BaseRef, i.MergedBy, i.MergeCommit)
@@ -770,6 +772,7 @@ func gitlabItemOf(i gitlabmcp.Item, folder string) wire.ForgeItem {
 		parent = new(forgeRepo{"gitlab", strings.ToLower(i.ParentProject)}.issue(i.ParentNumber))
 	}
 	withHierarchy(&out, parent, i.SubTotal, i.SubDone)
+	withPlanLabels(&out, forgeOwn{})
 	return out
 }
 
@@ -787,6 +790,8 @@ func linearItemOf(i linearmcp.Item, folder string) wire.ForgeItem {
 		parent = new(linearNode(i.Parent))
 	}
 	withHierarchy(&out, parent, i.SubTotal, i.SubDone)
+	// Linear has a priority on every issue, and no hold state.
+	withPlanLabels(&out, forgeOwn{priority: true})
 	return out
 }
 
@@ -804,6 +809,11 @@ func jiraItemOf(i jiramcp.Item, folder string) wire.ForgeItem {
 		parent = new(jiraNode(i.Parent))
 	}
 	withHierarchy(&out, parent, i.SubTotal, i.SubDone)
+	// Jira has no hold of its own; a status named On hold is the usual one.
+	if isHoldName(i.Status) {
+		out.OnHold = new(true)
+	}
+	withPlanLabels(&out, forgeOwn{priority: i.PriorityField})
 	return out
 }
 

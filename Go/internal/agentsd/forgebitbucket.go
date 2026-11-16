@@ -497,11 +497,17 @@ func bitbucketItemOf(i bitbucketmcp.Item, folder string) wire.ForgeItem {
 		out.Draft, out.AutoMerge = new(i.Draft), new(false)
 		out.Checks, out.Review, out.Mergeable = optional(i.Checks), optional(i.Review), optional(i.Mergeable)
 		withPullRefs(&out, i.HeadRef, i.BaseRef, "", i.MergeCommit)
-		withPriorityLabels(&out)
+		withPlanLabels(&out, forgeOwn{})
 		return out
 	}
 	// An issue's level and feature are its labels' (its component); Bitbucket has no parent.
 	withHierarchy(&out, nil, 0, 0)
+	// An issue's priority and its state on hold are Bitbucket's own; it has no labels.
+	out.Priority = optional(i.Priority)
+	if i.OnHold {
+		out.OnHold = new(true)
+	}
+	withPlanLabels(&out, forgeOwn{priority: true, hold: true})
 	return out
 }
 

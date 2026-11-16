@@ -51,9 +51,11 @@ type Item struct {
 	Milestone string
 	// MilestoneDue is that fix version's release date, "" for none; Priority is high, medium or low, "" for none (#5688).
 	MilestoneDue, Priority string
-	Labels                 []string
-	Assignees              []string
-	Comments               int
+	// PriorityField says the issue has a priority field: its project uses one (#5747).
+	PriorityField bool
+	Labels        []string
+	Assignees     []string
+	Comments      int
 	// Parent is the issue it is a sub-task or a child of, by key; SubTotal and SubDone are its
 	// sub-tasks and the done ones.
 	Parent            string
@@ -171,6 +173,7 @@ func (r restIssue) item(site string) Item {
 		i.Milestone, i.MilestoneDue = f.FixVersions[0].Name, f.FixVersions[0].ReleaseDate
 	}
 	if f.Priority != nil {
+		i.PriorityField = true
 		switch strings.ToLower(strings.TrimSpace(f.Priority.Name)) {
 		case "highest", "high":
 			i.Priority = "high"

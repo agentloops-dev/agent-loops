@@ -406,3 +406,18 @@ func TestItemDates(t *testing.T) {
 		t.Fatalf("pull %+v, issue %+v", pr, issue)
 	}
 }
+
+// #5747: an issue's priority field (major, the default, is none) and its state on hold.
+func TestIssuePriorityAndHold(t *testing.T) {
+	for _, c := range []struct {
+		state, priority, want string
+		hold                  bool
+	}{
+		{"on hold", "blocker", "high", true}, {"open", "critical", "high", false}, {"new", "major", "", false},
+		{"open", "minor", "low", false}, {"resolved", "trivial", "low", false},
+	} {
+		if got := (issueJSON{State: c.state, Priority: c.priority}).forgeItem("w/r"); got.Priority != c.want || got.OnHold != c.hold {
+			t.Errorf("%s %s: %q %v", c.state, c.priority, got.Priority, got.OnHold)
+		}
+	}
+}
