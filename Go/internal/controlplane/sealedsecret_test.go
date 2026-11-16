@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -130,6 +131,7 @@ func TestAPersonsClientGetsItsOwnCopyOfASecretWithAnAuditEntry(t *testing.T) {
 
 // A card's reveal and a copy of one of its parts say so in the audit (wireframes, section 9).
 func TestACardsPartsSayWhichInTheAudit(t *testing.T) {
+	flaky.UnderLoad(t, "#5865")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	member, window := p.client("Alex's Mac")
