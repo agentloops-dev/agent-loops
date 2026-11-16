@@ -52,9 +52,24 @@ func withHierarchy(i *wire.ForgeItem, parent *wire.LineageNode, total, done int)
 			i.Standing = new(true)
 		}
 	}
+	withPriorityLabels(i)
 	i.Parent = parent
 	if total > 0 {
 		i.Progress = &wire.ForgeProgress{Done: int64(done), Total: int64(total)}
+	}
+}
+
+// withPriorityLabels sets an item's priority from its labels priority:high, priority:medium and
+// priority:low (any case), the higher of two, unless the forge's own priority field set it (#5688).
+func withPriorityLabels(i *wire.ForgeItem) {
+	if i.Priority != nil {
+		return
+	}
+	for _, p := range []string{"high", "medium", "low"} {
+		if hasLabel(*i, "priority:"+p) {
+			i.Priority = &p
+			return
+		}
 	}
 }
 
