@@ -277,23 +277,3 @@ struct MachinePickerList: View {
         }
     }
 }
-
-/// A machine's state dot: green online, amber needing an update, grey stopped, red anything else that does not answer.
-struct MachinePickerDot: View {
-    let dot: MachinePickerChoice.Dot
-
-    init(_ machine: DaemonAPI.ControlMachine) { dot = MachinePickerChoice.dot(machine) }
-
-    var body: some View {
-        Circle().fill(tint).frame(width: 7, height: 7).accessibilityHidden(true)
-    }
-
-    private var tint: AnyShapeStyle {
-        switch dot {
-        case .online: StateTint.vouched.style(or: .secondary)
-        case .attention: StateTint.attention.style(or: .secondary)
-        case .stopped: AnyShapeStyle(.tertiary)
-        case .offline: StateTint.failure.style(or: .secondary)
-        }
-    }
-}
