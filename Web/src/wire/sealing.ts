@@ -5,12 +5,14 @@
 // the same. HPKE is @hpke/core over WebCrypto: DHKEM(P-256, HKDF-SHA256), HKDF-SHA256, AES-256-GCM.
 import { Aes256Gcm, CipherSuite, DhkemP256HkdfSha256, HkdfSha256 } from "@hpke/core";
 import type { Base64, OrgRouteKind, UserSealedSecret, OrgRouteSettings, OrgRouteVendor, SealedEnvelope, SealingAddItem, SealingItem, SealRecipient,
-  SealingWork } from "../protocol/generated";
+  SealingWork, SecretOffer } from "../protocol/generated";
 import { base64, hex, utf8 } from "./bytes";
 import type { KeyRecord } from "./keys";
 
 export const orgRoutePurpose = "com.alexecollins.agents.orgroute.v3";
 export const userSecretPurpose = "com.alexecollins.agents.usersecret.v1";
+/** An agent's secret, sealed by its machine to the person's clients only (#5308). */
+export const agentSecretPurpose = "com.alexecollins.agents.agentsecret.v1";
 
 const suite = new CipherSuite({ kem: new DhkemP256HkdfSha256(), kdf: new HkdfSha256(), aead: new Aes256Gcm() });
 
@@ -49,6 +51,11 @@ export async function orgRouteAD(route: RouteBinding, recipient: string, field: 
 /** Ask before use (#4014) adds "|ask", as Go's UserSecretADAsk, so a flag the control plane changed does not open. */
 export function userSecretAD(user: string, recipient: string, name: string, version: number, ask = false): Uint8Array {
   return utf8(`usersecret.v1|${user}|${recipient}|${name}|${version}${ask ? "|ask" : ""}`);
+}
+
+/** Go's controllink.AgentSecretAD (#5308): the person, the machine, this client, the name and the offer, and "|ask". */
+export function agentSecretAD(user: string, machine: string, recipient: string, name: string, offer: string, ask = false): Uint8Array {
+  return utf8(`agentsecret.v1|${user}|${machine}|${recipient}|${name}|${offer}${ask ? "|ask" : ""}`);
 }
 
 function fromBase64(text: string): Uint8Array {
@@ -139,4 +146,11 @@ export async function sealWork(record: KeyRecord, work: SealingWork): Promise<Se
     out.push({ item: item.item, id: item.id, version: item.version, values: sealed });
   }
   return out;
+}
+
+/** An agent's secret that its machine sealed to this page (#5308), opened with this page's own key: in memory only. */
+export async function openOffer(record: KeyRecord, user: string, offer: SecretOffer): Promise<string> {
+  if (!offer.mine) throw new Error("The machine sealed no copy to this browser.");
+  const ad = agentSecretAD(user, offer.machine, clientRecipient(record.client), offer.name, offer.offer, offer.needsApproval === true);
+  return new TextDecoder().decode(await open(record, agentSecretPurpose, ad, offer.mine));
 }

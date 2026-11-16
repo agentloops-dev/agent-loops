@@ -23,6 +23,9 @@ const (
 	OrgRoutePurpose = "com.alexecollins.agents.orgroute.v3"
 	// UserSecretPurpose is HPKE's info a person's own secret is sealed under (#3397).
 	UserSecretPurpose = "com.alexecollins.agents.usersecret.v1"
+	// AgentSecretPurpose is HPKE's info a machine seals an agent's secret under, to its
+	// person's clients only (#5308, specs/5308-agent-secrets-sync).
+	AgentSecretPurpose = "com.alexecollins.agents.agentsecret.v1"
 )
 
 // MachineRecipient and ClientRecipient name what a value is sealed to, as the associated
@@ -86,6 +89,18 @@ func UserSecretAD(user, recipient, name string, version int64) []byte {
 // a flag the control plane turned on or off does not open. Off is UserSecretAD as before.
 func UserSecretADAsk(user, recipient, name string, version int64, needsApproval bool) []byte {
 	ad := UserSecretAD(user, recipient, name, version)
+	if needsApproval {
+		ad = append(ad, "|ask"...)
+	}
+	return ad
+}
+
+// AgentSecretAD is the associated data of an agent's secret that a machine sealed to one of
+// its person's clients (#5308): the person, the machine, the client, the name and the offer,
+// and "|ask" when Ask before use is on. A copy moved to another offer, another name or
+// another machine's row does not open.
+func AgentSecretAD(user, machine, recipient, name, offer string, needsApproval bool) []byte {
+	ad := fmt.Appendf(nil, "agentsecret.v1|%s|%s|%s|%s|%s", user, machine, recipient, name, offer)
 	if needsApproval {
 		ad = append(ad, "|ask"...)
 	}
