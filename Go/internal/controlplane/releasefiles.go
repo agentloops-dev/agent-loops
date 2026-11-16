@@ -79,14 +79,14 @@ func (rf *releaseFiles) serve(w http.ResponseWriter, r *http.Request) {
 		plain(w, http.StatusNotFound, "this control plane has no such file\n")
 		return
 	}
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G703: path is built from a checked version and file name
 	if err != nil {
 		plain(w, http.StatusNotFound, "this control plane has no such file\n")
 		return
 	}
 	defer f.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
-	http.NewResponseController(w).SetWriteDeadline(time.Now().Add(downloadWriteTimeout))
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(downloadWriteTimeout))
 	http.ServeContent(w, r, name, time.Time{}, f)
 }
 
@@ -124,7 +124,7 @@ func (rf *releaseFiles) find(ctx context.Context, version, name string) (string,
 // SHA256SUMS, and keeps it. A file whose sum does not match is not kept.
 func (rf *releaseFiles) fetch(ctx context.Context, version, name string) error {
 	dir := filepath.Join(rf.folder, version)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // G7xx: built from a checked version and file name, never a request path
 		return err
 	}
 	base := rf.source + "/v" + version + "/"
@@ -138,7 +138,7 @@ func (rf *releaseFiles) fetch(ctx context.Context, version, name string) error {
 			return err
 		}
 	}
-	text, err := os.ReadFile(sums)
+	text, err := os.ReadFile(sums) //nolint:gosec // G7xx: built from a checked version and file name, never a request path
 	if err != nil {
 		return err
 	}
@@ -153,11 +153,11 @@ func (rf *releaseFiles) fetch(ctx context.Context, version, name string) error {
 // download copies url to dest through a temporary file, and renames it into place when it
 // is whole and, given a sum, matches it. It says the file's sum.
 func (rf *releaseFiles) download(ctx context.Context, url, dest string, limit int64, want ...string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil) //nolint:gosec // G7xx: built from a checked version and file name, never a request path
 	if err != nil {
 		return "", err
 	}
-	resp, err := rf.http.Do(req)
+	resp, err := rf.http.Do(req) //nolint:gosec // G704: the url is the release source plus a checked version and file name
 	if err != nil {
 		return "", err
 	}
@@ -185,10 +185,11 @@ func (rf *releaseFiles) download(ctx context.Context, url, dest string, limit in
 	if len(want) > 0 && sum != want[0] {
 		return "", fmt.Errorf("%s does not match its checksum", url)
 	}
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+	// A release file is public: G302 is no concern.
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil { //nolint:gosec // G302: public file
 		return "", err
 	}
-	return sum, os.Rename(tmp.Name(), dest)
+	return sum, os.Rename(tmp.Name(), dest) //nolint:gosec // G7xx: built from a checked version and file name, never a request path
 }
 
 // prune keeps the folders of this release and of the newest one before it.
@@ -208,7 +209,7 @@ func (rf *releaseFiles) prune() {
 	slices.SortFunc(others, compareVersions)
 	if len(others) > 1 {
 		for _, old := range others[:len(others)-1] {
-			os.RemoveAll(filepath.Join(rf.folder, old))
+			_ = os.RemoveAll(filepath.Join(rf.folder, old))
 		}
 	}
 }
@@ -226,6 +227,6 @@ func sumLine(sums, name string) string {
 }
 
 func fileExists(p string) bool {
-	fi, err := os.Stat(p)
+	fi, err := os.Stat(p) //nolint:gosec // G7xx: built from a checked version and file name, never a request path
 	return err == nil && fi.Mode().IsRegular()
 }

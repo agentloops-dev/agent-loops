@@ -578,7 +578,7 @@ func settleSelfUpdates(app, running, settingsFile string, swap func(a, b string)
 		if err := writeSelfUpdateSettings(settingsFile, settings); err != nil {
 			log.Printf("self-update: %v", err)
 		}
-		os.RemoveAll(work)
+		_ = os.RemoveAll(work)
 		back = true
 	}
 	return keep, back
@@ -676,25 +676,4 @@ func (d *Daemon) toldRelease(params json.RawMessage) {
 	if u := d.selfUpdateState.updater; u != nil {
 		u.Named(r.Version)
 	}
-}
-
-// controlSources are the addresses of the control plane this host joined, from its root's
-// membership, or none when it has not joined one (#5786).
-func controlSources(root string) []releaseSource {
-	member, err := controllink.LoadMembership(root)
-	if err != nil || member == nil {
-		return nil
-	}
-	var out []releaseSource
-	for _, e := range member.EndpointsToDial() {
-		if !strings.HasPrefix(e.URL, "https://") && !strings.HasPrefix(e.URL, "http://") {
-			continue
-		}
-		src := releaseSource{base: e.URL}
-		if e.Pin != nil {
-			src.pin = *e.Pin
-		}
-		out = append(out, src)
-	}
-	return out
 }

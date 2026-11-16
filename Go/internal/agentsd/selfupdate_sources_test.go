@@ -24,9 +24,9 @@ func releasesServer(t *testing.T, prefix string, sumOf, zip []byte, hits *atomic
 		hits.Add(1)
 		switch req.URL.Path {
 		case prefix + "SHA256SUMS":
-			w.Write([]byte(hex.EncodeToString(sum[:]) + "  Agent-Loops-0.12.0.zip\n"))
+			_, _ = w.Write([]byte(hex.EncodeToString(sum[:]) + "  Agent-Loops-0.12.0.zip\n"))
 		case prefix + "Agent-Loops-0.12.0.zip":
-			w.Write(zip)
+			_, _ = w.Write(zip)
 		default:
 			http.NotFound(w, req)
 		}

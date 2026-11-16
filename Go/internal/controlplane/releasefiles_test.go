@@ -29,12 +29,12 @@ func releaseRig(t *testing.T, version string, files map[string]string, sumOf map
 		hits.Add(1)
 		dir := "/v" + version + "/"
 		if r.URL.Path == dir+"SHA256SUMS" {
-			io.WriteString(w, sums)
+			_, _ = io.WriteString(w, sums)
 			return
 		}
 		for name, body := range files {
 			if r.URL.Path == dir+name {
-				io.WriteString(w, body)
+				_, _ = io.WriteString(w, body)
 				return
 			}
 		}
@@ -91,7 +91,7 @@ func TestReleaseFileOnlyForItsOwnRelease(t *testing.T) {
 func TestReleaseFilesKeepOwnAndTheOneBefore(t *testing.T) {
 	rf, _ := releaseRig(t, "0.12.0", map[string]string{"a.zip": "x"}, nil)
 	for _, v := range []string{"0.9.0", "0.10.0", "0.11.0"} {
-		os.MkdirAll(filepath.Join(rf.folder, v), 0o755)
+		_ = os.MkdirAll(filepath.Join(rf.folder, v), 0o750)
 	}
 	if code, _ := getRelease(rf, "0.12.0", "a.zip"); code != 200 {
 		t.Fatal(code)
