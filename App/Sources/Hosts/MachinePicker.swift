@@ -30,7 +30,7 @@ struct MachinePicker: View {
             HStack(spacing: 6) {
                 if let row = value.flatMap({ model.hosts.controlRows[$0] }) { MachinePickerDot(row) }
                 Text(title ?? value.map { model.hosts.label($0) } ?? any?.title ?? placeholder).appText(.reading).lineLimit(1)
-                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(.secondary)
+                Image(icon: "chevron.down").glyph(size: 8, weight: .semibold).foregroundStyle(.secondary).accessibilityHidden(true)
             }
         }
         .accessibilityLabel(label)
@@ -197,7 +197,7 @@ struct MachinePickerList: View {
                 HStack {
                     Text(any.title).lineLimit(1)
                     Spacer()
-                    if value == nil { Image(systemName: "checkmark").foregroundStyle(.secondary) }
+                    if value == nil { Image(icon: "checkmark").foregroundStyle(.secondary) }
                 }
                 if let help = any.help { Text(help).appText(.fine).foregroundStyle(.secondary) }
             }
@@ -219,14 +219,14 @@ struct MachinePickerList: View {
                     Text(name).lineLimit(1)
                     Spacer()
                     Text(MachineListChoice.stateWords(machine)).appText(.fine).foregroundStyle(.secondary).lineLimit(1)
-                    if machine.id == value { Image(systemName: "checkmark").foregroundStyle(.secondary) }
+                    if machine.id == value { Image(icon: "checkmark").foregroundStyle(.secondary) }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(machine.id == value ? .isSelected : [])
             Button { pinned = MachinePickerChoice.togglePin(WindowDefaults.store, machine.id.rawValue) } label: {
-                Image(systemName: isPinned ? "star.fill" : "star")
+                Image(icon: isPinned ? "pin.fill" : "pin")
                     .foregroundStyle(isPinned ? StateTint.attention.style(or: .secondary) : AnyShapeStyle(.tertiary))
             }
             .buttonStyle(.plain)

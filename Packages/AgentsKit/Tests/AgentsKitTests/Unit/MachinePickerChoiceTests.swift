@@ -44,10 +44,8 @@ struct MachinePickerChoiceTests {
         #expect(MachinePickerChoice.dot(made("a", "offline")) == .offline)
     }
 
-    @Test func recentKeepsTheLastFiveNewestFirstAndAPinToggles() throws {
-        let name = "MachinePickerChoiceTests.\(UUID().uuidString)"
-        let store = try #require(UserDefaults(suiteName: name))
-        defer { store.removePersistentDomain(forName: name) }
+    @Test func recentKeepsTheLastFiveNewestFirstAndAPinToggles() {
+        let store = MemoryDefaults()
         for id in ["1", "2", "3", "4", "5", "6", "3"] { MachinePickerChoice.remember(store, id) }
         #expect(MachinePickerChoice.recent(store) == ["3", "6", "5", "4", "2"])
         #expect(MachinePickerChoice.togglePin(store, "a") == ["a"])
