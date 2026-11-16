@@ -7838,7 +7838,11 @@ export interface LockJoinNonce {
  * answeredBy is that signer's client id; reveal is the asking client's nonce, once it showed it.
  * Each screen makes the six digits from key, reveal and nonce. machine is set when a machine asks
  * (#3491, D3): client is then the machine's id, kind is unknown, and a signer approves it with an
- * addMachine whose key and sealing key are both key, the machine's own.
+ * addMachine whose key and sealing key are both key, the machine's own. compared is set on a
+ * machine's request when the control plane made that machine and its set-up's compare step showed
+ * the digits the control plane made from its join token (#5359, #5776): a signer then sends its
+ * nonce and, once the machine's reveal checks against its commitment, approves it by itself, with
+ * no card for the person. The control plane still signs nothing.
  */
 export interface LockJoinRequest {
   request: string;
@@ -7852,6 +7856,7 @@ export interface LockJoinRequest {
   nonce?: Base64;
   answeredBy?: string;
   reveal?: Base64;
+  compared?: boolean;
 }
 
 /** lock/join's answer (#3490): the request, and when it ends unanswered. */
@@ -18226,7 +18231,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LockJoinDecided: { required: ["request", "result"], optional: [] },
   LockJoinEnd: { required: ["request"], optional: [] },
   LockJoinNonce: { required: ["request", "nonce"], optional: [] },
-  LockJoinRequest: { required: ["request", "client", "name", "kind", "key", "commitment", "expires"], optional: ["machine", "nonce", "answeredBy", "reveal"] },
+  LockJoinRequest: { required: ["request", "client", "name", "kind", "key", "commitment", "expires"], optional: ["machine", "nonce", "answeredBy", "reveal", "compared"] },
   LockJoinStarted: { required: ["request", "expires"], optional: [] },
   LockSignature: { required: ["at", "key", "sig"], optional: ["to"] },
   MCPAddAnswer: { required: [], optional: ["server", "error"] },
