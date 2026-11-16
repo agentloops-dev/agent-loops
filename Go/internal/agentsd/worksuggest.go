@@ -30,11 +30,11 @@ const suggestLeadsPlans = 4
 // dismissedLeadsFile is the person's list of dismissed epics, under their home's .agents.
 const dismissedLeadsFile = "dismissed-leads.json"
 
-// dismissedLead is what an epic was when it was dismissed: it comes back when that changes.
+// dismissedLead is an epic's progress when it was dismissed: it comes back when that changes
+// (#5731). Its update time is not kept: a comment or a label changes it, so it came back in hours.
 type dismissedLead struct {
-	UpdatedAt wire.Date `json:"updatedAt"`
-	Done      int64     `json:"done"`
-	Total     int64     `json:"total"`
+	Done  int64 `json:"done"`
+	Total int64 `json:"total"`
 }
 
 func (d *Daemon) registerWorkSuggestLeads() {
@@ -72,8 +72,8 @@ func (d *Daemon) writeDismissedLeads(m map[string]dismissedLead) error {
 	return store.WriteAtomically(d.dismissedLeadsPath(), append(b, '\n'), 0o600)
 }
 
-// workDismissLead hides an epic until it changes (its update time or its progress) or a lead of
-// it has ended.
+// workDismissLead hides an epic until its progress changes (done or total children) or a lead of
+// it has ended (#5731).
 func (d *Daemon) workDismissLead(ctx context.Context, r wire.WorkDismissLeadRequest) (wire.ForgeDone, error) {
 	const method = "work/dismiss-lead"
 	epics, _, err := d.suggestEpics(ctx, nil)
@@ -89,7 +89,7 @@ func (d *Daemon) workDismissLead(ctx context.Context, r wire.WorkDismissLeadRequ
 	suggestedLeadMu.Lock()
 	defer suggestedLeadMu.Unlock()
 	m := d.readDismissedLeads()
-	m[r.Node.Ref] = dismissedLead{UpdatedAt: epic.UpdatedAt, Done: p.Done, Total: p.Total}
+	m[r.Node.Ref] = dismissedLead{Done: p.Done, Total: p.Total}
 	if err := d.writeDismissedLeads(m); err != nil {
 		return wire.ForgeDone{}, Invalid("%s: %v", method, err)
 	}
@@ -166,7 +166,8 @@ func (d *Daemon) workSuggestLeads(ctx context.Context, r wire.WorkSuggestLeadsRe
 	suggestedLeadMu.Unlock()
 	open = slices.DeleteFunc(open, func(e wire.ForgeItem) bool {
 		x, ok := dismissed[e.Node.Ref]
-		return ok && x == dismissedLead{UpdatedAt: e.UpdatedAt, Done: progressOf(e).Done, Total: progressOf(e).Total}
+		p := progressOf(e)
+		return ok && x == dismissedLead{Done: p.Done, Total: p.Total}
 	})
 
 	// Each one's plan, a few at once, for its children's labels.
