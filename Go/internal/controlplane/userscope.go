@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/audit"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/kms"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/usersettings"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -109,10 +110,41 @@ func (m *Methods) userMethod(ctx context.Context, method string, params json.Raw
 		if err != nil {
 			return nil, err
 		}
-		if err := book.SetSecret(ctx, user, request, recipientIDs(m.s.userRecipients(user))); err != nil {
+		var savedBy *wire.SecretSavedBy
+		if request.Offer != nil {
+			by, err := book.TakeOffer(ctx, user, string(*request.Offer), string(request.Name))
+			if err != nil {
+				return nil, offerFailure(err)
+			}
+			savedBy = &by
+		}
+		if err := book.SetSecretFrom(ctx, user, request, recipientIDs(m.s.userRecipients(user)), savedBy); err != nil {
 			return nil, userFailure(err)
 		}
 		m.s.log("secret " + string(request.Name) + " set for " + user)
+		if request.Offer != nil {
+			m.s.offerGone(ctx, user, string(*request.Offer), from.Client, "Took an agent's secret")
+		}
+		m.s.userChanged(user, nil, true, from.Client)
+		return wire.Empty{}, nil
+	case "user/secretOffers":
+		client := m.records.Client(strings.ToUpper(from.Client))
+		if client == nil || user == "" || m.s.PersonOf(client.ID) != user || m.s.isBot(user) {
+			return wire.SecretOffers{Offers: []wire.SecretOffer{}}, nil
+		}
+		rows, err := book.Offers(ctx, user, controllink.ClientRecipient(client.ID))
+		if err != nil {
+			return nil, userFailure(err)
+		}
+		return wire.SecretOffers{Offers: rows, User: &user}, nil
+	case "user/dropSecretOffer":
+		request, err := require[wire.SecretOfferRequest](params, "SecretOfferRequest")
+		if err != nil {
+			return nil, err
+		}
+		if !m.s.offerGone(ctx, user, string(request.Offer), from.Client, "Kept your secret over an agent's") {
+			return nil, fail(noSuchSecret, "That agent's secret is not waiting any more.")
+		}
 		m.s.userChanged(user, nil, true, from.Client)
 		return wire.Empty{}, nil
 	case "user/removeSecret":
@@ -131,6 +163,87 @@ func (m *Methods) userMethod(ctx context.Context, method string, params json.Raw
 		return wire.Empty{}, nil
 	}
 	return nil, fail(methodNotFound, "No method %s.", method)
+}
+
+// offerFailure is TakeOffer's error as words for the client.
+func offerFailure(err error) error {
+	if errors.Is(err, usersettings.ErrNoOffer) {
+		return fail(noSuchSecret, "That agent's secret is not waiting any more: another app of yours took it, or the machine saved it again.")
+	}
+	return userFailure(err)
+}
+
+// offerGone removes an offer that a client took or dropped, and writes the audit entry: the
+// name and the machine, never the value. It says whether the offer was there.
+func (s *Service) offerGone(ctx context.Context, user, offer, client, action string) bool {
+	gone, err := s.users.DropOffer(ctx, user, offer)
+	if err != nil {
+		if !errors.Is(err, usersettings.ErrNoOffer) {
+			s.log("an agent's secret for " + user + " could not be removed: " + err.Error())
+		}
+		return false
+	}
+	target := gone.Name + " · " + gone.MachineName
+	s.auditWriter.Add(audit.Pending{Method: "user/secretOffers", Action: action, Host: gone.Machine,
+		Who: func() (wire.AuditActor, *string) { return s.actorFor(client), &target }})
+	s.log(fmt.Sprintf("%s: %s from %s for %s", action, gone.Name, gone.MachineName, user))
+	return true
+}
+
+// offerSecret is machine/offerSecret (#5308): an agent on host saved a secret, sealed to its
+// person's clients only. Kept, audited, and the person's clients told. A bot's machine has no
+// client of its own to take it.
+func (m *Methods) offerSecret(ctx context.Context, host string, params json.RawMessage) (any, error) {
+	request, err := require[wire.AgentSecretOffer](params, "AgentSecretOffer")
+	if err != nil {
+		return nil, err
+	}
+	user := m.s.ownerOf(host)
+	if user == "" || m.s.users == nil {
+		return nil, fail(notPermitted, "This machine has no person to give its secrets to.")
+	}
+	allowed := map[string]bool{}
+	for _, r := range m.s.userRecipients(user) {
+		if machineOfRecipient(r.ID) == "" {
+			allowed[r.ID] = true
+		}
+	}
+	name := host
+	if h := m.records.Host(host); h != nil && h.Name != "" {
+		name = h.Name
+	}
+	offered, err := m.s.users.Offer(ctx, user, host, name, request, allowed)
+	if err != nil {
+		return nil, userFailure(err)
+	}
+	target := offered.Name + " · " + offered.MachineName
+	if offered.Agent != "" {
+		target += " · session " + offered.Agent
+	}
+	actor := m.s.personActor(user)
+	m.s.auditWriter.Add(audit.Pending{Method: "machine/offerSecret", Action: "An agent saved a secret", Host: host,
+		Who: func() (wire.AuditActor, *string) { return actor, &target }})
+	m.s.log(fmt.Sprintf("an agent on %s saved %s for %s", name, offered.Name, user))
+	m.s.wantSealingBy(user, "offer|"+user+"|"+string(request.Offer))
+	// The person's clients read again, and the machine is told its offer waits.
+	m.s.userChanged(user, nil, true, host)
+	return wire.Empty{}, nil
+}
+
+// secretClients is machine/secretClients (#5308): the person's clients that have a key, to
+// seal an agent's secret to. Never a machine: a machine does not seal to another machine.
+func (m *Methods) secretClients(host string) (any, error) {
+	user := m.s.ownerOf(host)
+	if user == "" {
+		return nil, fail(notPermitted, "This machine has no person to give its secrets to.")
+	}
+	clients := []wire.SealRecipient{}
+	for _, r := range m.s.userRecipients(user) {
+		if machineOfRecipient(r.ID) == "" {
+			clients = append(clients, r)
+		}
+	}
+	return wire.SealRecipients{Recipients: clients, User: &user}, nil
 }
 
 // sealedSecret is user/sealedSecret (#5112, #5114): a person's own client gets its own
@@ -291,6 +404,10 @@ func (s *Service) sendUserSettings(host string, always bool) {
 		recipient = controllink.MachineRecipient(host)
 	}
 	delivery, waiting, err := s.users.Delivery(ctx, user, recipient)
+	if err == nil && recipient != "" {
+		// The offers of this machine's that wait (#5308): it keeps its own copy of each.
+		delivery.OffersWaiting, err = s.users.WaitingOffers(ctx, user, host)
+	}
 	if err != nil {
 		s.log("user settings for " + host + " could not be read: " + err.Error())
 		return
@@ -364,6 +481,12 @@ func (s *Service) machineLeft(host, user, name string) {
 	had, err := s.users.Left(ctx, user, host, name)
 	if err != nil {
 		s.log("the secrets on " + host + " could not be noted: " + err.Error())
+	}
+	// Its agents' secrets that no client took go with it (#5308).
+	if n, err := s.users.DropMachineOffers(ctx, user, host); err != nil {
+		s.log("the agents' secrets of " + host + " could not be removed: " + err.Error())
+	} else if n > 0 {
+		s.log(fmt.Sprintf("%s was removed with %d agents' secrets waiting; they went with it", host, n))
 	}
 	if len(had) == 0 {
 		return
