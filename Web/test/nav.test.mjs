@@ -36,6 +36,10 @@ test("every page has a title, and its group headings come in order", () => {
   assert.deepEqual(n.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts", "environment", "features"],
     "Status is status only (#3998), with Secrets and Accounts after Events (#4161), then Environment (#5260), then Features (#5280)");
   assert.ok(n.navPages.reports.every((p) => p.id !== "events"), "Events left Reports ▸ Records (#3998)");
+  assert.deepEqual(n.navPages.reports.filter((p) => p.group === "Output").map((p) => p.id),
+    ["outcomes", "summary", "delivery", "builds", "environments"],
+    "Summary is a report, after Outcomes and its Multiplier and Velocity, as the window's Reports has it (#5729)");
+  assert.ok(n.navPages.agents.every((p) => p.id !== "summary"), "and not an Agents page (#5729)");
   assert.deepEqual(n.groupedPages(n.navPages.settings).map(([g]) => g), ["You", "Settings", "Organisation"], "You first (#3998)");
   assert.deepEqual(n.navPages.settings.filter((p) => p.group === "You").map((p) => p.id), ["mcp", "secrets", "accounts", "environment"],
     "Connectors, Secrets (#3632) and Accounts (#3967) are the person's own settings (#3998)");
@@ -63,6 +67,7 @@ test("each section is its own address, and #/ is the Overview", async () => {
     assert.deepEqual(r.parseRoute("#/setup/accounts"), { nav: "status", section: "accounts" }, "the Accounts page (#5258)");
     assert.deepEqual(r.parseRoute("#/reports/events"), { nav: "status", section: "events" }, "Events left Reports ▸ Records (#3998)");
     assert.deepEqual(r.parseRoute("#/reports/spend"), { nav: "reports", section: "spend" });
+    assert.deepEqual(r.parseRoute("#/agents/summary"), { nav: "reports", section: "summary" }, "the Summary page moved to Reports (#5729)");
     assert.equal(r.routeHash({ nav: "settings", section: "policy" }, undefined), "#/settings/policy");
     assert.equal(r.routeHash({}, undefined), "#/");
     assert.deepEqual(r.parseRoute(r.routeHash({ nav: "reports", section: "a b" }, undefined)), { nav: "reports", section: "a b" });
