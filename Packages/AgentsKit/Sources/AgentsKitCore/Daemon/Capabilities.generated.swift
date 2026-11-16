@@ -145,6 +145,7 @@ public enum Capability {
     public static let machineAgentSecrets1 = "machine.agent-secrets/1"
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
+    public static let machinesAll1 = "machines.all/1"
     public static let machines1 = "machines/1"
     public static let machines2 = "machines/2"
     public static let mailbox1 = "mailbox/1"
@@ -760,6 +761,7 @@ public enum Capability {
         "clients/startPairing": "clients/1",
         "clients/stopPairing": "clients/1",
         "clients/webPushKey": "clients/1",
+        "connections/listAll": "machines.all/1",
         "console/fleet": "console/1",
         "console/live": "console/1",
         "console/stopAgent": "console/1",
@@ -779,7 +781,10 @@ public enum Capability {
         "deploys/deliveryAll": "deploys.read/1",
         "deploys/sync": "deploys.copy/1",
         "docs/listAll": "docs.all/1",
+        "events/listAll": "machines.all/1",
         "folders/detected": "folders/1",
+        "forge/boardsAll": "machines.all/1",
+        "forge/listAll": "machines.all/1",
         "git/credential": "git/1",
         "governance/approvals": "governance/1",
         "governance/decide": "governance/1",
@@ -793,6 +798,7 @@ public enum Capability {
         "groups/set": "groups/1",
         "groups/setRole": "org-identity/1",
         "handover/status": "handover/1",
+        "lineage/forecastAll": "machines.all/1",
         "lineage/sessionsOn": "lineage.read/2",
         "lineage/sync": "lineage.graph/1",
         "lineage/walkAll": "lineage.read/2",
@@ -928,6 +934,7 @@ public enum Capability {
         "readApi/revoke": "readapi/1",
         "reports/deleteView": "reports.views/1",
         "reports/export": "reports/2",
+        "reports/featuresAll": "machines.all/1",
         "reports/nodes": "reports.nodes/2",
         "reports/policy": "reports.scope/1",
         "reports/saveView": "reports.views/2",
