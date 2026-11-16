@@ -57,6 +57,9 @@
 @media (prefers-color-scheme: dark) {
   .work-label.coloured { background: var(--chip-fill-dark); border-color: var(--chip-border-dark); color: var(--chip-ink-dark); }
 }
+/* The priority chip (#5690): the label chip with the state tint in its text and line, never in its fill. */
+.work-priority.is-high { color: var(--tint-failure); border-color: var(--line-failure); }
+.work-priority.is-medium { color: var(--tint-warning); border-color: var(--line-warning); }
 .work-state { display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 0.8em; line-height: 1.6; color: var(--paper-on-fill); background: var(--forge-fill-draft); }
 .work-state.open { background: var(--forge-fill-open); }
 .work-state.merged { background: var(--forge-fill-done); }

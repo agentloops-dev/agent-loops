@@ -104,7 +104,11 @@ test("a step counts its children, and one all done starts folded", () => {
   assert.equal(p.startsFolded(plan.steps[1], plan), false);
   assert.equal(p.moreWords(19), "9 more");
   assert.equal(p.moreWords(10), undefined);
-  assert.equal(p.priorityLabel(item(5, "open", { labels: [{ name: "bug" }, { name: "priority:high" }] }))?.name, "priority:high");
+  // The chip reads ForgeItem.priority, not the label's name (#5690).
+  assert.equal(p.priorityWords(item(5, "open", { labels: [{ name: "priority:high" }] }).priority), undefined);
+  assert.equal(p.priorityWords("high"), "High");
+  assert.equal(p.priorityWords("medium"), "Medium");
+  assert.equal(p.priorityWords("low"), "Low");
 });
 
 test("a standing epic's header has no end", () => {
