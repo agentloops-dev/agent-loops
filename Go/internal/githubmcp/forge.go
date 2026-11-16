@@ -21,6 +21,8 @@ type SearchFilter struct {
 	PRs                                      bool
 	State                                    string
 	Label, Assignee, Query, Feature, Project string
+	// Reviewer is a login a review is requested from (#5803), "" for any.
+	Reviewer string
 }
 
 // Item is an issue or a pull request as the forge reads list it.
@@ -342,6 +344,10 @@ func SearchQuery(repos []string, f SearchFilter) string {
 	}
 	if f.Assignee != "" {
 		words = append(words, "assignee:"+f.Assignee)
+	}
+	if f.Reviewer != "" {
+		// Asked of the person, not of a team of theirs; GitHub drops it once they review.
+		words = append(words, "user-review-requested:"+f.Reviewer)
 	}
 	if f.Project != "" {
 		words = append(words, "project:"+f.Project)

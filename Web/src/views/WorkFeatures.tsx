@@ -30,7 +30,7 @@ import { Icon } from "./Icon";
 
 // The list's state lives for the tab, so Back from an epic's page finds it as it was left.
 const features = signal<ForgeFeature[] | null>(null);
-/** The open pull requests labelled needs-approval, of every machine (#4115). */
+/** The open pull requests with a review requested from the person, of every machine (#4115, #5803). */
 const approvals = signal<string[]>([]);
 const errors = signal<string[]>([]);
 /** The features a person opened (true) or folded (false), until the page is read again (note 3). */

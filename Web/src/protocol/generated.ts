@@ -5657,8 +5657,8 @@ export interface ForgeFeature {
 /**
  * forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or
  * closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull
- * requests labelled needs-approval (#4115), so a client finds the sessions labelled P#<n> for them;
- * errors says a forge that could not be read, as in ForgeList.
+ * requests with a review requested from the person (#4115, #5803), so a client finds the sessions
+ * labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
  */
 export interface ForgeFeatures {
   features: ForgeFeature[];
@@ -6654,7 +6654,10 @@ export interface LineageCostNode {
    * start when askedAt is unknown.
    */
   openedAt?: WireDate;
-  /** When a PR was labelled needs-approval (#4553), from pr.labelled: the approval wait's start. */
+  /**
+   * When a review was first requested from the person on a PR (#4553, #5803), from
+   * review.requested: the approval wait's start.
+   */
   askedAt?: WireDate;
   /**
    * A PR's first answer by a person (#4553): the first pr.reviewed or pr.commented at or after the
@@ -6732,9 +6735,9 @@ export interface LineageDelivery {
    */
   flowEfficiency: LineageDeliveryFigure;
   /**
-   * The approval wait (#4553), in seconds: from a PR's needs-approval label (its opening when the
-   * label is unknown) to its first answer by a person; the median, and p90. Counted by the answer's
-   * time.
+   * The approval wait (#4553), in seconds: from the review requested from the person on a PR (its
+   * opening when no request is known, #5803) to its first answer by a person; the median, and p90.
+   * Counted by the answer's time.
    */
   approvalWait: LineageDeliveryFigure;
   /**
@@ -12371,8 +12374,8 @@ export interface Request {
   /** The session that asked. */
   askedBy?: UUID;
   /**
-   * A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request
-   * labelled needs-approval.
+   * A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request with a
+   * review requested from the person (#5803).
    */
   forge?: RequestForge;
   /** Every session that waits on it; the asker first. Kept as history once it ends. */
@@ -12402,8 +12405,9 @@ export interface RequestAnswer {
 }
 
 /**
- * A needs-approval pull request's answer: approve adds approved, changes adds changes-wanted; the
- * note is the person's comment on it.
+ * An answer to a pull request with a review requested from the person (#5803): only their review of
+ * the head, approve an Approve and changes a Request changes; the note is the review's words. Their
+ * own pull request takes no review from them.
  */
 export interface RequestApprovalAnswer {
   action: "approve" | "changes";
@@ -12455,7 +12459,10 @@ export interface RequestForge {
   item: "issue" | "pr";
   number: number;
   url: string;
-  /** alex-todo, needs-account or needs-approval. */
+  /**
+   * alex-todo or needs-account on an issue; review-requested on a pull request with a review
+   * requested from the person (#5803), which is no label.
+   */
   label: string;
   /** An issue's lines under its first "## What <name> does" heading. */
   checklist: RequestChecklistLine[];
@@ -12705,8 +12712,8 @@ export interface ReviewOpenRequest {
 }
 
 /**
- * An open pull request labelled needs-approval, a UI change waiting for the person (#2811), in the
- * sidebar's For Review (#3330) until it is labelled approved or changes-wanted, is closed, or is
+ * An open pull request with a review requested from the person (#5803), a UI change waiting for
+ * them (#2811), in the sidebar's For Review (#3330) until they review it, it is closed, or it is
  * dismissed.
  */
 export interface ReviewPull {

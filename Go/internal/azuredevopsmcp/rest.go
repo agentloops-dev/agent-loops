@@ -396,6 +396,12 @@ func (p pullJSON) labels() []string {
 	return out
 }
 
+// personAsked says a person, not a group, is a reviewer who has not voted (#5803): it waits
+// for them.
+func (p pullJSON) personAsked() bool {
+	return slices.ContainsFunc(p.Reviewers, func(r reviewerJSON) bool { return !r.IsContainer && r.Vote == 0 && !r.HasDeclined })
+}
+
 // changesRequested: a reviewer voted waiting for author (-5) or rejected (-10).
 func (p pullJSON) changesRequested() bool {
 	return slices.ContainsFunc(p.Reviewers, func(r reviewerJSON) bool { return r.Vote <= -5 })
@@ -620,7 +626,7 @@ func (f *RealAzureDevOps) OpenPRs(ctx context.Context, repo string) ([]OpenPR, e
 	for _, p := range list {
 		out = append(out, OpenPR{PR: f.pr(repo, p), Author: p.CreatedBy.name(), Draft: p.IsDraft, Conflicts: conflicts(p),
 			HeadSHA: p.head(), Trusted: trustedPR(p),
-			SkipsBlocked: mcpevents.SkipsBlocked(p.IsDraft, p.labels()), ChangesRequested: p.changesRequested()})
+			SkipsBlocked: mcpevents.SkipsBlocked(p.IsDraft, p.personAsked()), ChangesRequested: p.changesRequested()})
 	}
 	return out, nil
 }
