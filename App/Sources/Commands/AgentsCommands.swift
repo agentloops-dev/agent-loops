@@ -363,6 +363,14 @@ struct AgentsCommands: Commands {
                 .keyboardShortcut(MenuKeys.openFile)
                 .disabled(model.selectedAgent == nil)
             Divider()
+            // Along every page the window showed (#5784), as the toolbar's ‹ ›.
+            Button("Back") { model.goBack() }
+                .keyboardShortcut(MenuKeys.back)
+                .disabled(!model.canGoBack)
+            Button("Forward") { model.goForward() }
+                .keyboardShortcut(MenuKeys.forward)
+                .disabled(!model.canGoForward)
+            Divider()
             // ⌥⌘↓ and ⌥⌘↑ go through the list in front: a Work page's list while one opened
             // from it is shown (#3257), else the folder's sessions. One item per key, so the
             // window never sees the key twice.

@@ -4,7 +4,7 @@ import SwiftUI
 /// Work (#3119, spec 3100), as the web page's Work section: Issues and Pull requests from every
 /// machine's forges (`forge/issues`, `forge/pulls`), one row per ref, with what lineage knows
 /// (`reports/nodes`) under each title; Releases from lineage alone. A row opens the
-/// item's page; Back and Forward go along the places, as a browser's. One view for the Mac's
+/// item's page; Back and Forward go along the places, as a browser's (on the Mac, the window's, #5784). One view for the Mac's
 /// window and the Remote (#3256): on a phone the filters scroll sideways and a row wraps.
 struct WorkView: View {
     let model: any WorkModel
@@ -64,21 +64,22 @@ struct WorkView: View {
         return place.kind.title
     }
 
+    /// The Remote's list has Back and Forward along Work's places; the Mac window's are its own,
+    /// along every page (#5784).
     private static func history(_ place: WorkPlace) -> Bool {
         #if os(iOS)
         place.ref == nil
         #else
-        true
+        false
         #endif
     }
 
-    /// Back and Forward: beside the window's title on the Mac, at the bar's end on the Remote,
-    /// whose start is its own way back to the sidebar.
+    /// Back and Forward at the bar's end on the Remote, whose start is its own way back to the sidebar.
     private static var historyPlacement: ToolbarItemPlacement {
         #if os(iOS)
         .topBarTrailing
         #else
-        .navigation
+        .automatic
         #endif
     }
 }
