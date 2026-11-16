@@ -17,7 +17,8 @@ import { ReportsPane } from "./Reports";
 import { BackToList } from "./BackToList";
 import { Modal } from "./Modal";
 import { folderKey, folderPath } from "../model/groups";
-import { filteredTo, nameLimit } from "../model/machineNames";
+import { filteredTo, firstOf, nameLimit } from "../model/machineNames";
+import { ShowAll } from "./ShowAll";
 import { accountChoices, accountRows, accountState, agentsHolding, allowanceLine, allowancePace, allowancePaceLine, pastWeeksLine, defaultAccountName, isOrgRow, orgAllowanceLine, ownRow, ownSignInID, reachesFoot, reachesTheModelBy, machineSignInLine, offersMachineSignIn, removeMessage, rowTitle, runtimeTime, runtimesHint, runtimesReadAt, machinesSummary, machinesWords, setupRuntimes, signInOnTheMac, type MachinesPart, type SetupRuntime } from "../model/runtimes";
 import { LastUpdate } from "./LastUpdate";
 import { signInRuntime } from "./RuntimeSignInDialog";
@@ -358,6 +359,9 @@ export function ActivityPageView({ store, page, inReport = false }: { store: Sto
   const pane = useSignal<"events" | "audit">("events");
   // Cost, or Reports: every person's machines, from the control plane (#1811).
   const costPane = useSignal<"cost" | "reports">("cost");
+  // Pass-through and MCP show three machines, then Show all (#5620).
+  const allPassThrough = useSignal(false);
+  const allMCP = useSignal(false);
   return (
     <section class={`chat activity-page ${page}-page`} aria-label={pageTitles[page]}>
       <header class="column-head page-head"><BackToList />
@@ -406,18 +410,26 @@ export function ActivityPageView({ store, page, inReport = false }: { store: Sto
                 </>;
               })()}
               {/* The person's own pass-through names, a name the policy refuses dimmed (#998), for each machine that has any. */}
-              {store.hosts.value.filter((h) => (store.passThrough.value[h.id] ?? []).length > 0).map((h) => (
-                <section key={h.id}>
-                  {several && <h2 class="section-head">{hostName(h.id)}</h2>}
-                  <PassThroughList names={store.passThrough.value[h.id] ?? []} />
-                </section>
-              ))}
+              {(() => {
+                const withNames = store.hosts.value.filter((h) => (store.passThrough.value[h.id] ?? []).length > 0);
+                return <>
+                  {firstOf(withNames, allPassThrough.value).map((h) => (
+                    <section key={h.id}>
+                      {several && <h2 class="section-head">{hostName(h.id)}</h2>}
+                      <PassThroughList names={store.passThrough.value[h.id] ?? []} />
+                    </section>
+                  ))}
+                  <ShowAll count={withNames.length} all={allPassThrough.value} toggle={() => { allPassThrough.value = !allPassThrough.value; }} />
+                </>;
+              })()}
             </section>
           )}
           {page === "mcp" && (
             <>
               <p class="hint">{personalIntro(store.hasMac.value)}</p>
-              {store.hosts.value.map((host) => (
+              {/* The machines with connectors of their own matter most, so they come first (#5620). */}
+              {firstOf([...store.hosts.value].sort((a, b) => Number(personalServers(store.mcpHealthOf(b.id)).length > 0)
+                - Number(personalServers(store.mcpHealthOf(a.id)).length > 0)), allMCP.value).map((host) => (
                 <section key={host.id}>
                   {several && <h2 class="section-head">{hostName(host.id)}</h2>}
                   {store.has(host.id, Capability.connections1)
@@ -427,6 +439,7 @@ export function ActivityPageView({ store, page, inReport = false }: { store: Sto
                   <MCPServersList store={store} host={host.id} />
                 </section>
               ))}
+              <ShowAll count={store.hosts.value.length} all={allMCP.value} toggle={() => { allMCP.value = !allMCP.value; }} />
               {store.hosts.value.every((host) => personalServers(store.mcpHealthOf(host.id)).length === 0) && (
                 <p class="hint">{personalEmpty}</p>
               )}

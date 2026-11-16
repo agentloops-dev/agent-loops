@@ -21,3 +21,19 @@ test("the more link opens the Machines page with the set as its filter", () => {
   assert.deepEqual(m.hostsOf(m.filteredTo(["a", "b"]).query), ["a", "b"]);
   assert.deepEqual(m.hostsOf(undefined), []);
 });
+
+test("and before the last name, up to three (#5620)", () => {
+  assert.equal(m.namesAnd(["a"]), "a");
+  assert.equal(m.namesAnd(["a", "b"]), "a and b");
+  assert.equal(m.namesAnd(["a", "b", "c"]), "a, b and c");
+  assert.equal(m.namesAnd(["a", "b", "c", "d", "e"]), "a, b, c and 2 more");
+});
+
+test("a per-machine section shows three, the open one too, then all (#5620)", () => {
+  const five = ["a", "b", "c", "d", "e"].map((id) => ({ id }));
+  assert.deepEqual(m.firstOf(five.slice(0, 3), false).map((x) => x.id), ["a", "b", "c"]);
+  assert.deepEqual(m.firstOf(five, false).map((x) => x.id), ["a", "b", "c"]);
+  assert.deepEqual(m.firstOf(five, false, "e").map((x) => x.id), ["a", "b", "c", "e"]);
+  assert.deepEqual(m.firstOf(five, false, "b").map((x) => x.id), ["a", "b", "c"]);
+  assert.equal(m.firstOf(five, true).length, 5);
+});
