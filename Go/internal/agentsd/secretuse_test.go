@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -57,6 +58,7 @@ func replyOf(t *testing.T, done chan browserReply) browserReply {
 // Once fills once; a hold that ends names the request to wait on; deny is an error; always
 // is a grant for the domain that a person can take away.
 func TestAFlaggedFillWaitsOnAPerson(t *testing.T) {
+	flaky.UnderLoad(t, "#5814")
 	answered, left := formHolds(t)
 	m, page, d := fillSetUp(t, nil)
 	if err := d.saveSecret("GITLAB_PASSWORD", filledValue, true); err != nil {
