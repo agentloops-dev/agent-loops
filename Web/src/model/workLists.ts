@@ -2,7 +2,7 @@
 // the cursors to the next pages, kept per kind for the tab's life. An item's page goes through the list
 // it was opened from (Previous and Next, j and k), and Back finds the list as it was left.
 import { signal, type Signal } from "@preact/signals";
-import type { ForgeItem, ForgeListError, ProjectBoard, ReportNode, ReportNodesSort } from "../protocol/generated";
+import type { ForgeItem, ForgeListAll, ForgeListError, ProjectBoard, ReportNode, ReportNodesSort } from "../protocol/generated";
 import type { Store } from "./store";
 import { Capability } from "../protocol/capabilities.generated";
 import { CallFailed } from "../wire/link";
@@ -11,7 +11,7 @@ import { hostAnswers } from "./capabilities";
 import { keepWork, keptWork, keptWorkRead } from "./localCopy";
 import { mark } from "./marks";
 import {
-  filterRows, forgeListRequest, fromForge, lineageRow, mergeBoards, mergeForge, neighbours, parseWorkQuery, projectRepos, refForge,
+  filterRows, forgeListAllRequest, fromForge, lineageRow, mergeBoards, mergeForge, neighbours, parseWorkQuery, projectRepos, refForge,
   shownErrors, sortRows, workQuery,
   type Neighbours, type WorkFilter, type WorkKind, type WorkProject, type WorkProjectRepos, type WorkRow, type WorkSort, type WorkState,
 } from "./work";
@@ -112,14 +112,11 @@ export async function loadBoards(store: Store, again = false): Promise<void> {
     const kept = await keptWork<ProjectBoard[]>("boards", mine);
     if (kept && boardsRead === mine && boards.peek().length === 0) boards.value = kept;
   }
-  // Each machine's boards draw as it answers (#5449): a slow machine does not hold the menu.
-  const got: ProjectBoard[][] = [];
-  await Promise.all(hosts.map((h) => store.link.call("forge/boards", {}, h.id).then((b) => b.boards, () => []).then((b) => {
-    got.push(b);
-    if (boardsRead === mine && b.length > 0) boards.value = mergeBoards(got);
-  })));
+  // Every machine's boards in one call to the control plane (#5592), which waits for a slow machine at most 5 s.
+  const asked = new Set(hosts.map((h) => h.id));
+  const all = await store.link.call("forge/boardsAll", {}).catch(() => null);
   if (boardsRead !== mine) return;
-  boards.value = mergeBoards(got);
+  boards.value = mergeBoards((all?.boards ?? []).filter((b) => asked.has(b.machine)).map((b) => b.boards.boards));
   if (boards.peek().length > 0) keepWork("boards", mine, boards.peek());
 }
 
@@ -169,6 +166,22 @@ export function carryStale(got: HostList, had: HostList | undefined): HostList {
   const fresh = new Set(got.items.map((i) => i.node.ref));
   const kept = had.items.filter((i) => !fresh.has(i.node.ref) && (failed.has("") || failed.has(i.node.ref.slice(0, i.node.ref.indexOf(":")))));
   return kept.length === 0 ? got : { ...got, items: [...got.items, ...kept], stale: kept.map((i) => i.node.ref) };
+}
+
+/** What a machine the control plane could not reach for a list says (#5592). */
+export const notAnswered = "It did not answer.";
+
+/** forge/listAll's answer (#5592) as a HostList for each of `hosts` it names, in their order, each carrying what `before` had
+ * for a forge it could not read (#4392). A machine it could not reach has an error for all its forges; one it names that is not
+ * of `hosts` (offline when the page asked) is left out, as it was not asked before. */
+export function hostListsOf(got: ForgeListAll, hosts: readonly string[], before: readonly HostList[]): HostList[] {
+  const by = new Map<string, HostList>();
+  for (const l of got.lists) by.set(l.machine, { host: l.machine, items: l.list.items, cursor: l.list.cursor, errors: l.list.errors ?? [], total: l.list.total });
+  for (const u of got.unreached) by.set(u.machine, { host: u.machine, items: [], errors: [{ forge: "", message: notAnswered }] });
+  return hosts.flatMap((h) => {
+    const list = by.get(h);
+    return list ? [carryStale(list, before.find((b) => b.host === h))] : [];
+  });
 }
 
 /** Each machine's list with only the errors the page shows (#5449): one machine's answer for a forge is enough, so the
@@ -244,33 +257,14 @@ export async function loadList(store: Store, l: WorkListState): Promise<void> {
       if (!l.problem.peek()) keepWork("list", wanted, { lists: [], lineage: known.nodes, lineageCursor: known.cursor } satisfies KeptList);
       return;
     }
-    const method = kind === "issue" ? "forge/issues" : "forge/pulls";
-    // Each machine's rows draw as it answers (#5449): the first machine that answers for a forge is enough, and a slow
-    // or offline one does not hold the page. The others keep the rows they had until they answer; errors wait for all.
-    const answers = new Map<string, HostList>();
-    const drawn = () => hosts.flatMap((h) => {
-      const got = answers.get(h.id);
-      if (got) return [{ ...got, errors: [] }];
-      const had = before.find((b) => b.host === h.id);
-      return had ? [had] : [];
-    });
-    await Promise.all(hosts.map(async (h) => {
-      const had = before.find((b) => b.host === h.id);
-      let got: HostList;
-      try {
-        const list = await store.link.call(method, forgeListRequest(forgeState(state), board), h.id);
-        got = carryStale({ host: h.id, items: list.items, cursor: list.cursor, errors: list.errors ?? [], total: list.total }, had);
-      } catch (e) {
-        got = carryStale({ host: h.id, items: [], errors: [{ forge: "", message: describe(e) }] }, had);
-      }
-      answers.set(h.id, got);
-      if (!current() || answers.size === hosts.length || got.items.length === 0) return;
-      l.lineage.value = known.nodes;
-      l.lineageCursor.value = known.cursor;
-      l.lists.value = drawn();
-    }));
+    // Every machine's list in one call to the control plane (#5592), which waits for a slow machine at most 5 s; the first
+    // machine that answers for a forge is enough (#5449). The rows read before stay until it answers.
+    const ids = hosts.map((h) => h.id);
+    const answered = ids.length === 0 ? [] : await store.link.call("forge/listAll", forgeListAllRequest(kind, forgeState(state), board)).then(
+      (all) => hostListsOf(all, ids, before),
+      (e: unknown) => ids.map((host) => carryStale({ host, items: [], errors: [{ forge: "", message: describe(e) }] }, before.find((b) => b.host === host))));
     if (!current()) return;
-    const read = settleLists(hosts.map((h) => answers.get(h.id)!));
+    const read = settleLists(answered);
     l.lineage.value = known.nodes;
     l.lineageCursor.value = known.cursor;
     l.lists.value = read;
@@ -300,19 +294,23 @@ export async function loadMore(store: Store, l: WorkListState): Promise<void> {
   l.moreFailed.value = null;
   try {
     if (fromForge(l.kind)) {
-      const method = l.kind === "issue" ? "forge/issues" : "forge/pulls";
       const { state, board } = l.filter.peek();
-      // A forge that could not read its next page says so in errors: the rows and the cursor stay, so Try again reads it again.
-      const failed: string[] = [];
-      l.lists.value = await Promise.all((l.lists.peek() ?? []).map(async (h) => {
-        if (!h.cursor) return h;
-        const got = await store.link.call(method, forgeListRequest(forgeState(state), board, h.cursor), h.host);
-        if (got.items.length === 0 && (got.errors ?? []).length > 0) {
-          failed.push(...got.errors!.map((e) => e.message));
+      const had = l.lists.peek() ?? [];
+      const pages = had.flatMap((h) => h.cursor ? [{ host: h.host, cursor: h.cursor }] : []);
+      // Each machine's next page in one call to the control plane (#5592). A forge or a machine that could not read its next
+      // page says so: the rows and the cursor stay, so Try again reads it again.
+      const all = await store.link.call("forge/listAll", forgeListAllRequest(l.kind, forgeState(state), board, pages));
+      const got = new Map(all.lists.map((m) => [m.machine as string, m.list]));
+      const failed: string[] = all.unreached.length > 0 ? [`${all.unreached.map((u) => u.machineName).join(", ")}: ${notAnswered}`] : [];
+      l.lists.value = had.map((h) => {
+        const next = h.cursor ? got.get(h.host) : undefined;
+        if (!next) return h;
+        if (next.items.length === 0 && (next.errors ?? []).length > 0) {
+          failed.push(...next.errors!.map((e) => e.message));
           return h;
         }
-        return { ...h, items: [...h.items, ...got.items], cursor: got.cursor, errors: got.errors ?? [] };
-      }));
+        return { ...h, items: [...h.items, ...next.items], cursor: next.cursor, errors: next.errors ?? [] };
+      });
       if (failed.length > 0) l.moreFailed.value = failed.join("; ");
     } else if (l.lineageCursor.peek()) {
       const next = await readLineage(store, l.kind, nodesSort(l), l.lineageCursor.peek());

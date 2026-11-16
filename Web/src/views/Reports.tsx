@@ -550,10 +550,12 @@ function NextPart({ store, epics }: { store: Store; epics: readonly LineageNode[
     // A new what-if keeps the figures on screen until its answer comes; the epics say they are forecasting.
     lands.value = {};
     const ask = whatIf ? { whatIf } : {};
-    void Promise.all(hosts.map((host) => store.link.call("lineage/forecast", ask, host).then((forecast) => ({ host, forecast }), () => null)))
+    // Every machine's forecast in one call to the control plane (#5592).
+    const asked = new Set<string>(hosts);
+    void store.link.call("lineage/forecastAll", ask).then((all) => all.forecasts, () => [])
       .then((got) => {
         if (!live) return;
-        const answers = got.filter((g): g is { host: MachineRef; forecast: LineageForecast } => g !== null);
+        const answers = got.filter((g) => asked.has(g.machine)).map((g) => ({ host: g.machine, forecast: g.forecast }));
         all.value = answers;
         const main = mainForecast(answers, store.macHostID.value);
         if (!main) return;
@@ -645,8 +647,10 @@ function FeaturesPane({ store }: { store: Store }) {
   const hosts = store.hosts.value.filter((h) => hostAnswers(h.state)).map((h) => h.id);
   useEffect(() => {
     usage.value = null;
-    void Promise.all(hosts.map((host) => store.link.call("reports/features", {}, host).catch(() => null))).then((all) => {
-      usage.value = mergeFeatures(all.filter((u): u is FeatureUsage => u !== null));
+    // Every machine's counts in one call to the control plane (#5592).
+    const asked = new Set<string>(hosts);
+    void store.link.call("reports/featuresAll", {}).then((all) => all.usage, () => []).then((all) => {
+      usage.value = mergeFeatures(all.filter((u) => asked.has(u.machine)).map((u) => u.usage));
     });
   }, [hosts.join(" ")]);
   const shown = usage.value;
