@@ -12,12 +12,13 @@ import { machineSessions } from "../model/machineSessions";
 import { bulkActions, bulkDeleteQuestion, bulkLabel, chipWords, chips, countsOf, emptyWords, filterTitle, localList, narrowed, noChoice,
   pageQuery, selectedWords, showMoreWords, sortTitle, sorts, toggled, type MachineChoice, type MachineSort } from "../model/machineList";
 import { describe } from "../model/errors";
-import { go } from "../route";
+import { go, route } from "../route";
+import { hostsOf } from "../model/machineNames";
 import { LastUpdate } from "./LastUpdate";
 import { ask } from "./MessageKinds";
 
 export function MachinesList({ store }: { store: Store }) {
-  const [choice, setChoice] = useState<MachineChoice>(noChoice);
+  const [choice, setChoice] = useState<MachineChoice>(() => ({ ...noChoice, only: hostsOf(route.peek().query) }));
   const [rows, setRows] = useState<ControlMachine[]>([]);
   const [next, setNext] = useState<string | undefined>();
   const [total, setTotal] = useState(0);
@@ -46,9 +47,21 @@ export function MachinesList({ store }: { store: Store }) {
         setTotal(shown.length);
         setCounts(countsOf(all));
       } else {
-        const answer = await store.link.call("machines/list", pageQuery(c, cursor));
+        let page = await store.link.call("machines/list", pageQuery(c, cursor)) as MachineList;
         if (mine !== serial.current) return;
-        const page = answer as MachineList;
+        if (c.only?.length) {
+          // Narrowed to the machines of an "and N more" link: the pages are read until they are all found, and only they show.
+          const found = page.machines.filter((h) => c.only!.includes(h.id));
+          let after = page.next;
+          while (after !== undefined && found.length < c.only.length) {
+            const more = await store.link.call("machines/list", pageQuery(c, after)) as MachineList;
+            if (mine !== serial.current) return;
+            found.push(...more.machines.filter((h) => c.only!.includes(h.id)));
+            after = more.next;
+          }
+          const { next: _drop, ...rest } = page;
+          page = { ...rest, machines: found, total: found.length };
+        }
         setRows((before) => cursor ? [...before, ...page.machines] : page.machines);
         setNext(page.next);
         setTotal(page.total);
@@ -68,6 +81,9 @@ export function MachinesList({ store }: { store: Store }) {
     const timer = setTimeout(() => void read(choice), choice.search ? 250 : 0);
     return () => clearTimeout(timer);
   }, [choice, hosts.map((h) => `${h.id}:${h.state}`).join(",")]);
+  // An "and N more" link while this page is open narrows it again.
+  const asked = route.value.query;
+  useEffect(() => { setChoice((now) => ({ ...now, only: hostsOf(asked) })); }, [asked]);
   // A ticked machine that is no longer in the list is let go.
   useEffect(() => {
     setPicked((now) => {

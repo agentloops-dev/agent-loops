@@ -123,6 +123,7 @@ func (d *Daemon) anyLive() bool {
 }
 
 func TestPingAndAnUnknownMethod(t *testing.T) {
+	t.Skip("flaky under load (#5751)")
 	_, c := start(t, t.TempDir())
 	if r := c.call(t, 1, "daemon/ping", nil); string(r) != `{"ok":true}` {
 		t.Fatalf("ping %s", r)

@@ -83,7 +83,7 @@ struct FolderMCPSection: View {
     }
 
     private func load() async {
-        guard let fresh = await model.mcpServers(at: place.destination) else { return }
+        guard let fresh = await model.mcpServers(at: place.destination, on: place.host(model)) else { return }
         servers = fresh.servers
         problem = fresh.problem
         approvalsProblem = fresh.approvalsProblem
@@ -198,7 +198,8 @@ private struct FolderMCPRow: View {
                     if case .folder(let folder) = place, case .waiting(let digest, _) = server.approval {
                         Button("Approve") {
                             Task {
-                                if let error = await model.approveFolderMCP(server.name, digest: digest, in: folder) {
+                                if let error = await model.approveFolderMCP(server.name, digest: digest, in: folder,
+                                                                             on: place.host(model)) {
                                     failed(MCPCatalogWords.sentence(error))
                                 } else {
                                     failed(nil)

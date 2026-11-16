@@ -29,6 +29,8 @@ final class UserScopeState {
     /// This client's key, to take an offer (the Mac window). Nil on the Remote, which does not
     /// seal: it shows the offers only.
     @ObservationIgnored var sealing: (() -> (DeviceKey, UUID)?)?
+    /// The files of variables the ⌘K menu read when it last opened (#5261): names only are shown.
+    var menuFiles: [EnvFile] = []
 
     func load(_ control: DaemonClient?) async {
         guard let control else {

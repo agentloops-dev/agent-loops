@@ -732,6 +732,7 @@ func (d *Daemon) dress(s *wire.FolderSummary, agents []wire.Agent) {
 	s.Approvals = append(s.Approvals, archiveApprovals(agents)...)
 	s.Approvals = append(s.Approvals, d.workflowFailures(folder)...)
 	s.Approvals = append(s.Approvals, d.deployApprovals(folder)...)
+	s.Approvals = append(s.Approvals, d.connectorApprovals(folder)...)
 	m, err := d.approvedConfig(folder)
 	if !isDir(folder) {
 		err = nil

@@ -54,9 +54,13 @@ func (d *Daemon) skillPlace(dest wire.SkillDestination) (skillcatalog.Place, err
 	return skillcatalog.Resolve(dest, d.personalHome(), d.Store.Loc.Root, d.usesRealTrash(), os.Getenv, d.isFolderPath)
 }
 
-// usesRealTrash is the ordinary daemon on a Mac: the standard root, with no personal home
-// named.
-func (d *Daemon) usesRealTrash() bool {
+// usesRealTrash is the ordinary daemon on a Mac (isThePersonsOwn).
+func (d *Daemon) usesRealTrash() bool { return d.isThePersonsOwn() }
+
+// isThePersonsOwn is the ordinary daemon on a Mac: the standard root, with no personal home
+// named. Only it may touch what is the person's own on this Mac: the real Trash, the login
+// Keychain's sign-up items (#5758).
+func (d *Daemon) isThePersonsOwn() bool {
 	return goruntime.GOOS == "darwin" && os.Getenv("AGENTS_PERSONAL_HOME") == "" && store.IsStandard(d.Store.Loc.Root)
 }
 

@@ -17,6 +17,7 @@ import { ReportsPane } from "./Reports";
 import { BackToList } from "./BackToList";
 import { Modal } from "./Modal";
 import { folderKey, folderPath } from "../model/groups";
+import { filteredTo, nameLimit } from "../model/machineNames";
 import { accountChoices, accountRows, accountState, agentsHolding, allowanceLine, allowancePace, allowancePaceLine, pastWeeksLine, defaultAccountName, isOrgRow, orgAllowanceLine, ownRow, ownSignInID, reachesFoot, reachesTheModelBy, machineSignInLine, offersMachineSignIn, removeMessage, rowTitle, runtimeTime, runtimesHint, runtimesReadAt, machinesSummary, machinesWords, setupRuntimes, signInOnTheMac, type MachinesPart, type SetupRuntime } from "../model/runtimes";
 import { LastUpdate } from "./LastUpdate";
 import { signInRuntime } from "./RuntimeSignInDialog";
@@ -327,7 +328,8 @@ function SetupRuntimeRows({ store, runtime: { status, home: hostID, machines }, 
         {/* With one machine alone, the row's own line says it already. */}
         {several && <span aria-label={`${status.runtime.name}: ${machinesWords(parts, hostName)}`}>{parts.map((part, i) => <Fragment key={part.words}>
           {i > 0 && " · "}{part.words}
-          {part.hosts.map((h, n) => <Fragment key={h}>{n === 0 ? " " : ", "}<a href={routeHash({ nav: "machines", section: `machine-${h}` })}>{hostName(h)}</a></Fragment>)}
+          {part.hosts.slice(0, nameLimit).map((h, n) => <Fragment key={h}>{n === 0 ? " " : ", "}<a href={routeHash({ nav: "machines", section: `machine-${h}` })}>{hostName(h)}</a></Fragment>)}
+          {part.hosts.length > nameLimit && <>{" and "}<a href={routeHash(filteredTo(part.hosts))}>{part.hosts.length - nameLimit} more</a></>}
         </Fragment>)}</span>}
         {detailed && <>{" "}<button class="link" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Hide Details" : "Details"}</button></>}
       </p>
@@ -335,8 +337,9 @@ function SetupRuntimeRows({ store, runtime: { status, home: hostID, machines }, 
   </Fragment>;
 }
 
-/** An Activity page in the chat's place. */
-export function ActivityPageView({ store, page }: { store: Store; page: ActivityPage }) {
+/** An Activity page in the chat's place. inReport: a part of a Reports page's Me lens (#5280), which is the report
+ * already, so Cost has no Cost | Reports switch there. */
+export function ActivityPageView({ store, page, inReport = false }: { store: Store; page: ActivityPage; inReport?: boolean }) {
   const hosts = onlineHosts(store);
   // Opened by its address, the page draws before any machine answers: load again as each one comes online (#3242).
   const online = hosts.map((h) => h.id).join(",");
@@ -430,7 +433,7 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
             </>
           )}
           {page === "runtimes" && <p class="hint">{runtimesHint(store.hasMac.value)}</p>}
-          {page === "spending" && (
+          {page === "spending" && !inReport && (
             <div class="tabs events-panes" role="tablist" aria-label="Show">
               {(["cost", "reports"] as const).map((p) => (
                 <button key={p} role="tab" aria-selected={costPane.value === p} class={costPane.value === p ? "on" : ""}

@@ -25,18 +25,24 @@ export interface Section {
   built: boolean;
 }
 
-/** Reports' pages. Each has two scopes: Me and the organisation. */
+/** Reports' pages, grouped by the question each answers (#5280, spec #5276 option A): Cost, Output, Time, Plan and
+ * Use. Each takes the lens bar's lenses: Me, a project and the organisation (#5279). Planning went into Delivery,
+ * Forecast and Estimates; Usage and Multiplier into the Me lens of Spend, Time and Outcomes; Features to Status. */
 export const reportSections: readonly Section[] = [
-  { id: "spend", title: "Spend", about: "Cost, tokens and time by person, folder, machine and runtime.", group: "Reports", built: true },
-  { id: "outcomes", title: "Outcomes", about: "What the agents shipped: pull requests opened, merged and reverted, and the cost of each.", group: "Reports", built: true },
-  { id: "time", title: "Time", about: "Where the agents’ time goes: working, or waiting for a person.", group: "Reports", built: true },
-  { id: "value", title: "Planning", about: "What the work cost and delivered, and what comes next: the burn against the allowance, the spend at this pace, service levels, when each open epic lands, and how the estimates and forecasts scored.", group: "Reports", built: true },
-  { id: "runtimes", title: "Runtimes", about: "Which runtime earns its cost: cost per merged pull request, and the sessions that failed.", group: "Reports", built: true },
-  { id: "adoption", title: "Adoption", about: "Who uses the agents each week, and which runtimes and workflows.", group: "Reports", built: true },
-  { id: "workflows", title: "Workflows", about: "Each workflow’s runs, its failed runs, and the cost of a run.", group: "Reports", built: true },
-  { id: "features", title: "Features", about: "Which features the apps and agents used on your machines, the least used first.", group: "Reports", built: true },
+  { id: "spend", title: "Spend", about: "Cost, tokens and time by person, folder, machine and runtime.", group: "Cost", built: true },
+  { id: "outcomes", title: "Outcomes", about: "What the agents shipped: pull requests opened, merged and reverted, and the cost of each.", group: "Output", built: true },
+  { id: "delivery", title: "Delivery", about: "What the work cost and delivered: the cost of a merged pull request, waste, lead time, the DORA figures, and each issue and release.", group: "Output", built: true },
+  { id: "time", title: "Time", about: "Where the agents’ time goes: working, or waiting for a person.", group: "Time", built: true },
+  { id: "forecast", title: "Forecast", about: "What comes next: the burn against each allowance, the spend at this pace, service levels, when each open epic lands, and What if.", group: "Plan", built: true },
+  { id: "estimates", title: "Estimates", about: "How the estimates and the forecasts scored against what happened.", group: "Plan", built: true },
+  { id: "adoption", title: "Adoption", about: "Who uses the agents each week, and which runtimes and workflows.", group: "Use", built: true },
+  { id: "runtimes", title: "Runtimes", about: "Which runtime earns its cost: cost per merged pull request, and the sessions that failed.", group: "Use", built: true },
+  { id: "workflows", title: "Workflows", about: "Each workflow’s runs, its failed runs, and the cost of a run.", group: "Use", built: true },
   { id: "saved", title: "Saved Views", about: "Your saved views, each to open or copy as a digest.", group: "Saved", built: true },
 ];
+
+/** Status ▸ Features (#2165; was Reports ▸ Features until #5280): product telemetry of the person's own machines, with no lens. */
+export const featuresSection: Section = { id: "features", title: "Features", about: "Which features the apps and agents used on your machines, the least used first.", group: "Status", built: true };
 
 /** The words of a call that failed, for the page. */
 export function failedWords(error: unknown): string {
