@@ -22,6 +22,10 @@
 // - A task whose tool on this machine is not the version its pin file names (.xcode-version,
 //   Web/.node-version, Go/go.mod) is not run and not attested: its hash reads the pin file, so
 //   a pass with another tool would cover a run that CI would make with the pinned one.
+// - A Node that links a library from the system (zlib, brotli, zstd, OpenSSL, ICU: a Homebrew
+//   Node does) is not the pinned Node, also at the version Web/.node-version names: CI runs the
+//   official build, whose own zlib gzips the web bundle to other sizes (#5774: 637216 bytes on
+//   this Mac where CI measured 640413, over the budget), and whose ICU and OpenSSL are its own.
 // - Nothing is attested when a task changed the tree (a stale generated file): the hashes were
 //   of the tree before.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -50,6 +54,20 @@ export function pinsOf(task) {
     if (file === ".xcode-version" || file === "Web/.node-version" || file === "Go/go.mod") pins.push(file);
   }
   return pins;
+}
+
+// The libraries whose bytes a test can see: compressed sizes, Intl's words, crypto.
+const NODE_OWN_LIBS = ["zlib", "brotli", "zstd", "openssl"];
+
+/**
+ * The Node build as the pin means it: its version, or its version and the libraries it takes
+ * from the system, which the official build (CI's, actions/setup-node) has its own copy of.
+ * versions: process.versions; variables: process.config.variables.
+ */
+export function nodeBuild(versions, variables) {
+  const shared = NODE_OWN_LIBS.filter((lib) => variables[`node_shared_${lib}`] === true);
+  if (variables.icu_system === true) shared.push("icu");
+  return shared.length ? `${versions.node} with the system's ${shared.join(", ")}` : versions.node;
 }
 
 /** The inputs of a task that the change touches: the "why". */
@@ -163,8 +181,10 @@ function sh(cmd, args, opts = {}) {
 }
 
 function nxEnv() {
-  // As scripts/nx.sh sets them: the hashes must be the run's.
-  return { ...process.env, NX_NO_CLOUD: "true", NX_LOAD_DOT_ENV_FILES: "false", NX_DAEMON: "false", NX_TUI: "false" };
+  // As scripts/nx.sh sets them: the hashes must be the run's. AGENTS_ATTEST (no task's input)
+  // makes a test that skips on a missing built file (Web/dist) fail instead, as on CI: a skip
+  // is a pass to Nx, and an attested skip is a test that never ran (#5774).
+  return { ...process.env, NX_NO_CLOUD: "true", NX_LOAD_DOT_ENV_FILES: "false", NX_DAEMON: "false", NX_TUI: "false", AGENTS_ATTEST: "1" };
 }
 
 function versionOf(cmd, args, env) {
@@ -179,7 +199,7 @@ function toolchain(env) {
   const xcode = versionOf("xcodebuild", ["-version"], env);
   tools[".xcode-version"] = { want: xcodeWant, have: xcode ? xcode.split("\n")[0].replace(/^Xcode\s+/, "") : null };
   const nodeWant = readFileSync(join(root, "Web/.node-version"), "utf8").trim();
-  tools["Web/.node-version"] = { want: nodeWant, have: process.version.replace(/^v/, "") };
+  tools["Web/.node-version"] = { want: nodeWant, have: nodeBuild(process.versions, process.config.variables) };
   const goWant = /^go\s+(\S+)/m.exec(readFileSync(join(root, "Go/go.mod"), "utf8"))?.[1] ?? null;
   const go = versionOf("Go/scripts/go.sh", ["env", "GOVERSION"], env);
   tools["Go/go.mod"] = { want: goWant, have: go ? go.replace(/^go/, "") : null };
@@ -374,6 +394,13 @@ function selftest() {
   assert(changedInputs(task, ["Go/a.go", "Web/x.ts"]).join() === "Go/a.go", "changedInputs is not the task's changed files");
   assert(skipFor(task, { "Go/go.mod": { want: "1.26.9", have: "1.27.4" } }) !== null, "another Go is run");
   assert(skipFor(task, { "Go/go.mod": { want: "1.26.9", have: "1.26.9" } }) === null, "the pinned Go is skipped");
+
+  const web = { ...task, id: "web:test", root: "Web", files: ["Web/a.ts", "Web/.node-version"] };
+  const official = nodeBuild({ node: "26.8.2" }, { node_shared_zlib: false, icu_system: false });
+  const homebrew = nodeBuild({ node: "26.8.2" }, { node_shared_zlib: true, node_shared_openssl: true, icu_system: true });
+  assert(official === "26.8.2", "the official Node's build is not its version");
+  assert(skipFor(web, { "Web/.node-version": { want: "26.8.2", have: official } }) === null, "the official pinned Node is skipped");
+  assert(skipFor(web, { "Web/.node-version": { want: "26.8.2", have: homebrew } }) !== null, "a Node with the system's zlib is run (#5774)");
 
   // Fail, then pass at the same hash: no statement. A new hash then attests.
   const ledger = new Set();

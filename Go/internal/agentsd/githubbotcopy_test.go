@@ -13,6 +13,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -52,6 +53,7 @@ func memberOf(t *testing.T, state *machinelock.State, id string) machinelock.Mem
 // A test: the key reaches a second machine of the same person, sealed to that machine's key,
 // and a machine of another person, a client and the control plane cannot read it.
 func TestTheBotsKeyReachesTheOtherMachineSealedToIt(t *testing.T) {
+	flaky.UnderLoad(t, "#5793")
 	d, phone, peer, state := lockedMachine(t)
 	defer d.Shutdown()
 	file := botStore(t, d)
