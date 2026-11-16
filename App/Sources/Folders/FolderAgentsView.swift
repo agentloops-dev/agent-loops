@@ -108,6 +108,8 @@ struct FolderAgentsView: View {
     private func adopt(_ folder: URL?, again: Bool = false) {
         let window = model.composingWindow
         model.composingWindow = windowFolder
+        // The draft is this window's again, not New Session in Background's (#5798).
+        model.composingInBackground = false
         guard let folder, model.draftCwd != folder || (again && window != windowFolder) else { return }
         model.draftCwd = folder
         Task { await model.loadDraftOptions() }

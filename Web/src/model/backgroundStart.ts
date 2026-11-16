@@ -17,8 +17,3 @@ export function backgroundStartFolder(live: readonly StartPlace[], open: { host?
   }
   return live[0] ?? null;
 }
-
-/** Whether Return in the prompt starts: Shift or Option and Return, or Return while composing text, is a new line. */
-export function returnStarts(e: { key: string; shiftKey: boolean; altKey: boolean; isComposing: boolean }): boolean {
-  return e.key === "Enter" && !e.shiftKey && !e.altKey && !e.isComposing;
-}
