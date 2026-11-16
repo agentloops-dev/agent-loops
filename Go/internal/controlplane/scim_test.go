@@ -22,6 +22,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin/signintest"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -588,6 +589,7 @@ func (failing) RoundTrip(*http.Request) (*http.Response, error) { return nil, io
 
 // T020, FR-023: 5,000 users and 500 groups; SCIM answers within 200 ms at p95.
 func TestSCIMAtSize(t *testing.T) {
+	flaky.UnderLoad(t, "#5911")
 	// Not parallel (#2512): it holds a wall-clock limit, which other tests running beside it would make flaky.
 	if testing.Short() {
 		t.Skip("5,000 users")
