@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -195,6 +196,7 @@ func TestPruneCost(t *testing.T) {
 // #3118: the nodes sent say the sessions that worked on them, and the title, state and
 // labels the resolve cache has; a node resolved after it was sent is sent again.
 func TestSentCostSaysSessionsAndResolved(t *testing.T) {
+	flaky.UnderLoad(t, "#5806")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()

@@ -42,11 +42,11 @@ func (d *Daemon) holdStartNow(a wire.Agent, folder string) (*wire.Agent, error) 
 	_, notArchived, _ := d.helperLimitsIn(folder)
 	d.queueMu.Lock()
 	defer d.queueMu.Unlock()
-	if d.startingFromQueue[a.ID] {
+	if _, starting := d.startingFromQueue[a.ID]; starting {
 		return nil, nil
 	}
 	scope := limitScope(folder)
-	reserved := d.reservedHelpers[scope]
+	reserved := d.reservedInLocked(scope)
 	if have := len(d.helpersIn(folder)) + reserved; int64(have) >= notArchived {
 		// Said after the client's "Could not start it now — ".
 		return nil, &Error{Code: wire.FailureNotAllowed, Message: fmt.Sprintf(
@@ -54,12 +54,8 @@ func (d *Daemon) holdStartNow(a wire.Agent, folder string) (*wire.Agent, error) 
 				"Archive one of the sessions agents started, or raise the limit in Project Settings.", scopeTitle(folder), have, notArchived)}
 	}
 	if d.startingFromQueue == nil {
-		d.startingFromQueue = map[wire.UUID]bool{}
+		d.startingFromQueue = map[wire.UUID]string{}
 	}
-	if d.reservedHelpers == nil {
-		d.reservedHelpers = map[string]int{}
-	}
-	d.startingFromQueue[a.ID] = true
-	d.reservedHelpers[scope]++
+	d.startingFromQueue[a.ID] = scope
 	return &a, nil
 }

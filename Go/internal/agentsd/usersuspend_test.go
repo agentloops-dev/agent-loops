@@ -132,7 +132,6 @@ func TestASuspendedPersonsWorkflowsPause(t *testing.T) {
 
 // The window's direct path (#1118) is cut off and refused while the person is suspended.
 func TestASuspendedPersonsWindowIsRefusedDirectly(t *testing.T) {
-	t.Skip("flaky under load (#5744)")
 	d, _ := start(t, t.TempDir())
 	w, listed := newWindow(t)
 	d.SetLocalClients(wire.MachineClients{Clients: []wire.MachineClient{listed}})

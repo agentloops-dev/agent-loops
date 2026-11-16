@@ -480,7 +480,7 @@ public enum UserScopeWords {
     /// Under a secret that was on a machine since removed (FR-026).
     public static func leftOn(_ row: DaemonAPI.UserSecretRow) -> String? {
         guard let left = row.leftOn, !left.isEmpty else { return nil }
-        let names = left.map(\.name).joined(separator: ", ")
+        let names = MachineNames.words(left.map(\.name))
         return "It was on \(names), which was removed. Change it where it was issued, then replace it here."
     }
 

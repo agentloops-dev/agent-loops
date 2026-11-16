@@ -139,10 +139,17 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	rep.Say(wire.MachineSetupStepIDInstall, wire.MachineSetupStateDone, detail, "")
 	say("Install Agents: %s", detail)
 
-	// 4: Compare digits. The code that joined this machine is one the control plane made and
-	// kept until now, so the host that joined is the host that was made (#5359 makes the
-	// digits themselves).
-	rep.Say(wire.MachineSetupStepIDCompare, wire.MachineSetupStateDone, "Joined with the code the control plane made for this machine", "")
+	// 4: Compare digits. This machine says the digits of the code it joined with; the control
+	// plane compares them with the ones it made for a machine it made (#5359, #5765).
+	digits := ""
+	if code, err := controllink.ParseCode(o.Join); err == nil {
+		digits = code.Digits()
+	}
+	if digits != "" {
+		rep.Compared("This machine shows "+digits, digits)
+	} else {
+		rep.Compared("Joined with the code the control plane made for this machine", "")
+	}
 
 	// 5 and 6, together.
 	var wg sync.WaitGroup

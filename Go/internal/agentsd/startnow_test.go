@@ -10,7 +10,6 @@ import (
 // Start now (#5156): the person starts a queued session past the running limit, never past
 // the total, and the rest of the queue keeps its order and waits.
 func TestStartNowGoesPastTheRunningLimitButNotTheTotal(t *testing.T) {
-	t.Skip("flaky under load (#5744)")
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

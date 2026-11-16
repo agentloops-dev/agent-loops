@@ -20,8 +20,6 @@ struct FolderListView: View {
     @AppStorage("showsMachines", store: WindowDefaults.store) private var showsMachines = true
     /// The machines pinned to the group (#5286), a machine on each line.
     @AppStorage(MachinePins.key, store: WindowDefaults.store) private var machinePins = ""
-    /// All Machines (N) pressed: the group draws every machine, until the Machines page (#5567).
-    @State private var showsAllMachines = false
     /// Status, open until folded, and kept so: its key from before #3633 (#3998).
     @AppStorage("showsStatus", store: WindowDefaults.store) private var showsStatus = true
     /// The Work group (#4004), open the first time: folded, it hides what the one Work row showed.
@@ -79,7 +77,7 @@ struct FolderListView: View {
         let listed = machines.map { host in
             MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
         }
-        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count, all: showsAllMachines)
+        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count)
     }
 
     /// No runtime can be started on: Runtimes' icon says so in red (#587); one nearly used
@@ -281,9 +279,11 @@ struct FolderListView: View {
                     ForEach(model.machinesMaking.prefix(rows.making - unnamed)) { making in
                         MakingMachineRow(making: making).appText(.supporting)
                     }
-                    if rows.bounded || showsAllMachines {
-                        AllMachinesRow(total: rows.total, showsAll: $showsAllMachines)
-                    }
+                    // The Machines page (#5567): every machine, with a search, filters and actions on many.
+                    // Past seven machines it says how many there are (#5286).
+                    Text(rows.bounded ? MachinesGroup.allTitle(rows.total) : "All Machines").activityIcon("list.bullet.rectangle")
+                        .help("Every machine: search, filter, and start, stop or delete many at once")
+                        .appText(.supporting).sidebarInk(.allMachines).tag(SidebarItem.allMachines)
                 } header: {
                     MachinesHeader()
                 }
@@ -1086,28 +1086,6 @@ private extension FolderMenu {
     func state(of host: MachineRef) -> SidebarProjects.MachineState {
         SidebarProjects.state(offline: model.hostUnreachable(host),
                               workspaceState: model.hosts.controlRows[host]?.workspace?.workspaceState)
-    }
-}
-
-/// The Machines group's last row past seven machines (#5286): All Machines (N) draws every one,
-/// and Fewer Machines folds them again. It opens the Machines page once the window has one (#5567).
-private struct AllMachinesRow: View {
-    let total: Int
-    @Binding var showsAll: Bool
-
-    var body: some View {
-        Button {
-            showsAll.toggle()
-        } label: {
-            Text(showsAll ? MachinesGroup.fewerTitle : MachinesGroup.allTitle(total))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .activityIcon(showsAll ? "chevron.up" : "ellipsis.circle")
-        .appText(.supporting)
-        .help(showsAll ? "Shows seven machines again" : "Shows every one of your \(total) machines")
     }
 }
 

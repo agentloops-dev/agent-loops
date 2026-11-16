@@ -7,6 +7,8 @@ import { cpuWords, isSessionsOwn, machineCPUWords, machineMemoryWords, memoryWor
 import { Capability } from "../../protocol/capabilities.generated";
 import type { ProcessesState, ProcessUsage } from "../../protocol/generated";
 import { go } from "../../route";
+import { firstOf } from "../../model/machineNames";
+import { ShowAll } from "../ShowAll";
 
 /** One machine's processes, read when it opens and every few seconds while it is open and the tab is seen. Its
  * CPU and memory above them, but not on the machine's page (#3626), which says them in its summary. There they are
@@ -79,6 +81,7 @@ export function MachineProcesses({ store, host, name, showsTotals = true, folds 
 /** Processes (#3453): a row for each machine that answers now, opening what runs on it. */
 export function ProcessesSection({ store }: { store: Store }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
   const hosts = store.hosts.value;
   const machines = hosts.filter((h) => hostAnswers(h.state) && hostHas(hosts, h.id, Capability.processes1));
   if (machines.length === 0) return null;
@@ -87,13 +90,14 @@ export function ProcessesSection({ store }: { store: Store }) {
     <>
       <section aria-labelledby="settings-processes">
         <h3 class="section-head" id="settings-processes">Processes</h3>
-        {machines.map((host) => (
+        {firstOf(machines, all, open).map((host) => (
           <div class="setting" key={host.id}>
             <span>{host.name}</span>
             <button type="button" aria-expanded={open === host.id}
               onClick={() => setOpen(open === host.id ? null : host.id)}>{open === host.id ? "Hide" : "Processes…"}</button>
           </div>
         ))}
+        <ShowAll count={machines.length} all={all} toggle={() => setAll(!all)} />
       </section>
       {shown && <MachineProcesses key={shown.id} store={store} host={shown.id} name={shown.name} />}
     </>

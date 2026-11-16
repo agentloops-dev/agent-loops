@@ -42,7 +42,9 @@ func TestARequestIsOpenedKeptAndAnswered(t *testing.T) {
 	}
 	c.call(t, 3, "requests/answer", map[string]any{"id": form.ID, "answer": map[string]any{"form": map[string]any{
 		"action": "accept", "content": map[string]any{"colour": "blue"}}}})
-	c.until(t, "the end", ended(id, wire.AgentStateFinished))
+	// On the record, not by its notification: the turn can end before the answer above
+	// goes, and c.call drops what comes before its answer (#5744).
+	waitFor(t, "the end", func() bool { return d.Store.Agent(id).State == wire.AgentStateFinished })
 	r := d.request(form.ID)
 	if r.State != wire.RequestStateAnswered || r.Answer == nil || !strings.HasSuffix(*r.Answer, ": blue") || r.AnsweredAt == nil {
 		t.Fatalf("%+v", r)

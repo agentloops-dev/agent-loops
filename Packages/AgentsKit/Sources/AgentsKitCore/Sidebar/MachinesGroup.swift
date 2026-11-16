@@ -39,7 +39,7 @@ public enum MachinesGroup {
 
     /// The rows of the group. `machines` is in the order the client lists them (This Mac, then
     /// by name); `making` is how many machines New Machine is making or that never joined.
-    /// `all` draws every one (the Mac window and the Remote, until their Machines page: #5567, #5568).
+    /// `all` draws every one (the Remote, until its Machines page: #5568).
     public static func rows(_ machines: [Machine], making: Int, all: Bool = false) -> Rows {
         let total = machines.count + making
         guard !all, total > limit else {

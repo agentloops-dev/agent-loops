@@ -498,7 +498,7 @@ public enum PeopleWords {
     /// "box-1 (online), studio (offline)", or nil with none.
     public static func machines(_ person: DaemonAPI.PersonRow) -> String? {
         guard !person.machines.isEmpty else { return nil }
-        return person.machines.map { "\($0.name) (\(state($0.state)))" }.joined(separator: ", ")
+        return MachineNames.words(person.machines.map { "\($0.name) (\(state($0.state)))" })
     }
 
     /// "MacBook Pro, iPhone", or nil with none.
@@ -558,7 +558,7 @@ public enum PeopleWords {
         }
         if let preview {
             if !preview.startedMachines.isEmpty {
-                lines.append("These machines are stopped and deleted: \(preview.startedMachines.map(\.name).joined(separator: ", ")).")
+                lines.append("These machines are stopped and deleted: \(MachineNames.words(preview.startedMachines.map(\.name))).")
             }
             for machine in preview.startedMachines {
                 if let unknown = machine.unknown {
@@ -569,10 +569,10 @@ public enum PeopleWords {
                 }
             }
             if !preview.registeredMachines.isEmpty {
-                lines.append("These machines leave the control plane: \(preview.registeredMachines.map(\.name).joined(separator: ", ")).")
+                lines.append("These machines leave the control plane: \(MachineNames.words(preview.registeredMachines.map(\.name))).")
             }
         } else if !person.machines.isEmpty {
-            lines.append("These machines leave the control plane: \(person.machines.map(\.name).joined(separator: ", ")).")
+            lines.append("These machines leave the control plane: \(MachineNames.words(person.machines.map(\.name))).")
         }
         if person.clients.isEmpty, person.machines.isEmpty {
             lines.append("They have no clients and no machines.")

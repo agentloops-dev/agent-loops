@@ -250,11 +250,15 @@ private struct MachinesLine: View {
         for (index, part) in summary.parts.enumerated() {
             if index > 0 { line += AttributedString(" · ") }
             line += AttributedString(part.words)
-            for (n, host) in part.machines.enumerated() {
+            // Three names, then "and N more" with no link: the Machines page is Web only (#5620).
+            for (n, host) in part.machines.prefix(MachineNames.limit).enumerated() {
                 line += AttributedString(n == 0 ? " " : ", ")
                 var name = AttributedString(model.hosts.label(host))
                 name.link = URL(string: "agents-machine://\(machines.firstIndex(of: host) ?? 0)")
                 line += name
+            }
+            if MachineNames.more(part.machines.count) > 0 {
+                line += AttributedString(" and \(MachineNames.more(part.machines.count)) more")
             }
         }
         return line
