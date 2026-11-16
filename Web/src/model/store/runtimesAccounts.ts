@@ -257,8 +257,9 @@ export const runtimesAccountsMethods = {
     const why = await this.link.call("mcp/list", { destination }, host)
       .then(async (list) => {
         const row = list.servers.find((s) => s.name === name);
-        if (!row?.approval.waiting) return undefined;
-        await this.link.call("mcp/approve", { destination, name, digest: row.approval.waiting.digest }, host);
+        const approval = row?.approval;
+        if (approval === undefined || !("waiting" in approval)) return undefined;
+        await this.link.call("mcp/approve", { destination, name, digest: approval.waiting.digest }, host);
         return undefined;
       }, (error: unknown) => describe(error))
       .catch((error: unknown) => describe(error));

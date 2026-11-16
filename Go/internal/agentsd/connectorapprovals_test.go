@@ -22,11 +22,12 @@ func TestAWaitingConnectorIsInTheFoldersApprovals(t *testing.T) {
 	if s, _ := d.summaryFor(dir); len(s.Approvals) != 0 {
 		t.Fatalf("%+v", s.Approvals)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o750); err != nil {
+	agents := filepath.Join(filepath.Clean(dir), ".agents")
+	if err := os.MkdirAll(agents, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	write := func(text string) {
-		if err := os.WriteFile(filepath.Join(dir, ".agents", "mcp.json"), []byte(text), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(agents, "mcp.json"), []byte(text), 0o600); err != nil { //nolint:gosec // the test's own temp folder
 			t.Fatal(err)
 		}
 	}
@@ -41,7 +42,9 @@ func TestAWaitingConnectorIsInTheFoldersApprovals(t *testing.T) {
 		pulled = s.Approvals[1]
 	}
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 2, "approvals/read", map[string]any{"folder": folder, "kind": "mcpServer", "key": "pulled"}), &reading)
+	if err := json.Unmarshal(c.call(t, 2, "approvals/read", map[string]any{"folder": folder, "kind": "mcpServer", "key": "pulled"}), &reading); err != nil {
+		t.Fatal(err)
+	}
 	if reading.Current == nil || *reading.Digest != *pulled.Digest {
 		t.Fatalf("%+v", reading)
 	}
@@ -58,7 +61,9 @@ func TestAWaitingConnectorIsInTheFoldersApprovals(t *testing.T) {
 		"digest": *pulled.Digest, "action": "approve"})
 	var list wire.MCPListAnswer
 	dest := map[string]any{"kind": "folder", "folder": dir}
-	json.Unmarshal(c.call(t, 6, "mcp/list", map[string]any{"destination": dest}), &list)
+	if err := json.Unmarshal(c.call(t, 6, "mcp/list", map[string]any{"destination": dest}), &list); err != nil {
+		t.Fatal(err)
+	}
 	for _, row := range list.Servers {
 		if row.Name == "pulled" && row.Approval.Approved == nil {
 			t.Fatalf("%+v", row)
@@ -74,7 +79,9 @@ func TestAWaitingConnectorIsInTheFoldersApprovals(t *testing.T) {
 	if s, _ := d.summaryFor(dir); len(s.Approvals) != 0 {
 		t.Fatalf("%+v", s.Approvals)
 	}
-	json.Unmarshal(c.call(t, 8, "mcp/list", map[string]any{"destination": dest}), &list)
+	if err := json.Unmarshal(c.call(t, 8, "mcp/list", map[string]any{"destination": dest}), &list); err != nil {
+		t.Fatal(err)
+	}
 	for _, row := range list.Servers {
 		if row.Name == "other" && row.Approval.Waiting == nil {
 			t.Fatalf("a denied connector is started: %+v", row)

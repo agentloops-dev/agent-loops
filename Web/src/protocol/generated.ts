@@ -16705,9 +16705,11 @@ export interface Methods {
   "machines/unlink": { params: MachineRequest; result: ControlMachine };
   "machines/update": { params: MachineUpdate; result: JSONValue };
   "marketplaces/list": { params: MarketplacesListRequest; result: MarketplacesListAnswer };
+  "mcp/approve": { params: MCPApproveRequest; result: MCPListAnswer };
   "mcp/health": { params: Empty; result: MCPHealthSnapshot };
   "mcp/health/check": { params: MCPHealthCheckRequest; result: MCPHealthSnapshot };
   "mcp/hosted": { params: Empty; result: HostedMCPSnapshot };
+  "mcp/list": { params: MCPListRequest; result: MCPListAnswer };
   "mcp/remove": { params: MCPRemoveRequest; result: MCPRemoveAnswer };
   "mcp/setToolLevel": { params: MCPSetToolLevelRequest; result: MCPToolsAnswer };
   "mcp/tools": { params: MCPToolsRequest; result: MCPToolsAnswer };
@@ -17166,9 +17168,11 @@ export const MethodTarget = {
   "machines/unlink": "control",
   "machines/update": "control",
   "marketplaces/list": "host",
+  "mcp/approve": "host",
   "mcp/health": "host",
   "mcp/health/check": "host",
   "mcp/hosted": "host",
+  "mcp/list": "host",
   "mcp/remove": "host",
   "mcp/setToolLevel": "host",
   "mcp/tools": "host",
