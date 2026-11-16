@@ -75,6 +75,8 @@ struct ContentView: View {
                                 }
                             },
                             dismiss: { requests.commandMenu = nil })
+                // This Mac's files of variables, so the menu finds a repo's too (#5261).
+                .task { await model.userScope.readMenuFiles(model) }
         }
     }
 

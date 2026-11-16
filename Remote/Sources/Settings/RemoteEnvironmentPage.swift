@@ -4,10 +4,11 @@ import SwiftUI
 /// Status ▸ Environment (#5260), as the window's: Yours through the control plane, each repo's through its machine's host.
 struct RemoteEnvironmentPage: View {
     @Environment(RemoteModel.self) private var model
-    @State private var selection: String?
 
     var body: some View {
-        EnvironmentPageView(control: model.controlPlane, state: model.userScope, source: model, selection: $selection,
+        @Bindable var model = model
+        EnvironmentPageView(control: model.controlPlane, state: model.userScope, source: model,
+                            selection: $model.environmentSelection,
                             openSecret: { _ in model.sidebarItem = .secretsStatus })
             .navigationTitle(EnvironmentPage.title)
             .navigationBarTitleDisplayMode(.inline)

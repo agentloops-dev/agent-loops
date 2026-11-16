@@ -24,7 +24,7 @@ export function secretWords(name: string, value: string): string | null {
 }
 
 /** NAME=value from one trimmed line, with `export ` and one pair of quotes taken off. */
-function split(raw: string): { name: string; value: string } | null {
+export function splitLine(raw: string): { name: string; value: string } | null {
   let line = raw.trim();
   if (line.startsWith("export ")) line = line.slice(7).trim();
   const eq = line.indexOf("=");
@@ -63,7 +63,7 @@ export function edit(text: string, name: string, value: string | null, descripti
   let body = text.replace(/\r\n/g, "\n");
   if (body.endsWith("\n")) body = body.slice(0, -1);
   const lines = body === "" ? [] : body.split("\n");
-  const at = lines.flatMap((l, i) => (split(l)?.name === name ? [i] : []));
+  const at = lines.flatMap((l, i) => (splitLine(l)?.name === name ? [i] : []));
   const commentAbove = (i: number) => i > 0 && (lines[i - 1] ?? "").trim().startsWith("#");
   const blank = (i: number) => i < 0 || i >= lines.length || (lines[i] ?? "").trim() === "";
   const replace = at.length > 0 ? at[at.length - 1] : undefined;
