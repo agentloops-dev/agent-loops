@@ -304,6 +304,45 @@ public enum WorkList {
         return lists.flatMap { $0 }.filter { seen.insert($0.url).inserted }
     }
 
+    /// forge/boardsAll's answer (#5592) as one list, as the web page's `loadBoards`: only the machines in `hosts`, in
+    /// their order (the home one first, so the same board keeps the same name), each board once.
+    public static func mergeBoards(_ got: DaemonAPI.ForgeBoardsAll, hosts: [MachineRef]) -> [DaemonAPI.ProjectBoard] {
+        let by = Dictionary(got.boards.map { ($0.machine, $0.boards.boards) }, uniquingKeysWith: { a, _ in a })
+        return mergeBoards(hosts.compactMap { by[$0] })
+    }
+
+    /// What a machine the control plane could not reach for a list says (#5592), as the web page's `notAnswered`.
+    public static let didNotAnswer = "It did not answer."
+
+    /// forge/listAll's answer (#5592) as each of `hosts`' list, in their order, as the web page's `hostListsOf`. A
+    /// machine the control plane could not reach has an error for all its forges (forge ""); one it names that is not of
+    /// `hosts` is left out, as it was not asked before.
+    public static func hostLists(_ got: DaemonAPI.ForgeListAll, hosts: [MachineRef])
+        -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
+        var by = Dictionary(got.lists.map { ($0.machine, $0.list) }, uniquingKeysWith: { a, _ in a })
+        for u in got.unreached { by[u.machine] = .init(errors: [.init(forge: "", message: didNotAnswer)]) }
+        return hosts.compactMap { host in by[host].map { (host, $0) } }
+    }
+
+    /// forge/listAll's next pages (#5592) added to each machine's list, as the web page's `loadMore`: a machine with no
+    /// cursor, or that could not read its next page, keeps its rows and cursor, so Try again reads it again; `problem` says
+    /// what could not be read, nil when all was.
+    public static func addPages(_ got: DaemonAPI.ForgeListAll, to lists: [(host: MachineRef, list: DaemonAPI.ForgeList)])
+        -> (lists: [(host: MachineRef, list: DaemonAPI.ForgeList)], problem: String?) {
+        let by = Dictionary(got.lists.map { ($0.machine, $0.list) }, uniquingKeysWith: { a, _ in a })
+        var failed = got.unreached.isEmpty ? [] : ["\(got.unreached.map(\.machineName).joined(separator: ", ")): \(didNotAnswer)"]
+        let next = lists.map { entry -> (host: MachineRef, list: DaemonAPI.ForgeList) in
+            guard entry.list.cursor != nil, let page = by[entry.host] else { return entry }
+            if page.items.isEmpty, let errors = page.errors, !errors.isEmpty {
+                failed += errors.map(\.message)
+                return entry
+            }
+            return (entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors,
+                                      total: entry.list.total))
+        }
+        return (next, failed.isEmpty ? nil : failed.joined(separator: "; "))
+    }
+
     /// A board's name in the Board menu, from the boards read; the url when it is not one of them.
     public static func boardName(_ url: String, in boards: [DaemonAPI.ProjectBoard]) -> String {
         boards.first { $0.url == url }?.name ?? url

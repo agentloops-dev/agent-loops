@@ -637,6 +637,11 @@ jobs:
           path: ${{ runner.temp }}/nx
           key: nx-apps-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
           restore-keys: nx-apps-
+      # Nx names its cache database for the machine, and each macOS runner is a new one: give
+      # the restored database this runner's name, or Nx uses none of the cache (#5762).
+      - name: Name the Nx database for this runner
+        if: env.APPS != 'skip'
+        run: bash scripts/ci-nx-db.sh "$NX_WORKSPACE_DATA_DIRECTORY"
       - name: Install from the lockfile
         if: env.APPS != 'skip'
         timeout-minutes: 5
@@ -896,6 +901,11 @@ jobs:
           path: ${{ runner.temp }}/nx
           key: nx-macos-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
           restore-keys: nx-macos-
+      # Nx names its cache database for the machine, and each macOS runner is a new one: give
+      # the restored database this runner's name, or Nx uses none of the cache (#5762).
+      - name: Name the Nx database for this runner
+        if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
+        run: bash scripts/ci-nx-db.sh "$NX_WORKSPACE_DATA_DIRECTORY"
       - name: Install from the lockfile
         if: env.SWIFT != 'skip' || env.SWIFTLINT != 'skip'
         timeout-minutes: 5
