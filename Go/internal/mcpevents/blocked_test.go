@@ -30,7 +30,7 @@ func TestBlockedKeepsAFailureWhileItsRerunRuns(t *testing.T) {
 	if clean.On || len(clean.Data["reasons"].([]any)) != 0 {
 		t.Fatalf("clean %+v", clean)
 	}
-	if !SkipsBlocked(false, []string{"x", "needs-approval"}) || !SkipsBlocked(true, nil) || SkipsBlocked(false, nil) {
+	if !SkipsBlocked(false, true) || !SkipsBlocked(true, false) || SkipsBlocked(false, false) {
 		t.Fatal("skips")
 	}
 	if !slices.Equal(BlockedReasons, []string{"conflict", "required_check_failed", "changes_requested", "automerge_disabled", "behind"}) {

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -455,6 +456,11 @@ func (m mergeRequest) mr() MR {
 
 func (m mergeRequest) draft() bool { return m.Draft || m.WorkInProgress }
 
+// personAsked says a person, not a bot, is a reviewer of it (#5803): it waits for them.
+func (m mergeRequest) personAsked() bool {
+	return slices.ContainsFunc(m.Reviewers, func(u user) bool { return !u.Bot && u.Username != "" })
+}
+
 // conflicts says whether it conflicts with its target; nil while GitLab works it out.
 func (m mergeRequest) conflicts() *bool {
 	switch m.DetailedMergeStatus {
@@ -602,7 +608,7 @@ func (g *RealGitLab) OpenMRs(ctx context.Context, project string) ([]OpenMR, err
 				return nil, err
 			}
 			out = append(out, OpenMR{MR: m.mr(), Author: m.Author.Username, Draft: m.draft(), Conflicts: m.conflicts(), Trusted: trusted,
-				Blocking: m.blocking(), SkipsBlocked: mcpevents.SkipsBlocked(m.draft(), m.Labels)})
+				Blocking: m.blocking(), SkipsBlocked: mcpevents.SkipsBlocked(m.draft(), m.personAsked())})
 		}
 		if len(list) < perPage {
 			break

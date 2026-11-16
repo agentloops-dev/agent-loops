@@ -189,7 +189,7 @@ struct DashboardTests {
     @Test func aPullRequestThatWaitsForApprovalPutsItsRowUnderNeedsYou() {
         // The session waits on the review with nothing to ask: the pull request is what needs the person.
         let b = board([agent("lane", labels: ["#12", "P#20"], state: .finished, ended: .endTurn)],
-                      pulls: [pull(20, checks: "passing", review: "review_required", labels: ["needs-approval"])])
+                      pulls: [pull(20, checks: "passing", review: "review_required")])
         let row = b.rows[.needsYou]?.first
         #expect(row?.mark == .needsYou)
         #expect(row?.pullRequest?.waitsForApproval == true)
@@ -204,9 +204,11 @@ struct DashboardTests {
                                                                  draft: true)]).count(.needsYou) == 0)
         // Not read from the forge: its labels alone never ask.
         #expect(board([agent("a", labels: ["P#20"])]).count(.needsYou) == 0)
-        // A review required by the forge asks without the label.
+        // A review required by the forge asks; a label alone never does (#5803).
         #expect(board([agent("a", labels: ["P#20"])], pulls: [pull(20, checks: "running",
                                                                  review: "review_required")]).count(.needsYou) == 1)
+        #expect(board([agent("a", labels: ["P#20"])], pulls: [pull(20, checks: "passing",
+                                                                 labels: ["needs-approval"])]).count(.needsYou) == 0)
     }
 
     @Test func aSessionWithACardItsStateDoesNotShowNeedsYou() {

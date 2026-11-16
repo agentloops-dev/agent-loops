@@ -69,7 +69,7 @@ type OpenPR struct {
 	Conflicts *bool
 	HeadSHA   string
 	Trusted   bool
-	// SkipsBlocked is a draft, or one labelled needs-approval: never pr.blocked (#5321).
+	// SkipsBlocked is a draft, or one with a review requested from a person: never pr.blocked (#5321, #5803).
 	// ChangesRequested is a reviewer asking its author for changes, where the forge says it.
 	SkipsBlocked     bool
 	ChangesRequested bool

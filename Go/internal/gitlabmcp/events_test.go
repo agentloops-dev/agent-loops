@@ -134,7 +134,7 @@ func TestConflictedWaitsForGitLabToKnow(t *testing.T) {
 func TestBlockedIsRaisedOncePerHeadAndReason(t *testing.T) {
 	f := newFake(t)
 	f.addMembers()
-	f.mrs = []obj{mrJSON(1, "a", alex, nil), mrJSON(2, "b", alex, obj{"labels": []string{"needs-approval"}})}
+	f.mrs = []obj{mrJSON(1, "a", alex, nil), mrJSON(2, "b", alex, obj{"reviewers": []obj{{"username": "alex"}}})}
 	p := newPoller(t, f, "pr.blocked", map[string]any{"any": true})
 	p.poll()
 	f.set(func() {

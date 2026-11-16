@@ -56,8 +56,10 @@ func forgeRequestsDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeGitHub) {
 	gh.todos = []githubmcp.Item{{Repo: "alexec/agents", Number: 5, State: "open", Title: "Make a GitLab account",
 		URL: "https://github.com/alexec/agents/issues/5", Labels: []string{"alex-todo"}, Assignees: []string{"alexec"}, UpdatedAt: "2026-11-01T10:00:00Z"}}
 	gh.reviews = []githubmcp.Item{{Repo: "alexec/agents", Number: 12, PR: true, State: "open", Title: "A new button",
-		URL: "https://github.com/alexec/agents/pull/12", Labels: []string{"needs-approval"}, UpdatedAt: "2026-11-01T10:00:00Z"}}
+		URL: "https://github.com/alexec/agents/pull/12", Author: "alexec-agents[bot]", UpdatedAt: "2026-11-01T10:00:00Z"},
+		{Repo: "alexec/agents", Number: 13, PR: true, State: "open", Title: "A draft", URL: "https://github.com/alexec/agents/pull/13", Draft: true}}
 	gh.bodies = map[int]string{5: todoBody, 12: "## Screenshots\n\n![mac](https://x/mac.png)\n"}
+	gh.authors = map[int]string{12: "alexec-agents[bot]"}
 	gh.states = map[int]string{}
 	gh.mu.Unlock()
 	return d, c, gh
@@ -110,12 +112,12 @@ func TestForgeItemsBecomeRequestsAndTheChecklistGoesBack(t *testing.T) {
 		!slices.Contains(w, "comment alexec/agents#5 Done in Agent Loops: every step is ticked.") {
 		t.Fatalf("%q", w)
 	}
-	// The approval: the person's comment, approved on and needs-approval off.
+	// The approval (#5803): only the person's review of the head; no comment, no label.
 	json.Unmarshal(c.call(t, 4, "requests/answer", map[string]any{"id": review.ID, "answer": map[string]any{"approval": map[string]any{"action": "approve"}}}), &u)
 	if u.Request.State != wire.RequestStateAnswered || deref(u.Request.Answer) != "approve: Approved in Agent Loops." {
 		t.Fatalf("%+v", u.Request)
 	}
-	if w := gh.writes(); !slices.Contains(w, "comment alexec/agents#12 Approved in Agent Loops.") || !slices.Contains(w, "labels alexec/agents#12 +approved -needs-approval") {
+	if w := gh.writes(); len(w) != 6 || !slices.Contains(w, "review alexec/agents#12 h12 approve=true") {
 		t.Fatalf("%q", w)
 	}
 	var answered *wire.Event
@@ -129,8 +131,32 @@ func TestForgeItemsBecomeRequestsAndTheChecklistGoesBack(t *testing.T) {
 	}
 }
 
-// A label taken off on the forge answers the request at the next sweep; an issue closed with
-// steps left drops it.
+// The person's own pull request takes no review from them: the answer is refused, and nothing
+// is written (#5803).
+func TestTheirOwnPullRequestCannotBeApproved(t *testing.T) {
+	d, c, gh := forgeRequestsDaemon(t)
+	gh.mu.Lock()
+	gh.authors[12] = "alexec"
+	gh.mu.Unlock()
+	sweepAgain(d)
+	var review wire.Request
+	for _, r := range listedRequests(t, c, 1, "open") {
+		if r.Forge.Item == "pr" {
+			review = r
+		}
+	}
+	msg := c.callErr(t, 2, "requests/answer", map[string]any{"id": review.ID, "answer": map[string]any{"approval": map[string]any{"action": "approve"}}})
+	if !strings.Contains(msg, "You opened this pull request, so you cannot approve it.") {
+		t.Fatalf("%s", msg)
+	}
+	if w := gh.writes(); len(w) != 0 {
+		t.Fatalf("%q", w)
+	}
+}
+
+// A label taken off on the forge answers the request at the next sweep, and so does the
+// person's review of a pull request, which drops the request from GitHub's list; an issue
+// closed with steps left drops it.
 func TestTheForgeEndsARequest(t *testing.T) {
 	d, c, gh := forgeRequestsDaemon(t)
 	sweepAgain(d)
@@ -140,6 +166,7 @@ func TestTheForgeEndsARequest(t *testing.T) {
 	gh.mu.Lock()
 	gh.todos, gh.reviews = nil, nil
 	gh.states[5] = "closed"
+	gh.reviewers = map[int][]githubmcp.Reviewer{12: {{Login: "someone", State: "approved"}, {Login: "alexec", State: "changes_requested"}}}
 	gh.mu.Unlock()
 	sweepAgain(d)
 	if open := listedRequests(t, c, 2, "open"); len(open) != 0 {
@@ -152,7 +179,7 @@ func TestTheForgeEndsARequest(t *testing.T) {
 				t.Fatalf("%+v", r)
 			}
 		case "pr":
-			if r.State != wire.RequestStateAnswered || deref(r.Answer) != "The label needs-approval was taken off" {
+			if r.State != wire.RequestStateAnswered || deref(r.Answer) != "changes" {
 				t.Fatalf("%+v", r)
 			}
 		}
@@ -160,7 +187,7 @@ func TestTheForgeEndsARequest(t *testing.T) {
 }
 
 // #3860: on the agents' bot's PR, Approve and Request changes in Agents are the person's real
-// review of the head commit, not a comment; the labels still mirror it.
+// review of the head commit, not a comment, and no label (#5803).
 func TestAnApprovalOfTheBotsPRIsARealReview(t *testing.T) {
 	d, c, gh := forgeRequestsDaemon(t)
 	gh.mu.Lock()
@@ -179,7 +206,7 @@ func TestAnApprovalOfTheBotsPRIsARealReview(t *testing.T) {
 		t.Fatalf("%+v", u.Request)
 	}
 	w := gh.writes()
-	if !slices.Contains(w, "review alexec/agents#12 h12 approve=false") || !slices.Contains(w, "labels alexec/agents#12 +changes-wanted -") {
+	if !slices.Equal(w, []string{"review alexec/agents#12 h12 approve=false"}) {
 		t.Fatalf("%q", w)
 	}
 	for _, line := range w {

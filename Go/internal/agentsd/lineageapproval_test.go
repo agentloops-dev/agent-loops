@@ -9,8 +9,9 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// #4553: a PR's node keeps its opening, its needs-approval label and its first answer by a
-// person, not a bot's or an agent's, and time/history says how long it waited.
+// #4553: a PR's node keeps its opening, the first review requested from the person (#5803) and
+// its first answer by a person, not a bot's or an agent's, and time/history says how long it
+// waited.
 func TestLineageApprovalWait(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -29,10 +30,11 @@ func TestLineageApprovalWait(t *testing.T) {
 			url, author, stamp(after)))
 	}
 	raise("pr.opened", fmt.Sprintf(`{"pr":{"number":9,"title":"A","url":%q},"openedAt":%q}`, url, stamp(0)))
-	// An answer before the label is not an answer to it.
+	// An answer before the request is not an answer to it; a label is no request.
 	comment(2*time.Minute, "alexec", "Looks odd")
-	raise("pr.labelled", fmt.Sprintf(`{"pr":{"number":9,"url":%q},"label":"needs-approval","by":"alexec","labelledAt":%q}`, url, stamp(5*time.Minute)))
-	raise("pr.labelled", fmt.Sprintf(`{"pr":{"number":9,"url":%q},"label":"approved","by":"alexec","labelledAt":%q}`, url, stamp(time.Minute)))
+	raise("review.requested", fmt.Sprintf(`{"pr":{"number":9,"url":%q,"author":"alexec-agents[bot]"},"requestedAt":%q}`, url, stamp(5*time.Minute)))
+	raise("review.requested", fmt.Sprintf(`{"pr":{"number":9,"url":%q,"author":"alexec-agents[bot]"},"requestedAt":%q}`, url, stamp(30*time.Minute)))
+	raise("pr.labelled", fmt.Sprintf(`{"pr":{"number":9,"url":%q},"label":"needs-approval","by":"alexec","labelledAt":%q}`, url, stamp(time.Minute)))
 	comment(10*time.Minute, "alexec", "<!-- agent --> Screenshots are up")
 	review(20*time.Minute, "alexec-agents[bot]")
 	review(65*time.Minute, "alexec")

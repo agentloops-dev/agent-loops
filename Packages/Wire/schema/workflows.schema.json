@@ -2220,7 +2220,7 @@
     },
     "RequestApprovalAnswer": {
       "type": "object",
-      "description": "A needs-approval pull request's answer: approve adds approved, changes adds changes-wanted; the note is the person's comment on it.",
+      "description": "An answer to a pull request with a review requested from the person (#5803): only their review of the head, approve an Approve and changes a Request changes; the note is the review's words. Their own pull request takes no review from them.",
       "properties": {
         "action": {
           "type": "string",

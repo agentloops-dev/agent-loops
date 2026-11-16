@@ -14,8 +14,8 @@ import Foundation
 /// For Review (#3194) holds what is ready to look at but blocks no agent: today, a session
 /// that ended done with a file it showed that nobody has opened (`fileToSee`), the daily
 /// summary's too. Opening it, or Mark as Read, its Dismiss, takes it out. After its sessions,
-/// each folder's open pull requests labelled needs-approval (#3330), until they are answered,
-/// closed or dismissed, then the read-only daily checks' suggestions (#3331), until one is
+/// each folder's open pull requests with a review requested from the person (#3330, #5803),
+/// until they review them, they close or they are dismissed, then the read-only daily checks' suggestions (#3331), until one is
 /// started or dismissed.
 ///
 /// Read off each folder's shelf (#165), so a folded smart row costs a sum of counts per

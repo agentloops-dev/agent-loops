@@ -75,7 +75,7 @@ type fakePR struct {
 	state              string // open, merged or closed
 	mergedAt, closedAt string
 	conflicts          *bool
-	// blocking is what stops it merging (#5321); skip is a draft or needs-approval.
+	// blocking is what stops it merging (#5321); skip is a draft or a review requested from a person.
 	blocking mcpevents.Blocking
 	skip     bool
 }
@@ -1057,7 +1057,7 @@ func TestPRBlockedRaisesOncePerHeadAndReasons(t *testing.T) {
 	equal(t, ids(clean), []string{}, "not blocked")
 	h.fake.edit(731, func(p *fakePR) { p.blocking = mcpevents.Blocking{HeadSHA: "c", Behind: true}; p.skip = true })
 	skipped := h.poll("pr.blocked", all, clean["cursor"])
-	equal(t, ids(skipped), []string{}, "needs-approval or a draft is never blocked")
+	equal(t, ids(skipped), []string{}, "a review requested from a person, or a draft, is never blocked")
 	h.fake.edit(731, func(p *fakePR) { p.skip = false })
 	equal(t, len(ids(h.poll("pr.blocked", all, skipped["cursor"]))), 1, "blocked anew")
 }
@@ -1065,6 +1065,7 @@ func TestPRBlockedRaisesOncePerHeadAndReasons(t *testing.T) {
 func TestBlockedNodeReadsGitHubsState(t *testing.T) {
 	var nodes []blockedNode
 	raw := `[{"number": 1, "headRefOid": "h", "mergeable": "CONFLICTING", "mergeStateStatus": "BEHIND", "reviewDecision": "CHANGES_REQUESTED",
+	  "reviewRequests": {"nodes": [{"asCodeOwner": true, "requestedReviewer": {"__typename": "User"}}, {"requestedReviewer": {"__typename": "Team"}}]},
 	  "latestReviews": {"nodes": [{"state": "APPROVED", "url": "u1"}, {"state": "CHANGES_REQUESTED", "url": "u2"}]},
 	  "timelineItems": {"nodes": [{"__typename": "AutoMergeDisabledEvent"}]},
 	  "baseRef": {"rules": {"nodes": [{"parameters": {"requiredStatusChecks": [{"context": "go"}, {"context": "lint"}]}}, {"parameters": null}]},
@@ -1076,11 +1077,12 @@ func TestBlockedNodeReadsGitHubsState(t *testing.T) {
 	    {"__typename": "StatusContext", "context": "legacy", "state": "ERROR", "targetUrl": "legacy-url"}]}}}}]}},
 	 {"number": 2, "headRefOid": "h", "mergeable": "MERGEABLE", "isDraft": true, "autoMergeRequest": {"enabledAt": "t"},
 	  "timelineItems": {"nodes": [{"__typename": "AutoMergeDisabledEvent"}]},
-	  "labels": {"nodes": [{"name": "needs-approval"}]},
 	  "baseRef": {"rules": {"nodes": [{"parameters": {"requiredStatusChecks": [{"context": "go"}]}}]}},
 	  "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
 	    {"__typename": "CheckRun", "name": "go", "status": "COMPLETED", "conclusion": "FAILURE"},
-	    {"__typename": "CheckRun", "name": "go", "status": "IN_PROGRESS"}]}}}}]}}]`
+	    {"__typename": "CheckRun", "name": "go", "status": "IN_PROGRESS"}]}}}}]}},
+	 {"number": 3, "headRefOid": "h", "mergeable": "CONFLICTING",
+	  "reviewRequests": {"nodes": [{"asCodeOwner": false, "requestedReviewer": {"__typename": "User"}}]}}]`
 	if err := json.Unmarshal([]byte(raw), &nodes); err != nil {
 		t.Fatal(err)
 	}
@@ -1089,11 +1091,12 @@ func TestBlockedNodeReadsGitHubsState(t *testing.T) {
 	equal(t, b.Reasons(), []string{"conflict", "required_check_failed", "changes_requested", "automerge_disabled", "behind"}, "every reason")
 	equal(t, b.FailedChecks, []mcpevents.FailedCheck{{Name: "go", URL: "go-url"}, {Name: "legacy", URL: "legacy-url"}}, "only required checks")
 	equal(t, b.ReviewURL, "u2", "the review that asks for changes")
-	equal(t, prs[0].Skip, false, "not skipped")
+	equal(t, prs[0].Skip, false, "not skipped: a code owner's and a team's requests wait for no one person")
 	b = prs[1].Blocking
 	equal(t, b.Reasons(), []string(nil), "a rerun still running; auto-merge on")
 	equal(t, b.ChecksRunning, true, "running")
-	equal(t, prs[1].Skip, true, "a draft labelled needs-approval")
+	equal(t, prs[1].Skip, true, "a draft")
+	equal(t, prs[2].Skip, true, "a review requested from a person (#5803)")
 }
 
 func TestPROpenedRaisesAReadyPROnceAndADraftWhenMarkedReady(t *testing.T) {

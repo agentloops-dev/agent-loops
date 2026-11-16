@@ -70,7 +70,7 @@ type OpenMR struct {
 	Conflicts *bool
 	Trusted   bool
 	// Blocking is why it cannot merge until its author acts, and SkipsBlocked a draft or one
-	// labelled needs-approval (pr.blocked, #5321).
+	// with a person as a reviewer (pr.blocked, #5321, #5803).
 	Blocking     mcpevents.Blocking
 	SkipsBlocked bool
 }
