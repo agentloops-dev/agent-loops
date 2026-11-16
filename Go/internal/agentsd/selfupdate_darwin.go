@@ -65,6 +65,7 @@ func (d *Daemon) registerSelfUpdate() {
 		})
 	}
 	u := newSelfUpdater(file, app, buildinfo.Version)
+	u.control = func() []releaseSource { return controlSources(d.Store.Loc.Root) }
 	u.unpack, u.verify, u.version, u.restart = dittoUnpack, verifyRelease, bundleVersion, restartLaunchAgents
 	if u.status.State != wire.SelfUpdateStateCannot {
 		if team, _ := signingOf(app); team == "" {
