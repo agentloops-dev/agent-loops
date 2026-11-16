@@ -8,7 +8,7 @@ import type { Store } from "../model/store";
 import type { MCPLevels } from "../protocol/generated";
 import {
   connectorLevels, fileProblem, healthKind, healthLastError, healthLine, healthReadAt, healthTone, levelsSentence,
-  notRemoved, notRemovedOffline, personalServers, folderEmpty, folderIntro, folderServers, removesCommitted, removesWords,
+  notApproved, notRemoved, notRemovedOffline, personalServers, folderEmpty, folderIntro, folderServers, removesCommitted, removesWords,
 } from "../model/hostedMCP";
 import { BackToList } from "./BackToList";
 import { ConnectorTools } from "./ConnectorTools";
@@ -48,6 +48,11 @@ export function MCPServersList({ store, host, folder }: { store: Store; host: st
     if (why === undefined) setRemoveProblem(undefined);
     else setRemoveProblem(store.hostIsOnline(host) ? notRemoved(name, why) : notRemovedOffline(name, machine ?? "This Mac"));
   };
+  const approve = async (name: string) => {
+    if (folder === undefined) return;
+    const why = await store.approveConnector(host, name, folder);
+    setRemoveProblem(why === undefined ? undefined : notApproved(name, why));
+  };
   const checkNow = () => {
     setChecking(true);
     void store.checkMCPHealth(host, folder).finally(() => setChecking(false));
@@ -76,6 +81,12 @@ export function MCPServersList({ store, host, folder }: { store: Store; host: st
                   <button class="small" aria-expanded={toolsOpen.has(server.name)} title="Allow, Ask or Off for each of its tools"
                     onClick={() => toggleTools(server.name)}>{toolsOpen.has(server.name) ? "Hide Tools" : "Tools"}</button>
                 )}{" "}
+                {folder !== undefined && server.check === "waiting" && (
+                  <>
+                    <button class="small" disabled={!store.hostIsOnline(host)} title={`Start ${server.name} in this folder's sessions`}
+                      onClick={() => void approve(server.name)}>Approve</button>{" "}
+                  </>
+                )}
                 <button class="small" disabled={!store.hostIsOnline(host)} title={`Take ${server.name} out of its mcp.json`}
                   onClick={() => void remove(server.name)}>Remove…</button>
                 {hasTools && toolsOpen.has(server.name) && <ConnectorTools store={store} host={host} name={server.name} folder={folder} />}
