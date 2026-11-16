@@ -33,8 +33,8 @@ extension AppModel {
     }
 }
 
-/// The window: the folder's name as a menu, where it is, and New Session's prompt bar. Return
-/// starts; Esc or the close button closes it, and the prompt is kept for the next time.
+/// The window: the folder's name as a menu, where it is, New Session's persona control (#5844)
+/// and its prompt bar. Return starts; Esc or the close button closes it, and the prompt is kept for the next time.
 struct BackgroundStartWindow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismissWindow) private var dismissWindow
@@ -55,6 +55,10 @@ struct BackgroundStartWindow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(summary.folder.folder.path)
+                // New Session's own persona control, under the place line (#5844).
+                PersonaChoice()
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 4)
                 OfflineStrip(host: summary.host)
                 PromptBar(folderIsFixed: true)
                     .padding(.top, 10)
