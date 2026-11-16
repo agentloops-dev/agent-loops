@@ -18,6 +18,10 @@ struct FolderListView: View {
     @AppStorage("showsArchivedFolders", store: WindowDefaults.store) private var showsArchived = false
     /// Machines, open until folded, and kept so (#3626).
     @AppStorage("showsMachines", store: WindowDefaults.store) private var showsMachines = true
+    /// The machines pinned to the group (#5286), a machine on each line.
+    @AppStorage(MachinePins.key, store: WindowDefaults.store) private var machinePins = ""
+    /// All Machines (N) pressed: the group draws every machine, until the Machines page (#5567).
+    @State private var showsAllMachines = false
     /// Status, open until folded, and kept so: its key from before #3633 (#3998).
     @AppStorage("showsStatus", store: WindowDefaults.store) private var showsStatus = true
     /// The Work group (#4004), open the first time: folded, it hides what the one Work row showed.
@@ -67,6 +71,15 @@ struct FolderListView: View {
     /// This Mac, when it is one of the machines, then the others by name (#3626).
     private var machines: [MachineRef] {
         (model.hasMacHost ? [.mac] : []) + model.hosts.servers
+    }
+
+    /// The Machines group's rows (#5286): at most seven, This Mac, pinned and busy first.
+    private var machineRows: MachinesGroup.Rows {
+        let pins = Set(MachinePins.pinned(machinePins))
+        let listed = machines.map { host in
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
+        }
+        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count, all: showsAllMachines)
     }
 
     /// No runtime can be started on: Runtimes' icon says so in red (#587); one nearly used
@@ -251,19 +264,25 @@ struct FolderListView: View {
             // A row per machine (#3626), each its page: CPU, memory and disks. Its icon says
             // its kind and, in its colour, its state (#4113).
             if !machines.isEmpty {
+                // At most seven rows, then All Machines (N) (#5286).
+                let rows = machineRows
                 Section(isExpanded: $showsMachines) {
-                    ForEach(machines, id: \.self) { host in
+                    ForEach(rows.machines, id: \.self) { host in
                         MachineRow(host: host) { picked = [.machine(host)] }
                             .appText(.supporting).sidebarInk(.machine(host)).tag(SidebarItem.machine(host))
                     }
                     // The machines New Machine is making, and the ones the control plane gave up
                     // waiting for (#4610), and every other machine of the person's that never
                     // joined, a click to join it (#4978): a row each until a machine of the name joins.
-                    ForEach(0..<model.machinesBeingMade, id: \.self) { _ in
+                    let unnamed = min(model.machinesBeingMade, rows.making)
+                    ForEach(0..<unnamed, id: \.self) { _ in
                         MakingMachineRow(making: nil).appText(.supporting)
                     }
-                    ForEach(model.machinesMaking) { making in
+                    ForEach(model.machinesMaking.prefix(rows.making - unnamed)) { making in
                         MakingMachineRow(making: making).appText(.supporting)
+                    }
+                    if rows.bounded || showsAllMachines {
+                        AllMachinesRow(total: rows.total, showsAll: $showsAllMachines)
                     }
                 } header: {
                     MachinesHeader()
@@ -1070,6 +1089,28 @@ private extension FolderMenu {
     }
 }
 
+/// The Machines group's last row past seven machines (#5286): All Machines (N) draws every one,
+/// and Fewer Machines folds them again. It opens the Machines page once the window has one (#5567).
+private struct AllMachinesRow: View {
+    let total: Int
+    @Binding var showsAll: Bool
+
+    var body: some View {
+        Button {
+            showsAll.toggle()
+        } label: {
+            Text(showsAll ? MachinesGroup.fewerTitle : MachinesGroup.allTitle(total))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .activityIcon(showsAll ? "chevron.up" : "ellipsis.circle")
+        .appText(.supporting)
+        .help(showsAll ? "Shows seven machines again" : "Shows every one of your \(total) machines")
+    }
+}
+
 /// The Machines group's header (#3973): its menu has New Machine, Register a Machine… and
 /// Machine Providers…. New Machine itself is the group's last row (#5265), not a `+` here.
 private struct MachinesHeader: View {
@@ -1209,7 +1250,9 @@ private struct SidebarFoot: View {
                 }
                 .padding(.horizontal, 14)
             }
-            ForEach(showsMachines ? [] : model.hosts.servers.filter { model.hostUnreachable($0) }, id: \.self) { host in
+            // At most seven, as the Machines group (#5286), then how many more.
+            let offline = showsMachines ? [] : model.hosts.servers.filter { model.hostUnreachable($0) }
+            ForEach(offline.prefix(MachinesGroup.limit), id: \.self) { host in
                 // A server gone quiet greys its folders; its row under Machines says why (#3764).
                 // With that group folded, this says it, once, where the Mac's own state is said.
                 // One on a stopped workspace says so, with Start (#961).
@@ -1231,6 +1274,13 @@ private struct SidebarFoot: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 4)
+            }
+            if offline.count > MachinesGroup.limit {
+                Label(MachinesGroup.moreOffline(offline.count - MachinesGroup.limit), icon: "bolt.horizontal.circle")
+                    .appText(.fine)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
             }
             // A file this Mac keeps that could not be read (#205): why paired devices or
             // folders may have gone from view, and that what they held is kept.
