@@ -245,41 +245,26 @@ extension RemoteModel {
         guard !words.isEmpty else { return }
         let request = DaemonAPI.ListRequest(archivedCommands: false, limit: Self.searchShown, lean: true, query: words)
         let hosts: [MachineRef] = [.mac] + reachableHosts.sorted { $0.rawValue < $1.rawValue }
-        let issue = SessionLabelQuery.issue(in: words)
-        for host in hosts {
-            await search(request, on: host)
-            // The sessions on the issue, its sub-issues and their PRs (#3899), from each host's
-            // Lineage, as the window asks. A host too old to say matches the #<n> label only.
-            if let issue, self.host(host, has: Capability.lineageSessions1), let target = hostClient(host),
-               let on = try? await target.call(DaemonAPI.Method.lineageSessions,
-                                               DaemonAPI.LineageSessionsRequest(number: issue),
-                                               returning: DaemonAPI.LineageSessions.self),
-               !Task.isCancelled {
-                work.noteIssueSessions(on)
-            }
-            // What was said (#1585): the sessions whose prompts or replies hold the words. Not
-            // asked of a host too old to say (#1748).
-            if self.host(host, has: Capability.agentsSaid1), let target = hostClient(host),
-               let said = try? await target.call(DaemonAPI.Method.agentsSaid, DaemonAPI.SaidSearchRequest(text: words),
-                                                 returning: DaemonAPI.SaidSearchResult.self),
-               !Task.isCancelled {
-                for match in said.matches { work.saidLines[match.agentID] = match.line }
-            }
-        }
+        // Every host at once, each answer shown as it comes, as the window asks (#5572).
+        await SessionSearch.askEveryHost(hosts, words: words, into: work,
+                                         has: { self.host($0, has: $1) },
+                                         client: { self.hostClient($0) },
+                                         page: { await self.search(request, on: $0) })
     }
 
-    /// The next page from each host that has more, newest first as the host lists them.
+    /// The next page from each host that has more, newest first as the host lists them; every
+    /// host at once (#5572).
     func searchMore() async {
         let next = searchNext
         searchNext = [:]
-        for (host, request) in next { await search(request, on: host) }
+        await SessionSearch.askMore(next) { await self.search($0, on: $1) }
     }
 
     func search(_ request: DaemonAPI.ListRequest, on host: MachineRef) async {
         guard let page = await ArchiveActions.searchArchived(request, on: host, fetch: {
             guard let target = self.hostClient(host) else { return nil }
             return try? await target.call(DaemonAPI.Method.agentsList, request, returning: [Agent].self)
-        }) else { return }
+        }), !Task.isCancelled else { return }
         searched.formUnion(page.agents.filter { work.agent($0.id) == nil }.map(\.id))
         work.takeListed(page.agents)
         searchNext[host] = page.next

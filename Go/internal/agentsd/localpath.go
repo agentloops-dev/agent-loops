@@ -334,6 +334,15 @@ func (d *Daemon) acceptLocal(c net.Conn, policy SocketPolicy, host string, priva
 	}
 	d.localConns[sc] = client
 	d.localMu.Unlock()
+	if d.suspension() != nil {
+		// Suspended after the exchange said ok and before the window was in localConns
+		// (#5744): closeLocalWindows did not see it, so it is cut off here.
+		d.localMu.Lock()
+		delete(d.localConns, sc)
+		d.localMu.Unlock()
+		sc.Close()
+		return
+	}
 	log.Printf("local: window %s connected", client)
 	defer func() {
 		d.localMu.Lock()
