@@ -21,7 +21,7 @@ const blockedQuery = `query($owner: String!, $name: String!) { repository(owner:
     nodes { number title body headRefName url isDraft headRefOid mergeable mergeStateStatus reviewDecision
       isCrossRepository authorAssociation author { login __typename }
       autoMergeRequest { enabledAt }
-      labels(first: 30) { nodes { name } }
+      reviewRequests(first: 20) { nodes { asCodeOwner requestedReviewer { __typename } } }
       latestReviews(first: 20) { nodes { state url } }
       timelineItems(itemTypes: [AUTO_MERGE_ENABLED_EVENT, AUTO_MERGE_DISABLED_EVENT], last: 1) { nodes { __typename } }
       baseRef { rules(first: 50) { nodes { parameters { ... on RequiredStatusChecksParameters { requiredStatusChecks { context } } } } }
@@ -51,11 +51,9 @@ type blockedNode struct {
 	AutoMerge *struct {
 		EnabledAt string `json:"enabledAt"`
 	} `json:"autoMergeRequest"`
-	Labels struct {
-		Nodes []struct {
-			Name string `json:"name"`
-		} `json:"nodes"`
-	} `json:"labels"`
+	Requests struct {
+		Nodes []blockedRequest `json:"nodes"`
+	} `json:"reviewRequests"`
 	Reviews struct {
 		Nodes []struct {
 			State string `json:"state"`
@@ -229,6 +227,22 @@ func (g *RealGitHub) BlockedPRs(ctx context.Context, repo string) ([]BlockedPR, 
 	return blockedPRs(answer.Data.Repository.PullRequests.Nodes), nil
 }
 
+// blockedRequest is one review a PR asks for and has not had since.
+type blockedRequest struct {
+	CodeOwner bool `json:"asCodeOwner"`
+	Reviewer  *struct {
+		Typename string `json:"__typename"`
+	} `json:"requestedReviewer"`
+}
+
+// personAsked says a review is requested from a person (#5803): a user, not a team or a bot, and
+// not only as a code owner, which GitHub asks of every PR that touches the owner's paths.
+func (n blockedNode) personAsked() bool {
+	return slices.ContainsFunc(n.Requests.Nodes, func(r blockedRequest) bool {
+		return !r.CodeOwner && r.Reviewer != nil && r.Reviewer.Typename == "User"
+	})
+}
+
 func blockedPRs(nodes []blockedNode) []BlockedPR {
 	var out []BlockedPR
 	for _, n := range nodes {
@@ -239,11 +253,7 @@ func blockedPRs(nodes []blockedNode) []BlockedPR {
 		if n.Author != nil && !n.CrossRepo {
 			b.Trusted = isOwnAuthor(n.Association, n.Author.Login, n.Author.Typename)
 		}
-		var labels []string
-		for _, l := range n.Labels.Nodes {
-			labels = append(labels, l.Name)
-		}
-		b.Skip = mcpevents.SkipsBlocked(n.Draft, labels)
+		b.Skip = mcpevents.SkipsBlocked(n.Draft, n.personAsked())
 		b.Blocking = n.blocking()
 		out = append(out, b)
 	}

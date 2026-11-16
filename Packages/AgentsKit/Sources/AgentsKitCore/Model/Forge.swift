@@ -846,8 +846,8 @@ public extension DaemonAPI {
         }
     }
 
-    /// The features, by name; `approvals` are the open pull requests labelled needs-approval
-    /// (#4115); `errors` says a forge that could not be read.
+    /// The features, by name; `approvals` are the open pull requests with a review requested
+    /// from the person (#4115, #5803); `errors` says a forge that could not be read.
     struct ForgeFeatures: Codable, Sendable, Hashable {
         public var features: [ForgeFeature]
         public var approvals: [String]?

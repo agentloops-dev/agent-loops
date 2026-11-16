@@ -13,7 +13,7 @@ import SwiftUI
 @Observable
 final class WorkFeaturesState {
     var features: [DaemonAPI.ForgeFeature]?
-    /// The open pull requests labelled needs-approval, of every machine (#4115).
+    /// The open pull requests with a review requested from the person, of every machine (#4115, #5803).
     var approvals: [String] = []
     var errors: [String] = []
     /// The features a person opened (true) or folded (false), by name in lower case; the others
