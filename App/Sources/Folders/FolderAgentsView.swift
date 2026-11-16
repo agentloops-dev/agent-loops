@@ -194,93 +194,51 @@ struct FolderAgentsView: View {
         return label(folder)
     }
 
-    /// On: the machines that have a folder of the project (#3279), this one first. A
-    /// stopped machine starts when it is used. Not drawn for a project with one folder.
+    /// On: the one machine picker (#5621, the web's #5287): Auto first, then the machines that have a
+    /// folder of the project (#3279) and those a folder can be sent to. A machine with a folder of the
+    /// project opens it (the one here first); any other adds one, by the Send to ‹machine›… sheet
+    /// (#1123). A stopped machine starts when it is used. Not drawn for a project with one folder.
     @ViewBuilder private var machineMenu: some View {
         if let summary, let project = NewSessionProject.choice(of: summary.key, in: model.newSessionProjects),
            !project.hidesMachine {
             let pick = model.draftAutoMachine
             let onAuto = AutoMachine.chosen(summary.key, named: model.draftNamedMachine, pick: pick)
-            Menu {
+            let shown = onAuto ? AutoMachine.rowWords(pick) : model.hosts.label(summary.host)
+            let withFolder = Set(project.folders.map(\.host))
+            let others = model.canSend(from: summary.host) && summary.exists ? Set(model.sendTargets) : []
+            MachinePicker(
+                label: "On",
+                value: onAuto ? nil : summary.host,
+                title: "On \(shown)",
+                keep: { withFolder.contains($0.id) || others.contains($0.id) },
                 // Auto first, chosen at every start (#5375); greyed, with the control plane's
                 // words, when no machine fits.
-                if AutoMachine.offered(pick) {
-                    Button {
-                        model.draftNamedMachine = nil
-                    } label: {
-                        if onAuto {
-                            Label(AutoMachine.rowWords(pick), icon: "checkmark")
-                        } else {
-                            Text(AutoMachine.rowWords(pick))
-                        }
-                        if let off = AutoMachine.offWords(pick) { Text(off) }
-                    }
-                    .disabled(!AutoMachine.usable(pick))
-                    Divider()
+                any: AutoMachine.offered(pick)
+                    ? .init(title: AutoMachine.rowWords(pick), disabled: !AutoMachine.usable(pick), help: AutoMachine.offWords(pick))
+                    : nil
+            ) { picked in
+                guard let picked else {
+                    model.draftNamedMachine = nil
+                    return
                 }
-                ForEach(project.folders, id: \.self) { key in
-                    Button {
-                        // A machine named by hand starts there and is not remembered (#5375).
-                        model.draftNamedMachine = key
-                        model.showFolder(key)
-                    } label: {
-                        if key == summary.key && !onAuto {
-                            Label(machineLabel(key, in: project), icon: "checkmark")
-                        } else {
-                            Text(machineLabel(key, in: project))
-                        }
-                    }
+                // A machine named by hand starts there and is not remembered (#5375).
+                if let key = project.folders.first(where: { $0 == summary.key && $0.host == picked })
+                    ?? project.folders.first(where: { $0.host == picked }) {
+                    model.draftNamedMachine = key
+                    model.showFolder(key)
+                } else {
+                    requests.sendToHost = SendToHostRequest(folder: summary.folder.folder, from: summary.host, host: picked)
                 }
-                // The existing Send to ‹machine›… sheet (#1123), not a new flow.
-                if model.canSend(from: summary.host), !model.sendTargets.isEmpty {
-                    Divider()
-                    Menu("Add a Folder on Another Machine") {
-                        ForEach(model.sendTargets, id: \.self) { host in
-                            Button("Send to \(model.hosts.label(host))…") {
-                                requests.sendToHost = SendToHostRequest(folder: summary.folder.folder, from: summary.host,
-                                                                        host: host)
-                            }
-                        }
-                    }
-                    .disabled(!summary.exists)
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text("On \(onAuto ? AutoMachine.rowWords(pick) : model.hosts.label(summary.host))")
-                        .appText(.reading)
-                        .lineLimit(1)
-                    Image(icon: "chevron.up.chevron.down")
-                        .imageScale(.small)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                }
-                .contentShape(Rectangle())
             }
-            .menuStyle(.button)
             .buttonStyle(.plain)
-            .menuIndicator(.hidden)
             .fixedSize()
             .help(AutoMachine.offWords(pick) ?? "Start the session on another machine")
-            .accessibilityLabel("On: \(onAuto ? AutoMachine.rowWords(pick) : model.hosts.label(summary.host))")
             // Asked again when the project, the machine or the runtime moves (#5375).
             .task(id: "\(summary.key.stored)|\(model.draftProjectID ?? "")|\(model.draftAutoMachineRuntime ?? "")|"
                   + project.folders.map { model.hostUnreachable($0.host) ? "0" : "1" }.joined()) {
                 await model.refreshDraftAutoMachine()
             }
         }
-    }
-
-    /// `This Mac`, `devbox (offline)`, `cloud-1 (stopped, starts when used)`; with the path
-    /// when the project has two folders on the machine.
-    private func machineLabel(_ key: FolderKey, in project: NewSessionProject.Choice) -> String {
-        let host = key.host
-        var name = model.hosts.label(host)
-        if project.folders.filter({ $0.host == host }).count > 1 {
-            name += " · \(FolderPlace.path(key.folder, on: host))"
-        }
-        if model.startsWhenUsed(host) { return "\(name) (stopped, starts when used)" }
-        if model.hostUnreachable(host) { return "\(name) (offline)" }
-        return name
     }
 
     /// The kind of session to start (#760), the same control as the folder's name, a
