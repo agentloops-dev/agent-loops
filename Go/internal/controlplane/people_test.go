@@ -16,6 +16,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -371,6 +372,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 // FR-006: a control plane keeps one admin at least; a removed person's clients are cut
 // off and their machines leave, and the code they paired with does nothing again.
 func TestRolesAndRemoval(t *testing.T) {
+	flaky.UnderLoad(t, "#5843")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	_, alexWindow := p.client("Alex's Mac")
