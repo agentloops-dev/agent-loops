@@ -88,6 +88,11 @@ then UI changes, bugs before features, then the rest):
    runtime. Add to the prompt: before you start and before each push, lease `ci`, do the
    step, release it; on a conflict
    with `main`, `git merge origin/main` and push without running the tests again (#5712).
+   **A `linux-ok` child** (AGENTS.md, "Plans", #5810) goes to a Linux machine when one is
+   free: call `list_machines`, and when a Linux machine is online, pass it as `machine` to
+   `start_session`. This keeps the Mac's build lease free for the Swift lanes. When no
+   Linux machine is online, or its start fails, start the lane on the Mac, as before. A
+   child without `linux-ok` always runs on the Mac.
 3. If `start_session` refuses (the folder's limits are full), unassign the child and
    start no more until a lane ends.
 4. After the epic's first lane starts, ask `estimate_issue` for the epic once. This keeps

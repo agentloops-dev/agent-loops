@@ -32,6 +32,11 @@ needs). "Landing a change" is for the lanes that build, not for you.
   (`bug`, `enhancement`). When testing it needs
   someone to create an account with an outside service (Meta, Slack, Google Cloud, a
   second runtime account…), add `needs-account` and say which account in the issue.
+- **Add `linux-ok`** (#5810) when a lane can do all of the issue on a Linux machine (Go,
+  the web page, docs or tooling), so a lead can start it there. Add it only when none of
+  these is true: it changes `App/`, `Remote/`, `Shared/`, `Host/` or
+  `Packages/AgentsKit`; it changes `Packages/Wire`; it needs a walk on the scratch Mac
+  app or the simulator, or Alex's Mac or devices. When you are not sure, leave it out.
 - **Size each issue you file** (#4532) with one `size:` label, from the rubric below.
   Every agent that files an issue uses this rubric (AGENTS.md, "Plans"). Size it when
   you file it, before any work starts, and do not change it later: the
