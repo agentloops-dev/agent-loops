@@ -33,6 +33,10 @@ struct RemoteSidebar: View {
     @AppStorage("showsWork") private var showsWork = true
     /// Machines (#4034), open until folded, and kept so, as the window keeps it.
     @AppStorage("showsMachines") private var showsMachines = true
+    /// The machines pinned to the group (#5286), a machine on each line, as the window keeps them.
+    @AppStorage(MachinePins.key) private var machinePins = ""
+    /// All Machines (N) tapped: the group draws every machine, until the Machines page (#5568).
+    @State private var showsAllMachines = false
     /// Reports (#5454), open until folded, and kept so, as the window keeps it.
     @AppStorage("showsReports") private var showsReports = true
     /// The smart groups turned off in Settings ▸ Sidebar (#846).
@@ -57,6 +61,15 @@ struct RemoteSidebar: View {
     /// up, in the warning tint (#3956).
     private var runtimesTally: RuntimeTally? {
         RuntimeTally(model.runtimes, allowances: model.runtimeAllowances)
+    }
+
+    /// The Machines group's rows (#5286): at most seven, This Mac, pinned and busy first.
+    private var machineRows: MachinesGroup.Rows {
+        let pins = Set(MachinePins.pinned(machinePins))
+        let listed = model.machines.map { host in
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
+        }
+        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count, all: showsAllMachines)
     }
 
     private var servers: [MachineRef] {
@@ -210,18 +223,38 @@ struct RemoteSidebar: View {
 
                 // A row per machine (#4034), each its page, as the window's (#3973).
                 if !model.machines.isEmpty {
+                    // At most seven rows, then All Machines (N) (#5286).
+                    let rows = machineRows
                     Section(isExpanded: $showsMachines) {
-                        ForEach(model.machines, id: \.self) { host in
+                        ForEach(rows.machines, id: \.self) { host in
                             RemoteMachineRow(host: host).paperTag(SidebarItem.machine(host))
                         }
                         // The machines New Machine is making, and the ones the control plane
                         // gave up waiting for (#4612), and every other machine of the person's that
                         // never joined (#4978): a row each until a machine of the name joins.
-                        ForEach(0..<model.machinesBeingMade, id: \.self) { _ in
+                        let unnamed = min(model.machinesBeingMade, rows.making)
+                        ForEach(0..<unnamed, id: \.self) { _ in
                             RemoteMakingMachineRow(making: nil)
                         }
-                        ForEach(model.machinesMaking) { making in
+                        ForEach(model.machinesMaking.prefix(rows.making - unnamed)) { making in
                             RemoteMakingMachineRow(making: making)
+                        }
+                        if rows.bounded || showsAllMachines {
+                            Button {
+                                showsAllMachines.toggle()
+                            } label: {
+                                HStack {
+                                    Text(showsAllMachines ? MachinesGroup.fewerTitle : MachinesGroup.allTitle(rows.total))
+                                        .foregroundStyle(Paper.secondary)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .activityIcon(showsAllMachines ? "chevron.up" : "ellipsis.circle")
+                            .appText(.supporting)
+                            .listRowBackground(Color.clear)
+                            .accessibilityHint(showsAllMachines ? "Shows seven machines again" : "Shows every machine")
                         }
                     } header: {
                         Text("Machines")
@@ -279,7 +312,8 @@ struct RemoteSidebar: View {
             let offline = showsMachines && !model.machines.isEmpty ? [] : servers.filter { model.hostIsOffline($0) }
             if !offline.isEmpty {
                 Section {
-                    ForEach(offline, id: \.self) { host in
+                    // At most seven, as the Machines group (#5286), then how many more.
+                    ForEach(offline.prefix(MachinesGroup.limit), id: \.self) { host in
                         // One on a stopped workspace says so, with Start, as its strip (#961).
                         let row = model.controlHost(host)
                         HStack(spacing: 8) {
@@ -299,6 +333,11 @@ struct RemoteSidebar: View {
                                     .accessibilityLabel("Start \(model.hostLabel(host))")
                             }
                         }
+                    }
+                    if offline.count > MachinesGroup.limit {
+                        Label(MachinesGroup.moreOffline(offline.count - MachinesGroup.limit), icon: "bolt.horizontal.circle")
+                            .appText(.fine)
+                            .foregroundStyle(Paper.secondary)
                     }
                 }
             }

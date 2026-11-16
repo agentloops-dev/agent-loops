@@ -96,16 +96,11 @@ public enum Dashboard {
             self.labels = labels
         }
 
-        /// The label a pull request waits for a person's approval under (#2811): this repo's, and
-        /// any folder's that uses the same word.
-        public static let approvalLabel = "needs-approval"
-
-        /// It waits for the person to approve it (#5534): open, ready for review, not approved yet,
-        /// and labelled `needs-approval` or with a review required by the forge. Only a pull request
-        /// the forge listed can, so a row with labels alone never asks.
+        /// It waits for the person to approve it (#5534): open, ready for review, with a review
+        /// required by the forge, as a review requested from the person asks (#5803); no label
+        /// says so. Only a pull request the forge listed can, so a row with labels alone never asks.
         public var waitsForApproval: Bool {
-            guard node != nil, state == "open", !draft, review != "approved" else { return false }
-            return labels.contains(Self.approvalLabel) || review == "review_required"
+            node != nil && state == "open" && !draft && review == "review_required"
         }
 
         /// Its checks fail on an open pull request the forge listed.

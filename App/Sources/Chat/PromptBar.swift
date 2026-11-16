@@ -14,6 +14,9 @@ struct PromptBar: View {
     @Environment(\.chatActions) private var chatActions
     /// Set in a window of its own (#826): this bar is that session's.
     @Environment(\.poppedChat) private var popped
+    /// In New Session in Background's window (#5798): always a new session, in that window's folder.
+    @Environment(\.startsInBackground) private var startsInBackground
+    @Environment(\.windowFolder) private var windowFolder
     @Environment(\.openURL) private var openURL
     @Environment(\.openSettings) private var openSettings
     /// Whether the folder is the caller's to decide rather than this bar's.
@@ -61,7 +64,11 @@ struct PromptBar: View {
     @State private var sending = 0
     @State private var sendingIsSlow = false
 
-    private var agent: Agent? { popped.map { model.work.agent($0.id) } ?? model.selectedAgent }
+    private var agent: Agent? {
+        // The background window's bar is never the main window's session's (#5798).
+        if startsInBackground { return nil }
+        return popped.map { model.work.agent($0.id) } ?? model.selectedAgent
+    }
     private var isNew: Bool { agent == nil }
 
     /// What the runtime behind this bar's agent, or the draft, says it will take.
@@ -80,7 +87,9 @@ struct PromptBar: View {
     private var draftKey: DraftKey {
         if let agent { return .agent(agent.id) }
         // The project's (#5376): On ▾ moves to its folder on another machine, the words stay.
-        guard folderIsFixed, let key = model.selectedFolderKey else { return .newAgent(folder: nil) }
+        guard folderIsFixed, let key = (startsInBackground ? windowFolder : nil) ?? model.selectedFolderKey else {
+            return .newAgent(folder: nil)
+        }
         return .newSession(in: key, folders: model.liveFolders)
     }
 

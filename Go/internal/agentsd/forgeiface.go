@@ -347,6 +347,9 @@ type forgeScope interface {
 type forgeFilter struct {
 	PRs                                    bool
 	State, Label, Assignee, Query, Feature string
+	// Reviewer is a login a review is requested from (#5803), "" for any; only GitHub reads it,
+	// so a list with one is of GitHub only.
+	Reviewer string
 	// Board is the project board the list is of, nil for none; each forge reads its own.
 	Board *forgeBoard
 }

@@ -23,6 +23,7 @@ ones every Mac app has.
 | Escape | In the prompt, with a list of commands or files showing | Closes the list. |
 | Command-N | **File ▸ New Session** | Starts a new session in the selected folder, the same as the compose button above the sessions column. |
 | Option-Command-N | **File ▸ New Session in a Worktree** | Starts a new session in the selected folder, in a new worktree. |
+| Shift-Command-N | **File ▸ New Session in Background** | Opens a small window that starts a session and then closes. The main window stays on what it shows, and the new session shows in the sidebar. Esc closes the window and keeps the typed prompt for the next time. |
 | Command-O | **File ▸ Add Folder…** | Adds a folder as a folder. |
 | Shift-Command-O | **File ▸ Clone Folder from Git URL…** | Clones a Git URL as a folder. |
 | Control-Command-O | **File ▸ Add a Machine…** | Adds a machine, as Settings ▸ Machines does. Off with no control plane. |

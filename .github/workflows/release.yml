@@ -163,7 +163,7 @@ jobs:
     permissions:
       contents: write
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v6
         with:
@@ -282,7 +282,7 @@ jobs:
     timeout-minutes: 90
     environment: release
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       # First, so a missing secret is one clear line rather than a signing error later.
       - name: The App Store secrets are there

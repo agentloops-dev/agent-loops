@@ -138,6 +138,7 @@ func TestSearchQuery(t *testing.T) {
 		{SearchFilter{}, "is:issue is:open repo:o/r sort:updated-desc"},
 		{SearchFilter{State: "closed"}, "is:issue is:closed repo:o/r sort:updated-desc"},
 		{SearchFilter{PRs: true, State: "all", Assignee: "kim", Query: " flaky "}, "is:pr repo:o/r assignee:kim flaky sort:updated-desc"},
+		{SearchFilter{PRs: true, Reviewer: "alexec"}, "is:pr is:open repo:o/r user-review-requested:alexec sort:updated-desc"},
 	} {
 		if got := SearchQuery([]string{"o/r"}, c.f); got != c.want {
 			t.Errorf("%+v: %q, want %q", c.f, got, c.want)

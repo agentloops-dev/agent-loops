@@ -536,7 +536,7 @@
     },
     "ForgeFeatures": {
       "type": "object",
-      "description": "forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests labelled needs-approval (#4115), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.",
+      "description": "forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests with a review requested from the person (#4115, #5803), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.",
       "properties": {
         "features": {
           "type": "array",
@@ -1597,7 +1597,7 @@
         },
         "label": {
           "type": "string",
-          "description": "alex-todo, needs-account or needs-approval."
+          "description": "alex-todo or needs-account on an issue; review-requested on a pull request with a review requested from the person (#5803), which is no label."
         },
         "checklist": {
           "type": "array",
@@ -1675,7 +1675,7 @@
     },
     "ReviewPull": {
       "type": "object",
-      "description": "An open pull request labelled needs-approval, a UI change waiting for the person (#2811), in the sidebar's For Review (#3330) until it is labelled approved or changes-wanted, is closed, or is dismissed.",
+      "description": "An open pull request with a review requested from the person (#5803), a UI change waiting for them (#2811), in the sidebar's For Review (#3330) until they review it, it is closed, or it is dismissed.",
       "properties": {
         "url": {
           "$ref": "core.schema.json#/definitions/URLString"

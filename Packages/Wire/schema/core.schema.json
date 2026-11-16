@@ -1406,7 +1406,7 @@
         },
         "forge": {
           "$ref": "forge.schema.json#/definitions/RequestForge",
-          "description": "A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request labelled needs-approval."
+          "description": "A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request with a review requested from the person (#5803)."
         },
         "waiters": {
           "type": "array",

@@ -6096,7 +6096,7 @@ type ForgeFeature struct {
 	UpdatedAt *Date `json:"updatedAt,omitzero"`
 }
 
-// forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests labelled needs-approval (#4115), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
+// forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests with a review requested from the person (#4115, #5803), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
 type ForgeFeatures struct {
 	Features []ForgeFeature `json:"features"`
 
@@ -7153,7 +7153,7 @@ type LineageCostNode struct {
 	// When a PR was opened (#4553): pr.opened's openedAt, the earliest kept. The approval wait's start when askedAt is unknown.
 	OpenedAt *Date `json:"openedAt,omitzero"`
 
-	// When a PR was labelled needs-approval (#4553), from pr.labelled: the approval wait's start.
+	// When a review was first requested from the person on a PR (#4553, #5803), from review.requested: the approval wait's start.
 	AskedAt *Date `json:"askedAt,omitzero"`
 
 	// A PR's first answer by a person (#4553): the first pr.reviewed or pr.commented at or after the wait's start, while it was open, not by a bot and not a comment that starts with <!-- agent -->. The approval wait is this less askedAt, else openedAt.
@@ -7214,7 +7214,7 @@ type LineageDelivery struct {
 	// The agents' working time on a closed issue and its PRs over its cycle time, at most 1, the median. Counted by its last merge.
 	FlowEfficiency LineageDeliveryFigure `json:"flowEfficiency"`
 
-	// The approval wait (#4553), in seconds: from a PR's needs-approval label (its opening when the label is unknown) to its first answer by a person; the median, and p90. Counted by the answer's time.
+	// The approval wait (#4553), in seconds: from the review requested from the person on a PR (its opening when no request is known, #5803) to its first answer by a person; the median, and p90. Counted by the answer's time.
 	ApprovalWait LineageDeliveryFigure `json:"approvalWait"`
 
 	// The share of merged PRs, 0 to 1, that waited for a person's answer before their merge (#4553), by merge time. count is the merged PRs.
@@ -13133,7 +13133,7 @@ type Request struct {
 	// The session that asked.
 	AskedBy *UUID `json:"askedBy,omitzero"`
 
-	// A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request labelled needs-approval.
+	// A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request with a review requested from the person (#5803).
 	Forge *RequestForge `json:"forge,omitzero"`
 
 	// Every session that waits on it; the asker first. Kept as history once it ends.
@@ -13165,7 +13165,7 @@ type RequestAnswer struct {
 	SecretUse *RequestSecretUseAnswer `json:"secretUse,omitzero"`
 }
 
-// A needs-approval pull request's answer: approve adds approved, changes adds changes-wanted; the note is the person's comment on it.
+// An answer to a pull request with a review requested from the person (#5803): only their review of the head, approve an Approve and changes a Request changes; the note is the review's words. Their own pull request takes no review from them.
 type RequestApprovalAnswer struct {
 	Action string `json:"action"`
 
@@ -13223,7 +13223,7 @@ type RequestForge struct {
 
 	URL string `json:"url"`
 
-	// alex-todo, needs-account or needs-approval.
+	// alex-todo or needs-account on an issue; review-requested on a pull request with a review requested from the person (#5803), which is no label.
 	Label string `json:"label"`
 
 	// An issue's lines under its first "## What <name> does" heading.
@@ -13494,7 +13494,7 @@ type ReviewOpenRequest struct {
 	URL URL `json:"url"`
 }
 
-// An open pull request labelled needs-approval, a UI change waiting for the person (#2811), in the sidebar's For Review (#3330) until it is labelled approved or changes-wanted, is closed, or is dismissed.
+// An open pull request with a review requested from the person (#5803), a UI change waiting for them (#2811), in the sidebar's For Review (#3330) until they review it, it is closed, or it is dismissed.
 type ReviewPull struct {
 	URL URL `json:"url"`
 

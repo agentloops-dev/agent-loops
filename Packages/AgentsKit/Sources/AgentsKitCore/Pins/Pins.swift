@@ -435,9 +435,9 @@ public struct FolderPins: Codable, Sendable, Hashable {
     }
 }
 
-/// An open pull request labelled needs-approval, a UI change waiting for the person (#2811),
-/// listed in the sidebar's For Review (#3330) until it is labelled approved or
-/// changes-wanted, is closed, or is dismissed. A row opens `url`, its page with the
+/// An open pull request with a review requested from the person (#5803), a UI change waiting
+/// for them (#2811), listed in the sidebar's For Review (#3330) until they review it, it is
+/// closed, or it is dismissed. A row opens `url`, its page with the
 /// screenshots.
 public struct ReviewPull: Codable, Sendable, Hashable, Identifiable {
     public var url: URL

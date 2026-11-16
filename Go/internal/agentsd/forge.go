@@ -279,6 +279,12 @@ func cursorOf(s *string) (forgeCursor, error) {
 
 // forgeList is a page of the issues or pull requests of r.folder, or of every folder.
 func (d *Daemon) forgeList(ctx context.Context, prs bool, r wire.ForgeListRequest) (wire.ForgeList, error) {
+	return d.forgeListAsked(ctx, prs, r, "")
+}
+
+// forgeListAsked is forgeList of the pull requests with a review requested from reviewer
+// (#5803), on GitHub; of every item for "".
+func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListRequest, reviewer string) (wire.ForgeList, error) {
 	method := map[bool]string{false: "forge/issues", true: "forge/pulls"}[prs]
 	limit := forgeListDefault
 	if r.Limit != nil {
@@ -316,7 +322,7 @@ func (d *Daemon) forgeList(ctx context.Context, prs bool, r wire.ForgeListReques
 		board = narrowToBoard(boardWire, folders, prs)
 	}
 	filter := forgeFilter{PRs: prs, State: state, Label: deref(r.Label), Assignee: deref(r.Assignee), Query: deref(r.Query),
-		Feature: deref(r.Feature), Board: board}
+		Feature: deref(r.Feature), Reviewer: reviewer, Board: board}
 	// The forges on the interface (#4329): each one's scope, and why it left folders out.
 	type scoped struct {
 		forge Forge
@@ -326,8 +332,8 @@ func (d *Daemon) forgeList(ctx context.Context, prs bool, r wire.ForgeListReques
 	var moved []scoped
 	scopeKeys := []any{}
 	for _, f := range d.forges() {
-		// A board's list is of the board's forge only.
-		if board != nil && board.forge != f.Name() {
+		// A board's list is of the board's forge only, and a list by reviewer of GitHub's.
+		if board != nil && board.forge != f.Name() || reviewer != "" && f.Name() != "github" {
 			continue
 		}
 		s, err := f.Sources(ctx, folders, prs)
@@ -341,7 +347,7 @@ func (d *Daemon) forgeList(ctx context.Context, prs bool, r wire.ForgeListReques
 		moved = append(moved, scoped{f, s, err})
 		scopeKeys = append(scopeKeys, f.Name(), s.Key())
 	}
-	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, cursor, limit})
+	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit})
 	if a, ok := d.forgeCached(string(key)); ok && a.list != nil {
 		return *a.list, nil
 	}

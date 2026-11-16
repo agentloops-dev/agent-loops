@@ -64,3 +64,7 @@ dialog.sheet:has(.settings-sheet) { width: min(760px, calc(100vw - 32px)); max-h
   border: 1px solid var(--paper-rule); border-radius: var(--radius-control); background: var(--paper-ground);
 }
 .move-to-machine p { margin: 0; }
+/* New Session in Background (#5798): New Session's own form in the dialog, at the height of what it holds. */
+dialog.sheet:has(.background-start) { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 64px); }
+.background-start .chat.new-agent.in-background { height: auto; min-height: 0; }
+.background-start .in-background .new-heading { flex: none; overflow: visible; padding-top: 4px; }

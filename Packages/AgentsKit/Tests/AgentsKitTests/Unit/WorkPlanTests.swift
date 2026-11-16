@@ -36,6 +36,16 @@ struct WorkPlanTests {
         #expect(!WorkPlan.hasPlan(item))
     }
 
+    @Test func thePriorityChipReadsTheFieldNotALabel() {
+        var item = DaemonAPI.ForgeItem(node: issue(1), title: "One", state: "open", updatedAt: day)
+        item.labels = [.init(name: "priority:high")]
+        #expect(WorkPlan.priorityWords(item) == nil)
+        for (value, words) in [("high", "High"), ("medium", "Medium"), ("low", "Low")] {
+            item.priority = value
+            #expect(WorkPlan.priorityWords(item) == words)
+        }
+    }
+
     @Test func thePROfAChildIsAnOpenOneFirstElseTheNewest() {
         let r = rollup(2, parts: [pr(10, outcome: "merged", at: 50), pr(11, at: 0), pr(12, outcome: "closed", at: 100)])
         #expect(WorkPlan.pr(r)?.node.ref == "github:alexec/Agents#11")

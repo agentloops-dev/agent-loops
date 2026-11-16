@@ -149,13 +149,13 @@ func BlockedDescription(reads string) string {
 		"(the forge turned auto-merge off) and behind (the base's rule wants the branch up to date, and it is not). " +
 		"Raised when the PR goes from not blocked to blocked, or when its head or its set of reasons changes; never twice for the same head and reasons, " +
 		"so a rerun that fails again on the same head is no new one. A check still running, a draft, and a PR that waits for a person's approval " +
-		"(labelled needs-approval, or a review a person must give) are no reason. " + reads
+		"(a review requested from a person, or a review a person must give) are no reason. " + reads
 }
 
-// SkipsBlocked is whether a PR is never blocked: a draft, or one labelled needs-approval,
-// which waits for a person, not its author.
-func SkipsBlocked(draft bool, labels []string) bool {
-	return draft || slices.Contains(labels, "needs-approval")
+// SkipsBlocked is whether a PR is never blocked: a draft, or one with a review requested from a
+// person (#5803), which waits for that person, not its author.
+func SkipsBlocked(draft, personAsked bool) bool {
+	return draft || personAsked
 }
 
 // CursorIDs are the ids in p's cursor, none on a first poll or a cursor this server did not

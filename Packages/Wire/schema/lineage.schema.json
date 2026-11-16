@@ -175,7 +175,7 @@
         },
         "askedAt": {
           "$ref": "core.schema.json#/definitions/WireDate",
-          "description": "When a PR was labelled needs-approval (#4553), from pr.labelled: the approval wait's start."
+          "description": "When a review was first requested from the person on a PR (#4553, #5803), from review.requested: the approval wait's start."
         },
         "answeredAt": {
           "$ref": "core.schema.json#/definitions/WireDate",
@@ -287,7 +287,7 @@
         },
         "approvalWait": {
           "$ref": "#/definitions/LineageDeliveryFigure",
-          "description": "The approval wait (#4553), in seconds: from a PR's needs-approval label (its opening when the label is unknown) to its first answer by a person; the median, and p90. Counted by the answer's time."
+          "description": "The approval wait (#4553), in seconds: from the review requested from the person on a PR (its opening when no request is known, #5803) to its first answer by a person; the median, and p90. Counted by the answer's time."
         },
         "approvalShare": {
           "$ref": "#/definitions/LineageDeliveryFigure",

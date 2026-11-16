@@ -41,7 +41,7 @@ type fakeForgeGitHub struct {
 	// timeline is what Timeline gives, and timelines how often it was asked (#4172).
 	timeline  githubmcp.Timeline
 	timelines int
-	// reviews are what a list of the label needs-approval gives (#3330).
+	// reviews are what a list by a requested reviewer gives (#3330, #5803).
 	reviews []githubmcp.Item
 	// waiting are each repo's deploys waiting for a reviewer (#3587).
 	waiting map[string][]githubmcp.WaitingDeploy
@@ -65,6 +65,8 @@ type fakeForgeGitHub struct {
 	states map[int]string
 	// authors are ItemPage's author by number, when set (#3860); its head is then h<number>.
 	authors map[int]string
+	// reviewers are ItemPage's reviewers by number, when set (#5803).
+	reviewers map[int][]githubmcp.Reviewer
 	// labeled are what a list of a label gives, when set for that label (#3661).
 	labeled map[string][]githubmcp.Item
 	// milestones are what Milestones gives, and milestoneReads how often it was asked (#4654).
@@ -100,7 +102,7 @@ func (f *fakeForgeGitHub) Search(_ context.Context, repos []string, sf githubmcp
 	if f.open != nil && sf.Label == "" && sf.State == "open" && !sf.PRs {
 		return githubmcp.SearchPage{Items: f.open}, nil
 	}
-	if sf.Label == "needs-approval" {
+	if sf.Reviewer != "" {
 		return githubmcp.SearchPage{Items: f.reviews}, nil
 	}
 	if sf.Label == "alex-todo" {
@@ -126,12 +128,14 @@ func (f *fakeForgeGitHub) ItemPage(_ context.Context, repo string, number int, b
 	body, hasBody := f.bodies[number]
 	state := f.states[number]
 	author := f.authors[number]
+	reviewers := f.reviewers[number]
 	f.mu.Unlock()
 	if hasBody {
 		if state == "" {
 			state = "open"
 		}
-		d := githubmcp.ItemDetail{Item: githubmcp.Item{Repo: repo, Number: number, PR: number == 12, State: state, Title: "Item", Author: author, UpdatedAt: "2026-11-01T10:00:00Z"}, Body: body}
+		d := githubmcp.ItemDetail{Item: githubmcp.Item{Repo: repo, Number: number, PR: number == 12, State: state, Title: "Item", Author: author, UpdatedAt: "2026-11-01T10:00:00Z"},
+			Body: body, Reviewers: reviewers}
 		if author != "" {
 			d.Head = fmt.Sprintf("h%d", number)
 		}
