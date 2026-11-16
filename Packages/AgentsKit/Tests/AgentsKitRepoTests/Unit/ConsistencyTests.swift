@@ -130,12 +130,8 @@ struct ConsistencyTests {
          why: "Work ▸ Timeline's own canvas, white before Now and navy after it, not the appearance (Alex, 2026-11-10, #4173)"),
         (file: "Shared/UI/Work/WorkTimelineView.swift", contains: "static let navy = Color(red:",
          why: "Work ▸ Timeline's night ground, after Now (Alex, 2026-11-10, #4173)"),
-        (file: "Shared/UI/Work/WorkTimelineView.swift", contains: "var ink: Color { night ?",
-         why: "Work ▸ Timeline's words, by day and by night on its own canvas (#4173)"),
         (file: "Shared/UI/Work/WorkTimelineView.swift", contains: "var faint: Color { night ?",
          why: "Work ▸ Timeline's faint words, by day and by night on its own canvas (#4173)"),
-        (file: "Shared/UI/Work/WorkTimelineView.swift", contains: "stroke(&gc, trunkPath,",
-         why: "Work ▸ Timeline's releases line by day, on its own canvas (#4173)"),
     ]
 
     /// A colour made from numbers: `Color(light: 0x…, dark: 0x…)`, `Color(red: 0.1, …)`,

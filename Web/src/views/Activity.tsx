@@ -345,8 +345,9 @@ export function ActivityPageView({ store, page, inReport = false }: { store: Sto
   // Opened by its address, the page draws before any machine answers: load again as each one comes online (#3242).
   const online = hosts.map((h) => h.id).join(",");
   useEffect(() => {
+    // Every machine's events in one call (#5592).
+    if (page === "events") void store.loadEventsAll(hosts.map((h) => h.id), 100);
     for (const host of hosts) {
-      if (page === "events") void store.loadEvents(host.id, 100);
       if (page === "spending" || page === "tokens") void store.loadCost(host.id);
       if (page === "spending" || page === "tokens") void store.loadRuntimes(host.id);
       if (page === "runtimes") void store.loadRuntimes(host.id);

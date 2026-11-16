@@ -111,7 +111,7 @@ final class DocsListState {
 
 /// Docs (#3321, spec 3319), as the web page's Docs section: every machine's docs (`docs/listAll`, one call, #5571),
 /// grouped by source (each project once, #3408), a folder's by its subfolders, with a Project filter; search (`docs/search`) with each match's line
-/// and snippet; and a doc's page (`docs/read`), read only. Back and Forward go along the places.
+/// and snippet; and a doc's page (`docs/read`), read only. The window's Back and Forward go along the places (#5784).
 struct DocsView: View {
     @Environment(AppModel.self) private var model
 
@@ -124,17 +124,8 @@ struct DocsView: View {
                 DocsListPane(list: model.docsList)
             }
         }
+        // Back and Forward are the window's, along every page (#5784).
         .navigationTitle("Docs")
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Button { model.docsHistory.back() } label: { Image(toolbarIcon: "chevron.left") }
-                    .disabled(!model.docsHistory.canGoBack)
-                    .help("Back")
-                Button { model.docsHistory.forward() } label: { Image(toolbarIcon: "chevron.right") }
-                    .disabled(!model.docsHistory.canGoForward)
-                    .help("Forward")
-            }
-        }
     }
 }
 

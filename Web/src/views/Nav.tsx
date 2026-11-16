@@ -270,7 +270,7 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   // Status ▸ Events' grey line reads who waits on each machine that answers; events/changed keeps it.
   const online = store.hosts.value.filter((h) => hostAnswers(h.state)).map((h) => h.id);
   useEffect(() => {
-    if (section === "status") for (const host of online) void store.loadEvents(host);
+    if (section === "status") void store.loadEventsAll(online);
   }, [section, online.join(",")]);
   // The Machines header (#3974): its menu has New Machine and registers one. New Machine is also in the sidebar's
   // + (#5447); either opens its sheet (#4634).
