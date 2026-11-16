@@ -256,7 +256,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             // The same rule as picking a folder: what you picked is what you see,
             // and a conversation or a workflow left open underneath would be waiting
             // to reappear when the bill is closed, which is a place nobody chose to
@@ -284,7 +284,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -311,7 +311,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -335,7 +335,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -359,7 +359,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -383,7 +383,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -407,7 +407,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -424,7 +424,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -448,7 +448,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -470,7 +470,7 @@ final class AppModel {
         didSet {
             guard showsDocs, showsDocs != oldValue else { return }
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -494,7 +494,7 @@ final class AppModel {
         didSet {
             guard showsMessages, showsMessages != oldValue else { return }
             showsSummary = false
-            showsMultiplier = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -521,7 +521,7 @@ final class AppModel {
     var showsSummary = false {
         didSet {
             guard showsSummary, showsSummary != oldValue else { return }
-            showsMultiplier = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -540,12 +540,12 @@ final class AppModel {
         }
     }
 
-    /// Whether the window is showing the Multiplier page (#3986), from its row under Usage or
-    /// View ▸ Multiplier (⌘0). A page like Velocity, and not persisted for the same reason. The
+    /// Whether the window is showing the Achievements page (#3986), from its row under Usage or
+    /// View ▸ Achievements (⌘0). A page like Velocity, and not persisted for the same reason. The
     /// window opens to the Dashboard instead (#5696).
-    var showsMultiplier = false {
+    var showsAchievements = false {
         didSet {
-            guard showsMultiplier, showsMultiplier != oldValue else { return }
+            guard showsAchievements, showsAchievements != oldValue else { return }
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -669,7 +669,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsMultiplier = false
+        showsAchievements = false
         if let agent = agents.first(where: { $0.id == agentID }) {
             pendingOpen = nil
             select(FolderKey(host: agent.host, folder: agent.folderPath))
@@ -697,7 +697,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsMultiplier = false
+        showsAchievements = false
         // Not listed yet: settling the selection would pick another, so it waits (#1055).
         pendingOpen = liveFolders.contains { $0.key == key } ? nil : .folder(key)
         select(key)
@@ -748,7 +748,7 @@ final class AppModel {
             if showsDocs { return .docs }
             if showsMessages { return .messages }
             if showsSummary { return .summary }
-            if showsMultiplier { return .multiplier }
+            if showsAchievements { return .achievements }
             // Nothing else open is the Dashboard (#5696), as the detail draws it.
             guard let key = selectedFolderKey else { return selection == nil && !composing ? .dashboard : nil }
             if let id = openWorkflow { return .workflow(id, in: key) }
@@ -779,7 +779,7 @@ final class AppModel {
                 showsDocs = false
                 showsMessages = false
                 showsSummary = false
-                showsMultiplier = false
+                showsAchievements = false
                 select(key)
                 openWorkflow = id
             case .pin(let path, let key):
@@ -792,8 +792,8 @@ final class AppModel {
                 showFolderPage(.mcpServers, of: key)
             case .review(let id, let key):
                 showFolderPage(.review(id), of: key)
-            case .multiplier:
-                showMultiplier()
+            case .achievements:
+                showAchievements()
             case .spending:
                 showsSpending = true
             case .tokens:
@@ -841,7 +841,7 @@ final class AppModel {
                 showsDocs = false
                 showsMessages = false
                 showsSummary = false
-                showsMultiplier = false
+                showsAchievements = false
                 showFolder(key)
             case nil:
                 // A list that clears its own selection — which macOS does while rows
@@ -852,9 +852,9 @@ final class AppModel {
         }
     }
 
-    /// The Multiplier page (#3986), from its row under Usage or View ▸ Multiplier (⌘0).
-    func showMultiplier() {
-        showsMultiplier = true
+    /// The Achievements page (#3986), from its row under Usage or View ▸ Achievements (⌘0).
+    func showAchievements() {
+        showsAchievements = true
     }
 
     /// The Dashboard (#5534), the home page (#5696): each work item on this Mac with its sessions,
@@ -874,7 +874,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsMultiplier = false
+        showsAchievements = false
         showNothing()
     }
 
@@ -892,7 +892,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsMultiplier = false
+        showsAchievements = false
         select(key)
         folderPage = page
     }
@@ -925,7 +925,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsMultiplier = false
+        showsAchievements = false
         select(key)
         // A new session in it (#366): the folder's own page is where a session starts,
         // as New Session has it. The folder's row in the sidebar only folds (#375).
@@ -1167,7 +1167,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsMultiplier = false
+        showsAchievements = false
         select(key)
         openPin = path
     }

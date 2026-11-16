@@ -9,8 +9,9 @@
 # `workflow_dispatch` of ci.yml with that sha and only those jobs: about log2(n) runs. It prints
 # the first bad commit and its pull request.
 #
-# Rule out a flake first (rerun the failed jobs once at <bad-sha>): a flaky test bisects to a
-# random commit. Each step waits for its run, so one step takes as long as the jobs do.
+# Rule out a flake first, from the batch and the log, not by a rerun (.agents/skills/fix-main,
+# step 2): a flaky test bisects to a random commit. Each step waits for its run, so one step
+# takes as long as the jobs do.
 #
 # Env: BISECT_REPO (default: this checkout's GitHub repo), BISECT_POLL (seconds, default 60).
 set -euo pipefail

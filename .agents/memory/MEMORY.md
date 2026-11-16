@@ -86,3 +86,4 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Scratch first-open take](scratch-first-open-take.md) — question page needs --walk + AGENTS_ROOT, not launch.sh; host env, own browser, Keychain connection, SecureField; #5563/#5564 block it
 - [agentsd goroutines go through goJob](agentsd-goroutines-go-through-gojob.md) — #5653: d.goJob/d.jobFunc so Shutdown waits; tests use setFor, not a deferred restore
 - [Go baseline from Linux](go-baseline-from-linux.md) — golangci-lint differs Mac vs Linux; --baseline on a Mac drops Linux-only entries (#5682)
+- [Homebrew Node is not the pinned Node](homebrew-node-is-not-the-pinned-node.md) — system zlib gzips to other sizes than CI; checks.sh attest does not attest web tasks with it (#5774)

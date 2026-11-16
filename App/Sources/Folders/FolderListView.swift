@@ -178,7 +178,7 @@ struct FolderListView: View {
             if let achievement = model.achievementCard {
                 Section {
                     AchievementCard(achievement: achievement,
-                                  open: { model.dismissAchievement(achievement); picked = [.multiplier] },
+                                  open: { model.dismissAchievement(achievement); picked = [.achievements] },
                                   dismiss: { model.dismissAchievement(achievement) })
                         .listRowSeparator(.hidden)
                         .selectionDisabled()
@@ -271,9 +271,9 @@ struct FolderListView: View {
             }
 
             Section(isExpanded: $showsUsage) {
-                // The Multiplier (#3986), always first.
-                MultiplierRow().activityIcon("multiply.circle")
-                    .appText(.supporting).sidebarInk(.multiplier).tag(SidebarItem.multiplier)
+                // The Achievements page (#3986), always first.
+                AchievementsRow().activityIcon("multiply.circle")
+                    .appText(.supporting).sidebarInk(.achievements).tag(SidebarItem.achievements)
                 SpendingRow(selection: $selection).activityIcon("dollarsign.circle",
                                                                 warns: model.costState?.daySpendIsCloseToFull == true)
                     .appText(.supporting).sidebarInk(.spending).tag(SidebarItem.spending)
