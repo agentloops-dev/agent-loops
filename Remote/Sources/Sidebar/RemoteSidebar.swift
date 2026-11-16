@@ -10,7 +10,7 @@ import UIKit
 ///
 /// The rules are the Mac's own, from `SidebarFolderFold`, `SidebarSmartRow`,
 /// `SidebarOrder` and `SidebarFolds` in AgentsKitCore: the same groups, order, pins and
-/// folds, kept the same way. Usage, connectors and folder management are Mac + web (#2798); the Multiplier is first under Status (#4116), and Velocity after it (#4758). The views are this device's: on an iPad the list sits beside
+/// folds, kept the same way. Usage, connectors and folder management are Mac + web (#2798); the Achievements page is first under Status (#4116), and Velocity after it (#4758). The views are this device's: on an iPad the list sits beside
 /// what it picked; on an iPhone it is the screen the app opens on and a pick is pushed
 /// over it. Swipe actions and a long press stand in for the Mac's context menus.
 struct RemoteSidebar: View {
@@ -231,9 +231,9 @@ struct RemoteSidebar: View {
                 // Reports (#5454), after Machines, as the window has them: the pages that report
                 // on the work. Cost, Tokens and Time are the Mac's and the web's (their tier).
                 Section(isExpanded: $showsReports) {
-                    // The Multiplier page (#4116), first, as the window has it.
-                    MultiplierRow().accessibilityHint(MultiplierRow.help)
-                        .activityIcon("multiply.circle").appText(.supporting).paperTag(SidebarItem.multiplier)
+                    // The Achievements page (#4116), first, as the window has it.
+                    AchievementsRow().accessibilityHint(AchievementsRow.help)
+                        .activityIcon("multiply.circle").appText(.supporting).paperTag(SidebarItem.achievements)
                     // Velocity (#4758): the Multiplier's PRs over time (tier Core).
                     HStack { Text("Velocity"); Spacer() }
                         .accessibilityHint("The pull requests that landed, over time")

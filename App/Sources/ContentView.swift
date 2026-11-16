@@ -139,8 +139,8 @@ struct ContentView: View {
             TimeView().paperGround()
         } else if model.showsVelocity {
             VelocityView().paperGround()
-        } else if model.showsMultiplier {
-            MultiplierPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
+        } else if model.showsAchievements {
+            AchievementsPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
                            agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
                            hints: "⌘N new session · ↑↓ move · ⌘K find",
                            refresh: { await model.refreshMultiplier() })
@@ -221,7 +221,7 @@ struct ContentView: View {
         guard terminal.isOpen, !model.showsEvents, !model.showsRuntimes, model.statusSecretsPage == nil,
               model.machinePage == nil,
               !model.showsSpending, !model.showsTokens, !model.showsTime, !model.showsVelocity,
-              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsSummary, !model.showsMultiplier, let folder = model.selectedFolderSummary, folder.exists else { return nil }
+              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsSummary, !model.showsAchievements, let folder = model.selectedFolderSummary, folder.exists else { return nil }
         return folder
     }
 
@@ -236,7 +236,7 @@ struct ContentView: View {
         model.selection != nil && !model.showsEvents
             && !model.showsRuntimes && model.statusSecretsPage == nil && model.machinePage == nil
             && !model.showsSpending && !model.showsTime && !model.showsVelocity && !model.showsWork && !model.showsDocs && !model.showsMessages
-            && !model.showsSummary && !model.showsMultiplier && model.openWorkflow == nil
+            && !model.showsSummary && !model.showsAchievements && model.openWorkflow == nil
             && model.folderPage == nil && model.openPin == nil
     }
 
