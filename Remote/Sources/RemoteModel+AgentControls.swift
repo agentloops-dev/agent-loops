@@ -635,6 +635,28 @@ extension RemoteModel {
     ///
     /// It goes when the layout does. What replaces it is the real thing US1 needs: a
     /// notification that lands on the agent it names.
+    /// The walk's scratch machines (`-canned-machines`, #5622): two groups by label, one stopped, one offline.
+    private func cannedMachines() {
+        func row(_ id: String, _ name: String, _ state: String, _ labels: [String]) -> DaemonAPI.ControlMachine {
+            var machine = DaemonAPI.ControlMachine(id: MachineRef(rawValue: id), name: name, platform: "linux", version: "0.0.0",
+                                                   state: state, reach: "direct", machineID: nil)
+            machine.labels = labels
+            return machine
+        }
+        let home = MachineRef(rawValue: "walk-home")
+        controlHome = home
+        controlHosts = [
+            DaemonAPI.ControlMachine(id: home, name: "walk-mac", platform: "darwin", version: "0.0.0", state: "online",
+                                     reach: "direct", machineID: nil),
+            row("walk-gpu-1", "gpu-1", "online", ["pool=gpu"]),
+            row("walk-gpu-2", "gpu-2", "stopped", ["pool=gpu"]),
+            row("walk-build-1", "build-1", "online", ["pool=build"]),
+            row("walk-build-2", "build-2", "needsUpdate", ["pool=build"]),
+            row("walk-devbox", "devbox", "online", []),
+            row("walk-old", "old-laptop", "offline", []),
+        ]
+    }
+
     func openFromLaunchArguments() async {
         let arguments = ProcessInfo.processInfo.arguments
         func value(_ flag: String) -> String? {
@@ -643,6 +665,9 @@ extension RemoteModel {
             else { return nil }
             return arguments[arguments.index(after: index)]
         }
+        // `-canned-machines`: scratch machines with labels beside the canned daemon's Mac, for a walk of
+        // the one machine picker (#5622): the canned daemon is one host with no control plane.
+        if arguments.contains("-canned-machines") { cannedMachines() }
         if let name = value("-folder"),
            let summary = work.folders.first(where: { $0.name == name }) {
             // Its page is New session (#366).

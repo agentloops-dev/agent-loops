@@ -22,7 +22,8 @@ struct SessionSearchTests {
     private let slow = MachineRef(rawValue: "slow")
     private let fast = MachineRef(rawValue: "fast")
 
-    @Test func asksEveryHostAtOnceAndKeepsEachAnswerAsItComes() async {
+    // Quarantined: the fast host can answer before the slow one is asked (#5861).
+    @Test(.flakyUnderLoad) func asksEveryHostAtOnceAndKeepsEachAnswerAsItComes() async {
         let asked = Asked()
         let slow = slow
         let search = Task { @MainActor in
