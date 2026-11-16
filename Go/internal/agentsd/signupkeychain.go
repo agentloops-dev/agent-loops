@@ -27,6 +27,11 @@ import (
 // The items were made by /usr/bin/security, which their access list names, so its read
 // raises no prompt; a read that does wait on one is stopped after ten seconds (#207), and
 // that item is tried again at the next start.
+//
+// Only the person's own daemon copies them (#5758): the standard root, with no
+// AGENTS_PERSONAL_HOME named. A scratch root or a scratch personal home (run-app, a walk, a
+// test) never lists or reads the login Keychain, so the person's passwords never reach a
+// scratch store, its control plane or its Secrets page.
 
 const signupKeychainPrefix = "agents-signup:"
 
@@ -81,7 +86,14 @@ func (d *Daemon) MoveSignupKeychain() {
 	}
 }
 
+// signupKeychainIsThePersons says whether this daemon is the person's own, whose store may
+// take the person's Keychain items (#5758). Tests replace it to copy into a scratch home.
+var signupKeychainIsThePersons = (*Daemon).isThePersonsOwn
+
 func (d *Daemon) moveSignupKeychain() (int, error) {
+	if !signupKeychainIsThePersons(d) {
+		return 0, nil
+	}
 	home := d.personalHome()
 	if home == "" {
 		return 0, nil
