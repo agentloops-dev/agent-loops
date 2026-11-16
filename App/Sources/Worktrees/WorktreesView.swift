@@ -89,6 +89,8 @@ struct WorktreeRow: View {
     @State private var sending: SendToHostRequest?
     /// The Bring back from ‹host›… sheet up for this worktree (#1473).
     @State private var bringingBack: BringBackFromHostRequest?
+    /// The machine picker the row's Send to / Bring Back from item opened (#5621).
+    @State private var picking: MachinePickerAsk?
 
     private var canClean: Bool { worktree.madeByApp && worktree.exists && worktree.isIdle }
     /// Send to and Bring Back are from this Mac's worktrees only.
@@ -142,18 +144,22 @@ struct WorktreeRow: View {
         .contextMenu {
             // This Mac's worktree, sent to a server and added there (#1123). The worktrees are
             // this Mac's host's, by its own id when it has one (#1496, #1536).
-            ForEach(sendsToServers ? model.sendTargets : [], id: \.self) { server in
-                Button("Send to \(model.hosts.label(server))…") {
-                    sending = SendToHostRequest(folder: worktree.root, from: model.thisMacHostID ?? .mac, host: server)
+            // One item each, which opens the one machine picker (#5621).
+            if sendsToServers, !model.sendTargets.isEmpty {
+                Button(MachinePickerAsk.sendMenu) {
+                    picking = .send(model.sendTargets) {
+                        sending = SendToHostRequest(folder: worktree.root, from: model.thisMacHostID ?? .mac, host: $0)
+                    }
                 }
-            }
-            // The server's branches, brought back into this worktree's repository (#1473).
-            ForEach(sendsToServers ? model.sendTargets : [], id: \.self) { server in
-                Button("Bring Back from \(model.hosts.label(server))…") {
-                    bringingBack = BringBackFromHostRequest(folder: worktree.root, from: model.thisMacHostID ?? .mac, host: server)
+                // The server's branches, brought back into this worktree's repository (#1473).
+                Button(MachinePickerAsk.bringBackMenu) {
+                    picking = .send(model.sendTargets, bringBack: true) {
+                        bringingBack = BringBackFromHostRequest(folder: worktree.root, from: model.thisMacHostID ?? .mac, host: $0)
+                    }
                 }
             }
         }
+        .machinePickerSheet($picking)
         .sheet(item: $sending) { SendToHostSheet(request: $0).paperSheet() }
         .sheet(item: $bringingBack) { BringBackSheet(request: $0).paperSheet() }
         .alert(alertTitle, isPresented: isAsking, presenting: asking) { check in

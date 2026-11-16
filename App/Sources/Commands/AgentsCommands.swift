@@ -66,6 +66,9 @@ final class WindowRequests {
     /// The folder and host of the Bring back from ‹host›… sheet that is up (#1473), or nil.
     var bringBackFromHost: BringBackFromHostRequest?
 
+    /// The machine picker a menu item opened (#5621): Add Folder On…, Send to a Machine…, or nil.
+    var machinePicker: MachinePickerAsk?
+
     func focusPrompt() { wantsPromptFocus = true }
     func focusSessionSearch() { wantsSessionSearchFocus = true }
 }

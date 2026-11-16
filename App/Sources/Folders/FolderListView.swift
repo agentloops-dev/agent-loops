@@ -482,6 +482,7 @@ struct FolderListView: View {
             if let folder = requests.dropboxFolder { DropboxSheet(folder: folder).paperSheet() }
         }
         .sendToHostSheet(requests)
+        .machinePickerSheet(requests)
         .bringBackSheet(requests)
         // New Machine (#4634): the defaults chosen, Make to confirm.
         .sheet(item: Binding(get: { model.newMachineAsk }, set: { model.newMachineAsk = $0 })) { ask in
@@ -1025,20 +1026,21 @@ private struct FolderMenu: View {
             .disabled(model.hostUnreachable(summary.host) || !summary.exists)
         ShowHiddenViewsButton(folder: summary.key)
         // This Mac's repository, sent to a server and added there (#1123).
-        if model.canSend(from: summary.host) {
-            ForEach(model.sendTargets, id: \.self) { host in
-                Button("Send to \(model.hosts.label(host))…") {
-                    requests.sendToHost = SendToHostRequest(folder: summary.folder.folder, from: summary.host, host: host)
+        // One item each, which opens the one machine picker (#5621).
+        if model.canSend(from: summary.host), !model.sendTargets.isEmpty {
+            Button(MachinePickerAsk.sendMenu) {
+                requests.machinePicker = .send(model.sendTargets) {
+                    requests.sendToHost = SendToHostRequest(folder: summary.folder.folder, from: summary.host, host: $0)
                 }
-                .disabled(!summary.exists)
             }
+            .disabled(!summary.exists)
             // The server's branches, brought back into this Mac's repository (#1473).
-            ForEach(model.sendTargets, id: \.self) { host in
-                Button("Bring Back from \(model.hosts.label(host))…") {
-                    requests.bringBackFromHost = BringBackFromHostRequest(folder: summary.folder.folder, from: summary.host, host: host)
+            Button(MachinePickerAsk.bringBackMenu) {
+                requests.machinePicker = .send(model.sendTargets, bringBack: true) {
+                    requests.bringBackFromHost = BringBackFromHostRequest(folder: summary.folder.folder, from: summary.host, host: $0)
                 }
-                .disabled(!summary.exists)
             }
+            .disabled(!summary.exists)
         }
         Divider()
         // To the top of the sidebar, above the folders that are not.
@@ -1124,26 +1126,23 @@ private struct NewMachineItems: View {
     }
 }
 
-/// Add Folder On ▸ and Clone Folder On ▸ a server (037), in the File menu and the toolbar's +
-/// (#5447): nothing with no server.
+/// Add Folder On… and Clone Folder On… a server (037), in the File menu and the toolbar's +
+/// (#5447): each opens the one machine picker (#5621); nothing with no server.
 struct FolderOnMenus: View {
     let model: AppModel
     let requests: WindowRequests
 
     var body: some View {
         if !model.hosts.servers.isEmpty {
-            Menu("Add Folder On") {
-                ForEach(model.hosts.servers, id: \.self) { host in
-                    Button(model.hosts.label(host)) { requests.folderSheet = .chooseFolder(host) }
-                        .disabled(model.hostUnreachable(host))
-                }
-            }
-            Menu("Clone Folder On") {
-                ForEach(model.hosts.servers, id: \.self) { host in
-                    Button(model.hosts.label(host)) { requests.folderSheet = .clone(host) }
-                        .disabled(model.hostUnreachable(host))
-                }
-            }
+            Button("Add Folder On…") { ask("Add a Folder On", then: { .chooseFolder($0) }) }
+            Button("Clone Folder On…") { ask("Clone a Folder On", then: { .clone($0) }) }
+        }
+    }
+
+    private func ask(_ title: String, then sheet: @escaping (MachineRef) -> WindowRequests.FolderSheet) {
+        let servers = Set(model.hosts.servers.filter { !model.hostUnreachable($0) })
+        requests.machinePicker = MachinePickerAsk(title: title, keep: { servers.contains($0.id) }) {
+            requests.folderSheet = sheet($0)
         }
     }
 }
