@@ -70,6 +70,7 @@ import { ask } from "./MessageKinds";
 import { laterRequestOf, useListKeys } from "./ListKeys";
 import { laterTime, listKeyGlyph } from "../model/listKeys";
 import { Glyph, Icon, type IconName } from "./Icon";
+import { MachinePicker } from "./MachinePicker";
 
 
 /** Folder Settings asked for another folder of the project, from Project Settings' Folders (#3280). */
@@ -344,10 +345,7 @@ function AgentFilters({ store }: { store: Store }) {
   return (
     <div class="agent-filters" role="group" aria-label="Filters">
       {(hosts.length > 1 || machine !== null) && (
-        <select aria-label="Machine" value={machine ?? ""} onChange={(e) => setMachineFilter((e.currentTarget as HTMLSelectElement).value || null)}>
-          <option value="">Every machine</option>
-          {hosts.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-        </select>
+        <MachinePicker store={store} label="Machine" value={machine} any="Every machine" onPick={setMachineFilter} />
       )}
       <select aria-label="State" value={stateFilter.value} onChange={(e) => setStateFilter((e.currentTarget as HTMLSelectElement).value as StateFilter)}>
         {stateFilters.map((f) => <option key={f} value={f}>{stateFilterTitle[f]}</option>)}
