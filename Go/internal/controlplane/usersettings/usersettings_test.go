@@ -298,6 +298,25 @@ func TestPartsAreKeptWithoutBeingRead(t *testing.T) {
 	}
 }
 
+// person, auto and retention (#5573) are kept as any part is, under a smaller bound.
+func TestTheMacsOwnPartsAreKept(t *testing.T) {
+	ctx := context.Background()
+	b := localBook(t, store.NewMemory())
+	for _, part := range []wire.UserSettingsPartName{wire.UserSettingsPartNamePerson, wire.UserSettingsPartNameAuto,
+		wire.UserSettingsPartNameRetention} {
+		if changed, err := b.SetPart(ctx, "sam", part, json.RawMessage(`{"x":1}`)); err != nil || !changed {
+			t.Fatal(part, changed, err)
+		}
+		if _, err := b.SetPart(ctx, "sam", part, json.RawMessage(`{"x":"`+strings.Repeat("a", MaxSmallPart)+`"}`)); !errors.Is(err, ErrInvalid) {
+			t.Fatal(part, err)
+		}
+	}
+	got, _ := b.Settings(ctx, "sam")
+	if got.Person == nil || got.Auto == nil || got.Retention == nil {
+		t.Fatalf("%+v", got)
+	}
+}
+
 // The largest delivery the bounds on parts and secrets allow fits one frame on a machine's
 // link, with room to spare (#2730): each part and each secret as long as it may be, of
 // what JSON writes longest.
@@ -310,6 +329,12 @@ func TestTheLargestDeliveryFitsAMachinesLink(t *testing.T) {
 		wire.UserSettingsPartNameRuntimes, wire.UserSettingsPartNameCostLimits} {
 		value := json.RawMessage(`{"x":"` + long(MaxPart-8) + `"}`)
 		if _, err := b.SetPart(ctx, "sam", part, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, part := range []wire.UserSettingsPartName{wire.UserSettingsPartNamePerson, wire.UserSettingsPartNameAuto,
+		wire.UserSettingsPartNameRetention} {
+		if _, err := b.SetPart(ctx, "sam", part, json.RawMessage(`{"x":"`+long(MaxSmallPart-8)+`"}`)); err != nil {
 			t.Fatal(err)
 		}
 	}

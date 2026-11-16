@@ -16579,6 +16579,15 @@ type UserSettings struct {
 	// ~/.agents/env (#5259), as a UserEnvironment: written to that file on each of the person's machines. The control plane refuses a value that looks like a secret.
 	Environment JSONValue `json:"environment,omitzero"`
 
+	// What agents call the person (#121, #5573), as a PersonSettings with the name resolved on their Mac: each machine writes it as person/set does.
+	Person JSONValue `json:"person,omitzero"`
+
+	// Auto's order, Include switches and own cells (#2658, FR-017; #5573), as an AutoSettings: each machine keeps it as auto/set does, with its own runtimes kept.
+	Auto JSONValue `json:"auto,omitzero"`
+
+	// How long archived agents are kept (051, #5573), as a RetentionSettings: each machine applies it as a confirmed retention/set. The person confirmed it on their Mac.
+	Retention JSONValue `json:"retention,omitzero"`
+
 	// #2957, research R11: your layer, as a SignedYourPolicy. Only the keeper sets it (user/setPolicy); a client cannot (user/setSettings refuses this part).
 	Policy JSONValue `json:"policy,omitzero"`
 
@@ -16603,7 +16612,7 @@ type UserSettingsPart struct {
 	Value JSONValue `json:"value"`
 }
 
-// A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers, agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time zone (#4818) and the environment (#5259) follow the person. Resources belong to each machine. policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
+// A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers, agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time zone (#4818), the environment (#5259), and what agents call the person, Auto's settings and retention (#5573) follow the person. Resources belong to each machine. policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
 type UserSettingsPartName string
 
 const UserSettingsPartNameMcpServers UserSettingsPartName = "mcpServers"
@@ -16615,6 +16624,9 @@ const UserSettingsPartNameAccounts UserSettingsPartName = "accounts"
 const UserSettingsPartNameTimeZone UserSettingsPartName = "timeZone"
 const UserSettingsPartNameEnvironment UserSettingsPartName = "environment"
 const UserSettingsPartNamePolicy UserSettingsPartName = "policy"
+const UserSettingsPartNamePerson UserSettingsPartName = "person"
+const UserSettingsPartNameAuto UserSettingsPartName = "auto"
+const UserSettingsPartNameRetention UserSettingsPartName = "retention"
 
 // user/suspended (#1002, FR-018): to each machine of a suspended person, at hello before its settings and within 5 seconds of a change; off: true ends it.
 type UserSuspended struct {

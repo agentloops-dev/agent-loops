@@ -38,6 +38,18 @@ func (d *Daemon) autoSettings() wire.AutoSettings {
 // setAutoSettings is auto/set: runtimes this host does not know are kept, so a Mac that
 // sends the same file to each machine does not lose a server's runtime (FR-017).
 func (d *Daemon) setAutoSettings(in wire.AutoSettings) (wire.AutoSettings, error) {
+	in = normalAuto(in)
+	if err := d.writeSetting("auto.json", in); err != nil {
+		return wire.AutoSettings{}, &Error{Code: wire.FailureCouldNotSave, Message: "auto.json: " + err.Error()}
+	}
+	st := d.autoSettings()
+	Broadcast(d, wire.NotifyAutoChanged, st)
+	return st, nil
+}
+
+// normalAuto is Auto's settings as auto.json keeps them: no setBy, each runtime once, and
+// only the cells a field has.
+func normalAuto(in wire.AutoSettings) wire.AutoSettings {
 	in.SetBy = nil
 	seen := map[string]bool{}
 	order := []string{}
@@ -58,12 +70,7 @@ func (d *Daemon) setAutoSettings(in wire.AutoSettings) (wire.AutoSettings, error
 		}
 	}
 	in.Overrides = overrides
-	if err := d.writeSetting("auto.json", in); err != nil {
-		return wire.AutoSettings{}, &Error{Code: wire.FailureCouldNotSave, Message: "auto.json: " + err.Error()}
-	}
-	st := d.autoSettings()
-	Broadcast(d, wire.NotifyAutoChanged, st)
-	return st, nil
+	return in
 }
 
 // autoOrder is every runtime this host knows, in the person's order, then the shipped one.

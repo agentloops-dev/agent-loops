@@ -116,6 +116,7 @@ const CapHostSessionSecrets1 = "host.session-secrets/1"
 const CapHostSuspend1 = "host.suspend/1"
 const CapHostTeam1 = "host.team/1"
 const CapHostUpdate1 = "host.update/1"
+const CapHostUserParts1 = "host.user-parts/1"
 const CapHostUserSettings1 = "host.user-settings/1"
 const CapHostUserSettings2 = "host.user-settings/2"
 const CapHostUserSettings3 = "host.user-settings/3"
@@ -235,6 +236,7 @@ const CapUser2 = "user/2"
 const CapUser3 = "user/3"
 const CapUser4 = "user/4"
 const CapUser5 = "user/5"
+const CapUser6 = "user/6"
 const CapVelocity1 = "velocity/1"
 const CapViews1 = "views/1"
 const CapWake1 = "wake/1"
@@ -1039,7 +1041,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"user/setAgentConfigFile", "user/1"},
 	{"user/setPolicy", "host.policy-layers/1"},
 	{"user/setSecret", "user/2"},
-	{"user/setSettings", "user/5"},
+	{"user/setSettings", "user/6"},
 	{"user/settings", "user/1"},
 	{"workflows/claimRun", "bots/1"},
 	{"workflows/fire", "events.team/1"},
@@ -1192,5 +1194,6 @@ var DeclaredCapabilities = map[string][]string{
 		"host.lock/1",
 		"host.lock/2",
 		"host.user-settings/3",
+		"host.user-parts/1",
 	},
 }
