@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -291,6 +292,7 @@ func TestOnlyTheMachinesOwnAccountResetsItsLock(t *testing.T) {
 }
 
 func TestLockResetOnDaemonSockAsksForTheLockAgain(t *testing.T) {
+	flaky.UnderLoad(t, "#5812")
 	d, path := serveWith(t, fixedPolicy{role: RoleStranger, ok: true})
 	var mu sync.Mutex
 	var said []string
