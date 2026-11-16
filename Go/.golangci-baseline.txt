@@ -1299,7 +1299,6 @@ Go/internal/agentsd/mcpservers.go: Error return value of `enc.Encode` is not che
 Go/internal/agentsd/mcpservers.go: Error return value of `json.Unmarshal` is not checked (errcheck)
 Go/internal/agentsd/mcpservers.go: Error return value of `store.WriteAtomically` is not checked (errcheck)
 Go/internal/agentsd/mcpservers.go: G703: Path traversal via taint analysis (gosec)
-Go/internal/agentsd/mcpservers.go: G703: Path traversal via taint analysis (gosec)
 Go/internal/agentsd/mcpservers_test.go: Error return value of `json.Unmarshal` is not checked (errcheck)
 Go/internal/agentsd/mcpservers_test.go: Error return value of `os.MkdirAll` is not checked (errcheck)
 Go/internal/agentsd/mcpservers_test.go: Error return value of `os.MkdirAll` is not checked (errcheck)
