@@ -162,12 +162,14 @@ struct WorkListTests {
         #expect(lists.map(\.host) == [mac, box, lost])
         #expect(lists[1].list.cursor == "b2")
         #expect(lists[2].list.errors == [.init(forge: "", message: WorkList.didNotAnswer)])
-        #expect(WorkList.shownErrors(lists.map { ($0.list.items.map(\.node.ref), $0.list.errors ?? []) })[2].isEmpty)
+        let shown = WorkList.shownErrors(lists.map { ($0.list.items.map(\.node.ref), $0.list.errors ?? []) })
+        try #require(shown.count == 3)
+        #expect(shown[2].isEmpty)
     }
 
     /// forge/listAll's next pages (#5592): each machine with a cursor gets its page; one that could not read it keeps its
     /// rows and cursor, and the page says why.
-    @Test func theNextPagesComeInOneAnswerAndAFailedOneKeepsItsCursor() {
+    @Test func theNextPagesComeInOneAnswerAndAFailedOneKeepsItsCursor() throws {
         let mac = MachineRef(rawValue: "mac"), box = MachineRef(rawValue: "box"), lost = MachineRef(rawValue: "lost")
         let had: [(host: MachineRef, list: DaemonAPI.ForgeList)] = [
             (mac, .init(items: [item(1)], cursor: "m2")),
@@ -181,6 +183,7 @@ struct WorkListTests {
                           list: .init(errors: [.init(forge: "github", message: "Not connected.")]))],
             unreached: [.init(machine: lost, machineName: "Lost")])
         let (next, problem) = WorkList.addPages(all, to: had)
+        try #require(next.count == 4)
         #expect(next.map { $0.list.items.count } == [2, 1, 1, 1])
         #expect(next[0].list.cursor == nil)
         #expect(next[1].list.cursor == "b2")
