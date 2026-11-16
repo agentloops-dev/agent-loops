@@ -60,5 +60,7 @@ func TestWarmPoolKeepsNoneUnderMemoryPressure(t *testing.T) {
 
 // machinePressure reads this machine without failing; what it says depends on the machine.
 func TestMachinePressureReads(t *testing.T) {
+	t.Parallel()
+
 	t.Log(machinePressure())
 }

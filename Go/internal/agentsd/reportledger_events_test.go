@@ -13,6 +13,8 @@ import (
 // Outcomes and Time (#2019): sessions, the pull requests of this host's agents' branches
 // and the waits for the person go into their hours, once each, beside the cost.
 func TestOutcomesGoIntoTheHours(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
@@ -83,6 +85,8 @@ func TestOutcomesGoIntoTheHours(t *testing.T) {
 // Runtimes and Workflows (#2019): a workflow's agents have rows of their own, with its runs
 // and the runs that failed; any agent's failure counts.
 func TestWorkflowRunsAndFailuresGoIntoTheHours(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

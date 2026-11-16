@@ -55,6 +55,8 @@ func TestAHostRefusedLastRunStartsAsForgotten(t *testing.T) {
 }
 
 func TestTheWorkflowClockWaitsForTheMembership(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, _ := start(t, root)
 	defer d.Shutdown()

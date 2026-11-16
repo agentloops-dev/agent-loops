@@ -16,6 +16,8 @@ import (
 // answers in the agent's words.
 
 func TestShowingAFile(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -49,6 +51,8 @@ func TestShowingAFile(t *testing.T) {
 }
 
 func TestSuggestingTheNextPrompt(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -66,6 +70,8 @@ func TestSuggestingTheNextPrompt(t *testing.T) {
 }
 
 func TestHangingUpVoiceMode(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -83,6 +89,8 @@ func TestHangingUpVoiceMode(t *testing.T) {
 }
 
 func TestAskingThePersonAForm(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
@@ -227,6 +235,8 @@ func TestAMessageDismissesTheQuestions(t *testing.T) {
 // A decline can say why (#4039): the agent reads the reason, and the record keeps it in the
 // person's bubble.
 func TestDecliningAFormSaysWhy(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
@@ -261,6 +271,8 @@ func TestDecliningAFormSaysWhy(t *testing.T) {
 // Dismiss (#5295): the client's cancel closes the card with no answer, the agent reads that
 // the person replies in a message, and the record says they dismissed it.
 func TestDismissingAFormLeavesTheReplyToTheNextMessage(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })

@@ -16,6 +16,8 @@ import (
 // settle it; the person's own edit is theirs; a pull's waits too.
 
 func TestAChangeWhileAnAgentWorksWaitsForKeepOrUndo(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -69,6 +71,8 @@ func TestAChangeWhileAnAgentWorksWaitsForKeepOrUndo(t *testing.T) {
 }
 
 func TestThePersonsOwnEditIsTheirs(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -81,6 +85,8 @@ func TestThePersonsOwnEditIsTheirs(t *testing.T) {
 }
 
 func TestAPullsChangeWaits(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
@@ -104,6 +110,8 @@ func TestAPullsChangeWaits(t *testing.T) {
 }
 
 func TestDiffLines(t *testing.T) {
+	t.Parallel()
+
 	got := diffLines("a\nb\nc\n", "a\nB\nc\nd\n")
 	var s []string
 	for _, l := range got {
@@ -116,6 +124,8 @@ func TestDiffLines(t *testing.T) {
 
 // A change waiting on a file the app no longer keeps goes when the records are read (#2680).
 func TestAFileTheAppNoLongerKeepsWaitsForNothing(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

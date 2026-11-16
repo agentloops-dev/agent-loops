@@ -109,6 +109,8 @@ func prove(t *testing.T, path string, w window) (net.Conn, *bufio.Reader, contro
 // A window the control plane lists proves its key on the local socket, is told which
 // host it reached, and is then served as through the control plane (#1118).
 func TestAPairedWindowReachesTheHostDirectly(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	w, listed := newWindow(t)
 	d.SetLocalClients(wire.MachineClients{Clients: []wire.MachineClient{listed}})
@@ -135,6 +137,8 @@ func TestAPairedWindowReachesTheHostDirectly(t *testing.T) {
 // A window the control plane does not list is refused, and so is one it lists that
 // cannot prove the key.
 func TestAnUnknownWindowIsRefused(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	w, listed := newWindow(t)
 	path := serveLocal(t, d, RoleWindow)
@@ -150,6 +154,8 @@ func TestAnUnknownWindowIsRefused(t *testing.T) {
 
 // Another program of this account is closed before a line is said.
 func TestAStrangerGetsNoHello(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	path := serveLocal(t, d, RoleStranger)
 	c := dialUnix(t, path)
@@ -163,6 +169,8 @@ func TestAStrangerGetsNoHello(t *testing.T) {
 // A window forgotten at the control plane is cut off at once, and the list is kept in the
 // root for a host that starts with the control plane away.
 func TestAForgottenWindowIsCutOff(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, _ := start(t, root)
 	w, listed := newWindow(t)
@@ -188,6 +196,8 @@ func TestAForgottenWindowIsCutOff(t *testing.T) {
 // control-clients.json is written only when machine/clients changes, not on every notice
 // (#1528), and a host that starts with the same list kept does not write it again.
 func TestTheLocalClientsFileIsWrittenOnlyWhenItChanges(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, _ := start(t, root)
 	_, listed := newWindow(t)
@@ -255,6 +265,8 @@ func TestTheLocalSocketMovesWithARotatedKey(t *testing.T) {
 // A window of another person is never let in on the local socket, even if a control plane
 // lists it, once it says whose host this is (FR-020); one of the host's own user is.
 func TestOnlyTheHostsOwnUsersWindowIsLetIn(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	mine, listedMine := newWindow(t)
 	theirs, listedTheirs := newWindow(t)

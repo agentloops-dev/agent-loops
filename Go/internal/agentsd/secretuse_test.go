@@ -300,6 +300,8 @@ func TestASecretUseIsPostedWithItsAnswers(t *testing.T) {
 
 // A session's own secret has no Always Approve on its banner, as on its row.
 func TestASessionSecretsBannerHasNoAllowAlways(t *testing.T) {
+	t.Parallel()
+
 	yes := true
 	var ids []string
 	for _, a := range secretUseAnswers(wire.RequestSecretUse{Name: "X", Use: wire.SecretUseCi, Place: "o/r", SessionOnly: &yes}) {

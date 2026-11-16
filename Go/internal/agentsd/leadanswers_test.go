@@ -69,6 +69,8 @@ func answerArgs(id wire.UUID, answer string) map[string]json.RawMessage {
 // #5440: a lead allows its helper's edit once, the card closes, and the chat and the
 // events say the lead chose.
 func TestALeadAllowsItsHelpersEditOnce(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	lead, helper, l := leadAndHelper(t, d, "acceptEdits")
@@ -112,6 +114,8 @@ func TestALeadAllowsItsHelpersEditOnce(t *testing.T) {
 // A lead's mode bounds what it allows; it can still deny. A step that is hard to undo
 // stays with the person, allow or deny.
 func TestALeadAllowsOnlyWhatItsModeDoesAndNeverAHardStep(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	lead, helper, l := leadAndHelper(t, d, "acceptEdits")
@@ -171,6 +175,8 @@ func TestALeadAllowsOnlyWhatItsModeDoesAndNeverAHardStep(t *testing.T) {
 // Only the session that started it answers a helper's card; the person's own answer still
 // wins when it comes first.
 func TestOnlyTheStarterAnswersAndThePersonCanBeFirst(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	lead, helper, l := leadAndHelper(t, d, "bypassPermissions")
@@ -200,6 +206,8 @@ func firstPending(l *live) wire.UUID {
 }
 
 func TestHardToUndoKeepsRoutineCommands(t *testing.T) {
+	t.Parallel()
+
 	for _, cmd := range []string{"go test ./...", "git push origin agents/5440", "git commit -m 'x'", "git checkout -b x", "npm run build", "gh pr create --fill"} {
 		raw, _ := json.Marshal(map[string]string{"command": cmd})
 		kind := "execute"

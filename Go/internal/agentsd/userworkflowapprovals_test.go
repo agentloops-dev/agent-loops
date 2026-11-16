@@ -13,6 +13,8 @@ import (
 // person's own saves in Settings keep it approved, and any other change makes it wait
 // in every folder it is on, until the person approves it.
 func TestAUserWorkflowWaitsAfterAChangeOutsideSettings(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -100,6 +102,8 @@ func TestAUserWorkflowWaitsAfterAChangeOutsideSettings(t *testing.T) {
 
 // A ready-made workflow written next to a skill that is not the app's own waits.
 func TestAReadyMadeWorkflowWaitsWhenItsSkillIsNotTheAppsOwn(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()

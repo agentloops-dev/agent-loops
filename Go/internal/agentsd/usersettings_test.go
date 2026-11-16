@@ -193,6 +193,8 @@ func TestAnOldMarkTakesAwayOnlyWhatAgentConfigWrote(t *testing.T) {
 }
 
 func TestAgentConfigNamesStayInTheirFolders(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
 	for _, name := range []string{"../evil", "a/b", ".hidden", ""} {
 		raw := mustJSON(wire.UserAgentConfig{Personas: map[string]string{name: "x"}})

@@ -23,6 +23,8 @@ func folder(t testing.TB, c *conn, n int) string {
 }
 
 func TestPinsAreTheSwiftFile(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -118,6 +120,8 @@ func TestPinsAreTheSwiftFile(t *testing.T) {
 // A pins.json in the folder before it is a folder is said when it is added (#1622), so a
 // window that read pins/list before then shows the pin at once.
 func TestPinsThereBeforeTheFolderAreSaidOnAdd(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -137,6 +141,8 @@ func TestPinsThereBeforeTheFolderAreSaidOnAdd(t *testing.T) {
 }
 
 func TestAnUnreadPinIsKept(t *testing.T) {
+	t.Parallel()
+
 	f, err := readPinsFile([]byte(`{"pins":[{"future":{"x":1},"pinned_by":{"person":true}},{"path":"a.md","pinned_by":{"agent":"A"}},{"path":"a.md","pinned_by":{"person":true}},{"path":"../b.md","pinned_by":{"person":true}}],"sessions":[{"session":"S","pinned_by":{"person":true}},{"session":"S","pinned_by":{"person":true}}]}`))
 	if err != nil || len(f.pins) != 1 || len(f.unread) != 1 || len(f.sessions) != 1 {
 		t.Fatalf("%+v %v", f, err)
@@ -148,6 +154,8 @@ func TestAnUnreadPinIsKept(t *testing.T) {
 }
 
 func TestSessionPinsAndArchive(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -175,6 +183,8 @@ func TestSessionPinsAndArchive(t *testing.T) {
 }
 
 func TestPreferencesMergeAndModes(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var got map[string]any
@@ -200,6 +210,8 @@ func TestPreferencesMergeAndModes(t *testing.T) {
 }
 
 func TestPersonas(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -263,6 +275,8 @@ func TestPersonaFilesCanBeManagedInEachScope(t *testing.T) {
 }
 
 func TestTheAppsYAML(t *testing.T) {
+	t.Parallel()
+
 	m, err := yamlnode.MappingFrom([]string{"name: \"a: b\"", "on:", "  - schedule:", "      at: \"09:00\"", "days: [mon, 'tue']", "url: http://x#y"})
 	if err != nil {
 		t.Fatal(err)

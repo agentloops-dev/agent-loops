@@ -39,6 +39,8 @@ func newLockKey(t *testing.T) *ecdsa.PrivateKey {
 }
 
 func TestTheHostPinsTheHeadAndRefusesNothingYet(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	mac, phone, ipad := newLockKey(t), newLockKey(t), newLockKey(t)
@@ -120,6 +122,8 @@ func lastOf(t *testing.T, said []told, method string) json.RawMessage {
 // #3491 (D3): a machine whose code carried an invite pins the lock from the code, signs its
 // own addMachine with the invite, and once it is in the lock drops the invite.
 func TestAMachineAddsItselfWithTheInviteFromItsCode(t *testing.T) {
+	t.Parallel()
+
 	d, key, said := joinedMachine(t)
 	mac, invite := newLockKey(t), newLockKey(t)
 	root := lockEntry(t, mac, wire.LockEntryKindRoot, mac, nil)
@@ -160,6 +164,8 @@ func TestAMachineAddsItselfWithTheInviteFromItsCode(t *testing.T) {
 // #3491 (D3): a machine with no invite asks with a commitment, reveals its nonce once a
 // signer sent one, and shows the digits the signer makes.
 func TestAMachineWithNoInviteAsksAndShowsTheDigits(t *testing.T) {
+	t.Parallel()
+
 	d, key, said := joinedMachine(t)
 	mac := newLockKey(t)
 	root := lockEntry(t, mac, wire.LockEntryKindRoot, mac, nil)

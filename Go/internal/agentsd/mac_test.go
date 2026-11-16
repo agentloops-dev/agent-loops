@@ -10,6 +10,8 @@ import (
 )
 
 func TestPersonIsKeptAsGiven(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	if r := c.call(t, 1, "person/state", nil); string(r) != `{}` {
 		t.Fatalf("empty: %s", r)
@@ -27,6 +29,8 @@ func TestPersonIsKeptAsGiven(t *testing.T) {
 }
 
 func TestMacVerbsWantAPathThatIsThere(t *testing.T) {
+	t.Parallel()
+
 	_, c := start(t, t.TempDir())
 	for i, m := range []string{"mac/reveal", "mac/open"} {
 		if e := c.callError(t, i+1, m, map[string]any{"path": "/no/such/file"}); e.Code != wire.FailureFileGone {

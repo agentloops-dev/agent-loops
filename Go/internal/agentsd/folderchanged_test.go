@@ -81,6 +81,8 @@ func folderChangedFor(t *testing.T, c *conn, folder string) wire.FolderSummary {
 // #4508: a turn that streams 50 changes a second sends its folder's summary at most 4
 // times a second, and the last one says the last change.
 func TestFolderChangedAtMostFourASecond(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	clientAdded(t, c)
@@ -115,6 +117,8 @@ func TestFolderChangedAtMostFourASecond(t *testing.T) {
 
 // #4508: one change goes out at the window's end, not before, and each folder has its own.
 func TestFolderChangedOneChangeAtWindowEnd(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	clientAdded(t, c)
@@ -146,6 +150,8 @@ func TestFolderChangedOneChangeAtWindowEnd(t *testing.T) {
 // policy, whose first read makes the first-start move into the root, which a test's
 // TempDir cleanup was removing (BenchmarkChangeAgent).
 func TestFolderChangedNotAfterShutdown(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	clock := &windowClock{}
 	d.folderAfter = clock.after

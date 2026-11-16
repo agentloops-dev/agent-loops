@@ -18,6 +18,8 @@ import (
 // machines; and a session started that way says who started it, from where.
 
 func TestAnAgentStartsASessionOnAnotherMachine(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := "fix-login"
@@ -160,6 +162,8 @@ func TestASessionStartedFromAnotherMachineSaysWho(t *testing.T) {
 // With the folder's switch on (#2928), start_session on another machine asks no one; off
 // again, it is kept as no choice at all.
 func TestTheFolderSwitchStartsOnAnotherMachineWithoutAsking(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

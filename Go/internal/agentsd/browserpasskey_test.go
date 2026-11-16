@@ -52,6 +52,8 @@ func TestPasskeyOffNeedsNoSite(t *testing.T) {
 }
 
 func TestPasskeySite(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"github.com":                    "github.com",
 		" GitHub.com ":                  "github.com",
@@ -77,6 +79,8 @@ func madeKey(id byte, rp string, count float64) *webauthn.Credential {
 }
 
 func TestParsePasskeysReadsTheAppsValueAndOneCDPPasskey(t *testing.T) {
+	t.Parallel()
+
 	own, _ := json.Marshal(passkeySecret{Site: "github.com", Passkeys: []*webauthn.Credential{madeKey(1, "github.com", 3)}})
 	if s, err := parsePasskeys(string(own)); err != nil || s.Site != "github.com" || len(s.Passkeys) != 1 || s.Passkeys[0].SignCount != 3 {
 		t.Fatal(s, err)

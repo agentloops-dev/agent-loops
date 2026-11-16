@@ -240,6 +240,8 @@ func TestMessagesMergeEveryContractConnector(t *testing.T) {
 // A connector whose page is kept only in part is asked for the same page again, and what was
 // kept is skipped; one that failed is asked again from where it was.
 func TestMergeMessagesPages(t *testing.T) {
+	t.Parallel()
+
 	a := messagesConnector{name: "slack", folder: "/f", scope: "~"}
 	b := messagesConnector{name: "email", folder: "/f", scope: "/f"}
 	bad := messagesConnector{name: "gmail", folder: "/f", scope: "~"}

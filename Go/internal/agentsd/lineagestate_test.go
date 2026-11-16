@@ -21,6 +21,8 @@ func statesOf(d *Daemon, id wire.UUID) []wire.LineageSessionStateName {
 
 // #4274: each agent state, and the waits the host keeps, read as a lineage state.
 func TestSessionStateOfAnAgent(t *testing.T) {
+	t.Parallel()
+
 	open := &wire.WorkReport{Outcome: wire.WorkOutcomeWaiting, Block: &wire.Block{Waits: []wire.Wait{}}}
 	cleared := wire.DateOf(time.Now())
 	for _, c := range []struct {
@@ -48,6 +50,8 @@ func TestSessionStateOfAnAgent(t *testing.T) {
 // #4274: a session's changes of state are recorded as its record changes, once each, and a
 // delete records deleted.
 func TestSessionStatesRecorded(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)

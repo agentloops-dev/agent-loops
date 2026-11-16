@@ -26,6 +26,8 @@ func featureOf(t *testing.T, u wire.FeatureUsage, method string) wire.FeatureUse
 }
 
 func TestFeaturesAreCountedByClient(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	mac := &Client{Role: RoleControl, conn: newConn(), d: d}
@@ -75,6 +77,8 @@ func TestFeaturesAreCountedByClient(t *testing.T) {
 }
 
 func TestAPairedPhoneIsTheRemote(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.devMu.Lock()
@@ -88,6 +92,8 @@ func TestAPairedPhoneIsTheRemote(t *testing.T) {
 }
 
 func TestFeaturesKeepNinetyDays(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	now := time.Now()

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -66,8 +67,36 @@ func TestMain(m *testing.M) {
 	runtimeVersion = func(string) string { return "" }
 	// Nor fetches the ready-made workflows from GitHub (#5091): every daemon has the fixture's.
 	useReadyMadeFixture()
-	os.Exit(m.Run())
+	// Every daemon of the process has one Mac toolsets folder, not its root's own, so tests that
+	// run side by side do not change where the others look (#4733).
+	shared, err := os.MkdirTemp("", "agentsd-tools-")
+	if err != nil {
+		panic(err)
+	}
+	sharedToolsHome = filepath.Join(shared, "tools")
+	serverToolsHome = filepath.Dir(toolsetFolder("claude"))
+	resetToolsHomes()
+	code := m.Run()
+	if err := os.RemoveAll(shared); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "could not remove the shared toolsets folder: %v\n", err)
+	}
+	os.Exit(code)
 }
+
+// resetToolsHomes puts the tools folders back as a daemon of this process starts with them:
+// after a test whose HOME or folders were its own, so that the tests that run side by side
+// next find them as they are and do not each write them (#4733).
+func resetToolsHomes() {
+	switch goruntime.GOOS {
+	case "darwin":
+		setToolsHomes(sharedToolsHome, sharedToolsHome, false)
+	case "linux":
+		setToolsHomes("", serverToolsHome, true)
+	}
+}
+
+// serverToolsHome is ~/.agents-server/tools of the test process's HOME (resetToolsHomes).
+var serverToolsHome string
 
 type fakeRuntime struct {
 	sdk.Agent // what it does not answer
@@ -672,6 +701,8 @@ func TestAnAdminsStopSaysSo(t *testing.T) {
 }
 
 func TestAStartInAFolderThatIsNotThere(t *testing.T) {
+	t.Parallel()
+
 	_, c := start(t, t.TempDir())
 	c.in <- `{"jsonrpc":"2.0","id":1,"method":"agents/start","params":{"runtimeID":"claude","cwd":"file:///no/such","prompt":"x"}}`
 	for line := range c.out {
@@ -794,6 +825,8 @@ func TestAntigravityLaunchKeepsItsSkillsOutOfGit(t *testing.T) {
 }
 
 func TestRuntimesList(t *testing.T) {
+	t.Parallel()
+
 	_, c := start(t, t.TempDir())
 	var rs []wire.RuntimeStatus
 	json.Unmarshal(c.call(t, 1, "runtimes/list", nil), &rs)
@@ -808,6 +841,8 @@ func TestRuntimesList(t *testing.T) {
 }
 
 func TestAToolCallIsRecordedAsSwiftRecordsIt(t *testing.T) {
+	t.Parallel()
+
 	tc := toolCall(sdk.SessionToolCallUpdate{ToolCallId: "c1", Status: sdk.Ptr(sdk.ToolCallStatusCompleted),
 		RawOutput: map[string]any{"ok": true}, Meta: map[string]any{"x": 1}})
 	if tc.Title != "Tool call" || *tc.ToolCallID != "c1" || *tc.Status != "completed" || string(tc.RawOutput) != `{"ok":true}` {
@@ -823,6 +858,8 @@ func TestAToolCallIsRecordedAsSwiftRecordsIt(t *testing.T) {
 }
 
 func TestAToolCallLeavesBigImagesOutOfTheTranscript(t *testing.T) {
+	t.Parallel()
+
 	shot := strings.Repeat("A", 200<<10)
 	small := strings.Repeat("B", 100)
 	tc := toolCall(sdk.SessionToolCallUpdate{ToolCallId: "c1", Status: sdk.Ptr(sdk.ToolCallStatusCompleted),

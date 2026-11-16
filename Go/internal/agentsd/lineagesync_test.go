@@ -15,6 +15,8 @@ import (
 // reset; then only what changed: a state the store recorded, and the links that started or
 // ended. A control plane with no copy is sent all again. What is unsent outlives the host.
 func TestLineageSyncSendsWhatChanged(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()

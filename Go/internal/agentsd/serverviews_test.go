@@ -77,6 +77,8 @@ func TestAServersListViewsShowWithoutAPinAndHide(t *testing.T) {
 }
 
 func TestAViewFedByAToolWithRequiredArgumentsIsNoList(t *testing.T) {
+	t.Parallel()
+
 	tool := func(name, uri string, required ...string) json.RawMessage {
 		b, _ := json.Marshal(map[string]any{"name": name, "_meta": map[string]any{"ui": map[string]any{"resourceUri": uri}},
 			"annotations": map[string]any{"readOnlyHint": true}, "inputSchema": map[string]any{"type": "object", "required": required}})
@@ -92,6 +94,8 @@ func TestAViewFedByAToolWithRequiredArgumentsIsNoList(t *testing.T) {
 }
 
 func TestAToolIsNotAViewWhenItsResourceIsNotListed(t *testing.T) {
+	t.Parallel()
+
 	tool, _ := json.Marshal(map[string]any{"name": "get_me", "_meta": map[string]any{"ui": map[string]any{
 		"resourceUri": "ui://github/profile", "visibility": []string{"model", "app"},
 	}}})
@@ -108,6 +112,8 @@ func TestAToolIsNotAViewWhenItsResourceIsNotListed(t *testing.T) {
 }
 
 func TestAListViewsName(t *testing.T) {
+	t.Parallel()
+
 	linear := &viewCatalog{Resources: []viewResource{{URI: "ui://linear/issues", Title: ptr("Linear issues")}}}
 	for _, tc := range []struct {
 		catalog *viewCatalog
@@ -126,6 +132,8 @@ func TestAListViewsName(t *testing.T) {
 }
 
 func TestOurViewsShowWhereTheRepoFits(t *testing.T) {
+	t.Parallel()
+
 	for remote, want := range map[string]string{
 		"https://github.com/alexec/agents.git": "github.com",
 		"git@github.com:alexec/agents.git":     "github.com",
@@ -177,6 +185,8 @@ func TestOurViewsShowWhereTheRepoFits(t *testing.T) {
 // #4911: Work lists Jira's issues and Azure Boards' work items only in a folder that names
 // their projects, so only there does the sidebar drop their list rows.
 func TestJiraAndAzureBoardsRowsGoOnlyWhereTheFolderNamesTheirProjects(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	jira, _ := mcpcatalog.OursByID("agents/jira")

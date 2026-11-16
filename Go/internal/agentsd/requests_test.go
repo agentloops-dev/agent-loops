@@ -142,6 +142,8 @@ func TestTwoSessionsThatWaitOnOneRequestBothWake(t *testing.T) {
 }
 
 func TestAWaitHoldsNoRunningPlace(t *testing.T) {
+	t.Parallel()
+
 	yes := true
 	cases := []struct {
 		state   wire.AgentState
@@ -290,6 +292,8 @@ func TestARequestDeferredAtTheMacComesBackWhenThePersonDoes(t *testing.T) {
 }
 
 func TestADeferralSurvivesARestart(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	asker := seeded(t, d, t.TempDir(), nil)

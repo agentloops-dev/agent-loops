@@ -13,6 +13,8 @@ import (
 // reads, writes or removes outside the folder; nor does a workflow file that is a link.
 
 func TestALinkedWorkflowFolderIsRefused(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -54,6 +56,8 @@ func TestALinkedWorkflowFolderIsRefused(t *testing.T) {
 }
 
 func TestALinkedAgentsFolderIsRefused(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

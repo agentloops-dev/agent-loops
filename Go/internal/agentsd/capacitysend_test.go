@@ -8,6 +8,8 @@ import (
 )
 
 func TestCapacityDue(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	last := capacitySent{level: wire.CapacityLevelOk, load5: 0.5, at: now, sent: true}
 	cases := []struct {

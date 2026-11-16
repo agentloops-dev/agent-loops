@@ -99,6 +99,8 @@ func TestLineageAsksForgejo(t *testing.T) {
 }
 
 func TestIssueOfURLOn(t *testing.T) {
+	t.Parallel()
+
 	for raw, want := range map[string]string{
 		"http://localhost:3753/walkalex/App/issues/7":           "forgejo:walkalex/app 7",
 		"http://LOCALHOST:3753/walkalex/app/issues/7#c3":        "forgejo:walkalex/app 7",
@@ -172,6 +174,8 @@ func TestTheForgejoServersViewsAskForLineage(t *testing.T) {
 }
 
 func TestForgejoOfURLOn(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct{ raw, root, sep, want string }{
 		{"http://localhost:3753/walkalex/App/pulls/8", "http://localhost:3753/", "/pulls/", "walkalex/app 8"},
 		{"http://localhost:3753/walkalex/App/pulls/8/files", "http://localhost:3753/", "/pulls/", "walkalex/app 8"},

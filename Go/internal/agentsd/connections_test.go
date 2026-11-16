@@ -24,6 +24,8 @@ import (
 // waits, and is told the account; the host keeps the tokens; the list says connected and
 // never holds a token; disconnect takes it away.
 func TestConnectingGitHubWithTheDeviceFlow(t *testing.T) {
+	t.Parallel()
+
 	var polls atomic.Int32
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -110,6 +112,8 @@ func TestConnectingGitHubWithTheDeviceFlow(t *testing.T) {
 
 // A second client that asks while a sign-in waits is shown the same code; a cancel ends it.
 func TestASignInUnderWayIsShared(t *testing.T) {
+	t.Parallel()
+
 	var starts atomic.Int32
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -153,6 +157,8 @@ func TestASignInUnderWayIsShared(t *testing.T) {
 // right state spends the code with the host's verifier, and the list says the account and
 // the workspace, with no token.
 func TestConnectingLinearWithTheCodeFlow(t *testing.T) {
+	t.Parallel()
+
 	var verifier atomic.Value
 	lin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -250,6 +256,8 @@ func TestConnectingLinearWithTheCodeFlow(t *testing.T) {
 // A self-managed GitLab (#1630): a personal access token is checked with that GitLab, kept with
 // its address, listed with its host and its end, and never given back or logged.
 func TestConnectingGitLabWithAnAccessToken(t *testing.T) {
+	t.Parallel()
+
 	gl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer glpat-secret" {
@@ -314,6 +322,8 @@ func TestConnectingGitLabWithAnAccessToken(t *testing.T) {
 // checks it with GitHub, keeps when it ends, and the row says it is a token, with no App to
 // install. An App's own token, which ends in hours, and a GitHub Enterprise Server are refused.
 func TestConnectingGitHubWithAPersonalAccessToken(t *testing.T) {
+	t.Parallel()
+
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer github_pat_secret" {
@@ -404,6 +414,8 @@ func TestAWalkConnectsTheFixtureGitHubWithAnyToken(t *testing.T) {
 // The App's user token is the default (#3857): its row has the App to install and is not a
 // token the person made, also when it must sign in again.
 func TestGitHubAppTokenRowSaysTheApp(t *testing.T) {
+	t.Parallel()
+
 	app := connections.Connection{Provider: connections.GitHub, Login: "octocat", Access: "ghu_x", Refresh: "ghr_x",
 		AccessExpiresAt: time.Now().Add(time.Hour)}
 	for _, c := range []connections.Connection{app, {Provider: connections.GitHub, Login: "octocat", SignInAgain: true}} {
@@ -417,6 +429,8 @@ func TestGitHubAppTokenRowSaysTheApp(t *testing.T) {
 // gitlab.com's device flow is GitHub's with GitLab's paths; a build with no application says
 // to use a token instead.
 func TestGitLabDeviceFlowNeedsTheApplication(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
@@ -434,6 +448,8 @@ func TestGitLabDeviceFlowNeedsTheApplication(t *testing.T) {
 // Connect Email (#1780): the IMAP server, the user and an app password, checked by one
 // sign-in and kept; the password never goes back to a client or into an error.
 func TestConnectingEmailWithAnAppPassword(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}

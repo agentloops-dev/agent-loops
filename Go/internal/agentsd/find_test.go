@@ -17,6 +17,8 @@ import (
 // one message found at its first chunk; tool calls, thoughts and a subagent's words are not
 // searched; the newest `limit` come back, oldest first.
 func TestFindInChat(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := seeded(t, d, t.TempDir(), nil).ID
@@ -117,6 +119,8 @@ func TestFindReadsOnlyMessages(t *testing.T) {
 
 // A find stops when its client asks again in the same chat, or when the host stops.
 func TestFindStops(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := seeded(t, d, t.TempDir(), nil).ID

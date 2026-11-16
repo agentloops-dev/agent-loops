@@ -9,6 +9,8 @@ import (
 
 // A closed issue says its estimate against what it took, in Work's words (#3590).
 func TestEstimateWordsSaysTheEstimateAgainstTheActual(t *testing.T) {
+	t.Parallel()
+
 	work := 3*3600.0 + 14*60
 	level := "epic"
 	open, closed := int64(0), int64(3)
@@ -33,6 +35,8 @@ func TestEstimateWordsSaysTheEstimateAgainstTheActual(t *testing.T) {
 
 // An open issue says the median and the range of each figure.
 func TestEstimateWordsSaysTheFigures(t *testing.T) {
+	t.Parallel()
+
 	by := "level"
 	e := wire.LineageEstimate{
 		Node: wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#7"}, MatchedBy: &by, Matches: 31, ClosedIssues: 80,
@@ -56,6 +60,8 @@ func TestEstimateWordsSaysTheFigures(t *testing.T) {
 
 // A ref is taken as it is; a bare word is not an issue.
 func TestEstimateNodeTakesARef(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{}
 	n, err := d.estimateNode("", "linear:issue:eng#ENG-4")
 	if err != nil || n.Ref != "linear:issue:eng#ENG-4" || n.Kind != "issue" {

@@ -17,6 +17,8 @@ import (
 // agent change, nor agentMu while it is held (P20261021-1): its lines are queued as a
 // daemon.sock client's are (#1399), and once its queue stays full it is let go.
 func TestAStalledPageDoesNotHoldAnAgentChange(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	go func() {
 		for range c.out {
