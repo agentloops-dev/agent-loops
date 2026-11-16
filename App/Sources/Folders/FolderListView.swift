@@ -120,6 +120,18 @@ struct FolderListView: View {
                     }
                 }
             }
+            // A secret an agent saved on a machine of the person's, until it is theirs (#5308).
+            if !model.userScope.offers.isEmpty {
+                Section {
+                    ForEach(model.userScope.offers) { offer in
+                        SecretOfferCard(offer: offer, isAnswering: model.userScope.answeringOffers.contains(offer.offer),
+                                        failure: model.userScope.offerFailures[offer.offer],
+                                        choose: { use in Task { await model.chooseSecretOffer(offer, useTheAgents: use) } })
+                            .listRowSeparator(.hidden)
+                            .selectionDisabled()
+                    }
+                }
+            }
             // A new client that signed in with GitHub as this person (#995), beside them.
             let signingIn = model.signIn.open()
             if !signingIn.isEmpty {
@@ -178,7 +190,8 @@ struct FolderListView: View {
             // Sessions (#5267), so the rows with no header went: Docs and Messages are Work's first.
             Section(isExpanded: $showsWorkLists) {
                 // The Dashboard (#5534, a PoC): each work item on this Mac and its sessions, with
-                // what waits on the person answered in place. First, as the place to start from.
+                // what waits on the person answered in place. First, as the page the window opens
+                // to and the way back to it (#5696).
                 HStack { Text("Dashboard").foregroundStyle(.primary); Spacer() }
                     .help("Each work item on this Mac, its sessions, pull request and checks, and what waits on you")
                     .activityIcon("square.grid.2x2")
@@ -222,11 +235,15 @@ struct FolderListView: View {
                 // What happened last to the person's secrets and accounts (#4161): the newest's age, and
                 // the one read last in grey. The mark keeps its plain tint; "not backed up" is on the page.
                 ForEach([StatusSecretsKind.secrets, .accounts], id: \.self) { kind in
-                    let item: SidebarItem = kind == .secrets ? .secretsStatus : .accountsStatus
+                    let item = kind.sidebarItem
                     StatusSecretsRow(kind: kind, state: model.userScope) { model.work.agent($0)?.title }
                         .activityIcon(kind.systemImage)
                         .appText(.supporting).sidebarInk(item).tag(item)
                 }
+                // The plain variables sessions get (#5260): a page to find, add and edit them.
+                StatusSecretsRow(kind: .environment, state: model.userScope)
+                    .activityIcon(StatusSecretsKind.environment.systemImage)
+                    .appText(.supporting).sidebarInk(.environmentStatus).tag(SidebarItem.environmentStatus)
             } header: {
                 Text("Status").appText(.supporting)
             }
@@ -254,7 +271,7 @@ struct FolderListView: View {
             }
 
             Section(isExpanded: $showsUsage) {
-                // The way back to the page the window opens to (#3986), always first.
+                // The Achievements page (#3986), always first.
                 AchievementsRow().activityIcon("multiply.circle")
                     .appText(.supporting).sidebarInk(.achievements).tag(SidebarItem.achievements)
                 SpendingRow(selection: $selection).activityIcon("dollarsign.circle",

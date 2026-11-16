@@ -2,7 +2,7 @@
 import type { ExportImportBusy } from "../exports";
 import { type HeardLiveFrame } from "../liveTile";
 import { computed, signal, type ReadonlySignal, type Signal } from "@preact/signals";
-import type { Agent, BrowserFrame, BrowserPageState, LiveSource, ControlMachine, ElicitationRequest, PermissionRequest, FolderSummary, TranscriptEntry, TurnSummary, WorkflowSummary, DraftOptionsNotification, JSONValue, AccountProfile, CloneSummary, LeaseSnapshot, HostedMCPSnapshot, MCPHealthSnapshot, DiskState, CapacityState, EventsPage, PinView, ReviewPull, CheckSuggestion, MachineJoinStatus, RequiredCapabilities, KeptDelivered, KeptRequest, Approval, Achievements, Multiplier, FolderWorktrees, WorktreeSize, BackupState, CapReached, ChannelLinkRequest, ConnectReport, ControlPerson, DailySummarySettings, SummaryPage, DesktopControlSettings, WakeSettings, JoinRequest, PeopleList, PersonRow, SecretsLeft, PolicyView, PolicyState, PassThroughName, SignInRequest, CatalogRequest, BudgetRequest, RemoveRequest, Connection, MoveNotification, Request as PersonRequest, OutsideAccount, ListRevision, PlaneMoveReport, UserSecretRow, WebRemoteStatus, WireDate } from "../../protocol/generated";
+import type { Agent, BrowserFrame, BrowserPageState, LiveSource, ControlMachine, ElicitationRequest, PermissionRequest, FolderSummary, TranscriptEntry, TurnSummary, WorkflowSummary, DraftOptionsNotification, JSONValue, AccountProfile, CloneSummary, LeaseSnapshot, HostedMCPSnapshot, MCPHealthSnapshot, DiskState, CapacityState, EventsPage, PinView, ReviewPull, CheckSuggestion, MachineJoinStatus, RequiredCapabilities, KeptDelivered, KeptRequest, Approval, Achievements, Multiplier, FolderWorktrees, WorktreeSize, BackupState, CapReached, ChannelLinkRequest, ConnectReport, ControlPerson, DailySummarySettings, SummaryPage, DesktopControlSettings, WakeSettings, JoinRequest, PeopleList, PersonRow, SecretsLeft, PolicyView, PolicyState, PassThroughName, SignInRequest, CatalogRequest, BudgetRequest, RemoveRequest, Connection, MoveNotification, Request as PersonRequest, OutsideAccount, ListRevision, PlaneMoveReport, UserSecretRow, WebRemoteStatus, WireDate, SecretOffer } from "../../protocol/generated";
 import { type Artifact } from "../artifacts";
 import { folderKey, type FolderView } from "../groups";
 import { decideMacHostNotice, steadyNotice, type MacHostNotice } from "../macHostNotice";
@@ -418,6 +418,10 @@ export class Work {
 
   /** The last machine of the person's removed with secrets on it (#1760, control/secretsLeft), until read. */
   readonly secretsLeft = signal<SecretsLeft | null>(null);
+  /** The secrets agents saved on the person's machines that are not theirs yet (#5308, user/secretOffers). */
+  readonly secretOffers = signal<SecretOffer[]>([]);
+  /** The person's id as the offers' associated data names it. */
+  secretOffersUser = "";
 
   /** The mode last chosen for each runtime, by host (029). */
   readonly rememberedModes = signal<Record<string, Record<string, JSONValue>>>({});

@@ -3,6 +3,7 @@
 // page, where the badges are (#3990). Apart from Achievements.tsx so the pages do not load the router.
 import { type AchievementID, achievementList, achievementsSeen } from "../model/achievements";
 import { go } from "../route";
+import { meLens } from "../model/nav";
 import type { Store } from "../model/store";
 import { Icon } from "./Icon";
 
@@ -24,7 +25,7 @@ export function AchievementCard({ store }: { store: Store }) {
         </span>
         <button class="link close" aria-label="Dismiss achievement" title="Dismiss" onClick={() => dismiss(id)}>✕</button>
       </div>
-      <button class="link small" onClick={() => { dismiss(id); go({ nav: "reports", section: "achievements" }); }}>
+      <button class="link small" onClick={() => { dismiss(id); go({ nav: "reports", section: "outcomes", query: meLens }); }}>
         See Achievements
       </button>
     </aside>

@@ -681,6 +681,7 @@
     {
       "name": "mcp/approve",
       "x-capability": "mcp/1",
+      "tags": [{"name": "web"}],
       "paramStructure": "by-name",
       "params": [
         {
@@ -836,6 +837,7 @@
     {
       "name": "mcp/list",
       "x-capability": "mcp/1",
+      "tags": [{"name": "web"}],
       "paramStructure": "by-name",
       "params": [
         {

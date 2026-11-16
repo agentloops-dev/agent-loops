@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Walk the scratch window through its walk socket (#1172): it draws and presses itself.
 
-    walk.py ROOT ping | windows [--all]           --all: minimised and hidden ones too, with identifiers
+    walk.py ROOT ping | windows [--all]           --all: minimised and hidden ones too, with identifiers; each with its least size (min WxH)
     walk.py ROOT minimize|close|back [--window N|TITLE]   a window minimised, closed or sent behind (#1454)
     walk.py ROOT shot OUT.png [--render] [--window N|TITLE] [--view CLASS]
     walk.py ROOT dock OUT.png                    the icon the app gives the Dock tile (#1317), and its badge
@@ -220,7 +220,8 @@ def main(argv):
         for w in reply["windows"]:
             f = w["frame"]
             state = "minimised " if w.get("minimised") else ("" if w.get("visible", True) else "hidden ")
-            print(f'{w["index"]}\t{f["width"]}x{f["height"]}\t{state}{"sheet " if w["sheet"] else ""}{w["title"]}\t{w.get("identifier", "")}')
+            print(f'{w["index"]}\t{f["width"]}x{f["height"]}\t{state}{"sheet " if w["sheet"] else ""}{w["title"]}\t{w.get("identifier", "")}'
+                  + (f'\tmin {m["width"]:g}x{m["height"]:g}' if (m := w.get("minSize")) else ""))
     else:
         print(reply.get("did") or reply.get("error") or json.dumps(reply))
     return 0 if reply.get("ok") else 1

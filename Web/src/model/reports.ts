@@ -144,6 +144,40 @@ export function scopeKey(scope: ReportScope): string {
   return scope.kind === "project" ? `project:${scope.project ?? ""}` : scope.kind;
 }
 
+/** The lens an address names (`lens=project:<id>`, `lens=org`); no `lens` is Me, so the Mac's link is unchanged (#5279). */
+export function lensAsked(query: string | undefined): ReportScope {
+  const named = new URLSearchParams(query ?? "").get("lens") ?? "";
+  if (named === "org") return { kind: "org" };
+  if (named.startsWith("project:") && named.length > 8) return { kind: "project", project: named.slice(8) };
+  return { kind: "me" };
+}
+
+/** A page's query with its lens and range set: Me leaves `lens` out, so Me's address is the one before the lens bar. Other keys stay. */
+export function lensQuery(query: string | undefined, lens: ReportScope, range?: ReportRange): string {
+  const q = new URLSearchParams(query ?? "");
+  if (lens.kind === "me") q.delete("lens"); else q.set("lens", scopeKey(lens));
+  if (range) q.set("range", range);
+  return q.toString().replace(/%3A/g, ":");
+}
+
+/** The page's title with the lens named: "Spend · Project Agents"; Me names nothing (#5279). */
+export function lensTitle(title: string, lens: ReportScope, name: string | undefined): string {
+  switch (lens.kind) {
+    case "me": return title;
+    case "org": return `${title} · Organisation`;
+    case "project": return `${title} · Project ${name ?? ""}`.trimEnd();
+  }
+}
+
+/** A lens bar's button words for each lens kind. */
+export const lensKinds = ["me", "project", "org"] as const;
+export type LensKind = (typeof lensKinds)[number];
+
+/** The ways to add up, leaving out the lens's own dimension: no By ▸ Project in a project lens (#5279). */
+export function dimensionsFor(lens: ReportScope | undefined, all: readonly ReportDimension[] = dimensions): ReportDimension[] {
+  return all.filter((d) => !(lens?.kind === "project" && d === "project"));
+}
+
 /** A saved view of a group lens, from before #5278, opens as Me, and says so. */
 export const groupViewNote = "This view was of a group. Reports has no group lens now, so it shows Me.";
 
@@ -399,7 +433,7 @@ export const adoptionNote = "A person is active in a week when one of their mach
 // control plane for the person who saved it, and its numbers as a few lines to paste.
 
 export const pageTitle: Record<ReportPage, string> = { spend: "Spend", outcomes: "Outcomes", time: "Time", runtimes: "Runtimes",
-  adoption: "Adoption", workflows: "Workflows", value: "Planning" };
+  adoption: "Adoption", workflows: "Workflows", value: "Delivery" };
 
 const isDimension = (by: string | undefined): by is ReportDimension =>
   by !== undefined && ["person", "project", "folder", "machine", "runtime", "workflow"].includes(by);

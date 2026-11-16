@@ -7,9 +7,10 @@ import Foundation
 /// sessions, and the forge's open issues, pull requests and epics.
 public enum Dashboard {
     /// A session's or a row's mark. A row shows its worst session's: needs you, then failed, then
-    /// working, then idle, then done (#5512).
+    /// working, then waiting, queued and paused, then done (#5512). Waiting, queued and paused are
+    /// the session list's own marks (#5763), so a state looks the same in both places.
     public enum Mark: Int, Comparable, Sendable, Hashable, CaseIterable {
-        case done, idle, working, failed, needsYou
+        case done, paused, queued, waiting, working, failed, needsYou
 
         public static func < (a: Mark, b: Mark) -> Bool { a.rawValue < b.rawValue }
 
@@ -19,28 +20,35 @@ public enum Dashboard {
             case .needsYou: "Needs you"
             case .failed: "Failed"
             case .working: "Working"
-            case .idle: "Idle"
+            case .waiting: "Waiting"
+            case .queued: "Queued"
+            case .paused: "Paused"
             case .done: "Done"
             }
         }
 
-        /// A session's mark from its group: what the sidebar says of it, in the Dashboard's five.
+        /// A session's mark from its group: what the sidebar's mark says of it (`SessionMark` in
+        /// `AgentRow.swift`): a queued helper waits for a free place, not on anything it asked for
+        /// (#630), and a stopped session is paused. A session that ended badly has failed.
         public static func of(_ agent: Agent, group: AgentGroup) -> Mark {
             switch group {
             case .needsAttention, .blocked: return .needsYou
             case .running: return .working
-            case .waiting: return .idle
+            case .waiting: return agent.state == .queued ? .queued : .waiting
             case .stopped, .finished:
                 if let reason = agent.endedReason, !reason.isFinish, reason != .cancelled { return .failed }
-                return group == .stopped ? .idle : .done
+                return group == .stopped ? .paused : .done
             case .archived: return .done
             }
         }
     }
 
-    /// The section a row is listed under. Finished work is not on the board (Alex, #5695).
+    /// The section a row is listed under. Finished work is not on the board (Alex, #5695). Working
+    /// and Waiting are apart (Alex, #5698): a row is Working while one of its sessions runs a turn or
+    /// a tool, and Waiting when none does and none asks the person (idle, paused on an event, failed,
+    /// or done with a pull request that still needs something).
     public enum Section: String, CaseIterable, Sendable, Hashable, Identifiable {
-        case needsYou, working
+        case needsYou, working, waiting
 
         public var id: Self { self }
 
@@ -48,6 +56,7 @@ public enum Dashboard {
             switch self {
             case .needsYou: "Needs you"
             case .working: "Working"
+            case .waiting: "Waiting"
             }
         }
     }
@@ -250,7 +259,9 @@ public enum Dashboard {
             }
             // A pull request that waits for the person's approval needs them, whatever its sessions do.
             if item.pullRequest?.waitsForApproval == true { item.mark = .needsYou }
-            rows[item.mark == .needsYou ? .needsYou : .working, default: []].append(item)
+            let section: Section = item.mark == .needsYou ? .needsYou
+                : item.sessions.contains { $0.mark == .working } ? .working : .waiting
+            rows[section, default: []].append(item)
         }
         for key in rows.keys {
             rows[key]?.sort(by: startsFirst)

@@ -172,22 +172,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
 
     private func chipButton(_ each: SecretsPage.Chip, count: Int) -> some View {
         let on = chip == each
-        return Button { chip = on && each != .all ? .all : each } label: {
-            HStack(spacing: 4) {
-                if each == .needsYou { Image(icon: "exclamationmark.triangle") }
-                Text("\(each.title) \(count)")
-            }
-            .appText(.fine)
-            .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(on ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear), in: Capsule())
-            .paperRaised(in: Capsule())
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(each.title), \(count)")
-        .accessibilityAddTraits(on ? .isSelected : [])
+        return PageChip(title: each.title, count: count, warns: each == .needsYou, on: on) { chip = on && each != .all ? .all : each }
     }
 
     private var addMenu: some View {
@@ -498,6 +483,10 @@ private struct SecretDetail: View {
             } else {
                 Text(UserScopeWords.about(item.description)).appText(.supporting).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                // An agent saved it on a machine (#5308): "Saved by an agent on devbox, 2 h ago".
+                if let saved = SecretOfferWords.savedBy(row?.savedBy) {
+                    Text(saved).appText(.fine).foregroundStyle(.secondary)
+                }
                 Divider()
                 facts
             }
@@ -589,20 +578,12 @@ private struct SecretDetail: View {
                     }
                 }
             }
-            if let warning = item.needs {
-                GridRow {
-                    label("Needs you")
-                    Label(warning, icon: "exclamationmark.triangle").tinted(.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            PageNeedsYouRow(warning: item.needs)
         }
         .appText(.supporting)
     }
 
-    private func label(_ text: String) -> some View {
-        Text(text).foregroundStyle(.secondary).gridColumnAlignment(.leading)
-    }
+    private func label(_ text: String) -> some View { PageGridLabel(text) }
 
     @ViewBuilder private var actions: some View {
         HStack(spacing: 10) {

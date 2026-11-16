@@ -2,8 +2,8 @@ import AgentsKitCore
 import SwiftUI
 
 /// The Dashboard (#5511, PoC #5534): one place to see what is being worked on, on this Mac. The
-/// counts on top, the epics' cards with their progress, then a row per work item under Needs you
-/// and Working, each with its sessions, its pull request and checks; finished work leaves (#5695).
+/// counts on top, the epics' cards with their progress, then a row per work item under Needs you,
+/// Working and Waiting (#5698), each with its sessions, its pull request and checks; finished work leaves (#5695).
 /// What waits on the person is answered on its row, with the chat's own cards. A row's title
 /// opens its Work page; a session opens its chat. No releases and no cost (Alex, 2026-11-14).
 ///
@@ -72,7 +72,6 @@ struct DashboardView: View {
                 .appText(.supporting).foregroundStyle(Paper.secondary)
             if model.selectedFolderKey != nil {
                 Button("New Session") {
-                    model.showsDashboard = false
                     model.composing = true
                 }
                 .buttonStyle(.paperProminent)
@@ -81,7 +80,7 @@ struct DashboardView: View {
         .padding(.top, 40)
     }
 
-    /// ✋ 2 need you · ● 5 working: each one lists only its section.
+    /// ✋ 2 need you · ● 3 working · the beacon and 2 waiting: each one lists only its section.
     private func counts(_ board: Dashboard.Board) -> some View {
         HStack(spacing: 10) {
             ForEach(Dashboard.Section.allCases) { section in
@@ -187,6 +186,7 @@ extension Dashboard.Section {
         switch self {
         case .needsYou: .needsYou
         case .working: .working
+        case .waiting: .waiting
         }
     }
 
@@ -194,14 +194,19 @@ extension Dashboard.Section {
         switch self {
         case .needsYou: n == 1 ? "needs you" : "need you"
         case .working: "working"
+        case .waiting: "waiting"
         }
     }
 }
 
-/// A mark: the hand when it needs the person, the ring while it works, a circle when idle, a cross
-/// when it failed, a tick when done. Only the hand and the cross have colour.
+/// A mark: the hand when it needs the person, the ring while it works, a cross when it failed, a
+/// tick when done, and the session list's own marks for the rest (#5763): the breathing beacon
+/// while it waits, drawn as what it waits on when there is one session to ask (#5022), a numbered
+/// list while queued and a pause mark once stopped. Only the hand and the cross have colour.
 struct DashboardMark: View {
     let mark: Dashboard.Mark
+    /// The session the mark is for, which says what its beacon draws; none for a row or a count.
+    var agent: Agent?
     @ScaledMetric private var scale: CGFloat = 1
 
     var body: some View {
@@ -209,12 +214,17 @@ struct DashboardMark: View {
             switch mark {
             case .needsYou: Image(icon: "hand.raised.fill").foregroundStyle(StateTint.attention.style(or: .secondary))
             case .working: WorkingRing(size: 12 * scale, color: Paper.accent)
-            case .idle: Image(icon: "circle").foregroundStyle(Paper.tertiary)
+            case .waiting:
+                // In step with every other beacon on the screen (#2456, #2657).
+                WaitingBeacon(size: 12 * scale, color: Paper.accent, kind: agent.map { WaitKind.of($0) } ?? .other)
+            case .queued: Image(icon: "list.number").foregroundStyle(Paper.accent)
+            case .paused: Image(icon: "pause.circle").foregroundStyle(Paper.accent)
             case .failed: Image(icon: "xmark.circle").foregroundStyle(StateTint.failure.style(or: .secondary))
             case .done: Image(icon: "checkmark").foregroundStyle(Paper.accent)
             }
         }
         .frame(width: 16 * scale, height: 16 * scale)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(mark.words)
     }
 }
@@ -262,7 +272,7 @@ private struct DashboardEpicsLoading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                DashboardMark(mark: .idle)
+                DashboardMark(mark: .waiting)
                 Text("#0 Epic")
             }
             .appText(.supporting)
@@ -403,7 +413,7 @@ private struct DashboardSessionLine: View {
         let agent = session.agent
         Button { model.openAgent(agent.id) } label: {
             HStack(alignment: .center, spacing: 8) {
-                DashboardMark(mark: session.mark)
+                DashboardMark(mark: session.mark, agent: session.agent)
                 Text(RuntimeCatalog.runtime(id: agent.runtimeID)?.name ?? agent.runtimeID).foregroundStyle(Paper.secondary)
                 Text("·").foregroundStyle(Paper.tertiary)
                 Text(title(agent)).lineLimit(1)
@@ -436,8 +446,12 @@ private struct DashboardSessionLine: View {
                 ?? "asks you"
         case .working:
             return agent.runningTool.map(StatusShape.runningLabel) ?? "working"
-        case .idle:
-            return model.work.group(of: agent) == .stopped ? "paused" : "waiting"
+        case .waiting:
+            return "waiting"
+        case .queued:
+            return "queued"
+        case .paused:
+            return "paused"
         case .failed:
             return agent.endedReason?.summary ?? "failed"
         case .done:

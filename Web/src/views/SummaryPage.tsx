@@ -1,8 +1,9 @@
 // The Summary page (#3721): the daily summary's newest saved page, with the earlier ones in a picker,
 // the session that wrote it one click away, and the daily summary's control under it, the same one
 // Settings ▸ Agent Configuration ▸ Workflows has (#3351, #3395), as the Mac's and the Remote's
-// SummaryPageView. Opened from the Summary row at the top of the sidebar. Links on the page open
-// their session, pull request or issue (#3353), as the renderer draws them.
+// SummaryPageView. A page of Reports (#5729), as the window's and the Remote's Reports have it, drawn
+// in the page's frame (Reports › Summary). Links on the page open their session, pull request or
+// issue (#3353), as the renderer draws them.
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import type { Store } from "../model/store";
@@ -12,9 +13,8 @@ import { openAgentLink } from "../model/agentLink";
 import { fromWireDate } from "../protocol/dates";
 import { dailySummaryTimeLabel } from "../model/dailySummaryWords";
 import { DailySummaryControl } from "./settings/DailySummary";
-import { BackToList } from "./BackToList";
 
-/** The row's line and the page's when no page is saved yet, as SummaryPageView.nonePage. */
+/** Under the row in Reports' list and on the page when no page is saved yet, as SummaryPageView.nonePage. */
 export const nonePage = "No summary yet";
 
 /** A page's place in the picker, such as "Fri 6 Nov, 18:10". */
@@ -40,15 +40,12 @@ export function SummaryPage({ store }: { store: Store }) {
   const settings = store.dailySummary.value;
   const now = text.value;
   return (
-    <section class="chat summary-page" aria-label="Summary">
-      <header class="column-head"><BackToList />
-        <div class="pin-head"><h1>Summary</h1></div>
-        {pages.length > 1 && (
-          <select aria-label="Page" value={shown?.name} onChange={(e) => (chosen.value = e.currentTarget.value)}>
-            {pages.map((p) => <option key={p.name} value={p.name}>{summaryWhen(p)}</option>)}
-          </select>
-        )}
-      </header>
+    <div class="summary-page">
+      {pages.length > 1 && (
+        <select aria-label="Page" value={shown?.name} onChange={(e) => (chosen.value = e.currentTarget.value)}>
+          {pages.map((p) => <option key={p.name} value={p.name}>{summaryWhen(p)}</option>)}
+        </select>
+      )}
       <div class="summary-body">
         {!shown ? (
           <p class="hint">{`${nonePage}. ${settings && settings.mode !== "off"
@@ -66,6 +63,6 @@ export function SummaryPage({ store }: { store: Store }) {
         <hr />
         <DailySummaryControl store={store} />
       </div>
-    </section>
+    </div>
   );
 }

@@ -6,6 +6,7 @@
 import type { AuditActor, ClientPermissionMode, CostLimits, FleetMachine, OrgPolicy, PolicyBudgets, PolicyLayerRef, PolicyReach, PolicyRefusal, PolicyRuntimeRule, PolicySetBy, PolicyState, PolicyStopAll,
   PolicyView, WireDate }
   from "../protocol/generated";
+import { namesWords } from "./machineNames";
 import type { CallFailed } from "../wire/link";
 import { Failure } from "../protocol/generated";
 import { levelsOf, levelWords } from "./levels";
@@ -527,7 +528,7 @@ export function warnings(p: OrgPolicy, machines: readonly FleetMachine[] | undef
   }
   const old = (machines ?? []).filter((m) => !m.host.capabilities?.includes("host.policy/1"));
   if (old.length > 0) {
-    const which = old.map((m) => m.host.name).sort().join(", ");
+    const which = namesWords(old.map((m) => m.host.name).sort());
     out.push(p.requireFollowing
       ? `${old.length === 1 ? "1 machine does" : `${old.length} machines do`} not follow policy and will start no agent: ${which}. Update Agent Loops on ${old.length === 1 ? "it" : "them"}.`
       : `${old.length === 1 ? "1 machine does" : `${old.length} machines do`} not follow policy: ${which}. Update Agent Loops on ${old.length === 1 ? "it" : "them"}.`);

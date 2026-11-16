@@ -77,10 +77,7 @@ test("the earned badges come earliest first, with the first still to earn next",
   for (const id of all) assert.ok(m.badgeGlyph[id], id);
 });
 
-test("Reports ▸ Yours has the Achievements page first, and an old Multiplier link opens it (#5736)", () => {
-  const yours = nav.navPages.reports.filter((p) => p.group === "Yours").map((p) => p.id);
-  assert.deepEqual(yours, ["achievements", "usage"]);
-  assert.equal(nav.navPages.reports.find((p) => p.id === "achievements")?.title, "Achievements");
-  assert.deepEqual(nav.movedPage("a", "achievements"), { nav: "reports", section: "achievements" });
-  assert.deepEqual(nav.movedPage("a", "multiplier"), { nav: "reports", section: "achievements" });
+test("the Multiplier is in Outcomes's Me lens (#5280), and Achievements opens it", () => {
+  assert.ok(!nav.navPages.reports.some((p) => p.id === "multiplier" || p.group === "Yours"));
+  assert.deepEqual(nav.movedPage("a", "achievements"), { nav: "reports", section: "outcomes", query: "lens=me" });
 });

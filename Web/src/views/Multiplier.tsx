@@ -1,6 +1,6 @@
-// The Achievements page (#3990, #5736): the page's half of the window's AchievementsPage (#3904), with the crowd
+// The Multiplier page (#3990): the page's half of the window's MultiplierPage (#3904), with the crowd
 // (#3985), the bests (#3988) and the earned badges (#3987), in place of the web's Achievements page. It
-// is Reports ▸ Multiplier, and Agents with nothing chosen, as the window's detail with nothing picked.
+// is in Reports ▸ Outcomes's Me lens (#5280; was Reports ▸ Multiplier), and Agents with nothing chosen, as the window's detail with nothing picked.
 //
 // The numbers count to each new value (about 1 s), from the last values this browser showed. When a PR
 // merges or a revert does, a line says so and fades; a new best week says that instead. With reduced
@@ -95,7 +95,8 @@ function useNews(multiplier: Multiplier | undefined): { words: string; up: boole
   return news;
 }
 
-export function AchievementsPage({ store }: { store: Store }) {
+/** The page, or (inReports) a part of Reports ▸ Outcomes's Me lens (#5280), with no keys of the sidebar's in its foot. */
+export function MultiplierPage({ store, inReports = false }: { store: Store; inReports?: boolean }) {
   const host = pageHost(store);
   const multiplier = host ? store.multiplier.value[host] : undefined;
   const achievements = host ? store.achievements.value[host] : undefined;
@@ -116,7 +117,7 @@ export function AchievementsPage({ store }: { store: Store }) {
     </p>
   );
   return (
-    <section class="chat multiplier-page" aria-label="Achievements">
+    <section class={`chat multiplier-page${inReports ? " in-reports" : ""}`} aria-label="Multiplier">
       {/* How old the figures are (#5144): when this page last heard the host's Multiplier. */}
       {readAt !== undefined && <p class="page-fresh"><LastUpdate at={readAt} /></p>}
       <div class="multiplier-body">
@@ -148,7 +149,7 @@ export function AchievementsPage({ store }: { store: Store }) {
       </div>
       <footer class="multiplier-foot quiet small">
         {multiplier && <p>{baselineLine(multiplier)}</p>}
-        <p>↑↓ move · →← unfold and fold a folder</p>
+        {!inReports && <p>↑↓ move · →← unfold and fold a folder</p>}
       </footer>
     </section>
   );

@@ -187,3 +187,6 @@ export const noNext = "Not enough history on this machine to say what comes next
 export const nextNote = "What comes next is this machine’s: its last 14 days of landings, drawn 1,000 times. A range is P10 to P90; P50 is as likely early as late, and P85 holds about 85% of the time. An epic’s date counts the children filed now, so it moves when more are filed. “All in” adds the turns that went on no issue or pull request (a Scrum Master’s, a review’s); people’s time and CI minutes are in no figure.";
 export const noNextOffline = "None of your machines is online, so nothing says what comes next. It shows when one is back.";
 export const noNextHere = "This machine does not forecast yet. Update it to see what comes next.";
+
+/** Reports ▸ Estimates (#5280) with nothing scored in its range. */
+export const noScores = "Nothing was scored in this range yet: an estimate or a forecast is scored when its issue lands.";

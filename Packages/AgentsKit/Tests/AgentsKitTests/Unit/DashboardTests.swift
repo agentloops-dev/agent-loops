@@ -76,12 +76,12 @@ struct DashboardTests {
         let first = order([a, b, c, c2], [:])
         #expect(first.0 == ["#1", "#2", "#3"])
         #expect(first.1 == ["c", "c2"])
-        // The newest session does something, then the oldest; one goes idle and another fails.
+        // The newest session does something, then the oldest, and one fails.
         c2.lastActivityAt = now.addingTimeInterval(30)
         a.lastActivityAt = now.addingTimeInterval(60)
         c.state = .finished
         c.endedReason = .processDied
-        let second = order([c2, b, a, c], ["b": .waiting])
+        let second = order([c2, b, a, c], [:])
         #expect(second.0 == first.0)
         #expect(second.1 == first.1)
     }
@@ -100,7 +100,7 @@ struct DashboardTests {
     @Test func aDoneRowStaysWhileItsPullRequestsChecksFail() {
         let b = board([agent("lane", labels: ["#8", "P#30"], state: .finished, ended: .endTurn)],
                       pulls: [pull(30, checks: "failing")])
-        let row = b.rows[.working]?.first
+        let row = b.rows[.waiting]?.first
         #expect(row?.mark == .failed)
         #expect(row?.sessions.isEmpty == true)
         #expect(board([agent("lane", labels: ["#8", "P#30"], state: .finished, ended: .endTurn)],
@@ -122,9 +122,50 @@ struct DashboardTests {
         #expect(row?.pullRequest?.checks == "failing")
     }
 
-    @Test func aCrashedSessionIsFailedAndStaysWithTheWorkingRows() {
+    @Test func aCrashedSessionIsFailedAndWaits() {
         let b = board([agent("x", labels: ["#3"], state: .finished, ended: .processDied)])
-        #expect(b.rows[.working]?.first?.mark == .failed)
+        #expect(b.rows[.waiting]?.first?.mark == .failed)
+        #expect(b.count(.working) == 0)
+    }
+
+    /// Alex, #5698: Working and Waiting are counted apart. A row works while one of its sessions
+    /// runs; one whose sessions are all idle waits; needing the person goes before both.
+    @Test func workingAndWaitingAreCountedApart() {
+        let b = board([agent("run", labels: ["#1"]),
+                       agent("run2", labels: ["#2"]), agent("idle2", labels: ["#2"]),
+                       agent("idle", labels: ["#3"]),
+                       agent("idle4", labels: ["#4"]), agent("crashed", labels: ["#4"], state: .finished, ended: .processDied),
+                       agent("asks", labels: ["#5"], state: .waitingOnUser)],
+                      groups: ["idle": .waiting, "idle2": .waiting, "idle4": .waiting])
+        #expect(b.count(.working) == 2)
+        #expect(b.count(.waiting) == 2)
+        #expect(b.count(.needsYou) == 1)
+        #expect(b.rows[.working]?.map(\.refText) == ["#1", "#2"])
+        #expect(b.rows[.waiting]?.map(\.refText) == ["#3", "#4"])
+        #expect(b.rows[.waiting]?.map(\.mark) == [.waiting, .failed])
+        #expect(b.sections.map(\.section) == [.needsYou, .working, .waiting])
+    }
+
+    /// #5763: a session that is not running and not asking takes the session list's mark: the
+    /// waiting beacon, or a queued place in line. Not one grey circle. A paused one is off the
+    /// board (#5695), but its mark is the sidebar's pause, as `SessionMark` draws it.
+    @Test func waitingQueuedAndPausedSessionsKeepTheSessionListsMarks() {
+        let b = board([agent("waits", labels: ["#1"]),
+                       agent("queued", labels: ["#2"], state: .queued),
+                       agent("paused", labels: ["#3"], state: .stopped)],
+                      groups: ["waits": .waiting, "queued": .waiting, "paused": .stopped])
+        #expect(b.count(.waiting) == 2)
+        #expect(b.rows[.waiting]?.map(\.mark) == [.waiting, .queued])
+        #expect(Dashboard.Mark.of(agent("p", state: .stopped), group: .stopped) == .paused)
+        #expect(Dashboard.Mark.of(agent("q", state: .queued), group: .waiting) == .queued)
+        #expect(Dashboard.Mark.allCases.map(\.words).contains("Idle") == false)
+    }
+
+    /// A row with a waiting and a queued session waits: the beacon goes before the queue.
+    @Test func aWaitingSessionGoesBeforeAQueuedOneOnItsRow() {
+        let b = board([agent("queued", labels: ["#1"], state: .queued), agent("waits", labels: ["#1"])],
+                      groups: ["waits": .waiting, "queued": .waiting])
+        #expect(b.rows[.waiting]?.first?.mark == .waiting)
     }
 
     @Test func anEpicCardForEachEpicOnTheBoardWithItsProgress() {

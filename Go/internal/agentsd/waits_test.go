@@ -31,7 +31,9 @@ func waitFailed(t testing.TB, format string, args ...any) {
 	t.Helper()
 	var stacks strings.Builder
 	if p := pprof.Lookup("goroutine"); p != nil {
-		p.WriteTo(&stacks, 2)
+		if err := p.WriteTo(&stacks, 2); err != nil {
+			t.Logf("could not write the goroutines' stacks: %v", err)
+		}
 	}
 	t.Logf("every goroutine when the wait reached its limit:\n%s", stacks.String())
 	t.Fatalf(format, args...)

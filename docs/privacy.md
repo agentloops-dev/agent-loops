@@ -20,7 +20,7 @@ make Agent Loops do not see your data and do not sell it.
 - **Feature counts (#2165):** each machine counts how many times a day each feature (a
   method of the host or an app tool) is used, and by which client: the Mac, the Remote, the
   web page, an agent or a workflow. It keeps only the counts, never what a call said, for 90
-  days in `features-history.json`. Reports ▸ Features shows them to you. They never leave
+  days in `features-history.json`. Status ▸ Features shows them to you. They never leave
   your machines.
 - **Your Linux servers:** a server that you add keeps the records of its own agents on its
   own disk.

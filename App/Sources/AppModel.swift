@@ -256,7 +256,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             // The same rule as picking a folder: what you picked is what you see,
             // and a conversation or a workflow left open underneath would be waiting
             // to reappear when the bill is closed, which is a place nobody chose to
@@ -284,7 +284,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -311,7 +311,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -335,7 +335,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -359,7 +359,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -383,7 +383,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -407,7 +407,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -424,7 +424,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -448,7 +448,7 @@ final class AppModel {
             showsDocs = false
             showsMessages = false
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -470,7 +470,7 @@ final class AppModel {
         didSet {
             guard showsDocs, showsDocs != oldValue else { return }
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -494,7 +494,7 @@ final class AppModel {
         didSet {
             guard showsMessages, showsMessages != oldValue else { return }
             showsSummary = false
-            showsDashboard = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -521,7 +521,7 @@ final class AppModel {
     var showsSummary = false {
         didSet {
             guard showsSummary, showsSummary != oldValue else { return }
-            showsDashboard = false
+            showsAchievements = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -540,12 +540,12 @@ final class AppModel {
         }
     }
 
-    /// Whether the window is showing the Dashboard (#5534): each work item on this Mac with its
-    /// sessions, its pull request and checks, and what waits on the person answered in place. A
-    /// page like Velocity, and not persisted for the same reason.
-    var showsDashboard = false {
+    /// Whether the window is showing the Achievements page (#3986), from its row under Usage or
+    /// View ▸ Achievements (⌘0). A page like Velocity, and not persisted for the same reason. The
+    /// window opens to the Dashboard instead (#5696).
+    var showsAchievements = false {
         didSet {
-            guard showsDashboard, showsDashboard != oldValue else { return }
+            guard showsAchievements, showsAchievements != oldValue else { return }
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -636,6 +636,15 @@ final class AppModel {
         statusSecretsPage = .secrets
     }
 
+    /// The Environment page's selected item, by its id (`EnvironmentPage.Item.id`), so a link opens one (#5260).
+    var environmentSelection: String?
+
+    /// Status ▸ Environment (#5260): the page, with `item` selected when given.
+    func showEnvironment(item: String? = nil) {
+        if let item { environmentSelection = item }
+        statusSecretsPage = .environment
+    }
+
     /// The Accounts page's selected account, by its id (`DaemonAPI.OutsideAccount.id`), so a link opens one (#5258).
     var accountsSelection: String?
 
@@ -660,7 +669,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsDashboard = false
+        showsAchievements = false
         if let agent = agents.first(where: { $0.id == agentID }) {
             pendingOpen = nil
             select(FolderKey(host: agent.host, folder: agent.folderPath))
@@ -688,7 +697,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsDashboard = false
+        showsAchievements = false
         // Not listed yet: settling the selection would pick another, so it waits (#1055).
         pendingOpen = liveFolders.contains { $0.key == key } ? nil : .folder(key)
         select(key)
@@ -729,7 +738,7 @@ final class AppModel {
         get {
             if showsEvents { return .events }
             if showsRuntimes { return .runtimes }
-            if let statusSecretsPage { return statusSecretsPage == .secrets ? .secretsStatus : .accountsStatus }
+            if let statusSecretsPage { return statusSecretsPage.sidebarItem }
             if let machinePage { return .machine(machinePage) }
             if showsSpending { return .spending }
             if showsTokens { return .tokens }
@@ -739,9 +748,9 @@ final class AppModel {
             if showsDocs { return .docs }
             if showsMessages { return .messages }
             if showsSummary { return .summary }
-            if showsDashboard { return .dashboard }
-            // Nothing else open is the Multiplier page (#3986), as the detail draws it.
-            guard let key = selectedFolderKey else { return selection == nil && !composing ? .achievements : nil }
+            if showsAchievements { return .achievements }
+            // Nothing else open is the Dashboard (#5696), as the detail draws it.
+            guard let key = selectedFolderKey else { return selection == nil && !composing ? .dashboard : nil }
             if let id = openWorkflow { return .workflow(id, in: key) }
             if case .review(let id)? = folderPage { return .review(id, in: key) }
             if folderPage == .archivedSessions { return .archivedSessions(key) }
@@ -749,7 +758,7 @@ final class AppModel {
             if folderPage == .mcpServers { return .folderMCPServers(key) }
             if let openPin { return .pin(openPin, in: key) }
             if let selection { return .session(selection) }
-            return composing ? .folder(key) : .achievements
+            return composing ? .folder(key) : .dashboard
         }
         set {
             // The person's own pick wins over a banner still waiting for its lists.
@@ -770,7 +779,7 @@ final class AppModel {
                 showsDocs = false
                 showsMessages = false
                 showsSummary = false
-                showsDashboard = false
+                showsAchievements = false
                 select(key)
                 openWorkflow = id
             case .pin(let path, let key):
@@ -794,7 +803,7 @@ final class AppModel {
             case .velocity:
                 showsVelocity = true
             case .dashboard:
-                showsDashboard = true
+                showDashboard()
             case .work(let kind):
                 // The list's row: its list, or the place in it still open.
                 showWork(workPlace.kind == kind ? workPlace : WorkPlace(kind: kind))
@@ -815,6 +824,8 @@ final class AppModel {
                 statusSecretsPage = .secrets
             case .accountsStatus:
                 statusSecretsPage = .accounts
+            case .environmentStatus:
+                statusSecretsPage = .environment
             case .machine(let host):
                 machinePage = host
             case .folder(let key):
@@ -830,7 +841,7 @@ final class AppModel {
                 showsDocs = false
                 showsMessages = false
                 showsSummary = false
-                showsDashboard = false
+                showsAchievements = false
                 showFolder(key)
             case nil:
                 // A list that clears its own selection — which macOS does while rows
@@ -841,9 +852,16 @@ final class AppModel {
         }
     }
 
-    /// The Achievements page (#3986), from its row under Usage or View ▸ Achievements (⌘0): every
-    /// page, folder page, pin, workflow and chat closed, as the window opens.
+    /// The Achievements page (#3986), from its row under Usage or View ▸ Achievements (⌘0).
     func showAchievements() {
+        showsAchievements = true
+    }
+
+    /// The Dashboard (#5534), the home page (#5696): each work item on this Mac with its sessions,
+    /// its pull request and checks, and what waits on the person answered in place. Every page,
+    /// folder page, pin, workflow and chat closed, as the window opens and as it is when the
+    /// selection clears. From its row under Work or View ▸ Dashboard.
+    func showDashboard() {
         showsSpending = false
         showsEvents = false
         showsRuntimes = false
@@ -856,7 +874,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsDashboard = false
+        showsAchievements = false
         showNothing()
     }
 
@@ -874,7 +892,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsDashboard = false
+        showsAchievements = false
         select(key)
         folderPage = page
     }
@@ -907,7 +925,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsDashboard = false
+        showsAchievements = false
         select(key)
         // A new session in it (#366): the folder's own page is where a session starts,
         // as New Session has it. The folder's row in the sidebar only folds (#375).
@@ -1149,7 +1167,7 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsSummary = false
-        showsDashboard = false
+        showsAchievements = false
         select(key)
         openPin = path
     }
@@ -1293,6 +1311,8 @@ final class AppModel {
 
     init() {
         userScope.lock = lock
+        // The window takes an agent's secret for the person (#5308): it seals, as Add a Secret does.
+        userScope.sealing = { ControlConfig.sealing().map { ($0.key, $0.client) } }
         let localCopy = LocalCopyKeeper(copy: Self.windowCopy(), work: work)
         self.localCopy = localCopy
         // At once, so the sidebar and a chat restored at launch draw before the host answers.
@@ -4173,8 +4193,9 @@ final class AppModel {
         }
     }
 
-    func mcpServers(at destination: DaemonAPI.SkillDestination) async -> DaemonAPI.MCPListAnswer? {
-        try? await macClient.call(DaemonAPI.Method.mcpList,
+    /// A folder's connectors as `host` reads them: a server folder's on its own host (#5717).
+    func mcpServers(at destination: DaemonAPI.SkillDestination, on host: MachineRef = .mac) async -> DaemonAPI.MCPListAnswer? {
+        try? await (host == .mac ? macClient : client(for: host)).call(DaemonAPI.Method.mcpList,
                                DaemonAPI.MCPListRequest(destination: destination),
                                returning: DaemonAPI.MCPListAnswer.self)
     }
@@ -4244,14 +4265,20 @@ final class AppModel {
         }
     }
 
-    /// Approve the entry the row showed. A digest that no longer matches comes back as an error.
-    func approveFolderMCP(_ name: String, digest: String, in folder: URL) async -> DaemonAPI.MCPCatalogError? {
+    /// Approve the entry the row showed, on the folder's own machine, as Remove does (#2199,
+    /// #5717). A digest that no longer matches comes back as an error.
+    func approveFolderMCP(_ name: String, digest: String, in folder: URL,
+                          on host: MachineRef = .mac) async -> DaemonAPI.MCPCatalogError? {
         do {
-            _ = try await macClient.call(DaemonAPI.Method.mcpApprove,
+            _ = try await (host == .mac ? macClient : client(for: host)).call(DaemonAPI.Method.mcpApprove,
                                       DaemonAPI.MCPApproveRequest(destination: .folder(folder: folder.path),
                                                                   name: name, digest: digest),
                                       returning: DaemonAPI.MCPListAnswer.self)
             return nil
+        } catch HostProblem.offline {
+            return .failed("\(hosts.label(host)) is offline")
+        } catch let rpc as JSONRPCError where rpc.code == DaemonAPI.Failure.hostOffline {
+            return .failed("\(hosts.label(host)) is offline")
         } catch {
             return Self.mcpError(error)
         }

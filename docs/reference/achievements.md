@@ -48,7 +48,7 @@ list with how to earn them.
 | --- | --- |
 | Mac | The **Achievements** page (**View ▸ Achievements**, ⌘0), under the Multiplier. |
 | iPhone and iPad | The **Achievements** page, first under **Reports** in the sidebar. |
-| Web page | The **Achievements** page, first in **Reports ▸ Yours**. |
+| Web page | **Reports ▸ Outcomes**, in the **Me** lens under **On your machines**, with the Multiplier. |
 
 On the Mac, each earned achievement is a round badge, earliest first. Hold the pointer on a
 badge to see its title and date. A count such as **3 of 7** is next to the badges, and a
@@ -74,7 +74,7 @@ charts on the **Time** page. See [See usage, cost and time](../how-to/see-usage-
 | Web page | The same card at the bottom right of the page. |
 | iPhone | No card. The achievement has a **New** mark on the **Achievements** page until you leave the page. |
 
-**See Achievements** opens the **Achievements** page. Each card shows once: it goes when you close it or open
+**See Achievements** opens the **Achievements** page (on the web, **Reports ▸ Outcomes**). Each card shows once: it goes when you close it or open
 it. Agent Loops never sends a notification for an achievement. On the first look from a device or
 a browser, the achievements earned before are not news, so they show no card.
 

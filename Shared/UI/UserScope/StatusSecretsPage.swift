@@ -1,13 +1,42 @@
 import AgentsKitCore
 import SwiftUI
 
-/// Which of the two Status rows (#4161): each opens its page, Secrets (#5257) or Accounts (#5258).
+/// Which of the Status rows (#4161): each opens its page, Secrets (#5257), Accounts (#5258) or Environment (#5260).
 enum StatusSecretsKind: Hashable {
-    case secrets, accounts
+    case secrets, accounts, environment
 
-    var title: String { self == .secrets ? StatusSecretsWords.secretsTitle : StatusSecretsWords.accountsTitle }
-    var help: String { self == .secrets ? StatusSecretsWords.secretsHelp : StatusSecretsWords.accountsHelp }
-    var systemImage: String { self == .secrets ? "key" : "person.crop.rectangle.stack" }
+    var title: String {
+        switch self {
+        case .secrets: StatusSecretsWords.secretsTitle
+        case .accounts: StatusSecretsWords.accountsTitle
+        case .environment: EnvironmentPage.title
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .secrets: StatusSecretsWords.secretsHelp
+        case .accounts: StatusSecretsWords.accountsHelp
+        case .environment: EnvironmentPage.whereLine
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .secrets: "key"
+        case .accounts: "person.crop.rectangle.stack"
+        case .environment: "terminal"
+        }
+    }
+
+    /// Its sidebar row.
+    var sidebarItem: SidebarItem {
+        switch self {
+        case .secrets: .secretsStatus
+        case .accounts: .accountsStatus
+        case .environment: .environmentStatus
+        }
+    }
 }
 
 extension UserScopeState {
@@ -22,6 +51,7 @@ extension UserScopeState {
         return switch kind {
         case .secrets: StatusSecretsWords.secretLines(secrets)
         case .accounts: StatusSecretsWords.accountLines(accounts, secrets: secrets)
+        case .environment: []
         }
     }
 }

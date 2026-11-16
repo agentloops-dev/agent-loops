@@ -7,6 +7,7 @@ import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { LocalSecrets, OutsideAccount, SessionSecrets, UserSecretRow } from "../protocol/generated";
 import type { Store } from "../model/store";
+import { savedByLine } from "../model/secretOffers";
 import { go, route } from "../route";
 import { describe } from "../model/errors";
 import { Capability } from "../protocol/capabilities.generated";
@@ -45,7 +46,7 @@ function open(item: Item | null): void {
   go(item ? { nav: "status", section: "secrets", item: itemRef(item) } : { nav: "status", section: "secrets" });
 }
 
-/** Under 720 px the list is alone (wireframes §2). The Accounts page uses it too (#5258). */
+/** Under 720 px the list is alone (wireframes §2). The Accounts page (#5258) and the Environment page (#5260) use it too. */
 export function useNarrow(): boolean {
   const query = "(max-width: 719px)";
   const narrow = useSignal(globalThis.matchMedia?.(query).matches ?? false);
@@ -360,6 +361,7 @@ function SecretDetail({ store, item, down, show, host, offersAsk, accounts, repl
       ) : (
         <>
           <p class="secret-about">{about(item.description)}</p>
+          {row?.savedBy && <p class="hint">{savedByLine(row.savedBy)}</p>}
           <dl class="secret-facts">
             <dt>Value</dt>
             <dd>

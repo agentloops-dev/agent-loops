@@ -1,15 +1,16 @@
 // The ⌘K command menu (#4788, spec `specs/4777-fast/spec.md`, "⌘K"), as the window's CommandFinder (#4787):
-// one field that finds any session, folder, issue or pull request, by its words or by its ref (`#4777`),
+// one field that finds any session, folder, issue or pull request, secret, account or environment variable (#5261), by its words or by its ref (`#4777`),
 // and any action, each with its shortcut. The page gives the items; this finds and orders them, with the
 // window's rules, so each client finds the same items in the same order. It makes no call.
 import { nodeName } from "./value";
 
 /** What an item is, which the row says; on a tie the earlier kind comes first. */
-export type CommandKind = "action" | "session" | "folder" | "issue" | "pr";
-const kindOrder: readonly CommandKind[] = ["action", "session", "folder", "issue", "pr"];
+export type CommandKind = "action" | "session" | "folder" | "secret" | "account" | "variable" | "issue" | "pr";
+const kindOrder: readonly CommandKind[] = ["action", "session", "folder", "secret", "account", "variable", "issue", "pr"];
 
 export const commandKindWord: Record<CommandKind, string> = {
-  action: "Action", session: "Session", folder: "Folder", issue: "Issue", pr: "Pull request",
+  action: "Action", session: "Session", folder: "Folder", secret: "Secret", account: "Account",
+  variable: "Environment variable", issue: "Issue", pr: "Pull request",
 };
 
 export interface CommandItem {
@@ -29,7 +30,7 @@ export interface CommandItem {
 
 /** What the menu says, the window's CommandMenuWords. */
 export const commandMenuWords = {
-  prompt: "Find a session, folder, issue or action",
+  prompt: "Find a session, folder, issue, secret or action",
   label: "Command menu",
   nothing: (term: string) => `Nothing matches “${term.trim()}”.`,
   shortcut: (keys: string) => `Shortcut ${keys}`,

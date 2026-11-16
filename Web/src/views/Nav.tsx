@@ -8,8 +8,8 @@ import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { Fragment, type ComponentChildren } from "preact";
 import type { Store } from "../model/store";
-import { go, route, sectionOf, usageAsked } from "../route";
-import { gated, groupedPages, machinePages, navPages, navTitle, openPage, pagesShown, sectionKeys, sectionsShown, usagePaneTitle, usagePanes,
+import { go, route, sectionOf } from "../route";
+import { gated, groupedPages, machinePages, navPages, navTitle, openPage, pagesShown, sectionKeys, sectionsShown,
   type NavPage, type NavSection, pageRoute, routePageID } from "../model/nav";
 import { adminOf, adminsOnly } from "../model/console";
 import { hostAnswers } from "../model/capabilities";
@@ -19,9 +19,11 @@ import { ConsoleSection, MachinesPage, roleProblemOf } from "./ConsoleApp";
 import { requestCount } from "./ConsoleRecords";
 import { policyNotSaved } from "./ConsolePolicy";
 import { orgPolicyNotSaved } from "./ConsoleOrgPolicy";
-import { ReportsPage } from "./Reports";
+import { ReportsPage, lensName } from "./Reports";
+import { lensAsked, lensTitle } from "../model/reports";
 import { BuildsPage } from "./Builds";
 import { DeliveryPage } from "./Delivery";
+import { nonePage, SummaryPage } from "./SummaryPage";
 import { WorkList, WorkPage } from "./Work";
 import { WorkReleasePage } from "./WorkRelease";
 import { WorkFeatures } from "./WorkFeatures";
@@ -40,13 +42,13 @@ import { AddMachineDialog } from "./AddMachineDialog";
 import { addMachineWords } from "../model/addMachine";
 import { SettingsPage } from "./Settings";
 import { SecretsPage } from "./SecretsPage";
+import { EnvironmentPage } from "./EnvironmentPage";
 import { AccountsPage } from "./AccountsPage";
 import { StatusListMark, StatusListLastLine, useUserScopeStatus } from "./StatusSecrets";
 import { WorkflowRow } from "./WorkflowRow";
 import { BackToList } from "./BackToList";
 import { PageTitle, PersonMenu, SearchBox } from "./TopBar";
 import { pageCrumbs, type Crumb } from "../model/crumbs";
-import { AchievementsPage } from "./Achievements";
 import { lowDetail, lowWords, runtimeTally, setupRuntimes } from "../model/runtimes";
 import { eventsWaitingLine } from "../model/eventsWaiting";
 import type { Session } from "../session";
@@ -155,6 +157,8 @@ function PageMark({ store, page }: { store: Store; page: NavPage }) {
     const low = runtimesLowWords(store);
     if (low) return <span class="small attention" title={low.detail} aria-hidden="true">●</span>;
   }
+  // Reports ▸ Summary (#3721, #5729): a dot while the newest page is unread, as the window's Summary row.
+  if (page.draw.kind === "summary" && store.summaryPages.value[0]?.unread) return <span class="dot" aria-label="Unread" />;
   if (page.id === "requests" && requestCount(store) > 0) return <span class="sub-app-count">{requestCount(store)}</span>;
   if (page.id === "reportPolicy" && policyNotSaved(store)) return <span class="quiet small attention">Not saved</span>;
   if (page.id === "policy" && orgPolicyNotSaved(store)) return <span class="quiet small attention">Not saved</span>;
@@ -188,6 +192,17 @@ function RuntimesLowLine({ store }: { store: Store }) {
   return low ? <p class="page-need quiet small" role="status" title={low.detail} aria-label={low.detail}>{low.words}</p> : null;
 }
 
+/** Under Reports ▸ Summary (#3721, #5729), in grey: the newest page's title, or "No summary yet", as the window's SummaryRowLabel. */
+function SummaryNewestLine({ store }: { store: Store }) {
+  return <p class="page-need quiet small">{store.summaryPages.value[0]?.title ?? nonePage}</p>;
+}
+
+/** Reports ▸ Summary is listed only while the daily summary is on, as the window's row (#3721); its address still opens it. */
+function summaryListed(store: Store, page: NavPage, open: string | undefined): boolean {
+  const settings = store.dailySummary.value;
+  return page.draw.kind !== "summary" || page.id === open || (!!settings && settings.mode !== "off");
+}
+
 const isEventsPage = (page: NavPage) => page.draw.kind === "activity" && page.draw.page === "events";
 
 /** Under Status ▸ Events, in grey: `4 sessions waiting`, as the window's Events row. Nothing when none waits;
@@ -204,7 +219,7 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   // A page per machine under Machines (#3626).
   const more = section === "machines" ? machinePages(store.hosts.value, store.macHostID.value) : [];
   const open = openPage(section, routePageID(section, r), admin, more);
-  const list = pagesShown(section, admin, open?.id, more);
+  const list = pagesShown(section, admin, open?.id, more).filter((p) => summaryListed(store, p, open?.id));
   const registering = useSignal(false);
   useUserScopeStatus(store, section === "status");
   // Work shown: the list it opens on read ahead (#4930), from this device's copy and then the machines, so it draws at once.
@@ -247,13 +262,14 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
                 </MachineRow>
               ) : (
                 <Fragment key={p.id}>
-                  <button type="button" class={`sub-app-row${p.id === open?.id ? " on" : ""}${p.under ? " under" : ""}`}
+                  <button type="button" class={`sub-app-row${p.id === open?.id ? " on" : ""}${p.under ? " under" : ""}${p.draw.kind === "summary" && store.summaryPages.value[0]?.unread ? " unread" : ""}`}
                     aria-current={p.id === open?.id ? "page" : undefined} onClick={() => go(pageRoute(section, p))}>
                     {p.title}
                     <PageMark store={store} page={p} />
                   </button>
                   {isRuntimesPage(p) && <RuntimesLowLine store={store} />}
                   {isEventsPage(p) && <EventsWaitingLine store={store} />}
+                  {p.draw.kind === "summary" && <SummaryNewestLine store={store} />}
                   {(p.draw.kind === "secrets" || p.draw.kind === "accounts") && <StatusListLastLine store={store} list={p.draw.kind} />}
                 </Fragment>
               ))}
@@ -287,19 +303,18 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
   const admin = adminOf(store);
   if (!gated(page, admin) && page.draw.kind === "activity") return <ActivityPageView store={store} page={page.draw.page} />;
   if (!gated(page, admin) && page.draw.kind === "settings") return <SettingsPage store={store} down={down} />;
-  if (page.draw.kind === "achievements") return <AchievementsPage store={store} />;
-  // A page under another (#5178) names that page in its breadcrumb: Reports › Planning › Builds.
+  // A page under another (#5178) names that page in its breadcrumb: Reports › Delivery › Builds.
   const parent = page.under ? navPages[section].find((p) => p.id === page.under) : undefined;
   return (
-    <Framed title={page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
+    <Framed title={page.draw.kind === "report" ? lensTitle(page.title, lensAsked(route.value.query), lensName.value) : page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
       {gated(page, admin) ? <p class="hint">{admin === null ? "Loading…" : roleProblemOf(store) ?? adminsOnly}</p>
         : page.draw.kind === "console" ? <ConsoleSection store={store} id={page.draw.id} down={down} />
         : page.draw.kind === "report" ? <ReportsPage store={store} section={page.draw.section} down={down} />
         : page.draw.kind === "builds" ? <BuildsPage store={store} down={down} />
         : page.draw.kind === "delivery" ? <DeliveryPage store={store} down={down} />
+        : page.draw.kind === "summary" ? <SummaryPage store={store} />
         : page.draw.kind === "machines" ? (admin === true ? <><MachinesList store={store} /><h2 class="section-head">Everyone’s machines</h2><MachinesPage store={store} down={down} /></> : <MachinesList store={store} />)
         : page.draw.kind === "workflows" ? <AllWorkflows store={store} down={down} />
-        : page.draw.kind === "usage" ? <Usage store={store} />
         // An item of a list Work no longer has (#/work/milestone/<ref>, #3878) opens the Work default's list.
         : page.draw.kind === "work" ? (route.value.item && route.value.section === page.id
           ? page.draw.work === "release"
@@ -315,6 +330,8 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         : page.draw.kind === "secrets" ? <SecretsPage store={store} down={down} />
         // Every outside account of the person's (#5258), in one list beside the selected one's detail.
         : page.draw.kind === "accounts" ? <AccountsPage store={store} down={down} />
+        // The plain variables sessions get when their agent starts (#5260): ~/.agents/env and each repo's .agents/env.
+        : page.draw.kind === "environment" ? <EnvironmentPage store={store} down={down} />
         : page.draw.kind === "docs" ? (route.value.item
           ? <DocPage key={route.value.item} store={store} docRef={route.value.item} />
           : <DocsList store={store} />)
@@ -377,18 +394,3 @@ function AllWorkflows({ store, down }: { store: Store; down: boolean }) {
   );
 }
 
-/** Usage: what was Activity's Cost, Tokens and Time, your own machines' (#956). */
-function Usage({ store }: { store: Store }) {
-  const pane = useSignal(usageAsked.peek() ?? "spending");
-  return (
-    <>
-      <div class="tabs" role="tablist" aria-label="Show">
-        {usagePanes.map((p) => (
-          <button key={p} role="tab" aria-selected={pane.value === p} class={pane.value === p ? "on" : ""}
-            onClick={() => { pane.value = p; usageAsked.value = undefined; }}>{usagePaneTitle[p]}</button>
-        ))}
-      </div>
-      <div class="usage-pane"><ActivityPageView key={pane.value} store={store} page={pane.value} /></div>
-    </>
-  );
-}

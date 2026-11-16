@@ -308,12 +308,12 @@ func (d *Daemon) generateSecret(ctx context.Context, drive *browserDrive, args m
 	// An agent's write: Ask before use is on, the old value's too (#4014).
 	if string(args["replace"]) == "true" {
 		if old, ok, _ := d.localSecret("", name); ok && old != "" {
-			if err := d.saveSecret(name+"_PREVIOUS", old, true); err != nil {
+			if err := d.saveAgentSecret("", name+"_PREVIOUS", old, true); err != nil {
 				return fillWords("Nothing was made: " + err.Error() + ".")
 			}
 		}
 	}
-	if err := d.saveSecret(name, value, true); err != nil {
+	if err := d.saveAgentSecret("", name, value, true); err != nil {
 		return fillWords("Nothing was made: " + err.Error() + ".")
 	}
 	_, isError, note := d.fillSecret(ctx, drive, secretFill{label: name, value: value, hide: map[string]string{name: value}}, args)

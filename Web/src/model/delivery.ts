@@ -1,4 +1,4 @@
-// Reports ▸ Planning's Delivery row (#4555, epic #4551): a card a figure, from reports/value's delivery: the four
+// Reports ▸ Delivery's DORA row (#4555, epic #4551): a card a figure, from reports/value's delivery: the four
 // DORA keys, DORA 2025's rework rate, flow efficiency, the approval wait and CI time to green, each over the 4 weeks
 // to now with its weekly series and DORA 2024's band where one exists. The figures are a scope's, never a person's.
 import type { LineageDelivery, LineageDeliveryFigure } from "../protocol/generated";

@@ -20,6 +20,10 @@ import (
 // polls from now: nothing from before is raised, and nothing is raised twice. Stopping lets
 // the lease go.
 func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) {
+	// Quarantined: it waits for states that can pass by ("the second wait stands by",
+	// "the cursor gone") and failed under load on a PR and on main. #5742 fixes it and
+	// removes this skip.
+	t.Skip("flaky under load (#5742)")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
