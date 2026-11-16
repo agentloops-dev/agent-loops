@@ -34,6 +34,18 @@ page.
 - **A control plane that keeps no reports** (one from before #1811) says so, and says to
   update it.
 
+## Reports' pages, by question (#5280)
+
+The list groups Reports' pages by the question each answers (spec #5276, option A): **Cost**
+(Spend), **Output** (Outcomes, Delivery), **Time** (Time), **Plan** (Forecast, Estimates), **Use**
+(Adoption, Runtimes, Workflows) and **Saved** (Saved Views); Audit is under Records, for admins.
+Usage and Multiplier are no longer pages: in the Me lens, Spend, Time and Outcomes end with **On
+your machines**, the charts of the pane each repeats (Cost and Tokens on Spend, Time on Time, the
+Multiplier and Velocity on Outcomes). Features is Status ▸ Features: it is about the product and
+the machines, not about work. An old `#/reports/usage`, `#/reports/multiplier` or
+`#/reports/features` opens its new place. The Mac's Cost ▸ Open Reports opens Spend in the Me lens,
+as before.
+
 ## Reports ▸ Spend, on the web page
 
 Reports is one of the control plane's three apps on the web page, beside Workspace and the
@@ -85,10 +97,14 @@ Three more pages of Reports (#2019), with the same scopes:
   ended in an error), the cost of a run and the time working a run. By Workflow first. The
   most failed runs come first. By Person shows each bot's runs under its name.
 
-## Reports ▸ Planning, on the web page (#2351, #4528)
+## Reports ▸ Delivery, Forecast and Estimates, on the web page (#2351, #4528, #5280)
 
-Value before #4528. What the work cost and what it delivered, then what comes next. Its page id is still
-`value`, so saved views and links keep working. The cost part: from the cost on the links (#2350). The control
+Planning until #5280, Value before #4528: three pages from `reports/value` now. **Delivery** (under
+Output) is what the work cost and delivered: the headline, waste, lead time, all in, unlinked, the
+DORA figures and the issues and releases, with **Builds** and **Environments** under it. **Forecast**
+(under Plan) is what comes next and What if. **Estimates** (under Plan) is how the estimates and
+forecasts scored. A saved view's page is still `value` on the wire and opens Delivery, and an old
+`#/reports/value`, `#/reports/value/builds` or `#/reports/value/delivery` opens its new place. The cost part: from the cost on the links (#2350). The control
 plane adds up the nodes that the scope's machines send (`v1/lineage/<host>.json`); the
 machines' copies of one node add up, as each banked its own turns.
 
@@ -223,7 +239,7 @@ machines' copies of one node add up, as each banked its own turns.
   (`sessions`, `failedSessions`, `prsOpened`, `prsMerged`, `prsReverted`, `mergeSeconds`,
   `waits`, `workflowRuns`, `workflowFailures`; blank from a machine before #2019).
 
-- `reports/value` (#2351) with a range and a scope: Reports ▸ Planning (`ReportValue`), with
+- `reports/value` (#2351) with a range and a scope: Reports ▸ Delivery, Forecast and Estimates (`ReportValue`), with
   `forecastScore` and `openEpics` (#4528), and `delivery` (#4555): a `ReportDelivery` a repo.
 - `reports/views`, `reports/saveView` (a view with no `id` is new) and `reports/deleteView`
   (#2019): the caller's saved views.
@@ -243,7 +259,7 @@ curl -H "Authorization: Bearer agread_…" \
 - `range` is `day`, `week`, `month` (the default) or `threeMonths`, as for `reports/usage`.
 - `format` is `json` (the default, the same answer as `reports/usage`), `csv` or `jsonl`
   (the same as `reports/export`).
-- `report=delivery` (#4555) reads Reports ▸ Planning's delivery figures instead, in JSON only:
+- `report=delivery` (#4555) reads Reports ▸ Delivery's DORA figures instead, in JSON only:
   `{"delivery": [ReportDelivery, …]}`, a repo each.
 - **A token reads these reports and nothing else.** It opens no socket and calls no
   method.

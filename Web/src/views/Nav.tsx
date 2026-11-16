@@ -8,8 +8,8 @@ import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { Fragment, type ComponentChildren } from "preact";
 import type { Store } from "../model/store";
-import { go, route, sectionOf, usageAsked } from "../route";
-import { gated, groupedPages, machinePages, navPages, navTitle, openPage, pagesShown, sectionKeys, sectionsShown, usagePaneTitle, usagePanes,
+import { go, route, sectionOf } from "../route";
+import { gated, groupedPages, machinePages, navPages, navTitle, openPage, pagesShown, sectionKeys, sectionsShown,
   type NavPage, type NavSection, pageRoute, routePageID } from "../model/nav";
 import { adminOf, adminsOnly } from "../model/console";
 import { hostAnswers } from "../model/capabilities";
@@ -48,7 +48,6 @@ import { WorkflowRow } from "./WorkflowRow";
 import { BackToList } from "./BackToList";
 import { PageTitle, PersonMenu, SearchBox } from "./TopBar";
 import { pageCrumbs, type Crumb } from "../model/crumbs";
-import { MultiplierPage } from "./Multiplier";
 import { lowDetail, lowWords, runtimeTally, setupRuntimes } from "../model/runtimes";
 import { eventsWaitingLine } from "../model/eventsWaiting";
 import type { Session } from "../session";
@@ -289,8 +288,7 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
   const admin = adminOf(store);
   if (!gated(page, admin) && page.draw.kind === "activity") return <ActivityPageView store={store} page={page.draw.page} />;
   if (!gated(page, admin) && page.draw.kind === "settings") return <SettingsPage store={store} down={down} />;
-  if (page.draw.kind === "multiplier") return <MultiplierPage store={store} />;
-  // A page under another (#5178) names that page in its breadcrumb: Reports › Planning › Builds.
+  // A page under another (#5178) names that page in its breadcrumb: Reports › Delivery › Builds.
   const parent = page.under ? navPages[section].find((p) => p.id === page.under) : undefined;
   return (
     <Framed title={page.draw.kind === "report" ? lensTitle(page.title, lensAsked(route.value.query), lensName.value) : page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
@@ -301,7 +299,6 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         : page.draw.kind === "delivery" ? <DeliveryPage store={store} down={down} />
         : page.draw.kind === "machines" ? (admin === true ? <><MachinesList store={store} /><h2 class="section-head">Everyone’s machines</h2><MachinesPage store={store} down={down} /></> : <MachinesList store={store} />)
         : page.draw.kind === "workflows" ? <AllWorkflows store={store} down={down} />
-        : page.draw.kind === "usage" ? <Usage store={store} />
         // An item of a list Work no longer has (#/work/milestone/<ref>, #3878) opens the Work default's list.
         : page.draw.kind === "work" ? (route.value.item && route.value.section === page.id
           ? page.draw.work === "release"
@@ -381,18 +378,3 @@ function AllWorkflows({ store, down }: { store: Store; down: boolean }) {
   );
 }
 
-/** Usage: what was Activity's Cost, Tokens and Time, your own machines' (#956). */
-function Usage({ store }: { store: Store }) {
-  const pane = useSignal(usageAsked.peek() ?? "spending");
-  return (
-    <>
-      <div class="tabs" role="tablist" aria-label="Show">
-        {usagePanes.map((p) => (
-          <button key={p} role="tab" aria-selected={pane.value === p} class={pane.value === p ? "on" : ""}
-            onClick={() => { pane.value = p; usageAsked.value = undefined; }}>{usagePaneTitle[p]}</button>
-        ))}
-      </div>
-      <div class="usage-pane"><ActivityPageView key={pane.value} store={store} page={pane.value} /></div>
-    </>
-  );
-}

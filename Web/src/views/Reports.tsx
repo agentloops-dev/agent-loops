@@ -4,7 +4,7 @@
 // has a scope, Me or the organisation, and names it.
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import { signal, useSignal } from "@preact/signals";
-import { go, replace, route, routeHash } from "../route";
+import { go, replace, route, routeHash, usageAsked } from "../route";
 import { hasPage } from "../model/work";
 import type { Store } from "../model/store";
 import type { FeatureUsage, LineageForecast, ReportDelivery, LineageForecastAssumes, LineageForecastWhatIfEffect, LineageNode, MachineRef, ReportFormat, ReportPage, ReportRange, ReportRow, ReportScope, ReportScopeOption, ReportValue, ReportValueRow, ReportView,
@@ -22,12 +22,15 @@ import {
   unlinkedLine, valueHeadline, valueNote, wasteLine,
 } from "../model/value";
 import { assumesLine, burnLine, burnRuntime, forecastScoreLine, landsLine, laneOptions, loadedLine, mergeBurns, mixOptions, nextNote, noNext,
-  noNextHere, noNextOffline, serviceLevelLine, spendLines, whatIfLines, whatIfNote, whatIfOf } from "../model/planning";
+  noNextHere, noNextOffline, noScores, serviceLevelLine, spendLines, whatIfLines, whatIfNote, whatIfOf } from "../model/planning";
 import { deliveryCards, deliveryNote, noDelivery, repoTitle, sparkPath } from "../model/delivery";
 import { deploysQuery } from "../model/deploys";
 import { buildsLinkQuery } from "../model/builds";
 import { Capability } from "../protocol/capabilities.generated";
 import type { Section } from "../model/console";
+import { usagePaneTitle, usagePanesOf } from "../model/nav";
+import { ActivityPageView } from "./Activity";
+import { MultiplierPage } from "./Multiplier";
 import { Choice } from "./Choice";
 import { ask } from "./MessageKinds";
 
@@ -220,7 +223,7 @@ function SavedPage({ store, scopes }: { store: Store; scopes: readonly ReportSco
   const scopeName = (v: ReportView) => isGroupView(v) ? "Me" : scopes.find((o) => scopeKey(o.scope) === scopeKey(v.scope))?.name ?? "A scope you no longer see";
   const open = (v: ReportView) => {
     opened.value = v;
-    go({ nav: "reports", section: v.page });
+    go({ nav: "reports", section: viewSection(v.page) });
   };
   const digest = async (v: ReportView) => {
     const text = store.link.call("reports/usage", { range: v.range, scope: isGroupView(v) ? { kind: "me" } : v.scope }).then((r) => digestText(v, scopeName(v), r));
@@ -269,6 +272,36 @@ function SavedPage({ store, scopes }: { store: Store; scopes: readonly ReportSco
       )}
       <p class="quiet small">{viewsNote}</p>
     </div>
+  );
+}
+
+/** The page a saved view opens (#5280): Planning's views ("value" on the wire) open Delivery, its first part. */
+export function viewSection(page: ReportPage): string {
+  return page === "value" ? "delivery" : page;
+}
+
+/** The Me lens's own part of Spend, Time and Outcomes (#5280): what was Reports ▸ Usage (#956, #4598), Activity's Cost,
+ * Tokens, Time and Velocity, the pane of each that the page repeats, from the person's own machines; and on Outcomes the
+ * Multiplier (#3990), which was a page of its own. */
+function YoursPart({ store, section }: { store: Store; section: string }) {
+  const panes = usagePanesOf(section);
+  const asked = usageAsked.peek();
+  const pane = useSignal(asked && panes.includes(asked) ? asked : panes[0]);
+  if (!pane.value) return null;
+  return (
+    <section class="report-yours" aria-label="On your machines">
+      <h2 class="section-head">On your machines</h2>
+      {section === "outcomes" && <MultiplierPage store={store} inReports />}
+      {panes.length > 1 && (
+        <div class="tabs" role="tablist" aria-label="Show">
+          {panes.map((p) => (
+            <button key={p} role="tab" aria-selected={pane.value === p} class={pane.value === p ? "on" : ""}
+              onClick={() => { pane.value = p; usageAsked.value = undefined; }}>{usagePaneTitle[p]}</button>
+          ))}
+        </div>
+      )}
+      <div class="usage-pane"><ActivityPageView key={pane.value} store={store} page={pane.value} inReport /></div>
+    </section>
   );
 }
 
@@ -359,12 +392,15 @@ function AdoptionPane({ store, scope, initial }: { store: Store; scope: ReportSc
   );
 }
 
-/** Reports ▸ Planning (#4528; Value before, #2351): what the work cost and delivered, from the machines' lineage
- * nodes: cost per merged pull request, all in beside it, waste and lead time; then what comes next, from
- * lineage/forecast (#4526): the burn against each allowance, the spend at this pace, the service levels and when each
- * open epic lands; then how the estimates and the forecasts scored; then each issue and release (#3023), the most
- * costly first. */
-function PlanningPane({ store, scope, initial }: { store: Store; scope: ReportScope | undefined; initial?: Initial | undefined }) {
+/** Planning's three pages since #5280 (were Reports ▸ Planning, #4528; Value before, #2351), each from reports/value. */
+type ValuePart = "delivery" | "forecast" | "estimates";
+
+/** Reports ▸ Output ▸ Delivery, ▸ Plan ▸ Forecast and ▸ Plan ▸ Estimates (#5280), from the machines' lineage nodes as
+ * reports/value adds them up. Delivery: what the work cost and delivered (cost per merged pull request, all in beside it,
+ * waste and lead time), the DORA figures of each repo (#4555), then each issue and release (#3023), the most costly first.
+ * Forecast: what comes next, from lineage/forecast (#4526): the burn against each allowance, the spend at this pace, the
+ * service levels and when each open epic lands, and What if (#4531). Estimates: how the estimates and the forecasts scored. */
+function ValuePane({ store, scope, part, initial }: { store: Store; scope: ReportScope | undefined; part: ValuePart; initial?: Initial | undefined }) {
   const range = useSignal<ReportRange>(initial?.range ?? "month");
   const value = useSignal<ReportValue | null>(null);
   const problem = useSignal<string | null>(null);
@@ -403,51 +439,59 @@ function PlanningPane({ store, scope, initial }: { store: Store; scope: ReportSc
   const empty = shown && shown.issues.length === 0 && shown.prsMerged + shown.prsClosed === 0;
   return (
     <div class="reports-pane">
-      <div class="reports-head">
-        <RangePicker range={range} />
-        {scope && <SaveView store={store} page="value" scope={scope} range={range.value} />}
-      </div>
-      <p class="quiet small">{rangeSpan[range.value]}</p>
+      {/* What comes next is the machines' last 14 days, whatever the range: Forecast has none to pick. */}
+      {part !== "forecast" && (
+        <div class="reports-head">
+          <RangePicker range={range} />
+          {/* A saved view's page is still "value" on the wire: it opens Delivery (viewSection). */}
+          {scope && part === "delivery" && <SaveView store={store} page="value" scope={scope} range={range.value} />}
+        </div>
+      )}
+      {part !== "forecast" && <p class="quiet small">{rangeSpan[range.value]}</p>}
       {problem.value && <p class="hint">{problem.value}</p>}
-      {!shown && !problem.value && <p class="hint">Loading…</p>}
-      {empty && <p class="hint">{noValue}</p>}
-      {shown && !empty && (
-        <ul class="report-list">
-          <li class="report-total"><span class="strong">{valueHeadline(shown)}</span><span class="quiet small">{wasteLine(shown)}</span></li>
-          {loaded && <li><span>{loaded}</span></li>}
-          {lead && <li><span>{lead}</span></li>}
-          {unlinked && <li><span class="quiet">{unlinked}</span></li>}
-        </ul>
-      )}
-      {shown?.delivery && <DeliveryPart delivery={shown.delivery} range={range.value} />}
-      <NextPart store={store} epics={shown?.openEpics ?? []} />
-      {(estimates || forecasts) && <h3>How the estimates and forecasts scored</h3>}
-      {(estimates || forecasts) && (
-        <ul class="report-list">
-          {forecasts && <li><span>{forecasts}</span></li>}
-          {estimates && <li><span>{estimates}</span></li>}
-          {coverage && <li><span class="quiet small">{coverage}</span></li>}
-          {landsAt && <li><span class="quiet small">{landsAt}</span></li>}
-        </ul>
-      )}
-      {shown && !empty && shown.issues.length > 0 && <h3>Issues</h3>}
-      {shown && !empty && shown.issues.length > 0 && <ul class="report-list">{shown.issues.map(row)}</ul>}
-      {shown && !empty && shown.releases.length > 0 && <h3>Releases</h3>}
-      {shown && !empty && shown.releases.length > 0 && <ul class="report-list">{shown.releases.map(row)}</ul>}
-      {shown?.limited && <p class="quiet small">The 100 most costly of each.</p>}
-      <p class="quiet small">{valueNote}</p>
+      {!shown && !problem.value && part !== "forecast" && <p class="hint">Loading…</p>}
+      {part === "delivery" && <>
+        {empty && <p class="hint">{noValue}</p>}
+        {shown && !empty && (
+          <ul class="report-list">
+            <li class="report-total"><span class="strong">{valueHeadline(shown)}</span><span class="quiet small">{wasteLine(shown)}</span></li>
+            {loaded && <li><span>{loaded}</span></li>}
+            {lead && <li><span>{lead}</span></li>}
+            {unlinked && <li><span class="quiet">{unlinked}</span></li>}
+          </ul>
+        )}
+        {shown?.delivery && <DeliveryPart delivery={shown.delivery} range={range.value} />}
+        {shown && !empty && shown.issues.length > 0 && <h3>Issues</h3>}
+        {shown && !empty && shown.issues.length > 0 && <ul class="report-list">{shown.issues.map(row)}</ul>}
+        {shown && !empty && shown.releases.length > 0 && <h3>Releases</h3>}
+        {shown && !empty && shown.releases.length > 0 && <ul class="report-list">{shown.releases.map(row)}</ul>}
+        {shown?.limited && <p class="quiet small">The 100 most costly of each.</p>}
+        <p class="quiet small">{valueNote}</p>
+      </>}
+      {part === "forecast" && <NextPart store={store} epics={shown?.openEpics ?? []} />}
+      {part === "estimates" && shown && <>
+        {!estimates && !forecasts && <p class="hint">{noScores}</p>}
+        {(estimates || forecasts) && (
+          <ul class="report-list">
+            {forecasts && <li><span>{forecasts}</span></li>}
+            {estimates && <li><span>{estimates}</span></li>}
+            {coverage && <li><span class="quiet small">{coverage}</span></li>}
+            {landsAt && <li><span class="quiet small">{landsAt}</span></li>}
+          </ul>
+        )}
+      </>}
       {scope && <p class="quiet small">{scopeNote(scope)}</p>}
     </div>
   );
 }
 
-/** Reports ▸ Planning's Delivery row (#4555): a card a figure for each repo the scope merged most in, with its
+/** Reports ▸ Delivery's DORA row (#4555; was Planning's): a card a figure for each repo the scope merged most in, with its
  * 4-week figure, a line of its weeks and DORA 2024's band where one exists. A repo's name heads its row only when
  * there are more than one. */
 function DeliveryPart({ delivery, range }: { delivery: readonly ReportDelivery[]; range: ReportRange }) {
   return (
     <>
-      <h3>Delivery</h3>
+      <h3>DORA figures</h3>
       {delivery.length === 0 && <p class="hint">{noDelivery}</p>}
       {delivery.map((d) => (
         <section key={d.repo} class="delivery-repo">
@@ -468,7 +512,7 @@ function DeliveryPart({ delivery, range }: { delivery: readonly ReportDelivery[]
                   {c.band && <span class="delivery-band">{`DORA: ${c.band}`}</span>}
                   {/* The way in to Builds (#5178, spec 5166 board 4 note 5), with the card's repo and the range. */}
                   {c.key === "ciTimeToGreen" && (
-                    <a class="small" href={routeHash({ nav: "reports", section: "value", item: "builds", query: buildsLinkQuery(d.repo, range) })}>Build trends ›</a>
+                    <a class="small" href={routeHash({ nav: "reports", section: "delivery", item: "builds", query: buildsLinkQuery(d.repo, range) })}>Build trends ›</a>
                   )}
                 </li>
               );
@@ -478,12 +522,12 @@ function DeliveryPart({ delivery, range }: { delivery: readonly ReportDelivery[]
       ))}
       {delivery.length > 0 && <p class="quiet small">{deliveryNote}</p>}
       {/* The figures of each environment, from the deploys themselves (#5245, spec 5239 board 5). */}
-      <p class="small"><a href={routeHash({ nav: "reports", section: "value", item: "delivery", query: deploysQuery({ range: range === "day" ? "week" : range, tier: "production" }) })}>The DORA figures of each environment ›</a></p>
+      <p class="small"><a href={routeHash({ nav: "reports", section: "delivery", item: "environments", query: deploysQuery({ range: range === "day" ? "week" : range, tier: "production" }) })}>The DORA figures of each environment ›</a></p>
     </>
   );
 }
 
-/** What comes next on Reports ▸ Planning (#4528), from lineage/forecast on the person's own machines: each
+/** Reports ▸ Forecast (#5280; was what comes next on Reports ▸ Planning, #4528), from lineage/forecast on the person's own machines: each
  * allowance's burn, the newest reading of it from any machine; the spend and the service levels of the machine with
  * the most landings (this Mac first); and when each open epic lands, from that machine. What if (#4531): a lane limit
  * and a runtime mix, asked of every machine, move the figures; the mix to pick from is the main machine's. */
@@ -524,15 +568,14 @@ function NextPart({ store, epics }: { store: Store; epics: readonly LineageNode[
       });
     return () => { live = false; };
   }, [hosts.join(" "), epicKey, whatIfKey]);
-  if (hosts.length === 0) return <><h3>What comes next</h3><p class="hint">{answering.length === 0 ? noNextOffline : noNextHere}</p></>;
-  if (all.value === null) return <><h3>What comes next</h3><p class="hint">Loading…</p></>;
+  if (hosts.length === 0) return <p class="hint">{answering.length === 0 ? noNextOffline : noNextHere}</p>;
+  if (all.value === null) return <p class="hint">Loading…</p>;
   const main = mainForecast(all.value, store.macHostID.value);
   const burns = mergeBurns(all.value.map((a) => a.forecast));
   const spend = main ? spendLines(main.forecast) : [];
   const levels = main?.forecast.serviceLevels ?? [];
   return (
     <>
-      <h3>What comes next</h3>
       {burns.length === 0 && spend.length === 0 && levels.length === 0 && <p class="hint">{noNext}</p>}
       {(burns.length > 0 || spend.length > 0) && (
         <ul class="report-list">
@@ -594,7 +637,7 @@ function mainForecast<T extends { host: MachineRef; forecast: LineageForecast }>
   return here ?? [...answers].sort((a, b) => b.forecast.landings - a.forecast.landings)[0];
 }
 
-/** Reports ▸ Features (#2165), as the window's: which methods the clients and agents called on the
+/** Status ▸ Features (#2165; Reports ▸ Features until #5280), as the window's: which methods the clients and agents called on the
  * person's own machines, from each machine's counts added up, the least used first. The counts stay
  * on the machines, so it has no scope. */
 function FeaturesPane({ store }: { store: Store }) {
@@ -679,6 +722,8 @@ function LensBar({ options, current, onPick }: { options: readonly ReportScopeOp
   );
 }
 
+const valueParts: Record<ValuePart, true> = { delivery: true, forecast: true, estimates: true };
+
 /** A page of Reports (#1804), the control plane's app beside the Workspace and the Console: Me, a project
  * or the organisation, as reports/scopes offers them (#5279). */
 export function ReportsPage({ store, section, down }: { store: Store; section: Section; down: boolean }) {
@@ -697,14 +742,14 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
     replace({ ...r, query: lensQuery(r.query, lens) || undefined });
   };
   // A saved view opens its page on its scope, range and way (#2019); the next page opens as before.
-  const view = opened.value && opened.value.page === section.id ? opened.value : null;
+  const view = opened.value && viewSection(opened.value.page) === section.id ? opened.value : null;
   useEffect(() => {
     if (view) setLens(isGroupView(view) ? { kind: "me" } : view.scope);
-    else if (opened.value && opened.value.page !== section.id) opened.value = null;
+    else if (opened.value && viewSection(opened.value.page) !== section.id) opened.value = null;
   }, [view?.id, section.id]);
   // The lens stays when the person goes to another page: an address with none takes the last one chosen (#5279).
   const named = new URLSearchParams(route.value.query ?? "").has("lens");
-  useEffect(() => { if (!named && !view && lastLens.value.kind !== "me") setLens(lastLens.value); }, [section.id]);
+  useEffect(() => { if (!named && !view && lastLens.value.kind !== "me" && section.id !== "features") setLens(lastLens.value); }, [section.id]);
   // Cost's Open Reports on the Mac (#4938) names the range in the address: #/reports/spend?range=month.
   const asked = rangeAsked(route.value.query);
   const initial = view ? { range: view.range, by: viewBy(view) } : asked ? { range: asked } : undefined;
@@ -712,7 +757,7 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
   const wanted = scopeKey(lensAsked(route.value.query));
   // A lens the person cannot see is not offered: the page shows Me.
   const option = list.find((o) => scopeKey(o.scope) === wanted) ?? list.find((o) => o.scope.kind === "me") ?? list[0];
-  useEffect(() => { lensName.value = option?.scope.kind === "project" ? option.name : undefined; return () => { lensName.value = undefined; }; }, [option?.name, option && scopeKey(option.scope)]);
+  useEffect(() => { lensName.value = option?.scope.kind === "project" && section.id !== "features" ? option.name : undefined; return () => { lensName.value = undefined; }; }, [option?.name, option && scopeKey(option.scope)]);
   const bar = section.id !== "saved" && section.id !== "features" && list.length > 0;
   const lens = option?.scope;
   return (
@@ -724,9 +769,11 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
         : section.id in countsPages
         ? <CountsPane key={`${section.id}:${view?.id ?? ""}:${wanted}`} store={store} runtimeName={runtimeNameIn(store)} scope={lens}
           kind={section.id as CountsKind} initial={initial} />
-        : section.id === "value" ? <PlanningPane key={`${view?.id ?? ""}:${wanted}`} store={store} scope={lens} initial={initial} />
+        : section.id in valueParts ? <ValuePane key={`${section.id}:${view?.id ?? ""}:${wanted}`} store={store} scope={lens}
+          part={section.id as ValuePart} initial={initial} />
         : section.id === "adoption" ? <AdoptionPane key={`${view?.id ?? ""}:${wanted}`} store={store} scope={lens} initial={initial} />
         : <ReportsPane key={`${view?.id ?? asked ?? ""}:${wanted}`} store={store} runtimeName={runtimeNameIn(store)} scope={lens} seesMore={list.length > 1} initial={initial} />)}
+      {scopes.value !== null && (!lens || lens.kind === "me") && usagePanesOf(section.id).length > 0 && <YoursPart key={section.id} store={store} section={section.id} />}
     </>
   );
 }

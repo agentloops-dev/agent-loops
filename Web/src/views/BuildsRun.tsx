@@ -1,4 +1,4 @@
-// Reports ▸ Planning ▸ Builds ▸ one run (#5179, spec 5166, board 3): the Gantt chart of a CI run's jobs and steps,
+// Reports ▸ Delivery ▸ Builds ▸ one run (#5179, spec 5166, board 3): the Gantt chart of a CI run's jobs and steps,
 // the run before's same jobs as dashed outlines, the steps that changed most, and the range's longest wait for a
 // runner, which is load and not code. The runs are asked of who answered the page's history: the control plane's
 // builds/runAll (#5232, #5327), or a machine's builds/run (#5177). The shapes and words are model/buildsRun.ts.

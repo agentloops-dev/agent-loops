@@ -1,4 +1,4 @@
-// Reports ▸ Planning ▸ Builds (#5178, spec 5166, boards 1, 2 and 4): the trend of a repository's CI runs by day
+// Reports ▸ Delivery ▸ Builds (#5178, spec 5166, boards 1, 2 and 4): the trend of a repository's CI runs by day
 // (run, waiting for a runner, waiting its turn), the changes found in each job's run time on the default branch, and
 // a change picked, with the runs around it and the commits between. The figures are builds/history and builds/run
 // (#5177) or, when the control plane keeps a copy of the machines' timings, its builds/historyAll and builds/runAll
@@ -29,7 +29,7 @@ import { RunDrill } from "./BuildsRun";
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 /** The page's address with other filters. */
-const at = (a: BuildsAsk) => ({ nav: "reports" as const, section: "value", item: "builds", query: buildsQuery(a) });
+const at = (a: BuildsAsk) => ({ nav: "reports" as const, section: "delivery", item: "builds", query: buildsQuery(a) });
 
 /** What the page read: the range's history, the tiles' two windows, and who answered (null: the control plane). */
 interface Read { from: BuildsFrom; history: BuildsHistory; last?: BuildsHistory | undefined; before?: BuildsHistory | undefined; key: string }

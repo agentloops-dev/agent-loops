@@ -1,4 +1,4 @@
-// Reports ▸ Planning ▸ Delivery (#5245, spec 5239-deploy-model, board 5): the four DORA figures for each target, a
+// Reports ▸ Delivery ▸ Environments (#5245, spec 5239-deploy-model, board 5): the four DORA figures for each target, a
 // component in one environment, on one tier. The figures are the control plane's deploys/deliveryAll, over the copy
 // of the deploys the person's machines send (#5496), so the page has data while a machine sleeps; with an older
 // control plane, deploys/delivery, asked of each of the person's machines that keeps deploys, and the one that keeps
@@ -19,7 +19,7 @@ import { CallFailed } from "../wire/link";
 import { Choice } from "./Choice";
 import { LastUpdate } from "./LastUpdate";
 
-const at = (a: DeploysAsk) => ({ nav: "reports" as const, section: "value", item: "delivery", query: deploysQuery(a) });
+const at = (a: DeploysAsk) => ({ nav: "reports" as const, section: "delivery", item: "environments", query: deploysQuery(a) });
 
 function failed(error: unknown, plane: boolean): string {
   if (error instanceof CallFailed) return error.code === -32601 ? "This machine does not count deploys. Update it to see them." : error.message;
