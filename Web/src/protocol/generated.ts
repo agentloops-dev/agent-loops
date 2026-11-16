@@ -15570,6 +15570,21 @@ export interface UserSettings {
    */
   environment?: JSONValue;
   /**
+   * What agents call the person (#121, #5573), as a PersonSettings with the name resolved on their
+   * Mac: each machine writes it as person/set does.
+   */
+  person?: JSONValue;
+  /**
+   * Auto's order, Include switches and own cells (#2658, FR-017; #5573), as an AutoSettings: each
+   * machine keeps it as auto/set does, with its own runtimes kept.
+   */
+  auto?: JSONValue;
+  /**
+   * How long archived agents are kept (051, #5573), as a RetentionSettings: each machine applies it
+   * as a confirmed retention/set. The person confirmed it on their Mac.
+   */
+  retention?: JSONValue;
+  /**
    * #2957, research R11: your layer, as a SignedYourPolicy. Only the keeper sets it
    * (user/setPolicy); a client cannot (user/setSettings refuses this part).
    */
@@ -15598,8 +15613,9 @@ export interface UserSettingsPart {
 /**
  * A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers,
  * agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time
- * zone (#4818) and the environment (#5259) follow the person. Resources belong to each machine.
- * policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
+ * zone (#4818), the environment (#5259), and what agents call the person, Auto's settings and
+ * retention (#5573) follow the person. Resources belong to each machine. policy (#2957) is set only
+ * by the keeper, through user/setPolicy; user/setSettings refuses it.
  */
 export type UserSettingsPartName =
   | "mcpServers"
@@ -15610,7 +15626,10 @@ export type UserSettingsPartName =
   | "accounts"
   | "timeZone"
   | "environment"
-  | "policy";
+  | "policy"
+  | "person"
+  | "auto"
+  | "retention";
 
 /**
  * user/suspended (#1002, FR-018): to each machine of a suspended person, at hello before its
@@ -18866,7 +18885,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   UserSecretRequest: { required: ["name"], optional: [] },
   UserSecretRow: { required: ["name", "updated", "machines"], optional: ["kind", "created", "hint", "lastOp", "backedUp", "leftOn", "version", "waiting", "needsApproval", "description", "savedBy"] },
   UserSecretSet: { required: ["name", "version", "values"], optional: ["kind", "needsApproval", "description", "offer"] },
-  UserSettings: { required: [], optional: ["mcpServers", "agentConfig", "agentConfigFiles", "runtimes", "costLimits", "notifications", "accounts", "timeZone", "environment", "policy", "updated"] },
+  UserSettings: { required: [], optional: ["mcpServers", "agentConfig", "agentConfigFiles", "runtimes", "costLimits", "notifications", "accounts", "timeZone", "environment", "person", "auto", "retention", "policy", "updated"] },
   UserSettingsChanged: { required: [], optional: ["parts", "agentConfigFiles", "secrets"] },
   UserSettingsPart: { required: ["part", "value"], optional: [] },
   UserSuspended: { required: ["user", "provider", "at"], optional: ["off"] },
