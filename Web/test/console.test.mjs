@@ -7,11 +7,54 @@ const c = await load("src/model/console.ts");
 
 test("Reports' pages are listed in Reports, in their order", async () => {
   const n = await load("src/model/nav.ts");
-  // Builds sits under Planning (#5178), a page of its own, not a report section.
+  // Builds sits under Delivery (#5178, #5280), a page of its own, not a report section.
   const pages = n.navPages.reports.filter((p) => p.draw.kind === "report").map((p) => p.id);
   assert.deepEqual(pages, c.reportSections.map((s) => s.id));
   const ids = n.navPages.reports.map((p) => p.id);
-  assert.equal(ids[ids.indexOf("value") + 1], "builds");
+  assert.deepEqual(ids.slice(ids.indexOf("delivery") + 1, ids.indexOf("delivery") + 3), ["builds", "environments"]);
+});
+
+test("Reports' pages are grouped by the question each answers (#5280)", async () => {
+  const n = await load("src/model/nav.ts");
+  const groups = n.groupedPages(n.navPages.reports).map(([g, list]) => [g, list.map((p) => p.title)]);
+  assert.deepEqual(groups, [
+    ["Cost", ["Spend"]],
+    ["Output", ["Outcomes", "Summary", "Delivery", "Builds", "Environments"]], // Summary after Outcomes (#5729)
+    ["Time", ["Time"]],
+    ["Plan", ["Forecast", "Estimates"]],
+    ["Use", ["Adoption", "Runtimes", "Workflows"]],
+    ["Saved", ["Saved Views"]],
+    ["Records", ["Audit"]],
+  ]);
+  // Features is about the product and the machines: it is Status's now.
+  assert.ok(n.navPages.status.some((p) => p.id === "features" && p.draw.kind === "report"));
+  assert.ok(!n.navPages.reports.some((p) => ["value", "usage", "multiplier", "features"].includes(p.id)));
+  // Each of Usage's panes is in the Me lens of the page it repeats.
+  assert.deepEqual(n.usagePanesOf("spend"), ["spending", "tokens"]);
+  assert.deepEqual(n.usagePanesOf("time"), ["time"]);
+  assert.deepEqual(n.usagePanesOf("outcomes"), ["velocity"]);
+  assert.deepEqual(n.usagePanesOf("adoption"), []);
+});
+
+test("an old Reports address opens its new place (#5280)", async () => {
+  const r = await load("src/route.ts");
+  const moved = {
+    "#/reports/value": { nav: "reports", section: "delivery" },
+    "#/reports/value?range=week": { nav: "reports", section: "delivery", query: "range=week" },
+    "#/reports/value/builds?repo=github:alexec/agents": { nav: "reports", section: "delivery", item: "builds", query: "repo=github:alexec/agents" },
+    "#/reports/value/delivery": { nav: "reports", section: "delivery", item: "environments" },
+    "#/reports/usage": { nav: "reports", section: "spend", query: "lens=me" },
+    "#/reports/multiplier": { nav: "reports", section: "outcomes", query: "lens=me" },
+    "#/reports/features": { nav: "status", section: "features" },
+  };
+  for (const [old, now] of Object.entries(moved)) {
+    assert.deepEqual(r.parseRoute(old), now, old);
+    assert.equal(r.isOldAddress(old), true, old);
+  }
+  // The Mac's Cost ▸ Open Reports (#4938) still opens Spend, in the Me lens.
+  assert.deepEqual(r.parseRoute("#/reports/spend?range=week"), { nav: "reports", section: "spend", query: "range=week" });
+  assert.equal(r.isOldAddress("#/reports/spend?range=week"), false);
+  assert.equal(r.isOldAddress("#/reports/delivery"), false);
 });
 
 const machine = (over = {}, host = {}) => ({

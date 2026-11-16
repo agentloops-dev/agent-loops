@@ -910,13 +910,13 @@ function TagGlyph() {
 
 /** The pipeline line (#3588): its releases, CI runs, deploys and health, each a link where it has one. */
 export function PipelineLine({ steps, kind }: { steps: readonly PipelineStep[]; kind: string }) {
-  // Build trends at the line's newest CI run, on Reports ▸ Planning ▸ Builds (#5180).
+  // Build trends at the line's newest CI run, on Reports ▸ Delivery ▸ Builds (#5180).
   const run = steps.find((s) => s.node?.kind === "ci-run")?.node;
   const trends = run && buildsRunLinkQuery(run.ref);
   return (
     <span class="small work-pipeline">{steps.map((s, i) => (
       <Fragment key={i}>{i > 0 && " · "}{s.url ? <a href={s.url} target="_blank" rel="noopener noreferrer">{s.words}</a> : <span class="quiet">{s.words}</span>}</Fragment>
-    ))}{trends && <> · <a href={routeHash({ nav: "reports", section: "value", item: "builds", query: trends })} title={buildsRunLinkHelp(kind)}>Build trends ›</a></>}</span>
+    ))}{trends && <> · <a href={routeHash({ nav: "reports", section: "delivery", item: "builds", query: trends })} title={buildsRunLinkHelp(kind)}>Build trends ›</a></>}</span>
   );
 }
 

@@ -1895,7 +1895,10 @@ func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin
 		// set-up's is (data-model.md).
 		home := s.cfg.MachineID != "" && a.MachineID == s.cfg.MachineID && s.records.Host("mac") == nil
 		want := records.NewHostID()
-		if home {
+		if stored.MadeHost != "" {
+			// A machine the control plane made joins as the host its set-up is kept for (#5765).
+			want = stored.MadeHost
+		} else if home {
 			want = "mac"
 		}
 		sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Host: &want})
@@ -1946,11 +1949,11 @@ func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin
 		s.router.Know(host)
 		s.router.HoldToOwners()
 		s.log("host " + a.Name + " enrolled as " + host)
-		// A machine the control plane made: its token's digits are what the host must show
-		// at the compare step (#5359).
+		// A machine the control plane made: it has joined (step 2), and its token's digits are
+		// what the host must show at the compare step (#5359, #5765).
 		if stored.Made {
 			private, _ := s.codes.keys()
-			s.expectDigits(ctx, host, controllink.TokenCode(controllink.CodeSecret(private, id)))
+			s.madeMachineJoined(ctx, host, controllink.TokenCode(controllink.CodeSecret(private, id)))
 		}
 		// A host an install made the code for a workspace for is linked to it (#3871): its
 		// name may not be the one the install asked for.

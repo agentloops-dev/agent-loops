@@ -16594,6 +16594,10 @@ export interface Methods {
   "dropbox/put": { params: DropboxPutRequest; result: DropboxPutResponse };
   "elicitations/answer": { params: AnswerElicitationRequest; result: Empty };
   "elicitations/pending": { params: Empty; result: ElicitationRequest[] };
+  "env/discard": { params: Empty; result: Empty };
+  "env/list": { params: EnvListRequest; result: EnvList };
+  "env/resolve": { params: EnvResolveRequest; result: EnvResolved };
+  "env/write": { params: EnvWriteRequest; result: Empty };
   "events/cancelWait": { params: CancelWaitRequest; result: WaitingAgent[] };
   "events/list": { params: EventsListRequest; result: EventsPage };
   "files/browse": { params: FilesBrowseRequest; result: DirectoryListing };
@@ -16705,9 +16709,11 @@ export interface Methods {
   "machines/unlink": { params: MachineRequest; result: ControlMachine };
   "machines/update": { params: MachineUpdate; result: JSONValue };
   "marketplaces/list": { params: MarketplacesListRequest; result: MarketplacesListAnswer };
+  "mcp/approve": { params: MCPApproveRequest; result: MCPListAnswer };
   "mcp/health": { params: Empty; result: MCPHealthSnapshot };
   "mcp/health/check": { params: MCPHealthCheckRequest; result: MCPHealthSnapshot };
   "mcp/hosted": { params: Empty; result: HostedMCPSnapshot };
+  "mcp/list": { params: MCPListRequest; result: MCPListAnswer };
   "mcp/remove": { params: MCPRemoveRequest; result: MCPRemoveAnswer };
   "mcp/setToolLevel": { params: MCPSetToolLevelRequest; result: MCPToolsAnswer };
   "mcp/tools": { params: MCPToolsRequest; result: MCPToolsAnswer };
@@ -17055,6 +17061,10 @@ export const MethodTarget = {
   "dropbox/put": "host",
   "elicitations/answer": "host",
   "elicitations/pending": "host",
+  "env/discard": "host",
+  "env/list": "host",
+  "env/resolve": "host",
+  "env/write": "host",
   "events/cancelWait": "host",
   "events/list": "host",
   "files/browse": "host",
@@ -17166,9 +17176,11 @@ export const MethodTarget = {
   "machines/unlink": "control",
   "machines/update": "control",
   "marketplaces/list": "host",
+  "mcp/approve": "host",
   "mcp/health": "host",
   "mcp/health/check": "host",
   "mcp/hosted": "host",
+  "mcp/list": "host",
   "mcp/remove": "host",
   "mcp/setToolLevel": "host",
   "mcp/tools": "host",
@@ -17426,6 +17438,7 @@ export interface Notifications {
   "dailySummary/changed": DailySummarySettings;
   "desktopControl/liveFrame": DesktopControlLiveFrame;
   "disk/changed": DiskState;
+  "env/changed": EnvChanged;
   "events/changed": EventsChange;
   "files/changed": FilesChangedNotification;
   "folder/changed": FolderSummary;

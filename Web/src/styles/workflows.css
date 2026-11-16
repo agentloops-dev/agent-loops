@@ -41,5 +41,12 @@
 .report-bar.over span { background: var(--tint-failure); opacity: 1; }
 .report-budget { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--paper-rule); border-radius: var(--radius-card);
   padding: 10px 12px; background: var(--paper-raised); }
-.report-scopes { margin-bottom: 8px; }
+.lens-bar { margin-bottom: 8px; font-size: 0.8125rem; }
+.lens-wide { display: inline-flex; align-items: center; gap: 6px; }
+.lens-narrow { display: none; }
+.lens-seg { display: inline-flex; align-items: center; height: var(--console-control); padding: 0 12px; border: 1px solid var(--paper-rule);
+  border-radius: var(--radius-card); background: var(--paper-raised); color: inherit; font: inherit; cursor: pointer; }
+.lens-seg.on { border-color: var(--accent, currentColor); font-weight: 600; }
+.lens-seg select { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0; }
+@media (max-width: 760px) { .lens-wide { display: none; } .lens-narrow { display: inline-flex; } }
 .report-whatif { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }

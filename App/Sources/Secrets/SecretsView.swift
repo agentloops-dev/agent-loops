@@ -14,6 +14,7 @@ struct SecretsView: View {
                     Text(SecretsPage.settingsLine).fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     Button(SecretsPage.openSecrets) { model.showSecrets() }
+                    Button(EnvironmentPage.open) { model.showEnvironment() }
                 }
             }
             .paperListRow()

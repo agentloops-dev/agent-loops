@@ -1,4 +1,4 @@
-// Reports ▸ Planning ▸ Builds (#5178, spec 5166, boards 1, 2 and 4): how long CI takes, as a trend by day, and a
+// Reports ▸ Delivery ▸ Builds (#5178, spec 5166, boards 1, 2 and 4): how long CI takes, as a trend by day, and a
 // change in one job's run time with the runs around it. The figures come from builds/history and builds/run
 // (#5177) on a machine that reads the forge's CI runs; this file has the page's words, its address and the
 // shapes of its charts. Run time points to a commit; waiting for a runner and waiting its turn are load.
@@ -409,7 +409,7 @@ export function fillingWords(filledFrom: WireDate, timeZone?: string): string {
 /** No machine that reads build timings answers. */
 export const noMachine = "None of your machines that read build timings answers now. Builds come from your machines’ reads of the forge, while they are awake.";
 /** No repository to pick. */
-export const noRepos = "No repository yet. Builds shows the repositories of Planning’s Delivery row and those your machines’ folders release from.";
+export const noRepos = "No repository yet. Builds shows the repositories of Delivery’s DORA figures and those your machines’ folders release from.";
 
 /** The colours in words, beside the chart (board 1 note 7): the design point. */
 export const legend: readonly { key: "run" | "runner" | "turn"; title: string; words: string }[] = [

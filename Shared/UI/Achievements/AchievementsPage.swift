@@ -3,12 +3,12 @@ import SwiftUI
 
 /// The page's row: first under Usage on the Mac (#3986), first under Status on the Remote
 /// (#4116). The way back to it from a session or a page.
-struct MultiplierRow: View {
-    static let help = "The work of how many engineers your agents did in the last 7 days"
+struct AchievementsRow: View {
+    static let help = "Your multiplier, your bests and the achievements you earned"
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("Multiplier").foregroundStyle(.primary)
+            Text("Achievements").foregroundStyle(.primary)
             Spacer()
         }
         .help(Self.help)
@@ -27,7 +27,7 @@ struct MultiplierRow: View {
 /// Under Reduce Motion they change with no count and no line.
 ///
 /// Drawn by the Mac window and the Remote (#4116): each passes in its own figures.
-struct MultiplierPage: View {
+struct AchievementsPage: View {
     /// The host's Multiplier; nil until it has said, or from a host too old to know it.
     let multiplier: DaemonAPI.Multiplier?
     /// When `multiplier` was last read or heard (#5144); nil until then, and no line.

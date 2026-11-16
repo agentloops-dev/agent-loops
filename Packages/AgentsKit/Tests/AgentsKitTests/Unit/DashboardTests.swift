@@ -142,8 +142,30 @@ struct DashboardTests {
         #expect(b.count(.needsYou) == 1)
         #expect(b.rows[.working]?.map(\.refText) == ["#1", "#2"])
         #expect(b.rows[.waiting]?.map(\.refText) == ["#3", "#4"])
-        #expect(b.rows[.waiting]?.map(\.mark) == [.idle, .failed])
+        #expect(b.rows[.waiting]?.map(\.mark) == [.waiting, .failed])
         #expect(b.sections.map(\.section) == [.needsYou, .working, .waiting])
+    }
+
+    /// #5763: a session that is not running and not asking takes the session list's mark: the
+    /// waiting beacon, or a queued place in line. Not one grey circle. A paused one is off the
+    /// board (#5695), but its mark is the sidebar's pause, as `SessionMark` draws it.
+    @Test func waitingQueuedAndPausedSessionsKeepTheSessionListsMarks() {
+        let b = board([agent("waits", labels: ["#1"]),
+                       agent("queued", labels: ["#2"], state: .queued),
+                       agent("paused", labels: ["#3"], state: .stopped)],
+                      groups: ["waits": .waiting, "queued": .waiting, "paused": .stopped])
+        #expect(b.count(.waiting) == 2)
+        #expect(b.rows[.waiting]?.map(\.mark) == [.waiting, .queued])
+        #expect(Dashboard.Mark.of(agent("p", state: .stopped), group: .stopped) == .paused)
+        #expect(Dashboard.Mark.of(agent("q", state: .queued), group: .waiting) == .queued)
+        #expect(Dashboard.Mark.allCases.map(\.words).contains("Idle") == false)
+    }
+
+    /// A row with a waiting and a queued session waits: the beacon goes before the queue.
+    @Test func aWaitingSessionGoesBeforeAQueuedOneOnItsRow() {
+        let b = board([agent("queued", labels: ["#1"], state: .queued), agent("waits", labels: ["#1"])],
+                      groups: ["waits": .waiting, "queued": .waiting])
+        #expect(b.rows[.waiting]?.first?.mark == .waiting)
     }
 
     @Test func anEpicCardForEachEpicOnTheBoardWithItsProgress() {

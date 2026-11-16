@@ -17,7 +17,6 @@ import { signal, useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { byBack, laterWords } from "../model/later";
-import { nonePage } from "./SummaryPage";
 import { FolderSettingsModal, ProjectSettingsModal } from "./ProjectSettings";
 import { projectSettingsWords } from "../model/projectSettings";
 import { actDoing, type Store } from "../model/store";
@@ -71,6 +70,7 @@ import { ask } from "./MessageKinds";
 import { laterRequestOf, useListKeys } from "./ListKeys";
 import { laterTime, listKeyGlyph } from "../model/listKeys";
 import { Glyph, Icon, type IconName } from "./Icon";
+import { MachinePicker } from "./MachinePicker";
 
 
 /** Folder Settings asked for another folder of the project, from Project Settings' Folders (#3280). */
@@ -248,8 +248,6 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
       </header>
       {!held && <AgentFilters store={store} />}
       <div class="scroll" onKeyDown={(e) => moveWithKeys(e)}>
-        {/* The daily summary's page (#3721), above the smart groups, while the daily summary is on. */}
-        {!held && <SummaryRow store={store} />}
         {/* A machine asking to join (#994): at the top, whatever groups are on, and with no folder yet. */}
         {!held && <JoinRequests store={store} down={linkDown} />}
         {/* A channel identity asking to act as this person (#1762), beside the machines. */}
@@ -347,33 +345,12 @@ function AgentFilters({ store }: { store: Store }) {
   return (
     <div class="agent-filters" role="group" aria-label="Filters">
       {(hosts.length > 1 || machine !== null) && (
-        <select aria-label="Machine" value={machine ?? ""} onChange={(e) => setMachineFilter((e.currentTarget as HTMLSelectElement).value || null)}>
-          <option value="">Every machine</option>
-          {hosts.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-        </select>
+        <MachinePicker store={store} label="Machine" value={machine} any="Every machine" onPick={setMachineFilter} />
       )}
       <select aria-label="State" value={stateFilter.value} onChange={(e) => setStateFilter((e.currentTarget as HTMLSelectElement).value as StateFilter)}>
         {stateFilters.map((f) => <option key={f} value={f}>{stateFilterTitle[f]}</option>)}
       </select>
     </div>
-  );
-}
-
-/** The Summary row (#3721), as the Mac's and the Remote's SummaryRowLabel: the newest page's title
- *  under it and a dot while that page is unread. Only while the daily summary is on. */
-function SummaryRow({ store }: { store: Store }) {
-  const settings = store.dailySummary.value;
-  if (!settings || settings.mode === "off") return null;
-  const newest = store.summaryPages.value[0];
-  const chosen = route.value.nav === "agents" && route.value.section === "summary";
-  return (
-    <button class={`row activity-row summary-row${chosen ? " chosen" : ""}${newest?.unread ? " unread" : ""}`}
-      aria-current={chosen} title="Your daily summary: what landed, what failed and what waits on you"
-      onClick={() => go({ nav: "agents", section: "summary" })}>
-      <Icon name="sun" class="activity-icon" />
-      <span class="title">Summary{newest?.unread && <span class="dot" aria-label="Unread" />}</span>
-      <span class="small quiet line">{newest?.title ?? nonePage}</span>
-    </button>
   );
 }
 

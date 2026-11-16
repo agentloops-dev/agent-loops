@@ -749,6 +749,43 @@ func TestAMakeThatFailsStaysAsAFailedRow(t *testing.T) {
 	}
 }
 
+// #5765: New Machine keeps step 1 of the made machine's set-up under the host id it joins as,
+// running while the provider makes it, then done (with step 2 running while it boots), or
+// failed with the provider's words.
+func TestAMakeSaysTheFirstSetUpSteps(t *testing.T) {
+	h := newHarness(t)
+	h.add()
+	h.provider.mu.Lock()
+	h.provider.firstBootRuns = true
+	h.provider.mu.Unlock()
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"h-made create running", "h-made create done", "h-made join running"}
+	if got := h.madeSteps(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("steps %v, want %v", got, want)
+	}
+
+	h = newHarness(t)
+	h.add()
+	h.provider.mu.Lock()
+	h.provider.failCreate = "The droplet limit is reached."
+	h.provider.mu.Unlock()
+	if _, err := h.createNameless(); err == nil {
+		t.Fatal("the make failed")
+	}
+	want = []string{"h-made create running", "h-made create failed"}
+	if got := h.madeSteps(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("steps %v, want %v", got, want)
+	}
+	h.setupMu.Lock()
+	last := h.setupSteps[1].report
+	h.setupMu.Unlock()
+	if last.Error == nil || !strings.Contains(*last.Error, "droplet limit") {
+		t.Errorf("the provider's words: %+v", last)
+	}
+}
+
 // Seven New Machine presses in one second (#4706) reach the provider one at a time: all
 // seven sent at once failed within 3 s at GitHub. Each still makes its own machine-N.
 func TestMakesOnOneProviderGoOneAtATime(t *testing.T) {
