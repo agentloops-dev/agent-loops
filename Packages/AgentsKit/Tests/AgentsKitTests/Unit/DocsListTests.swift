@@ -50,6 +50,28 @@ struct DocsListTests {
         #expect(DocsList.groups([Self.mac], sort: .updated, only: "mcp:confluence").map(\.row.key) == ["mcp:confluence"])
     }
 
+    /// docs/listAll (#5571): one answer for every machine, as Web/test/docs.test.mjs's hostDocsOf.
+    @Test func everyMachinesDocsComeInOneAnswerThisMacFirst() throws {
+        let studio = MachineRef(rawValue: "studio")
+        let box = MachineRef(rawValue: "box")
+        let first = DaemonAPI.DocsListAll(
+            docs: [.init(machine: studio, machineName: "Studio", doc: Self.payments), .init(machine: .mac, machineName: "alex-mac", doc: Self.spec)],
+            sources: [.init(machine: .mac, machineName: "alex-mac", source: Self.agents)],
+            unreached: [.init(machine: box, machineName: "Box")], cursor: "next")
+        let page = DocsList.hostDocs(first, thisMac: .mac)
+        try #require(page.count == 3)
+        #expect(page.map(\.name) == ["This Mac", "Box", "Studio"])
+        #expect(page[0].docs == [Self.spec])
+        #expect(page[0].sources == [Self.agents])
+        #expect(page[1].problem == DocsList.didNotAnswer)
+        // A later page adds to the machines it already has.
+        let second = DaemonAPI.DocsListAll(docs: [.init(machine: .mac, machineName: "alex-mac", doc: Self.plans)])
+        let both = DocsList.hostDocs(second, into: page, thisMac: .mac)
+        try #require(both.count == 3)
+        #expect(both[0].docs == [Self.spec, Self.plans])
+        #expect(both[2].docs == [Self.payments])
+    }
+
     @Test func oneConnectorOnTwoMachinesIsOneSource() {
         let studio = DocsList.HostDocs(host: MachineRef(rawValue: "studio"), name: "Studio",
                                        sources: [Source(id: "/Users/a/Agents", kind: .folder, name: "Agents"), Self.confluence])
