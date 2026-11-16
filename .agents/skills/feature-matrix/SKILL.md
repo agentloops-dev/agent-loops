@@ -70,8 +70,10 @@ If nothing changes in steps 1 and 2, say so and call `archive_session` (no id).
    changed cells and anything for Alex to decide.
 7. Wait for its checks: call wait_for_event with `until_minutes: 20` and no events, and
    when started again check them with `gh pr checks`; if they are still running, wait
-   again the same way. Fix what fails because of your change; rerun a check that failed
-   for something else.
+   again the same way. Fix what fails because of your change. Never rerun a failed job
+   to get to green (Alex, 2026-11-15, #5754): for a test that fails because of
+   something else, follow `.agents/skills/fix-failed-checks/SKILL.md` (file or update
+   the test's `bug` and quarantine it on a pull request of its own).
 
 ## 4. Report
 

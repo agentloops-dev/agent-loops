@@ -117,6 +117,7 @@ public enum Capability {
     public static let hostSuspend1 = "host.suspend/1"
     public static let hostTeam1 = "host.team/1"
     public static let hostUpdate1 = "host.update/1"
+    public static let hostUserParts1 = "host.user-parts/1"
     public static let hostUserSettings1 = "host.user-settings/1"
     public static let hostUserSettings2 = "host.user-settings/2"
     public static let hostUserSettings3 = "host.user-settings/3"
@@ -237,6 +238,7 @@ public enum Capability {
     public static let user3 = "user/3"
     public static let user4 = "user/4"
     public static let user5 = "user/5"
+    public static let user6 = "user/6"
     public static let velocity1 = "velocity/1"
     public static let views1 = "views/1"
     public static let wake1 = "wake/1"
@@ -983,7 +985,7 @@ public enum Capability {
         "user/setAgentConfigFile": "user/1",
         "user/setPolicy": "host.policy-layers/1",
         "user/setSecret": "user/2",
-        "user/setSettings": "user/5",
+        "user/setSettings": "user/6",
         "user/settings": "user/1",
         "workflows/claimRun": "bots/1",
         "workflows/fire": "events.team/1",
@@ -1075,6 +1077,7 @@ public enum Capability {
             "host.lock/1",
             "host.lock/2",
             "host.user-settings/3",
+            "host.user-parts/1",
         ],
     ]
 }

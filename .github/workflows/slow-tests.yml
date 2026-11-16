@@ -216,7 +216,7 @@ jobs:
             export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
           fi
           scripts/nx.sh run-many -t gen,build,vet,lint,test ${{ matrix.exclude }} --skip-nx-cache \
-            --parallel=1 --output-style=static
+            --parallel=1 --output-style=stream
       - name: File a bug for each input that nobody declared
         if: ${{ failure() && steps.run.outcome == 'failure' }}
         env:

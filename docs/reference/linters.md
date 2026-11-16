@@ -27,6 +27,14 @@ every tracked file, so every change runs it; a change to docs only runs only it.
 runs `swift-lint:lint` only when a Swift file, its rules, its baseline or `scripts/lint.sh`
 changes.
 
+## Output
+
+`scripts/nx.sh` streams each task's output as the task runs (`NX_DEFAULT_OUTPUT_STYLE=stream`,
+#5887), and CI passes `--output-style=stream`. An `--output-style` flag still wins. With no style,
+Nx 24 picks `summary` when an agent runs it, which prints only the path of each failing task's
+log, and `static` prints a task's output only when the task ends, so a hung task shows nothing.
+`scripts/ci-sample.mjs` keeps `static`, because it keeps the log for a bug, not for a reader.
+
 ## Baselines
 
 golangci-lint, SwiftLint and jscpd fail only on a finding that is not in their baseline: the

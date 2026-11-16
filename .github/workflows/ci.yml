@@ -320,9 +320,9 @@ jobs:
           if [[ -n "$SKIP" ]]; then
             node scripts/ci-attested.mjs run --group linux --base "$BASE" --skip "$SKIP"
           elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            scripts/nx.sh affected -t "$targets" --exclude='tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+            scripts/nx.sh affected -t "$targets" --exclude='tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
           else
-            scripts/nx.sh run-many -t "$targets" --exclude='tag:xcode' --parallel=1 --output-style=static
+            scripts/nx.sh run-many -t "$targets" --exclude='tag:xcode' --parallel=1 --output-style=stream
           fi
       # wire:gen and design:gen ran before the tasks that read their files, so a change that
       # did not commit what they write would pass the tests: it fails here.
@@ -667,9 +667,9 @@ jobs:
           source scripts/ci-clean-retry.sh
           nx_apps() {
             if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-              scripts/nx.sh affected -t build --exclude='*,!mac,!remote' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+              scripts/nx.sh affected -t build --exclude='*,!mac,!remote' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
             else
-              scripts/nx.sh run-many -t build --projects=mac,remote --parallel=1 --output-style=static
+              scripts/nx.sh run-many -t build --projects=mac,remote --parallel=1 --output-style=stream
             fi
           }
           clean_retry "$RESTORED" build/DerivedData -- nx_apps
@@ -944,15 +944,15 @@ jobs:
             if [[ -n "$SKIP" ]]; then
               node scripts/ci-attested.mjs run --group swift --base "$BASE" --skip "$SKIP"
             elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-              scripts/nx.sh affected -t test --exclude='*,!agentskit,!agentskit-repo,!codetext' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+              scripts/nx.sh affected -t test --exclude='*,!agentskit,!agentskit-repo,!codetext' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
             else
-              scripts/nx.sh run-many -t test --projects=agentskit,agentskit-repo,codetext --parallel=1 --output-style=static
+              scripts/nx.sh run-many -t test --projects=agentskit,agentskit-repo,codetext --parallel=1 --output-style=stream
             fi
           }
           clean_retry "$RESTORED" Packages/AgentsKit/.build Packages/CodeText/.build -- nx_swift
       - name: SwiftLint
         if: ${{ always() && !cancelled() && env.SWIFTLINT != 'skip' }}
-        run: scripts/nx.sh run swift-lint:lint --output-style=static
+        run: scripts/nx.sh run swift-lint:lint --output-style=stream
       - name: Save the Nx cache
         if: ${{ (always() && !cancelled()) && !inputs.sha }}
         uses: actions/cache/save@v5
@@ -1141,9 +1141,9 @@ jobs:
           if [[ -n "$SKIP" ]]; then
             node scripts/ci-attested.mjs run --group gomac --base "$BASE" --skip "$SKIP"
           elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            scripts/nx.sh affected -t "$targets" --exclude='web,tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+            scripts/nx.sh affected -t "$targets" --exclude='web,tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
           else
-            scripts/nx.sh run-many -t "$targets" --exclude='web,tag:xcode' --parallel=1 --output-style=static
+            scripts/nx.sh run-many -t "$targets" --exclude='web,tag:xcode' --parallel=1 --output-style=stream
           fi
       - name: Save the Nx cache
         if: ${{ (always() && !cancelled()) && !inputs.sha }}

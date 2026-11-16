@@ -42,9 +42,11 @@ const Prefix = "v1/users/"
 
 // The bounds on what one person keeps, so no person fills the store or a machine's link.
 const (
-	MaxPart    = 256 << 10
-	MaxSecret  = 16 << 10
-	MaxSecrets = 200
+	MaxPart = 256 << 10
+	// MaxSmallPart bounds person, auto and retention (#5573): a few names and switches each.
+	MaxSmallPart = 16 << 10
+	MaxSecret    = 16 << 10
+	MaxSecrets   = 200
 	// MaxRecipients bounds the machines and clients a secret is sealed to (#3397).
 	MaxRecipients = 200
 )
@@ -189,10 +191,17 @@ func partKind(part wire.UserSettingsPartName) (string, bool) {
 	switch part {
 	case wire.UserSettingsPartNameMcpServers, wire.UserSettingsPartNameAgentConfig,
 		wire.UserSettingsPartNameRuntimes, wire.UserSettingsPartNameCostLimits, wire.UserSettingsPartNameNotifications,
-		wire.UserSettingsPartNameAccounts, wire.UserSettingsPartNameTimeZone, wire.UserSettingsPartNameEnvironment:
+		wire.UserSettingsPartNameAccounts, wire.UserSettingsPartNameTimeZone, wire.UserSettingsPartNameEnvironment,
+		wire.UserSettingsPartNamePerson, wire.UserSettingsPartNameAuto, wire.UserSettingsPartNameRetention:
 		return "{", true
 	}
 	return "", false
+}
+
+// smallPart is a part with the smaller bound, MaxSmallPart.
+func smallPart(part wire.UserSettingsPartName) bool {
+	return part == wire.UserSettingsPartNamePerson || part == wire.UserSettingsPartNameAuto ||
+		part == wire.UserSettingsPartNameRetention
 }
 
 // SetPart sets one part of a person's settings, or with a null value removes it from the
@@ -216,6 +225,9 @@ func (b *Book) setPart(ctx context.Context, user string, part wire.UserSettingsP
 	if !removing {
 		if len(value) > MaxPart {
 			return false, fmt.Errorf("%w: %s is over %d KB", ErrInvalid, part, MaxPart>>10)
+		}
+		if smallPart(part) && len(value) > MaxSmallPart {
+			return false, fmt.Errorf("%w: %s is over %d KB", ErrInvalid, part, MaxSmallPart>>10)
 		}
 		if !strings.HasPrefix(string(value), kind) || !json.Valid(value) {
 			return false, fmt.Errorf("%w: %s must be a JSON %s", ErrInvalid, part, map[string]string{"{": "object", "[": "list"}[kind])
@@ -291,6 +303,12 @@ func partOf(s *wire.UserSettings, part wire.UserSettingsPartName) *wire.JSONValu
 		return &s.TimeZone
 	case wire.UserSettingsPartNameEnvironment:
 		return &s.Environment
+	case wire.UserSettingsPartNamePerson:
+		return &s.Person
+	case wire.UserSettingsPartNameAuto:
+		return &s.Auto
+	case wire.UserSettingsPartNameRetention:
+		return &s.Retention
 	}
 	return nil
 }
