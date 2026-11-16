@@ -2,10 +2,11 @@
 # Give a restored Nx cache's database this Mac's name, so Nx can use the cache (#5762).
 #
 # Nx keeps what it knows about its cache in a SQLite file in its workspace-data folder,
-# named for the machine: `<IOPlatformUUID>-v<n>.db` on macOS. Each macOS runner is a new
-# VM with a new UUID, so Nx made a new, empty database next to the restored one, said
-# "Unrecognized Cache Artifacts", and ran every task again: the Swift step of `test` then
-# went past its budget. The Linux runners keep one machine id, so `go` needs no rename.
+# named for the machine: `<IOPlatformUUID>-v<n>.db` on macOS. When a runner's UUID differs
+# from the one that saved the cache (the runners of one image share theirs, so a new image),
+# Nx makes a new, empty database next to the restored one, says "Unrecognized Cache
+# Artifacts", and runs every task again. The slow Swift steps of #5762 were a cold start
+# after the Xcode pin of #5838, not this; this keeps a new image from adding to one.
 #
 # This renames the newest restored database (with its -wal and -shm files) to this Mac's
 # name and deletes the others, which were for runners that no longer exist. It does
