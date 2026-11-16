@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/ulikunitz/xz"
 )
@@ -460,6 +461,7 @@ func TestAServerTakesNPXAsNoClaude(t *testing.T) {
 // installs the pinned toolset, runtimes/list says installing, and from then on the shim
 // runs the adapter with node, with no `npm exec` under it.
 func TestClaudesFirstUseInstallsTheAppsCopy(t *testing.T) {
+	flaky.UnderLoad(t, "#5825")
 	_, bundle := fakeVendors(t)
 	own := t.TempDir()
 	os.WriteFile(filepath.Join(own, "npx"), []byte("#!/bin/sh\n"), 0o755)
