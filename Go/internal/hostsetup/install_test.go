@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -186,5 +187,27 @@ func TestPlaceBinaryIsRepeatable(t *testing.T) {
 	}
 	if got, _ := os.Readlink(filepath.Join(l.Bin, "current")); got != "agentsd-"+a {
 		t.Errorf("current -> %s", got)
+	}
+}
+
+// Step 4 carries the digits of the code this machine joined with (#5359, #5765): the control
+// plane compares them with the ones it made, and fails a made machine's step with none.
+func TestCompareSaysTheDigitsOfTheJoinCode(t *testing.T) {
+	o, l := options(t)
+	private := controllink.NewPrivateKey()
+	public, _ := controllink.PublicKey(private)
+	_, secret := controllink.MakeCodeSecret(private)
+	code := &controllink.Code{Host: true, ControlKey: public, Secret: secret, URL: "https://cp.example", Name: "cp"}
+	o.Join = code.Text()
+	started := 0
+	if err := Run(context.Background(), o, fakeHost(t, l, &started)); err != nil {
+		t.Fatal(err)
+	}
+	r := lastOf(reports(t, l), wire.MachineSetupStepIDCompare)
+	if r == nil || r.State != wire.MachineSetupStateDone || r.Code == nil || *r.Code != code.Digits() {
+		t.Fatalf("compare = %+v, want the digits %s", r, code.Digits())
+	}
+	if b, _ := os.ReadFile(filepath.Join(l.Root, "control-join-code")); string(b) != o.Join {
+		t.Errorf("the host joins with %q", b)
 	}
 }

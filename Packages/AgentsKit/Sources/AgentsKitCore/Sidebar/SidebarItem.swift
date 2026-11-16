@@ -71,6 +71,10 @@ public enum SidebarItem: Hashable, Sendable {
     /// One machine's page (#3626): its CPU, memory and disks, from its row under Machines.
     /// Mac + web: the Remote has no row for it (#2796).
     case machine(MachineRef)
+    /// The Machines page (#5567; the web's #5285): every machine, with a search, filter chips, a sort
+    /// and Start, Stop and Delete… on many, from **All Machines** at the foot of the Machines group.
+    /// Core: the Remote's page is #5568, and until then nothing opens it there.
+    case allMachines
     /// A folder's MCP servers (#753), under its folder when its `.agents/mcp.json` has any.
     case folderMCPServers(FolderKey)
     /// A change waiting for an OK, on its Review page (#1472), by its `Approval.id`, from

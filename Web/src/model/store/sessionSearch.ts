@@ -120,7 +120,9 @@ export const sessionSearchMethods = {
   /**
    * Ask every host for the sessions matching `words`, archived ones included, a capped page each
    * (#165, #193): the sidebar holds the live ones and filters those itself. What the last search
-   * brought in is let go first, so the page holds one search's matches at a time.
+   * brought in is let go first, so the page holds one search's matches at a time. Every host is
+   * asked at once, and each answer shows as it comes (#5572): a slow or far machine does not hold
+   * back the others' matches.
    */
   async searchSessions(this: Store, words: string): Promise<void> {
     const turn = ++this.searchTurn;
@@ -135,29 +137,31 @@ export const sessionSearchMethods = {
     const request: ListRequest = {
       includeArchived: true, archivedCommands: false, archivedOnly: false, lean: true, limit: searchShown, query: words,
     };
-    for (const host of this.hosts.value) {
-      if (turn !== this.searchTurn) return;
-      if (!this.hostIsOnline(host.id)) continue;
-      await this.search(request, host.id, turn);
-      if (turn !== this.searchTurn) return;
-      // The sessions on the issue, its sub-issues and their PRs (#3899). A host too old to say
-      // matches the #<n> label only.
-      if (issue !== null && this.has(host.id, Capability.lineageSessions1)) {
-        const on = await this.link.call("lineage/sessions", { number: issue }, host.id).catch(() => null);
-        if (Array.isArray(on?.matches) && turn === this.searchTurn) {
-          this.issueSessions.value = { ...this.issueSessions.value, ...Object.fromEntries(on.matches.map((m) => [m.agentID, m.on])) };
-          this.noteIssueHeadings(on.issues ?? []);
-        }
-        if (turn !== this.searchTurn) return;
-      }
-      // What was said (#1585): the sessions whose prompts or replies hold the words. Not asked of a
-      // host too old to say (#1748).
-      if (!this.has(host.id, Capability.agentsSaid1)) continue;
-      const said = await this.link.call("agents/said", { text: words }, host.id).catch(() => null);
-      if (Array.isArray(said?.matches) && turn === this.searchTurn) {
-        this.saidLines.value = { ...this.saidLines.value, ...Object.fromEntries(said.matches.map((m) => [m.agentID, m.line])) };
-      }
+    const hosts = this.hosts.value.filter((host) => this.hostIsOnline(host.id)).map((host) => host.id);
+    await Promise.all(hosts.map((host) => this.searchHost(request, words, issue, host, turn)));
+  },
+  /** One host's part of a search: its matches, the sessions on the issue and what was said, all
+   *  asked at once, each written when it comes back, unless the search changed meanwhile. */
+  async searchHost(this: Store, request: ListRequest, words: string, issue: number | null, host: string, turn: number): Promise<void> {
+    const asks: Promise<void>[] = [this.search(request, host, turn)];
+    // The sessions on the issue, its sub-issues and their PRs (#3899). A host too old to say
+    // matches the #<n> label only.
+    if (issue !== null && this.has(host, Capability.lineageSessions1)) {
+      asks.push(this.link.call("lineage/sessions", { number: issue }, host).catch(() => null).then((on) => {
+        if (!Array.isArray(on?.matches) || turn !== this.searchTurn) return;
+        this.issueSessions.value = { ...this.issueSessions.value, ...Object.fromEntries(on.matches.map((m) => [m.agentID, m.on])) };
+        this.noteIssueHeadings(on.issues ?? []);
+      }));
     }
+    // What was said (#1585): the sessions whose prompts or replies hold the words. Not asked of a
+    // host too old to say (#1748).
+    if (this.has(host, Capability.agentsSaid1)) {
+      asks.push(this.link.call("agents/said", { text: words }, host).catch(() => null).then((said) => {
+        if (!Array.isArray(said?.matches) || turn !== this.searchTurn) return;
+        this.saidLines.value = { ...this.saidLines.value, ...Object.fromEntries(said.matches.map((m) => [m.agentID, m.line])) };
+      }));
+    }
+    await Promise.all(asks);
   },
   noteIssueHeadings(this: Store, issues: readonly LineageSessionIssue[]): void {
     const held = [...this.issueHeadings.value];
@@ -190,15 +194,12 @@ export const sessionSearchMethods = {
     const { [key]: _, ...rest } = this.leadProgress.value;
     this.leadProgress.value = words ? { ...rest, [key]: words } : rest;
   },
-  /** The next page from each host that has more, newest first as the host lists them. */
+  /** The next page from each host that has more, newest first as the host lists them; every host at once (#5572). */
   async searchMore(this: Store): Promise<void> {
     const turn = this.searchTurn;
     const next = this.searchNext.value;
     this.searchNext.value = {};
-    for (const [host, request] of Object.entries(next)) {
-      if (turn !== this.searchTurn) return;
-      await this.search(request, host, turn);
-    }
+    await Promise.all(Object.entries(next).map(([host, request]) => this.search(request, host, turn)));
   },
   async search(this: Store, request: ListRequest, host: string, turn: number): Promise<void> {
     const found = await this.link.call("agents/list", request, host).catch(() => null);

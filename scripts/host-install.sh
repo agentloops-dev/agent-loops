@@ -7,9 +7,11 @@
 # With --join there is no code: the host asks to join as the person, shows a short code,
 # and waits until the person approves it on a client (#994).
 #
-# Installs the host (agentsd, Go since #1136) for this user in ~/.agents-server, and starts
-# it. It connects out to the control plane; nothing needs to reach this machine. Run it
-# again with a new code to join again. The Swift host, and --impl, went in #1381.
+# Installs the host (agentsd, Go since #1136) for this user in ~/.agents-server. With a
+# host code, `agentsd install --join` then sets the machine up and starts the host (#5765);
+# with --join, this script starts it. It connects out to the control plane; nothing needs
+# to reach this machine. Run it again with a new code to join again. The Swift host, and
+# --impl, went in #1381.
 set -eu
 
 code= name= ask=
@@ -169,19 +171,20 @@ fi
 # The host enrols again with the new code. (The record of which host was installed,
 # from when there were two, is gone with them.)
 rm -f "$d/root/control-host.json" "$d/impl" "$d/root/control-join-shown"
-if [ -n "$ask" ]; then
-    # The person's id or name, the address and the pin, as JSON: none holds a quote.
-    for v in "$url" "$pin" "$person"; do
-        case "$v" in *'"'*|*'\'*) echo "The address, pin and person can't hold quotes." >&2; exit 2 ;; esac
-    done
-    printf '{"url":"%s","pin":"%s","person":"%s"}' "$url" "$pin" "$person" > "$d/root/control-join-ask"
-    chmod 600 "$d/root/control-join-ask"
-    rm -f "$d/root/control-join-code"
-else
-    printf %s "$code" > "$d/root/control-join-code"
-    chmod 600 "$d/root/control-join-code"
+if [ -z "$ask" ]; then
+    # With a host code, the one installer (#5356, #5765) does the rest: it joins with the
+    # code, starts the host, installs the runtimes and prepares the projects, and says each
+    # step of this machine's set-up, which the machine's page shows. Safe to run again.
     rm -f "$d/root/control-join-ask"
+    exec "$d/bin/current" install --join "$code" --name "$name"
 fi
+# The person's id or name, the address and the pin, as JSON: none holds a quote.
+for v in "$url" "$pin" "$person"; do
+    case "$v" in *'"'*|*'\'*) echo "The address, pin and person can't hold quotes." >&2; exit 2 ;; esac
+done
+printf '{"url":"%s","pin":"%s","person":"%s"}' "$url" "$pin" "$person" > "$d/root/control-join-ask"
+chmod 600 "$d/root/control-join-ask"
+rm -f "$d/root/control-join-code"
 
 unit="$HOME/.config/systemd/user/agents-host.service"
 # /run/systemd/system is there only when systemd runs (sd_booted). A codespace's
@@ -212,15 +215,12 @@ else
     echo "Started in the background (no systemd user session here)."
 fi
 
-wait=30
-if [ -n "$ask" ]; then
-    # Up to the request's 10 minutes, and a little more.
-    wait=660
-    i=0
-    while [ ! -f "$d/root/control-join-shown" ] && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done
-    if [ -f "$d/root/control-join-shown" ]; then
-        echo "Waiting for approval. On a client of $person, approve $name. Check that it shows the code $(cat "$d/root/control-join-shown")."
-    fi
+# Up to the request's 10 minutes, and a little more.
+wait=660
+i=0
+while [ ! -f "$d/root/control-join-shown" ] && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done
+if [ -f "$d/root/control-join-shown" ]; then
+    echo "Waiting for approval. On a client of $person, approve $name. Check that it shows the code $(cat "$d/root/control-join-shown")."
 fi
 i=0
 while [ ! -f "$d/root/control-host.json" ] && [ $i -lt $wait ]; do sleep 1; i=$((i + 1)); done

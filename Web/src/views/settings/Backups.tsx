@@ -9,6 +9,8 @@ import { Capability } from "../../protocol/capabilities.generated";
 import type { BackupEvery, BackupRestoreResult, BackupSettings, BackupState, BackupTarget } from "../../protocol/generated";
 import { ask } from "../MessageKinds";
 import { HeadWithUpdate } from "../LastUpdate";
+import { firstOf } from "../../model/machineNames";
+import { ShowAll } from "../ShowAll";
 
 /** Backups (#1810): how often, how many kept, where, Back Up Now, and Restore for each backup there. The
  * Mac's folder is its disk, so it is chosen on the Mac. A server's page draws the same (#1815). */
@@ -120,6 +122,7 @@ function ServerBackups({ store, host, name }: { store: Store; host: string; name
  * them from the host's menu and the Remote from its own Settings. */
 export function ServerBackupsSection({ store }: { store: Store }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
   const hosts = store.hosts.value;
   const servers = hosts.filter((h) => !store.isMac(h.id) && hostAnswers(h.state)
     && hostHas(hosts, h.id, Capability.backups1));
@@ -129,13 +132,14 @@ export function ServerBackupsSection({ store }: { store: Store }) {
     <>
       <section aria-labelledby="settings-server-backups">
         <h3 class="section-head" id="settings-server-backups">Machines' Backups</h3>
-        {servers.map((host) => (
+        {firstOf(servers, all, open).map((host) => (
           <div class="setting" key={host.id}>
             <span>{host.name}</span>
             <button type="button" aria-expanded={open === host.id}
               onClick={() => setOpen(open === host.id ? null : host.id)}>{open === host.id ? "Hide" : "Backups…"}</button>
           </div>
         ))}
+        <ShowAll count={servers.length} all={all} toggle={() => setAll(!all)} />
       </section>
       {shown && <ServerBackups key={shown.id} store={store} host={shown.id} name={shown.name} />}
     </>

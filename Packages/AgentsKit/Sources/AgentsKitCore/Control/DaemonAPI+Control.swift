@@ -396,6 +396,71 @@ public extension DaemonAPI {
         }
     }
 
+    /// `machines/list` with a query (#5283): what the Machines page asks for (`MachineListQuery`).
+    /// Every field is optional; a control plane with `machines/2` then answers `MachineList`.
+    struct MachineListQuery: Codable, Sendable, Hashable {
+        public enum Sort: String, Codable, Sendable, CaseIterable {
+            case name, state, lastSeen, version
+        }
+
+        public var query: String?
+        public var state: String?
+        public var labels: [String]?
+        public var provider: String?
+        public var os: String?
+        public var version: String?
+        public var sort: Sort?
+        public var limit: Int?
+        public var cursor: String?
+
+        public init(query: String? = nil, state: String? = nil, labels: [String]? = nil, provider: String? = nil,
+                    os: String? = nil, version: String? = nil, sort: Sort? = nil, limit: Int? = nil, cursor: String? = nil) {
+            self.query = query
+            self.state = state
+            self.labels = labels
+            self.provider = provider
+            self.os = os
+            self.version = version
+            self.sort = sort
+            self.limit = limit
+            self.cursor = cursor
+        }
+    }
+
+    /// For each filter, how many machines have each of its values (`MachineCounts`).
+    struct MachineCounts: Codable, Sendable, Hashable {
+        public var state: [String: Int]?
+        public var labels: [String: Int]?
+        public var provider: [String: Int]?
+        public var os: [String: Int]?
+        public var version: [String: Int]?
+
+        public init(state: [String: Int]? = nil, labels: [String: Int]? = nil, provider: [String: Int]? = nil,
+                    os: [String: Int]? = nil, version: [String: Int]? = nil) {
+            self.state = state
+            self.labels = labels
+            self.provider = provider
+            self.os = os
+            self.version = version
+        }
+    }
+
+    /// A page of `machines/list` (#5283): the machines, the next page's cursor (none on the
+    /// last), how many match in all, and the counts (`MachineList`).
+    struct MachineList: Codable, Sendable, Hashable {
+        public var machines: [ControlMachine]
+        public var next: String?
+        public var total: Int
+        public var counts: MachineCounts
+
+        public init(machines: [ControlMachine], next: String? = nil, total: Int, counts: MachineCounts) {
+            self.machines = machines
+            self.next = next
+            self.total = total
+            self.counts = counts
+        }
+    }
+
     /// One host in the ssh config, and what `machines/detect` did with it (#429).
     struct DetectedServer: Codable, Sendable, Hashable, Identifiable {
         public enum Outcome: String, Codable, Sendable {

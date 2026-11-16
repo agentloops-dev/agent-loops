@@ -609,6 +609,29 @@ func TestRunCompletedRaisesAnyConclusionOncePerAttempt(t *testing.T) {
 	equal(t, ids(h.poll("run.completed", byID, firstByID["cursor"])), []string{"run.completed:" + repo + ":9203:1"}, "by run id")
 }
 
+// #5775: conclusion raises only the runs that ended so, one conclusion or a list, and the
+// cursor still moves past the others; a conclusion GitHub has no such name for is refused.
+func TestRunCompletedRaisesOnlyTheConclusionsAskedFor(t *testing.T) {
+	h := newHarness(t)
+	red := map[string]any{"repo": repo, "workflow": "ci.yml", "branch": "main", "conclusion": []any{"failure", "timed_out"}}
+	one := map[string]any{"repo": repo, "workflow": "ci.yml", "branch": "main", "conclusion": "cancelled"}
+	first, firstOne := h.poll("run.completed", red, nil), h.poll("run.completed", one, nil)
+	h.fake.addCompleted(9300, 1, "ci.yml", "main", h.at(5), "success", true)
+	h.fake.addCompleted(9301, 1, "ci.yml", "main", h.at(5), "failure", true)
+	h.fake.addCompleted(9302, 1, "ci.yml", "main", h.at(5), "cancelled", true)
+	h.fake.addCompleted(9303, 1, "ci.yml", "main", h.at(5), "timed_out", true)
+	h.fake.addCompleted(9304, 1, "ci.yml", "main", h.at(5), "skipped", true)
+	raised := h.poll("run.completed", red, first["cursor"])
+	equal(t, ids(raised), []string{"run.completed:" + repo + ":9301:1", "run.completed:" + repo + ":9303:1"}, "failure and timed_out only")
+	equal(t, ids(h.poll("run.completed", one, firstOne["cursor"])), []string{"run.completed:" + repo + ":9302:1"}, "one conclusion")
+	h.fake.addCompleted(9301, 2, "ci.yml", "main", h.at(9), "success", true)
+	equal(t, ids(h.poll("run.completed", red, raised["cursor"])), []string{}, "a green rerun is not raised")
+	_, err := h.rpc(map[string]any{"name": "run.completed", "arguments": map[string]any{"repo": repo, "conclusion": "red"}})
+	if err == nil || err.Code != -32602 || !strings.Contains(err.Message, "conclusion must be a run's conclusion, as failure") {
+		t.Fatalf("got %v, want -32602 on conclusion", err)
+	}
+}
+
 // #3587: a run waiting for an environment's reviewers is raised once per run, attempt and set
 // of environments, so the next environment it waits on is a new event; not a fork's or a bot's
 // unless anyone is true.

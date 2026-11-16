@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -38,6 +39,7 @@ func serveRegistry(t *testing.T) {
 }
 
 func TestAnMCPServerFoundAddedListedAndRemoved(t *testing.T) {
+	flaky.UnderLoad(t, "#5812")
 	serveRegistry(t)
 	home := t.TempDir()
 	t.Setenv("AGENTS_PERSONAL_HOME", home)

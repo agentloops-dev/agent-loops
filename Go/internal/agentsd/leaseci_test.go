@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // The ci lease (#5678): in line while the folder's repository has a CI job queued, with the
@@ -82,6 +84,7 @@ func TestTheCILeaseWaitsWhileAJobIsQueued(t *testing.T) {
 	if !holds(d, name, a.ID) || holds(d, name, b.ID) {
 		t.Fatal("no job queued did not grant the first in line alone")
 	}
+	ma = wokenClient(t, d, a.ID, name)
 	// Its release hands it on while the queue is still empty.
 	if text, _ := ma.tool(3, "release_resource", map[string]any{"name": "ci"}); !strings.HasPrefix(text, "Released CI of alexec/agents. It has gone to ") {
 		t.Fatal(text)
@@ -89,6 +92,7 @@ func TestTheCILeaseWaitsWhileAJobIsQueued(t *testing.T) {
 	if !holds(d, name, b.ID) {
 		t.Fatal("the release did not hand it on")
 	}
+	mb = wokenClient(t, d, b.ID, name)
 	if text, _ := mb.tool(3, "release_resource", map[string]any{"name": "ci"}); text != "Released CI of alexec/agents." {
 		t.Fatal(text)
 	}
@@ -100,4 +104,23 @@ func TestTheCILeaseWaitsWhileAJobIsQueued(t *testing.T) {
 	if text, _ := mo.tool(2, "lease_resource", map[string]any{"name": "ci"}); !strings.HasPrefix(text, "You hold CI until ") {
 		t.Fatal(text)
 	}
+}
+
+// wokenClient waits for lease.granted to wake id and for that turn to end, then is a new
+// client for it: the turn gave it a new token, so the old client's calls were refused
+// (#5744), as an empty release_resource error, when the wake won the race.
+func wokenClient(t *testing.T, d *Daemon, id wire.UUID, resource string) *mcpClient {
+	t.Helper()
+	waitFor(t, "the wake in its chat", func() bool {
+		for _, u := range userMessages(d, id) {
+			if strings.HasPrefix(u, "The event you were waiting for happened.\n\nlease.granted at ") && strings.Contains(u, "\nresource: "+resource) {
+				return true
+			}
+		}
+		return false
+	})
+	waitFor(t, "its turn over", func() bool { return d.Store.Agent(id).State == wire.AgentStateFinished })
+	m := appClient(t, d, id)
+	m.post("initialize", map[string]any{}, 1)
+	return m
 }

@@ -21,9 +21,9 @@ const defaultRuntimeID = "claude"
 
 type helperQueueState struct {
 	queueMu           sync.Mutex
-	startingFromQueue map[wire.UUID]bool // queued agents being started now
-	reservedHelpers   map[string]int     // by limitScope: starts decided and not yet on the record
-	projectCounts     projectCounts      // each project's helpers on the other machines (#3281)
+	startingFromQueue map[wire.UUID]string // queued agents being started now, with the limitScope that held each place
+	reservedHelpers   map[string]int       // by limitScope: direct starts decided and not yet on the record
+	projectCounts     projectCounts        // each project's helpers on the other machines (#3281)
 }
 
 // modeRanks is ModeLooseness: how much each mode lets an agent do without asking.
@@ -226,7 +226,7 @@ func errMessage(err error) (int, string) {
 func (d *Daemon) helperLimitRefusal(folder string) string {
 	running, notArchived, _ := d.helperLimitsIn(folder)
 	d.queueMu.Lock()
-	reserved := d.reservedHelpers[limitScope(folder)]
+	reserved := d.reservedInLocked(limitScope(folder))
 	d.queueMu.Unlock()
 	quotedList := func(as []wire.Agent) string {
 		if len(as) == 0 {
@@ -594,9 +594,9 @@ func (d *Daemon) nextFromQueue(folder string, overRunning bool) *wire.Agent {
 	d.queueMu.Lock()
 	defer d.queueMu.Unlock()
 	scope := limitScope(folder)
-	reserved := d.reservedHelpers[scope]
+	reserved := d.reservedInLocked(scope)
 	for _, q := range d.helperQueue(folder) {
-		if d.startingFromQueue[q.ID] {
+		if _, starting := d.startingFromQueue[q.ID]; starting {
 			continue
 		}
 		if int64(len(d.helpersIn(folder))+reserved) >= notArchived {
@@ -606,27 +606,38 @@ func (d *Daemon) nextFromQueue(folder string, overRunning bool) *wire.Agent {
 			return nil
 		}
 		if d.startingFromQueue == nil {
-			d.startingFromQueue = map[wire.UUID]bool{}
+			d.startingFromQueue = map[wire.UUID]string{}
 		}
-		if d.reservedHelpers == nil {
-			d.reservedHelpers = map[string]int{}
-		}
-		d.startingFromQueue[q.ID] = true
-		d.reservedHelpers[scope]++
+		d.startingFromQueue[q.ID] = scope
 		q := q
 		return &q
 	}
 	return nil
 }
 
+// reservedInLocked is how many places in scope are held for starts not yet on the record: the
+// direct starts, and the queued sessions being started that are still queued. One that has
+// left the queue counts in helpersIn already, so its place is not held twice (#5744): with
+// both, Start now saw "3 of 2" while the session before it was still starting.
+func (d *Daemon) reservedInLocked(scope string) int {
+	n := d.reservedHelpers[scope]
+	for id, s := range d.startingFromQueue {
+		if s != scope {
+			continue
+		}
+		if a := d.Store.Agent(id); a != nil && a.State == wire.AgentStateQueued {
+			n++
+		}
+	}
+	return n
+}
+
 // startQueued starts q in its own folder, which may be another folder here of folder's
 // project; folder's scope held its place.
 func (d *Daemon) startQueued(q wire.Agent, folder string) {
-	scope := limitScope(folder)
 	defer func() {
 		d.queueMu.Lock()
 		delete(d.startingFromQueue, q.ID)
-		d.reservedHelpers[scope]--
 		d.queueMu.Unlock()
 	}()
 	if a := d.Store.Agent(q.ID); a == nil || a.State != wire.AgentStateQueued || a.StartedByAgent == nil {

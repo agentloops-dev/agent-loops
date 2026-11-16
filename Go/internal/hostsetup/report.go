@@ -43,8 +43,6 @@ func NewReporter(root string) (*Reporter, error) {
 
 // Say records one step's state. The same words said twice in a row are said once.
 func (r *Reporter) Say(step wire.MachineSetupStepID, state wire.MachineSetupState, detail, problem string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	report := wire.MachineSetupReport{Step: step, State: state}
 	if detail != "" {
 		report.Detail = &detail
@@ -52,6 +50,23 @@ func (r *Reporter) Say(step wire.MachineSetupStepID, state wire.MachineSetupStat
 	if problem != "" {
 		report.Error = &problem
 	}
+	r.say(report)
+}
+
+// Compared says step 4 is done with the digits this machine shows for its join code (#5359,
+// #5765): the control plane compares them with the ones it made for a machine it made.
+func (r *Reporter) Compared(detail, digits string) {
+	report := wire.MachineSetupReport{Step: wire.MachineSetupStepIDCompare, State: wire.MachineSetupStateDone, Detail: &detail}
+	if digits != "" {
+		report.Code = &digits
+	}
+	r.say(report)
+}
+
+func (r *Reporter) say(report wire.MachineSetupReport) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	step := report.Step
 	line, err := json.Marshal(report)
 	if err != nil || r.last[step] == string(line) {
 		return

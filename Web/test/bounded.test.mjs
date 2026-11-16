@@ -383,12 +383,32 @@ test("a search's reply for words no longer asked is dropped (#193)", async () =>
   store.hosts.value = [{ id: "mac", state: "online" }];
   const first = store.searchSessions("ab");
   const second = store.searchSessions("abc");
+  // Each asks its matches and what was said at once (#1585, #5572); the dropped one's answers are not kept.
   await link.answer("agents/list");
   await link.answer("agents/list");
-  // The search still asked for asks what was said too (#1585); the one dropped does not.
+  await link.answer("agents/said");
   await link.answer("agents/said");
   await Promise.all([first, second]);
   assert.deepEqual((store.agents.value.mac ?? []).map((a) => a.id), ["for-abc"]);
+});
+
+test("a search asks every host at once and shows each host's matches as they come (#5572)", async () => {
+  const link = heldLink((_method, _params, host) => [agent(`${host}-old`, "p", 1, { state: "archived" })]);
+  const store = new Store(link);
+  store.hosts.value = [{ id: "mac", state: "online" }, { id: "box", state: "online" }];
+  const searching = store.searchSessions("old");
+  await wait(0);
+  assert.deepEqual(link.out.filter((c) => c.method === "agents/list").map((c) => c.host), ["mac", "box"], "both are asked before either answers");
+  // The Mac is slow: the box's answer shows first.
+  const at = link.out.findIndex((c) => c.method === "agents/list" && c.host === "box");
+  link.out.splice(at, 1)[0].reply();
+  await wait(0);
+  assert.deepEqual((store.agents.value.box ?? []).map((a) => a.id), ["box-old"]);
+  assert.deepEqual(store.agents.value.mac ?? [], [], "the Mac has not answered yet");
+  await link.answer("agents/list");
+  while (link.out.length) await link.answer(link.out[0].method);
+  await searching;
+  assert.deepEqual(store.agents.value.mac.map((a) => a.id), ["mac-old"]);
 });
 
 function ran(n, id, extra = {}) {

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -113,6 +114,44 @@ func install(t *testing.T, c *conn, n int, id string) wire.RuntimeStatus {
 	return waitInstalled(t, c, id)
 }
 
+// installAnswered is install with its answer too: the answer and the ending, which can come
+// in either order. With c.call, then waitInstalled, an install that ended before its answer
+// went had its ending dropped as a notification, and the wait said "no ending" (#5744).
+func installAnswered(t *testing.T, c *conn, n int, id string) (answer, end wire.RuntimeStatus) {
+	t.Helper()
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": n, "method": "runtimes/install",
+		"params": map[string]any{"runtimeID": id}})
+	c.in <- string(b)
+	answered, ended := false, false
+	deadline := time.After(20 * time.Second)
+	for !answered || !ended {
+		select {
+		case line := <-c.out:
+			var m struct {
+				ID     json.RawMessage    `json:"id"`
+				Method string             `json:"method"`
+				Result json.RawMessage    `json:"result"`
+				Error  *Error             `json:"error"`
+				Params wire.RuntimeStatus `json:"params"`
+			}
+			json.Unmarshal([]byte(line), &m)
+			switch {
+			case string(m.ID) == strconv.Itoa(n):
+				if m.Error != nil {
+					t.Fatalf("%s: %v", id, m.Error)
+				}
+				json.Unmarshal(m.Result, &answer)
+				answered = true
+			case m.Method == "runtime/changed" && m.Params.Runtime.ID == id && m.Params.Availability.Installing == nil:
+				end, ended = m.Params, true
+			}
+		case <-deadline:
+			t.Fatalf("%s: answered %v, ended %v", id, answered, ended)
+		}
+	}
+	return answer, end
+}
+
 func waitInstalled(t *testing.T, c *conn, id string) wire.RuntimeStatus {
 	t.Helper()
 	deadline := time.After(20 * time.Second)
@@ -144,12 +183,10 @@ func TestInstallTheAppsOwnCopies(t *testing.T) {
 	}
 
 	for i, id := range []string{"codex", "opencode"} {
-		var s wire.RuntimeStatus
-		json.Unmarshal(c.call(t, i+1, "runtimes/install", map[string]any{"runtimeID": id}), &s)
+		s, end := installAnswered(t, c, i+1, id)
 		if s.Availability.Installing == nil {
 			t.Fatalf("%s: answered %+v", id, s.Availability)
 		}
-		end := waitInstalled(t, c, id)
 		if end.Availability.Available == nil || !strings.HasSuffix(end.Availability.Available.Path, "/current/bin/"+runtimeByID(id).Executable) {
 			t.Fatalf("%s: %+v", id, end.Availability)
 		}
@@ -161,7 +198,9 @@ func TestInstallTheAppsOwnCopies(t *testing.T) {
 	}
 	// runtimes/list offers the button, and says the copy is the one the app carries.
 	var list []wire.RuntimeStatus
-	json.Unmarshal(c.call(t, 9, "runtimes/list", nil), &list)
+	if err := json.Unmarshal(c.call(t, 9, "runtimes/list", nil), &list); err != nil {
+		t.Fatal(err)
+	}
 	for _, s := range list {
 		if s.Runtime.ID == "codex" && (s.Runtime.Install == nil || s.Availability.Available == nil || s.Outdated) {
 			t.Fatalf("codex listed as %+v", s)

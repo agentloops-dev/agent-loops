@@ -2,6 +2,7 @@
 // person's in one list (theirs, those for one session and those on one machine), with a search, chips, a sort, and the
 // Needs you group on top. The rules are SecretsPage's in Packages/AgentsKit/Sources/AgentsKitCore/Model/SecretsPage.swift.
 import type { LocalSecret, OutsideAccount, SecretLastOp, SessionSecret, UserSecretRow } from "../protocol/generated";
+import { namesWords } from "./machineNames";
 import { fromWireDate } from "../protocol/dates";
 import { age, hint as secretHint, type Part, setPart, usedPart } from "./secretInfo";
 import { cardKind } from "./userScope";
@@ -198,7 +199,7 @@ export function items(s: Sources, now = new Date()): Item[] {
     };
     const left = row.leftOn ?? [];
     const firstMachine = row.machines[0];
-    if (left.length > 0) item.needs = `It was on ${left.map((l) => l.name).join(", ")}, which was removed.`;
+    if (left.length > 0) item.needs = `It was on ${namesWords(left.map((l) => l.name))}, which was removed.`;
     else if (s.didNotOpen?.has(row.name)) item.needs = `This ${client === "this Mac" ? "Mac" : "browser"}’s copy did not open.`;
     else if (s.noCopy?.has(row.name)) item.needs = `No copy for ${client} yet.`;
     else if (!oneMachine && row.backedUp === false && (row.waiting?.length ?? 0) === 0 && firstMachine !== undefined) {
