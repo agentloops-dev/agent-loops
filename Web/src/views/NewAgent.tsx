@@ -584,7 +584,7 @@ export function NewAgent({ store, host, folder, folderName, down, inBackground }
           }}
           disabled={down || !chosenRuntime || refusedHere !== null
             || (!store.hostIsOnline(host) && !store.startsWhenUsed(host))} send={start}
-          recipient={store.recipient(host)} starting commands={form.value.commands}
+          recipient={store.recipient(host)} starting focusFirst commands={form.value.commands}
           where={(
             <>
               {isRepository.value && (
