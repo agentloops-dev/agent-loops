@@ -665,6 +665,8 @@ public extension DaemonAPI {
                 Row(Method.sealingAdd, params: SealingAdd.self, result: Empty.self, kind: .controlRequest),
                 Row(Method.userSecretRecipients, params: Empty.self, result: SealRecipients.self, kind: .controlRequest),
                 Row(Method.userSealedSecret, params: UserSealedSecretRequest.self, result: UserSealedSecret.self, kind: .controlRequest),
+                Row(Method.userSecretOffers, params: Empty.self, result: SecretOffers.self, kind: .controlRequest),
+                Row(Method.userDropSecretOffer, params: SecretOfferRequest.self, result: Empty.self, kind: .controlRequest),
                 // The machine lock (#3399, #3490): the chain, and a client asking to join it.
                 Row(Method.lockGet, params: Empty.self, result: Lock.self, kind: .controlRequest),
                 Row(Method.lockAdd, params: LockAdd.self, result: LockHead.self, kind: .controlRequest),

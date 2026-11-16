@@ -69,9 +69,11 @@ type userSettingsSyncState struct {
 }
 
 type userScopeState struct {
-	userScopeMu sync.Mutex
-	userMark    *userSettingsSyncState
-	personTZ    atomic.Pointer[string]
+	// agentOffersMu makes one offer of an agent's secret at a time (#5308).
+	agentOffersMu sync.Mutex
+	userScopeMu   sync.Mutex
+	userMark      *userSettingsSyncState
+	personTZ      atomic.Pointer[string]
 }
 
 // agentConfigName is a persona's or a skill's name, as one folder or file name.
@@ -125,6 +127,8 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 		}
 		// What this machine holds now, with each hint and last operation (#4158).
 		d.goJob("tellSecretsHeld", func() { d.tellSecretsHeld() })
+		// An agent's secret here that is not offered yet goes to the person's apps (#5308).
+		d.goJob("offerWaitingAgentSecrets", func() { d.offerWaitingAgentSecrets() })
 	}()
 	d.userScopeMu.Lock()
 	defer d.userScopeMu.Unlock()
@@ -168,7 +172,11 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	// timeZone (#4818): the zone of a workflow's hours: with no time-zone:.
 	mark.TimeZone = zoneOfPart(s.TimeZone)
 	opened, flagged, versions, kept, hints := d.openUserSecrets(u, before)
-	names, err := d.syncUserSecrets(home, opened, flagged, before.Secrets, kept)
+	coming := map[string]bool{}
+	for _, w := range u.Waiting {
+		coming[string(w.Name)] = true
+	}
+	names, err := d.syncUserSecrets(home, opened, flagged, before.Secrets, kept, u.OffersWaiting, coming)
 	for i := range opened {
 		opened[i].Value = ""
 	}
@@ -191,6 +199,12 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	}
 	if err == nil && before.User == u.User {
 		changes = userSecretChanges(before, mark)
+		// A name an agent's secret keeps here while its offer waits (#5308) was not removed.
+		held := readSealedSecrets(home).Secrets
+		changes = slices.DeleteFunc(changes, func(c secretChange) bool {
+			_, ok := held[c.name]
+			return c.what == wire.SecretOperationWhatRemoved && ok
+		})
 	}
 	mark.About, mark.Waiting = secretsAbout(u.Secrets, names), u.Waiting
 	if err != nil {

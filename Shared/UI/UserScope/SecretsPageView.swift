@@ -483,6 +483,10 @@ private struct SecretDetail: View {
             } else {
                 Text(UserScopeWords.about(item.description)).appText(.supporting).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                // An agent saved it on a machine (#5308): "Saved by an agent on devbox, 2 h ago".
+                if let saved = SecretOfferWords.savedBy(row?.savedBy) {
+                    Text(saved).appText(.fine).foregroundStyle(.secondary)
+                }
                 Divider()
                 facts
             }

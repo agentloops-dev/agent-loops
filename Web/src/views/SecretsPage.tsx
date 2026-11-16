@@ -7,6 +7,7 @@ import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { LocalSecrets, OutsideAccount, SessionSecrets, UserSecretRow } from "../protocol/generated";
 import type { Store } from "../model/store";
+import { savedByLine } from "../model/secretOffers";
 import { go, route } from "../route";
 import { describe } from "../model/errors";
 import { Capability } from "../protocol/capabilities.generated";
@@ -360,6 +361,7 @@ function SecretDetail({ store, item, down, show, host, offersAsk, accounts, repl
       ) : (
         <>
           <p class="secret-about">{about(item.description)}</p>
+          {row?.savedBy && <p class="hint">{savedByLine(row.savedBy)}</p>}
           <dl class="secret-facts">
             <dt>Value</dt>
             <dd>

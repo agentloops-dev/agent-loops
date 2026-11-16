@@ -198,15 +198,18 @@ public extension DaemonAPI {
         public var needsApproval: Bool?
         /// What it is for (#4167): not secret, and not sealed. nil has none.
         public var description: String?
+        /// The agent's offer this set takes (#5308); nil for Add a Secret.
+        public var offer: String?
 
         public init(name: String, version: Int, values: [String: Envelope], kind: String? = nil, needsApproval: Bool? = nil,
-                    description: String? = nil) {
+                    description: String? = nil, offer: String? = nil) {
             self.name = name
             self.version = version
             self.values = values
             self.kind = kind
             self.needsApproval = needsApproval
             self.description = description
+            self.offer = offer
         }
     }
 
@@ -311,6 +314,8 @@ public extension DaemonAPI {
         public var lastOp: SecretLastOp? = nil
         /// False when one copy only opens (#4158).
         public var backedUp: Bool? = nil
+        /// Where it came from (#5308): an agent saved it on a machine.
+        public var savedBy: SecretSavedBy? = nil
 
         public var id: String { name }
         public var isCard: Bool { kind == CardSecret.kind }

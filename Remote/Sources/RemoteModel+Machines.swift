@@ -374,6 +374,8 @@ extension RemoteModel {
                         guard let self, !Task.isCancelled else { return }
                         if change.method == DaemonAPI.Notification.controlSealingWanted {
                             await Self.sealWaiting(on: control, lock: self.lock)
+                            // An agent's secret, shown: the Remote does not take it (#5308).
+                            await self.userScope.loadOffers(control)
                             continue
                         }
                         if await self.people.heard(change.method, change.params, on: control) { continue }
