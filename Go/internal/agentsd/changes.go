@@ -847,16 +847,8 @@ func (d *Daemon) fork(ctx context.Context, id wire.UUID) (wire.UUID, error) {
 	case err != nil:
 		return "", &Error{Code: CodeServer, Message: err.Error()}
 	}
-	t := now()
-	b := wire.Agent{ID: store.NewUUID(), RuntimeID: a.RuntimeID, Cwd: a.Cwd, State: wire.AgentStateFinished,
-		EndedReason: reason(wire.EndedReasonEndTurn), RuntimeSessionID: &forked, StartOptions: a.StartOptions,
-		AdvertisedOptions: a.AdvertisedOptions, AvailableCommands: a.AvailableCommands, AdditionalDirectories: a.AdditionalDirectories,
-		McpServers: a.McpServers, Worktree: a.Worktree, StartingPoint: a.StartingPoint, MadeInRoot: &d.Store.RootID,
-		CreatedAt: t, LastActivityAt: t, AccountID: a.AccountID}
-	if a.Title != nil {
-		title := *a.Title + " (branch)"
-		b.Title = &title
-	}
+	b := d.branchOf(a)
+	b.RuntimeSessionID = &forked
 	if err := d.Store.Save(b); err != nil {
 		return "", err
 	}
@@ -871,6 +863,23 @@ func (d *Daemon) fork(ctx context.Context, id wire.UUID) (wire.UUID, error) {
 	d.record(b.ID, runtimeNote("Branched from "+from+"."))
 	d.change(b.ID, func(*wire.Agent) {})
 	return b.ID, nil
+}
+
+// branchOf is a new finished agent with a's runtime, folder and options, as a branch starts:
+// its levels matched, so its pill says its mode, not Custom (#5730).
+func (d *Daemon) branchOf(a *wire.Agent) wire.Agent {
+	t := now()
+	b := wire.Agent{ID: store.NewUUID(), RuntimeID: a.RuntimeID, Cwd: a.Cwd, State: wire.AgentStateFinished,
+		EndedReason: reason(wire.EndedReasonEndTurn), StartOptions: a.StartOptions,
+		AdvertisedOptions: a.AdvertisedOptions, AvailableCommands: a.AvailableCommands, AdditionalDirectories: a.AdditionalDirectories,
+		McpServers: a.McpServers, Worktree: a.Worktree, StartingPoint: a.StartingPoint, MadeInRoot: &d.Store.RootID,
+		CreatedAt: t, LastActivityAt: t, AccountID: a.AccountID}
+	b.Levels = d.matchLevels(&b)
+	if a.Title != nil {
+		title := *a.Title + " (branch)"
+		b.Title = &title
+	}
+	return b
 }
 
 // branchFrom is agents/branchFrom (#1658): a new agent goes on from just before one of the
@@ -902,17 +911,8 @@ func (d *Daemon) branchFrom(r wire.BranchFromRequest) (wire.UUID, error) {
 	if at < 0 {
 		return "", Invalid("That prompt is not in this session's record.")
 	}
-	t := now()
-	b := wire.Agent{ID: store.NewUUID(), RuntimeID: a.RuntimeID, Cwd: a.Cwd, State: wire.AgentStateFinished,
-		EndedReason: reason(wire.EndedReasonEndTurn), StartOptions: a.StartOptions,
-		AdvertisedOptions: a.AdvertisedOptions, AvailableCommands: a.AvailableCommands, AdditionalDirectories: a.AdditionalDirectories,
-		McpServers: a.McpServers, Worktree: a.Worktree, StartingPoint: a.StartingPoint, MadeInRoot: &d.Store.RootID,
-		SandboxOverride: a.SandboxOverride, BranchedFrom: &a.ID, CreatedAt: t, LastActivityAt: t,
-		AccountID: a.AccountID}
-	if a.Title != nil {
-		title := *a.Title + " (branch)"
-		b.Title = &title
-	}
+	b := d.branchOf(a)
+	b.SandboxOverride, b.BranchedFrom = a.SandboxOverride, &a.ID
 	if err := d.Store.Save(b); err != nil {
 		return "", err
 	}

@@ -5,8 +5,8 @@ import { useEffect } from "preact/hooks";
 import type { WorkSuggestLeads } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { hostHas } from "../model/capabilities";
-import { describe } from "../model/errors";
-import { keepSuggestedHidden, moreWords, suggestedHidden, suggestionDetail } from "../model/suggestedLeads";
+import { CallFailed, describe, methodNotFound } from "../model/errors";
+import { keepSuggestedHidden, moreWords, suggestedHidden, suggestionDetail, unreadWords } from "../model/suggestedLeads";
 import { go } from "../route";
 import { Icon } from "./Icon";
 import { LastUpdate } from "./LastUpdate";
@@ -18,14 +18,19 @@ export function Suggested({ store, host, down }: { store: Store; host: string; d
   const hidden = useSignal(suggestedHidden(storage));
   const got = useSignal<{ list: WorkSuggestLeads; at: number } | undefined>(undefined);
   const said = useSignal<string | null>(null);
+  const failed = useSignal<string | null>(null);
   const asked = !down && hostHas(store.hosts.value, host, "work.suggest-leads/1");
   // Read when the form opens; a read that fails keeps the last one, and the line says how old it is (#5139).
+  // A first read that fails says why in one line (#5790); a host that does not know the method draws nothing.
   useEffect(() => {
     if (!asked || hidden.value) return;
     let current = true;
     store.link.call("work/suggest-leads", {}, host).then(
-      (list) => { if (current) got.value = { list, at: Date.now() }; },
-      () => { /* nothing to suggest is not a failure of the form */ },
+      (list) => { if (current) { got.value = { list, at: Date.now() }; failed.value = null; } },
+      (e) => {
+        if (!current || (e instanceof CallFailed && e.code === methodNotFound)) return;
+        failed.value = `Could not read: ${describe(e)}`;
+      },
     );
     return () => { current = false; };
   }, [asked, host, hidden.value]);
@@ -35,6 +40,16 @@ export function Suggested({ store, host, down }: { store: Store; host: string; d
     return <button type="button" class="link small suggested-show" onClick={() => toggle(false)}>Show suggestions</button>;
   }
   const list = got.value?.list;
+  // A read that failed, or a forge it could not read and no rows: one line says why (#5790).
+  const why = list ? unreadWords(list) : failed.value;
+  if (why) {
+    return (
+      <section class="suggested" aria-label="Suggested">
+        <div class="suggested-head"><h2>Suggested</h2></div>
+        <p class="failure small">{why}</p>
+      </section>
+    );
+  }
   if (!list || list.suggestions.length === 0) return null;
   const lead = (i: number) => {
     const s = list.suggestions[i]!;

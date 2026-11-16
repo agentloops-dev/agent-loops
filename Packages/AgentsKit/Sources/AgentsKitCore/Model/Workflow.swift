@@ -514,6 +514,7 @@ public struct WorkflowSummary: Codable, Hashable, Sendable, Identifiable {
         // A state or failure this version does not know costs the lines, not the list (#383).
         mcpTriggers = (try? c.decodeIfPresent([MCPTriggerStatus].self, forKey: .mcpTriggers)) ?? nil
         hearsFor = try c.decodeIfPresent(String.self, forKey: .hearsFor)
+        approvedFrom = try c.decodeIfPresent(String.self, forKey: .approvedFrom)
         readyMadeUpdatedAt = try c.decodeIfPresent(Date.self, forKey: .readyMadeUpdatedAt)
         newerReadyMade = try c.decodeIfPresent(String.self, forKey: .newerReadyMade)
     }

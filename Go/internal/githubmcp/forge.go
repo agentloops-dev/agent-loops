@@ -21,6 +21,8 @@ type SearchFilter struct {
 	PRs                                      bool
 	State                                    string
 	Label, Assignee, Query, Feature, Project string
+	// Reviewer is a login a review is requested from (#5803), "" for any.
+	Reviewer string
 }
 
 // Item is an issue or a pull request as the forge reads list it.
@@ -30,6 +32,8 @@ type Item struct {
 	PR     bool
 	// State is open, closed or merged.
 	State, Title, URL, Author, Milestone, UpdatedAt string
+	// MilestoneDue is the milestone's due date, "" for none (#5688).
+	MilestoneDue string
 	// CreatedAt is when it opened; ClosedAt when it closed or merged, "" while open (#4373).
 	CreatedAt, ClosedAt string
 	// AuthorAvatar is the author's picture (avatars.githubusercontent.com), "" for none (#4363).
@@ -158,7 +162,7 @@ const assigneeFields = `... on User { login } ... on Bot { login } ... on Manneq
 // itemFields are what an issue and a pull request both say, in a search and on their own. Their
 // states are of two types, so each has its own name: issueState and pullState.
 const itemFields = `number title url createdAt closedAt updatedAt author { login __typename avatarUrl } repository { nameWithOwner }
-  ` + labelFields + ` assignees(first: 20) { nodes { login } } milestone { title } commentCount: comments { totalCount }`
+  ` + labelFields + ` assignees(first: 20) { nodes { login } } milestone { title dueOn } commentCount: comments { totalCount }`
 
 // issueFields are an issue's own: its parent and how many of its sub-issues are closed (#3267),
 // and why it closed (#4365).
@@ -218,6 +222,7 @@ type gqlItem struct {
 	} `json:"assignees"`
 	Milestone *struct {
 		Title string `json:"title"`
+		DueOn string `json:"dueOn"`
 	} `json:"milestone"`
 	CommentCount struct {
 		TotalCount int `json:"totalCount"`
@@ -266,7 +271,7 @@ func (n gqlItem) item() Item {
 		i.Assignees = append(i.Assignees, a.Login)
 	}
 	if n.Milestone != nil {
-		i.Milestone = n.Milestone.Title
+		i.Milestone, i.MilestoneDue = n.Milestone.Title, n.Milestone.DueOn
 	}
 	if n.Parent != nil && n.Parent.Number > 0 {
 		i.ParentRepo, i.ParentNumber = n.Parent.Repository.NameWithOwner, n.Parent.Number
@@ -339,6 +344,10 @@ func SearchQuery(repos []string, f SearchFilter) string {
 	}
 	if f.Assignee != "" {
 		words = append(words, "assignee:"+f.Assignee)
+	}
+	if f.Reviewer != "" {
+		// Asked of the person, not of a team of theirs; GitHub drops it once they review.
+		words = append(words, "user-review-requested:"+f.Reviewer)
 	}
 	if f.Project != "" {
 		words = append(words, "project:"+f.Project)

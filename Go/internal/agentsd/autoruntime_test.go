@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -235,6 +236,49 @@ func TestTheMappingsAreThePersons(t *testing.T) {
 	}
 	if a.Levels == nil || a.Levels.Permission == nil || *a.Levels.Permission != wire.PermissionLevelApproveForMe || a.Levels.Model != nil {
 		t.Fatalf("%+v", a.Levels)
+	}
+}
+
+// A record keeps the levels it was given when it last changed: a cell the person moved
+// since, or a record from before levels were kept, said Custom for a mode a cell now gives
+// (#5730). auto/set and a branch match them again.
+func TestLevelsFollowTheMappings(t *testing.T) {
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := t.TempDir()
+	// Claude's own Auto mode: no shipped cell gives it, so Custom, and no levels kept.
+	a := seeded(t, d, dir, func(a *wire.Agent) { a.StartOptions.Values["mode"] = jsonString("auto") })
+	permission := func(id wire.UUID) *wire.PermissionLevel {
+		if l := d.Store.Agent(id).Levels; l != nil {
+			return l.Permission
+		}
+		return nil
+	}
+	if d.rematchLevels(); permission(a.ID) != nil {
+		t.Fatalf("auto is no shipped cell: %v", *permission(a.ID))
+	}
+	auto := map[string]any{"options": map[string]any{"mode": "auto"}}
+	c.call(t, 1, "auto/set", map[string]any{"order": []string{}, "excluded": []string{},
+		"overrides": []any{map[string]any{"runtimeID": "claude", "field": "permission", "level": "approveForMe", "native": auto}}})
+	until(t, "Approve for me", func() bool {
+		p := permission(a.ID)
+		return p != nil && *p == wire.PermissionLevelApproveForMe
+	})
+	// A branch says the mode it runs in, not Custom.
+	b := seeded(t, d, dir, func(a *wire.Agent) { a.StartOptions.Values["mode"] = jsonString("plan") })
+	if _, err := d.Store.Append(b.ID, wire.TranscriptEntry{ID: store.NewUUID(), At: now(),
+		Kind: wire.TranscriptEntryKind{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _, _ := d.Store.Transcript(b.ID, 0)
+	id, err := d.branchFrom(wire.BranchFromRequest{AgentID: b.ID, EntryID: entries[0].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := permission(id); p == nil || *p != wire.PermissionLevelPlan {
+		t.Fatalf("branch: %v", p)
 	}
 }
 

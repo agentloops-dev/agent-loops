@@ -15,6 +15,10 @@ struct WorkflowStatusLine: Identifiable {
 }
 
 extension WorkflowSummary {
+    /// What an "Approved by you on <machine>, <date>" line says under it (#5462, #5543);
+    /// the web page's words.
+    static let approvedFromDetail = "The file is the same as when you approved it there. A change to it waits for your OK"
+
     /// Everything that decides whether it runs, a line each, most important first:
     /// what stops it, then what it is doing, then when it next runs. The heading keeps
     /// only the summary sentence, so none of this is said twice.
@@ -41,6 +45,11 @@ extension WorkflowSummary {
             lines.append(WorkflowStatusLine(symbol: "hand.raised.slash",
                                             text: "Denied on this machine — it does not run here",
                                             detail: "Other machines still see it waiting. Approve to let it run here"))
+        }
+        // An approval taken from the person's other machine (#5462, #5543).
+        if awaitingApproval == nil, deniedHere == nil, let from = approvedFrom, !from.isEmpty {
+            lines.append(WorkflowStatusLine(symbol: "checkmark.seal", text: from,
+                                            detail: Self.approvedFromDetail))
         }
         if !isArchived {
             lines.append(enabledLine)

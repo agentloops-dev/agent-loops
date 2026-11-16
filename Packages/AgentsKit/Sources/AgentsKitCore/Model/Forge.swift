@@ -37,6 +37,10 @@ public extension DaemonAPI {
         public var assignees: [String]
         /// The wire's, for the standing epics' queries; the app does not show it (#3878).
         public var milestone: String?
+        /// The milestone's due date, where the forge says it (#5688); no client shows it yet.
+        public var milestoneDue: Date?
+        /// high, medium or low; nil for none (#5688). The labels `priority:…` give it on most forges.
+        public var priority: String?
         public var updatedAt: Date
         /// When it opened, and when it closed or merged (nil while open), where the forge says
         /// them (`ForgeCapabilities.createdAt` and `closedAt`; #4373).
@@ -842,8 +846,8 @@ public extension DaemonAPI {
         }
     }
 
-    /// The features, by name; `approvals` are the open pull requests labelled needs-approval
-    /// (#4115); `errors` says a forge that could not be read.
+    /// The features, by name; `approvals` are the open pull requests with a review requested
+    /// from the person (#4115, #5803); `errors` says a forge that could not be read.
     struct ForgeFeatures: Codable, Sendable, Hashable {
         public var features: [ForgeFeature]
         public var approvals: [String]?

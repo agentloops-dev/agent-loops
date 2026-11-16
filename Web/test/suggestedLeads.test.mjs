@@ -25,3 +25,9 @@ test("hide is kept", () => {
   m.keepSuggestedHidden(s, false);
   assert.equal(m.suggestedHidden(s), false);
 });
+
+test("a forge it could not read, with no rows, says why (#5790)", () => {
+  assert.equal(m.unreadWords({ suggestions: [], more: 0, errors: [{ forge: "github", message: "GitHub is not connected" }] }), "Could not read: GitHub is not connected");
+  assert.equal(m.unreadWords({ suggestions: [], more: 0 }), undefined);
+  assert.equal(m.unreadWords({ suggestions: [row()], more: 0, errors: [{ forge: "github", message: "x" }] }), undefined);
+});

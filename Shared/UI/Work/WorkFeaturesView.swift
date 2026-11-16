@@ -13,7 +13,7 @@ import SwiftUI
 @Observable
 final class WorkFeaturesState {
     var features: [DaemonAPI.ForgeFeature]?
-    /// The open pull requests labelled needs-approval, of every machine (#4115).
+    /// The open pull requests with a review requested from the person, of every machine (#4115, #5803).
     var approvals: [String] = []
     var errors: [String] = []
     /// The features a person opened (true) or folded (false), by name in lower case; the others
@@ -779,11 +779,13 @@ struct WorkFeaturesPane: View {
                         .appText(.supporting)
                     }
                     Spacer(minLength: 8)
+                    WorkPriorityChip(epic)
                     bar(tally).frame(width: 90)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 } else {
                     epicTitle(epic, place: place).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 8)
+                    WorkPriorityChip(epic)
                     bar(tally).frame(width: 110)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                     Text(tally.epicWords).appText(.supporting).monospacedDigit().foregroundStyle(.secondary)
@@ -877,6 +879,7 @@ struct WorkFeaturesPane: View {
             .help("Open \(WorkList.shortRef(line.item.node.ref))'s page")
             if !compact { childWords(line, needs: needs).layoutPriority(-1) }
             Spacer(minLength: 8)
+            WorkPriorityChip(line.item)
             // On a phone the pull request is in the words, and the child's page has it (note 14).
             if !compact, let pr = line.pr {
                 Button {

@@ -218,15 +218,17 @@ ended and that waits only on requests (or on a wait for the person) holds no run
 
 A GitHub item that asks the person for something is a request too (#3865): an issue labelled
 `alex-todo` (a step) or `needs-account` (an account), with its `## What Alex does` checklist,
-and a pull request labelled `needs-approval` (an approval), with its `## Screenshots`. The
-daemon sweeps every 5 minutes. Answered in the app, the answer goes to GitHub as the person: a
-ticked line ticks the issue's line; the last one removes the label, unassigns the person and
-says so in a comment; an approval posts the note and sets `approved` (or `changes-wanted`).
-On a pull request that the agents' bot opened, the note is the person's real review of its
-head commit, Approve or Request changes (#3860); on the person's own, which GitHub does not
-let them review, it is a comment.
-A label changed on GitHub opens or ends the request at the next sweep. A lane waits on its
-approval with `where: {pr: <n>}`; the answer is `approve: <note>` or `changes: <note>`.
+and an open, non-draft pull request with a review requested from the person (an approval,
+#5803), with its `## Screenshots`. The daemon sweeps every 5 minutes. Answered in the app, the
+answer goes to GitHub as the person: a ticked line ticks the issue's line; the last one
+removes the label, unassigns the person and says so in a comment; an approval is only the
+person's review of the pull request's head commit, Approve or Request changes with the note,
+and sets no label. The person's own pull request, which GitHub does not let them review, is
+refused: "You opened this pull request, so you cannot approve it."
+A label changed on GitHub opens or ends an issue's request at the next sweep; a pull
+request's ends when GitHub no longer lists the review as requested from the person, with
+their review as its answer (`approve`, `changes` or `commented`). A lane waits on its approval
+with `where: {pr: <n>}`; the answer in the app is `approve: <note>` or `changes: <note>`.
 
 A person can put an open request off to **Later** (#4233): `requests/defer` with `until` (a
 time after now), `atMac` (when the person is next at the Mac) or both, whichever comes first;
@@ -565,8 +567,9 @@ and `pr.reviewed` stay as they are.
   reasons changes. It never fires twice for the same head and the same reasons: a rerun that
   fails again on the same head is not a new event, and neither is a forge that is still
   working out whether the PR can merge.
-- **Not a reason.** A check that still runs; a draft; a PR labelled `needs-approval`, or one
-  that waits for a person's review (GitHub's rule for changes not made by a person). These
+- **Not a reason.** A check that still runs; a draft; a PR with a review requested from a
+  person (#5803; on GitHub, not only as a code owner), or one that waits for a person's review
+  (GitHub's rule for changes not made by a person). These
   need a person or time, not the author.
 - **Payload.** `pr`, `headSha`, `blockedAt`, and `reasons`, in this order, one or more of:
 

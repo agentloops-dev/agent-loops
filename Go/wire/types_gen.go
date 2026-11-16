@@ -6096,7 +6096,7 @@ type ForgeFeature struct {
 	UpdatedAt *Date `json:"updatedAt,omitzero"`
 }
 
-// forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests labelled needs-approval (#4115), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
+// forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests with a review requested from the person (#4115, #5803), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
 type ForgeFeatures struct {
 	Features []ForgeFeature `json:"features"`
 
@@ -6125,7 +6125,7 @@ type ForgeImageRequest struct {
 	URL string `json:"url"`
 }
 
-// An issue or a pull request (a GitLab merge request) as its forge says it (#3129): one model for GitHub, GitLab, Linear and Jira (#3260), so one page draws each. node is its lineage node (kind issue or pr, ref github:issue:alexec/agents#12). state is open, closed or merged; status is the tracker's own name for its step, where its workflow has steps (a Jira status, as In Progress; one in Jira's Done category is closed). folder is a folder on this machine on its repo, to act from. labels have their #rrggbb colour where the forge gives one (#2956). The pull request's own fields: draft; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. The hierarchy (#3267): parent is the issue it is a sub-issue (a Linear or GitLab child) of; level is epic, story, task or spike, from its labels; feature is the name of its feature:<name> label; progress is a parent's closed children of all of them, where the forge says it: in a GitHub list, and on an issue's own read. standing says it has the label standing: a standing epic, whose plan is a query (#3659). authorAvatar is the author's picture, a URL that only forge/image reads (#4363), where the forge gives one (ForgeCapabilities.avatars). stateReason is why a closed issue closed (#4365): completed, not_planned or duplicate, where the forge says it (ForgeCapabilities.stateReason); absent on an open issue and on a pull request. createdAt is when it opened and closedAt when it closed or merged (#4373), where the forge says them (ForgeCapabilities.createdAt and closedAt); closedAt is absent while it is open. A pull request's branches (#4409): headRef is the branch it merges from and baseRef the one it merges into, where the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it is open or closed unmerged.
+// An issue or a pull request (a GitLab merge request) as its forge says it (#3129): one model for GitHub, GitLab, Linear and Jira (#3260), so one page draws each. node is its lineage node (kind issue or pr, ref github:issue:alexec/agents#12). state is open, closed or merged; status is the tracker's own name for its step, where its workflow has steps (a Jira status, as In Progress; one in Jira's Done category is closed). folder is a folder on this machine on its repo, to act from. labels have their #rrggbb colour where the forge gives one (#2956). The pull request's own fields: draft; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. The hierarchy (#3267): parent is the issue it is a sub-issue (a Linear or GitLab child) of; level is epic, story, task or spike, from its labels; feature is the name of its feature:<name> label; progress is a parent's closed children of all of them, where the forge says it: in a GitHub list, and on an issue's own read. standing says it has the label standing: a standing epic, whose plan is a query (#3659). authorAvatar is the author's picture, a URL that only forge/image reads (#4363), where the forge gives one (ForgeCapabilities.avatars). stateReason is why a closed issue closed (#4365): completed, not_planned or duplicate, where the forge says it (ForgeCapabilities.stateReason); absent on an open issue and on a pull request. createdAt is when it opened and closedAt when it closed or merged (#4373), where the forge says them (ForgeCapabilities.createdAt and closedAt); closedAt is absent while it is open. A pull request's branches (#4409): headRef is the branch it merges from and baseRef the one it merges into, where the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it is open or closed unmerged. priority is high, medium or low, absent for none (#5688): from Linear's and Jira's priority field (Urgent and High, Highest and High → high; Low and Lowest → low), and on the other forges from the labels priority:high, priority:medium and priority:low (any case; the higher of two). milestoneDue is the due date of the item's milestone, where the forge says it; absent with no milestone or no due date.
 type ForgeItem struct {
 	Node LineageNode `json:"node"`
 
@@ -6150,6 +6150,10 @@ type ForgeItem struct {
 	Assignees []string `json:"assignees"`
 
 	Milestone *string `json:"milestone,omitzero"`
+
+	MilestoneDue *Date `json:"milestoneDue,omitzero"`
+
+	Priority *string `json:"priority,omitzero"`
 
 	CreatedAt *Date `json:"createdAt,omitzero"`
 
@@ -7147,7 +7151,7 @@ type LineageCostNode struct {
 	// When a PR was opened (#4553): pr.opened's openedAt, the earliest kept. The approval wait's start when askedAt is unknown.
 	OpenedAt *Date `json:"openedAt,omitzero"`
 
-	// When a PR was labelled needs-approval (#4553), from pr.labelled: the approval wait's start.
+	// When a review was first requested from the person on a PR (#4553, #5803), from review.requested: the approval wait's start.
 	AskedAt *Date `json:"askedAt,omitzero"`
 
 	// A PR's first answer by a person (#4553): the first pr.reviewed or pr.commented at or after the wait's start, while it was open, not by a bot and not a comment that starts with <!-- agent -->. The approval wait is this less askedAt, else openedAt.
@@ -7208,7 +7212,7 @@ type LineageDelivery struct {
 	// The agents' working time on a closed issue and its PRs over its cycle time, at most 1, the median. Counted by its last merge.
 	FlowEfficiency LineageDeliveryFigure `json:"flowEfficiency"`
 
-	// The approval wait (#4553), in seconds: from a PR's needs-approval label (its opening when the label is unknown) to its first answer by a person; the median, and p90. Counted by the answer's time.
+	// The approval wait (#4553), in seconds: from the review requested from the person on a PR (its opening when no request is known, #5803) to its first answer by a person; the median, and p90. Counted by the answer's time.
 	ApprovalWait LineageDeliveryFigure `json:"approvalWait"`
 
 	// The share of merged PRs, 0 to 1, that waited for a person's answer before their merge (#4553), by merge time. count is the merged PRs.
@@ -13127,7 +13131,7 @@ type Request struct {
 	// The session that asked.
 	AskedBy *UUID `json:"askedBy,omitzero"`
 
-	// A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request labelled needs-approval.
+	// A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request with a review requested from the person (#5803).
 	Forge *RequestForge `json:"forge,omitzero"`
 
 	// Every session that waits on it; the asker first. Kept as history once it ends.
@@ -13159,7 +13163,7 @@ type RequestAnswer struct {
 	SecretUse *RequestSecretUseAnswer `json:"secretUse,omitzero"`
 }
 
-// A needs-approval pull request's answer: approve adds approved, changes adds changes-wanted; the note is the person's comment on it.
+// An answer to a pull request with a review requested from the person (#5803): only their review of the head, approve an Approve and changes a Request changes; the note is the review's words. Their own pull request takes no review from them.
 type RequestApprovalAnswer struct {
 	Action string `json:"action"`
 
@@ -13217,7 +13221,7 @@ type RequestForge struct {
 
 	URL string `json:"url"`
 
-	// alex-todo, needs-account or needs-approval.
+	// alex-todo or needs-account on an issue; review-requested on a pull request with a review requested from the person (#5803), which is no label.
 	Label string `json:"label"`
 
 	// An issue's lines under its first "## What <name> does" heading.
@@ -13488,7 +13492,7 @@ type ReviewOpenRequest struct {
 	URL URL `json:"url"`
 }
 
-// An open pull request labelled needs-approval, a UI change waiting for the person (#2811), in the sidebar's For Review (#3330) until it is labelled approved or changes-wanted, is closed, or is dismissed.
+// An open pull request with a review requested from the person (#5803), a UI change waiting for them (#2811), in the sidebar's For Review (#3330) until they review it, it is closed, or it is dismissed.
 type ReviewPull struct {
 	URL URL `json:"url"`
 

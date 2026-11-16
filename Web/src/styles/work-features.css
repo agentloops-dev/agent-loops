@@ -45,6 +45,8 @@
 .work-delivery-epic-row .where { white-space: nowrap; }
 .work-delivery-phone { display: none; }
 .work-flight-lines { padding-left: 22px; }
+/* The priority chip (#5690) keeps its width; on a flight line it sits before the pull request. */
+.work-feature-row .work-priority { flex: none; }
 .work-flight-row .mark { flex: none; width: 14px; text-align: center; color: var(--forge-open); font-size: 0.8em; }
 .work-flight-row.is-attention .mark { color: var(--tint-attention); font-size: 1em; }
 .work-flight-row .name { flex: 0 1 auto; }

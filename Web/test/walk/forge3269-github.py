@@ -2,7 +2,7 @@
 """A fixture GitHub for Work ▸ Features (#3269): the repo example/shop with the features checkout
 (two open epics, one closed, and a loose issue) and accounts (one open epic), as forge/features and
 forge/issues read them (GraphQL search, filtered by its is: and label: words), and an epic's page
-(issueOrPullRequest, subIssues). Scratch data only. Point a run-app host at it with
+(issueOrPullRequest, subIssues). Some carry priority:… labels, for the priority chip (#5690). Scratch data only. Point a run-app host at it with
 --env AGENTS_TEST_GITHUB_URL=http://127.0.0.1:<port>.
 
     python3 Web/test/walk/forge3269-github.py <port>
@@ -14,27 +14,28 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 REPO = "example/shop"
 LABELS = {"epic": "3e4b9e", "story": "0e8a16", "task": "c5def5", "spike": "fbca04", "feature:checkout": "1d76db",
-          "feature:accounts": "d93f0b", "docs": "0075ca"}
+          "feature:accounts": "d93f0b", "docs": "0075ca", "priority:high": "b60205", "priority:medium": "fbca04",
+          "priority:low": "c5def5"}
 NOW = "2026-11-02T18:00:00Z"
 
 ITEMS = {
-    40: {"title": "Epic: Gift cards at checkout", "state": "OPEN", "labels": ["epic", "feature:checkout"],
+    40: {"title": "Epic: Gift cards at checkout", "state": "OPEN", "labels": ["epic", "feature:checkout", "priority:high"],
          "body": "Shoppers pay with a gift card at checkout.\n\nThe plan is this issue's sub-issues."},
     41: {"title": "Gift card balances in the store's API", "state": "CLOSED", "labels": ["task", "feature:checkout"], "parent": 40},
     42: {"title": "A gift card field on the payment form", "state": "CLOSED", "labels": ["story", "feature:checkout"], "parent": 40},
-    43: {"title": "Pay part with a gift card, the rest by card", "state": "OPEN", "labels": ["story", "feature:checkout"], "parent": 40,
+    43: {"title": "Pay part with a gift card, the rest by card", "state": "OPEN", "labels": ["story", "feature:checkout", "priority:high"], "parent": 40,
          "blockedBy": [41, 42]},
-    44: {"title": "Show the card's balance after paying", "state": "OPEN", "labels": ["story", "feature:checkout"], "parent": 40,
+    44: {"title": "Show the card's balance after paying", "state": "OPEN", "labels": ["story", "feature:checkout", "priority:medium"], "parent": 40,
          "blockedBy": [43]},
-    45: {"title": "Which gift card provider to use", "state": "OPEN", "labels": ["spike", "feature:checkout"], "parent": 40,
+    45: {"title": "Which gift card provider to use", "state": "OPEN", "labels": ["spike", "feature:checkout", "priority:low"], "parent": 40,
          "blockedBy": [17]},
     17: {"title": "Document the coupon field", "state": "OPEN", "labels": ["docs"]},
-    50: {"title": "Epic: Saved carts", "state": "OPEN", "labels": ["epic", "feature:checkout"]},
+    50: {"title": "Epic: Saved carts", "state": "OPEN", "labels": ["epic", "feature:checkout", "priority:medium"]},
     51: {"title": "Keep a cart for 30 days", "state": "OPEN", "labels": ["story", "feature:checkout"], "parent": 50},
     52: {"title": "Email a saved cart", "state": "OPEN", "labels": ["story", "feature:checkout"], "parent": 50},
     30: {"title": "Epic: One-page checkout", "state": "CLOSED", "labels": ["epic", "feature:checkout"]},
     55: {"title": "Checkout button too small on phones", "state": "OPEN", "labels": ["feature:checkout"]},
-    60: {"title": "Epic: Sign in with a passkey", "state": "OPEN", "labels": ["epic", "feature:accounts"]},
+    60: {"title": "Epic: Sign in with a passkey", "state": "OPEN", "labels": ["epic", "feature:accounts", "priority:low"]},
     61: {"title": "Passkeys in the store's API", "state": "CLOSED", "labels": ["task", "feature:accounts"], "parent": 60},
     62: {"title": "A passkey button on the sign-in page", "state": "OPEN", "labels": ["story", "feature:accounts"], "parent": 60},
 }

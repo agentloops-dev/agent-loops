@@ -279,6 +279,12 @@ func cursorOf(s *string) (forgeCursor, error) {
 
 // forgeList is a page of the issues or pull requests of r.folder, or of every folder.
 func (d *Daemon) forgeList(ctx context.Context, prs bool, r wire.ForgeListRequest) (wire.ForgeList, error) {
+	return d.forgeListAsked(ctx, prs, r, "")
+}
+
+// forgeListAsked is forgeList of the pull requests with a review requested from reviewer
+// (#5803), on GitHub; of every item for "".
+func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListRequest, reviewer string) (wire.ForgeList, error) {
 	method := map[bool]string{false: "forge/issues", true: "forge/pulls"}[prs]
 	limit := forgeListDefault
 	if r.Limit != nil {
@@ -316,7 +322,7 @@ func (d *Daemon) forgeList(ctx context.Context, prs bool, r wire.ForgeListReques
 		board = narrowToBoard(boardWire, folders, prs)
 	}
 	filter := forgeFilter{PRs: prs, State: state, Label: deref(r.Label), Assignee: deref(r.Assignee), Query: deref(r.Query),
-		Feature: deref(r.Feature), Board: board}
+		Feature: deref(r.Feature), Reviewer: reviewer, Board: board}
 	// The forges on the interface (#4329): each one's scope, and why it left folders out.
 	type scoped struct {
 		forge Forge
@@ -326,8 +332,8 @@ func (d *Daemon) forgeList(ctx context.Context, prs bool, r wire.ForgeListReques
 	var moved []scoped
 	scopeKeys := []any{}
 	for _, f := range d.forges() {
-		// A board's list is of the board's forge only.
-		if board != nil && board.forge != f.Name() {
+		// A board's list is of the board's forge only, and a list by reviewer of GitHub's.
+		if board != nil && board.forge != f.Name() || reviewer != "" && f.Name() != "github" {
 			continue
 		}
 		s, err := f.Sources(ctx, folders, prs)
@@ -341,7 +347,7 @@ func (d *Daemon) forgeList(ctx context.Context, prs bool, r wire.ForgeListReques
 		moved = append(moved, scoped{f, s, err})
 		scopeKeys = append(scopeKeys, f.Name(), s.Key())
 	}
-	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, cursor, limit})
+	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit})
 	if a, ok := d.forgeCached(string(key)); ok && a.list != nil {
 		return *a.list, nil
 	}
@@ -719,11 +725,12 @@ func forgeItemOf(i githubmcp.Item, folder string) wire.ForgeItem {
 	out := wire.ForgeItem{Node: node, Title: i.Title, State: i.State, URL: optional(i.URL), Folder: optional(folder),
 		Author: optional(i.Author), AuthorAvatar: optional(i.AuthorAvatar), StateReason: optional(i.StateReason), Assignees: i.Assignees, Milestone: optional(i.Milestone),
 		Labels: forgeLabelsOf(i.Labels, i.LabelColors), UpdatedAt: forgeDate(i.UpdatedAt), Comments: int64(i.Comments),
-		CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt)}
+		CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), MilestoneDue: forgeDueOptional(i.MilestoneDue)}
 	if out.Assignees == nil {
 		out.Assignees = []string{}
 	}
 	if i.PR {
+		withPriorityLabels(&out)
 		out.Draft, out.AutoMerge = new(i.Draft), new(i.AutoMerge)
 		out.Checks, out.Review, out.Mergeable = optional(i.Checks), optional(i.Review), optional(i.Mergeable)
 		withPullRefs(&out, i.HeadRef, i.BaseRef, i.MergedBy, i.MergeCommit)
@@ -746,11 +753,13 @@ func gitlabItemOf(i gitlabmcp.Item, folder string) wire.ForgeItem {
 	}
 	out := wire.ForgeItem{Node: node, Title: i.Title, State: i.State, URL: optional(i.URL), Folder: optional(folder),
 		Labels: forgeLabelsOf(i.Labels, i.LabelColors), Author: optional(i.Author), AuthorAvatar: optional(i.AuthorAvatar), Assignees: i.Assignees,
-		Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), Comments: int64(i.Comments)}
+		Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), Comments: int64(i.Comments),
+		MilestoneDue: forgeDueOptional(i.MilestoneDue)}
 	if out.Assignees == nil {
 		out.Assignees = []string{}
 	}
 	if i.MR {
+		withPriorityLabels(&out)
 		out.Draft, out.AutoMerge = new(i.Draft), new(i.AutoMerge)
 		out.Checks, out.Review, out.Mergeable = optional(i.Checks), optional(i.Review), optional(i.Mergeable)
 		withPullRefs(&out, i.HeadRef, i.BaseRef, i.MergedBy, i.MergeCommit)
@@ -768,7 +777,8 @@ func gitlabItemOf(i gitlabmcp.Item, folder string) wire.ForgeItem {
 func linearItemOf(i linearmcp.Item, folder string) wire.ForgeItem {
 	out := wire.ForgeItem{Node: linearNode(i.Identifier), Title: i.Title, State: i.State,
 		URL: optional(i.URL), Folder: optional(folder), Labels: forgeLabelsOf(i.Labels, i.LabelColors), Author: optional(i.Author), AuthorAvatar: optional(i.AuthorAvatar), StateReason: optional(i.StateReason),
-		Assignees: i.Assignees, Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), Comments: int64(i.Comments)}
+		Assignees: i.Assignees, Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), Comments: int64(i.Comments),
+		MilestoneDue: forgeDueOptional(i.MilestoneDue), Priority: optional(i.Priority)}
 	if out.Assignees == nil {
 		out.Assignees = []string{}
 	}
@@ -785,7 +795,7 @@ func jiraItemOf(i jiramcp.Item, folder string) wire.ForgeItem {
 	out := wire.ForgeItem{Node: jiraNode(i.Key), Title: i.Title, State: i.State,
 		Status: optional(i.Status), URL: optional(i.URL), Folder: optional(folder), Labels: forgeLabelsOf(i.Labels, nil),
 		Author: optional(i.Author), AuthorAvatar: optional(i.AuthorAvatar), StateReason: optional(i.StateReason), Assignees: i.Assignees, Milestone: optional(i.Milestone), UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt),
-		Comments: int64(i.Comments)}
+		Comments: int64(i.Comments), MilestoneDue: forgeDueOptional(i.MilestoneDue), Priority: optional(i.Priority)}
 	if out.Assignees == nil {
 		out.Assignees = []string{}
 	}
@@ -926,4 +936,14 @@ func optional(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// forgeDueOptional is a milestone's due date (#5688): a forge says it as a day (2026-12-01:
+// GitLab, Linear, Jira) or as a time (GitHub, Forgejo); nil for none or one it cannot read.
+func forgeDueOptional(s string) *wire.Date {
+	if t, err := time.Parse(time.DateOnly, s); err == nil {
+		d := wire.DateOf(t)
+		return &d
+	}
+	return forgeDateOptional(s)
 }

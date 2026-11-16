@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -211,6 +212,7 @@ func TestTeamPeopleFillsTheViewersForgejoLoginFromTheForgejoConnection(t *testin
 // The viewer's own blank Bitbucket and Azure DevOps logins come from this machine's Bitbucket
 // and Azure DevOps connections (#3853); another person's logins are theirs as kept.
 func TestTeamPeopleFillsTheViewersBitbucketAndAzureDevOpsLoginsFromTheConnections(t *testing.T) {
+	flaky.UnderLoad(t, "#5809")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}

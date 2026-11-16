@@ -256,7 +256,6 @@ func TestDailySummaryIsAboutThePerson(t *testing.T) {
 	script := `#!/bin/sh
 case "$*" in
 "repo view"*) echo '{"nameWithOwner":"o/r","url":"https://github.com/o/r"}' ;;
-"search prs --label needs-approval"*) echo '[{"number":5,"title":"New button","url":"https://github.com/o/r/pull/5","createdAt":"` + stamp(-48*time.Hour) + `","repository":{"nameWithOwner":"o/r"}}]' ;;
 "search prs --review-requested"*) echo '[{"number":5,"title":"New button","url":"https://github.com/o/r/pull/5","createdAt":"` + stamp(-48*time.Hour) + `","repository":{"nameWithOwner":"o/r"}},
   {"number":6,"title":"Review me","url":"https://github.com/o/r/pull/6","createdAt":"` + stamp(-24*time.Hour) + `","repository":{"nameWithOwner":"o/r"}}]' ;;
 "search issues"*) echo '[{"number":7,"title":"Sign up","url":"https://github.com/o/r/issues/7","createdAt":"` + stamp(-72*time.Hour) + `","repository":{"nameWithOwner":"o/r"}}]' ;;
@@ -284,7 +283,7 @@ esac
 
 	f := d.machineSummaryFactsWith("", since, gh)
 	if len(f.Waiting) != 3 || !strings.HasPrefix(f.Waiting[0], assignedLine+`#7 "Sign up"`) ||
-		!strings.HasPrefix(f.Waiting[1], approvalLine+"#5") || !strings.HasPrefix(f.Waiting[2], reviewLine+"#6") {
+		!strings.HasPrefix(f.Waiting[1], reviewLine+"#5") || !strings.HasPrefix(f.Waiting[2], reviewLine+"#6") {
 		t.Fatalf("waits on you:\n%s", strings.Join(f.Waiting, "\n"))
 	}
 	landed := strings.Join(f.Landed, "\n")

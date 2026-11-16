@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// Placed under the project and the persona, above kept starts (#5460): a tap there fills the
 /// prompt card below, which is in view with the keyboard down or up. Not drawn when every epic
-/// has a lead, or when the folder's host cannot say.
+/// has a lead, or when the folder's host cannot say; a first read that fails says why in one line.
 struct SuggestedLeadsSection: View {
     @Environment(RemoteModel.self) private var model
     let key: FolderKey
@@ -49,6 +49,15 @@ struct SuggestedLeadsSection: View {
                 header(read)
             }
             .disabled(model.isStarting)
+        } else if let why = model.startSuggestions[key].map({ SuggestedLeads.unread($0.value) }) ?? model.startSuggestionsFailed[key] {
+            // A first read that failed, or a forge it could not read and no rows, says why (#5790).
+            Section {
+                Text(why)
+                    .appText(.supporting)
+                    .foregroundStyle(Paper.secondary)
+            } header: {
+                Text(SuggestedLeads.heading)
+            }
         }
     }
 

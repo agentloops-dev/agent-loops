@@ -52,9 +52,24 @@ func withHierarchy(i *wire.ForgeItem, parent *wire.LineageNode, total, done int)
 			i.Standing = new(true)
 		}
 	}
+	withPriorityLabels(i)
 	i.Parent = parent
 	if total > 0 {
 		i.Progress = &wire.ForgeProgress{Done: int64(done), Total: int64(total)}
+	}
+}
+
+// withPriorityLabels sets an item's priority from its labels priority:high, priority:medium and
+// priority:low (any case), the higher of two, unless the forge's own priority field set it (#5688).
+func withPriorityLabels(i *wire.ForgeItem) {
+	if i.Priority != nil {
+		return
+	}
+	for _, p := range []string{"high", "medium", "low"} {
+		if hasLabel(*i, "priority:"+p) {
+			i.Priority = &p
+			return
+		}
 	}
 }
 
@@ -359,12 +374,16 @@ func (d *Daemon) forgeFeaturesReadOnce(ctx context.Context, r wire.ForgeFeatures
 	slices.SortFunc(out.Features, func(a, b wire.ForgeFeature) int {
 		return cmp.Or(cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.Name, b.Name))
 	})
-	// The pull requests that wait for Alex's approval (#3474). A forge with no pull requests, or
-	// none labelled so, has none: this read adds no error of its own to the features.
-	if prs, err := d.forgeList(ctx, true, wire.ForgeListRequest{Folder: r.Folder, State: new("open"), Label: new("needs-approval"),
-		Limit: new(int64(forgeListMost))}); err == nil {
-		for _, p := range prs.Items {
-			out.Approvals = append(out.Approvals, p.Node.Ref)
+	// The pull requests that wait for the person's approval (#3474): a review requested from them
+	// (#5803). A forge with no pull requests, or none asked so, has none: this read adds no error
+	// of its own to the features.
+	if login := d.reviewer(); login != "" {
+		prs, err := d.forgeListAsked(ctx, true, wire.ForgeListRequest{Folder: r.Folder, State: new("open"),
+			Limit: new(int64(forgeListMost))}, login)
+		if err == nil {
+			for _, p := range prs.Items {
+				out.Approvals = append(out.Approvals, p.Node.Ref)
+			}
 		}
 	}
 	return out, items, nil

@@ -10,9 +10,10 @@ import (
 )
 
 // The approval wait per PR (#4553, epic #4551): how long work waits on the person. A PR's
-// node keeps when it was opened (pr.opened), when it was labelled needs-approval
-// (pr.labelled) and its first answer by a person (pr.reviewed or pr.commented). The wait is
-// from the label, else the opening, to that answer (lineage.ApprovalWait); lineage/figures
+// node keeps when it was opened (pr.opened), when a review was requested from the person
+// (review.requested, #5803) and its first answer by a person (pr.reviewed or pr.commented: a
+// comment that asks for a change answers it too). The wait is from the request, else the
+// opening, to that answer (lineage.ApprovalWait); lineage/figures
 // gives its median, P90 and the share of merged PRs that waited, and time/history its
 // median for Reports ▸ Time.
 //
@@ -33,7 +34,6 @@ type approvalPayload struct {
 	PR struct {
 		URL string `json:"url"`
 	} `json:"pr"`
-	Label  string `json:"label"`
 	Review *struct {
 		Author string `json:"author"`
 		Body   string `json:"body"`
@@ -42,12 +42,13 @@ type approvalPayload struct {
 		Author string `json:"author"`
 		Body   string `json:"body"`
 	} `json:"comment"`
-	LabelledAt  string `json:"labelledAt"`
+	RequestedAt string `json:"requestedAt"`
 	ReviewedAt  string `json:"reviewedAt"`
 	CommentedAt string `json:"commentedAt"`
 }
 
-// lineageApprovalEvent notes a needs-approval label, or a person's review or comment, on its PR.
+// lineageApprovalEvent notes a review requested from the person, or a person's review or
+// comment, on its PR.
 func (d *Daemon) lineageApprovalEvent(e wire.Event) {
 	var p approvalPayload
 	if json.Unmarshal([]byte(e.Details["payload"]), &p) != nil {
@@ -59,9 +60,9 @@ func (d *Daemon) lineageApprovalEvent(e wire.Event) {
 	}
 	pr := repo.pr(n)
 	switch e.Name {
-	case "pr.labelled":
-		at, ok := payloadTime(p.LabelledAt)
-		if !ok || p.Label != reviewLabel {
+	case "review.requested":
+		at, ok := payloadTime(p.RequestedAt)
+		if !ok {
 			return
 		}
 		d.lineageDo(func() { d.notePRAsked(pr, at) })
@@ -109,7 +110,7 @@ func (d *Daemon) notePROpened(pr wire.LineageNode, at wire.Date) {
 	})
 }
 
-// notePRAsked keeps the first needs-approval label of a PR. An answer before it was not an
+// notePRAsked keeps the first review requested from the person on a PR. An answer before it was not an
 // answer to it, so it goes.
 func (d *Daemon) notePRAsked(pr wire.LineageNode, at wire.Date) {
 	d.noteApproval(pr, func(c *wire.LineageCostNode) bool {

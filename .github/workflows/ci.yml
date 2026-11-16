@@ -550,6 +550,11 @@ jobs:
           restore-keys: |
             macos-xcode-27-dd-${{ steps.keys.outputs.base }}-
             macos-xcode-27-dd-${{ steps.toolchain.outputs.fingerprint }}-
+      # A mark of when the restore ended: a file in DerivedData newer than it was built in this
+      # run (the cache's tar keeps the restored files' times). "Did a scheme build here" reads it.
+      - name: Mark the restored Xcode build cache
+        if: env.APPS != 'skip'
+        run: touch "$RUNNER_TEMP/xcode-restored"
       # A graph restored from another tree can hold an AgentsKit that Xcode will not rebuild
       # (#679, #681, #683): when the recorded AgentsKit sources differ, only AgentsKit's own
       # objects go, and the rest stays warm.
@@ -687,13 +692,19 @@ jobs:
         run: bash scripts/prune-ci-caches.sh "go-apps-${{ runner.os }}-" "${{ steps.go-key.outputs.prefix }}-${{ steps.nx.outcome == 'success' && 'full' || 'part' }}-${{ github.run_id }}-${{ github.run_attempt }}" "$GITHUB_REF"
       # Only on a push to main, as the golangci-lint cache (2026-11-13): this graph is about 2 GB,
       # and a pull request's own, under its merge ref, no other pull request can read. A pull
-      # request restores main's newest through the restore-keys above. Only when both schemes
-      # built in this run: an Nx cache hit builds nothing, and leaves DerivedData as it was.
-      - name: Did both schemes build here
+      # request restores main's newest through the restore-keys above. Only when a scheme built
+      # in this run: an Nx cache hit builds nothing, and leaves DerivedData as it was. One scheme
+      # is enough (2026-11-16): a push to main usually changes only the Mac app, so Nx builds
+      # mac:build alone, and when both had to build here no cache was saved at all; every apps
+      # job built the Mac app cold, 10 to 15 minutes of a PR's 20. A graph with one scheme
+      # restores warm for that scheme, and the next push that builds the other saves both.
+      - name: Did a scheme build here
         id: built
         if: ${{ env.APPS != 'skip' && (always() && env.MAIN_CACHE == 'true' && steps.xcode-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success') }}
         run: |
-          if [[ -d build/DerivedData/Build/Products/Debug && -d build/DerivedData/Build/Products/Debug-iphonesimulator ]]; then
+          products=build/DerivedData/Build/Products
+          built="$(find "$products/Debug" "$products/Debug-iphonesimulator" -newer "$RUNNER_TEMP/xcode-restored" -print -quit 2>/dev/null || true)"
+          if [[ -n "$built" ]]; then
             echo "${{ steps.keys.outputs.agentskit }}" > build/DerivedData/agentskit-sources
             echo "save=true" >> "$GITHUB_OUTPUT"
           fi

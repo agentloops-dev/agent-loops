@@ -14,25 +14,22 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// The pull requests in the sidebar's For Review (#3330): each folder's open pull requests
-// labelled needs-approval, a UI change waiting for the person (#2811), until one is labelled
-// approved or changes-wanted, is closed, or the person dismisses it. Read with forge/pulls
-// (#3129), one search for every folder, on its own poll; said with each folder's pins
+// The pull requests in the sidebar's For Review (#3330): each folder's open, non-draft pull
+// requests with a review requested from the connected person (#5803), as a UI change waiting
+// for them (#2811), until the person reviews it (GitHub then drops the request), it closes, or
+// the person dismisses it. Read with forge/pulls (#3129), one GitHub search for every folder,
+// on its own poll; said with each folder's pins
 // (FolderPins.reviews, pins/changed). A dismissal is kept in <root>/review-dismissals.json,
 // so a dismissed pull request never comes back; not in the folder's .agents/pins.json, which
 // a repo may check in. A pull request the person opened is kept in <root>/review-opened.json
 // (#3464), so every client draws its row read.
 
 const (
-	reviewLabel = "needs-approval"
 	// reviewDismissalsPerFolder bounds the dismissals kept for one folder: the oldest go first.
 	reviewDismissalsPerFolder = 200
 	// reviewOpenedPerFolder bounds the opened pull requests kept for one folder: the oldest go first.
 	reviewOpenedPerFolder = 200
 )
-
-// The labels that say the person has answered: the pull request leaves For Review.
-var reviewAnswered = []string{"approved", "changes-wanted"}
 
 // reviewEvery is the poll: forge/pulls keeps an answer a minute, so no faster than that.
 var reviewEvery = 2 * time.Minute
@@ -104,16 +101,9 @@ func reviewPullOf(i wire.ForgeItem) (wire.ReviewPull, bool) {
 	if i.State != "open" || i.URL == nil || *i.URL == "" || (i.Draft != nil && *i.Draft) {
 		return wire.ReviewPull{}, false
 	}
-	labelled := false
-	for _, l := range i.Labels {
-		if slices.Contains(reviewAnswered, l.Name) {
-			return wire.ReviewPull{}, false
-		}
-		labelled = labelled || l.Name == reviewLabel
-	}
 	// A ref is "github:pr:owner/name#12", or "gitlab:mr:group/project#12".
 	r, ok := lineage.RefOf(i.Node)
-	if !labelled || !ok || r.Topic == "" {
+	if !ok || r.Topic == "" {
 		return wire.ReviewPull{}, false
 	}
 	number, err := strconv.ParseInt(r.ID, 10, 64)
@@ -124,11 +114,24 @@ func reviewPullOf(i wire.ForgeItem) (wire.ReviewPull, bool) {
 		Ref: new(i.Node.Ref), Author: i.Author, UpdatedAt: i.UpdatedAt}, true
 }
 
-// readReviews reads every folder's open pull requests labelled needs-approval once, and says a
-// folder's pins again when its list changed. A forge that could not be read keeps its last list.
+// reviewer is the connected person's GitHub login, whose requested reviews make a pull request
+// wait for them (#5803); "" when GitHub is not connected.
+func (d *Daemon) reviewer() string {
+	if c, ok := d.githubConnection(); ok {
+		return c.Login
+	}
+	return ""
+}
+
+// readReviews reads every folder's open pull requests with a review requested from the person
+// once, and says a folder's pins again when its list changed. A forge that could not be read,
+// or no person to ask, keeps its last list.
 func (d *Daemon) readReviews(ctx context.Context) {
-	list, err := d.forgeList(ctx, true, wire.ForgeListRequest{State: new("open"), Label: new(reviewLabel),
-		Limit: new(int64(forgeListMost))})
+	login := d.reviewer()
+	if login == "" {
+		return
+	}
+	list, err := d.forgeListAsked(ctx, true, wire.ForgeListRequest{State: new("open"), Limit: new(int64(forgeListMost))}, login)
 	if err != nil || len(list.Errors) > 0 {
 		return
 	}

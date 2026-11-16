@@ -6,7 +6,7 @@
 // sessions asking or blocked, sessions asking to be archived (#584, #649, once a group of their own),
 // and each folder's approvals as rows of their own. For Review (#3194) holds what is ready to look at
 // but blocks no agent: a session done with a file it showed that nobody has opened, then each folder's
-// open pull requests labelled needs-approval (#3330), then the read-only daily checks' suggestions (#3331).
+// open pull requests with a review requested from the person (#3330, #5803), then the read-only daily checks' suggestions (#3331).
 import type { Agent, Approval, CheckSuggestion, LineageNode, LineageSessionIssue, ReviewPull, WorkflowSummary } from "../protocol/generated";
 import { asksToArchive, byArchived, byStart, folderKey, groupOf, showsUnread, writesDailySummary } from "./groups";
 import { queryMatches, type LabelQuery } from "./labels";
