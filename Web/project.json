@@ -12,8 +12,25 @@
       "generator-sources"
     ],
     "web-test-reads": [
+      "{workspaceRoot}/App/Sources/Chat/ChatView.swift",
+      "{workspaceRoot}/App/Sources/Chat/PromptBar.swift",
+      "{workspaceRoot}/App/Sources/Sidebar/AgentBrowserPane.swift",
+      "{workspaceRoot}/App/Sources/Sidebar/SidebarState.swift",
+      "{workspaceRoot}/Go/internal/agentsd/changes.go",
+      "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/BrowserSettings.swift",
+      "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/DailySummarySettings.swift",
+      "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/SessionPrompts.swift",
       "{workspaceRoot}/Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/**/*",
-      "{workspaceRoot}/design/icons.json"
+      "{workspaceRoot}/Remote/Sources/Chat/PromptBar.swift",
+      "{workspaceRoot}/Remote/Sources/Chat/RemoteChatView.swift",
+      "{workspaceRoot}/Shared/UI/Chat/ChatTranscript.swift",
+      "{workspaceRoot}/Shared/UI/Chat/DesktopControlPauseCard.swift",
+      "{workspaceRoot}/Shared/UI/Chat/LiveTile.swift",
+      "{workspaceRoot}/Shared/UI/Chat/NowCard.swift",
+      "{workspaceRoot}/Shared/UI/Chat/TranscriptRows.swift",
+      "{workspaceRoot}/Shared/UI/DailySummaryControls.swift",
+      "{workspaceRoot}/design/icons.json",
+      "{workspaceRoot}/scripts/perf-budgets.json"
     ]
   },
   "targets": {
