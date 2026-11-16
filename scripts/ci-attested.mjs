@@ -46,9 +46,9 @@ const SWIFT_PROJECTS = new Set(["agentskit", "agentskit-repo", "codetext"]);
 // The Nx steps of ci.yml, each a group: its targets and projects are the step's `nx affected`,
 // and its platform is its job's runner. Keep them in step with ci.yml.
 // - linux: `go`'s "Nx affected" (ubuntu-latest).
-// - swift: `test`'s "Nx affected, Swift" (xcode-27, Apple silicon).
-// - gomac: `test`'s "Nx affected, Go on a Mac" (no lint: the Linux job's).
-// - swiftlint: `test`'s "SwiftLint" (swift-lint:lint); one task, so it runs or is skipped.
+// - swift: `test-swift`'s "Nx affected, Swift" (xcode-27, Apple silicon).
+// - gomac: `test-go`'s "Nx affected, Go on a Mac" (#5755) (no lint: the Linux job's).
+// - swiftlint: `test-swift`'s "SwiftLint" (swift-lint:lint); one task, so it runs or is skipped.
 export const GROUPS = {
   linux: { platform: "linux-x64", targets: ["gen", "build", "vet", "lint", "test"], has: (t) => !t.tags.includes("xcode") },
   swift: { platform: "macos-arm64", targets: ["test"], has: (t) => SWIFT_PROJECTS.has(t.project) },

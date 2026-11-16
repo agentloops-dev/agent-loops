@@ -16,6 +16,7 @@ on:
   pull_request:
   # By hand, or by scripts/bisect-main.sh (#5587): `sha` runs at that commit of main, not the
   # branch's head, and `jobs` runs only those jobs (space-separated: go, apps, test; empty: all).
+  # `test` is test-swift, test-go and their gate, `test` (#5755).
   # A run with a sha saves no cache, so a bisect step at an old commit never becomes main's
   # newest cache.
   workflow_dispatch:
@@ -771,27 +772,29 @@ jobs:
           STATUS: ${{ job.status }}
         run: bash scripts/ci-step-times.sh
 
-  # The check main requires for the Swift packages and Go on a Mac (#5645), beside `apps`:
+  # Two macOS jobs side by side, and `test`, the check main requires (#5645), which passes only
+  # when both did (#5755): one 20-minute job did not hold the Swift tests (7 to 8 minutes on a
+  # change to Go, which agentskit-repo reads) and then the Go tests on a Mac (6 to 7), so both
+  # ran out of time on main and on pull requests.
+  #
+  # test-swift, beside `apps`:
   #  - AgentsKit and CodeText, as Nx's tasks (#5631): agentskit:test-unit, test-control and
   #    test-integration, agentskit-repo:test (the suites that read files outside the package,
   #    so their inputs are the repo's), and codetext:test, each a `swift test` through
   #    scripts/build-cache.sh. A target whose inputs did not change is a cache hit;
-  #  - the Go module on a Mac (#1138), so a Mac-only path (its root, its folders, a *_darwin.go
-  #    file) is held as Linux's is. TMPDIR is resolved, because a Mac's temporary folder is
-  #    reached through the /var link and the daemon keeps folders with their links resolved;
   #  - SwiftLint against .swiftlint-baseline.json (#5645), as Nx's swift-lint:lint (#5672): a
   #    finding not in it fails.
-  # Each step's `if:` reads `changes`'s outputs (SWIFT, GO, SWIFTLINT).
-  test:
+  # Each step's `if:` reads `changes`'s outputs (SWIFT, SWIFTLINT).
+  test-swift:
     needs: changes
     # `always()` so a failed `changes` still runs this job rather than skipping it, which would
     # read as a pass: an output that `changes` did not reach is empty, not 'skip', so its steps run.
-    if: ${{ always() && !cancelled() && (!inputs.jobs || contains(format(' {0} ', inputs.jobs), ' test ')) && (needs.changes.outputs.swift != 'skip' || needs.changes.outputs.gomac != 'skip' || needs.changes.outputs.swiftlint != 'skip') }}
+    if: ${{ always() && !cancelled() && (!inputs.jobs || contains(format(' {0} ', inputs.jobs), ' test ')) && (needs.changes.outputs.swift != 'skip' || needs.changes.outputs.swiftlint != 'skip') }}
     runs-on: xcode-27
-    # The limit of every job, as in `go` (#5673): warm, the Swift targets take about 5 minutes
-    # and the Go tests on a Mac about 7. Every AgentsKit target from cold does not fit in it:
-    # such a run fails, and its Step times say so. The "Time left for" steps below read the same
-    # number as JOB_MINUTES; change them together.
+    # The limit of every job, as in `go` (#5673): warm, the Swift targets take about 5 to 8
+    # minutes. Every AgentsKit target from cold does not fit in it: such a run fails, and its
+    # Step times say so. The "Time left for" step below reads the same number as JOB_MINUTES;
+    # change them together.
     timeout-minutes: 20
     permissions:
       contents: read
@@ -802,8 +805,6 @@ jobs:
       NX_LOAD_DOT_ENV_FILES: "false"
       NX_TUI: "false"
       SWIFT: ${{ needs.changes.outputs.swift }}
-      # Go on a Mac: `changes`'s go, or skip when an attestation covers all of it (#5585).
-      GO: ${{ needs.changes.outputs.gomac }}
       SWIFTLINT: ${{ needs.changes.outputs.swiftlint }}
     steps:
       - name: Start the clock
@@ -875,35 +876,35 @@ jobs:
       - name: Time the login shell
         if: env.SWIFT != 'skip'
         run: time zsh -lc 'printf %s "$PATH"' > /dev/null
-      # agentskit-repo:test depends on web:build, as WebDistManifestTests reads Web/dist; the Go
-      # tests and web:build need Node, Go and the packages too; SwiftLint, a task of Nx, Node
-      # and the packages.
+      # agentskit-repo:test depends on web:build, as WebDistManifestTests reads Web/dist, which
+      # needs Node and the packages; Go as before the Go tests moved to test-go (#5755);
+      # SwiftLint, a task of Nx, Node and the packages.
       - uses: actions/setup-node@v5
-        if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
+        if: env.SWIFT != 'skip' || env.SWIFTLINT != 'skip'
         with:
           node-version-file: Web/.node-version
           package-manager-cache: false
       - uses: actions/setup-go@v6
-        if: env.SWIFT != 'skip' || env.GO != 'skip'
+        if: env.SWIFT != 'skip'
         with:
           go-version-file: Go/go.mod
           cache: false
       - name: Restore the Nx cache
-        if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
+        if: env.SWIFT != 'skip' || env.SWIFTLINT != 'skip'
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/nx
           key: nx-macos-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
           restore-keys: nx-macos-
       - name: Install from the lockfile
-        if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
+        if: env.SWIFT != 'skip' || env.SWIFTLINT != 'skip'
         timeout-minutes: 5
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
       # As in `go`, on macOS (#5584).
       - name: Nx task hashes
-        if: github.event_name == 'pull_request' && (env.SWIFT != 'skip' || env.GO != 'skip')
+        if: github.event_name == 'pull_request' && env.SWIFT != 'skip'
         continue-on-error: true
         shell: bash
         env:
@@ -913,15 +914,15 @@ jobs:
       # A job that reaches its timeout-minutes ends Cancelled, not Failed, and a pull request
       # with auto-merge on waits for a check that never comes; a step's own timeout fails the
       # step (scripts/ci-time-left.sh, #5609).
-      # The reserve is the steps after it: the Go tests on a Mac when Go is affected (about 7
-      # minutes), SwiftLint and the cache saves.
+      # The reserve is the steps after it: SwiftLint and the cache saves. The Go tests on a Mac
+      # are `test-go`'s, beside this job (#5755), so they take none of its minutes.
       - name: Time left for Nx
         if: env.SWIFT != 'skip'
         id: budget
         env:
           START: ${{ steps.clock.outputs.start }}
           JOB_MINUTES: 20
-          RESERVE: ${{ env.GO != 'skip' && 10 || 3 }}
+          RESERVE: 3
         run: bash scripts/ci-time-left.sh
       # One target at a time: they share each package's .build, and at most three tests at a
       # time, one per core (#1320; each target's command). Nx's log says which target failed and
@@ -949,67 +950,6 @@ jobs:
             fi
           }
           clean_retry "$RESTORED" Packages/AgentsKit/.build Packages/CodeText/.build -- nx_swift
-      # Go's own caches, under Nx's, as in `go`.
-      # Its key ends in full (the Go tasks passed) or part (they failed or ran out of time), then
-      # the run (#5704): a part restores by prefix, so a rerun and the next run start warm, and
-      # it never hits the exact key that would stop a full one from being saved.
-      - name: Go build cache key
-        id: go-key
-        if: ${{ always() && !cancelled() && env.GO != 'skip' }}
-        run: echo "prefix=go-race-$RUNNER_OS-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" >> "$GITHUB_OUTPUT"
-      - name: Restore Go build cache
-        id: go-cache
-        if: ${{ always() && !cancelled() && env.GO != 'skip' }}
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/Library/Caches/go-build
-            ~/go/pkg/mod
-          key: ${{ steps.go-key.outputs.prefix }}-full
-          restore-keys: |
-            ${{ steps.go-key.outputs.prefix }}-full-
-            ${{ steps.go-key.outputs.prefix }}-
-            go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
-            go-race-${{ runner.os }}-
-      - name: Go build cache size
-        if: ${{ always() && !cancelled() && env.GO != 'skip' && env.MAIN_CACHE == 'true' }}
-        run: bash scripts/ci-cache-grew.sh mark go ~/Library/Caches/go-build ~/go/pkg/mod
-      - name: Time left for Go
-        id: go-budget
-        if: ${{ always() && !cancelled() && env.GO != 'skip' }}
-        env:
-          START: ${{ steps.clock.outputs.start }}
-          JOB_MINUTES: 20
-          RESERVE: 3
-        run: bash scripts/ci-time-left.sh
-      # Each tracked file's time from its content, as in `go` (#5677): Go's test cache then runs
-      # only the packages whose inputs changed, where a checkout's own times made 20 of the 70
-      # tested packages, internal/agentsd and internal/controlplane with them, run every time.
-      # After the Swift tasks, whose .build caches keep the times they were made with.
-      - name: Content times
-        if: ${{ always() && !cancelled() && env.GO != 'skip' }}
-        run: python3 scripts/ci-mtimes.py
-      # The Go tasks on a Mac, after the Swift ones (one task at a time, #5632). Its `always()`:
-      # a Swift failure does not hide a Go one.
-      - name: Nx affected, Go on a Mac
-        id: go-nx
-        if: ${{ always() && !cancelled() && env.GO != 'skip' }}
-        timeout-minutes: ${{ fromJSON(steps.go-budget.outputs.minutes) }}
-        shell: bash
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          SKIP: ${{ needs.changes.outputs.skip-gomac }}
-        run: |
-          export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
-          # No lint: go:lint and repo-lint:lint are the Linux job's, which reads Go as Linux.
-          targets=gen,build,vet,test
-          if [[ -n "$SKIP" ]]; then
-            node scripts/ci-attested.mjs run --group gomac --base "$BASE" --skip "$SKIP"
-          elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            scripts/nx.sh affected -t "$targets" --exclude='web,tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
-          else
-            scripts/nx.sh run-many -t "$targets" --exclude='web,tag:xcode' --parallel=1 --output-style=static
-          fi
       - name: SwiftLint
         if: ${{ always() && !cancelled() && env.SWIFTLINT != 'skip' }}
         run: scripts/nx.sh run swift-lint:lint --output-style=static
@@ -1061,6 +1001,161 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/prune-ci-caches.sh macos-xcode-27-codetext- 'macos-xcode-27-codetext-${{ steps.toolchain.outputs.fingerprint }}-${{ steps.keys.outputs.codetext }}' "$GITHUB_REF"
+      # Where this job's minutes went, in its summary; on a failure near the limit, an error that
+      # names the slowest step (#5673).
+      - name: Step times
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 20
+          STATUS: ${{ job.status }}
+        run: bash scripts/ci-step-times.sh
+
+  # test-go, beside test-swift and `apps`: the Go module on a Mac (#1138), so a Mac-only path
+  # (its root, its folders, a *_darwin.go file) is held as Linux's is. TMPDIR is resolved,
+  # because a Mac's temporary folder is reached through the /var link and the daemon keeps
+  # folders with their links resolved. Each step's `if:` reads GO: `changes`'s gomac, which is
+  # its go, or skip when an attestation covers all of it (#5585).
+  test-go:
+    needs: changes
+    # `always()`, as in test-swift: a failed `changes` runs this job rather than skip it.
+    if: ${{ always() && !cancelled() && (!inputs.jobs || contains(format(' {0} ', inputs.jobs), ' test ')) && needs.changes.outputs.gomac != 'skip' }}
+    runs-on: xcode-27
+    # The limit of every job, as in `go` (#5673): the Go tests on a Mac take about 6 to 7
+    # minutes, and their restore about 1 to 2. The "Time left for" step below reads the same
+    # number as JOB_MINUTES; change them together.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write
+    env:
+      NX_NO_CLOUD: "true"
+      NX_DAEMON: "false"
+      NX_LOAD_DOT_ENV_FILES: "false"
+      NX_TUI: "false"
+      GO: ${{ needs.changes.outputs.gomac }}
+    steps:
+      - name: Start the clock
+        id: clock
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - name: Nx's folders
+        run: |
+          echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
+          echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      - name: Xcode
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v5
+        if: env.GO != 'skip'
+        with:
+          node-version-file: Web/.node-version
+          package-manager-cache: false
+      - uses: actions/setup-go@v6
+        if: env.GO != 'skip'
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+      # A key of its own, so this job and test-swift never save the same key, and test-swift's
+      # restore by prefix never takes this one. nx-macos- is test-swift's, which held the Go tasks
+      # too before #5755: the first runs start warm from it.
+      - name: Restore the Nx cache
+        if: env.GO != 'skip'
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/nx
+          key: nx-gomac-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+          restore-keys: |
+            nx-gomac-
+            nx-macos-
+      - name: Install from the lockfile
+        if: env.GO != 'skip'
+        timeout-minutes: 5
+        run: |
+          scripts/pnpm.sh install --frozen-lockfile
+          scripts/pnpm.sh audit signatures
+      # As in `go`, on macOS (#5584).
+      - name: Nx task hashes
+        if: github.event_name == 'pull_request' && env.GO != 'skip'
+        continue-on-error: true
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          { echo "### Nx task hashes, $(uname -sm)"; echo '```'; node scripts/nx-hashes.cjs --affected "$BASE" test vet lint; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+      # Go's own caches, under Nx's, as in `go`.
+      # Its key ends in full (the Go tasks passed) or part (they failed or ran out of time), then
+      # the run (#5704): a part restores by prefix, so a rerun and the next run start warm, and
+      # it never hits the exact key that would stop a full one from being saved.
+      - name: Go build cache key
+        id: go-key
+        if: env.GO != 'skip'
+        run: echo "prefix=go-race-$RUNNER_OS-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-${{ hashFiles('Go/**/*.go') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore Go build cache
+        id: go-cache
+        if: env.GO != 'skip'
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ~/Library/Caches/go-build
+            ~/go/pkg/mod
+          key: ${{ steps.go-key.outputs.prefix }}-full
+          restore-keys: |
+            ${{ steps.go-key.outputs.prefix }}-full-
+            ${{ steps.go-key.outputs.prefix }}-
+            go-race-${{ runner.os }}-${{ hashFiles('Go/go.mod', 'Go/go.sum') }}-
+            go-race-${{ runner.os }}-
+      - name: Go build cache size
+        if: env.GO != 'skip' && env.MAIN_CACHE == 'true'
+        run: bash scripts/ci-cache-grew.sh mark go ~/Library/Caches/go-build ~/go/pkg/mod
+      - name: Time left for Go
+        id: go-budget
+        if: env.GO != 'skip'
+        env:
+          START: ${{ steps.clock.outputs.start }}
+          JOB_MINUTES: 20
+          RESERVE: 3
+        run: bash scripts/ci-time-left.sh
+      # Each tracked file's time from its content, as in `go` (#5677): Go's test cache then runs
+      # only the packages whose inputs changed, where a checkout's own times made 20 of the 70
+      # tested packages, internal/agentsd and internal/controlplane with them, run every time.
+      - name: Content times
+        if: env.GO != 'skip'
+        run: python3 scripts/ci-mtimes.py
+      # The Go tasks on a Mac, one task at a time (#5632).
+      - name: Nx affected, Go on a Mac
+        id: go-nx
+        if: env.GO != 'skip'
+        timeout-minutes: ${{ fromJSON(steps.go-budget.outputs.minutes) }}
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          SKIP: ${{ needs.changes.outputs.skip-gomac }}
+        run: |
+          export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
+          # No lint: go:lint and repo-lint:lint are the Linux job's, which reads Go as Linux.
+          targets=gen,build,vet,test
+          if [[ -n "$SKIP" ]]; then
+            node scripts/ci-attested.mjs run --group gomac --base "$BASE" --skip "$SKIP"
+          elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            scripts/nx.sh affected -t "$targets" --exclude='web,tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+          else
+            scripts/nx.sh run-many -t "$targets" --exclude='web,tag:xcode' --parallel=1 --output-style=static
+          fi
+      - name: Save the Nx cache
+        if: ${{ (always() && !cancelled()) && !inputs.sha }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/nx
+          key: nx-gomac-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+      - name: Prune old Nx caches for this ref
+        if: ${{ (always() && !cancelled()) && !inputs.sha }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh "nx-gomac-" "nx-gomac-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}" "$GITHUB_REF"
       - name: Did the Go build cache grow
         id: go-grew
         if: ${{ always() && !cancelled() && env.GO != 'skip' && env.MAIN_CACHE == 'true' && !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-full-', steps.go-key.outputs.prefix)) }}
@@ -1097,3 +1192,28 @@ jobs:
           JOB_MINUTES: 20
           STATUS: ${{ job.status }}
         run: bash scripts/ci-step-times.sh
+
+  # The check main requires (#5645): it passes when test-swift and test-go each passed or were
+  # skipped, and fails when either failed or was cancelled (a job that reaches its limit ends
+  # Cancelled, #5609). A skipped job satisfies a required check, so with both skipped this passes
+  # too. The failing job's own log says what failed.
+  test:
+    needs: [changes, test-swift, test-go]
+    if: ${{ always() && !cancelled() && (!inputs.jobs || contains(format(' {0} ', inputs.jobs), ' test ')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: test-swift and test-go
+        env:
+          SWIFT: ${{ needs.test-swift.result }}
+          GO: ${{ needs.test-go.result }}
+        run: |
+          echo "test-swift: $SWIFT, test-go: $GO"
+          failed=0
+          for job in "test-swift:$SWIFT" "test-go:$GO"; do
+            case ${job#*:} in
+              success | skipped) ;;
+              *) echo "::error::${job%%:*} ended ${job#*:}: its own log says why."; failed=1 ;;
+            esac
+          done
+          exit "$failed"
