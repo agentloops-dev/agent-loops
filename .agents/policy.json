@@ -1,6 +1,7 @@
 {
   "helpers": {
-    "mostNotArchived": 10,
+    "mostNotArchived": 20,
+    "mostQueued": 5,
     "mostRunning": 10
   }
 }

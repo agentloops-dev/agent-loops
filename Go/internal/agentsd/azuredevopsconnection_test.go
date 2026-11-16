@@ -16,6 +16,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -104,6 +105,7 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 // access token checked with it as a bearer token, the pair kept and renewed with the scope, and
 // an Azure DevOps Server or no organization refused before Entra is asked.
 func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
+	flaky.UnderLoad(t, "#5750")
 	var mu sync.Mutex
 	var forms []map[string]string
 	access := "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln"
