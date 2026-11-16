@@ -43,6 +43,8 @@ type Item struct {
 	PR     bool
 	// State is open, closed or merged.
 	State, Title, URL, Author, Milestone, UpdatedAt string
+	// MilestoneDue is the milestone's due date, "" for none (#5688).
+	MilestoneDue string
 	// CreatedAt is when it opened; ClosedAt when it closed or merged, "" while open (#4373).
 	CreatedAt, ClosedAt string
 	// AuthorAvatar is the author's picture, on the Forgejo or on Gravatar; "" for none (#4363).
@@ -150,6 +152,7 @@ type forgeJSON struct {
 	Assignees []user      `json:"assignees"`
 	Milestone *struct {
 		Title string `json:"title"`
+		DueOn string `json:"due_on"`
 	} `json:"milestone"`
 	UpdatedAt   string `json:"updated_at"`
 	CreatedAt   string `json:"created_at"`
@@ -185,7 +188,7 @@ func (j forgeJSON) item(repo string) Item {
 		}
 	}
 	if j.Milestone != nil {
-		i.Milestone = j.Milestone.Title
+		i.Milestone, i.MilestoneDue = j.Milestone.Title, j.Milestone.DueOn
 	}
 	if i.PR {
 		i.Draft = j.PullRequest.Draft || pullJSON{Title: j.Title}.draft()
