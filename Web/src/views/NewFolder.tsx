@@ -13,6 +13,7 @@ import { emptyListRuntimeLine, noAgentRuntime } from "../model/runtimes";
 import { isSafeLink } from "../render/markdown";
 import { go } from "../route";
 import { Modal } from "./Modal";
+import { backgroundStartTitle, openBackgroundStart } from "./BackgroundStart";
 import { MachineDialog } from "./MachineDialog";
 import { machineWords } from "../model/machineFromRepository";
 import { projectWords } from "../model/projects";
@@ -94,6 +95,8 @@ export function NewFolderMenu({ store, newSession }: { store: Store; newSession?
         <div class="popover right" role="menu" aria-label="New folder">
           {/* In the folder last started in, or the one open (#628). */}
           <button role="menuitem" disabled={!newSession} onClick={() => { open.value = false; newSession?.(); }}>New Session</button>
+          {/* The start form over the page, which stays where it was (#5798). */}
+          <button role="menuitem" disabled={!newSession} onClick={() => { open.value = false; openBackgroundStart(); }}>{backgroundStartTitle}</button>
           <NewFolderItems store={store} onChoose={() => (open.value = false)} />
           {/* Let's build your idea, again (#5132), as the window's File ▸ New App…, after the folders' items. */}
           <button role="menuitem" onClick={() => { open.value = false; firstBuild.newApp(); }}>{newAppItem}</button>

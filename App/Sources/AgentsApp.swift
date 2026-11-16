@@ -94,6 +94,15 @@ struct AgentsApp: App {
         .windowResizability(.contentSize)
         .restorationBehavior(.disabled)
 
+        // New Session in Background (#5798), ⇧⌘N: one small window that starts a session and
+        // closes, the main window left where it was. Never restored at launch.
+        Window(BackgroundStartScene.title, id: BackgroundStartScene.id) {
+            BackgroundStartWindow()
+                .environment(model)
+        }
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+
         // The app's first Settings scene, and what gives it ⌘, and the menu item.
         // A scene rather than a page beside Spending, which Spending itself is not:
         // that one is read-only by construction, and a limit is the one number in

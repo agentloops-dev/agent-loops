@@ -476,10 +476,11 @@ private struct ProjectGeneralPane: View {
             if let removeProblem {
                 SheetNote(text: removeProblem, reservesSpace: false)
             }
-            Menu(ProjectSettingsWords.addOnAnotherMachine) {
-                ForEach(otherMachines, id: \.self) { machine in
-                    Button(machineName(machine)) { addFolder(on: machine) }
-                }
+            // The one machine picker (#5621).
+            let others = Set(otherMachines)
+            MachinePicker(label: ProjectSettingsWords.addOnAnotherMachine, value: nil,
+                          placeholder: ProjectSettingsWords.addOnAnotherMachine, keep: { others.contains($0.id) }) { machine in
+                if let machine { addFolder(on: machine) }
             }
             .fixedSize()
             .disabled(otherMachines.isEmpty)

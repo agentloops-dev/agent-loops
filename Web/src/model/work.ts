@@ -45,6 +45,8 @@ export interface WorkRow {
   /** The tracker's own name for its step (a Jira status, #3260), shown in place of state. */
   status?: string | undefined;
   labels: ForgeLabel[];
+  /** high, medium or low, from ForgeItem.priority (#5690); absent for none. */
+  priority?: ForgeItem["priority"];
   /** The ref's repo or tracker: github:alexec/Agents, linear:ENG (a Linear team, #3311), jira. */
   repo: string;
   author?: string | undefined;
@@ -132,7 +134,7 @@ const unix = (at: number) => fromWireDate(at as never).getTime() / 1000;
 /** A row from the forge's item, with its lineage when there is any. */
 export function forgeRow(item: ForgeItem, host: string, lineage?: ReportNode): WorkRow {
   return {
-    node: item.node, title: item.title, state: item.state, stateReason: item.stateReason, status: item.status, labels: item.labels,
+    node: item.node, title: item.title, state: item.state, stateReason: item.stateReason, status: item.status, labels: item.labels, priority: item.priority,
     repo: repoOf(item.node.ref), author: item.author, avatar: item.authorAvatar, assignees: item.assignees, updated: unix(item.updatedAt),
     created: item.createdAt === undefined ? undefined : unix(item.createdAt), closed: item.closedAt === undefined ? undefined : unix(item.closedAt),
     url: item.url, host, folder: item.folder, draft: item.draft, comments: item.comments, checks: item.checks, review: item.review, lineage,

@@ -41,8 +41,8 @@ not start a second one.
   folder's lane and open-PR limits.
 - **Places:** the folder's limits give places, not another agent. Start no new lane
   while more than the folder's open-PR limit of pull requests are open: land first. A PR
-  labelled `needs-approval` does not count: it waits for Alex, and its lane holds no
-  running place.
+  with a review requested from Alex (`gh pr view <n> --json reviewRequests`) does not
+  count: it waits for Alex, and its lane holds no running place.
 - **Wait with `wait_for_event`, never by polling.** To wait on lanes themselves, wait on
   `agent.ended` alone, with `agent` their ids and `wake_on: any`.
 - **Name people in questions:** "Claude (the epic's lead) will…", "Alex, do you want…?".
@@ -88,6 +88,11 @@ then UI changes, bugs before features, then the rest):
    runtime. Add to the prompt: before you start and before each push, lease `ci`, do the
    step, release it; on a conflict
    with `main`, `git merge origin/main` and push without running the tests again (#5712).
+   **A `linux-ok` child** (AGENTS.md, "Plans", #5810) goes to a Linux machine when one is
+   free: call `list_machines`, and when a Linux machine is online, pass it as `machine` to
+   `start_session`. This keeps the Mac's build lease free for the Swift lanes. When no
+   Linux machine is online, or its start fails, start the lane on the Mac, as before. A
+   child without `linux-ok` always runs on the Mac.
 3. If `start_session` refuses (the folder's limits are full), unassign the child and
    start no more until a lane ends.
 4. After the epic's first lane starts, ask `estimate_issue` for the epic once. This keeps
@@ -115,7 +120,7 @@ only the keys it has. A wait that names nothing is refused. When you start again
 - **`pr.blocked`** on a child's PR (#5321: a conflict, a failed required check, changes
   requested, auto-merge off; its `reasons` say which): its lane fixes it. If the lane
   has ended or stopped, message it about its own PR (`message_session`), never to widen
-  its work. Leave a PR labelled `needs-approval` alone: it waits for Alex. A failed
+  its work. Leave a PR with a review requested from Alex alone: it waits for Alex. A failed
   check that main also fails, with the same test, is not the lane's to fix: the lane
   waits for main to go green, then runs its checks again (`fix-failed-checks`, step 2a,
   #5589). Do not message the lane, and do not start a lane to fix main: the Fix main
