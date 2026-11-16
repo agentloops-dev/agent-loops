@@ -41,12 +41,16 @@ extension RemoteModel {
                                        returning: DaemonAPI.WorkSuggestLeads.self, on: key.host)
             let now = Date()
             startSuggestions[key] = SuggestionsRead(value: read, at: now, fresh: true)
+            startSuggestionsFailed[key] = nil
             keepWork(read, .suggestions, Self.suggestionsAsked(key))
         } catch {
             note("start: suggestions for \(key.folder.lastPathComponent) not read: \(error.localizedDescription)")
             if var held = startSuggestions[key] {
                 held.fresh = false
                 startSuggestions[key] = held
+            } else if let why = SuggestedLeads.failure(error) {
+                // No read to show: say why in one line (#5790).
+                startSuggestionsFailed[key] = why
             }
         }
     }
