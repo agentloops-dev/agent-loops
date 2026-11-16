@@ -196,8 +196,16 @@ export const standingShown = 10;
 /** "9 more": the rows of a standing epic's list past the first ten; undefined with none. */
 export const moreWords = (count: number) => count > standingShown ? `${count - standingShown} more` : undefined;
 
-/** A child's priority: label, for a standing epic's row (note 18). */
-export const priorityLabel = (item: ForgeItem) => item.labels.find((l) => l.name.toLowerCase().startsWith("priority:"));
+/** An item's priority chip in words, from ForgeItem.priority (#5690), not a label's name: "High", "Medium" or "Low";
+ * undefined for none, which has no chip. */
+export function priorityWords(priority: ForgeItem["priority"]): "High" | "Medium" | "Low" | undefined {
+  switch (priority) {
+    case "high": return "High";
+    case "medium": return "Medium";
+    case "low": return "Low";
+    default: return undefined;
+  }
+}
 
 /** The most issues forge/plan reads for a standing epic's query. */
 const standingLimit = 100;

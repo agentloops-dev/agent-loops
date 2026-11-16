@@ -67,7 +67,8 @@ starts lanes.
    - Not needed (copy, colour, spacing, fonts, icons, the look or state of an existing
      control, empty states, polish): turn on squash auto-merge at once and go on to
      step 7, as for a bug fix.
-   - Needed: open the PR with auto-merge **off** and the label `needs-approval`.
+   - Needed: open the PR with auto-merge **off**, as the agents' bot, and request Alex's
+     review: `gh pr edit <n> --add-reviewer alexec` (epic #5802). Add no label.
    - Needed: fix nothing until Alex answers: no CI fixes, rebases or conflict fixes. Wait with
      `wait_for_event` on `pr.reviewed`, `pr.commented` and `pr.closed`, `where: {"pr": <n>}`,
      and end your turn (#2838, #3860): each wakes you with the review or the comment itself
@@ -75,16 +76,17 @@ starts lanes.
      the PR by hand. A comment you write as `alexec` starts with `<!-- agent -->`
      (AGENTS.md, "Who an agent posts as"): `pr.commented` leaves those out, and a bot's,
      so a comment it raises is always Alex's.
-   - Alex approves: a review with **Approve** (`pr.reviewed`, state `approved`) on the
-     bot's PR, or a comment such as "I approve these screenshots, ship it" on a PR posted
-     as `alexec`, who cannot review their own. Add `approved`, remove `needs-approval`,
-     write `Alex approved (<review or comment link>)` in the PR body, fix the checks,
-     rebase, turn on squash auto-merge and go on to step 7.
+   - Alex approves: only Alex's own review with **Approve** (`pr.reviewed`, state
+     `approved`), from github.com or from Approve in the app, which makes the same review.
+     Write `Alex approved (<review link>)` in the PR body, fix the checks, rebase, turn on
+     squash auto-merge and go on to step 7. A comment, a message in chat or a label does
+     not approve: when Alex says "approved" that way, ask on the PR for a review with
+     Approve, and wait again.
    - Alex asks for changes: a review with **Request changes** (state `changes_requested`)
-     or any other comment. Add `changes-wanted`, make the changes, take a new set of
-     screenshots, remove `changes-wanted`, say on the PR what you changed and wait again.
-     A review with only words (state `commented`) is a comment. When you cannot tell which
-     one Alex means, ask on the PR.
+     or any other comment. Make the changes, take a new set of screenshots, say on the PR
+     what you changed, request Alex's review again (`gh pr edit <n> --add-reviewer
+     alexec`) and wait again. A review with only words (state `commented`) is a comment.
+     When you cannot tell what Alex wants changed, ask on the PR.
    - Closed: Alex dropped it. Go to step 9.
 7. Wait for the pull request to merge. Use one `wait_for_event` call with
    `events: ["pr.merged", "pr.closed", "pr.blocked", "checks.passed"]`,

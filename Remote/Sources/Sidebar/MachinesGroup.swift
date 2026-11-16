@@ -43,6 +43,8 @@ struct RemoteMachineRow: View {
     @State private var removing = false
     /// Stop, asked first while agents work there, with who they are.
     @State private var stoppingNames: [String] = []
+    /// The machines pinned to the sidebar's group (#5286).
+    @AppStorage(MachinePins.key) private var machinePins = ""
 
     var body: some View {
         let name = model.machineName(host)
@@ -87,6 +89,13 @@ struct RemoteMachineRow: View {
         }
         .contextMenu {
             Button("Open", icon: "arrow.up.forward.app") { model.sidebarItem = .machine(host) }
+            // Pinned: after This Mac in the group, also past seven machines (#5286).
+            if host != .mac {
+                let pinned = MachinePins.pinned(machinePins).contains(host)
+                Button(MachinePins.menuTitle(pinned: pinned), icon: pinned ? "pin.slash" : "pin") {
+                    machinePins = MachinePins.toggled(host, in: machinePins)
+                }
+            }
             if actions.start {
                 Button("Start", icon: "play") { Task { await model.startHost(host) } }
             } else if actions.stop {

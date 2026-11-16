@@ -72,6 +72,8 @@ public enum WorkList {
         /// The tracker's own name for its step (a Jira status, #3260), shown in place of `state`.
         public var status: String?
         public var labels: [DaemonAPI.ForgeLabel]
+        /// high, medium or low, from `ForgeItem.priority` (#5690); nil for none.
+        public var priority: String?
         /// The ref's repo or tracker: github:alexec/Agents, linear:ENG (a Linear team, #3311), jira.
         public var repo: String
         public var author: String?
@@ -134,6 +136,7 @@ public enum WorkList {
                       lineage: lineage,
                       status: item.status, comments: item.comments, checks: item.checks, review: item.review,
                       stateReason: item.stateReason, avatar: item.authorAvatar, created: item.createdAt, closed: item.closedAt)
+            priority = item.priority
         }
 
         /// A row lineage alone knows: a release, named by its tag until the forge names it (#4426).

@@ -354,6 +354,8 @@ extension AppModel {
     func startDraft(prompt: String, attachments: [Attachment] = [], labels: [String] = [],
                     voice: Bool = false, started: (UUID) -> Void = { _ in }) async -> Bool {
         guard !isStarting, let runtimeID = draftRuntimeID, let cwd = draftCwd else { return false }
+        // Read now: the person may go to another window while it starts (#5798).
+        let inBackground = composingInBackground
         isStarting = true
         defer { isStarting = false }
         // Auto picks once, at start (#5375): the control plane says where, and the session says why.
@@ -411,7 +413,11 @@ extension AppModel {
             // Gone to, as the phone does: what you just asked for is what you want to
             // see start. Once the list has it, so the chat opens on a row that is there.
             // Started in a folder's own window, it opens there (#1089).
-            if let window = composingWindow.flatMap({ folderWindows[$0] }) {
+            // Started from New Session in Background (#5798): nothing opens it, and the
+            // window under it stays where it was; the new row in the sidebar says it started.
+            if inBackground {
+                startedInBackground?(id)
+            } else if let window = composingWindow.flatMap({ folderWindows[$0] }) {
                 window.show(started: id)
             } else {
                 justStarted = id
