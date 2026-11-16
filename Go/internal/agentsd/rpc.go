@@ -344,10 +344,14 @@ func (d *Daemon) acceptSocket(c net.Conn, policy SocketPolicy) {
 // serveSockConn reads sc's lines from r, which may hold some already, and serves it until
 // it goes.
 func (d *Daemon) serveSockConn(sc *sockConn, r *bufio.Reader) {
-	d.goJob("socket read", func() {
+	reading := d.goJobAt("socket read", callerSite(1), func() {
 		// A client gone takes its writer with it.
 		defer sc.Close()
 		defer close(sc.in)
+		// The host going ends the connection too (#5744): a client that stays connected
+		// held its reader and Accept past Shutdown.
+		stop := context.AfterFunc(d.hostCtx(), sc.Close)
+		defer stop()
 		for {
 			line, err := r.ReadString('\n')
 			if len(line) > 1 {
@@ -358,6 +362,12 @@ func (d *Daemon) serveSockConn(sc *sockConn, r *bufio.Reader) {
 			}
 		}
 	})
+	if !reading {
+		// The host is going: with no reader, nothing would close sc.in, and Accept would
+		// wait on it for ever (#5744).
+		sc.Close()
+		return
+	}
 	d.Accept(sc)
 }
 

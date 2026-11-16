@@ -38,7 +38,7 @@ public struct RuntimeMachinesSummary<Machine: Hashable> {
     /// The line as plain words, for a test or a screen reader: "On This Mac, devbox · Not on build-box".
     public func words(_ name: (Machine) -> String) -> String {
         parts.map { part in
-            ([part.words] + [part.machines.map(name).joined(separator: ", ")].filter { !$0.isEmpty }).joined(separator: " ")
+            ([part.words] + [MachineNames.words(part.machines.map(name))].filter { !$0.isEmpty }).joined(separator: " ")
         }.joined(separator: " · ")
     }
 

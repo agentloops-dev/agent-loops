@@ -144,9 +144,10 @@ extension RemoteModel {
                 // The Achievements page (#4116) and Velocity (#4758), from their rows under Status.
                 openActivity = newValue
             case .spending, .tokens, .time,
-                 .folderMCPServers, .docs, .messages, .dashboard:
+                 .folderMCPServers, .docs, .messages, .dashboard, .allMachines:
                 // Cost, Tokens, Time, a folder's connectors and Docs are Mac + web (#2798,
                 // #3321): the Remote opens none of them. The Dashboard is the Mac's PoC (#5534; #5537).
+                // The Machines page comes to the Remote in #5568.
                 break
             }
         }
