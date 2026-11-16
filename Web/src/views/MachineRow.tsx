@@ -10,6 +10,7 @@ import { deleteQuestion, machineActions, machineDot, machineIcon, machineKind, m
   type MachineIconTone, type MachineJoin, type MachineKind, type MachineMaking, joinHint, makingCanDelete, makingFailed,
   makingLine, makingTone } from "../model/machineRow";
 import { machineSheets } from "../model/machineSheets";
+import { machinesGroupWords, sidebarPins, toggleSidebarPin } from "../model/machinesGroup";
 import { placedSessions } from "../model/overview";
 import { holdForMenu, isMenuKey, openContextMenu, type MenuItem } from "./ContextMenu";
 import { MachineSheetDialog, type MachineSheet } from "./MachineSheets";
@@ -119,6 +120,8 @@ export function MachineRow({ store, host, on, open, children }: {
   };
   const items = (): MenuItem[] => [
     { label: "Open", run: open },
+    // Pinned: after This Mac in the Machines group, also past seven machines (#5286).
+    ...(mac ? [] : [{ label: machinesGroupWords.pin(sidebarPins.value.includes(host)), run: () => toggleSidebarPin(host) }]),
     ...(actions.start ? [{ label: "Start", run: run.start }] : []),
     ...(actions.stop ? [{ label: "Stop", run: run.stop }] : []),
     // As Settings ▸ Machines has them (#3979).

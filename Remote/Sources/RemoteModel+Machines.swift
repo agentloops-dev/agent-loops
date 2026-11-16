@@ -47,6 +47,14 @@ extension RemoteModel {
         }
     }
 
+    /// Whether the Machines group shows the machine before the rest (#5286), as the window's:
+    /// it needs something, it is starting, or sessions work or wait for the person there.
+    func machineIsActive(_ host: MachineRef) -> Bool {
+        if need(of: host) != nil || hostsBeingStarted.contains(host) { return true }
+        let sessions = MachineSessions(work.agents.filter { $0.host == host })
+        return !sessions.agents(.working).isEmpty || !sessions.agents(.waiting).isEmpty
+    }
+
     /// A machine's most urgent need, as its row says it (#3764).
     func need(of host: MachineRef) -> MachineNeed? {
         MachineNeed.most(row: machineRow(host), offline: machineOffline(host),

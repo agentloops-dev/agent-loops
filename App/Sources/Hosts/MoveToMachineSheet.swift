@@ -74,10 +74,11 @@ struct MoveToMachineSheet: View {
                     .appText(.supporting).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Picker("Machine", selection: $machine) {
-                    ForEach(targets, id: \.self) { host in
-                        Text(model.hosts.label(host)).tag(Optional(host))
-                    }
+                // The one machine picker (#5621).
+                LabeledContent("Machine") {
+                    let allowed = Set(targets)
+                    MachinePicker(label: "Machine", value: machine, keep: { allowed.contains($0.id) }) { machine = $0 }
+                        .disabled(moving)
                 }
                 LabeledContent(MoveToMachineWords.folderLabel) {
                     TextField(MoveToMachineWords.folderPlaceholder, text: $folder)

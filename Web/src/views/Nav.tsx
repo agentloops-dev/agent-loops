@@ -35,6 +35,7 @@ import { MachinePage } from "./MachinePage";
 import { machineSessions, runningLineOf } from "../model/machineSessions";
 import { machineNeed, machineNeedLine } from "./OfflineStrip";
 import { MachinesList } from "./MachinesList";
+import { type GroupRows, machinesGroupRows, machinesGroupWords, sidebarPins } from "../model/machinesGroup";
 import { MachineRow, MakingRow } from "./MachineRow";
 import { deleteMakingQuestion, joinTrustQuestion, type MachineMaking, makingRows, newMachineItems } from "../model/machineRow";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
@@ -212,6 +213,37 @@ function EventsWaitingLine({ store }: { store: Store }) {
   return words ? <p class="page-need quiet small" role="status">{words}</p> : null;
 }
 
+/** The Machines group's rows (#5286): the machine pages it draws, at most seven, This Mac, pinned and busy first. */
+function machinesGroup(store: Store, pages: readonly NavPage[], making: number): { pages: NavPage[]; rows: GroupRows } {
+  const pins = sidebarPins.value;
+  const macID = store.macHostID.value;
+  const listed = pages.flatMap((p) => p.draw.kind === "machine" ? [p.draw.host] : []).map((id) => ({
+    id, pinned: pins.includes(id), active: machineIsActive(store, id),
+  }));
+  const rows = machinesGroupRows(listed, making, macID);
+  const byID = new Map(pages.map((p) => [p.draw.kind === "machine" ? p.draw.host : p.id, p]));
+  return { pages: rows.machines.flatMap((id) => byID.get(id) ?? []), rows };
+}
+
+/** Past seven, the Machines page's row goes after the machines as All Machines (N); else it stays first. */
+function boundedPages(list: NavPage[], rows: GroupRows): NavPage[] {
+  if (!rows.bounded) return list;
+  const page = list.find((p) => p.draw.kind === "machines");
+  if (!page) return list;
+  return [...list.filter((p) => p !== page), { ...page, title: machinesGroupWords.all(rows.total) }];
+}
+
+/** It needs something, it is starting, or sessions work or wait there: the group shows it before the rest (#5286). */
+function machineIsActive(store: Store, host: string): boolean {
+  const row = store.hosts.value.find((h) => h.id === host);
+  if (!row) return false;
+  if (store.hostsBeingStarted.value.includes(host)) return true;
+  if (machineNeed(row, store.hostIsOnline(host), store.runtimes.value[host] ?? [], store.disk.value[host]?.alarms ?? [],
+    store.capacity.value[host]?.level)) return true;
+  const sessions = machineSessions(store.agents.value[host] ?? []);
+  return sessions.groups.working.length + sessions.groups.waiting.length > 0;
+}
+
 /** A section's list of pages on the left, the page open on the right. */
 export function SectionPage({ store, section, down }: { store: Store; section: Exclude<NavSection, "overview" | "agents">; down: boolean }) {
   const admin = adminOf(store);
@@ -219,7 +251,12 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   // A page per machine under Machines (#3626).
   const more = section === "machines" ? machinePages(store.hosts.value, store.macHostID.value) : [];
   const open = openPage(section, routePageID(section, r), admin, more);
-  const list = pagesShown(section, admin, open?.id, more).filter((p) => summaryListed(store, p, open?.id));
+  // At most seven machines, then All Machines (N), the Machines page, after them (#5286).
+  const making = section === "machines" ? makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value) : [];
+  const bounded = section === "machines" ? machinesGroup(store, more, making.length) : null;
+  const groupRows = bounded?.rows;
+  const list = (bounded ? boundedPages(pagesShown(section, admin, open?.id, bounded.pages), bounded.rows)
+    : pagesShown(section, admin, open?.id, more)).filter((p) => summaryListed(store, p, open?.id));
   const registering = useSignal(false);
   useUserScopeStatus(store, section === "status");
   // Work shown: the list it opens on read ahead (#4930), from this device's copy and then the machines, so it draws at once.
@@ -273,7 +310,7 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
                   {(p.draw.kind === "secrets" || p.draw.kind === "accounts") && <StatusListLastLine store={store} list={p.draw.kind} />}
                 </Fragment>
               ))}
-              {machinesHead(group) && makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value)
+              {machinesHead(group) && making.slice(0, groupRows?.making ?? making.length)
                 .map((row) => <MakingRow key={`making-${row.provider}/${row.workspace}/${row.name}`} row={row}
                   join={store.machineJoins.value[`${row.provider}/${row.workspace}`]}
                   onDelete={async () => { if (await ask(deleteMakingQuestion(row))) void store.deleteWorkspace(row.provider, row.workspace); }}

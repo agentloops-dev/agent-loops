@@ -185,12 +185,12 @@ struct ControlProvidersPage: View {
             .buttonStyle(.paper)
             .help("\(host.name) may already be this machine: links it, without installing again.")
         } else if !hosts.isEmpty {
-            Menu("Link to Existing Machine") {
-                ForEach(hosts) { host in
-                    Button(host.name) { link(host, to: provider.id, workspace: workspace.id) }
-                }
+            // The one machine picker (#5621).
+            let byID = Dictionary(hosts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            MachinePicker(label: "Link to Existing Machine", value: nil, placeholder: "Link to Existing Machine",
+                          keep: { byID[$0.id] != nil }) { picked in
+                if let host = picked.flatMap({ byID[$0] }) { link(host, to: provider.id, workspace: workspace.id) }
             }
-            .menuStyle(.borderlessButton)
             .fixedSize()
             .help("One of these machines may already be this one: links it, without installing again.")
         }

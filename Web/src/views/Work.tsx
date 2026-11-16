@@ -40,7 +40,7 @@ import { keepWork, keptPicture, keptWorkRead } from "../model/localCopy";
 import { forgeMarkdown } from "../model/forgeMarkdown";
 import { ForgeTitle } from "../render/ForgeTitle";
 import {
-  Avatar, Avatars, EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, PlaceholderRows, RefreshButton, StateIcon, picture, type MenuChoice, type ReadPicture,
+  Avatar, Avatars, EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon, picture, type MenuChoice, type ReadPicture,
 } from "./WorkParts";
 import { WorkChecksPage, WorkCommentBox, WorkFilesChanged, WorkLabelsPicker, WorkMergeBox, WorkStatusMenu } from "./WorkActions";
 import { WorkFilesPage } from "./WorkFilesPage";
@@ -294,6 +294,7 @@ export function WorkRowView({ row, several, dim, pick, read, open, latest: isLat
           <span class="work-row-head">
             <span class="work-title"><ForgeTitle text={row.title} /></span>
             {isLatest && <ReleaseChip />}
+            <PriorityChip priority={row.priority} />
             {row.labels.length > 0 && (
               <span class="work-chips">
                 {row.labels.map((l) => <LabelChip key={l.name} label={l} pick={pick} />)}
