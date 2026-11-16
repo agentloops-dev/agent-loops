@@ -93,6 +93,8 @@ import pointer from "lucide:pointer";
 import calendar from "lucide:calendar";
 import loaderCircle from "lucide:loader-circle";
 import cornerDownRight from "lucide:corner-down-right";
+import key from "lucide:key";
+import contact from "lucide:contact";
 
 type Node = [string, Record<string, string>];
 
@@ -110,6 +112,7 @@ const icons = {
   "wifi-off": wifiOff, "folder-search": folderSearch, "user-x": userX, history, coins, "building-2": building2,
   pencil, search, brain, hammer, "square-arrow-right": squareArrowRight, "scroll-text": scrollText, "message-circle-question-mark": messageCircleQuestionMark, "undo-2": undo2, "clock-fading": clockFading, "circle-alert": circleAlert,
   "git-branch": gitBranch, "git-merge": gitMerge, cloud, hash, "square-dot": squareDot, "square-plus": squarePlus, "square-minus": squareMinus, "arrow-right": arrowRight, "shield-check": shieldCheck, hourglass, pointer, calendar, "corner-down-right": cornerDownRight, "loader-circle": loaderCircle,
+  key, contact,
 } satisfies Record<string, Node[]>;
 
 export type IconName = keyof typeof icons;

@@ -1,19 +1,22 @@
 import Foundation
 
 /// The ⌘K command menu (#4787, spec `specs/4777-fast/spec.md`, "⌘K"): one field that finds any
-/// session, folder, issue or pull request, by its words or by its ref (`#4777`), and any action,
+/// session, folder, issue or pull request, secret, account or environment variable (#5261), by its words or by its ref (`#4777`), and any action,
 /// each with its shortcut. The app gives the items; this finds and orders them, so each client
 /// that draws the menu finds the same items in the same order.
 public enum CommandFinder {
     /// What an item is, which the row says, and which comes first when two match as well.
     public enum Kind: Int, Sendable, Hashable, CaseIterable {
-        case action, session, folder, issue, pr
+        case action, session, folder, secret, account, variable, issue, pr
 
         public var word: String {
             switch self {
             case .action: "Action"
             case .session: "Session"
             case .folder: "Folder"
+            case .secret: "Secret"
+            case .account: "Account"
+            case .variable: "Environment variable"
             case .issue: "Issue"
             case .pr: "Pull request"
             }
@@ -24,6 +27,10 @@ public enum CommandFinder {
             case .action: "command"
             case .session: "bubble.left"
             case .folder: "folder"
+            // The pages' own marks, as the sidebar's Status rows (#5261).
+            case .secret: "key"
+            case .account: "person.crop.rectangle.stack"
+            case .variable: "terminal"
             case .issue: "smallcircle.filled.circle"
             case .pr: "arrow.triangle.pull"
             }
