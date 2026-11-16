@@ -617,6 +617,8 @@ final class RemoteModel {
     /// New Session's Suggested section (#5460), by folder: the last read, when it was read, and
     /// whether it is this showing's own (else it is the device's copy, with its "Last update").
     var startSuggestions: [FolderKey: SuggestionsRead] = [:]
+    /// Why a folder's first Suggested read failed, while there is no read to show (#5790).
+    var startSuggestionsFailed: [FolderKey: String] = [:]
 
     /// The offered worktree's name, chosen once the page's repository has answered: before
     /// then the page has no Worktree row, and opening it puts the place back.
