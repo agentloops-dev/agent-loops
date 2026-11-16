@@ -29,7 +29,7 @@
     {
       "name": "user/3",
       "by": "control",
-      "description": "The control plane still reads user/setSettings as 0.19.0 sent it. user/5 (#5259): a client may send the part environment, which an older control plane does not know (user/4, user/sealedSecret, shipped in 0.19.0 without it)."
+      "description": "The control plane still reads user/setSettings as 0.19.0 sent it. user/5 (#5259): a client may send the part environment, which an older control plane does not know (user/4, user/sealedSecret, shipped in 0.19.0 without it). user/6 (#5573): it may also send the parts person, auto and retention, which an older control plane refuses; the Mac then sends them to each machine itself."
     }
   ],
   "methods": [
@@ -834,6 +834,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/connections.schema.json#/definitions/WebPushKey"
+        }
+      }
+    },
+    {
+      "name": "connections/listAll",
+      "description": "The connections of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ConnectionsListAll"
         }
       }
     },
@@ -2104,6 +2130,32 @@
       }
     },
     {
+      "name": "events/listAll",
+      "description": "The newest events of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/EventsListAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/EventsListAll"
+        }
+      }
+    },
+    {
       "name": "folders/detect",
       "x-capability": "folders/1",
       "description": "To a host just added, from a control plane before #656.",
@@ -2137,6 +2189,58 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "forge/boardsAll",
+      "description": "The boards of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ForgeBoardsAll"
+        }
+      }
+    },
+    {
+      "name": "forge/listAll",
+      "description": "The issues or pull requests of the caller's machines in one call, each machine's page (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ForgeListAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ForgeListAll"
         }
       }
     },
@@ -2457,6 +2561,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/org.schema.json#/definitions/HandoverStatus"
+        }
+      }
+    },
+    {
+      "name": "lineage/forecastAll",
+      "description": "lineage/forecast of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/lineage.schema.json#/definitions/LineageForecastRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/LineageForecastAll"
         }
       }
     },
@@ -5866,6 +5996,32 @@
       }
     },
     {
+      "name": "reports/featuresAll",
+      "description": "reports/features of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/FeatureUsageAll"
+        }
+      }
+    },
+    {
       "name": "reports/nodes",
       "x-capability": "reports.nodes/2",
       "description": "The lineage nodes of one kind in a scope (#3118): issues, PRs or releases, with their cost, sessions and lead time, filtered, sorted and in pages of at most 100, from the machines' lineage nodes as reports/value reads them.",
@@ -7065,7 +7221,7 @@
     },
     {
       "name": "user/setSettings",
-      "x-capability": "user/5",
+      "x-capability": "user/6",
       "tags": [
         {
           "name": "web"

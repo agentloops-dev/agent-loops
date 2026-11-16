@@ -112,8 +112,13 @@ struct PromptBar: View {
     private func takeFocusIfAsked() {
         guard requests.wantsPromptFocus, folderIsFixed else { return }
         requests.wantsPromptFocus = false
-        // After the page has settled: from inside a chat, this bar is already there under
-        // the chat, and focus asked for before the chat has popped off it lands nowhere.
+        // At once (#5845): a new window's first focus is the first field of its key view
+        // loop, the labels field above this one, and what is typed before the focus moves
+        // goes there. Where the bar is already in place (the background window, a page
+        // with no chat on it), this takes it before the first key.
+        focused = true
+        // And again after the page has settled: from inside a chat, this bar is already there
+        // under the chat, and focus asked for before the chat has popped off it lands nowhere.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true }
     }
 

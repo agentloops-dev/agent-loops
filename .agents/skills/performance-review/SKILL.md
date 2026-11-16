@@ -108,7 +108,7 @@ Only **critical** and **high** findings are fixed; medium and low stay recorded.
   helper limits are 3 running and 5 not archived unless Alex changed them). Every
   other critical or high finding is recorded as "needs a decision: no helper place this
   run" and is picked up next run.
-- Start it with `start_session`: runtime Claude, permission mode no looser than yours, a
+- Start it with `start_session` (for a `linux-ok` issue, on a Linux machine that `list_machines` shows online, as `machine`: AGENTS.md, #5877): runtime Claude, permission mode no looser than yours, a
   **new worktree** off `main` on the branch `agents/review-fix-<finding id>`, and this
   prompt, filled in:
 

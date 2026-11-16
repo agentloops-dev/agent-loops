@@ -113,7 +113,9 @@ final class WorkTimelineState {
         async let found = model.workBoards()
         let on = Set(project.folders.map { String($0.prefix { $0 != "|" }) })
         let machines = model.timelineMachines.filter { on.contains($0.id.rawValue) }
-        let content = content
+        // The widest range's span, whatever the range: the rows are packed over it, so they stay put
+        // across ranges (#5506).
+        let span = WorkTimeline.packSpan(anchor)
         let board = board
         var got: [DaemonAPI.WorkTimeline] = []
         var epics: Set<String>?
@@ -156,8 +158,8 @@ final class WorkTimelineState {
                 group.addTask {
                     do {
                         let t = try await model.forge(DaemonAPI.Method.workTimeline,
-                                                      DaemonAPI.WorkTimelineRequest(project: project.id, from: content.start,
-                                                                                    to: content.end),
+                                                      DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start,
+                                                                                    to: span.end),
                                                       returning: DaemonAPI.WorkTimeline.self, on: machine.id)
                         // A board narrows to its epics: the forge says which they are.
                         var refs: [String]?
@@ -199,16 +201,15 @@ final class WorkTimelineState {
     }
 }
 
-/// Work ▸ Timeline (#4173, specs/time-stream/wireframe.md): time across, the releases line in the
-/// middle, an epic's line leaving it when its first child starts and joining it when its last one
-/// closes; the forecast dashed after Now. A SwiftUI `Canvas` (spike #4171): the lanes and the
-/// marks come from `WorkTimeline` in AgentsKitCore.
+/// Work ▸ Timeline (#4173): time across, each epic a filled block in its own row from when its first
+/// child starts to when its last one closes, a lighter tint with a dashed edge after Now (the
+/// forecast), then a thin bar to where it closes 8 times in 10 (#5506, Alex, 2026-11-14). A SwiftUI
+/// `Canvas` (spike #4171): the rows and the marks come from `WorkTimeline` in AgentsKitCore.
 struct WorkTimelinePane: View {
     let model: any WorkModel
     @Bindable var state: WorkTimelineState
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.openURL) private var openURL
 
     @State private var position = ScrollPosition(edge: .leading)
     @State private var offset: Double = 0
@@ -219,8 +220,8 @@ struct WorkTimelinePane: View {
         var at: CGPoint
     }
 
-    nonisolated static let laneHeight: Double = 60
     nonisolated static let axisHeight: Double = 26
+    nonisolated static let footHeight: Double = 26
 
     var body: some View {
         VStack(spacing: 0) {
@@ -324,7 +325,7 @@ struct WorkTimelinePane: View {
             WorkEmptyState(symbol: WorkList.Kind.timeline.sidebarIcon, title: WorkTimeline.noProject,
                            line: WorkTimeline.noProjectLine)
         } else {
-            // S10: before the first read, the releases line and Now draw at once, and grey lanes shimmer.
+            // S10: before the first read, the axis and Now draw at once, and grey blocks shimmer in rows.
             let timeline = state.timeline ?? .init()
             VStack(spacing: 0) {
                 let lines = problems(timeline)
@@ -334,7 +335,7 @@ struct WorkTimelinePane: View {
                     WorkErrorStrip(lines: lines, read: state.stale || state.fromDevice ? state.plotRead : nil) { state.asked += 1 }
                         .padding(.horizontal, 16).padding(.vertical, 8)
                 }
-                // Once a minute; while the first read runs, often, so the grey lanes shimmer.
+                // Once a minute; while the first read runs, often, so the grey blocks shimmer.
                 let loading = state.timeline == nil
                 TimelineView(.animation(minimumInterval: loading && !reduceMotion ? 1.0 / 20 : 60)) { context in
                     plot(timeline, now: context.date, loading: loading)
@@ -353,26 +354,28 @@ struct WorkTimelinePane: View {
             let visible = max(geo.size.width, 1)
             let content = state.content
             let axis = WorkTimeline.Axis(interval: content, width: visible * content.duration / state.range.span)
-            // The epics and children a session is in a turn on now (#4265): their open lines pulse.
+            // The epics and children a session is in a turn on now (#4265): their open blocks glow.
             let working = WorkTimeline.workingNow(timeline, sessions: state.sessions, agents: model.workAgents)
+            // Packed over the widest range's span, so a block keeps its row when the range changes or the plot
+            // scrolls (#5506).
             let lines = WorkTimeline.layout(
-                WorkTimeline.overlapping(WorkTimeline.lines(timeline, now: now, working: working), content),
-                axis: axis, labelWidth: { Self.measure($0.label) })
-            let lanes = WorkTimeline.lanes(lines)
-            let sides = Double(max(lanes.above, lanes.below, 2))
-            let height = max((2 * sides + 2) * Self.laneHeight, geo.size.height - Self.axisHeight)
-            let drawing = Drawing(lines: lines, releases: timeline.releases, backtest: timeline.backtest, axis: axis,
-                                  now: now, trunk: height / 2, height: height, offset: offset, visible: visible,
-                                  night: scheme == .dark, project: projectName, loading: loading, moving: !reduceMotion)
+                WorkTimeline.overlapping(WorkTimeline.lines(timeline, now: now, working: working), WorkTimeline.packSpan(state.anchor)))
+            let rows = max(WorkTimeline.rowCount(lines), 3)
+            let height = max(WorkTimeline.rowTop(rows) + WorkTimeline.rowGap, geo.size.height - Self.axisHeight - Self.footHeight)
+            let drawing = Drawing(lines: lines, axis: axis, now: now, height: height, offset: offset, visible: visible,
+                                  night: scheme == .dark, loading: loading, moving: !reduceMotion)
             ScrollView(.horizontal) {
                 VStack(spacing: 0) {
+                    // The axis at the top, the blocks under it, and Now's time at the foot (#5506).
+                    Canvas { context, _ in drawing.drawAxis(&context) }
+                        .frame(width: axis.width, height: Self.axisHeight)
+                        .accessibilityHidden(true)
                     ScrollView(.vertical) {
                         canvas(drawing, timeline: timeline)
                             .frame(width: axis.width, height: height)
                     }
-                    .defaultScrollAnchor(.center, for: .initialOffset)
-                    Canvas { context, _ in drawing.drawAxis(&context) }
-                        .frame(width: axis.width, height: Self.axisHeight)
+                    Canvas { context, _ in drawing.drawNow(&context) }
+                        .frame(width: axis.width, height: Self.footHeight)
                         .accessibilityHidden(true)
                 }
                 .frame(width: axis.width, height: geo.size.height)
@@ -406,7 +409,7 @@ struct WorkTimelinePane: View {
         }
     }
 
-    /// S11: no epic in the window. The releases line and Now stay; the card says when the last one
+    /// S11: no epic in the window. The axis and Now stay; the card says when the last one
     /// joined, when the read knows, and offers the week.
     private func emptyCard(_ timeline: DaemonAPI.WorkTimeline, now: Date) -> some View {
         let window = state.range.window(now: state.anchor)
@@ -460,17 +463,13 @@ struct WorkTimelinePane: View {
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let p):
-                    let hit = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, releases: drawing.releases,
-                                               axis: drawing.axis, trunk: drawing.trunk, laneHeight: Self.laneHeight)
-                    hover = hit.map { Hover(hit: $0, at: p) }
+                    hover = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis).map { Hover(hit: $0, at: p) }
                 case .ended:
                     hover = nil
                 }
             }
             .onTapGesture { p in
-                guard let hit = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, releases: drawing.releases,
-                                                 axis: drawing.axis, trunk: drawing.trunk, laneHeight: Self.laneHeight)
-                else { return }
+                guard let hit = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis) else { return }
                 open(hit)
             }
             .accessibilityElement(children: .contain)
@@ -500,9 +499,9 @@ struct WorkTimelinePane: View {
         }
     }
 
-    /// An epic a session is in a turn on now (#4265): its open line is drawn twice as thick, a glow
-    /// under it breathes and its ◐ at Now turns; with Reduce Motion, the thick line and a still ◐.
-    /// One clock for every working line and ring (#1653).
+    /// An epic a session is in a turn on now (#4265): a soft glow round its block breathes and its ◐
+    /// at Now turns; with Reduce Motion, a still glow and a still ◐. One clock for every working
+    /// block and ring (#1653).
     @ViewBuilder
     private func working(_ drawing: Drawing) -> some View {
         if !reduceMotion, drawing.lines.contains(where: drawing.isWorking) {
@@ -515,28 +514,16 @@ struct WorkTimelinePane: View {
 
     private func open(_ hit: WorkTimeline.Hit) {
         switch hit {
-        case .dot(_, let dot):
-            model.showWork(WorkPlace(kind: .issue, ref: dot.ref))
-        case .line(let line):
-            model.showWork(WorkPlace(kind: .issue, ref: line.epic.ref))
-        case .join(let join):
-            if let line = drawingLine(join.lines.first) { model.showWork(WorkPlace(kind: .issue, ref: line)) }
-        case .release(let release):
-            if let url = release.url.flatMap(URL.init(string:)) { openURL(url) }
+        case .dot(_, let dot): model.showWork(WorkPlace(kind: .issue, ref: dot.ref))
+        case .line(let line): model.showWork(WorkPlace(kind: .issue, ref: line.epic.ref))
         }
-    }
-
-    /// A join's epic, from a line's id (`<ref>/<segment>`).
-    private func drawingLine(_ id: String?) -> String? {
-        guard let id, let slash = id.lastIndex(of: "/") else { return nil }
-        return String(id[..<slash])
     }
 
     // MARK: The hover card
 
     /// A mini row (milestones.md note 33) on three lines (Alex, 2026-11-10): the state glyph and the
-    /// title; the label chips where the wire has them (#4428); then the prediction. A join of
-    /// several lines has a row for each.
+    /// title; the label chips where the wire has them (#4428); then the prediction. No cost (Alex,
+    /// 2026-11-14).
     private func card(_ hit: WorkTimeline.Hit, drawing: Drawing) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             switch hit {
@@ -546,14 +533,6 @@ struct WorkTimelinePane: View {
                         line: WorkTimeline.dotLine(dot, now: drawing.now))
             case .line(let line):
                 lineRow(line, drawing: drawing)
-            case .join(let join):
-                ForEach(join.lines, id: \.self) { id in
-                    if let line = drawing.lines.first(where: { $0.id == id }) { lineRow(line, drawing: drawing) }
-                }
-            case .release(let release):
-                miniRow(glyph: AnyView(Image(icon: WorkList.Kind.release.sidebarIcon).foregroundStyle(.secondary)
-                            .accessibilityHidden(true)),
-                        title: release.tag, labels: [], line: WorkTimeline.releaseLine(release, now: drawing.now))
             }
         }
         .frame(maxWidth: 360, alignment: .leading)
@@ -598,10 +577,10 @@ struct WorkTimelinePane: View {
         state.timeline?.epics.lazy.flatMap(\.children).first { $0.item.node.ref == ref }
     }
 
-    /// The labels' step, as the canvas resolves it.
-    nonisolated static var labelFont: NSFont { TextStep.fine.nsFont }
+    /// The words' step, as the canvas resolves it: bold, so a block's semibold title is never wider.
+    nonisolated static var labelFont: NSFont { NSFontManager.shared.convert(TextStep.fine.nsFont, toHaveTrait: .boldFontMask) }
 
-    /// A label's width, as the canvas draws it.
+    /// A title's width, as the canvas draws it.
     nonisolated static func measure(_ text: String) -> Double {
         Double((text as NSString).size(withAttributes: [.font: labelFont]).width)
     }
@@ -610,124 +589,145 @@ struct WorkTimelinePane: View {
 /// What one frame of the plot draws, and how.
 private struct Drawing {
     var lines: [WorkTimeline.Line]
-    var releases: [DaemonAPI.WorkTimelineRelease]
-    var backtest: DaemonAPI.WorkTimelineBacktest?
     var axis: WorkTimeline.Axis
     var now: Date
-    var trunk: Double
     var height: Double
     var offset: Double
     var visible: Double
     var night: Bool
-    var project: String
-    /// Before the first read (S10): grey lanes that shimmer with the clock.
+    /// Before the first read (S10): grey blocks that shimmer with the clock.
     var loading = false
-    /// Not Reduce Motion: the working lines' ◐ turns in the overlay, on the glow's clock.
+    /// Not Reduce Motion: the working blocks' ◐ turns in the overlay, on the glow's clock.
     var moving = true
 
-    /// One breath of a working line's glow and one turn of its ◐, in seconds (#4265).
+    /// One breath of a working block's glow and one turn of its ◐, in seconds (#4265).
     static let pulsePeriod = 1.6
 
     /// The system colours for the features; the last, grey, for an epic with none.
     static let palette: [Color] = [.blue, .purple, .pink, Color.orange, Color.green, .teal, .indigo, .mint, .brown, .cyan, Color.red, .gray]
+    /// Each colour, as the light appearance draws it, darkened until white text on it has 4.5:1 (#5506).
+    static let fills: [Color] = palette.map { colour in
+        var rgb: [Double] = [0, 0, 0]
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+            if let c = NSColor(colour).usingColorSpace(.sRGB) {
+                rgb = [Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent)]
+            }
+        }
+        let dark = WorkTimeline.forWhiteText(rgb)
+        return Color(red: dark[0], green: dark[1], blue: dark[2])
+    }
     /// Now: a grey line with its time in a grey pill (Alex, 2026-11-10).
     static let nowGrey = Color(white: 0.55)
-    /// Where a line stops for the person: the colour of what waits on them.
+    /// Where a block waits for the person: the colour of what waits on them.
     static let waits = StateTint.attention.color ?? .primary
     static let navy = Color(red: 0.05, green: 0.08, blue: 0.16)
 
     /// One background before and after Now (Alex, 2026-11-10).
     var plot: Color { night ? Self.navy : .white }
-    var ink: Color { night ? Color(white: 0.85) : Color(white: 0.45) }
     var faint: Color { night ? Color(white: 0.6) : Color(white: 0.55) }
 
+    /// A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not planned.
     func colour(_ line: WorkTimeline.Line) -> Color {
-        let base = Self.palette[WorkTimeline.colour(line.feature, of: Self.palette.count)]
-        // At night the system colours are mixed 25% with white, to keep 3:1 on the navy (section 11).
-        return night ? base.mix(with: .white, by: 0.25) : base
+        Self.fills[line.how == .dropped ? Self.fills.count - 1 : WorkTimeline.colour(line.feature, of: Self.fills.count)]
     }
 
-    func y(_ lane: Int) -> Double { trunk - Double(lane) * WorkTimelinePane.laneHeight }
+    /// The words and marks after Now, on the lighter tint: the colour itself by day, lighter at night
+    /// to read on the navy.
+    func later(_ line: WorkTimeline.Line) -> Color {
+        night ? colour(line).mix(with: .white, by: 0.45) : colour(line)
+    }
 
     /// What is drawn: the window, and a screen on each side of it.
     var seen: ClosedRange<Double> { (offset - visible)...(offset + 2 * visible) }
 
+    func block(_ line: WorkTimeline.Line) -> CGRect {
+        let sx = axis.x(line.start)
+        return CGRect(x: sx, y: WorkTimeline.rowTop(line.row), width: max(axis.x(line.end) - sx, 2), height: WorkTimeline.blockHeight)
+    }
+
+    /// The wait pill's words: 👤 and the number, no words (Alex, 2026-11-14).
+    func waitPill(_ count: Int) -> Text { Text("\(Image(icon: "person.fill")) \(count)") }
+    func pillWidth(_ count: Int) -> Double { WorkTimelinePane.measure("👤 \(count)") + 12 }
+
     func draw(_ gc: inout GraphicsContext) {
         let nowX = axis.x(now)
         gc.fill(Path(CGRect(x: 0, y: 0, width: axis.width, height: height)), with: .color(plot))
-        let shown = lines.filter { axis.x($0.start) <= seen.upperBound && axis.x(max($0.end, $0.band?.end ?? $0.end)) >= seen.lowerBound }
+        let shown = lines.filter { axis.x($0.start) <= seen.upperBound && axis.x(WorkTimeline.reach($0)) >= seen.lowerBound }
+        let past = Path(CGRect(x: -100, y: 0, width: max(nowX + 100, 0), height: height))
+        let ahead = Path(CGRect(x: nowX, y: 0, width: max(axis.width - nowX + 100, 0), height: height))
+        let left = offset, right = offset + visible
 
-        // The bands under everything (8 times in 10).
         for line in shown {
-            guard let band = line.band else { continue }
-            let rect = CGRect(x: axis.x(band.start), y: y(line.lane) - 7, width: max(axis.x(band.end) - axis.x(band.start), 2), height: 14)
-            gc.fill(Path(roundedRect: rect, cornerRadius: 7), with: .color(colour(line).opacity(0.13)))
-        }
-
-        // The releases line: solid to Now, dashed after, the brightest at night.
-        var trunkPath = Path()
-        trunkPath.move(to: CGPoint(x: 0, y: trunk))
-        trunkPath.addLine(to: CGPoint(x: axis.width, y: trunk))
-        stroke(&gc, trunkPath, colour: night ? .white.opacity(0.9) : Color(white: 0.6), width: 2.5, nowX: nowX, glow: night)
-
-        // The lines.
-        for line in shown {
-            stroke(&gc, path(line), colour: colour(line), width: isWorking(line) ? 4 : 2, nowX: nowX, glow: night)
-        }
-
-        // The joins on the releases line.
-        for join in WorkTimeline.joins(shown, axis: axis) {
-            let x = axis.x(join.at)
-            let colour = lines.first { $0.id == join.lines.first }.map(colour) ?? ink
-            // A ring with a count is larger, so the count reads.
-            let r = join.lines.count > 1 ? 9.0 : 6.0
-            let ring = Path(ellipseIn: CGRect(x: x - r, y: trunk - r, width: 2 * r, height: 2 * r))
-            if join.forecast {
-                gc.fill(ring, with: .color(plot))
-                gc.stroke(ring, with: .color(colour), style: StrokeStyle(lineWidth: 2, dash: [3, 2]))
-            } else {
-                gc.fill(ring, with: .color(colour))
+            let c = colour(line), rect = block(line)
+            let shape = Path(roundedRect: rect, cornerRadius: Paper.Radius.code)
+            let mid = rect.midY
+            // An epic a session is in a turn on now (#4265): with Reduce Motion a still glow; with motion it
+            // breathes in the overlay.
+            if isWorking(line), !moving {
+                gc.drawLayer { layer in
+                    layer.addFilter(.blur(radius: 3))
+                    layer.stroke(shape, with: .color(c.opacity(0.35)), lineWidth: 6)
+                }
             }
-            if join.lines.count > 1 {
-                gc.draw(Text("\(join.lines.count)").stepped(.fine).fontWeight(.bold)
-                    .foregroundStyle(join.forecast ? colour : .white), at: CGPoint(x: x, y: trunk))
+            // Solid to Now.
+            gc.drawLayer { layer in
+                layer.clip(to: past)
+                layer.fill(shape, with: .color(c))
             }
-        }
-
-        // The releases: a ring on the releases line; its tag goes on after the labels.
-        for release in releases {
-            let x = axis.x(release.at)
-            guard seen.contains(x) else { continue }
-            let ring = Path(ellipseIn: CGRect(x: x - 5, y: trunk - 5, width: 10, height: 10))
-            gc.fill(ring, with: .color(plot))
-            gc.stroke(ring, with: .color(night ? .white : .black), lineWidth: 2)
-        }
-
-        // The dots, and the children working now.
-        for line in shown {
-            let c = colour(line)
+            // After Now, the forecast: a lighter tint with a dashed edge.
+            if line.how == .forecast || { if case .waits = line.how { true } else { false } }() {
+                gc.drawLayer { layer in
+                    layer.clip(to: ahead)
+                    layer.fill(shape, with: .color(c.opacity(night ? 0.32 : 0.22)))
+                    layer.stroke(shape, with: .color(later(line)), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
+            }
+            // 8 times in 10: a thin bar after the forecast.
+            if let band = line.band, axis.x(band.end) > rect.maxX {
+                let bar = CGRect(x: rect.maxX, y: mid - 2, width: axis.x(band.end) - rect.maxX, height: 4)
+                gc.fill(Path(roundedRect: bar, cornerRadius: 2), with: .color(later(line).opacity(0.35)))
+            }
+            // The children: white dots for the closed ones, rings for those ahead.
             for dot in line.dots {
                 let x = WorkTimeline.dotX(dot, on: line, axis: axis)
-                let r = dot.closed ? 4.0 : 3.5
-                let circle = Path(ellipseIn: CGRect(x: x - r, y: y(line.lane) - r, width: 2 * r, height: 2 * r))
-                if dot.closed {
-                    gc.fill(circle, with: .color(dot.notPlanned ? faint : c))
-                } else {
-                    gc.fill(circle, with: .color(plot))
-                    gc.stroke(circle, with: .color(c), lineWidth: 1.5)
+                let r = dot.closed ? 2.0 : 2.5
+                let circle = Path(ellipseIn: CGRect(x: x - r, y: WorkTimeline.dotY(line.row) - r, width: 2 * r, height: 2 * r))
+                let mark = x > nowX ? later(line) : .white
+                if dot.closed { gc.fill(circle, with: .color(mark)) } else { gc.stroke(circle, with: .color(mark), lineWidth: 1.2) }
+            }
+            // The words: the title in the block, white to Now and the colour after it; or after the block.
+            var trailing = 0.0
+            if case .waits(let n) = line.how {
+                trailing = pillWidth(n)
+                let words = waitPill(n)
+                pill(&gc, words, at: CGPoint(x: axis.x(WorkTimeline.reach(line)) + 6 + trailing / 2, y: mid), fill: Self.waits,
+                     text: night ? Self.navy : .white)
+            }
+            let words = WorkTimeline.blockWords(line, axis: axis, measure: WorkTimelinePane.measure,
+                                                next: WorkTimeline.nextInRow(lines, after: line), left: left + 2, trailing: trailing)
+            if let inside = words.inside {
+                let at = CGPoint(x: words.insideX, y: WorkTimeline.titleY(line.row))
+                gc.drawLayer { layer in
+                    layer.clip(to: past)
+                    layer.draw(Text(inside).stepped(.fine).fontWeight(.semibold).foregroundStyle(.white), at: at, anchor: .leading)
                 }
+                gc.drawLayer { layer in
+                    layer.clip(to: ahead)
+                    layer.draw(Text(inside).stepped(.fine).fontWeight(.semibold).foregroundStyle(later(line)), at: at, anchor: .leading)
+                }
+            }
+            if let outside = words.outside {
+                let text = line.how == .dropped
+                    ? Text(outside).stepped(.fine).foregroundStyle(faint)
+                    : Text(outside).stepped(.fine).fontWeight(.semibold).foregroundStyle(later(line))
+                gc.draw(text, at: CGPoint(x: words.outsideX, y: mid), anchor: .leading)
             }
             // With motion the ◐ turns in the overlay; with Reduce Motion it is still, here.
             if isWorking(line), !moving { drawHalfRing(&gc, line, x: nowX, turn: 0) }
-            switch line.how {
-            case .dropped:
-                let x = axis.x(line.end), yl = y(line.lane)
-                var cross = Path()
-                cross.move(to: CGPoint(x: x - 4, y: yl - 4)); cross.addLine(to: CGPoint(x: x + 4, y: yl + 4))
-                cross.move(to: CGPoint(x: x - 4, y: yl + 4)); cross.addLine(to: CGPoint(x: x + 4, y: yl - 4))
-                gc.stroke(cross, with: .color(c), lineWidth: 2)
-            default:
-                break
+            // → for a block that goes on past the right edge.
+            if axis.x(WorkTimeline.reach(line)) > right {
+                gc.draw(Text("→").stepped(.fine).fontWeight(.bold).foregroundStyle(right - 10 > nowX ? later(line) : .white),
+                        at: CGPoint(x: right - 10, y: mid))
             }
         }
 
@@ -738,114 +738,15 @@ private struct Drawing {
         nowLine.move(to: CGPoint(x: nowX, y: 0))
         nowLine.addLine(to: CGPoint(x: nowX, y: height))
         gc.stroke(nowLine, with: .color(Self.nowGrey), lineWidth: 1.5)
-
-        // Last, on a halo: the labels, the pills that wait for the person, the arrows at the edges.
-        let left = offset, right = offset + visible
-        var labels: [CGRect] = []
-        for line in shown {
-            let yl = y(line.lane)
-            let c = colour(line)
-            if case .waits(let n) = line.how {
-                // Where the forecast stops: "3 wait for you", with a person.
-                let words = Text("\(Image(icon: "person.fill")) \(WorkTimeline.waitWords(n))")
-                let width = WorkTimelinePane.measure(WorkTimeline.waitWords(n)) + 16
-                pill(&gc, words, at: CGPoint(x: axis.x(line.end) + 6 + width / 2, y: yl), fill: Self.waits, text: .white)
-            }
-            let startX = axis.x(line.start) + WorkTimeline.riser(line.lane) + 4
-            let endX = axis.x(line.end)
-            guard endX >= left || line.open, startX <= right else { continue }
-            let cutLeft = startX < left + 8
-            let x = cutLeft ? left + 8 : startX
-            let room = WorkTimeline.labelRoom(line, from: x, axis: axis) - (cutLeft ? 14 : 0)
-            if let words = WorkTimeline.label(line, room: room, measure: WorkTimelinePane.measure) {
-                let arrow = cutLeft ? "← " : ""
-                let text: Text = words.title.isEmpty
-                    ? Text(arrow + words.figures).foregroundStyle(faint)
-                    : Text("\(Text(arrow).foregroundStyle(faint))\(Text(words.title).foregroundStyle(c))\(Text("  " + words.figures).foregroundStyle(faint))")
-                let resolved = gc.resolve(text.stepped(.fine))
-                let size = resolved.measure(in: CGSize(width: room.isFinite ? room + 20 : 2000, height: 20))
-                let halo = CGRect(x: x - 3, y: yl - 9 - size.height / 2 - 2, width: size.width + 6, height: size.height + 2)
-                gc.fill(Path(roundedRect: halo, cornerRadius: 3), with: .color(plot.opacity(0.85)))
-                labels.append(halo)
-                gc.draw(resolved, at: CGPoint(x: x, y: yl - 9), anchor: .leading)
-            }
-            // → for a line that goes on past the right edge.
-            if max(endX, line.band.map { axis.x($0.end) } ?? endX) > right, line.lane != 0 {
-                gc.draw(Text("→").stepped(.fine).fontWeight(.bold).foregroundStyle(c), at: CGPoint(x: right - 10, y: yl - 9))
-            }
-        }
-
-        // The releases line's name, held at the left edge.
-        if !project.isEmpty {
-            let name = gc.resolve(Text(project).stepped(.fine).fontWeight(.semibold).foregroundStyle(faint))
-            let size = name.measure(in: CGSize(width: 400, height: 20))
-            gc.draw(name, at: CGPoint(x: left + 8, y: trunk - 6), anchor: .bottomLeading)
-            labels.append(CGRect(x: left + 8, y: trunk - 6 - size.height, width: size.width, height: size.height))
-        }
-
-        // The release tags: below the releases line, unless a label is there and none is above
-        // (section 12, item 6).
-        for release in releases {
-            let x = axis.x(release.at)
-            guard seen.contains(x) else { continue }
-            let width = WorkTimelinePane.measure(release.tag) + 12
-            func free(_ y: Double) -> Bool {
-                !labels.contains { $0.intersects(CGRect(x: x - width / 2, y: y - 9, width: width, height: 18)) }
-            }
-            // With a label on each side, the ring alone: its hover card says the tag.
-            guard free(trunk + 17) || free(trunk - 17) else { continue }
-            let below = free(trunk + 17)
-            pill(&gc, release.tag, at: CGPoint(x: x, y: trunk + (below ? 17 : -17)),
-                 fill: night ? .white : .black, text: night ? .black : .white)
-        }
-
     }
 
-    /// S10: a grey bar on each of the first lanes, in the window, its grey breathing with the clock.
+    /// S10: grey blocks in rows, in the window, their grey breathing with the clock.
     func drawPlaceholders(_ gc: inout GraphicsContext) {
         let phase = 0.5 + 0.5 * sin(now.timeIntervalSinceReferenceDate * .pi / 1.1)
         let grey = Paper.wash.opacity(0.55 + 0.45 * phase)
-        for (lane, from, width) in [(1, 0.12, 0.42), (-1, 0.28, 0.36), (2, 0.36, 0.3), (-2, 0.08, 0.26)] {
-            let rect = CGRect(x: offset + visible * from, y: y(lane) - 4, width: visible * width, height: 8)
-            gc.fill(Path(roundedRect: rect, cornerRadius: 4), with: .color(grey))
-        }
-    }
-
-    /// A line's path: a cubic curve up from the releases line, along its lane, and a curve back
-    /// down when it joins (section 10). The rise is in points, not minutes (section 12, item 2).
-    func path(_ line: WorkTimeline.Line) -> Path {
-        let r = WorkTimeline.riser(line.lane)
-        let sx = axis.x(line.start), ex = max(axis.x(line.end), sx)
-        let yl = y(line.lane)
-        let joins = line.how == .joined || line.how == .forecast
-        var p = Path()
-        p.move(to: CGPoint(x: sx, y: trunk))
-        p.addCurve(to: CGPoint(x: sx + r, y: yl), control1: CGPoint(x: sx + r / 2, y: trunk), control2: CGPoint(x: sx + r / 2, y: yl))
-        if joins {
-            let jx = max(ex - r, sx + r)
-            p.addLine(to: CGPoint(x: jx, y: yl))
-            p.addCurve(to: CGPoint(x: jx + r, y: trunk), control1: CGPoint(x: jx + r / 2, y: yl), control2: CGPoint(x: jx + r / 2, y: trunk))
-        } else {
-            p.addLine(to: CGPoint(x: max(ex, sx + r), y: yl))
-        }
-        return p
-    }
-
-    /// Solid up to Now and dashed after it; at night with a soft blur under it.
-    func stroke(_ gc: inout GraphicsContext, _ path: Path, colour: Color, width: Double, nowX: Double, glow: Bool) {
-        if glow {
-            gc.drawLayer { layer in
-                layer.addFilter(.blur(radius: 3))
-                layer.stroke(path, with: .color(colour.opacity(0.7)), lineWidth: width + 2)
-            }
-        }
-        gc.drawLayer { layer in
-            layer.clip(to: Path(CGRect(x: -100, y: 0, width: nowX + 100, height: height)))
-            layer.stroke(path, with: .color(colour), style: StrokeStyle(lineWidth: width, lineCap: .round))
-        }
-        gc.drawLayer { layer in
-            layer.clip(to: Path(CGRect(x: nowX, y: 0, width: axis.width - nowX + 100, height: height)))
-            layer.stroke(path, with: .color(colour), style: StrokeStyle(lineWidth: width, lineCap: .round, dash: [5, 4]))
+        for (row, from, width) in [(0, 0.04, 0.4), (1, 0.16, 0.45), (2, 0.07, 0.2), (3, 0.24, 0.36)] {
+            let rect = CGRect(x: offset + visible * from, y: WorkTimeline.rowTop(row), width: visible * width, height: WorkTimeline.blockHeight)
+            gc.fill(Path(roundedRect: rect, cornerRadius: Paper.Radius.code), with: .color(grey))
         }
     }
 
@@ -861,36 +762,44 @@ private struct Drawing {
         gc.draw(resolved, at: at)
     }
 
-    /// The hour axis at the foot, and Now's time in a grey pill.
+    /// The hour axis at the top (#5506).
     func drawAxis(_ gc: inout GraphicsContext) {
-        gc.fill(Path(CGRect(x: 0, y: 0, width: axis.width, height: WorkTimelinePane.axisHeight)), with: .color(plot))
+        let h = WorkTimelinePane.axisHeight
+        gc.fill(Path(CGRect(x: 0, y: 0, width: axis.width, height: h)), with: .color(plot))
         let calendar = Calendar.current
-        let nowX = axis.x(now)
         for tick in axis.ticks(seen: visible * axis.interval.duration / max(axis.width, 1)) {
             let x = axis.x(tick)
-            // Now's pill is where the tick under it would be.
-            guard seen.contains(x), abs(x - nowX) > 44 else { continue }
+            guard seen.contains(x) else { continue }
             let midnight = calendar.component(.hour, from: tick) == 0
             let words = midnight ? tick.formatted(.dateTime.weekday(.abbreviated).day()) : tick.formatted(.dateTime.hour())
             var mark = Path()
-            mark.move(to: CGPoint(x: x, y: 0))
-            mark.addLine(to: CGPoint(x: x, y: midnight ? 7 : 4))
+            mark.move(to: CGPoint(x: x, y: h - (midnight ? 7 : 4)))
+            mark.addLine(to: CGPoint(x: x, y: h))
             gc.stroke(mark, with: .color(faint), lineWidth: 1)
             gc.draw(Text(words).stepped(.fine).fontWeight(midnight ? .semibold : .regular).foregroundStyle(faint),
-                    at: CGPoint(x: x, y: 15))
+                    at: CGPoint(x: x, y: 11))
         }
-        pill(&gc, now.formatted(date: .omitted, time: .shortened), at: CGPoint(x: axis.x(now), y: 13), fill: Self.nowGrey, text: .white)
+        var rule = Path()
+        rule.move(to: CGPoint(x: 0, y: h - 0.5))
+        rule.addLine(to: CGPoint(x: axis.width, y: h - 0.5))
+        gc.stroke(rule, with: .color(Paper.rule), lineWidth: 1)
     }
 
-    /// A child of the line is worked on now, and the line is open at Now.
+    /// Now's time in a grey pill, under the plot where the Now line ends.
+    func drawNow(_ gc: inout GraphicsContext) {
+        gc.fill(Path(CGRect(x: 0, y: 0, width: axis.width, height: WorkTimelinePane.footHeight)), with: .color(plot))
+        pill(&gc, now.formatted(date: .omitted, time: .shortened), at: CGPoint(x: axis.x(now), y: 12), fill: Self.nowGrey, text: .white)
+    }
+
+    /// A child of the block is worked on now, and the block is open at Now.
     func isWorking(_ line: WorkTimeline.Line) -> Bool {
         line.working > 0 && line.start <= now && line.end >= now
     }
 
     /// ◐: a ring at Now, half of it filled; `turn` of a full turn on from the left half, clockwise.
     func drawHalfRing(_ gc: inout GraphicsContext, _ line: WorkTimeline.Line, x: Double, turn: Double) {
-        let c = colour(line)
-        let rect = CGRect(x: x - 5, y: y(line.lane) - 5, width: 10, height: 10)
+        let c = later(line)
+        let rect = CGRect(x: x - 5, y: block(line).midY - 5, width: 10, height: 10)
         gc.fill(Path(ellipseIn: rect), with: .color(plot))
         var half = Path()
         let from = 90 + 360 * turn
@@ -900,15 +809,18 @@ private struct Drawing {
         gc.stroke(Path(ellipseIn: rect), with: .color(c), lineWidth: 1.5)
     }
 
-    /// The working lines' glow, wider than the line and breathing, and their ◐ turning: one breath
-    /// and one turn in `pulsePeriod`, read off the wall clock (`SpinnerClock`), so all are in step.
+    /// The working blocks' glow, a soft ring round the block that breathes, and their ◐ turning: one
+    /// breath and one turn in `pulsePeriod`, read off the wall clock (`SpinnerClock`), so all are in step.
     func drawWorking(_ gc: inout GraphicsContext, at time: Date) {
         let turn = SpinnerClock.fraction(at: time, period: Self.pulsePeriod)
         let phase = 0.5 - 0.5 * cos(2 * .pi * turn)
         let nowX = axis.x(now)
         for line in lines where isWorking(line) && axis.x(line.start) <= seen.upperBound && axis.x(line.end) >= seen.lowerBound {
-            gc.stroke(path(line), with: .color(colour(line).opacity(0.1 + 0.3 * phase)),
-                      style: StrokeStyle(lineWidth: 4 + 8 * phase, lineCap: .round))
+            let shape = Path(roundedRect: block(line), cornerRadius: Paper.Radius.code)
+            gc.drawLayer { layer in
+                layer.addFilter(.blur(radius: 2))
+                layer.stroke(shape, with: .color(colour(line).opacity(0.15 + 0.3 * phase)), lineWidth: 4 + 6 * phase)
+            }
             drawHalfRing(&gc, line, x: nowX, turn: turn)
         }
     }
@@ -922,8 +834,8 @@ private struct Drawing {
                 guard t >= 0, t < 1 else { continue }
                 let r = 4 + 10 * t
                 let x = WorkTimeline.dotX(dot, on: line, axis: axis)
-                let ring = Path(ellipseIn: CGRect(x: x - r, y: y(line.lane) - r, width: 2 * r, height: 2 * r))
-                gc.stroke(ring, with: .color(colour(line).opacity(1 - t)), lineWidth: 2)
+                let ring = Path(ellipseIn: CGRect(x: x - r, y: WorkTimeline.dotY(line.row) - r, width: 2 * r, height: 2 * r))
+                gc.stroke(ring, with: .color(later(line).opacity(1 - t)), lineWidth: 2)
             }
         }
     }

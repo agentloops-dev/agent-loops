@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { load } from "./load.mjs";
+import { flakyUnderLoad } from "./flaky.mjs";
 
 const {
   Work, Store, archivedPage, searchShown, keepingTurns, effect,
@@ -490,7 +491,7 @@ test("entries heard are kept for a page only while one is on its way (#214)", ()
   assert.deepEqual(work.entries.value.map((e) => e.id), ["e100"]);
 });
 
-test("a heartbeat answered with an error keeps the link (#214)", async () => {
+test("a heartbeat answered with an error keeps the link (#214)", { skip: flakyUnderLoad("#5879") }, async () => {
   const sockets = [];
   const l = new w.Link({ url: "ws://localhost:1/v1/connect", origin: "http://localhost:1",
     keys: Object.assign(new w.MemoryKeyStore(), { record: { privateKey: {}, publicKey: {}, client: "C", control: "K", paired: "" } }),

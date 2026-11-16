@@ -1,5 +1,5 @@
 // New Session's Suggested section (#5461, epic #5457): the epics with no lead, from work/suggest-leads (#5458), at most 3.
-// A tap fills the form as Start lead does and starts nothing; Dismiss hides an epic until it changes; Hide, the section.
+// A tap fills the form as Start lead does and starts nothing; Dismiss hides an epic until its progress changes and reads the list again (#5731); Hide, the section.
 import { useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import type { WorkSuggestLeads } from "../protocol/generated";
@@ -19,6 +19,8 @@ export function Suggested({ store, host, down }: { store: Store; host: string; d
   const got = useSignal<{ list: WorkSuggestLeads; at: number } | undefined>(undefined);
   const said = useSignal<string | null>(null);
   const failed = useSignal<string | null>(null);
+  // One more each Dismiss: the list is read again, so the next epic comes in at its place (#5731).
+  const reads = useSignal(0);
   const asked = !down && hostHas(store.hosts.value, host, "work.suggest-leads/1");
   // Read when the form opens; a read that fails keeps the last one, and the line says how old it is (#5139).
   // A first read that fails says why in one line (#5790); a host that does not know the method draws nothing.
@@ -33,7 +35,7 @@ export function Suggested({ store, host, down }: { store: Store; host: string; d
       },
     );
     return () => { current = false; };
-  }, [asked, host, hidden.value]);
+  }, [asked, host, hidden.value, reads.value]);
   if (!asked) return null;
   const toggle = (value: boolean) => { hidden.value = value; keepSuggestedHidden(storage, value); };
   if (hidden.value) {
@@ -61,6 +63,7 @@ export function Suggested({ store, host, down }: { store: Store; host: string; d
     try {
       await store.link.call("work/dismiss-lead", { node: s.node }, host);
       got.value = { at: got.value!.at, list: { ...list, suggestions: list.suggestions.filter((_, j) => j !== i) } };
+      reads.value++;
     } catch (e) { said.value = describe(e); }
   };
   const more = moreWords(list.more);

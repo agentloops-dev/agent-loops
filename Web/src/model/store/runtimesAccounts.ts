@@ -205,8 +205,12 @@ export const runtimesAccountsMethods = {
   /** Each host's connections, and, on a host where one ended, the stored set-up of each project's Connectors folder there
    * (#3407): a slot stops working when its connection ends. A stored set-up is the host's last reading, so no provider is asked. */
   async refreshEndedConnections(this: Store, places: readonly { host: string; folder: string }[]): Promise<void> {
-    const hosts = [...new Set(places.map((p) => p.host))].filter((h) => this.hostIsOnline(h));
-    await Promise.all(hosts.map((h) => this.loadConnections(h)));
+    const hosts = new Set([...new Set(places.map((p) => p.host))].filter((h) => this.hostIsOnline(h) && this.has(h, Capability.connections1)));
+    // Every machine's connections in one call to the control plane (#5592); a machine that did not answer keeps what it had.
+    if (hosts.size > 0) {
+      const all = await this.link.call("connections/listAll", {}).catch(() => null);
+      for (const { machine, connections } of all?.lists ?? []) if (hosts.has(machine)) this.knowConnections(machine, connections.connections);
+    }
     const next: Record<string, Connection> = {};
     for (const { host, folder } of places) {
       if ((this.endedConnections.value[host] ?? []).length === 0 || !this.has(host, Capability.connectorsSetup1)) continue;
@@ -265,6 +269,18 @@ export const runtimesAccountsMethods = {
       .catch((error: unknown) => describe(error));
     if (why === undefined) await this.checkMCPHealth(host, folder);
     return why;
+  },
+  /**
+   * The folder's connectors that this host approved from the person's approval on another of their
+   * machines (#5462, #5813): each one's name and its words ("Approved by you on Studio, 2026-11-14").
+   * Empty when the host does not answer: the row then says nothing more.
+   */
+  async connectorsApprovedFrom(this: Store, host: string, folder: string): Promise<Record<string, string>> {
+    const destination = { kind: "folder", folder: hostedFolderPath(folder) } as never;
+    const list = await this.link.call("mcp/list", { destination }, host).catch(() => null);
+    const out: Record<string, string> = {};
+    for (const s of list?.servers ?? []) if (s.approvedFrom) out[s.name] = s.approvedFrom;
+    return out;
   },
   /** A connector's tools with Allow, Ask or Off for each (#4099); its refusal's words when the host refuses. */
   async connectorTools(this: Store, host: string, name: string, folder?: string): Promise<MCPToolsAnswer | string> {

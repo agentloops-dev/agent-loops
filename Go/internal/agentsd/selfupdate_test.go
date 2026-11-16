@@ -262,12 +262,12 @@ func TestSelfUpdateRefusesABadChecksum(t *testing.T) {
 	var verified atomic.Bool
 	r.u.verify = func(string, string) error { verified.Store(true); return nil }
 	// The server's sum is for "zip"; the bytes are something else.
-	r.u.fetch = func(ctx context.Context, url string, w io.Writer, limit int64) error {
+	r.u.fetch = func(ctx context.Context, url, pin string, w io.Writer, limit int64) error {
 		if strings.HasSuffix(url, ".zip") {
 			_, err := w.Write([]byte("tampered"))
 			return err
 		}
-		return fetchTo(ctx, url, w, limit)
+		return fetchTo(ctx, url, pin, w, limit)
 	}
 	r.u.Named("0.12.0")
 	s := r.until(t, wire.SelfUpdateStateFailed)

@@ -317,7 +317,7 @@ async function main(argv) {
     // One task at a time, as CI runs them (#5632): a first run under load is a flake's chance.
     spawnSync(join(root, "scripts/nx.sh"), [
       "run-many", "-t", ...TARGETS, `--projects=${projects.join(",")}`,
-      "--skip-nx-cache", "--nxBail=false", "--parallel=1", "--output-style=static",
+      "--skip-nx-cache", "--nxBail=false", "--parallel=1", "--output-style=stream",
     ], { cwd: root, stdio: "inherit", env });
   }
   const results = await nxResults(planned.filter((t) => !t.skip), since);
