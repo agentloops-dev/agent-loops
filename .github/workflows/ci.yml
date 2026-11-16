@@ -636,11 +636,12 @@ jobs:
           path: ${{ runner.temp }}/nx
           key: nx-apps-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
           restore-keys: nx-apps-
-      # Nx names its cache database for the machine, and each macOS runner is a new one: give
-      # the restored database this runner's name, or Nx uses none of the cache (#5762).
+      # Nx names its cache database for the machine's UUID: when it differs from the runner that
+      # saved the cache, give the restored database this runner's name, or Nx uses none of the
+      # cache (#5762). A pull request's head from before the script landed does not have it.
       - name: Name the Nx database for this runner
         if: env.APPS != 'skip'
-        run: bash scripts/ci-nx-db.sh "$NX_WORKSPACE_DATA_DIRECTORY"
+        run: if [[ -f scripts/ci-nx-db.sh ]]; then bash scripts/ci-nx-db.sh "$NX_WORKSPACE_DATA_DIRECTORY"; fi
       - name: Install from the lockfile
         if: env.APPS != 'skip'
         timeout-minutes: 5
@@ -900,11 +901,12 @@ jobs:
           path: ${{ runner.temp }}/nx
           key: nx-macos-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
           restore-keys: nx-macos-
-      # Nx names its cache database for the machine, and each macOS runner is a new one: give
-      # the restored database this runner's name, or Nx uses none of the cache (#5762).
+      # Nx names its cache database for the machine's UUID: when it differs from the runner that
+      # saved the cache, give the restored database this runner's name, or Nx uses none of the
+      # cache (#5762). A pull request's head from before the script landed does not have it.
       - name: Name the Nx database for this runner
         if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
-        run: bash scripts/ci-nx-db.sh "$NX_WORKSPACE_DATA_DIRECTORY"
+        run: if [[ -f scripts/ci-nx-db.sh ]]; then bash scripts/ci-nx-db.sh "$NX_WORKSPACE_DATA_DIRECTORY"; fi
       - name: Install from the lockfile
         if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
         timeout-minutes: 5
