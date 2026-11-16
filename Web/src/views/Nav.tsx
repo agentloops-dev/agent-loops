@@ -40,6 +40,7 @@ import { AddMachineDialog } from "./AddMachineDialog";
 import { addMachineWords } from "../model/addMachine";
 import { SettingsPage } from "./Settings";
 import { SecretsPage } from "./SecretsPage";
+import { EnvironmentPage } from "./EnvironmentPage";
 import { AccountsPage } from "./AccountsPage";
 import { StatusListMark, StatusListLastLine, useUserScopeStatus } from "./StatusSecrets";
 import { WorkflowRow } from "./WorkflowRow";
@@ -315,6 +316,8 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         : page.draw.kind === "secrets" ? <SecretsPage store={store} down={down} />
         // Every outside account of the person's (#5258), in one list beside the selected one's detail.
         : page.draw.kind === "accounts" ? <AccountsPage store={store} down={down} />
+        // The plain variables sessions get when their agent starts (#5260): ~/.agents/env and each repo's .agents/env.
+        : page.draw.kind === "environment" ? <EnvironmentPage store={store} down={down} />
         : page.draw.kind === "docs" ? (route.value.item
           ? <DocPage key={route.value.item} store={store} docRef={route.value.item} />
           : <DocsList store={store} />)

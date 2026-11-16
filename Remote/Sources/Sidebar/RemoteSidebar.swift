@@ -198,8 +198,12 @@ struct RemoteSidebar: View {
                     ForEach([StatusSecretsKind.secrets, .accounts], id: \.self) { kind in
                         StatusSecretsRow(kind: kind, state: model.userScope) { model.work.agent($0)?.title }
                             .activityIcon(kind.systemImage)
-                            .appText(.supporting).paperTag(kind == .secrets ? SidebarItem.secretsStatus : .accountsStatus)
+                            .appText(.supporting).paperTag(kind.sidebarItem)
                     }
+                    // The plain variables sessions get (#5260), as the window's.
+                    StatusSecretsRow(kind: .environment, state: model.userScope)
+                        .activityIcon(StatusSecretsKind.environment.systemImage)
+                        .appText(.supporting).paperTag(SidebarItem.environmentStatus)
                 } header: {
                     Text("Status")
                 }

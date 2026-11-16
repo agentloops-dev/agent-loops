@@ -65,6 +65,9 @@ public enum SidebarItem: Hashable, Sendable {
     case secretsStatus
     /// Status ▸ Accounts (#4161): the same for the person's outside accounts.
     case accountsStatus
+    /// Status ▸ Environment (#5260): the plain variables sessions get when their agent starts, Yours and each
+    /// repo's, on a page to find, add and edit them. Core: every client.
+    case environmentStatus
     /// One machine's page (#3626): its CPU, memory and disks, from its row under Machines.
     /// Mac + web: the Remote has no row for it (#2796).
     case machine(MachineRef)

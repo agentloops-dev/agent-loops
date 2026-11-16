@@ -33,6 +33,7 @@ export type PageDraw =
   | { kind: "messages" }
   | { kind: "machine"; host: string }
   | { kind: "secrets" }
+  | { kind: "environment" }
   | { kind: "accounts" }
   | { kind: "multiplier" }
   | { kind: "usage" | "machines" | "workflows" | "settings" };
@@ -113,6 +114,8 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
     // #/secrets and #/accounts.
     { id: "secrets", title: "Secrets", group: "Status", draw: { kind: "secrets" } },
     { id: "accounts", title: "Accounts", group: "Status", draw: { kind: "accounts" } },
+    // The plain variables sessions get when their agent starts (#5260): ~/.agents/env and each repo's .agents/env, at #/environment.
+    { id: "environment", title: "Environment", group: "Status", draw: { kind: "environment" } },
   ],
   // You first (#3998), as the window's Settings rail: the person's own connectors, their secrets and cards, which go to every
   // machine of theirs (#3632), and their outside accounts (#3967), kept and sent as their secrets are. Was Your setup.
@@ -123,6 +126,8 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
     { id: "secrets", title: "Secrets", group: "You", draw: { kind: "secrets" } },
     // Opens Status ▸ Accounts (#5258), as Secrets does.
     { id: "accounts", title: "Accounts", group: "You", draw: { kind: "accounts" } },
+    // Opens Status ▸ Environment (#5260), as Secrets opens its page: the window's Settings ▸ You has Open Environment.
+    { id: "environment", title: "Environment", group: "You", draw: { kind: "environment" } },
     { id: "settings", title: "Settings", group: "Settings", draw: { kind: "settings" } },
     adminPage("policy", "Policy", "Organisation"),
     adminPage("modelAccess", "Model Access", "Organisation"),

@@ -23,6 +23,13 @@ struct RemoteSettings: View {
                     } label: {
                         Label(SecretsPage.openSecrets, icon: "key")
                     }
+                    // Environment variables have a page of their own too, Status ▸ Environment (#5260).
+                    Button {
+                        model.sidebarItem = .environmentStatus
+                        dismiss()
+                    } label: {
+                        Label(EnvironmentPage.open, icon: "terminal")
+                    }
                     Button {
                         model.sidebarItem = .accountsStatus
                         dismiss()

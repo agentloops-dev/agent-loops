@@ -529,6 +529,13 @@ public enum DaemonAPI {
         /// Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): the secrets a machine keeps for itself,
         /// which agents saved there. The person's own clients only.
         public static let secretsLocalList = "secrets/localList"
+        /// Status ▸ Environment (#5259, #5260): a machine's `~/.agents/env` and each folder's `.agents/env`, one
+        /// variable of a folder's file changed, what a session there gets, and a hand edit of `~/.agents/env` undone.
+        /// The person's own clients only.
+        public static let envList = "env/list"
+        public static let envWrite = "env/write"
+        public static let envResolve = "env/resolve"
+        public static let envDiscard = "env/discard"
         public static let desktopControlState = "desktopControl/state"
         public static let desktopControlSet = "desktopControl/set"
         public static let desktopControlResume = "desktopControl/resume"
@@ -578,6 +585,8 @@ public enum DaemonAPI {
 
     public enum Notification {
         public static let agentChanged = "agent/changed"
+        /// A file of variables changed on a machine (#5259): the Environment page reads `env/list` again.
+        public static let envChanged = "env/changed"
         public static let agentEntry = "agent/entry"
         /// The live tile's frame for an agent holding the screen (#3004, US4).
         public static let desktopControlLiveFrame = "desktopControl/liveFrame"
