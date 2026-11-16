@@ -16,11 +16,11 @@ const target = (change = {}) => ({
   ...change,
 });
 
-test("the page is under Planning, at #/reports/value/delivery, with its range and tier after the ?", () => {
-  const route = r.parseRoute("#/reports/value/delivery?range=threeMonths&tier=all");
-  assert.equal(nav.routePageID("reports", route), "delivery");
-  assert.equal(r.routeHash(route), "#/reports/value/delivery?range=threeMonths&tier=all");
-  assert.deepEqual(nav.pageRoute("reports", nav.navPages.reports.find((p) => p.id === "delivery")), { nav: "reports", section: "value", item: "delivery" });
+test("the page is under Delivery, at #/reports/delivery/environments, with its range and tier after the ?", () => {
+  const route = r.parseRoute("#/reports/delivery/environments?range=threeMonths&tier=all");
+  assert.equal(nav.routePageID("reports", route), "environments");
+  assert.equal(r.routeHash(route), "#/reports/delivery/environments?range=threeMonths&tier=all");
+  assert.deepEqual(nav.pageRoute("reports", nav.navPages.reports.find((p) => p.id === "environments")), { nav: "reports", section: "delivery", item: "environments" });
   assert.deepEqual(d.parseDeploysQuery("range=threeMonths&tier=all"), { range: "threeMonths", tier: "" });
   // None named: the last 30 days, production. A day is not offered.
   assert.deepEqual(d.parseDeploysQuery(undefined), { range: "month", tier: "production" });

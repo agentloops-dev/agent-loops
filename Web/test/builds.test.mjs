@@ -27,15 +27,15 @@ test("the Delivery card's link names the repo in builds/history's form and the r
   assert.equal(b.buildsLinkQuery("github:repo:#alexec/agents", "month"), "repo=github:alexec/agents&range=month");
 });
 
-test("the route keeps a page item's query, and Builds is a page under Planning", () => {
-  const route = r.parseRoute("#/reports/value/builds?repo=github:alexec/agents&range=month");
-  assert.deepEqual(route, { nav: "reports", section: "value", item: "builds", query: "repo=github:alexec/agents&range=month" });
-  assert.equal(r.routeHash(route), "#/reports/value/builds?repo=github:alexec/agents&range=month");
+test("the route keeps a page item's query, and Builds is a page under Delivery", () => {
+  const route = r.parseRoute("#/reports/delivery/builds?repo=github:alexec/agents&range=month");
+  assert.deepEqual(route, { nav: "reports", section: "delivery", item: "builds", query: "repo=github:alexec/agents&range=month" });
+  assert.equal(r.routeHash(route), "#/reports/delivery/builds?repo=github:alexec/agents&range=month");
   assert.equal(nav.routePageID("reports", route), "builds");
-  assert.equal(nav.routePageID("reports", { section: "value" }), "value");
+  assert.equal(nav.routePageID("reports", { section: "delivery" }), "delivery");
   const list = nav.navPages.reports.map((p) => p.id);
-  assert.equal(list[list.indexOf("value") + 1], "builds");
-  assert.deepEqual(nav.pageRoute("reports", nav.navPages.reports.find((p) => p.id === "builds")), { nav: "reports", section: "value", item: "builds" });
+  assert.equal(list[list.indexOf("delivery") + 1], "builds");
+  assert.deepEqual(nav.pageRoute("reports", nav.navPages.reports.find((p) => p.id === "builds")), { nav: "reports", section: "delivery", item: "builds" });
 });
 
 test("times are said as the boards say them", () => {

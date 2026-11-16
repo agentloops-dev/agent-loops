@@ -335,8 +335,9 @@ function SetupRuntimeRows({ store, runtime: { status, home: hostID, machines }, 
   </Fragment>;
 }
 
-/** An Activity page in the chat's place. */
-export function ActivityPageView({ store, page }: { store: Store; page: ActivityPage }) {
+/** An Activity page in the chat's place. inReport: a part of a Reports page's Me lens (#5280), which is the report
+ * already, so Cost has no Cost | Reports switch there. */
+export function ActivityPageView({ store, page, inReport = false }: { store: Store; page: ActivityPage; inReport?: boolean }) {
   const hosts = onlineHosts(store);
   // Opened by its address, the page draws before any machine answers: load again as each one comes online (#3242).
   const online = hosts.map((h) => h.id).join(",");
@@ -430,7 +431,7 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
             </>
           )}
           {page === "runtimes" && <p class="hint">{runtimesHint(store.hasMac.value)}</p>}
-          {page === "spending" && (
+          {page === "spending" && !inReport && (
             <div class="tabs events-panes" role="tablist" aria-label="Show">
               {(["cost", "reports"] as const).map((p) => (
                 <button key={p} role="tab" aria-selected={costPane.value === p} class={costPane.value === p ? "on" : ""}

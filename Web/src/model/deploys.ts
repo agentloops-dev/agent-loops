@@ -1,4 +1,4 @@
-// Reports ▸ Planning ▸ Delivery (#5245, spec 5239-deploy-model, board 5): the four DORA figures for each target, a
+// Reports ▸ Delivery ▸ Environments (#5245, spec 5239-deploy-model, board 5): the four DORA figures for each target, a
 // component in one environment, from deploys/delivery. The figures are counted on one tier, production unless the
 // person picks another, and drawn dimmed, with the count, when fewer than 5 deploys ended in the range (note 18).
 import type { DeployDeliveryTarget, EnvironmentTier, ReportRange } from "../protocol/generated";
