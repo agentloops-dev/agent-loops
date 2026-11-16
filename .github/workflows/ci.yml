@@ -535,8 +535,9 @@ jobs:
           agentskit="$(git ls-tree HEAD -- Packages/AgentsKit/Package.swift Packages/AgentsKit/Sources | git hash-object --stdin)"
           echo "agentskit=${agentskit}" >> "$GITHUB_OUTPUT"
       # DerivedData (build-cache.sh's build/DerivedData) and the packages it fetches. Each falls
-      # back to the newest built from the same manifests, then to the newest for this toolchain;
-      # there is deliberately no key that ignores the fingerprint.
+      # back to a part of the same sources (#5794), then to the newest built from the same
+      # manifests, then to the newest for this toolchain; there is deliberately no key that
+      # ignores the fingerprint.
       - name: Restore Xcode build cache
         if: env.APPS != 'skip'
         id: xcode-cache
@@ -546,8 +547,9 @@ jobs:
             build/DerivedData
             ~/Library/Caches/Agents-build/packages
             ~/Library/Caches/Agents-build/checkouts
-          key: macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}
+          key: macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}-full-graph
           restore-keys: |
+            macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}-
             macos-xcode-27-dd-${{ steps.keys.outputs.base }}-
             macos-xcode-27-dd-${{ steps.toolchain.outputs.fingerprint }}-
       # A mark of when the restore ended: a file in DerivedData newer than it was built in this
@@ -698,15 +700,31 @@ jobs:
       # mac:build alone, and when both had to build here no cache was saved at all; every apps
       # job built the Mac app cold, 10 to 15 minutes of a PR's 20. A graph with one scheme
       # restores warm for that scheme, and the next push that builds the other saves both.
+      # Also when Nx affected failed or ran out of time (#5794), as the Go cache's part (#5704):
+      # a cold build of both schemes does not fit in the step's budget, so main failed, saved
+      # nothing, and the next run was cold again, a loop that left every apps job cold. A part
+      # keeps what built (one scheme, or some of its targets), so the next run starts warm and
+      # can finish and save a full graph. It never takes the full key, and the prune never
+      # deletes a full one for it. A part that does not build is rebuilt from clean
+      # (ci-clean-retry.sh).
       - name: Did a scheme build here
         id: built
-        if: ${{ env.APPS != 'skip' && (always() && env.MAIN_CACHE == 'true' && steps.xcode-cache.outputs.cache-hit != 'true' && steps.nx.outcome == 'success') }}
+        if: ${{ env.APPS != 'skip' && (always() && !cancelled() && env.MAIN_CACHE == 'true' && steps.xcode-cache.outputs.cache-hit != 'true' && (steps.nx.outcome == 'success' || steps.nx.outcome == 'failure')) }}
+        env:
+          OUTCOME: ${{ steps.nx.outcome }}
         run: |
           products=build/DerivedData/Build/Products
-          built="$(find "$products/Debug" "$products/Debug-iphonesimulator" -newer "$RUNNER_TEMP/xcode-restored" -print -quit 2>/dev/null || true)"
+          intermediates=build/DerivedData/Build/Intermediates.noindex
+          built="$(find "$products/Debug" "$products/Debug-iphonesimulator" "$intermediates" -newer "$RUNNER_TEMP/xcode-restored" -type f -print -quit 2>/dev/null || true)"
           if [[ -n "$built" ]]; then
             echo "${{ steps.keys.outputs.agentskit }}" > build/DerivedData/agentskit-sources
             echo "save=true" >> "$GITHUB_OUTPUT"
+            if [[ $OUTCOME == success ]]; then
+              echo "key=full-graph" >> "$GITHUB_OUTPUT"
+            else
+              echo "::notice::Nx affected did not finish; saving what built as a part (#5794)."
+              echo "key=part-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+            fi
           fi
       - name: Save Xcode build cache
         if: ${{ (env.APPS != 'skip' && (always() && steps.built.outputs.save == 'true')) && !inputs.sha }}
@@ -716,12 +734,12 @@ jobs:
             build/DerivedData
             ~/Library/Caches/Agents-build/packages
             ~/Library/Caches/Agents-build/checkouts
-          key: macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}
+          key: macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}-${{ steps.built.outputs.key }}
       - name: Prune old Xcode caches for this ref
         if: ${{ (env.APPS != 'skip' && (always() && steps.built.outputs.save == 'true')) && !inputs.sha }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh macos-xcode-27-dd- 'macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}' "$GITHUB_REF"
+        run: bash scripts/prune-ci-caches.sh macos-xcode-27-dd- 'macos-xcode-27-dd-${{ steps.keys.outputs.base }}-${{ steps.keys.outputs.xcode }}-${{ steps.built.outputs.key }}' "$GITHUB_REF"
       # Where this job's minutes went, in its summary; on a failure near the limit, an error that
       # names the slowest step (#5673).
       - name: Step times
