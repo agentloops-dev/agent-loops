@@ -22,9 +22,13 @@ func TestAWaitingConnectorIsInTheFoldersApprovals(t *testing.T) {
 	if s, _ := d.summaryFor(dir); len(s.Approvals) != 0 {
 		t.Fatalf("%+v", s.Approvals)
 	}
-	os.MkdirAll(filepath.Join(dir, ".agents"), 0o755)
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	write := func(text string) {
-		os.WriteFile(filepath.Join(dir, ".agents", "mcp.json"), []byte(text), 0o644)
+		if err := os.WriteFile(filepath.Join(dir, ".agents", "mcp.json"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	write(`{"mcpServers":{"pulled":{"command":"echo"},"other":{"command":"true"}}}`)
 	s, _ := d.summaryFor(dir)
