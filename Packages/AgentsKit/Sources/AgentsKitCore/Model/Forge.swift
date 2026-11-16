@@ -357,8 +357,11 @@ public extension DaemonAPI {
     /// close it, and `events` its timeline, oldest first; nil where the forge gives none. On a pull
     /// request's read (#4409): `additions`, `deletions` and `commits` are its size, `reviewers`
     /// each person asked or who reviewed, once, and `closes` the issues it closes when it merges.
+    /// `viewer` is the login this machine reads and writes the forge as (#5804), the one
+    /// `forge/approve` reviews as; nil where the connection does not say it.
     struct ForgeItemDetail: Codable, Sendable, Hashable {
         public var item: ForgeItem
+        public var viewer: String?
         public var body: String
         public var comments: [ForgeComment]
         public var cursor: String?
@@ -385,8 +388,9 @@ public extension DaemonAPI {
                     transitions: [ForgeTransition]? = nil, actions: [String]? = nil, children: [ForgeLinked]? = nil,
                     linkedPulls: [ForgeLinked]? = nil, events: [ForgeEvent]? = nil, additions: Int? = nil,
                     deletions: Int? = nil, commits: Int? = nil, reviewers: [ForgeReviewer]? = nil,
-                    closes: [ForgeLinked]? = nil) {
+                    closes: [ForgeLinked]? = nil, viewer: String? = nil) {
             self.item = item
+            self.viewer = viewer
             self.body = body
             self.comments = comments
             self.cursor = cursor

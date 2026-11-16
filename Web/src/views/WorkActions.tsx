@@ -9,7 +9,8 @@ import type { Store } from "../model/store";
 import { describe } from "../model/errors";
 import { doneWords, forgeName, mergeButton, shortRef } from "../model/work";
 import {
-  checkSign, checksInOrder, checksPageWords, filesChangedWords, mergeMain, noWriter, offers, readyOnForge, resolveOnForge,
+  approveWords, checkSign, checksInOrder, checksPageWords, filesChangedWords, mergeMain, noWriter, offers, ownPullWords, readyOnForge,
+  resolveOnForge,
   type MergeBox, type MergeRow,
 } from "../model/workPull";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
@@ -157,8 +158,9 @@ export function WorkMergeBox({ store, host, detail, box, writes, waiting = false
                 )}
                 {box.resolve && item.url && <button type="button" onClick={() => openLink(`${item.url}/conflicts`)}>{resolveOnForge(node.ref)}</button>}
                 {box.approves && detail.head && (
-                  <button type="button" class="work-approve" disabled={busy.value} onClick={() => void act("forge/approve", { node, sha: detail.head })}>
-                    <Icon name="check" />Approve</button>
+                  <button type="button" class="work-approve" disabled={busy.value || box.approved}
+                    onClick={() => void act("forge/approve", { node, sha: detail.head })}>
+                    <Icon name="check" />{approveWords(box.approved)}</button>
                 )}
                 {box.reruns && (
                   <button type="button" class="work-rerun" disabled={busy.value} onClick={() => void act("forge/rerun", { node })}>
@@ -167,6 +169,7 @@ export function WorkMergeBox({ store, host, detail, box, writes, waiting = false
                 {busy.value && <span class="work-spinner" aria-label="Working" />}
               </div>
             )}
+          {box.ownPull && writes && !waiting && <p class="quiet small">{ownPullWords}</p>}
           {said.value && <p class={said.value.failed ? "hint failure small" : "quiet small"} role="status">{said.value.words}</p>}
         </div>
       </section>

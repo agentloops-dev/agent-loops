@@ -68,6 +68,31 @@ struct WorkPullLookTests {
         #expect(!box.merges && box.approves)
     }
 
+    /// Approve is Approved once the person's own review approved it, from the forge's state, and
+    /// is gone on the person's own pull request (#5804).
+    @Test func approvedOnceThePersonApproved() throws {
+        typealias Reviewer = DaemonAPI.ForgeReviewer
+        func of(author: String? = "alexec-agents[bot]", viewer: String?, _ reviewers: [Reviewer]) -> DaemonAPI.ForgeItemDetail {
+            var detail = pull()
+            detail.item.author = author
+            detail.viewer = viewer
+            detail.reviewers = reviewers
+            return detail
+        }
+        let asked = try #require(WorkLook.mergeBox(of(viewer: "alexec", [Reviewer(login: "alexec", state: "pending")])))
+        #expect(asked.approves && !asked.approved && !asked.ownPull)
+        #expect(WorkLook.approveWords(approved: asked.approved) == "Approve")
+        let mine = try #require(WorkLook.mergeBox(of(viewer: "Alexec", [Reviewer(login: "alexec", state: "approved")])))
+        #expect(mine.approves && mine.approved)
+        #expect(WorkLook.approveWords(approved: mine.approved) == "Approved")
+        // Another reviewer's approval is not the person's; with no viewer, Approve as before.
+        #expect(WorkLook.mergeBox(of(viewer: "alexec", [Reviewer(login: "kim", state: "approved")]))?.approved == false)
+        #expect(WorkLook.mergeBox(of(viewer: nil, [Reviewer(login: "alexec", state: "approved")]))?.approved == false)
+        let own = try #require(WorkLook.mergeBox(of(author: "alexec", viewer: "alexec", [])))
+        #expect(!own.approves && own.ownPull)
+        #expect(WorkLook.ownPullWords == "You opened this pull request, so you cannot approve it.")
+    }
+
     @Test func noBoxOnAMergedOrClosedPullRequestOrAnIssue() {
         #expect(WorkLook.mergeBox(pull(state: "merged")) == nil)
         #expect(WorkLook.mergeBox(pull(state: "closed")) == nil)

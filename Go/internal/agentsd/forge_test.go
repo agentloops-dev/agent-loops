@@ -296,6 +296,10 @@ func TestForgePullReadsOne(t *testing.T) {
 	if len(p.Checks) != 1 || p.Checks[0].State != "failing" || *p.ReviewThreads != 2 || *p.FilesChanged != 5 {
 		t.Fatalf("checks: %+v", p)
 	}
+	// #5804: the login the connection writes as, so a client knows which reviewer is the person.
+	if deref(p.Viewer) != "alexec" {
+		t.Fatalf("viewer: %v", p.Viewer)
+	}
 	c.call(t, 2, "forge/pull", wire.ForgeItemRequest{Node: pr})
 	if _, items := gh.asked(); items != 1 {
 		t.Fatalf("the same pull within a minute asked %d times", items)
