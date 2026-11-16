@@ -15,12 +15,17 @@ for the rest. Write every comment that you post as `alexec` with `<!-- agent -->
 
 ## Rules
 
-- **One red spell, one lane.** A red spell starts at the first red `push` run on `main`
-  and ends at the next green `push` run. The workflow starts a new agent for each red
-  run on `main` (`conclusion` `failure` or `timed_out`, #5775; a rerun and a bisect step
-  too). Only the first one for a spell does the work; the others end at once (step 1).
-  When you already work on a spell, a new red run is part of it: add it to the bug (step
-  4), and do not start again.
+- **One session for every spell (#5778).** A red spell starts at the first red `push` run
+  on `main` and ends at the next green `push` run. The workflow sends each red run on
+  `main` (`conclusion` `failure` or `timed_out`, #5775; a rerun and a bisect step too) to
+  one standing session, this one (`agent: standing`). A run that comes while you work
+  waits for its turn. When you already work on a spell, a new red run is part of it: add
+  it to the bug (step 4), and do not start again.
+- **Never archive this session.** End the turn instead: the next run starts it again. An
+  archived standing session gets no more runs, and the next run starts a new one.
+- **Keep no state between spells** except the "Main broken" and "Flaky test" bugs and
+  your PRs. Your context can be compacted between runs: read the state again from them
+  and from `gh` at the start of each run, not from what you remember.
 - **Never rerun a failed job (Alex, 2026-11-15, #5754).** A rerun that passes hides a flaky test,
   and the test stays flaky in the suite. A test that fails with no cause in the batch is a
   flake: quarantine it and file a bug to fix it (step 3).
@@ -41,28 +46,30 @@ The event is `run.completed` for `ci.yml` on `main`, with `conclusion` `failure`
 Read its `run`: `id`, `attempt`, `event`, `headSha`, `conclusion`, `url`.
 
 Do these checks in order, and stop at the first that ends the turn. Most runs end here,
-so use as few tool calls as you can. Each "end" here is: archive the session with
-`archive_session`, so it does not look like a lane in check 2.
+so use as few tool calls as you can. Each "end" here is: end the turn. When you work a
+spell, end it with step 6's wait again, so its events still wake you. Never archive the
+session (Rules).
 
 1. **`event` is not `push`** (a `workflow_dispatch` from a bisect): it is not a red
    `main`. End.
-2. **Another lane has the spell.** Call `list_sessions` and look for a session that is
-   not archived, is not you, and has the label `fix-main` (the workflow gives it to each
-   of its sessions; a lane archives itself when its spell ends). When there is one:
-   - `attempt` is 1: send that lane this run's link with `message_session` (it is part
-     of its spell, or a new break), and end.
-   - Else (an attempt that a person reran): that lane waits for it already. End.
-3. **`attempt` is more than 1** and no lane: a person reran a job. Treat it as the first
+2. **You work a spell already** (you have an open "Main broken" bug or a quarantine PR
+   from an earlier turn, or your session labels name one):
+   - `attempt` is 1: it is part of the spell. Read the failure (step 2.1); when it is
+     the same failure, comment on the bug with the run's link and end. Else it is a new
+     break or flake in the same spell: do steps 2 to 5 for it.
+   - Else (an attempt that a person reran): your wait sees it already. End.
+3. **`attempt` is more than 1** and no spell: a person reran a job. Treat it as the first
    red run of a spell: go on with step 2. Do not rerun it again.
 4. **Else:** the event is a hint, so read the run again (`gh run view <id> --json
-   status,conclusion,attempt,jobs,headSha`). This spell is yours: go on. When a newer
+   status,conclusion,attempt,jobs,headSha`). This is a new spell: go on. When a newer
    `push` run on `main` is green already, do step 2 all the same: a flake that passed by
    chance stays a flake (go to step 3), and a break that a later commit fixed ends here.
 
-While you work the spell, the events of `main`'s next runs come to your waits; new agents
-of the workflow see you in check 2 and end. An open bug titled "Main broken:" that no lane
-has (its lane stopped) is not closed by a green run: the next red run's lane finds it in
-step 4 and takes it as its own.
+While you work the spell, the events of `main`'s next runs come to your waits, and each
+new red run comes to you as a new run of the workflow (check 2). An open bug titled "Main
+broken:" from an earlier spell (this session stopped, or a new standing session started
+after the old one was archived) is not closed by a green run: you find it in step 4 and
+take it as your own.
 
 ## 2. Flake or break?
 
@@ -202,8 +209,8 @@ bisect found <bad PR link>. Claude (this agent) tried <your PR link, or: no fix,
 - **Revert #<bad pr> (Recommended)** when the bisect found a bad PR: do "The revert",
   below.
 - **Keep fixing forward:** say in the description what you will try next.
-- **Leave it to Alex:** comment on the bug that Alex has it, unassign nothing, and
-  archive the session.
+- **Leave it to Alex:** comment on the bug that Alex has it, unassign nothing, and end
+  the spell as step 7.3 says (do not archive the session).
 
 Wait for the answer with the same `wait_for_event` as above, and do what Alex says. Never
 revert before Alex answers.
@@ -235,7 +242,11 @@ When a `push` run on `main` is green after the break:
    already. **A flake:** comment on the flaky test's bug with the green run's link, and
    leave it open for the fix.
 2. Label the session `merged` when your PR merged.
-3. Remove your worktree's build output (`build/`, `.build`, `Packages/*/.build`), and
-   leave the worktree with `move_worktree` and `leave_worktree: remove`.
-4. Archive the session with `archive_session`. The workflow starts a new lane on the
-   next red run on `main`.
+3. Remove your worktree's build output (`build/`, `.build`, `Packages/*/.build`), and go
+   back to the folder's checkout with `move_worktree` and `leave_worktree: remove` (it
+   takes the worktree away, and its branch when it is merged). A standing session that
+   stays in an old worktree would start the next spell on a stale branch and keep its
+   disk. Commit or push everything first: the move refuses uncommitted work.
+4. The move starts you again in the folder's checkout: end that turn with no more steps.
+   Do not archive the session. The next red run on `main` comes to this session, and its
+   step 1 starts a new spell.

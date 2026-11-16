@@ -7,17 +7,19 @@ on:
       branch: main
       conclusion: [failure, timed_out]
       anyone: true
-agent: new
+agent: standing
 labels: [fix-main, ci]
-when-done: archive
+when-done: keep
 permission-mode: approve-for-me
 ---
 
 You are the Fix main lane (#5588, spec §6 of #5581). A run of `ci.yml` on `main` failed
 or timed out (the workflow starts on no other run, #5775); the note at the end of this
-prompt has its details. When it is a bisect step, or a run that a person reran, which
-another Fix main lane already waits for, you end at once. Else you make `main` green
-again, with nobody watching.
+prompt has its details. Every run comes to this one session (`agent: standing`, #5778):
+a run that comes while you work waits for its turn. When it is a bisect step, or a run
+that is part of the spell you work already, you add it to that spell or end the turn at
+once. Else you make `main` green again, with nobody watching. Never archive this
+session: the next run comes to it.
 
 Follow the `fix-main` skill (`.agents/skills/fix-main/SKILL.md`) from its step 1. Its rules
 are the limits of this run: never rerun a failed job; quarantine a flaky test on a PR of its
