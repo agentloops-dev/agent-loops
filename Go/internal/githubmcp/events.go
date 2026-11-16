@@ -35,6 +35,11 @@ var (
 	// anyProperty is every one in the repo (#3797): a wait that names none sets it.
 	anyProperty = property{Name: "any", Kind: "boolean",
 		Description: "true: every one in the repo. A wait (not a workflow trigger) that names none, by the other arguments that say which, is refused without it. It is about which ones; anyone is about who."}
+	// conclusionProperty is run.completed's runs that ended so (#5775): Fix main starts only for a red run.
+	conclusionProperty = property{Name: "conclusion", Kind: "ids",
+		Description: "Only runs with this conclusion, or one of these: success, failure, cancelled, timed_out, skipped, neutral, action_required, startup_failure or stale.",
+		Pattern:     regexp.MustCompile(`^(success|failure|cancelled|timed_out|skipped|neutral|action_required|startup_failure|stale)$`),
+		LooksLike:   "a run's conclusion, as failure"}
 	// fixesProperty is the PRs that close these issues (#3797): a lead knows a child's issue before its PR.
 	fixesProperty = property{Name: "fixes", Kind: "refs",
 		Description: `Only pull requests whose body closes one of these issues, as "#12" (this repo's) or "owner/repo#12".`,
@@ -91,7 +96,7 @@ var events = append([]event{
 			property{Name: "workflow", Kind: "string", Description: "Only runs of this workflow, by its file name, as release.yml.",
 				Pattern: regexp.MustCompile(`^[A-Za-z0-9_.-]+\.ya?ml$`), LooksLike: "release.yml"},
 			branchProperty("Only runs on this branch or tag, as main or v0.16.0."),
-			property{Name: "run", Kind: "integer", Description: "Only this run, by its id."}, anyoneProperty, anyProperty},
+			property{Name: "run", Kind: "integer", Description: "Only this run, by its id."}, conclusionProperty, anyoneProperty, anyProperty},
 		Payload: object(map[string]any{
 			"run": object(map[string]any{"id": integer, "attempt": integer, "name": str, "workflow": str, "event": str,
 				"branch": str, "headSha": str, "url": str, "conclusion": str, "actor": str}),
@@ -139,7 +144,7 @@ var events = append([]event{
 		Input:       schema{repoProperty, branchProperty("Only the PR from this branch."), prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
 		Payload:     object(map[string]any{"pr": prSchema(nil), "conflictedAt": str})},
 	{Name: "pr.blocked", Title: "Pull request blocked",
-		Description: mcpevents.BlockedDescription("On GitHub: mergeable, mergeStateStatus (BEHIND only under a rule that wants the branch up to date), reviewDecision, the last auto-merge event, and the head's checks against the required checks of the base's rulesets and branch protection."+ownPRs),
+		Description: mcpevents.BlockedDescription("On GitHub: mergeable, mergeStateStatus (BEHIND only under a rule that wants the branch up to date), reviewDecision, the last auto-merge event, and the head's checks against the required checks of the base's rulesets and branch protection." + ownPRs),
 		Input:       schema{repoProperty, branchProperty("Only the PR from this branch."), prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
 		Payload:     mcpevents.BlockedPayload(prSchema(nil))},
 	{Name: "pr.commented", Title: "Pull request commented on",
@@ -638,7 +643,7 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 			list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%d", repo, r.Run.ID, r.Run.Attempt), Time: at,
 				Subject: runRef(repo, r.Run.ID), Key: fmt.Sprint(r.Run.Attempt),
 				Data: func() (map[string]any, error) {
-					if !a.anyone && !r.Trusted {
+					if !a.anyone && !r.Trusted || len(a.conclusions) > 0 && !slices.Contains(a.conclusions, r.Conclusion) {
 						return nil, nil
 					}
 					deploys, err := gh.RunDeploys(ctx, repo, r)

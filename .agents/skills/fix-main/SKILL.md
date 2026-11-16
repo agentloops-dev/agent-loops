@@ -16,9 +16,9 @@ Use the `github` server's tools where they fit (`get_job_logs`, `actions_run_tri
 ## Rules
 
 - **One red spell, one lane.** A red spell starts at the first red `push` run on `main`
-  and ends at the next green `push` run. The workflow starts a new agent for each run on
-  `main` (every run, green or red, and each rerun and bisect step). Only the first one
-  for a spell does the work; the others end at once (step 1). When you already work on a
+  and ends at the next green `push` run. The workflow starts a new agent for each red
+  run on `main` (`conclusion` `failure` or `timed_out`, #5775; a rerun and a bisect step
+  too). Only the first one for a spell does the work; the others end at once (step 1). When you already work on a
   spell, a new red run is part of it: add it to the bug (step 3), and do not start again.
 - **Revert first** (Decided in #5581: it is the fastest way back to green, and easy to
   undo). Fix forward only when the revert conflicts.
@@ -32,34 +32,32 @@ Use the `github` server's tools where they fit (`get_job_logs`, `actions_run_tri
 
 ## 1. Read the event
 
-The event is `run.completed` for `ci.yml` on `main`. Read its `run`: `id`, `attempt`,
-`event`, `headSha`, `conclusion`, `url`.
+The event is `run.completed` for `ci.yml` on `main`, with `conclusion` `failure` or
+`timed_out`: the workflow starts no agent for a green, cancelled or skipped run (#5775).
+Read its `run`: `id`, `attempt`, `event`, `headSha`, `conclusion`, `url`.
 
 Do these checks in order, and stop at the first that ends the turn. Most runs end here,
 so use as few tool calls as you can. Each "end" here is: archive the session with
-`archive_session`, so it does not look like a lane in check 3.
+`archive_session`, so it does not look like a lane in check 2.
 
 1. **`event` is not `push`** (a `workflow_dispatch` from a bisect): it is not a red
    `main`. End.
-2. **`conclusion` is `cancelled` or `skipped`:** end.
-3. **Another lane has the spell.** Call `list_sessions` and look for a session that is
+2. **Another lane has the spell.** Call `list_sessions` and look for a session that is
    not archived, is not you, and has the label `fix-main` (the workflow gives it to each
    of its sessions; a lane archives itself when its spell ends). When there is one:
-   - `conclusion` is `failure` or `timed_out`, with `attempt` 1: send that lane this
-     run's link with `message_session` (it is part of its spell, or a new break), and
-     end.
-   - Else (a green run, or a rerun's attempt): that lane waits for it already. End.
-4. **`conclusion` is `success`:** when an open bug titled "Main broken:" is left with no
-   lane (none in check 3), comment on it with this run's link and close it (step 7, part
-   1). End.
-5. **`conclusion` is `failure` or `timed_out`, with `attempt` more than 1** and no lane:
-   a person reran a job. Treat it as the first red run of a spell: go on with step 2.
-6. **`conclusion` is `failure` or `timed_out`:** the event is a hint, so read the run
-   again (`gh run view <id> --json status,conclusion,attempt,jobs,headSha`). When a
-   newer `push` run on `main` is green already, end. Else this spell is yours: go on.
+   - `attempt` is 1: send that lane this run's link with `message_session` (it is part
+     of its spell, or a new break), and end.
+   - Else (a rerun's attempt): that lane waits for it already. End.
+3. **`attempt` is more than 1** and no lane: a person reran a job. Treat it as the first
+   red run of a spell: go on with step 2.
+4. **Else:** the event is a hint, so read the run again (`gh run view <id> --json
+   status,conclusion,attempt,jobs,headSha`). When a newer `push` run on `main` is green
+   already, end. Else this spell is yours: go on.
 
 While you work the spell, the event of your own rerun (step 2) and of `main`'s next runs
-come to your waits; new agents of the workflow see you in check 3 and end.
+come to your waits; new agents of the workflow see you in check 2 and end. An open bug
+titled "Main broken:" that no lane has (its lane stopped) is not closed by a green run:
+the next red run's lane finds it in step 3 and takes it as its own.
 
 ## 2. Is it a flake?
 

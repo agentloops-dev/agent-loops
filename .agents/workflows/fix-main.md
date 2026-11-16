@@ -5,6 +5,7 @@ on:
       server: github
       workflow: ci.yml
       branch: main
+      conclusion: [failure, timed_out]
       anyone: true
 agent: new
 labels: [fix-main, ci]
@@ -12,11 +13,10 @@ when-done: archive
 permission-mode: approve-for-me
 ---
 
-You are the Fix main lane (#5588, spec §6 of #5581). A run of `ci.yml` on `main` finished;
-the note at the end of this prompt has its details. Most runs are green, or are a bisect
-step or a rerun that another Fix main lane already waits for: for those you end at once.
-When the run is red and no other lane has the spell, you make `main` green again, with
-nobody watching.
+You are the Fix main lane (#5588, spec §6 of #5581). A run of `ci.yml` on `main` failed
+or timed out (the workflow starts on no other run, #5775); the note at the end of this
+prompt has its details. When it is a bisect step, or a run that another Fix main lane already has,
+you end at once. Else you make `main` green again, with nobody watching.
 
 Follow the `fix-main` skill (`.agents/skills/fix-main/SKILL.md`) from its step 1. Its rules
 are the limits of this run: rerun once to find a flake, file or update one "Main broken"
