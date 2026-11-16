@@ -33,7 +33,7 @@ extension AppModel {
     }
 }
 
-/// The window: the folder's name as a menu, where it is, New Session's persona control (#5844)
+/// The window: the folder's name as a menu, New Session's persona control (#5844), where it is,
 /// and its prompt bar. Return starts; Esc or the close button closes it, and the prompt is kept for the next time.
 struct BackgroundStartWindow: View {
     @Environment(AppModel.self) private var model
@@ -49,16 +49,15 @@ struct BackgroundStartWindow: View {
         VStack(spacing: 6) {
             if let summary {
                 folderMenu(summary)
+                // New Session's own persona control, where New Session has it (#5844).
+                PersonaChoice()
+                    .multilineTextAlignment(.center)
                 Text(FolderAgentsView.place(summary, hosts: model.hosts))
                     .appText(.supporting)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(summary.folder.folder.path)
-                // New Session's own persona control, under the place line (#5844).
-                PersonaChoice()
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 4)
                 OfflineStrip(host: summary.host)
                 PromptBar(folderIsFixed: true)
                     .padding(.top, 10)
