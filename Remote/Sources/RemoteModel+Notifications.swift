@@ -136,7 +136,7 @@ extension RemoteModel {
         // The Summary row (#3721): shown only while the daily summary is on, with its newest page.
         async let dailySummary: Void = refreshDailySummarySettings()
         async let summaries: Void = refreshSummaryPages()
-        // The Multiplier page (#4116), on the iPad's empty detail as well as its row.
+        // The Achievements page (#4116), on the iPad's empty detail as well as its row.
         async let multiplier: Void = refreshMultiplier()
         async let achievements: Void = refreshAchievements()
         async let moving: Void = refreshMoves(on: .mac, through: client)
