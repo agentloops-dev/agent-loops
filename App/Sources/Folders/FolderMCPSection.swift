@@ -296,6 +296,10 @@ private struct FolderMCPRow: View {
         if needsSignIn {
             return "It asks you to sign in. Agents start without it until you do."
         }
+        // An approval taken from the person's other machine (#5462, #5543).
+        if let from = server.approvedFrom, !from.isEmpty {
+            return "\(from). The entry is the same as when you approved it there; a change to it waits for your OK."
+        }
         return nil
     }
 }
