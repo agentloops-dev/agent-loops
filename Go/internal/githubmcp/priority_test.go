@@ -75,11 +75,11 @@ func TestSearchWithoutIssueFields(t *testing.T) {
 			_ = json.Unmarshal(body, &req)
 			if strings.Contains(req.Query, "issueField") {
 				with.Add(1)
-				io.WriteString(w, c.refusal)
+				_, _ = io.WriteString(w, c.refusal)
 				return
 			}
 			without.Add(1)
-			io.WriteString(w, `{"data":{"search":{"issueCount":1,"pageInfo":{"hasNextPage":false},"edges":[{"cursor":"c","node":{"__typename":"Issue",
+			_, _ = io.WriteString(w, `{"data":{"search":{"issueCount":1,"pageInfo":{"hasNextPage":false},"edges":[{"cursor":"c","node":{"__typename":"Issue",
   "issueState":"OPEN","number":5,"title":"t","repository":{"nameWithOwner":"o/r"},"labels":{"nodes":[]},"assignees":{"nodes":[]}}}]}}}`)
 		}))
 		g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
