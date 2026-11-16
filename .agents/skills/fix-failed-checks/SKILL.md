@@ -28,9 +28,10 @@ A lane that waits on `pr.blocked` (#5321) comes here for the reason
 `failedChecks`' `url` (on GitHub, `…/actions/runs/<run.id>/job/<job id>`), and use the
 event's `pr` and your own branch.
 
-0. **Stop at once when the pull request is labelled `needs-approval`** (#2811). It is a UI
-   enhancement that waits for Alex's approval, and its checks are fixed only after Alex
-   approves it. Do not comment.
+0. **Stop at once when the pull request waits for Alex's review** (#2811, epic #5802): a
+   review is requested from Alex (`gh pr view <n> --json reviewRequests`) and Alex has
+   not approved it. It is a UI enhancement that waits for Alex's approval, and its checks
+   are fixed only after Alex approves it with a review. Do not comment.
 1. **Read the failure.** Use the tools in the table.
 2. **Decide.** Never run the failed jobs again to get to green (Alex, 2026-11-15,
    #5754): a rerun that passes hides a flake. When the default branch fails the same

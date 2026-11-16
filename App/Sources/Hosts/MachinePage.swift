@@ -350,6 +350,8 @@ struct MachineRow: View {
     @State private var sheet: MachineSheet?
     /// The control plane's model, for the sheets that need it, made as one opens.
     @State private var control: ControlSettingsModel?
+    /// The machines pinned to the sidebar's group (#5286).
+    @AppStorage(MachinePins.key, store: WindowDefaults.store) private var machinePins = ""
 
     var body: some View {
         let name = model.hosts.label(host)
@@ -401,6 +403,12 @@ struct MachineRow: View {
         }
         .contextMenu {
             Button("Open", action: open)
+            // Pinned: after This Mac in the group, also past seven machines (#5286).
+            if host != .mac {
+                Button(MachinePins.menuTitle(pinned: MachinePins.pinned(machinePins).contains(host))) {
+                    machinePins = MachinePins.toggled(host, in: machinePins)
+                }
+            }
             // This Mac's one item, as its row in Settings ▸ Machines had it (#656, #3975).
             if let row, host == .mac {
                 Divider()
@@ -533,6 +541,14 @@ extension AppModel {
     /// The machine's sessions, counted once for its sidebar line and its page (#5489, #5488).
     func machineSessions(_ host: MachineRef) -> MachineSessions {
         MachineSessions(work.agents.filter { $0.host == host })
+    }
+
+    /// Whether the Machines group shows the machine before the rest (#5286): it needs something,
+    /// it is starting, or sessions work or wait for the person there.
+    func machineIsActive(_ host: MachineRef) -> Bool {
+        if need(of: host) != nil || hostsBeingStarted.contains(host) { return true }
+        let sessions = machineSessions(host)
+        return !sessions.agents(.working).isEmpty || !sessions.agents(.waiting).isEmpty
     }
 
     /// A machine's most urgent need, as its row says it (#3764). Sign-in is what its runtimes

@@ -18,6 +18,8 @@ struct FolderListView: View {
     @AppStorage("showsArchivedFolders", store: WindowDefaults.store) private var showsArchived = false
     /// Machines, open until folded, and kept so (#3626).
     @AppStorage("showsMachines", store: WindowDefaults.store) private var showsMachines = true
+    /// The machines pinned to the group (#5286), a machine on each line.
+    @AppStorage(MachinePins.key, store: WindowDefaults.store) private var machinePins = ""
     /// Status, open until folded, and kept so: its key from before #3633 (#3998).
     @AppStorage("showsStatus", store: WindowDefaults.store) private var showsStatus = true
     /// The Work group (#4004), open the first time: folded, it hides what the one Work row showed.
@@ -67,6 +69,15 @@ struct FolderListView: View {
     /// This Mac, when it is one of the machines, then the others by name (#3626).
     private var machines: [MachineRef] {
         (model.hasMacHost ? [.mac] : []) + model.hosts.servers
+    }
+
+    /// The Machines group's rows (#5286): at most seven, This Mac, pinned and busy first.
+    private var machineRows: MachinesGroup.Rows {
+        let pins = Set(MachinePins.pinned(machinePins))
+        let listed = machines.map { host in
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
+        }
+        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count)
     }
 
     /// No runtime can be started on: Runtimes' icon says so in red (#587); one nearly used
@@ -251,22 +262,26 @@ struct FolderListView: View {
             // A row per machine (#3626), each its page: CPU, memory and disks. Its icon says
             // its kind and, in its colour, its state (#4113).
             if !machines.isEmpty {
+                // At most seven rows, then All Machines (N) (#5286).
+                let rows = machineRows
                 Section(isExpanded: $showsMachines) {
-                    ForEach(machines, id: \.self) { host in
+                    ForEach(rows.machines, id: \.self) { host in
                         MachineRow(host: host) { picked = [.machine(host)] }
                             .appText(.supporting).sidebarInk(.machine(host)).tag(SidebarItem.machine(host))
                     }
                     // The machines New Machine is making, and the ones the control plane gave up
                     // waiting for (#4610), and every other machine of the person's that never
                     // joined, a click to join it (#4978): a row each until a machine of the name joins.
-                    ForEach(0..<model.machinesBeingMade, id: \.self) { _ in
+                    let unnamed = min(model.machinesBeingMade, rows.making)
+                    ForEach(0..<unnamed, id: \.self) { _ in
                         MakingMachineRow(making: nil).appText(.supporting)
                     }
-                    ForEach(model.machinesMaking) { making in
+                    ForEach(model.machinesMaking.prefix(rows.making - unnamed)) { making in
                         MakingMachineRow(making: making).appText(.supporting)
                     }
                     // The Machines page (#5567): every machine, with a search, filters and actions on many.
-                    Text("All Machines").activityIcon("list.bullet.rectangle")
+                    // Past seven machines it says how many there are (#5286).
+                    Text(rows.bounded ? MachinesGroup.allTitle(rows.total) : "All Machines").activityIcon("list.bullet.rectangle")
                         .help("Every machine: search, filter, and start, stop or delete many at once")
                         .appText(.supporting).sidebarInk(.allMachines).tag(SidebarItem.allMachines)
                 } header: {
@@ -1212,7 +1227,9 @@ private struct SidebarFoot: View {
                 }
                 .padding(.horizontal, 14)
             }
-            ForEach(showsMachines ? [] : model.hosts.servers.filter { model.hostUnreachable($0) }, id: \.self) { host in
+            // At most seven, as the Machines group (#5286), then how many more.
+            let offline = showsMachines ? [] : model.hosts.servers.filter { model.hostUnreachable($0) }
+            ForEach(offline.prefix(MachinesGroup.limit), id: \.self) { host in
                 // A server gone quiet greys its folders; its row under Machines says why (#3764).
                 // With that group folded, this says it, once, where the Mac's own state is said.
                 // One on a stopped workspace says so, with Start (#961).
@@ -1234,6 +1251,13 @@ private struct SidebarFoot: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 4)
+            }
+            if offline.count > MachinesGroup.limit {
+                Label(MachinesGroup.moreOffline(offline.count - MachinesGroup.limit), icon: "bolt.horizontal.circle")
+                    .appText(.fine)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
             }
             // A file this Mac keeps that could not be read (#205): why paired devices or
             // folders may have gone from view, and that what they held is kept.
