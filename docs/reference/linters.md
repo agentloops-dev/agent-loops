@@ -27,6 +27,11 @@ every tracked file, so every change runs it; a change to docs only runs only it.
 runs `swift-lint:lint` only when a Swift file, its rules, its baseline or `scripts/lint.sh`
 changes.
 
+`Web/test/lint.mjs` also fails when a web test reads a file outside `Web/` that is not an input
+of `web:test` in `Web/project.json` (#5780). Without that input, a change to the file alone does
+not make `web:test` affected, and Nx's cache gives a false pass. Add the file to
+`web-test-reads`.
+
 ## Output
 
 `scripts/nx.sh` streams each task's output as the task runs (`NX_DEFAULT_OUTPUT_STYLE=stream`,

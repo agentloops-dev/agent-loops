@@ -8,7 +8,7 @@
 // another origin, or carry inline script or style.
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, matchesGlob, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const web = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -152,6 +152,37 @@ for (const path of files(join(web, "dist"))) {
     for (const ref of html.matchAll(/\b(?:src|href)\s*=\s*"([^"]*)"/gi)) {
       if (!ref[1].startsWith("/") || ref[1].startsWith("//")) failures.push(`${relative(web, path)}: ${ref[1]} is not on this origin`);
     }
+  }
+}
+
+// A file outside Web/ that a test reads is an input of web:test in Web/project.json (#5780).
+// Without it, a change to that file alone does not make web:test affected, and a cache hit at
+// the old hash is a false pass. A test that reads files (readFileSync) names them as string
+// literals, from the repo root or as "../../…"; each literal that names a file or folder
+// outside Web/ must match one of the task's inputs. Tests that only use paths as data read no
+// file, so they are not checked.
+const repo = dirname(web);
+const project = JSON.parse(readFileSync(join(web, "project.json"), "utf8"));
+const workspace = JSON.parse(readFileSync(join(repo, "nx.json"), "utf8"));
+const named = { ...workspace.namedInputs, ...project.namedInputs };
+const expand = (input, seen = new Set()) => {
+  if (typeof input !== "string" || seen.has(input)) return [];
+  if (named[input]) return named[input].flatMap((each) => expand(each, new Set([...seen, input])));
+  return input.startsWith("{workspaceRoot}/") ? [input.slice("{workspaceRoot}/".length)] : [];
+};
+const testInputs = project.targets.test.inputs.flatMap((input) => expand(input));
+const literal = /["'`]((?:\.\.\/\.\.\/)?[A-Za-z.][\w.@-]*(?:\/[\w.@-]+)+\/?)["'`]/g;
+for (const path of files(join(web, "test"))) {
+  if (!path.endsWith(".mjs") || /\/(lint|licences)\.mjs$/.test(path)) continue;
+  const text = readFileSync(path, "utf8");
+  if (!text.includes("readFileSync")) continue;
+  for (const match of text.matchAll(literal)) {
+    const read = normalize(match[1].replace(/^\.\.\/\.\.\//, "")).replace(/\/$/, "");
+    if (read.startsWith("Web/") || read.startsWith("..") || read.startsWith("node_modules")) continue;
+    if (!existsSync(join(repo, read))) continue;
+    if (testInputs.some((input) => input === read || matchesGlob(read, input))) continue;
+    const line = text.slice(0, match.index).split("\n").length;
+    failures.push(`${relative(web, path)}:${line}: reads ${read}, which is not an input of web:test; add "{workspaceRoot}/${read}" to web-test-reads in Web/project.json (#5780)`);
   }
 }
 
