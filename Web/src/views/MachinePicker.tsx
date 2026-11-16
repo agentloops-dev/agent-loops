@@ -20,7 +20,7 @@ export function MachinePicker({ store, value, onPick, label, skip, any, anyDisab
   /** Machines left out, as the one a session is on. */
   skip?: (h: ControlMachine) => boolean;
   /** A first row that picks no machine, as "Every machine". */
-  any?: string;
+  any?: string | undefined;
   /** The `any` row is shown but cannot be picked, as an Auto with no machine that fits. */
   anyDisabled?: boolean;
   placeholder?: string;

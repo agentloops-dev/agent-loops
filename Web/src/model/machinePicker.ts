@@ -44,7 +44,7 @@ export function sections(page: readonly ControlMachine[], pinned: readonly strin
   const taken = new Set<string>();
   const take = (ids: readonly string[], title: string): PickerSection[] => {
     const found = ids.map((id) => rows.find((h) => h.id === id)).filter((h): h is ControlMachine => !!h && !taken.has(h.id));
-    found.forEach((h) => taken.add(h.id));
+    for (const h of found) taken.add(h.id);
     return found.length ? [{ title, machines: found }] : [];
   };
   const out = [...take(pinned, "Pinned"), ...take(recent, "Recent")];
