@@ -16,6 +16,7 @@ struct RemoteMoveToMachineSheet: View {
     @State private var problem: String?
 
     private var targets: [MachineRef] { model.moveTargets(for: agent) ?? [] }
+    private var allowed: Set<MachineRef> { Set(targets) }
 
     var body: some View {
         NavigationStack {
@@ -26,12 +27,11 @@ struct RemoteMoveToMachineSheet: View {
                     }
                 } else {
                     Section {
-                        Picker("Machine", selection: $machine) {
-                            ForEach(targets, id: \.self) { host in
-                                Text(model.machineName(host)).tag(Optional(host))
-                            }
+                        // The one machine picker (#5622, the Mac's #5621) over the machines it can go to.
+                        RemoteMachinePickerRow(label: "Machine", value: machine, keep: { allowed.contains($0.id) },
+                                               disabled: moving) { picked in
+                            if let picked { machine = picked }
                         }
-                        .disabled(moving)
                     } header: {
                         Text(MoveToMachineWords.title(agent.title)).textCase(nil)
                     }

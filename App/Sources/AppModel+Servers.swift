@@ -95,13 +95,16 @@ extension AppModel {
                 if answered {
                     backoff.connected()
                     self?.controlPlaneDidAnswer()
+                    // Status ▸ Secrets and Accounts' rows say when the newest operation was (#4161).
+                    // Read before the machines are reached: what the control plane keeps, a
+                    // machine has from it, and gets no call of its own from here (#5573).
+                    await self?.userScope.load(control)
+                    await self?.keepTimeZone()
+                    await self?.keepMacParts()
                     await self?.syncControlHosts(control)
                     await self?.loadKept(control)
                     await self?.people.connected(control)
                     await self?.signIn.connected(control)
-                    // Status ▸ Secrets and Accounts' rows say when the newest operation was (#4161).
-                    await self?.userScope.load(control)
-                    await self?.keepTimeZone()
                     // A change of this Mac's zone is the person's, while connected (#4818).
                     let zoneWatch = Task { [weak self] in
                         for await _ in NotificationCenter.default.notifications(named: .NSSystemTimeZoneDidChange) {

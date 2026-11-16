@@ -3068,6 +3068,17 @@ export interface ConnectionsList {
   providers?: ConnectionProvider[];
 }
 
+/**
+ * connections/listAll (#5592): each machine's connections/list. unreached is the machines that have
+ * the method but did not answer (offline, too slow or an error); notAsked counts the machines past
+ * the most one call asks (50), as in DocsListAll.
+ */
+export interface ConnectionsListAll {
+  lists: MachineConnections[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+}
+
 /** A GitHub Codespace for a folder's repository (#1591). */
 export interface ConnectorCodespace {
   id: string;
@@ -4994,6 +5005,26 @@ export interface EventsChange {
   waiting: WaitingAgent[];
 }
 
+/**
+ * events/listAll (#5592): each machine's newest EventsPage. unreached is the machines that have the
+ * method but did not answer (offline, too slow or an error); notAsked counts the machines past the
+ * most one call asks (50), as in DocsListAll.
+ */
+export interface EventsListAll {
+  pages: MachineEventsPage[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+}
+
+/**
+ * events/listAll (#5592): the newest page of each of the caller's machines' events/list in one
+ * call. limit is each machine's, as in EventsListRequest, 50 when not said, at most 100. An older
+ * page is one machine's, by events/list.
+ */
+export interface EventsListAllRequest {
+  limit?: number;
+}
+
 export interface EventsListRequest {
   before?: number;
   limit: number;
@@ -5023,6 +5054,17 @@ export interface FeatureUsage {
   /** YYYY-MM-DD in the host's zone. */
   since?: string;
   features: FeatureUse[];
+}
+
+/**
+ * reports/featuresAll (#5592): each machine's reports/features. unreached is the machines that have
+ * the method but did not answer (offline, too slow or an error); notAsked counts the machines past
+ * the most one call asks (50), as in DocsListAll.
+ */
+export interface FeatureUsageAll {
+  usage: MachineFeatureUsage[];
+  unreached: ProjectMachine[];
+  notAsked: number;
 }
 
 /** One feature's uses (#2165). clients is who used it: mac, remote, web, agent or workflow. */
@@ -5452,6 +5494,17 @@ export interface ForgeBoards {
 }
 
 /**
+ * forge/boardsAll (#5592): each machine's forge/boards. unreached is the machines that have the
+ * method but did not answer (offline, too slow or an error); notAsked counts the machines past the
+ * most one call asks (50), as in DocsListAll.
+ */
+export interface ForgeBoardsAll {
+  boards: MachineForgeBoards[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+}
+
+/**
  * forge/boards (#3282): the boards of every folder's project on this machine, or of one folder's.
  */
 export interface ForgeBoardsRequest {
@@ -5866,6 +5919,32 @@ export interface ForgeList {
   total?: number;
   errors?: ForgeListError[];
   forges?: ForgeCapabilities[];
+}
+
+/**
+ * forge/listAll (#5592): each machine's ForgeList, as it answered, in the order of the caller's
+ * machines. The machines list the same repos, so a client merges the items by ref. unreached is the
+ * machines that have the method but did not answer (offline, too slow or an error); notAsked counts
+ * the machines past the most one call asks (50), as in DocsListAll.
+ */
+export interface ForgeListAll {
+  lists: MachineForgeList[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+}
+
+/**
+ * forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's
+ * machines in one call. state, board and limit are as in ForgeListRequest, for each machine. pages,
+ * for a next page, names the machines to ask and each one's cursor, as its last list gave it;
+ * without pages every machine is asked for its first page.
+ */
+export interface ForgeListAllRequest {
+  kind: "issues" | "pulls";
+  state?: string;
+  board?: string;
+  limit?: number;
+  pages?: MachineCursor[];
 }
 
 /**
@@ -6985,6 +7064,17 @@ export interface LineageForecast {
   assumes?: LineageForecastAssumes;
   /** What the request's what-if moved (#4531); every figure is then the what-if's. */
   whatIf?: LineageForecastWhatIfEffect;
+}
+
+/**
+ * lineage/forecastAll (#5592): each machine's lineage/forecast for the same request. unreached is
+ * the machines that have the method but did not answer (offline, too slow or an error); notAsked
+ * counts the machines past the most one call asks (50), as in DocsListAll.
+ */
+export interface LineageForecastAll {
+  forecasts: MachineLineageForecast[];
+  unreached: ProjectMachine[];
+  notAsked: number;
 }
 
 /**
@@ -8331,6 +8421,13 @@ export interface MachineClients {
   user?: string;
 }
 
+/** A machine's ConnectionsList in connections/listAll (#5592). */
+export interface MachineConnections {
+  machine: MachineRef;
+  machineName: string;
+  connections: ConnectionsList;
+}
+
 /** A conversation of messages/conversationsAll (#5571) with the machine whose connector has it. */
 export interface MachineConversation {
   machine: MachineRef;
@@ -8349,6 +8446,12 @@ export interface MachineCounts {
   provider: Record<string, number>;
   os: Record<string, number>;
   version: Record<string, number>;
+}
+
+/** A machine and the cursor of its next page (#5592). */
+export interface MachineCursor {
+  machine: MachineRef;
+  cursor: string;
 }
 
 /** A doc of docs/listAll (#5571) with the machine that has it. */
@@ -8371,6 +8474,20 @@ export interface MachineDocsSource {
  */
 export interface MachineEnroll {
   as?: string;
+}
+
+/** A machine's EventsPage in events/listAll (#5592). */
+export interface MachineEventsPage {
+  machine: MachineRef;
+  machineName: string;
+  page: EventsPage;
+}
+
+/** A machine's FeatureUsage in reports/featuresAll (#5592). */
+export interface MachineFeatureUsage {
+  machine: MachineRef;
+  machineName: string;
+  usage: FeatureUsage;
 }
 
 /**
@@ -8402,6 +8519,20 @@ export interface MachineFolderSent {
   facts?: SendFacts;
   pack?: SendPack;
   read?: SendRead;
+}
+
+/** A machine's ForgeBoards in forge/boardsAll (#5592). */
+export interface MachineForgeBoards {
+  machine: MachineRef;
+  machineName: string;
+  boards: ForgeBoards;
+}
+
+/** A machine's ForgeList in forge/listAll (#5592). */
+export interface MachineForgeList {
+  machine: MachineRef;
+  machineName: string;
+  list: ForgeList;
 }
 
 /** machine/hello, on every connect of an uplink. `implementation` is `swift` or `go` (#1134). */
@@ -8544,6 +8675,13 @@ export interface MachineLastHeard {
   folders?: FolderSummary[];
   agents?: Agent[];
   heardAt?: WireDate;
+}
+
+/** A machine's LineageForecast in lineage/forecastAll (#5592). */
+export interface MachineLineageForecast {
+  machine: MachineRef;
+  machineName: string;
+  forecast: LineageForecast;
 }
 
 /**
@@ -15435,6 +15573,21 @@ export interface UserSettings {
    */
   environment?: JSONValue;
   /**
+   * What agents call the person (#121, #5573), as a PersonSettings with the name resolved on their
+   * Mac: each machine writes it as person/set does.
+   */
+  person?: JSONValue;
+  /**
+   * Auto's order, Include switches and own cells (#2658, FR-017; #5573), as an AutoSettings: each
+   * machine keeps it as auto/set does, with its own runtimes kept.
+   */
+  auto?: JSONValue;
+  /**
+   * How long archived agents are kept (051, #5573), as a RetentionSettings: each machine applies it
+   * as a confirmed retention/set. The person confirmed it on their Mac.
+   */
+  retention?: JSONValue;
+  /**
    * #2957, research R11: your layer, as a SignedYourPolicy. Only the keeper sets it
    * (user/setPolicy); a client cannot (user/setSettings refuses this part).
    */
@@ -15463,8 +15616,9 @@ export interface UserSettingsPart {
 /**
  * A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers,
  * agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time
- * zone (#4818) and the environment (#5259) follow the person. Resources belong to each machine.
- * policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
+ * zone (#4818), the environment (#5259), and what agents call the person, Auto's settings and
+ * retention (#5573) follow the person. Resources belong to each machine. policy (#2957) is set only
+ * by the keeper, through user/setPolicy; user/setSettings refuses it.
  */
 export type UserSettingsPartName =
   | "mcpServers"
@@ -15475,7 +15629,10 @@ export type UserSettingsPartName =
   | "accounts"
   | "timeZone"
   | "environment"
-  | "policy";
+  | "policy"
+  | "person"
+  | "auto"
+  | "retention";
 
 /**
  * user/suspended (#1002, FR-018): to each machine of a suspended person, at hello before its
@@ -15930,8 +16087,9 @@ export interface WorkReport {
  * machine's sessions. suggestions are at most 3 epics with no lead (no session that is not archived
  * has both #<epic> and lead), ranked: an epic with priority:high children first, then one with UI
  * children, then the earliest milestone due date, then the one nearest to done. more is how many
- * more there are, for N more in Work. An epic the person dismissed is left out until it changes or
- * a lead has ended. errors say a forge that could not be read.
+ * more there are, for N more in Work. An epic the person dismissed is left out until its progress
+ * changes (done or total children; not its update time, #5731) or a lead of it has ended. errors
+ * say a forge that could not be read.
  */
 export interface WorkSuggestLeads {
   suggestions: WorkLeadSuggestion[];
@@ -16569,6 +16727,7 @@ export interface Methods {
   "connections/bot/start": { params: ConnectionBotStartRequest; result: ConnectionBotStart };
   "connections/disconnect": { params: ConnectionProviderRequest; result: ConnectionDisconnectAnswer };
   "connections/list": { params: Empty; result: ConnectionsList };
+  "connections/listAll": { params: Empty; result: ConnectionsListAll };
   "connections/sign-in": { params: ConnectionProviderRequest; result: ConnectionSignIn };
   "connections/sign-in/cancel": { params: ConnectionSignInFlowRequest; result: ConnectionSignIn };
   "connections/sign-in/complete": { params: ConnectionSignInCompleteRequest; result: ConnectionSignIn };
@@ -16616,6 +16775,7 @@ export interface Methods {
   "env/write": { params: EnvWriteRequest; result: Empty };
   "events/cancelWait": { params: CancelWaitRequest; result: WaitingAgent[] };
   "events/list": { params: EventsListRequest; result: EventsPage };
+  "events/listAll": { params: EventsListAllRequest; result: EventsListAll };
   "files/browse": { params: FilesBrowseRequest; result: DirectoryListing };
   "files/complete": { params: FileCompletionRequest; result: FileCompletions };
   "files/diagnostics": { params: FileDiagnosticsRequest; result: FileDiagnostics };
@@ -16648,6 +16808,7 @@ export interface Methods {
   "forge/assign": { params: ForgeAssignRequest; result: ForgeDone };
   "forge/blocked-by": { params: ForgeBlockedByRequest; result: ForgeDone };
   "forge/boards": { params: ForgeBoardsRequest; result: ForgeBoards };
+  "forge/boardsAll": { params: Empty; result: ForgeBoardsAll };
   "forge/cancel-auto-merge": { params: ForgeNodeRequest; result: ForgeDone };
   "forge/close": { params: ForgeCloseRequest; result: ForgeDone };
   "forge/comment": { params: ForgeCommentRequest; result: ForgeDone };
@@ -16658,6 +16819,7 @@ export interface Methods {
   "forge/issues": { params: ForgeListRequest; result: ForgeList };
   "forge/label": { params: ForgeLabelRequest; result: ForgeDone };
   "forge/labels": { params: ForgeNodeRequest; result: ForgeLabels };
+  "forge/listAll": { params: ForgeListAllRequest; result: ForgeListAll };
   "forge/log": { params: ForgeLogRequest; result: ForgeLog };
   "forge/merge": { params: ForgeMergeRequest; result: ForgeDone };
   "forge/plan": { params: ForgePlanRequest; result: ForgePlan };
@@ -16681,6 +16843,7 @@ export interface Methods {
   "lineage/estimate": { params: LineageEstimateRequest; result: LineageEstimate };
   "lineage/figures": { params: LineageNodeRequest; result: LineageFigures };
   "lineage/forecast": { params: LineageForecastRequest; result: LineageForecast };
+  "lineage/forecastAll": { params: LineageForecastRequest; result: LineageForecastAll };
   "lineage/sessions": { params: LineageSessionsRequest; result: LineageSessions };
   "lineage/sessionsOn": { params: LineageSessionsOnRequest; result: LineageSessionsOn };
   "lineage/walk": { params: LineageNodeRequest; result: LineageGraph };
@@ -16821,6 +16984,7 @@ export interface Methods {
   "reports/deleteView": { params: ReportViewID; result: ReportViews };
   "reports/export": { params: ReportQuery; result: ReportExport };
   "reports/features": { params: Empty; result: FeatureUsage };
+  "reports/featuresAll": { params: Empty; result: FeatureUsageAll };
   "reports/nodes": { params: ReportNodesQuery; result: ReportNodes };
   "reports/policy": { params: Empty; result: ReportPolicy };
   "reports/problem": { params: ProblemReportRequest; result: ProblemReport };
@@ -17036,6 +17200,7 @@ export const MethodTarget = {
   "connections/bot/start": "host",
   "connections/disconnect": "host",
   "connections/list": "host",
+  "connections/listAll": "control",
   "connections/sign-in": "host",
   "connections/sign-in/cancel": "host",
   "connections/sign-in/complete": "host",
@@ -17083,6 +17248,7 @@ export const MethodTarget = {
   "env/write": "host",
   "events/cancelWait": "host",
   "events/list": "host",
+  "events/listAll": "control",
   "files/browse": "host",
   "files/complete": "host",
   "files/diagnostics": "host",
@@ -17115,6 +17281,7 @@ export const MethodTarget = {
   "forge/assign": "host",
   "forge/blocked-by": "host",
   "forge/boards": "host",
+  "forge/boardsAll": "control",
   "forge/cancel-auto-merge": "host",
   "forge/close": "host",
   "forge/comment": "host",
@@ -17125,6 +17292,7 @@ export const MethodTarget = {
   "forge/issues": "host",
   "forge/label": "host",
   "forge/labels": "host",
+  "forge/listAll": "control",
   "forge/log": "host",
   "forge/merge": "host",
   "forge/plan": "host",
@@ -17148,6 +17316,7 @@ export const MethodTarget = {
   "lineage/estimate": "host",
   "lineage/figures": "host",
   "lineage/forecast": "host",
+  "lineage/forecastAll": "control",
   "lineage/sessions": "host",
   "lineage/sessionsOn": "control",
   "lineage/walk": "host",
@@ -17288,6 +17457,7 @@ export const MethodTarget = {
   "reports/deleteView": "control",
   "reports/export": "control",
   "reports/features": "host",
+  "reports/featuresAll": "control",
   "reports/nodes": "control",
   "reports/policy": "control",
   "reports/problem": "host",
@@ -17707,6 +17877,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ConnectionTokenAnswer: { required: [], optional: ["connection", "error"] },
   ConnectionTokenRequest: { required: ["provider", "token"], optional: ["url", "user"] },
   ConnectionsList: { required: ["connections"], optional: ["providers"] },
+  ConnectionsListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
   ConnectorCodespace: { required: ["id", "name", "repository", "state", "ssh"], optional: ["ref"] },
   ConnectorCodespaces: { required: ["codespaces"], optional: ["repository", "message"] },
   ConnectorCodespacesRequest: { required: ["folder", "action"], optional: ["id", "name"] },
@@ -17843,9 +18014,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   EventRaiseRequest: { required: ["draft"], optional: ["consequences"] },
   EventWait: { required: ["id", "patterns", "from", "since"], optional: ["deadline", "ending", "resumePromptID", "serverEvents", "forPerson"] },
   EventsChange: { required: ["waiting"], optional: ["event"] },
+  EventsListAll: { required: ["pages", "unreached", "notAsked"], optional: [] },
+  EventsListAllRequest: { required: [], optional: ["limit"] },
   EventsListRequest: { required: ["limit"], optional: ["before", "scope", "groups"] },
   EventsPage: { required: ["events", "waiting", "hasMore"], optional: ["producer"] },
   FeatureUsage: { required: ["days", "features"], optional: ["since"] },
+  FeatureUsageAll: { required: ["usage", "unreached", "notAsked"], optional: [] },
   FeatureUse: { required: ["method", "week", "quarter", "clients"], optional: ["lastUsed"] },
   FileCompletion: { required: ["label"], optional: ["insert", "detail"] },
   FileCompletionRequest: { required: ["agentID", "path", "text", "line", "column"], optional: [] },
@@ -17889,6 +18063,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeAssignRequest: { required: ["node"], optional: ["add", "remove"] },
   ForgeBlockedByRequest: { required: ["node"], optional: ["add", "remove"] },
   ForgeBoards: { required: ["boards"], optional: [] },
+  ForgeBoardsAll: { required: ["boards", "unreached", "notAsked"], optional: [] },
   ForgeBoardsRequest: { required: [], optional: ["folder"] },
   ForgeCapabilities: { required: ["forge", "issues", "pulls", "labelColors", "avatars", "stateReason", "commentCount"], optional: ["createdAt", "closedAt", "children", "linkedPulls", "events", "total", "releases", "branches", "mergedBy", "mergeCommit", "size", "reviewers", "closes", "checkTimes", "commentsMost"] },
   ForgeCheck: { required: ["name", "state"], optional: ["url", "startedAt", "finishedAt"] },
@@ -17914,6 +18089,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeLead: { required: ["session", "state"], optional: ["title"] },
   ForgeLinked: { required: ["node", "title", "state"], optional: ["url"] },
   ForgeList: { required: ["items"], optional: ["cursor", "total", "errors", "forges"] },
+  ForgeListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
+  ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "limit", "pages"] },
   ForgeListError: { required: ["forge", "message"], optional: [] },
   ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board"] },
   ForgeLog: { required: ["text"], optional: [] },
@@ -17996,6 +18173,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LineageEstimateRequest: { required: ["node"], optional: ["startAt"] },
   LineageFigures: { required: ["node", "cost", "sessions", "running", "runtimes"], optional: ["leadTimeSeconds", "limited", "delivery"] },
   LineageForecast: { required: ["at", "windowDays", "landings", "burn", "serviceLevels"], optional: ["node", "milestone", "lands", "noForecast", "toComplete", "kept", "spend", "overhead", "assumes", "whatIf"] },
+  LineageForecastAll: { required: ["forecasts", "unreached", "notAsked"], optional: [] },
   LineageForecastAssumes: { required: ["lanes", "peakLanes", "runtimes"], optional: [] },
   LineageForecastBurn: { required: ["credentialKey", "window", "used", "at", "resetsAt", "lasts"], optional: ["runsOutAt"] },
   LineageForecastKept: { required: ["at", "p50", "p85", "windowDays", "share", "open"], optional: [] },
@@ -18107,13 +18285,19 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineCatalog: { required: ["items"], optional: [] },
   MachineClient: { required: ["id", "kind", "publicKey"], optional: ["person"] },
   MachineClients: { required: ["clients"], optional: ["user"] },
+  MachineConnections: { required: ["machine", "machineName", "connections"], optional: [] },
   MachineConversation: { required: ["machine", "machineName", "conversation"], optional: [] },
   MachineCounts: { required: ["state", "labels", "provider", "os", "version"], optional: [] },
+  MachineCursor: { required: ["machine", "cursor"], optional: [] },
   MachineDoc: { required: ["machine", "machineName", "doc"], optional: [] },
   MachineDocsSource: { required: ["machine", "machineName", "source"], optional: [] },
   MachineEnroll: { required: [], optional: ["as"] },
+  MachineEventsPage: { required: ["machine", "machineName", "page"], optional: [] },
+  MachineFeatureUsage: { required: ["machine", "machineName", "usage"], optional: [] },
   MachineFolderSend: { required: ["host"], optional: ["state", "upload", "receive", "facts", "pack", "read", "moveIn"] },
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read"] },
+  MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
+  MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
   MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
   MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined"] },
@@ -18125,6 +18309,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineLabelsRequest: { required: ["machines"], optional: ["set", "add", "remove"] },
   MachineLabelsResult: { required: ["changed"], optional: [] },
   MachineLastHeard: { required: ["host"], optional: ["folders", "agents", "heardAt"] },
+  MachineLineageForecast: { required: ["machine", "machineName", "forecast"], optional: [] },
   MachineLink: { required: ["host", "provider", "workspace"], optional: ["startWhenUsed", "stopWhenIdleMinutes", "trust"] },
   MachineList: { required: ["machines", "total", "counts"], optional: ["next"] },
   MachineListQuery: { required: [], optional: ["query", "state", "labels", "provider", "os", "version", "sort", "limit", "cursor"] },
@@ -18703,7 +18888,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   UserSecretRequest: { required: ["name"], optional: [] },
   UserSecretRow: { required: ["name", "updated", "machines"], optional: ["kind", "created", "hint", "lastOp", "backedUp", "leftOn", "version", "waiting", "needsApproval", "description", "savedBy"] },
   UserSecretSet: { required: ["name", "version", "values"], optional: ["kind", "needsApproval", "description", "offer"] },
-  UserSettings: { required: [], optional: ["mcpServers", "agentConfig", "agentConfigFiles", "runtimes", "costLimits", "notifications", "accounts", "timeZone", "environment", "policy", "updated"] },
+  UserSettings: { required: [], optional: ["mcpServers", "agentConfig", "agentConfigFiles", "runtimes", "costLimits", "notifications", "accounts", "timeZone", "environment", "person", "auto", "retention", "policy", "updated"] },
   UserSettingsChanged: { required: [], optional: ["parts", "agentConfigFiles", "secrets"] },
   UserSettingsPart: { required: ["part", "value"], optional: [] },
   UserSuspended: { required: ["user", "provider", "at"], optional: ["off"] },

@@ -2,13 +2,14 @@ import AgentsKitCore
 import SwiftUI
 
 /// The **+** over the sidebar's folders (#4036), as the window's + over its sidebar and the
-/// page's + menu (#5447): New Session; Add Folder… and Clone Git URL… per machine, this Mac
-/// first; New Machine (no New App…, which is the Mac's and the web's). A machine that is
-/// offline cannot take a folder. The folder goes to its default project; Connect your tools stays
+/// page's + menu (#5447): New Session; Add Folder… and Clone Git URL… (with several machines,
+/// Add Folder On… and Clone Git URL On…, which open the one machine picker, #5622); New Machine
+/// (no New App…, which is the Mac's and the web's). A machine that is offline cannot take a folder. The folder goes to its default project; Connect your tools stays
 /// on the Mac and the web.
 struct NewFolderMenu: View {
     @Environment(RemoteModel.self) private var model
     @State private var adding: NewFolderSheet.Kind?
+    @State private var picking: RemoteMachinePickerAsk?
 
     var body: some View {
         let machines = model.folderMachines
@@ -19,14 +20,12 @@ struct NewFolderMenu: View {
             }
             .disabled(model.isStale || model.newSessionFolder == nil)
             Divider()
-            ForEach(machines) { machine in
-                if machines.count > 1 {
-                    Section(machine.offline ? "\(machine.title) — Offline" : machine.title) {
-                        items(for: machine)
-                    }
-                } else {
-                    items(for: machine)
-                }
+            if machines.count > 1 {
+                // One item each, which opens the one machine picker (#5622, the Mac's #5621).
+                Button("Add Folder On…", icon: "folder.badge.plus") { ask("Add a Folder On", machines) { .folder($0, $1) } }
+                Button("Clone Git URL On…", icon: "arrow.down.circle") { ask("Clone a Git URL On", machines) { .clone($0, $1) } }
+            } else if let machine = machines.first {
+                items(for: machine)
             }
             Divider()
             NewMachineItems()
@@ -36,6 +35,17 @@ struct NewFolderMenu: View {
         .accessibilityHint("Starts a new session, adds a folder on a machine or clones one from a Git URL, or makes a new machine")
         .sheet(item: $adding) { kind in
             NewFolderSheet(kind: kind)
+        }
+        .machinePickerSheet($picking)
+    }
+
+    /// The picker over the machines that answer; a pick opens the folder sheet on it.
+    private func ask(_ title: String, _ machines: [RemoteModel.HostSection],
+                     then kind: @escaping (MachineRef, String) -> NewFolderSheet.Kind) {
+        let open = machines.filter { !$0.offline }
+        let ids = Set(open.map(\.id))
+        picking = RemoteMachinePickerAsk(title: title, keep: { ids.contains($0.id) }) { picked in
+            adding = kind(picked, open.first { $0.id == picked }?.title ?? picked.rawValue)
         }
     }
 

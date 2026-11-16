@@ -78,6 +78,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -531,7 +532,11 @@ func serve() {
 		port = p
 	}
 	cfg := controlplane.Config{URL: text, Bind: value("--bind"), Port: port, Log: logs.Write, Logger: logs.Logger(),
-		ServerFolder: controlplane.ServerFolder(), ToolsetFolder: controlplane.ToolsetFolder()}
+		ServerFolder: controlplane.ServerFolder(), ToolsetFolder: controlplane.ToolsetFolder(),
+		ReleaseSource: os.Getenv("AGENTS_RELEASE_DOWNLOADS")}
+	if dir := cmp.Or(os.Getenv("AGENTS_CONTROL_RELEASES"), filepath.Join(home(), "releases")); home() != "" || os.Getenv("AGENTS_CONTROL_RELEASES") != "" {
+		cfg.ReleaseFolder = expand(dir)
+	}
 	if dir := value("--self-signed"); dir != "" || home() != "" {
 		if dir == "" {
 			dir = filepath.Join(home(), "tls")

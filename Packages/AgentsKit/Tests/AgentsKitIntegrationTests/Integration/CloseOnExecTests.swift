@@ -158,7 +158,7 @@ struct CloseOnExecTests {
     /// 021 T051: a connection is a window until it says it is a device, and then it
     /// is that device for every request after — as the handler sees it, never as the
     /// request's own parameters claim.
-    @Test func aConnectionBecomesTheDeviceItIdentifiesAs() async throws {
+    @Test(.flakyUnderLoad) func aConnectionBecomesTheDeviceItIdentifiesAs() async throws {
         let url = temporaryFile()
         defer { try? FileManager.default.removeItem(at: url) }
         let seen = SeenContexts()

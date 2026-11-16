@@ -1,5 +1,5 @@
 // Part of the Store (#5384): events.
-import type { Agent, UUID, BusEvent, Event as ActivityEvent } from "../../protocol/generated";
+import type { Agent, UUID, BusEvent, Event as ActivityEvent, EventsPage } from "../../protocol/generated";
 import { busLogQuery, type EnvelopeFilter } from "../eventBus";
 import type { Store } from "../store";
 import { eventsKept, eventsPagedMost } from "./shared";
@@ -23,13 +23,25 @@ export const eventsMethods = {
    */
   async loadEvents(this: Store, host: string, limit = 50): Promise<void> {
     const page = await this.link.call("events/list", { limit }, host).catch(() => null);
-    if (page) {
-      const older = this.events.value[host]?.events ?? [];
-      const merged = [...page.events, ...older.filter((event) => !page.events.some((next: ActivityEvent) => next.position === event.position))]
-        .sort((a: ActivityEvent, b: ActivityEvent) => b.position - a.position);
-      const hasMore = page.hasMore || merged.length > eventsKept;
-      this.events.value = { ...this.events.value, [host]: { ...page, events: merged.slice(0, eventsKept), hasMore } };
-    }
+    if (page) this.takeEventsPage(host, page);
+  },
+  /**
+   * The newest page of each of `hosts` in one call to the control plane (#5592), each laid over what is held, as
+   * loadEvents does; a machine that did not answer keeps what it had.
+   */
+  async loadEventsAll(this: Store, hosts: readonly string[], limit = 50): Promise<void> {
+    if (hosts.length === 0) return;
+    const all = await this.link.call("events/listAll", { limit }).catch(() => null);
+    const asked = new Set(hosts);
+    for (const { machine, page } of all?.pages ?? []) if (asked.has(machine)) this.takeEventsPage(machine, page);
+  },
+  /** A host's newest page laid over what is held: the list keeps `eventsKept` of them. */
+  takeEventsPage(this: Store, host: string, page: EventsPage): void {
+    const older = this.events.value[host]?.events ?? [];
+    const merged = [...page.events, ...older.filter((event) => !page.events.some((next: ActivityEvent) => next.position === event.position))]
+      .sort((a: ActivityEvent, b: ActivityEvent) => b.position - a.position);
+    const hasMore = page.hasMore || merged.length > eventsKept;
+    this.events.value = { ...this.events.value, [host]: { ...page, events: merged.slice(0, eventsKept), hasMore } };
   },
   /** The newest page of the bus log, narrowed by the envelope's fields; an older page with `older`. */
   async loadBusLog(this: Store, filter: EnvelopeFilter, older = false): Promise<void> {

@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"bufio"
-	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,6 +20,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"golang.org/x/sys/unix"
@@ -86,9 +86,11 @@ type selfUpdateMarkFile struct {
 	Starts int    `json:"starts"`
 }
 
-// releaseDownloads is where a release's files are, by tag. AGENTS_RELEASE_DOWNLOADS
-// replaces it, for a test or a mirror.
-const releaseDownloads = "https://github.com/agentloops-dev/agent-loops/releases/download"
+// releaseDownloads is where the public releases' files are, by tag (#1064: the releases'
+// repository, not the source's). A self-update takes them from the control plane first
+// (#5786), and from here when it does not answer or has no such file.
+// AGENTS_RELEASE_DOWNLOADS replaces both, for a test or a mirror.
+const releaseDownloads = "https://github.com/agentloops-dev/agents-releases/releases/download"
 
 // selfUpdater is one Mac host's updater; nil on a host that is not in an app.
 type selfUpdater struct {
@@ -100,7 +102,12 @@ type selfUpdater struct {
 	ctx     context.Context
 
 	// What the Mac does, replaced by a test.
-	fetch    func(ctx context.Context, url string, w io.Writer, limit int64) error
+	fetch func(ctx context.Context, url, pin string, w io.Writer, limit int64) error
+	// control is where this Mac's control plane answers, one address after another, as
+	// {url, pin}; nil or empty when it has none.
+	control func() []releaseSource
+	// public is where the public releases are (releaseDownloads; a test says another).
+	public   string
 	unpack   func(zip, dir string) error
 	verify   func(next, running string) error
 	version  func(app string) (string, error)
@@ -146,7 +153,7 @@ func writeSelfUpdateSettings(path string, s selfUpdateSettings) error {
 
 func newSelfUpdater(file, app, running string) *selfUpdater {
 	u := &selfUpdater{file: file, app: app, running: running, pause: 15 * time.Second,
-		fetch: fetchTo, writable: folderWritable, swap: exchangePaths, ctx: context.Background()}
+		fetch: fetchTo, public: releaseDownloads, writable: folderWritable, swap: exchangePaths, ctx: context.Background()}
 	settings := readSelfUpdateSettings(file)
 	u.rolledBack = settings.RolledBack
 	u.status = wire.SelfUpdate{AutoUpdate: settings.AutoUpdate, State: wire.SelfUpdateStateUpToDate, Running: running}
@@ -372,10 +379,55 @@ func (u *selfUpdater) betweenTurns() error {
 // unpacks it in work. It is the new Agent Loops.app, which goes where this copy is, whatever
 // that is named.
 func (u *selfUpdater) download(version, work string) (string, error) {
-	base := strings.TrimSuffix(cmp.Or(os.Getenv("AGENTS_RELEASE_DOWNLOADS"), releaseDownloads), "/") + "/v" + version + "/"
+	var lastErr error
+	for _, src := range u.sources(version) {
+		zip, err := u.downloadFrom(src, version, work)
+		if err == nil {
+			return u.unpackZip(version, work, zip)
+		}
+		var refused *refusedDownload
+		if errors.As(err, &refused) {
+			return "", err
+		}
+		log.Printf("self-update: %s did not give release %s: %v", src.base, version, err)
+		lastErr = err
+	}
+	return "", lastErr
+}
+
+// releaseSource is where a release's files are: a base address that ends in a slash, and
+// the pin of its certificate, "" for none.
+type releaseSource struct{ base, pin string }
+
+// sources are the places to take a release from, in order: the control plane (every
+// address it has), then the public releases. AGENTS_RELEASE_DOWNLOADS is the only one when
+// it is set.
+func (u *selfUpdater) sources(version string) []releaseSource {
+	if given := os.Getenv("AGENTS_RELEASE_DOWNLOADS"); given != "" {
+		return []releaseSource{{base: strings.TrimSuffix(given, "/") + "/v" + version + "/"}}
+	}
+	var out []releaseSource
+	if u.control != nil {
+		for _, c := range u.control() {
+			out = append(out, releaseSource{base: strings.TrimSuffix(c.base, "/") + "/v1/releases/" + version + "/", pin: c.pin})
+		}
+	}
+	return append(out, releaseSource{base: strings.TrimSuffix(u.public, "/") + "/v" + version + "/"})
+}
+
+// refusedDownload is a file that does not match its checksum: no other source is tried.
+type refusedDownload struct{ version string }
+
+func (e *refusedDownload) Error() string {
+	return "The download of release " + e.version + " does not match its checksum, so it was not installed."
+}
+
+// downloadFrom fetches the release's zip and its sum from one source, and checks the one
+// against the other. It is the zip's path.
+func (u *selfUpdater) downloadFrom(src releaseSource, version, work string) (string, error) {
 	name := releaseZip(version)
 	var sums strings.Builder
-	if err := u.fetch(u.ctx, base+"SHA256SUMS", &sums, 1<<16); err != nil {
+	if err := u.fetch(u.ctx, src.base+"SHA256SUMS", src.pin, &sums, 1<<16); err != nil {
 		return "", fmt.Errorf("Agent Loops could not download release %s's checksums: %w", version, err)
 	}
 	want := sumFor(sums.String(), name)
@@ -388,14 +440,21 @@ func (u *selfUpdater) download(version, work string) (string, error) {
 		return "", err
 	}
 	h := sha256.New()
-	err = u.fetch(u.ctx, base+name, io.MultiWriter(f, h), selfUpdateLimit)
+	err = u.fetch(u.ctx, src.base+name, src.pin, io.MultiWriter(f, h), selfUpdateLimit)
 	f.Close()
 	if err != nil {
 		return "", fmt.Errorf("Agent Loops could not download release %s: %w", version, err)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
-		return "", fmt.Errorf("The download of release %s does not match its checksum, so it was not installed.", version)
+		os.Remove(zip)
+		return "", &refusedDownload{version}
 	}
+	return zip, nil
+}
+
+// unpackZip unpacks a checked zip in work. It is the new Agent Loops.app, which goes where
+// this copy is, whatever that is named.
+func (u *selfUpdater) unpackZip(version, work, zip string) (string, error) {
 	out := filepath.Join(work, "new")
 	if err := u.unpack(zip, out); err != nil {
 		return "", fmt.Errorf("Agent Loops could not unpack release %s: %w", version, err)
@@ -425,15 +484,19 @@ func sumFor(sums, name string) string {
 	return ""
 }
 
-var selfUpdateHTTP = &http.Client{Timeout: 30 * time.Minute}
+var selfUpdateHTTP = controllink.HTTPClient("")
 
 // fetchTo copies a URL's body to w: at most limit bytes, or an error.
-func fetchTo(ctx context.Context, url string, w io.Writer, limit int64) error {
+func fetchTo(ctx context.Context, url, pin string, w io.Writer, limit int64) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
-	resp, err := selfUpdateHTTP.Do(req)
+	client := selfUpdateHTTP
+	if pin != "" {
+		client = controllink.HTTPClient(pin)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -515,7 +578,7 @@ func settleSelfUpdates(app, running, settingsFile string, swap func(a, b string)
 		if err := writeSelfUpdateSettings(settingsFile, settings); err != nil {
 			log.Printf("self-update: %v", err)
 		}
-		os.RemoveAll(work)
+		_ = os.RemoveAll(work)
 		back = true
 	}
 	return keep, back

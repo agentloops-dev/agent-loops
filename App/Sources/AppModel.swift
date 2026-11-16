@@ -603,7 +603,10 @@ final class AppModel {
         }
     }
 
-    /// Docs' places: the list, or a doc's page, and the ones before and after it, for Back and Forward.
+    /// The window's places, every page's, for Back and Forward (#5784): see `AppModel+History`.
+    var pageHistory = PageHistory()
+
+    /// Docs' place now: the list, or a doc's page. Back and Forward go by `pageHistory`.
     var docsHistory = LineageHistory<DocsPlace>()
     /// The list's sources, sort, filter and search, kept while the window is open, so Back finds it as left.
     let docsList = DocsListState()
@@ -2569,9 +2572,10 @@ final class AppModel {
         return result
     }
 
+    /// Once, at the control plane (#5573); to each machine that does not take it from there.
     func pushRetentionToServers(_ settings: RetentionSettings) async {
-        for host in hosts.hosts.all where !hosts.isOffline(host.id) {
-            _ = try? await client(for: host.id).call(
+        await sendToMachines(.retention, settings) { server in
+            _ = try? await server.call(
                 DaemonAPI.Method.retentionSet,
                 DaemonAPI.RetentionSetRequest(settings: settings, confirmed: true),
                 returning: DaemonAPI.RetentionSetResult.self)
@@ -2622,9 +2626,15 @@ final class AppModel {
         }
         guard let saved else { return }
         person = saved
-        for host in hosts.hosts.all where !hosts.isOffline(host.id) {
-            _ = try? await client(for: host.id).call(DaemonAPI.Method.personSet, saved.resolved(),
-                                                     returning: PersonSettings.self)
+        await pushPersonToServers(saved)
+    }
+
+    /// Once, at the control plane (#5573), with the name resolved here; to each machine that
+    /// does not take it from there.
+    func pushPersonToServers(_ settings: PersonSettings) async {
+        let resolved = settings.resolved()
+        await sendToMachines(.person, resolved) { server in
+            _ = try? await server.call(DaemonAPI.Method.personSet, resolved, returning: PersonSettings.self)
         }
     }
 
@@ -2640,11 +2650,9 @@ final class AppModel {
         await pushClientPermissionsToServers(saved)
     }
 
+    /// As the part runtimes, once, at the control plane (#5573).
     func pushClientPermissionsToServers(_ settings: ClientPermissionSettings) async {
-        for host in hosts.hosts.all where !hosts.isOffline(host.id) {
-            _ = try? await client(for: host.id).call(DaemonAPI.Method.clientPermissionsSet, settings,
-                                                     returning: ClientPermissionSettings.self)
-        }
+        await sendRuntimeChoicesToMachines()
     }
 
     /// One agent's own sandbox choice, nil to follow its runtime's default (064).
@@ -2697,8 +2705,13 @@ final class AppModel {
         autoSettings = saved
         await refreshAuto()
         await refreshDraftAutoPreview()
-        for host in hosts.hosts.all where !hosts.isOffline(host.id) {
-            _ = try? await client(for: host.id).call(DaemonAPI.Method.autoSet, saved, returning: AutoSettings.self)
+        await pushAutoToServers(saved)
+    }
+
+    /// Once, at the control plane (#5573); to each machine that does not take it from there.
+    func pushAutoToServers(_ settings: AutoSettings) async {
+        await sendToMachines(.auto, settings) { server in
+            _ = try? await server.call(DaemonAPI.Method.autoSet, settings, returning: AutoSettings.self)
         }
     }
 
@@ -2826,10 +2839,7 @@ final class AppModel {
         // Not kept, so not shown: the picker goes back to what the host still has (073).
         guard let saved else { sandboxSettings = before; return }
         sandboxSettings = saved
-        for host in hosts.hosts.all where !hosts.isOffline(host.id) {
-            _ = try? await client(for: host.id).call(DaemonAPI.Method.sandboxSet, saved,
-                                                     returning: SandboxSettings.self)
-        }
+        await sendRuntimeChoicesToMachines()
     }
 
     /// Delete one archived agent (#398). It leaves the list by `agent/removed`; a refusal
@@ -2857,10 +2867,12 @@ final class AppModel {
 
     /// A change to the person's layer reaches each server this window links to directly
     /// (research R3, path 2); one that is not newer, or that is its own, is refused and kept
-    /// as it is.
+    /// as it is. A server that says host.policy-layers/1 has it from the control plane
+    /// already, which this Mac's host told (user/setPolicy), so it gets no call (#5573).
     private func applyYoursOnServers() async {
-        guard let signed = await signedYours() else { return }
-        for host in hosts.hosts.all where !hosts.isOffline(host.id) {
+        let older = hosts.hosts.all.filter { !hosts.isOffline($0.id) && !host($0.id, has: Capability.hostPolicyLayers1) }
+        guard !older.isEmpty, let signed = await signedYours() else { return }
+        for host in older {
             _ = try? await client(for: host.id).call(DaemonAPI.Method.policyApplyYours, signed,
                                                      returning: DaemonAPI.PolicyApplyYoursResult.self)
         }
@@ -3595,7 +3607,10 @@ final class AppModel {
 
         case DaemonAPI.Notification.personChanged:
             guard let settings = try? params?.decode(PersonSettings.self) else { return }
+            let changed = person != nil && person != settings
             person = settings
+            // Set from the Remote or the web page on the Mac's host: the other machines too (#5573).
+            if changed { Task { await pushPersonToServers(settings) } }
 
         case DaemonAPI.Notification.preferencesChanged:
             guard let preferences = try? params?.decode(DaemonAPI.DisplayPreferences.self) else { return }
@@ -3621,11 +3636,7 @@ final class AppModel {
                 await refreshAuto()
                 await refreshDraftAutoPreview()
                 // Set from the Remote or the web page on the Mac's host: the servers too (FR-017).
-                if changed {
-                    for host in hosts.hosts.all where !hosts.isOffline(host.id) {
-                        _ = try? await client(for: host.id).call(DaemonAPI.Method.autoSet, settings, returning: AutoSettings.self)
-                    }
-                }
+                if changed { await pushAutoToServers(settings) }
             }
 
         case DaemonAPI.Notification.policyEffectiveChanged:
@@ -3967,15 +3978,10 @@ final class AppModel {
         await refreshServerDisk(host)
         await refreshMoves(on: host)
         await refreshCapacity(host)
-        // And its retention settings (051).
-        if let settings = work.retentionState?.settings {
-            _ = try? await server.call(DaemonAPI.Method.retentionSet,
-                                       DaemonAPI.RetentionSetRequest(settings: settings, confirmed: true),
-                                       returning: DaemonAPI.RetentionSetResult.self)
-        }
-        // And Cursor/Grok permission mode (061).
-        _ = try? await server.call(DaemonAPI.Method.clientPermissionsSet, clientPermissions,
-                                   returning: ClientPermissionSettings.self)
+        // Its retention (051), permission modes (061), name for the person (#121), sandbox
+        // defaults (064) and Auto (#2658): from the control plane, as it joined, unless it is
+        // older than that or the control plane does not keep them yet (#5573).
+        await sendSettingsNotTaken(to: host)
         // And the person's own layer of the policy, signed on this Mac's host (#2957,
         // research R3 path 2): its limits, how many workflows may run and the rest. A server
         // with no control plane gets it only this way.
@@ -3983,15 +3989,6 @@ final class AppModel {
             _ = try? await server.call(DaemonAPI.Method.policyApplyYours, signed,
                                        returning: DaemonAPI.PolicyApplyYoursResult.self)
         }
-        // And what agents call the person, as this Mac resolves it (#121).
-        if let person {
-            _ = try? await server.call(DaemonAPI.Method.personSet, person.resolved(), returning: PersonSettings.self)
-        }
-        // And each runtime's sandbox default (064).
-        _ = try? await server.call(DaemonAPI.Method.sandboxSet, sandboxSettings,
-                                   returning: SandboxSettings.self)
-        // And Auto's order, Include switches and own cells (#2658, FR-017).
-        _ = try? await server.call(DaemonAPI.Method.autoSet, autoSettings, returning: AutoSettings.self)
         // And what the Mac knows of the plans it relays (052, R6): a server's Codex
         // spends the Mac's ChatGPT plan, so the Mac's word that it is out is the server's.
         if let allowances = work.runtimeAllowances {

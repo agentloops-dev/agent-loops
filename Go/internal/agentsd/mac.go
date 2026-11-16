@@ -1,12 +1,12 @@
 package agentsd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -39,28 +39,37 @@ func (d *Daemon) registerMac() {
 		return wire.Empty{}, macOpen("-a", "Terminal")
 	})
 
-	var mu sync.Mutex
-	file := func() string { return filepath.Join(d.SettingsDir, "person.json") }
 	On(d, wire.CallPersonState, func(context.Context, *Client, wire.Empty) (wire.PersonSettings, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		return readPerson(file()), nil
+		d.personMu.Lock()
+		defer d.personMu.Unlock()
+		return readPerson(d.personFile()), nil
 	})
 	// person/set is said to agents from their next briefing on.
 	On(d, wire.CallPersonSet, func(_ context.Context, _ *Client, p wire.PersonSettings) (wire.PersonSettings, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		b, err := storeJSON(p)
-		if err == nil {
-			os.MkdirAll(d.SettingsDir, 0o700)
-			err = store.WriteAtomically(file(), b, 0o644)
-		}
-		if err != nil {
-			return wire.PersonSettings{}, &Error{Code: wire.FailureCouldNotSave, Message: "person.json: " + err.Error()}
-		}
-		Broadcast(d, wire.NotifyPersonChanged, p)
-		return p, nil
+		return d.setPerson(p)
 	})
+}
+
+func (d *Daemon) personFile() string { return filepath.Join(d.SettingsDir, "person.json") }
+
+// setPerson is person/set, and the part person of the user settings (#5573). The same
+// settings again change nothing and say nothing.
+func (d *Daemon) setPerson(p wire.PersonSettings) (wire.PersonSettings, error) {
+	d.personMu.Lock()
+	defer d.personMu.Unlock()
+	b, err := storeJSON(p)
+	if err == nil {
+		if had, readErr := os.ReadFile(d.personFile()); readErr == nil && bytes.Equal(had, b) {
+			return p, nil
+		}
+		os.MkdirAll(d.SettingsDir, 0o700)
+		err = store.WriteAtomically(d.personFile(), b, 0o644)
+	}
+	if err != nil {
+		return wire.PersonSettings{}, &Error{Code: wire.FailureCouldNotSave, Message: "person.json: " + err.Error()}
+	}
+	Broadcast(d, wire.NotifyPersonChanged, p)
+	return p, nil
 }
 
 // readPerson is person.json, empty when it is missing; one that will not read is set

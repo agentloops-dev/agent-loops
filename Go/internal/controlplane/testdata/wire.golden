@@ -74,6 +74,7 @@ control/status
     "machine.accounts/2",
     "machine.agent-secrets/1",
     "machine/1",
+    "machines.all/1",
     "machines/1",
     "machines/2",
     "messages.all/1",
@@ -111,7 +112,8 @@ control/status
     "user/2",
     "user/3",
     "user/4",
-    "user/5"
+    "user/5",
+    "user/6"
   ],
   "required": {
     "host": [
@@ -340,6 +342,7 @@ control/status
     "machine.accounts/2",
     "machine.agent-secrets/1",
     "machine/1",
+    "machines.all/1",
     "machines/1",
     "machines/2",
     "messages.all/1",
@@ -377,7 +380,8 @@ control/status
     "user/2",
     "user/3",
     "user/4",
-    "user/5"
+    "user/5",
+    "user/6"
   ],
   "required": {
     "host": [

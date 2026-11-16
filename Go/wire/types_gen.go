@@ -3296,6 +3296,15 @@ type ConnectionsList struct {
 	Providers []ConnectionProvider `json:"providers,omitzero"`
 }
 
+// connections/listAll (#5592): each machine's connections/list. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.
+type ConnectionsListAll struct {
+	Lists []MachineConnections `json:"lists"`
+
+	Unreached []ProjectMachine `json:"unreached"`
+
+	NotAsked int64 `json:"notAsked"`
+}
+
 // A GitHub Codespace for a folder's repository (#1591).
 type ConnectorCodespace struct {
 	ID string `json:"id"`
@@ -5405,6 +5414,20 @@ type EventsChange struct {
 	Waiting []WaitingAgent `json:"waiting"`
 }
 
+// events/listAll (#5592): each machine's newest EventsPage. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.
+type EventsListAll struct {
+	Pages []MachineEventsPage `json:"pages"`
+
+	Unreached []ProjectMachine `json:"unreached"`
+
+	NotAsked int64 `json:"notAsked"`
+}
+
+// events/listAll (#5592): the newest page of each of the caller's machines' events/list in one call. limit is each machine's, as in EventsListRequest, 50 when not said, at most 100. An older page is one machine's, by events/list.
+type EventsListAllRequest struct {
+	Limit *int64 `json:"limit,omitzero"`
+}
+
 type EventsListRequest struct {
 	Before *int64 `json:"before,omitzero"`
 
@@ -5434,6 +5457,15 @@ type FeatureUsage struct {
 	Since *string `json:"since,omitzero"`
 
 	Features []FeatureUse `json:"features"`
+}
+
+// reports/featuresAll (#5592): each machine's reports/features. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.
+type FeatureUsageAll struct {
+	Usage []MachineFeatureUsage `json:"usage"`
+
+	Unreached []ProjectMachine `json:"unreached"`
+
+	NotAsked int64 `json:"notAsked"`
 }
 
 // One feature's uses (#2165). clients is who used it: mac, remote, web, agent or workflow.
@@ -5896,6 +5928,15 @@ type ForgeBoards struct {
 	Boards []ProjectBoard `json:"boards"`
 }
 
+// forge/boardsAll (#5592): each machine's forge/boards. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.
+type ForgeBoardsAll struct {
+	Boards []MachineForgeBoards `json:"boards"`
+
+	Unreached []ProjectMachine `json:"unreached"`
+
+	NotAsked int64 `json:"notAsked"`
+}
+
 // forge/boards (#3282): the boards of every folder's project on this machine, or of one folder's.
 type ForgeBoardsRequest struct {
 	Folder *string `json:"folder,omitzero"`
@@ -6296,6 +6337,28 @@ type ForgeList struct {
 	Errors []ForgeListError `json:"errors,omitzero"`
 
 	Forges []ForgeCapabilities `json:"forges,omitzero"`
+}
+
+// forge/listAll (#5592): each machine's ForgeList, as it answered, in the order of the caller's machines. The machines list the same repos, so a client merges the items by ref. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.
+type ForgeListAll struct {
+	Lists []MachineForgeList `json:"lists"`
+
+	Unreached []ProjectMachine `json:"unreached"`
+
+	NotAsked int64 `json:"notAsked"`
+}
+
+// forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board and limit are as in ForgeListRequest, for each machine. pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.
+type ForgeListAllRequest struct {
+	Kind string `json:"kind"`
+
+	State *string `json:"state,omitzero"`
+
+	Board *string `json:"board,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
+
+	Pages []MachineCursor `json:"pages,omitzero"`
 }
 
 // A forge forge/issues or forge/pulls could not read (#3129): forge is github, gitlab or linear.
@@ -7447,6 +7510,15 @@ type LineageForecast struct {
 
 	// What the request's what-if moved (#4531); every figure is then the what-if's.
 	WhatIf *LineageForecastWhatIfEffect `json:"whatIf,omitzero"`
+}
+
+// lineage/forecastAll (#5592): each machine's lineage/forecast for the same request. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.
+type LineageForecastAll struct {
+	Forecasts []MachineLineageForecast `json:"forecasts"`
+
+	Unreached []ProjectMachine `json:"unreached"`
+
+	NotAsked int64 `json:"notAsked"`
 }
 
 // What a forecast assumes (#4531): the lanes and the runtime mix of its window. lanes is the issues in flight (from their first work to their landing, or to now when open) in an average hour that had one; peakLanes is the most in any hour. runtimes is the mix, the most hours first.
@@ -8933,6 +9005,15 @@ type MachineClients struct {
 	User *string `json:"user,omitzero"`
 }
 
+// A machine's ConnectionsList in connections/listAll (#5592).
+type MachineConnections struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Connections ConnectionsList `json:"connections"`
+}
+
 // A conversation of messages/conversationsAll (#5571) with the machine whose connector has it.
 type MachineConversation struct {
 	Machine MachineRef `json:"machine"`
@@ -8953,6 +9034,13 @@ type MachineCounts struct {
 	Os map[string]int64 `json:"os"`
 
 	Version map[string]int64 `json:"version"`
+}
+
+// A machine and the cursor of its next page (#5592).
+type MachineCursor struct {
+	Machine MachineRef `json:"machine"`
+
+	Cursor string `json:"cursor"`
 }
 
 // A doc of docs/listAll (#5571) with the machine that has it.
@@ -8976,6 +9064,24 @@ type MachineDocsSource struct {
 // machines/startEnroll (#1761): with as, a bot's machine code, an admin's only. Without, the caller's own, as before.
 type MachineEnroll struct {
 	As *string `json:"as,omitzero"`
+}
+
+// A machine's EventsPage in events/listAll (#5592).
+type MachineEventsPage struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Page EventsPage `json:"page"`
+}
+
+// A machine's FeatureUsage in reports/featuresAll (#5592).
+type MachineFeatureUsage struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Usage FeatureUsage `json:"usage"`
 }
 
 // machines/sendFolder, through machine/machines: one step of an agent's start_session with send (#2929), which sends this folder's branch to another of the person's machines first, or of its bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which moves a session there with its branch. Exactly one of state, upload, receive, facts, pack, read and moveIn; the control plane sends that machine's folders/receiveState, folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or agents/moveIn.
@@ -9008,6 +9114,24 @@ type MachineFolderSent struct {
 	Pack *SendPack `json:"pack,omitzero"`
 
 	Read *SendRead `json:"read,omitzero"`
+}
+
+// A machine's ForgeBoards in forge/boardsAll (#5592).
+type MachineForgeBoards struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Boards ForgeBoards `json:"boards"`
+}
+
+// A machine's ForgeList in forge/listAll (#5592).
+type MachineForgeList struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	List ForgeList `json:"list"`
 }
 
 // machine/hello, on every connect of an uplink. `implementation` is `swift` or `go` (#1134).
@@ -9154,6 +9278,15 @@ type MachineLastHeard struct {
 	Agents []Agent `json:"agents,omitzero"`
 
 	HeardAt *Date `json:"heardAt,omitzero"`
+}
+
+// A machine's LineageForecast in lineage/forecastAll (#5592).
+type MachineLineageForecast struct {
+	Machine MachineRef `json:"machine"`
+
+	MachineName string `json:"machineName"`
+
+	Forecast LineageForecast `json:"forecast"`
 }
 
 // machines/link. A machine whose ssh host key the control plane has not trusted yet (one that joined with the command, #3379) is refused -32069 hostKeyToTrust, data {fingerprint}, until trust is that fingerprint: the key is then kept for the machine's ssh start.
@@ -16585,6 +16718,15 @@ type UserSettings struct {
 	// ~/.agents/env (#5259), as a UserEnvironment: written to that file on each of the person's machines. The control plane refuses a value that looks like a secret.
 	Environment JSONValue `json:"environment,omitzero"`
 
+	// What agents call the person (#121, #5573), as a PersonSettings with the name resolved on their Mac: each machine writes it as person/set does.
+	Person JSONValue `json:"person,omitzero"`
+
+	// Auto's order, Include switches and own cells (#2658, FR-017; #5573), as an AutoSettings: each machine keeps it as auto/set does, with its own runtimes kept.
+	Auto JSONValue `json:"auto,omitzero"`
+
+	// How long archived agents are kept (051, #5573), as a RetentionSettings: each machine applies it as a confirmed retention/set. The person confirmed it on their Mac.
+	Retention JSONValue `json:"retention,omitzero"`
+
 	// #2957, research R11: your layer, as a SignedYourPolicy. Only the keeper sets it (user/setPolicy); a client cannot (user/setSettings refuses this part).
 	Policy JSONValue `json:"policy,omitzero"`
 
@@ -16609,7 +16751,7 @@ type UserSettingsPart struct {
 	Value JSONValue `json:"value"`
 }
 
-// A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers, agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time zone (#4818) and the environment (#5259) follow the person. Resources belong to each machine. policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
+// A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers, agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time zone (#4818), the environment (#5259), and what agents call the person, Auto's settings and retention (#5573) follow the person. Resources belong to each machine. policy (#2957) is set only by the keeper, through user/setPolicy; user/setSettings refuses it.
 type UserSettingsPartName string
 
 const UserSettingsPartNameMcpServers UserSettingsPartName = "mcpServers"
@@ -16621,6 +16763,9 @@ const UserSettingsPartNameAccounts UserSettingsPartName = "accounts"
 const UserSettingsPartNameTimeZone UserSettingsPartName = "timeZone"
 const UserSettingsPartNameEnvironment UserSettingsPartName = "environment"
 const UserSettingsPartNamePolicy UserSettingsPartName = "policy"
+const UserSettingsPartNamePerson UserSettingsPartName = "person"
+const UserSettingsPartNameAuto UserSettingsPartName = "auto"
+const UserSettingsPartNameRetention UserSettingsPartName = "retention"
 
 // user/suspended (#1002, FR-018): to each machine of a suspended person, at hello before its settings and within 5 seconds of a change; off: true ends it.
 type UserSuspended struct {
@@ -17127,7 +17272,7 @@ type WorkReport struct {
 	Block *Block `json:"block,omitzero"`
 }
 
-// work/suggest-leads (#5458): New Session's Suggested section, from the forge's open epics and this machine's sessions. suggestions are at most 3 epics with no lead (no session that is not archived has both #<epic> and lead), ranked: an epic with priority:high children first, then one with UI children, then the earliest milestone due date, then the one nearest to done. more is how many more there are, for N more in Work. An epic the person dismissed is left out until it changes or a lead has ended. errors say a forge that could not be read.
+// work/suggest-leads (#5458): New Session's Suggested section, from the forge's open epics and this machine's sessions. suggestions are at most 3 epics with no lead (no session that is not archived has both #<epic> and lead), ranked: an epic with priority:high children first, then one with UI children, then the earliest milestone due date, then the one nearest to done. more is how many more there are, for N more in Work. An epic the person dismissed is left out until its progress changes (done or total children; not its update time, #5731) or a lead of it has ended. errors say a forge that could not be read.
 type WorkSuggestLeads struct {
 	Suggestions []WorkLeadSuggestion `json:"suggestions"`
 

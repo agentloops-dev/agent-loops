@@ -116,6 +116,7 @@ const CapHostSessionSecrets1 = "host.session-secrets/1"
 const CapHostSuspend1 = "host.suspend/1"
 const CapHostTeam1 = "host.team/1"
 const CapHostUpdate1 = "host.update/1"
+const CapHostUserParts1 = "host.user-parts/1"
 const CapHostUserSettings1 = "host.user-settings/1"
 const CapHostUserSettings2 = "host.user-settings/2"
 const CapHostUserSettings3 = "host.user-settings/3"
@@ -144,6 +145,7 @@ const CapMachineAccounts2 = "machine.accounts/2"
 const CapMachineAgentSecrets1 = "machine.agent-secrets/1"
 const CapMachineUsage1 = "machine.usage/1"
 const CapMachine1 = "machine/1"
+const CapMachinesAll1 = "machines.all/1"
 const CapMachines1 = "machines/1"
 const CapMachines2 = "machines/2"
 const CapMailbox1 = "mailbox/1"
@@ -235,6 +237,7 @@ const CapUser2 = "user/2"
 const CapUser3 = "user/3"
 const CapUser4 = "user/4"
 const CapUser5 = "user/5"
+const CapUser6 = "user/6"
 const CapVelocity1 = "velocity/1"
 const CapViews1 = "views/1"
 const CapWake1 = "wake/1"
@@ -823,6 +826,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"clients/startPairing", "clients/1"},
 	{"clients/stopPairing", "clients/1"},
 	{"clients/webPushKey", "clients/1"},
+	{"connections/listAll", "machines.all/1"},
 	{"console/fleet", "console/1"},
 	{"console/live", "console/1"},
 	{"console/stopAgent", "console/1"},
@@ -842,7 +846,10 @@ var ControlCapabilities = pairs([][2]string{
 	{"deploys/deliveryAll", "deploys.read/1"},
 	{"deploys/sync", "deploys.copy/1"},
 	{"docs/listAll", "docs.all/1"},
+	{"events/listAll", "machines.all/1"},
 	{"folders/detected", "folders/1"},
+	{"forge/boardsAll", "machines.all/1"},
+	{"forge/listAll", "machines.all/1"},
 	{"git/credential", "git/1"},
 	{"governance/approvals", "governance/1"},
 	{"governance/decide", "governance/1"},
@@ -856,6 +863,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"groups/set", "groups/1"},
 	{"groups/setRole", "org-identity/1"},
 	{"handover/status", "handover/1"},
+	{"lineage/forecastAll", "machines.all/1"},
 	{"lineage/sessionsOn", "lineage.read/2"},
 	{"lineage/sync", "lineage.graph/1"},
 	{"lineage/walkAll", "lineage.read/2"},
@@ -991,6 +999,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"readApi/revoke", "readapi/1"},
 	{"reports/deleteView", "reports.views/1"},
 	{"reports/export", "reports/2"},
+	{"reports/featuresAll", "machines.all/1"},
 	{"reports/nodes", "reports.nodes/2"},
 	{"reports/policy", "reports.scope/1"},
 	{"reports/saveView", "reports.views/2"},
@@ -1039,7 +1048,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"user/setAgentConfigFile", "user/1"},
 	{"user/setPolicy", "host.policy-layers/1"},
 	{"user/setSecret", "user/2"},
-	{"user/setSettings", "user/5"},
+	{"user/setSettings", "user/6"},
 	{"user/settings", "user/1"},
 	{"workflows/claimRun", "bots/1"},
 	{"workflows/fire", "events.team/1"},
@@ -1192,5 +1201,6 @@ var DeclaredCapabilities = map[string][]string{
 		"host.lock/1",
 		"host.lock/2",
 		"host.user-settings/3",
+		"host.user-parts/1",
 	},
 }
