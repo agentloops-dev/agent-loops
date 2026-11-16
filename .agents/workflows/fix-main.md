@@ -19,7 +19,8 @@ When the run is red and no other lane has the spell, you make `main` green again
 nobody watching.
 
 Follow the `fix-main` skill (`.agents/skills/fix-main/SKILL.md`) from its step 1. Its rules
-are the limits of this run: rerun once to find a flake, file or update one "Main broken"
-bug, bisect with `scripts/bisect-main.sh`, revert the bad PR first (fix forward only when
-the revert conflicts), and `notify` Alex only when `main` is still red 60 minutes after
-the first red run. Never weaken a check, never force-push and never push to `main`.
+are the limits of this run: never rerun a failed job; quarantine a flaky test on a PR of its
+own and file a bug to fix it later; for a break, file or update one "Main broken" bug,
+bisect with `scripts/bisect-main.sh` and fix forward. Never revert without Alex: when `main`
+cannot be made green, ask Alex with `ask_question`, and revert only when Alex says so. Never
+weaken a check, never force-push and never push to `main`.

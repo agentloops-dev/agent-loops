@@ -57,14 +57,14 @@ event's `pr` and your own branch.
       the workflow again: the event is a hint. Still red with the same test: wait again.
       Red with another failure, or not finished: wait again.
    4. **Run the checks again once main is green.** When main's run went green at the
-      same commit as the red one (a flake), run the failed jobs again. When it went green
-      at a newer commit (a revert or a fix), a rerun tests the old merge commit and
+      same commit as the red one (a person reran it), run the failed jobs again. When it
+      went green at a newer commit (a quarantine, a fix or a revert), a rerun tests the old merge commit and
       fails again: rebase the branch onto the default branch and push (never a
       force-push of someone else's work; `gh pr update-branch <n>` when the branch is
       not yours), then run `scripts/rearm-automerge.sh <pr>`.
    5. **When it fails again** after main is green, the failure is the change's: go to
       step 3. When main is still red 60 minutes after you began to wait, wait again;
-      the Fix main lane tells Alex (#5581, §6 step 7).
+      the Fix main lane asks Alex (`fix-main`, step 6).
 3. **Get the branch.** Use the app's `move_worktree` tool to move into a worktree on the
    branch (the event's `pr.branch`). When you do not have that tool, use
    `git worktree add` beside the folder's folder. Pull it first, so that you have its
