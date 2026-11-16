@@ -37,6 +37,10 @@ func transport(pin string) *http.Transport {
 	return &http.Transport{Proxy: Proxy, TLSClientConfig: tlsConfig(pin)}
 }
 
+// HTTPClient is an HTTP client for a control plane at pin (empty: no pin), through the
+// network's proxy, with no time limit of its own: a download's context ends it (#5786).
+func HTTPClient(pin string) *http.Client { return &http.Client{Transport: transport(pin)} }
+
 // tlsConfig checks the control plane's certificate by its pin, or by TrustRoots.
 func tlsConfig(pin string) *tls.Config {
 	config := &tls.Config{MinVersion: tls.VersionTLS12}

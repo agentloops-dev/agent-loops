@@ -22,7 +22,14 @@ the App Store. Pushing a version tag on main publishes a release. The tag starts
 - builds the static Linux agentsd (Go) as `agentsd-linux-<arch>-<version>.tar.gz`;
 - creates the release, titled **Agent Loops <version>**, with these files and a
   `SHA256SUMS`. Agent Loops on a Mac updates itself from them (#2178): agentsd downloads
-  `v<version>/SHA256SUMS` and `v<version>/Agent-Loops-<version>.zip`, checks the sum, then
+  `SHA256SUMS` and `Agent-Loops-<version>.zip`, first from its control plane
+  (`GET /v1/releases/<version>/<file>`), and from the public releases
+  (`https://github.com/agentloops-dev/agents-releases/releases/download/v<version>/`, #1064)
+  when the control plane does not answer or answers 404. The control plane takes a file
+  from there the first time a machine asks, checks it against that release's `SHA256SUMS`,
+  keeps it in its releases folder (`AGENTS_CONTROL_RELEASES`, or `releases` in its
+  `--home`), and keeps only its own release and the one before it (#5786).
+  `AGENTS_RELEASE_DOWNLOADS` replaces both sources, for a test. It checks the sum, then
   the app's signature (the same team and identifier), its notarisation and its
   `CFBundleShortVersionString`. Keep these names. Keep the app in
   `Agent-Loops-<version>.zip` stapled and named `Agent Loops.app`, the app in

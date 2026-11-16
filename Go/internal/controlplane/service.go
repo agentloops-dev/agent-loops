@@ -68,6 +68,11 @@ type Config struct {
 	HostJoinFile string
 	// Where the Linux hosts it hands out are (ServerFiles.folder).
 	ServerFolder string
+	// Where the public releases' files are kept for the Macs' self-update (#5786): ""
+	// keeps none, and a Mac then takes its release from the public releases itself.
+	ReleaseFolder string
+	// Where those files come from: ReleaseDownloads when empty (a test says another).
+	ReleaseSource string
 	// Where the runtimes' toolsets machines/install puts on a server are (#1136): "" puts none.
 	ToolsetFolder string
 	// The web remote's loopback listener (071): Web/dist and the port, or nil for none,
@@ -160,6 +165,8 @@ type WebConfig struct {
 // Service is ControlService.
 type Service struct {
 	cfg Config
+	// The public releases' files kept for the Macs (#5786).
+	releases *releaseFiles
 	// The control key, and the one before a rotation (#997): read with currentKeys.
 	keyBook
 	// The Multiplier of each person, by their lineage objects' tags (#3903).
@@ -372,6 +379,7 @@ func New(cfg Config) (*Service, error) {
 	if s.tunnels != nil {
 		tunnels = s.tunnels
 	}
+	s.releases = newReleaseFiles(cfg)
 	s.installer = &hostinstall.Installer{Codes: s.codes, ServerFolder: cfg.ServerFolder,
 		ToolsetFolder: cfg.ToolsetFolder,
 		Log:           func(format string, args ...any) { s.log(fmt.Sprintf(format, args...)) },
@@ -1035,7 +1043,7 @@ func (s *Service) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			plain(w, http.StatusServiceUnavailable, "the store can't be reached\n")
 		}
-	case (path == "/v1/install.sh" || strings.HasPrefix(path, "/v1/servers/") || strings.HasPrefix(path, "/v1/toolsets/")) && !s.mayDownload(r):
+	case (path == "/v1/install.sh" || strings.HasPrefix(path, "/v1/servers/") || strings.HasPrefix(path, "/v1/releases/") || strings.HasPrefix(path, "/v1/toolsets/")) && !s.mayDownload(r):
 		plain(w, http.StatusTooManyRequests, "too many downloads from this address; try again in a minute\n")
 	case path == "/v1/install.sh":
 		w.Header().Set("Content-Type", "text/x-shellscript")
@@ -1049,6 +1057,8 @@ func (s *Service) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(downloadWriteTimeout))
 		w.Write(data)
+	case strings.HasPrefix(path, "/v1/releases/"):
+		s.releases.serve(w, r)
 	case strings.HasPrefix(path, "/v1/toolsets/"):
 		data, ok := toolsetFile(strings.TrimPrefix(path, "/v1/toolsets/"), s.cfg.ToolsetFolder)
 		if !ok {
