@@ -1,22 +1,22 @@
-// Work ▸ Timeline (#4206), as the window's WorkTimelinePane (#4173, specs/time-stream/wireframe.md):
-// time across, the releases line in the middle, an epic's line leaving it when its first child
-// starts and joining it when its last one closes; the forecast dashed after Now. Drawn in SVG; the
-// lanes and the marks come from model/workTimeline. The state lives for the tab, so Back from an
-// issue's page finds the Timeline as it was left.
+// Work ▸ Timeline (#4206), as the window's WorkTimelinePane (#4173): time across, each epic a filled block in its
+// own row from when its first child starts to when its last one closes, a lighter tint with a dashed edge after Now
+// (the forecast), then a thin bar to where it closes 8 times in 10 (#5506, Alex, 2026-11-14). Drawn in SVG; the rows
+// and the marks come from model/workTimeline. The state lives for the tab, so Back from an issue's page finds the
+// Timeline as it was left.
 import { signal } from "@preact/signals";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ForgeItem, LineageSessionOn, WorkTimeline as Timeline } from "../protocol/generated";
 import { Capability } from "../protocol/capabilities.generated";
-import { fromWireDate, toWireDate } from "../protocol/dates";
+import { toWireDate } from "../protocol/dates";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
 import { boardChoices, boardName, withBoard, type WorkProject } from "../model/work";
 import { boards, forgeHosts, loadBoards } from "../model/workLists";
 import {
-  Axis, cardRows, colourIndex, dotX, epicCount, epicOf, epicRows, errorWords, fitLabel, hit, isOpen, joins, label, labelText, lastJoined,
-  lastJoinedWords, landed as landedRefs, lanes, layout, labelRoom, mergeTimelines, noEpicsWords, noMachine, noProject, noProjectTitle,
-  overlapping, rangeSpan, rangeTitle, rangeWindow, riser, sessionNodes, showTheWeek, startedBySessions, timelineLines, workingNow, timelineRanges,
-  titleWords, waitWords, zoomed, type Interval, type TimelineHit, type TimelineLine, type TimelineRange,
+  Axis, blockHeight, blockWords, cardRow, colourIndex, dotX, dotY, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
+  lastJoinedWords, landed as landedRefs, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping,
+  packSpan, rangeSpan, rangeTitle, rangeWindow, reach, rgbOf, rowCount, rowGap, rowTop, sessionNodes, showTheWeek, startedBySessions,
+  timelineLines, timelineRanges, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineHit, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
 import { go } from "../route";
 import { keepWork, keptWorkRead } from "../model/localCopy";
@@ -60,11 +60,13 @@ const sessions = signal<LineageSessionOn[]>([]);
 /** The machines' timelines as one, before the sessions start their children. */
 let fromMachines: Timeline | undefined;
 
-const laneHeight = 60;
 const axisHeight = 26;
+const footHeight = 26;
 
 /** The system colours for the features, as the window's palette; the last, grey, for an epic with none. */
 const palette = ["#007aff", "#af52de", "#ff2d55", "#ff9500", "#34c759", "#30b0c7", "#5856d6", "#00c7be", "#a2845e", "#32ade6", "#ff3b30", "#8e8e93"];
+/** Each colour darkened until white text on it has 4.5:1 (#5506). */
+const fills = palette.map((c) => hexOf(forWhiteText(rgbOf(c))));
 
 /** What the plot holds: the window, and a range's width on each side of it to scroll through. */
 function content(): Interval {
@@ -84,7 +86,8 @@ function timelineProjects(store: Store): WorkProject[] {
 async function loadTimeline(store: Store) {
   const projects = timelineProjects(store);
   const chosen = projects.find((p) => p.id === project.value) ?? projects[0];
-  const span = content();
+  // The widest range's span, whatever the range: the rows are packed over it, so they stay put across ranges (#5506).
+  const span = packSpan(anchor.value);
   const key = `${asked.value} ${chosen?.id} ${board.value} ${range.value} ${span.start} ${timelineHosts(store).map((h) => h.id).join(",")}`;
   if (read === key && timeline.value !== null) return;
   read = key;
@@ -249,7 +252,6 @@ export function WorkTimeline({ store }: { store: Store }) {
             <FromDeviceStrip at={fromDevice.value && problems.length === 0 ? plotAt.value : undefined} />
             <ErrorStrip lines={problems} retry={refresh} at={stale.value || fromDevice.value ? plotAt.value : undefined} />
             <Plot timeline={t ?? { epics: [], releases: [] }} loading={t === null} dim={stale.value}
-              projectName={projects.find((p) => p.id === project.value)?.name ?? ""}
               working={t ? workingNow(t, sessions.value, Object.values(store.agents.value).flat()) : new Set()} />
           </>
         )}
@@ -269,11 +271,11 @@ function useMinute(): number {
 
 interface Hover { hit: TimelineHit; x: number; y: number }
 
-/** The plot; under 700 px the list of epics in its place (note 36). `loading`: the first read, the releases line and
- * Now with grey lanes that shimmer (S10). `dim`: the last plot under the error strip (S12). `working`: the epics and
- * children a session is in a turn on now (#4265); their open lines pulse. */
-function Plot({ timeline: t, projectName, loading, dim, working }: {
-  timeline: Timeline; projectName: string; loading: boolean; dim: boolean; working: ReadonlySet<string>;
+/** The plot; under 700 px the list of epics in its place (note 36). `loading`: the first read, the axis and Now with
+ * grey blocks that shimmer in rows (S10). `dim`: the last plot under the error strip (S12). `working`: the epics and
+ * children a session is in a turn on now (#4265); their blocks glow. */
+function Plot({ timeline: t, loading, dim, working }: {
+  timeline: Timeline; loading: boolean; dim: boolean; working: ReadonlySet<string>;
 }) {
   const now = useMinute();
   const scroller = useRef<HTMLDivElement>(null);
@@ -298,13 +300,11 @@ function Plot({ timeline: t, projectName, loading, dim, working }: {
   const visible = Math.max(size.width, 1);
   const span = content();
   const axis = new Axis(span, visible * (span.end - span.start) / rangeSpan[range.value]);
-  const lines = layout(overlapping(timelineLines(t, now, true, working), span), axis, (l) => measure(label(l)));
-  const { above, below } = lanes(lines);
-  const sides = Math.max(above, below, 2);
-  const height = Math.max((2 * sides + 2) * laneHeight, size.height - axisHeight);
-  const trunk = height / 2;
+  // Packed over the widest range's span, so a block keeps its row when the range changes or the plot scrolls (#5506).
+  const lines = layout(overlapping(timelineLines(t, now, true, working), packSpan(anchor.value)));
+  const height = Math.max(rowTop(Math.max(rowCount(lines), 3)) + rowGap, size.height - axisHeight - footHeight);
 
-  // The window starts a screen in: a range's width is before it. Up and down, the releases line in the middle.
+  // The window starts a screen in: a range's width is before it.
   const scrollTo = (x: number) => {
     const el = scroller.current;
     if (!el) return;
@@ -315,7 +315,7 @@ function Plot({ timeline: t, projectName, loading, dim, working }: {
     const el = scroller.current;
     if (!el || size.width === 0) return;
     scrollTo(visible);
-    el.scrollTop = Math.max((height + axisHeight - el.clientHeight) / 2, 0);
+    el.scrollTop = 0;
   }, [nowAsked.value, size.width === 0]);
 
   // Past an edge of what the plot holds, the window moves by a range, and the plot with it.
@@ -357,17 +357,10 @@ function Plot({ timeline: t, projectName, loading, dim, working }: {
     const r = (e.currentTarget as SVGElement).getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
-  const hitAt = (p: { x: number; y: number }) => hit(p, lines, t.releases, axis, trunk, laneHeight);
-  const open = (h: TimelineHit) => {
-    switch (h.kind) {
-      case "dot": go({ nav: "work", section: "issue", item: h.dot.ref }); break;
-      case "line": go({ nav: "work", section: "issue", item: h.line.epic }); break;
-      case "join": if (h.join.lines[0]) go({ nav: "work", section: "issue", item: epicOf(h.join.lines[0]) }); break;
-      case "release": if (h.release.url) window.open(h.release.url, "_blank", "noopener"); break;
-    }
-  };
+  const hitAt = (p: { x: number; y: number }) => hit(p, lines, axis);
+  const open = (h: TimelineHit) => go({ nav: "work", section: "issue", item: h.kind === "dot" ? h.dot.ref : h.line.epic });
 
-  const d = new Drawing(lines, t, axis, now, trunk, height, offset, visible, projectName);
+  const d = new Drawing(lines, axis, now, height, offset, visible);
   const win = rangeWindow(range.value, anchor.value);
   const rows = epicRows(timelineLines(t, now), win, now);
   const last = rows.length === 0 && !loading ? lastJoined(t, win.start) : undefined;
@@ -375,6 +368,7 @@ function Plot({ timeline: t, projectName, loading, dim, working }: {
     <div class={`timeline${dim ? " dim" : ""}`}>
       <div class="timeline-scroll" ref={scroller} onScroll={onScroll}>
         <div class="timeline-content" style={{ width: `${axis.width}px` }}>
+          <svg class="timeline-axis" width={axis.width} height={axisHeight} aria-hidden="true">{d.axisMarks()}</svg>
           <svg class={`timeline-plot${hover ? " pointing" : ""}`} width={axis.width} height={height} aria-hidden="true"
             onMouseMove={(e) => { const p = point(e); const h = hitAt(p); setHover(h ? { hit: h, ...p } : null); }}
             onMouseLeave={() => setHover(null)}
@@ -382,8 +376,8 @@ function Plot({ timeline: t, projectName, loading, dim, working }: {
             {d.plot()}
             {loading && d.placeholders()}
           </svg>
-          {hover && <Card hover={hover} lines={lines} timeline={t} now={now} right={offset + visible} />}
-          <svg class="timeline-axis" width={axis.width} height={axisHeight} aria-hidden="true">{d.axisMarks()}</svg>
+          {hover && <Card hover={hover} timeline={t} now={now} right={offset + visible} />}
+          <svg class="timeline-foot" width={axis.width} height={footHeight} aria-hidden="true">{d.nowPill()}</svg>
         </div>
       </div>
       {/* S11: no epic in the window, and the way to a wider one. */}
@@ -425,27 +419,25 @@ function Plot({ timeline: t, projectName, loading, dim, working }: {
 }
 
 /** The card beside the pointer, on the left of it near the plot's right edge, so it stays in sight. A row on three
- * lines (Alex, 2026-11-10): the title; the label chips, where the wire has them; the prediction. A join has a row
- * for each of its lines. */
-function Card({ hover, lines, timeline: t, now, right }: { hover: Hover; lines: TimelineLine[]; timeline: Timeline; now: number; right: number }) {
+ * lines (Alex, 2026-11-10): the title; the label chips, where the wire has them; the prediction. */
+function Card({ hover, timeline: t, now, right }: { hover: Hover; timeline: Timeline; now: number; right: number }) {
+  const row = cardRow(hover.hit, t, now);
   return (
     <div class="timeline-card" style={hover.x + 14 + 370 > right
-      ? { left: `${hover.x - 14}px`, transform: "translateX(-100%)", top: `${hover.y + 14}px` }
-      : { left: `${hover.x + 14}px`, top: `${hover.y + 14}px` }}>
-      {cardRows(hover.hit, lines, t, now).map((row, i) => (
-        <div key={i} class="timeline-card-row">
-          <div class="timeline-card-title">
-            {row.state && <StateIcon kind="issue" state={row.state} size={14} />}<span class="strong">{row.title}</span>
-          </div>
-          {row.labels.length > 0 && (
-            <div class="work-chips">
-              {row.labels.slice(0, 3).map((l) => <LabelChip key={l.name} label={l} />)}
-              {row.labels.length > 3 && <span class="work-chips-more quiet small">+{row.labels.length - 3}</span>}
-            </div>
-          )}
-          <div class="quiet small timeline-card-line">{row.line}</div>
+      ? { left: `${hover.x - 14}px`, transform: "translateX(-100%)", top: `${hover.y + axisHeight + 14}px` }
+      : { left: `${hover.x + 14}px`, top: `${hover.y + axisHeight + 14}px` }}>
+      <div class="timeline-card-row">
+        <div class="timeline-card-title">
+          <StateIcon kind="issue" state={row.state} size={14} /><span class="strong">{row.title}</span>
         </div>
-      ))}
+        {row.labels.length > 0 && (
+          <div class="work-chips">
+            {row.labels.slice(0, 3).map((l) => <LabelChip key={l.name} label={l} />)}
+            {row.labels.length > 3 && <span class="work-chips-more quiet small">+{row.labels.length - 3}</span>}
+          </div>
+        )}
+        <div class="quiet small timeline-card-line">{row.line}</div>
+      </div>
     </div>
   );
 }
@@ -455,50 +447,27 @@ class Drawing {
   readonly nowX: number;
   readonly shown: TimelineLine[];
 
-  constructor(readonly lines: TimelineLine[], readonly t: Timeline, readonly axis: Axis, readonly now: number, readonly trunk: number,
-              readonly height: number, readonly offset: number, readonly visible: number, readonly project: string) {
+  constructor(readonly lines: TimelineLine[], readonly axis: Axis, readonly now: number, readonly height: number,
+              readonly offset: number, readonly visible: number) {
     this.nowX = axis.x(now);
-    this.shown = lines.filter((l) => axis.x(l.start) <= this.seenTo && axis.x(Math.max(l.end, l.band?.end ?? l.end)) >= this.seenFrom);
+    this.shown = lines.filter((l) => axis.x(l.start) <= this.seenTo && axis.x(reach(l)) >= this.seenFrom);
   }
 
   get seenFrom() { return this.offset - this.visible; }
   get seenTo() { return this.offset + 2 * this.visible; }
   seen(x: number) { return x >= this.seenFrom && x <= this.seenTo; }
-  y(lane: number) { return this.trunk - lane * laneHeight; }
 
-  colour(l: TimelineLine) { return palette[colourIndex(l.feature, palette.length)]!; }
+  /** A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not planned. */
+  colour(l: TimelineLine) { return fills[l.how.how === "dropped" ? fills.length - 1 : colourIndex(l.feature, fills.length)]!; }
 
-  /** A child of the line is worked on now, and the line is open at Now. */
+  /** A child of the block is worked on now, and the block is open at Now. */
   isWorking(l: TimelineLine) { return l.working > 0 && l.start <= this.now && l.end >= this.now; }
 
-  /** A line's path: a cubic curve up from the releases line, along its lane, and a curve back down
-   * when it joins (section 10). The rise is in pixels, not minutes (section 12, item 2). */
-  path(l: TimelineLine): string {
-    const r = riser(l.lane), a = this.axis;
-    const sx = a.x(l.start), ex = Math.max(a.x(l.end), sx), yl = this.y(l.lane), tr = this.trunk;
-    let p = `M${sx},${tr} C${sx + r / 2},${tr} ${sx + r / 2},${yl} ${sx + r},${yl}`;
-    if (l.how.how === "joined" || l.how.how === "forecast") {
-      const jx = Math.max(ex - r, sx + r);
-      p += ` L${jx},${yl} C${jx + r / 2},${yl} ${jx + r / 2},${tr} ${jx + r},${tr}`;
-    } else {
-      p += ` L${Math.max(ex, sx + r)},${yl}`;
-    }
-    return p;
-  }
-
-  /** Solid up to Now and dashed after it; at night with a soft glow (the CSS's). */
-  stroke(key: string, d: string, colour: string, width: number) {
-    return (
-      <g key={key} class="timeline-stroke" style={{ "--c": colour }}>
-        <path d={d} class="glow" stroke-width={width + 2} />
-        <path d={d} clip-path="url(#timeline-past)" stroke-width={width} />
-        <path d={d} clip-path="url(#timeline-ahead)" stroke-width={width} stroke-dasharray="5 4" />
-      </g>
-    );
-  }
+  /** The wait pill's width: 👤 and the number, no words (Alex, 2026-11-14). */
+  pillWidth(count: number) { return measure(`👤 ${count}`) + 12; }
 
   plot() {
-    const { axis, nowX, trunk, height, shown } = this;
+    const { axis, nowX, height, shown } = this;
     const left = this.offset, right = this.offset + this.visible;
     const out = [
       <defs key="defs">
@@ -507,173 +476,115 @@ class Drawing {
       </defs>,
       <rect key="plot" class="timeline-ground" x={0} y={0} width={axis.width} height={height} />,
     ];
-    // The bands under everything (8 times in 10).
     for (const l of shown) {
-      if (!l.band) continue;
-      out.push(<rect key={`band ${l.id}`} class="timeline-band" style={{ "--c": this.colour(l) }} x={axis.x(l.band.start)} y={this.y(l.lane) - 7}
-        width={Math.max(axis.x(l.band.end) - axis.x(l.band.start), 2)} height={14} rx={7} />);
-    }
-    // The releases line: solid to Now, dashed after, the brightest at night.
-    out.push(<g key="trunk" class="timeline-trunk">{this.stroke("trunk", `M0,${trunk} L${axis.width},${trunk}`, "var(--timeline-trunk)", 2.5)}</g>);
-    // An epic a session is in a turn on now (#4265): under its line, a glow that breathes, and its ◐ turns, one
-    // clock for every working line and ring (spinnerClock.ts); with Reduce Motion, neither (the CSS's). The line
-    // itself is twice as thick.
-    const working = shown.filter((l) => this.isWorking(l));
-    if (working.length > 0) {
-      out.push(<g key="breathing" class="timeline-breathing">
-        {working.map((l) => <path key={l.id} d={this.path(l)} style={{ "--c": this.colour(l) }} />)}
-      </g>);
-    }
-    // The lines.
-    for (const l of shown) out.push(this.stroke(`line ${l.id}`, this.path(l), this.colour(l), this.isWorking(l) ? 4 : 2));
-    // The joins on the releases line.
-    for (const j of joins(shown, axis)) {
-      const x = axis.x(j.at);
-      const line = this.lines.find((l) => l.id === j.lines[0]);
-      const c = line ? this.colour(line) : "var(--timeline-faint)";
-      // A ring with a count is larger, so the count reads.
-      const r = j.lines.length > 1 ? 9 : 6;
+      const c = this.colour(l), top = rowTop(l.row), mid = top + blockHeight / 2;
+      const sx = axis.x(l.start), ex = Math.max(axis.x(l.end), sx + 2), w = ex - sx;
+      const forecast = l.how.how === "forecast" || l.how.how === "waits";
+      const block = (cls: string, clip?: string) => (
+        <rect class={cls} x={sx} y={top} width={w} height={blockHeight} clip-path={clip ? `url(#${clip})` : undefined} />
+      );
+      const pill = l.how.how === "waits" ? this.pillWidth(l.how.count) : 0;
+      const words = blockWords(l, axis, measure, { next: nextInRow(this.lines, l), left: left + 2, trailing: pill });
       out.push(
-        <g key={`join ${j.lines.join(",")}`} class={`timeline-join${j.forecast ? " forecast" : ""}`} style={{ "--c": c }}>
-          <circle cx={x} cy={trunk} r={r} stroke-dasharray={j.forecast ? "3 2" : undefined} />
-          {j.lines.length > 1 && <text x={x} y={trunk} dy="0.35em" text-anchor="middle">{j.lines.length}</text>}
+        <g key={`block ${l.id}`} class={`timeline-block${this.isWorking(l) ? " working" : ""}${l.how.how === "dropped" ? " dropped" : ""}`}
+          style={{ "--c": c }}>
+          {/* An epic a session is in a turn on now (#4265): a soft glow that breathes; with Reduce Motion, still. */}
+          {this.isWorking(l) && <rect class="breathing" x={sx} y={top} width={w} height={blockHeight} />}
+          {block("past", "timeline-past")}
+          {forecast && block("ahead", "timeline-ahead")}
+          {/* 8 times in 10: a thin bar after the forecast. */}
+          {l.band && axis.x(l.band.end) > ex && (
+            <rect class="band" x={ex} y={mid - 2} width={axis.x(l.band.end) - ex} height={4} rx={2} />
+          )}
+          {l.dots.map((dot) => {
+            const x = dotX(dot, l, axis);
+            return (
+              <g key={dot.ref}>
+                <circle class={`timeline-dot${dot.closed ? "" : " ahead"}${x > nowX ? " later" : ""}`} cx={x} cy={dotY(l.row)} r={dot.closed ? 2 : 2.5} />
+                {landed.value.has(dot.ref) && (
+                  <circle class="timeline-pulse" cx={x} cy={dotY(l.row)} r={4}
+                    onAnimationEnd={() => { const next = new Set(landed.value); next.delete(dot.ref); landed.value = next; }} />
+                )}
+              </g>
+            );
+          })}
+          {words.inside && (
+            <>
+              <text class="title past" clip-path="url(#timeline-past)" x={words.insideX} y={titleY(l.row)} dy="0.35em">{words.inside}</text>
+              <text class="title later" clip-path="url(#timeline-ahead)" x={words.insideX} y={titleY(l.row)} dy="0.35em">{words.inside}</text>
+            </>
+          )}
+          {words.outside && <text class="outside" x={words.outsideX} y={mid} dy="0.35em">{words.outside}</text>}
+          {/* Where the forecast stops for the person: 👤 and the number. */}
+          {l.how.how === "waits" && this.pill(`👤 ${l.how.count}`, axis.x(reach(l)) + 6 + pill / 2, mid, "timeline-pill waits")}
+          {this.isWorking(l) && (
+            // ◐: a ring at Now, its left half filled; the half turns about the ring's centre.
+            <g class="timeline-working">
+              <circle cx={nowX} cy={mid} r={5} />
+              <path style={{ transformOrigin: `${nowX}px ${mid}px` }} d={`M${nowX},${mid - 5} A5,5 0 0 0 ${nowX},${mid + 5} Z`} />
+            </g>
+          )}
+          {/* → for a block that goes on past the right edge. */}
+          {axis.x(reach(l)) > right && (
+            <text class={`timeline-more${right - 10 > nowX ? " later" : ""}`} x={right - 10} y={mid} dy="0.35em" text-anchor="middle">→</text>
+          )}
         </g>,
       );
     }
-    // The releases: a ring on the releases line; its tag goes on after the labels.
-    for (const rel of this.t.releases) {
-      const x = axis.x(fromWireDate(rel.at).getTime());
-      if (this.seen(x)) out.push(<circle key={`release ${rel.repo}@${rel.tag}`} class="timeline-release" cx={x} cy={trunk} r={5} />);
-    }
-    // The dots, and the children working now.
-    for (const l of shown) {
-      const c = this.colour(l), yl = this.y(l.lane);
-      for (const dot of l.dots) {
-        const x = dotX(dot, l, axis);
-        out.push(<circle key={`dot ${l.id} ${dot.ref}`} class={`timeline-dot${dot.closed ? "" : " ahead"}${dot.notPlanned ? " dropped" : ""}`}
-          style={{ "--c": c }} cx={x} cy={yl} r={dot.closed ? 4 : 3.5} />);
-        if (landed.value.has(dot.ref)) {
-          out.push(<circle key={`pulse ${dot.ref}`} class="timeline-pulse" style={{ "--c": c }} cx={x} cy={yl} r={4}
-            onAnimationEnd={() => { const next = new Set(landed.value); next.delete(dot.ref); landed.value = next; }} />);
-        }
-      }
-      if (this.isWorking(l)) {
-        // ◐: a ring at Now, its left half filled; the half turns about the ring's centre.
-        out.push(
-          <g key={`working ${l.id}`} class="timeline-working" style={{ "--c": c }}>
-            <circle cx={nowX} cy={yl} r={5} />
-            <path style={{ transformOrigin: `${nowX}px ${yl}px` }} d={`M${nowX},${yl - 5} A5,5 0 0 0 ${nowX},${yl + 5} Z`} />
-          </g>,
-        );
-      }
-      if (l.how.how === "dropped") {
-        const x = axis.x(l.end);
-        out.push(<path key={`dropped ${l.id}`} class="timeline-cross" style={{ "--c": c }}
-          d={`M${x - 4},${yl - 4} L${x + 4},${yl + 4} M${x - 4},${yl + 4} L${x + 4},${yl - 4}`} />);
-      }
-    }
     // Now: a grey line.
     out.push(<line key="now" class="timeline-now" x1={nowX} y1={0} x2={nowX} y2={height} />);
-
-    // Last, on a halo: the labels, the pills that wait for the person, the arrows at the edges.
-    const labels: { x: number; y: number; w: number; h: number }[] = [];
-    for (const l of shown) {
-      const yl = this.y(l.lane), c = this.colour(l);
-      if (l.how.how === "waits") {
-        // Where the forecast stops: "3 wait for you", with a person.
-        const words = `👤 ${waitWords(l.how.count)}`;
-        const w = measure(words) + 16;
-        out.push(this.pill(`waits ${l.id}`, words, axis.x(l.end) + 6 + w / 2, yl, "timeline-pill waits"));
-      }
-      const startX = axis.x(l.start) + riser(l.lane) + 4;
-      const endX = axis.x(l.end);
-      if (!(endX >= left || isOpen(l)) || startX > right) continue;
-      const cutLeft = startX < left + 8;
-      const x = cutLeft ? left + 8 : startX;
-      const room = labelRoom(l, x, axis) - (cutLeft ? 14 : 0);
-      const words = fitLabel(l, room, measure);
-      if (words) {
-        const arrow = cutLeft ? "← " : "";
-        const w = measure(arrow + labelText(words));
-        labels.push({ x: x - 3, y: yl - 17, w: w + 6, h: 16 });
-        out.push(
-          <g key={`label ${l.id}`} class="timeline-label">
-            <rect class="halo" x={x - 3} y={yl - 17} width={w + 6} height={16} rx={3} />
-            <text x={x} y={yl - 9} dy="0.35em">
-              {arrow && <tspan class="faint">{arrow}</tspan>}
-              {words.title
-                ? <><tspan style={{ fill: c }} class="name">{words.title}</tspan><tspan class="faint">{`  ${words.figures}`}</tspan></>
-                : <tspan class="faint">{words.figures}</tspan>}
-            </text>
-          </g>,
-        );
-      }
-      // → for a line that goes on past the right edge.
-      if (Math.max(endX, l.band ? axis.x(l.band.end) : endX) > right && l.lane !== 0) {
-        out.push(<text key={`more ${l.id}`} class="timeline-more" style={{ fill: c }} x={right - 10} y={yl - 9} dy="0.35em" text-anchor="middle">→</text>);
-      }
-    }
-    // The releases line's name, held at the left edge.
-    if (this.project) {
-      labels.push({ x: left + 8, y: trunk - 20, w: measure(this.project), h: 14 });
-      out.push(<text key="project" class="timeline-project" x={left + 8} y={trunk - 6}>{this.project}</text>);
-    }
-    // The release tags: below the releases line, unless a label is there and none is above (section 12, item 6).
-    for (const rel of this.t.releases) {
-      const x = axis.x(fromWireDate(rel.at).getTime());
-      if (!this.seen(x)) continue;
-      const w = measure(rel.tag) + 12;
-      const free = (y: number) => !labels.some((b) => b.x < x + w / 2 && b.x + b.w > x - w / 2 && b.y < y + 9 && b.y + b.h > y - 9);
-      // With a label on each side, the ring alone: its hover card says the tag.
-      if (!free(trunk + 17) && !free(trunk - 17)) continue;
-      out.push(this.pill(`tag ${rel.repo}@${rel.tag}`, rel.tag, x, trunk + (free(trunk + 17) ? 17 : -17), "timeline-pill tag"));
-    }
     return out;
   }
 
-  /** S10: grey bars that shimmer where the lanes go, on the window, over the releases line and Now. */
+  /** S10: grey blocks that shimmer, in rows, on the window. */
   placeholders() {
-    const x = this.offset + this.visible * 0.08;
+    const x = this.offset + this.visible * 0.04;
     return (
       <g key="placeholders" class="timeline-placeholder">
-        {[[1, 0.55], [-1, 0.4], [2, 0.3], [-2, 0.5]].map(([lane, w], i) => (
-          <rect key={i} x={x + i * this.visible * 0.06} y={this.y(lane!) - 4} width={this.visible * w!} height={8} rx={4} />
+        {[[0, 0, 0.4], [1, 0.12, 0.45], [2, 0.03, 0.2], [3, 0.2, 0.36]].map(([row, from, w]) => (
+          <rect key={row} x={x + this.visible * from!} y={rowTop(row!)} width={this.visible * w!} height={blockHeight} />
         ))}
       </g>
     );
   }
 
-  pill(key: string, words: string, x: number, y: number, cls: string) {
+  pill(words: string, x: number, y: number, cls: string) {
     const w = measure(words) + 12;
     return (
-      <g key={key} class={cls}>
+      <g class={cls}>
         <rect x={x - w / 2} y={y - 9} width={w} height={18} rx={9} />
         <text x={x} y={y} dy="0.35em" text-anchor="middle">{words}</text>
       </g>
     );
   }
 
-  /** The hour axis at the foot, and Now's time in a grey pill. */
+  /** The hour axis at the top (#5506). */
   axisMarks() {
-    const { axis, nowX } = this;
+    const { axis } = this;
     const out = [<rect key="ground" class="timeline-ground" x={0} y={0} width={axis.width} height={axisHeight} />];
     const seenSpan = this.visible * (axis.interval.end - axis.interval.start) / Math.max(axis.width, 1);
     for (const tick of axis.ticks(seenSpan)) {
       const x = axis.x(tick);
-      // Now's pill is where the tick under it would be.
-      if (!this.seen(x) || Math.abs(x - nowX) <= 44) continue;
+      if (!this.seen(x)) continue;
       const midnight = new Date(tick).getHours() === 0;
       // "Sun 8", as the window's ticks say it.
       const words = midnight ? `${new Date(tick).toLocaleDateString(undefined, { weekday: "short" })} ${new Date(tick).getDate()}`
         : new Date(tick).toLocaleTimeString(undefined, { hour: "numeric" });
       out.push(
         <g key={`tick ${tick}`} class={`timeline-tick${midnight ? " midnight" : ""}`}>
-          <line x1={x} y1={0} x2={x} y2={midnight ? 7 : 4} />
-          <text x={x} y={15} dy="0.35em" text-anchor="middle">{words}</text>
+          <line x1={x} y1={axisHeight - (midnight ? 7 : 4)} x2={x} y2={axisHeight} />
+          <text x={x} y={11} dy="0.35em" text-anchor="middle">{words}</text>
         </g>,
       );
     }
-    out.push(this.pill("now", new Date(this.now).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }), nowX, 13, "timeline-pill now"));
     return out;
+  }
+
+  /** Now's time in a grey pill, under the plot where the Now line ends. */
+  nowPill() {
+    return [
+      <rect key="ground" class="timeline-ground" x={0} y={0} width={this.axis.width} height={footHeight} />,
+      <g key="now">{this.pill(new Date(this.now).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }), this.nowX, 12, "timeline-pill now")}</g>,
+    ];
   }
 }

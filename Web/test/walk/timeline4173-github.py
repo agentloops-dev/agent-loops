@@ -111,18 +111,19 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.split("?")[0] != "/api/graphql":
             return self.answer(404, {"message": "Not Found"})
         q, v = b.get("query", ""), b.get("variables", {})
-        if "releases(" in q and "subIssues(" in q:
+        # The epics' ids and the releases first (timelineListQuery), then the epics by id with their
+        # sub-issues (timelineEpicsQuery), as work/timeline reads them since #5154.
+        if "releases(" in q:
             states = v.get("states") or ["OPEN", "CLOSED"]
-            nodes = []
-            for n in EPICS:
-                node, closed = epic(n)
-                if node["issueState"] in states:
-                    nodes.append(node)
+            nodes = [{"id": f"I_{n}", "number": n} for n in EPICS if epic(n)[0]["issueState"] in states]
             releases = [{"tagName": t, "publishedAt": at(h), "url": f"https://github.com/{REPO}/releases/tag/{t}",
                          "isDraft": False} for t, h in RELEASES][: v.get("releases", 50)]
             return self.answer(200, {"data": {"repository": {
                 "issues": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes},
                 "releases": {"nodes": releases}}}})
+        if "nodes(ids:" in q and "subIssues(" in q:
+            return self.answer(200, {"data": {"nodes": [epic(int(i[2:]))[0] for i in v.get("ids", [])
+                                                        if i.startswith("I_") and int(i[2:]) in EPICS]}})
         if "search(" in q:
             return self.answer(200, {"data": {"search": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": []}}})
         self.answer(200, {"data": {}})
