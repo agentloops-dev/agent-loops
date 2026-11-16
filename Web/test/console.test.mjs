@@ -19,7 +19,7 @@ test("Reports' pages are grouped by the question each answers (#5280)", async ()
   const groups = n.groupedPages(n.navPages.reports).map(([g, list]) => [g, list.map((p) => p.title)]);
   assert.deepEqual(groups, [
     ["Cost", ["Spend"]],
-    ["Output", ["Outcomes", "Delivery", "Builds", "Environments"]],
+    ["Output", ["Outcomes", "Summary", "Delivery", "Builds", "Environments"]], // Summary after Outcomes (#5729)
     ["Time", ["Time"]],
     ["Plan", ["Forecast", "Estimates"]],
     ["Use", ["Adoption", "Runtimes", "Workflows"]],

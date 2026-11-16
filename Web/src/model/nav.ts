@@ -25,6 +25,7 @@ export type PageDraw =
   | { kind: "report"; section: Section }
   | { kind: "builds" }
   | { kind: "delivery" }
+  | { kind: "summary" }
   | { kind: "work"; work: WorkKind }
   | { kind: "features" }
   | { kind: "timeline" }
@@ -96,6 +97,10 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
         { id: "builds", title: "Builds", group: s.group, under: "delivery", draw: { kind: "builds" } },
         { id: "environments", title: "Environments", group: s.group, under: "delivery", draw: { kind: "delivery" } },
       ] satisfies NavPage[] : [],
+      // The daily summary's page (#3721) after Outcomes, whose Me lens has Multiplier and Velocity: a report, as the
+      // window's and the Remote's Reports have it (#5729; was a row at the top of the Agents sidebar). Listed only while
+      // the daily summary is on (shownWhile).
+      ...s.id === "outcomes" ? [{ id: "summary", title: "Summary", group: s.group, draw: { kind: "summary" } } satisfies NavPage] : [],
     ]),
     // Multiplier and Usage went into the Me lens of Outcomes, Spend and Time (#5280): an old address opens there (movedReport).
     adminPage("audit", "Audit", "Records"),

@@ -283,7 +283,7 @@ test("For Review lists a session done with a file nobody opened, not Unread, and
   assert.equal(keepsInUnread(read, [], noReview, "forReview"), false, "off, it keeps nothing");
 });
 
-test("the daily summary's sessions are the Summary row's: not in For Review, Unread or their folder; asking, in Needs You (#3721)", async () => {
+test("the daily summary's sessions are Reports ▸ Summary's (#5729): not in For Review, Unread or their folder; asking, in Needs You (#3721)", async () => {
   const { home, smartAgents, folderSessions } = await load("src/model/sidebar.ts");
   const writes = { startedByWorkflow: "daily-summary" };
   const live = [
