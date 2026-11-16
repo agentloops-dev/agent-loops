@@ -88,6 +88,7 @@ then UI changes, bugs before features, then the rest):
    runtime. Add to the prompt: before you start and before each push, lease `ci`, do the
    step, release it; on a conflict
    with `main`, `git merge origin/main` and push without running the tests again (#5712).
+   A lead runs on any machine; it writes no code and holds no build lease (#5877).
    **A `linux-ok` child** (AGENTS.md, "Plans", #5810) goes to a Linux machine when one is
    free: call `list_machines`, and when a Linux machine is online, pass it as `machine` to
    `start_session`. This keeps the Mac's build lease free for the Swift lanes. When no
