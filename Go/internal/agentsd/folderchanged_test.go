@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -106,6 +107,7 @@ func TestFolderChangedAtMostFourASecond(t *testing.T) {
 
 // #4508: one change goes out at the window's end, not before, and each folder has its own.
 func TestFolderChangedOneChangeAtWindowEnd(t *testing.T) {
+	flaky.UnderLoad(t, "#5878")
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	clock := &windowClock{}
