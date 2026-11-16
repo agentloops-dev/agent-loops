@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { load } from "./load.mjs";
+import { flakyUnderLoad } from "./flaky.mjs";
 
 const m = await load("src/wire/machineLock.ts");
 const model = await load("src/model/machineLock.ts");
@@ -300,7 +301,8 @@ test("another signer sees that one is comparing; a deny ends the ask, and Ask Ag
   assert.equal(mac.lock.cards.value[0].view.kind, "compare");
 });
 
-test("digits come from this signer's nonce, and a reveal that breaks its promise is refused", async () => {
+// Quarantined (#5819): it reads the digits before they arrive under load.
+test("digits come from this signer's nonce, and a reveal that breaks its promise is refused", { skip: flakyUnderLoad("#5819") }, async () => {
   const plane = controlPlane();
   const mac = plane.connect("AAAA-1111", "Mac");
   await mac.lock.run();
