@@ -42,4 +42,34 @@ struct SuggestedLeadsTests {
         #expect(SuggestedLeads.title(s) == "Lead Billing")
         #expect(SuggestedLeads.detail(s) == "")
     }
+
+    // MARK: When to ask, and what a failed read says (#5790)
+
+    private func machine(_ id: String, capabilities: [String]?) -> DaemonAPI.ControlMachine {
+        var row = DaemonAPI.ControlMachine(id: MachineRef(rawValue: id), name: id, platform: "macOS", version: "0.17",
+                                           state: "online", reach: "direct", machineID: nil)
+        row.capabilities = capabilities
+        return row
+    }
+
+    @Test func asksOnceTheHostIsListed() {
+        let mac = MachineRef(rawValue: "mac")
+        #expect(SuggestedLeads.canAsk(mac, in: nil), "no control plane: ask the folder's host")
+        #expect(!SuggestedLeads.canAsk(mac, in: []), "the list has not come in: wait for it")
+        #expect(SuggestedLeads.canAsk(mac, in: [machine("mac", capabilities: [Capability.workSuggestLeads1])]))
+        #expect(SuggestedLeads.canAsk(mac, in: [machine("mac", capabilities: nil)]), "a host with no list has them all")
+        #expect(!SuggestedLeads.canAsk(mac, in: [machine("mac", capabilities: [])]))
+        #expect(!SuggestedLeads.canAsk(mac, in: [machine("devbox", capabilities: nil)]))
+    }
+
+    @Test func failedReadSaysWhy() {
+        #expect(SuggestedLeads.failure(JSONRPCError(code: -32602, message: "work/suggest-leads: no forge")) ==
+            "Could not read: work/suggest-leads: no forge")
+        #expect(SuggestedLeads.failure(JSONRPCError.methodNotFound("work/suggest-leads")) == nil)
+        #expect(SuggestedLeads.failure(CancellationError()) == nil)
+        #expect(SuggestedLeads.hiddenLine == "Suggested is hidden.")
+        let unread = DaemonAPI.WorkSuggestLeads(errors: [.init(forge: "github", message: "GitHub is not connected")])
+        #expect(SuggestedLeads.unread(unread) == "Could not read: GitHub is not connected")
+        #expect(SuggestedLeads.unread(DaemonAPI.WorkSuggestLeads()) == nil, "every epic has a lead: nothing to say")
+    }
 }

@@ -118,6 +118,35 @@ public enum SuggestedLeads {
         return parts.joined(separator: ", ")
     }
 
+    /// The line Hide leaves, beside Show (#5790).
+    public static let hiddenLine = "Suggested is hidden."
+
+    /// Whether New Session asks the folder's host (#5790): with no control plane (`hosts` nil),
+    /// yes; with one, only once its list has the host and the host says `work.suggest-leads/1`
+    /// (or says no list). A list that has not come in yet is a no, and the view asks again when it does.
+    public static func canAsk(_ host: MachineRef, in hosts: [DaemonAPI.ControlMachine]?) -> Bool {
+        guard let hosts else { return true }
+        return hosts.first { $0.id == host }?.has(Capability.workSuggestLeads1) ?? false
+    }
+
+    /// The one line for a read that failed (#5790), or nil when there is nothing to say: the
+    /// read was cancelled, or the host does not know the method and so draws no section.
+    public static func failure(_ error: Error) -> String? {
+        if error is CancellationError { return nil }
+        if let rpc = error as? JSONRPCError {
+            if rpc.isMethodNotFound || rpc.isCancelled { return nil }
+            return "Could not read: \(rpc.message)"
+        }
+        return "Could not read: \(error.localizedDescription)"
+    }
+
+    /// The one line for an answer with no rows because a forge could not be read (#5790): the
+    /// first forge's words, or nil when it has rows or every forge was read.
+    public static func unread(_ answer: DaemonAPI.WorkSuggestLeads) -> String? {
+        guard answer.suggestions.isEmpty, let first = answer.errors?.first else { return nil }
+        return "Could not read: \(first.message)"
+    }
+
     /// "1 more in Work", "4 more in Work"; nil with none more.
     public static func more(_ n: Int) -> String? {
         n > 0 ? "\(n) more in Work" : nil
