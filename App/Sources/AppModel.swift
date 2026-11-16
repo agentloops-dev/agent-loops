@@ -603,7 +603,10 @@ final class AppModel {
         }
     }
 
-    /// Docs' places: the list, or a doc's page, and the ones before and after it, for Back and Forward.
+    /// The window's places, every page's, for Back and Forward (#5784): see `AppModel+History`.
+    var pageHistory = PageHistory()
+
+    /// Docs' place now: the list, or a doc's page. Back and Forward go by `pageHistory`.
     var docsHistory = LineageHistory<DocsPlace>()
     /// The list's sources, sort, filter and search, kept while the window is open, so Back finds it as left.
     let docsList = DocsListState()

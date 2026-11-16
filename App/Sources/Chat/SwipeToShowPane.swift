@@ -15,6 +15,9 @@ struct SwipeToShowPane: ViewModifier {
     let show: () -> Void
     /// Left to right.
     let hide: () -> Void
+    /// Whether it is watched for now: the window's page swipe (#5784) is off over a chat,
+    /// whose swipe is the pane's.
+    var enabled = true
 
     @State private var sideways: CGFloat = 0
     @State private var isSwiping = false
@@ -30,7 +33,9 @@ struct SwipeToShowPane: ViewModifier {
     private static let commit: CGFloat = 80
 
     func body(content: Content) -> some View {
-        content
+        // The watcher holds the anchor, not this view, so it reads `enabled` as it is now.
+        anchor.enabled = enabled
+        return content
             .background(SwipeAnchorView(anchor: anchor))
             .onAppear(perform: watch)
             .onDisappear(perform: stopWatching)
@@ -40,6 +45,7 @@ struct SwipeToShowPane: ViewModifier {
         guard watcher == nil else { return }
         watcher = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [anchor] event in
             guard anchor.holds(window: event.windowNumber, at: event.locationInWindow) else { return event }
+            guard MainActor.assumeIsolated({ anchor.enabled }) else { return event }
             let ownScroller = event.phase == .began && Self.scrollsSideways(under: event)
             let taken = MainActor.assumeIsolated {
                 take(phase: event.phase, sideways: event.scrollingDeltaX,
@@ -113,6 +119,8 @@ struct SwipeToShowPane: ViewModifier {
 @MainActor
 final class SwipeAnchor {
     weak var view: NSView?
+    /// Whether its swipe is watched for now (`SwipeToShowPane.enabled`).
+    var enabled = true
 
     /// Whether the event is over the chat, in the chat's own window.
     ///
@@ -170,6 +178,12 @@ extension View {
     /// Two fingers sideways over the chat: in from the right shows, out to the right hides.
     func swipeToShowPane(show: @escaping () -> Void, hide: @escaping () -> Void) -> some View {
         modifier(SwipeToShowPane(show: show, hide: hide))
+    }
+
+    /// Two fingers sideways over a page, as Safari's (#5784): left to right goes back, right to left
+    /// forward. Off while `enabled` is false.
+    func swipeBackForward(enabled: Bool, back: @escaping () -> Void, forward: @escaping () -> Void) -> some View {
+        modifier(SwipeToShowPane(show: forward, hide: back, enabled: enabled))
     }
 }
 

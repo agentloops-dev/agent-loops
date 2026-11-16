@@ -246,6 +246,16 @@ struct ContentView: View {
     /// whichever of its pages is open (#97).
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
+        // Back and Forward along every page the window showed (#5784), where Finder,
+        // Safari and System Settings have them: Go ▸ Back (⌘[) and Forward (⌘]) too.
+        ToolbarItemGroup(placement: .navigation) {
+            Button { model.goBack() } label: { Image(toolbarIcon: "chevron.left") }
+                .disabled(!model.canGoBack)
+                .help("Back")
+            Button { model.goForward() } label: { Image(toolbarIcon: "chevron.right") }
+                .disabled(!model.canGoForward)
+                .help("Forward")
+        }
         // No New Session button (#375): the folder's New session row, ⌘N and the
         // folder menu start one.
         // Pin and Archive (#586), as the workflow page has them: the two things a session
@@ -349,6 +359,9 @@ struct ContentView: View {
                         VStack(spacing: 0) {
                             detail(inPaneOf: pane.size.width)
                                 .frame(maxHeight: .infinity)
+                                // Two fingers sideways go back and forward over a page; over a
+                                // chat they show its pane instead (#5784).
+                                .swipeBackForward(enabled: !showsChat, back: model.goBack, forward: model.goForward)
                                 // The window's toast, above the prompt bar (#4737).
                                 .modifier(WindowToasts())
                             if let folder = folderForTerminal {
@@ -362,6 +375,7 @@ struct ContentView: View {
                     .overlay { fileSearch }
                     .overlay { commandMenu }
                     .toolbar { detailToolbar }
+                    .pageBackForward(back: model.goBack, forward: model.goForward)
                     .navigationTitle(title)
                     .navigationSubtitle(subtitle)
                 }
@@ -408,6 +422,8 @@ struct ContentView: View {
         // itself. Here rather than in the sidebar, because the sidebar may be shut,
         // and shut means gone: there would be nothing listening.
         .onChange(of: model.filesToShow) { showWhatWasAskedFor() }
+        // Each page the window comes to goes on its history (#5784).
+        .onChange(of: model.pagePlace, initial: true) { model.notePagePlace() }
         .onChange(of: model.selection) {
             // Open File… searches the session it was opened over.
             requests.showsFileSearch = false
