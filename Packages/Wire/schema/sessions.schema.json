@@ -51,6 +51,18 @@
             "$ref": "#/definitions/SessionLabel"
           }
         },
+        "priority": {
+          "$ref": "#/definitions/SessionPriority",
+          "description": "The priority the session goes by (#5846): prioritySet, else the highest priority of the issues it is labelled with (#n, and the issues a P#n closes), else its starter's, else none (absent). prioritySource says which. The daemon works it out; a client only reads it."
+        },
+        "prioritySet": {
+          "$ref": "#/definitions/SessionPriority",
+          "description": "The priority a person or an agent set on the session (agents/setPriority, start_session, set_session_priority); absent when it follows its issue. It wins until it is cleared, and it lasts a restart."
+        },
+        "prioritySource": {
+          "$ref": "#/definitions/SessionPrioritySource",
+          "description": "Where priority comes from (#5846); absent is none."
+        },
         "state": {
           "$ref": "#/definitions/AgentState"
         },
@@ -1305,6 +1317,25 @@
         "agent"
       ]
     },
+    "SessionPriority": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "description": "A session's priority (#5846): the same three levels as an issue's (ForgeItem.priority), in the order high, medium, none, low."
+    },
+    "SessionPrioritySource": {
+      "type": "string",
+      "enum": [
+        "set",
+        "issue",
+        "starter",
+        "none"
+      ],
+      "description": "Where a session's priority comes from (#5846): set on it, its issue's, its starter's, or none."
+    },
     "SessionsListRequest": {
       "type": "object",
       "properties": {
@@ -1380,6 +1411,22 @@
         "agentID",
         "optionID",
         "value"
+      ],
+      "additionalProperties": false
+    },
+    "SetPriorityRequest": {
+      "type": "object",
+      "description": "agents/setPriority (#5847): the priority set on a session; with no priority (absent or null), the setting is cleared and the session follows its issue again (\"From issue\").",
+      "properties": {
+        "agentID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "priority": {
+          "$ref": "#/definitions/SessionPriority"
+        }
+      },
+      "required": [
+        "agentID"
       ],
       "additionalProperties": false
     },
@@ -1489,6 +1536,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "priority": {
+          "$ref": "#/definitions/SessionPriority",
+          "description": "The priority set on the new session (#5847), as agents/setPriority sets it; absent, it follows its issue, then its starter."
         },
         "persona": {
           "type": "string"

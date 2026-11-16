@@ -73,6 +73,7 @@ var appToolMethods = map[string]string{
 	"answer_permission":      "permissions/answer",
 	"cancel_message":         "sessions/cancelMessage",
 	"set_session_labels":     "sessions/setLabels",
+	"set_session_priority":   "sessions/setPriority",
 	"move_worktree":          "worktrees/move",
 	"show_file":              "files/show",
 	"ask_question":           "questions/ask",

@@ -393,6 +393,7 @@ public extension DaemonAPI {
                 // Start now (#5156): a queued session, at once, by the person's click.
                 Row(Method.agentsStartNow, params: AgentRequest.self, result: Empty.self, kind: .hostRequest),
                 Row(Method.agentsSetLabels, params: SetLabelsRequest.self, result: Agent.self, kind: .hostRequest),
+                Row(Method.agentsSetPriority, params: SetPriorityRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsSetCeiling, params: SetCeilingRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsSetSandbox, params: SetSandboxRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsSetLevels, params: SetLevelsRequest.self, result: Agent.self, kind: .hostRequest),

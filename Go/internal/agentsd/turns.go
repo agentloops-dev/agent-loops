@@ -382,12 +382,14 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 		AdvertisedOptions: []wire.ConfigOption{}, AvailableCommands: []wire.SlashCommand{},
 		CreatedAt: t, LastActivityAt: t, MadeInRoot: &d.Store.RootID, StartRequestID: r.RequestID,
 		StartedByAgent: by.agent, SandboxOverride: r.Sandbox, Persona: r.Persona, AccountID: r.AccountID,
-		Auto: pick, ClientPermission: client,
+		Auto: pick, ClientPermission: client, PrioritySet: r.Priority,
 	}
 	a.Levels = d.matchLevels(&a)
 	if q := by.queued; q != nil {
-		// Out of the queue, the same agent: its id, its title and when it was asked for.
+		// Out of the queue, the same agent: its id, its title, when it was asked for and the
+		// priority set on it (#5847).
 		a.ID, a.CreatedAt, a.Title, a.Labels = q.ID, q.CreatedAt, q.Title, q.Labels
+		a.PrioritySet, a.Priority, a.PrioritySource = q.PrioritySet, q.Priority, q.PrioritySource
 	}
 	if title != "" && a.Title == nil {
 		a.Title = &title

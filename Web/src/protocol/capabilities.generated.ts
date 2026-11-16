@@ -292,6 +292,7 @@ export const HostCapabilities: Readonly<Record<string, Capability>> = {
   "agents/setLevels": "auto/1",
   "agents/setMuted": "mute/1",
   "agents/setOption": "agents/1",
+  "agents/setPriority": "agents/1",
   "agents/setSandbox": "agents/1",
   "agents/setUnread": "agents/1",
   "agents/start": "agents/1",

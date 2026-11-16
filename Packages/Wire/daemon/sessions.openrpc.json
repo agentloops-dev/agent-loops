@@ -1165,6 +1165,32 @@
       }
     },
     {
+      "name": "agents/setPriority",
+      "x-capability": "agents/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "Set or clear the priority set on a session (#5847). It wins over its issue's and its starter's; cleared, the session follows them again. Answers the session as it is now.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/sessions.schema.json#/definitions/SetPriorityRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/sessions.schema.json#/definitions/Agent"
+        }
+      }
+    },
+    {
       "name": "agents/setSandbox",
       "x-capability": "agents/1",
       "tags": [

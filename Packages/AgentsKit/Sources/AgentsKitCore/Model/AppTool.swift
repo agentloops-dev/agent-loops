@@ -19,6 +19,9 @@ public enum AppTool {
     /// Add or remove the agent's own labels on its session (#481).
     public static let setSessionLabels = "set_session_labels"
 
+    /// Set or clear the priority of the agent's session, or of one it started (#5847).
+    public static let setSessionPriority = "set_session_priority"
+
     /// Move into a worktree, or back to the folder, once the turn ends (#481).
     /// Offered only on a runtime that can carry its conversation across folders.
     public static let moveWorktree = "move_worktree"
@@ -176,7 +179,7 @@ public enum AppTool {
         finishTurn, showFile, notify, manageWorkflows, manageAccounts, manageConnectors, askQuestion, askSecret, suggestNextPrompt, hangUp, startSession, stopSession, archiveSession,
         leaseResource, releaseResource, listResources, waitForEvent,
         cancelWait, listSessions, readSession,
-        setSessionLabels, moveWorktree, messageSession, cancelMessage,
+        setSessionLabels, setSessionPriority, moveWorktree, messageSession, cancelMessage,
     ] + machineTools + writerTools
 
     /// How runtimes put the server's name in front of a tool's, as measured: Claude's
