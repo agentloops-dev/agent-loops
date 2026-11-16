@@ -205,8 +205,12 @@ export const runtimesAccountsMethods = {
   /** Each host's connections, and, on a host where one ended, the stored set-up of each project's Connectors folder there
    * (#3407): a slot stops working when its connection ends. A stored set-up is the host's last reading, so no provider is asked. */
   async refreshEndedConnections(this: Store, places: readonly { host: string; folder: string }[]): Promise<void> {
-    const hosts = [...new Set(places.map((p) => p.host))].filter((h) => this.hostIsOnline(h));
-    await Promise.all(hosts.map((h) => this.loadConnections(h)));
+    const hosts = new Set([...new Set(places.map((p) => p.host))].filter((h) => this.hostIsOnline(h) && this.has(h, Capability.connections1)));
+    // Every machine's connections in one call to the control plane (#5592); a machine that did not answer keeps what it had.
+    if (hosts.size > 0) {
+      const all = await this.link.call("connections/listAll", {}).catch(() => null);
+      for (const { machine, connections } of all?.lists ?? []) if (hosts.has(machine)) this.knowConnections(machine, connections.connections);
+    }
     const next: Record<string, Connection> = {};
     for (const { host, folder } of places) {
       if ((this.endedConnections.value[host] ?? []).length === 0 || !this.has(host, Capability.connectorsSetup1)) continue;

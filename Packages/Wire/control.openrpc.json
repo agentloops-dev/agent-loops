@@ -838,6 +838,32 @@
       }
     },
     {
+      "name": "connections/listAll",
+      "description": "The connections of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ConnectionsListAll"
+        }
+      }
+    },
+    {
       "name": "console/fleet",
       "x-capability": "console/1",
       "description": "Console ▸ Machines (#1804, M1): every machine, its owner and state. Admins only.",
@@ -2104,6 +2130,32 @@
       }
     },
     {
+      "name": "events/listAll",
+      "description": "The newest events of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/EventsListAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/EventsListAll"
+        }
+      }
+    },
+    {
       "name": "folders/detect",
       "x-capability": "folders/1",
       "description": "To a host just added, from a control plane before #656.",
@@ -2137,6 +2189,58 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "forge/boardsAll",
+      "description": "The boards of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ForgeBoardsAll"
+        }
+      }
+    },
+    {
+      "name": "forge/listAll",
+      "description": "The issues or pull requests of the caller's machines in one call, each machine's page (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ForgeListAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ForgeListAll"
         }
       }
     },
@@ -2457,6 +2561,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/org.schema.json#/definitions/HandoverStatus"
+        }
+      }
+    },
+    {
+      "name": "lineage/forecastAll",
+      "description": "lineage/forecast of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/lineage.schema.json#/definitions/LineageForecastRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/LineageForecastAll"
         }
       }
     },
@@ -5862,6 +5992,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/reports.schema.json#/definitions/ReportExport"
+        }
+      }
+    },
+    {
+      "name": "reports/featuresAll",
+      "description": "reports/features of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/FeatureUsageAll"
         }
       }
     },

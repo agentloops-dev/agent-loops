@@ -401,7 +401,12 @@ test("a next page a forge could not read keeps the rows and the cursor, and says
   const l = lists.workList("pr");
   l.lists.value = [{ host: "mac", items: [item(1)], cursor: "next", errors: [] }];
   let answer = { items: [], errors: [{ forge: "github", message: "GitHub said 502" }] };
-  const store = { link: { call: async () => answer } };
+  // Each machine's next page in one call (#5592).
+  const store = { link: { call: async (method, params) => {
+    assert.equal(method, "forge/listAll");
+    assert.deepEqual(params.pages, [{ machine: "mac", cursor: "next" }]);
+    return { lists: [{ machine: "mac", machineName: "Mac", list: answer }], unreached: [], notAsked: 0 };
+  } } };
   await lists.loadMore(store, l);
   assert.equal(l.moreFailed.value, "GitHub said 502");
   assert.equal(l.lists.value[0].cursor, "next");

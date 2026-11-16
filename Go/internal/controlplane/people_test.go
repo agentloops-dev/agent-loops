@@ -330,6 +330,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 		"scim/set": true, "scim/tokens/list": true, "scim/tokens/make": true, "scim/tokens/revoke": true,
 		"groups/setRole": true, "people/removeRequests": true,
 		"projects/list": true, "projects/set": true, "projects/remove": true, "projects/setSlot": true, "projects/setBoards": true, "projects/sessions": true, "sessions/previewStart": true, "docs/listAll": true, "messages/conversationsAll": true,
+		"forge/listAll": true, "forge/boardsAll": true, "lineage/forecastAll": true, "reports/featuresAll": true, "events/listAll": true, "connections/listAll": true,
 		"governance/usage": true, "governance/request": true, "governance/requests": true, "governance/decide": true,
 		"governance/approvals": true, "governance/revoke": true,
 		"readApi/list": true, "readApi/make": true, "readApi/revoke": true,

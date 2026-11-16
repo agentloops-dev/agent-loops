@@ -63,12 +63,11 @@ export function Overview({ store, down }: { store: Store; down: boolean }) {
     void store.link.call("reports/usage", { range: "day", scope: { kind: admin ? "org" : "me" } })
       .then((r) => { spend.value = r; }, () => { spend.value = null; });
   }, [down, admin]);
-  // Each machine's events and cost, as the Events page asks for them.
+  // Each machine's events (in one call, #5592) and cost, as the Events page asks for them.
   useEffect(() => {
-    for (const host of hosts.filter((h) => hostAnswers(h.state))) {
-      void store.loadEvents(host.id);
-      void store.loadCost(host.id);
-    }
+    const answering = hosts.filter((h) => hostAnswers(h.state));
+    void store.loadEventsAll(answering.map((h) => h.id));
+    for (const host of answering) void store.loadCost(host.id);
   }, [online]);
 
   const machines: FleetMachine[] = fleet.value ?? hosts.map((host) => ({ host, ownerName: "", bot: false }) as FleetMachine);

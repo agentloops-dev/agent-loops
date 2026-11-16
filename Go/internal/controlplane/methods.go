@@ -96,7 +96,11 @@ var own = methodSet(
 	"devices/list",
 	"devices/startPairing",
 	"devices/stopPairing",
+	"connections/listAll",
 	"docs/listAll",
+	"events/listAll",
+	"forge/boardsAll",
+	"forge/listAll",
 	"governance/approvals",
 	"governance/decide",
 	"governance/request",
@@ -119,6 +123,8 @@ var own = methodSet(
 	"machines/lendSignIn",
 	"machines/list",
 	"messages/conversationsAll",
+	"lineage/forecastAll",
+	"reports/featuresAll",
 	"machines/remove",
 	"machines/sshHosts",
 	"machines/startEnroll",
@@ -441,6 +447,9 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.busLogMethod(ctx, params, from)
 	case wire.CallDocsListAll.Name, wire.CallMessagesConversationsAll.Name:
 		return m.fanMethod(ctx, method, params, from)
+	case wire.CallForgeListAll.Name, wire.CallForgeBoardsAll.Name, wire.CallLineageForecastAll.Name, wire.CallReportsFeaturesAll.Name,
+		wire.CallEventsListAll.Name, wire.CallConnectionsListAll.Name:
+		return m.fanAllMethod(ctx, method, params, from)
 	case "lineage/walkAll", "lineage/sessionsOn":
 		return m.lineageReadMethod(ctx, method, params, from)
 	case wire.CallBuildsHistoryAll.Name, wire.CallBuildsRunAll.Name:
