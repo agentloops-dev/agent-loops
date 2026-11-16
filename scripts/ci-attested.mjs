@@ -332,7 +332,7 @@ function run(argv) {
   for (const s of steps) {
     console.log(`ci-attested: nx run-many -t ${s.target} --projects=${s.projects.join(",")}`);
     if (dry) continue;
-    const r = spawnSync(join(root, "scripts/nx.sh"), ["run-many", "-t", s.target, `--projects=${s.projects.join(",")}`, "--parallel=1", "--output-style=static"], { cwd: root, stdio: "inherit" });
+    const r = spawnSync(join(root, "scripts/nx.sh"), ["run-many", "-t", s.target, `--projects=${s.projects.join(",")}`, "--parallel=1", "--output-style=stream"], { cwd: root, stdio: "inherit" });
     if (r.status !== 0) status = r.status || 1;
   }
   if (steps.length === 0) console.log("ci-attested: every task of this step is attested");

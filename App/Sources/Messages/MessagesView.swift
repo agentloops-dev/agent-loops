@@ -481,6 +481,24 @@ struct MessagesRow: View {
         // One call for every machine's count (#5571); a failed one leaves the count out. This Mac first, so its copy
         // of a conversation is the one counted, as the page keeps it.
         async let all = try? model.messagesAll(DaemonAPI.MessagesConversationsAllRequest(unread: true, limit: 50))
+        async let events = Self.newestEvents(machines, model: model)
+        let lists = await all.map { MessagesList.hostConversations($0, thisMac: model.thisMacHostID) }
+        unread = lists.map { $0.isEmpty ? 0 : MessagesList.unreadTotal($0) ?? 0 }
+        last = MessagesList.lastConsequence(await events)
+    }
+
+    /// Each machine's newest page of events: every machine's in one call to the control plane (`events/listAll`, #5592);
+    /// with none, a call to each. A machine that did not answer gives none. The plane gives at most 100 a machine.
+    private static func newestEvents(_ machines: [(id: MachineRef, name: String)], model: AppModel) async -> [Event] {
+        let asked = Set(machines.map(\.id))
+        do {
+            if let all = try await model.controlAll(DaemonAPI.Method.eventsListAll, DaemonAPI.EventsListAllRequest(limit: 100),
+                                                    returning: DaemonAPI.EventsListAll.self) {
+                return all.pages.filter { asked.contains($0.machine) }.flatMap(\.page.events)
+            }
+        } catch {
+            return []
+        }
         var events: [Event] = []
         await withTaskGroup(of: [Event].self) { group in
             for machine in machines {
@@ -493,8 +511,6 @@ struct MessagesRow: View {
             }
             for await page in group { events += page }
         }
-        let lists = await all.map { MessagesList.hostConversations($0, thisMac: model.thisMacHostID) }
-        unread = lists.map { $0.isEmpty ? 0 : MessagesList.unreadTotal($0) ?? 0 }
-        last = MessagesList.lastConsequence(events)
+        return events
     }
 }

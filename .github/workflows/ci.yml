@@ -319,9 +319,9 @@ jobs:
           if [[ -n "$SKIP" ]]; then
             node scripts/ci-attested.mjs run --group linux --base "$BASE" --skip "$SKIP"
           elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            scripts/nx.sh affected -t "$targets" --exclude='tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+            scripts/nx.sh affected -t "$targets" --exclude='tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
           else
-            scripts/nx.sh run-many -t "$targets" --exclude='tag:xcode' --parallel=1 --output-style=static
+            scripts/nx.sh run-many -t "$targets" --exclude='tag:xcode' --parallel=1 --output-style=stream
           fi
       # wire:gen and design:gen ran before the tasks that read their files, so a change that
       # did not commit what they write would pass the tests: it fails here.
@@ -636,6 +636,12 @@ jobs:
           path: ${{ runner.temp }}/nx
           key: nx-apps-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
           restore-keys: nx-apps-
+      # Nx names its cache database for the machine's UUID: when it differs from the runner that
+      # saved the cache, give the restored database this runner's name, or Nx uses none of the
+      # cache (#5762). A pull request's head from before the script landed does not have it.
+      - name: Name the Nx database for this runner
+        if: env.APPS != 'skip'
+        run: if [[ -f scripts/ci-nx-db.sh ]]; then bash scripts/ci-nx-db.sh "$NX_WORKSPACE_DATA_DIRECTORY"; fi
       - name: Install from the lockfile
         if: env.APPS != 'skip'
         timeout-minutes: 5
@@ -666,9 +672,9 @@ jobs:
           source scripts/ci-clean-retry.sh
           nx_apps() {
             if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-              scripts/nx.sh affected -t build --exclude='*,!mac,!remote' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+              scripts/nx.sh affected -t build --exclude='*,!mac,!remote' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
             else
-              scripts/nx.sh run-many -t build --projects=mac,remote --parallel=1 --output-style=static
+              scripts/nx.sh run-many -t build --projects=mac,remote --parallel=1 --output-style=stream
             fi
           }
           clean_retry "$RESTORED" build/DerivedData -- nx_apps
@@ -895,6 +901,12 @@ jobs:
           path: ${{ runner.temp }}/nx
           key: nx-macos-${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
           restore-keys: nx-macos-
+      # Nx names its cache database for the machine's UUID: when it differs from the runner that
+      # saved the cache, give the restored database this runner's name, or Nx uses none of the
+      # cache (#5762). A pull request's head from before the script landed does not have it.
+      - name: Name the Nx database for this runner
+        if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
+        run: if [[ -f scripts/ci-nx-db.sh ]]; then bash scripts/ci-nx-db.sh "$NX_WORKSPACE_DATA_DIRECTORY"; fi
       - name: Install from the lockfile
         if: env.SWIFT != 'skip' || env.GO != 'skip' || env.SWIFTLINT != 'skip'
         timeout-minutes: 5
@@ -943,9 +955,9 @@ jobs:
             if [[ -n "$SKIP" ]]; then
               node scripts/ci-attested.mjs run --group swift --base "$BASE" --skip "$SKIP"
             elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-              scripts/nx.sh affected -t test --exclude='*,!agentskit,!agentskit-repo,!codetext' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+              scripts/nx.sh affected -t test --exclude='*,!agentskit,!agentskit-repo,!codetext' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
             else
-              scripts/nx.sh run-many -t test --projects=agentskit,agentskit-repo,codetext --parallel=1 --output-style=static
+              scripts/nx.sh run-many -t test --projects=agentskit,agentskit-repo,codetext --parallel=1 --output-style=stream
             fi
           }
           clean_retry "$RESTORED" Packages/AgentsKit/.build Packages/CodeText/.build -- nx_swift
@@ -1006,13 +1018,13 @@ jobs:
           if [[ -n "$SKIP" ]]; then
             node scripts/ci-attested.mjs run --group gomac --base "$BASE" --skip "$SKIP"
           elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            scripts/nx.sh affected -t "$targets" --exclude='web,tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=static
+            scripts/nx.sh affected -t "$targets" --exclude='web,tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
           else
-            scripts/nx.sh run-many -t "$targets" --exclude='web,tag:xcode' --parallel=1 --output-style=static
+            scripts/nx.sh run-many -t "$targets" --exclude='web,tag:xcode' --parallel=1 --output-style=stream
           fi
       - name: SwiftLint
         if: ${{ always() && !cancelled() && env.SWIFTLINT != 'skip' }}
-        run: scripts/nx.sh run swift-lint:lint --output-style=static
+        run: scripts/nx.sh run swift-lint:lint --output-style=stream
       - name: Save the Nx cache
         if: ${{ (always() && !cancelled()) && !inputs.sha }}
         uses: actions/cache/save@v5

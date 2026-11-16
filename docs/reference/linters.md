@@ -32,6 +32,14 @@ of `web:test` in `Web/project.json` (#5780). Without that input, a change to the
 not make `web:test` affected, and Nx's cache gives a false pass. Add the file to
 `web-test-reads`.
 
+## Output
+
+`scripts/nx.sh` streams each task's output as the task runs (`NX_DEFAULT_OUTPUT_STYLE=stream`,
+#5887), and CI passes `--output-style=stream`. An `--output-style` flag still wins. With no style,
+Nx 24 picks `summary` when an agent runs it, which prints only the path of each failing task's
+log, and `static` prints a task's output only when the task ends, so a hung task shows nothing.
+`scripts/ci-sample.mjs` keeps `static`, because it keeps the log for a bug, not for a reader.
+
 ## Baselines
 
 golangci-lint, SwiftLint and jscpd fail only on a finding that is not in their baseline: the
