@@ -176,3 +176,22 @@ test("the address's range opens the page on it, and an unknown one is left out",
   assert.equal(r.rangeAsked(""), undefined);
   assert.equal(r.rangeAsked(undefined), undefined);
 });
+
+test("the lens is in the address, and Me leaves it out (#5279)", () => {
+  assert.deepEqual(r.lensAsked(undefined), { kind: "me" });
+  assert.deepEqual(r.lensAsked("range=week"), { kind: "me" });
+  assert.deepEqual(r.lensAsked("lens=org"), { kind: "org" });
+  assert.deepEqual(r.lensAsked("lens=project:p1&range=week"), { kind: "project", project: "p1" });
+  assert.deepEqual(r.lensAsked("lens=project:"), { kind: "me" });
+  assert.equal(r.lensQuery("range=week", { kind: "project", project: "p1" }), "range=week&lens=project:p1");
+  assert.equal(r.lensQuery("lens=org&range=week", { kind: "me" }), "range=week");
+  assert.equal(r.lensQuery(undefined, { kind: "me" }), "");
+});
+
+test("the title names the lens, and By leaves out its dimension (#5279)", () => {
+  assert.equal(r.lensTitle("Spend", { kind: "me" }, undefined), "Spend");
+  assert.equal(r.lensTitle("Spend", { kind: "project", project: "p1" }, "Agents"), "Spend · Project Agents");
+  assert.equal(r.lensTitle("Spend", { kind: "org" }, undefined), "Spend · Organisation");
+  assert.ok(!r.dimensionsFor({ kind: "project", project: "p1" }).includes("project"));
+  assert.ok(r.dimensionsFor({ kind: "me" }).includes("project"));
+});
