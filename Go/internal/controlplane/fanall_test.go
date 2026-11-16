@@ -25,6 +25,14 @@ func (p *plane) allHost(machine string, boards bool, answers map[string]func(jso
 	return h
 }
 
+// decodeInto reads an answer, and fails the test on one it cannot read.
+func decodeInto(t *testing.T, raw json.RawMessage, into any) {
+	t.Helper()
+	if err := json.Unmarshal(raw, into); err != nil {
+		t.Fatalf("%s: %v", raw, err)
+	}
+}
+
 // #5592: forge/listAll asks each of the caller's machines once and gives each one's list; a
 // next page asks only the machines it names, from their cursors; a board asks only the machines
 // that know boards.
@@ -36,7 +44,7 @@ func TestForgeListAllGivesEachMachinesList(t *testing.T) {
 	list := func(name string) func(json.RawMessage) any {
 		return func(params json.RawMessage) any {
 			var r wire.ForgeListRequest
-			json.Unmarshal(params, &r)
+			_ = json.Unmarshal(params, &r)
 			mu.Lock()
 			asked[name] = append(asked[name], r)
 			mu.Unlock()
@@ -54,7 +62,7 @@ func TestForgeListAllGivesEachMachinesList(t *testing.T) {
 	_, window := p.client("Window")
 
 	var got wire.ForgeListAll
-	json.Unmarshal(call(t, window, "", "forge/listAll", map[string]any{"kind": "issues", "state": "open"}), &got)
+	decodeInto(t, call(t, window, "", "forge/listAll", map[string]any{"kind": "issues", "state": "open"}), &got)
 	if len(got.Lists) != 2 || len(got.Unreached) != 1 || got.Unreached[0].Machine != wire.MachineRef(off.member.Host) {
 		t.Fatalf("%+v", got)
 	}
@@ -68,7 +76,7 @@ func TestForgeListAllGivesEachMachinesList(t *testing.T) {
 	}
 
 	got = wire.ForgeListAll{}
-	json.Unmarshal(call(t, window, "", "forge/listAll", map[string]any{"kind": "issues",
+	decodeInto(t, call(t, window, "", "forge/listAll", map[string]any{"kind": "issues",
 		"pages": []any{map[string]any{"machine": mac.member.Host, "cursor": "mac-2"}}}), &got)
 	if len(got.Lists) != 1 || got.Lists[0].Machine != wire.MachineRef(mac.member.Host) || got.Lists[0].List.Cursor != nil {
 		t.Fatalf("%+v", got)
@@ -78,7 +86,7 @@ func TestForgeListAllGivesEachMachinesList(t *testing.T) {
 	}
 
 	got = wire.ForgeListAll{}
-	json.Unmarshal(call(t, window, "", "forge/listAll", map[string]any{"kind": "issues", "board": "https://b"}), &got)
+	decodeInto(t, call(t, window, "", "forge/listAll", map[string]any{"kind": "issues", "board": "https://b"}), &got)
 	if len(got.Lists) != 1 || got.Lists[0].Machine != wire.MachineRef(mac.member.Host) || len(asked["box"]) != 1 {
 		t.Fatalf("%+v %+v", got, asked)
 	}
@@ -100,7 +108,7 @@ func TestEachMachineAnswersInOneCall(t *testing.T) {
 		"reports/features": func(json.RawMessage) any { return map[string]any{"features": []any{}, "days": 7} },
 		"events/list": func(params json.RawMessage) any {
 			var r wire.EventsListRequest
-			json.Unmarshal(params, &r)
+			_ = json.Unmarshal(params, &r)
 			mu.Lock()
 			eventLimits = append(eventLimits, r.Limit)
 			mu.Unlock()
@@ -114,9 +122,9 @@ func TestEachMachineAnswersInOneCall(t *testing.T) {
 
 	count := func(method string, params any, field string) int {
 		var got map[string]json.RawMessage
-		json.Unmarshal(call(t, window, "", method, params), &got)
+		decodeInto(t, call(t, window, "", method, params), &got)
 		var items []map[string]any
-		json.Unmarshal(got[field], &items)
+		decodeInto(t, got[field], &items)
 		for _, item := range items {
 			if item["machine"] == "" || item["machineName"] == "" {
 				t.Fatalf("%s: %v", method, item)
