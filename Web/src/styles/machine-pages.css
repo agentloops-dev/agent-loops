@@ -110,3 +110,23 @@
 .agent-config-sync { display: grid; gap: 3px; margin-bottom: 12px; }
 .agent-config-sync p { margin: 0; }
 .agent-config-project { min-width: min(760px, 90vw); max-height: 85vh; overflow: auto; }
+
+/* The one machine picker (#5287): a button, and under it a search, the pinned and recent machines, then groups by label. */
+.machine-picker { position: relative; display: inline-block; }
+.machine-picker-button { display: inline-flex; align-items: center; gap: 0.4rem; font: inherit; }
+.machine-picker .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--paper-rule); }
+.machine-picker .dot.online { background: var(--tint-vouched); }
+.machine-picker .dot.attention { background: var(--tint-attention); }
+.machine-picker .dot.offline { background: var(--tint-failure, var(--tint-attention)); }
+.machine-picker .caret { font-size: 0.8125rem; opacity: 0.5; }
+.machine-picker-panel { position: absolute; z-index: 20; top: 100%; left: 0; min-width: 18rem; max-width: 24rem; margin-top: 0.25rem; padding: 0.5rem;
+  background: var(--paper); border: 1px solid var(--paper-rule); border-radius: 8px; box-shadow: var(--shadow-floating); }
+.machine-picker-panel input[type="search"] { width: 100%; box-sizing: border-box; margin-bottom: 0.25rem; }
+.machine-picker-list { max-height: 20rem; overflow-y: auto; }
+.machine-picker-title { margin: 0.5rem 0 0.125rem; font-size: 0.75rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.04em; }
+.machine-picker-line { display: flex; align-items: center; }
+.machine-picker-row { flex: 1; display: flex; align-items: center; gap: 0.5rem; text-align: left; background: none; border: 0; padding: 0.3rem 0.4rem; font: inherit; cursor: pointer; border-radius: 4px; }
+.machine-picker-row:hover, .machine-picker-row[aria-selected="true"] { background: var(--paper-rule); }
+.machine-picker-row .state { margin-left: auto; font-size: 0.75rem; opacity: 0.6; }
+.machine-picker-pin { background: none; border: 0; cursor: pointer; opacity: 0.35; }
+.machine-picker-pin.on, .machine-picker-pin:hover { opacity: 1; }

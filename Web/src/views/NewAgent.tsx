@@ -41,7 +41,8 @@ import { OfflineStrip } from "./OfflineStrip";
 import { LevelSelect, PromptMenus, type LevelProps } from "./PromptMenus";
 import { BackToList } from "./BackToList";
 import { orderedFolders, folderLabel } from "./Sidebar";
-import { addFolderOn, hostLabel } from "./NewFolder";
+import { addFolderOn } from "./NewFolder";
+import { MachinePicker } from "./MachinePicker";
 import { newSessionProjects, projectFolder, rememberProjectFolder, rememberedProjectFolders } from "../model/projects";
 import { hostAnswers } from "../model/capabilities";
 import { autoIsChosen, autoOffWords, autoOffered, autoRowWords, autoUsable, namedMachine } from "../model/autoMachine";
@@ -901,13 +902,6 @@ function ProjectSwitch({ store, host, folder, folderName, down, auto }: {
   if (!current || here < 0) return <h1>{folderName}</h1>;
   const label = (p: typeof current) => p.folders.length === 1 ? folderLabel(p.folders[0]!.host, p.folders[0]!.folder, macID) : p.name;
   const open = (r: Row) => go({ host: r.host.id, folder: r.folder.folder.folder, compose: true });
-  const machine = (r: Row) => {
-    const id = r.host.id;
-    const twice = current.folders.filter((o) => o.host.id === id).length > 1;
-    const name = twice ? `${hostLabel(store, id)} · ${decodeURI(folderKey(r.folder.folder.folder).replace(/^file:\/\//, ""))}` : hostLabel(store, id);
-    if (store.startsWhenUsed(id)) return `${name} (stopped, starts when used)`;
-    return store.hostIsOnline(id) ? name : `${name} (offline)`;
-  };
   const onAuto = autoIsChosen(thisKey, auto);
   // Add Folder… on a machine that has none of the project's yet, as the last of On.
   const others = store.hosts.value.filter((h) => hostAnswers(h.state) && !current.folders.some((r) => r.host.id === h.id));
@@ -929,36 +923,20 @@ function ProjectSwitch({ store, host, folder, folderName, down, auto }: {
         </h1>
       )}
       {current.folders.length > 1 && (
-        <label class="persona-menu machine-switch" title="Start it on another machine">
-          <span aria-hidden="true">On {onAuto ? autoRowWords(auto) : hostLabel(store, host)} <span class="caret">▾</span></span>
-          <select aria-label="On" disabled={down} value={onAuto ? "auto" : String(here)}
-            onChange={(e) => {
-              const select = e.currentTarget as HTMLSelectElement;
-              if (select.value === "auto") {
-                namedMachine.value = undefined;
-                return;
-              }
-              if (select.value.startsWith("add:")) {
-                const machineID = select.value.slice(4);
-                select.value = String(here);
-                addFolderOn(machineID);
-                return;
-              }
-              const row = current.folders[Number(select.value)];
+        <span class="machine-switch" title="Start it on another machine">
+          <MachinePicker store={store} label="On" disabled={down} value={onAuto ? null : host}
+            any={autoOffered(auto) ? (autoUsable(auto) ? autoRowWords(auto) : `Auto (${autoOffWords(auto) ?? "no machine fits"})`) : undefined}
+            anyDisabled={!autoUsable(auto)}
+            skip={(h) => !current.folders.some((r) => r.host.id === h.id) && !others.some((o) => o.id === h.id)}
+            onPick={(id) => {
+              // Auto is the picker's first row (#5375).
+              if (!id) { namedMachine.value = undefined; return; }
+              // A machine with a folder of the project opens it (the one here first); any other adds one (#5287).
+              const row = current.folders.find((r) => r.host.id === id && keyOf(r) === keyOf(current.folders[here]!)) ?? current.folders.find((r) => r.host.id === id);
               // A machine named by hand is not remembered: the next start is Auto again (#5375).
-              if (row) { namedMachine.value = keyOf(row); open(row); }
-            }}>
-            {autoOffered(auto) && (
-              <option value="auto" disabled={!autoUsable(auto)}>{autoUsable(auto) ? autoRowWords(auto) : `Auto (${autoOffWords(auto) ?? "no machine fits"})`}</option>
-            )}
-            {current.folders.map((r, i) => <option key={keyOf(r)} value={String(i)}>{machine(r)}</option>)}
-            {others.length > 0 && (
-              <optgroup label="Add a folder on another machine">
-                {others.map((h) => <option key={h.id} value={`add:${h.id}`}>Add Folder on {hostLabel(store, h.id)}…</option>)}
-              </optgroup>
-            )}
-          </select>
-        </label>
+              if (row) { namedMachine.value = keyOf(row); open(row); } else addFolderOn(id);
+            }} />
+        </span>
       )}
     </>
   );
