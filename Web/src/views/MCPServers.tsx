@@ -3,11 +3,11 @@
 // its row in the sidebar, read in one of its folders (#3407). A folder's page opens with its set-up (#1336), and Connectors with
 // the person's connections. Read-only but for Check Now, Remove… (#2154) and each tool's Allow, Ask or Off (#4099):
 // servers are edited in Settings.
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { Store } from "../model/store";
 import type { MCPLevels } from "../protocol/generated";
 import {
-  connectorLevels, fileProblem, healthKind, healthLastError, healthLine, healthReadAt, healthTone, levelsSentence,
+  approvedFromLine, connectorLevels, fileProblem, healthKind, healthLastError, healthLine, healthReadAt, healthTone, levelsSentence,
   notApproved, notRemoved, notRemovedOffline, personalServers, folderEmpty, folderIntro, folderServers, removesCommitted, removesWords,
 } from "../model/hostedMCP";
 import { BackToList } from "./BackToList";
@@ -35,6 +35,14 @@ export function MCPServersList({ store, host, folder }: { store: Store; host: st
     else next.add(name);
     setToolsOpen(next);
   };
+  // The folder's connectors approved from another of the person's machines (#5813), read again with each check.
+  const [approvedFrom, setApprovedFrom] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (folder === undefined) return;
+    let live = true;
+    void store.connectorsApprovedFrom(host, folder).then((found) => { if (live) setApprovedFrom(found); });
+    return () => { live = false; };
+  }, [host, folder, snapshot]);
   const checkable = servers.some((s) => !s.hosted);
   // The oldest check, in place of a time on each row (#5145).
   const readAt = healthReadAt(servers);
@@ -67,6 +75,7 @@ export function MCPServersList({ store, host, folder }: { store: Store; host: st
           {servers.map((server) => {
             const tone = healthTone(server);
             const error = healthLastError(server);
+            const from = folder !== undefined && server.check !== "waiting" ? approvedFrom[server.name] : undefined;
             return (
               <li class="resource" key={`${server.folder ?? "~"}|${server.name}`}>
                 <p>
@@ -76,6 +85,7 @@ export function MCPServersList({ store, host, folder }: { store: Store; host: st
                 </p>
                 <p class="quiet small">{healthLine(server)}</p>
                 {error && <p class={tone === "failing" ? "small failure" : "quiet small"}>{error}</p>}
+                {from && <p class="quiet small">{approvedFromLine(from)}</p>}
                 <ConnectorLevels levels={server.levels} />
                 {hasTools && (
                   <button class="small" aria-expanded={toolsOpen.has(server.name)} title="Allow, Ask or Off for each of its tools"
