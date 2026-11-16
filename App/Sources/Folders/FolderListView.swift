@@ -265,6 +265,10 @@ struct FolderListView: View {
                     ForEach(model.machinesMaking) { making in
                         MakingMachineRow(making: making).appText(.supporting)
                     }
+                    // The Machines page (#5567): every machine, with a search, filters and actions on many.
+                    Text("All Machines").activityIcon("list.bullet.rectangle")
+                        .help("Every machine: search, filter, and start, stop or delete many at once")
+                        .appText(.supporting).sidebarInk(.allMachines).tag(SidebarItem.allMachines)
                 } header: {
                     MachinesHeader()
                 }

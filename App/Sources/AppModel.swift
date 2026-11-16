@@ -252,6 +252,7 @@ final class AppModel {
             showsVelocity = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -280,6 +281,7 @@ final class AppModel {
             showsVelocity = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -307,6 +309,7 @@ final class AppModel {
             showsVelocity = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -331,6 +334,7 @@ final class AppModel {
             showsVelocity = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -355,6 +359,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -379,6 +384,7 @@ final class AppModel {
             showsTime = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -403,6 +409,7 @@ final class AppModel {
             showsTime = false
             showsVelocity = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -420,6 +427,32 @@ final class AppModel {
     var machinePage: MachineRef? {
         didSet {
             guard machinePage != nil, machinePage != oldValue else { return }
+            showsWork = false
+            showsDocs = false
+            showsMessages = false
+            showsSummary = false
+            showsAchievements = false
+            showsSpending = false
+            showsEvents = false
+            showsRuntimes = false
+            statusSecretsPage = nil
+            showsTime = false
+            showsVelocity = false
+            showsTokens = false
+            showsMachines = false
+            selection = nil
+            openWorkflow = nil
+            folderPage = nil
+            composing = false
+        }
+    }
+
+    /// The Machines page (#5567, the web's #5285): every machine, with a search, filter chips, a sort and
+    /// Start, Stop and Delete… on the selected ones. From All Machines under Machines in the sidebar.
+    var showsMachines = false {
+        didSet {
+            guard showsMachines, showsMachines != oldValue else { return }
+            machinePage = nil
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -457,6 +490,7 @@ final class AppModel {
             showsVelocity = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -479,6 +513,7 @@ final class AppModel {
             showsVelocity = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsMessages = false
             selection = nil
@@ -503,6 +538,7 @@ final class AppModel {
             showsVelocity = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             selection = nil
@@ -530,6 +566,7 @@ final class AppModel {
             showsVelocity = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -554,6 +591,7 @@ final class AppModel {
             showsVelocity = false
             showsTokens = false
             machinePage = nil
+            showsMachines = false
             showsWork = false
             showsDocs = false
             showsMessages = false
@@ -665,6 +703,7 @@ final class AppModel {
         showsVelocity = false
         showsTokens = false
         machinePage = nil
+        showsMachines = false
         showsWork = false
         showsDocs = false
         showsMessages = false
@@ -693,6 +732,7 @@ final class AppModel {
         showsVelocity = false
         showsTokens = false
         machinePage = nil
+        showsMachines = false
         showsWork = false
         showsDocs = false
         showsMessages = false
@@ -740,6 +780,7 @@ final class AppModel {
             if showsRuntimes { return .runtimes }
             if let statusSecretsPage { return statusSecretsPage.sidebarItem }
             if let machinePage { return .machine(machinePage) }
+            if showsMachines { return .allMachines }
             if showsSpending { return .spending }
             if showsTokens { return .tokens }
             if showsTime { return .time }
@@ -775,6 +816,7 @@ final class AppModel {
                 showsVelocity = false
                 showsTokens = false
                 machinePage = nil
+                showsMachines = false
                 showsWork = false
                 showsDocs = false
                 showsMessages = false
@@ -828,6 +870,8 @@ final class AppModel {
                 statusSecretsPage = .environment
             case .machine(let host):
                 machinePage = host
+            case .allMachines:
+                showsMachines = true
             case .folder(let key):
                 showsSpending = false
                 showsEvents = false
@@ -837,6 +881,7 @@ final class AppModel {
                 showsVelocity = false
                 showsTokens = false
                 machinePage = nil
+                showsMachines = false
                 showsWork = false
                 showsDocs = false
                 showsMessages = false
@@ -870,6 +915,7 @@ final class AppModel {
         showsVelocity = false
         showsTokens = false
         machinePage = nil
+        showsMachines = false
         showsWork = false
         showsDocs = false
         showsMessages = false
@@ -888,6 +934,7 @@ final class AppModel {
         showsVelocity = false
         showsTokens = false
         machinePage = nil
+        showsMachines = false
         showsWork = false
         showsDocs = false
         showsMessages = false
@@ -921,6 +968,7 @@ final class AppModel {
         showsVelocity = false
         showsTokens = false
         machinePage = nil
+        showsMachines = false
         showsWork = false
         showsDocs = false
         showsMessages = false
@@ -1163,6 +1211,7 @@ final class AppModel {
         showsVelocity = false
         showsTokens = false
         machinePage = nil
+        showsMachines = false
         showsWork = false
         showsDocs = false
         showsMessages = false

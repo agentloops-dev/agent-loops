@@ -86,3 +86,4 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Scratch first-open take](scratch-first-open-take.md) — question page needs --walk + AGENTS_ROOT, not launch.sh; host env, own browser, Keychain connection, SecureField; #5563/#5564 block it
 - [agentsd goroutines go through goJob](agentsd-goroutines-go-through-gojob.md) — #5653: d.goJob/d.jobFunc so Shutdown waits; tests use setFor, not a deferred restore
 - [Go baseline from Linux](go-baseline-from-linux.md) — golangci-lint differs Mac vs Linux; --baseline on a Mac drops Linux-only entries (#5682)
+- [A press on a sidebar header breaks layout](sidebar-section-header-press-breaks-layout.md) — #5567: AXPress on a Section header stood the window 41,378 pt tall; open pages from a tagged row
