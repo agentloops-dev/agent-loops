@@ -219,6 +219,20 @@ func rollup(items []checkItem) (string, int) {
 type gqlError struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
+	Path    []any  `json:"path"`
+}
+
+// aboutIssueFields says the error is about the issue fields that priorityFields asks for.
+func (e gqlError) aboutIssueFields() bool {
+	if strings.Contains(e.Message, "issueField") {
+		return true
+	}
+	for _, p := range e.Path {
+		if s, ok := p.(string); ok && (strings.HasPrefix(s, "issueField") || s == "fieldRepo") {
+			return true
+		}
+	}
+	return false
 }
 
 // graphql runs query with vars, and reads its data into into.
@@ -236,6 +250,9 @@ func (g *RealGitHub) graphql(ctx context.Context, query string, vars map[string]
 		return &GitHubError{Kind: Failed, Message: "GitHub's answer is not JSON"}
 	}
 	if len(answer.Errors) > 0 {
+		if slices.ContainsFunc(answer.Errors, gqlError.aboutIssueFields) {
+			return &GitHubError{Kind: Failed, Message: "GitHub: " + answer.Errors[0].Message, issueFields: true}
+		}
 		if answer.Errors[0].Type == "NOT_FOUND" {
 			return &GitHubError{Kind: NotFound, Message: "not found on GitHub"}
 		}
@@ -245,6 +262,24 @@ func (g *RealGitHub) graphql(ctx context.Context, query string, vars map[string]
 		return &GitHubError{Kind: Failed, Message: "GitHub's answer is not JSON"}
 	}
 	return nil
+}
+
+// graphqlFields runs query, which asks for priorityFields (#5747). When GitHub refuses those
+// (a GitHub Enterprise Server with no issue fields, or a token that may not read them), it
+// runs it again without them; when the GitHub has no issue fields at all, it leaves them out
+// from then on.
+func (g *RealGitHub) graphqlFields(ctx context.Context, query string, vars map[string]any, into any) error {
+	if !g.noIssueFields.Load() {
+		err := g.graphql(ctx, query, vars, into)
+		var gerr *GitHubError
+		if err == nil || !errors.As(err, &gerr) || !gerr.issueFields {
+			return err
+		}
+		if strings.Contains(gerr.Message, "doesn't exist on type") {
+			g.noIssueFields.Store(true)
+		}
+	}
+	return g.graphql(ctx, strings.Replace(query, priorityFields, "", 1), vars, into)
 }
 
 func ownerName(repo string) (string, string, error) {
