@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	goruntime "runtime"
 	"strconv"
 	"strings"
@@ -39,6 +40,13 @@ func TestMain(m *testing.M) {
 		close(f.ready)
 		<-f.conn.Done()
 		return
+	}
+	// go test always gives the binary its -test. flags. With none, a daemon started it as a
+	// stand-in without its switch: it fails at once, not runs every test while the daemon
+	// waits for an answer (#5988).
+	if !slices.ContainsFunc(os.Args[1:], func(a string) bool { return strings.HasPrefix(a, "-test.") }) {
+		fmt.Fprintln(os.Stderr, "agentsd.test: started with no -test. flag and no AGENTS_FAKE_MCP or AGENTS_FAKE_ACP switch")
+		os.Exit(2)
 	}
 	// A test's writes are not synced to the disk: on a Mac each sync costs about 4 ms (#4709).
 	store.SyncWrites = false
