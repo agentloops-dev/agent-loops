@@ -45,7 +45,11 @@ func TestStartSessionSendsTheBranchFirst(t *testing.T) {
 	var starts []wire.MachineSessionStart
 	offline := false
 	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		call := params.(wire.MachineWorkspaceCall)
+		// Other jobs of the daemon ask too (user/setPolicy, #5793): they get no step.
+		call, ok := params.(wire.MachineWorkspaceCall)
+		if !ok {
+			return nil, &controllink.AskError{Code: -32010, Message: "Agent Loops can’t ask that of the control plane."}
+		}
 		b, _ := json.Marshal(call.Params)
 		mu.Lock()
 		defer mu.Unlock()
