@@ -221,6 +221,10 @@ private struct ResourceRow: View {
                 HStack(spacing: 0) {
                     Text("\(index + 1)  ").monospacedDigit()
                     agentLink(member.agentID)
+                    // High or low (#5849): the line goes by it (#5848).
+                    if let agent = model.work.agent(member.agentID), let chip = WorkPriorityChip(agent) {
+                        chip.padding(.leading, 5)
+                    }
                     Text("  asked \(LeaseWords.clock(member.askedAt)) \u{00B7} "
                          + (member.isCallOpen ? "waiting for lease.granted" : "will be started"))
                         .foregroundStyle(.secondary)

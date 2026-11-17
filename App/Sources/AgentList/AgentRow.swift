@@ -146,6 +146,11 @@ struct AgentRow: View {
                             .fixedSize()
                             .accessibilityLabel(LeadProgress.spoken(progress))
                     }
+                    // High or low (#5849), as the Work rows mark an issue's (#5690): medium and
+                    // none are the usual and show nothing. Whole after the title, which is cut first.
+                    if let chip = WorkPriorityChip(agent) {
+                        chip
+                    }
                     // Started by a workflow rather than a person: the one thing about
                     // an agent's origin worth a mark, because it is the difference
                     // between something you asked for and something that ran itself.
@@ -382,6 +387,10 @@ struct AgentRow: View {
                         Task { await model.setMuted(agent.id, !agent.isMuted) }
                     }
                     .help(MuteWords.help(muted: agent.isMuted))
+                }
+                // High, Medium, Low or From issue (#5849): the lease lines and the start queue go by it.
+                SessionPriorityMenu(agent: agent) { priority in
+                    Task { await model.setPriority(agent.id, priority) }
                 }
                 // The person's title, which the runtime's no longer replaces (#751).
                 // Each with the list's key (#4796), which works while the list has the keyboard.

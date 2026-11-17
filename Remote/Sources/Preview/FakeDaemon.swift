@@ -151,6 +151,16 @@ private actor FakeState {
                 await change(request?.agentID) { $0.isMuted = request?.muted == true }
                 return .success(.object([:]))
 
+            // Priority ▸ (#5849): set wins; cleared, a scratch session has no issue to follow.
+            case DaemonAPI.Method.agentsSetPriority:
+                let request = try params?.decode(DaemonAPI.SetPriorityRequest.self)
+                await change(request?.agentID) {
+                    $0.prioritySet = request?.priority
+                    $0.priority = request?.priority
+                    $0.prioritySource = request?.priority == nil ? nil : .set
+                }
+                return .success(.object([:]))
+
             case DaemonAPI.Method.agentsRename:
                 let request = try params?.decode(DaemonAPI.RenameRequest.self)
                 await change(request?.agentID) { $0.rename(to: request.flatMap { Agent.cleanedTitle($0.title) }) }

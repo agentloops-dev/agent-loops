@@ -20,6 +20,8 @@
 .session .title.unread { font-weight: 600; }
 /* Started by a workflow or another agent (028, #251): quiet, after the title, as the window's mark. */
 .session .title .started-by { margin-left: 5px; font-size: 0.6875rem; font-weight: 400; opacity: 0.45; }
+/* A session's priority chip (#5849), after its title, as the Work rows' (#5690). */
+.session .title .session-priority { margin-left: 5px; vertical-align: 1px; }
 .working.coming-back { opacity: 0.65; padding: 4px 0; }
 .unread-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: middle; }
 
