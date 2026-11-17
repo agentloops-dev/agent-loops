@@ -997,7 +997,7 @@
     "annotations": {
       "destructiveHint": true
     },
-    "description": "Delete the machine a host runs on, with everything on its disk, and remove the             host and its agents. The person is asked first, on the question card, and nothing             is deleted without their yes.",
+    "description": "Delete the machine a host runs on, with everything on its disk, and remove the             host and its agents. The person is asked first, on the question card, and nothing             is deleted without their yes. Given the name of a make that failed (list_machines shows it as failed), it deletes only that row: the provider never made the machine, so nothing is deleted there.",
     "inputSchema": {
       "properties": {
         "description": {
@@ -1005,7 +1005,7 @@
           "type": "string"
         },
         "host": {
-          "description": "The machine, by its name at the start of its line in list_machines, or by its host's name.",
+          "description": "The machine, by its name at the start of its line in list_machines, or by its host's name, or the name of a make that failed.",
           "type": "string"
         },
         "provider": {

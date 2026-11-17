@@ -19,6 +19,8 @@ struct ControlProvidersPage: View {
     @State private var startingMachine = false
     /// Link to <machine>: its host key, to trust first (#3379).
     @State private var trusting: LinkTrust?
+    /// Delete… on a failed make's row (#6078).
+    @State private var deletingFailed: FailedRow?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -80,6 +82,16 @@ struct ControlProvidersPage: View {
         } message: { _ in
             Text("Its machines stay as they are, unlinked: nothing here can start or stop them any more.")
         }
+        .confirmationDialog(deletingFailed.map { "Delete \($0.name)?" } ?? "",
+                            isPresented: Binding(get: { deletingFailed != nil }, set: { if !$0 { deletingFailed = nil } }),
+                            titleVisibility: .visible, presenting: deletingFailed) { row in
+            Button("Delete", role: .destructive) {
+                Task { await control.deleteFailedMake(row.provider, workspace: row.workspace) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { row in
+            Text(Self.deleteFailedMessage(row.providerName))
+        }
         .alert("Trust \(trusting?.name ?? "")’s host key?",
                isPresented: Binding(get: { trusting != nil }, set: { if !$0 { trusting = nil } }),
                presenting: trusting) { trust in
@@ -90,6 +102,20 @@ struct ControlProvidersPage: View {
         } message: { trust in
             Text(LinkWorkspaceSheet.trustNote(trust.fingerprint))
         }
+    }
+
+    /// A failed make's row to delete (#6078).
+    struct FailedRow: Identifiable {
+        var provider: ProviderID
+        var providerName: String
+        var workspace: String
+        var name: String
+        var id: String { workspace }
+    }
+
+    /// Delete's question on a failed make's row, as the web page's.
+    static func deleteFailedMessage(_ provider: String) -> String {
+        "Only its row goes: \(provider) never made it, so nothing is deleted there."
     }
 
     /// A link that waits on a host key to trust (#3379).
@@ -166,6 +192,13 @@ struct ControlProvidersPage: View {
                             ProgressView().controlSize(.small)
                             Text("Joining…").appText(.supporting).foregroundStyle(.secondary)
                         }
+                    } else if workspace.state == "failed" {
+                        // A make that failed is no machine (#6078): its row offers only Delete.
+                        Button("Delete…") {
+                            deletingFailed = .init(provider: provider.id, providerName: provider.name,
+                                                   workspace: workspace.id, name: workspace.name)
+                        }
+                        .buttonStyle(.paper)
                     } else if workspace.host == nil {
                         HStack(spacing: 8) {
                             linkToExistingHost(workspace, of: provider)

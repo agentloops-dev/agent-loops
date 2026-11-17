@@ -121,6 +121,11 @@ type Hooks struct {
 	// SetupStep keeps a step of a made machine's set-up (#5765, epic #5353): 1, create
 	// machine, as the provider makes it, and 2, join machine, until it joins. Nil keeps none.
 	SetupStep func(host string, report wire.MachineSetupReport)
+	// MadeFor keeps, in the store, the workspace a made machine's host id is for, as soon as
+	// the provider has made it (#6075): the host that joins as that id is linked to it by its
+	// code, also after the control plane restarted and lost linkWhenJoined's wait. Nil keeps
+	// none.
+	MadeFor func(host, provider, workspace string)
 	// BackUp makes a backup of the host, and waits for it, before its workspace is deleted
 	// (#1815). False when the host can't make one: it is offline, or older than backups.
 	// Nil makes none.
@@ -166,6 +171,13 @@ type listed struct {
 	// Which list it is, as lists counted them.
 	asked uint64
 }
+
+// deletedWorkspace is a workspace deleted here, by its provider's id and its own (#6079).
+type deletedWorkspace struct{ provider, workspace string }
+
+// deletedKeep is how long a deleted workspace is left out of its provider's lists at most
+// (#6079): until a list no longer has it, or this long, in case the delete did not happen.
+const deletedKeep = 10 * time.Minute
 
 type activityKind int
 
@@ -263,7 +275,11 @@ type Providers struct {
 	awake map[string]keptAwake
 	// One make at a time on each provider, by its id (#4706): seven makes sent in one
 	// second all failed in 3 s, and GitHub asks for one user's requests one after another.
-	making   map[string]*sync.Mutex
+	making map[string]*sync.Mutex
+	// The workspaces deleted here, until when each is left out of its provider's lists
+	// (#6079): a provider such as DigitalOcean deletes after it answers, so its next list
+	// can still have the workspace.
+	deleted  map[deletedWorkspace]time.Time
 	done     chan struct{}
 	stopOnce sync.Once
 }
@@ -302,6 +318,9 @@ func NewProviders(cfg Config) *Providers {
 	if h.SetupStep == nil {
 		h.SetupStep = func(string, wire.MachineSetupReport) {}
 	}
+	if h.MadeFor == nil {
+		h.MadeFor = func(string, string, string) {}
+	}
 	if h.OwnerOf == nil {
 		h.OwnerOf = func(string) string { return "" }
 	}
@@ -311,7 +330,7 @@ func NewProviders(cfg Config) *Providers {
 		activities: map[string]*activity{}, problems: map[string]string{}, statuses: map[string]MachineStatus{},
 		idleTimers: map[string]*time.Timer{}, idleStopping: map[string]int{}, stoppedBy: map[string]string{},
 		broughtBack: map[string]bool{}, joining: map[string]*joining{}, failedMakes: map[string][]failedMake{}, making: map[string]*sync.Mutex{},
-		done: make(chan struct{})}
+		deleted: map[deletedWorkspace]time.Time{}, done: make(chan struct{})}
 }
 
 // KeepWith keeps prompts and starts for this control plane's stopped hosts (US3).
@@ -571,9 +590,15 @@ func (p *Providers) AgentCall(host, agent, method string, params json.RawMessage
 			given["id"] = found
 		}
 	}
-	// An agent deletes only a machine with no host that its person is shown (#6080).
-	if method == MethodProvidersDeleteWorkspace && !p.agentSees(caller.Person, given) {
-		return nil, fail(CodeNoSuchHost, "No machine is called %v.", given["workspace"])
+	// An agent deletes this way only a failed make's row (#6078) or a machine with no host
+	// that its person is shown (#6080): delete_machine deletes a machine by its host, with
+	// its backup.
+	if method == MethodProvidersDeleteWorkspace {
+		id, _ := str(given["id"])
+		workspace, _ := str(given["workspace"])
+		if _, failed := p.failedOwner(id, workspace); !failed && !p.agentSees(caller.Person, given) {
+			return nil, fail(CodeNoSuchHost, "No machine is called %s.", workspace)
+		}
 	}
 	return p.answer(method, rawOf(given), caller, "agent "+agent+" on "+hostName)
 }
@@ -770,6 +795,9 @@ func (p *Providers) answer(method string, params json.RawMessage, caller Caller,
 		var request wire.ProviderWorkspaceRequest
 		if err := requireParams(params, &request, "ProviderWorkspaceRequest", "id", "workspace"); err != nil {
 			return nil, err
+		}
+		if _, failed := p.failedOwner(string(request.ID), request.Workspace); failed {
+			return map[string]any{}, p.deleteFailed(string(request.ID), request.Workspace, caller.Person, who)
 		}
 		return map[string]any{}, p.deleteWorkspace(string(request.ID), request.Workspace, who)
 	case MethodHostsDelete:
@@ -1206,6 +1234,11 @@ func (p *Providers) remove(id string) error {
 	p.mu.Lock()
 	delete(p.providers, id)
 	delete(p.listed, id)
+	for d := range p.deleted {
+		if d.provider == id {
+			delete(p.deleted, d)
+		}
+	}
 	connection := p.connections[id]
 	delete(p.connections, id)
 	p.mu.Unlock()
@@ -1273,7 +1306,7 @@ func (p *Providers) Refresh(only string) {
 			}
 			if r.err == nil {
 				now := time.Now()
-				l = &listed{workspaces: r.workspaces, listedAt: &now, current: true, asked: r.asked}
+				l = &listed{workspaces: p.leaveOutDeletedLocked(r.id, r.workspaces, now), listedAt: &now, current: true, asked: r.asked}
 			} else {
 				l.current = l.listedAt == nil
 				l.problem = errorWords(r.err)
@@ -1908,6 +1941,9 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	p.log(fmt.Sprintf("workspace: create %s (%s/%s) by %s: ok in %s%s", name, id, found.ID, who,
 		secondsSince(began), joiningWords))
 	if runs {
+		if madeHost != "" {
+			p.hooks.MadeFor(madeHost, id, found.ID)
+		}
 		for _, c := range request.Clones {
 			if c = trimSpaces(c); c != "" {
 				clones = append(clones, c)
@@ -1982,7 +2018,10 @@ func (p *Providers) LinkJoined(host, provider, workspace, trust string) {
 	}
 }
 
-// linkWhenJoined links a made workspace's host once it has joined, within the start's time.
+// linkWhenJoined links a made workspace's host once it has joined, within the start's time,
+// and clones its repositories. The join itself links a host whose code names its workspace
+// (MadeFor, #6075), so this wait, kept only in memory, is needed for the link only when the
+// control plane keeps no set-up; it still does the clones.
 func (p *Providers) linkWhenJoined(name string) {
 	began := time.Now()
 	var last *joining
@@ -1995,14 +2034,21 @@ func (p *Providers) linkWhenJoined(name string) {
 		}
 		last = wanted
 		for _, h := range p.records.Hosts() {
-			if h.Name == name && LinkOf(&h) == nil {
-				p.mu.Lock()
-				delete(p.joining, name)
-				p.mu.Unlock()
-				p.link(MachineLink{Host: wire.MachineRef(h.ID), Provider: wire.ProviderID(wanted.provider), Workspace: wanted.workspace})
-				p.clone(wanted.clones, h.ID, name, wanted.caller)
-				return
+			ours := (wanted.host != "" && h.ID == wanted.host) || h.Name == name
+			if !ours {
+				continue
 			}
+			// Linked to this workspace already: by its code, as it joined (#6075).
+			link := LinkOf(&h)
+			if link != nil && (link.Provider != wanted.provider || link.Workspace != wanted.workspace) {
+				continue
+			}
+			p.mu.Lock()
+			delete(p.joining, name)
+			p.mu.Unlock()
+			p.LinkJoined(h.ID, wanted.provider, wanted.workspace, "")
+			p.clone(wanted.clones, h.ID, name, wanted.caller)
+			return
 		}
 		if !p.sleep(p.timing.LookEvery) {
 			return
@@ -2086,7 +2132,7 @@ func (p *Providers) deleteWorkspace(id, workspace, who string) error {
 		}
 	}
 	what := fmt.Sprintf("%s/%s", id, workspace)
-	if _, err := p.providerCall(id, func(c Provider) (any, error) { return nil, c.Delete(workspace) }); err != nil {
+	if err := p.deleteAt(id, workspace, what, who); err != nil {
 		p.log(fmt.Sprintf("workspace: delete %s by %s: failed: %s", what, who, errorWords(err)))
 		return err
 	}
@@ -2190,7 +2236,7 @@ func (p *Providers) deleteMachine(host, who string, caller Caller) error {
 // confirmed. The host's record is the caller's to remove, at once; this may take a while,
 // so the caller runs it in the background.
 func (p *Providers) DeleteForRemoval(link WorkspaceLink, what, who string) error {
-	if _, err := p.providerCall(link.Provider, func(c Provider) (any, error) { return nil, c.Delete(link.Workspace) }); err != nil {
+	if err := p.deleteAt(link.Provider, link.Workspace, what, who); err != nil {
 		p.log(fmt.Sprintf("workspace: delete %s (%s/%s), as %s was removed: failed: %s", what, link.Provider, link.Workspace, who, errorWords(err)))
 		return err
 	}
@@ -2201,7 +2247,7 @@ func (p *Providers) DeleteForRemoval(link WorkspaceLink, what, who string) error
 
 // removeWorkspace is the delete itself: the provider's, then the host's record.
 func (p *Providers) removeWorkspace(host string, link WorkspaceLink, what, who string, caller Caller) error {
-	if _, err := p.providerCall(link.Provider, func(c Provider) (any, error) { return nil, c.Delete(link.Workspace) }); err != nil {
+	if err := p.deleteAt(link.Provider, link.Workspace, what, who); err != nil {
 		p.log(fmt.Sprintf("workspace: delete %s by %s: failed: %s", what, who, errorWords(err)))
 		return err
 	}
@@ -2211,6 +2257,71 @@ func (p *Providers) removeWorkspace(host string, link WorkspaceLink, what, who s
 	}
 	p.Refresh(link.Provider)
 	return nil
+}
+
+// deleteAt has the provider delete a workspace (#6079). A delete that fails while the
+// provider no longer lists the workspace is done: a slow provider's first delete took it,
+// and its row stayed. Once done, the workspace leaves the provider's last list at once,
+// and later lists until one no longer has it.
+func (p *Providers) deleteAt(provider, workspace, what, who string) error {
+	_, err := p.providerCall(provider, func(c Provider) (any, error) { return nil, c.Delete(workspace) })
+	if err != nil {
+		if !p.unlisted(provider, workspace) {
+			return err
+		}
+		p.log(fmt.Sprintf("workspace: delete %s by %s: it was gone already (%s)", what, who, errorWords(err)))
+	}
+	p.mu.Lock()
+	p.deleted[deletedWorkspace{provider, workspace}] = time.Now().Add(deletedKeep)
+	if l := p.listed[provider]; l != nil {
+		l.workspaces = without(l.workspaces, workspace)
+	}
+	p.mu.Unlock()
+	p.changed()
+	return nil
+}
+
+// unlisted is whether a new list of the provider says the workspace is not there; false
+// when the list fails.
+func (p *Providers) unlisted(provider, workspace string) bool {
+	connection, err := p.connection(provider)
+	if err != nil {
+		return false
+	}
+	workspaces, err := connection.List()
+	if err != nil {
+		return false
+	}
+	return len(without(workspaces, workspace)) == len(workspaces)
+}
+
+// leaveOutDeletedLocked is a list without the workspaces deleted here that it still has
+// (#6079). A deleted workspace the list no longer has, or one deleted more than
+// deletedKeep ago, is forgotten. p.mu is held.
+func (p *Providers) leaveOutDeletedLocked(provider string, workspaces []MachineInfo, now time.Time) []MachineInfo {
+	for d, until := range p.deleted {
+		if d.provider != provider {
+			continue
+		}
+		kept := without(workspaces, d.workspace)
+		if len(kept) == len(workspaces) || now.After(until) {
+			delete(p.deleted, d)
+			continue
+		}
+		workspaces = kept
+	}
+	return workspaces
+}
+
+// without is a new list of the workspaces but the one with this id.
+func without(workspaces []MachineInfo, id string) []MachineInfo {
+	kept := make([]MachineInfo, 0, len(workspaces))
+	for _, w := range workspaces {
+		if w.ID != id {
+			kept = append(kept, w)
+		}
+	}
+	return kept
 }
 
 // providerCall is a provider call, its failure in the provider's words.

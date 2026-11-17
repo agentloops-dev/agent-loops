@@ -294,6 +294,13 @@ final class ControlSettingsModel {
         return nil
     }
 
+    /// Delete on a failed make's row (#6078): the control plane drops the row and asks the
+    /// provider for nothing, since it made nothing.
+    func deleteFailedMake(_ provider: ProviderID, workspace: String) async {
+        await perform(DaemonAPI.Method.providersDeleteWorkspace,
+                      DaemonAPI.ProviderWorkspaceRequest(id: provider, workspace: workspace))
+    }
+
     func unlink(_ host: MachineRef) async {
         await perform(DaemonAPI.Method.hostsUnlink, DaemonAPI.MachineRequest(host: host))
     }

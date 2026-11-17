@@ -142,7 +142,13 @@ function WorkspaceRow({ store, provider, workspace, hosts, say, link, install }:
     say(await store.providers.unlink(host.id));
   };
   const setIdle = async (minutes: number) => { if (host) say(await store.providers.setIdle(host.id, minutes)); };
-  const free = linkableHosts(workspace, hosts);
+  // A make that failed is no machine (#6078): its row offers only Delete.
+  const failed = workspace.state === "failed";
+  const deleteFailed = async () => {
+    if (!await ask(words.deleteFailed(workspace.name, provider.name))) return;
+    say(await store.providers.deleteFailed(provider.id, workspace.id));
+  };
+  const free = failed ? [] : linkableHosts(workspace, hosts);
   const noHost = noHostLine(workspace, hosts);
   const adding = addAsMachine(workspace);
   const awake = linked ? keptAwakeLine(linked) : null;
@@ -174,6 +180,7 @@ function WorkspaceRow({ store, provider, workspace, hosts, say, link, install }:
       {adding && (
         <button type="button" disabled={!adding.ready} title={adding.help} onClick={install}>{words.addAsMachine}</button>
       )}
+      {failed && <button type="button" onClick={() => void deleteFailed()}>Delete…</button>}
     </li>
   );
 }

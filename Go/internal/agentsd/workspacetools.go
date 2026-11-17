@@ -26,8 +26,8 @@ const (
 	hostsStop          = "machines/stop"
 	providersCreate    = "providers/create"
 	hostsDeleteMachine = "machines/deleteMachine"
-	// A provider's machine that no host is linked to (#4610, #6080).
-	providersDeleteWorkspace = "providers/deleteWorkspace"
+	// A provider's machine that no host is linked to, or a failed make's row (#4610, #6078, #6080).
+	providersDeleteWS = "providers/deleteWorkspace"
 )
 
 // askControl is a request of the control plane on channel 0, and its answer.
@@ -289,6 +289,9 @@ func (d *Daemon) deleteMachine(agent wire.UUID, args map[string]json.RawMessage)
 		return "", &Error{Code: wire.FailureNoSuchHost,
 			Message: "Nothing was deleted: no machine provider has a machine called " + given + ". list_machines names the ones that do."}
 	}
+	if machine.Host == nil && machine.State == "failed" {
+		return d.deleteFailedMake(since, agent, provider, machine)
+	}
 	if machine.Host == nil {
 		// No host is linked to it (#6080): the provider deletes it, and there are no agents.
 		if !provider.CanDelete {
@@ -301,7 +304,7 @@ func (d *Daemon) deleteMachine(agent wire.UUID, args map[string]json.RawMessage)
 					return "Nothing was deleted: the person said no, or didn’t answer.", nil
 				}
 				params := map[string]any{"id": provider.ID, "workspace": machine.ID}
-				if _, err := d.askWorkspaces(agent, providersDeleteWorkspace, params); err != nil {
+				if _, err := d.askWorkspaces(agent, providersDeleteWS, params); err != nil {
 					return "", err
 				}
 				return "Deleted the machine " + machine.Name + " at " + provider.Name + ".", nil
@@ -395,6 +398,24 @@ func findMachine(given, provider string, listed wire.AgentMachines, done string)
 		}
 	}
 	return nil, nil, nil
+}
+
+// deleteFailedMake is delete_machine on a make that failed (#6078): with the person's yes,
+// its row goes. The provider made nothing, so nothing is deleted there.
+func (d *Daemon) deleteFailedMake(since time.Time, agent wire.UUID, provider *wire.AgentMachinesProvider, failed *wire.AgentMachinesMachine) (string, error) {
+	name := failed.Name
+	return d.personSaysYesSince(since, agent, d.agentWho(agent)+" wants to delete a failed make's row",
+		"Delete the row of "+name+", a make that failed at "+provider.Name+"? "+provider.Name+" never made it, so nothing is deleted there.",
+		"Delete it",
+		func(yes bool) (string, error) {
+			if !yes {
+				return "Nothing was deleted: the person said no, or didn’t answer.", nil
+			}
+			if _, err := d.askWorkspaces(agent, providersDeleteWS, map[string]any{"id": string(provider.ID), "workspace": failed.ID}); err != nil {
+				return "", err
+			}
+			return "Deleted the row of " + name + ", a make that failed. Nothing was deleted at " + provider.Name + ".", nil
+		})
 }
 
 // agentWho is an agent as the control plane's log and the card name it: "Claude (fix-login)".

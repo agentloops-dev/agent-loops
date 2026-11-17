@@ -126,6 +126,18 @@ export class Providers {
     }
   }
 
+  /** Delete on a failed make's row (#6078): the row goes; the provider made nothing, so it deletes nothing. */
+  async deleteFailed(provider: string, workspace: string): Promise<string | null> {
+    try {
+      await this.caller.call("providers/deleteWorkspace", { id: provider as ProviderID, workspace });
+      this.list.value = (this.list.value ?? []).map((p) =>
+        p.id === provider ? { ...p, workspaces: p.workspaces.filter((w) => w.id !== workspace) } : p);
+      return null;
+    } catch (error) {
+      return describe(error);
+    }
+  }
+
   /**
    * Link to Machine: `host` runs on `workspace` of `provider`. A machine that joined with the
    * command has no host key trusted yet (#3379): its fingerprint comes back to show, and `trust`

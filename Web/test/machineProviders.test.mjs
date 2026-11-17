@@ -121,6 +121,10 @@ test("Add as Machine… is offered with an ssh destination, and pressable only w
   assert.deepEqual(w.addAsMachine({ id: "x", name: "cs", state: "stopped", ssh: "cs.cs" }), { ready: false, help: w.providerWords.startFirst });
   assert.equal(w.addAsMachine({ id: "x", name: "cs", state: "running" }), undefined);
   assert.equal(w.addAsMachine({ id: "x", name: "cs", state: "running", ssh: "cs.cs", host: "4" }), undefined);
+  // A failed make is no machine (#6078): no Add as Machine…, no "not joined" line, only Delete.
+  assert.equal(w.addAsMachine({ id: "failed-cs", name: "cs", state: "failed", ssh: "cs.cs" }), undefined);
+  assert.equal(w.noHostLine({ id: "failed-cs", name: "cs", state: "failed" }, []), undefined);
+  assert.match(w.providerWords.deleteFailed("cs", "DigitalOcean"), /never made it, so nothing is deleted there/);
 });
 
 test("a provider's ssh with a port is one word, as ssh takes it", () => {

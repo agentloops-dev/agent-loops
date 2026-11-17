@@ -109,7 +109,7 @@ func TestProvidersAreReadBackAfterARestart(t *testing.T) {
 	id := h.add()
 	again := NewProviders(Config{Store: h.store, Records: h.records, Router: h.router, Methods: h.methods,
 		Timing: quickTiming(),
-		Hooks: Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
+		Hooks:  Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
 	again.Start()
 	defer again.Stop()
 	if s := again.Summaries(); len(s) != 1 || string(s[0].ID) != id {
@@ -605,6 +605,51 @@ func TestAMadeMachineThatNeverJoinsIsSaidAndCanBeDeleted(t *testing.T) {
 	}
 }
 
+// Delete on a made machine's row takes the row away at once, also when the provider's
+// next list still has the workspace, and a second Delete is done, not "There is no
+// workspace" (#6079).
+func TestADeletedWorkspaceLeavesItsRowAtOnceAndASecondDeleteIsDone(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	if _, err := h.create("build-4", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.provider.mu.Lock()
+	h.provider.slowDelete = true
+	h.provider.mu.Unlock()
+	listed := func() bool {
+		for _, s := range h.must(MethodProvidersList, nil).(map[string]any)["providers"].([]ProviderSummary) {
+			for _, w := range s.Workspaces {
+				if w.ID == "ws-build-4" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	// The Refresh just after the Delete gets the list that still has it.
+	h.must(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "ws-build-4"})
+	if listed() {
+		t.Fatal("the deleted workspace's row stayed")
+	}
+	// Delete again, as a person does when the row stays: the provider says it has none.
+	if _, err := h.call(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "ws-build-4"}); err != nil {
+		t.Fatalf("a second Delete failed: %v", err)
+	}
+	h.providers.Refresh(id)
+	if listed() {
+		t.Error("the deleted workspace came back")
+	}
+	// A Delete that fails while the provider still lists the workspace still fails.
+	h.provider.mu.Lock()
+	h.provider.failDelete = "The droplet is locked."
+	h.provider.mu.Unlock()
+	_, err := h.call(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "scratch-1"})
+	if err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("%v", err)
+	}
+}
+
 // A workspace a machine is linked to is not deleted by its row: Delete on the machine
 // does that, with the machine's backup first (#4610).
 func TestDeleteWorkspaceRefusesOneAMachineIsLinkedTo(t *testing.T) {
@@ -837,7 +882,7 @@ func TestAFailedMakeIsThereAfterARestart(t *testing.T) {
 	}
 	again := NewProviders(Config{Store: h.store, Records: h.records, Router: h.router, Methods: h.methods,
 		Timing: quickTiming(),
-		Hooks: Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
+		Hooks:  Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
 	again.Start()
 	defer again.Stop()
 	var names []string
@@ -1579,6 +1624,88 @@ func TestARunningWorkspaceThatStartsItsOwnHostIsNotStartedOverSSH(t *testing.T) 
 	time.Sleep(50 * time.Millisecond)
 	if got := h.ssh.all(); len(got) != 0 {
 		t.Fatalf("ssh %v", got)
+	}
+}
+
+// Delete on a failed make's row takes the row away, also after a restart, and asks the
+// provider for nothing: it never made the machine (#6078). Only its maker or an admin
+// may.
+func TestDeleteOnAFailedMakesRowForgetsIt(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	h.providers.hooks.IsAdmin = func(person string) bool { return person == "admin" }
+	h.providers.hooks.InGroup = func(string, string) bool { return true }
+	group := "crew"
+	if err := h.providers.SetGroup(id, &group); err != nil {
+		t.Fatal(err)
+	}
+	h.provider.mu.Lock()
+	h.provider.failCreate = "api.digitalocean.com answered 403"
+	h.provider.mu.Unlock()
+	h.caller.Person = "kim"
+	for range 2 {
+		if _, err := h.createNameless(); err == nil {
+			t.Fatal("the make did not fail")
+		}
+	}
+	failedNames := func(p *Providers) []string {
+		var names []string
+		for _, w := range p.Summaries()[0].Workspaces {
+			if w.State == "failed" {
+				names = append(names, w.Name)
+			}
+		}
+		return names
+	}
+	if got := failedNames(h.providers); !reflect.DeepEqual(got, []string{"machine-1", "machine-2"}) {
+		t.Fatalf("failed rows %v", got)
+	}
+	// Another member may not delete kim's row.
+	h.caller.Person = "lee"
+	_, err := h.call(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "failed-machine-1"})
+	if f := failureOf(err); f == nil || f.Code != CodeNotPermitted {
+		t.Fatalf("%v", err)
+	}
+	// Kim deletes one, an admin the other.
+	h.caller.Person = "kim"
+	h.must(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "failed-machine-1"})
+	if got := failedNames(h.providers); !reflect.DeepEqual(got, []string{"machine-2"}) {
+		t.Fatalf("failed rows %v", got)
+	}
+	h.caller.Person = "admin"
+	h.must(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "failed-machine-2"})
+	h.provider.mu.Lock()
+	deleted := append([]string{}, h.provider.deleted...)
+	h.provider.mu.Unlock()
+	if len(deleted) != 0 {
+		t.Errorf("the provider was asked to delete %v", deleted)
+	}
+	again := NewProviders(Config{Store: h.store, Records: h.records, Router: h.router, Methods: h.methods,
+		Timing: quickTiming(),
+		Hooks: Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
+	again.Start()
+	defer again.Stop()
+	if got := failedNames(again); len(got) != 0 {
+		t.Fatalf("after a restart, failed rows %v", got)
+	}
+}
+
+// An agent's delete reaches providers/deleteWorkspace only for a failed make's row (#6078):
+// a workspace the provider made is deleted by delete_machine on its host.
+func TestAnAgentDeletesOnlyAFailedMakesRow(t *testing.T) {
+	h := newHarness(t)
+	h.providers.hooks.OwnerOf = func(string) string { return "" }
+	id := h.add()
+	_, err := h.providers.AgentCall(devbox, "claude", MethodProvidersDeleteWorkspace,
+		rawOf(map[string]string{"id": id, "workspace": "ws-build-3"}), nil)
+	if err == nil || !strings.Contains(err.Error(), "not a make that failed") {
+		t.Fatalf("%v", err)
+	}
+	h.provider.mu.Lock()
+	deleted := len(h.provider.deleted)
+	h.provider.mu.Unlock()
+	if deleted != 0 {
+		t.Fatal("the provider was asked to delete")
 	}
 }
 

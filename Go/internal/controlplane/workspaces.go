@@ -80,7 +80,8 @@ func (s *Service) makeProviders(home string) *providers.Providers {
 				return *shown.Command, host, nil
 			},
 			SetupStep: s.madeStep,
-			BackUp: s.backUpBeforeDelete,
+			MadeFor:   s.madeFor,
+			BackUp:    s.backUpBeforeDelete,
 		},
 	})
 	providers.NewDraftsFor(p, providers.DraftWiring{Router: adapter, Records: s.records, Home: home, Connect: connect,

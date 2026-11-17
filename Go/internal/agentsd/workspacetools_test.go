@@ -328,6 +328,74 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 	}
 }
 
+// delete_machine with the name of a make that failed (#6078): the person is asked, and a
+// yes deletes only its row, by providers/deleteWorkspace; no machine is deleted.
+func TestDeleteMachineOnAFailedMakeDeletesItsRow(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	title := "tidy"
+	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) {
+		a.State, a.EndedReason, a.RuntimeID, a.Title = wire.AgentStateRunning, nil, "claude", &title
+	})
+	m := appClient(t, d, a.ID)
+	m.post("initialize", map[string]any{}, 1)
+	listed := wire.AgentMachines{Providers: []wire.AgentMachinesProvider{{ID: "do", Name: "DigitalOcean", CanMake: true, CanDelete: true,
+		Workspaces: []wire.AgentMachinesMachine{{ID: "failed-pool-1-1b71be", Name: "pool-1-1b71be", State: "failed", Reason: new("403")}}}}}
+	var mu sync.Mutex
+	var asked []wire.MachineWorkspaceCall
+	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == wire.CallUserSetPolicy.Name {
+			return json.RawMessage(`{}`), nil
+		}
+		call := params.(wire.MachineWorkspaceCall)
+		mu.Lock()
+		asked = append(asked, call)
+		mu.Unlock()
+		switch call.Method {
+		case "machines/forAgent":
+			b, _ := json.Marshal(listed)
+			return b, nil
+		case "providers/deleteWorkspace":
+			return json.RawMessage(`{}`), nil
+		}
+		return nil, &controllink.AskError{Code: -32010, Message: "Agent Loops can’t ask that of the control plane."}
+	})
+	l := d.live(a.ID)
+	l.mu.Lock()
+	l.inTurn = true
+	l.mu.Unlock()
+	answered := make(chan string, 1)
+	go func() { text, _ := m.tool(2, "delete_machine", map[string]any{"host": "pool-1-1b71be"}); answered <- text }()
+	var pending []wire.ElicitationRequest
+	waitFor(t, "the card", func() bool {
+		_ = json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		return len(pending) == 1
+	})
+	if f := pending[0].Mode.Form.Value; !strings.Contains(*f.Properties[0].Title, "DigitalOcean never made it, so nothing is deleted there") {
+		t.Fatalf("%s", *f.Properties[0].Title)
+	}
+	c.call(t, 2, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "accept", "content": map[string]any{"go": "yes"}})
+	if text := <-answered; text != "Deleted the row of pool-1-1b71be, a make that failed. Nothing was deleted at DigitalOcean." {
+		t.Fatal(text)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	var deletes []string
+	for _, call := range asked {
+		switch call.Method {
+		case "providers/deleteWorkspace":
+			deletes = append(deletes, string(call.Params))
+		case "machines/deleteMachine":
+			t.Fatal("a machine was deleted")
+		}
+	}
+	if !slices.Equal(deletes, []string{`{"id":"do","workspace":"failed-pool-1-1b71be"}`}) {
+		t.Fatalf("%v", deletes)
+	}
+}
+
 // A machine is found by its name in list_machines or by its host's name (#6080): a host that
 // Add as Machine… linked chose its own name, so the two differ. One with no host can't be
 // started or stopped, but can be deleted at its provider; a name two providers have is asked
