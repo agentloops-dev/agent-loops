@@ -112,6 +112,8 @@ type forgeJira interface {
 	// Blockers are the blockers of a standing epic's children (#4242), by their keys.
 	Blockers(ctx context.Context, keys []string) (map[string][]jiramcp.Ref, error)
 	BoardFilter(ctx context.Context, board string) (string, error)
+	// SetPriority sets the priority field (#6091).
+	SetPriority(ctx context.Context, key, priority string) error
 }
 
 // forgeLinear is what the forge reads ask of Linear; a test gives a fake.
@@ -189,6 +191,7 @@ func (d *Daemon) registerForge() {
 	On(d, wire.CallForgePull, item(lineage.KindPR))
 	d.registerForgePlans()
 	d.registerForgeWrites()
+	d.registerForgePlanFields()
 	d.registerForgeBoards()
 	d.registerForgeImage()
 	d.registerForgeReleases()

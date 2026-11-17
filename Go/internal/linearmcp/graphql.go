@@ -63,8 +63,20 @@ type gqlError struct {
 
 // query asks Linear query with variables and reads its data into out. A read's answer is shared
 // for sharedFor; a mutation's never is, so the same write asked again is written again (#3271).
+// A mutation forgets every shared read, so a read after it shows the write (#6091).
 func (l *RealLinear) query(ctx context.Context, query string, variables map[string]any, out any) error {
-	return l.ask(ctx, query, variables, out, !strings.HasPrefix(strings.TrimSpace(query), "mutation"))
+	mutation := strings.HasPrefix(strings.TrimSpace(query), "mutation")
+	if mutation {
+		defer l.forget()
+	}
+	return l.ask(ctx, query, variables, out, !mutation)
+}
+
+// forget drops every shared answer.
+func (l *RealLinear) forget() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	clear(l.recent)
 }
 
 // ask is query, with share false for a read that a write depends on.

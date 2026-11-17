@@ -44,6 +44,8 @@ type forgeAzureBoards interface {
 	SetParent(ctx context.Context, project string, id, parent int) error
 	SetBlockedBy(ctx context.Context, project string, id, blocker int, blocked bool) error
 	TeamAreas(ctx context.Context, project, team string) ([]azureboardsmcp.Area, error)
+	// SetPriority writes the Priority field; has is false where the type has none (#6091).
+	SetPriority(ctx context.Context, project string, id int, priority string) (has bool, err error)
 }
 
 var (
@@ -186,6 +188,7 @@ func (azureBoardsForge) Images() forgeImageHost { return azureImages{} }
 func (azureBoardsForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues:      true,
+		Priority: true, Hold: true,
 		Issue:       forgeActions{Comment: true, Label: true, Close: true, Reopen: true, Transition: true},
 		Avatars:     true,
 		StateReason: true,
@@ -521,4 +524,21 @@ func boardsStart(i wire.ForgeItem) *wire.ForgeStart {
 	return &wire.ForgeStart{Prompt: fmt.Sprintf("%s: %s\n\nWork on this Azure Boards work item: %s\n\n"+
 		"Name %s in the pull request's title, so Azure Boards links it.", key, i.Title, deref(i.URL), key),
 		Labels: []string{key}, Worktree: optional(strconv.Itoa(id) + " " + i.Title)}
+}
+
+// SetPriority is the work item's Priority field where its type has one, else the tags (#6091);
+// SetHold is the tag On Hold, as a work item has no hold state of its own.
+func (a azureBoardsForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	ab, err := a.d.forgeAzureBoards()
+	if err != nil {
+		return err
+	}
+	if has, err := ab.SetPriority(ctx, r.Repo, r.Number, priority); has || err != nil {
+		return err
+	}
+	return labelPriority(ctx, a, r, priority)
+}
+
+func (a azureBoardsForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	return labelHold(ctx, a, r, on)
 }
