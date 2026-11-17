@@ -36,7 +36,14 @@ public extension WorkLook {
         public var merges: Bool
         /// The main button merges now (green), or waits for the checks (the accent colour).
         public var waits: Bool
+        /// Approve is there: not on a draft, nor on the person's own pull request (#5804).
         public var approves: Bool
+        /// The person's own Approve review is on it (#5804): Approve is *Approved*, with a check,
+        /// and does nothing. From the forge's state, so a push that dismisses it shows Approve again.
+        public var approved: Bool
+        /// The person opened it, so the forge takes no review from them: no Approve, and
+        /// `ownPullWords` in its place (#5804).
+        public var ownPull: Bool
         public var reruns: Bool
         /// *Resolve on GitHub*: the branch has conflicts.
         public var resolve: Bool
@@ -71,11 +78,32 @@ public extension WorkLook {
         let failed = checks?.sign == .fail
         let waits = WorkList.mergeWaits(detail) || failed
         let reviewed = item.review == nil || item.review == "approved"
+        let own = isViewer(item.author, detail.viewer)
         let border: MergeSign = failed || conflicts ? .fail : (!draft && !waits && !auto && reviewed) ? .pass : .info
         return MergeBox(border: border, rows: rows, checksOpen: failed,
                         merges: !draft && !conflicts && !auto && detail.head != nil,
-                        waits: waits, approves: !draft && detail.head != nil,
+                        waits: waits, approves: !draft && !own && detail.head != nil,
+                        approved: !draft && !own && approvedByViewer(detail), ownPull: !draft && own,
                         reruns: !WorkList.failedChecks(detail).isEmpty, resolve: conflicts)
+    }
+
+    /// Approve's words: *Approved* once the person's own review approved it (#5804).
+    static func approveWords(approved: Bool) -> String { approved ? "Approved" : "Approve" }
+
+    /// In Approve's place on the person's own pull request (#5804, epic #5802).
+    static let ownPullWords = "You opened this pull request, so you cannot approve it."
+
+    /// The person's own review approved it: the reviewer whose login is the viewer's, with the
+    /// state approved (#5804). Not the pull request's overall review, which another can set.
+    static func approvedByViewer(_ detail: DaemonAPI.ForgeItemDetail) -> Bool {
+        guard detail.viewer != nil else { return false }
+        return (detail.reviewers ?? []).contains { isViewer($0.login, detail.viewer) && $0.state == "approved" }
+    }
+
+    /// A login is the viewer's, the forge's logins compared without case.
+    static func isViewer(_ login: String?, _ viewer: String?) -> Bool {
+        guard let login, let viewer, !viewer.isEmpty else { return false }
+        return login.caseInsensitiveCompare(viewer) == .orderedSame
     }
 
     /// The main button's words: the repo's first method, *Merge when checks pass* while they run.

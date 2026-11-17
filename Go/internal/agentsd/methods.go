@@ -54,6 +54,7 @@ func (d *Daemon) register() {
 	d.registerCost()
 	d.registerLineage()
 	d.registerLineageSessions()
+	d.registerSessionPriority()
 	d.registerLineageFigures()
 	d.registerBuilds()
 	d.registerDeploysDelivery()

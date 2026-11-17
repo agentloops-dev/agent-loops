@@ -38,6 +38,10 @@ protocol WorkModel: AnyObject, Sendable {
                    on host: MachineRef) async throws -> DaemonAPI.ForgeItemDetail
     func forge<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable, returning: R.Type,
                                         on host: MachineRef) async throws -> R
+    /// One call to the control plane that asks every machine of the person's (`forge/listAll`, `forge/boardsAll`,
+    /// #5592); nil with no control plane, where the app asks each machine itself. The Remote has none: it asks its hosts.
+    func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
+                                             returning: R.Type) async throws -> R?
     /// A page of the lineage nodes of a kind, from the control plane; nil with none.
     func reportNodes(_ query: DaemonAPI.ReportNodesQuery) async throws -> DaemonAPI.ReportNodes?
     /// The sessions on every machine that lineage links to these nodes, with their state now, from
@@ -76,6 +80,8 @@ extension WorkModel {
     var workProjects: [WorkList.Project] { [] }
     func askWorkConnectors() -> Bool { false }
     var workCopy: LocalCopy? { nil }
+    func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
+                                             returning: R.Type) async throws -> R? { nil }
 
     /// The last answer this device kept for what was asked (#4930); nil with none.
     func keptWork<Value: Codable & Sendable>(_: Value.Type, _ group: LocalCopy.WorkGroup, _ asked: String) async -> Value? {
@@ -120,9 +126,30 @@ extension WorkModel {
     var lineageChanges: Int { 0 }
 
     /// The boards of every machine's folders' projects (#3282), each once, by url, the first
-    /// name kept; none from a machine that cannot be read.
+    /// name kept; none from a machine that cannot be read. With a control plane, every machine's in
+    /// one call (`forge/boardsAll`, #5592), which waits for a slow machine at most 5 s.
     func workBoards() async -> [DaemonAPI.ProjectBoard] {
         let machines = boardMachines
+        let order = machines.map(\.id)
+        var boards: [DaemonAPI.ProjectBoard] = []
+        guard !order.isEmpty else { return boards }
+        do {
+            if let all = try await controlAll(DaemonAPI.Method.forgeBoardsAll, DaemonAPI.Empty(),
+                                              returning: DaemonAPI.ForgeBoardsAll.self) {
+                boards = WorkList.mergeBoards(all, hosts: order)
+            } else {
+                boards = await eachMachinesBoards(machines)
+            }
+        } catch {
+            // The control plane did not answer: none, as from a machine that cannot be read.
+        }
+        if !boards.isEmpty { keepWork(boards, .boards, order.map(\.rawValue).joined(separator: ",")) }
+        return boards
+    }
+
+    /// Each machine's boards, a call to each (no control plane): the machines' own order, the home
+    /// one first, so the same board keeps the same name.
+    private func eachMachinesBoards(_ machines: [(id: MachineRef, name: String)]) async -> [DaemonAPI.ProjectBoard] {
         var got: [(host: MachineRef, boards: [DaemonAPI.ProjectBoard])] = []
         await withTaskGroup(of: (MachineRef, [DaemonAPI.ProjectBoard]).self) { group in
             for machine in machines {
@@ -134,12 +161,9 @@ extension WorkModel {
             }
             for await (host, boards) in group { got.append((host, boards)) }
         }
-        // The machines' own order, the home one first, so the same board keeps the same name.
         let order = machines.map(\.id)
         got.sort { (order.firstIndex(of: $0.host) ?? .max) < (order.firstIndex(of: $1.host) ?? .max) }
-        let boards = WorkList.mergeBoards(got.map(\.boards))
-        if !boards.isEmpty { keepWork(boards, .boards, machines.map(\.id.rawValue).joined(separator: ",")) }
-        return boards
+        return WorkList.mergeBoards(got.map(\.boards))
     }
 
     /// The machines a list asks: those that narrow to the board when one is chosen.

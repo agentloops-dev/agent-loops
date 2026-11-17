@@ -451,6 +451,15 @@
           "description": "Optional. The runtime's own permission mode, as a workflow's `permission-mode:` — e.g. a read-only or plan mode. Leave out to start it in the mode you are in now, when it runs on your runtime.",
           "type": "string"
         },
+        "priority": {
+          "description": "Optional: high, medium or low, set on the new session. Leave out and it follows its issue's priority, else yours.",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "type": "string"
+        },
         "prompt": {
           "description": "What the new session is to do. Sent to it as its first message.",
           "type": "string"
@@ -540,6 +549,37 @@
     },
     "name": "set_session_labels",
     "title": "Label this session"
+  },
+  {
+    "description": "Set or clear the priority of this session or one you started: high, medium or low, or issue to follow its issue's priority again (else its starter's). A session with a higher priority goes first when sessions wait for the same resource. A priority set here wins over its issue's until it is cleared.",
+    "inputSchema": {
+      "properties": {
+        "description": {
+          "description": "Why you are making this call, in one short sentence for the person.",
+          "type": "string"
+        },
+        "id": {
+          "description": "The id start_session or list_sessions gave. Leave out for yourself.",
+          "type": "string"
+        },
+        "priority": {
+          "description": "high, medium or low; issue clears the set priority.",
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "issue"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "priority"
+      ],
+      "type": "object"
+    },
+    "name": "set_session_priority",
+    "title": "Set a session's priority"
   },
   {
     "description": "Move once this turn ends: into a git worktree of this folder, or back to the folder. Do it when the work turns into a change that should be on its own branch, or when asked. You are started again there to carry on, or stay there if you asked to be archived. Nothing uncommitted comes with you, and a new worktree starts from the commit you have checked out: commit first. Give neither argument to take back a move you asked for. Not with a wait.",

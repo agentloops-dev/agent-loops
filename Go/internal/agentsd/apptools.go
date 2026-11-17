@@ -68,6 +68,7 @@ type appTool struct {
 func appToolCalls() []appTool {
 	return []appTool{
 		{"set_session_labels", (*Daemon).setSessionLabels},
+		{"set_session_priority", (*Daemon).setSessionPriority},
 		{"lease_resource", (*Daemon).leaseResourceTool},
 		{"release_resource", (*Daemon).releaseResource},
 		{"list_resources", (*Daemon).listResources},

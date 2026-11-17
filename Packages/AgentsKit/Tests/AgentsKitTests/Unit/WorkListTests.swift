@@ -136,6 +136,62 @@ struct WorkListTests {
         #expect(WorkList.Filter().board.isEmpty)
     }
 
+    /// forge/boardsAll (#5592): only the machines asked, in their order, so the home one names a board.
+    @Test func everyMachinesBoardsComeInOneAnswerTheHomeOneFirst() {
+        let web = DaemonAPI.ProjectBoard(name: "Web", url: "https://github.com/orgs/acme/projects/7")
+        let renamed = DaemonAPI.ProjectBoard(name: "Web team", url: web.url)
+        let other = DaemonAPI.ProjectBoard(name: "Other", url: "https://linear.app/acme/team/OTHER")
+        let mac = MachineRef(rawValue: "mac"), box = MachineRef(rawValue: "box"), lost = MachineRef(rawValue: "lost")
+        let all = DaemonAPI.ForgeBoardsAll(boards: [.init(machine: box, machineName: "Box", boards: .init(boards: [renamed])),
+                                                    .init(machine: mac, machineName: "Mac", boards: .init(boards: [web])),
+                                                    .init(machine: lost, machineName: "Lost", boards: .init(boards: [other]))])
+        #expect(WorkList.mergeBoards(all, hosts: [mac, box]).map(\.name) == ["Web"])
+    }
+
+    /// forge/listAll (#5592): each machine asked, in its order; one the plane could not reach fails all its forges,
+    /// so another machine's answer for them is enough (#5449); one not asked is left out.
+    @Test func everyMachinesListComesInOneAnswerInTheirOrder() throws {
+        let mac = MachineRef(rawValue: "mac"), box = MachineRef(rawValue: "box"), lost = MachineRef(rawValue: "lost")
+        let all = DaemonAPI.ForgeListAll(
+            lists: [.init(machine: box, machineName: "Box", list: .init(items: [item(2)], cursor: "b2")),
+                    .init(machine: MachineRef(rawValue: "new"), machineName: "New", list: .init(items: [item(9)])),
+                    .init(machine: mac, machineName: "Mac", list: .init(items: [item(1)]))],
+            unreached: [.init(machine: lost, machineName: "Lost")])
+        let lists = WorkList.hostLists(all, hosts: [mac, box, lost])
+        try #require(lists.count == 3)
+        #expect(lists.map(\.host) == [mac, box, lost])
+        #expect(lists[1].list.cursor == "b2")
+        #expect(lists[2].list.errors == [.init(forge: "", message: WorkList.didNotAnswer)])
+        let shown = WorkList.shownErrors(lists.map { ($0.list.items.map(\.node.ref), $0.list.errors ?? []) })
+        try #require(shown.count == 3)
+        #expect(shown[2].isEmpty)
+    }
+
+    /// forge/listAll's next pages (#5592): each machine with a cursor gets its page; one that could not read it keeps its
+    /// rows and cursor, and the page says why.
+    @Test func theNextPagesComeInOneAnswerAndAFailedOneKeepsItsCursor() throws {
+        let mac = MachineRef(rawValue: "mac"), box = MachineRef(rawValue: "box"), lost = MachineRef(rawValue: "lost")
+        let had: [(host: MachineRef, list: DaemonAPI.ForgeList)] = [
+            (mac, .init(items: [item(1)], cursor: "m2")),
+            (box, .init(items: [item(2)], cursor: "b2")),
+            (lost, .init(items: [item(3)], cursor: "l2")),
+            (MachineRef(rawValue: "done"), .init(items: [item(4)])),
+        ]
+        let all = DaemonAPI.ForgeListAll(
+            lists: [.init(machine: mac, machineName: "Mac", list: .init(items: [item(5)])),
+                    .init(machine: box, machineName: "Box",
+                          list: .init(errors: [.init(forge: "github", message: "Not connected.")]))],
+            unreached: [.init(machine: lost, machineName: "Lost")])
+        let (next, problem) = WorkList.addPages(all, to: had)
+        try #require(next.count == 4)
+        #expect(next.map { $0.list.items.count } == [2, 1, 1, 1])
+        #expect(next[0].list.cursor == nil)
+        #expect(next[1].list.cursor == "b2")
+        #expect(next[2].list.cursor == "l2")
+        #expect(problem == "Lost: \(WorkList.didNotAnswer); Not connected.")
+        #expect(WorkList.addPages(.init(lists: [.init(machine: mac, machineName: "Mac", list: .init())]), to: had).problem == nil)
+    }
+
     @Test func aProjectHasTheReposItsFoldersReadOnEveryMachine() throws {
         let box = MachineRef(rawValue: "box")
         func read(_ n: Int, _ repo: String, _ folder: String) -> DaemonAPI.ForgeItem {

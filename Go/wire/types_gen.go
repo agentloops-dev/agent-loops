@@ -196,6 +196,15 @@ type Agent struct {
 
 	Labels []SessionLabel `json:"labels,omitzero"`
 
+	// The priority the session goes by (#5846): prioritySet, else the highest priority of the issues it is labelled with (#n, and the issues a P#n closes), else its starter's, else none (absent). prioritySource says which. The daemon works it out; a client only reads it.
+	Priority *SessionPriority `json:"priority,omitzero"`
+
+	// The priority a person or an agent set on the session (agents/setPriority, start_session, set_session_priority); absent when it follows its issue. It wins until it is cleared, and it lasts a restart.
+	PrioritySet *SessionPriority `json:"prioritySet,omitzero"`
+
+	// Where priority comes from (#5846); absent is none.
+	PrioritySource *SessionPrioritySource `json:"prioritySource,omitzero"`
+
 	State AgentState `json:"state"`
 
 	RuntimeSessionID *string `json:"runtimeSessionID,omitzero"`
@@ -6235,9 +6244,11 @@ type ForgeItem struct {
 	Standing *bool `json:"standing,omitzero"`
 }
 
-// forge/issue and forge/pull (#3129): one item with its body (Markdown) and a page of its comments, the newest page first and at most 50, oldest first in the page; cursor is the page before it, absent at the first comment. A pull request's checks, review threads (line comments, in threads) and files changed come with it. head is a pull request's head commit, which forge/merge and forge/approve name (#3130); mergeMethods are the ways its repo allows, the repo's default first; start is the new-agent form for an issue. transitions are the moves an issue's workflow allows now (Jira, #3260), which forge/close takes in place of a close or a reopen. actions are what the item's page offers now, from its forge and its state (#4361): a merged pull request has no merge and no reopen, a closed item no close; absent from an earlier daemon, when the page shows what it did before. On an issue's read (#4373), where the forge says them (ForgeCapabilities): children are its sub-issues, linkedPulls the pull requests that close it, and events its timeline, oldest first (labelled, assigned, closed, referenced and the like); each is absent where the forge gives none. On a pull request's read (#4409), where the forge says them (ForgeCapabilities): additions, deletions and commits are its size; reviewers are the people asked to review it and the people who reviewed it, each once with their newest state; closes are the issues it closes when it merges.
+// forge/issue and forge/pull (#3129): one item with its body (Markdown) and a page of its comments, the newest page first and at most 50, oldest first in the page; cursor is the page before it, absent at the first comment. A pull request's checks, review threads (line comments, in threads) and files changed come with it. head is a pull request's head commit, which forge/merge and forge/approve name (#3130); mergeMethods are the ways its repo allows, the repo's default first; start is the new-agent form for an issue. transitions are the moves an issue's workflow allows now (Jira, #3260), which forge/close takes in place of a close or a reopen. actions are what the item's page offers now, from its forge and its state (#4361): a merged pull request has no merge and no reopen, a closed item no close; absent from an earlier daemon, when the page shows what it did before. On an issue's read (#4373), where the forge says them (ForgeCapabilities): children are its sub-issues, linkedPulls the pull requests that close it, and events its timeline, oldest first (labelled, assigned, closed, referenced and the like); each is absent where the forge gives none. On a pull request's read (#4409), where the forge says them (ForgeCapabilities): additions, deletions and commits are its size; reviewers are the people asked to review it and the people who reviewed it, each once with their newest state; closes are the issues it closes when it merges. viewer is the login this machine reads and writes the forge as (#5804), the one forge/approve reviews as, so a client knows which reviewer and which author is the person; absent where the connection does not say it, and from an earlier daemon.
 type ForgeItemDetail struct {
 	Item ForgeItem `json:"item"`
+
+	Viewer *string `json:"viewer,omitzero"`
 
 	Body string `json:"body"`
 
@@ -8177,7 +8188,7 @@ type LockJoinNonce struct {
 	Nonce Data `json:"nonce"`
 }
 
-// lock/joinRequests and control/lockJoinRequested (#3490): a client asking to join its person's lock, to every client of that person, and sent again in place as it goes on. client is the asking client's id, so it knows its own. nonce is the signer's, once one sent it (lock/joinAnswer), and answeredBy is that signer's client id; reveal is the asking client's nonce, once it showed it. Each screen makes the six digits from key, reveal and nonce. machine is set when a machine asks (#3491, D3): client is then the machine's id, kind is unknown, and a signer approves it with an addMachine whose key and sealing key are both key, the machine's own.
+// lock/joinRequests and control/lockJoinRequested (#3490): a client asking to join its person's lock, to every client of that person, and sent again in place as it goes on. client is the asking client's id, so it knows its own. nonce is the signer's, once one sent it (lock/joinAnswer), and answeredBy is that signer's client id; reveal is the asking client's nonce, once it showed it. Each screen makes the six digits from key, reveal and nonce. machine is set when a machine asks (#3491, D3): client is then the machine's id, kind is unknown, and a signer approves it with an addMachine whose key and sealing key are both key, the machine's own. compared is set on a machine's request when the control plane made that machine and its set-up's compare step showed the digits the control plane made from its join token (#5359, #5776): a signer then sends its nonce and, once the machine's reveal checks against its commitment, approves it by itself, with no card for the person. The control plane still signs nothing.
 type LockJoinRequest struct {
 	Request string `json:"request"`
 
@@ -8200,6 +8211,8 @@ type LockJoinRequest struct {
 	AnsweredBy *string `json:"answeredBy,omitzero"`
 
 	Reveal Data `json:"reveal,omitzero"`
+
+	Compared *bool `json:"compared,omitzero"`
 }
 
 // lock/join's answer (#3490): the request, and when it ends unanswered.
@@ -14678,6 +14691,21 @@ type SessionNotice struct {
 	Detail *string `json:"detail,omitzero"`
 }
 
+// A session's priority (#5846): the same three levels as an issue's (ForgeItem.priority), in the order high, medium, none, low.
+type SessionPriority string
+
+const SessionPriorityHigh SessionPriority = "high"
+const SessionPriorityMedium SessionPriority = "medium"
+const SessionPriorityLow SessionPriority = "low"
+
+// Where a session's priority comes from (#5846): set on it, its issue's, its starter's, or none.
+type SessionPrioritySource string
+
+const SessionPrioritySourceSet SessionPrioritySource = "set"
+const SessionPrioritySourceIssue SessionPrioritySource = "issue"
+const SessionPrioritySourceStarter SessionPrioritySource = "starter"
+const SessionPrioritySourceNone SessionPrioritySource = "none"
+
 // A secret kept for one session only (#3548): only that session's agent can use it (fill_secret, its environment, its MCP servers), and its host deletes it when the session is archived. No value.
 type SessionSecret struct {
 	AgentID UUID `json:"agentID"`
@@ -14830,6 +14858,13 @@ type SetPinnedRequest struct {
 	Folder URL `json:"folder"`
 
 	Pinned bool `json:"pinned"`
+}
+
+// agents/setPriority (#5847): the priority set on a session; with no priority (absent or null), the setting is cleared and the session follows its issue again ("From issue").
+type SetPriorityRequest struct {
+	AgentID UUID `json:"agentID"`
+
+	Priority *SessionPriority `json:"priority,omitzero"`
 }
 
 type SetProviderRequest struct {
@@ -15624,6 +15659,9 @@ type StartRequest struct {
 	Sandbox *SandboxChoice `json:"sandbox,omitzero"`
 
 	Labels []string `json:"labels"`
+
+	// The priority set on the new session (#5847), as agents/setPriority sets it; absent, it follows its issue, then its starter.
+	Priority *SessionPriority `json:"priority,omitzero"`
 
 	Persona *string `json:"persona,omitzero"`
 

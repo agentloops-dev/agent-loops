@@ -328,3 +328,71 @@ func TestTheRecoveryKeyAndANewLock(t *testing.T) {
 	}
 	signOnto(t, phone, phoneKey, wire.LockBody{Kind: wire.LockEntryKindRoot, Key: machinelock.PublicKey(phoneKey)})
 }
+
+// #5776: a machine the control plane made, whose compare step showed the digits made from its
+// join token (#5359), is told to the signers again as compared, so a signer adds it with no
+// card. Before that step, and for a machine no digits were made for, it is not.
+func TestAMadeMachineWhoseDigitsMatchedIsCompared(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	_, mac := p.client("Mac")
+	macKey := lockKey(t)
+	signOnto(t, mac, macKey, wire.LockBody{Kind: wire.LockEntryKindRoot, Key: machinelock.PublicKey(macKey)})
+	ctx := context.Background()
+	ask := func(name string) (*fakeHost, string) {
+		h := p.host(name)
+		key, _ := controllink.PublicKey(h.private)
+		nonce := bytes.Repeat([]byte{5}, machinelock.NonceSize)
+		var started wire.LockJoinStarted
+		b, err := h.uplink.Ask(ctx, "machine/lockJoin", wire.LockJoin{Key: key, Commitment: machinelock.Commitment(key, nonce)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &started); err != nil {
+			t.Fatal(err)
+		}
+		if asked := joinNote(t, mac, started.Request, func(wire.LockJoinRequest) bool { return true }); asked.Compared != nil {
+			t.Fatalf("%s is compared before its set-up compared it: %+v", name, asked)
+		}
+		return h, started.Request
+	}
+	compare := func(host string, code *string) {
+		for _, r := range []wire.MachineSetupReport{rep(wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone),
+			rep(wire.MachineSetupStepIDJoin, wire.MachineSetupStateDone),
+			rep(wire.MachineSetupStepIDInstall, wire.MachineSetupStateRunning),
+			rep(wire.MachineSetupStepIDInstall, wire.MachineSetupStateDone),
+			{Step: wire.MachineSetupStepIDCompare, State: wire.MachineSetupStateDone, Code: code}} {
+			if err := p.s.setupStep(ctx, host, r); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	box, request := ask("box")
+	digits := "MX47V6"
+	p.s.madeMachineJoined(ctx, box.member.Host, digits)
+	compare(box.member.Host, &digits)
+	told := joinNote(t, mac, request, func(r wire.LockJoinRequest) bool { return r.Compared != nil })
+	if !*told.Compared || told.Machine == nil || string(*told.Machine) != box.member.Host {
+		t.Fatalf("%+v", told)
+	}
+	var listed []wire.LockJoinRequest
+	if err := json.Unmarshal(call(t, mac, "", "lock/joinRequests", nil), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].Compared == nil || !*listed[0].Compared {
+		t.Fatalf("listed: %+v", listed)
+	}
+
+	// A machine that came by a pasted code: its compare step is a person's, so not compared.
+	dev, other := ask("dev")
+	compare(dev.member.Host, nil)
+	if err := json.Unmarshal(call(t, mac, "", "lock/joinRequests", nil), &listed); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range listed {
+		if r.Request == other && r.Compared != nil {
+			t.Fatalf("a pasted machine is compared: %+v", r)
+		}
+	}
+}

@@ -310,6 +310,16 @@ waits for approval, with a notice on every client ("Approve the new machine dev-
 because a standing invite that lasts for hours is a key that a machine could steal. This
 leaves nothing out of P5.
 
+Decided: a machine that the control plane made (New Machine, a pool) and whose set-up's
+compare step showed the digits the control plane made from its join token (#5359) is added
+with no card (#5776). The control plane marks its `lock/join` request `compared`. A signer
+then sends its nonce, checks the machine's reveal against its commitment, and signs the
+`addMachine` itself; a reveal that does not check, or a refused step, shows the card as
+before. The control plane still signs nothing, but here it is trusted to say which machine it
+made, as the digits that come through it are for a machine whose screen the person cannot
+see (trust on first use). A machine that came by a pasted code, or that asks to join, is
+still compared by a person.
+
 ### D4. Recovery when every signer is lost
 
 Decided: a client offers to make a **recovery key**: a 128-bit secret, as a line of words,

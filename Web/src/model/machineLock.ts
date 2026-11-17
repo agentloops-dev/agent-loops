@@ -207,6 +207,11 @@ export function namesAnotherClient(state: LockState, key: Uint8Array, client: st
   return member.id.toUpperCase() !== client.toUpperCase();
 }
 
+/** A machine's request that the control plane marked compared (#5776): a signer approves it with no card. */
+export function isCompared(row: LockJoinRequest): boolean {
+  return !!row.machine && row.compared === true;
+}
+
 export class MachineLock {
   readonly device = signal<ThisDevice>({ kind: "unknown" });
   /** The signer's cards: other devices of this person that ask to join. */
@@ -223,6 +228,9 @@ export class MachineLock {
   private ended = false;
   /** The nonce this browser sent for each request, kept only in memory. */
   private readonly sent = new Map<string, Uint8Array>();
+  /** Compared machines (#5776) this page is approving by itself, and the ones that failed: those get a card. */
+  private readonly approving = new Set<string>();
+  private readonly approveFailed = new Set<string>();
   private rows: LockJoinRequest[] = [];
   /** The lock as this page last checked it. */
   private state: LockState | null = null;
@@ -383,6 +391,7 @@ export class MachineLock {
       this.rows = [];
       for (const row of listed) await this.take(row);
       await this.show();
+      for (const row of [...this.rows]) await this.approveCompared(row);
       return;
     }
     this.rows = [];
@@ -567,6 +576,33 @@ export class MachineLock {
     if (this.device.peek().kind !== "member") return;
     this.rows = [...this.rows.filter((r) => r.request !== row.request), row];
     await this.show();
+    await this.approveCompared(row);
+  }
+
+  /**
+   * A machine the control plane made, whose set-up showed the digits made from its join token
+   * (#5359, #5776): this page sends its nonce and, once the machine showed the nonce it
+   * committed to, signs its addMachine. The person compares nothing, and sees a card only when
+   * that failed or the reveal did not check. A request another device answered is its own.
+   */
+  private async approveCompared(row: LockJoinRequest): Promise<void> {
+    if (!isCompared(row) || this.device.peek().kind !== "member" || this.approving.has(row.request) || this.approveFailed.has(row.request)) return;
+    const view = await this.viewOf(row);
+    if (view.kind !== "compare" && view.kind !== "digits") return;
+    this.approving.add(row.request);
+    let done = false;
+    try {
+      done = view.kind === "compare" ? await this.compare(row.request) : await this.approve(row.request);
+      if (!done) {
+        this.approveFailed.add(row.request);
+        await this.show();
+      }
+    } finally {
+      this.approving.delete(row.request);
+    }
+    // The machine may have shown its nonce while this page's was on its way.
+    const latest = this.rows.find((r) => r.request === row.request);
+    if (done && view.kind === "compare" && latest) await this.approveCompared(latest);
   }
 
   private decided(decided: LockJoinDecided): void {
@@ -581,6 +617,7 @@ export class MachineLock {
       return;
     }
     this.sent.delete(decided.request);
+    this.approveFailed.delete(decided.request);
     this.rows = this.rows.filter((r) => r.request !== decided.request);
     void this.show();
   }
@@ -590,7 +627,12 @@ export class MachineLock {
     const now = this.now();
     this.rows = this.rows.filter((r) => r.expires > now);
     const cards: SignerCard[] = [];
-    for (const request of this.rows) cards.push({ request, view: await this.viewOf(request) });
+    for (const request of this.rows) {
+      const view = await this.viewOf(request);
+      // A compared machine is approved here by itself (#5776).
+      if (isCompared(request) && view.kind !== "notPromised" && !this.approveFailed.has(request.request)) continue;
+      cards.push({ request, view });
+    }
     this.cards.value = cards;
     this.wake();
   }
@@ -626,29 +668,31 @@ export class MachineLock {
     (this.timer as { unref?: () => void } | undefined)?.unref?.();
   }
 
-  /** Compare Digits: send this browser's nonce for the request. */
-  async compare(request: string): Promise<void> {
+  /** Compare Digits: send this browser's nonce for the request. False when it was refused. */
+  async compare(request: string): Promise<boolean> {
     const nonce = newNonce();
     this.sent.set(request, nonce);
+    let done = true;
     try {
       await this.link.call("lock/joinAnswer", { request, nonce: base64(nonce) });
     } catch (error) {
       this.sent.delete(request);
       this.say(error);
+      done = false;
     }
     await this.show();
+    return done;
   }
 
-  /** Approve: put the request's addClient on the lock, signed by this browser. */
-  async approve(request: string): Promise<void> {
-    const card = this.cards.peek().find((c) => c.request.request === request);
-    if (!card || card.view.kind !== "digits") return;
-    const row = card.request;
+  /** Approve: put the request's addClient on the lock, signed by this browser. False when it was not put. */
+  async approve(request: string): Promise<boolean> {
+    const row = this.rows.find((r) => r.request === request);
+    if (!row || (await this.viewOf(row)).kind !== "digits") return false;
     try {
       const { pair, publicRaw } = await this.signingKey();
       for (let tries = 0; ; tries++) {
         const read = await this.checked();
-        if (!read) return;
+        if (!read) return false;
         // A machine's key is also its sealing key (D8).
         const entry = await sign(pair.privateKey, publicRaw, row.machine
           ? {
@@ -671,8 +715,10 @@ export class MachineLock {
       this.sent.delete(request);
       this.rows = this.rows.filter((r) => r.request !== request);
       await this.show();
+      return true;
     } catch (error) {
       this.say(error);
+      return false;
     }
   }
 

@@ -119,6 +119,7 @@ public enum DaemonAPI {
         /// right after `mailbox/carry`.
         public static let agentsStart = "agents/start"
         public static let agentsSetLabels = "agents/setLabels"
+        public static let agentsSetPriority = "agents/setPriority"
         public static let agentsLabelVocabulary = "agents/labelVocabulary"
         public static let agentsPrompt = "agents/prompt"
         public static let agentsUnqueue = "agents/unqueue"
@@ -1144,6 +1145,8 @@ public enum DaemonAPI {
         public var sandbox: SandboxChoice?
         /// Labels chosen by the person on the new-session form.
         public var labels: [String]
+        /// The priority set on the new session (#5847); nil follows its issue, then its starter.
+        public var priority: SessionPriority?
         /// The persona picked on the form (#760), by id. Its settings are already in
         /// the rest of the request; this brings its prompt.
         public var persona: String?
@@ -1168,7 +1171,8 @@ public enum DaemonAPI {
                     worktree: WorktreeChoice? = nil, requestID: UUID? = nil,
                     sandbox: SandboxChoice? = nil, labels: [String] = [], persona: String? = nil,
                     purpose: AgentPurpose? = nil, accountID: String? = nil, voice: Bool? = nil,
-                    levels: Levels? = nil, autoChose: String? = nil) {
+                    levels: Levels? = nil, autoChose: String? = nil, priority: SessionPriority? = nil) {
+            self.priority = priority
             self.levels = levels
             self.autoChose = autoChose
             self.accountID = accountID
@@ -1212,6 +1216,7 @@ public enum DaemonAPI {
             voice = try c.decodeIfPresent(Bool.self, forKey: .voice)
             levels = try c.decodeIfPresent(Levels.self, forKey: .levels)
             autoChose = try c.decodeIfPresent(String.self, forKey: .autoChose)
+            priority = try? c.decodeIfPresent(SessionPriority.self, forKey: .priority)
         }
 
         /// What goes to the runtime: the words, then whatever was attached.
@@ -1333,6 +1338,18 @@ public enum DaemonAPI {
             self.agentID = agentID
             self.add = add
             self.remove = remove
+        }
+    }
+
+    /// agents/setPriority (#5847): the priority set on one session; nil clears it, and the
+    /// session follows its issue again ("From issue").
+    public struct SetPriorityRequest: Codable, Sendable {
+        public var agentID: UUID
+        public var priority: SessionPriority?
+
+        public init(agentID: UUID, priority: SessionPriority?) {
+            self.agentID = agentID
+            self.priority = priority
         }
     }
 
