@@ -550,7 +550,8 @@ func (p *Providers) AgentCall(host, agent, method string, params json.RawMessage
 	case MethodSummaryFacts:
 		return p.summaryFacts(host, rawOf(given), caller)
 	}
-	if named, ok := str(given["id"]); ok && (method == MethodProvidersCreate || method == MethodProvidersOptions) {
+	if named, ok := str(given["id"]); ok && (method == MethodProvidersCreate || method == MethodProvidersOptions ||
+		method == MethodProvidersDeleteWorkspace) {
 		p.mu.Lock()
 		_, known := p.providers[named]
 		found := ""
@@ -570,7 +571,29 @@ func (p *Providers) AgentCall(host, agent, method string, params json.RawMessage
 			given["id"] = found
 		}
 	}
+	// An agent deletes only a machine with no host that its person is shown (#6080).
+	if method == MethodProvidersDeleteWorkspace && !p.agentSees(caller.Person, given) {
+		return nil, fail(CodeNoSuchHost, "No machine is called %v.", given["workspace"])
+	}
 	return p.answer(method, rawOf(given), caller, "agent "+agent+" on "+hostName)
+}
+
+// agentSees says whether the workspace given names is one of person's machines with no
+// host, as forAgent lists it (#6080).
+func (p *Providers) agentSees(person string, given map[string]any) bool {
+	id, _ := str(given["id"])
+	workspace, _ := str(given["workspace"])
+	for _, provider := range p.forAgent(person).Providers {
+		if string(provider.ID) != id {
+			continue
+		}
+		for _, w := range provider.Workspaces {
+			if w.ID == workspace && w.Host == nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // forAgent is what an agent is shown (US6 AS1): every provider's workspaces and their

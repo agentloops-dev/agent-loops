@@ -26,6 +26,8 @@ const (
 	hostsStop          = "machines/stop"
 	providersCreate    = "providers/create"
 	hostsDeleteMachine = "machines/deleteMachine"
+	// A provider's machine that no host is linked to (#4610, #6080).
+	providersDeleteWorkspace = "providers/deleteWorkspace"
 )
 
 // askControl is a request of the control plane on channel 0, and its answer.
@@ -159,7 +161,7 @@ func (d *Daemon) listMachines(agent wire.UUID, _ map[string]json.RawMessage) (st
 
 // startMachine is start_machine.
 func (d *Daemon) startMachine(agent wire.UUID, args map[string]json.RawMessage) (string, error) {
-	host, err := named(args, "host", "host")
+	host, err := d.machineHost(agent, args, "started")
 	if err != nil {
 		return "", err
 	}
@@ -180,7 +182,7 @@ func (d *Daemon) startMachine(agent wire.UUID, args map[string]json.RawMessage) 
 
 // stopMachine is stop_machine.
 func (d *Daemon) stopMachine(agent wire.UUID, args map[string]json.RawMessage) (string, error) {
-	host, err := named(args, "host", "host")
+	host, err := d.machineHost(agent, args, "stopped")
 	if err != nil {
 		return "", err
 	}
@@ -279,19 +281,33 @@ func (d *Daemon) deleteMachine(agent wire.UUID, args map[string]json.RawMessage)
 	if err != nil {
 		return "", err
 	}
-	var provider *wire.AgentMachinesProvider
-	host := ""
-	for i := range listed.Providers {
-		for _, w := range listed.Providers[i].Workspaces {
-			if provider == nil && w.Host != nil && strings.EqualFold(*w.Host, given) {
-				provider, host = &listed.Providers[i], *w.Host
-			}
-		}
+	provider, machine, err := findMachine(given, argString(args, "provider"), listed, "deleted")
+	if err != nil {
+		return "", err
 	}
 	if provider == nil {
 		return "", &Error{Code: wire.FailureNoSuchHost,
 			Message: "Nothing was deleted: no machine provider has a machine called " + given + ". list_machines names the ones that do."}
 	}
+	if machine.Host == nil {
+		// No host is linked to it (#6080): the provider deletes it, and there are no agents.
+		if !provider.CanDelete {
+			return "", Invalid("Nothing was deleted: %s can’t delete machines.", provider.Name)
+		}
+		return d.personSaysYesSince(since, agent, d.agentWho(agent)+" wants to delete a machine",
+			"Delete the machine "+machine.Name+" at "+provider.Name+", with everything on its disk?", "Delete it",
+			func(yes bool) (string, error) {
+				if !yes {
+					return "Nothing was deleted: the person said no, or didn’t answer.", nil
+				}
+				params := map[string]any{"id": provider.ID, "workspace": machine.ID}
+				if _, err := d.askWorkspaces(agent, providersDeleteWorkspace, params); err != nil {
+					return "", err
+				}
+				return "Deleted the machine " + machine.Name + " at " + provider.Name + ".", nil
+			})
+	}
+	host := *machine.Host
 	if !provider.CanDelete {
 		return "", Invalid("Nothing was deleted: %s runs on %s, which can’t delete machines.", host, provider.Name)
 	}
@@ -306,6 +322,79 @@ func (d *Daemon) deleteMachine(agent wire.UUID, args map[string]json.RawMessage)
 			}
 			return "Deleted the machine " + host + " ran on, and removed the machine.", nil
 		})
+}
+
+// machineHost is the host that start_machine or stop_machine asks for (#6080): the machine
+// the agent named, by its name in list_machines or by its host's name, or what it gave when
+// no provider lists it (a host's id), for the control plane to find.
+func (d *Daemon) machineHost(agent wire.UUID, args map[string]json.RawMessage, done string) (string, error) {
+	given, err := named(args, "host", "host")
+	if err != nil {
+		return "", err
+	}
+	listed, err := d.agentWorkspaces(agent)
+	if err != nil {
+		return "", err
+	}
+	provider, machine, err := findMachine(given, argString(args, "provider"), listed, done)
+	if err != nil || provider == nil {
+		return given, err
+	}
+	if machine.Host == nil {
+		return "", &Error{Code: wire.FailureNoSuchHost, Message: "Nothing was " + done + ": the machine " + machine.Name + " at " +
+			provider.Name + " has no host, so Agent Loops does not run there. list_machines says why."}
+	}
+	return *machine.Host, nil
+}
+
+// findMachine is the machine an agent named (#6080): by the provider's name for it, as
+// list_machines begins its line, then by its host's name. With provider given, only that
+// provider's. Nil when none is called that; an error when two providers' are, naming both.
+func findMachine(given, provider string, listed wire.AgentMachines, done string) (*wire.AgentMachinesProvider, *wire.AgentMachinesMachine, error) {
+	provider = strings.TrimSpace(provider)
+	var only *wire.AgentMachinesProvider
+	if provider != "" {
+		if only = workspaceProvider(provider, listed); only == nil {
+			return nil, nil, Invalid("Nothing was %s: %s", done, noProvider(provider, listed))
+		}
+	}
+	type match struct {
+		provider *wire.AgentMachinesProvider
+		machine  *wire.AgentMachinesMachine
+	}
+	for _, byHost := range []bool{false, true} {
+		var found []match
+		for i := range listed.Providers {
+			p := &listed.Providers[i]
+			if only != nil && p.ID != only.ID {
+				continue
+			}
+			for j := range p.Workspaces {
+				w := &p.Workspaces[j]
+				name := w.Name
+				if byHost {
+					if w.Host == nil {
+						continue
+					}
+					name = *w.Host
+				}
+				if strings.EqualFold(name, given) {
+					found = append(found, match{p, w})
+				}
+			}
+		}
+		if len(found) == 1 {
+			return found[0].provider, found[0].machine, nil
+		}
+		if len(found) > 1 {
+			var where []string
+			for _, m := range found {
+				where = append(where, m.provider.Name+" (provider "+string(m.provider.ID)+")")
+			}
+			return nil, nil, Invalid("Nothing was %s: %s is a machine at %s. Say which, with provider.", done, given, strings.Join(where, " and at "))
+		}
+	}
+	return nil, nil, nil
 }
 
 // agentWho is an agent as the control plane's log and the card name it: "Claude (fix-login)".
@@ -488,7 +577,7 @@ func workspacesNote(listed wire.AgentMachines) string {
 		}
 	}
 	if len(listed.Providers) > 0 {
-		lines = append(lines, "Start or stop one by its host's name. Making and deleting ask the person first.")
+		lines = append(lines, "Start, stop or delete one by its name at the start of its line, or by its host's name. Making and deleting ask the person first.")
 	}
 	// Every machine of the person's, for start_session's machine (#2887).
 	if len(listed.Hosts) > 0 {

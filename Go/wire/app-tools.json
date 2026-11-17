@@ -919,7 +919,11 @@
           "type": "string"
         },
         "host": {
-          "description": "The host, by its name as list_machines gives it.",
+          "description": "The machine, by its name at the start of its line in list_machines, or by its host's name.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Optional. The machine's provider, by its name or id from list_machines, when two providers have a machine of that name.",
           "type": "string"
         }
       },
@@ -944,7 +948,11 @@
           "type": "string"
         },
         "host": {
-          "description": "The host, by its name as list_machines gives it.",
+          "description": "The machine, by its name at the start of its line in list_machines, or by its host's name.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Optional. The machine's provider, by its name or id from list_machines, when two providers have a machine of that name.",
           "type": "string"
         }
       },
@@ -997,7 +1005,11 @@
           "type": "string"
         },
         "host": {
-          "description": "The host, by its name as list_machines gives it.",
+          "description": "The machine, by its name at the start of its line in list_machines, or by its host's name.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Optional. The machine's provider, by its name or id from list_machines, when two providers have a machine of that name.",
           "type": "string"
         }
       },

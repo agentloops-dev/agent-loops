@@ -1581,3 +1581,29 @@ func TestARunningWorkspaceThatStartsItsOwnHostIsNotStartedOverSSH(t *testing.T) 
 		t.Fatalf("ssh %v", got)
 	}
 }
+
+// An agent's delete_machine deletes a machine with no host at its provider (#6080), named
+// by the provider's name or id, but not one a host is linked to, nor one it is not shown.
+func TestAnAgentDeletesAMachineWithNoHost(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	if _, err := h.create("build-3", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.link(id, devbox, "agents-devbox")
+	for _, ws := range []string{"agents-devbox", "ws-nobody"} {
+		if _, err := h.agentCall(MethodProvidersDeleteWorkspace, map[string]any{"id": id, "workspace": ws}); failureOf(err) == nil ||
+			failureOf(err).Code != CodeNoSuchHost {
+			t.Errorf("%s: %v", ws, err)
+		}
+	}
+	if _, err := h.agentCall(MethodProvidersDeleteWorkspace, map[string]any{"id": "digitalocean", "workspace": "ws-build-3"}); err != nil {
+		t.Fatal(err)
+	}
+	h.provider.mu.Lock()
+	deleted := append([]string{}, h.provider.deleted...)
+	h.provider.mu.Unlock()
+	if !reflect.DeepEqual(deleted, []string{"ws-build-3"}) {
+		t.Errorf("deleted %v", deleted)
+	}
+}

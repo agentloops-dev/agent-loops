@@ -327,3 +327,120 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 		t.Fatalf("%+v", pending)
 	}
 }
+
+// A machine is found by its name in list_machines or by its host's name (#6080): a host that
+// Add as Machine… linked chose its own name, so the two differ. One with no host can't be
+// started or stopped, but can be deleted at its provider; a name two providers have is asked
+// about, and provider says which.
+func TestAMachineIsFoundByEitherName(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	title := "fix-login"
+	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) {
+		a.State, a.EndedReason, a.RuntimeID, a.Title = wire.AgentStateRunning, nil, "claude", &title
+	})
+	m := appClient(t, d, a.ID)
+	m.post("initialize", map[string]any{}, 1)
+	listed := wire.AgentMachines{Providers: []wire.AgentMachinesProvider{
+		{ID: "cs", Name: "GitHub Codespaces", CanDelete: true, Workspaces: []wire.AgentMachinesMachine{
+			{ID: "c1", Name: "fluffy-space-x", State: "running", Host: new("codespaces-1a2b"), HostState: new("offline")},
+			{ID: "c2", Name: "pool-1", State: "stopped"},
+			{ID: "c3", Name: "shared", State: "running", Host: new("shared-cs"), HostState: new("online")}}},
+		{ID: "do", Name: "DigitalOcean", CanDelete: true, Workspaces: []wire.AgentMachinesMachine{
+			{ID: "d1", Name: "shared", State: "running", Host: new("shared-do"), HostState: new("online")}}}}}
+	var mu sync.Mutex
+	var asked []string
+	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == wire.CallUserSetPolicy.Name {
+			return json.RawMessage(`{}`), nil
+		}
+		call := params.(wire.MachineWorkspaceCall)
+		if call.Method == "machines/forAgent" {
+			b, _ := json.Marshal(listed)
+			return b, nil
+		}
+		mu.Lock()
+		asked = append(asked, call.Method+" "+string(call.Params))
+		mu.Unlock()
+		return json.RawMessage(`{}`), nil
+	})
+	last := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(asked) == 0 {
+			return ""
+		}
+		return asked[len(asked)-1]
+	}
+
+	for i, tc := range []struct{ tool, name, provider, asks string }{
+		{"start_machine", "fluffy-space-x", "", `machines/start {"host":"codespaces-1a2b"}`},
+		{"start_machine", "codespaces-1a2b", "", `machines/start {"host":"codespaces-1a2b"}`},
+		{"stop_machine", "FLUFFY-space-x", "", `machines/stop {"host":"codespaces-1a2b"}`},
+		{"stop_machine", "shared", "DigitalOcean", `machines/stop {"host":"shared-do"}`},
+		{"start_machine", "shared", "cs", `machines/start {"host":"shared-cs"}`},
+		// Not a provider's: a host's id, for the control plane to find.
+		{"start_machine", "h-1234", "", `machines/start {"host":"h-1234"}`},
+	} {
+		args := map[string]any{"host": tc.name}
+		if tc.provider != "" {
+			args["provider"] = tc.provider
+		}
+		if text, isErr := m.tool(10+i, tc.tool, args); isErr {
+			t.Fatalf("%s %s: %s", tc.tool, tc.name, text)
+		}
+		if got := last(); got != tc.asks {
+			t.Errorf("%s %s asked %s, want %s", tc.tool, tc.name, got, tc.asks)
+		}
+	}
+	before := last()
+	if text, isErr := m.tool(20, "start_machine", map[string]any{"host": "pool-1"}); !isErr ||
+		text != "Nothing was started: the machine pool-1 at GitHub Codespaces has no host, so Agent Loops does not run there. list_machines says why." {
+		t.Fatal(text)
+	}
+	if text, isErr := m.tool(21, "stop_machine", map[string]any{"host": "shared"}); !isErr ||
+		text != "Nothing was stopped: shared is a machine at GitHub Codespaces (provider cs) and at DigitalOcean (provider do). Say which, with provider." {
+		t.Fatal(text)
+	}
+	if text, isErr := m.tool(22, "delete_machine", map[string]any{"host": "shared", "provider": "Nobody"}); !isErr ||
+		text != "Nothing was deleted: no provider is called Nobody. There are GitHub Codespaces, DigitalOcean." {
+		t.Fatal(text)
+	}
+	if got := last(); got != before {
+		t.Fatalf("asked %s", got)
+	}
+
+	// Deleting asks the person, then deletes by the host, or at the provider when it has none.
+	l := d.live(a.ID)
+	l.mu.Lock()
+	l.inTurn = true
+	l.mu.Unlock()
+	for i, tc := range []struct{ name, question, said, asks string }{
+		{"fluffy-space-x", "Delete the machine codespaces-1a2b runs on, with everything on its disk, and remove the machine codespaces-1a2b with its agents?",
+			"Deleted the machine codespaces-1a2b ran on, and removed the machine.", `machines/deleteMachine {"host":"codespaces-1a2b"}`},
+		{"codespaces-1a2b", "Delete the machine codespaces-1a2b runs on, with everything on its disk, and remove the machine codespaces-1a2b with its agents?",
+			"Deleted the machine codespaces-1a2b ran on, and removed the machine.", `machines/deleteMachine {"host":"codespaces-1a2b"}`},
+		{"pool-1", "Delete the machine pool-1 at GitHub Codespaces, with everything on its disk?",
+			"Deleted the machine pool-1 at GitHub Codespaces.", `providers/deleteWorkspace {"id":"cs","workspace":"c2"}`},
+	} {
+		answered := make(chan string, 1)
+		go func() { text, _ := m.tool(30+i, "delete_machine", map[string]any{"host": tc.name}); answered <- text }()
+		var pending []wire.ElicitationRequest
+		waitFor(t, "the card for "+tc.name, func() bool {
+			json.Unmarshal(c.call(t, 40+2*i, "elicitations/pending", nil), &pending)
+			return len(pending) == 1
+		})
+		if q := *pending[0].Mode.Form.Value.Properties[0].Title; q != tc.question {
+			t.Errorf("%s: card %q", tc.name, q)
+		}
+		c.call(t, 41+2*i, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "accept", "content": map[string]any{"go": "yes"}})
+		if text := <-answered; text != tc.said {
+			t.Errorf("%s: %s", tc.name, text)
+		}
+		if got := last(); got != tc.asks {
+			t.Errorf("%s asked %s, want %s", tc.name, got, tc.asks)
+		}
+	}
+}

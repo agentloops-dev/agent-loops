@@ -186,7 +186,7 @@ var AgentWorkspaceMethods = map[string]bool{
 	MethodWorkspacesAgent: true, MethodHostsStart: true, MethodHostsStop: true, MethodProvidersOptions: true,
 	MethodProvidersCreate: true, MethodHostsDelete: true, MethodSessionOnMachine: true, MethodSessionCall: true,
 	MethodSessionEnded: true, MethodSendFolder: true, MethodProjectFolders: true, MethodProjectSessions: true,
-	MethodSummaryFacts: true, MethodBotKey: true,
+	MethodSummaryFacts: true, MethodBotKey: true, MethodProvidersDeleteWorkspace: true,
 }
 
 // KeptMethods is DaemonAPI.Method.keptMethods: the only requests that are kept.
