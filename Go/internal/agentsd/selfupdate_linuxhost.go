@@ -54,20 +54,20 @@ func openLinuxRelease(current, arch, version, work, file string) (string, error)
 		return "", err
 	}
 	if err := linuxrelease.Unpack(file, out, arch, selfUpdateLimit); err != nil {
-		return "", fmt.Errorf("Agent Loops could not unpack release %s: %w", version, err)
+		return "", fmt.Errorf("Agent Loops could not unpack release %s: %w", version, err) //nolint:staticcheck // ST1005: the person reads it as the update's message
 	}
 	os.Remove(file)
 	host := filepath.Join(out, "agentsd-linux-"+arch)
 	sha := linuxrelease.FileSum(host)
 	if sha == "" {
-		return "", fmt.Errorf("Release %s holds no host for %s-linux.", version, arch)
+		return "", fmt.Errorf("Release %s holds no host for %s-linux.", version, arch) //nolint:staticcheck // ST1005: the person reads it as the update's message
 	}
 	name := "agentsd-" + sha
 	if err := os.Chmod(host, 0o700); err != nil {
 		return "", err
 	}
 	if err := os.Rename(host, filepath.Join(filepath.Dir(current), name)); err != nil {
-		return "", fmt.Errorf("Agent Loops could not put release %s beside itself: %w", version, err)
+		return "", fmt.Errorf("Agent Loops could not put release %s beside itself: %w", version, err) //nolint:staticcheck // ST1005: the person reads it as the update's message
 	}
 	next := filepath.Join(work, "current")
 	if err := os.Symlink(name, next); err != nil {
