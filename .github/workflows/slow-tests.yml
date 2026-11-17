@@ -167,9 +167,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # CI's go job leaves the Xcode projects out on Linux; test and apps run them on macOS.
           - os: linux
             runs-on: ubuntu-latest
-            exclude: ""
+            exclude: --exclude=tag:xcode
           - os: macos
             runs-on: macos-latest
             exclude: --exclude=web
@@ -210,6 +211,15 @@ jobs:
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
+      # The pinned linters on the PATH, as ci.yml's go job puts them there (#5890): on Linux
+      # scripts/lint.sh runs only a linter on the PATH, so without this step every lint target
+      # fails here and is filed as an input that nobody declared. On macOS lint.sh gets them.
+      - name: Lint tools
+        if: matrix.os == 'linux'
+        timeout-minutes: 5
+        run: |
+          scripts/lint.sh --tools "$RUNNER_TEMP/lint-tools" shellcheck golangci-lint govulncheck biome jscpd
+          echo "$RUNNER_TEMP/lint-tools" >> "$GITHUB_PATH"
       # Before the run, which may write its own results over them.
       - name: The cached passes
         run: node scripts/nx-undeclared.mjs passes > "$RUNNER_TEMP/passes.txt"
