@@ -337,7 +337,7 @@ func (d *Daemon) ServeSocket(ctx context.Context, path string) error {
 			return err
 		}
 		if !d.goJobAt("socket accept", callerSite(0), func() { d.acceptSocket(c, policy) }) {
-			c.Close() // the host is going
+			_ = c.Close() // the host is going; a close that fails has nothing left to tell
 		}
 	}
 }
