@@ -61,8 +61,14 @@ func (f *fakeForgeGitHub) MarkReady(_ context.Context, repo string, number int) 
 	return nil
 }
 
-func (f *fakeForgeGitHub) ReviewPR(_ context.Context, repo string, number int, sha string, approve bool, _ string) (map[string]any, error) {
-	f.note("review %s#%d %s approve=%v", repo, number, sha, approve)
+func (f *fakeForgeGitHub) ReviewPR(_ context.Context, repo string, number int, sha string, approve bool, words string) (map[string]any, error) {
+	if approve {
+		f.note("review %s#%d %s approve=true", repo, number, sha)
+	} else if words == "" {
+		f.note("review %s#%d %s approve=false", repo, number, sha)
+	} else {
+		f.note("review %s#%d %s approve=false %s", repo, number, sha, words)
+	}
 	return map[string]any{}, nil
 }
 
@@ -388,6 +394,8 @@ func TestForgeWritesRefuseWhatIsWrong(t *testing.T) {
 		{"forge/assign", wire.ForgeAssignRequest{Node: wire.LineageNode{Kind: "issue", Ref: "linear:issue:eng#ENG-4"}, Add: []string{"kim"}}},
 		{"forge/merge", wire.ForgeMergeRequest{Node: ghPull}},
 		{"forge/approve", wire.ForgeApproveRequest{Node: ghIssue, Sha: "abc"}},
+		{"forge/request-changes", wire.ForgeRequestChangesRequest{Node: ghPull, Sha: "abc", Body: "  "}},
+		{"forge/request-changes", wire.ForgeRequestChangesRequest{Node: ghIssue, Sha: "abc", Body: "Rename it."}},
 		{"forge/rerun", wire.ForgeNodeRequest{Node: ghIssue}},
 		{"forge/close", wire.ForgeCloseRequest{Node: wire.LineageNode{Kind: "issue", Ref: "bitbucket:X-1"}}},
 	} {
@@ -400,11 +408,40 @@ func TestForgeWritesRefuseWhatIsWrong(t *testing.T) {
 	}
 }
 
+// #5857: request changes names the head and the review text. GitLab's API has no such write, so
+// the page is not offered it and a call says why, and GitLab is not asked.
+func TestForgeRequestChangesGoesToGitHubNotGitLab(t *testing.T) {
+	t.Parallel()
+
+	_, c, gh, gl, _, _ := allForgesDaemon(t)
+	c.call(t, 1, "forge/request-changes", wire.ForgeRequestChangesRequest{Node: ghPull, Sha: "abc", Body: "  Rename it.  "})
+	if got, want := gh.writes(), []string{"review alexec/agents#12 abc approve=false Rename it."}; !slices.Equal(got, want) {
+		t.Fatalf("writes:\n%q\nwant\n%q", got, want)
+	}
+	mr := wire.LineageNode{Kind: "pr", Ref: "gitlab:mr:group/app#4"}
+	if e := c.callError(t, 2, "forge/request-changes", wire.ForgeRequestChangesRequest{Node: mr, Sha: "head4", Body: "Rename it."}); e == nil || !strings.Contains(e.Message, gitlabNoRequestChanges) {
+		t.Fatalf("GitLab: %v", e)
+	}
+	gl.mu.Lock()
+	defer gl.mu.Unlock()
+	if len(gl.wrote) != 0 {
+		t.Fatalf("GitLab wrote: %q", gl.wrote)
+	}
+	open := githubForge{}.Caps().itemActions(wire.ForgeItemDetail{Item: wire.ForgeItem{Node: ghPull, State: "open"}})
+	if !slices.Contains(open, wire.ForgeActionRequestChanges) {
+		t.Fatalf("an open pull request: %v", open)
+	}
+	closed := githubForge{}.Caps().itemActions(wire.ForgeItemDetail{Item: wire.ForgeItem{Node: ghPull, State: "closed"}})
+	if slices.Contains(closed, wire.ForgeActionRequestChanges) {
+		t.Fatalf("a closed pull request offers it: %v", closed)
+	}
+}
+
 // #3130: an agent's connection may call none of the writes: a person writes, from their own page.
 func TestForgeWritesAreNotAnAgents(t *testing.T) {
 	t.Parallel()
 
-	for _, m := range []string{"forge/comment", "forge/label", "forge/assign", "forge/close", "forge/merge", "forge/cancel-auto-merge", "forge/ready", "forge/approve", "forge/rerun"} {
+	for _, m := range []string{"forge/comment", "forge/label", "forge/assign", "forge/close", "forge/merge", "forge/cancel-auto-merge", "forge/ready", "forge/approve", "forge/request-changes", "forge/rerun"} {
 		if RoleAgent.Allows(m) {
 			t.Fatalf("an agent may call %s", m)
 		}

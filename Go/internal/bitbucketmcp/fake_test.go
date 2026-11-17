@@ -166,7 +166,7 @@ var (
 	diffPath          = regexp.MustCompile(`^` + root + `/pullrequests/([0-9]+)/diff$`)
 	prCommentsPath    = regexp.MustCompile(`^` + root + `/pullrequests/([0-9]+)/comments$`)
 	prCommentPath     = regexp.MustCompile(`^` + root + `/pullrequests/([0-9]+)/comments/([0-9]+)$`)
-	mergePath         = regexp.MustCompile(`^` + root + `/pullrequests/([0-9]+)/(merge|approve)$`)
+	mergePath         = regexp.MustCompile(`^` + root + `/pullrequests/([0-9]+)/(merge|approve|request-changes)$`)
 	statusesPath      = regexp.MustCompile(`^` + root + `/commit/([^/]+)/statuses$`)
 	issuesPath        = regexp.MustCompile(`^` + root + `/issues$`)
 	issuePath         = regexp.MustCompile(`^` + root + `/issues/([0-9]+)$`)

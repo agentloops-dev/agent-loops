@@ -40,6 +40,7 @@ type forgeAzureDevOps interface {
 	CancelAutoMerge(ctx context.Context, repo string, number int) error
 	MarkReady(ctx context.Context, repo string, number int) error
 	Approve(ctx context.Context, repo string, number int, sha string) (string, error)
+	RequestChanges(ctx context.Context, repo string, number int, sha, body string) (string, error)
 	PRDiff(ctx context.Context, repo string, number int) (map[string]any, error)
 	RetryBuild(ctx context.Context, repo string, build int) (string, error)
 	FailedLog(ctx context.Context, repo string, build int) (string, error)
@@ -125,7 +126,7 @@ func (azureDevOpsForge) Caps() forgeCaps {
 	return forgeCaps{
 		PRs: true,
 		PR: forgeActions{Comment: true, Label: true, Close: true, Reopen: true, Merge: true, AutoMerge: true, Approve: true,
-			Rerun: true, Log: true, Diff: true, CancelAutoMerge: true, Ready: true},
+			RequestChanges: true, Rerun: true, Log: true, Diff: true, CancelAutoMerge: true, Ready: true},
 		Avatars:   true,
 		CreatedAt: true, ClosedAt: true,
 		// A pull request's branches and merge (#4409), its reviewers and its builds' times (#4682).
@@ -410,6 +411,18 @@ func (a azureDevOpsForge) Approve(ctx context.Context, r forgeRef, sha string) (
 		return wire.ForgeDone{}, err
 	}
 	link, err := ado.Approve(ctx, named, r.Number, sha)
+	return wire.ForgeDone{URL: optional(link)}, err
+}
+
+func (a azureDevOpsForge) RequestChanges(ctx context.Context, r forgeRef, sha, body string) (wire.ForgeDone, error) {
+	if !r.pr() {
+		return wire.ForgeDone{}, cannot(actionRequestChanges)
+	}
+	ado, named, _, err := a.of(ctx, "forge/request-changes", r)
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	link, err := ado.RequestChanges(ctx, named, r.Number, sha, body)
 	return wire.ForgeDone{URL: optional(link)}, err
 }
 

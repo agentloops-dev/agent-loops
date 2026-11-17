@@ -460,6 +460,7 @@ export const HostCapabilities: Readonly<Record<string, Capability>> = {
   "forge/ready": "forge.ready/1",
   "forge/release": "forge.releases/1",
   "forge/releases": "forge.releases/1",
+  "forge/request-changes": "forge-write/1",
   "forge/rerun": "forge-write/1",
   "git/fill": "git/1",
   "lineage/cost": "lineage/1",

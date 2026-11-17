@@ -42,6 +42,7 @@ type forgeBitbucket interface {
 	// MarkReady marks a draft pull request ready for review (#4410).
 	MarkReady(ctx context.Context, repo string, number int) error
 	Approve(ctx context.Context, repo string, number int, sha string) (string, error)
+	RequestChanges(ctx context.Context, repo string, number int, sha, body string) (string, error)
 	PRDiff(ctx context.Context, repo string, number int) (map[string]any, error)
 	RetryPipeline(ctx context.Context, repo string, run int) (map[string]any, error)
 	FailedLog(ctx context.Context, repo string, run int, step string) (string, error)
@@ -128,7 +129,7 @@ func (bitbucketForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues: true, PRs: true,
 		Issue:       forgeActions{Comment: true, Label: true, Close: true, Reopen: true},
-		PR:          forgeActions{Comment: true, Close: true, Merge: true, Approve: true, Rerun: true, Log: true, Diff: true, Ready: true},
+		PR:          forgeActions{Comment: true, Close: true, Merge: true, Approve: true, RequestChanges: true, Rerun: true, Log: true, Diff: true, Ready: true},
 		Avatars:     true,
 		StateReason: true,
 		// Bitbucket says when an item opened, but no time that it closed or merged: a pull
@@ -423,6 +424,18 @@ func (b bitbucketForge) Approve(ctx context.Context, r forgeRef, sha string) (wi
 		return wire.ForgeDone{}, err
 	}
 	link, err := bb.Approve(ctx, named, r.Number, sha)
+	return wire.ForgeDone{URL: optional(link)}, err
+}
+
+func (b bitbucketForge) RequestChanges(ctx context.Context, r forgeRef, sha, body string) (wire.ForgeDone, error) {
+	if !r.pr() {
+		return wire.ForgeDone{}, cannot(actionRequestChanges)
+	}
+	bb, named, _, err := b.of(ctx, "forge/request-changes", r)
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	link, err := bb.RequestChanges(ctx, named, r.Number, sha, body)
 	return wire.ForgeDone{URL: optional(link)}, err
 }
 

@@ -19,6 +19,8 @@ test("an approved pull request with green checks merges now, in green", () => {
     ["review", "Approved", undefined], ["checks", "All checks passed", "1 passed, 1 skipped"], ["conflicts", "No conflicts with the base branch", undefined],
   ]);
   assert.equal(box.merges, true);
+  assert.equal(box.requests, true);
+  assert.equal(box.closes, true);
   assert.equal(box.waits, false);
   assert.equal(box.checksOpen, false);
   assert.equal(p.mergeMain(["squash"], box.waits), "Squash and merge");
@@ -41,6 +43,8 @@ test("a draft, conflicts and auto-merge take Merge away", () => {
   assert.equal(draft.rows[0].title, "This is a draft");
   assert.equal(draft.merges, false);
   assert.equal(draft.approves, false);
+  assert.equal(draft.requests, false);
+  assert.equal(draft.closes, false);
   const conflicts = p.mergeBox(pr({ mergeable: "conflicting" }));
   assert.equal(conflicts.border, "fail");
   assert.equal(conflicts.resolve, true);
@@ -66,6 +70,8 @@ test("Approve is Approved once the person's own review approved it, and is gone 
   assert.equal(p.mergeBox(pr({ review: "approved" }, { reviewers: [{ login: "alexec", state: "approved" }] })).approved, false);
   const own = p.mergeBox(pr({ author: "alexec" }, { viewer: "alexec" }));
   assert.equal(own.approves, false);
+  assert.equal(own.requests, false);
+  assert.equal(own.closes, true);
   assert.equal(own.ownPull, true);
   assert.equal(p.ownPullWords, "You opened this pull request, so you cannot approve it.");
   assert.equal(p.mergeBox(pr({ author: "alexec", draft: true }, { viewer: "alexec" })).ownPull, false);
@@ -76,7 +82,12 @@ test("only the actions the forge offers show (#4361); a merged one has no box", 
   const none = p.mergeBox(pr({}, { actions: ["comment"], checks: [check("b", "failing")] }));
   assert.equal(none.merges, false);
   assert.equal(none.approves, false);
+  assert.equal(none.requests, false);
+  assert.equal(none.closes, false);
   assert.equal(none.reruns, false);
+  const gitlab = p.mergeBox(pr({}, { actions: ["approve", "close", "merge"] }));
+  assert.equal(gitlab.requests, false);
+  assert.equal(gitlab.closes, true);
   assert.equal(p.offers(pr(), "diff"), true);
   assert.equal(p.offers(pr({}, { actions: ["merge"] }), "diff"), false);
 });

@@ -197,6 +197,22 @@ func (b *RealBitbucket) Approve(ctx context.Context, repo string, number int, sh
 	return p.Links.HTML.Href, nil
 }
 
+// RequestChanges asks for changes at the head commit sha. Bitbucket's request-changes call takes
+// no text, so the words go on as a comment first; a failed comment changes nothing.
+func (b *RealBitbucket) RequestChanges(ctx context.Context, repo string, number int, sha, body string) (string, error) {
+	p, err := b.atHead(ctx, repo, number, sha)
+	if err != nil {
+		return "", err
+	}
+	if _, err := b.Comment(ctx, repo, number, true, body); err != nil {
+		return "", err
+	}
+	if err := b.send(ctx, http.MethodPost, fmt.Sprintf("%s/pullrequests/%d/request-changes", repoPath(repo), number), nil, nil); err != nil {
+		return "", err
+	}
+	return p.Links.HTML.Href, nil
+}
+
 // MARK: The diff
 
 // diffLines is the most lines of hunks a diff gives, all files together; past it, a file is

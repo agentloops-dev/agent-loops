@@ -208,6 +208,7 @@ var CallForgePulls = Method[ForgeListRequest, ForgeList]{"forge/pulls"}
 var CallForgeReady = Method[ForgeNodeRequest, ForgeDone]{"forge/ready"}
 var CallForgeRelease = Method[ForgeReleaseRequest, ForgeReleaseDetail]{"forge/release"}
 var CallForgeReleases = Method[ForgeReleasesRequest, ForgeReleases]{"forge/releases"}
+var CallForgeRequestChanges = Method[ForgeRequestChangesRequest, ForgeDone]{"forge/request-changes"}
 var CallForgeRerun = Method[ForgeNodeRequest, ForgeDone]{"forge/rerun"}
 var CallGitFill = Method[GitCredentialRequest, GitCredential]{"git/fill"}
 var CallLineageCost = Method[LineageNodeRequest, LineageCostRollup]{"lineage/cost"}

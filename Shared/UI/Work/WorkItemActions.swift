@@ -3,7 +3,8 @@ import SwiftUI
 
 /// A pull request's merge box (#4406, pull-request.md note 10): a bordered box at the end of the
 /// timeline (at the top of a narrow page) with a row for the review, the checks and conflicts,
-/// each with a glyph in its state's colour, then Merge ▾, Approve and Rerun failed. The checks
+/// each with a glyph in its state's colour, then Merge ▾, Resolve, Approve, Request changes,
+/// Close pull request and Rerun failed. The checks
 /// list opens with Show all, and is open from the start when a check failed; a failed check has
 /// Log (`forge/log`). On the iPhone (#4407) the checks row pushes the Checks page in place of
 /// the list, and Merge ▾ takes the width. Each write goes to the machine that read the item, as
@@ -23,6 +24,9 @@ struct WorkMergeBox: View {
     @Environment(\.openURL) private var openURL
     @State private var busy: String?
     @State private var said: (words: String, failed: Bool)?
+    /// Request changes is open: the field for what should change, in place of its button (#5857).
+    @State private var asking = false
+    @State private var change = ""
     @State private var log: WorkLog?
     @State private var showsChecks: Bool?
     #if os(iOS)
@@ -157,28 +161,40 @@ struct WorkMergeBox: View {
             } else if phone {
                 phoneButtons
             } else {
-                WrappingHStack(spacing: 8) {
-                    if box.merges, let head = detail.head { mergeButton(head) }
-                    if box.resolve, let url = item.url.flatMap(URL.init(string:)) {
-                        Button(WorkLook.resolveOnForge(node.ref)) { openURL(url.appendingPathComponent("conflicts")) }
-                    }
-                    if box.approves, let head = detail.head {
-                        Button(WorkLook.approveWords(approved: box.approved), icon: "checkmark") {
-                            act(DaemonAPI.Method.forgeApprove, DaemonAPI.ForgeApproveRequest(node: node, sha: head))
+                VStack(alignment: .leading, spacing: 6) {
+                    WrappingHStack(spacing: 8) {
+                        if box.merges, let head = detail.head { mergeButton(head) }
+                        if box.resolve, let url = item.url.flatMap(URL.init(string:)) {
+                            Button(WorkLook.resolveOnForge(node.ref)) { openURL(url.appendingPathComponent("conflicts")) }
                         }
-                        .disabled(box.approved)
-                    }
-                    if box.reruns {
-                        Button("Rerun failed", icon: "arrow.clockwise") {
-                            act(DaemonAPI.Method.forgeRerun, DaemonAPI.ForgeNodeRequest(node: node))
+                        if box.approves, let head = detail.head {
+                            Button(WorkLook.approveWords(approved: box.approved), icon: "checkmark") {
+                                act(DaemonAPI.Method.forgeApprove, DaemonAPI.ForgeApproveRequest(node: node, sha: head))
+                            }
+                            .disabled(box.approved)
                         }
+                        if box.requests, detail.head != nil, !asking {
+                            Button("Request changes") { asking = true }
+                        }
+                        if box.closes {
+                            Button("Close pull request", icon: "xmark.circle") {
+                                act(DaemonAPI.Method.forgeClose, DaemonAPI.ForgeCloseRequest(node: node))
+                            }
+                            .help("Close it without merging")
+                        }
+                        if box.reruns {
+                            Button("Rerun failed", icon: "arrow.clockwise") {
+                                act(DaemonAPI.Method.forgeRerun, DaemonAPI.ForgeNodeRequest(node: node))
+                            }
+                        }
+                        if busy != nil { ProgressView().controlSize(.small) }
                     }
-                    if busy != nil { ProgressView().controlSize(.small) }
+                    .disabled(busy != nil)
+                    #if os(iOS)
+                    .buttonStyle(.bordered)
+                    #endif
+                    if asking, let head = detail.head { requestField(head) }
                 }
-                .disabled(busy != nil)
-                #if os(iOS)
-                .buttonStyle(.bordered)
-                #endif
             }
             if box.ownPull, writes, !waiting {
                 Text(WorkLook.ownPullWords).appText(.supporting).foregroundStyle(.secondary)
@@ -192,42 +208,57 @@ struct WorkMergeBox: View {
 
     /// The iPhone's buttons (pull-request.md, Narrow): Merge ▾ the full width, or with Approve
     /// beside it (Approve its own width, never wrapped; Merge the rest); Approve and Rerun failed
-    /// side by side when both show.
+    /// side by side when both show. Request changes and Close pull request share the next row.
+    /// On the person's own pull request, Close pull request sits beside Merge.
     @ViewBuilder
     private var phoneButtons: some View {
         let merges = box.merges && detail.head != nil
         let resolve = box.resolve ? item.url.flatMap(URL.init(string:)) : nil
         let approves = box.approves && detail.head != nil
+        let requests = box.requests && detail.head != nil && !asking
+        let closes = box.closes
         // Approve goes beside Merge only when Rerun failed does not need the row under it.
         let approveBeside = approves && !box.reruns && (merges || resolve != nil)
+        // Close sits beside Merge when nothing else shares that row (the person's own pull request).
+        let closeBeside = closes && !approves && !requests && !box.reruns && (merges || resolve != nil)
         let gap: CGFloat = 8
         VStack(spacing: gap) {
-            if merges || resolve != nil {
-                HStack(spacing: gap) {
-                    Group {
-                        if merges, let head = detail.head {
-                            mergeButton(head, full: true)
-                        } else if let resolve {
-                            Button { openURL(resolve.appendingPathComponent("conflicts")) } label: {
-                                Text(WorkLook.resolveOnForge(node.ref)).frame(maxWidth: .infinity)
+            VStack(spacing: gap) {
+                if merges || resolve != nil {
+                    HStack(spacing: gap) {
+                        Group {
+                            if merges, let head = detail.head {
+                                mergeButton(head, full: true)
+                            } else if let resolve {
+                                Button { openURL(resolve.appendingPathComponent("conflicts")) } label: {
+                                    Text(WorkLook.resolveOnForge(node.ref)).frame(maxWidth: .infinity)
+                                }
                             }
                         }
+                        .frame(maxWidth: .infinity)
+                        if approveBeside { approveButton(glyph: false).fixedSize() }
+                        if closeBeside { closeButton(beside: true).fixedSize() }
                     }
-                    .frame(maxWidth: .infinity)
-                    if approveBeside { approveButton(glyph: false).fixedSize() }
                 }
-            }
-            if (approves && !approveBeside) || box.reruns {
-                HStack(spacing: gap) {
-                    if approves && !approveBeside { approveButton(glyph: true) }
-                    if box.reruns { rerunButton }
+                if (approves && !approveBeside) || box.reruns {
+                    HStack(spacing: gap) {
+                        if approves && !approveBeside { approveButton(glyph: true) }
+                        if box.reruns { rerunButton }
+                    }
                 }
+                if requests || (closes && !closeBeside) {
+                    HStack(spacing: gap) {
+                        if requests { requestButton }
+                        if closes && !closeBeside { closeButton(beside: requests) }
+                    }
+                }
+                if busy != nil { ProgressView().controlSize(.small) }
             }
-            if busy != nil { ProgressView().controlSize(.small) }
+            .disabled(busy != nil)
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            if asking, let head = detail.head { requestField(head) }
         }
-        .disabled(busy != nil)
-        .buttonStyle(.bordered)
-        .controlSize(.large)
     }
 
     /// Approve; beside Merge it is its word alone, so Merge keeps its words. *Approved* keeps its
@@ -245,6 +276,70 @@ struct WorkMergeBox: View {
             .frame(maxWidth: .infinity)
         }
         .disabled(box.approved)
+    }
+
+    /// Request changes: opens the field. Hidden while the field is open.
+    private var requestButton: some View {
+        Button { asking = true } label: {
+            Text("Request changes").lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
+        }
+    }
+
+    /// Close pull request, with no question first: Reopen pull request undoes it (#5857). Beside
+    /// Merge or Request changes it is its words alone, so neither is cut short on an iPhone.
+    private func closeButton(beside: Bool) -> some View {
+        Button {
+            act(DaemonAPI.Method.forgeClose, DaemonAPI.ForgeCloseRequest(node: node))
+        } label: {
+            Group {
+                if beside { Text("Close pull request") } else { Label("Close pull request", icon: "xmark.circle") }
+            }
+            .lineLimit(1).minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity)
+        }
+        .help("Close it without merging")
+    }
+
+    /// What should change, then Cancel and Request changes. The words stay when the write fails.
+    private func requestField(_ head: String) -> some View {
+        let empty = change.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(alignment: .leading, spacing: 6) {
+            TextEditor(text: $change)
+                .appText(.reading)
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .frame(height: 96)
+                .background(RoundedRectangle(cornerRadius: Paper.Radius.card).fill(Paper.raised))
+                .overlay(RoundedRectangle(cornerRadius: Paper.Radius.card).strokeBorder(Paper.rule))
+                .overlay(alignment: .topLeading) {
+                    if change.isEmpty {
+                        Text("What should change?").appText(.reading).foregroundStyle(.tertiary)
+                            .padding(.horizontal, 11).padding(.vertical, 6)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .accessibilityLabel("What should change?")
+                .disabled(busy != nil)
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") { asking = false }
+                    .disabled(busy != nil)
+                Button("Request changes") { sendChanges(head) }
+                    .buttonStyle(.paperProminent)
+                    .disabled(busy != nil || empty)
+            }
+        }
+    }
+
+    private func sendChanges(_ head: String) {
+        let body = change.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        act(DaemonAPI.Method.forgeRequestChanges, DaemonAPI.ForgeRequestChangesRequest(node: node, sha: head, body: body)) { ok in
+            if ok {
+                change = ""
+                asking = false
+            }
+        }
     }
 
     private var rerunButton: some View {
@@ -303,7 +398,7 @@ struct WorkMergeBox: View {
         }
     }
 
-    private func act(_ method: String, _ params: some Encodable & Sendable) {
+    private func act(_ method: String, _ params: some Encodable & Sendable, done ok: ((Bool) -> Void)? = nil) {
         Task {
             busy = method
             defer { busy = nil }
@@ -311,8 +406,10 @@ struct WorkMergeBox: View {
                 let done = try await model.forge(method, params, returning: DaemonAPI.ForgeDone.self, on: host)
                 said = (WorkList.doneWords(method, done), false)
                 wrote()
+                ok?(true)
             } catch {
                 said = (WorkList.failureWords(error), true)
+                ok?(false)
             }
         }
     }

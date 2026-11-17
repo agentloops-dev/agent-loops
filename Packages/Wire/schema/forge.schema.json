@@ -28,6 +28,7 @@
         "merge",
         "autoMerge",
         "approve",
+        "requestChanges",
         "rerun",
         "log",
         "diff",
@@ -37,7 +38,7 @@
         "cancelAutoMerge",
         "ready"
       ],
-      "description": "A write or a read that an item's page offers (#4329, #4361): forge/comment, forge/label, forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve, forge/rerun, forge/log, forge/diff, forge/add-child, forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410)."
+      "description": "A write or a read that an item's page offers (#4329, #4361): forge/comment, forge/label, forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve, forge/request-changes (#5857), forge/rerun, forge/log, forge/diff, forge/add-child, forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410)."
     },
     "ForgeAddChildRequest": {
       "type": "object",
@@ -1497,6 +1498,27 @@
           "type": "integer"
         }
       },
+      "additionalProperties": false
+    },
+    "ForgeRequestChangesRequest": {
+      "type": "object",
+      "description": "forge/request-changes (#5857): request changes on a pull request at sha, the head commit its page shows (refused when the head moved). body is the review text, and it is required.",
+      "properties": {
+        "node": {
+          "$ref": "lineage.schema.json#/definitions/LineageNode"
+        },
+        "sha": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "sha",
+        "body"
+      ],
       "additionalProperties": false
     },
     "ForgeReviewer": {

@@ -32,7 +32,7 @@ func (githubForge) Caps() forgeCaps {
 		Issues: true, PRs: true,
 		Issue: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, CloseNotPlanned: true},
 		PR: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, Merge: true, AutoMerge: true, Approve: true,
-			Rerun: true, Log: true, Diff: true, CancelAutoMerge: true, Ready: true},
+			RequestChanges: true, Rerun: true, Log: true, Diff: true, CancelAutoMerge: true, Ready: true},
 		LabelColors: true,
 		Avatars:     true,
 		StateReason: true,
@@ -439,6 +439,23 @@ func (g githubForge) Approve(ctx context.Context, r forgeRef, sha string) (wire.
 		return wire.ForgeDone{}, err
 	}
 	out, err := gh.ReviewPR(ctx, r.Repo, r.Number, sha, true, "")
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	url, _ := out["url"].(string)
+	return wire.ForgeDone{URL: optional(url)}, nil
+}
+
+// RequestChanges asks for changes at the head the page shows, with body as the review text.
+func (g githubForge) RequestChanges(ctx context.Context, r forgeRef, sha, body string) (wire.ForgeDone, error) {
+	if !r.pr() {
+		return wire.ForgeDone{}, cannot(actionRequestChanges)
+	}
+	gh, err := g.d.forgeGitHub()
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	out, err := gh.ReviewPR(ctx, r.Repo, r.Number, sha, false, body)
 	if err != nil {
 		return wire.ForgeDone{}, err
 	}
