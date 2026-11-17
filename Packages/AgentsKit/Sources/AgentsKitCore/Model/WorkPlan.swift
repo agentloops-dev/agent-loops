@@ -319,12 +319,12 @@ public enum WorkPlan {
             : DaemonAPI.ForgeBlockedByRequest(node: child.item.node, remove: [blocker])
     }
 
-    /// Start lead's form (the `lead` skill's "Starting a lead"): the issue's own first line, the
-    /// skill and the epic's address, its labels and `lead`, and no worktree.
+    /// Start lead's form (the `lead` skill's "Starting a lead"): the issue's own first line,
+    /// "Lead this epic" and the epic's address, its labels and `lead`, and no worktree.
     public static func leadStart(_ start: DaemonAPI.ForgeStart, url: String?) -> DaemonAPI.ForgeStart {
         let first = start.prompt.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? start.prompt
-        let skill = "Lead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`)"
-        let prompt = "\(first)\n\n\(skill)" + (url.map { ": \($0)" } ?? ".")
+        let lead = "Lead this epic"
+        let prompt = "\(first)\n\n\(lead)" + (url.map { ": \($0)" } ?? ".")
         return DaemonAPI.ForgeStart(prompt: prompt, labels: start.labels + (start.labels.contains("lead") ? [] : ["lead"]))
     }
 }
