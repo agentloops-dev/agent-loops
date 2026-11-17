@@ -47,7 +47,7 @@ starts lanes.
    <branch>` is the same core for a person or a script.
 6. Commit, push, and open a pull request whose body says `Fixes #<n>`. Then run
    `scripts/checks.sh attest` under the `build` lease, in the foreground: it runs the
-   affected test, vet and lint tasks with no cache and posts `attestation/<platform>` on
+   affected test, vet and lint tasks and app builds with no cache and posts `attestation/<platform>` on
    the PR's head as the agents' bot (#5674), and CI skips each task it covers (#5710).
    It refuses to run before the PR's head is your commit. Do it again after each later
    push that changes a task's inputs. CI on `main` runs 10% of attested tasks again; a
