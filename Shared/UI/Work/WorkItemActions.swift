@@ -249,7 +249,7 @@ struct WorkMergeBox: View {
                 if requests || (closes && !closeBeside) {
                     HStack(spacing: gap) {
                         if requests { requestButton }
-                        if closes && !closeBeside { closeButton(beside: false) }
+                        if closes && !closeBeside { closeButton(beside: requests) }
                     }
                 }
                 if busy != nil { ProgressView().controlSize(.small) }
@@ -286,7 +286,7 @@ struct WorkMergeBox: View {
     }
 
     /// Close pull request, with no question first: Reopen pull request undoes it (#5857). Beside
-    /// Merge it is its words alone, so Merge keeps its words.
+    /// Merge or Request changes it is its words alone, so neither is cut short on an iPhone.
     private func closeButton(beside: Bool) -> some View {
         Button {
             act(DaemonAPI.Method.forgeClose, DaemonAPI.ForgeCloseRequest(node: node))
