@@ -50,7 +50,7 @@ import { putFilesInDropbox, useDropboxDrop } from "./DropboxDialog";
 import { exportFromMenu, importFromMenu } from "../model/exports";
 import { rowExtras, SessionRow } from "./SessionRow";
 import { prefetchOnHover } from "./hoverPrefetch";
-import { canMoveOn, openInNewTab, RenameInput, runSessionAction, sessionActions, startedBy } from "./SessionMenu";
+import { canMoveOn, openInNewTab, priorityItems, RenameInput, runSessionAction, sessionActions, startedBy } from "./SessionMenu";
 import { markAgentOf, treeRows, type TreeRow } from "../model/tree";
 import { WorkflowRow } from "./WorkflowRow";
 import { footLine, offersStart } from "./OfflineStrip";
@@ -1031,6 +1031,8 @@ export const SidebarSession = memo(function SidebarSession({ store, host, folder
     })),
     // A question it asked, out of Needs You for an hour, as l does (#4796).
     ...laterItem(store, host, agent, down),
+    // High, Medium, Low or From issue (#5849), as the window's row menu has it.
+    ...priorityItems(store, host, agent, down || !!store.onItsWay.value[agent.id]),
     // Its record and transcript as a .tar.gz (#1001), as the window's Export….
     ...(store.has(host, Capability.agentsExport1) ? [
       { label: "Export…", help: "Download this session as a .tar.gz", disabled: down || !!store.exportImport.value,

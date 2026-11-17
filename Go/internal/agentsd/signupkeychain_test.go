@@ -29,6 +29,8 @@ func (k *fakeKeychain) password(service string) (string, error) {
 }
 
 func TestSignupSecretName(t *testing.T) {
+	t.Parallel()
+
 	for domain, want := range map[string]string{
 		"gitlab.com":              "GITLAB_PASSWORD",
 		"digitalocean.com":        "DIGITALOCEAN_PASSWORD",
@@ -46,6 +48,8 @@ func TestSignupSecretName(t *testing.T) {
 }
 
 func TestSignupServicesReadsNoValue(t *testing.T) {
+	t.Parallel()
+
 	dump := []byte(`keychain: "/Users/x/Library/Keychains/login.keychain-db"
 attributes:
     "acct"<blob>="agents@example.com"

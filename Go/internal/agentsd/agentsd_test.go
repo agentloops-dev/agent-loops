@@ -114,12 +114,14 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 			t.Errorf("goroutines the daemon started still run after Shutdown:\n\t%s", strings.Join(live, "\n\t"))
 		}
 		hooks.stopped()
+		resetToolsHomes()
 	})
 	// As main does at each start (#4177): a fixture's secrets.env goes into sealed.json.
 	d.MoveSecretsFile()
 	c := newConn()
 	go d.Accept(c)
 	t.Cleanup(func() { close(c.in) })
+	clientAdded(t, d, c)
 	t.Cleanup(d.stopFolderWatches)
 	// A stopped runtime's turn still records how it ended: wait for that before the
 	// root's TempDir goes, or the removal races a write into it.
@@ -129,6 +131,27 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 		}
 	})
 	return d, c
+}
+
+// clientAdded waits until the daemon has c as a client. Accept runs on its own goroutine,
+// so a test that goes on at once can find no window: a notification goes to nobody (#5878),
+// and show_file says no window is open (#5940).
+func clientAdded(t testing.TB, d *Daemon, c *conn) {
+	t.Helper()
+	for deadline := time.Now().Add(waitLimit(t)); ; time.Sleep(time.Millisecond) {
+		d.mu.Lock()
+		added := false
+		for _, each := range d.clients {
+			added = added || each.conn == c
+		}
+		d.mu.Unlock()
+		if added {
+			return
+		}
+		if time.Now().After(deadline) {
+			waitFailed(t, "the daemon never added the test's window client")
+		}
+	}
 }
 
 // anyLive is whether an agent's run loop is still running or in a turn.
@@ -151,6 +174,7 @@ func (d *Daemon) anyLive() bool {
 }
 
 func TestPingAndAnUnknownMethod(t *testing.T) {
+	t.Parallel()
 	_, c := start(t, t.TempDir())
 	if r := c.call(t, 1, "daemon/ping", nil); string(r) != `{"ok":true}` {
 		t.Fatalf("ping %s", r)
@@ -161,6 +185,7 @@ func TestPingAndAnUnknownMethod(t *testing.T) {
 }
 
 func TestAPanickingHandlerAnswersAnError(t *testing.T) {
+	t.Parallel()
 	d, c := start(t, t.TempDir())
 	d.handlers["boom"] = func(context.Context, *Client, json.RawMessage) (any, error) {
 		var m map[string]int
@@ -178,6 +203,8 @@ func TestAPanickingHandlerAnswersAnError(t *testing.T) {
 // A root the Swift host wrote: its agent is listed with its folder, and its transcript
 // pages as Swift pages it.
 func TestASwiftRootIsServed(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	fix := filepath.Join("..", "..", "..", "Packages", "AgentsKit", "Tests", "AgentsKitTests", "Fixtures", "legacy-agent")
 	b, _ := os.ReadFile(filepath.Join(fix, "agent.json"))
@@ -223,6 +250,8 @@ func TestASwiftRootIsServed(t *testing.T) {
 }
 
 func TestAddAFolder(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	work := filepath.Join(t.TempDir(), "hello")
 	os.Mkdir(work, 0o755)

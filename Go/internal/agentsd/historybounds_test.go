@@ -96,6 +96,8 @@ func TestTheHourlySweepBoundsHistoriesByAge(t *testing.T) {
 
 // Keys from a clock that was set ahead are never too old, so the count still bounds them.
 func TestKeepSinceStillCountsKeys(t *testing.T) {
+	t.Parallel()
+
 	m := map[string]int{"2026-11-01": 1, "2026-11-05": 1, "2026-12-01": 1, "2026-12-02": 1}
 	if gone := keepSince(m, "2026-11-02", 2, ""); gone != 2 {
 		t.Fatalf("%d gone", gone)

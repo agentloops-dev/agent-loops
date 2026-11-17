@@ -138,6 +138,8 @@ func TestConnectingJiraWithAtlassianSignIn(t *testing.T) {
 // Connect Jira with a token (#3304): with an email, a Jira Cloud API token sent as Basic; with
 // none, a Data Center personal access token sent as Bearer. Checked with the site and kept.
 func TestConnectingJiraWithAnAPIToken(t *testing.T) {
+	t.Parallel()
+
 	var body, auth atomic.Value
 	jira := fakeAtlassian(t, &body, &auth)
 	defer jira.Close()

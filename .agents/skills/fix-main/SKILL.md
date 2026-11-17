@@ -97,7 +97,8 @@ Do not rerun the failed jobs to find out (Rules). Read the failure and the batch
 
 1. Search for an open `bug` about the same test (`gh issue list --search "<test>
    in:title,body"`). When there is one, comment with the run's link and the failure lines.
-   Else file one `bug`, with no milestone, the labels `bug` and `size:XS`, titled "Flaky
+   Else file one `bug`, with no milestone, the labels `bug` and `size:XS` and no priority (the quarantine
+   unblocks `main`; #5692), titled "Flaky
    test: `<test>` fails under load on main". The body gives the job, the failure lines
    from the log (in a fence), the run's link and why it is a flake (step 2.5). The bug
    stays open: the bug lane (#4207) fixes the test later and removes the quarantine.

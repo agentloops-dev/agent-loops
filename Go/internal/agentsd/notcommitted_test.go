@@ -12,6 +12,8 @@ import (
 )
 
 func TestNotCommittedIsWhatGitIgnoresInAgents(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

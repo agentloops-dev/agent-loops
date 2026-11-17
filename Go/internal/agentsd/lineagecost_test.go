@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -20,6 +19,8 @@ func usd(r wire.LineageCost) float64 { return r.Cost["USD"] }
 // #2350: a turn's cost goes under the links active then, split evenly; a label taken off
 // later moves nothing; a turn with no link stays on its session.
 func TestCostGoesOnTheActiveLinks(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -64,6 +65,8 @@ func TestCostGoesOnTheActiveLinks(t *testing.T) {
 // #2350: a helper with no work of its own works for its parent; one with its own label
 // works on that.
 func TestAHelpersCostGoesToItsParentsWork(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -92,6 +95,8 @@ func TestAHelpersCostGoesToItsParentsWork(t *testing.T) {
 // #2350: an issue adds up its PRs; a PR closed without a merge stays against it, as
 // waste; failed CI rounds are counted; the nodes go to the control plane with the hours.
 func TestAnIssueAddsUpItsPRsAndTheirWaste(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
@@ -172,6 +177,8 @@ func TestAnIssueAddsUpItsPRsAndTheirWaste(t *testing.T) {
 
 // #2350: the nodes banked longest ago go first, past 90 days or the bound.
 func TestPruneCost(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	f := &costLedgerFile{Nodes: map[string]wire.LineageCostNode{}, Unsent: map[string]int64{}}
 	for i := range costNodesKept + 2 {
@@ -196,7 +203,8 @@ func TestPruneCost(t *testing.T) {
 // #3118: the nodes sent say the sessions that worked on them, and the title, state and
 // labels the resolve cache has; a node resolved after it was sent is sent again.
 func TestSentCostSaysSessionsAndResolved(t *testing.T) {
-	flaky.UnderLoad(t, "#5806")
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -232,6 +240,9 @@ func TestSentCostSaysSessionsAndResolved(t *testing.T) {
 		t.Fatal("sent again with nothing changed")
 	}
 
+	// The first send asked the forge for #12 (the backfill, #3562): its failed answer comes
+	// before the one set here, not after it (#5806).
+	d.resolveSettle(5 * time.Second)
 	state := "open"
 	d.resolveMu.Lock()
 	d.resolveCache = map[wire.LineageNode]resolvedEntry{issue: {
@@ -250,6 +261,8 @@ func TestSentCostSaysSessionsAndResolved(t *testing.T) {
 // feature, area and epic come from its labels and the forge's plan, kept when the cache
 // forgets them; and an issue with none is asked of the forge, as the backfill.
 func TestCostNodeKeepsStartAndLevel(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -324,6 +337,8 @@ func TestCostNodeKeepsStartAndLevel(t *testing.T) {
 // #3559: lineage/estimate reads the epic's plan from the forge and its history from the totals:
 // the closed child's cost is spent, and the open child is estimated from the closed issues.
 func TestLineageEstimateOfAnEpic(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	issue := func(n int) wire.LineageNode {
@@ -367,6 +382,8 @@ func TestLineageEstimateOfAnEpic(t *testing.T) {
 // #3561: an issue keeps the estimate it had when its work started, from the issues merged
 // before then only, and once closed lineage/estimate says it with what the work took.
 func TestLineageEstimateKeepsTheStartAndSaysTheActual(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	issue := func(n int) wire.LineageNode {
@@ -424,6 +441,8 @@ func TestLineageEstimateKeepsTheStartAndSaysTheActual(t *testing.T) {
 // #4525: an estimate kept before the cycle time and landsAt were added gets them the next time
 // the backfill runs, from the same history, so its median dollars does not change.
 func TestKeepEstimatesBackfillsCycleTimeAndLandsAt(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	issue := func(n int) wire.LineageNode {
@@ -462,6 +481,8 @@ func TestKeepEstimatesBackfillsCycleTimeAndLandsAt(t *testing.T) {
 // #4524: a turn with no work that started sessions goes on their work, a Scrum Master's turn
 // on the lane it started; a later turn that started nothing stays on the session.
 func TestATurnThatStartsALaneGoesOnItsWork(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -499,6 +520,8 @@ func TestATurnThatStartsALaneGoesOnItsWork(t *testing.T) {
 
 // #4524: a turn begins at the oldest of its newest run of working and needs-you.
 func TestTurnStart(t *testing.T) {
+	t.Parallel()
+
 	st := func(s wire.LineageSessionStateName, at wire.Date) wire.LineageSessionState {
 		return wire.LineageSessionState{State: s, At: at}
 	}
@@ -522,6 +545,8 @@ func TestTurnStart(t *testing.T) {
 // #4524: a run started by a PR's checks.failed works on that PR until it merges; one started
 // by pr.merged does not.
 func TestARunStartedByChecksFailedWorksOnItsPR(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -548,6 +573,8 @@ func TestARunStartedByChecksFailedWorksOnItsPR(t *testing.T) {
 // #4524: a release session's version label puts its cost on the release, and the release's
 // rollup counts it.
 func TestAReleaseSessionsCostGoesOnItsRelease(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()

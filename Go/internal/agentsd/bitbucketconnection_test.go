@@ -21,6 +21,8 @@ import (
 // Bitbucket (#3785): an Atlassian API token with its email, or an access token, is checked
 // with Bitbucket, kept, listed, and never given back or logged. Bitbucket has no sign-in page.
 func TestConnectingBitbucketWithAToken(t *testing.T) {
+	t.Parallel()
+
 	bb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		user, pass, basic := r.BasicAuth()
@@ -209,6 +211,8 @@ func TestABitbucketFoldersConnectorSetUp(t *testing.T) {
 // A connection to a fake Bitbucket's API (a walk's) is used for a bitbucket.org remote and a
 // project's Bitbucket slot, and Bitbucket comes before a Forgejo remote but after GitHub.
 func TestABitbucketRemoteAtTheConnectionsAPI(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}

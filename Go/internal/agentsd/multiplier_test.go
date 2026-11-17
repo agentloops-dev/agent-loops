@@ -16,6 +16,8 @@ import (
 // PR; one no agent worked on, and a closed one, count nothing; a merged revert takes one away.
 // With no control plane the figure is this machine's; with one, the control plane's.
 func TestMultiplierFollowsTheMerges(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()

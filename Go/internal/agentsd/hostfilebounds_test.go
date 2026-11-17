@@ -28,6 +28,8 @@ func dirNames(t *testing.T, dir string) []string {
 // A copy of an approved workflow goes once no record names it: an edit approved again
 // leaves only the new copy.
 func TestOnlyTheNamedWorkflowCopiesAreKept(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -56,6 +58,8 @@ func TestOnlyTheNamedWorkflowCopiesAreKept(t *testing.T) {
 
 // The newest 50 assessments are kept, each with its score and its scope file.
 func TestTheNewestAssessmentsAreKept(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := d.assessmentsPath()
@@ -86,6 +90,8 @@ func TestTheNewestAssessmentsAreKept(t *testing.T) {
 
 // mcp-logs keeps the newest 32 servers' logs, the one opened among them.
 func TestTheNewestServerLogsAreKept(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	old := time.Now().Add(-time.Hour)
 	for i := range hostedLogsKept + 1 {
@@ -114,6 +120,8 @@ func TestTheNewestServerLogsAreKept(t *testing.T) {
 // A folder that is no longer a folder leaves events-state.json's branch tips. On the
 // map alone: a started daemon's own folder watch drops "/kept" too, as it has no folder.
 func TestBranchTipsOfAGoneFolderGo(t *testing.T) {
+	t.Parallel()
+
 	tips := map[string]map[string]string{"/kept": {"main": "a"}, "/gone": {"main": "b"}}
 	if !dropGone(tips, map[string]bool{"/kept": true}) {
 		t.Fatal("nothing went")

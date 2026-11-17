@@ -153,6 +153,8 @@ func TestSendNow(t *testing.T) {
 }
 
 func TestRenameAndHandBack(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	runtimeTitle := "From the runtime"
@@ -174,6 +176,8 @@ func TestRenameAndHandBack(t *testing.T) {
 }
 
 func TestLabels(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -245,6 +249,8 @@ func TestUnarchiveAndDelete(t *testing.T) {
 }
 
 func TestAnOptionWithNoSessionIsAStartOption(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -258,6 +264,8 @@ func TestAnOptionWithNoSessionIsAStartOption(t *testing.T) {
 }
 
 func TestTouchedPaths(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -312,6 +320,8 @@ func TestContinueInFolder(t *testing.T) {
 // TestArchivedListIsNewestArchivedFirst: an archived-only page is in order of when each was
 // archived, not of last activity (#2153), and goes on from its cursor in that order.
 func TestArchivedListIsNewestArchivedFirst(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	hour := wire.Date(3600)

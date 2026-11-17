@@ -18,6 +18,8 @@ import (
 // The three endings name the runtime's own question tool where the app knows it, and
 // ask_question always.
 func TestTheEndingBriefNamesTheThreeEndings(t *testing.T) {
+	t.Parallel()
+
 	for runtimeID, ask := range map[string]string{"claude": "AskUserQuestion (or ask_question if you lack it)", "grok": "with ask_question."} {
 		got := endingBrief(runtimeID)
 		// Only a question needs the person (#1916): no stuck or blocked ending.
@@ -34,6 +36,8 @@ func TestTheEndingBriefNamesTheThreeEndings(t *testing.T) {
 
 // What the person declared is said inside the lease paragraph, once.
 func TestTheLeaseBriefSaysWhatWasDeclared(t *testing.T) {
+	t.Parallel()
+
 	if got := leasesWithDeclared(nil); got != leasesBrief {
 		t.Fatalf("%q", got)
 	}
@@ -46,6 +50,8 @@ func TestTheLeaseBriefSaysWhatWasDeclared(t *testing.T) {
 // Claude's is _meta.systemPrompt.append, Grok's goes before its rules, Codex's uses AIR
 // custom instructions, and a runtime with no system prompt has its _meta as it was.
 func TestTheBriefGoesWhereTheRuntimeTakesASystemPrompt(t *testing.T) {
+	t.Parallel()
+
 	claude := withSystemPrompt(sessionMeta("claude"), "claude", "words")
 	if systemPromptOf(claude) != "words" || claude["claudeCode"] == nil {
 		t.Fatalf("%v", claude)
@@ -67,6 +73,8 @@ func TestTheBriefGoesWhereTheRuntimeTakesASystemPrompt(t *testing.T) {
 // OpenCode's brief is a file in the agent's own folder, added to the instructions of the
 // configuration the app gives it, and only the brief's words are in the file (#2612).
 func TestOpenCodeHasTheBriefAsAnInstructionsFile(t *testing.T) {
+	t.Parallel()
+
 	folder := t.TempDir()
 	l := withToolPolicy(acp.Launch{Env: []string{"HOME=/h"}}, "opencode")
 	l, err := withBriefFile(l, "opencode", folder, "words")
@@ -179,6 +187,8 @@ func TestAPageEditIsToldOnTheNextTurn(t *testing.T) {
 // Who is who: the runtime's name, the person's from person.json, their pronouns or "they",
 // and for a helper the title of the agent that started it (#121, #335).
 func TestTheBriefSaysWhoIsWho(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := "Login redirect"
@@ -202,6 +212,8 @@ func TestTheBriefSaysWhoIsWho(t *testing.T) {
 // Asking names the runtime's own question tool where the app keeps one, and says what is
 // decided and told (#601, #1083).
 func TestTheBriefSaysWhatToAskAndWhatToDecide(t *testing.T) {
+	t.Parallel()
+
 	if got := escalationBrief("cursor"); !strings.Contains(got, "ask me with AskQuestion (or ask_question if you lack it) rather than guessing") ||
 		!strings.Contains(got, "write `Decided: <what>, because <why>.`") {
 		t.Fatal(got)
@@ -223,6 +235,8 @@ func TestTheBriefSaysWhatToAskAndWhatToDecide(t *testing.T) {
 
 // The workflow line forbids cron entries only where the runtime still has its scheduler.
 func TestTheWorkflowBriefIsShorterWhereSchedulingIsRemoved(t *testing.T) {
+	t.Parallel()
+
 	cron := "Write no cron entries"
 	if strings.Contains(workflowsBrief("claude"), cron) || !strings.Contains(workflowsBrief("copilot"), cron) ||
 		!strings.HasSuffix(workflowsBrief("claude"), "use manage_workflows. Create none I did not ask for.") {
@@ -233,6 +247,8 @@ func TestTheWorkflowBriefIsShorterWhereSchedulingIsRemoved(t *testing.T) {
 // Live documents, helpers, sessions and memory are told to every agent, worktrees only where
 // move_worktree is offered, residue and first-prompt cards only on their runtime.
 func TestTheBriefSaysTheRestWhereItApplies(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	for _, rt := range catalog {
@@ -268,6 +284,8 @@ var toolsBriefSkips = map[string]string{
 // together as browser_*; the browser and drive_screen only where they are offered, and
 // hand_to_person not on a bot's machine.
 func TestTheBriefNamesEveryAppTool(t *testing.T) {
+	t.Parallel()
+
 	var all []struct {
 		Name string `json:"name"`
 	}
@@ -347,6 +365,8 @@ func TestTheNewAppSkillIsReadyMade(t *testing.T) {
 // #5054) finds each task by its words, so the skill's two tables hold these words, in this
 // order. A change here is a change to the plan pages too.
 func TestTheNewAppSkillKeepsTheFirstBuildTaskList(t *testing.T) {
+	t.Parallel()
+
 	skill, err := os.ReadFile(filepath.Join(readyMadeFixtureDir, "skills", "start-a-new-app", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -442,6 +462,8 @@ func TestThePersonasPromptFollowsTheBrief(t *testing.T) {
 // Grok's rules write out each tool this host offers it, under the name Grok calls, with
 // required arguments first (AppToolPreface).
 func TestGroksRulesWriteOutTheAppsTools(t *testing.T) {
+	t.Parallel()
+
 	rules := grokRules()
 	if !strings.HasPrefix(rules, "These tools are fully specified.") || !strings.Contains(rules, "agents__show_file — ") ||
 		!strings.Contains(rules, "agents__ask_question — ") || strings.Contains(rules, "agents__move_worktree") {
@@ -505,6 +527,8 @@ func TestVoiceModeTextGoesBeforeTheWords(t *testing.T) {
 // Claude is started with its task tools on, which a model newer than claude-opus-4-7 does
 // not have otherwise, so it can send a plan (#5093). The person's own value is kept.
 func TestClaudeIsStartedWithItsTaskTools(t *testing.T) {
+	t.Parallel()
+
 	if got := withClaudeTodoTools([]string{"PATH=/bin", "CLAUDE_CODE_ENABLE_TODO_TOOLS="}); !slices.Equal(got, []string{"PATH=/bin", "CLAUDE_CODE_ENABLE_TODO_TOOLS=1"}) {
 		t.Fatalf("%q", got)
 	}

@@ -206,6 +206,8 @@ func TestAWithdrawnFormTakesTheAgentOutOfWaiting(t *testing.T) {
 }
 
 func TestAFormOutsideATurnIsNotHeld(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	l := d.live("8C1F6A1E-0000-4000-8000-000000000001")
@@ -221,6 +223,8 @@ func TestAFormOutsideATurnIsNotHeld(t *testing.T) {
 // ElicitationSchemaTests: the schema's own order, titled choices, the free-text box that
 // goes with the question before it, and the checks.
 func TestAFormIsReadAsSwiftReadsIt(t *testing.T) {
+	t.Parallel()
+
 	req, ok := parseElicitation(json.RawMessage(`{"message":"Two things","requestId":"r1","requestedSchema":{
 		"title":"Setup","propertyOrder":["question_0","question_0_custom","question_1","when","count","ok","tags"],
 		"required":["question_0","count"],

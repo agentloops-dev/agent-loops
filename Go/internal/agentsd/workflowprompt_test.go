@@ -16,6 +16,8 @@ import (
 // behind an event, a schedule, Run now, or an agent's manage_workflows run. A queued run
 // keeps the cause of the trigger that queued it.
 func TestEveryRunSaysWhyItStarted(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()

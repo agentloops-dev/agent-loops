@@ -15,6 +15,8 @@ import (
 // On a Mac the app's own toolsets are in the root's cache, where the Swift host put them:
 // the only copy of Codex, found there.
 func TestAMacFindsTheAppsToolsets(t *testing.T) {
+	// Its daemon's own <cache>/tools, as a host has, not the one the other tests share.
+	setFor(t, &sharedToolsHome, "")
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	bin := filepath.Join(d.Store.Loc.Cache, "tools", "codex", "current", "bin")

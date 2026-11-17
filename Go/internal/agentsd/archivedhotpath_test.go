@@ -12,6 +12,8 @@ import (
 // live records once its archived ones are summed (#4510); the archived still count in the
 // summary and are still listed when asked for.
 func TestTheHotPathReadsOnlyLiveRecords(t *testing.T) {
+	t.Parallel()
+
 	d, err := New(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)

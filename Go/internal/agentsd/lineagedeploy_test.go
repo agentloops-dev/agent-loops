@@ -49,6 +49,8 @@ func deployEvent(t *testing.T, name string, id int, env, sha, tag string, run in
 // the environment once it ends, so the deploy leaves the forge environment for it; a started
 // polled late takes back nothing.
 func TestLineageDeployNodesFromDeployEvents(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	t0 := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
@@ -111,6 +113,8 @@ func TestLineageDeployNodesFromDeployEvents(t *testing.T) {
 // older release than the one it replaced is a rollback; and what a deploy brings is the PRs
 // between the deploy before it and it, worked out in the background, never stored.
 func TestLineageDeployReplacedRollbackAndBrings(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, "git@github.com:alexec/agents.git")})
@@ -178,6 +182,8 @@ func TestLineageDeployReplacedRollbackAndBrings(t *testing.T) {
 }
 
 func TestDeployNotice(t *testing.T) {
+	t.Parallel()
+
 	for notice, want := range map[string]string{
 		"testflight=testflight:com.example.app/42": "testflight testflight:artifact:com.example.app#42",
 		"testflight:com.example.app/42":            "testflight testflight:artifact:com.example.app#42",
@@ -206,6 +212,8 @@ func TestDeployNotice(t *testing.T) {
 // version keeps its since; a waiting deploy older than the live one is not next; and the next
 // deploy brings the PRs since the live version.
 func TestLineageDeployLiveAndNext(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, "git@github.com:alexec/agents.git")})
@@ -297,6 +305,8 @@ func TestLineageDeployLiveAndNext(t *testing.T) {
 // #5270: deploys/targets says every target, in the environment its job's notice names, with
 // its live versions (the most traffic first), since when, its next deploys, and the release.
 func TestDeployTargets(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	t0 := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)

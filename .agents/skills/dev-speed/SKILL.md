@@ -170,8 +170,8 @@ Before you file an issue, look for an open one on the same cause
 (`gh issue list --search "<script or tool> in:title,body" --state open`) and add a
 comment with the new numbers instead. A filed issue gets `task` (or `bug` for a
 script that is wrong), one `size:` label from the rubric in
-`.agents/personas/product-owner.md`, and the `feature:` label that fits
-(`feature:capacity` for leases and lanes, `feature:performance` for builds and tests).
+`.agents/personas/product-owner.md`, a priority (AGENTS.md, "Set a priority when you file", #5692) (most have
+none), and the `feature:` label that fits (`feature:capacity` for leases and lanes, `feature:performance` for builds and tests).
 Its body says the measured cost, the cause with one or two example commands, the fix
 and the expected saving.
 

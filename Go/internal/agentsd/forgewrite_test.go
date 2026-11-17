@@ -335,6 +335,8 @@ func TestForgeCancelAutoMergeAndReady(t *testing.T) {
 // #4410: the page offers Turn off auto-merge only while it is on, and Ready for review only on a
 // draft, and neither once the pull request is closed.
 func TestForgeItemActionsFollowAutoMergeAndDraft(t *testing.T) {
+	t.Parallel()
+
 	caps := githubForge{}.Caps()
 	for _, tc := range []struct {
 		state       string
@@ -388,6 +390,8 @@ func TestForgeWritesRefuseWhatIsWrong(t *testing.T) {
 
 // #3130: an agent's connection may call none of the writes: a person writes, from their own page.
 func TestForgeWritesAreNotAnAgents(t *testing.T) {
+	t.Parallel()
+
 	for _, m := range []string{"forge/comment", "forge/label", "forge/assign", "forge/close", "forge/merge", "forge/cancel-auto-merge", "forge/ready", "forge/approve", "forge/rerun"} {
 		if RoleAgent.Allows(m) {
 			t.Fatalf("an agent may call %s", m)

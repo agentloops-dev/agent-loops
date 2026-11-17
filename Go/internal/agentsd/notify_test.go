@@ -15,6 +15,8 @@ import (
 // The person's attention (#2805): a burst, then one notice back each cool-down, never
 // the whole burst at the end of one.
 func TestNoticesComeBackOneAtATime(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{}
 	at := time.Unix(1_000_000, 0)
 	for i := 2; i >= 0; i-- {
@@ -40,6 +42,8 @@ func TestNoticesComeBackOneAtATime(t *testing.T) {
 }
 
 func TestNotifyingThePerson(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	if _, err := d.setPreferences(map[string]wire.JSONValue{noticeBurstKey: json.RawMessage("2")}); err != nil {
@@ -155,6 +159,8 @@ func TestNoticeLineSaysWhereItWent(t *testing.T) {
 // set in a client go into your layer (#2957) and are pushed on, as every change to it is
 // (user/setPolicy), not by the old dedicated user/setNoticeLimits call, which is gone.
 func TestNoticeLimitsFollowThePerson(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

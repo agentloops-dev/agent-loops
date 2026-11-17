@@ -225,6 +225,8 @@ func TestALineOutlivesARestart(t *testing.T) {
 }
 
 func TestOrdinals(t *testing.T) {
+	t.Parallel()
+
 	for n, want := range map[int]string{1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 11: "11th", 12: "12th", 13: "13th", 21: "21st", 112: "112th"} {
 		if ordinal(n) != want {
 			t.Errorf("%d: %s", n, ordinal(n))

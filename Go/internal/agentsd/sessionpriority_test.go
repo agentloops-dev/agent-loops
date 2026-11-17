@@ -71,6 +71,8 @@ func labelled(values ...string) []wire.SessionLabel {
 // #5847: a session labelled with an issue goes by the issue's priority, and follows it when a
 // forge read says another.
 func TestSessionPriorityFromItsIssue(t *testing.T) {
+	t.Parallel()
+
 	d, _, folder, _ := priorityDaemon(t, t.TempDir(), map[int][]string{5846: {"epic", "priority:high"}, 12: {"priority:low"}})
 	a := seeded(t, d, folder, func(a *wire.Agent) { a.Labels = labelled("#5846", "#12") })
 	d.noteLineage(nil, a)
@@ -92,6 +94,8 @@ func TestSessionPriorityFromItsIssue(t *testing.T) {
 
 // #5847: P#n goes by the priority of the issues its pull request fixes.
 func TestSessionPriorityFromItsPullRequestsIssue(t *testing.T) {
+	t.Parallel()
+
 	d, _, folder, _ := priorityDaemon(t, t.TempDir(), map[int][]string{7: {"priority:medium"}})
 	a := seeded(t, d, folder, func(a *wire.Agent) { a.Labels = labelled("P#8") })
 	d.noteLineage(nil, a)
@@ -104,6 +108,8 @@ func TestSessionPriorityFromItsPullRequestsIssue(t *testing.T) {
 
 // #5847: agents/setPriority wins over the issue's; cleared, the session follows its issue again.
 func TestSessionPrioritySetWinsAndClears(t *testing.T) {
+	t.Parallel()
+
 	d, c, folder, _ := priorityDaemon(t, t.TempDir(), map[int][]string{5846: {"priority:high"}})
 	a := seeded(t, d, folder, func(a *wire.Agent) { a.Labels = labelled("#5846") })
 	d.noteLineage(nil, a)
@@ -130,6 +136,8 @@ func TestSessionPrioritySetWinsAndClears(t *testing.T) {
 
 // #5847: a lane its lead started, with no label yet, goes by the lead's priority, and follows it.
 func TestSessionPriorityFromItsStarter(t *testing.T) {
+	t.Parallel()
+
 	d, _, folder, _ := priorityDaemon(t, t.TempDir(), nil)
 	lead := seeded(t, d, folder, nil)
 	if _, err := d.setPriority(lead.ID, new(wire.SessionPriorityHigh)); err != nil {
@@ -156,6 +164,8 @@ func TestSessionPriorityFromItsStarter(t *testing.T) {
 // #5847: the set priority lasts a restart, and an issue's priority is kept until the forge is
 // read again.
 func TestSessionPriorityLastsARestart(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c, folder, _ := priorityDaemon(t, root, map[int][]string{3: {"priority:high"}})
 	set := seeded(t, d, folder, nil)
@@ -188,6 +198,8 @@ func TestSessionPriorityLastsARestart(t *testing.T) {
 // #5847: set_session_priority sets the caller's priority or a helper's, and issue clears it;
 // start_session's priority is checked.
 func TestSetSessionPriorityTool(t *testing.T) {
+	t.Parallel()
+
 	d, _, folder, _ := priorityDaemon(t, t.TempDir(), nil)
 	me := seeded(t, d, folder, nil)
 	helper := seeded(t, d, folder, func(a *wire.Agent) { a.StartedByAgent = &me.ID })
@@ -228,6 +240,8 @@ func TestSetSessionPriorityTool(t *testing.T) {
 // #5847: a lookup's labels give the priority; with none, a forge field's priority stays, and a
 // label's lost one goes.
 func TestLookedUpPriority(t *testing.T) {
+	t.Parallel()
+
 	field := resolvedEntry{priority: "high"}
 	label := resolvedEntry{priority: "high", resolved: wire.LineageResolved{Labels: []string{"priority:high"}}}
 	for _, c := range []struct {

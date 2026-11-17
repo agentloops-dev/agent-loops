@@ -13,6 +13,8 @@ import (
 // ones too, with the removals in the catch-up; a point the host cannot vouch for gets
 // revisionGone from the list and the whole list from the catch-up (#4785).
 func TestChangedSince(t *testing.T) {
+	t.Parallel()
+
 	d, err := New(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)

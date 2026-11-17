@@ -22,6 +22,8 @@ import (
 // the App's key, keeps the key in its own store, and gives a client only the bot's name and
 // where to install it.
 func TestMakingTheAgentsBot(t *testing.T) {
+	t.Parallel()
+
 	k, _ := rsa.GenerateKey(rand.Reader, 2048)
 	pemText := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}))
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

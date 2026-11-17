@@ -96,6 +96,8 @@ func TestARestartIsSaidAndAWaitOpenOverItIsTold(t *testing.T) {
 }
 
 func TestACrashAndAFirstStart(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, _ := start(t, root)
 	d.SayRestarted()
@@ -127,6 +129,8 @@ func TestACrashAndAFirstStart(t *testing.T) {
 }
 
 func TestRestartWords(t *testing.T) {
+	t.Parallel()
+
 	at := wire.DateOf(time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC))
 	for _, c := range []struct {
 		seconds float64

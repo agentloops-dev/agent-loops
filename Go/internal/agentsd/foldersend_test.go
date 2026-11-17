@@ -42,6 +42,8 @@ func nextSend(c *conn, wait time.Duration) *wire.SendNotification {
 }
 
 func TestFoldersSendSendsOnItsOwn(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	src := repo(t)

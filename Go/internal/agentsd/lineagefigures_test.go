@@ -14,6 +14,8 @@ import (
 // #4427: a release's figures are its rollup's cost and sessions, the runtimes and how many
 // run now, and its lead time. A milestone's are refused since #3878, as an issue's are.
 func TestLineageFiguresOfARelease(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -79,6 +81,8 @@ func TestLineageFiguresOfARelease(t *testing.T) {
 // #4552: a merged PR's files and the PR it reverts are asked of the forge, and a repo's
 // figures carry its delivery figures.
 func TestLineageFiguresOfARepo(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -140,6 +144,8 @@ func TestLineageFiguresOfARepo(t *testing.T) {
 
 // #4552: GitHub's and GitLab's answers for a merged PR's files and description.
 func TestPRFactsOf(t *testing.T) {
+	t.Parallel()
+
 	gh, err := githubPRFactsOf([]byte(`{"body":"Reverts o/r#3","files":[{"path":"a.go","additions":1},{"path":"b/c.go"}]}`))
 	if err != nil || gh.body != "Reverts o/r#3" || len(gh.files) != 2 || gh.files[1] != "b/c.go" {
 		t.Errorf("github %+v %v", gh, err)
@@ -155,6 +161,8 @@ func TestPRFactsOf(t *testing.T) {
 
 // #4552: a PR's files are kept while the rework rate can count them, not as long as its node.
 func TestPruneCostDropsOldFiles(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now()
 	at := func(ago time.Duration) *wire.Date { d := wire.DateOf(now.Add(-ago)); return &d }
 	f := &costLedgerFile{Nodes: map[string]wire.LineageCostNode{

@@ -14,6 +14,8 @@ import (
 // secrets filled, one missing a secret left out, and a folder's new server waiting.
 
 func TestASessionsMCPServers(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()

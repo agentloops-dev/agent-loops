@@ -16,6 +16,8 @@ import (
 // the ends a wait comes to.
 
 func TestAWaitSaysWhatIsWrongWithIt(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	m := appClient(t, d, seeded(t, d, t.TempDir(), nil).ID)
@@ -75,6 +77,8 @@ func TestAMacOnlyWaitIsRefusedOnlyOnAServer(t *testing.T) {
 }
 
 func TestAWaitIsAnsweredByItsEvent(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -175,6 +179,8 @@ func TestABranchWaitNamesTheBranchOrSetsAny(t *testing.T) {
 }
 
 func TestAWaitEnds(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)

@@ -9,6 +9,8 @@ import (
 // The goal on a session_info_update (#2742): Codex's snapshot and Claude's, a cleared
 // goal, and the shapes that say nothing, which leave the goal as it was.
 func TestTheGoalOnASessionInfoUpdate(t *testing.T) {
+	t.Parallel()
+
 	air := func(goal any) map[string]any {
 		return map[string]any{"jetbrains": map[string]any{"air": map[string]any{"version": 1.0, "goal": goal}}}
 	}

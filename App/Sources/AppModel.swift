@@ -5341,6 +5341,15 @@ final class AppModel {
         if sent { offer(undo) }
     }
 
+    /// Priority ▸ from the row's or the Session menu (#5849): a level set on the session, or nil
+    /// to follow its issue again. The host's agent.updated then redraws the chip.
+    func setPriority(_ id: UUID, _ priority: SessionPriority?) async {
+        await attempt(on: work.agent(id)?.host ?? .mac) {
+            try await self.client(forAgent: id).call(DaemonAPI.Method.agentsSetPriority,
+                                                     DaemonAPI.SetPriorityRequest(agentID: id, priority: priority))
+        }
+    }
+
     /// Whether the host of this session can mute it: one from before #2003 cannot.
     func canMute(_ agent: Agent) -> Bool {
         agent.state != .archived && host(agent.host, has: Capability.mute1)

@@ -17,6 +17,8 @@ import (
 // FolderDetectionTests and GitRemoteTests for a server.
 
 func TestArchiveUnarchiveAndDeleteAFolder(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -53,6 +55,8 @@ func TestArchiveUnarchiveAndDeleteAFolder(t *testing.T) {
 }
 
 func TestAFoldersSettingsAreItsFile(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -107,6 +111,8 @@ func TestAFoldersSettingsAreItsFile(t *testing.T) {
 }
 
 func TestFindingFolders(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	parent := t.TempDir()
@@ -125,6 +131,8 @@ func TestFindingFolders(t *testing.T) {
 
 // #2134: no chat folder. A host with a personal home lists only the folders added.
 func TestNoChatFolder(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.PersonalHome = t.TempDir()
@@ -141,6 +149,8 @@ func TestNoChatFolder(t *testing.T) {
 // #4506: folderChanged says one folder's summary, the same row folders(true) would make
 // for it, not a summary of every folder.
 func TestFolderChangedSummaryMatchesFolders(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	root := t.TempDir()
@@ -196,6 +206,8 @@ func TestFolderChangedSummaryMatchesFolders(t *testing.T) {
 }
 
 func TestGitAddresses(t *testing.T) {
+	t.Parallel()
+
 	for url, want := range map[string]string{
 		"https://github.com/alexec/Agents.git": "github.com/alexec/agents",
 		"git@github.com:alexec/Agents.git":     "github.com/alexec/agents",

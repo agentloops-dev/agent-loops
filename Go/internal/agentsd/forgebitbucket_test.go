@@ -296,6 +296,8 @@ func TestForgeWritesOnABitbucketItem(t *testing.T) {
 }
 
 func TestBitbucketOfNode(t *testing.T) {
+	t.Parallel()
+
 	for ref, want := range map[string]string{
 		"bitbucket:issue:walkalex/app#7": "walkalex/app 7",
 		"bitbucket:issue:a/b#0":          "",

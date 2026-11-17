@@ -12,6 +12,8 @@ import (
 // #4526: a weekly allowance at its reading's pace: half used two days into the week runs out
 // two days later; a tenth used lasts to the reset; a past week or another window says nothing.
 func TestBurnOfAWeeklyAllowance(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
 	reading := func(window string, used float64, at, resets time.Time) wire.AllowanceReading {
 		return wire.AllowanceReading{Window: &window, Used: &used, At: wire.DateOf(at), ResetsAt: new(wire.DateOf(resets))}
@@ -38,6 +40,8 @@ func TestBurnOfAWeeklyAllowance(t *testing.T) {
 // #4526: lineage/forecast reads the epic's plan and says why it has no date with too little
 // history; it always says the burn, and keeps a forecast on the epic's node only once.
 func TestLineageForecastOfAnEpic(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	epic := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#10"}
@@ -71,6 +75,8 @@ func TestLineageForecastOfAnEpic(t *testing.T) {
 // #4620: lineage/forecast for a milestone reads the store's issues in it, in the folder's repo;
 // a node and a milestone together are refused.
 func TestLineageForecastOfAMilestone(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
