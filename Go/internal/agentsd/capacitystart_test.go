@@ -25,7 +25,7 @@ func TestAHelperStartWaitsWhileTheMachineIsNear(t *testing.T) {
 	set(capacitySample{load1: 2.4})
 	d.checkCapacity(ctx)
 	text, isErr := m.tool(2, "start_session", map[string]any{"prompt": "Write it"})
-	busy := sentenceMachine() + " is near capacity (load 2.4 per core). It starts by itself, oldest first, once the machine has room and this project has a place free."
+	busy := sentenceMachine() + " is near capacity (load 2.4 per core). It starts by itself, highest priority first, then the oldest, once the machine has room and this project has a place free."
 	if isErr || !strings.HasPrefix(text, "Queued “Write it” (id ") || !strings.Contains(text, "1st in this project's queue: "+busy) {
 		t.Fatal(text)
 	}

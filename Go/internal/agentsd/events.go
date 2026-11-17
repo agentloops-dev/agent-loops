@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -795,9 +796,19 @@ func (d *Daemon) raiseLeaseEvent(e leaseEvent) *wire.Event {
 				title = *a.Title
 			}
 		}
+		details := map[string]string{"resource": string(l.Resource), "agent": string(l.Holder), "agent_title": title}
+		// A grant from the line says how long it waited and at what priority, so the wait of a
+		// low-priority session can be measured (#5848, #5846 "ageing").
+		if e.waiter != nil {
+			details["waited_seconds"] = strconv.FormatInt(max(0, int64(l.GrantedAt.Time().Sub(e.waiter.AskedAt.Time())/time.Second)), 10)
+			details["priority"] = "none"
+			if a := d.Store.Agent(l.Holder); a != nil && a.Priority != nil {
+				details["priority"] = string(*a.Priority)
+			}
+		}
 		raised := d.raise(wire.EventDraft{Name: "lease.granted", At: now(), Scope: macScope(),
 			Sentence: agentName(t) + " was given " + l.DisplayName + ".",
-			Details:  map[string]string{"resource": string(l.Resource), "agent": string(l.Holder), "agent_title": title}})
+			Details:  details})
 		return &raised
 	case e.released:
 		how, words := "ended", "taken back"

@@ -75,7 +75,7 @@ func uniqueAgents(as []wire.Agent) []wire.Agent {
 }
 
 // helperQueue is HelperLimit.queue: the queued in folder, or in every folder here of its
-// project, first in first. This machine starts only its own.
+// project, the highest priority first, then first in first (#5848). This machine starts only its own.
 func (d *Daemon) helperQueue(folder string) []wire.Agent {
 	var out []wire.Agent
 	project := projectOfFolder(folder)
@@ -85,7 +85,11 @@ func (d *Daemon) helperQueue(folder string) []wire.Agent {
 			out = append(out, a)
 		}
 	}
+	// The highest priority first (#5848), then the oldest.
 	sort.SliceStable(out, func(i, j int) bool {
+		if ri, rj := priorityRank(&out[i]), priorityRank(&out[j]); ri != rj {
+			return ri < rj
+		}
 		if out[i].CreatedAt != out[j].CreatedAt {
 			return out[i].CreatedAt < out[j].CreatedAt
 		}
