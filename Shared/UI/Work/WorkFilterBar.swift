@@ -32,6 +32,13 @@ struct WorkFilterBar<Menus: View, More: View, Trailing: View>: View {
                 line(search: WorkLook.filterBarSearch.wide, folded: false)
                 line(search: WorkLook.filterBarSearch.short, folded: false)
                 line(search: WorkLook.filterBarSearch.short, folded: true)
+                // Narrower still (an iPad's column beside the sidebar, large text): the folded line
+                // scrolls sideways. Its menus do not shrink, so laid out as it is it was wider than
+                // the column, and the split view centred the whole page under the sidebar (#5964).
+                ScrollView(.horizontal) {
+                    line(search: WorkLook.filterBarSearch.short, folded: true)
+                }
+                .scrollIndicators(.hidden)
             }
         }
     }
