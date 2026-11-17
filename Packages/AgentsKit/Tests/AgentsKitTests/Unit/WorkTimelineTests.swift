@@ -303,6 +303,21 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.epicCount(lines, in: WorkTimeline.Range.twoDays.window(now: Self.now)) == 1)
     }
 
+    /// #5925: two reads, the first with no epic and the second with one; S11 never shows between them.
+    @Test func theWindowIsLoadingNotEmptyUntilEveryReadEnded() {
+        let window = WorkTimeline.Range.twoDays.window(now: Self.now)
+        func count(_ t: DaemonAPI.WorkTimeline) -> Int { WorkTimeline.epicCount(WorkTimeline.lines(t, now: Self.now), in: window) }
+        let first = DaemonAPI.WorkTimeline(epics: [], releases: [])
+        let both = WorkTimeline.merge([first, DaemonAPI.WorkTimeline(
+            epics: [Self.epic(44, [Self.child(45, started: -2)], segments: [(-2, nil)])], releases: [])])
+        #expect(WorkTimeline.shows(drawn: false, reading: true, epics: 0) == .loading)
+        #expect(WorkTimeline.shows(drawn: true, reading: true, epics: count(first)) == .loading)
+        #expect(WorkTimeline.shows(drawn: true, reading: true, epics: count(both)) == .epics)
+        #expect(WorkTimeline.shows(drawn: true, reading: false, epics: count(both)) == .epics)
+        // Only once every read ended does an empty window say so (S11).
+        #expect(WorkTimeline.shows(drawn: true, reading: false, epics: count(first)) == .empty)
+    }
+
     @Test func machinesMergeEachEpicAndReleaseOnce() {
         let a = DaemonAPI.WorkTimeline(epics: [Self.epic(23, [Self.child(1, closed: -1)], segments: [(-2, -1)])],
                                        releases: [.init(tag: "v2", at: Self.h(-1), repo: "a/b")], errors: ["x"])
