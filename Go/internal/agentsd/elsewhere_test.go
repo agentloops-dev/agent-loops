@@ -277,3 +277,11 @@ func TestHeardThereWritesOnlyWhatChanged(t *testing.T) {
 		t.Fatal("the same ending was written again")
 	}
 }
+
+// #5806: a host with no store (a test's bare Daemon) has no waits to ask about, and the job
+// that SetControlAsk starts does not panic.
+func TestAskThereWaitsWithNoStore(t *testing.T) {
+	t.Parallel()
+
+	(&Daemon{ctx: context.Background()}).askThereWaits()
+}

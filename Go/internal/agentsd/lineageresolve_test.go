@@ -264,3 +264,45 @@ func sameStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// #5806: a failed ask does not replace an answer that came while it was asked (a list read
+// the node then), and replaces one from before it was asked.
+func TestAFailedAskKeepsANewerAnswer(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	folder := t.TempDir()
+	d.repos = map[string]forgeRepo{folder: {"github", "alexec/agents"}}
+	seeded(t, d, folder, nil)
+	issue := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#12"}
+	put := func(at time.Time) {
+		d.resolveMu.Lock()
+		d.resolveCache = map[wire.LineageNode]resolvedEntry{issue: {
+			resolved: wire.LineageResolved{Title: "Fix it"}, ok: true, at: at}}
+		d.resolveMu.Unlock()
+	}
+	d.resolveLookup = func(context.Context, string, forgeRepo, string, int) (wire.LineageResolved, error) {
+		put(time.Now())
+		return wire.LineageResolved{}, errNoForgeInTests
+	}
+	d.resolveNode(context.Background(), issue)
+	d.resolveMu.Lock()
+	e := d.resolveCache[issue]
+	d.resolveMu.Unlock()
+	if !e.ok || e.resolved.Title != "Fix it" {
+		t.Fatalf("the newer answer went: %+v", e)
+	}
+
+	put(time.Now().Add(-time.Hour))
+	d.resolveLookup = func(context.Context, string, forgeRepo, string, int) (wire.LineageResolved, error) {
+		return wire.LineageResolved{}, errNoForgeInTests
+	}
+	d.resolveNode(context.Background(), issue)
+	d.resolveMu.Lock()
+	e = d.resolveCache[issue]
+	d.resolveMu.Unlock()
+	if e.ok {
+		t.Fatalf("an answer from before the ask stayed: %+v", e)
+	}
+}
