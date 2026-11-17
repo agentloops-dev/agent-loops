@@ -50,6 +50,27 @@ test("a draft, conflicts and auto-merge take Merge away", () => {
   assert.equal(auto.merges, false);
 });
 
+test("Approve is Approved once the person's own review approved it, and is gone on the person's own pull request (#5804)", () => {
+  const asked = p.mergeBox(pr({ review: "review_required", author: "alexec-agents[bot]" }, { viewer: "alexec", reviewers: [{ login: "alexec", state: "pending" }] }));
+  assert.equal(asked.approves, true);
+  assert.equal(asked.approved, false);
+  assert.equal(p.approveWords(asked.approved), "Approve");
+  const mine = p.mergeBox(pr({ review: "approved", author: "alexec-agents[bot]" }, { viewer: "Alexec", reviewers: [{ login: "alexec", state: "approved" }] }));
+  assert.equal(mine.approves, true);
+  assert.equal(mine.approved, true);
+  assert.equal(p.approveWords(mine.approved), "Approved");
+  // Another reviewer's approval is not the person's.
+  const other = p.mergeBox(pr({ review: "approved", author: "sam" }, { viewer: "alexec", reviewers: [{ login: "kim", state: "approved" }] }));
+  assert.equal(other.approved, false);
+  // With no viewer from an earlier daemon, Approve as before.
+  assert.equal(p.mergeBox(pr({ review: "approved" }, { reviewers: [{ login: "alexec", state: "approved" }] })).approved, false);
+  const own = p.mergeBox(pr({ author: "alexec" }, { viewer: "alexec" }));
+  assert.equal(own.approves, false);
+  assert.equal(own.ownPull, true);
+  assert.equal(p.ownPullWords, "You opened this pull request, so you cannot approve it.");
+  assert.equal(p.mergeBox(pr({ author: "alexec", draft: true }, { viewer: "alexec" })).ownPull, false);
+});
+
 test("only the actions the forge offers show (#4361); a merged one has no box", () => {
   assert.equal(p.mergeBox(pr({ state: "merged" })), undefined);
   const none = p.mergeBox(pr({}, { actions: ["comment"], checks: [check("b", "failing")] }));

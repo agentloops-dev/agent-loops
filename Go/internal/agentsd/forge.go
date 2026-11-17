@@ -610,9 +610,27 @@ func (d *Daemon) forgeItem(ctx context.Context, kind string, r wire.ForgeItemReq
 		return wire.ForgeItemDetail{}, forgeCannotErr(method, f, err)
 	}
 	out.Actions = f.Caps().itemActions(out)
+	if kind == lineage.KindPR {
+		out.Viewer = d.forgeViewer(f.Name())
+	}
 	d.forgeRemember(string(key), forgeAnswer{item: &out})
 	d.resolvedFromForge([]wire.ForgeItem{out.Item})
 	return out, nil
+}
+
+// forgeViewer is the login the person's connection to the forge named name has (#5804): the
+// one forge/approve reviews as, so a client knows which reviewer and which author is the
+// person. nil where the connection does not say it.
+func (d *Daemon) forgeViewer(name string) *string {
+	switch name {
+	case connections.GitHub, connections.GitLab, connections.Forgejo, connections.Bitbucket, connections.AzureDevOps:
+	default:
+		return nil
+	}
+	if c, ok := d.storedConnection(name); ok && c.Login != "" {
+		return &c.Login
+	}
+	return nil
 }
 
 // gitlabOf is the connected GitLab, the project of repo there and a folder on it: a node names
