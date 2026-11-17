@@ -42,8 +42,11 @@ var oneMachineWorkflows = map[string]bool{dailySummaryID: true, dailyChecksID: t
 
 func summariesDir(home string) string { return filepath.Join(home, ".agents", "summaries") }
 
-// summaryFiles is the saved summaries, newest first.
+// summaryFiles is the saved summaries, newest first; none with no home (#5815).
 func summaryFiles(home string) []string {
+	if home == "" {
+		return nil
+	}
 	entries, _ := os.ReadDir(summariesDir(home))
 	var out []string
 	for _, e := range entries {
@@ -430,6 +433,10 @@ func (d *Daemon) saveSummary(id wire.UUID, markdown, headline string, at time.Ti
 		return "", Invalid("Nothing was saved: the page is over %d KB. Keep it short.", summaryBytes>>10)
 	}
 	home := d.personalHome()
+	if home == "" {
+		// summariesDir would be relative: the daemon's working folder (#5815).
+		return "", &Error{Message: "The summary was not saved: " + errNoPersonalHome.Error()}
+	}
 	dir := summariesDir(home)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", &Error{Message: "The summary was not saved: " + err.Error()}

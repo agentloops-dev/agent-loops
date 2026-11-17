@@ -27,7 +27,8 @@ const suggestLeadsMost = 3
 // suggestLeadsPlans is how many plans are read at once, as workFeaturesPlans.
 const suggestLeadsPlans = 4
 
-// dismissedLeadsFile is the person's list of dismissed epics, under their home's .agents.
+// dismissedLeadsFile is the person's list of dismissed epics, under their home's .agents, or
+// in the root when the daemon has no personal home (a scratch root, #5815).
 const dismissedLeadsFile = "dismissed-leads.json"
 
 // dismissedLead is an epic's progress when it was dismissed: it comes back when that changes
@@ -49,8 +50,13 @@ func (d *Daemon) registerWorkSuggestLeads() {
 // suggestedLeadMu keeps the dismissed list's read and write whole.
 var suggestedLeadMu sync.Mutex
 
+// dismissedLeadsPath is never relative: with no personal home it was the daemon's working
+// folder, and a scratch daemon wrote the list into the checkout it started from (#5815).
 func (d *Daemon) dismissedLeadsPath() string {
-	return filepath.Join(d.personalHome(), ".agents", dismissedLeadsFile)
+	if home := d.personalHome(); home != "" {
+		return filepath.Join(home, ".agents", dismissedLeadsFile)
+	}
+	return filepath.Join(d.Store.Loc.Root, dismissedLeadsFile)
 }
 
 // readDismissedLeads is the dismissed list; a file that is missing or unreadable is an empty one.
