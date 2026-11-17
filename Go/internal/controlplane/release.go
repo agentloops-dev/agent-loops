@@ -8,8 +8,8 @@ import (
 )
 
 // sendRelease is machine/release, at each join of a machine that says host.update/1 (#2178):
-// the release this control plane names is its own version, so a Mac's Agents Host updates
-// itself to what the organisation runs. A development build names nothing.
+// the release this control plane names is its own version, so a Mac's or a Linux machine's
+// host updates itself to what the organisation runs (#5788). A development build names nothing.
 func (s *Service) sendRelease(host string) {
 	version := s.cfg.Version
 	if version == "" || strings.ContainsAny(version, "-+") {

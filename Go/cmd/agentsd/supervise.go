@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
 )
@@ -22,7 +23,9 @@ import (
 // the host by its daemon.lock pid, still stop it. Anything else (a panic's status 2, a signal such
 // as SIGKILL or SIGSEGV) is a crash: it waits 1 s, doubling to 60 s, and starts the host again.
 // After 5 minutes up, the wait goes back to 1 s. Its own pid is in the root's supervise.lock;
-// SIGTERM to it stops the host and then the supervisor.
+// SIGTERM to it stops the host and then the supervisor. A host that ends with
+// agentsd.ExitRestart has a self-update in bin/current (#5788): the supervisor starts
+// itself again from there, so the supervisor is the new copy too.
 func supervise(args []string) {
 	root := parse(args).root
 	// The host's output at each start: the log as it is then (the host opens its own,
@@ -37,11 +40,18 @@ func supervise(args []string) {
 	defer os.Remove(lock)
 
 	self, _ := os.Executable()
+	// The host is bin/current where there is one (#5788): a self-update points it at the
+	// new copy, and a copy that did not stay up points it back.
+	host := self
+	current := filepath.Join(filepath.Dir(self), "current")
+	if fi, err := os.Lstat(current); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		host = current
+	}
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 	wait, starts := time.Second, 0
 	for {
-		cmd := exec.Command(self, args...)
+		cmd := exec.Command(host, args...)
 		// The host stamps its own lines; a panic's stack goes in as it is.
 		w := out()
 		cmd.Stdout, cmd.Stderr = w, w
@@ -69,7 +79,18 @@ func supervise(args []string) {
 		}
 		var ee *exec.ExitError
 		what := err.Error()
-		if errors.As(err, &ee) {
+		if errors.As(err, &ee) && ee.ExitCode() == agentsd.ExitRestart && host == current {
+			// A self-update is in place: the supervisor starts again as the new copy too,
+			// which starts the host.
+			log.Printf("supervise: agentsd stopped to run its update; the supervisor starts again from %s", current)
+			_ = os.Remove(lock)
+			signal.Stop(sigs)
+			err := syscall.Exec(current, append([]string{current, "supervise"}, args...), os.Environ()) //nolint:gosec // G204: this host's own bin/current
+			log.Printf("supervise: could not start again from %s: %v", current, err)
+			_ = os.WriteFile(lock, []byte(fmt.Sprint(os.Getpid())), 0o600)
+			signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
+			what = "a restart for its update"
+		} else if errors.As(err, &ee) {
 			if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() && ws.Signal() == syscall.SIGTERM {
 				log.Printf("supervise: agentsd was sent SIGTERM; the supervisor ends too")
 				return
