@@ -52,6 +52,9 @@ type forgeBitbucket interface {
 	Compare(ctx context.Context, repo, base, head string) ([]bitbucketmcp.Commit, error)
 	CommitPR(ctx context.Context, repo, sha string) (int, error)
 	CostComment(ctx context.Context, repo string, number int, id, mark, body string) (string, error)
+	// An issue's priority and its state on hold (#6091).
+	SetPriority(ctx context.Context, repo string, number int, priority string) error
+	SetHold(ctx context.Context, repo string, number int, on bool) error
 }
 
 // bitbucketNoAutoMerge is why a merge when checks pass is refused: Bitbucket's API has none.
@@ -115,6 +118,7 @@ func (bitbucketForge) Images() forgeImageHost { return bitbucketImages{} }
 func (bitbucketForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues: true, PRs: true,
+		Priority: true, Hold: true,
 		Issue:       forgeActions{Comment: true, Label: true, Close: true, Reopen: true},
 		PR:          forgeActions{Comment: true, Close: true, Merge: true, Approve: true, RequestChanges: true, Rerun: true, Log: true, Diff: true, Ready: true},
 		Avatars:     true,
@@ -532,4 +536,22 @@ func bitbucketFailedRuns(ctx context.Context, bb forgeBitbucket, repo string, nu
 func bitbucketStart(i wire.ForgeItem, n int) *wire.ForgeStart {
 	return &wire.ForgeStart{Prompt: fmt.Sprintf("#%d: %s\n\nWork on this Bitbucket issue: %s", n, i.Title, deref(i.URL)),
 		Labels: []string{"#" + strconv.Itoa(n)}, Worktree: optional(strconv.Itoa(n) + " " + i.Title)}
+}
+
+// SetPriority is the issue's priority field, and SetHold its state on hold (#6091): Bitbucket's
+// labels are its kinds and components, so it has no label for either.
+func (b bitbucketForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	bb, named, _, err := b.of(ctx, "forge/priority", r)
+	if err != nil {
+		return err
+	}
+	return bb.SetPriority(ctx, named, r.Number, priority)
+}
+
+func (b bitbucketForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	bb, named, _, err := b.of(ctx, "forge/hold", r)
+	if err != nil {
+		return err
+	}
+	return bb.SetHold(ctx, named, r.Number, on)
 }

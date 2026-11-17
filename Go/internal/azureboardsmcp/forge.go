@@ -916,3 +916,26 @@ func (f *RealBoards) SetBlockedBy(ctx context.Context, project string, id, block
 	}
 	return f.change(ctx, project, id, patch{{"op": "test", "path": "/rev", "value": w.Rev}, {"op": "remove", "path": "/relations/" + itoa(at)}})
 }
+
+// boardsPriorities are the Priority field's values for each priority (#6091): high is 1,
+// medium and none are 2 (the default, which the read takes as none), and low is 3.
+var boardsPriorities = map[string]int{"high": 1, "medium": 2, "": 2, "low": 3}
+
+// SetPriority sets a work item's Priority field: high, medium, low, or "" for none (#6091).
+// has is false, with no write, when its type has no Priority field: the caller writes the tags
+// then.
+func (f *RealBoards) SetPriority(ctx context.Context, project string, id int, priority string) (has bool, err error) {
+	value, ok := boardsPriorities[priority]
+	if !ok {
+		return false, &BoardsError{Kind: Failed, Message: fmt.Sprintf("%q is not a priority", priority)}
+	}
+	project = strings.ToLower(project)
+	w, err := f.read(ctx, project, id)
+	if err != nil {
+		return false, err
+	}
+	if _, ok := w.Fields[fieldPriority]; !ok {
+		return false, nil
+	}
+	return true, f.change(ctx, project, id, patch{{"op": "add", "path": "/fields/" + fieldPriority, "value": value}})
+}

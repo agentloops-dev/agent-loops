@@ -341,3 +341,23 @@ func (b *RealBitbucket) PRDiff(ctx context.Context, repo string, number int) (ma
 	return map[string]any{"repo": repo, "number": number, "url": strings.TrimSuffix(p.Links.HTML.Href, "/") + "/diff", "sha": p.Source.hash(),
 		"files": files, "cut": cut}, nil
 }
+
+// bitbucketPriorities are an issue's priority for each priority (#6091): high is critical (a
+// blocker is above it), medium and none are major (the default, which the read takes as
+// none), and low is minor.
+var bitbucketPriorities = map[string]string{"high": "critical", "medium": "major", "": "major", "low": "minor"}
+
+// SetPriority sets an issue's priority: high, medium, low, or "" for none (#6091).
+func (b *RealBitbucket) SetPriority(ctx context.Context, repo string, number int, priority string) error {
+	p, ok := bitbucketPriorities[priority]
+	if !ok {
+		return &BitbucketError{Kind: Failed, Message: fmt.Sprintf("%q is not a priority", priority)}
+	}
+	return b.send(ctx, http.MethodPut, fmt.Sprintf("%s/issues/%d", repoPath(repo), number), map[string]any{"priority": p}, nil)
+}
+
+// SetHold puts an issue in the state on hold, or with on false back to open (#6091).
+func (b *RealBitbucket) SetHold(ctx context.Context, repo string, number int, on bool) error {
+	return b.send(ctx, http.MethodPut, fmt.Sprintf("%s/issues/%d", repoPath(repo), number),
+		map[string]any{"state": map[bool]string{true: "on hold", false: "open"}[on]}, nil)
+}

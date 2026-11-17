@@ -5960,7 +5960,7 @@ type ForgeBoardsRequest struct {
 	Folder *string `json:"folder,omitzero"`
 }
 
-// What one forge on a list's page fills (#4329, #4361), so a client hides what it does not: issues and pulls say it has them; labelColors that its labels have a #rrggbb colour; avatars that its items have authorAvatar; stateReason that its closed issues have stateReason. createdAt that its items have createdAt, and closedAt that its closed and merged items have closedAt; children, linkedPulls and events that an item's read has them (#4373); total that it counts a list's items, for ForgeList.total (#4396); releases that it has releases, for forge/releases and forge/release (#4426); a pull request's fields (#4409): branches that it has headRef and baseRef, mergedBy and mergeCommit that a merged one says them, size that its read has additions, deletions and commits, reviewers and closes that its read has them, and checkTimes that its checks have startedAt and finishedAt; each is absent from an earlier daemon, which has none. commentCount says how to read ForgeItem.comments: exact; capped at commentsMost (show 50+ there); or detail, only on an item's own page (hide it on the row).
+// What one forge on a list's page fills (#4329, #4361), so a client hides what it does not: issues and pulls say it has them; labelColors that its labels have a #rrggbb colour; avatars that its items have authorAvatar; stateReason that its closed issues have stateReason. createdAt that its items have createdAt, and closedAt that its closed and merged items have closedAt; children, linkedPulls and events that an item's read has them (#4373); total that it counts a list's items, for ForgeList.total (#4396); releases that it has releases, for forge/releases and forge/release (#4426); a pull request's fields (#4409): branches that it has headRef and baseRef, mergedBy and mergeCommit that a merged one says them, size that its read has additions, deletions and commits, reviewers and closes that its read has them, and checkTimes that its checks have startedAt and finishedAt; priority and hold that forge/priority and forge/hold set an issue's priority and on hold, in the forge's own field or else by the labels (#6091); each is absent from an earlier daemon, which has none. commentCount says how to read ForgeItem.comments: exact; capped at commentsMost (show 50+ there); or detail, only on an item's own page (hide it on the row).
 type ForgeCapabilities struct {
 	Forge string `json:"forge"`
 
@@ -6001,6 +6001,10 @@ type ForgeCapabilities struct {
 	Closes *bool `json:"closes,omitzero"`
 
 	CheckTimes *bool `json:"checkTimes,omitzero"`
+
+	Priority *bool `json:"priority,omitzero"`
+
+	Hold *bool `json:"hold,omitzero"`
 
 	CommentCount ForgeCommentCount `json:"commentCount"`
 
@@ -6170,6 +6174,13 @@ type ForgeFeaturesRequest struct {
 
 	// A board's url, from forge/boards (#3282): only the epics on that board.
 	Board *string `json:"board,omitzero"`
+}
+
+// forge/hold (#6091): put an issue on hold (on) or take it off hold. The daemon writes the forge's own field where it has one (Bitbucket: the state on hold; Jira: a status named On hold where the workflow has one), else the label on hold.
+type ForgeHoldRequest struct {
+	Node LineageNode `json:"node"`
+
+	On bool `json:"on"`
 }
 
 // forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL. mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes.
@@ -6524,6 +6535,13 @@ type ForgePlanStep struct {
 	Step int64 `json:"step"`
 
 	Nodes []LineageNode `json:"nodes"`
+}
+
+// forge/priority (#6091): set an issue's priority to high, medium or low, or to none when priority is absent. The daemon writes the forge's own field where it has one (#5747: Linear, Jira, GitHub's Priority issue field, Bitbucket, Azure Boards), else the label priority:<priority>, and takes off the other two.
+type ForgePriorityRequest struct {
+	Node LineageNode `json:"node"`
+
+	Priority *string `json:"priority,omitzero"`
 }
 
 // A parent issue's children (#3267): done are closed, of total.

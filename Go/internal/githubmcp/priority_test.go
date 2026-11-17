@@ -95,3 +95,48 @@ func TestSearchWithoutIssueFields(t *testing.T) {
 		s.Close()
 	}
 }
+
+// #6091: the write finds the issue and the repo's Priority field, sets the option of the
+// priority (High for high, Urgent where there is no High), clears it for none, and says there
+// is no field where the repo has none or the GitHub refuses issue fields.
+func TestSetPriorityField(t *testing.T) {
+	for _, c := range []struct {
+		name, fields, priority string
+		has                    bool
+		want                   string
+	}{
+		{"high", `{"id":"F1","name":"Priority","options":[{"id":"O0","name":"Urgent"},{"id":"O1","name":"High"},{"id":"O3","name":"Low"}]}`, "high", true, "set F1 O1"},
+		{"urgent", `{"id":"F1","name":"priority","options":[{"id":"O0","name":"Urgent"}]}`, "high", true, "set F1 O0"},
+		{"none", `{"id":"F1","name":"Priority","options":[]}`, "", true, "clear F1"},
+		{"no field", `{},{"id":"F2","name":"Effort","options":[{"id":"O1","name":"High"}]}`, "high", false, ""},
+		{"no issue fields", "refuse", "high", false, ""},
+	} {
+		var wrote []string
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				Query     string         `json:"query"`
+				Variables map[string]any `json:"variables"`
+			}
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &req)
+			switch {
+			case strings.Contains(req.Query, "setIssueFieldValue"):
+				wrote = append(wrote, "set "+req.Variables["field"].(string)+" "+req.Variables["option"].(string))
+				_, _ = io.WriteString(w, `{"data":{"setIssueFieldValue":{"issue":{"number":5}}}}`)
+			case strings.Contains(req.Query, "deleteIssueFieldValue"):
+				wrote = append(wrote, "clear "+req.Variables["field"].(string))
+				_, _ = io.WriteString(w, `{"data":{"deleteIssueFieldValue":{"success":true}}}`)
+			case c.fields == "refuse":
+				_, _ = io.WriteString(w, `{"errors":[{"message":"Field 'issueFields' doesn't exist on type 'Repository'"}]}`)
+			default:
+				_, _ = io.WriteString(w, `{"data":{"repository":{"issue":{"id":"I5"},"issueFields":{"nodes":[`+c.fields+`]}}}}`)
+			}
+		}))
+		g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
+		has, err := g.SetPriorityField(context.Background(), "o/r", 5, c.priority)
+		if err != nil || has != c.has || strings.Join(wrote, ";") != c.want {
+			t.Errorf("%s: has %v, %v, wrote %q, want %v %q", c.name, has, err, wrote, c.has, c.want)
+		}
+		s.Close()
+	}
+}

@@ -37,6 +37,7 @@ func (gitlabForge) Images() forgeImageHost { return gitlabImages{} }
 func (gitlabForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues: true, PRs: true,
+		Priority: true, Hold: true,
 		Issue: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true},
 		PR: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, Merge: true, AutoMerge: true, Approve: true,
 			Rerun: true, Log: true, Diff: true, CancelAutoMerge: true, Ready: true},
@@ -458,4 +459,13 @@ func gitlabStart(i wire.ForgeItem) *wire.ForgeStart {
 		return nil
 	}
 	return numberedStart(fmt.Sprintf("#%d: %s\n\nWork on this GitLab issue: %s", n, i.Title, deref(i.URL)), n, i.Title)
+}
+
+// SetPriority and SetHold are the labels: GitLab has no field for either (#6091).
+func (g gitlabForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	return labelPriority(ctx, g, r, priority)
+}
+
+func (g gitlabForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	return labelHold(ctx, g, r, on)
 }

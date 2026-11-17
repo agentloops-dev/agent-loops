@@ -5546,9 +5546,10 @@ export interface ForgeBoardsRequest {
  * (#4426); a pull request's fields (#4409): branches that it has headRef and baseRef, mergedBy and
  * mergeCommit that a merged one says them, size that its read has additions, deletions and commits,
  * reviewers and closes that its read has them, and checkTimes that its checks have startedAt and
- * finishedAt; each is absent from an earlier daemon, which has none. commentCount says how to read
- * ForgeItem.comments: exact; capped at commentsMost (show 50+ there); or detail, only on an item's
- * own page (hide it on the row).
+ * finishedAt; priority and hold that forge/priority and forge/hold set an issue's priority and on
+ * hold, in the forge's own field or else by the labels (#6091); each is absent from an earlier
+ * daemon, which has none. commentCount says how to read ForgeItem.comments: exact; capped at
+ * commentsMost (show 50+ there); or detail, only on an item's own page (hide it on the row).
  */
 export interface ForgeCapabilities {
   forge: string;
@@ -5571,6 +5572,8 @@ export interface ForgeCapabilities {
   reviewers?: boolean;
   closes?: boolean;
   checkTimes?: boolean;
+  priority?: boolean;
+  hold?: boolean;
   commentCount: ForgeCommentCount;
   commentsMost?: number;
 }
@@ -5751,6 +5754,16 @@ export interface ForgeFeaturesRequest {
   folder?: string;
   /** A board's url, from forge/boards (#3282): only the epics on that board. */
   board?: string;
+}
+
+/**
+ * forge/hold (#6091): put an issue on hold (on) or take it off hold. The daemon writes the forge's
+ * own field where it has one (Bitbucket: the state on hold; Jira: a status named On hold where the
+ * workflow has one), else the label on hold.
+ */
+export interface ForgeHoldRequest {
+  node: LineageNode;
+  on: boolean;
 }
 
 /**
@@ -6139,6 +6152,17 @@ export interface ForgePlanRequest {
 export interface ForgePlanStep {
   step: number;
   nodes: LineageNode[];
+}
+
+/**
+ * forge/priority (#6091): set an issue's priority to high, medium or low, or to none when priority
+ * is absent. The daemon writes the forge's own field where it has one (#5747: Linear, Jira,
+ * GitHub's Priority issue field, Bitbucket, Azure Boards), else the label priority:<priority>, and
+ * takes off the other two.
+ */
+export interface ForgePriorityRequest {
+  node: LineageNode;
+  priority?: "high" | "medium" | "low";
 }
 
 /** A parent issue's children (#3267): done are closed, of total. */
@@ -16989,6 +17013,7 @@ export interface Methods {
   "forge/comment": { params: ForgeCommentRequest; result: ForgeDone };
   "forge/diff": { params: ForgeNodeRequest; result: ForgeDiff };
   "forge/features": { params: ForgeFeaturesRequest; result: ForgeFeatures };
+  "forge/hold": { params: ForgeHoldRequest; result: ForgeDone };
   "forge/image": { params: ForgeImageRequest; result: ForgeImage };
   "forge/issue": { params: ForgeItemRequest; result: ForgeItemDetail };
   "forge/issues": { params: ForgeListRequest; result: ForgeList };
@@ -16999,6 +17024,7 @@ export interface Methods {
   "forge/merge": { params: ForgeMergeRequest; result: ForgeDone };
   "forge/next": { params: ForgeNextRequest; result: ForgeNext };
   "forge/plan": { params: ForgePlanRequest; result: ForgePlan };
+  "forge/priority": { params: ForgePriorityRequest; result: ForgeDone };
   "forge/pull": { params: ForgeItemRequest; result: ForgeItemDetail };
   "forge/pulls": { params: ForgeListRequest; result: ForgeList };
   "forge/ready": { params: ForgeNodeRequest; result: ForgeDone };
@@ -17471,6 +17497,7 @@ export const MethodTarget = {
   "forge/comment": "host",
   "forge/diff": "host",
   "forge/features": "host",
+  "forge/hold": "host",
   "forge/image": "host",
   "forge/issue": "host",
   "forge/issues": "host",
@@ -17481,6 +17508,7 @@ export const MethodTarget = {
   "forge/merge": "host",
   "forge/next": "host",
   "forge/plan": "host",
+  "forge/priority": "host",
   "forge/pull": "host",
   "forge/pulls": "host",
   "forge/ready": "host",
@@ -18257,7 +18285,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeBoards: { required: ["boards"], optional: [] },
   ForgeBoardsAll: { required: ["boards", "unreached", "notAsked"], optional: [] },
   ForgeBoardsRequest: { required: [], optional: ["folder"] },
-  ForgeCapabilities: { required: ["forge", "issues", "pulls", "labelColors", "avatars", "stateReason", "commentCount"], optional: ["createdAt", "closedAt", "children", "linkedPulls", "events", "total", "releases", "branches", "mergedBy", "mergeCommit", "size", "reviewers", "closes", "checkTimes", "commentsMost"] },
+  ForgeCapabilities: { required: ["forge", "issues", "pulls", "labelColors", "avatars", "stateReason", "commentCount"], optional: ["createdAt", "closedAt", "children", "linkedPulls", "events", "total", "releases", "branches", "mergedBy", "mergeCommit", "size", "reviewers", "closes", "checkTimes", "priority", "hold", "commentsMost"] },
   ForgeCheck: { required: ["name", "state"], optional: ["url", "startedAt", "finishedAt"] },
   ForgeCloseRequest: { required: ["node"], optional: ["reopen", "transition", "reason"] },
   ForgeComment: { required: ["author", "body", "at"], optional: ["avatar", "url", "bot"] },
@@ -18270,6 +18298,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeFeature: { required: ["name", "epics", "open"], optional: ["color", "issues", "refs", "waiting", "updatedAt"] },
   ForgeFeatures: { required: ["features"], optional: ["approvals", "errors"] },
   ForgeFeaturesRequest: { required: [], optional: ["folder", "board"] },
+  ForgeHoldRequest: { required: ["node", "on"], optional: [] },
   ForgeImage: { required: ["mimeType", "data"], optional: [] },
   ForgeImageRequest: { required: ["url"], optional: [] },
   ForgeItem: { required: ["node", "title", "state", "labels", "assignees", "updatedAt", "comments"], optional: ["stateReason", "status", "url", "folder", "author", "authorAvatar", "milestone", "milestoneDue", "priority", "onHold", "createdAt", "closedAt", "draft", "checks", "review", "mergeable", "autoMerge", "headRef", "baseRef", "mergedBy", "mergeCommit", "parent", "level", "feature", "progress", "standing"] },
@@ -18297,6 +18326,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgePlanChild: { required: ["item", "blockedBy", "step"], optional: ["blockedOutside"] },
   ForgePlanRequest: { required: ["node"], optional: [] },
   ForgePlanStep: { required: ["step", "nodes"], optional: [] },
+  ForgePriorityRequest: { required: ["node"], optional: ["priority"] },
   ForgeProgress: { required: ["done", "total"], optional: [] },
   ForgeRelease: { required: ["node", "forge", "repo", "tag", "name", "draft", "prerelease", "latest", "assets", "url"], optional: ["folder", "body", "createdAt", "publishedAt", "author", "authorAvatar"] },
   ForgeReleaseDetail: { required: ["release", "commits", "pulls"], optional: ["previous", "compareUrl"] },
