@@ -425,6 +425,9 @@ func (d *Daemon) fire(fr fireRequest) {
 			hf.DueAt = &due
 		}
 		switch {
+		case refused.Queued != nil && fr.fromQueue:
+			// Taken from the queue's front as another run began: it keeps its place.
+			st.QueuedFires = append([]heldFire{hf}, st.QueuedFires...)
 		case refused.Queued != nil:
 			st.QueuedFires = append(st.QueuedFires, hf)
 		case refused.CoolingDown != nil, refused.OutsideHours != nil:
@@ -907,6 +910,13 @@ func (d *Daemon) releaseQueued(folder, id string) {
 		d.workflowMu.Unlock()
 		return
 	}
+	// A changed file waits for its approval (#6035), and so do the fires it holds and
+	// queues: released now, fire refuses each as awaiting approval and it is lost. The
+	// clock releases them once the change is approved.
+	if awaiting, _ := d.approvalOf(folder, id, f); awaiting != nil {
+		d.workflowMu.Unlock()
+		return
+	}
 	var next *heldFire
 	fromQueue := false
 	if len(st.QueuedFires) > 0 {
@@ -1031,7 +1041,9 @@ func (d *Daemon) workflowTickOnce(at time.Time) {
 		bot := d.isBot()
 		for folder, ws := range d.workflowFiles {
 			for id, f := range ws {
-				if st := d.stateLocked(folder, id, false); st != nil && st.HeldFire != nil {
+				// A held fire, or a queue that waited for an approval with no run left to
+				// release it (#6035).
+				if st := d.stateLocked(folder, id, false); st != nil && (st.HeldFire != nil || len(st.QueuedFires) > 0) {
 					held[workflowKey(folder, id)] = true
 				}
 				w := f.wf
