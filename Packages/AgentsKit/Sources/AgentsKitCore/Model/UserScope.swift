@@ -423,7 +423,6 @@ public enum UserScopeWords {
     public static let reveal = "Reveal"
     public static let hide = "Hide"
     public static let copy = "Copy"
-    public static let copyValue = "Copy Value"
     /// How long a value shows, and how long until the clipboard is cleared of it.
     public static let shownSeconds = 30
     public static let clipboardSeconds = 90
@@ -440,8 +439,6 @@ public enum UserScopeWords {
         (part.map { "Copied \(partWords($0))." } ?? "Copied.") + " The clipboard clears in \(clipboardSeconds) s."
     }
 
-    /// Ask before use, on a row a person can reveal: it holds only an agent's use (#4016).
-    public static let asksForAgents = "Asks before use: for agents. You reveal and copy at once."
     public static let noCopyYet = "This app has no copy yet. It gets one when another app of yours is online."
     public static let revealNeedsNewerPlane = "This control plane cannot show or copy a secret yet. Update it."
     public static let didNotOpen = "This app's copy did not open. Replace the secret to seal it again."
@@ -534,7 +531,6 @@ public enum UserScopeWords {
 
     // Card secrets (#3531).
     public static let addCard = "Add a Card…"
-    public static let cardKind = "Card"
     /// Where a person adds a card: what a card for agents must be.
     public static let cardRule = "Add only a card that has a spend limit, such as a Privacy.com card. A card locked to one merchant or category is safer. "
         + "An agent fills it into a page with fill_secret and never sees it. It stays sealed on your own machines."

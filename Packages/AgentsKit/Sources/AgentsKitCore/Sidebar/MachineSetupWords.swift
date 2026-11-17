@@ -128,7 +128,4 @@ public enum MachineSetupWords {
     public static func foldedAway(_ setup: DaemonAPI.MachineSetup, now: Date = Date()) -> Bool {
         foldedLine(setup, now: now) != nil
     }
-
-    /// The notice's words when it is ready.
-    public static func readyNotice(name: String) -> String { "\(name) is ready" }
 }

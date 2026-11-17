@@ -83,7 +83,6 @@ public extension DaemonAPI.Method {
 public enum SecretOfferWords {
     public static let keepYours = "Keep Yours"
     public static let useTheAgents = "Use the Agent's"
-    public static let offersLabel = "Secrets saved by agents"
     /// On the Remote, which does not seal: where the person chooses.
     public static let chooseElsewhere = "Choose Keep Yours or Use the Agent's in Agents on your Mac or in the browser."
 
