@@ -104,6 +104,9 @@ gh issue create --label bug --title "<process> crashes: <exception or what it wa
   --body-file "$OUT/new-<signature>.md"
 ```
 
+Add a priority (AGENTS.md, "Set a priority when you file", #5692): `priority:high` when the crash
+blocks a release or Alex says so, else `priority:medium` (a crash is core usability, #2800).
+
 Titles say what happened in plain words, like *agentsd crashes on an out-of-range turn
 index in AgentStore.turns*. Keep the `Crash signature:` line at the end of every body and
 comment: it is how the next run knows the crash.
