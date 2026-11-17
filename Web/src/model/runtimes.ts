@@ -387,13 +387,30 @@ export function agentsHolding(agents: readonly Agent[], account: AccountProfile)
 /** A time on the Runtimes page, such as 14:05. */
 export const runtimeTime = (wire: number) => fromWireDate(wire as never).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+/** Why an allowance is out, after the times. The words match the Mac and the Remote. */
+function outWhy(why: string | undefined): string {
+  switch (why) {
+    case "allowanceSpent": return " · allowance spent";
+    case "overage": return " · paid extra usage began";
+    case "creditUsedUp": return " · credit used up";
+    case "creditExpired": return " · free credit expired";
+    case "rateLimitPersisted": return " · still rate limited";
+    case "runtimeFailed": return " · runtime failed";
+    default: return "";
+  }
+}
+
 /** An allowance's state, as the Runtimes page says it. */
 export function allowanceLine(state: AllowanceState): string {
   if ("available" in state.status) return "Available";
   if ("rateLimited" in state.status) return `Rate limited · trying again at ${runtimeTime(state.status.rateLimited.until)}`;
   const out = state.status.out;
-  return out.until ? `Out · reset ${runtimeTime(out.until)}${out.retryAfter ? ` · checking after ${runtimeTime(out.retryAfter)}` : ""}`
-    : `Out since ${runtimeTime(state.since)}${out.retryAfter ? ` · checking after ${runtimeTime(out.retryAfter)}` : ""}`;
+  const retry = out.retryAfter ? ` · checking after ${runtimeTime(out.retryAfter)}` : "";
+  if (out.until) return `Out · reset ${runtimeTime(out.until)}${retry}${outWhy(out.why)}`;
+  // These two lines already name the reason.
+  if (out.why === "creditUsedUp") return out.retryAfter ? `Credit used up${retry}` : "Credit used up";
+  if (out.why === "creditExpired" && !out.retryAfter) return "Free credit expired";
+  return `Out since ${runtimeTime(state.since)}${retry}${outWhy(out.why)}`;
 }
 
 /**

@@ -180,6 +180,12 @@ test("account words: a choice says it is not signed in, not usable or out (#2265
   assert.equal(r.choiceNote(work, row({ available: {} }), now), "a@b.c");
   assert.equal(r.choiceNote(work, row({ available: {} }, { unusable: "no key" }), now), "Not usable: no key");
   assert.match(r.choiceNote(work, row({ out: {} }), now), /^Out since /);
+  const spent = r.allowanceLine({ status: { out: { why: "allowanceSpent", retryAfter: 1 } }, since: 0 });
+  assert.match(spent, /^Out since /);
+  assert.match(spent, /allowance spent/);
+  assert.match(r.allowanceLine({ status: { out: { why: "overage", until: 1 } }, since: 0 }), /paid extra usage began/);
+  assert.equal(r.allowanceLine({ status: { out: { why: "creditUsedUp" }, since: 0 } }), "Credit used up");
+  assert.equal(r.allowanceLine({ status: { out: { why: "creditExpired" }, since: 0 } }), "Free credit expired");
   assert.equal(r.choiceNote(undefined, undefined, now), undefined);
 });
 

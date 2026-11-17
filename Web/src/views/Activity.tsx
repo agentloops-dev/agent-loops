@@ -19,7 +19,7 @@ import { Modal } from "./Modal";
 import { folderKey, folderPath } from "../model/groups";
 import { filteredTo, firstOf, nameLimit } from "../model/machineNames";
 import { ShowAll } from "./ShowAll";
-import { accountChoices, accountRows, accountState, agentsHolding, allowanceLine, allowancePace, allowancePaceLine, pastWeeksLine, defaultAccountName, isOrgRow, orgAllowanceLine, ownRow, ownSignInID, reachesFoot, reachesTheModelBy, machineSignInLine, offersMachineSignIn, removeMessage, rowTitle, runtimeTime, runtimesHint, runtimesReadAt, machinesSummary, machinesWords, setupRuntimes, signInOnTheMac, type MachinesPart, type SetupRuntime } from "../model/runtimes";
+import { accountChoices, accountRows, accountState, agentsHolding, allowanceLine, allowancePace, allowancePaceLine, pastWeeksLine, defaultAccountName, isOrgRow, orgAllowanceLine, ownRow, ownSignInID, reachesFoot, reachesTheModelBy, machineSignInLine, offersMachineSignIn, removeMessage, rowTitle, runtimeTime, runtimesHint, runtimesReadAt, machinesSummary, machinesWords, setupRuntimes, signInOnTheMac, unavailableReason, type MachinesPart, type SetupRuntime } from "../model/runtimes";
 import { LastUpdate } from "./LastUpdate";
 import { signInRuntime } from "./RuntimeSignInDialog";
 import { limitsHint } from "../model/onTheMac";
@@ -238,6 +238,14 @@ export function availabilityWords(availability: RuntimeAvailability): string {
   return `Install failed: ${availability.installFailed.reason}`;
 }
 
+/** The runtime's own row. A runtime that cannot start says why, also when an allowance row would say Available. */
+function runtimeRowLine(status: RuntimeStatus, allowance: { unusable?: string; state: AllowanceState } | undefined,
+  short: (line: string, state: AllowanceState, out: boolean) => string, isAllowanceOut: boolean): string {
+  if (allowance?.unusable) return `Not usable: ${allowance.unusable}`;
+  if (!("available" in status.availability)) return unavailableReason(status) ?? availabilityWords(status.availability);
+  return allowance ? short(allowanceLine(allowance.state), allowance.state, isAllowanceOut) : availabilityWords(status.availability);
+}
+
 const onlineHosts = (store: Store): ControlMachine[] => store.hosts.value.filter((h) => hostAnswers(h.state));
 
 const pageTitles: Record<ActivityPage, string> = { events: "Events", runtimes: "Runtimes", mcp: "Connectors", spending: "Cost", tokens: "Tokens", time: "Time", velocity: "Velocity" };
@@ -283,8 +291,7 @@ function SetupRuntimeRows({ store, runtime: { status, home: hostID, machines }, 
   return <Fragment>
     <li class={isAllowanceOut || isOut(status) ? "out" : ""}>
       <p class={status.setBy ? "set-by-org" : undefined}><span class="strong">{status.runtime.name}</span>{" "}
-        <span class="quiet small">{allowance?.unusable ? `Not usable: ${allowance.unusable}`
-          : allowance ? short(allowanceLine(allowance.state), allowance.state, isAllowanceOut) : availabilityWords(status.availability)}{status.outdated ? " · an update is out" : ""}</span></p>
+        <span class="quiet small">{runtimeRowLine(status, allowance, short, isAllowanceOut)}{status.outdated ? " · an update is out" : ""}</span></p>
       {allowance && !allowance.unusable && bar(allowance.state)}
       {/* A runtime the organisation does not allow here: shown, with why (#998). */}
       <OrgPolicyLine mark={status.setBy} />
@@ -393,7 +400,9 @@ export function ActivityPageView({ store, page, inReport = false }: { store: Sto
                 // The oldest read on the page (#5145): an offline machine's runtimes stay, from before it went.
                 const readAt = runtimesReadAt(store.hosts.value.map((h) => store.runtimes.value[h.id] ?? []),
                   store.hosts.value.flatMap((h) => store.runtimeAllowances.value[h.id] ?? []));
-                return readAt !== undefined && <p><LastUpdate at={readAt} /></p>;
+                const refresh = () => { for (const host of hosts) void store.loadRuntimes(host.id); };
+                return <p class="page-fresh">{readAt !== undefined && <LastUpdate at={readAt} />}{" "}
+                  <button type="button" class="link" onClick={refresh}>Refresh</button></p>;
               })()}
               {(() => {
                 const all = setupRuntimes(store.hosts.value, store.macHostID.value, store.runtimes.value)
