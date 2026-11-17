@@ -34,6 +34,8 @@ func heard(t *testing.T, c *conn, id int) map[string][]json.RawMessage {
 }
 
 func TestOnlyTheWindowShowingAnAgentGetsItWhole(t *testing.T) {
+	t.Parallel()
+
 	d, showing := start(t, t.TempDir())
 	defer d.Shutdown()
 	other := newConn()
@@ -93,6 +95,8 @@ func TestOnlyTheWindowShowingAnAgentGetsItWhole(t *testing.T) {
 }
 
 func TestTheWatchedAgentIsShownAndAListCanBeLean(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) {

@@ -12,6 +12,8 @@ import (
 // The iOS Simulator pane (#842): what `simctl list` says, read; a screen made smaller; and
 // nothing but a UDID reaching simctl.
 func TestParseSimulators(t *testing.T) {
+	t.Parallel()
+
 	out := []byte(`{"devices":{
 		"com.apple.CoreSimulator.SimRuntime.iOS-26-0":[{"udid":"A","name":"iPhone 17","state":"Shutdown"}],
 		"com.apple.CoreSimulator.SimRuntime.iOS-27-0":[{"udid":"B","name":"iPad Pro","state":"Shutdown"},{"udid":"C","name":"Agents Walk","state":"Booted"}],
@@ -32,6 +34,8 @@ func TestParseSimulators(t *testing.T) {
 }
 
 func TestShrinkAverages(t *testing.T) {
+	t.Parallel()
+
 	picture := image.NewRGBA(image.Rect(0, 0, 4, 8))
 	for y := range 8 {
 		for x := range 4 {
@@ -91,6 +95,8 @@ func shrinkAny(picture image.Image, height int) image.Image {
 
 // A screen that did not change is not decoded and made smaller again (#1650).
 func TestUnchangedScreenIsNotDecodedAgain(t *testing.T) {
+	t.Parallel()
+
 	var shot bytes.Buffer
 	if err := jpeg.Encode(&shot, image.NewGray(image.Rect(0, 0, 100, 200)), nil); err != nil {
 		t.Fatal(err)
@@ -115,6 +121,8 @@ func TestUnchangedScreenIsNotDecodedAgain(t *testing.T) {
 }
 
 func TestSimctlTakesOnlyAUDID(t *testing.T) {
+	t.Parallel()
+
 	if noSimulators() != "" {
 		t.Skip("no simulators here")
 	}

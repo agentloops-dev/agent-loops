@@ -36,6 +36,8 @@ func realTempDir(t *testing.T) string {
 // #3585: a new Sentry issue is a health node seen-in the release of its version, at the time
 // Sentry first saw it, so a walk from it reaches the release, its PRs and the issues they fix.
 func TestLineageHealthSeenInItsRelease(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := realTempDir(t)
@@ -72,6 +74,8 @@ func TestLineageHealthSeenInItsRelease(t *testing.T) {
 // #3585: an event with no folder links only a release the graph knows, in one repo; a
 // version that is not x.y.z links nothing.
 func TestLineageHealthWithNoFolder(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	one, two := realTempDir(t), realTempDir(t)
@@ -104,6 +108,8 @@ func TestLineageHealthWithNoFolder(t *testing.T) {
 // #3585: an Apple app's version names its build, and the health node is seen-in that
 // TestFlight deploy when the graph knows it (#3584).
 func TestLineageHealthSeenInItsDeploy(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := realTempDir(t)
@@ -124,6 +130,8 @@ func TestLineageHealthSeenInItsDeploy(t *testing.T) {
 }
 
 func TestSentryVersion(t *testing.T) {
+	t.Parallel()
+
 	for release, want := range map[string]string{
 		"1.2.0":                       "v1.2.0  ",
 		"v1.2.0":                      "v1.2.0  ",
@@ -149,6 +157,8 @@ func TestSentryVersion(t *testing.T) {
 // by the health signal, and the bug it labels itself with reports it, so a walk from the bug
 // reaches the release and its PRs.
 func TestLineageABugReportsTheHealthThatStartedIt(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := realTempDir(t)
@@ -199,6 +209,8 @@ func incidentEvent(name, folder, startedAt string) wire.Event {
 // #3655: a Better Stack incident is a health node seen-in the release that was out when it
 // started: not a later one, and nothing with no folder.
 func TestLineageIncidentSeenInTheReleaseOut(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := realTempDir(t)

@@ -46,6 +46,8 @@ func TestATokenSplitOverTwoChunksIsRedacted(t *testing.T) {
 }
 
 func TestSplitHeld(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string][2]string{
 		"":                       {"", ""},
 		"Hello there.":           {"Hello ", "there."},

@@ -206,6 +206,8 @@ func TestDocsOfAFolderWithNoForge(t *testing.T) {
 }
 
 func TestDocsWindow(t *testing.T) {
+	t.Parallel()
+
 	var many []string
 	for i := 1; i <= docsReadLines+10; i++ {
 		many = append(many, fmt.Sprint(i))
@@ -229,6 +231,8 @@ func TestDocsWindow(t *testing.T) {
 }
 
 func TestDocsMarkdown(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct{ raw, want, problem string }{
 		{raw: `{"content":[{"type":"text","text":"# T\nbody"}]}`, want: "# T\nbody"},
 		{raw: `{"content":[{"type":"text","text":"a"},{"type":"resource","resource":{"text":"b"}}]}`, want: "a\n\nb"},
@@ -251,6 +255,8 @@ func TestDocsMarkdown(t *testing.T) {
 
 // A ref reaches only a doc: no path out of the folder, no link, nothing outside specs/ and docs/.
 func TestFolderDocFile(t *testing.T) {
+	t.Parallel()
+
 	folder := t.TempDir()
 	outside := t.TempDir()
 	writeFile(t, filepath.Join(folder, "docs", "a.md"), "a")

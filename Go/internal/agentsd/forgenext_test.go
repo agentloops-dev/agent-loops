@@ -39,6 +39,8 @@ func agentsFolder(t *testing.T, d *Daemon) string {
 // #5689: the one order. On hold last; then priority high, medium, none, low; then the
 // milestone's due date, none last; then the oldest, then the lowest number.
 func TestNextCompare(t *testing.T) {
+	t.Parallel()
+
 	at := func(s string) *wire.Date {
 		return new(wire.DateOf(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, len(s))))
 	}

@@ -19,6 +19,8 @@ import (
 // TestLanguageServerHelper is a fake language server when AGENTS_FAKE_LSP is set: each line
 // holding TODO is a warning, and it asks the client for its configuration once.
 func TestLanguageServerHelper(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("AGENTS_FAKE_LSP") != "1" {
 		return
 	}
@@ -145,6 +147,8 @@ func TestLanguageServerStartingIsNotNoProblems(t *testing.T) {
 }
 
 func TestReadFrame(t *testing.T) {
+	t.Parallel()
+
 	r := bufio.NewReader(strings.NewReader("Content-Type: x\r\nContent-Length: 2\r\n\r\n{}rest"))
 	if b, err := readFrame(r); err != nil || string(b) != "{}" {
 		t.Fatalf("%q %v", b, err)

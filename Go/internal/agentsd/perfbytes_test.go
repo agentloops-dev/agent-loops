@@ -56,6 +56,8 @@ func perfSeeded(t *testing.T, d *Daemon, dir string) {
 }
 
 func TestLeanAgentRecordKeepsItsBudget(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	dir := folder(t, c, 1)
 	perfSeeded(t, d, dir)
@@ -78,6 +80,8 @@ func TestLeanAgentRecordKeepsItsBudget(t *testing.T) {
 }
 
 func TestCatchUpKeepsItsBudget(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	dir := folder(t, c, 1)
 	perfSeeded(t, d, dir)

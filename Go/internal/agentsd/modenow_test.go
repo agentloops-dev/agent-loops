@@ -22,6 +22,8 @@ func startedIn(mode string) func(*wire.Agent) {
 }
 
 func TestTheModeChecksReadTheModeAnAgentIsInNow(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()

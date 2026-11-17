@@ -109,6 +109,8 @@ func TestFirstBuildStart(t *testing.T) {
 
 // The prompt is the host's, the same from every client (spec 5048 §7).
 func TestFirstBuildPrompt(t *testing.T) {
+	t.Parallel()
+
 	got := firstBuildPrompt("A website for my book club's reading list", firstBuildKinds[wire.FirstBuildStarterWebService],
 		wire.FirstBuildStarterWebService)
 	want := "Build my first app with the start-a-new-app skill. The idea: A website for my book club's reading list. " +

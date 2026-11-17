@@ -237,6 +237,8 @@ func TestReadyMadeSkillIsInstalledWhenItsWorkflowAlreadyExists(t *testing.T) {
 }
 
 func TestPushesToAForgeInAWorktree(t *testing.T) {
+	t.Parallel()
+
 	main, wt := t.TempDir(), t.TempDir()
 	os.MkdirAll(filepath.Join(main, ".git", "worktrees", "x"), 0o755)
 	os.WriteFile(filepath.Join(main, ".git", "config"), []byte("[remote \"origin\"]\n\turl = https://github.com/o/n\n"), 0o644)
@@ -297,6 +299,8 @@ func TestAnswerASignUpCodeHearsOnlyItsSenders(t *testing.T) {
 // tick scanned again and wrote the ready-made skills into the next test's personal home,
 // which AGENTS_PERSONAL_HOME names, while its TempDir was being removed.
 func TestShutdownEndsTheWorkflowClock(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	d.Shutdown()
 	select {

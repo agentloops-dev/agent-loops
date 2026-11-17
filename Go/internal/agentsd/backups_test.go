@@ -41,6 +41,8 @@ func backupsIn(t *testing.T, c *conn, n int) wire.BackupState {
 }
 
 func TestBackupDefaults(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	s := backupsIn(t, c, 1)
@@ -362,6 +364,8 @@ func TestBackupIfDueFollowsTheSchedule(t *testing.T) {
 }
 
 func TestRestoreRefusesAnIDOutsideTheFolder(t *testing.T) {
+	t.Parallel()
+
 	_, c := start(t, t.TempDir())
 	for i, id := range []string{"../x", "a/../../b", "a", "/etc/passwd", ".hidden/x"} {
 		b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 10 + i, "method": "backups/restore", "params": map[string]any{"id": id}})

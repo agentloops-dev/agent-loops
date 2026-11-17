@@ -25,6 +25,8 @@ import (
 // and connects at the host's loopback listener, and the control plane answers it through
 // the host. With no control plane to carry it to, the page is told it is unavailable.
 func TestAPageThroughThisHost(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	dist := t.TempDir()
@@ -214,6 +216,8 @@ func TestAPageThroughThisHost(t *testing.T) {
 // The control plane's word that a page is answered here is taken only from the line right
 // after the page's ok, and says who the page is and which calls still go up.
 func TestCarriedLine(t *testing.T) {
+	t.Parallel()
+
 	said := controllink.Carried{Actor: wire.AuditActor{User: "P1"}, Up: []string{"agents/start"}}
 	got, ok := controllink.ParseCarried(said.Line())
 	if !ok || got.Actor.User != "P1" {

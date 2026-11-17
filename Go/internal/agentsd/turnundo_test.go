@@ -132,6 +132,8 @@ func TestATurnOutsideTheFolderCannotBeUndone(t *testing.T) {
 
 // A turn's summary keeps its card as an outcome, with the undo said on it.
 func TestATurnsSummaryKeepsItsCardAndItsUndo(t *testing.T) {
+	t.Parallel()
+
 	es := entriesOf(t,
 		`{"userMessage":{"_0":"Fix it"}}`,
 		`{"agentMessage":{"messageID":"m1","text":"Fixed."}}`,

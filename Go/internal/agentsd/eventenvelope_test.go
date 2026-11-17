@@ -21,6 +21,8 @@ func envStr(p *string) string {
 }
 
 func TestTheAppsOwnEventsHaveAnEnvelope(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	folder := t.TempDir()
@@ -79,6 +81,8 @@ func TestTheAppsOwnEventsHaveAnEnvelope(t *testing.T) {
 }
 
 func TestAServersEventTakesTheSubjectItSays(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -104,6 +108,8 @@ func TestAServersEventTakesTheSubjectItSays(t *testing.T) {
 }
 
 func TestAnOldLogLineGetsItsEnvelope(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	line := `{"event":{"position":1,"name":"pr.merged","at":` + fmt.Sprint(float64(now())) + `,"count":1,"scope":{"mac":{}},"sentence":"github reported pr.merged",` +
 		`"details":{"server":"github","event":"pr.merged","subscription":"k","mcp_event_id":"pr.merged:a/b:1","payload":"{}"},"chainDepth":0,"consequences":[]}}` + "\n"

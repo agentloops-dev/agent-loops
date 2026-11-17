@@ -546,6 +546,8 @@ func TestTheRuntimesOwnModelIsCheckedBeforeTheFirstTurn(t *testing.T) {
 // matched with the value, the value without its context suffix, the model id that the
 // option's name says (Sonnet 5 is claude-sonnet-5) and the family (claude-sonnet).
 func TestAModelPatternMatchesTheAliasAndTheModelItIs(t *testing.T) {
+	t.Parallel()
+
 	// The Claude adapter's model option, as it says it (specs/052-quota-fallback/walk).
 	claude := []wire.ConfigOption{{ID: "model", Name: "Model", Category: new("model"), Type: "select",
 		CurrentValue: json.RawMessage(`"default"`), Options: json.RawMessage(`[
@@ -756,6 +758,8 @@ func TestAMissingCapabilityRefusesEveryStart(t *testing.T) {
 
 // T025: each roll-up row carries the tokens a limit counts.
 func TestARollupRowCarriesLimitTokens(t *testing.T) {
+	t.Parallel()
+
 	var r wire.UsageRollupRow
 	addRollupRow(&r, wire.UsageRollupRow{InputTokens: 5, LimitTokens: new(int64(4))})
 	addRollupRow(&r, wire.UsageRollupRow{InputTokens: 5, LimitTokens: new(int64(6))})
@@ -843,6 +847,8 @@ func TestAlwaysApproveIsUnderTheModeCeiling(t *testing.T) {
 // is no app tool or workflow action that reaches policy/setYours at all): the handler's own
 // forbiddenCallerRefusal is the one gate for all three.
 func TestSetYoursRefusesTheAgentSocketRole(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	for _, role := range []Role{RoleAgent, RoleHostApp, RoleStranger} {
@@ -864,6 +870,8 @@ func TestSetYoursRefusesTheAgentSocketRole(t *testing.T) {
 // now is refused conflict, so the client reloads before it overwrites a change it has not
 // seen (Edge Cases, "Two clients change your layer at once").
 func TestSetYoursRefusesAConflictingRevision(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	// The first start makes revision 1 (no old files here, so empty rules).
@@ -884,6 +892,8 @@ func TestSetYoursRefusesAConflictingRevision(t *testing.T) {
 // different keeper (today only reachable by a copy from elsewhere; slice 3 wires the
 // transport) refuses to change it itself, naming the keeper (research R4).
 func TestSetYoursRefusesANonKeeperMachine(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	os.MkdirAll(d.SettingsDir, 0o700)
@@ -921,6 +931,8 @@ func TestSetYoursRefusesANonKeeperMachine(t *testing.T) {
 // TestSetYoursRefusesInvalidRules: a value out of policylayers.Validate's range is refused
 // invalid, and nothing is saved.
 func TestSetYoursRefusesInvalidRules(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	tooMany := int64(99)
@@ -942,6 +954,8 @@ func TestSetYoursRefusesInvalidRules(t *testing.T) {
 // display.json, where every client reads them (#3161); a rule the copy leaves unset takes
 // its key away, so clients show the default the host uses.
 func TestAPushedLayerReachesDisplay(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

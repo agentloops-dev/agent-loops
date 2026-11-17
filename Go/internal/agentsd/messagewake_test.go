@@ -122,6 +122,8 @@ func TestMessageWakesOnlyAnAgentNoLooser(t *testing.T) {
 }
 
 func TestNextTurnPassesHeldMessagesOver(t *testing.T) {
+	t.Parallel()
+
 	q := func(id string, from wire.PromptOrigin) wire.QueuedPrompt {
 		return wire.QueuedPrompt{ID: wire.UUID(id), Text: id, From: from, Attachments: []wire.Attachment{}}
 	}

@@ -24,6 +24,8 @@ func peerApproval(t *testing.T, state *machinelock.State, peer *ecdsa.PrivateKey
 
 // A machine takes an approval only when a machine of its own lock signed it.
 func TestAMachineTakesOnlyApprovalsASignerOfItsLockMade(t *testing.T) {
+	t.Parallel()
+
 	d, phone, peer, state := lockedMachine(t)
 	defer d.Shutdown()
 	digest := "abcd"
@@ -67,6 +69,8 @@ func takeForTest(d *Daemon, digest string) {
 // A new machine runs an approved, unchanged workflow with no prompt; a changed file waits,
 // and so does a file the person denied here.
 func TestAWorkflowApprovedElsewhereIsApprovedHereOnlyWhileItIsTheSameFile(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -112,6 +116,8 @@ func TestAWorkflowApprovedElsewhereIsApprovedHereOnlyWhileItIsTheSameFile(t *tes
 
 // A connector entry approved elsewhere is approved here, and one that changed is not.
 func TestAConnectorApprovedElsewhereIsApprovedHereOnlyWhileItIsTheSameEntry(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

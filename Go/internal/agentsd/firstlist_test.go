@@ -9,6 +9,8 @@ import (
 // The calls before a connection's first list (#4891) are counted in the order they come,
 // once, and only for a client that draws a list.
 func TestFirstListCountsTheCallsBeforeIt(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{handlers: map[string]Handler{}}
 	c := &Client{Role: RoleWindow, conn: newConn(), d: d}
 	for _, m := range []string{"daemon/hello", "presence/set"} {
@@ -30,6 +32,8 @@ func TestFirstListCountsTheCallsBeforeIt(t *testing.T) {
 }
 
 func TestFirstListKeepsABoundedListOfNames(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{handlers: map[string]Handler{}}
 	c := &Client{Role: RoleWindow, conn: newConn(), d: d}
 	for range firstListNames + 5 {
@@ -43,6 +47,8 @@ func TestFirstListKeepsABoundedListOfNames(t *testing.T) {
 }
 
 func TestFirstListSaysNothingForAnAgent(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{handlers: map[string]Handler{}}
 	c := &Client{Role: RoleAgent, conn: newConn(), d: d}
 	if line := d.noteFirstList(c, "agents/list", nil); line != "" {

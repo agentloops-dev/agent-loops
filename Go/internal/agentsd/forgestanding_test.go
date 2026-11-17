@@ -14,6 +14,8 @@ import (
 // #3661: the standing block's fields, case-insensitive, with lanes 1 when not said; no block, a
 // second block, an unknown field and a bad value are errors.
 func TestStandingOfReadsTheBlock(t *testing.T) {
+	t.Parallel()
+
 	q := standingOf("The bug lane.\r\n\r\n```standing\r\nLabels: bug\r\nany: polish, , competitor\r\nnot: wontfix\r\nmilestone: None\r\n```\r\n")
 	if q.Error != nil || strings.Join(q.Labels, ",") != "bug" || strings.Join(q.Any, ",") != "polish,competitor" ||
 		strings.Join(q.Not, ",") != "wontfix" || deref(q.Milestone) != "none" || q.Lanes != 1 {
@@ -44,6 +46,8 @@ func TestStandingOfReadsTheBlock(t *testing.T) {
 // #3661: the query takes open issues that are not epics, with its labels and milestone; the
 // order is priority (high, medium, none, low), then the oldest.
 func TestStandingMatchesAndOrder(t *testing.T) {
+	t.Parallel()
+
 	item := func(n string, milestone string, labels ...string) wire.ForgeItem {
 		i := forgeItemOf(planIssue(0, "open", labels...), "")
 		i.Node.Ref = "github:issue:alexec/agents#" + n

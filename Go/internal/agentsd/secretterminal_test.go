@@ -127,6 +127,8 @@ func TestATerminalsAgentsSecretAsksAPerson(t *testing.T) {
 // The banner of a terminal's request names the terminal and the known gap, with its three
 // answers.
 func TestATerminalsRequestHasItsBanner(t *testing.T) {
+	t.Parallel()
+
 	u := wire.RequestSecretUse{Name: "PLAIN_KEY", Use: wire.SecretUseTerminal, Place: "zsh"}
 	var ids []string
 	for _, a := range secretUseAnswers(u) {

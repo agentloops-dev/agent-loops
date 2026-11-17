@@ -122,6 +122,8 @@ func TestAnAddedAccount(t *testing.T) {
 }
 
 func TestCodexAccountSignedInAs(t *testing.T) {
+	t.Parallel()
+
 	folder := t.TempDir()
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"b@example.com"}`))
 	os.WriteFile(filepath.Join(folder, "auth.json"), []byte(`{"tokens":{"id_token":"x.`+payload+`.y"}}`), 0o600)
@@ -136,6 +138,8 @@ func TestCodexAccountSignedInAs(t *testing.T) {
 }
 
 func TestAccountKeys(t *testing.T) {
+	t.Parallel()
+
 	id := "abc"
 	if accountKey("claude", nil) != "claude:sign-in" ||
 		accountKey("claude", &id) != "claude:account:abc" || keyAccount("claude:account:abc") != "abc" || keyAccount("claude:sign-in") != "" {

@@ -87,6 +87,7 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 			t.Errorf("goroutines the daemon started still run after Shutdown:\n\t%s", strings.Join(live, "\n\t"))
 		}
 		hooks.stopped()
+		resetToolsHomes()
 	})
 	// As main does at each start (#4177): a fixture's secrets.env goes into sealed.json.
 	d.MoveSecretsFile()
@@ -146,6 +147,8 @@ func (d *Daemon) anyLive() bool {
 }
 
 func TestPingAndAnUnknownMethod(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("flaky under load (#5751)")
 	_, c := start(t, t.TempDir())
 	if r := c.call(t, 1, "daemon/ping", nil); string(r) != `{"ok":true}` {
@@ -158,6 +161,8 @@ func TestPingAndAnUnknownMethod(t *testing.T) {
 }
 
 func TestAPanickingHandlerAnswersAnError(t *testing.T) {
+	t.Parallel()
+
 	flaky.UnderLoad(t, "#5751")
 	d, c := start(t, t.TempDir())
 	d.handlers["boom"] = func(context.Context, *Client, json.RawMessage) (any, error) {
@@ -177,6 +182,8 @@ func TestAPanickingHandlerAnswersAnError(t *testing.T) {
 // A root the Swift host wrote: its agent is listed with its folder, and its transcript
 // pages as Swift pages it.
 func TestASwiftRootIsServed(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	fix := filepath.Join("..", "..", "..", "Packages", "AgentsKit", "Tests", "AgentsKitTests", "Fixtures", "legacy-agent")
 	b, _ := os.ReadFile(filepath.Join(fix, "agent.json"))
@@ -222,6 +229,8 @@ func TestASwiftRootIsServed(t *testing.T) {
 }
 
 func TestAddAFolder(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	work := filepath.Join(t.TempDir(), "hello")
 	os.Mkdir(work, 0o755)

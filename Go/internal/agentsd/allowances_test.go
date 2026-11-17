@@ -134,6 +134,8 @@ func TestAllowancesLocateOnceAndReadSignInOnce(t *testing.T) {
 
 // The sign-in cache is bounded: it never holds more than signInCacheSize files.
 func TestSignInCacheBounded(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	var c signInCache
 	for i := range signInCacheSize + 10 {

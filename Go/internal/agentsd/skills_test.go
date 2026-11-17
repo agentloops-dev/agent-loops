@@ -87,6 +87,8 @@ func TestAFoldersSkillsListedAndOneTakenOut(t *testing.T) {
 }
 
 func TestAFolderPluginWaitsUntilApproved(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()

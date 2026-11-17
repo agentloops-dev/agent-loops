@@ -13,6 +13,8 @@ import (
 // the hour when it ends, and the day says how many agents worked.
 
 func TestATurnsTimeBySegment(t *testing.T) {
+	t.Parallel()
+
 	at := time.Date(2026, 10, 16, 9, 59, 0, 0, time.Local)
 	sec := func(n int) time.Time { return at.Add(time.Duration(n) * time.Second) }
 	marks := []timeMark{

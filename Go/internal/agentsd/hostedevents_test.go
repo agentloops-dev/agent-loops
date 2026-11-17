@@ -103,6 +103,8 @@ func TestAHostedStartEndsTheOldProcess(t *testing.T) {
 // (the old token ended as the host renewed it) is tried again, as a direct server's is; it was
 // read as a refusal for good, and every wait on github ended.
 func TestAHostedRefusalKeepsItsReason(t *testing.T) {
+	t.Parallel()
+
 	_, err := hostedReplyOf(json.RawMessage(`{"jsonrpc":"2.0","id":3,"error":{"code":-32012,` +
 		`"message":"GitHub is not connected, or its sign-in ended","data":{"reason":"not connected"}}}`))
 	if err == nil {

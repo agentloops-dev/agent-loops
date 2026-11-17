@@ -233,6 +233,8 @@ func TestAMachineWithNoLockTakesNoBotsKey(t *testing.T) {
 
 // Forget the Bot tells the other machines; a machine the person removed deletes its key.
 func TestForgettingAndRemovingTakeTheBotsKeyAway(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, _ := lockedMachine(t)
 	defer d.Shutdown()
 	file := botStore(t, d)

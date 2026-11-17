@@ -7,6 +7,8 @@ import (
 )
 
 func TestParseDiskOverride(t *testing.T) {
+	t.Parallel()
+
 	for text, want := range map[string]int64{"500GB\n": 500 * gigabyte, " 1.5 gb ": 1_500_000_000, "1500000000": 1_500_000_000, "0": 0} {
 		if got, ok := parseDiskOverride(text); !ok || got != want {
 			t.Errorf("%q = %d %v, want %d", text, got, ok, want)
@@ -22,6 +24,8 @@ func TestParseDiskOverride(t *testing.T) {
 // A scratch root's disk-free-override says each volume's free space (#195, #4851), so a
 // video never shows the real disk; a root that may not read it shows the real one.
 func TestAScratchRootsDiskOverrideSaysTheFreeSpace(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "disk-free-override"), []byte("1GB\n"), 0o600); err != nil {
 		t.Fatal(err)

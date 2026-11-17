@@ -12,6 +12,8 @@ import (
 // The phase is TurnActivityContent.make's (#1744): what waits on the person first, then
 // the state; a clean end is done, or needs you as the sidebars say, any other ending failed.
 func TestATurnsPhaseIsWhatItsActivitySays(t *testing.T) {
+	t.Parallel()
+
 	id := wire.UUID("A0000000-0000-4000-8000-000000000001")
 	agent := func(s wire.AgentState, r *wire.EndedReason) wire.Agent {
 		return wire.Agent{ID: id, State: s, EndedReason: r, LastActivityAt: 800000300}
@@ -94,6 +96,8 @@ func (c *toldTurns) of(id wire.UUID) []wire.TurnPhase {
 // A host tells its control plane each move of a recent turn, once; not one long idle; and
 // gone for one deleted.
 func TestAHostTellsItsControlPlaneEachMoveOfATurn(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	recent := seeded(t, d, t.TempDir(), nil)
@@ -125,6 +129,8 @@ func TestAHostTellsItsControlPlaneEachMoveOfATurn(t *testing.T) {
 // #1916: an old record's stuck or partly_done (finish_turn's) reads as done, so it shows as
 // Complete, not Needs you. #2981: so does an old blocked, through the x-fallback.
 func TestAnOldStuckOrPartlyDoneReadsAsDone(t *testing.T) {
+	t.Parallel()
+
 	for _, old := range []string{"stuck", "partly_done", "blocked"} {
 		var a wire.Agent
 		b := []byte(`{"id":"A","runtimeID":"claude","cwd":"file:///w/","state":"finished","report":{"outcome":"` + old + `","message":"m","at":1}}`)

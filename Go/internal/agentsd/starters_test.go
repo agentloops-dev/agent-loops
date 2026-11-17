@@ -57,6 +57,8 @@ var webTemplate = map[string]string{
 }
 
 func TestStarterRepo(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"iphone-app": "agentloops-dev/iphone-app-starter", "web-service": "agentloops-dev/web-service-starter",
 		"someone/my-starter": "someone/my-starter",
@@ -126,6 +128,8 @@ func TestFillStarterFillsEveryPlaceholder(t *testing.T) {
 }
 
 func TestWithoutStarterIgnoredWithNoIgnoreFile(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a": nil, ".github/README.md": nil}
 	if got := withoutStarterIgnored(files); len(got) != 2 {
 		t.Errorf("got %v", got)

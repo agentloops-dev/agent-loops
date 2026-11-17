@@ -14,6 +14,8 @@ import (
 
 // #4730: provider, topic, subject and debounce, as a wait and a trigger read them.
 func TestReadBusFilter(t *testing.T) {
+	t.Parallel()
+
 	f, problem := readBusFilter(map[string][]string{"provider": {"GitHub"}, "topic": {"Alexec/Agents", "alexec/agents", "x/y"},
 		"subject": {"github:pr:alexec/agents#4702"}, "debounce": {"30s"}})
 	if problem != "" || f.provider != "github" || len(f.topics) != 2 || f.topics[0] != "alexec/agents" ||
@@ -38,6 +40,8 @@ func TestReadBusFilter(t *testing.T) {
 }
 
 func TestBusFilterMatchesTheEnvelope(t *testing.T) {
+	t.Parallel()
+
 	subject := wire.Ref{Provider: "github", Type: "pr", Topic: "alexec/agents", ID: "4702"}
 	other := wire.Ref{Provider: "github", Type: "pr", Topic: "alexec/agents", ID: "1"}
 	provider, topic := "github", "Alexec/Agents"
@@ -65,6 +69,8 @@ func TestBusFilterMatchesTheEnvelope(t *testing.T) {
 
 // A forge's server here is asked for the thing the subject names.
 func TestLocalWhereFromTheSubject(t *testing.T) {
+	t.Parallel()
+
 	subject := wire.Ref{Provider: "gitlab", Type: "mr", Topic: "group/repo", ID: "45"}
 	got := busFilter{subject: &subject}.localWhere(map[string][]string{"mine": {"true"}})
 	if len(got) != 3 || got["project"][0] != "group/repo" || got["pr"][0] != "45" || got["mine"][0] != "true" {
@@ -81,6 +87,8 @@ func TestLocalWhereFromTheSubject(t *testing.T) {
 // A workflow's `- type: …` trigger, with the envelope's keys beside it: they stay in its
 // keys, are no server argument, and a forge's repo comes from its topic.
 func TestATriggerByTypeProviderAndTopic(t *testing.T) {
+	t.Parallel()
+
 	m, err := yamlnode.MappingFrom([]string{
 		"on:",
 		"  - type: pr.merged",
@@ -145,6 +153,8 @@ func TestATriggerByTypeProviderAndTopic(t *testing.T) {
 // that subject only, and says its ref and that it is a hint. A bare wait does not hear
 // the bus.
 func TestAWaitBySubjectHearsTheBus(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -219,6 +229,8 @@ func TestAWaitBySubjectHearsTheBus(t *testing.T) {
 // debounce holds a burst on one subject and type, and wakes once with the last and how
 // many came.
 func TestADebouncedWaitWakesOnceWithTheLast(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -246,6 +258,8 @@ func TestADebouncedWaitWakesOnceWithTheLast(t *testing.T) {
 }
 
 func TestAWaitSaysWhatIsWrongWithItsFilter(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)

@@ -87,6 +87,8 @@ func TestDeleteLeavesNoRuntimeSessionFile(t *testing.T) {
 // A runtime that cannot be started: Codex's files are removed all the same, from the home
 // its launch would name.
 func TestCodexFilesGoWithoutTheRuntime(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
 	session := "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b"
 	mine := filepath.Join(home, "sessions", "2026", "10", "22", "rollout-2026-10-22T06-00-00-"+session+".jsonl")
@@ -116,6 +118,8 @@ func TestCodexFilesGoWithoutTheRuntime(t *testing.T) {
 // Grok's, Copilot's, Cursor's and Antigravity's copies go without the runtime too, from the
 // home their launch names, and another session's stay (#3647).
 func TestOtherRuntimesFilesGoWithoutTheRuntime(t *testing.T) {
+	t.Parallel()
+
 	session := "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b"
 	other := "019a0000-0000-7000-8000-000000000000"
 	for _, tc := range []struct {
@@ -162,6 +166,8 @@ func TestOtherRuntimesFilesGoWithoutTheRuntime(t *testing.T) {
 // Claude's transcript is in projects/<slug>/ of the home its launch names, and goes
 // without the runtime (#3625).
 func TestClaudeTranscriptGoesWithoutTheRuntime(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
 	session := "5b0f6a1e-1c2d-4e3f-8a9b-0c1d2e3f4a5b"
 	transcript := filepath.Join(home, "projects", "-Users-me-work", session+".jsonl")
@@ -186,6 +192,8 @@ func TestClaudeTranscriptGoesWithoutTheRuntime(t *testing.T) {
 
 // Only a runtime copy this set-up made, and that no kept agent still holds, is erased.
 func TestDeleteErasesOnlyItsOwnRuntimeCopy(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	dir := folder(t, c, 1)
 	other := "another-root"
@@ -207,6 +215,8 @@ func TestDeleteErasesOnlyItsOwnRuntimeCopy(t *testing.T) {
 
 // The queue is bounded, and kept across a restart only for erasureTries and erasureKeep.
 func TestTheErasureQueueIsBounded(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	dir := folder(t, c, 1)
@@ -237,6 +247,8 @@ func TestTheErasureQueueIsBounded(t *testing.T) {
 
 // The erased list is bounded by count, oldest out, and by age.
 func TestTheErasedListIsBounded(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	old := map[wire.UUID]time.Time{store.NewUUID(): nowFunc().Add(-erasedKeep - time.Hour)}
 	d.erasures.mu.Lock()
@@ -389,6 +401,8 @@ func TestASweepStartsTheRuntimeOnce(t *testing.T) {
 // Delete says when the runtime keeps its own copy (#3669): only a runtime whose files are
 // not known and whose adapter cannot delete a session keeps one.
 func TestDeleteSaysWhenTheRuntimeKeepsItsCopy(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		runtime   string
 		canDelete bool

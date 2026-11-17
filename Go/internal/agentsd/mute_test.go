@@ -84,6 +84,8 @@ func TestAMutedSessionSendsTheMacNoNotification(t *testing.T) {
 // A workflow's mute is `muted: true` in its file: its runs not archived take it, and so
 // do the runs it starts.
 func TestMutingAWorkflowMutesItsRuns(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

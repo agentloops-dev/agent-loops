@@ -43,6 +43,8 @@ func (c *conn) callErr(t *testing.T, id int, method string, params any) string {
 }
 
 func TestFilesAreKeptToTheAgentsFolder(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	work, _ := store.Resolve(t.TempDir())
 	os.Mkdir(filepath.Join(work, "sub"), 0o755)
@@ -88,6 +90,8 @@ func TestFilesAreKeptToTheAgentsFolder(t *testing.T) {
 
 // A link is listed under its own path, not its target's (#1265); the folder's own links are resolved.
 func TestBrowseListsALinkUnderItsOwnPath(t *testing.T) {
+	t.Parallel()
+
 	_, c := start(t, t.TempDir())
 	real, _ := store.Resolve(t.TempDir())
 	os.WriteFile(filepath.Join(real, "AGENTS.md"), []byte("# hi\n"), 0o644)

@@ -105,6 +105,8 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 // access token checked with it as a bearer token, the pair kept and renewed with the scope, and
 // an Azure DevOps Server or no organization refused before Entra is asked.
 func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
+	t.Parallel()
+
 	flaky.UnderLoad(t, "#5750")
 	var mu sync.Mutex
 	var forms []map[string]string
@@ -352,6 +354,8 @@ func TestAnAzureDevOpsSetUpKeepsTheFoldersBoardsProjects(t *testing.T) {
 // A connection to an Azure DevOps Server (or a walk's fake) is used for a remote on it, and a
 // connection on dev.azure.com is not sent to a server; GitHub still comes first.
 func TestAnAzureDevOpsRemoteAtTheConnectionsServer(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}

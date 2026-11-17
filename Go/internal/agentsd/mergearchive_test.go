@@ -43,6 +43,8 @@ func mergedEvent(folder, branch string, number int) wire.Event {
 // #2886: a session whose pull request merges is archived when its turn has ended and its
 // worktree has nothing uncommitted; any other is told, once; the switch off does nothing.
 func TestASessionIsArchivedWhenItsPullRequestMerges(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

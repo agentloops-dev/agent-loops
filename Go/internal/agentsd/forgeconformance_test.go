@@ -1202,6 +1202,8 @@ func (noForge) Sources(context.Context, []string, bool) (forgeScope, error) {
 // #4352: forgeNone says "cannot" for each action, and the answer is Invalid with the forge's own
 // reason when Caps gives one, else one that names the action.
 func TestForgeNoneCannotAnything(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	var f Forge = noForge{}
 	r := forgeRef{Node: wire.LineageNode{Kind: lineage.KindPR, Ref: "none:a#1"}}

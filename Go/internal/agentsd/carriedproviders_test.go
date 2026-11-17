@@ -108,6 +108,8 @@ func TestAFailedCarriedMakeIsLoggedWithItsReason(t *testing.T) {
 
 // What a provider answers goes back with every secret's value said as its name.
 func TestACarriedAnswerHoldsNoSecret(t *testing.T) {
+	t.Parallel()
+
 	r := providers.NewRedaction(map[string]string{"TOKEN": "s3cr3t-value"})
 	words := "refused s3cr3t-value"
 	out := redacted(r, wire.ProviderCarried{Result: json.RawMessage(`{"note":"s3cr3t-value"}`), Error: &words})

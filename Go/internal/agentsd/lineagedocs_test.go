@@ -28,6 +28,8 @@ func writeDoc(t *testing.T, root, rel string) string {
 // that is not there, a file outside specs/ and docs/, and an address that is not a docs page
 // link nothing.
 func TestDocsASessionReadsOrLinksTo(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder, worktree := t.TempDir(), t.TempDir()
@@ -61,6 +63,8 @@ func TestDocsASessionReadsOrLinksTo(t *testing.T) {
 
 // #3308: a folder with no forge names its docs by their path.
 func TestADocInAFolderWithNoForge(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -75,6 +79,8 @@ func TestADocInAFolderWithNoForge(t *testing.T) {
 // #3308: the issue's and the PR's section name the docs its sessions read, and a doc does
 // not take the walk on to the other work of the sessions that read it too.
 func TestTheLineageSectionNamesTheDocs(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -134,6 +140,8 @@ func TestTheLineageSectionNamesTheDocs(t *testing.T) {
 
 // #3308: a doc's name and address in the section.
 func TestDocNameAndURL(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct{ ref, base, name, url string }{
 		{"github:doc:alexec/agents#specs/1/spec.md", "https://github.com", "specs/1/spec.md", "https://github.com/alexec/agents/blob/HEAD/specs/1/spec.md"},
 		{"gitlab:doc:group/sub/project#docs/a.md", "https://git.example.com", "docs/a.md", "https://git.example.com/group/sub/project/-/blob/HEAD/docs/a.md"},
