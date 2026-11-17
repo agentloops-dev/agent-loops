@@ -21,6 +21,8 @@ import (
 // each request, and the session's runtime starts again so it connects. A stdio server with a
 // flagged ${NAME} is left out.
 func TestAnHTTPServerGetsAFlaggedSecretThroughAgentsd(t *testing.T) {
+	t.Parallel()
+
 	const value = "s3cret-token-4120"
 	var mu sync.Mutex
 	var seen []http.Header
@@ -38,7 +40,7 @@ func TestAnHTTPServerGetsAFlaggedSecretThroughAgentsd(t *testing.T) {
 	defer upstream.Close()
 
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	path := skillcatalog.SecretsPath(home)
 	os.MkdirAll(filepath.Dir(path), 0o700)
 	env, _ := skillcatalog.LoadSecretsForChange(path)
@@ -139,8 +141,10 @@ func TestAnHTTPServerGetsAFlaggedSecretThroughAgentsd(t *testing.T) {
 
 // #4120: a person's deny holds for the route, so a runtime that tries again does not ask again.
 func TestADeniedServerDoesNotAskAgain(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"),
 		[]byte(`{"mcpServers":{"notes":{"url":"https://notes.example.com/${API_TOKEN}"}}}`), 0o600)

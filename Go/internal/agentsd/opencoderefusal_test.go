@@ -13,6 +13,8 @@ import (
 const openCodeRefusalLine = `timestamp=2026-11-07T03:11:48.551Z level=ERROR run=598ba7f5 message="stream error" providerID=opencode modelID=big-pickle session.id=ses_e4c0 small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go"`
 
 func TestAnOpenCodeStreamErrorIsTheProvidersWords(t *testing.T) {
+	t.Parallel()
+
 	said, ok := openCodeStreamError(openCodeRefusalLine, "ses_e4c0")
 	want := "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go"
 	if !ok || said != want {
@@ -37,6 +39,8 @@ func TestAnOpenCodeStreamErrorIsTheProvidersWords(t *testing.T) {
 }
 
 func TestTheLogDirFollowsTheRuntimesEnvironment(t *testing.T) {
+	t.Parallel()
+
 	env := map[string]string{"HOME": "/h"}
 	get := func(k string) string { return env[k] }
 	if got := openCodeLogDir(get); got != "/h/.local/share/opencode/log" {
@@ -50,6 +54,8 @@ func TestTheLogDirFollowsTheRuntimesEnvironment(t *testing.T) {
 
 // Only what the log gained during the turn is read: an older refusal ends nothing.
 func TestTheTailReadsOnlyNewWholeLines(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "opencode.log")
 	writeLog(t, path, openCodeRefusalLine+"\n")
 	tail := newOpenCodeLogTail(path)

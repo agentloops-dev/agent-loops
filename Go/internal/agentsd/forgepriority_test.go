@@ -14,6 +14,8 @@ import (
 )
 
 func TestForgePriorityFromLabels(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		labels []string
 		want   string
@@ -31,6 +33,8 @@ func TestForgePriorityFromLabels(t *testing.T) {
 }
 
 func TestForgePriorityFromFields(t *testing.T) {
+	t.Parallel()
+
 	if got := linearItemOf(linearmcp.Item{Identifier: "ENG-1", Priority: "high", MilestoneDue: "2026-12-01"}, ""); deref(got.Priority) != "high" || got.MilestoneDue == nil {
 		t.Errorf("linear: %+v", got)
 	}
@@ -44,6 +48,8 @@ func TestForgePriorityFromFields(t *testing.T) {
 
 // #5747: each forge's own priority and hold, and the labels only where it has none of its own.
 func TestForgePriorityAndHoldFromEachForge(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		name     string
 		item     wire.ForgeItem

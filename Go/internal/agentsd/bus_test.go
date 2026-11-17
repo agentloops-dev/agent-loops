@@ -12,6 +12,8 @@ import (
 // #4729: a machine publishes each new event it records, envelope only; an event the bus
 // delivers is recorded once, and never published again.
 func TestBusPublishesAndTakesADeliveryOnce(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	var mu sync.Mutex

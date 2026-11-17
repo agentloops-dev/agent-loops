@@ -12,6 +12,8 @@ import (
 // the running limit the next queues, and starts by itself once a place is free.
 
 func TestALeadStartsSessionsAndTheyQueue(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -59,6 +61,8 @@ func TestALeadStartsSessionsAndTheyQueue(t *testing.T) {
 }
 
 func TestStartSessionInheritsCallerRuntimeAndMode(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -96,6 +100,8 @@ func TestStartSessionInheritsCallerRuntimeAndMode(t *testing.T) {
 }
 
 func TestStartSessionInheritsCallerRuntimeWhenQueued(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -131,6 +137,8 @@ func helperID(text string) wire.UUID {
 // #5441: start_session takes an effort, by the value or the name the start form shows, and
 // refuses one the runtime does not offer, naming the ones it does; a queued helper keeps it.
 func TestStartSessionChoosesEffort(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

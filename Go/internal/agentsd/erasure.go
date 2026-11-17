@@ -69,8 +69,8 @@ var writeErasureFile = store.WriteAtomically
 
 // adapterKey names a runtime's adapter as installed: its path and when it last changed, so
 // an update is asked again. It is "" when the adapter is not found.
-func adapterKey(rt *runtimeDef) string {
-	path, _, _ := locateFor(rt)
+func (d *Daemon) adapterKey(rt *runtimeDef) string {
+	path, _, _ := d.locate(rt)
 	if path == "" {
 		return ""
 	}
@@ -288,7 +288,7 @@ func (p *erasePass) session(e erasure, account *wire.AccountProfile) (*acp.Sessi
 	rt := runtimeByID(e.RuntimeID)
 	adapter := ""
 	if rt != nil {
-		adapter = adapterKey(rt)
+		adapter = p.d.adapterKey(rt)
 	}
 	if adapter != "" && p.d.erasures.cannotDelete[adapter] {
 		p.sessions[key] = &passSession{}

@@ -140,7 +140,7 @@ func boardsDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeBoards, string) {
 	os.MkdirAll(filepath.Join(app, ".agents"), 0o755)
 	os.WriteFile(filepath.Join(app, ".agents", "folder.json"), []byte(`{"azureBoardsProjects": ["acme/Web App", "not a project", "a/b/c"]}`), 0o644)
 	c.call(t, 300, "folders/add", map[string]any{"folder": "file://" + app})
-	home := os.Getenv("AGENTS_PERSONAL_HOME")
+	home := d.personalHome()
 	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
 	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
 		[]byte("AZURE_DEVOPS_URL=https://tfs.acme.test/\nAZURE_DEVOPS_TOKEN=tok\n"), 0o600)
@@ -153,6 +153,8 @@ var boardsItem = wire.LineageNode{Kind: "issue", Ref: "azureboards:issue:acme/we
 // one model: an azureboards: node, the state's name beside open or closed, its parent, and the
 // folder that names its project. forge/pulls asks Azure Boards nothing.
 func TestForgeIssuesReadsTheFoldersAzureBoardsProjects(t *testing.T) {
+	t.Parallel()
+
 	d, c, b, app := boardsDaemon(t)
 	if got := d.folderBoardsProjects(app); !slices.Equal(got, []string{boardsProjectName}) {
 		t.Fatalf("projects: %q", got)
@@ -185,6 +187,8 @@ func TestForgeIssuesReadsTheFoldersAzureBoardsProjects(t *testing.T) {
 // #3815: forge/issue reads a work item with its body, comments, the states it can move to and
 // Start Agent, labelled AB#12; one Azure Boards does not have is invalid.
 func TestForgeReadsAnAzureBoardsWorkItem(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, app := boardsDaemon(t)
 	var i wire.ForgeItemDetail
 	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: boardsItem}), &i)
@@ -213,6 +217,8 @@ func TestForgeReadsAnAzureBoardsWorkItem(t *testing.T) {
 // #3815: a comment, tags, the tag choices, a move to a state, and close and reopen go to Azure
 // Boards.
 func TestForgeWritesOnAnAzureBoardsWorkItem(t *testing.T) {
+	t.Parallel()
+
 	_, c, b, _ := boardsDaemon(t)
 	var done wire.ForgeDone
 	json.Unmarshal(c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: boardsItem, Body: "On it."}), &done)
@@ -238,8 +244,10 @@ func TestForgeWritesOnAnAzureBoardsWorkItem(t *testing.T) {
 
 // #3815: with no Azure DevOps token in the secrets, a read says so; a list still reads the rest.
 func TestForgeAzureBoardsNotSignedIn(t *testing.T) {
-	_, c, _, _ := boardsDaemon(t)
-	os.Remove(filepath.Join(os.Getenv("AGENTS_PERSONAL_HOME"), ".agents-secrets", "secrets.env"))
+	t.Parallel()
+
+	d, c, _, _ := boardsDaemon(t)
+	os.Remove(filepath.Join(d.personalHome(), ".agents-secrets", "secrets.env"))
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(list.Errors) != 1 || list.Errors[0].Forge != "azureboards" || !strings.Contains(list.Errors[0].Message, "Azure DevOps is not connected") {
@@ -250,6 +258,8 @@ func TestForgeAzureBoardsNotSignedIn(t *testing.T) {
 // #3815: forge/plan reads a work item's children in steps, by their predecessors; a new child,
 // one that is there, and a blocker go to Azure Boards.
 func TestForgePlanOfAnAzureBoardsWorkItem(t *testing.T) {
+	t.Parallel()
+
 	_, c, b, _ := boardsDaemon(t)
 	var plan wire.ForgePlan
 	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: boardsItem}), &plan)
@@ -281,6 +291,8 @@ func TestForgePlanOfAnAzureBoardsWorkItem(t *testing.T) {
 // #3815: AB#12 is a work item of the folder's first project, as a session's label and in a PR's
 // title or branch; a work item's page is its node.
 func TestAzureBoardsKeysInLabelsTitlesAndURLs(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, app := boardsDaemon(t)
 	if n, ok := d.labelNode(app, "AB#12"); !ok || n != boardsItem {
 		t.Fatalf("AB#12: %+v", n)
@@ -311,6 +323,8 @@ func TestAzureBoardsKeysInLabelsTitlesAndURLs(t *testing.T) {
 // paths, in its project, on the connected Azure DevOps; a board on another Azure DevOps says
 // so; another forge's board asks Azure Boards nothing.
 func TestAnAzureBoardsBoardNarrowsWorkToItsTeam(t *testing.T) {
+	t.Parallel()
+
 	d, c, b, app := boardsDaemon(t)
 	id, _, _ := d.folderProject(app)
 	payments := board("Payments", "https://tfs.acme.test/acme/Web%20App/_boards/board/t/Payments", wire.ConnectionProviderAzuredevops,
@@ -360,6 +374,8 @@ func TestAnAzureBoardsBoardNarrowsWorkToItsTeam(t *testing.T) {
 // #3939: Work ▸ Features narrowed to an Azure Boards board lists the features of the Epic work
 // items under the team's area paths, though the epic has no epic tag.
 func TestFeaturesOfAnAzureBoardsBoard(t *testing.T) {
+	t.Parallel()
+
 	d, c, b, app := boardsDaemon(t)
 	id, _, _ := d.folderProject(app)
 	payments := board("Payments", "https://tfs.acme.test/acme/Web%20App/_boards/board/t/Payments", wire.ConnectionProviderAzuredevops,

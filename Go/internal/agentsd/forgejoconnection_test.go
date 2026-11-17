@@ -21,6 +21,8 @@ import (
 // A Forgejo (#3752): an access token is checked with that Forgejo, kept with its address,
 // listed with its host, and never given back or logged. Forgejo has no sign-in page.
 func TestConnectingForgejoWithAnAccessToken(t *testing.T) {
+	t.Parallel()
+
 	fj := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "token fj-secret" {
@@ -121,8 +123,10 @@ func (f *fakeSetupForgejo) LastChecks(ctx context.Context, repo string) (*forgej
 // slots, each proved by one read, the forgejo connector's events go on, and a connection to
 // another Forgejo is not used here.
 func TestAForgejoFoldersConnectorSetUp(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -192,6 +196,8 @@ func TestAForgejoFoldersConnectorSetUp(t *testing.T) {
 // Forgejo of one's own (#3752): a remote on the connected Forgejo picks it, as does a host
 // named gitea before it is connected; a GitHub remote still comes first.
 func TestAForgejoRemoteOfOnesOwn(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
@@ -220,6 +226,8 @@ func TestAForgejoRemoteOfOnesOwn(t *testing.T) {
 // A project's slot on Forgejo (#3752) keeps only the host: on the connected Forgejo's host it
 // is read at the connection's own root, http on this machine as well.
 func TestAProjectsForgejoSlotUsesTheConnectionsRoot(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}

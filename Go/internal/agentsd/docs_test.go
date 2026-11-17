@@ -73,8 +73,10 @@ func fakeDocsServer(t *testing.T) *httptest.Server {
 // by its ref, from a folder or a connector; and a folder whose Docs slot is None gives no
 // source.
 func TestDocsListSearchAndRead(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "git@github.com:Alexec/Agents.git")
@@ -186,7 +188,9 @@ func TestDocsListSearchAndRead(t *testing.T) {
 
 // A folder with no forge remote names its docs by this machine and its name.
 func TestDocsOfAFolderWithNoForge(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "")
@@ -206,6 +210,8 @@ func TestDocsOfAFolderWithNoForge(t *testing.T) {
 }
 
 func TestDocsWindow(t *testing.T) {
+	t.Parallel()
+
 	var many []string
 	for i := 1; i <= docsReadLines+10; i++ {
 		many = append(many, fmt.Sprint(i))
@@ -229,6 +235,8 @@ func TestDocsWindow(t *testing.T) {
 }
 
 func TestDocsMarkdown(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct{ raw, want, problem string }{
 		{raw: `{"content":[{"type":"text","text":"# T\nbody"}]}`, want: "# T\nbody"},
 		{raw: `{"content":[{"type":"text","text":"a"},{"type":"resource","resource":{"text":"b"}}]}`, want: "a\n\nb"},
@@ -251,6 +259,8 @@ func TestDocsMarkdown(t *testing.T) {
 
 // A ref reaches only a doc: no path out of the folder, no link, nothing outside specs/ and docs/.
 func TestFolderDocFile(t *testing.T) {
+	t.Parallel()
+
 	folder := t.TempDir()
 	outside := t.TempDir()
 	writeFile(t, filepath.Join(folder, "docs", "a.md"), "a")

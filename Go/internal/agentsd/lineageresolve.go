@@ -74,6 +74,9 @@ type lineageResolveBook struct {
 	// priorityQueued is true while a refresh of every session's priority waits on the linker
 	// (refreshPrioritiesSoon), so a burst of reads costs one (#5847).
 	priorityQueued atomic.Bool
+	// priorityMu holds one refreshPriorities at a time: each reads a session, works out its
+	// priority and writes it, and two at once lose an update (#5980).
+	priorityMu sync.Mutex
 }
 
 // resolvedGraph is g with resolved filled in from the cache, at once. The nodes the cache
@@ -190,6 +193,7 @@ func (d *Daemon) resolveNode(ctx context.Context, n wire.LineageNode) {
 	ask := d.resolveLookup
 	d.resolveMu.Unlock()
 	folder := d.repoFolder(repo)
+	asked := nowFunc()
 	var r wire.LineageResolved
 	var err error
 	if folder == "" {
@@ -211,6 +215,12 @@ func (d *Daemon) resolveNode(ctx context.Context, n wire.LineageNode) {
 		d.resolveCache = map[wire.LineageNode]resolvedEntry{}
 	}
 	had, cached := d.resolveCache[n]
+	// A failed ask does not replace an answer that came while it was asked (#5806): a list
+	// read the node then, and its answer is newer than this failure.
+	if err != nil && cached && had.ok && had.at.After(asked) {
+		d.resolveMu.Unlock()
+		return
+	}
 	if !cached && len(d.resolveCache) >= resolvedCached {
 		d.dropOldestResolvedLocked()
 	}

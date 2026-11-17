@@ -13,6 +13,8 @@ import (
 // hours and days; a PR no session worked on, one still open, one closed without a merge and
 // one older than the 90 days count nothing.
 func TestVelocityHistoryCountsTheLandedPRs(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	now := time.Now()

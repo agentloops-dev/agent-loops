@@ -16,6 +16,8 @@ import (
 // whose sandbox is on is not given off.
 
 func TestEachRuntimesSandboxAsItTakesIt(t *testing.T) {
+	t.Parallel()
+
 	l, meta := withSandbox(acp.Launch{Args: []string{"acp"}, Env: []string{"GEMINI_SANDBOX=true"}}, sessionMeta("claude"), "claude", wire.SandboxChoiceOff)
 	b, _ := json.Marshal(meta)
 	if string(b) != `{"claudeCode":{"options":{"disallowedTools":["Workflow","CronCreate","CronList","CronDelete","ScheduleWakeup","Monitor","RemoteTrigger","PushNotification","EnterWorktree","ExitWorktree"],"sandbox":{"enabled":false}}}}` || len(l.Args) != 1 {
@@ -51,6 +53,8 @@ func TestEachRuntimesSandboxAsItTakesIt(t *testing.T) {
 }
 
 func TestAnAgentsSandbox(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -86,6 +90,8 @@ func TestAnAgentsSandbox(t *testing.T) {
 }
 
 func TestASandboxThatCouldNotStart(t *testing.T) {
+	t.Parallel()
+
 	if got := sandboxMatch("claude", "\x1b[31mError: run failed. sandbox_apply: Operation not permitted\x1b[0m\nok"); got != "sandbox_apply: Operation not permitted" {
 		t.Fatalf("%q", got)
 	}

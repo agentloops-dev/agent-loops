@@ -10,6 +10,8 @@ import (
 // A session on Auto that waits in the queue picks its runtime when it leaves the queue, as
 // one started at once does (#4380).
 func TestAQueuedAutoSessionPicksItsRuntimeWhenItStarts(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -57,6 +59,8 @@ func TestAQueuedAutoSessionPicksItsRuntimeWhenItStarts(t *testing.T) {
 
 // A session whose runtime is not there says so when it does not start (#4380).
 func TestASessionWithNoRuntimeSaysWhyItDidNotStart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()

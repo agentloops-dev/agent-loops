@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -39,10 +38,9 @@ func serveRegistry(t *testing.T) {
 }
 
 func TestAnMCPServerFoundAddedListedAndRemoved(t *testing.T) {
-	flaky.UnderLoad(t, "#5812")
 	serveRegistry(t)
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -138,8 +136,10 @@ func TestAnMCPServerFoundAddedListedAndRemoved(t *testing.T) {
 
 // A personal entry removed is kept in ~/.agents/mcp.removed.json (#2195): that file is in no git.
 func TestARemovedPersonalServerIsKept(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
@@ -186,7 +186,7 @@ func TestAnMCPServerTypedVerifiedAndAdded(t *testing.T) {
 	self, _ := os.Executable()
 	t.Setenv("AGENTS_FAKE_MCP", "1")
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	personal := map[string]any{"kind": "personal"}
@@ -246,8 +246,10 @@ func TestAnMCPServerTypedVerifiedAndAdded(t *testing.T) {
 // Ours are rows of the Agent Loops marketplace, a file inside agentsd, with their levels and no
 // mark of their own, and added as any connector is: hosted (#1428, #2155).
 func TestOursAreListedAndAddedLikeAnyConnector(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -326,8 +328,10 @@ func TestOursAreListedAndAddedLikeAnyConnector(t *testing.T) {
 // A person's marketplace can be a file (#2155): the registry's shape, searched and added with no
 // network; a command in its _meta is not read, so it cannot run one.
 func TestAFileMarketplaceIsSearchedAndAdded(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	os.MkdirAll(filepath.Join(home, "team"), 0o755)

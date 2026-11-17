@@ -18,6 +18,8 @@ import (
 // #2033: a server's list view row ends in the count its feeding tool says.
 
 func TestAViewsCountIsReadFromItsAnswer(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		result          string
 		count, attended int64 // -1: none
@@ -83,12 +85,14 @@ func countServer(t *testing.T, count *atomic.Int32, down *atomic.Bool) *httptest
 }
 
 func TestAViewRowsCountFollowsItsListAndGoesStale(t *testing.T) {
+	t.Parallel()
+
 	var count atomic.Int32
 	var down atomic.Bool
 	count.Store(23)
 	server := countServer(t, &count, &down)
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"gh":{"url":"`+server.URL+`"}}}`), 0o644)
 	d, c := start(t, t.TempDir())

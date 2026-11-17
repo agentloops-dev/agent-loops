@@ -17,6 +17,8 @@ import (
 // #3652: release-tags.json keeps a repo's newest tags only, and a tag older than those
 // is not linked again.
 func TestReleaseTagsKeepTheNewest(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	repo := forgeRepo{"github", "alexec/agents"}
@@ -112,6 +114,8 @@ func TestWorkflowStatesGoThirtyDaysAfterTheirFile(t *testing.T) {
 // #3652: the approvals and review files let go of a folder that is gone, and keep one on
 // disk and one this host still lists.
 func TestApprovalsLetGoOfFoldersThatAreGone(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	listed := folder(t, c, 1)
@@ -156,6 +160,8 @@ func TestApprovalsLetGoOfFoldersThatAreGone(t *testing.T) {
 
 // #3652: a device not seen for 90 days is forgotten; one seen since is kept.
 func TestDevicesNotSeenForNinetyDaysAreForgotten(t *testing.T) {
+	t.Parallel()
+
 	d, _ := startDevices(t)
 	defer d.Shutdown()
 	at := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)

@@ -31,6 +31,8 @@ func repo(t *testing.T) string {
 }
 
 func TestWorktreeNames(t *testing.T) {
+	t.Parallel()
+
 	at := time.Date(2026, 10, 16, 9, 5, 0, 0, time.UTC)
 	for prompt, want := range map[string]string{
 		"Please fix the login bug on the dashboard": "fix-login-bug-dashboard",
@@ -55,6 +57,8 @@ func TestWorktreeNames(t *testing.T) {
 }
 
 func TestAStartInANewWorktreeAndItsRemoval(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -124,6 +128,8 @@ func TestAStartInANewWorktreeAndItsRemoval(t *testing.T) {
 }
 
 func TestAWorktreeOutsideARepositoryIsRefused(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -134,6 +140,8 @@ func TestAWorktreeOutsideARepositoryIsRefused(t *testing.T) {
 }
 
 func TestBuildOutputIsCleared(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
@@ -162,6 +170,8 @@ func TestBuildOutputIsCleared(t *testing.T) {
 // the lead skill starts lanes in fix-github-issue-<n>. A name with a slash is a
 // branch, so one that is not there is still refused.
 func TestAHelperNamesANewWorktree(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)

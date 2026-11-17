@@ -14,6 +14,8 @@ import (
 // gone or rate limited; spent and gone take the runtime out of the pool and stop the agent.
 
 func TestALimitInWords(t *testing.T) {
+	t.Parallel()
+
 	c := func(n int) *int { return &n }
 	for _, tc := range []struct {
 		runtime   string
@@ -42,6 +44,8 @@ func TestALimitInWords(t *testing.T) {
 }
 
 func TestACreditGoneStopsTheAgent(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -65,6 +69,8 @@ func TestACreditGoneStopsTheAgent(t *testing.T) {
 // The typed layer and the plan window (SessionFailure, RateLimitInfo): a limit with no
 // action is spent, one with retry a rate limit, another kind only said.
 func TestATypedFailureAndAPlanWindow(t *testing.T) {
+	t.Parallel()
+
 	f := failureIn(map[string]any{"jetbrains": map[string]any{"air": map[string]any{"sessionFailure": map[string]any{
 		"id": "f", "revision": 2.0, "category": "limit", "title": "Spent", "actions": []any{"retry"}}}}})
 	if f == nil || f.Revision != 2 || !f.isError() || classifyLimit("claude", f, nil, nil, "", "").kind != limitRateLimited {
@@ -127,6 +133,8 @@ func TestARateLimitIsSentAgain(t *testing.T) {
 }
 
 func TestATypedLimitStopsTheAgentUntilItsReset(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -149,6 +157,8 @@ func TestATypedLimitStopsTheAgentUntilItsReset(t *testing.T) {
 }
 
 func TestPaidOverageTakesTheRuntimeOutAndTheTurnStands(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -168,6 +178,8 @@ func TestPaidOverageTakesTheRuntimeOutAndTheTurnStands(t *testing.T) {
 // A weekly reading is the last of its week (#3438): a later one of the same week replaces it,
 // the next week adds one, at most six weeks of a window stay, and other windows are not kept.
 func TestWithWeekKeepsTheLastReadingOfEachWeek(t *testing.T) {
+	t.Parallel()
+
 	week := func(window string, n int, used float64, at float64) wire.AllowanceReading {
 		resets := wire.Date(float64(n) * 7 * 86400)
 		return wire.AllowanceReading{Window: &window, Used: &used, ResetsAt: &resets, At: wire.Date(at)}

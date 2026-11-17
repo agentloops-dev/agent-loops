@@ -26,6 +26,8 @@ func diskNotices(t *testing.T, c *conn, id int) []wire.Need {
 // A volume that becomes critical is one notice of the machine's (#3682), with no chat, and
 // it is taken back when the volume climbs back.
 func TestACriticalDiskIsOneNoticeUntilItClimbsBack(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	alarm := wire.DiskAlarm{Reading: wire.DiskReading{Volume: "Macintosh HD", Mount: "/", FreeBytes: 1_500_000_000, TotalBytes: 100e9},

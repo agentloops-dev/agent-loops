@@ -14,7 +14,9 @@ import (
 // file of their own, so that list is never written over and can still be moved to
 // folders.json by hand (#2707).
 func TestHeardProjectsLeavesAV011FolderListAlone(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	root := t.TempDir()
 	old := filepath.Join(root, "projects.json")
 	v011 := []byte(`[{"path":"/Users/alex/src/agents","archived":true,"helperLimits":{"running":3,"kept":5}}]`)
@@ -40,6 +42,8 @@ func TestHeardProjectsLeavesAV011FolderListAlone(t *testing.T) {
 // The forgejo server's list views (#3838) are the Tasks and Code review slots' pages, as the
 // gitlab server's are, pointed at the repository by its repo argument.
 func TestTheForgejoListsAreTheTasksAndCodeReviewSlotsPages(t *testing.T) {
+	t.Parallel()
+
 	for uri, want := range map[string]wire.ConnectorSlotKind{forgejomcp.IssuesURI: wire.ConnectorSlotKindTasks,
 		forgejomcp.PullsURI: wire.ConnectorSlotKindCodeReview} {
 		kind, provider, key, ok := viewSlot("agents/forgejo", uri)
@@ -55,6 +59,8 @@ func TestTheForgejoListsAreTheTasksAndCodeReviewSlotsPages(t *testing.T) {
 // The bitbucket server's list views (#3866) are the Tasks and Code review slots' pages, as the
 // forgejo server's are, pointed at the repository by its repo argument.
 func TestTheBitbucketListsAreTheTasksAndCodeReviewSlotsPages(t *testing.T) {
+	t.Parallel()
+
 	for uri, want := range map[string]wire.ConnectorSlotKind{bitbucketmcp.IssuesURI: wire.ConnectorSlotKindTasks,
 		bitbucketmcp.PullsURI: wire.ConnectorSlotKindCodeReview} {
 		kind, provider, key, ok := viewSlot("agents/bitbucket", uri)

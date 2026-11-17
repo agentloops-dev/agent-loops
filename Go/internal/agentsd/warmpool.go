@@ -205,7 +205,7 @@ func (d *Daemon) warmKey(a *wire.Agent) string {
 	k := map[string]any{"runtime": a.RuntimeID, "cwd": a.Cwd, "account": a.AccountID, "extra": a.StartOptions.ExtraArguments,
 		"persona": a.Persona, "starter": a.StartedByAgent}
 	if rt := runtimeByID(a.RuntimeID); rt != nil {
-		path, args, _ := locateFor(rt)
+		path, args, _ := d.locate(rt)
 		k["path"], k["args"] = path, args
 		if fi, err := os.Stat(path); err == nil {
 			k["version"] = fmt.Sprint(fi.Size(), fi.ModTime().UnixNano())

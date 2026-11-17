@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -65,6 +64,8 @@ func reachText(t *testing.T, r wire.SharedReach) string {
 }
 
 func TestSharedSnapshotSaysWhoGetsWhat(t *testing.T) {
+	t.Parallel()
+
 	home := sharedHome(t)
 	present := rulesFor("claude", "codex", "copilot")
 	s := personalSnapshot(home, present, layoutRecord{Home: home}, nil, map[string]string{})
@@ -151,9 +152,10 @@ func TestSharedSnapshotSaysWhoGetsWhat(t *testing.T) {
 }
 
 func TestSharedSnapshotAnsweredOverTheSocket(t *testing.T) {
-	flaky.UnderLoad(t, "#5812")
+	t.Parallel()
+
 	home := sharedHome(t)
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 
@@ -186,10 +188,12 @@ func TestSharedSnapshotAnsweredOverTheSocket(t *testing.T) {
 }
 
 func TestSharedSnapshotWithNoPersonalHome(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.PersonalHome = ""
-	t.Setenv("AGENTS_PERSONAL_HOME", "")
+	personalHomeFor(t, "")
 	raw := c.call(t, 1, "personal/shared", nil)
 	var s wire.SharedSnapshot
 	json.Unmarshal(raw, &s)

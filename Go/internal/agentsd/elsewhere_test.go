@@ -22,6 +22,8 @@ import (
 const there = wire.UUID("11111111-2222-3333-4444-555555555555")
 
 func TestTheStarterReachesItsSessionOnAnotherMachine(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := "fix-login"
@@ -117,6 +119,8 @@ func TestTheStarterReachesItsSessionOnAnotherMachine(t *testing.T) {
 // P20261030-1: list_sessions must not wait on every session on another machine in turn —
 // one slow machine should not cost the others their share of the wait.
 func TestListThereAsksEveryMachineAtOnce(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -151,6 +155,8 @@ func TestListThereAsksEveryMachineAtOnce(t *testing.T) {
 }
 
 func TestOnlyTheStarterReachesASessionFromAnotherMachine(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -233,6 +239,8 @@ func TestOnlyTheStarterReachesASessionFromAnotherMachine(t *testing.T) {
 // #2977: a status that says what was already held writes nothing; one that changes a record
 // writes elsewhere.json again.
 func TestHeardThereWritesOnlyWhatChanged(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -270,4 +278,12 @@ func TestHeardThereWritesOnlyWhatChanged(t *testing.T) {
 	if written() {
 		t.Fatal("the same ending was written again")
 	}
+}
+
+// #5806: a host with no store (a test's bare Daemon) has no waits to ask about, and the job
+// that SetControlAsk starts does not panic.
+func TestAskThereWaitsWithNoStore(t *testing.T) {
+	t.Parallel()
+
+	(&Daemon{ctx: context.Background()}).askThereWaits()
 }

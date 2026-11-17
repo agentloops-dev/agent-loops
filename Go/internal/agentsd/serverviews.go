@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"bufio"
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,7 +97,7 @@ func (d *Daemon) readServerViews(s viewServer, folder string) {
 		if d.pinsHaveStopped() {
 			return
 		}
-		if d.loadViewCatalog(context.Background(), s) != nil {
+		if d.loadViewCatalog(d.hostCtx(), s) != nil {
 			d.pinsChanged(folder)
 		}
 	})

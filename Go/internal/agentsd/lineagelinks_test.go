@@ -36,6 +36,8 @@ func wantLinks(t *testing.T, got map[string]bool, want ...string) {
 // #2349: a start label, a label added and taken off, a helper's parent and an archive each
 // make or end the session's links.
 func TestLineageFromLabelsHelpersAndArchive(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -78,6 +80,8 @@ func TestLineageFromLabelsHelpersAndArchive(t *testing.T) {
 
 // #2349: a workflow's session is started by its run, and the run is part of its workflow.
 func TestLineageFromAWorkflowRun(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -97,6 +101,8 @@ func TestLineageFromAWorkflowRun(t *testing.T) {
 // #2349: pr.opened links every session on its branch, in its repo, and the issues its body
 // closes; pr.closed ends them all, as a PR closed without a merge fixed nothing.
 func TestLineageFromPREvents(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder, other := t.TempDir(), t.TempDir()
@@ -129,6 +135,8 @@ func TestLineageFromPREvents(t *testing.T) {
 
 // #2349: pr.merged ends the sessions' links to the PR and keeps what it fixed.
 func TestLineageWhenAPRMerges(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -144,6 +152,8 @@ func TestLineageWhenAPRMerges(t *testing.T) {
 }
 
 func TestPROfURL(t *testing.T) {
+	t.Parallel()
+
 	for raw, want := range map[string]string{
 		"https://github.com/alexec/Agents/pull/12":                 "github:pr:alexec/agents#12",
 		"https://github.com/alexec/Agents/pull/12/files":           "github:pr:alexec/agents#12",

@@ -404,17 +404,17 @@ func (d *Daemon) registerSettings() {
 		return d.rememberedOptions(r), nil
 	})
 	On(d, wire.CallPersonasList, func(ctx context.Context, c *Client, r wire.PersonasListRequest) ([]wire.Persona, error) {
-		return personas(store.FolderPath(r.Folder), personaHome()), nil
+		return personas(store.FolderPath(r.Folder), d.personaHome()), nil
 	})
 	On(d, wire.CallPersonasFiles, func(ctx context.Context, c *Client, r wire.PersonasFilesRequest) (wire.PersonaFilesAnswer, error) {
-		base, err := personaFilesBase(r.Folder, r.Origin)
+		base, err := d.personaFilesBase(r.Folder, r.Origin)
 		if err != nil {
 			return nil, err
 		}
 		return listPersonaFiles(base, r.Origin)
 	})
 	On(d, wire.CallPersonasSave, func(ctx context.Context, c *Client, r wire.PersonaFileSaveRequest) (wire.Empty, error) {
-		base, err := personaFilesBase(r.Folder, r.Origin)
+		base, err := d.personaFilesBase(r.Folder, r.Origin)
 		if err != nil {
 			return wire.Empty{}, err
 		}
@@ -422,11 +422,11 @@ func (d *Daemon) registerSettings() {
 	})
 }
 
-func personaFilesBase(folder *wire.URL, origin wire.PersonaOrigin) (string, error) {
+func (d *Daemon) personaFilesBase(folder *wire.URL, origin wire.PersonaOrigin) (string, error) {
 	var base string
 	switch origin {
 	case wire.PersonaOriginPersonal:
-		base = personaHome()
+		base = d.personaHome()
 	case wire.PersonaOriginFolder:
 		if folder == nil {
 			return "", Invalid("Choose a folder for folder personas.")
@@ -518,5 +518,6 @@ func savePersonaFile(base string, r wire.PersonaFileSaveRequest) error {
 	return nil
 }
 
-// personaHome is the folder whose .agents/personas are the person's own.
-func personaHome() string { return os.Getenv("AGENTS_PERSONAL_HOME") }
+// personaHome is the folder whose .agents/personas are the person's own: the home
+// AGENTS_PERSONAL_HOME named at the start.
+func (d *Daemon) personaHome() string { return d.startOpts().namedHome }

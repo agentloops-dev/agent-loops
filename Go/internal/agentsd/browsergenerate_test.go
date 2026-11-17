@@ -68,6 +68,8 @@ func TestGenerateSecretRefusesRulesNoPasswordMeets(t *testing.T) {
 }
 
 func TestPasswordRules(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		rules  string
 		length int

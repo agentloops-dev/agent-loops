@@ -11,6 +11,8 @@ import (
 // over becomes a finished agent whose transcript is its replay, and deleting one needs a yes.
 
 func TestTheirConversationsTakenOver(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

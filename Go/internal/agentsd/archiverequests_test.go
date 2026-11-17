@@ -15,6 +15,8 @@ import (
 // lead stops and archives only what it started.
 
 func TestAnAgentAsksToBeArchived(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	// The person's own chat, with the person's setting off: it waits for approval (#1802).
@@ -51,6 +53,8 @@ func TestAnAgentAsksToBeArchived(t *testing.T) {
 // setting allows by default; not when the turn showed a file, which stays unread under
 // Done with nobody asked; and never when the turn wants the person.
 func TestThePersonsChatArchivesItself(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
@@ -85,6 +89,8 @@ func TestThePersonsChatArchivesItself(t *testing.T) {
 // #1802: show_file puts a mark on the row of a conversation nobody is watching, and reading
 // it, or Mark as Read, takes the mark away.
 func TestAShownFileIsAMarkUntilRead(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -112,6 +118,8 @@ func TestAShownFileIsAMarkUntilRead(t *testing.T) {
 }
 
 func TestALeadStopsAndArchivesItsHelpers(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()

@@ -273,6 +273,8 @@ func TestABrowserThatDoesNotStartSaysWhy(t *testing.T) {
 }
 
 func TestABrowserToolIsAMethodOfItsOwn(t *testing.T) {
+	t.Parallel()
+
 	for tool, want := range map[string]string{
 		"browser_navigate": "browser/navigate", "browser_take_screenshot": "browser/takeScreenshot",
 		"browser_navigate_back": "browser/navigateBack", "show_file": "files/show",
@@ -295,6 +297,8 @@ func TestABrowserToolIsAMethodOfItsOwn(t *testing.T) {
 // The list is the pinned @playwright/mcp's: after a change to the pin, run
 // scripts/browser-tools.sh.
 func TestTheBrowserToolsMatchThePin(t *testing.T) {
+	t.Parallel()
+
 	var list browserToolList
 	if err := json.Unmarshal(browserToolsFile, &list); err != nil {
 		t.Fatal(err)
@@ -321,6 +325,8 @@ func TestTheBrowserToolsMatchThePin(t *testing.T) {
 // Playwright's links into its output folder, as 0.0.83 writes them, name the tool that
 // reads the file through the filter instead.
 func TestPlaywrightsFilesAreNotLinked(t *testing.T) {
+	t.Parallel()
+
 	const out = "/cache/browser/output/A1"
 	in := "### Snapshot\n- [Snapshot](/cache/browser/output/A1/page-2026-11-05T17-40-49-901Z.yml)\n" +
 		"### Events\n- New console entries: /cache/browser/output/A1/console-2026-11-05T17-40-49-716Z.log#L1\n" +

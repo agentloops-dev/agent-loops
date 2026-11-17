@@ -26,6 +26,8 @@ func someone() *wire.AuditActor {
 // #1751: the events a person's call raises carry the actor the control plane gave its
 // channel into events.jsonl; what the agent does by itself carries none.
 func TestAPersonsCallsPutTheirActorOnTheLog(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, _ := start(t, root)
@@ -71,6 +73,8 @@ func TestAPersonsCallsPutTheirActorOnTheLog(t *testing.T) {
 
 // The same event from two people is two events, not one with a count.
 func TestTwoPeoplesEventsDoNotFold(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	draft := wire.EventDraft{Name: "server.offline", At: now(), Scope: macScope(), Sentence: "ci went offline.",
 		Details: map[string]string{"server": "ci"}}

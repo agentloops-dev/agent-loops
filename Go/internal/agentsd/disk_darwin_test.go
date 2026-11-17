@@ -9,6 +9,8 @@ import (
 // A Mac's home is on the data volume, and its reading says the volume's name and "/",
 // as Foundation's does, not "This server's disk" (#1138).
 func TestDiskVolumeNamesTheMacsVolume(t *testing.T) {
+	t.Parallel()
+
 	home, _ := os.UserHomeDir()
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(home, &st); err != nil {

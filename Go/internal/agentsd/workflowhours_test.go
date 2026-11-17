@@ -25,6 +25,8 @@ func hoursOf(t *testing.T, front string) *wire.WorkflowHours {
 }
 
 func TestReadingHours(t *testing.T) {
+	t.Parallel()
+
 	h := hoursOf(t, "hours:\n  between: \"18:00-09:00\"\n  days: [mon, tue, wed, thu, fri]\n  time-zone: Europe/London\n")
 	if h == nil || *h.Between != "18:00-09:00" || len(h.Days) != 5 || h.Days[0] != wire.WeekdayMon || *h.TimeZone != "Europe/London" {
 		t.Fatalf("%+v", h)
@@ -70,6 +72,8 @@ func TestReadingHours(t *testing.T) {
 // A schedule's between: can go past midnight now; the hours after midnight are the day
 // before's.
 func TestAScheduleBetweenPastMidnight(t *testing.T) {
+	t.Parallel()
+
 	w := parseWorkflow("---\non:\n  - schedule:\n      at: \":00\"\n      between: \"22:00-02:00\"\n      days: [fri]\n---\nGo\n", "x", "/p")
 	if w.Problem != nil {
 		t.Fatal(w.Problem.Unreadable)
@@ -98,6 +102,8 @@ func TestAScheduleBetweenPastMidnight(t *testing.T) {
 }
 
 func TestTheHoursWindow(t *testing.T) {
+	t.Parallel()
+
 	london, _ := time.LoadLocation("Europe/London")
 	tokyo, _ := time.LoadLocation("Asia/Tokyo")
 	between, weekdays := "18:00-09:00", []wire.Weekday{wire.WeekdayMon, wire.WeekdayTue, wire.WeekdayWed, wire.WeekdayThu, wire.WeekdayFri}
@@ -155,6 +161,8 @@ func TestTheHoursWindow(t *testing.T) {
 
 // A schedule fires only when its own window and hours: both allow it.
 func TestAScheduleInsideBothWindows(t *testing.T) {
+	t.Parallel()
+
 	s := wire.WorkflowSchedule{Minutes: []int64{0}, Hours: [2]int64{0, 23}, StartMinute: 0, EndMinute: 30, Days: allWeekdays}
 	between := "09:00-12:00"
 	win := windowOf(&wire.WorkflowHours{Between: &between}, "")
@@ -172,6 +180,8 @@ func TestAScheduleInsideBothWindows(t *testing.T) {
 
 // When cooldown and hours both hold a fire, it starts when both allow it.
 func TestCooldownWithHours(t *testing.T) {
+	t.Parallel()
+
 	between := "09:00-17:00"
 	win := windowOf(&wire.WorkflowHours{Between: &between}, "")
 	cool := 3 * 3600.0
@@ -200,6 +210,8 @@ func TestCooldownWithHours(t *testing.T) {
 // An event outside the hours is held and said quietly; Run now runs; the held fire starts
 // once the hours open.
 func TestAFireOutsideHoursIsHeld(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -273,6 +285,8 @@ func TestAFireOutsideHoursIsHeld(t *testing.T) {
 
 // The person's time zone comes from the control plane's timeZone part, and is kept.
 func TestThePersonsTimeZone(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if z := d.personZone(); z != "" {
@@ -296,6 +310,8 @@ func TestThePersonsTimeZone(t *testing.T) {
 // The Hours setting (#4820) writes `hours:` as a block, checked by the file's own reader,
 // and Any time takes it out.
 func TestWritingHours(t *testing.T) {
+	t.Parallel()
+
 	s := func(v string) *string { return &v }
 	src := "---\non: agent.finished\ncooldown: 2h\n---\nGo\n"
 	lines, err := hoursLines(wire.WorkflowHours{Between: s("18:00-09:00"), Days: []wire.Weekday{wire.WeekdayMon, wire.WeekdayFri}, TimeZone: s("Europe/London")})
@@ -344,6 +360,8 @@ func TestWritingHours(t *testing.T) {
 }
 
 func TestTheSettingsWriteHours(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -371,6 +389,8 @@ func TestTheSettingsWriteHours(t *testing.T) {
 // Named windows (#4821): `hours: working` is the project's working hours, and
 // `hours: not-working` every time outside them.
 func TestNamedHours(t *testing.T) {
+	t.Parallel()
+
 	for front, want := range map[string]wire.WorkflowHoursName{
 		"hours: working\n": wire.WorkflowHoursNameWorking, "hours: not-working\n": wire.WorkflowHoursNameNotWorking,
 	} {
@@ -396,6 +416,8 @@ func TestNamedHours(t *testing.T) {
 
 // Outside the window: open where the window is shut, and it opens where a day's window ends.
 func TestTheNotWorkingWindow(t *testing.T) {
+	t.Parallel()
+
 	london, _ := time.LoadLocation("Europe/London")
 	in := func(day, h, m int) time.Time { return time.Date(2026, 11, day, h, m, 0, 0, london) } // the 13th is a Friday
 	h := defaultWorkingHours()
@@ -435,6 +457,8 @@ func TestTheNotWorkingWindow(t *testing.T) {
 // The project's working hours are a setting in .agents/folder.json, and a named window
 // follows them.
 func TestTheProjectsWorkingHours(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

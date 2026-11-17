@@ -14,6 +14,8 @@ import (
 // You lists it on every client and for a folder on any machine (#5717). Approve and Deny
 // settle it from there, as for a workflow.
 func TestAWaitingConnectorIsInTheFoldersApprovals(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

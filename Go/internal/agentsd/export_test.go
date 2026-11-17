@@ -124,6 +124,8 @@ func TestExportAnAgentAndImportItOnAnotherMachine(t *testing.T) {
 // #2389: an export from folder A, imported from folder B's menu on another machine,
 // lands in B, whatever folder A was there; a folder that is no folder is refused.
 func TestImportFromAFolderMenuLandsInThatFolder(t *testing.T) {
+	t.Parallel()
+
 	a, ca := start(t, t.TempDir())
 	folderA := folder(t, ca, 1)
 	one := seeded(t, a, folderA, nil)
@@ -158,6 +160,8 @@ func TestImportFromAFolderMenuLandsInThatFolder(t *testing.T) {
 
 // A folder's export holds its agents and no other folder's.
 func TestExportAFolder(t *testing.T) {
+	t.Parallel()
+
 	a, ca := start(t, t.TempDir())
 	dir := folder(t, ca, 1)
 	elsewhere := folder(t, ca, 2)
@@ -192,6 +196,8 @@ func TestExportAFolder(t *testing.T) {
 // An agent deleted here does not come back from its export, and its own export, imported
 // on the machine that made it, is never run there.
 func TestImportSkipsAnErasedAgentAndNeverRunsOwnAgents(t *testing.T) {
+	t.Parallel()
+
 	a, ca := start(t, t.TempDir())
 	dir := folder(t, ca, 1)
 	gone := archivedWithSession(t, a, dir, "gone")
@@ -252,6 +258,8 @@ func TestImportRefusesWhatIsNotAnExport(t *testing.T) {
 }
 
 func TestExportFileName(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"":                       "Agent Loops",
 		"  ..  ":                 "Agent Loops",

@@ -53,6 +53,8 @@ func refusedByYou(t testing.TB, err error, rule string) {
 // TestYourLayerStopsAnAgentStart: your layer's runtimes allowlist (FR-002, "runtimes and
 // models allowed") refuses a start on a runtime it does not name.
 func TestYourLayerStopsAnAgentStart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -68,6 +70,8 @@ func TestYourLayerStopsAnAgentStart(t *testing.T) {
 // (TestEveryRuleAtEveryPath's "folders/setHelperLimits: above the cap" row), and caps
 // helperLimitsIn's count itself, which a helper's own start is held to (helpers.go).
 func TestYourLayerStopsAHelperStart(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	dir := t.TempDir()
@@ -86,6 +90,8 @@ func TestYourLayerStopsAHelperStart(t *testing.T) {
 // on a runtime it does not name, the same path a helper's start takes (startedBy with no
 // agent: DaemonCore+Helpers' workflow shape).
 func TestYourLayerStopsAWorkflowRun(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -99,6 +105,8 @@ func TestYourLayerStopsAWorkflowRun(t *testing.T) {
 // Continue in New and Branch on a session whose runtime it no longer allows (the same
 // table TestEveryRuleAtEveryPath runs for the organisation).
 func TestYourLayerStopsContinueInNewAndBranch(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -119,6 +127,8 @@ func TestYourLayerStopsContinueInNewAndBranch(t *testing.T) {
 // TestYourLayerStopsALooserModeChange: your layer's permissionMode rule (FR-008) refuses a
 // person's own choice of a mode looser than it allows.
 func TestYourLayerStopsALooserModeChange(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -134,6 +144,8 @@ func TestYourLayerStopsALooserModeChange(t *testing.T) {
 // TestYourLayerStopsSandboxOff: your layer's sandbox rule (FR-002, new for your layer) set
 // to on refuses turning the command sandbox off.
 func TestYourLayerStopsSandboxOff(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -149,6 +161,8 @@ func TestYourLayerStopsSandboxOff(t *testing.T) {
 // TestYourLayerStopsYesToAll: your layer's permissionRequests rule (FR-002, tighter is Ask
 // me) refuses Always Approve, the permission flow's ceiling.
 func TestYourLayerStopsYesToAll(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	askMe := wire.ClientPermissionModeDefault
@@ -160,6 +174,8 @@ func TestYourLayerStopsYesToAll(t *testing.T) {
 // TestYourLayerStopsAMarketplaceAdd: your layer's marketplaces.allowed rule (FR-002, new
 // for your layer) refuses a marketplace it does not name.
 func TestYourLayerStopsAMarketplaceAdd(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	d.PersonalHome = t.TempDir()
@@ -171,6 +187,8 @@ func TestYourLayerStopsAMarketplaceAdd(t *testing.T) {
 // TestYourLayerStopsAConnectorAddedByHand: your layer's marketplaces.customServers rule
 // (FR-002) set to refuse refuses an MCP server added by hand.
 func TestYourLayerStopsAConnectorAddedByHand(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	setYourRules(t, d, wire.PolicyRules{Marketplaces: &wire.PolicyMarketplaces{CustomServers: "refuse"}})
@@ -181,6 +199,8 @@ func TestYourLayerStopsAConnectorAddedByHand(t *testing.T) {
 // rule (FR-002) refuses a start once the day's, or an agent's, budget is reached (the turn
 // and day budgets).
 func TestYourLayerStopsTheDayBudget(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -193,6 +213,8 @@ func TestYourLayerStopsTheDayBudget(t *testing.T) {
 }
 
 func TestYourLayerStopsTheAgentBudget(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -207,6 +229,8 @@ func TestYourLayerStopsTheAgentBudget(t *testing.T) {
 // here, by the organisation's ceiling either (research table): the tool's own reply says
 // so, which this checks instead of a refusal's layer.
 func TestYourLayerSetsTheNoticeLimit(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	one := int64(1)
@@ -222,6 +246,8 @@ func TestYourLayerSetsTheNoticeLimit(t *testing.T) {
 // person's approval instead of archiving a chat they started on its own (archive
 // requests). Like the notice limit, there is no refusal here, so the effect is checked.
 func TestYourLayerSetsArchiveRequests(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	no := false
@@ -235,6 +261,8 @@ func TestYourLayerSetsArchiveRequests(t *testing.T) {
 // moved from runtime-environment.json, FR-012) is what passThrough gives a runtime to
 // launch with.
 func TestYourLayerSetsTheRuntimeLaunchEnvironment(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	setYourRules(t, d, wire.PolicyRules{Environment: &wire.PolicyEnvironment{PassThrough: []string{"AWS_PROFILE"}, Runtimes: map[string][]string{"claude": {"SECRET_TOKEN"}}}})

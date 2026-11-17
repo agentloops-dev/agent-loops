@@ -53,7 +53,7 @@ func toldSecretOps(d *Daemon) func() []wire.SecretOperation {
 func TestEachUseOfASecretIsRecorded(t *testing.T) {
 	setFor(t, &secretOpsBatch, 100*time.Millisecond)
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{
 		"notes":{"url":"https://notes.example.com/${API_TOKEN}"},
@@ -173,6 +173,8 @@ func TestEachUseOfASecretIsRecorded(t *testing.T) {
 
 // set_ci_secret's read names the repo it went to.
 func TestACISecretsReadIsRecorded(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, _ := forgeDaemon(t)
 	a := seeded(t, d, gitFolder(t, "git@github.com:alexec/newapp.git"), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
 	if err := d.saveSecret("SENTRY_TOKEN", "sntrys_4156-not-real", false); err != nil {
@@ -189,6 +191,8 @@ func TestACISecretsReadIsRecorded(t *testing.T) {
 
 // A sync of the person's secrets says what it added, replaced and removed here.
 func TestUserSecretChanges(t *testing.T) {
+	t.Parallel()
+
 	before := userSettingsSyncState{Secrets: []string{"A", "B", "C"}, Versions: map[string]int64{"A": 1, "B": 2, "C": 1}}
 	after := userSettingsSyncState{Secrets: []string{"A", "B", "D"}, Versions: map[string]int64{"A": 1, "B": 3, "D": 1}}
 	var got []string

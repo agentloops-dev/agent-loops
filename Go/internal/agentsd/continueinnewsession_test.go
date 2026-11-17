@@ -15,6 +15,8 @@ import (
 // worktree, and the old chat is archived only after that start is saved.
 
 func TestContinueInNewSessionKeepsTheWorktreeAndTheTitle(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -66,6 +68,8 @@ func TestContinueInNewSessionKeepsTheWorktreeAndTheTitle(t *testing.T) {
 }
 
 func TestContinueInNewSessionInAFolderUsesTheFolderSentence(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -92,6 +96,8 @@ func TestContinueInNewSessionInAFolderUsesTheFolderSentence(t *testing.T) {
 }
 
 func TestContinueInNewSessionRefusesUnlessTheAllowanceRanOut(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

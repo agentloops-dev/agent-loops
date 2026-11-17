@@ -14,6 +14,8 @@ import (
 // #3661: the standing block's fields, case-insensitive, with lanes 1 when not said; no block, a
 // second block, an unknown field and a bad value are errors.
 func TestStandingOfReadsTheBlock(t *testing.T) {
+	t.Parallel()
+
 	q := standingOf("The bug lane.\r\n\r\n```standing\r\nLabels: bug\r\nany: polish, , competitor\r\nnot: wontfix\r\nmilestone: None\r\n```\r\n")
 	if q.Error != nil || strings.Join(q.Labels, ",") != "bug" || strings.Join(q.Any, ",") != "polish,competitor" ||
 		strings.Join(q.Not, ",") != "wontfix" || deref(q.Milestone) != "none" || q.Lanes != 1 {
@@ -44,6 +46,8 @@ func TestStandingOfReadsTheBlock(t *testing.T) {
 // #3661: the query takes open issues that are not epics, with its labels and milestone; the
 // order is priority (high, medium, none, low), then the oldest.
 func TestStandingMatchesAndOrder(t *testing.T) {
+	t.Parallel()
+
 	item := func(n string, milestone string, labels ...string) wire.ForgeItem {
 		i := forgeItemOf(planIssue(0, "open", labels...), "")
 		i.Node.Ref = "github:issue:alexec/agents#" + n
@@ -92,6 +96,8 @@ func TestStandingMatchesAndOrder(t *testing.T) {
 // in order, all in one step, with the query, their blockers and no progress; the same plan again
 // asks GitHub nothing.
 func TestForgePlanOfAStandingEpic(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	gh.plan = githubmcp.Plan{Epic: planIssue(3659, "open", "epic", "Standing")}
 	gh.plan.Epic.SubTotal, gh.plan.Epic.SubDone = 3, 1
@@ -158,6 +164,8 @@ func TestForgePlanOfAStandingEpic(t *testing.T) {
 // #4242: a standing epic's children say their blockers on GitLab, Forgejo, Linear, Jira and
 // Azure Boards, from one read on the epic's own forge, as on GitHub.
 func TestStandingBlockersOnEveryForge(t *testing.T) {
+	t.Parallel()
+
 	children := func(refs ...string) []planChild {
 		var out []planChild
 		for _, r := range refs {
@@ -223,6 +231,8 @@ func TestStandingBlockersOnEveryForge(t *testing.T) {
 // #4335: parent: none leaves out the issues that are another's sub-issue. GitHub's list says the
 // parent, so the plan asks nothing more.
 func TestForgePlanOfAStandingEpicWithNoParent(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	gh.plan = githubmcp.Plan{Epic: planIssue(4208, "open", "epic", "Standing")}
 	gh.bodies = map[int]string{4208: "```standing\nlabels: enhancement\nmilestone: none\nparent: none\n```\n"}
@@ -243,6 +253,8 @@ func TestForgePlanOfAStandingEpicWithNoParent(t *testing.T) {
 // #4335: GitLab's and Forgejo's lists do not say an issue's parent, so parent: none reads them
 // for the epic's own repo, a page at a time, and keeps the issues with none, in order.
 func TestStandingParentlessOnGitLabAndForgejo(t *testing.T) {
+	t.Parallel()
+
 	items := func(refs ...string) []wire.ForgeItem {
 		var out []wire.ForgeItem
 		for _, r := range refs {

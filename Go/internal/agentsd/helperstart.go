@@ -147,7 +147,7 @@ func (d *Daemon) heldMessages(a *wire.Agent) map[wire.UUID]bool {
 }
 
 func (d *Daemon) unavailableRuntime(rt *runtimeDef) string {
-	if p, _, _ := locateFor(rt); p == "" {
+	if p, _, _ := d.locate(rt); p == "" {
 		return rt.Name + " is not installed on this machine"
 	}
 	if err := d.needsSignIn(rt.ID); err != nil {

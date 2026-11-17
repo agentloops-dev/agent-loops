@@ -83,6 +83,8 @@ func ciFakeGitHub(t *testing.T, now time.Time) (*httptest.Server, *atomic.Int32)
 }
 
 func TestCITimingsReadAndAnswer(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now().UTC().Truncate(time.Second)
 	srv, calls := ciFakeGitHub(t, now)
 	d, err := New(context.Background(), t.TempDir())
@@ -151,6 +153,8 @@ func TestCITimingsReadAndAnswer(t *testing.T) {
 }
 
 func TestCITimingsBackfillKeepsToItsBudget(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now().UTC().Truncate(time.Second)
 	srv, _ := ciFakeGitHub(t, now)
 	d, err := New(context.Background(), t.TempDir())
@@ -178,6 +182,8 @@ func TestCITimingsBackfillKeepsToItsBudget(t *testing.T) {
 
 // A fake GitLab with two finished pipelines: one on main with a retried job, one merge request's.
 func TestCITimingsGitLab(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now().UTC().Truncate(time.Second)
 	at := func(d time.Duration) string { return now.Add(d).UTC().Format(time.RFC3339) }
 	mux := http.NewServeMux()
@@ -265,6 +271,8 @@ func TestCITimingsGitLab(t *testing.T) {
 // then only a day that changed; a control plane with no copy is sent all again, and what is
 // unsent outlives the daemon.
 func TestCITimingsSyncSendsWhatChanged(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now().UTC().Truncate(time.Second)
 	srv, _ := ciFakeGitHub(t, now)
 	root := t.TempDir()
@@ -369,6 +377,8 @@ func TestCITimingsSyncSendsWhatChanged(t *testing.T) {
 // steps" (run 2), one for a pull request with its steps on two pages, and one on main older
 // than the store keeps.
 func TestCITimingsBitbucket(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now().UTC().Truncate(time.Second)
 	at := func(d time.Duration) string { return now.Add(d).UTC().Format(time.RFC3339) }
 	var srv *httptest.Server
@@ -498,6 +508,8 @@ func TestCITimingsBitbucket(t *testing.T) {
 // has no steps, so each job is read), one for a pull request in Gitea's shape, and one still
 // running.
 func TestCITimingsForgejo(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now().UTC().Truncate(time.Second)
 	at := func(d time.Duration) string { return now.Add(d).UTC().Format(time.RFC3339) }
 	repo := "/api/v1/repos/scratch/app"
@@ -592,6 +604,8 @@ func TestCITimingsForgejo(t *testing.T) {
 // #5410: at connect the control plane has not said what it can do yet, so the first send finds
 // no builds.copy/1 and sends nothing; once it says, the send goes then, not on the next hour.
 func TestCITimingsSendWhenTheCapabilitiesAreKnown(t *testing.T) {
+	t.Parallel()
+
 	now := time.Now().UTC().Truncate(time.Second)
 	srv, _ := ciFakeGitHub(t, now)
 	d, err := New(context.Background(), t.TempDir())

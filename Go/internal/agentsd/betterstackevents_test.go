@@ -21,6 +21,8 @@ import (
 
 // TestBetterStackEventsHelper is the betterstack-mcp server, when the test below starts it.
 func TestBetterStackEventsHelper(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("AGENTS_BETTERSTACK_HELPER") != "1" {
 		return
 	}
@@ -31,6 +33,8 @@ func TestBetterStackEventsHelper(t *testing.T) {
 }
 
 func TestAWaitOnABetterStackIncident(t *testing.T) {
+	t.Parallel()
+
 	var mu sync.Mutex
 	incidents := []map[string]any{}
 	reads := 0

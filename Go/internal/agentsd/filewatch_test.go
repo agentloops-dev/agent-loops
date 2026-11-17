@@ -142,6 +142,8 @@ func TestAFileStillBeingWrittenIsAddedOnceAfterItStops(t *testing.T) {
 }
 
 func TestAFileWaitWithoutPathsIsRefusedAtOnce(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -163,6 +165,8 @@ func TestAFileWaitWithoutPathsIsRefusedAtOnce(t *testing.T) {
 }
 
 func TestAFileTriggerWithoutPathsIsUnreadable(t *testing.T) {
+	t.Parallel()
+
 	if _, problem := parsePattern("file.added", map[string][]string{}); !strings.Contains(problem, "`paths`") {
 		t.Fatal(problem)
 	}
@@ -172,6 +176,8 @@ func TestAFileTriggerWithoutPathsIsUnreadable(t *testing.T) {
 }
 
 func TestAFilePatternMatchesWhenOneOfItsPathsDoes(t *testing.T) {
+	t.Parallel()
+
 	p := waitPattern{name: "file.*", filters: map[string][]string{"paths": {"reports/*.csv", "docs/**/*.md"}}}
 	for paths, want := range map[string]bool{
 		`["reports/a.csv"]`:         true,
@@ -191,6 +197,8 @@ func TestAFilePatternMatchesWhenOneOfItsPathsDoes(t *testing.T) {
 }
 
 func TestGlobsCouldHoldOnlyTheFoldersTheyReach(t *testing.T) {
+	t.Parallel()
+
 	globs := []string{"reports/*.csv", "docs/**/*.md"}
 	for dir, want := range map[string]bool{"": true, "reports": true, "reports/old": false, "docs": true, "docs/a/b": true, "src": false} {
 		if got := globsCouldHold(dir, globs); got != want {
@@ -203,6 +211,8 @@ func TestGlobsCouldHoldOnlyTheFoldersTheyReach(t *testing.T) {
 }
 
 func TestAFileEventStaysOnItsMachine(t *testing.T) {
+	t.Parallel()
+
 	e := wire.Event{Name: "file.added"}
 	if scopeOf(fireRequest{event: &e}) != scopeMachine {
 		t.Fatal("file.added left its machine")

@@ -29,7 +29,8 @@ added it.
 4. Drop gaps the folder has set aside, such as new runtimes or App Store work.
 5. Pick **at most three** gaps that users of those tools would expect from us. File each
    one with `gh issue create --label competitor --label enhancement`, after creating the
-   `competitor` label if it does not exist yet. Each issue says which tool has the feature
+   `competitor` label if it does not exist yet, and a priority (AGENTS.md, "Set a priority when you file", #5692): a UI
+   change or core usability is `priority:medium`, the rest has none. Each issue says which tool has the feature
    (with a link) and what Agent Loops does today. Do
    not file a duplicate of an existing issue: if one already covers the gap, add a
    comment to it instead.

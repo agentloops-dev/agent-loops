@@ -98,6 +98,8 @@ func TestDesktopControlIsSavedAndReadBack(t *testing.T) {
 // A file from before #4264, {enabled: true}, is Always Approve: nothing changes for a Mac that
 // turned it on. {enabled: false} stays Off.
 func TestDesktopControlFromBeforeAskKeepsItsMeaning(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
@@ -116,6 +118,8 @@ func TestDesktopControlFromBeforeAskKeepsItsMeaning(t *testing.T) {
 // desktopControl/set), so the handler's own gate and the role table cover all three, the
 // same shape as TestSetYoursRefusesTheAgentSocketRole.
 func TestDesktopControlSetRefusesTheAgentSocketRole(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

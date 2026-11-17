@@ -13,6 +13,8 @@ import (
 // a crash, nothing asks for the person, the session stays archived, and the next start
 // does not pick it back up (#1605).
 func TestAnArchiveDuringATurnStaysArchived(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	first, c := start(t, root)
@@ -60,6 +62,8 @@ func TestAnArchiveDuringATurnStaysArchived(t *testing.T) {
 // An archive while a card waits for the person: the card's answer does not take the
 // session out of the archive (#1611).
 func TestAnArchiveWhileACardWaitsStaysArchived(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

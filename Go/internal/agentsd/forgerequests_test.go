@@ -34,6 +34,8 @@ func (f *fakeForgeGitHub) Assign(_ context.Context, repo string, number int, log
 const todoBody = "Why.\n\n## What Alex does\n\n- [ ] Sign in to gitlab.com\n- [x] Make a token\n- [ ] Paste it\n\n## Notes\n\n- [ ] not a step\n"
 
 func TestChecklistIsReadAndTicked(t *testing.T) {
+	t.Parallel()
+
 	lines := checklistOf(todoBody)
 	if len(lines) != 3 || lines[0] != (wire.RequestChecklistLine{Text: "Sign in to gitlab.com"}) || !lines[1].Done {
 		t.Fatalf("%+v", lines)
@@ -74,6 +76,8 @@ func sweepAgain(d *Daemon) {
 }
 
 func TestForgeItemsBecomeRequestsAndTheChecklistGoesBack(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh := forgeRequestsDaemon(t)
 	sweepAgain(d)
 	sweepAgain(d)
@@ -134,6 +138,8 @@ func TestForgeItemsBecomeRequestsAndTheChecklistGoesBack(t *testing.T) {
 // The person's own pull request takes no review from them: the answer is refused, and nothing
 // is written (#5803).
 func TestTheirOwnPullRequestCannotBeApproved(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh := forgeRequestsDaemon(t)
 	gh.mu.Lock()
 	gh.authors[12] = "alexec"
@@ -158,6 +164,8 @@ func TestTheirOwnPullRequestCannotBeApproved(t *testing.T) {
 // person's review of a pull request, which drops the request from GitHub's list; an issue
 // closed with steps left drops it.
 func TestTheForgeEndsARequest(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh := forgeRequestsDaemon(t)
 	sweepAgain(d)
 	if len(listedRequests(t, c, 1, "open")) != 2 {
@@ -189,6 +197,8 @@ func TestTheForgeEndsARequest(t *testing.T) {
 // #3860: on the agents' bot's PR, Approve and Request changes in Agents are the person's real
 // review of the head commit, not a comment, and no label (#5803).
 func TestAnApprovalOfTheBotsPRIsARealReview(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh := forgeRequestsDaemon(t)
 	gh.mu.Lock()
 	gh.authors = map[int]string{12: "alexec-agents"}

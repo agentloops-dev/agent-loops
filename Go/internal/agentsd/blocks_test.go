@@ -15,6 +15,8 @@ import (
 // is refused in a sentence.
 
 func TestALeadWaitsOnItsHelper(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -87,6 +89,8 @@ func TestALeadWaitsOnItsHelper(t *testing.T) {
 // agent.ended names its sessions, or sets any: true, and waits on its own; wake_on is for it
 // alone (#3799).
 func TestAWaitOnAgentEndedNamesItsSessions(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -113,6 +117,8 @@ func TestAWaitOnAgentEndedNamesItsSessions(t *testing.T) {
 
 // Every way a session ends is agent.ended, with how; a turn that ends waiting is not (#3799).
 func TestEndedHow(t *testing.T) {
+	t.Parallel()
+
 	report := func(o wire.WorkOutcome) *wire.Agent { return &wire.Agent{Report: &wire.WorkReport{Outcome: o}} }
 	for _, c := range []struct {
 		a    *wire.Agent
@@ -136,6 +142,8 @@ func TestEndedHow(t *testing.T) {
 // A block reported before a card in the same turn is still the turn's ending once the card
 // is answered (#1432): the assessments' helpers and waits were lost to an edit's card.
 func TestABlockOutlivesACardInTheSameTurn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -274,6 +282,8 @@ func TestOnlyOneWaitAtATime(t *testing.T) {
 // both reviews a release waited on, each stop cleared the release's block, and the second
 // resume woke the release's next wait on them at once, saying they were stopped.
 func TestABlockClearedTwiceAtOnceResumesOnce(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -326,6 +336,8 @@ func TestABlockClearedTwiceAtOnceResumesOnce(t *testing.T) {
 // wait goes on after it (#3173): the Scrum Master's message to a release cleared its wait
 // on two reviews, so the release was never woken when they finished or when its time came.
 func TestAWaitOutlivesAnotherAgentsMessage(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -390,6 +402,8 @@ func TestAWaitOutlivesAnotherAgentsMessage(t *testing.T) {
 // A block that waits on no session is a time-only one that check_again made before #4843:
 // on load it is dropped, with no resume and no move up the list (#5152).
 func TestATimeOnlyBlockIsDroppedOnLoad(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -416,6 +430,8 @@ func TestATimeOnlyBlockIsDroppedOnLoad(t *testing.T) {
 // at its time, which had passed, the timer fired every 20 ms until the turn ended, and
 // each pass copied and sorted every record. The block resumes as the turn ends.
 func TestADueBlockInATurnFiresTheTimerOnce(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()

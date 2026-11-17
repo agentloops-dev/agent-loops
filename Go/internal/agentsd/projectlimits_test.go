@@ -18,6 +18,8 @@ import (
 // count, and a machine the control plane does not answer counts alone and says so.
 
 func TestHelperLimitsCountAcrossTheProject(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -122,6 +124,8 @@ func TestHelperLimitsCountAcrossTheProject(t *testing.T) {
 
 // A folder in no project counts on its own, as before, also on a control plane.
 func TestHelperLimitsOfAFolderInNoProject(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir, near := t.TempDir(), t.TempDir()

@@ -37,8 +37,10 @@ func TestSecretHint(t *testing.T) {
 // A session's secret has its hint, when it was first set, its last operation, and is never
 // backed up (#4158); a new value keeps created and changes the hint.
 func TestSessionSecretRowInfo(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -63,8 +65,10 @@ func TestSessionSecretRowInfo(t *testing.T) {
 // A machine works out the hint when it opens its copy, keeps it beside the copy for that
 // version, and sends it with what it holds; an older version sent back keeps the hint (#4158).
 func TestAMachineKeepsTheHintOfItsCopy(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	_, public := machineKeys(t, root)
 	d, _ := start(t, root)
 	defer d.Shutdown()

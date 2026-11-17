@@ -3,6 +3,8 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +16,8 @@ import (
 // A lease's line in `by` order (#4268).
 
 func TestLeaseByReadsMinutesAndTimes(t *testing.T) {
+	t.Parallel()
+
 	at := time.Date(2026, 11, 9, 14, 0, 0, 0, time.Local)
 	for _, tc := range []struct {
 		raw  string
@@ -37,6 +41,8 @@ func TestLeaseByReadsMinutesAndTimes(t *testing.T) {
 }
 
 func TestTheLineIsInByOrder(t *testing.T) {
+	t.Parallel()
+
 	at := time.Date(2026, 11, 9, 14, 0, 0, 0, time.UTC)
 	when := func(m int) *wire.Date { d := wire.DateOf(at.Add(time.Duration(m) * time.Minute)); return &d }
 	e := &leaseEntry{}
@@ -86,6 +92,8 @@ func savePrioritised(t *testing.T, d *Daemon, folder string, state wire.AgentSta
 }
 
 func TestAHighSessionIsGrantedBeforeEarlierOnesWithNone(t *testing.T) {
+	t.Parallel()
+
 	d, folder := lineDaemon(t)
 	high, low := wire.SessionPriorityHigh, wire.SessionPriorityLow
 	holder := savePrioritised(t, d, folder, wire.AgentStateRunning, 1, nil)
@@ -125,6 +133,8 @@ func TestAHighSessionIsGrantedBeforeEarlierOnesWithNone(t *testing.T) {
 }
 
 func TestAPriorityChangedWhileWaitingMovesItAhead(t *testing.T) {
+	t.Parallel()
+
 	d, folder := lineDaemon(t)
 	low, high := wire.SessionPriorityLow, wire.SessionPriorityHigh
 	first := savePrioritised(t, d, folder, wire.AgentStateRunning, 1, nil)
@@ -152,7 +162,21 @@ func TestAPriorityChangedWhileWaitingMovesItAhead(t *testing.T) {
 }
 
 func TestTheStartQueueStartsAHighHelperBeforeAnOlderOne(t *testing.T) {
-	d, folder := lineDaemon(t)
+	t.Parallel()
+
+	// The machine at capacity, by the walk's file (#4748), from the first look: a look while
+	// the machine is ok starts a queued helper (#4580), and the test reads the queue (#5980).
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, capacityOverrideFile), []byte("99\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := New(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Shutdown)
+	t.Cleanup(d.stopFolderWatches)
+	folder := t.TempDir()
 	high := wire.SessionPriorityHigh
 	older := savePrioritised(t, d, folder, wire.AgentStateQueued, 10, nil)
 	newer := savePrioritised(t, d, folder, wire.AgentStateQueued, 20, &high)
@@ -163,6 +187,8 @@ func TestTheStartQueueStartsAHighHelperBeforeAnOlderOne(t *testing.T) {
 }
 
 func TestTheInLineReplySaysWhoIsAheadByPriority(t *testing.T) {
+	t.Parallel()
+
 	if got := placeWords(3, 2); got != "3rd in line; 2 sessions with a higher priority are ahead" {
 		t.Fatal(got)
 	}
@@ -177,6 +203,8 @@ func TestTheInLineReplySaysWhoIsAheadByPriority(t *testing.T) {
 // A session queued by start_session with a #n label and no priority goes by its issue's
 // priority before it starts (#5848): urgent work skips the queue.
 func TestAQueuedSessionWithAHighIssueStartsBeforeAnOlderOne(t *testing.T) {
+	t.Parallel()
+
 	d, _, folder, _ := priorityDaemon(t, t.TempDir(), map[int][]string{77: {"priority:high"}})
 	starter := store.NewUUID()
 	older := seeded(t, d, folder, func(a *wire.Agent) {

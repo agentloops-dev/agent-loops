@@ -22,10 +22,12 @@ func board(name, url string, forge wire.ConnectionProvider, key, site string) wi
 // a GitLab group board's scope in the group's projects, a Linear team, a Jira board's filter;
 // a board no folder's project has lists nothing and asks no forge.
 func TestABoardNarrowsWorkToItsForge(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, gl, ln, _ := allForgesDaemon(t)
 	j := &fakeForgeJira{}
 	d.newForgeJira = func(jiramcp.Auth) forgeJira { return j }
-	home := os.Getenv("AGENTS_PERSONAL_HOME")
+	home := d.personalHome()
 	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
 	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
 		[]byte("JIRA_URL=https://acme.atlassian.net/\nJIRA_EMAIL=kim@acme.com\nJIRA_API_TOKEN=tok\n"), 0o600)

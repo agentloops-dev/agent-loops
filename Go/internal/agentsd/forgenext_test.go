@@ -39,6 +39,8 @@ func agentsFolder(t *testing.T, d *Daemon) string {
 // #5689: the one order. On hold last; then priority high, medium, none, low; then the
 // milestone's due date, none last; then the oldest, then the lowest number.
 func TestNextCompare(t *testing.T) {
+	t.Parallel()
+
 	at := func(s string) *wire.Date {
 		return new(wire.DateOf(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, len(s))))
 	}
@@ -87,6 +89,8 @@ func TestNextCompare(t *testing.T) {
 // reasons: not an epic, not assigned, not blocked by an open issue, not labelled on a session
 // that is not archived, not fixed by an open pull request; on hold ones come last, marked.
 func TestForgeNextOfAFolder(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	folder := agentsFolder(t, d)
 	year := time.Now().UTC().Year()
@@ -151,6 +155,8 @@ func TestForgeNextOfAFolder(t *testing.T) {
 // #5689: level epic gives the open epics in the same order, and an epic gives its children that
 // are ready, from its plan's blockers.
 func TestForgeNextOfEpicsAndOfAnEpic(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	folder := agentsFolder(t, d)
 	gh.epics = []githubmcp.Item{planIssue(40, "open", "epic"), planIssue(41, "open", "epic", "priority:high"),
