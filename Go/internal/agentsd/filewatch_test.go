@@ -44,7 +44,7 @@ func answer(t *testing.T, answered chan string) string {
 	select {
 	case text := <-answered:
 		return text
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the wait was not answered")
 		return ""
 	}

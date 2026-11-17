@@ -3,6 +3,22 @@
 version: "2"
 linters:
   default: none
-  enable: [govet, staticcheck, errcheck, ineffassign, unused, gosec]
+  enable: [govet, staticcheck, errcheck, ineffassign, unused, gosec, forbidigo]
+  settings:
+    # No agentsd test waits for a fixed time (#6128, epic #6126): a fixed wait ends before a
+    # loaded -race runner answers (spike #5600, cause B). Wait on a channel or an event, or
+    # for afterLimit(t), the limit from t.Deadline() (#5632). A short poll step inside such a
+    # wait gets //nolint:forbidigo with why.
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^time\.Sleep$
+          msg: "an agentsd test waits on a channel or an event, or for afterLimit(t), not for a fixed time (#6128)"
+        - pattern: ^time\.After$
+          msg: "an agentsd test waits for afterLimit(t), the limit from t.Deadline(), not for a fixed time (#6128)"
   exclusions:
     presets: [std-error-handling, common-false-positives]
+    rules:
+      # forbidigo's rule is for agentsd's tests only.
+      - path-except: ^internal/agentsd/.*_test\.go$
+        linters: [forbidigo]

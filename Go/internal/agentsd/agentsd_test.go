@@ -39,7 +39,7 @@ func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMes
 	p, _ := json.Marshal(params)
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
 	c.in <- string(b)
-	deadline := time.After(waitLimit(t))
+	deadline := afterLimit(t)
 	for {
 		select {
 		case line := <-c.out:
@@ -67,7 +67,7 @@ func (c *conn) callError(t *testing.T, id int, method string, params any) *Error
 	p, _ := json.Marshal(params)
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
 	c.in <- string(b)
-	deadline := time.After(waitLimit(t))
+	deadline := afterLimit(t)
 	for {
 		select {
 		case line := <-c.out:

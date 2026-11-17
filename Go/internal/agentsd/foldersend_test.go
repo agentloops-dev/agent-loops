@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
@@ -47,7 +46,7 @@ func (h *sendsHeard) call(t *testing.T, id int, method string, params any) json.
 	p, _ := json.Marshal(params)
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
 	h.c.in <- string(b)
-	for deadline := time.After(waitLimit(t)); ; {
+	for deadline := afterLimit(t); ; {
 		select {
 		case line := <-h.c.out:
 			m, answer := h.keep(line)
@@ -70,7 +69,7 @@ func (h *sendsHeard) call(t *testing.T, id int, method string, params any) json.
 // goroutine's stack: a send still in git, or a line that went nowhere.
 func (h *sendsHeard) next(t *testing.T, what string) wire.SendNotification {
 	t.Helper()
-	for deadline := time.After(waitLimit(t)); len(h.held) == 0; {
+	for deadline := afterLimit(t); len(h.held) == 0; {
 		select {
 		case line := <-h.c.out:
 			h.keep(line)

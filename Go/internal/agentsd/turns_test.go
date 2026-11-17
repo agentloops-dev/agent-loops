@@ -566,7 +566,7 @@ func fakeRuntimes(t testing.TB) {
 // notes collects the notifications a client hears.
 func (c *conn) until(t *testing.T, what string, ok func(method string, params json.RawMessage) bool) {
 	t.Helper()
-	deadline := time.After(waitLimit(t))
+	deadline := afterLimit(t)
 	for {
 		select {
 		case line := <-c.out:

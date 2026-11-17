@@ -48,6 +48,15 @@ as no baseline holds a line number. jscpd's key is the pair of files of a clone,
 clone, so a second clone between the same two files is new. Fix an old finding, then run
 `scripts/lint.sh --baseline` to drop it from the list. Never add a new finding to a baseline.
 
+## No fixed wait in an agentsd test
+
+`go:lint` fails on `time.Sleep` and `time.After` in `Go/internal/agentsd/*_test.go` (forbidigo,
+#6128, epic #6126). A fixed wait ends before a loaded `-race` runner answers (spike #5600, cause
+B). A test waits on a channel or an event, or for `afterLimit(t)`: the limit from `t.Deadline()`
+(`waitLimit`, #5632). A short poll step inside such a wait gets `//nolint:forbidigo // why` on its
+line. The waits that were there when the rule came are in `Go/.golangci-baseline.txt`; the lanes
+of #6126 take them out.
+
 ## What is left out, and why
 
 - **Biome's `noAssignInExpressions` is off.** `entry ??= make()` inside an expression is how this
