@@ -17045,6 +17045,7 @@ export interface Methods {
   "machines/listKept": { params: KeptListQuery; result: KeptList };
   "machines/remove": { params: MachineRequest; result: Empty };
   "machines/retryKept": { params: KeptRequestID; result: Empty };
+  "machines/retrySetup": { params: MachineRequest; result: Empty };
   "machines/setLabels": { params: MachineLabelsRequest; result: MachineLabelsResult };
   "machines/setMachineOptions": { params: MachineOptions; result: ControlMachine };
   "machines/start": { params: MachineRequest; result: ControlMachine };
@@ -17124,6 +17125,10 @@ export interface Methods {
   "policy/settleUntrustedYours": { params: SettleUntrustedYourPolicyRequest; result: YourPolicyState };
   "policy/stopAll": { params: PolicyStopAllRequest; result: PolicyKept };
   "policy/yours": { params: Empty; result: YourPolicyState };
+  "pool/claim": { params: WarmPoolClaim; result: WarmPoolClaimed };
+  "pool/delete": { params: WarmPoolRequest; result: Empty };
+  "pool/list": { params: Empty; result: WarmPools };
+  "pool/set": { params: WarmPoolSet; result: WarmPool };
   "preferences/get": { params: Empty; result: Record<string, JSONValue> };
   "preferences/set": { params: Record<string, JSONValue>; result: Record<string, JSONValue> };
   "presence/report": { params: PresenceReport; result: Empty };
@@ -17521,6 +17526,7 @@ export const MethodTarget = {
   "machines/listKept": "control",
   "machines/remove": "control",
   "machines/retryKept": "control",
+  "machines/retrySetup": "control",
   "machines/setLabels": "control",
   "machines/setMachineOptions": "control",
   "machines/start": "control",
@@ -17600,6 +17606,10 @@ export const MethodTarget = {
   "policy/settleUntrustedYours": "host",
   "policy/stopAll": "control",
   "policy/yours": "host",
+  "pool/claim": "control",
+  "pool/delete": "control",
+  "pool/list": "control",
+  "pool/set": "control",
   "preferences/get": "host",
   "preferences/set": "host",
   "presence/report": "host",

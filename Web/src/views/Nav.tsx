@@ -253,7 +253,8 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   const more = section === "machines" ? machinePages(store.hosts.value, store.macHostID.value) : [];
   const open = openPage(section, routePageID(section, r), admin, more);
   // At most seven machines, then All Machines (N), the Machines page, after them (#5286).
-  const making = section === "machines" ? makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value) : [];
+  const making = section === "machines" ? makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value,
+    store.providers.pools.value.map((p) => p.name)) : [];
   const bounded = section === "machines" ? machinesGroup(store, more, making.length) : null;
   const groupRows = bounded?.rows;
   const list = (bounded ? boundedPages(pagesShown(section, admin, open?.id, bounded.pages), bounded.rows)
