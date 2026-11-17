@@ -6,7 +6,7 @@ import SwiftUI
 /// machine that reads it. It opens for any item, also one no agent touched. An issue's page is in
 /// the Work look (#4400, `specs/4328-work-look/issue.md`): the header with Start Agent, one
 /// timeline (the body, then the comments), the comment box with Close or Reopen, and the side
-/// panel (Assignees, Labels with its gear, Repo, Linked, Lineage and, on the Mac, Docs).
+/// panel (Priority and On hold, Assignees, Labels with its gear, Repo, Linked, Lineage and, on the Mac, Docs).
 /// A pull request's page (#4406, `specs/4328-work-look/pull-request.md`) has Files changed in
 /// place of Start Agent, the merge box at the end of the timeline (at the top of a narrow page),
 /// Close or Reopen pull request in the comment box, and Reviewers and Branch on the panel.
@@ -619,6 +619,10 @@ struct WorkItemPage: View {
     @ViewBuilder
     private var details: some View {
         let item = item
+        if let detail, node.kind == "issue" || detail.got.item.priority != nil || detail.got.item.onHold == true {
+            // First, as the wireframe of #6092 has it: the menu and the toggle where the forge sets them, else the chip.
+            WorkPrioritySection(model: model, host: detail.host, detail: detail.got, writes: writes) { await reread() }
+        }
         WorkSideSection(title: "Assignees") {
             let assignees = item?.assignees ?? row?.assignees ?? []
             if assignees.isEmpty {
@@ -641,7 +645,8 @@ struct WorkItemPage: View {
             }
         }
         WorkSideSection(title: "Labels", edit: labelsEdit) {
-            let labels = item?.labels ?? row?.labels ?? []
+            // Priority and on hold have their own section (#6092).
+            let labels = WorkList.sideLabels(item?.labels ?? row?.labels ?? [])
             if labels.isEmpty {
                 WorkSideNone(words: "None")
             } else {

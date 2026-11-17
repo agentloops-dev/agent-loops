@@ -346,6 +346,26 @@ struct WorkPageTests {
         #expect(WorkList.doneWords(DaemonAPI.Method.forgeRequestChanges, .init()) == "Changes requested.")
         #expect(WorkList.doneWords(DaemonAPI.Method.forgeClose, .init(), reopened: true) == "Reopened.")
         #expect(WorkList.doneWords(DaemonAPI.Method.forgeClose, .init(), moved: true) == "Status changed.")
+        #expect(WorkList.doneWords(DaemonAPI.Method.forgePriority, .init()) == "Priority changed.")
+        #expect(WorkList.doneWords(DaemonAPI.Method.forgeHold, .init(), held: true) == "On hold: not picked up next.")
+        #expect(WorkList.doneWords(DaemonAPI.Method.forgeHold, .init()) == "Off hold.")
+    }
+
+    /// #6092: the Priority section shows an issue's priority and on hold, so Labels leaves out their labels.
+    @Test func theLabelsLeaveOutPriorityAndHold() {
+        let labels = ["bug", "Priority:High", "priority:low", "priority:urgent", "on hold", "On-Hold", "story"].map { DaemonAPI.ForgeLabel(name: $0) }
+        #expect(WorkList.sideLabels(labels).map(\.name) == ["bug", "priority:urgent", "story"])
+        #expect(WorkList.priorityChoices == ["high", "medium", nil, "low"])
+    }
+
+    /// #6092: the menu and the toggle show only where the item's actions have them and a machine writes.
+    @Test func thePriorityControlsFollowTheActions() {
+        let item = DaemonAPI.ForgeItem(node: .init(kind: "issue", ref: "github:o/r#1"), title: "T", state: "open", updatedAt: at)
+        let both = DaemonAPI.ForgeItemDetail(item: item, actions: ["label", "priority", "hold"])
+        #expect(WorkList.setsPriority(both, writes: true) == (true, true))
+        #expect(WorkList.setsPriority(both, writes: false) == (false, false))
+        #expect(WorkList.setsPriority(DaemonAPI.ForgeItemDetail(item: item, actions: ["priority"]), writes: true) == (true, false))
+        #expect(WorkList.setsPriority(DaemonAPI.ForgeItemDetail(item: item), writes: true) == (false, false))
     }
 
     /// #3130: a pull request's diff from the forge is the diff a view gives the app's diff page.

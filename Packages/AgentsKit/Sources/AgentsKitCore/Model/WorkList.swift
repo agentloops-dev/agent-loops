@@ -531,6 +531,25 @@ public enum WorkList {
         return !(node.kind == "pr" && forgesWithoutPRLabels.contains(forge))
     }
 
+    /// The Labels section's labels (#6092): not `priority:high`, `priority:medium`, `priority:low` or
+    /// `on hold` (Jira's `on-hold`), in any case, which the panel's Priority section shows instead.
+    public static func sideLabels(_ labels: [DaemonAPI.ForgeLabel]) -> [DaemonAPI.ForgeLabel] {
+        labels.filter { label in
+            let name = label.name.lowercased()
+            return !priorityChoices.contains { $0.map { "priority:" + $0 } == name } && name != "on hold" && name != "on-hold"
+        }
+    }
+
+    /// The Priority menu's choices, in its order (#6092): `forge/priority`'s values, nil for none.
+    public static let priorityChoices: [String?] = ["high", "medium", nil, "low"]
+
+    /// What the page offers on an item's priority and on hold (#6092): where its `actions` say the
+    /// forge sets them, and a machine of the person's writes.
+    public static func setsPriority(_ detail: DaemonAPI.ForgeItemDetail, writes: Bool) -> (priority: Bool, hold: Bool) {
+        let actions = detail.actions ?? []
+        return (writes && actions.contains("priority"), writes && actions.contains("hold"))
+    }
+
     /// Why a write failed, in the machine's own words: a JSON-RPC error's message, not Foundation's
     /// "The operation couldn't be completed".
     public static func failureWords(_ error: any Error) -> String {
@@ -591,8 +610,11 @@ public enum WorkList {
     }
 
     /// What a write did, for the line under the actions.
-    public static func doneWords(_ method: String, _ done: DaemonAPI.ForgeDone, reopened: Bool = false, moved: Bool = false) -> String {
+    public static func doneWords(_ method: String, _ done: DaemonAPI.ForgeDone, reopened: Bool = false, moved: Bool = false,
+                                 held: Bool = false) -> String {
         switch method {
+        case DaemonAPI.Method.forgePriority: "Priority changed."
+        case DaemonAPI.Method.forgeHold: held ? "On hold: not picked up next." : "Off hold."
         case DaemonAPI.Method.forgeClose where moved: "Status changed."
         case DaemonAPI.Method.forgeComment: "Commented."
         case DaemonAPI.Method.forgeLabel: "Labels changed."

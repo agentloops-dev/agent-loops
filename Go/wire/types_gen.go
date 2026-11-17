@@ -5883,7 +5883,7 @@ type FoldersListRequest struct {
 	IncludeArchived bool `json:"includeArchived"`
 }
 
-// A write or a read that an item's page offers (#4329, #4361): forge/comment, forge/label, forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve, forge/request-changes (#5857), forge/rerun, forge/log, forge/diff, forge/add-child, forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410).
+// A write or a read that an item's page offers (#4329, #4361): forge/comment, forge/label, forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve, forge/request-changes (#5857), forge/rerun, forge/log, forge/diff, forge/add-child, forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410), and on an issue forge/priority and forge/hold (#6091, #6092).
 type ForgeAction string
 
 const ForgeActionComment ForgeAction = "comment"
@@ -5904,6 +5904,8 @@ const ForgeActionBlockedBy ForgeAction = "blockedBy"
 const ForgeActionAssign ForgeAction = "assign"
 const ForgeActionCancelAutoMerge ForgeAction = "cancelAutoMerge"
 const ForgeActionReady ForgeAction = "ready"
+const ForgeActionPriority ForgeAction = "priority"
+const ForgeActionHold ForgeAction = "hold"
 
 // forge/add-child (#3271): add a child to an epic's plan: a new issue (title, with level story, task, spike or bug) or one that is there (issue: #12, owner/repo#12, its URL, or a Linear key such as ENG-4). A new child gets the level's label and the epic's feature: label. GitHub and Linear.
 type ForgeAddChildRequest struct {
