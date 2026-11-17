@@ -41,20 +41,6 @@ public enum MissingFolderWords {
         guard !home.isEmpty, trimmed == home || trimmed.hasPrefix(home + "/") else { return trimmed }
         return "~" + trimmed.dropFirst(home.count)
     }
-
-    /// The first words of a successor started in the folder: which session it
-    /// carries on, and how to read it (065's continue successor, `read_session`). The
-    /// person's own words, if they had any in the bar, follow.
-    public static func successorPrompt(title: String?, agentID: UUID, missingFolder: String,
-                                       folder: String, then text: String) -> String {
-        let name = title.map { "“\($0)” (\(agentID.uuidString))" } ?? agentID.uuidString
-        var prompt = "Continue the work of the session \(name). Its folder, \(missingFolder), is not there any more, "
-            + "so you are in the folder, \(folder), instead. Read that session with read_session "
-            + "to see what it did and what is left, then carry on."
-        let said = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !said.isEmpty { prompt += "\n\n" + said }
-        return prompt
-    }
 }
 
 extension Agent {

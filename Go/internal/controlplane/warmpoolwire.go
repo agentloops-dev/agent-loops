@@ -93,6 +93,40 @@ func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int
 	return host.ID, nil
 }
 
+// Detail is the line of the step a pool machine's set-up is on: the running one, else the
+// failed one (#5366).
+func (b poolsBackend) Detail(provider, workspace string) string {
+	host := b.s.providers.PoolHost(provider, workspace)
+	if host == nil {
+		return "being made"
+	}
+	stored, _, err := b.s.readMachineSetup(context.Background(), host.ID)
+	if err != nil || stored == nil {
+		return ""
+	}
+	for _, step := range stored.Steps {
+		switch step.State {
+		case wire.MachineSetupStateFailed:
+			if step.Error != "" {
+				return step.Error
+			}
+			return step.Detail
+		case wire.MachineSetupStateRunning:
+			return step.Detail
+		}
+	}
+	return ""
+}
+
+// ReadyAt is when a machine's set-up was ready, for a pool's median time to ready (#5366).
+func (b poolsBackend) ReadyAt(host string) *time.Time {
+	stored, _, err := b.s.readMachineSetup(context.Background(), host)
+	if err != nil || stored == nil {
+		return nil
+	}
+	return stored.Ready
+}
+
 // Version is the Agents release a new machine installs: the one this control plane is.
 func (b poolsBackend) Version() string { return b.s.cfg.Version }
 
@@ -114,12 +148,29 @@ func (s *Service) startPools() {
 	go s.pools.every(poolEvery)
 }
 
-// poolMethod is pool/list, pool/set and pool/delete: a person's own pools.
+// poolMethod is pool/list, pool/set, pool/delete and pool/claim: a person's own pools.
 func (m *Methods) poolMethod(ctx context.Context, method string, params json.RawMessage, from Caller) (any, error) {
 	if m.s.pools == nil {
 		return nil, m.s.providersOff()
 	}
 	switch method {
+	case "pool/claim":
+		request, err := require[wire.WarmPoolClaim](params, "WarmPoolClaim")
+		if err != nil {
+			return nil, err
+		}
+		var stop *int
+		if request.StopWhenIdle != nil {
+			minutes := int(*request.StopWhenIdle)
+			stop = &minutes
+		}
+		got, err := m.s.pools.claim(ctx, from.Person, claim{Provider: request.Provider, Size: deref(request.Size),
+			Region: deref(request.Region), StopWhenIdle: stop})
+		if err != nil {
+			return nil, err
+		}
+		return wire.WarmPoolClaimed{Host: optional(got.Host), Workspace: got.Workspace, Name: got.Name,
+			Pool: optional(got.Pool), FromPool: got.FromPool, Note: optional(got.Note)}, nil
 	case "pool/list":
 		return m.s.pools.list(ctx, from.Person)
 	case "pool/set":

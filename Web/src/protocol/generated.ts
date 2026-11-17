@@ -15963,6 +15963,7 @@ export interface WakeState {
  * to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a
  * claimed machine leaves the pool and does not count). target is written by the control plane and
  * is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
+ * machines and claims are read-only too (#5366).
  */
 export interface WarmPool {
   id: string;
@@ -15992,6 +15993,50 @@ export interface WarmPool {
   failedMakes?: number;
   /** Why the pool stopped making, in the provider's words. */
   stoppedBecause?: string;
+  /**
+   * The machines the pool holds now, ready, setting up or failed (#5366): a line each on the pool's
+   * card.
+   */
+  machines?: WarmPoolMachine[];
+  claims?: WarmPoolClaims;
+}
+
+/**
+ * pool/claim (#5365, #5366): New Machine's Start from a warm pool. The oldest ready machine of a
+ * pool of this provider and size, bound to the person with their Stop when idle; with none ready, a
+ * new machine.
+ */
+export interface WarmPoolClaim {
+  provider: string;
+  size?: string;
+  region?: string;
+  /** Minutes; 0 is never. Absent keeps the machine's. */
+  stopWhenIdle?: number;
+}
+
+/**
+ * What pool/claim gave: a pool's machine (fromPool, with its host) or a new machine being made,
+ * with note saying so.
+ */
+export interface WarmPoolClaimed {
+  /** The machine's host id; absent for a new machine, which joins on its own. */
+  host?: string;
+  workspace: string;
+  name: string;
+  /** The pool's name, when it came from one. */
+  pool?: string;
+  fromPool: boolean;
+  note?: string;
+}
+
+/**
+ * A pool's claims in the last seven days (#5366): how many, how many found it empty and fell back
+ * to a new machine, and the median time from a claim to the machine being ready, when any is.
+ */
+export interface WarmPoolClaims {
+  count: number;
+  empty: number;
+  medianSeconds?: number;
 }
 
 /**
@@ -16004,6 +16049,15 @@ export interface WarmPoolHours {
   from: string;
   to: string;
   timezone?: string;
+}
+
+/** One machine a warm pool holds (#5366). */
+export interface WarmPoolMachine {
+  name: string;
+  state: "ready" | "setting-up" | "failed";
+  madeAt: WireDate;
+  /** What its set-up is doing now, as the running step's line says: installing Claude. */
+  detail?: string;
 }
 
 export interface WarmPoolRequest {
@@ -19045,8 +19099,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitingOffer: { required: ["name", "offer"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
-  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause"] },
+  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "machines", "claims"] },
+  WarmPoolClaim: { required: ["provider"], optional: ["size", "region", "stopWhenIdle"] },
+  WarmPoolClaimed: { required: ["workspace", "name", "fromPool"], optional: ["host", "pool", "note"] },
+  WarmPoolClaims: { required: ["count", "empty"], optional: ["medianSeconds"] },
   WarmPoolHours: { required: ["days", "from", "to"], optional: ["timezone"] },
+  WarmPoolMachine: { required: ["name", "state", "madeAt"], optional: ["detail"] },
   WarmPoolRequest: { required: ["id"], optional: [] },
   WarmPoolSet: { required: ["name", "provider", "minReady", "maxSize"], optional: ["id", "scope", "size", "region", "runtimes", "projects", "replaceAfter", "hours"] },
   WarmPools: { required: ["pools"], optional: [] },

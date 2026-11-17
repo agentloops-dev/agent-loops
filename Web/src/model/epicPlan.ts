@@ -256,13 +256,13 @@ const leadState: Record<AgentState, string> = {
 /** The lead's state in words (note 4): working, needs you, waiting, stopped. */
 export const leadWords = (state: AgentState) => leadState[state];
 
-/** Start lead's form (the lead skill's "Starting a lead"): the issue's own first line, the skill and
- * the epic's address, its labels and lead, and no worktree. */
+/** Start lead's form (the lead skill's "Starting a lead"): the issue's own first line, "Lead this
+ * epic" and the epic's address, its labels and lead, and no worktree. */
 export function leadStart(start: ForgeStart, url: string | undefined): ForgeStart {
   const first = start.prompt.split("\n", 1)[0] ?? start.prompt;
-  const skill = "Lead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`)";
+  const lead = "Lead this epic";
   return {
-    prompt: `${first}\n\n${skill}${url ? `: ${url}` : "."}`,
+    prompt: `${first}\n\n${lead}${url ? `: ${url}` : "."}`,
     labels: [...start.labels, ...start.labels.includes("lead") ? [] : ["lead"]],
   };
 }

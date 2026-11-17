@@ -189,6 +189,8 @@ jobs:
         run: |
           echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
           echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
+          # go:test keeps each shard's log and its summary here (#6008).
+          echo "GO_TEST_LOG_DIR=$RUNNER_TEMP/go-test-logs" >> "$GITHUB_ENV"
       # The pull request's own commit, not its merge with main: the hashes are then the lane's
       # (#5584). The base for `nx affected` is its merge base with main.
       - uses: actions/checkout@v6
@@ -324,6 +326,19 @@ jobs:
           else
             scripts/nx.sh run-many -t "$targets" --exclude='tag:xcode' --parallel=1 --output-style=stream
           fi
+      # Nx can cut a task's output before its end (#6008): how each go:test shard ended, from
+      # outside Nx, and the shard logs as an artifact.
+      - name: Go test summary
+        if: ${{ failure() && steps.nx.outcome == 'failure' }}
+        run: bash scripts/ci-go-test-summary.sh
+      - name: Upload the Go test logs
+        if: ${{ failure() && steps.nx.outcome == 'failure' }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: go-test-logs-linux-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/go-test-logs
+          if-no-files-found: ignore
+          retention-days: 7
       # wire:gen and design:gen ran before the tasks that read their files, so a change that
       # did not commit what they write would pass the tests: it fails here.
       - name: Generated files are committed
@@ -1055,6 +1070,8 @@ jobs:
         run: |
           echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
           echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
+          # go:test keeps each shard's log and its summary here (#6008).
+          echo "GO_TEST_LOG_DIR=$RUNNER_TEMP/go-test-logs" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -1157,6 +1174,19 @@ jobs:
           else
             scripts/nx.sh run-many -t "$targets" --exclude='web,tag:xcode' --parallel=1 --output-style=stream
           fi
+      # Nx can cut a task's output before its end (#6008): how each go:test shard ended, from
+      # outside Nx, and the shard logs as an artifact.
+      - name: Go test summary
+        if: ${{ failure() && steps.go-nx.outcome == 'failure' }}
+        run: bash scripts/ci-go-test-summary.sh
+      - name: Upload the Go test logs
+        if: ${{ failure() && steps.go-nx.outcome == 'failure' }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: go-test-logs-mac-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/go-test-logs
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Save the Nx cache
         if: ${{ (always() && !cancelled()) && !inputs.sha }}
         uses: actions/cache/save@v5

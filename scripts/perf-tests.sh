@@ -1,9 +1,10 @@
 #!/bin/sh
 # The performance check (#225): the tests marked `.perfBudget`, on their own, held to
-# their wall-clock budgets with AGENTS_RUN_PERF=1. Every other run of these tests (a plain
-# `swift test`, CI, Nx's agentskit and codetext tests) asserts what they
+# their wall-clock budgets with AGENTS_RUN_PERF=1, and the Go tests in GO_PERF_TESTS, with
+# AGENTS_RUN_PERF=1 and no -race (#5911). Every other run of these tests (a plain
+# `swift test`, CI, Nx's agentskit, codetext and go tests) asserts what they
 # compute and prints the time, but holds no budget, because a budget measured beside
-# three builds measures the load.
+# three builds, or under -race, measures the load.
 #
 # Run it on a quiet Mac, nothing else building:
 #   scripts/perf-tests.sh             both packages
@@ -28,4 +29,11 @@ for package in Packages/AgentsKit Packages/CodeText; do
     # shellcheck disable=SC2086
     AGENTS_RUN_PERF=1 swift test --package-path "$package" $config --no-parallel --filter "$f" || status=1
 done
+# The Go tests that hold a wall-clock budget in a perf run: package and -run pattern.
+GO_PERF_TESTS="./internal/controlplane ^TestSCIMAtSize$"
+echo "$GO_PERF_TESTS" | while read -r pkg run; do
+    if [ "${1:-}" = --filter ]; then echo "Go $pkg $run"; continue; fi
+    echo "perf-tests: Go $pkg" >&2
+    AGENTS_RUN_PERF=1 Go/scripts/go.sh test -count=1 -p 1 -run "$run" "$pkg" || exit 1
+done || status=1
 exit $status

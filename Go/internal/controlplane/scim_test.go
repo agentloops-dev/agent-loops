@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,7 +23,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin/signintest"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -588,18 +588,103 @@ type failing struct{}
 func (failing) RoundTrip(*http.Request) (*http.Response, error) { return nil, io.ErrUnexpectedEOF }
 
 // T020, FR-023: 5,000 users and 500 groups; SCIM answers within 200 ms at p95.
+//
+// A time measured under -race on a shared runner measures the runner (#5911). So each
+// run holds what does not change with load: the store work of 200 requests (the calls,
+// the records read and written, and their bytes) is no more at 5,000 users and 500 groups
+// than at 100 users and 10 groups. The 200 ms is held only in a perf run
+// (AGENTS_RUN_PERF=1, no -race), as scripts/perf-tests.sh runs it.
 func TestSCIMAtSize(t *testing.T) {
-	flaky.UnderLoad(t, "#5911")
-	// Not parallel (#2512): it holds a wall-clock limit, which other tests running beside it would make flaky.
+	// Not parallel (#2512): a perf run holds a wall-clock limit, which other tests running beside it would make flaky.
 	if testing.Short() {
 		t.Skip("5,000 users")
 	}
-	p, _, _, token, base := scimPlane(t, wire.OrgProviderJoinScim)
+	small, _ := scimRequestCosts(t, 100, 10)
+	large, took := scimRequestCosts(t, 5000, 500)
+	t.Logf("store work of 200 requests: %+v at 100 users and 10 groups, %+v at 5,000 and 500", small, large)
+	// The same records, read and written: only their stamps can differ by a byte or two.
+	slack := func(n int64) int64 { return n + n/50 + 256 }
+	if large.Calls > small.Calls || large.Reads > small.Reads || large.Writes > small.Writes ||
+		large.ReadBytes > slack(small.ReadBytes) || large.WriteBytes > slack(small.WriteBytes) {
+		t.Errorf("the store work grows with the directory: %+v at 100 users and 10 groups, %+v at 5,000 and 500", small, large)
+	}
+	sort.Slice(took, func(i, j int) bool { return took[i] < took[j] })
+	p95 := took[len(took)*95/100]
+	t.Logf("p95 %v at 5,000 users and 500 groups (budget 200ms, held only with AGENTS_RUN_PERF=1 and no -race)", p95)
+	if os.Getenv("AGENTS_RUN_PERF") == "1" && !raceEnabled && p95 > 200*time.Millisecond {
+		t.Fatalf("p95 %v is over 200ms", p95)
+	}
+}
+
+// storeCost is the store work of some requests.
+type storeCost struct {
+	Calls, Reads, ReadBytes, Writes, WriteBytes, Events int64
+}
+
+// costStore counts the work done on a store.
+type costStore struct {
+	store.Store
+	calls, reads, readBytes, writes, writeBytes, events atomic.Int64
+}
+
+func (c *costStore) Get(ctx context.Context, key string) (*store.Object, error) {
+	c.calls.Add(1)
+	o, err := c.Store.Get(ctx, key)
+	if o != nil {
+		c.reads.Add(1)
+		c.readBytes.Add(int64(len(o.Data)))
+	}
+	return o, err
+}
+
+func (c *costStore) Put(ctx context.Context, key string, data []byte, when store.Condition) (string, error) {
+	c.calls.Add(1)
+	c.writes.Add(1)
+	c.writeBytes.Add(int64(len(data)))
+	if strings.HasPrefix(key, "v1/events/") {
+		c.events.Add(1)
+	}
+	return c.Store.Put(ctx, key, data, when)
+}
+
+func (c *costStore) Delete(ctx context.Context, key string) error {
+	c.calls.Add(1)
+	c.writes.Add(1)
+	return c.Store.Delete(ctx, key)
+}
+
+func (c *costStore) List(ctx context.Context, prefix string) ([]store.Key, error) {
+	c.calls.Add(1)
+	return c.Store.List(ctx, prefix)
+}
+
+func (c *costStore) now() storeCost {
+	return storeCost{c.calls.Load(), c.reads.Load(), c.readBytes.Load(), c.writes.Load(), c.writeBytes.Load(), c.events.Load()}
+}
+
+func (c storeCost) minus(o storeCost) storeCost {
+	return storeCost{c.Calls - o.Calls, c.Reads - o.Reads, c.ReadBytes - o.ReadBytes, c.Writes - o.Writes,
+		c.WriteBytes - o.WriteBytes, c.Events - o.Events}
+}
+
+// scimRequestCosts seeds users and groups (ten members each), makes 200 SCIM requests of
+// four kinds, and returns their store work, once the work they leave to goroutines (the
+// audit entries, the token's last use) is done, and the time each request took.
+func scimRequestCosts(t *testing.T, users, groups int) (storeCost, []time.Duration) {
+	t.Helper()
+	st := &costStore{Store: store.NewMemory()}
+	prov := signintest.NewProvider(t, "RS256", "")
+	// No backstop read in the window (the records and the tunnels every 15 s, the audit sinks
+	// every 30 s, the SCIM token after 10 s): their calls are the clock's, not the requests',
+	// and a slower run would make more of them (#6004).
+	p, _, owner, _ := orgPlaneWith(t, st, prov, nil, func(c *Config) { c.BackstopEvery = time.Hour })
+	addOrg(t, owner, prov, wire.OrgProviderJoinScim)
+	token, base := scimOn(t, owner, wire.SCIMMatchExternalId)
 	// The time each takes is measured here, not the rate the provider keeps to.
 	p.s.scimServer.PerSecond = 100000
 	ctx := context.Background()
 	var ids []string
-	for i := range 5000 {
+	for i := range users {
 		id := records.NewPersonID()
 		now := records.Now()
 		person := records.Person{ID: id, Name: "User " + strconv.Itoa(i), Kind: records.KindPerson, Role: records.RoleMember, Provisioned: true,
@@ -610,7 +695,7 @@ func TestSCIMAtSize(t *testing.T) {
 		}
 		ids = append(ids, id)
 	}
-	for i := range 500 {
+	for i := range groups {
 		id := records.NewPersonID()
 		members := ids[i*10 : i*10+10]
 		if _, err := p.s.records.ChangeGroup(ctx, id, func(*records.Group) (*records.Group, error) {
@@ -620,29 +705,51 @@ func TestSCIMAtSize(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	settle(t, st, st.now().Events)
+	before := st.now()
 	var took []time.Duration
 	for i := range 200 {
 		start := time.Now()
 		var status int
 		switch i % 4 {
 		case 0:
-			status, _ = scimDo(t, base, token, "GET", "/Users?filter="+urlEscape(`userName eq "user`+strconv.Itoa(i*20)+`@acme.test"`), nil)
+			status, _ = scimDo(t, base, token, "GET", "/Users?filter="+urlEscape(`userName eq "user`+strconv.Itoa(i*20%users)+`@acme.test"`), nil)
 		case 1:
-			status, _ = scimDo(t, base, token, "GET", "/Users?startIndex="+strconv.Itoa(i*20)+"&count=100", nil)
+			status, _ = scimDo(t, base, token, "GET", "/Users?startIndex="+strconv.Itoa(i*20%users+1)+"&count=100", nil)
 		case 2:
-			status, _ = scimDo(t, base, token, "GET", "/Groups?excludedAttributes=members&filter="+urlEscape(`displayName eq "Group `+strconv.Itoa(i)+`"`), nil)
+			status, _ = scimDo(t, base, token, "GET", "/Groups?excludedAttributes=members&filter="+urlEscape(`displayName eq "Group `+strconv.Itoa(i%groups)+`"`), nil)
 		case 3:
-			status, _ = scimDo(t, base, token, "PATCH", "/Users/"+ids[i], patchOp(map[string]any{"op": "replace", "path": "displayName", "value": "Renamed"}))
+			// The same 50 people at each size, so the records written are the same.
+			status, _ = scimDo(t, base, token, "PATCH", "/Users/"+ids[i%100], patchOp(map[string]any{"op": "replace", "path": "displayName", "value": "Renamed " + strconv.Itoa(i)}))
 		}
+		took = append(took, time.Since(start))
 		if status != 200 {
 			t.Fatal(i, status)
 		}
-		took = append(took, time.Since(start))
 	}
-	sort.Slice(took, func(i, j int) bool { return took[i] < took[j] })
-	if p95 := took[len(took)*95/100]; p95 > 200*time.Millisecond {
-		t.Fatalf("p95 %v", p95)
+	// Each of the 50 PATCHes keeps one audit entry.
+	settle(t, st, before.Events+50)
+	return st.now().minus(before), took
+}
+
+// settle waits until the store has kept events audit entries in all and then has had
+// no call for 300 ms, so the work that requests leave to goroutines is counted.
+func settle(t *testing.T, st *costStore, events int64) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	last, quiet := st.now(), time.Now()
+	for time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		now := st.now()
+		if now != last {
+			last, quiet = now, time.Now()
+			continue
+		}
+		if now.Events >= events && time.Since(quiet) >= 300*time.Millisecond {
+			return
+		}
 	}
+	t.Fatalf("the store did not settle in 30s: %+v, want %d audit entries", last, events)
 }
 
 // #2424: a sync sends every user and group again, mostly as they were. A write that

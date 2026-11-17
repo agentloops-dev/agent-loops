@@ -209,7 +209,7 @@ struct WorkPlanTests {
         #expect(lead.prompt == """
             #3100: Work pages
 
-            Lead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`): https://github.com/alexec/Agents/issues/3100
+            Lead this epic: https://github.com/alexec/Agents/issues/3100
             """)
         #expect(lead.labels == ["#3100", "lead"])
         #expect(lead.worktree == nil)

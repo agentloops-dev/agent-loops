@@ -974,6 +974,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"policy/requests", "policy.ask/1"},
 	{"policy/set", "policy/1"},
 	{"policy/stopAll", "policy/1"},
+	{"pool/claim", "pools/1"},
 	{"pool/delete", "pools/1"},
 	{"pool/list", "pools/1"},
 	{"pool/set", "pools/1"},

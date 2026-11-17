@@ -75,7 +75,8 @@ public enum MachineSetupWords {
     }
 
     /// The one line under a step's name: what it is doing, or why it failed, or why it waits.
-    public static func line(_ step: DaemonAPI.MachineSetupStep) -> String {
+    /// A step done in a warm pool says so (#5366, board 4): step 1 says since when.
+    public static func line(_ step: DaemonAPI.MachineSetupStep, now: Date = Date()) -> String {
         switch step.state {
         case .failed:
             return step.error ?? step.detail ?? "Failed"
@@ -87,13 +88,20 @@ public enum MachineSetupWords {
             let words = step.detail ?? "Working…"
             return step.slower == true ? "\(words) · Slower than usual" : words
         case .done:
-            let words = step.detail ?? "Done"
-            return step.fromPool == true ? "\(words) · done in the pool" : words
+            guard step.fromPool == true else { return step.detail ?? "Done" }
+            if step.id == "create", let made = step.endedAt ?? step.startedAt {
+                let since = made.formatted(date: Calendar.current.isDate(made, inSameDayAs: now) ? .omitted : .abbreviated,
+                                           time: .shortened)
+                return "In the pool since \(since) (\(duration(now.timeIntervalSince(made))) ago)"
+            }
+            return step.detail ?? "In the pool"
         }
     }
 
-    /// The time a step took (or has taken); nil before it began.
+    /// The time a step took (or has taken); nil before it began; *pool* for one done in a warm
+    /// pool before the claim (#5366, board 4).
     public static func time(_ step: DaemonAPI.MachineSetupStep, now: Date = Date()) -> String? {
+        if step.fromPool == true, step.state == .done { return "pool" }
         guard let start = step.startedAt else { return nil }
         return duration((step.endedAt ?? now).timeIntervalSince(start))
     }
@@ -120,7 +128,4 @@ public enum MachineSetupWords {
     public static func foldedAway(_ setup: DaemonAPI.MachineSetup, now: Date = Date()) -> Bool {
         foldedLine(setup, now: now) != nil
     }
-
-    /// The notice's words when it is ready.
-    public static func readyNotice(name: String) -> String { "\(name) is ready" }
 }

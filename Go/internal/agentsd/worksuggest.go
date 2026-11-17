@@ -337,11 +337,11 @@ func leadStartOf(i wire.ForgeItem) wire.ForgeStart {
 		labels = []string{"#" + strconv.Itoa(n), "lead"}
 		first = "#" + strconv.Itoa(n) + ": " + i.Title
 	}
-	skill := "Lead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`)"
+	lead := "Lead this epic"
 	if url := deref(i.URL); url != "" {
-		skill += ": " + url
+		lead += ": " + url
 	} else {
-		skill += "."
+		lead += "."
 	}
-	return wire.ForgeStart{Prompt: first + "\n\n" + skill, Labels: labels}
+	return wire.ForgeStart{Prompt: first + "\n\n" + lead, Labels: labels}
 }

@@ -125,6 +125,7 @@ type fakePools struct {
 	failMake      error
 	stages        map[string]poolStage
 	stopped       string
+	readyAt       map[string]*time.Time
 }
 
 func (f *fakePools) Make(person, provider, name, size, region string) (string, error) {
@@ -151,7 +152,7 @@ func (f *fakePools) Stopped(person, pool, why string) {
 func testPools(t *testing.T) (*warmPools, *fakePools) {
 	t.Helper()
 	s := &Service{cfg: Config{Store: store.NewMemory(), Log: func(string) {}}, stop: make(chan struct{})}
-	f := &fakePools{stages: map[string]poolStage{}, dead: map[string]bool{}}
+	f := &fakePools{stages: map[string]poolStage{}, dead: map[string]bool{}, readyAt: map[string]*time.Time{}}
 	return &warmPools{s: s, backend: f}, f
 }
 
@@ -236,6 +237,13 @@ func TestPoolStopsAfterThreeFailedMakes(t *testing.T) {
 }
 
 func (f *fakePools) Ping(provider, workspace string) bool { return !f.dead[workspace] }
+func (f *fakePools) Detail(provider, workspace string) string {
+	if f.stages[workspace] == stageSettingUp {
+		return "installing Claude"
+	}
+	return ""
+}
+func (f *fakePools) ReadyAt(host string) *time.Time { return f.readyAt[host] }
 func (f *fakePools) Bind(person, provider, workspace string, stop *int) (string, error) {
 	f.bound = append(f.bound, person+":"+workspace)
 	return "host-" + workspace, nil
@@ -280,5 +288,47 @@ func TestClaimTakesOldestReadyAndReplacesIt(t *testing.T) {
 	// Another provider or size matches no pool.
 	if got, _ = w.claim(ctx, "alex", claim{Provider: "do", Size: "big"}); got.FromPool {
 		t.Fatal("size must match")
+	}
+}
+
+// #5366: a pool's card lists its machines with what each is doing, and its last week of claims:
+// how many, how many found it empty, and the median time to ready.
+func TestPoolCardHasMachinesAndClaims(t *testing.T) {
+	t.Parallel()
+	w, f := testPools(t)
+	ctx := context.Background()
+	pool, err := w.set(ctx, "alex", wire.WarmPoolSet{Name: "dev", Provider: "do", MinReady: 1, MaxSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pool.Machines) != 1 || pool.Machines[0].State != "setting-up" || pool.Machines[0].Detail == nil ||
+		*pool.Machines[0].Detail != "installing Claude" {
+		t.Fatalf("a machine setting up says what it does: %+v", pool.Machines)
+	}
+	// Nothing ready: the claim falls back and counts as one that found the pool empty.
+	if got, err := w.claim(ctx, "alex", claim{Provider: "do"}); err != nil || got.FromPool {
+		t.Fatalf("%+v %v", got, err)
+	}
+	f.stages["ws-"+f.made[0]] = stageReady
+	got, err := w.claim(ctx, "alex", claim{Provider: "do"})
+	if err != nil || !got.FromPool {
+		t.Fatalf("%+v %v", got, err)
+	}
+	ready := time.Now().Add(20 * time.Second)
+	f.readyAt[got.Host] = &ready
+	list, _ := w.list(ctx, "alex")
+	c := list.Pools[0].Claims
+	if c == nil || c.Count != 2 || c.Empty != 1 || c.MedianSeconds == nil || *c.MedianSeconds < 15 || *c.MedianSeconds > 25 {
+		t.Fatalf("two claims, one empty, about 20 s to ready: %+v", c)
+	}
+	// A claim older than a week is dropped from the card.
+	stored, tag, _ := w.read(ctx, pool.ID)
+	stored.Claims[0].At = time.Now().Add(-8 * 24 * time.Hour)
+	if err := w.write(ctx, stored, tag); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = w.list(ctx, "alex")
+	if c := list.Pools[0].Claims; c.Count != 1 || c.Empty != 0 {
+		t.Fatalf("the old claim is out: %+v", c)
 	}
 }

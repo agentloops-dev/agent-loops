@@ -7,15 +7,31 @@ import type { VelocityHistory } from "../protocol/generated";
 import { type UsageRange, usageRanges, usageRangeWords } from "../model/usage";
 import { prWords, repoWords, revertWords, velocityChart, velocityHeadline } from "../model/velocity";
 import { Choice } from "./Choice";
+import { Icon } from "./Icon";
 import { label, tick, when } from "./UsageCharts";
 
 const width = 600;
 const height = 200;
 const axis = 56;
 
-export function VelocityCharts({ history }: { history: VelocityHistory | undefined }) {
+/** What the page says when the read failed (#5972), as the window and the Remote do. */
+export const couldNotReadVelocity = "Could not read velocity";
+
+export function VelocityCharts({ history, failed = false, retry }: {
+  history: VelocityHistory | undefined; failed?: boolean; retry?: () => void;
+}) {
   const range = useSignal<UsageRange>("W");
   const picked = useSignal<string | null>(null);
+  if (!history && failed) {
+    // Nothing read, and the read failed: no "Loading…" for ever.
+    return (
+      <div class="work-plan-could-not" role="alert">
+        <span class="mark" aria-hidden="true"><Icon name="triangle-alert" /></span>
+        <p class="strong">{couldNotReadVelocity}</p>
+        {retry && <button type="button" onClick={retry}>Try again</button>}
+      </div>
+    );
+  }
   if (!history) return <p class="quiet">Loading…</p>;
   const chart = velocityChart(history, range.value);
   const bar = chart.bars.find((b) => b.stamp === picked.value) ?? null;
@@ -27,6 +43,11 @@ export function VelocityCharts({ history }: { history: VelocityHistory | undefin
 
   return (
     <section class="usage-charts velocity-charts">
+      {/* An earlier read on screen, and the last one failed: the page's line above says its age. */}
+      {failed && (
+        <p class="quiet small" role="status">{couldNotReadVelocity}.{" "}
+          {retry && <button type="button" class="link" onClick={retry}>Try again</button>}</p>
+      )}
       <Choice label="Range" value={range.value} options={usageRanges.map((r) => [r, usageRangeWords[r]] as const)}
         onPick={(r) => { range.value = r; picked.value = null; }} />
       <div class="usage-headline">

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -93,7 +94,7 @@ func (d *Daemon) azureDevOpsRepoAt(ctx context.Context, folder string) (root, re
 	}
 	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if f, found := d.azureDevOpsAtRoots(gitCtx, folder, roots); found {
+	if f, found := d.azureDevOpsAtRoots(gitremote.URLs(gitCtx, folder), roots); found {
 		root, repo = f.root, f.repo
 	}
 	d.forgeMu.Lock()

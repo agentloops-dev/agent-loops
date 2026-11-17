@@ -7,14 +7,7 @@ import Foundation
 public enum StatusSecretsWords {
     public static let secretsTitle = "Secrets"
     public static let accountsTitle = "Accounts"
-    public static let secretsLead = "What happened to your secrets last, newest first. Only status here: "
-        + "change them in Settings ▸ You ▸ Secrets."
-    public static let accountsLead = "What happened to your accounts last, newest first. Only status here: "
-        + "change them in Settings ▸ You ▸ Accounts."
-    public static let editSecrets = "Edit in Settings ▸ You ▸ Secrets"
-    public static let editAccounts = "Edit in Settings ▸ You ▸ Accounts"
     public static let noSecrets = "No secrets yet."
-    public static let noAccounts = "No accounts yet."
     /// Before the grey line's name, for VoiceOver.
     public static let lastLabel = "Last operation:"
     public static let notBackedUp = "Not backed up: only on one machine."

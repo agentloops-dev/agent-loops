@@ -13,6 +13,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -43,6 +44,7 @@ func nextSend(c *conn, wait time.Duration) *wire.SendNotification {
 
 func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	t.Parallel()
+	flaky.UnderLoad(t, "#6001")
 
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

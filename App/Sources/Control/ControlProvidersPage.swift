@@ -29,6 +29,10 @@ struct ControlProvidersPage: View {
             } else {
                 ForEach(control.providers) { provider in
                     providerCard(provider)
+                    // A provider that makes machines can keep some ready (#5366).
+                    if control.poolsHere, provider.capabilities.contains("create") {
+                        WarmPoolsSection(control: control, provider: provider)
+                    }
                 }
                 HStack(spacing: 8) {
                     // Only an admin adds one (#1761).
@@ -47,6 +51,14 @@ struct ControlProvidersPage: View {
         }
         // Lists every provider again when the page opens (FR-004).
         .task { await control.listMachinesAgain() }
+        // The warm pools, read again every 30 s while the page is open: their machines set
+        // themselves up and are claimed (#5366). The section says when it last read them.
+        .task {
+            while !Task.isCancelled {
+                await control.loadPools()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
         .sheet(isPresented: $adding) { AddProviderSheet(control: control).paperSheet() }
         .sheet(isPresented: $startingMachine) {
             MachineFromRepositorySheet(calls: control.machineCalls, close: { startingMachine = false },

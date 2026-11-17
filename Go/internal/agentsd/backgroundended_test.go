@@ -14,8 +14,17 @@ import (
 )
 
 // asNotWakingItself makes the fake runtime one that does not start itself again when its
-// background command ends, as Codex does not (#4577).
+// background command ends, as Codex does not (#4577). Call it before start: the daemon's
+// warm-pool pass reads wakesItself, so a write while a daemon runs is a data race (#6009).
 func asNotWakingItself(t *testing.T) {
+	t.Helper()
+	h := testHooksOf(t)
+	h.mu.Lock()
+	running := h.daemons > 0
+	h.mu.Unlock()
+	if running {
+		t.Fatal("asNotWakingItself after start: its daemon reads wakesItself")
+	}
 	setFor(t, &wakesItself, func(string) bool { return false })
 }
 
@@ -147,9 +156,8 @@ func TestBackgroundEndedWakesOnlyItsOwnSession(t *testing.T) {
 	}
 }
 
-// A wait on it alone is refused where nothing would raise it: a runtime that wakes itself,
-// and nothing in the background.
-func TestBackgroundWaitRefusedWhenNothingWouldEnd(t *testing.T) {
+// A wait on it alone is refused for a runtime that wakes itself.
+func TestBackgroundWaitRefusedWhenTheRuntimeWakesItself(t *testing.T) {
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -159,8 +167,22 @@ func TestBackgroundWaitRefusedWhenNothingWouldEnd(t *testing.T) {
 	if text, _ := m.tool(2, "wait_for_event", map[string]any{"events": backgroundEndedEvent, "until_minutes": 5}); !strings.Contains(text, "starts your session again itself") {
 		t.Fatal(text)
 	}
+	if waitOf(d.Store.Agent(id)) != nil {
+		t.Fatal("a refused wait waits")
+	}
+}
+
+// A wait on it alone is refused where nothing runs in the background. The hook is set
+// before start: the daemon's warm-pool pass reads it (#6009).
+func TestBackgroundWaitRefusedWhenNothingWouldEnd(t *testing.T) {
+	fakeRuntimes(t)
 	asNotWakingItself(t)
-	if text, _ := m.tool(3, "wait_for_event", map[string]any{"events": backgroundEndedEvent, "until_minutes": 5}); !strings.Contains(text, "Nothing you started runs in the background now") {
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	id := warmAgent(t, d, c, t.TempDir())
+	m := appClient(t, d, id)
+	m.post("initialize", map[string]any{}, 1)
+	if text, _ := m.tool(2, "wait_for_event", map[string]any{"events": backgroundEndedEvent, "until_minutes": 5}); !strings.Contains(text, "Nothing you started runs in the background now") {
 		t.Fatal(text)
 	}
 	if waitOf(d.Store.Agent(id)) != nil {
