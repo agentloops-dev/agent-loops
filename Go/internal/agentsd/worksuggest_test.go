@@ -106,7 +106,7 @@ func TestWorkSuggestLeads(t *testing.T) {
 	}
 	s := out.Suggestions[0]
 	if s.Title != "Two" || !slices.Equal(s.Start.Labels, []string{"#2", "lead"}) || s.Start.Worktree != nil ||
-		s.Start.Prompt != "#2: Two\n\nLead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`): https://github.com/alexec/agents/issues/2" {
+		s.Start.Prompt != "#2: Two\n\nLead this epic: https://github.com/alexec/agents/issues/2" {
 		t.Fatalf("row: %+v", s)
 	}
 

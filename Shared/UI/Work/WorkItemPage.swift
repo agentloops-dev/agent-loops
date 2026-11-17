@@ -361,7 +361,7 @@ struct WorkItemPage: View {
             }
             .buttonStyle(.paperProminent)
             .controlSize(compact ? .large : .regular)
-            .help("The new-session form in this epic's folder, filled in for a lead with the lead skill")
+            .help("The new-session form in this epic's folder, filled in for a lead")
         }
     }
 

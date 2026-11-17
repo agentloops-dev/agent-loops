@@ -58,6 +58,10 @@ struct MachinePage: View {
                 Form {
                     if let row = model.hosts.controlRows[host], let setup = row.setup {
                         MachineSetupSection(host: host, row: row, setup: setup)
+                        // From a warm pool, or a claim that found it empty (#5366, board 4).
+                        if let note = model.machinePoolNotes[row.name], !MachineSetupWords.foldedAway(setup) {
+                            Section { Text(note).appText(.supporting).foregroundStyle(.secondary) }
+                        }
                     }
                     MachineSessionsSection(host: host)
                     if offline {

@@ -297,6 +297,13 @@ struct WireSchemaTests {
             "JoinApproved": Self.through(DaemonAPI.JoinApproved.self),
             "JoinDecided": Self.through(DaemonAPI.JoinDecided.self),
             "MachineJoinDecision": Self.through(DaemonAPI.MachineJoinDecision.self),
+            // Warm pools (#5363, #5366).
+            "WarmPool": Self.through(DaemonAPI.WarmPool.self),
+            "WarmPools": Self.through(DaemonAPI.WarmPools.self),
+            "WarmPoolSet": Self.through(DaemonAPI.WarmPoolSet.self),
+            "WarmPoolRequest": Self.through(DaemonAPI.WarmPoolRequest.self),
+            "WarmPoolClaim": Self.through(DaemonAPI.WarmPoolClaim.self),
+            "WarmPoolClaimed": Self.through(DaemonAPI.WarmPoolClaimed.self),
             // Channel links (#1762).
             "ChannelLink": Self.through(DaemonAPI.ChannelLink.self),
             "ChannelLinkRequest": Self.through(DaemonAPI.ChannelLinkRequest.self),

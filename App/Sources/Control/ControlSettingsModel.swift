@@ -32,6 +32,13 @@ final class ControlSettingsModel {
     /// How each connected client reaches the control plane now (frame N). Empty from a
     /// control plane that does not say.
     private(set) var connections: [UUID: DaemonAPI.ClientConnection] = [:]
+    /// The person's warm pools (#5366), as the control plane last listed them, and when.
+    private(set) var pools: [DaemonAPI.WarmPool] = []
+    private(set) var poolsReadAt: Date?
+    /// False on a control plane before warm pools: the section is not drawn.
+    private(set) var poolsHere = true
+    /// Each provider's price an hour by size, from its New Machine form, for a pool's cost.
+    private(set) var poolPrices: [ProviderID: [String: Double]] = [:]
     /// Said when an action was refused, in the words the control plane used.
     var problem: String?
     private(set) var isReachable = false
@@ -604,6 +611,58 @@ final class ControlSettingsModel {
         // The control plane on this Mac is the host side's to restart (ControlSettingsView).
         problem = "Restart the control plane from Agent Loops on this Mac."
         return
+    }
+
+    /// The person's warm pools (#5366). A control plane before pools answers no such method,
+    /// and the section goes; one that cannot be reached keeps the last list, with its time.
+    func loadPools() async {
+        do {
+            pools = try await client.call(DaemonAPI.Method.poolList, DaemonAPI.Empty(), returning: DaemonAPI.WarmPools.self).pools
+            poolsReadAt = Date()
+            poolsHere = true
+            for provider in Set(pools.map(\.provider)) where poolPrices[provider] == nil {
+                guard case .success(let options) = await providerOptions(provider) else { continue }
+                var prices: [String: Double] = [:]
+                for field in NewMachineSheet.Field.read(options.schema) {
+                    for (choice, cost) in field.costs { prices[choice] = WarmPoolWords.hourly(cost) }
+                }
+                poolPrices[provider] = prices
+            }
+        } catch let error as JSONRPCError where error.isMethodNotFound {
+            poolsHere = false
+        } catch {}
+    }
+
+    /// Save on a warm pool's form: nil once it is kept, or why not, in the control plane's words.
+    func setPool(_ set: DaemonAPI.WarmPoolSet) async -> String? {
+        do {
+            _ = try await client.call(DaemonAPI.Method.poolSet, set)
+            await loadPools()
+            return nil
+        } catch {
+            return Self.refusal(error)
+        }
+    }
+
+    /// Delete Warm Pool…: the pool and its ready machines; claimed machines stay.
+    func deletePool(_ id: String) async {
+        do {
+            _ = try await client.call(DaemonAPI.Method.poolDelete, DaemonAPI.WarmPoolRequest(id: id))
+            problem = nil
+        } catch {
+            problem = Self.refusal(error)
+        }
+        await loadPools()
+    }
+
+    /// A provider's New Machine form, for a pool's size and region (#5366).
+    func providerOptions(_ provider: ProviderID) async -> Result<DaemonAPI.ProviderOptions, NewMachineRefusal> {
+        do {
+            return .success(try await client.call(DaemonAPI.Method.providersOptions, DaemonAPI.ProviderRequest(id: provider),
+                                                  returning: DaemonAPI.ProviderOptions.self))
+        } catch {
+            return .failure(NewMachineRefusal(Self.refusal(error)))
+        }
     }
 
     private func perform(_ method: String, _ params: some Encodable & Sendable) async {

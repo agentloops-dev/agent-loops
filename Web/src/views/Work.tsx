@@ -598,7 +598,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
     </button>
   ) : startsLead && (
     <button type="button" class="prominent work-start" onClick={startLead}
-      title="The new-session form in this epic's folder, filled in for a lead with the lead skill"><Icon name="sparkles" />Start lead</button>
+      title="The new-session form in this epic's folder, filled in for a lead"><Icon name="sparkles" />Start lead</button>
   );
 
   // The Files changed page (#5477), pushed from Files changed.
