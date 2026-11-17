@@ -101,9 +101,11 @@
 .timeline-axis { position: sticky; top: 0; z-index: 1; border-bottom: 1px solid var(--paper-rule); }
 .timeline-foot { position: sticky; bottom: 0; z-index: 1; }
 .timeline-ground { fill: var(--timeline-plot); }
-.timeline-block rect.past, .timeline-block rect.ahead, .timeline-block rect.breathing, .timeline-placeholder rect { rx: var(--radius-code); }
+.timeline-block rect.ghost, .timeline-block rect.past, .timeline-block rect.ahead, .timeline-block rect.breathing, .timeline-placeholder rect { rx: var(--radius-code); }
 .timeline-block .past { fill: var(--c); }
-.timeline-block .ahead { fill: var(--c); fill-opacity: var(--timeline-tint); stroke: var(--c-later); stroke-width: 1; stroke-dasharray: 4 3; }
+/* The ghost (#6043): the lighter tint from created to closed; the solid span is drawn over it. */
+.timeline-block .ghost { fill: var(--c); fill-opacity: var(--timeline-tint); }
+.timeline-block .ahead { fill: none; stroke: var(--c-later); stroke-width: 1; stroke-dasharray: 4 3; }
 .timeline-block .band { fill: var(--c-later); opacity: 0.35; }
 .timeline-block .title { font-weight: 600; }
 .timeline-block .title.past { fill: var(--paper-on-fill); }

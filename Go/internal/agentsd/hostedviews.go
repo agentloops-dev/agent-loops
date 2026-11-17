@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 	"time"
 
@@ -79,6 +80,9 @@ func (c *hostedViewConn) call(ctx context.Context, _ int, method string, params 
 		}
 		return a.result, nil
 	case <-ctx.Done():
+		c.d.hostedMu.Lock()
+		log.Printf("hosted mcp: a view's %s to %s ran out of time (%s)", method, c.h.key.name, c.d.hostedCopyLocked(c.h))
+		c.d.hostedMu.Unlock()
 		return nil, &mcpCheckFailure{kind: "timedOut"}
 	}
 }

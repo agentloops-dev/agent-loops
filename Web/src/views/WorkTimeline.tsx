@@ -453,7 +453,7 @@ class Drawing {
   constructor(readonly lines: TimelineLine[], readonly axis: Axis, readonly now: number, readonly height: number,
               readonly offset: number, readonly visible: number) {
     this.nowX = axis.x(now);
-    this.shown = lines.filter((l) => axis.x(l.start) <= this.seenTo && axis.x(reach(l)) >= this.seenFrom);
+    this.shown = lines.filter((l) => axis.x(l.createdAt) <= this.seenTo && axis.x(reach(l)) >= this.seenFrom);
   }
 
   get seenFrom() { return this.offset - this.visible; }
@@ -474,14 +474,17 @@ class Drawing {
     const left = this.offset, right = this.offset + this.visible;
     const out = [
       <defs key="defs">
-        <clipPath id="timeline-past"><rect x={-100} y={0} width={Math.max(nowX + 100, 0)} height={height} /></clipPath>
         <clipPath id="timeline-ahead"><rect x={nowX} y={0} width={Math.max(axis.width - nowX + 100, 0)} height={height} /></clipPath>
       </defs>,
       <rect key="plot" class="timeline-ground" x={0} y={0} width={axis.width} height={height} />,
     ];
-    for (const l of shown) {
+    shown.forEach((l, i) => {
       const c = this.colour(l), top = rowTop(l.row), mid = top + blockHeight / 2;
-      const sx = axis.x(l.start), ex = Math.max(axis.x(l.end), sx + 2), w = ex - sx;
+      const sx = axis.x(l.createdAt), ex = Math.max(axis.x(l.end), sx + 2), w = ex - sx;
+      // The ghost from created to closed (or Now, or the forecast), solid only from started to stopped (#6043).
+      const wx = axis.x(l.start), wex = Math.max(axis.x(l.stoppedAt), wx);
+      const onSolid = (x: number) => wex > wx && x >= wx && x <= wex + 0.5;
+      const solid = `timeline-solid-${i}`, idle = `timeline-idle-${i}`;
       const forecast = l.how.how === "forecast" || l.how.how === "waits";
       const block = (cls: string, clip?: string) => (
         <rect class={cls} x={sx} y={top} width={w} height={blockHeight} clip-path={clip ? `url(#${clip})` : undefined} />
@@ -492,8 +495,16 @@ class Drawing {
         <g key={`block ${l.id}`} class={`timeline-block${this.isWorking(l) ? " working" : ""}${l.how.how === "dropped" ? " dropped" : ""}`}
           style={{ "--c": c }}>
           {/* An epic a session is in a turn on now (#4265): a soft glow that breathes; with Reduce Motion, still. */}
+          <defs>
+            <clipPath id={solid}><rect x={wx} y={-100} width={wex - wx} height={height + 200} /></clipPath>
+            <clipPath id={idle}>
+              <rect x={-100} y={-100} width={Math.max(wx + 100, 0)} height={height + 200} />
+              <rect x={wex} y={-100} width={Math.max(axis.width - wex + 100, 0)} height={height + 200} />
+            </clipPath>
+          </defs>
           {this.isWorking(l) && <rect class="breathing" x={sx} y={top} width={w} height={blockHeight} />}
-          {block("past", "timeline-past")}
+          {block("ghost")}
+          {block("past", solid)}
           {forecast && block("ahead", "timeline-ahead")}
           {/* 8 times in 10: a thin bar after the forecast. */}
           {l.band && axis.x(l.band.end) > ex && (
@@ -503,7 +514,7 @@ class Drawing {
             const x = dotX(dot, l, axis);
             return (
               <g key={dot.ref}>
-                <circle class={`timeline-dot${dot.closed ? "" : " ahead"}${x > nowX ? " later" : ""}`} cx={x} cy={dotY(l.row)} r={dot.closed ? 2 : 2.5} />
+                <circle class={`timeline-dot${dot.closed ? "" : " ahead"}${onSolid(x) ? "" : " later"}`} cx={x} cy={dotY(l.row)} r={dot.closed ? 2 : 2.5} />
                 {landed.value.has(dot.ref) && (
                   <circle class="timeline-pulse" cx={x} cy={dotY(l.row)} r={4}
                     onAnimationEnd={() => { const next = new Set(landed.value); next.delete(dot.ref); landed.value = next; }} />
@@ -513,8 +524,8 @@ class Drawing {
           })}
           {words.inside && (
             <>
-              <text class="title past" clip-path="url(#timeline-past)" x={words.insideX} y={titleY(l.row)} dy="0.35em">{words.inside}</text>
-              <text class="title later" clip-path="url(#timeline-ahead)" x={words.insideX} y={titleY(l.row)} dy="0.35em">{words.inside}</text>
+              <text class="title past" clip-path={`url(#${solid})`} x={words.insideX} y={titleY(l.row)} dy="0.35em">{words.inside}</text>
+              <text class="title later" clip-path={`url(#${idle})`} x={words.insideX} y={titleY(l.row)} dy="0.35em">{words.inside}</text>
             </>
           )}
           {words.outside && <text class="outside" x={words.outsideX} y={mid} dy="0.35em">{words.outside}</text>}
@@ -529,11 +540,11 @@ class Drawing {
           )}
           {/* → for a block that goes on past the right edge. */}
           {axis.x(reach(l)) > right && (
-            <text class={`timeline-more${right - 10 > nowX ? " later" : ""}`} x={right - 10} y={mid} dy="0.35em" text-anchor="middle">→</text>
+            <text class={`timeline-more${onSolid(right - 10) ? "" : " later"}`} x={right - 10} y={mid} dy="0.35em" text-anchor="middle">→</text>
           )}
         </g>,
       );
-    }
+    });
     // Now: a grey line.
     out.push(<line key="now" class="timeline-now" x1={nowX} y1={0} x2={nowX} y2={height} />);
     return out;

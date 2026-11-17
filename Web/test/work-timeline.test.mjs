@@ -15,8 +15,10 @@ const drop = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !==
 const item = (n, { feature, state = "open" } = {}) => drop({
   node: { kind: "issue", ref: `github:alexec/Agents#${n}` }, title: `Issue ${n}`, state, labels: [], assignees: [], updatedAt: 0, comments: 0, feature,
 });
-const child = (n, { started, closed, forecast, waits, reason } = {}) => drop({
-  item: item(n, { state: closed === undefined ? "open" : "closed" }), stateReason: reason, createdAt: wire(-100),
+// `created` is when it was filed: by default when it started (or closed), so the ghost adds nothing.
+const child = (n, { created, started, closed, forecast, waits, reason } = {}) => drop({
+  item: item(n, { state: closed === undefined ? "open" : "closed" }), stateReason: reason,
+  createdAt: wire(created ?? started ?? closed ?? forecast ?? -100),
   startedAt: wire(started), closedAt: wire(closed), waitsForPerson: waits ? true : undefined, forecastAt: wire(forecast),
 });
 const fc = (low, mid, high, waits) => drop({ low: wire(low), mid: wire(mid), high: wire(high), waits });
@@ -87,6 +89,40 @@ test("an open line is forecast, waits or stops at Now", () => {
   const past = t.timelineLines(timeline, now, false);
   assert.deepEqual(past.map((l) => l.how.how), ["open", "waits", "open"]);
   assert.ok(past[0].dots.every((d) => d.closed) && past[0].band === undefined);
+});
+
+test("a block is solid from started to stopped, and the ghost from created to closed (#6043)", () => {
+  const timeline = { epics: [
+    // Open, nobody on it, its last close 3 h before Now: solid to there, the ghost to Now.
+    epic(1, [child(10, { created: -12, started: -10, closed: -3 }), child(11, { created: -9 })], [[-10, null]]),
+    // A child filed a day before it started: the ghost before the solid span.
+    epic(2, [child(12, { created: -30, started: -6 })], [[-6, null]]),
+    // Joined: the ghost from created to started, solid to its last close.
+    epic(3, [child(13, { created: -20, started: -15, closed: -14 })], [[-15, -14]]),
+    // Dropped: the same spans, in grey.
+    epic(4, [child(14, { created: -8, started: -7, closed: -5 })], [[-7, -5]], { reason: "not_planned" }),
+  ], releases: [] };
+  const [stopped, filed, joined, dropped] = t.timelineLines(timeline, now);
+  assert.deepEqual([stopped.createdAt, stopped.start, stopped.stoppedAt, stopped.end], [h(-12), h(-10), h(-3), now]);
+  assert.ok(t.hasStopped(stopped, now));
+  assert.equal(t.lineLine(stopped, now), "#1 · 1 of 2 · stopped 3 h ago · open");
+  assert.deepEqual(t.lineWords(stopped, undefined, now).slice(2), ["Open", "Stopped 3 h ago"]);
+  // The dots do not move: #10 is still at its close.
+  assert.deepEqual(stopped.dots.map((d) => d.at), [h(-3)]);
+  assert.deepEqual([filed.createdAt, filed.start, filed.stoppedAt], [h(-30), h(-6), h(-6)]);
+  assert.deepEqual([joined.createdAt, joined.start, joined.stoppedAt, joined.end], [h(-20), h(-15), h(-14), h(-14)]);
+  assert.ok(!t.hasStopped(joined, now));
+  assert.equal(t.lineLine(joined, now), "#3 · 1 of 1 · closed 14 h ago");
+  assert.deepEqual([dropped.how.how, dropped.createdAt, dropped.stoppedAt], ["dropped", h(-8), h(-5)]);
+  // A session in a turn on it: the work did not stop, solid to Now.
+  const working = t.timelineLines(timeline, now, true, new Set(["github:alexec/Agents#11"]))[0];
+  assert.equal(working.stoppedAt, now);
+  assert.equal(t.lineLine(working, now), "#1 · 1 of 2 · open");
+  // The rows pack by the created time: #2 is filed before #1 starts, so it takes row 0.
+  assert.equal(t.layout([stopped, filed, joined, dropped]).find((l) => l.number === "#2").row, 0);
+  // The block, its words and its hit start at the ghost.
+  assert.equal(t.blockWords(filed, axis, (s) => s.length * 6).insideX, axis.x(h(-30)) + 6);
+  assert.equal(t.hit({ x: axis.x(h(-20)), y: t.rowTop(filed.row) + 4 }, [filed], axis)?.kind, "line");
 });
 
 test("a dropped epic ends in a cross", () => {
@@ -222,7 +258,7 @@ test("the hover card is a row of three lines: the title, the labels, the predict
   const row = t.cardRow({ kind: "line", line: lines[0] }, timeline, now);
   assert.deepEqual([row.state, row.title], ["open", "Issue 24"]);
   assert.deepEqual(row.labels.map((l) => l.name), ["enhancement"]);
-  assert.match(row.line, /^#24 · 1 of 2 · closes about .*–.*, 8 in 10$/);
+  assert.match(row.line, /^#24 · 1 of 2 · stopped 1 h ago · closes about .*–.*, 8 in 10$/);
   // How past forecasts did is the title line's help, not the card's.
   assert.doesNotMatch(row.line, /Past forecasts/);
   const dot = t.cardRow({ kind: "dot", line: lines[0], dot: lines[0].dots[0] }, timeline, now);
@@ -258,7 +294,8 @@ test("under 700 px the epics are a list, in the order they close", () => {
   const rows = t.epicRows(t.timelineLines(timeline, now), t.rangeWindow("twoDays", now), now);
   assert.deepEqual(rows.map((r) => r.line.number), ["#34", "#31", "#32", "#30", "#33"]);
   assert.match(rows[0].line2, /^closes about .+ · .+–.+$/);
-  assert.equal(rows[2].line2, "2 wait for you");
+  // Nothing closed since they started 2 h ago, and no session is in a turn on them: the work stopped (#6043).
+  assert.equal(rows[2].line2, "2 wait for you · stopped 2 h ago");
   assert.match(rows[3].line2, /^joined /);
   assert.equal(rows[1].line.done, 1);
   assert.equal(rows[1].line.total, 2);

@@ -10,7 +10,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -511,29 +510,49 @@ func TestASessionStartedAsAPersonaHasItsPrompt(t *testing.T) {
 }
 
 // Words sent from voice mode have the voice-mode text before them, and the next words
-// sent without the flag do not (#2322).
+// sent without the flag do not (#2322). The text ends in "hang_up.", a run of token
+// characters that the daemon holds back until the turn ends (#1001, chunkseam.go), so
+// each answer is read only after its turn has ended (#5924).
 func TestVoiceModeTextGoesBeforeTheWords(t *testing.T) {
 	t.Parallel()
 
-	flaky.UnderLoad(t, "#5924")
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := startAgent(t, c, 1, t.TempDir(), "hi")
 	c.until(t, "the first end", ended(id, wire.AgentStateFinished))
-	c.call(t, 2, "agents/prompt", map[string]any{"agentID": id, "text": "say your brief", "from": "person", "voice": true})
-	waitFor(t, "the answer", func() bool { return strings.Count(agentMessages(d, id), "Before: ") == 1 })
-	if said := agentMessages(d, id); !strings.HasSuffix(said, "Before: "+voicePreface) {
+	c.callHearing(t, 2, "agents/prompt", map[string]any{"agentID": id, "text": "say your brief", "from": "person", "voice": true},
+		"the second end", ranThenEnded(t, id))
+	if said := agentMessages(d, id); strings.Count(said, "Before: ") != 1 || !strings.HasSuffix(said, "Before: "+voicePreface) {
 		t.Fatalf("said %q", said)
 	}
 	if u := userMessages(d, id); u[len(u)-1] != "say your brief" {
 		t.Fatalf("the person's words %q", u)
 	}
-	c.until(t, "the second end", ended(id, wire.AgentStateFinished))
-	c.call(t, 3, "agents/prompt", map[string]any{"agentID": id, "text": "say your brief", "from": "person"})
-	waitFor(t, "the second answer", func() bool { return strings.Count(agentMessages(d, id), "Before: ") == 2 })
-	if said := agentMessages(d, id); !strings.HasSuffix(said, "Before: ") {
+	c.callHearing(t, 3, "agents/prompt", map[string]any{"agentID": id, "text": "say your brief", "from": "person"},
+		"the third end", ranThenEnded(t, id))
+	if said := agentMessages(d, id); strings.Count(said, "Before: ") != 2 || !strings.HasSuffix(said, "Before: ") {
 		t.Fatalf("said %q", said)
+	}
+}
+
+// ranThenEnded hears the agent run and then finish: a "finished" agent/changed that
+// comes before it runs is the turn before's, not this one's.
+func ranThenEnded(t *testing.T, id wire.UUID) func(string, json.RawMessage) bool {
+	ran := false
+	return func(method string, p json.RawMessage) bool {
+		if method != "agent/changed" {
+			return false
+		}
+		var a wire.Agent
+		if err := json.Unmarshal(p, &a); err != nil {
+			t.Fatalf("agent/changed %s: %v", p, err)
+		}
+		if a.ID != id {
+			return false
+		}
+		ran = ran || a.State == wire.AgentStateRunning
+		return ran && a.State == wire.AgentStateFinished
 	}
 }
 

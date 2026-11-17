@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"maps"
 	"net/http"
 	"os"
@@ -485,27 +486,41 @@ func mergeForgePages(pages []forgePage, from forgeCursor, limit int) ([]wire.For
 
 // gitlabProjectAt is the GitLab a folder's remote is on (connected first), and its project there.
 func (d *Daemon) gitlabProjectAt(ctx context.Context, folder, connected string) (root, project string) {
-	key := folder + " " + connected
+	at := d.forgeRootAt(ctx, folder+" "+connected, folder, func(remotes []string) [2]string {
+		var roots []string
+		if connected != "" {
+			roots = append(roots, connected)
+		}
+		root, project, _ := gitlabmcp.ProjectIn(remotes, append(roots, connections.GitLabCom))
+		return [2]string{root, project}
+	})
+	return at[0], at[1]
+}
+
+// forgeRootAt is what find says of folder's git remotes, kept under key, so a folder's
+// remotes are read once for each forge (the forge's root and repository). A read that fails
+// says "not known" and keeps nothing, so the next call reads again (#6064): a folder is not
+// put off its forge for good by one slow git.
+func (d *Daemon) forgeRootAt(ctx context.Context, key, folder string, find func(remotes []string) [2]string) [2]string {
 	d.forgeMu.Lock()
 	at, ok := d.forgeRoots[key]
 	d.forgeMu.Unlock()
 	if ok {
-		return at[0], at[1]
+		return at
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	var roots []string
-	if connected != "" {
-		roots = append(roots, connected)
+	remotes, err := folderRemotes(ctx, folder)
+	if err != nil {
+		log.Printf("forge of %s: %v", folder, err)
+		return [2]string{}
 	}
-	root, project, _ = gitlabmcp.ProjectAt(gitCtx, folder, append(roots, connections.GitLabCom))
+	at = find(remotes)
 	d.forgeMu.Lock()
 	defer d.forgeMu.Unlock()
 	if d.forgeRoots == nil || len(d.forgeRoots) >= forgeCached {
 		d.forgeRoots = map[string][2]string{}
 	}
-	d.forgeRoots[key] = [2]string{root, project}
-	return root, project
+	d.forgeRoots[key] = at
+	return at
 }
 
 // folderLinearTeams is the Linear teams, by key, that a folder's .agents/folder.json names for

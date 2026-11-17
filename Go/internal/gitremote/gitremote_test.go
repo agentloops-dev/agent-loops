@@ -44,3 +44,24 @@ func TestURLs(t *testing.T) {
 		t.Fatalf("not a repository: %q", got)
 	}
 }
+
+// A read that fails is an error, not "no remote" (#6064): a folder with a Forgejo remote
+// must not look like a folder with none when git is slow.
+func TestReadTellsAFailedReadFromNoRemote(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil { //nolint:gosec // git on the test's own temporary folder
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	if got, err := Read(context.Background(), dir); err != nil || len(got) != 0 {
+		t.Fatalf("a repository with no remote: %q %v", got, err)
+	}
+	if got, err := Read(context.Background(), t.TempDir()); err != nil || len(got) != 0 {
+		t.Fatalf("not a repository: %q %v", got, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got, err := Read(ctx, dir); err == nil {
+		t.Fatalf("a read with no time left: %q, want an error", got)
+	}
+}

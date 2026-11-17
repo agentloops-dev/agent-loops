@@ -222,13 +222,13 @@ func TestABitbucketRemoteAtTheConnectionsAPI(t *testing.T) {
 	ctx := context.Background()
 
 	folder := gitFolder(t, "https://alex@bitbucket.org/team/app.git")
-	if f, _, connected := d.forgeAt(ctx, folder); f.provider != wire.ConnectionProviderBitbucket || f.root != connections.BitbucketAPI ||
+	if f, _, connected := forgeAtOK(t, d, ctx, folder); f.provider != wire.ConnectionProviderBitbucket || f.root != connections.BitbucketAPI ||
 		f.repo != "team/app" || f.site != "bitbucket.org" || connected {
 		t.Fatalf("before connecting: %+v %v", f, connected)
 	}
 	fake := "http://127.0.0.1:3785/2.0/"
 	file.Put(connections.BitbucketConnection(fake, "", "bb-access", "agentstest", time.Now()))
-	if f, c, connected := d.forgeAt(ctx, folder); f.root != fake || !connected || c.Access != "bb-access" {
+	if f, c, connected := forgeAtOK(t, d, ctx, folder); f.root != fake || !connected || c.Access != "bb-access" {
 		t.Fatalf("connected to a fake: %+v %v", f, connected)
 	}
 	bitbucket, repo := wire.ConnectionProviderBitbucket, "team/app"
@@ -236,7 +236,7 @@ func TestABitbucketRemoteAtTheConnectionsAPI(t *testing.T) {
 	if c, ok := d.connectionFor(f); f.site != "bitbucket.org" || f.root != fake || !ok || c.Access != "bb-access" {
 		t.Fatalf("a project's slot: %+v %v", f, ok)
 	}
-	if f, _, _ := d.forgeAt(ctx, gitFolder(t, "git@github.com:team/app.git")); f.provider != wire.ConnectionProviderGithub {
+	if f, _, _ := forgeAtOK(t, d, ctx, gitFolder(t, "git@github.com:team/app.git")); f.provider != wire.ConnectionProviderGithub {
 		t.Fatalf("GitHub first: %+v", f)
 	}
 }
