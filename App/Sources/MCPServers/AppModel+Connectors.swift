@@ -175,9 +175,7 @@ extension AppModel {
     func refreshEndedConnections(folders: [DaemonAPI.FolderSummary]) async {
         let hosts = Set(folders.map(\.host)).union([.mac])
             .filter { !hostUnreachable($0) && host($0, has: Capability.connections1) }
-        for host in hosts {
-            if case .success(let list) = await connections(on: host) { endedConnections.set(list, on: host) }
-        }
+        await readConnections(of: hosts)
         for folder in folders {
             guard !endedConnections.on(folder.host).isEmpty, self.host(folder.host, has: Capability.connectorsSetup1),
                   case .success(let setup) = await connectorSetup(folder.key, reading: .stored) else {
@@ -187,6 +185,38 @@ extension AppModel {
             endedConnections.set(setup.connection.flatMap { ConnectorSetupWords.hasEnded($0) ? $0 : nil }, in: folder.key)
         }
         endedConnections.keep(Set(folders.map(\.key)))
+    }
+
+    /// Each of `hosts`' connections: with a control plane, every machine's in one call (`connections/listAll`, #5592),
+    /// and a machine that did not answer keeps what it had, as the web page's `refreshEndedConnections`; with none, a call
+    /// to each. This Mac's answer under its own id is also this Mac's (`.mac`), as Connectors reads it.
+    private func readConnections(of hosts: Set<MachineRef>) async {
+        guard !hosts.isEmpty else { return }
+        do {
+            if let all = try await controlAll(DaemonAPI.Method.connectionsListAll, DaemonAPI.Empty(),
+                                              returning: DaemonAPI.ConnectionsListAll.self) {
+                let mine = thisMacHostID
+                var macRead = false
+                for list in all.lists {
+                    if hosts.contains(list.machine) { endedConnections.set(list.connections.connections, on: list.machine) }
+                    if list.machine == mine, hosts.contains(.mac) {
+                        endedConnections.set(list.connections.connections, on: .mac)
+                        macRead = true
+                    }
+                }
+                // This Mac's own daemon, when the control plane does not name it: asked itself, as before.
+                if hosts.contains(.mac), !macRead, case .success(let list) = await connections(on: .mac) {
+                    endedConnections.set(list, on: .mac)
+                }
+                return
+            }
+        } catch {
+            // The control plane did not answer: each machine keeps what it had.
+            return
+        }
+        for host in hosts {
+            if case .success(let list) = await connections(on: host) { endedConnections.set(list, on: host) }
+        }
     }
 }
 

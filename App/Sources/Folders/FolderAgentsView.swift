@@ -130,7 +130,7 @@ struct FolderAgentsView: View {
                     .appText(.title).fontWeight(.semibold)
                     .lineLimit(1)
             }
-            personaMenu
+            PersonaChoice()
             if let summary {
                 Text(place(summary))
                     .appText(.supporting)
@@ -228,80 +228,6 @@ struct FolderAgentsView: View {
                   + project.folders.map { model.hostUnreachable($0.host) ? "0" : "1" }.joined()) {
                 await model.refreshDraftAutoMachine()
             }
-        }
-    }
-
-    /// The kind of session to start (#760), the same control as the folder's name, a
-    /// size smaller, on its own line under it (#913). What the picked one is for, and any
-    /// persona file that cannot be read, are under it. Not drawn where there are none.
-    @ViewBuilder private var personaMenu: some View {
-        let usable = model.draftPersonas.filter { $0.problem == nil }
-        let broken = model.draftPersonas.filter { $0.problem != nil }
-        let picked = usable.first { $0.id == model.draftPersona }
-        VStack(spacing: 4) {
-            if !model.draftPersonas.isEmpty {
-                if !usable.isEmpty {
-                    // Centred under the folder when it fits; a menu of them when it does not (#2795).
-                    ViewThatFits(in: .horizontal) {
-                        personaPicker(usable, picked: picked)
-                        personaPicker(usable, picked: picked, menu: true)
-                    }
-                    .disabled(model.isStarting)
-                    .help("Start a kind of session: a persona sets what it names")
-                    // What the live pick picked and the word, so the person sees what to change (#4559).
-                    if model.draftPersonaAuto {
-                        Text(Persona.autoLine(model.draftAutoPick))
-                            .appText(.fine)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                if let description = picked?.description {
-                    Text(description)
-                        .appText(.fine)
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(broken) { persona in
-                    Text("\(persona.id).md: \(persona.problem ?? "")")
-                        .appText(.fine)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    static let noPersona = "No persona"
-
-    /// Segments, or a menu: the picked one's name and a chevron, where they do not fit (#2795).
-    /// No Auto segment (#4721): the prompt's words pick one live until one is picked by hand.
-    @ViewBuilder
-    private func personaPicker(_ usable: [Persona], picked: Persona?, menu: Bool = false) -> some View {
-        let picker = Picker("Persona", selection: Binding<Persona.Segment>(
-            get: { Persona.Segment(picked: model.draftPersona) },
-            set: { segment in
-                switch segment {
-                case .none: model.choosePersona(nil)
-                case .persona(let id): model.choosePersona(usable.first { $0.id == id })
-                }
-            }
-        )) {
-            Text(Self.noPersona).tag(Persona.Segment.none)
-            ForEach(usable) { persona in
-                Text(persona.name).tag(Persona.Segment.persona(persona.id))
-            }
-        }
-        let shown = picked?.name ?? Self.noPersona
-        if menu {
-            picker
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityLabel("Persona: \(shown)")
-        } else {
-            picker
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize(horizontal: true, vertical: false)
-                .accessibilityLabel("Persona: \(shown)")
         }
     }
 

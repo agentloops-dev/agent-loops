@@ -25,7 +25,13 @@ export interface MergeBox {
   merges: boolean;
   /** The main button waits for the checks (the accent colour), or merges now (green). */
   waits: boolean;
+  /** Approve is there: not on a draft, nor on the person's own pull request (#5804). */
   approves: boolean;
+  /** The person's own Approve review is on it (#5804): Approve is Approved, with a check, and does nothing. From the
+   * forge's state, so a push that dismisses it shows Approve again. */
+  approved: boolean;
+  /** The person opened it, so the forge takes no review from them: no Approve, and ownPullWords in its place. */
+  ownPull: boolean;
   reruns: boolean;
   /** Resolve on GitHub: the branch has conflicts. */
   resolve: boolean;
@@ -57,13 +63,30 @@ export function mergeBox(d: ForgeItemDetail): MergeBox | undefined {
   const reviewed = item.review === undefined || item.review === "approved";
   const border: MergeSign = failed || conflicts ? "fail" : !draft && !waits && !auto && reviewed ? "pass" : "info";
   const head = d.head !== undefined;
+  const own = isViewer(item.author, d.viewer);
   return {
     border, rows, checksOpen: failed,
     merges: !draft && !conflicts && !auto && head && (offers(d, "merge") || offers(d, "autoMerge")),
-    waits, approves: !draft && head && offers(d, "approve"),
+    waits, approves: !draft && !own && head && offers(d, "approve"),
+    approved: !draft && !own && approvedByViewer(d), ownPull: !draft && own,
     reruns: failedChecks(d).length > 0 && offers(d, "rerun"), resolve: conflicts,
   };
 }
+
+/** Approve's words: Approved once the person's own review approved it (#5804). */
+export const approveWords = (approved: boolean) => approved ? "Approved" : "Approve";
+
+/** In Approve's place on the person's own pull request (#5804, epic #5802). */
+export const ownPullWords = "You opened this pull request, so you cannot approve it.";
+
+/** A login is the viewer's, the forge's logins compared without case. */
+const isViewer = (login: string | undefined, viewer: string | undefined) =>
+  !!login && !!viewer && login.toLowerCase() === viewer.toLowerCase();
+
+/** The person's own review approved it: the reviewer whose login is the viewer's, with the state approved (#5804).
+ * Not the pull request's overall review, which another can set. */
+export const approvedByViewer = (d: ForgeItemDetail) =>
+  (d.reviewers ?? []).some((r) => isViewer(r.login, d.viewer) && r.state === "approved");
 
 const methodTitle = (m: ForgeMergeMethod | undefined) => m ? mergeTitle[m] : "Merge";
 

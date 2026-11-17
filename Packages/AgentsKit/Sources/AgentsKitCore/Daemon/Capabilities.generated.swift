@@ -117,6 +117,7 @@ public enum Capability {
     public static let hostSuspend1 = "host.suspend/1"
     public static let hostTeam1 = "host.team/1"
     public static let hostUpdate1 = "host.update/1"
+    public static let hostUserParts1 = "host.user-parts/1"
     public static let hostUserSettings1 = "host.user-settings/1"
     public static let hostUserSettings2 = "host.user-settings/2"
     public static let hostUserSettings3 = "host.user-settings/3"
@@ -145,6 +146,7 @@ public enum Capability {
     public static let machineAgentSecrets1 = "machine.agent-secrets/1"
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
+    public static let machinesAll1 = "machines.all/1"
     public static let machines1 = "machines/1"
     public static let machines2 = "machines/2"
     public static let mailbox1 = "mailbox/1"
@@ -236,6 +238,7 @@ public enum Capability {
     public static let user3 = "user/3"
     public static let user4 = "user/4"
     public static let user5 = "user/5"
+    public static let user6 = "user/6"
     public static let velocity1 = "velocity/1"
     public static let views1 = "views/1"
     public static let wake1 = "wake/1"
@@ -761,6 +764,7 @@ public enum Capability {
         "clients/startPairing": "clients/1",
         "clients/stopPairing": "clients/1",
         "clients/webPushKey": "clients/1",
+        "connections/listAll": "machines.all/1",
         "console/fleet": "console/1",
         "console/live": "console/1",
         "console/stopAgent": "console/1",
@@ -780,7 +784,10 @@ public enum Capability {
         "deploys/deliveryAll": "deploys.read/1",
         "deploys/sync": "deploys.copy/1",
         "docs/listAll": "docs.all/1",
+        "events/listAll": "machines.all/1",
         "folders/detected": "folders/1",
+        "forge/boardsAll": "machines.all/1",
+        "forge/listAll": "machines.all/1",
         "git/credential": "git/1",
         "governance/approvals": "governance/1",
         "governance/decide": "governance/1",
@@ -794,6 +801,7 @@ public enum Capability {
         "groups/set": "groups/1",
         "groups/setRole": "org-identity/1",
         "handover/status": "handover/1",
+        "lineage/forecastAll": "machines.all/1",
         "lineage/sessionsOn": "lineage.read/2",
         "lineage/sync": "lineage.graph/1",
         "lineage/walkAll": "lineage.read/2",
@@ -929,6 +937,7 @@ public enum Capability {
         "readApi/revoke": "readapi/1",
         "reports/deleteView": "reports.views/1",
         "reports/export": "reports/2",
+        "reports/featuresAll": "machines.all/1",
         "reports/nodes": "reports.nodes/2",
         "reports/policy": "reports.scope/1",
         "reports/saveView": "reports.views/2",
@@ -977,7 +986,7 @@ public enum Capability {
         "user/setAgentConfigFile": "user/1",
         "user/setPolicy": "host.policy-layers/1",
         "user/setSecret": "user/2",
-        "user/setSettings": "user/5",
+        "user/setSettings": "user/6",
         "user/settings": "user/1",
         "workflows/claimRun": "bots/1",
         "workflows/fire": "events.team/1",
@@ -1069,6 +1078,7 @@ public enum Capability {
             "host.lock/1",
             "host.lock/2",
             "host.user-settings/3",
+            "host.user-parts/1",
         ],
     ]
 }

@@ -403,8 +403,8 @@ private struct DashboardPullChip: View {
     }
 }
 
-/// A session under its row: its mark, runtime and title, what it does or asks, and when it last
-/// did anything. Opens its chat.
+/// A session under its row: its mark and title, what it does or asks, and when it last did
+/// anything. Opens its chat.
 private struct DashboardSessionLine: View {
     @Environment(AppModel.self) private var model
     let session: Dashboard.Session
@@ -414,8 +414,6 @@ private struct DashboardSessionLine: View {
         Button { model.openAgent(agent.id) } label: {
             HStack(alignment: .center, spacing: 8) {
                 DashboardMark(mark: session.mark, agent: session.agent)
-                Text(RuntimeCatalog.runtime(id: agent.runtimeID)?.name ?? agent.runtimeID).foregroundStyle(Paper.secondary)
-                Text("·").foregroundStyle(Paper.tertiary)
                 Text(title(agent)).lineLimit(1)
                 Text(line(agent)).foregroundStyle(Paper.secondary).lineLimit(1)
                 Spacer(minLength: 8)

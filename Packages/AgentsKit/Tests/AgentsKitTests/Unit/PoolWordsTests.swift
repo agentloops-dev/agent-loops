@@ -15,6 +15,8 @@ struct PoolWordsTests {
         #expect(PoolWords.state(state, now: now).hasPrefix("Out · reset "))
         state.markOut(.allowanceSpent, until: nil, payment: .allowance(label: nil), now: now, from: .words)
         #expect(PoolWords.state(state, now: now).contains("checking after"))
+        #expect(PoolWords.state(state, now: now).contains("allowance spent"))
+        #expect(PoolWords.state(state, now: now).hasPrefix("Out since "))
         state.markOut(.creditUsedUp, until: nil, payment: .prepaid(amount: nil, expires: nil), now: now, from: .ledger)
         #expect(PoolWords.state(state, now: now).hasPrefix("Credit used up · checking after "))
         state.markAvailable(now: now)

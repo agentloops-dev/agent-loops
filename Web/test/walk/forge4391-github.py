@@ -9,7 +9,8 @@ epic page (#4416), the epic #10 with sub-issues in three steps: #12 waits for #1
 starts folded), #13 and #17 wait for #12, and #17 is also blocked by #16, outside the plan; for the
 forge's own fields (#4397), opened and closed times, a closed issue not planned (#20), avatars (public
 GitHub avatars, which `forge/image` reads), the list's total, #12's timeline events and the pull
-request that closes it (#21), and #10's children. Scratch data only. Point a
+request that closes it (#21), and #10's children; each pull request's reviewers (#5804): sam, whom any token
+signs in as, approved #25, is asked on #22, and opened #21. Scratch data only. Point a
 run-app host at it with --env AGENTS_TEST_GITHUB_URL=http://127.0.0.1:<port>, and connect GitHub with
 rpc.py call connections/sign-in/token '{"provider":"github","token":"walk"}'.
 
@@ -63,13 +64,14 @@ ITEMS = {
     21: {"title": "Pay part with a gift card", "state": "OPEN", "labels": ["feature:checkout"], "pr": True, "author": "sam",
          "assignees": ["sam"], "at": 12, "check": "SUCCESS", "review": "APPROVED", "commentCount": 2},
     22: {"title": "Filter results by price", "state": "OPEN", "labels": ["needs-approval", "feature:search"], "pr": True,
-         "author": "robin", "at": 75, "check": "FAILURE", "review": "CHANGES_REQUESTED", "commentCount": 5},
+         "author": "robin", "at": 75, "check": "FAILURE", "review": "CHANGES_REQUESTED", "commentCount": 5,
+         "reviews": [("kai", "CHANGES_REQUESTED")], "asked": ["sam"]},
     23: {"title": "Search: typo tolerance", "state": "OPEN", "labels": [], "pr": True, "draft": True, "author": "kai",
          "at": 4 * 60, "check": "PENDING"},
     24: {"title": "Cart: keep the coupon after a refresh", "state": "OPEN", "labels": ["area:cart"], "pr": True,
          "author": "sam", "at": 40, "check": "SUCCESS", "review": "REVIEW_REQUIRED", "conflicts": True, "threads": 2},
     25: {"title": "Search: rank exact matches first", "state": "OPEN", "labels": ["feature:search"], "pr": True,
-         "author": "kai", "at": 30, "check": "PENDING", "review": "APPROVED", "auto": True},
+         "author": "kai", "at": 30, "check": "PENDING", "review": "APPROVED", "auto": True, "reviews": [("sam", "APPROVED")]},
     19: {"title": "Gift card balances in the store's API", "state": "MERGED", "labels": ["feature:checkout"], "pr": True,
          "author": "robin", "at": 2 * 1440, "check": "SUCCESS", "review": "APPROVED"},
     18: {"title": "Try a second payment provider", "state": "CLOSED", "labels": [], "pr": True, "author": "sam",
@@ -169,6 +171,11 @@ def detail(n):
     if i.get("pr"):
         rollup = {"contexts": {"nodes": checks(n)}} if "check" in i else None
         got.update({"reviewThreads": {"totalCount": i.get("threads", 0)}, "changedFiles": 3, "headRefOid": "abc123",
+                    # Each reviewer's newest review, and who is asked (#5804): sam, the connected person, approved #25.
+                    "latestReviews": {"nodes": [{"author": {"login": who, "__typename": "User"}, "state": st}
+                                                for who, st in i.get("reviews", [])]},
+                    "reviewRequests": {"nodes": [{"requestedReviewer": {"__typename": "User", "login": who}}
+                                                 for who in i.get("asked", [])]},
                     "commits": {"nodes": [{"commit": {"oid": "abc123", "statusCheckRollup": rollup}}]}})
     return got
 

@@ -285,6 +285,7 @@ on Linux).
 | | No deny list sent | `_meta.agy.disabledTools`, while there is something in it | There is nothing to deny; the list is only ever for tools the app has a reason to take away. |
 | | Keys in the environment ignored | `GEMINI_API_KEY`, `GOOGLE_API_KEY` removed | It signs in with a Google account only. |
 | **OpenCode** | Asks before editing, running commands and fetching pages; sharing and self-update off | `OPENCODE_CONFIG_CONTENT`, `OPENCODE_DISABLE_SHARE`, `OPENCODE_DISABLE_AUTOUPDATE` | Left alone, it does all three without asking; no conversation is published; the app's copy is never replaced under a running agent. |
+| | Its own database, never `~/.local/share/opencode` | `XDG_DATA_HOME` | A newer OpenCode that you run yourself migrates that database, and this copy then cannot start. Your sign-in stays in your directory. This copy does not read it. |
 | | A temporary folder of its own | `TMPDIR` | It walks that folder at every turn: 40 seconds before the first word with the Mac's own. |
 | | Its question tool off | `OPENCODE_ENABLE_QUESTION_TOOL` removed | Questions go through the app's `ask_question`. |
 | **Grok** | Asks, whatever you saved in its own config | `--permission-mode default` | The app's **Request cards** or **Always Approve** in the prompt permission capsule decides. |
@@ -374,7 +375,8 @@ else is an option under the prompt, the tool list the app sends, or its environm
 #### OpenCode
 
 The app passes its settings in `OPENCODE_CONFIG_CONTENT`, above your own `opencode.json`,
-which reaches servers too. Settings your Mac's administrator manages win over both.
+which reaches servers too. Settings your Mac's administrator manages win over both. The app's
+copy keeps its database in its own data directory. It does not open `~/.local/share/opencode`.
 
 | Option | Where | Values (default) | Under ACP | On servers | Decided |
 | --- | --- | --- | --- | --- | --- |

@@ -513,6 +513,13 @@ public extension DaemonAPI {
                 Row(Method.docsListAll, params: DocsListAllRequest.self, result: DocsListAll.self, kind: .controlRequest),
                 Row(Method.messagesConversationsAll, params: MessagesConversationsAllRequest.self, result: MessagesConversationsAll.self,
                     kind: .controlRequest),
+                // Every machine's Work lists, boards, forecast, features, events and connections in one call (#5592).
+                Row(Method.forgeListAll, params: ForgeListAllRequest.self, result: ForgeListAll.self, kind: .controlRequest),
+                Row(Method.forgeBoardsAll, params: Empty.self, result: ForgeBoardsAll.self, kind: .controlRequest),
+                Row(Method.lineageForecastAll, params: LineageForecastRequest.self, result: LineageForecastAll.self, kind: .controlRequest),
+                Row(Method.reportsFeaturesAll, params: Empty.self, result: FeatureUsageAll.self, kind: .controlRequest),
+                Row(Method.eventsListAll, params: EventsListAllRequest.self, result: EventsListAll.self, kind: .controlRequest),
+                Row(Method.connectionsListAll, params: Empty.self, result: ConnectionsListAll.self, kind: .controlRequest),
                 Row(Method.hostsList, params: Empty.self, result: [ControlMachine].self, kind: .controlRequest),
                 Row(Method.hostsSetLabels, params: MachineLabelsRequest.self, result: MachineLabelsResult.self, kind: .controlRequest),
                 // Which machine Auto would pick (#5375).

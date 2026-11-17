@@ -3,7 +3,7 @@
 // (reports/nodes: cost, sessions, lead time) on top. Releases come from reports/nodes alone in v1. As
 // WorkList has it on the window.
 import type {
-  ForgeCheck, ForgeComment, ForgeDone, ForgeEvent, ForgeItem, ForgeItemDetail, ForgeLabel, ForgeListError, ForgeListRequest, ForgeMergeMethod,
+  ForgeCheck, ForgeComment, ForgeDone, ForgeEvent, ForgeItem, ForgeItemDetail, ForgeLabel, ForgeListAllRequest, MachineRef, ForgeListError, ForgeListRequest, ForgeMergeMethod,
   LineageNode, ProjectBoard, ReportNode,
 } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
@@ -237,6 +237,15 @@ export function withBoard<T extends object>(request: T, board: string): T & { bo
 /** forge/issues' and forge/pulls' request: the state, a page of 100, the board when one is chosen, the next page's cursor. */
 export function forgeListRequest(state: string, board: string, cursor?: string): ForgeListRequest {
   return withBoard({ state, limit: 100, ...cursor ? { cursor } : {} }, board);
+}
+
+/** forge/listAll's request (#5592): forge/issues' or forge/pulls' of every machine in one call; `pages`, for the next page,
+ * names each machine still to read and its cursor. */
+export function forgeListAllRequest(kind: WorkKind, state: string, board: string, pages?: readonly { host: string; cursor: string }[]): ForgeListAllRequest {
+  return withBoard({
+    kind: kind === "issue" ? "issues" as const : "pulls" as const, state, limit: 100,
+    ...pages ? { pages: pages.map((p) => ({ machine: p.host as MachineRef, cursor: p.cursor })) } : {},
+  }, board);
 }
 
 /** The boards of several machines (forge/boards, #3282) as one list: each once, by url, in the order first read,

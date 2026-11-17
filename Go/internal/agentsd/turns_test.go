@@ -732,6 +732,38 @@ func TestAntigravityLaunchesInItsOwnHome(t *testing.T) {
 	}
 }
 
+// OpenCode's own copy gets a data directory in the root, and no XDG_DATA_HOME from the
+// login shell. It then does not open ~/.local/share/opencode, which a newer OpenCode
+// migrates until this copy exits with "no such column: project_id".
+func TestOpenCodeLaunchesInItsOwnDataDirectory(t *testing.T) {
+	fakeRuntimes(t)
+	root := t.TempDir()
+	d, _ := start(t, root)
+	defer d.Shutdown()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "person"))
+	l, err := d.launchFor(runtimeByID("opencode"), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "runtimes", "opencode", "data")
+	n := 0
+	for _, kv := range l.Env {
+		if !strings.HasPrefix(kv, "XDG_DATA_HOME=") {
+			continue
+		}
+		n++
+		if kv != "XDG_DATA_HOME="+want {
+			t.Fatalf("%s", kv)
+		}
+	}
+	if n != 1 {
+		t.Fatalf("XDG_DATA_HOME count %d in\n%s", n, strings.Join(l.Env, "\n"))
+	}
+	if _, err := os.Stat(want); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Antigravity 1.4.5 writes skills/system/run-workflow into the session's folder (#3731):
 // info/exclude keeps it out of git status, also in a subfolder, and once only.
 func TestAntigravityLaunchKeepsItsSkillsOutOfGit(t *testing.T) {

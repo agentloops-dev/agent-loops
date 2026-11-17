@@ -8,6 +8,9 @@ public extension DaemonAPI {
     /// A part of the user settings. Each keeps the shape its file has on a machine.
     enum UserSettingsPartName: String, Codable, Sendable, Hashable, CaseIterable {
         case mcpServers, agentConfig, runtimes, costLimits, notifications, accounts, timeZone, environment
+        /// What agents call the person, Auto's settings and retention (#5573): set once by the
+        /// Mac, which the control plane sends to each machine, in place of a call to each.
+        case person, auto, retention
     }
 
     /// The timeZone part (#4818): the person's time zone, which their Mac sets from its own
@@ -68,11 +71,21 @@ public extension DaemonAPI {
         public var timeZone: JSONValue?
         /// `~/.agents/env` (#5259), as a `UserEnvironment`: written to that file on each of the person's machines.
         public var environment: JSONValue?
+        /// What agents call the person (#5573), as a `PersonSettings` with the name resolved on the Mac.
+        public var person: JSONValue?
+        /// Auto's settings (#5573), as an `AutoSettings`.
+        public var auto: JSONValue?
+        /// How long archived agents are kept (#5573), as a `RetentionSettings`.
+        public var retention: JSONValue?
         public var updated: String?
 
         public init(mcpServers: JSONValue? = nil, agentConfig: JSONValue? = nil, agentConfigFiles: AgentConfigFiles? = nil, runtimes: JSONValue? = nil,
                     costLimits: JSONValue? = nil, notifications: JSONValue? = nil, accounts: JSONValue? = nil, timeZone: JSONValue? = nil,
-                    environment: JSONValue? = nil, updated: String? = nil) {
+                    environment: JSONValue? = nil, person: JSONValue? = nil, auto: JSONValue? = nil, retention: JSONValue? = nil,
+                    updated: String? = nil) {
+            self.person = person
+            self.auto = auto
+            self.retention = retention
             self.timeZone = timeZone
             self.environment = environment
             self.mcpServers = mcpServers
@@ -95,6 +108,9 @@ public extension DaemonAPI {
             case .accounts: accounts
             case .timeZone: timeZone
             case .environment: environment
+            case .person: person
+            case .auto: auto
+            case .retention: retention
             }
         }
     }

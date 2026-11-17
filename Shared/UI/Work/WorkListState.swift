@@ -191,34 +191,23 @@ final class WorkListState {
             readBoards = await model.workBoards()
             guard ask == mine else { return }
         }
-        var got: [(host: MachineRef, list: DaemonAPI.ForgeList)] = []
         let machines = model.workMachines(board: board)
-        await withTaskGroup(of: (MachineRef, DaemonAPI.ForgeList).self) { group in
-            for machine in machines {
-                group.addTask {
-                    do {
-                        return (machine.id, try await model.forgeList(kind, .init(state: state, limit: 100,
-                                                                                  board: board.isEmpty ? nil : board),
-                                                                      on: machine.id))
-                    } catch {
-                        return (machine.id, .init(errors: [.init(forge: "", message: error.localizedDescription)]))
-                    }
+        let ids = machines.map(\.id)
+        var got: [(host: MachineRef, list: DaemonAPI.ForgeList)] = []
+        if !ids.isEmpty {
+            // Every machine's list in one call to the control plane (#5592), which waits for a slow machine at most 5 s;
+            // with none, a call to each machine. The rows read before stay until it answers.
+            do {
+                if let all = try await model.controlAll(DaemonAPI.Method.forgeListAll,
+                                                        Self.listAllRequest(kind, state: state, board: board),
+                                                        returning: DaemonAPI.ForgeListAll.self) {
+                    got = WorkList.hostLists(all, hosts: ids)
+                } else {
+                    got = await readEach(machines, .init(state: state, limit: 100, board: board.isEmpty ? nil : board),
+                                         model: model, mine: mine, known: known)
                 }
-            }
-            // Each machine's rows draw as it answers (#5449): the first machine that answers for a forge is enough, and
-            // a slow or offline one does not hold the list. The others keep the rows they had; errors wait for all.
-            for await (host, list) in group {
-                got.append((host, list))
-                guard ask == mine, got.count < machines.count, !list.items.isEmpty else { continue }
-                var drawn = got.map { entry in
-                    var quiet = entry.list
-                    quiet.errors = nil
-                    return (host: entry.host, list: quiet)
-                }
-                drawn += (lists ?? []).filter { had in !got.contains { $0.host == had.host } }
-                lineage = known.nodes
-                lineageCursor = known.cursor
-                lists = drawn
+            } catch {
+                got = ids.map { ($0, .init(errors: [.init(forge: "", message: error.localizedDescription)])) }
             }
         }
         guard ask == mine else { return }
@@ -253,6 +242,48 @@ final class WorkListState {
         }
     }
 
+    /// forge/listAll's request (#5592) for a kind's list: its state, a page of 100, the board when one is chosen, and
+    /// `pages`, each machine still to read and its cursor, for the next page.
+    static func listAllRequest(_ kind: WorkList.Kind, state: String, board: String,
+                               pages: [DaemonAPI.MachineCursor]? = nil) -> DaemonAPI.ForgeListAllRequest {
+        .init(kind: kind == .pr ? "pulls" : "issues", state: state, board: board.isEmpty ? nil : board, limit: 100, pages: pages)
+    }
+
+    /// Each machine's list, a call to each, with no control plane. Each machine's rows draw as it answers (#5449): the
+    /// first machine that answers for a forge is enough, and a slow or offline one does not hold the list. The others
+    /// keep the rows they had; errors wait for all.
+    private func readEach(_ machines: [(id: MachineRef, name: String)], _ request: DaemonAPI.ForgeListRequest,
+                          model: any WorkModel, mine: Ask, known: (nodes: [DaemonAPI.ReportNode], cursor: String?))
+        async -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
+        let kind = kind
+        var got: [(host: MachineRef, list: DaemonAPI.ForgeList)] = []
+        await withTaskGroup(of: (MachineRef, DaemonAPI.ForgeList).self) { group in
+            for machine in machines {
+                group.addTask {
+                    do {
+                        return (machine.id, try await model.forgeList(kind, request, on: machine.id))
+                    } catch {
+                        return (machine.id, .init(errors: [.init(forge: "", message: error.localizedDescription)]))
+                    }
+                }
+            }
+            for await (host, list) in group {
+                got.append((host, list))
+                guard ask == mine, got.count < machines.count, !list.items.isEmpty else { continue }
+                var drawn = got.map { entry in
+                    var quiet = entry.list
+                    quiet.errors = nil
+                    return (host: entry.host, list: quiet)
+                }
+                drawn += (lists ?? []).filter { had in !got.contains { $0.host == had.host } }
+                lineage = known.nodes
+                lineageCursor = known.cursor
+                lists = drawn
+            }
+        }
+        return got
+    }
+
     /// The machines answered for what is asked: the rows are theirs now.
     private func answered(_ wanted: String) {
         shownFor = wanted
@@ -268,11 +299,25 @@ final class WorkListState {
         defer { loadingMore = false }
         do {
             if kind.fromForge {
+                let had = lists ?? []
+                let board = filter.board
+                let pages = had.compactMap { entry in entry.list.cursor.map { DaemonAPI.MachineCursor(machine: entry.host, cursor: $0) } }
+                // Each machine's next page in one call to the control plane (#5592). A forge or a machine that could not
+                // read its next page says so: the rows and the cursor stay, so Try again reads it again.
+                if let all = try await model.controlAll(DaemonAPI.Method.forgeListAll,
+                                                        Self.listAllRequest(kind, state: filter.state.forge, board: board,
+                                                                            pages: pages),
+                                                        returning: DaemonAPI.ForgeListAll.self) {
+                    let (next, problem) = WorkList.addPages(all, to: had)
+                    lists = next
+                    pageProblem = problem
+                    return
+                }
                 var next: [(host: MachineRef, list: DaemonAPI.ForgeList)] = []
-                for entry in lists ?? [] {
+                for entry in had {
                     guard let cursor = entry.list.cursor else { next.append(entry); continue }
                     let page = try await model.forgeList(kind, .init(state: filter.state.forge, cursor: cursor, limit: 100,
-                                                                     board: filter.board.isEmpty ? nil : filter.board),
+                                                                     board: board.isEmpty ? nil : board),
                                                          on: entry.host)
                     next.append((entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors)))
                 }

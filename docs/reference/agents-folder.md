@@ -96,6 +96,12 @@ set aside as `<name>.corrupt-<time>`, and the setting goes back to its default. 
 `host.json`, the file is left as it is, and Agent Loops starts with the defaults until you
 mend the file or remove it.
 
+`retention.json`, `person.json`, `client-permissions.json`, `sandbox.json` and `auto.json`
+follow you to each of your machines. Your Mac sets each one once on the control plane
+(`user/setSettings`, parts `retention`, `person`, `runtimes` and `auto`), and the control
+plane sends it to each machine when it joins and when it changes (`machine/userSettings`).
+A machine that is older than these parts gets one call from your Mac instead (#5573).
+
 `limits.json`, `workflow-limit.json` and `runtime-environment.json` are not read now. On
 the first start, Agent Loops moves what they hold into `policy-yours.json` and renames each one
 `<name>.moved`.

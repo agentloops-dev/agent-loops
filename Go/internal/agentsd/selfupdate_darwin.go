@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"golang.org/x/sys/unix"
 )
@@ -65,6 +66,7 @@ func (d *Daemon) registerSelfUpdate() {
 		})
 	}
 	u := newSelfUpdater(file, app, buildinfo.Version)
+	u.control = func() []releaseSource { return controlSources(d.Store.Loc.Root) }
 	u.unpack, u.verify, u.version, u.restart = dittoUnpack, verifyRelease, bundleVersion, restartLaunchAgents
 	if u.status.State != wire.SelfUpdateStateCannot {
 		if team, _ := signingOf(app); team == "" {
@@ -171,4 +173,25 @@ func (d *Daemon) serveSelfUpdate(u *selfUpdater) {
 	On(d, wire.CallSelfUpdateSet, func(_ context.Context, _ *Client, r wire.SelfUpdateSet) (wire.SelfUpdate, error) {
 		return u.Set(r)
 	})
+}
+
+// controlSources are the addresses of the control plane this host joined, from its root's
+// membership, or none when it has not joined one (#5786).
+func controlSources(root string) []releaseSource {
+	member, err := controllink.LoadMembership(root)
+	if err != nil || member == nil {
+		return nil
+	}
+	var out []releaseSource
+	for _, e := range member.EndpointsToDial() {
+		if !strings.HasPrefix(e.URL, "https://") && !strings.HasPrefix(e.URL, "http://") {
+			continue
+		}
+		src := releaseSource{base: e.URL}
+		if e.Pin != nil {
+			src.pin = *e.Pin
+		}
+		out = append(out, src)
+	}
+	return out
 }

@@ -100,7 +100,7 @@ function MessagesStatusLine({ store }: { store: Store }) {
       const ids = messagesHosts(store).map((h) => h.id);
       // One call for every machine (#5571); a failed one leaves the count out.
       const got = await store.link.call("messages/conversationsAll", { limit: 50, unread: true }).then((list) => hostConversationsOf(list), () => null);
-      await Promise.all(ids.map((host) => store.loadEvents(host)));
+      await store.loadEventsAll(ids);
       if (!current) return;
       unread.value = got?.length ? unreadTotal(got) ?? 0 : got ? 0 : undefined;
       now.value = Date.now();
