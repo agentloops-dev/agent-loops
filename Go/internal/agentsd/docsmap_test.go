@@ -60,8 +60,10 @@ func fakeDocsMCP(t *testing.T, asked *[]map[string]any, mu *sync.Mutex) *httptes
 // search sends the folder's name and the slot shows the first doc found; a changed map is
 // searched again at once; and a map that names a tool the server lacks says so.
 func TestADocsConnectorProvesItselfWithOneSearch(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "")
@@ -124,6 +126,8 @@ func TestADocsConnectorProvesItselfWithOneSearch(t *testing.T) {
 }
 
 func TestFirstDoc(t *testing.T) {
+	t.Parallel()
+
 	text := func(s string) string {
 		b, _ := json.Marshal(s)
 		return `{"content":[{"type":"text","text":` + string(b) + `}]}`

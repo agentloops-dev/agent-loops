@@ -91,6 +91,8 @@ func startParams(dir, runtime string, values map[string]any) map[string]any {
 
 // US1: with no control plane, or a control plane with no policy, nothing changes (SC-001).
 func TestNoPolicyChangesNothing(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -120,6 +122,8 @@ func TestNoPolicyChangesNothing(t *testing.T) {
 // T015, US6: the policy is kept on disk, 0600; a forged, missing, older or edited copy
 // starts no work; a newer one and the same one signed again are taken (SC-005).
 func TestThePolicyFileIsKeptAndChecked(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -235,6 +239,8 @@ func TestAPolicyOfTheOldKeyIsTrusted30Days(t *testing.T) {
 // reason policy and the rule's name; a helper's and a workflow's mode falls to the
 // ceiling. Then a looser policy gives back each choice, unchanged (FR-011).
 func TestEveryRuleAtEveryPath(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -430,6 +436,8 @@ func TestEveryRuleAtEveryPath(t *testing.T) {
 // T014, FR-012: a running agent meets a new policy at its next turn: its mode goes down
 // to the ceiling, with a line in its chat; a runtime now refused waits, and says why.
 func TestARunningAgentMeetsANewPolicyAtItsNextTurn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -473,6 +481,8 @@ func TestARunningAgentMeetsANewPolicyAtItsNextTurn(t *testing.T) {
 // the mode ceiling: refused to a person, dropped from a helper's or a workflow's start,
 // marked in the lists, and turned off before a running agent's next turn.
 func TestApprovingEveryRequestIsUnderTheModeCeiling(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -525,6 +535,8 @@ func TestApprovingEveryRequestIsUnderTheModeCeiling(t *testing.T) {
 // An agent started with no model chosen runs on the runtime's own: once the runtime says
 // it, a model the policy refuses holds the first turn, as at the start of any turn.
 func TestTheRuntimesOwnModelIsCheckedBeforeTheFirstTurn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -546,6 +558,8 @@ func TestTheRuntimesOwnModelIsCheckedBeforeTheFirstTurn(t *testing.T) {
 // matched with the value, the value without its context suffix, the model id that the
 // option's name says (Sonnet 5 is claude-sonnet-5) and the family (claude-sonnet).
 func TestAModelPatternMatchesTheAliasAndTheModelItIs(t *testing.T) {
+	t.Parallel()
+
 	// The Claude adapter's model option, as it says it (specs/052-quota-fallback/walk).
 	claude := []wire.ConfigOption{{ID: "model", Name: "Model", Category: new("model"), Type: "select",
 		CurrentValue: json.RawMessage(`"default"`), Options: json.RawMessage(`[
@@ -632,6 +646,8 @@ func TestMarkingTheModelsGrowsWithTheList(t *testing.T) {
 // agents, prompts and workflow runs, keeps what is queued, and when it is turned off
 // starts nothing by itself.
 func TestTheKillSwitch(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -673,6 +689,8 @@ func TestTheKillSwitch(t *testing.T) {
 
 // T017, US4, SC-006: budgets on the machine.
 func TestMachineBudgets(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -730,6 +748,8 @@ func TestMachineBudgets(t *testing.T) {
 
 // T018: a capability the policy requires that this machine lacks refuses every start.
 func TestAMissingCapabilityRefusesEveryStart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	d, c := joined(t, t.TempDir(), k)
@@ -756,6 +776,8 @@ func TestAMissingCapabilityRefusesEveryStart(t *testing.T) {
 
 // T025: each roll-up row carries the tokens a limit counts.
 func TestARollupRowCarriesLimitTokens(t *testing.T) {
+	t.Parallel()
+
 	var r wire.UsageRollupRow
 	addRollupRow(&r, wire.UsageRollupRow{InputTokens: 5, LimitTokens: new(int64(4))})
 	addRollupRow(&r, wire.UsageRollupRow{InputTokens: 5, LimitTokens: new(int64(6))})
@@ -769,6 +791,8 @@ func TestARollupRowCarriesLimitTokens(t *testing.T) {
 // saved Yes answers nothing, setting one is refused, and the state says who set it. A
 // helper or a workflow's agent never takes the person's from Settings.
 func TestAlwaysApproveIsUnderTheModeCeiling(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -843,6 +867,8 @@ func TestAlwaysApproveIsUnderTheModeCeiling(t *testing.T) {
 // is no app tool or workflow action that reaches policy/setYours at all): the handler's own
 // forbiddenCallerRefusal is the one gate for all three.
 func TestSetYoursRefusesTheAgentSocketRole(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	for _, role := range []Role{RoleAgent, RoleHostApp, RoleStranger} {
@@ -864,6 +890,8 @@ func TestSetYoursRefusesTheAgentSocketRole(t *testing.T) {
 // now is refused conflict, so the client reloads before it overwrites a change it has not
 // seen (Edge Cases, "Two clients change your layer at once").
 func TestSetYoursRefusesAConflictingRevision(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	// The first start makes revision 1 (no old files here, so empty rules).
@@ -884,6 +912,8 @@ func TestSetYoursRefusesAConflictingRevision(t *testing.T) {
 // different keeper (today only reachable by a copy from elsewhere; slice 3 wires the
 // transport) refuses to change it itself, naming the keeper (research R4).
 func TestSetYoursRefusesANonKeeperMachine(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	os.MkdirAll(d.SettingsDir, 0o700)
@@ -921,6 +951,8 @@ func TestSetYoursRefusesANonKeeperMachine(t *testing.T) {
 // TestSetYoursRefusesInvalidRules: a value out of policylayers.Validate's range is refused
 // invalid, and nothing is saved.
 func TestSetYoursRefusesInvalidRules(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	tooMany := int64(99)
@@ -942,6 +974,8 @@ func TestSetYoursRefusesInvalidRules(t *testing.T) {
 // display.json, where every client reads them (#3161); a rule the copy leaves unset takes
 // its key away, so clients show the default the host uses.
 func TestAPushedLayerReachesDisplay(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

@@ -16,8 +16,10 @@ import (
 // plain text, not in the agent's environment or its MCP servers, and the agent is told no
 // path to read; agentsd itself still opens it for fill_secret.
 func TestAnAgentsSecretIsSealed(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	root := t.TempDir()
 	d, c := start(t, root)
 	defer d.Shutdown()
@@ -82,8 +84,10 @@ func TestAnAgentsSecretIsSealed(t *testing.T) {
 // #4014: an agent's write turns the flag on, also over a plain value a person set, and no
 // agent's connection reaches a way to turn it off.
 func TestAnAgentCannotClearTheFlag(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	if err := d.saveSecret("GITLAB_PASSWORD", "the-persons", false); err != nil {
@@ -128,8 +132,10 @@ func TestAnAgentCannotClearTheFlag(t *testing.T) {
 // #4014: a sealed record changed by hand, its grants or its name, does not open; nor does
 // another machine's.
 func TestAChangedSealedRecordDoesNotOpen(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	root := t.TempDir()
 	d, _ := start(t, root)
 	defer d.Shutdown()
@@ -165,8 +171,10 @@ func TestAChangedSealedRecordDoesNotOpen(t *testing.T) {
 // sealed here and not in secrets.env; a flag the control plane changed either way does not
 // open; turned off by the person's client, it goes back to secrets.env.
 func TestYourSetupsFlagIsSealed(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	_, public := machineKeys(t, root)
 	d, c := start(t, root)
 	defer d.Shutdown()

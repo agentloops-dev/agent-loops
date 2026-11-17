@@ -17,6 +17,8 @@ import (
 
 // manage_accounts' import reads the old registry's snake_case files (#3909, #3967).
 func TestOldAccounts(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "gitlab.json"), []byte(`{"service":"gitlab.com","address":"a@example.com","plan":"Free",
 		"monthly_cost_usd":0,"card":null,"secret":"~/.agents/secrets/gitlab-token","two_factor":null,"issue":1634,
@@ -35,6 +37,8 @@ func TestOldAccounts(t *testing.T) {
 }
 
 func TestAccountsNote(t *testing.T) {
+	t.Parallel()
+
 	cost := 5.0
 	address, about := "agents@example.com", "The agents' own gitlab.com account, for the integration tests."
 	all := []wire.OutsideAccount{{Service: "gitlab.com", Address: &address, Description: &about, MonthlyCostUsd: &cost},
@@ -65,6 +69,8 @@ func TestAccountsNote(t *testing.T) {
 // get gives the whole account by the id that list gives, which stays the same for the same
 // service and address (#4164).
 func TestAccountNote(t *testing.T) {
+	t.Parallel()
+
 	address := "agents@example.com"
 	all := []wire.OutsideAccount{{Service: "gitlab.com"}, {Service: "gitlab.com", Address: &address}}
 	if accountID(all[0]) == accountID(all[1]) || len(accountID(all[0])) != 8 {
@@ -85,6 +91,8 @@ func TestAccountNote(t *testing.T) {
 
 // add needs a description (#4164).
 func TestManageAccountsAddNeedsADescription(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{}
 	_, err := d.manageAccounts("", map[string]json.RawMessage{"action": json.RawMessage(`"add"`),
 		"account": json.RawMessage(`{"service":"gitlab.com"}`)})
@@ -96,6 +104,8 @@ func TestManageAccountsAddNeedsADescription(t *testing.T) {
 // An add that would replace an account waits for the person's yes; a new one, or one with no
 // change, goes in at once (#4001).
 func TestAddingAnAccountAsksBeforeReplacing(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := "sign-up"
@@ -289,6 +299,8 @@ func TestAGetMadeAgainShowsItsRequestAgain(t *testing.T) {
 }
 
 func TestPlanAccounts(t *testing.T) {
+	t.Parallel()
+
 	have := []wire.OutsideAccount{{Service: "gitlab.com", Address: new("a@example.com"), Plan: new("Free"), Notes: new("Keychain")}}
 	plan := planAccounts(have, []wire.OutsideAccount{
 		{Service: "GitLab.com", Address: new("A@example.com"), Plan: new("Free")},
@@ -309,6 +321,8 @@ func TestPlanAccounts(t *testing.T) {
 // for the control plane's audit, and the account's last operation, which a later read of its
 // secret moves on. A list with no service reads no account.
 func TestManageAccountsRecordsEachOperation(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason, a.RuntimeID = wire.AgentStateRunning, nil, "claude" })
@@ -408,6 +422,8 @@ func TestManageAccountsRecordsEachOperation(t *testing.T) {
 
 // The record keeps the newest accountOpsMost of each kind.
 func TestTrimOldest(t *testing.T) {
+	t.Parallel()
+
 	m := map[string]wire.Date{}
 	for i := range accountOpsMost + 3 {
 		m[strconv.Itoa(i)] = wire.Date(i)
@@ -535,6 +551,8 @@ func TestAGetOfAnAccountThatAsksWaitsOnAPerson(t *testing.T) {
 // manage_accounts asks machine/accounts only of a control plane that said machine.accounts/1
 // (#4100): an older one, or one that has not answered machine/hello yet, is asked nothing.
 func TestAskAccountsNeedsTheCapability(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{}
 	asked := 0
 	ask := askControl(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
@@ -559,6 +577,8 @@ func TestAskAccountsNeedsTheCapability(t *testing.T) {
 // #5253: remove takes an account an agent added out at once; one the person added waits for
 // their Remove on a card, and a Don’t keeps it. An old control plane is told to update.
 func TestRemovingAnAccountAsksForThePersons(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := "tidy"
@@ -653,6 +673,8 @@ func TestRemovingAnAccountAsksForThePersons(t *testing.T) {
 
 // #5253: an agent's add says it added the account, so that an agent may remove it later.
 func TestAnAddSaysWhichAgentAddedIt(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason, a.RuntimeID = wire.AgentStateRunning, nil, "claude" })

@@ -31,6 +31,8 @@ func usePolicy(t testing.TB, d *Daemon, p SocketPolicy) {
 }
 
 func TestRoleAllows(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		role   Role
 		method string
@@ -102,6 +104,8 @@ func serveWith(t *testing.T, p SocketPolicy) (*Daemon, string) {
 }
 
 func TestSocketRefusesWhatTheRoleMayNotCall(t *testing.T) {
+	t.Parallel()
+
 	_, path := serveWith(t, fixedPolicy{role: RoleStranger, ok: true})
 	if m := socketCall(t, path, "daemon/ping"); m == nil || m.Error != nil {
 		t.Fatalf("a stranger's ping: %+v", m)
@@ -113,6 +117,8 @@ func TestSocketRefusesWhatTheRoleMayNotCall(t *testing.T) {
 }
 
 func TestSocketControlMayCallEverything(t *testing.T) {
+	t.Parallel()
+
 	_, path := serveWith(t, fixedPolicy{role: RoleControl, ok: true})
 	if m := socketCall(t, path, "agents/list"); m == nil || m.Error != nil {
 		t.Fatalf("a window's agents/list: %+v", m)
@@ -120,6 +126,8 @@ func TestSocketControlMayCallEverything(t *testing.T) {
 }
 
 func TestSocketClosesACallerThePolicyTurnsAway(t *testing.T) {
+	t.Parallel()
+
 	_, path := serveWith(t, fixedPolicy{ok: false})
 	if m := socketCall(t, path, "daemon/ping"); m != nil {
 		t.Fatalf("answered: %+v", m)
@@ -127,6 +135,8 @@ func TestSocketClosesACallerThePolicyTurnsAway(t *testing.T) {
 }
 
 func TestOnlyAPersonIsCountedAsAClient(t *testing.T) {
+	t.Parallel()
+
 	d, window := start(t, t.TempDir()) // one window, in memory
 	window.call(t, 1, "daemon/ping", nil)
 	stranger := &roledConn{conn: newConn(), role: RoleStranger}
@@ -169,6 +179,8 @@ func (r *roledConn) ask(t *testing.T, method string) message {
 
 // The lines that matter, as Debian's kernel writes them for an ssh login's session.
 func TestProcStatusIsRead(t *testing.T) {
+	t.Parallel()
+
 	status := "Name:\tsshd\nUmask:\t0022\nState:\tS (sleeping)\nTgid:\t3389\nPid:\t3389\nPPid:\t3383\n" +
 		"Uid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\n"
 	if s, ok := parseProcStatus(status); !ok || s != (procStatus{name: "sshd", uid: 1000, parent: 3383}) {
@@ -181,6 +193,8 @@ func TestProcStatusIsRead(t *testing.T) {
 
 // The Mac's forward is carried by the login's own sshd, whose parent is the root one.
 func TestAnSSHLoginsSessionIsControl(t *testing.T) {
+	t.Parallel()
+
 	for _, name := range []string{"sshd", "sshd-session"} {
 		if !isSSHSession(procStatus{name: name, uid: 1000, parent: 3383}, &procStatus{name: name, uid: 0, parent: 1}) {
 			t.Errorf("%s", name)
@@ -191,6 +205,8 @@ func TestAnSSHLoginsSessionIsControl(t *testing.T) {
 // Everything an agent can start: under the daemon, orphaned to a container's sshd at pid
 // 1, named sshd under its own shell, or run by cron as root's child.
 func TestNothingAnAgentStartsIsAnSSHSession(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		peer   procStatus
 		parent *procStatus

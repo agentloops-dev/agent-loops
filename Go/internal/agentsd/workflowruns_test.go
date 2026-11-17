@@ -30,6 +30,8 @@ func approveAll(t *testing.T, c *conn, folder wire.URL) {
 }
 
 func TestAWorkflowRuns(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -87,6 +89,8 @@ func TestAWorkflowRuns(t *testing.T) {
 // A mode the runtime does not offer stops the run, rather than leaving the agent in the
 // runtime's own default; with nothing offered yet, the mode is taken as offered.
 func TestAWorkflowModeTheRuntimeDoesNotOffer(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if id, why := d.offeredMode("grok", "auto"); id != "mode" || why != "" {
@@ -108,6 +112,8 @@ func TestAWorkflowModeTheRuntimeDoesNotOffer(t *testing.T) {
 }
 
 func TestAllowanceFailureDoesNotAutoarchiveWorkflowRun(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -140,6 +146,8 @@ func TestAllowanceFailureDoesNotAutoarchiveWorkflowRun(t *testing.T) {
 }
 
 func TestRunNowRetriesStoppedWorkflowOnCurrentRuntime(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -184,6 +192,8 @@ func TestRunNowRetriesStoppedWorkflowOnCurrentRuntime(t *testing.T) {
 }
 
 func TestRunEndingBeforeAgentAttachmentReleasesRun(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -216,6 +226,8 @@ func TestRunEndingBeforeAgentAttachmentReleasesRun(t *testing.T) {
 }
 
 func TestRunNowUsesExplicitlyChangedRuntimeWhileOldRunIsActive(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -261,6 +273,8 @@ func TestRunNowUsesExplicitlyChangedRuntimeWhileOldRunIsActive(t *testing.T) {
 }
 
 func TestAFireWhileARunGoesQueues(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -348,6 +362,8 @@ func TestAWorkflowPinnedHereRuns(t *testing.T) {
 // same wait wait_for_event makes, and the agent is started again when it is granted. A
 // workflow that may archive a done run must not archive one still waiting on that.
 func TestAWorkflowRunQueuedForALeaseIsNotArchived(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

@@ -25,6 +25,8 @@ func writesOnlyUnder(dir string) string {
 }
 
 func TestSeatbeltConfinesWrites(t *testing.T) {
+	t.Parallel()
+
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	in, out := filepath.Join(dir, "in"), filepath.Join(dir, "out")
 	os.Mkdir(in, 0o755)
@@ -42,6 +44,8 @@ func TestSeatbeltConfinesWrites(t *testing.T) {
 }
 
 func TestARuntimesOwnSeatbeltCannotNest(t *testing.T) {
+	t.Parallel()
+
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	said, err := underSeatbelt(t, writesOnlyUnder(dir), "/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true")
 	if err == nil {

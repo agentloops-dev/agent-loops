@@ -158,7 +158,7 @@ func (d *Daemon) brief(a *wire.Agent) string {
 	if c := firstPromptCards[a.RuntimeID]; c != "" {
 		parts = append(parts, c)
 	}
-	if p := personaPrompt(a); p != "" {
+	if p := personaPrompt(a, d.personaHome()); p != "" {
 		parts = append(parts, p)
 	}
 	return strings.Join(parts, "\n\n")
@@ -393,7 +393,7 @@ func appToolServed(name string) bool {
 // personaPrompt is the prompt of the persona the agent was started as (#760): the folder's
 // .agents/personas/<id>.md, else the person's, read now so an edit reaches the next
 // conversation. None for a persona that is not there or will not parse.
-func personaPrompt(a *wire.Agent) string {
+func personaPrompt(a *wire.Agent, home string) string {
 	if a.Persona == nil {
 		return ""
 	}
@@ -401,7 +401,7 @@ func personaPrompt(a *wire.Agent) string {
 	if id == "" || strings.Contains(id, "/") || strings.HasPrefix(id, ".") {
 		return ""
 	}
-	for _, from := range []struct{ base, origin string }{{folderPath(a), "folder"}, {personaHome(), "personal"}} {
+	for _, from := range []struct{ base, origin string }{{folderPath(a), "folder"}, {home, "personal"}} {
 		if from.base == "" {
 			continue
 		}

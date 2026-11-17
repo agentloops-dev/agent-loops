@@ -24,8 +24,10 @@ func writeEnv(t *testing.T, dir, text string) {
 // The login environment, then the repo's file, then yours: yours wins, and a refused name is
 // given by neither.
 func TestYoursWinsOverTheRepos(t *testing.T) {
+	t.Parallel()
+
 	root, home, folder := t.TempDir(), t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, root)
 	writeEnv(t, folder, "REGION=repo\nREPO_ONLY=1\nNODE_OPTIONS=--require ./x.js\nPATH=/evil\n")
 	writeEnv(t, home, "# Mine\nREGION=yours\nNODE_OPTIONS=--max-old-space-size=4096\nANTHROPIC_API_KEY=x\n")
@@ -54,6 +56,8 @@ func TestYoursWinsOverTheRepos(t *testing.T) {
 }
 
 func TestRepoFileRefusesNamesThatRunCode(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		name string
 		repo bool
@@ -90,8 +94,10 @@ func TestRepoFileRefusesNamesThatRunCode(t *testing.T) {
 }
 
 func TestEnvWriteKeepsTheFileAndRefusesSecrets(t *testing.T) {
+	t.Parallel()
+
 	root, home, folder := t.TempDir(), t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	_, c := start(t, root)
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 	writeEnv(t, folder, "# Top\n\n# Where we run\nREGION=eu\n")
@@ -130,8 +136,10 @@ func TestEnvWriteKeepsTheFileAndRefusesSecrets(t *testing.T) {
 // The environment part writes ~/.agents/env; an edit by hand there is kept and marked, until
 // Discard writes the part's text again.
 func TestEnvironmentPartAndAnEditByHand(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, root)
 	send := func(text string) {
 		d.Told(wire.NotifyMachineUserSettings.Name, mustJSON(wire.MachineUserSettings{User: "sam",
@@ -169,8 +177,10 @@ func TestEnvironmentPartAndAnEditByHand(t *testing.T) {
 
 // A person's own file from before the part came is not written over.
 func TestAPersonsOwnFileIsKeptOnTheFirstPart(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, root)
 	writeEnv(t, home, "OWN=1\n")
 	d.Told(wire.NotifyMachineUserSettings.Name, mustJSON(wire.MachineUserSettings{User: "sam",

@@ -70,6 +70,8 @@ func ciSlowedDaemon(t *testing.T) (*Daemon, string) {
 }
 
 func TestCISlowedIsSentOnceForAStepUp(t *testing.T) {
+	t.Parallel()
+
 	d, _ := ciSlowedDaemon(t)
 	repo := citimings.Repo{Forge: "github", Path: "alexec/agents"}
 	end := time.Now().UTC().Truncate(time.Second)
@@ -127,6 +129,8 @@ func TestCISlowedIsSentOnceForAStepUp(t *testing.T) {
 }
 
 func TestCISlowedNotSentForASpeedUpOrAnOldChange(t *testing.T) {
+	t.Parallel()
+
 	for name, tc := range map[string]struct {
 		end           time.Time
 		before, after float64
@@ -153,6 +157,8 @@ func TestCISlowedNotSentForASpeedUpOrAnOldChange(t *testing.T) {
 }
 
 func TestCISlowedTheSameChangeARunAwayIsNotSentAgain(t *testing.T) {
+	t.Parallel()
+
 	c := citimings.Change{Workflow: "ci.yml", Job: "go-darwin", FirstSlow: citimings.Run{Ref: "github:run:alexec/agents#122", Made: 1000 + 3600}}
 	sent := map[string]ciSlowedSent{"github:run:alexec/agents#121@ci.slowed/ci.yml/go-darwin": {Workflow: "ci.yml", Job: "go-darwin", Made: 1000}}
 	if !ciSlowedHas(sent, c) {

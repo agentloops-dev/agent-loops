@@ -17,6 +17,8 @@ import (
 // sign-ins taken when newer, and marking one available.
 
 func TestAllowancesOnAServer(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -63,7 +65,7 @@ func TestAllowancesOnAServer(t *testing.T) {
 // starts one login shell a minute at most, and reads an account's sign-in file only when it
 // changed (#2251).
 func TestAllowancesLocateOnceAndReadSignInOnce(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	var shells, located atomic.Int64
 	oldShell := loginShellPath
@@ -134,6 +136,8 @@ func TestAllowancesLocateOnceAndReadSignInOnce(t *testing.T) {
 
 // The sign-in cache is bounded: it never holds more than signInCacheSize files.
 func TestSignInCacheBounded(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	var c signInCache
 	for i := range signInCacheSize + 10 {

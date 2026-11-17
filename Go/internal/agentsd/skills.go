@@ -61,7 +61,7 @@ func (d *Daemon) usesRealTrash() bool { return d.isThePersonsOwn() }
 // named. Only it may touch what is the person's own on this Mac: the real Trash, the login
 // Keychain's sign-up items (#5758).
 func (d *Daemon) isThePersonsOwn() bool {
-	return goruntime.GOOS == "darwin" && os.Getenv("AGENTS_PERSONAL_HOME") == "" && store.IsStandard(d.Store.Loc.Root)
+	return goruntime.GOOS == "darwin" && d.startOpts().namedHome == "" && store.IsStandard(d.Store.Loc.Root)
 }
 
 // isFolderPath is a folder here, one an agent has worked in, or a worktree of either

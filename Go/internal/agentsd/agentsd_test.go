@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -59,6 +58,34 @@ func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMes
 	}
 }
 
+// callError sends a call and is the error it answers with, or fails when it answers.
+// It reads past notifications (lines with no id), as call does: a watch's wake/changed
+// can come before the answer (#5751). Read an answer with call or callError, never
+// with a bare <-c.out.
+func (c *conn) callError(t *testing.T, id int, method string, params any) *Error {
+	t.Helper()
+	p, _ := json.Marshal(params)
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
+	c.in <- string(b)
+	deadline := time.After(waitLimit(t))
+	for {
+		select {
+		case line := <-c.out:
+			var m message
+			json.Unmarshal([]byte(line), &m)
+			if string(m.ID) != strings.TrimSpace(string(mustJSON(id))) {
+				continue // a notification
+			}
+			if m.Error == nil {
+				t.Fatalf("%s answered %s", method, m.Result)
+			}
+			return m.Error
+		case <-deadline:
+			waitFailed(t, "%s: no answer", method)
+		}
+	}
+}
+
 func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }
 
 func start(t testing.TB, root string) (*Daemon, *conn) {
@@ -69,7 +96,8 @@ func start(t testing.TB, root string) (*Daemon, *conn) {
 // startWith is start on a context of the test's, as main's that a signal ends.
 func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) {
 	t.Helper()
-	d, err := New(ctx, root)
+	hooks := testHooksOf(t)
+	d, err := newWith(ctx, root, hooks.options())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,20 +107,23 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 	// Then no goroutine the daemon started may still run (#5653): one that does would write
 	// into the root as it goes, or read a setting the next test changes. It fails here, by
 	// where it started, not at TempDir's RemoveAll.
-	hooks := testHooksOf(t)
 	hooks.started()
+	hooks.add(d)
 	t.Cleanup(func() {
 		d.Shutdown()
+		hooks.remove(d)
 		if live := d.liveJobs(); len(live) > 0 {
 			t.Errorf("goroutines the daemon started still run after Shutdown:\n\t%s", strings.Join(live, "\n\t"))
 		}
 		hooks.stopped()
+		resetToolsHomes()
 	})
 	// As main does at each start (#4177): a fixture's secrets.env goes into sealed.json.
 	d.MoveSecretsFile()
 	c := newConn()
 	go d.Accept(c)
 	t.Cleanup(func() { close(c.in) })
+	clientAdded(t, d, c)
 	t.Cleanup(d.stopFolderWatches)
 	// A stopped runtime's turn still records how it ended: wait for that before the
 	// root's TempDir goes, or the removal races a write into it.
@@ -102,6 +133,27 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 		}
 	})
 	return d, c
+}
+
+// clientAdded waits until the daemon has c as a client. Accept runs on its own goroutine,
+// so a test that goes on at once can find no window: a notification goes to nobody (#5878),
+// and show_file says no window is open (#5940).
+func clientAdded(t testing.TB, d *Daemon, c *conn) {
+	t.Helper()
+	for deadline := time.Now().Add(waitLimit(t)); ; time.Sleep(time.Millisecond) {
+		d.mu.Lock()
+		added := false
+		for _, each := range d.clients {
+			added = added || each.conn == c
+		}
+		d.mu.Unlock()
+		if added {
+			return
+		}
+		if time.Now().After(deadline) {
+			waitFailed(t, "the daemon never added the test's window client")
+		}
+	}
 }
 
 // anyLive is whether an agent's run loop is still running or in a turn.
@@ -124,28 +176,26 @@ func (d *Daemon) anyLive() bool {
 }
 
 func TestPingAndAnUnknownMethod(t *testing.T) {
-	t.Skip("flaky under load (#5751)")
+	t.Parallel()
 	_, c := start(t, t.TempDir())
 	if r := c.call(t, 1, "daemon/ping", nil); string(r) != `{"ok":true}` {
 		t.Fatalf("ping %s", r)
 	}
-	c.in <- `{"jsonrpc":"2.0","id":2,"method":"nothing/here"}`
-	if line := <-c.out; !strings.Contains(line, "-32601") {
-		t.Fatalf("%s", line)
+	if e := c.callError(t, 2, "nothing/here", nil); e.Code != -32601 {
+		t.Fatalf("%+v", e)
 	}
 }
 
 func TestAPanickingHandlerAnswersAnError(t *testing.T) {
-	flaky.UnderLoad(t, "#5751")
+	t.Parallel()
 	d, c := start(t, t.TempDir())
 	d.handlers["boom"] = func(context.Context, *Client, json.RawMessage) (any, error) {
 		var m map[string]int
 		m["x"] = 1
 		return nil, nil
 	}
-	c.in <- `{"jsonrpc":"2.0","id":1,"method":"boom"}`
-	if line := <-c.out; !strings.Contains(line, "-32603") {
-		t.Fatalf("%s", line)
+	if e := c.callError(t, 1, "boom", nil); e.Code != -32603 {
+		t.Fatalf("%+v", e)
 	}
 	if r := c.call(t, 2, "daemon/ping", nil); string(r) != `{"ok":true}` {
 		t.Fatal("the host stopped serving")
@@ -155,6 +205,8 @@ func TestAPanickingHandlerAnswersAnError(t *testing.T) {
 // A root the Swift host wrote: its agent is listed with its folder, and its transcript
 // pages as Swift pages it.
 func TestASwiftRootIsServed(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	fix := filepath.Join("..", "..", "..", "Packages", "AgentsKit", "Tests", "AgentsKitTests", "Fixtures", "legacy-agent")
 	b, _ := os.ReadFile(filepath.Join(fix, "agent.json"))
@@ -200,12 +252,16 @@ func TestASwiftRootIsServed(t *testing.T) {
 }
 
 func TestAddAFolder(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	work := filepath.Join(t.TempDir(), "hello")
 	os.Mkdir(work, 0o755)
 	d, c := start(t, root)
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + work}), &s)
+	if err := json.Unmarshal(c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + work}), &s); err != nil {
+		t.Fatal(err)
+	}
 	if s.Name != "hello" || !s.Exists {
 		t.Fatalf("%+v", s)
 	}

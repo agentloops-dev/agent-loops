@@ -44,6 +44,8 @@ func screenGen(d *Daemon, agent wire.UUID) int {
 }
 
 func TestWatchingTheBrowserStartsNothing(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	var s wire.BrowserPageState
 	if err := json.Unmarshal(c.call(t, 1, "browser/watch", wire.BrowserWatchRequest{Width: 800, Height: 600}), &s); err != nil {
@@ -68,6 +70,8 @@ func TestWatchingTheBrowserStartsNothing(t *testing.T) {
 }
 
 func TestFramesGoOnlyToTheClientsThatWatch(t *testing.T) {
+	t.Parallel()
+
 	d, watcher := start(t, t.TempDir())
 	other := newConn()
 	go d.Accept(other)
@@ -114,6 +118,8 @@ func TestFramesGoOnlyToTheClientsThatWatch(t *testing.T) {
 }
 
 func TestTheWiresInputIsTheBrowsers(t *testing.T) {
+	t.Parallel()
+
 	x, y, kind := 12.5, 40.0, "mousePressed"
 	button, clicks, mods := "left", int64(2), int64(8)
 	in := browserInput(wire.BrowserInputRequest{Kind: wire.BrowserInputKindMouse, Type: &kind, X: &x, Y: &y,
@@ -129,6 +135,8 @@ func TestTheWiresInputIsTheBrowsers(t *testing.T) {
 
 // A page that does not change sends no frame: one who joins sees the last one at once.
 func TestAWatcherWhoJoinsSeesTheLastFrame(t *testing.T) {
+	t.Parallel()
+
 	d, first := start(t, t.TempDir())
 	first.call(t, 1, "browser/watch", wire.BrowserWatchRequest{Width: 800, Height: 600})
 	gen := screenGen(d, "")

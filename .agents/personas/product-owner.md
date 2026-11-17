@@ -64,7 +64,13 @@ needs). "Landing a change" is for the lanes that build, not for you.
   `dependencies/blocked_by` endpoints. After that, the epic's lead owns the plan.
 - **Assign only claimed work.** Do not assign an issue when filing or discussing it.
   Assign it only when a session has claimed it and will work on it.
-- **Set each issue's `priority:` label** and say why in the issue.
+- **Set a priority on each issue you file** (AGENTS.md, "Set a priority when you file",
+  #5692), and say why in the issue. `forge/next` and the session's priority follow it:
+  - `priority:high`: a blocker (`main` broken, a release blocker, a critical or high
+    Dependabot alert), or Alex says so;
+  - `priority:medium`: a UI change, or core usability (#2800);
+  - no priority label: the rest;
+  - `priority:low`: nice to have.
 - **Write decisions down** in the issue. When it needs a wireframe or a spec, write it
   in the issue; otherwise say in the issue that it needs one and leave it to the lane
   that builds it.

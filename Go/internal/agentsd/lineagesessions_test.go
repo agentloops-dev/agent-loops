@@ -14,6 +14,8 @@ import (
 
 // #3899: a search for #<n> names the issue, issue:#<n> and issue:<n> too, as a word of its own.
 func TestIssueNumberIn(t *testing.T) {
+	t.Parallel()
+
 	for query, want := range map[string]int{
 		"#3465": 3465, "issue:#3465": 3465, "issue:12 flaky": 12, "flaky #7": 7, "ISSUE:#8": 8,
 		"P#3465": 0, "a#1": 0, "#12a": 0, "label:#3465": 0, "flaky": 0, "#": 0,
@@ -25,6 +27,8 @@ func TestIssueNumberIn(t *testing.T) {
 }
 
 func TestNamesIssue(t *testing.T) {
+	t.Parallel()
+
 	for text, want := range map[string]bool{
 		"#3899: Session search": false, "Fix #38 now": true, "#3899 and #38": true, "#3899": false, "end #38": true,
 	} {
@@ -37,6 +41,8 @@ func TestNamesIssue(t *testing.T) {
 // #3899: lineage/sessions is the sessions on the epic, on its sub-issues and on their PRs, each
 // once and on the issue it came by, and not a session on another issue that a lane also touched.
 func TestLineageSessionsOnAnEpic(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := realTempDir(t)
@@ -79,6 +85,8 @@ func TestLineageSessionsOnAnEpic(t *testing.T) {
 // #3899: agents/list's #<n> query sends the sessions on the issue, archived ones too, those
 // labelled #<n> and those with #<n> in their title, and leaves the rest to the client.
 func TestListQueryForAnIssue(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := realTempDir(t)
@@ -107,6 +115,8 @@ func TestListQueryForAnIssue(t *testing.T) {
 // #3900: lineage/sessions says the epic, then its sub-issues in the forge's order (by number for
 // those it has not said), with the titles it has; a session on two of them is on the first.
 func TestLineageSessionsIssuesInTheEpicsOrder(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := realTempDir(t)

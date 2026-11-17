@@ -43,9 +43,11 @@ func callError(t *testing.T, c *conn, id int, method string, params any) Error {
 // agent there with the host's prompt and the first-build label, and refuses a second while
 // the first is not archived, with its id.
 func TestFirstBuildStart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	params := map[string]any{"idea": "  An iPhone app that logs my runs ", "starter": "iphone-app", "runtimeID": "claude"}
 	var id wire.UUID
@@ -109,6 +111,8 @@ func TestFirstBuildStart(t *testing.T) {
 
 // The prompt is the host's, the same from every client (spec 5048 §7).
 func TestFirstBuildPrompt(t *testing.T) {
+	t.Parallel()
+
 	got := firstBuildPrompt("A website for my book club's reading list", firstBuildKinds[wire.FirstBuildStarterWebService],
 		wire.FirstBuildStarterWebService)
 	want := "Build my first app with the start-a-new-app skill. The idea: A website for my book club's reading list. " +
@@ -123,8 +127,10 @@ func TestFirstBuildPrompt(t *testing.T) {
 
 // An empty idea, a starter that is not one, and no runtime are refused before anything is made.
 func TestFirstBuildStartRefusesWhatIsNotAFirstBuild(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	_, c := start(t, t.TempDir())
 	for i, p := range []map[string]any{
 		{"idea": "  ", "starter": "iphone-app", "runtimeID": "claude"},
@@ -142,8 +148,10 @@ func TestFirstBuildStartRefusesWhatIsNotAFirstBuild(t *testing.T) {
 
 // A scratch root, with no personal home, keeps the folder in the root, never in a home.
 func TestFirstBuildOnAScratchRootStaysInTheRoot(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
-	t.Setenv("AGENTS_PERSONAL_HOME", "")
+	personalHomeFor(t, "")
 	root := t.TempDir()
 	d, c := start(t, root)
 	var id wire.UUID

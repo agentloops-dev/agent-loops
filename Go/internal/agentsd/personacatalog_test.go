@@ -75,7 +75,7 @@ func servePersonas(t *testing.T) *atomic.Bool {
 func TestAPersonaSearchedPreviewedAddedUpdatedAndRemoved(t *testing.T) {
 	moved := servePersonas(t)
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	t.Setenv("XDG_STATE_HOME", "")
 	root := t.TempDir()
 	d, c := start(t, root)

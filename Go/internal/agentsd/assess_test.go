@@ -18,6 +18,8 @@ import (
 // as answered, and the score is taken from that record, not the agent's word.
 
 func TestARuntimeAssessedFromTheRecord(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -87,6 +89,8 @@ func TestARuntimeAssessedFromTheRecord(t *testing.T) {
 // A runtime that names its conversation after read_session (Codex, #492) still passes
 // sessions: the title list_sessions gave just before the read counts (#1432).
 func TestSessionsTakesTheTitleListedBeforeTheRead(t *testing.T) {
+	t.Parallel()
+
 	me, now := "F19C1064-5986-4C97-B007-D8283136B992", now()
 	title := "Assess Codex runtime"
 	text := func(s string) *string { return &s }
@@ -109,6 +113,8 @@ func TestSessionsTakesTheTitleListedBeforeTheRead(t *testing.T) {
 // Every app tool is one method, `<the tool's noun, plural>/<its verb>` (#2172): a new tool
 // cannot be left out, nor named after something else.
 func TestEveryAppToolIsOneMethodNamedAfterIt(t *testing.T) {
+	t.Parallel()
+
 	// The tools whose noun is not in their name: ask_question asks a question (#2298), and
 	// cancel_wait cancels a wait for an event.
 	// hang_up hangs up a voice call (#2375), notify tells the person (#2805), and bring_back
@@ -160,6 +166,8 @@ func TestEveryAppToolIsOneMethodNamedAfterIt(t *testing.T) {
 // (#2416); the brief's own form and the runtime's "running unattended" question are later
 // steps, and a question by the runtime's own tool counts once, for the step it came in.
 func TestShouldAskCountsOnlyTheQuestionsBeforeTheBriefSaysToAsk(t *testing.T) {
+	t.Parallel()
+
 	text := func(s string) *string { return &s }
 	asked := func(at wire.Date, message string) wire.TranscriptEntry {
 		return wire.TranscriptEntry{At: at, Kind: wire.TranscriptEntryKind{ElicitationAsked: &wire.TranscriptEntryKindElicitationAsked{
@@ -194,6 +202,8 @@ func TestShouldAskCountsOnlyTheQuestionsBeforeTheBriefSaysToAsk(t *testing.T) {
 // An agent's app tool calls go in its own folder, upper case as Delete removes it, also for
 // an ID given in lower case: Linux is case-sensitive (#3651).
 func TestAppToolCallsGoInTheAgentsUpperCaseFolder(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d := &Daemon{Store: &store.Store{Loc: store.Locations{Root: root}}}
 	const id = "0a1b2c3d-0000-4000-8000-00000000abcd"
@@ -209,6 +219,8 @@ func TestAppToolCallsGoInTheAgentsUpperCaseFolder(t *testing.T) {
 // ask_question is scored on the brief's form, not on should_ask's question by ask_question
 // before it, and workspaces on list_machines, which says when there are no providers (#1356).
 func TestAskQuestionAndWorkspacesAfterTheShelfQuestion(t *testing.T) {
+	t.Parallel()
+
 	text := func(s string) *string { return &s }
 	shelf := appToolCall{At: 10, Method: "questions/ask", Ok: true, Answer: text("They answered:\n- Which shelf?: kept"), Arguments: map[string]json.RawMessage{
 		"questions": json.RawMessage(`[{"id":"shelf","prompt":"Which shelf?","options":[{"id":"kept"},{"id":"scratch"}]}]`)}}
@@ -241,6 +253,8 @@ func TestAskQuestionAndWorkspacesAfterTheShelfQuestion(t *testing.T) {
 // One call's arguments are cut as its answer is (#3687): a long one keeps its first
 // appToolAnswerMost runes as text, a short one is kept as it was, the token never.
 func TestAnAppToolCallsArgumentsAreCut(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	agent := wire.UUID("6F1C6E2A-3B57-4D0E-9C61-3D8A1F0B2C11")
@@ -272,6 +286,8 @@ func TestAnAppToolCallsArgumentsAreCut(t *testing.T) {
 // named interaction_<id>, its choices the options; and its helper archives itself before
 // the assessing agent asks (#1361).
 func TestAntigravityQuestionCardAndASelfArchivedHelper(t *testing.T) {
+	t.Parallel()
+
 	text := func(s string) *string { return &s }
 	card := func(at wire.Date, id, title string) wire.TranscriptEntry {
 		return wire.TranscriptEntry{At: at, Kind: wire.TranscriptEntryKind{PermissionAsked: &wire.TranscriptEntryKindPermissionAsked{

@@ -19,6 +19,8 @@ func countEvents(d *Daemon, name string) int {
 // The Mac and the person, as the Swift host says them (#1368): the sentence, why, and the
 // person's standing kept for the next host's first look (#1219).
 func TestMachineChangesAreItsEvents(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	for _, w := range []string{"", "nap", "away", "away:asleep", "sleep:x"} {

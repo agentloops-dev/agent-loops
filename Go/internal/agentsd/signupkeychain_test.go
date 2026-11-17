@@ -29,6 +29,8 @@ func (k *fakeKeychain) password(service string) (string, error) {
 }
 
 func TestSignupSecretName(t *testing.T) {
+	t.Parallel()
+
 	for domain, want := range map[string]string{
 		"gitlab.com":              "GITLAB_PASSWORD",
 		"digitalocean.com":        "DIGITALOCEAN_PASSWORD",
@@ -46,6 +48,8 @@ func TestSignupSecretName(t *testing.T) {
 }
 
 func TestSignupServicesReadsNoValue(t *testing.T) {
+	t.Parallel()
+
 	dump := []byte(`keychain: "/Users/x/Library/Keychains/login.keychain-db"
 attributes:
     "acct"<blob>="agents@example.com"
@@ -66,7 +70,7 @@ attributes:
 // that does not read is left for the next start.
 func TestMoveSignupKeychain(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if err := d.saveSecret("GITLAB_PASSWORD", "newer-reset-not-real", true); err != nil {
@@ -120,9 +124,9 @@ func TestScratchHomeCopiesNoSignupKeychain(t *testing.T) {
 	for _, named := range []bool{true, false} {
 		home := t.TempDir()
 		if named {
-			t.Setenv("AGENTS_PERSONAL_HOME", home)
+			personalHomeFor(t, home)
 		} else {
-			t.Setenv("AGENTS_PERSONAL_HOME", "")
+			personalHomeFor(t, "")
 		}
 		d, _ := start(t, t.TempDir())
 		d.PersonalHome = home

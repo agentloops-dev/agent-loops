@@ -13,6 +13,8 @@ import (
 // nobody cancels, a stopped host's merged pull request loop ran an hour after its test and
 // called that finished test's fake, whose t.Fatal panicked.
 func TestShutdownWaitsForTheTimerLoops(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	running := make(chan struct{})
 	var ended atomic.Bool

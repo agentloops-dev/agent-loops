@@ -31,6 +31,8 @@ func pendingIDs(t *testing.T, c *conn, id int) map[wire.UUID]bool {
 }
 
 func TestALostFormIsDrawnAndAnswered(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	asker := seeded(t, d, t.TempDir(), nil)
@@ -48,6 +50,8 @@ func TestALostFormIsDrawnAndAnswered(t *testing.T) {
 }
 
 func TestAnArchiveDropsALostForm(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	asker := seeded(t, d, t.TempDir(), nil)
@@ -62,6 +66,8 @@ func TestAnArchiveDropsALostForm(t *testing.T) {
 }
 
 func TestAMessageInsteadDropsALostQuestion(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	asker := seeded(t, d, t.TempDir(), nil)

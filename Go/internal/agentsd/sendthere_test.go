@@ -20,6 +20,8 @@ import (
 // offline machine, refuses before the person is asked.
 
 func TestStartSessionSendsTheBranchFirst(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	src := repo(t)
@@ -43,7 +45,11 @@ func TestStartSessionSendsTheBranchFirst(t *testing.T) {
 	var starts []wire.MachineSessionStart
 	offline := false
 	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		call := params.(wire.MachineWorkspaceCall)
+		// Other jobs of the daemon ask too (user/setPolicy, #5793): they get no step.
+		call, ok := params.(wire.MachineWorkspaceCall)
+		if !ok {
+			return nil, &controllink.AskError{Code: -32010, Message: "Agent Loops can’t ask that of the control plane."}
+		}
 		b, _ := json.Marshal(call.Params)
 		mu.Lock()
 		defer mu.Unlock()

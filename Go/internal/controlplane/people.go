@@ -440,6 +440,10 @@ func (m *Methods) removePerson(ctx context.Context, user string, from Caller) er
 			m.s.announce("clientForgotten", c.ID, from.Client)
 		}
 	}
+	// Their open windows lose access before the reply, not some time after it: forget
+	// closes a client's sockets on a goroutine of its own (#5843). The caller is never the
+	// removed person, so its reply still goes.
+	m.router.CutOffPerson(user)
 	for _, h := range m.records.Hosts() {
 		if m.s.ownerOf(h.ID) != user {
 			continue

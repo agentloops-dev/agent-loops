@@ -16,6 +16,8 @@ import (
 // into .agents/folder.json; one that names a project keeps it; a bad id is left as it
 // is and said.
 func TestAddingAFolderGivesItAProject(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 
@@ -73,6 +75,8 @@ func TestAddingAFolderGivesItAProject(t *testing.T) {
 // #2671: the project picked in the Add Folder sheet is written as the folder is added, in
 // place of a new one and of one a clone names; an id that is not valid adds nothing.
 func TestAddingAFolderInAPickedProject(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 
@@ -114,6 +118,8 @@ func TestAddingAFolderInAPickedProject(t *testing.T) {
 
 // US2 (#2317, FR-010): folders/setProject writes the id the person picked.
 func TestAFolderJoinsAnotherProject(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -133,6 +139,8 @@ func TestAFolderJoinsAnotherProject(t *testing.T) {
 
 // US1 AS3 (#2317): a folder added before projects gets one when the machine starts.
 func TestAnOlderFolderGetsAProjectAtStart(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -155,6 +163,8 @@ func TestAnOlderFolderGetsAProjectAtStart(t *testing.T) {
 // the project's sessions on this machine; and a folder says its machine once this one has
 // joined a control plane.
 func TestSessionsCarryTheirProject(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 

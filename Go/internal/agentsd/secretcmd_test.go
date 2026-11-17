@@ -16,8 +16,10 @@ import (
 // recorded with the session and the name. A flagged secret, a name that is not set and a dropped
 // grant get words and no value; a call with no grant asks a person (secretterminal_test.go).
 func TestAgentsSecretReadsASecretThatDoesNotAsk(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	const plain, flagged, session = "plain-4178-not-real", "flagged-4178-not-real", "session-4178-not-real"

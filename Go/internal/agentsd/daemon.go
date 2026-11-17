@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
@@ -17,7 +19,10 @@ import (
 
 // Daemon is one host: its root, the clients connected to it, and what it serves them.
 type Daemon struct {
-	ctx      context.Context
+	ctx context.Context
+	// opts are the daemon's own (#5926): set by New, and changed only by a test, as a test
+	// once changed the process's environment while its daemon ran.
+	opts     atomic.Pointer[startOptions]
 	Store    *store.Store
 	handlers map[string]Handler
 
@@ -193,7 +198,33 @@ type Daemon struct {
 }
 
 // New opens the root and registers every method this host serves.
+// startOptions is what one daemon has from its start (#5926), before New starts its first
+// goroutine, in place of what the process's environment and package variables say: tests run
+// daemons side by side in one process, each with its own.
+type startOptions struct {
+	// namedHome is the personal home AGENTS_PERSONAL_HOME names, "" when none is named.
+	namedHome string
+	// locate finds a runtime in place of locateFor; nil is locateFor. A test's starts a fake.
+	locate func(*runtimeDef) (string, []string, []string)
+	// runtimeEnv goes into each runtime's environment, after the rest.
+	runtimeEnv []string
+}
+
+// startOpts are the daemon's start options now: none for a Daemon made without New.
+func (d *Daemon) startOpts() startOptions {
+	if o := d.opts.Load(); o != nil {
+		return *o
+	}
+	return startOptions{}
+}
+
+// New is a daemon on root, with the personal home AGENTS_PERSONAL_HOME names.
 func New(ctx context.Context, root string) (*Daemon, error) {
+	return newWith(ctx, root, startOptions{namedHome: os.Getenv("AGENTS_PERSONAL_HOME")})
+}
+
+// newWith is New with its options given, not read from the process.
+func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, error) {
 	st, err := store.Open(root)
 	if err != nil {
 		return nil, err
@@ -205,6 +236,7 @@ func New(ctx context.Context, root string) (*Daemon, error) {
 		watches: map[string]*folderWatch{}, interests: map[string][]interest{}, shells: map[shellKey]*shell{},
 		SettingsDir: filepath.Join(st.Loc.Root, "settings"), HostKey: controllink.HostKeyFile{Root: st.Loc.Root},
 		PersonKey: controllink.PersonKeyFile{Root: st.Loc.Root}}
+	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
 	// The sweep of roots that are gone finds this root's own folders by this (#3746).

@@ -46,10 +46,10 @@ type mcpBook struct {
 	mcpLoaded    bool
 }
 
-// personalHome is StoreLocations.personalHome: AGENTS_PERSONAL_HOME, or the person's
-// home on a server.
+// personalHome is StoreLocations.personalHome: the home AGENTS_PERSONAL_HOME named at the
+// start, or the person's home on a server.
 func (d *Daemon) personalHome() string {
-	if h := os.Getenv("AGENTS_PERSONAL_HOME"); h != "" {
+	if h := d.startOpts().namedHome; h != "" {
 		return h
 	}
 	return d.PersonalHome

@@ -15,6 +15,8 @@ import (
 // provider's reset, goes on as soon as the runtime is back, and stops waiting when asked.
 
 func TestAPausedChatContinuesWhenItsAllowanceIsBack(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -42,6 +44,8 @@ func TestAPausedChatContinuesWhenItsAllowanceIsBack(t *testing.T) {
 }
 
 func TestAWaitThatIsDueGoesAndCancelStopsOne(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -93,6 +97,8 @@ func TestAWaitThatIsDueGoesAndCancelStopsOne(t *testing.T) {
 // helper in a folder whose helpers are set to waits as soon as its turn is refused; a
 // chat the person started does not, and nor does a run of a workflow that is not set to.
 func TestHelpersAndRunsSetToContinueWaitByThemselves(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

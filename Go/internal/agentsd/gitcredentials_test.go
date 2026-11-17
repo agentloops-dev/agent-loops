@@ -31,7 +31,9 @@ func lastEnv(env []string, name string) string {
 // environment holds a grant and no token, each ask gets the token the host has now (a renewal
 // is seen at once, as an 8-hour session needs), and the grant is dead once the runtime ends.
 func TestAnAgentsGitAndGhAskForTheAppsToken(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -136,6 +138,8 @@ func TestAnAgentsGitAndGhAskForTheAppsToken(t *testing.T) {
 }
 
 func TestGitConfigFromTheEnvironmentCountsOnFromWhatIsThere(t *testing.T) {
+	t.Parallel()
+
 	env := withGitConfig([]string{"A=1"}, "x.y", "1", "x.z", "")
 	if strings.Join(env, " ") != "A=1 GIT_CONFIG_KEY_0=x.y GIT_CONFIG_VALUE_0=1 GIT_CONFIG_KEY_1=x.z GIT_CONFIG_VALUE_1= GIT_CONFIG_COUNT=2" {
 		t.Fatalf("%v", env)
@@ -146,6 +150,8 @@ func TestGitConfigFromTheEnvironmentCountsOnFromWhatIsThere(t *testing.T) {
 // runs it once more with the person's own login; not when it made something, read stdin, or
 // failed for another reason.
 func TestAnAgentsGhRunsAgainAsThePersonWhenGitHubRefusesTheApp(t *testing.T) {
+	t.Parallel()
+
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "ghu_app")
 	}))

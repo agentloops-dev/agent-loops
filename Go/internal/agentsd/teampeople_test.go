@@ -16,6 +16,8 @@ import (
 // whose repo is the one asked about, by number; an archived session is not on it any
 // more, and a label in another repo's folder does not match.
 func TestAgentOnByNumber(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -52,6 +54,8 @@ func TestAgentOnByNumber(t *testing.T) {
 // A Forgejo remote is a forge's too (#3882): a session labelled #n or P#n in a folder that
 // pushes to the same Codeberg repo is on it, and one whose folder pushes to another is not.
 func TestAgentOnAForgejoRemote(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder, worktree, other := t.TempDir(), t.TempDir(), t.TempDir()
@@ -85,6 +89,8 @@ func TestAgentOnAForgejoRemote(t *testing.T) {
 // A Linear key is not one folder's own: a session labelled one is on it whichever
 // folder it is in.
 func TestAgentOnByLinearKey(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folderA, folderB := t.TempDir(), t.TempDir()
@@ -168,6 +174,8 @@ func TestTeamPeopleIsKept(t *testing.T) {
 // The viewer's own blank Jira login comes from this machine's Atlassian connection (#3313), as
 // a blank Linear login comes from its Linear one; another person's login is theirs as kept.
 func TestTeamPeopleFillsTheViewersJiraLoginFromTheAtlassianConnection(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
@@ -192,6 +200,8 @@ func TestTeamPeopleFillsTheViewersJiraLoginFromTheAtlassianConnection(t *testing
 // The viewer's own blank Forgejo login comes from this machine's Forgejo connection (#3836);
 // another person's login is theirs as kept.
 func TestTeamPeopleFillsTheViewersForgejoLoginFromTheForgejoConnection(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
@@ -215,6 +225,8 @@ func TestTeamPeopleFillsTheViewersForgejoLoginFromTheForgejoConnection(t *testin
 // The viewer's own blank Bitbucket and Azure DevOps logins come from this machine's Bitbucket
 // and Azure DevOps connections (#3853); another person's logins are theirs as kept.
 func TestTeamPeopleFillsTheViewersBitbucketAndAzureDevOpsLoginsFromTheConnections(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}

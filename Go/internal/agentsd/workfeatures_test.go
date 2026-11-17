@@ -21,6 +21,8 @@ import (
 // has no children and an error; the loose open issues are those with no epic and no parent, the
 // newest first; and a read again within forgeCacheFor asks GitHub for no plan.
 func TestWorkFeaturesGivesEpicsWithTheirPlans(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	for _, f := range d.folderPaths() {
 		if d.folderRepo(f).path == "alexec/agents" {
@@ -94,6 +96,8 @@ func TestWorkFeaturesGivesEpicsWithTheirPlans(t *testing.T) {
 // first, read the forge's lists once between them; a caller that gives up stops waiting, and the
 // read goes on for the other.
 func TestFeaturesReadsAtOnceShareOneRead(t *testing.T) {
+	t.Parallel()
+
 	d, _, gh, _ := forgeDaemon(t)
 	gh.epics = []githubmcp.Item{planIssue(1, "open", "epic", "feature:work")}
 	gh.open = []githubmcp.Item{planIssue(5, "open", "bug", "feature:work")}

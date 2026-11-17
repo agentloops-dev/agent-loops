@@ -36,6 +36,8 @@ func suspendedRefusal(t *testing.T, e *Error) {
 
 // The machine says it can hear user/suspended (host.suspend/1) in machine/hello.
 func TestAHostSaysItTakesASuspension(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	if !slices.Contains(d.Capabilities(), wire.CapHostSuspend1) {
 		t.Fatal(d.Capabilities())
@@ -45,6 +47,8 @@ func TestAHostSaysItTakesASuspension(t *testing.T) {
 // FR-018: two running turns stop within 5 s; a queued prompt waits; new work, a prompt and
 // a workflow's run are refused; every agent and file stays. Off starts nothing by itself.
 func TestASuspendedPersonsWorkStops(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -99,6 +103,8 @@ func TestASuspendedPersonsWorkStops(t *testing.T) {
 // A suspended person's workflows are paused: a trigger is let go, by hand is refused, and none
 // runs by itself when the suspension ends.
 func TestASuspendedPersonsWorkflowsPause(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -132,6 +138,8 @@ func TestASuspendedPersonsWorkflowsPause(t *testing.T) {
 
 // The window's direct path (#1118) is cut off and refused while the person is suspended.
 func TestASuspendedPersonsWindowIsRefusedDirectly(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	w, listed := newWindow(t)
 	d.SetLocalClients(wire.MachineClients{Clients: []wire.MachineClient{listed}})

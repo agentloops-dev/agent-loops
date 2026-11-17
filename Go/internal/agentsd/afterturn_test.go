@@ -14,6 +14,8 @@ import (
 // Shutdown returns once the turns it stopped have written their endings and what follows
 // them, and starts nothing after (#1272).
 func TestShutdownWaitsForTheWritesAfterATurn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	var id wire.UUID
@@ -44,6 +46,8 @@ func TestShutdownWaitsForTheWritesAfterATurn(t *testing.T) {
 // conn's 5 s, so a workflow's run that told three things outlived Shutdown's wait and
 // wrote into a test's folder as it was deleted.
 func TestShutdownWaitsForWhatTellsAClientThatReadsNothing(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	for len(c.out) < cap(c.out) {
 		c.out <- ""

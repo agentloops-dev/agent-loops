@@ -21,6 +21,8 @@ import (
 // leaves the claim. A trigger the control plane sends runs here, unclaimed, when this
 // machine has the workflow and its trigger matches.
 func TestABotsMachineSendsTeamEventsAndKeepsItsOwn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -161,6 +163,8 @@ func TestABotsMachineSendsTeamEventsAndKeepsItsOwn(t *testing.T) {
 // which starts a machine of the bot's when none is online (#2011, FR-034); it runs nothing
 // of it, and a bot's machine sends none of another's.
 func TestAPersonsMachineSendsABotsSchedule(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -210,6 +214,8 @@ func TestAPersonsMachineSendsABotsSchedule(t *testing.T) {
 // sends each match to the control plane. Nothing of it runs here, by a trigger or by hand.
 // A server's event is one trigger whatever each machine's credentials were shown of it.
 func TestAPersonsMachineHearsABotsServerEventsAndOnlySendsThem(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -323,6 +329,8 @@ func TestAPersonsMachineHearsABotsServerEventsAndOnlySendsThem(t *testing.T) {
 // A schedule the control plane sends runs only at a time one of the workflow's schedules
 // falls due here, about now, under the trigger id its due time names.
 func TestATeamScheduleRunsOnlyWhenItIsDue(t *testing.T) {
+	t.Parallel()
+
 	hourly := wire.WorkflowTrigger{Schedule: &wire.WorkflowTriggerStoredSchedule{Value: wire.WorkflowSchedule{Minutes: []int64{0},
 		Hours: [2]int64{0, 23}, EndMinute: 59, Days: []wire.Weekday{wire.WeekdaySun, wire.WeekdayMon, wire.WeekdayTue,
 			wire.WeekdayWed, wire.WeekdayThu, wire.WeekdayFri, wire.WeekdaySat}}}}

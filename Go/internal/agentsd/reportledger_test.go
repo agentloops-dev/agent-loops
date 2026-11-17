@@ -15,6 +15,8 @@ import (
 // runtime, and the hours that changed go to the control plane with their days, once; a
 // send that fails is tried again.
 func TestUsageGoesToTheControlPlaneByTheHour(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, _ := start(t, root)
 	defer d.Shutdown()
@@ -90,6 +92,8 @@ func TestUsageGoesToTheControlPlaneByTheHour(t *testing.T) {
 
 // Hours older than 8 days go, and their days are not sent short.
 func TestOldReportHoursGo(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	r := &reportFile{Hours: map[string]map[string]wire.UsageRollupRow{
 		utcHour(now.Add(-9 * 24 * time.Hour)): {"a\tclaude": {}},
@@ -104,6 +108,8 @@ func TestOldReportHoursGo(t *testing.T) {
 // A usage update writes no file (#2052): the hours are saved once, by the timer or at
 // shutdown, however many updates came.
 func TestReportHoursAreSavedOnceNotPerUpdate(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	d.SettingsDir = t.TempDir()

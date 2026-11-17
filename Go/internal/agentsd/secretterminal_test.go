@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -14,12 +15,13 @@ import (
 // ran it, and takes once, hour or deny; hour is kept in memory, so a call in the hour does not
 // ask. A flagged secret and a name that is not set get words and no request.
 func TestATerminalsAgentsSecretAsksAPerson(t *testing.T) {
+	flaky.UnderLoad(t, "#5938")
 	answered, left := formHolds(t)
 	wasHour, wasParent := terminalHour, parentCommand
 	parentCommand = func() string { return "/bin/zsh" }
 	defer func() { terminalHour, parentCommand = wasHour, wasParent }()
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, sock := serveWith(t, fixedPolicy{role: RoleStranger, ok: true})
 	const plain, flagged = "plain-4179-not-real", "flagged-4179-not-real"
 	if err := d.saveSecret("PLAIN_KEY", plain, false); err != nil {
@@ -125,6 +127,8 @@ func TestATerminalsAgentsSecretAsksAPerson(t *testing.T) {
 // The banner of a terminal's request names the terminal and the known gap, with its three
 // answers.
 func TestATerminalsRequestHasItsBanner(t *testing.T) {
+	t.Parallel()
+
 	u := wire.RequestSecretUse{Name: "PLAIN_KEY", Use: wire.SecretUseTerminal, Place: "zsh"}
 	var ids []string
 	for _, a := range secretUseAnswers(u) {

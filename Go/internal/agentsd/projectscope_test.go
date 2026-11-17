@@ -30,6 +30,8 @@ func projectFolder(t *testing.T, project string) string {
 }
 
 func TestSessionToolsReachTheProjectOnThisMachine(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	mine, clone, other := projectFolder(t, "p-agents"), projectFolder(t, "p-agents"), projectFolder(t, "p-other")
@@ -65,6 +67,8 @@ func TestSessionToolsReachTheProjectOnThisMachine(t *testing.T) {
 }
 
 func TestSessionToolsReachTheProjectOnOtherMachines(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	me := seeded(t, d, projectFolder(t, "p-agents"), func(a *wire.Agent) {
@@ -161,6 +165,8 @@ func TestSessionToolsReachTheProjectOnOtherMachines(t *testing.T) {
 }
 
 func TestAProjectMemberOnAnotherMachineReadsButCannotStop(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var mu sync.Mutex
@@ -226,6 +232,8 @@ func TestAProjectMemberOnAnotherMachineReadsButCannotStop(t *testing.T) {
 // A message from an agent of the project on another machine wakes a waiting session here
 // and is read, as its starter's is, not held as from a session gone (#5618).
 func TestAProjectMemberOnAnotherMachineMessagesAWaitingSession(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

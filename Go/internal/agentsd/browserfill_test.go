@@ -89,7 +89,7 @@ func fillSetUp(t *testing.T, secrets map[string]string) (*mcpClient, *fillPage, 
 	page := &fillPage{}
 	openBrowserSession = func(context.Context, browserStart) (browserSession, error) { return page, nil }
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	path := skillcatalog.SecretsPath(home)
 	os.MkdirAll(filepath.Dir(path), 0o700)
 	env, _ := skillcatalog.LoadSecretsForChange(path)

@@ -119,10 +119,20 @@ func (l *live) showForm(req wire.ElicitationRequest) *pendingElicitation {
 	// The state moves before the form can be answered (#4568): an answer that came first
 	// would move it back to running, then this to waiting on a form already gone.
 	d.moveIf(l.id, wire.AgentStateRunning, wire.AgentStateWaitingOnUser)
+	// The form and its request come in one step (#5974): a client that sees the form can
+	// answer it at once, and that answer must find the request to end.
+	r := d.formRequest(req)
+	var opened *wire.Request
 	l.mu.Lock()
 	l.elicitations[req.ID] = pe
+	if r != nil {
+		c := d.keepFormRequest(r)
+		opened = &c
+	}
 	l.mu.Unlock()
-	d.openFormRequest(req)
+	if opened != nil {
+		d.requestOpened(*opened)
+	}
 	Broadcast(d, wire.NotifyAgentElicitation, wire.ElicitationNotification{AgentID: l.id, RequestID: req.ID, Request: &req})
 	d.raiseAgentEvent("agent.asked_form", l.id, "is asking for a form to be filled in.", nil)
 	d.reconsider()

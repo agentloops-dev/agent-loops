@@ -15,6 +15,8 @@ import (
 // Ports LeaseBookTests and the person's side of LeaseTests on a server.
 
 func TestDeclaringAResource(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	defer d.Shutdown()
@@ -64,6 +66,8 @@ func TestDeclaringAResource(t *testing.T) {
 // A book the Swift host wrote is read, ended by the person, and handed on: the next in
 // line, with no wait open for it, is started again with the event (#2361).
 func TestABookSwiftWroteIsHandedOn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -139,6 +143,8 @@ func TestABookSwiftWroteIsHandedOn(t *testing.T) {
 }
 
 func TestTheBookRules(t *testing.T) {
+	t.Parallel()
+
 	r := leaseRules{Holders: 1}
 	if l, capped := r.length(nil); l != 30*time.Minute || capped {
 		t.Fatal(l)

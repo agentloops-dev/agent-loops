@@ -52,6 +52,32 @@ var (
 	serverToolsets bool
 )
 
+// toolsHomesMu orders the writes of toolsHome, serverToolsets and macToolsHome. A host has
+// one daemon, but a test process starts many, side by side (#4733).
+var toolsHomesMu sync.Mutex
+
+// setToolsHomes sets macToolsHome, toolsHome and serverToolsets, and writes none that already
+// has its value: then daemons that start side by side with the same ones only read them, as
+// every other part of the daemon does (#4733).
+func setToolsHomes(mac, tools string, server bool) {
+	toolsHomesMu.Lock()
+	defer toolsHomesMu.Unlock()
+	if macToolsHome != mac {
+		macToolsHome = mac
+	}
+	if toolsHome != tools {
+		toolsHome = tools
+	}
+	if serverToolsets != server {
+		serverToolsets = server
+	}
+}
+
+// sharedToolsHome, when set, is the Mac toolsets folder of every daemon in this process,
+// instead of each root's <cache>/tools. agentsd's TestMain sets it, so that the tests' daemons,
+// which run side by side, do not each change the folder that the others look in (#4733).
+var sharedToolsHome string
+
 // serverLibc is the C library a server has, as `getconf GNU_LIBC_VERSION` says it
 // ("glibc 2.36"), or "" when it says nothing (musl); a test gives its own.
 var serverLibc = func() string {
@@ -344,7 +370,7 @@ func (d *Daemon) installRuntime(c *Client, id string) (wire.RuntimeStatus, error
 		d.instMu.Unlock()
 		return d.statusOf(r), nil
 	}
-	path, _, _ := locateFor(r)
+	path, _, _ := d.locate(r)
 	installed := installedAt(r, path)
 	// The person's own copy of a runtime that prefers the app's is no reason not to install
 	// the app's (#4512).
@@ -461,7 +487,7 @@ func (d *Daemon) install(r *runtimeDef, recipe wire.RuntimeInstall, progress fun
 		}
 		return installFailed(fmt.Sprintf("Installing %s failed: %v", r.Name, err))
 	}
-	path, _, looked := locateFor(r)
+	path, _, looked := d.locate(r)
 	if path == "" {
 		if len(looked) > 4 {
 			looked = looked[:4]
@@ -919,14 +945,17 @@ func npmProblem(out, name string) error {
 // serveInstall loads the bundle's toolsets from folder, tidies what is left of older ones
 // and serves runtimes/install, on a Mac into tools; install_darwin.go calls it.
 func (d *Daemon) serveInstall(tools, folder string) {
-	macToolsHome, toolsHome, serverToolsets = tools, tools, false
+	setToolsHomes(tools, tools, false)
 	d.loadAndServeInstall(folder)
 }
 
 // serveServerInstall is serveInstall on a server (#1312): from the toolsets in folder into
 // ~/.agents-server/tools, where discovery looks first. install_linux.go calls it.
 func (d *Daemon) serveServerInstall(folder string) {
-	toolsHome, serverToolsets = filepath.Dir(toolsetFolder("claude")), true
+	toolsHomesMu.Lock()
+	mac := macToolsHome
+	toolsHomesMu.Unlock()
+	setToolsHomes(mac, filepath.Dir(toolsetFolder("claude")), true)
 	d.loadAndServeInstall(folder)
 }
 

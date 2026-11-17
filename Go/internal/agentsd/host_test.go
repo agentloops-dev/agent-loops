@@ -15,6 +15,8 @@ import (
 // Ports what CatchUpTests, DiskSpaceTests, DropboxTests and ArtifactTests hold of a server.
 
 func TestCatchUpIsOneAnswer(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -67,6 +69,8 @@ func TestDiskLevelsTakeAMarginToGetBetter(t *testing.T) {
 }
 
 func TestSettingsTheWindowReads(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	os.MkdirAll(d.SettingsDir, 0o700)
@@ -96,6 +100,8 @@ func TestSettingsTheWindowReads(t *testing.T) {
 }
 
 func TestADropBoxAndAnArtifact(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

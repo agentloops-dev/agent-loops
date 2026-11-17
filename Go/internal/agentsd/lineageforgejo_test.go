@@ -45,6 +45,8 @@ func (f *fakeForgeForgejo) CostComment(_ context.Context, repo string, number in
 // a release's pull requests, and the cost comment; and
 // reads an issue address on its own host, whose name does not say Forgejo.
 func TestLineageAsksForgejo(t *testing.T) {
+	t.Parallel()
+
 	d, _, fj, _ := forgejoDaemon(t)
 	repo := forgeRepo{"forgejo", "walkalex/app"}
 	folder := d.repoFolder(repo)
@@ -99,6 +101,8 @@ func TestLineageAsksForgejo(t *testing.T) {
 }
 
 func TestIssueOfURLOn(t *testing.T) {
+	t.Parallel()
+
 	for raw, want := range map[string]string{
 		"http://localhost:3753/walkalex/App/issues/7":           "forgejo:walkalex/app 7",
 		"http://LOCALHOST:3753/walkalex/app/issues/7#c3":        "forgejo:walkalex/app 7",
@@ -127,6 +131,8 @@ func TestIssueOfURLOn(t *testing.T) {
 // #3850: the forgejo server's views ask for lineage, by an issue's or a pull request's address
 // on the connected Forgejo, and its pull requests' addresses are on the Forgejo's own root.
 func TestTheForgejoServersViewsAskForLineage(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, _ := forgejoDaemon(t)
 	repo := forgeRepo{"forgejo", "walkalex/app"}
 	folder := d.repoFolder(repo)
@@ -172,6 +178,8 @@ func TestTheForgejoServersViewsAskForLineage(t *testing.T) {
 }
 
 func TestForgejoOfURLOn(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct{ raw, root, sep, want string }{
 		{"http://localhost:3753/walkalex/App/pulls/8", "http://localhost:3753/", "/pulls/", "walkalex/app 8"},
 		{"http://localhost:3753/walkalex/App/pulls/8/files", "http://localhost:3753/", "/pulls/", "walkalex/app 8"},
@@ -195,6 +203,8 @@ func TestForgejoOfURLOn(t *testing.T) {
 // back the issue's address; fj only `created issue #12`, on its --repo or the folder's.
 // The outputs are the scratch Forgejo 17's.
 func TestLineageSessionOpensTheIssuesTeaAndFjFile(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, _ := forgejoDaemon(t)
 	repo := forgeRepo{"forgejo", "walkalex/app"}
 	a := seeded(t, d, d.repoFolder(repo), func(*wire.Agent) {})

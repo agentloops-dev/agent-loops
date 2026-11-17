@@ -12,6 +12,8 @@ import (
 )
 
 func TestConflictRiskRequestsAreReadWhateverTheForge(t *testing.T) {
+	t.Parallel()
+
 	soon := true
 	head, base := "feat", "main"
 	checks := "passing"
@@ -33,6 +35,8 @@ func TestConflictRiskRequestsAreReadWhateverTheForge(t *testing.T) {
 }
 
 func TestConflictRiskAnalysisIsListedAndAnswersWhereThereIsNoForge(t *testing.T) {
+	t.Parallel()
+
 	var listed bool
 	for _, raw := range offeredTools(false, false, false, false) {
 		listed = listed || strings.Contains(string(raw), `"conflict_risk_analysis"`)

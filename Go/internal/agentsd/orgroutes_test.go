@@ -346,6 +346,8 @@ func leaksUnder(t *testing.T, key, dir string) []string {
 
 // US1, SC-001: no route, no change: no org account, no relay, the same launch.
 func TestNoOrgRouteChangesNothing(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c, _ := orgMachine(t, root, newControlKeys(t))
@@ -398,7 +400,7 @@ func TestTheOrgKeyLeaksNowhere(t *testing.T) {
 	fakeRuntimes(t)
 	root := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	var logged bytes.Buffer
 	var logMu sync.Mutex
 	restoreLog := captureLog(&logged, &logMu)
@@ -777,7 +779,7 @@ func transcriptText(t *testing.T, d *Daemon, id wire.UUID) string {
 func TestEachRuntimesOrgLaunch(t *testing.T) {
 	fakeRuntimes(t)
 	root := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "sk-person")
 	t.Setenv("ANTHROPIC_BASE_URL", "https://person.example")
 	t.Setenv("OPENAI_API_KEY", "sk-person-openai")
@@ -1178,6 +1180,8 @@ func TestAnEditedOrgRouteDoesNotOpen(t *testing.T) {
 
 // T019, US6: Antigravity's terms: shown as today, accepted, or refused on start and sign-in.
 func TestAntigravityTermsByPolicy(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -1398,7 +1402,7 @@ func TestTheRelayIsQuick(t *testing.T) {
 func TestARemovedRoutesFolderGoes(t *testing.T) {
 	fakeRuntimes(t)
 	root := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, _, public := orgMachine(t, root, newControlKeys(t))
 	route := testRoute(t, public, "xkey", 1, wire.OrgRouteKindKey, wire.OrgRouteVendorOpenai, "", map[string]string{"apiKey": "k"}, "codex")
 	deliver(t, d, route)

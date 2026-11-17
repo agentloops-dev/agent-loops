@@ -16,7 +16,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -80,7 +79,7 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 	}
 	// No Entra app in the machine's secrets (#4873): the sign-in uses the Agents app, in any
 	// work or school tenant; one in the secrets goes first.
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	t.Setenv("AGENTS_"+connections.AzureDevOpsClientIDName, "")
 	if f := d.deviceFlow(wire.ConnectionProviderAzuredevops); f.ClientID != connections.AzureDevOpsClientID ||
 		!strings.HasSuffix(f.Base, "/"+connections.EntraTenant+"/") {
@@ -105,10 +104,12 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 // access token checked with it as a bearer token, the pair kept and renewed with the scope, and
 // an Azure DevOps Server or no organization refused before Entra is asked.
 func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
-	flaky.UnderLoad(t, "#5750")
+	t.Parallel()
+
 	var mu sync.Mutex
 	var forms []map[string]string
 	access := "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln"
+	polling := make(chan struct{})
 	entra := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		form := map[string]string{"path": r.URL.Path}
@@ -150,7 +151,16 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 	d.newDeviceFlow = func(wire.ConnectionProvider) *connections.DeviceFlow {
 		f := connections.NewAzureDevOpsEntraFlow("entra-app", "")
 		f.Base, f.HTTP = entra.URL+"/organizations/", entra.Client()
-		f.Sleep = func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
+		// The first poll waits here (#5750): the flow stays "waiting" until the test calls
+		// connections/sign-in/wait, so a slow runner cannot end the poll before sign-in answers.
+		f.Sleep = func(ctx context.Context, _ time.Duration) error {
+			select {
+			case <-polling:
+				return ctx.Err()
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
 		return f
 	}
 
@@ -166,6 +176,7 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 		started.VerificationURL != "https://microsoft.com/devicelogin" || started.Grant != wire.ConnectionSignInGrantDeviceCode {
 		t.Fatalf("started: %+v", started)
 	}
+	close(polling)
 	var done wire.ConnectionSignIn
 	for range 50 {
 		raw := c.call(t, 4, "connections/sign-in/wait", map[string]any{"flowID": started.FlowID})
@@ -250,8 +261,10 @@ func (f *fakeSetupAzureDevOps) LastChecks(ctx context.Context, repo string) (*az
 // fills the three slots, each proved by one read, a refusal says so, and the azuredevops
 // connector's events go on.
 func TestAnAzureDevOpsFoldersConnectorSetUp(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -323,7 +336,9 @@ func TestAnAzureDevOpsFoldersConnectorSetUp(t *testing.T) {
 // #3816: a folder that names its Azure Boards projects already keeps them; one that names Jira
 // projects or Linear teams for its tasks is given none.
 func TestAnAzureDevOpsSetUpKeepsTheFoldersBoardsProjects(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -352,6 +367,8 @@ func TestAnAzureDevOpsSetUpKeepsTheFoldersBoardsProjects(t *testing.T) {
 // A connection to an Azure DevOps Server (or a walk's fake) is used for a remote on it, and a
 // connection on dev.azure.com is not sent to a server; GitHub still comes first.
 func TestAnAzureDevOpsRemoteAtTheConnectionsServer(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}

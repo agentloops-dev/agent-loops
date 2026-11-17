@@ -14,6 +14,8 @@ import (
 // #4825: an event's data goes on the bus sealed to each other machine of the person's lock:
 // the control plane reads none of it, and the machine it is sealed to opens it.
 func TestBusSealsAnEventsDataToThePersonsOtherMachines(t *testing.T) {
+	t.Parallel()
+
 	d, phone, peer, state := lockedMachine(t)
 	defer d.Shutdown()
 	var mu sync.Mutex
@@ -115,6 +117,8 @@ func TestBusDeliveryOpensOnlyItsOwnSignedCopy(t *testing.T) {
 
 // #4825: data over 256 KB is not sealed, and a machine with no other machine seals nothing.
 func TestBusSealsNoDataTooLargeOrToNobody(t *testing.T) {
+	t.Parallel()
+
 	_, _, peer, state := lockedMachine(t)
 	h1 := memberOf(t, state, "h-1")
 	big := []byte(`"` + strings.Repeat("a", busDataMost) + `"`)

@@ -1,5 +1,5 @@
 // Part of the Store (#5384): agentSettings.
-import type { WorkflowSummary, JSONValue, StartRequest, UUID, WorktreesListResponse, Persona, ConfigOption, WorkflowSettings, WorkflowHours, FileMentionDTO, KeptRequest, BuildOutputRemoved, RemovalCheck, WorktreeSize, WorktreeSummary } from "../../protocol/generated";
+import type { SessionPriority, WorkflowSummary, JSONValue, StartRequest, UUID, WorktreesListResponse, Persona, ConfigOption, WorkflowSettings, WorkflowHours, FileMentionDTO, KeptRequest, BuildOutputRemoved, RemovalCheck, WorktreeSize, WorktreeSummary } from "../../protocol/generated";
 import { Failure } from "../../protocol/generated";
 import { CallFailed } from "../../wire/link";
 import { describe, methodNotFound } from "../errors";
@@ -93,6 +93,11 @@ export const agentSettingsMethods = {
     const changed = await this.act("workflows/setMuted",
       { folder: summary.workflow.folder, workflowID: summary.workflow.workflowID, muted }, host);
     if (changed) this.placeWorkflow(changed, host);
+  },
+  /** Priority ▸ (#5849): a level set on the session, or null to follow its issue again. The host's agent.updated
+   *  then redraws the chip. */
+  async setPriority(this: Store, host: string, agentID: string, priority: SessionPriority | null): Promise<void> {
+    await this.act("agents/setPriority", priority ? { agentID: agentID as UUID, priority } : { agentID: agentID as UUID }, host);
   },
   /** Mark as Unread / Mark as Read (#70). */
   async setUnread(this: Store, host: string, agentID: string, unread: boolean): Promise<void> {

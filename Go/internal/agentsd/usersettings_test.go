@@ -15,8 +15,10 @@ import (
 
 // The person's settings sync into each machine's files, and resources stay local.
 func TestUserSettingsGoIntoTheMachinesFiles(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	_, public := machineKeys(t, root)
 	d, c := start(t, root)
 	defer d.Shutdown()
@@ -126,8 +128,10 @@ func controllinkPublic(t *testing.T) []byte {
 // as an older control plane may still send them: one machine does not change what runs on
 // the person's others.
 func TestAgentConfigFilesFromAnotherMachineAreNotWritten(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	os.MkdirAll(filepath.Join(home, ".agents", "skills", "mine"), 0o755)
 	os.WriteFile(filepath.Join(home, ".agents", "skills", "mine", "SKILL.md"), []byte("mine"), 0o644)
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"mine":{"command":"x"}}}`), 0o644)
@@ -162,8 +166,10 @@ func TestAgentConfigFilesFromAnotherMachineAreNotWritten(t *testing.T) {
 // A mark from before files from other machines were refused names them too. The first
 // agentConfig part after it takes away none of them, nor the mcp.json it just wrote.
 func TestAnOldMarkTakesAwayOnlyWhatAgentConfigWrote(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	agents := filepath.Join(home, ".agents")
 	for _, rel := range []string{"mcp.json", "plugins/one/plugin.json", "skills/tool/run.sh", "personas/old.md"} {
 		os.MkdirAll(filepath.Dir(filepath.Join(agents, rel)), 0o755)
@@ -193,6 +199,8 @@ func TestAnOldMarkTakesAwayOnlyWhatAgentConfigWrote(t *testing.T) {
 }
 
 func TestAgentConfigNamesStayInTheirFolders(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
 	for _, name := range []string{"../evil", "a/b", ".hidden", ""} {
 		raw := mustJSON(wire.UserAgentConfig{Personas: map[string]string{name: "x"}})
@@ -210,8 +218,10 @@ func TestAgentConfigNamesStayInTheirFolders(t *testing.T) {
 }
 
 func TestAPartIsTakenFromThisMachine(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, root)
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
@@ -252,8 +262,10 @@ func TestAPartIsTakenFromThisMachine(t *testing.T) {
 
 // A delivery that is on disk already writes no file again (#2729).
 func TestAnUnchangedDeliveryWritesNoFile(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, root)
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

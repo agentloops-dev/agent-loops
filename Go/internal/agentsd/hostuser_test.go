@@ -15,6 +15,8 @@ import (
 // bot's name, its os and its provider, keeps that over a restart, offers no ask tools,
 // claims a runs-on: run before it starts one, and at its cap starts none.
 func TestABotsMachineAsksNobodyAndClaimsItsRuns(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, _ := start(t, root)
 	defer d.Shutdown()
