@@ -67,8 +67,9 @@ type Config struct {
 	// How this Mac's host's join stands (#113): its root's control-join.json.
 	HostJoinFile string
 	// BackstopEvery is how often the reads that back up a change made by hand or by another
-	// copy run: the records (R4, 15 s), the host tunnels (15 s) and the audit sinks (30 s);
-	// each its own default when 0. A test that counts the store work of requests sets it
+	// copy run: the records (R4, 15 s), the host tunnels (15 s) and the audit sinks (30 s),
+	// and how long a SCIM token read is trusted (10 s, a bound on a missed revoke); each its
+	// own default when 0. A test that counts the store work of requests sets it
 	// long, so no backstop read falls in its window (#6004).
 	BackstopEvery time.Duration
 	// Where the Linux hosts it hands out are (ServerFiles.folder).

@@ -31,22 +31,6 @@ public enum TurnChangesWords {
     /// "and 12 more", under the files listed.
     public static func more(_ n: Int) -> String { "and \(n) more" }
 
-    public static func stateSymbol(_ state: ChangeState) -> String {
-        switch state {
-        case .added, .untracked: "plus.circle"
-        case .deleted: "minus.circle"
-        default: "pencil.circle"
-        }
-    }
-
-    public static func stateWord(_ state: ChangeState) -> String {
-        switch state {
-        case .added, .untracked: "Added"
-        case .deleted: "Deleted"
-        default: "Changed"
-        }
-    }
-
     /// The files undo cannot put back, by name.
     public static func cannotUndo(_ paths: [String]) -> String {
         let names = paths.map { URL(filePath: $0).lastPathComponent }.formatted(.list(type: .and))

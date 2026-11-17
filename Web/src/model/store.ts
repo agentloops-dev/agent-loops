@@ -409,6 +409,8 @@ export class Store extends Work {
 
   /** Each host's velocity/history (#4598): the PRs that landed, by hour and day, by repository. */
   readonly velocity = signal<Record<string, VelocityHistory>>({});
+  /** The hosts whose last velocity/history read failed (#5972): the page says so, not "Loading…" for ever. */
+  readonly velocityFailed = signal<Record<string, boolean>>({});
 
   /**
    * The person's bus log (#4732): every machine's events, newest first, for the rows no host here
