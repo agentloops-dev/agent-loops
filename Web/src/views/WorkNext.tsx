@@ -46,11 +46,15 @@ async function ask(store: Store, folders: readonly { host: string; folder: strin
   Promise<{ got?: ForgeNext; failed: string[] }> {
   const failed: string[] = [];
   for (const f of folders) {
+    const name = store.hosts.value.find((h) => h.id === f.host)?.name ?? f.host;
+    const say = (words: string) => folders.length > 1 ? `${name}: ${words}` : words;
     try {
-      return { got: await store.link.call("forge/next", { folder: f.folder, ...params }, f.host), failed };
+      const got: ForgeNext = await store.link.call("forge/next", { folder: f.folder, ...params }, f.host);
+      // A forge that could not be read and no rows is a failed read, not an empty list: the rows on screen stay.
+      if (got.rows.length === 0 && got.errors?.length) failed.push(...got.errors.map((e) => say(e.message)));
+      else return { got, failed };
     } catch (e) {
-      const name = store.hosts.value.find((h) => h.id === f.host)?.name ?? f.host;
-      failed.push(folders.length > 1 ? `${name}: ${nextProblem(describe(e))}` : nextProblem(describe(e)));
+      failed.push(say(nextProblem(describe(e))));
     }
   }
   return { failed };
@@ -88,7 +92,7 @@ async function load(store: Store) {
     next.value = rows.got;
     readAt.value = fromWireDate(rows.got.readAt).getTime();
     fromDevice.value = false;
-    keepWork("next", copyKey, rows.got);
+    if (!rows.got.errors?.length) keepWork("next", copyKey, rows.got);
   } finally {
     if (read === key) reading.value = false;
   }
