@@ -203,6 +203,87 @@ struct WorkTimelineTests {
         #expect(waits.map(\.row) == [0, 1])
     }
 
+    static func with(_ epic: DaemonAPI.WorkTimelineEpic, priority: String? = nil, onHold: Bool = false) -> DaemonAPI.WorkTimelineEpic {
+        var epic = epic
+        epic.item.priority = priority
+        epic.item.onHold = onHold ? true : nil
+        return epic
+    }
+
+    @Test func eachPriorityIsABandOfRowsHighAtTheTop() {
+        let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(1), mid: Self.h(2), high: Self.h(4))
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            // No priority, and it starts first.
+            Self.epic(30, [Self.child(70, started: -20, closed: -10)], segments: [(-20, -10)]),
+            // High, and it starts later: it still goes above the one with none (#6089).
+            Self.with(Self.epic(31, [Self.child(71, started: -8, closed: -2)], segments: [(-8, -2)]), priority: "high"),
+            Self.with(Self.epic(32, [Self.child(72, started: -15, closed: -12)], segments: [(-15, -12)]), priority: "HIGH"),
+            Self.with(Self.epic(33, [Self.child(73, started: -6, closed: -3)], segments: [(-6, -3)]), priority: "low"),
+            // On hold: last, and not forecast.
+            Self.with(Self.epic(34, [Self.child(74, started: -4), Self.child(75, forecast: 2)], segments: [(-4, nil)],
+                                forecast: forecast), priority: "high", onHold: true),
+            Self.with(Self.epic(35, [Self.child(76, started: -30, closed: -25)], segments: [(-30, -25)]), priority: "medium"),
+        ])
+        let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))
+        let rows = Dictionary(uniqueKeysWithValues: lines.map { ($0.number, $0.row) })
+        // In a band, the blocks still pack in time: #32 and #31 share High's row.
+        #expect(rows == ["#32": 0, "#31": 0, "#35": 1, "#30": 2, "#33": 3, "#34": 4])
+        let held = lines.first { $0.number == "#34" }
+        #expect(held?.how == .open && held?.band == nil && held?.dots.allSatisfy(\.closed) == true)
+        #expect(lines.map(\.chip) == ["High", "High", "Medium", nil, "Low", "On hold"])
+        // Each band in use has its name on its first row; a band with no block takes no room.
+        #expect(WorkTimeline.bands(lines).map { "\($0.words)@\($0.row)" } == ["High@0", "Medium@1", "None@2", "Low@3", "On hold@4"])
+        let some = WorkTimeline.layout(lines.filter { $0.number == "#31" || $0.number == "#33" })
+        #expect(some.map(\.row) == [0, 1] && WorkTimeline.bands(some).map(\.words) == ["High", "Low"])
+        // A band of two rows: its next band starts below both.
+        let two = WorkTimeline.layout(WorkTimeline.lines(DaemonAPI.WorkTimeline(epics: [
+            Self.with(Self.epic(36, [Self.child(77, started: -10, closed: -2)], segments: [(-10, -2)]), priority: "high"),
+            Self.with(Self.epic(37, [Self.child(78, started: -9, closed: -3)], segments: [(-9, -3)]), priority: "high"),
+            Self.epic(38, [Self.child(79, started: -20, closed: -15)], segments: [(-20, -15)]),
+        ]), now: Self.now))
+        #expect(two.map(\.row) == [0, 1, 2])
+        #expect(WorkTimeline.bands(two).map { "\($0.words)@\($0.row)x\($0.rows)" } == ["High@0x2", "None@2x1"])
+        // The list: High first, then in time.
+        let spoken = WorkTimeline.spoken(lines, now: Self.now).map(\.line.number)
+        #expect(spoken == ["#32", "#31", "#35", "#30", "#33", "#34"])
+        #expect(WorkTimeline.spoken(lines, now: Self.now).first?.words.hasPrefix("Issue 32, priority high, 1 of 1 done") == true)
+        #expect(WorkTimeline.spoken(lines, now: Self.now).last?.words.hasPrefix("Issue 34, on hold, 0 of 2 done") == true)
+    }
+
+    @Test func thePriorityChipIsAfterTheTitleInTheBlockOrAfterIt() throws {
+        let measure: (String) -> Double = { Double($0.count) * 6 }
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            Self.with(Self.epic(19, [Self.child(60, started: -9, closed: -1)], segments: [(-9, -1)]), priority: "high"),
+            Self.with(Self.epic(20, [Self.child(61, started: -24, closed: -23.5)], segments: [(-24, -23.5)]), priority: "medium"),
+            Self.with(Self.epic(23, [Self.child(63, started: -6, closed: -4)], segments: [(-6, -4)]), priority: "low"),
+            Self.epic(24, [Self.child(64, started: -9, closed: -1)], segments: [(-9, -1)]),
+        ])
+        let lines = WorkTimeline.lines(timeline, now: Self.now)
+        try #require(lines.count == 4)
+        let (high, medium, low, none) = (lines[0], lines[1], lines[2], lines[3])
+        // 160 pt: "Issue 19" (48) and "High" (24 + 10) fit in it, 6 pt after the title.
+        let inside = WorkTimeline.blockWords(high, axis: Self.axis, measure: measure)
+        #expect(inside.chip == "High" && inside.chipInside && inside.chipX == inside.insideX + 48 + 6)
+        // 10 pt: the title and the chip after the block.
+        let after = WorkTimeline.blockWords(medium, axis: Self.axis, measure: measure)
+        #expect(after.outside == "Issue 20" && after.chip == "Medium" && !after.chipInside && after.chipX == after.outsideX + 48 + 6)
+        // No room before the next block for the chip: the words keep it, cut.
+        let cut = WorkTimeline.blockWords(medium, axis: Self.axis, measure: measure, next: Self.h(-21.6))
+        #expect(cut.chip == nil && cut.outside == "Iss…")
+        // 40 pt: neither fits in it; both go after the block.
+        let tight = WorkTimeline.blockWords(low, axis: Self.axis, measure: measure)
+        #expect(tight.inside == nil && tight.outside == "Issue 23" && tight.chip == "Low" && !tight.chipInside)
+        // 160 pt with a title of 140: the title fits, the chip does not, so it goes after the block.
+        var long = none
+        long.title = String(repeating: "x", count: 23)
+        long.priority = "low"
+        let squeezed = WorkTimeline.blockWords(long, axis: Self.axis, measure: measure)
+        #expect(squeezed.inside == long.title && squeezed.outside == nil && squeezed.chip == "Low"
+            && !squeezed.chipInside && squeezed.chipX == squeezed.outsideX)
+        // None: no chip.
+        #expect(WorkTimeline.blockWords(none, axis: Self.axis, measure: measure).chip == nil)
+    }
+
     @Test func theRowsDoNotChangeBetweenRangesForTheSameRead() {
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(4), mid: Self.h(6), high: Self.h(10))
         let timeline = DaemonAPI.WorkTimeline(epics: [
