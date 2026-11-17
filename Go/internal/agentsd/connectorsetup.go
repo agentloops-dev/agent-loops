@@ -22,6 +22,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -624,12 +625,14 @@ func (d *Daemon) atConnectedRoot(f forge) forge {
 // folder on the connected GitLab, gitlab.com, or a host named gitlab, else a Forgejo
 // repository on the connected Forgejo, codeberg.org, or a host named forgejo, gitea or
 // codeberg. Its connection, and whether there is one, come with it: a GitLab or Forgejo
-// connection counts only on its own root.
+// connection counts only on its own root. The remotes are read once, with one git process
+// (#6027): a process for each forge and remote ran out of time under load.
 func (d *Daemon) forgeAt(ctx context.Context, folder string) (forge, connections.Connection, bool) {
 	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	remotes := gitremote.URLs(gitCtx, folder)
 	github := forge{provider: wire.ConnectionProviderGithub, site: "github.com"}
-	if repo, ok := githubmcp.RepoAt(gitCtx, folder); ok {
+	if repo, ok := githubmcp.RepoIn(remotes); ok {
 		github.repo = repo
 		c, connected := d.githubConnection()
 		return github, c, connected
@@ -639,17 +642,17 @@ func (d *Daemon) forgeAt(ctx context.Context, folder string) (forge, connections
 	if connected && c.URL != "" {
 		roots = append([]string{c.URL}, roots...)
 	}
-	root, project, ok := gitlabmcp.ProjectAt(gitCtx, folder, roots)
+	root, project, ok := gitlabmcp.ProjectIn(remotes, roots)
 	if !ok {
-		if f, ok := d.bitbucketAt(gitCtx, folder); ok {
+		if f, ok := d.bitbucketAt(remotes); ok {
 			c, connected := d.connectionFor(f)
 			return f, c, connected
 		}
-		if f, ok := d.azureDevOpsAt(gitCtx, folder); ok {
+		if f, ok := d.azureDevOpsAtRoots(remotes, d.azureDevOpsRoots()); ok {
 			c, connected := d.connectionFor(f)
 			return f, c, connected
 		}
-		if f, ok := d.forgejoAt(gitCtx, folder); ok {
+		if f, ok := d.forgejoAt(remotes); ok {
 			c, connected := d.connectionFor(f)
 			return f, c, connected
 		}
@@ -669,8 +672,8 @@ func (d *Daemon) forgeAt(ctx context.Context, folder string) (forge, connections
 
 // bitbucketAt is the Bitbucket Cloud repository the folder's git remote names, if any, at
 // the connection's API (Bitbucket Cloud's without one).
-func (d *Daemon) bitbucketAt(ctx context.Context, folder string) (forge, bool) {
-	repo, ok := bitbucketmcp.RepoAt(ctx, folder)
+func (d *Daemon) bitbucketAt(remotes []string) (forge, bool) {
+	repo, ok := bitbucketmcp.RepoIn(remotes)
 	if !ok {
 		return forge{}, false
 	}
@@ -693,15 +696,11 @@ func (d *Daemon) azureDevOpsRoots() []string {
 	return slices.Compact(roots)
 }
 
-// azureDevOpsAt is the Azure Repos repository the folder's git remote names, if any, on the
-// first of azureDevOpsRoots that it is on.
-func (d *Daemon) azureDevOpsAt(ctx context.Context, folder string) (forge, bool) {
-	return d.azureDevOpsAtRoots(ctx, folder, d.azureDevOpsRoots())
-}
-
-func (d *Daemon) azureDevOpsAtRoots(ctx context.Context, folder string, roots []string) (forge, bool) {
+// azureDevOpsAtRoots is the Azure Repos repository the folder's git remotes name, if any, on
+// the first of roots (azureDevOpsRoots) that it is on.
+func (d *Daemon) azureDevOpsAtRoots(remotes, roots []string) (forge, bool) {
 	for _, root := range roots {
-		if repo, ok := azuredevopsmcp.RepoAt(ctx, folder, root); ok {
+		if repo, ok := azuredevopsmcp.RepoIn(remotes, root); ok {
 			f := forge{provider: wire.ConnectionProviderAzuredevops, root: root, repo: repo, site: "dev.azure.com"}
 			if u, err := url.Parse(root); err == nil && u.Host != "" {
 				f.site = u.Host
@@ -712,13 +711,13 @@ func (d *Daemon) azureDevOpsAtRoots(ctx context.Context, folder string, roots []
 	return forge{}, false
 }
 
-// forgejoAt is the Forgejo repository the folder's git remote names, if any.
-func (d *Daemon) forgejoAt(ctx context.Context, folder string) (forge, bool) {
+// forgejoAt is the Forgejo repository the folder's git remotes name, if any.
+func (d *Daemon) forgejoAt(remotes []string) (forge, bool) {
 	roots := []string{connections.Codeberg}
 	if c, connected := d.forgejoConnection(); connected && c.URL != "" {
 		roots = append([]string{c.URL}, roots...)
 	}
-	root, repo, ok := forgejomcp.RepoAt(ctx, folder, roots)
+	root, repo, ok := forgejomcp.RepoIn(remotes, roots)
 	if !ok {
 		return forge{}, false
 	}
