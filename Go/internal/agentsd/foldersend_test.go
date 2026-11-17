@@ -13,7 +13,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -22,29 +21,66 @@ import (
 // mid-send finds it with folders/sends. A folder there with work of its own, or an offline
 // machine, refuses at once, and nothing goes.
 
-// nextSend is the next send/changed c hears, or nil after wait.
-func nextSend(c *conn, wait time.Duration) *wire.SendNotification {
-	deadline := time.After(wait)
-	for {
+// sendsHeard are the send/changed notifications c hears, in order. c.call reads past
+// notifications and drops them, and a send's job can say every part before the call's
+// answer (#6001): call keeps the ones it reads past, and next gives them first.
+type sendsHeard struct {
+	c    *conn
+	held []wire.SendNotification
+}
+
+// keep holds line when it is a send/changed, and is its id when it is an answer.
+func (h *sendsHeard) keep(line string) (message, bool) {
+	var m message
+	json.Unmarshal([]byte(line), &m)
+	if m.Method == wire.NotifySendChanged.Name {
+		var n wire.SendNotification
+		json.Unmarshal(m.Params, &n)
+		h.held = append(h.held, n)
+	}
+	return m, m.Method == ""
+}
+
+// call is c.call that keeps the send/changed it reads past.
+func (h *sendsHeard) call(t *testing.T, id int, method string, params any) json.RawMessage {
+	t.Helper()
+	p, _ := json.Marshal(params)
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
+	h.c.in <- string(b)
+	for deadline := time.After(waitLimit(t)); ; {
 		select {
-		case line := <-c.out:
-			var m message
-			json.Unmarshal([]byte(line), &m)
-			if m.Method != wire.NotifySendChanged.Name {
+		case line := <-h.c.out:
+			m, answer := h.keep(line)
+			if !answer || string(m.ID) != strings.TrimSpace(string(mustJSON(id))) {
 				continue
 			}
-			var n wire.SendNotification
-			json.Unmarshal(m.Params, &n)
-			return &n
+			if m.Error != nil {
+				t.Fatalf("%s: %v", method, m.Error)
+			}
+			return m.Result
 		case <-deadline:
-			return nil
+			waitFailed(t, "%s: no answer", method)
 		}
 	}
 }
 
+// next is the next send/changed, or nil after wait.
+func (h *sendsHeard) next(wait time.Duration) *wire.SendNotification {
+	for deadline := time.After(wait); len(h.held) == 0; {
+		select {
+		case line := <-h.c.out:
+			h.keep(line)
+		case <-deadline:
+			return nil
+		}
+	}
+	n := h.held[0]
+	h.held = h.held[1:]
+	return &n
+}
+
 func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	t.Parallel()
-	flaky.UnderLoad(t, "#6001")
 
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -65,7 +101,7 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	var steps, who []string
 	offline := false
 	receiving := make(chan struct{})
-	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+	d.SetControlAsk(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
 		// Only the send's steps: the host's other calls to the control plane go nowhere.
 		call, ok := params.(wire.MachineWorkspaceCall)
 		if !ok || call.Method != sendFolderMethod {
@@ -100,8 +136,13 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 				return nil, err
 			}
 		case s.Receive != nil:
-			// Held until the test has seen the send under way.
-			<-receiving
+			// Held until the test has seen the send under way, or the host stops: the
+			// control plane's ask ends with ctx, so Shutdown leaves no job running.
+			select {
+			case <-receiving:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 			mu.Lock()
 			steps = append(steps, "receive")
 			mu.Unlock()
@@ -118,7 +159,9 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 		"branches": []string{"fix-login"}, "checkout": "fix-login", "includeChanges": true}
 
 	// Offline: refused at once, and nothing is under way.
+	mu.Lock()
 	offline = true
+	mu.Unlock()
 	if e := c.callError(t, 1, "folders/send", send); e.Message != "Nothing was sent to pc: pc is offline." {
 		t.Fatal(e.Message)
 	}
@@ -127,15 +170,16 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	mu.Unlock()
 
 	// It answers before the send is done.
+	heard := &sendsHeard{c: c}
 	var s wire.SendSummary
-	json.Unmarshal(c.call(t, 2, "folders/send", send), &s)
+	json.Unmarshal(heard.call(t, 2, "folders/send", send), &s)
 	if s.Machine != "pc-id" || s.MachineName != "pc" || s.Destination != there || s.Folder != store.PathURL(src) {
 		t.Fatalf("%+v", s)
 	}
 	// The parts go, and each says how far the send is.
 	var last *wire.SendNotification
 	for last == nil || last.Sent < last.Total || last.Total == 0 {
-		if last = nextSend(c, 10*time.Second); last == nil {
+		if last = heard.next(10 * time.Second); last == nil {
 			t.Fatal("no send/changed")
 		}
 		if last.Finished {
@@ -156,7 +200,7 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	}
 	close(receiving)
 	for last == nil || !last.Finished {
-		if last = nextSend(c, 10*time.Second); last == nil {
+		if last = heard.next(10 * time.Second); last == nil {
 			t.Fatal("no finished send/changed")
 		}
 	}
