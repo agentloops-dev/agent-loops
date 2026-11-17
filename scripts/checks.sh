@@ -1,20 +1,25 @@
 #!/bin/sh
 # A lane's checks, attested (#5584, epic #5581).
 #
-#   scripts/checks.sh attest            run the affected test, vet and lint tasks with Nx and
-#                                       no cache hits, and post the check run
-#                                       attestation/<platform> on the pull request's head commit,
-#                                       as the agents' bot: one in-toto test-result statement
+#   scripts/checks.sh attest run        before the push: run the affected test, vet and lint
+#                                       tasks with Nx and no cache hits, at the head commit, and
+#                                       keep the check run on disk by head sha (#6059)
+#   scripts/checks.sh attest post       just after the push: post the kept check run
+#                                       attestation/<platform> on the pull request's head, as the
+#                                       agents' bot, when the head is that commit and no task's
+#                                       hash changed; runs no task, so it takes seconds
+#   scripts/checks.sh attest            both, after the push: one in-toto test-result statement
 #                                       for each task that passed on its first run
 #   scripts/checks.sh attest --plan     the tasks, their Nx hashes and the inputs that changed;
 #                                       runs nothing
-#   scripts/checks.sh attest --no-post  run them, and print the check run in place of posting it
+#   scripts/checks.sh attest --no-post  run them, keep them, and print the check run
 #   scripts/checks.sh attest --base REF the change since REF (default: its merge base with
 #                                       origin/main)
 #
-# Commit and push first: the statements name each task by its Nx hash at the head commit, and
-# the check run goes on the pull request's head. CI skips the tasks it covers (#5585). The rules and
-# the statement's shape are in scripts/checks-attest.mjs. Lease "build" first (not for --plan).
+# Commit first: the statements name each task by its Nx hash at the head commit. Run before the
+# push and post just after it, so the check run is there when CI's `changes` job reads it, about
+# a minute after the push; CI skips the tasks it covers (#5585). The rules and the statement's
+# shape are in scripts/checks-attest.mjs. Lease "build" for the run (not for post or --plan).
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
@@ -38,7 +43,7 @@ attest)
 	exec node "$root/scripts/checks-attest.mjs" "$@"
 	;;
 *)
-	echo "usage: scripts/checks.sh attest [--plan] [--no-post] [--base REF]" >&2
+	echo "usage: scripts/checks.sh attest [run | post] [--plan] [--no-post] [--base REF]" >&2
 	exit 2
 	;;
 esac
