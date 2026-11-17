@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -52,6 +51,14 @@ func (c *windowClock) advance(d time.Duration) int {
 	return len(due)
 }
 
+// clientAdded waits until the daemon has c as a client: Accept runs on its own goroutine, and a
+// notification sent before it adds the client goes to nobody (#5878). A ping's answer
+// comes after that.
+func clientAdded(t *testing.T, c *conn) {
+	t.Helper()
+	c.call(t, 1, "daemon/ping", nil)
+}
+
 // folderChangedFor waits for the next folder/changed of one folder, and is its summary.
 func folderChangedFor(t *testing.T, c *conn, folder string) wire.FolderSummary {
 	t.Helper()
@@ -76,6 +83,7 @@ func folderChangedFor(t *testing.T, c *conn, folder string) wire.FolderSummary {
 func TestFolderChangedAtMostFourASecond(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
+	clientAdded(t, c)
 	clock := &windowClock{}
 	d.folderAfter = clock.after
 	folder := t.TempDir()
@@ -107,9 +115,9 @@ func TestFolderChangedAtMostFourASecond(t *testing.T) {
 
 // #4508: one change goes out at the window's end, not before, and each folder has its own.
 func TestFolderChangedOneChangeAtWindowEnd(t *testing.T) {
-	flaky.UnderLoad(t, "#5878")
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
+	clientAdded(t, c)
 	clock := &windowClock{}
 	d.folderAfter = clock.after
 	one, two := t.TempDir(), t.TempDir()
