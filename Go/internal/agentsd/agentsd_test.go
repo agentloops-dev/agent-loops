@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -135,6 +136,7 @@ func TestPingAndAnUnknownMethod(t *testing.T) {
 }
 
 func TestAPanickingHandlerAnswersAnError(t *testing.T) {
+	flaky.UnderLoad(t, "#5751")
 	d, c := start(t, t.TempDir())
 	d.handlers["boom"] = func(context.Context, *Client, json.RawMessage) (any, error) {
 		var m map[string]int

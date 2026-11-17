@@ -163,9 +163,10 @@ struct WorkMergeBox: View {
                         Button(WorkLook.resolveOnForge(node.ref)) { openURL(url.appendingPathComponent("conflicts")) }
                     }
                     if box.approves, let head = detail.head {
-                        Button("Approve", icon: "checkmark") {
+                        Button(WorkLook.approveWords(approved: box.approved), icon: "checkmark") {
                             act(DaemonAPI.Method.forgeApprove, DaemonAPI.ForgeApproveRequest(node: node, sha: head))
                         }
+                        .disabled(box.approved)
                     }
                     if box.reruns {
                         Button("Rerun failed", icon: "arrow.clockwise") {
@@ -178,6 +179,9 @@ struct WorkMergeBox: View {
                 #if os(iOS)
                 .buttonStyle(.bordered)
                 #endif
+            }
+            if box.ownPull, writes, !waiting {
+                Text(WorkLook.ownPullWords).appText(.supporting).foregroundStyle(.secondary)
             }
             if let said {
                 Text(said.words).appText(.supporting).foregroundStyle((said.failed ? StateTint.failure : .none).style(or: .secondary))
@@ -226,18 +230,21 @@ struct WorkMergeBox: View {
         .controlSize(.large)
     }
 
-    /// Approve; beside Merge it is its word alone, so Merge keeps its words.
+    /// Approve; beside Merge it is its word alone, so Merge keeps its words. *Approved* keeps its
+    /// check, and does nothing, once the person approved (#5804).
     private func approveButton(glyph: Bool) -> some View {
-        Button {
+        let words = WorkLook.approveWords(approved: box.approved)
+        return Button {
             if let head = detail.head {
                 act(DaemonAPI.Method.forgeApprove, DaemonAPI.ForgeApproveRequest(node: node, sha: head))
             }
         } label: {
             Group {
-                if glyph { Label("Approve", icon: "checkmark") } else { Text("Approve") }
+                if glyph || box.approved { Label(words, icon: "checkmark") } else { Text(words) }
             }
             .frame(maxWidth: .infinity)
         }
+        .disabled(box.approved)
     }
 
     private var rerunButton: some View {

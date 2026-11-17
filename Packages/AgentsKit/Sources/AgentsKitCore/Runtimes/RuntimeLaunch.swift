@@ -237,6 +237,10 @@ public enum RuntimeLaunchCatalog {
     /// - `OPENCODE_AUTH_CONTENT` removed: on the Mac, OpenCode uses its own sign-in in the
     ///   person's home (D3). A server run is lent the Mac's through this variable, set after
     ///   this by the lending (D7), never from a stray one in the daemon's environment.
+    /// - `XDG_DATA_HOME`: the database for this copy, under the app's root. It does not open
+    ///   `~/.local/share/opencode`. A newer OpenCode on the PATH migrates that database, and
+    ///   this copy then exits before a session can start. The person's sign-in stays in their
+    ///   directory. This process does not copy it.
     /// - `OPENCODE_ENABLE_QUESTION_TOOL` removed: questions go through the app's `ask_question`.
     /// - `TMPDIR` of its own: at the start of every turn OpenCode walks its temporary folder,
     ///   and a Mac's per-user one can hold close to a million entries. Measured on this Mac on
@@ -246,6 +250,7 @@ public enum RuntimeLaunchCatalog {
         runtimeID: "opencode",
         environment: [
             "TMPDIR": "<cache>/runtimes/opencode/tmp",
+            "XDG_DATA_HOME": "<root>/runtimes/opencode/data",
             "OPENCODE_DISABLE_AUTOUPDATE": "1",
             "OPENCODE_DISABLE_SHARE": "1",
             "OPENCODE_AUTH_CONTENT": nil,
