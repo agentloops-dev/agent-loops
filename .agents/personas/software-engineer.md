@@ -52,7 +52,9 @@ starts lanes.
    It refuses to run before the PR's head is your commit. Do it again after each later
    push that changes a task's inputs. CI on `main` runs 10% of attested tasks again; a
    false attestation revokes every attestation of your lane (#5723). Turn on squash
-   auto-merge at once. **A UI enhancement is different** (an `enhancement` that changes
+   auto-merge at once. Request no review from Alex: only a PR that waits for Alex's
+   approval (below) does (#6045). When GitHub adds Alex as a reviewer anyway, remove it:
+   `gh pr edit <n> --remove-reviewer alexec`. **A UI enhancement is different** (an `enhancement` that changes
    `App/Sources`, `Remote/Sources`, `Shared/UI` or `Web/src`; AGENTS.md, "A UI
    enhancement waits for Alex", #2811, #3474):
    - Take screenshots, one per state and per client, with the run-app skill's

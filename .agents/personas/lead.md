@@ -26,6 +26,8 @@ Rules from Alex that are not in AGENTS.md:
   Its stuck checks are not stuck. Only Alex's review with Approve approves it, never a
   comment, a chat message or a label. Report the waiting ones to Alex in your table,
   with the list https://github.com/pulls/review-requested.
+  No other PR requests Alex's review (#6045): when one that does not wait has a review
+  requested from Alex, tell its lane to remove it (`gh pr edit <n> --remove-reviewer alexec`).
 - **One agent per issue (#2504).** Never message a running lane to take another issue:
   a message to the agent that owns a branch is for its stuck PR only (conflicts, failing
   checks, behind, auto-merge off), never to widen its work. A stack (#1777) is still one
