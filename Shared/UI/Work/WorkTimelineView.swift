@@ -535,7 +535,7 @@ struct WorkTimelinePane: View {
             case .dot(_, let dot):
                 let child = self.child(dot.ref)
                 miniRow(glyph: dotGlyph(dot), title: dot.title, labels: child?.item.labels ?? [],
-                        line: WorkTimeline.dotLine(dot, now: drawing.now))
+                        onHold: child.map { WorkPlan.onHold($0.item) } ?? false, line: WorkTimeline.dotLine(dot, now: drawing.now))
             case .line(let line):
                 lineRow(line, drawing: drawing)
             }
@@ -552,18 +552,21 @@ struct WorkTimelinePane: View {
         let glyph = AnyView(WorkStateIcon(kind: "issue", state: epic?.item.state ?? (line.open ? "open" : "closed"),
                                           stateReason: epic?.stateReason))
         return miniRow(glyph: glyph, title: line.title, labels: epic?.item.labels ?? [],
-                       line: WorkTimeline.lineLine(line, now: drawing.now))
+                       onHold: epic.map { WorkPlan.onHold($0.item) } ?? false, line: WorkTimeline.lineLine(line, now: drawing.now))
     }
 
-    private func miniRow(glyph: AnyView, title: String, labels: [DaemonAPI.ForgeLabel], line: String) -> some View {
-        let chips = WorkLook.shownLabels(labels, limit: WorkLook.rowChips)
+    private func miniRow(glyph: AnyView, title: String, labels: [DaemonAPI.ForgeLabel], onHold: Bool,
+                         line: String) -> some View {
+        // The On hold chip first, and the `on hold` label not again (#6090).
+        let chips = WorkLook.shownLabels(WorkPlan.labels(labels, onHold: onHold), limit: WorkLook.rowChips)
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 glyph
                 Text(title).appText(.supporting).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
             }
-            if !chips.shown.isEmpty {
+            if !chips.shown.isEmpty || onHold {
                 HStack(spacing: 4) {
+                    WorkOnHoldChip(onHold: onHold)
                     ForEach(chips.shown, id: \.name) { WorkLabelChip(label: $0) }
                     WorkMoreChips(count: chips.more)
                 }

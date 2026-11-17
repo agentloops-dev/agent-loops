@@ -780,12 +780,14 @@ struct WorkFeaturesPane: View {
                     }
                     Spacer(minLength: 8)
                     WorkPriorityChip(epic)
+                    WorkOnHoldChip(epic)
                     bar(tally).frame(width: 90)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 } else {
                     epicTitle(epic, place: place).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 8)
                     WorkPriorityChip(epic)
+                    WorkOnHoldChip(epic)
                     bar(tally).frame(width: 110)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                     Text(tally.epicWords).appText(.supporting).monospacedDigit().foregroundStyle(.secondary)
@@ -880,6 +882,7 @@ struct WorkFeaturesPane: View {
             if !compact { childWords(line, needs: needs).layoutPriority(-1) }
             Spacer(minLength: 8)
             WorkPriorityChip(line.item)
+            WorkOnHoldChip(line.item)
             // On a phone the pull request is in the words, and the child's page has it (note 14).
             if !compact, let pr = line.pr {
                 Button {
