@@ -22,8 +22,9 @@ once. Else you make `main` green again, with nobody watching. Never archive this
 session: the next run comes to it.
 
 Follow the `fix-main` skill (`.agents/skills/fix-main/SKILL.md`) from its step 1. Its rules
-are the limits of this run: never rerun a failed job; quarantine a flaky test on a PR of its
-own and file a bug to fix it later; for a break, file or update one "Main broken" bug,
+are the limits of this run: never rerun a failed job; run a test that looks flaky alone 20
+times first, and treat it as a break when it fails there (#6129); quarantine a flaky test on
+a PR of its own and file a bug to fix it later; for a break, file or update one "Main broken" bug,
 bisect with `scripts/bisect-main.sh` and fix forward. Never revert without Alex: when `main`
 cannot be made green, ask Alex with `ask_question`, and revert only when Alex says so. Never
 weaken a check, never force-push and never push to `main`.
