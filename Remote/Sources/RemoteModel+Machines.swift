@@ -146,6 +146,20 @@ extension RemoteModel {
         await machineCall(DaemonAPI.Method.hostsDeleteMachine, host)
     }
 
+    /// Try Again on a machine's set-up (#5357, #6012): the control plane runs the failed step and
+    /// the ones after it. The row stays; its next push says how the run goes.
+    func retrySetup(_ host: MachineRef) async {
+        guard let control = controlPlane else {
+            problem = "The control plane isn’t answering."
+            return
+        }
+        do {
+            _ = try await control.call(DaemonAPI.Method.hostsRetrySetup, DaemonAPI.MachineRequest(host: host))
+        } catch {
+            problem = sentence(for: error)
+        }
+    }
+
     /// Remove… on a registered machine (#3973): Agents forgets it; the computer stays.
     func removeMachine(_ host: MachineRef) async {
         await machineCall(DaemonAPI.Method.hostsRemove, host)
