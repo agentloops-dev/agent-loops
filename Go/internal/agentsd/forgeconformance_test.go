@@ -1154,7 +1154,7 @@ func conformItemActions(t *testing.T, caps forgeCaps, i wire.ForgeItem, actions 
 		a = caps.PR
 	}
 	for _, name := range actions {
-		if n := string(name); n != actionAddChild && n != actionBlockedBy && !a.on(n) {
+		if n := string(name); n != actionAddChild && n != actionBlockedBy && n != actionPriority && n != actionHold && !a.on(n) {
 			t.Errorf("%v: actions has %s, which caps say no to", i.Node, n)
 		}
 	}
@@ -1174,6 +1174,11 @@ func conformItemActions(t *testing.T, caps forgeCaps, i wire.ForgeItem, actions 
 			has(wire.ForgeActionCloseNotPlanned) != a.CloseNotPlanned {
 			t.Errorf("%v (open): actions %v", i.Node, actions)
 		}
+	}
+	// An issue's priority and on hold are its forge's (#6092): on an issue where caps say so, never on a pull request.
+	issue := i.Node.Kind == lineage.KindIssue
+	if has(wire.ForgeActionPriority) != (caps.Priority && issue) || has(wire.ForgeActionHold) != (caps.Hold && issue) {
+		t.Errorf("%v: priority and hold in actions %v, caps say %v, %v", i.Node, actions, caps.Priority, caps.Hold)
 	}
 	if i.Node.Kind == lineage.KindPR && (has(wire.ForgeActionAddChild) || has(wire.ForgeActionBlockedBy)) {
 		t.Errorf("%v: a pull request with a plan's actions %v", i.Node, actions)

@@ -212,6 +212,9 @@ func (c forgeCaps) itemActions(d wire.ForgeItemDetail) []wire.ForgeAction {
 		{wire.ForgeActionReady, a.Ready && open && i.Draft != nil && *i.Draft},
 		{wire.ForgeActionAddChild, c.AddChild && issue},
 		{wire.ForgeActionBlockedBy, c.BlockedBy && issue},
+		// An issue's priority and on hold, where the forge sets them (#6091); the page's menu and toggle (#6092).
+		{wire.ForgeActionPriority, c.Priority && issue},
+		{wire.ForgeActionHold, c.Hold && issue},
 	} {
 		if on.on {
 			out = append(out, on.action)

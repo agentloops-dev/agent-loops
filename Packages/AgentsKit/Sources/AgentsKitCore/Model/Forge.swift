@@ -361,7 +361,7 @@ public extension DaemonAPI {
     /// the default first (#3130); an issue's `start` is its new-agent form, and `transitions` the
     /// moves its workflow allows (Jira, #3260), in place of Close and Reopen. `actions` are what
     /// the page offers now, by name (comment, label, close, reopen, transition, merge, autoMerge,
-    /// approve, requestChanges, rerun, log, diff, addChild, blockedBy, assign, cancelAutoMerge, ready; #4361, #5857), as
+    /// approve, requestChanges, rerun, log, diff, addChild, blockedBy, assign, cancelAutoMerge, ready; #4361, #5857; an issue's priority and hold, #6092), as
     /// strings so a later daemon's new one does not break this decoder; nil from an earlier daemon. On an issue's read, where the
     /// forge says them (#4373): `children` are its sub-issues, `linkedPulls` the pull requests that
     /// close it, and `events` its timeline, oldest first; nil where the forge gives none. On a pull

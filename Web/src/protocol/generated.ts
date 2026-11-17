@@ -5446,7 +5446,8 @@ export interface FoldersListRequest {
  * forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason
  * not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve,
  * forge/request-changes (#5857), forge/rerun, forge/log, forge/diff, forge/add-child,
- * forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410).
+ * forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410), and on
+ * an issue forge/priority and forge/hold (#6091, #6092).
  */
 export type ForgeAction =
   | "comment"
@@ -5466,7 +5467,9 @@ export type ForgeAction =
   | "blockedBy"
   | "assign"
   | "cancelAutoMerge"
-  | "ready";
+  | "ready"
+  | "priority"
+  | "hold";
 
 /**
  * forge/add-child (#3271): add a child to an epic's plan: a new issue (title, with level story,
