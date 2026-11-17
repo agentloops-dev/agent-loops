@@ -135,7 +135,8 @@ public enum WorkFeatures {
         return a + b.filter { !a.contains($0) }
     }
 
-    /// An opened feature: its open epics and its loose issues, each once, the last updated first.
+    /// An opened feature: its open epics and its loose issues, each once, in the order of
+    /// `forge/next` (not on hold first, then High, Medium, none, Low; #6088), then the last updated first.
     public struct Opened: Equatable, Sendable {
         public var epics: [DaemonAPI.ForgeItem]
         public var loose: [DaemonAPI.ForgeItem]
@@ -146,7 +147,7 @@ public enum WorkFeatures {
     public static func opened(_ items: [DaemonAPI.ForgeItem]) -> Opened {
         var seen = Set<String>()
         let mine = items.filter { $0.node.kind == "issue" && $0.state == "open" && seen.insert($0.node.ref).inserted }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted { a, b in a.nextRank != b.nextRank ? a.nextRank < b.nextRank : a.updatedAt > b.updatedAt }
         return Opened(epics: mine.filter(isEpic), loose: mine.filter { !isEpic($0) && $0.parent == nil })
     }
 
@@ -327,12 +328,16 @@ public enum WorkFeatures {
     public static let shownInFlight = 5
     public static let shownInFlightOnPhone = 2
 
-    /// The children in flight, as the page lists them: Needs you first, then Working, each the
-    /// most recently updated first.
+    /// The children in flight, as the page lists them: Needs you first, then Working, each in the
+    /// order of `forge/next` (#6088), then the most recently updated first.
     public static func inFlight(_ items: [DaemonAPI.ForgeItem], work: (DaemonAPI.ForgeItem) -> Work,
                                 approvals: Set<String>) -> [Line] {
         items.compactMap { line($0, work: work($0), approvals: approvals) }
-            .sorted { a, b in a.flight != b.flight ? a.flight < b.flight : a.item.updatedAt > b.item.updatedAt }
+            .sorted { a, b in
+                if a.flight != b.flight { return a.flight < b.flight }
+                if a.item.nextRank != b.item.nextRank { return a.item.nextRank < b.item.nextRank }
+                return a.item.updatedAt > b.item.updatedAt
+            }
     }
 
     /// A bar's three parts (note 4): done, in flight and not started, of the children counted.
