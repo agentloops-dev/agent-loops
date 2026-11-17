@@ -200,6 +200,7 @@ var CallForgeLabel = Method[ForgeLabelRequest, ForgeDone]{"forge/label"}
 var CallForgeLabels = Method[ForgeNodeRequest, ForgeLabels]{"forge/labels"}
 var CallForgeLog = Method[ForgeLogRequest, ForgeLog]{"forge/log"}
 var CallForgeMerge = Method[ForgeMergeRequest, ForgeDone]{"forge/merge"}
+var CallForgeNext = Method[ForgeNextRequest, ForgeNext]{"forge/next"}
 var CallForgePlan = Method[ForgePlanRequest, ForgePlan]{"forge/plan"}
 var CallForgePull = Method[ForgeItemRequest, ForgeItemDetail]{"forge/pull"}
 var CallForgePulls = Method[ForgeListRequest, ForgeList]{"forge/pulls"}

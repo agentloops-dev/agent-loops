@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -173,15 +172,6 @@ func refNumber(ref string) int {
 	return n
 }
 
-// standingOrder puts a standing plan's issues in order: priority first, then the oldest (the
-// lowest number), so no issue waits for ever behind newer ones of the same priority.
-func standingOrder(items []wire.ForgeItem) {
-	slices.SortStableFunc(items, func(a, b wire.ForgeItem) int {
-		return cmp.Or(cmp.Compare(standingRank(a), standingRank(b)), cmp.Compare(refNumber(a.Node.Ref), refNumber(b.Node.Ref)),
-			cmp.Compare(a.Node.Ref, b.Node.Ref))
-	})
-}
-
 // standingPlan is a standing epic's query, read from its body, and the open issues of its repo
 // (or Linear team, or Jira project) that it takes, in order, at most forgeListMost. The list is
 // read with forge/issues on the epic's folder, narrowed on the forge by the query's first label,
@@ -220,7 +210,7 @@ func (d *Daemon) standingPlan(ctx context.Context, method string, epic wire.Forg
 		}
 		list.Cursor = page.Cursor
 	}
-	standingOrder(items)
+	nextOrder(items)
 	if q.Parent != nil {
 		if items, err = d.standingParentless(ctx, method, epic, items); err != nil {
 			return wire.ForgeStanding{}, nil, err

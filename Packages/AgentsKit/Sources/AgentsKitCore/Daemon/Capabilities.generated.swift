@@ -448,6 +448,7 @@ public enum Capability {
         "forge/labels": "forge-write/1",
         "forge/log": "forge-write/1",
         "forge/merge": "forge-write/1",
+        "forge/next": "forge/1",
         "forge/plan": "forge/1",
         "forge/pull": "forge/1",
         "forge/pulls": "forge/1",

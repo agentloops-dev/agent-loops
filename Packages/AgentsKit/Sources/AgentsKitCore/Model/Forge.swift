@@ -869,6 +869,50 @@ public extension DaemonAPI {
     }
 }
 
+/// `forge/next` (#5689): the work that is ready, in one order, with the reason for each place.
+public extension DaemonAPI {
+    /// `forge/next`'s question: the folder; one epic's children, or the open epics (`level: "epic"`).
+    struct ForgeNextRequest: Codable, Sendable, Hashable {
+        public var folder: String
+        public var epic: LineageNode?
+        public var level: String?
+
+        public init(folder: String, epic: LineageNode? = nil, level: String? = nil) {
+            self.folder = folder
+            self.epic = epic
+            self.level = level
+        }
+    }
+
+    /// A row: the item, its place (1 first), the reasons for it, and whether it is on hold.
+    struct ForgeNextRow: Codable, Sendable, Hashable {
+        public var item: ForgeItem
+        public var place: Int
+        public var reasons: [String]
+        public var onHold: Bool
+
+        public init(item: ForgeItem, place: Int, reasons: [String] = [], onHold: Bool = false) {
+            self.item = item
+            self.place = place
+            self.reasons = reasons
+            self.onHold = onHold
+        }
+    }
+
+    /// The rows, at most 100, when they were read, and the forges that could not be read.
+    struct ForgeNext: Codable, Sendable, Hashable {
+        public var rows: [ForgeNextRow]
+        public var readAt: Date
+        public var errors: [ForgeListError]?
+
+        public init(rows: [ForgeNextRow] = [], readAt: Date, errors: [ForgeListError]? = nil) {
+            self.rows = rows
+            self.readAt = readAt
+            self.errors = errors
+        }
+    }
+}
+
 public extension DaemonAPI.Method {
     /// `ForgeListRequest` → `ForgeList` (#3129).
     static let forgeIssues = "forge/issues"
@@ -896,6 +940,8 @@ public extension DaemonAPI.Method {
     static let forgeDiff = "forge/diff"
     /// `ForgePlanRequest` → `ForgePlan`, `ForgeFeaturesRequest` → `ForgeFeatures` (#3267).
     static let forgePlan = "forge/plan"
+    /// `ForgeNextRequest` → `ForgeNext` (#5689).
+    static let forgeNext = "forge/next"
     static let forgeFeatures = "forge/features"
     /// `ForgeBoardsRequest` → `ForgeBoards` (#3282).
     static let forgeBoards = "forge/boards"
