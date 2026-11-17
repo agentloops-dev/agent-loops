@@ -26,6 +26,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -154,10 +155,52 @@ func KeychainService(root string) string {
 // FileName is the file in ~/.agents-secrets.
 const FileName = "connections.json"
 
-// File is the Linux store: one JSON file of every connection, mode 0600.
+// File is the Linux store: one JSON file of every connection, mode 0600. A write reads the
+// file, changes one connection and writes it again, under a lock on its folder (#5809): every
+// host of one person on a Linux machine has the same file, and each Open is a new File, so
+// the mutex alone let two writes at the same time lose one connection.
 type File struct {
 	Path string
 	mu   sync.Mutex
+}
+
+// change runs edit on the file's connections and writes them when edit says so, under the
+// mutex and a lock on the file's folder. The folder, not a file beside the store, so the
+// folder holds only the store (a lock file would stay there, with nothing in it).
+func (f *File) change(edit func(all map[string]Connection) bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	dir := filepath.Dir(f.Path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	_ = os.Chmod(dir, 0o700)
+	lock, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := flock(lock, syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer flock(lock, syscall.LOCK_UN) //nolint:errcheck // Close unlocks it too.
+	all, err := f.read()
+	if err != nil {
+		return err
+	}
+	if !edit(all) {
+		return nil
+	}
+	return f.write(all)
+}
+
+func flock(f *os.File, how int) error {
+	for {
+		err := syscall.Flock(int(f.Fd()), how)
+		if err != syscall.EINTR {
+			return err
+		}
+	}
 }
 
 func (f *File) read() (map[string]Connection, error) {
@@ -172,16 +215,12 @@ func (f *File) read() (map[string]Connection, error) {
 	return all, nil
 }
 
+// write is change's: the folder is made and locked first.
 func (f *File) write(all map[string]Connection) error {
 	b, err := json.MarshalIndent(all, "", "  ")
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(f.Path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	_ = os.Chmod(dir, 0o700)
 	return store.WriteAtomically(f.Path, b, 0o600)
 }
 
@@ -197,28 +236,20 @@ func (f *File) Get(provider string) (Connection, bool, error) {
 }
 
 func (f *File) Put(c Connection) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	all, err := f.read()
-	if err != nil {
-		return err
-	}
-	all[c.Provider] = c
-	return f.write(all)
+	return f.change(func(all map[string]Connection) bool {
+		all[c.Provider] = c
+		return true
+	})
 }
 
 func (f *File) Delete(provider string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	all, err := f.read()
-	if err != nil {
-		return err
-	}
-	if _, ok := all[provider]; !ok {
-		return nil
-	}
-	delete(all, provider)
-	return f.write(all)
+	return f.change(func(all map[string]Connection) bool {
+		if _, ok := all[provider]; !ok {
+			return false
+		}
+		delete(all, provider)
+		return true
+	})
 }
 
 // MARK: macOS: the Keychain
