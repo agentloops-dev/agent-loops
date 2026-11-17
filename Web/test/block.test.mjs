@@ -18,7 +18,7 @@ for (const { name, input, expected } of cases("block/lines.json")) {
       ? rowLines.waitMark(agent, { names, lines: block.blockLines(agent, input.agents) }, null, () => undefined)?.line ?? "" : null;
     const hasDeadline = open !== null && block.deadlineLine(open) !== null;
     if (hasDeadline) assert.match(lines.pop(), /^Carries on by \d{1,2}:\d{2}/);
-    assert.deepEqual({ isBlocked: open !== null, lines, hasDeadline, waitLine, carryOnHelp: block.carryOnHelp(agent),
+    assert.deepEqual({ isBlocked: open !== null, isHeld: block.isHeld(agent), lines, hasDeadline, waitLine, carryOnHelp: block.carryOnHelp(agent),
       cardTitle: open === null ? null : block.cardTitle(open) }, expected);
   });
 }

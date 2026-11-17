@@ -31,15 +31,17 @@ public struct WaitEventLine: Identifiable, Hashable, Sendable {
             } else {
                 servers.map(serverName).joined(separator: " or ")
             }
+            // A session waits in its own folder: the folder says nothing new (#6065).
+            let filters = pattern.filters.filter { $0.key != "folder" }
             // An agent finishing, narrowed to one agent, is that agent by its title.
-            let finisher = pattern.name == "agent.finished" && pattern.filters.count == 1
-                ? pattern.filters["agent"]?.single.map { id in UUID(uuidString: id).flatMap(names) ?? id } : nil
+            let finisher = pattern.name == "agent.finished" && filters.count == 1
+                ? filters["agent"]?.single.map { id in UUID(uuidString: id).flatMap(names) ?? id } : nil
             let arguments: [String] = if let server {
                 server.trigger.arguments.sorted { $0.key < $1.key }.map { "\($0.key) \(MCPEventTrigger.words($0.value))" }
             } else if finisher != nil {
                 []
             } else {
-                pattern.filters.sorted { $0.key < $1.key }.map { key, filter in
+                filters.sorted { $0.key < $1.key }.map { key, filter in
                     let values = key == "agent"
                         ? filter.values.map { id in "\u{201C}\(UUID(uuidString: id).flatMap(names) ?? id)\u{201D}" }
                         : filter.values

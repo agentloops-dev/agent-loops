@@ -265,8 +265,11 @@ export function eventWaitSummaryLines(wait: EventWait, title: (id: string) => st
     const source = server
       ? servers.length > 0 ? servers.map(serverName).join(" or ") : "Connected tools"
       : waitSourceName(pattern.name);
-    const filterKeys = [...new Set([...Object.keys(pattern.filters), ...Object.keys(pattern.anyOf ?? {})])].sort();
-    const finisherID = pattern.name === "agent.finished" && Object.keys(pattern.anyOf ?? pattern.filters).length === 1
+    // A session waits in its own folder: the folder says nothing new (#6065).
+    const filterKeys = [...new Set([...Object.keys(pattern.filters), ...Object.keys(pattern.anyOf ?? {})])]
+      .filter((key) => key !== "folder").sort();
+    const finisherID = pattern.name === "agent.finished"
+      && Object.keys(pattern.anyOf ?? pattern.filters).filter((key) => key !== "folder").length === 1
       ? single(pattern, "agent") : undefined;
     const finisher = finisherID === undefined ? undefined : title(finisherID) ?? finisherID;
     const args = server

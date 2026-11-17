@@ -98,7 +98,7 @@ struct WaitCard: View {
     }
 
     /// The agent's own wait, as a part of the Now card (#5033): its head (the waiting mark of
-    /// #5022, what, how long), the bar to its deadline, its events when the card is open,
+    /// #5022, what, how long), the bar to its deadline, its events (always, #6065),
     /// and Carry On and End Wait. The Now card draws the well.
     private var waitBody: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -177,22 +177,17 @@ struct WaitCard: View {
             if let deadline = wait.deadline {
                 NowBar(fraction: now.timeIntervalSince(wait.since) / deadline.timeIntervalSince(wait.since))
             }
-            if isOpen {
-                ForEach(lines) { line in
-                    eventLine(line)
-                        .appText(.fine)
-                        .fixedSize(horizontal: false, vertical: true)
-                        // The events' own names, for whoever writes a wait or a workflow.
-                        .help(line.events.joined(separator: ", "))
-                }
+            // Always, also when the Now card is closed: what it waits for is the card's point (#6065).
+            ForEach(lines) { line in
+                eventLine(line)
+                    .appText(.fine)
+                    .fixedSize(horizontal: false, vertical: true)
+                    // The events' own names, for whoever writes a wait or a workflow.
+                    .help(line.events.joined(separator: ", "))
             }
         }
         .fixedSize(horizontal: false, vertical: true)
     }
-
-    /// Whether the Now card around it is open; alone, it shows all.
-    @Environment(\.nowOpen) private var nowOpen
-    private var isOpen: Bool { nowOpen?.wrappedValue ?? true }
 
     /// One of the card's event lines (#2747): "GitHub · PR merged (repo alexec/Agents)",
     /// the parenthesised arguments a link to the PR or issue they name, when they name
