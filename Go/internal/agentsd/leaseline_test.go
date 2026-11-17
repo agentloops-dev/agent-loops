@@ -173,3 +173,24 @@ func TestTheInLineReplySaysWhoIsAheadByPriority(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// A session queued by start_session with a #n label and no priority goes by its issue's
+// priority before it starts (#5848): urgent work skips the queue.
+func TestAQueuedSessionWithAHighIssueStartsBeforeAnOlderOne(t *testing.T) {
+	d, _, folder, _ := priorityDaemon(t, t.TempDir(), map[int][]string{77: {"priority:high"}})
+	starter := store.NewUUID()
+	older := seeded(t, d, folder, func(a *wire.Agent) {
+		a.State, a.StartedByAgent, a.CreatedAt = wire.AgentStateQueued, &starter, 10
+	})
+	d.noteLineage(nil, older)
+	newer := seeded(t, d, folder, func(a *wire.Agent) {
+		a.State, a.StartedByAgent, a.CreatedAt, a.Labels = wire.AgentStateQueued, &starter, 20, labelled("#77")
+	})
+	d.noteLineage(nil, newer)
+	settlePriorities(d)
+	wantPriority(t, d, newer.ID, "high", wire.SessionPrioritySourceIssue)
+	q := d.helperQueue(folder)
+	if len(q) != 2 || q[0].ID != newer.ID || q[1].ID != older.ID {
+		t.Fatalf("queue %v", q)
+	}
+}
