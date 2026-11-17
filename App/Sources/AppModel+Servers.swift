@@ -146,6 +146,8 @@ extension AppModel {
                             // The Machines header's New Machine on ▸ and its default (#3979), and the
                             // machines that have not joined (#4978).
                             if let listed = try? note.params?["providers"]?.decode([DaemonAPI.ProviderSummary].self) {
+                                // A pool made since the last read names its machines (#5366).
+                                self?.warmPoolNames = await self?.warmPools().map(\.name) ?? []
                                 self?.listedProviders = listed.filter(\.usable)
                             }
                         case DaemonAPI.Notification.controlInstallProgress:
@@ -312,10 +314,47 @@ extension AppModel {
     var newMachineChoices: NewMachineChoices {
         var seen = Set<URL>()
         let projects = folders.filter { isOnThisMac($0.host) && $0.exists }.map(\.folder.folder).filter { seen.insert($0).inserted }
-        return NewMachineChoices(projects: projects) { [weak self] folder in
+        return NewMachineChoices(projects: projects, hasChanges: { [weak self] folder in
             guard let self else { return false }
             return (try? await self.sendFacts(folder, on: .mac))?.hasChanges ?? false
+        }, pools: { [weak self] in
+            await self?.warmPools() ?? []
+        })
+    }
+
+    /// The person's warm pools (#5366), for New Machine's Start from; none from a control plane
+    /// before pools, or one that cannot be reached.
+    func warmPools() async -> [DaemonAPI.WarmPool] {
+        guard let controlRequests else { return [] }
+        return (try? await controlRequests.call(DaemonAPI.Method.poolList, DaemonAPI.Empty(),
+                                                returning: DaemonAPI.WarmPools.self).pools) ?? []
+    }
+
+    /// Make with Start from a warm pool (#5366, spec "A claim"): the control plane takes the
+    /// oldest ready machine of a pool of this provider and size, binds it with the person's Stop
+    /// when idle, and the pool makes another. Its page opens on the catch-up; the projects the
+    /// pool does not hold are sent as a new machine's are. With no ready machine left by now it
+    /// makes a new one, and its page says so.
+    private func claimMachine(_ draft: NewMachineDraft, _ controlRequests: DaemonClient) async throws {
+        let claimed = try await controlRequests.call(
+            DaemonAPI.Method.poolClaim,
+            DaemonAPI.WarmPoolClaim(provider: draft.provider, size: draft.values["size"]?.stringValue,
+                                    region: draft.values["region"]?.stringValue, stopWhenIdle: draft.stopWhenIdleMinutes),
+            returning: DaemonAPI.WarmPoolClaimed.self)
+        var rest = draft
+        rest.name = claimed.name
+        rest.stopWhenIdleMinutes = nil
+        if claimed.fromPool {
+            rest.projects = draft.projects.filter { !draft.poolProjects.contains($0.path) }
+            machinePoolNotes[claimed.name] = WarmPoolWords.replacedNote(pool: claimed.pool ?? "the pool")
+        } else {
+            rest.stopWhenIdleMinutes = draft.stopWhenIdleMinutes
+            if let note = claimed.note { machinePoolNotes[claimed.name] = note }
         }
+        if let host = claimed.host { machinePage = host }
+        let made = DaemonAPI.ProviderCreated(workspace: DaemonAPI.MachineInfo(id: claimed.workspace, name: claimed.name,
+                                                                               state: "running", host: claimed.host), joining: true)
+        Task { await finishNewMachine(rest, made: made) }
     }
 
     /// After a make that asked for a sleep time or projects (#5358): waits for the machine's
@@ -355,6 +394,11 @@ extension AppModel {
             defer { machinesBeingMade -= 1 }
             var refused: String?
             do {
+                if draft.fromPool {
+                    try await claimMachine(draft, controlRequests)
+                    await loadMachineProviders()
+                    return
+                }
                 let made = try await controlRequests.call(
                     DaemonAPI.Method.providersCreate,
                     DaemonAPI.ProviderCreate(id: draft.provider, name: draft.name, options: .object(draft.values)),
@@ -380,7 +424,7 @@ extension AppModel {
     /// under Machines, red with the reason once the control plane gave up on one; and every other
     /// machine of the person's that has not joined, grey, a click to join it (#4978).
     var machinesMaking: [MachineMaking] {
-        MachineMaking.rows(listedProviders, hostNames: Set(hosts.controlRows.values.map(\.name)))
+        MachineMaking.rows(listedProviders, hostNames: Set(hosts.controlRows.values.map(\.name)), pools: warmPoolNames)
     }
 
     /// Delete on a row the control plane gave up on (#4610): the provider deletes the workspace.
@@ -404,6 +448,7 @@ extension AppModel {
               let listed = try? answer["providers"]?.decode([DaemonAPI.ProviderSummary].self)
         else { return }
         listedProviders = listed.filter(\.usable)
+        warmPoolNames = await warmPools().map(\.name)
     }
 
     /// A click on a machine that never joined (#4978): the control plane installs Agents on it

@@ -744,6 +744,7 @@ var CallPolicyRefuseMore = Method[PolicyRefuseMore, BudgetRequest]{"policy/refus
 var CallPolicyRequests = Method[Empty, BudgetRequestList]{"policy/requests"}
 var CallPolicySet = Method[PolicySet, PolicyKept]{"policy/set"}
 var CallPolicyStopAll = Method[PolicyStopAllRequest, PolicyKept]{"policy/stopAll"}
+var CallPoolClaim = Method[WarmPoolClaim, WarmPoolClaimed]{"pool/claim"}
 var CallPoolDelete = Method[WarmPoolRequest, Empty]{"pool/delete"}
 var CallPoolList = Method[Empty, WarmPools]{"pool/list"}
 var CallPoolSet = Method[WarmPoolSet, WarmPool]{"pool/set"}

@@ -39,6 +39,11 @@ const (
 	poolJoinGiveUp = 30 * time.Minute
 	// poolEvery is how often every pool is looked at.
 	poolEvery = 30 * time.Second
+	// poolClaimsKept: a pool keeps its claims of the last week, and no more than mostPoolClaims of
+	// them, for its card (#5366); poolClaimsTimed of the latest give the median time to ready.
+	poolClaimsKept  = 7 * 24 * time.Hour
+	mostPoolClaims  = 500
+	poolClaimsTimed = 20
 )
 
 type poolStage int
@@ -72,6 +77,11 @@ type poolBackend interface {
 	// keeps the machine's), and sets steps 6 to 8 of its set-up to run again as a catch-up
 	// (steps 1 to 5 are marked as done in the pool). It returns the machine's host id.
 	Bind(person, provider, workspace string, stopWhenIdle *int) (host string, err error)
+	// Detail is what a machine's set-up is doing now, as its running step's line says, for
+	// the pool's card (#5366); "" when nothing says.
+	Detail(provider, workspace string) string
+	// ReadyAt is when a claimed machine's set-up was ready, nil before (#5366).
+	ReadyAt(host string) *time.Time
 }
 
 type storedPoolMachine struct {
@@ -80,6 +90,14 @@ type storedPoolMachine struct {
 	MadeAt    time.Time `json:"madeAt"`
 	Version   string    `json:"version,omitempty"`
 	Pins      string    `json:"pins,omitempty"`
+}
+
+// storedPoolClaim is one claim of a pool (#5366): when, the machine it gave, or that it found
+// the pool empty and made a new machine.
+type storedPoolClaim struct {
+	At    time.Time `json:"at"`
+	Host  string    `json:"host,omitempty"`
+	Empty bool      `json:"empty,omitempty"`
 }
 
 type storedPool struct {
@@ -100,6 +118,7 @@ type storedPool struct {
 	Stopped      string              `json:"stopped,omitempty"`
 	Machines     []storedPoolMachine `json:"machines,omitempty"`
 	LastMade     *time.Time          `json:"lastMade,omitempty"`
+	Claims       []storedPoolClaim   `json:"claims,omitempty"`
 }
 
 func warmPoolKey(id string) string { return warmPoolPrefix + id + ".json" }
@@ -320,13 +339,22 @@ func (w *warmPools) machines(p *storedPool, now time.Time) []poolMachine {
 // wire is the pool as clients see it.
 func (w *warmPools) wire(p *storedPool, now time.Time) wire.WarmPool {
 	var ready, settingUp int64
+	lines := []wire.WarmPoolMachine{}
 	for _, m := range w.machines(p, now) {
+		line := wire.WarmPoolMachine{Name: m.Name, MadeAt: wire.DateOf(m.MadeAt)}
 		switch m.stage {
 		case stageReady:
 			ready++
+			line.State = "ready"
 		case stageSettingUp:
 			settingUp++
+			line.State = "setting-up"
+			line.Detail = optional(w.backend.Detail(p.Provider, m.Workspace))
+		default:
+			line.State = "failed"
+			line.Detail = optional(w.backend.Detail(p.Provider, m.Workspace))
 		}
+		lines = append(lines, line)
 	}
 	state := wire.WarmPoolStateKeeping
 	switch {
@@ -342,7 +370,72 @@ func (w *warmPools) wire(p *storedPool, now time.Time) wire.WarmPool {
 		Runtimes: p.Runtimes, Projects: p.Projects, MinReady: int64(p.MinReady), MaxSize: int64(p.MaxSize),
 		Target: int64(p.target()), ReplaceAfter: optional(p.ReplaceAfter), Hours: p.Hours, State: state,
 		Ready: optional(ready), SettingUp: optional(settingUp), FailedMakes: optional(int64(p.Failures)),
-		StoppedBecause: optional(p.Stopped),
+		StoppedBecause: optional(p.Stopped), Machines: lines, Claims: w.claims(p, now),
+	}
+}
+
+// claims is the pool's last week of claims for its card (#5366): how many, how many found it
+// empty, and the median time from a claim to the machine being ready over the latest that are.
+func (w *warmPools) claims(p *storedPool, now time.Time) *wire.WarmPoolClaims {
+	out := wire.WarmPoolClaims{}
+	var times []float64
+	for i := len(p.Claims) - 1; i >= 0; i-- {
+		c := p.Claims[i]
+		if now.Sub(c.At) > poolClaimsKept {
+			continue
+		}
+		out.Count++
+		if c.Empty {
+			out.Empty++
+			continue
+		}
+		if c.Host != "" && len(times) < poolClaimsTimed {
+			if ready := w.backend.ReadyAt(c.Host); ready != nil && ready.After(c.At) {
+				times = append(times, ready.Sub(c.At).Seconds())
+			}
+		}
+	}
+	if len(times) > 0 {
+		sort.Float64s(times)
+		median := times[len(times)/2]
+		if len(times)%2 == 0 {
+			median = (times[len(times)/2-1] + times[len(times)/2]) / 2
+		}
+		out.MedianSeconds = &median
+	}
+	return &out
+}
+
+// recordClaim keeps one claim on its pool, dropping those older than a week and past
+// mostPoolClaims. A claim is given already: a pool that cannot keep the record only logs it.
+func (w *warmPools) recordClaim(ctx context.Context, id string, c storedPoolClaim) {
+	for range 3 {
+		w.mu.Lock()
+		p, tag, err := w.read(ctx, id)
+		if err != nil || p == nil {
+			w.mu.Unlock()
+			return
+		}
+		kept := p.Claims[:0:0]
+		for _, old := range p.Claims {
+			if c.At.Sub(old.At) <= poolClaimsKept {
+				kept = append(kept, old)
+			}
+		}
+		kept = append(kept, c)
+		if len(kept) > mostPoolClaims {
+			kept = kept[len(kept)-mostPoolClaims:]
+		}
+		p.Claims = kept
+		err = w.write(ctx, p, tag)
+		w.mu.Unlock()
+		if err == nil {
+			return
+		}
+		if !isConflict(err) {
+			w.s.log(fmt.Sprintf("warm pool %s: the claim was not kept: %v", p.Name, err))
+			return
+		}
 	}
 }
 
@@ -673,6 +766,7 @@ func (w *warmPools) claim(ctx context.Context, person string, c claim) (claimed,
 		return claimed{}, fail(storeUnavailable, "The warm pools could not be read: %v", err)
 	}
 	now := time.Now()
+	started := now
 	ready := func(p *storedPool) int {
 		n := 0
 		for _, m := range w.machines(p, now) {
@@ -682,7 +776,8 @@ func (w *warmPools) claim(ctx context.Context, person string, c claim) (claimed,
 		}
 		return n
 	}
-	for _, match := range matchPools(pools, c, ready) {
+	matches := matchPools(pools, c, ready)
+	for _, match := range matches {
 		// Each pass takes or deletes one machine, so the pool's size bounds the passes.
 		for pass := 0; pass <= len(match.Machines); pass++ {
 			p, m := w.oldestReady(ctx, match.ID)
@@ -716,11 +811,16 @@ func (w *warmPools) claim(ctx context.Context, person string, c claim) (claimed,
 				continue
 			}
 			// The machine is the person's and never goes back. The pool makes another.
+			w.recordClaim(ctx, p.ID, storedPoolClaim{At: started, Host: host})
 			if err := w.reconcile(ctx, p.ID); err != nil {
 				w.s.log(fmt.Sprintf("warm pool %s: %v", p.Name, err))
 			}
 			return claimed{Host: host, Workspace: m.Workspace, Name: m.Name, Pool: p.Name, FromPool: true}, nil
 		}
+	}
+	// A pool that matched but had nothing ready counts the claim as one that found it empty.
+	if len(matches) > 0 {
+		w.recordClaim(ctx, matches[0].ID, storedPoolClaim{At: started, Empty: true})
 	}
 	name := machineName("machine")
 	workspace, err := w.backend.Make(person, c.Provider, name, c.Size, c.Region)
