@@ -193,3 +193,17 @@
 }
 @keyframes timeline-pulse { from { r: 4px; opacity: 1; } to { r: 14px; opacity: 0; } }
 
+
+/* Work ▸ Next (#5691): the place before each row, the level and Last update at the bar's trailing edge, and the on hold
+   rows at the end under their own heading. */
+.next-trailing { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+.next-row .next-place { flex: none; min-width: 2.2em; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600;
+  color: var(--paper-secondary); }
+.next-rows li.on-hold .work-title { color: var(--paper-secondary); }
+.next-on-hold { margin-top: 16px; }
+.next-on-hold .section-head { margin: 0 16px 2px; }
+.next-on-hold > p { margin: 0 16px 6px; }
+.next-number { font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .next-trailing { margin-left: 0; }
+}

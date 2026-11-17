@@ -30,6 +30,7 @@ export type PageDraw =
   | { kind: "features" }
   | { kind: "timeline" }
   | { kind: "deploys" }
+  | { kind: "next" }
   | { kind: "docs" }
   | { kind: "messages" }
   | { kind: "machine"; host: string }
@@ -74,6 +75,8 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
     { id: "messages", title: "Messages", group: "Work", draw: { kind: "messages" } },
     ...workKinds.flatMap((k): NavPage[] => [
       { id: k, title: workKindTitle[k], group: "Work", draw: { kind: "work", work: k } },
+      // Next (#5691) after Issues: the ready work in one order, with the reason for each place, from forge/next.
+      ...k === "issue" ? [{ id: "next", title: "Next", group: "Work", draw: { kind: "next" } } satisfies NavPage] : [],
       ...k === "pr" ? [{ id: "features", title: "Features", group: "Work", draw: { kind: "features" } } satisfies NavPage] : [],
       ...k === "release" ? [
         { id: "deploys", title: "Deploys", group: "Work", draw: { kind: "deploys" } } satisfies NavPage,
