@@ -101,16 +101,15 @@ struct RuntimesView: View {
                 Text("No runtimes on the Mac yet.").foregroundStyle(Paper.secondary)
             }
         }
-        .task {
-            await model.refreshRuntimeAllowances()
-            await model.refreshAccountProfiles()
-            await model.refreshPassThrough()
-        }
-        .refreshable {
-            await model.refreshRuntimeAllowances()
-            await model.refreshAccountProfiles()
-            await model.refreshPassThrough()
-        }
+        .task { await reload() }
+        .refreshable { await reload() }
+    }
+
+    /// The list, the allowances and the names passed through. Pull to refresh does the same.
+    private func reload() async {
+        await model.refreshRuntimes()
+        await model.refreshRuntimeAllowances()
+        await model.refreshPassThrough()
     }
 
     @State private var addingTo: Runtime?

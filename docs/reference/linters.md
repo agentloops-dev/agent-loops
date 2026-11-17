@@ -20,12 +20,17 @@ is what each target runs.
 | `repo-lint:lint` | `zsh -n` | a syntax error | `go` (Linux) |
 | `repo-lint:lint` | our text checks (`scripts/check-*.py` and the other self-tests) | a failure | `go` (Linux) |
 | `repo-lint:lint` | jscpd (`.jscpd.json`) | a clone not in `.jscpd-baseline.txt` | `go` (Linux) |
-| `swift-lint:lint` | SwiftLint (`.swiftlint.yml`) | a finding not in `.swiftlint-baseline.json` | `test` (macOS) |
+| `swift-lint:lint` | SwiftLint (`.swiftlint.yml`) | a finding not in `.swiftlint-baseline.json` | `test-swift` (macOS) |
 
 `repo-lint` and `swift-lint` are projects with no code of their own (`lint/`). `repo-lint` reads
-every tracked file, so every change runs it; a change to docs only runs only it. CI's `test` job
+every tracked file, so every change runs it; a change to docs only runs only it. CI's `test-swift` job
 runs `swift-lint:lint` only when a Swift file, its rules, its baseline or `scripts/lint.sh`
 changes.
+
+`Web/test/lint.mjs` also fails when a web test reads a file outside `Web/` that is not an input
+of `web:test` in `Web/project.json` (#5780). Without that input, a change to the file alone does
+not make `web:test` affected, and Nx's cache gives a false pass. Add the file to
+`web-test-reads`.
 
 ## Output
 

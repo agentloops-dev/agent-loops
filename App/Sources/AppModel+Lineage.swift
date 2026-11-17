@@ -202,6 +202,19 @@ extension AppModel {
         try await client(for: host).call(method, params, returning: R.self)
     }
 
+    /// One call to the control plane that asks every machine of the person's (#5592): Work's lists and boards, the
+    /// Messages row's events, the ended connections. Nil with no control plane, or one from before these methods, where
+    /// the window asks each machine itself.
+    func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
+                                             returning: R.Type) async throws -> R? {
+        guard let controlRequests else { return nil }
+        do {
+            return try await controlRequests.call(method, params, returning: R.self)
+        } catch let error as JSONRPCError where error.isMethodNotFound {
+            return nil
+        }
+    }
+
     /// A session's title for Work's links (#3256).
     func workSessionTitle(_ id: UUID) -> String? { work.agent(id)?.title }
 

@@ -5826,10 +5826,13 @@ export interface ForgeItem {
  * none. On a pull request's read (#4409), where the forge says them (ForgeCapabilities): additions,
  * deletions and commits are its size; reviewers are the people asked to review it and the people
  * who reviewed it, each once with their newest state; closes are the issues it closes when it
- * merges.
+ * merges. viewer is the login this machine reads and writes the forge as (#5804), the one
+ * forge/approve reviews as, so a client knows which reviewer and which author is the person; absent
+ * where the connection does not say it, and from an earlier daemon.
  */
 export interface ForgeItemDetail {
   item: ForgeItem;
+  viewer?: string;
   body: string;
   comments: ForgeComment[];
   cursor?: string;
@@ -18083,7 +18086,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeImage: { required: ["mimeType", "data"], optional: [] },
   ForgeImageRequest: { required: ["url"], optional: [] },
   ForgeItem: { required: ["node", "title", "state", "labels", "assignees", "updatedAt", "comments"], optional: ["stateReason", "status", "url", "folder", "author", "authorAvatar", "milestone", "milestoneDue", "priority", "createdAt", "closedAt", "draft", "checks", "review", "mergeable", "autoMerge", "headRef", "baseRef", "mergedBy", "mergeCommit", "parent", "level", "feature", "progress", "standing"] },
-  ForgeItemDetail: { required: ["item", "body", "comments"], optional: ["cursor", "checks", "reviewThreads", "filesChanged", "additions", "deletions", "commits", "reviewers", "closes", "head", "mergeMethods", "start", "transitions", "actions", "children", "linkedPulls", "events"] },
+  ForgeItemDetail: { required: ["item", "body", "comments"], optional: ["viewer", "cursor", "checks", "reviewThreads", "filesChanged", "additions", "deletions", "commits", "reviewers", "closes", "head", "mergeMethods", "start", "transitions", "actions", "children", "linkedPulls", "events"] },
   ForgeItemRequest: { required: ["node"], optional: ["cursor"] },
   ForgeLabel: { required: ["name"], optional: ["color"] },
   ForgeLabelRequest: { required: ["node"], optional: ["add", "remove"] },

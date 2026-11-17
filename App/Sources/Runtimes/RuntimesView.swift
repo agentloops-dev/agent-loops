@@ -34,6 +34,7 @@ struct RuntimesView: View {
     /// The runtimes whose Details are open; all are closed when the page opens (#3744).
     @State private var expanded: Set<String> = []
     @State private var showsOthers = false
+    @State private var refreshing = false
 
     var body: some View {
         ScrollView {
@@ -42,6 +43,10 @@ struct RuntimesView: View {
                     Text("Runtimes").appText(.reading)
                     Spacer(minLength: 16)
                     if let readAt { LastUpdateText(read: readAt) }
+                    Button("Refresh") { Task { await reload() } }
+                        .buttonStyle(.link)
+                        .disabled(refreshing)
+                        .help("Read the runtimes again")
                 }
                 // One sentence (#3744); what a spent allowance means is its help tag.
                 Text("What you can start on, and how much is left.")
@@ -66,14 +71,7 @@ struct RuntimesView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .task {
-            await model.refreshRuntimes()
-            await model.refreshRuntimeAllowances()
-            await model.refreshAccountProfiles()
-            for host in model.hosts.servers where !model.hosts.isOffline(host) {
-                await model.refreshServerRuntimes(host)
-            }
-        }
+        .task { await reload() }
         .sheet(isPresented: Binding(get: { signingIn != nil }, set: { if !$0 { signingIn = nil } })) {
             if let signingIn {
                 RuntimeAccountView(runtimeID: signingIn)
@@ -168,6 +166,18 @@ struct RuntimesView: View {
             }
         }
         .paperRaised(in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// The same reads as the page's open: the list, the allowances, the accounts, and each server.
+    private func reload() async {
+        refreshing = true
+        defer { refreshing = false }
+        await model.refreshRuntimes()
+        await model.refreshRuntimeAllowances()
+        await model.refreshAccountProfiles()
+        for host in model.hosts.servers where !model.hosts.isOffline(host) {
+            await model.refreshServerRuntimes(host)
+        }
     }
 
     private var now: Date { model.runtimeAllowances?.at ?? Date() }
@@ -348,6 +358,8 @@ private struct RuntimeStatusRow<Actions: View>: View {
 
     /// The line, then how much is left while it is not out: "Available · 62% left this week".
     private var shortLine: String {
+        // A runtime that cannot start says why. An amount left would hide that.
+        if title == nil, !status.availability.isAvailable { return line }
         guard !isOut, allowance?.unusable == nil, let amount = PoolWords.amount(allowance?.state.reading, now: at)
         else { return line }
         return "\(line) · \(amount)"
@@ -356,10 +368,20 @@ private struct RuntimeStatusRow<Actions: View>: View {
     /// The allowance's own words where it has one, and the runtime's otherwise. What is
     /// not on this Mac is not an allowance state, so it is said in the runtime's terms.
     /// The install row keeps the size of a download and the buttons; this says what is.
+    /// A runtime that cannot start says that, also when an allowance row would say "Available".
     private var line: String {
         // A runtime the daemon found but nothing can start is that, whatever its plan
         // says. "Available" on a binary that is not here would be true of nothing.
         if let unusable = allowance?.unusable { return "Not usable: \(unusable)" }
+        if title == nil {
+            switch status.availability {
+            case .available: break
+            case .missing: return "Not on this Mac"
+            case .needsSignIn, .failed: return status.unavailableReason ?? "Can’t be used"
+            case .installing(let progress): return progress.map { "\($0)…" } ?? "Starting…"
+            case .installFailed(let reason): return reason
+            }
+        }
         if let allowance { return allowance.memberLine(now: at) }
         switch status.availability {
         case .available: return "Available · no plan of its own"

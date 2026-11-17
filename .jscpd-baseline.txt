@@ -31,7 +31,6 @@ App/Sources/Folders/ArchivedPages.swift <-> Remote/Sources/Folders/ArchivedPages
 App/Sources/Folders/ArchivedPages.swift <-> Remote/Sources/Folders/ArchivedPages.swift
 App/Sources/Folders/ArchivedPages.swift <-> Remote/Sources/Folders/ArchivedPages.swift
 App/Sources/Folders/ArchivedPages.swift <-> Remote/Sources/Folders/ArchivedPages.swift
-App/Sources/Folders/FolderAgentsView.swift <-> Remote/Sources/StartAgent/StartAgentView.swift
 App/Sources/Folders/FolderListView.swift <-> Remote/Sources/Sidebar/RemoteSidebar.swift
 App/Sources/Folders/FolderListView.swift <-> Remote/Sources/Sidebar/RemoteSidebar.swift
 App/Sources/Folders/FolderListView.swift <-> Remote/Sources/Sidebar/RemoteSidebar.swift

@@ -28,18 +28,33 @@ public enum PoolWords {
             return "Rate limited · trying again at \(time(until, now: now))"
         case .out(let until?, let retry?, let why):
             return "Out · reset \(time(until, now: now)) · checking after \(time(retry, now: now))"
-                + (why == .overage ? " · paid extra usage began" : "")
+                + whyPhrase(why)
         case .out(let until?, nil, let why):
-            return "Out · reset \(time(until, now: now))"
-                + (why == .overage ? " · paid extra usage began" : "")
+            return "Out · reset \(time(until, now: now))" + whyPhrase(why)
         case .out(nil, let retry?, .creditUsedUp):
             return "Credit used up · checking after \(time(retry, now: now))"
-        case .out(nil, let retry?, _):
+        case .out(nil, let retry?, let why):
             return "Out since \(time(state.since, now: now)) · checking after \(time(retry, now: now))"
+                + whyPhrase(why)
         case .out(nil, nil, .creditExpired):
             return "Free credit expired"
-        case .out(nil, nil, _):
+        case .out(nil, nil, .creditUsedUp):
             return "Credit used up"
+        case .out(nil, nil, let why):
+            return "Out since \(time(state.since, now: now))" + whyPhrase(why)
+        }
+    }
+
+    /// Why an allowance is out, after the times. The words are the event catalogue's.
+    /// A line that already says "Credit used up" or "Free credit expired" does not add them again.
+    private static func whyPhrase(_ why: AllowanceState.OutReason) -> String {
+        switch why {
+        case .allowanceSpent: " · allowance spent"
+        case .overage: " · paid extra usage began"
+        case .creditUsedUp: " · credit used up"
+        case .creditExpired: " · free credit expired"
+        case .rateLimitPersisted: " · still rate limited"
+        case .runtimeFailed: " · runtime failed"
         }
     }
 

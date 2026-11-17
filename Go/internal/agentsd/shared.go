@@ -113,9 +113,15 @@ func installedRuntimeIDs() map[string]bool {
 	return out
 }
 
-// appHomes is the homes the app gives runtimes of its own (Antigravity's GEMINI_HOME).
+// appHomes is the homes the app gives runtimes of its own: Antigravity's GEMINI_HOME, and
+// the data directory OpenCode's own copy opens (XDG_DATA_HOME). OpenCode then keeps its
+// database at <data>/opencode. It does not open ~/.local/share/opencode.
 func (d *Daemon) appHomes() map[string]string {
-	return map[string]string{"antigravity": filepath.Join(d.Store.Loc.Root, "runtimes", "antigravity", "home")}
+	root := d.Store.Loc.Root
+	return map[string]string{
+		"antigravity": filepath.Join(root, "runtimes", "antigravity", "home"),
+		"opencode":    filepath.Join(root, "runtimes", "opencode", "data"),
+	}
 }
 
 func emptySnapshot(home string, laidOut bool) wire.SharedSnapshot {
