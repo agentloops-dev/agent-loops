@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -53,6 +52,34 @@ func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMes
 				t.Fatalf("%s: %v", method, m.Error)
 			}
 			return m.Result
+		case <-deadline:
+			waitFailed(t, "%s: no answer", method)
+		}
+	}
+}
+
+// callError sends a call and is the error it answers with, or fails when it answers.
+// It reads past notifications (lines with no id), as call does: a watch's wake/changed
+// can come before the answer (#5751). Read an answer with call or callError, never
+// with a bare <-c.out.
+func (c *conn) callError(t *testing.T, id int, method string, params any) *Error {
+	t.Helper()
+	p, _ := json.Marshal(params)
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
+	c.in <- string(b)
+	deadline := time.After(waitLimit(t))
+	for {
+		select {
+		case line := <-c.out:
+			var m message
+			json.Unmarshal([]byte(line), &m)
+			if string(m.ID) != strings.TrimSpace(string(mustJSON(id))) {
+				continue // a notification
+			}
+			if m.Error == nil {
+				t.Fatalf("%s answered %s", method, m.Result)
+			}
+			return m.Error
 		case <-deadline:
 			waitFailed(t, "%s: no answer", method)
 		}
@@ -124,28 +151,24 @@ func (d *Daemon) anyLive() bool {
 }
 
 func TestPingAndAnUnknownMethod(t *testing.T) {
-	t.Skip("flaky under load (#5751)")
 	_, c := start(t, t.TempDir())
 	if r := c.call(t, 1, "daemon/ping", nil); string(r) != `{"ok":true}` {
 		t.Fatalf("ping %s", r)
 	}
-	c.in <- `{"jsonrpc":"2.0","id":2,"method":"nothing/here"}`
-	if line := <-c.out; !strings.Contains(line, "-32601") {
-		t.Fatalf("%s", line)
+	if e := c.callError(t, 2, "nothing/here", nil); e.Code != -32601 {
+		t.Fatalf("%+v", e)
 	}
 }
 
 func TestAPanickingHandlerAnswersAnError(t *testing.T) {
-	flaky.UnderLoad(t, "#5751")
 	d, c := start(t, t.TempDir())
 	d.handlers["boom"] = func(context.Context, *Client, json.RawMessage) (any, error) {
 		var m map[string]int
 		m["x"] = 1
 		return nil, nil
 	}
-	c.in <- `{"jsonrpc":"2.0","id":1,"method":"boom"}`
-	if line := <-c.out; !strings.Contains(line, "-32603") {
-		t.Fatalf("%s", line)
+	if e := c.callError(t, 1, "boom", nil); e.Code != -32603 {
+		t.Fatalf("%+v", e)
 	}
 	if r := c.call(t, 2, "daemon/ping", nil); string(r) != `{"ok":true}` {
 		t.Fatal("the host stopped serving")
