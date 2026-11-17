@@ -736,3 +736,56 @@ printf 'printf "%%s\\n" "$@" > "$HOME/install-args"\n' > "$out"
 		t.Errorf("left %v", left)
 	}
 }
+
+// With no host for the machine in the server folder, the install takes the control plane's
+// release from the public releases (#5787), and copies it as it copies its own.
+func TestAMachineWithNoHostHereGetsItFromTheReleases(t *testing.T) {
+	f := newFake(t)
+	f.env["FAKE_SSH_PERSON_KNOWS"] = "1"
+	released := filepath.Join(f.dir, "released")
+	if err := os.Rename(f.servers, released); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(released, "VERSION"), []byte("2.0.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var asked []string
+	var steps []string
+	in := f.installer(&fakeCodes{}, &steps)
+	in.Releases = func(_ context.Context, arch string) (string, error) {
+		asked = append(asked, arch)
+		return released, nil
+	}
+	reply(t)(in.Install(context.Background(), json.RawMessage(`{"destination":"agents@devbox.lan","name":"Dev box"}`)))
+	if !reflect.DeepEqual(asked, []string{"aarch64"}) {
+		t.Fatalf("asked %v", asked)
+	}
+	current, err := os.Readlink(f.server("bin/current"))
+	if err != nil || current != binaryName(f.sha) {
+		t.Fatalf("current %s %v", current, err)
+	}
+	if _, err := os.Stat(f.server("bin/github-mcp")); err != nil {
+		t.Fatal("github-mcp was not copied")
+	}
+	var record installRecord
+	data, _ := os.ReadFile(f.server("install.json"))
+	if json.Unmarshal(data, &record) != nil || record.Version != "2.0.0" {
+		t.Fatalf("install.json %s", data)
+	}
+}
+
+// When the releases have none either, the machine is refused as before.
+func TestAMachineTheReleasesHaveNoHostForIsRefused(t *testing.T) {
+	f := newFake(t)
+	f.env["FAKE_SSH_PERSON_KNOWS"] = "1"
+	if err := os.RemoveAll(f.servers); err != nil {
+		t.Fatal(err)
+	}
+	var steps []string
+	in := f.installer(&fakeCodes{}, &steps)
+	in.Releases = func(context.Context, string) (string, error) { return "", os.ErrNotExist }
+	_, err := in.Install(context.Background(), json.RawMessage(`{"destination":"devbox"}`))
+	if got := failure(t, err); got.Code != NotAllowed || !strings.HasSuffix(got.Message, "which this control plane has no host for.") {
+		t.Fatalf("%v", got)
+	}
+}

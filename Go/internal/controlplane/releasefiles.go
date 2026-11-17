@@ -1,10 +1,13 @@
 package controlplane
 
 import (
+	"archive/tar"
 	"bufio"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +28,10 @@ import (
 // Any other file comes from the public releases the first time a machine asks: it is
 // checked against that release's SHA256SUMS, kept in ReleaseFolder, and served from there
 // after that. Only the files of its own release and the one before it are kept.
+//
+// A Linux machine's first install takes them too (#5787): GET /v1/releases/VERSION names
+// the release for install.sh, and an install over SSH with no host for the machine in the
+// server folder unpacks the release's agentsd-linux-<arch>-<version>.tar.gz (linux).
 
 // ReleaseDownloads is where a release's files are, by tag (#1064: the public releases'
 // repository, not the source's).
@@ -68,6 +75,15 @@ func newReleaseFiles(cfg Config) *releaseFiles {
 // serve answers GET /v1/releases/<version>/<file>.
 func (rf *releaseFiles) serve(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/v1/releases/")
+	if rest == "VERSION" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		// The release this control plane names (machine/release), for install.sh (#5787).
+		if rf.version == "" {
+			plain(w, http.StatusNotFound, "this control plane names no release\n")
+		} else {
+			plain(w, http.StatusOK, rf.version+"\n")
+		}
+		return
+	}
 	version, name, ok := strings.Cut(rest, "/")
 	if !ok || r.Method != http.MethodGet && r.Method != http.MethodHead ||
 		!releaseVersionPattern.MatchString(version) || !releaseFilePattern.MatchString(name) {
@@ -190,6 +206,122 @@ func (rf *releaseFiles) download(ctx context.Context, url, dest string, limit in
 		return "", err
 	}
 	return sum, os.Rename(tmp.Name(), dest) //nolint:gosec // G7xx: built from a checked version and file name, never a request path
+}
+
+// linux is a folder with this control plane's release of the Linux host for arch (x86_64
+// or aarch64), laid out as the server folder is (agentsd-linux-<arch> and the MCP
+// servers, each with its .sha256, and VERSION), for an install over SSH when the server
+// folder has none (#5787). The release's tarball is fetched and checked against
+// SHA256SUMS as any other release file, and unpacked once beside it.
+func (rf *releaseFiles) linux(ctx context.Context, arch string) (string, error) {
+	if rf.folder == "" || rf.version == "" {
+		return "", errors.New("this control plane keeps no release files")
+	}
+	if arch != "x86_64" && arch != "aarch64" {
+		return "", fmt.Errorf("no release is built for %s", arch)
+	}
+	dir := filepath.Join(rf.folder, rf.version, "linux-"+arch)
+	if fileExists(filepath.Join(dir, "VERSION")) {
+		return dir, nil
+	}
+	tarball, err := rf.find(ctx, rf.version, "agentsd-linux-"+arch+"-"+rf.version+".tar.gz")
+	if err != nil {
+		return "", err
+	}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if fileExists(filepath.Join(dir, "VERSION")) {
+		return dir, nil
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), ".unpack-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmp)
+	if err := unpackLinux(tarball, tmp, arch); err != nil {
+		return "", err
+	}
+	if !fileExists(filepath.Join(tmp, "agentsd-linux-"+arch)) {
+		return "", fmt.Errorf("release %s has no host for %s", rf.version, arch)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "VERSION"), []byte(rf.version+"\n"), 0o644); err != nil { //nolint:gosec // G306: public file
+		return "", err
+	}
+	_ = os.RemoveAll(dir)
+	return dir, os.Rename(tmp, dir)
+}
+
+// unpackLinux puts the server files for arch from a release's tarball into dir: only
+// names the server folder hands out, only regular files. A program whose .sha256 does not
+// match it is left out, with its .sha256.
+func unpackLinux(tarball, dir, arch string) error {
+	f, err := os.Open(tarball) //nolint:gosec // G304: a kept release file
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	tr := tar.NewReader(gz)
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		name := filepath.Base(h.Name)
+		if h.Typeflag != tar.TypeReg || !serverFileNames[name] || !strings.Contains(name, "-linux-"+arch) {
+			continue
+		}
+		out, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644) //nolint:gosec // G302, G304: a checked name in our own folder; public file
+		if err != nil {
+			return err
+		}
+		n, err := io.Copy(out, io.LimitReader(tr, releaseFileLimit+1))
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return err
+		}
+		if n > releaseFileLimit {
+			return fmt.Errorf("%s is larger than %d bytes", name, releaseFileLimit)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		program := filepath.Join(dir, e.Name())
+		if strings.HasSuffix(program, ".sha256") {
+			continue
+		}
+		want, _ := os.ReadFile(program + ".sha256") //nolint:gosec // G304: our own folder
+		if strings.TrimSpace(string(want)) != fileSum(program) {
+			_ = os.Remove(program)
+			_ = os.Remove(program + ".sha256")
+		}
+	}
+	return nil
+}
+
+// fileSum is a file's SHA-256 in hex, or "" when it cannot be read.
+func fileSum(path string) string {
+	f, err := os.Open(path) //nolint:gosec // G304: our own folder
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // prune keeps the folders of this release and of the newest one before it.
