@@ -191,6 +191,23 @@ jobs:
           echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
           echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
+      # The Xcode that .xcode-version names, which every Swift task's hash reads (rule 4 of
+      # #5627), as ci.yml's macOS jobs set it. Without it the runner's default Xcode compiled
+      # at hashes that say another one, and its type checker gave up on SidebarSmartRow.swift,
+      # where 27.2 passes (#5892, #5893, #5894).
+      - name: Xcode
+        if: matrix.os == 'macos'
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
+      # What ci.yml's `apps` and `test-swift` set up: mac:build and remote:build need
+      # xcodegen, and the app and AgentsKit compile Metal.
+      - name: Tools
+        if: matrix.os == 'macos'
+        run: |
+          xcodebuild -version
+          brew install xcodegen &
+          xcodegen_pid=$!
+          xcodebuild -downloadComponent MetalToolchain
+          wait "$xcodegen_pid"
       - uses: actions/setup-node@v5
         with:
           node-version-file: Web/.node-version
