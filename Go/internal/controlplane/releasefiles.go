@@ -1,9 +1,7 @@
 package controlplane
 
 import (
-	"archive/tar"
 	"bufio"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/linuxrelease"
 	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 )
 
@@ -224,7 +223,7 @@ func (rf *releaseFiles) linux(ctx context.Context, arch string) (string, error) 
 	if fileExists(filepath.Join(dir, "VERSION")) {
 		return dir, nil
 	}
-	tarball, err := rf.find(ctx, rf.version, "agentsd-linux-"+arch+"-"+rf.version+".tar.gz")
+	tarball, err := rf.find(ctx, rf.version, linuxrelease.Tarball(arch, rf.version))
 	if err != nil {
 		return "", err
 	}
@@ -238,7 +237,7 @@ func (rf *releaseFiles) linux(ctx context.Context, arch string) (string, error) 
 		return "", err
 	}
 	defer os.RemoveAll(tmp)
-	if err := unpackLinux(tarball, tmp, arch); err != nil {
+	if err := linuxrelease.Unpack(tarball, tmp, arch, releaseFileLimit); err != nil {
 		return "", err
 	}
 	if !fileExists(filepath.Join(tmp, "agentsd-linux-"+arch)) {
@@ -249,79 +248,6 @@ func (rf *releaseFiles) linux(ctx context.Context, arch string) (string, error) 
 	}
 	_ = os.RemoveAll(dir)
 	return dir, os.Rename(tmp, dir)
-}
-
-// unpackLinux puts the server files for arch from a release's tarball into dir: only
-// names the server folder hands out, only regular files. A program whose .sha256 does not
-// match it is left out, with its .sha256.
-func unpackLinux(tarball, dir, arch string) error {
-	f, err := os.Open(tarball) //nolint:gosec // G304: a kept release file
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	tr := tar.NewReader(gz)
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		name := filepath.Base(h.Name)
-		if h.Typeflag != tar.TypeReg || !serverFileNames[name] || !strings.Contains(name, "-linux-"+arch) {
-			continue
-		}
-		out, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644) //nolint:gosec // G302, G304: a checked name in our own folder; public file
-		if err != nil {
-			return err
-		}
-		n, err := io.Copy(out, io.LimitReader(tr, releaseFileLimit+1))
-		if cerr := out.Close(); err == nil {
-			err = cerr
-		}
-		if err != nil {
-			return err
-		}
-		if n > releaseFileLimit {
-			return fmt.Errorf("%s is larger than %d bytes", name, releaseFileLimit)
-		}
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		program := filepath.Join(dir, e.Name())
-		if strings.HasSuffix(program, ".sha256") {
-			continue
-		}
-		want, _ := os.ReadFile(program + ".sha256") //nolint:gosec // G304: our own folder
-		if strings.TrimSpace(string(want)) != fileSum(program) {
-			_ = os.Remove(program)
-			_ = os.Remove(program + ".sha256")
-		}
-	}
-	return nil
-}
-
-// fileSum is a file's SHA-256 in hex, or "" when it cannot be read.
-func fileSum(path string) string {
-	f, err := os.Open(path) //nolint:gosec // G304: our own folder
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return ""
-	}
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 // prune keeps the folders of this release and of the newest one before it.

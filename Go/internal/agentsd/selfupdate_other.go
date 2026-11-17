@@ -1,7 +1,7 @@
-//go:build !darwin
+//go:build !darwin && !linux
 
 package agentsd
 
-// registerSelfUpdate serves nothing off a Mac: a server's agentsd is updated by the control
-// plane over ssh (machines/update, #1766).
+// registerSelfUpdate serves nothing here: only a Mac (#2178) and a Linux machine (#5788)
+// update themselves.
 func (d *Daemon) registerSelfUpdate() {}
