@@ -211,10 +211,14 @@ func (d *Daemon) leaveNotice(n leaseNotice, agent wire.UUID) {
 	d.book.Notices[string(agent)] = append(d.book.Notices[string(agent)], n)
 }
 
-// handOn gives free places to the line, first come first served. A compute resource's
-// line waits while the machine is near or full, and is served one a look after (#4579).
+// handOn gives free places to the line, in its order (lineBefore: priority, `by`, first to
+// ask). A compute resource's line waits while the machine is near or full, and is served one
+// a look after (#4579).
 func (d *Daemon) handOn(name wire.ResourceName, e *leaseEntry) []leaseEvent {
 	var events []leaseEvent
+	if !e.full() && len(e.Line) > 1 {
+		orderLine(e, d.lineRank)
+	}
 	for !e.full() && len(e.Line) > 0 && !d.heldByCapacity(name, e) {
 		events = append(events, d.grantNext(name, e))
 	}

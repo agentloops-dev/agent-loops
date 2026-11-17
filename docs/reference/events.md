@@ -185,7 +185,7 @@ they are `machine.`.
 
 | Event | Filter by | Details | What it means |
 | --- | --- | --- | --- |
-| `lease.granted` | — | resource, agent | An agent was given a lease. See [Leases on shared resources](../explanation/leases.md). |
+| `lease.granted` | — | resource, agent, and from the line waited_seconds, priority | An agent was given a lease. One given it from the line also says how long it waited and its priority then (`high`, `medium`, `low` or `none`), so the wait of a low-priority session can be measured (#5848). See [Leases on shared resources](../explanation/leases.md). |
 | `lease.released` | — | resource, how | A lease was given back, ended or ran out. `how` is `released`, `ended` or `expired`. |
 | `mac.sleep` | — | | The Mac is going to sleep. Mac only. |
 | `mac.wake` | — | | The Mac woke up. Mac only. |
