@@ -112,6 +112,8 @@ export const providerWords = {
   noHosts: "No machine to link: add one with Add a Machine… in the sidebar’s Machines menu, or start one from a repository.",
   notAHostYet: "Not joined yet, and it gives no ssh destination: add it with the command from Add a Machine…, then Link to Machine….",
   addAsMachine: "Add as Machine…",
+  /** Delete's question on a failed make's row (#6078), as the window's. */
+  deleteFailed: (name: string, provider: string) => `Delete ${name}? Only its row goes: ${provider} never made it, so nothing is deleted there.`,
   addAsMachineHelp: "Installs Agent Loops on it over ssh, and links the machine to it.",
   startFirst: "Start it first: it has to be running to be installed.",
   installNote: (provider: string) => `The control plane installs Agent Loops on it over its own ssh, and links the machine to it, so ${provider} starts it again.`,
@@ -254,7 +256,7 @@ export function workspaceLine(workspace: MachineInfo, hosts: readonly ControlMac
  * destination (#1931): Add as Machine… cannot reach it, so the person is told the other way in.
  */
 export function noHostLine(workspace: MachineInfo, hosts: readonly ControlMachine[]): string | undefined {
-  return !workspace.host && !workspace.ssh && linkableHosts(workspace, hosts).length === 0 ? providerWords.notAHostYet : undefined;
+  return !workspace.host && !workspace.ssh && workspace.state !== "failed" && linkableHosts(workspace, hosts).length === 0 ? providerWords.notAHostYet : undefined;
 }
 
 /**
@@ -263,7 +265,7 @@ export function noHostLine(workspace: MachineInfo, hosts: readonly ControlMachin
  * offered, else whether it can be pressed and its help line.
  */
 export function addAsMachine(workspace: MachineInfo): { ready: boolean; help: string } | undefined {
-  if (workspace.host || !workspace.ssh) return undefined;
+  if (workspace.host || !workspace.ssh || workspace.state === "failed") return undefined;
   const ready = workspace.state === "running";
   return { ready, help: ready ? providerWords.addAsMachineHelp : providerWords.startFirst };
 }

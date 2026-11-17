@@ -421,6 +421,73 @@ func (p *Providers) forgetFailed(provider string) {
 	}
 }
 
+// deleteFailed is Delete on a failed make's row (#6078): the row goes from here and from
+// the store, so a restart does not bring it back. The provider never made the machine, so
+// it is not asked to delete anything. Only the person who made it, or an admin, may.
+func (p *Providers) deleteFailed(provider, workspace, person, who string) error {
+	maker, ok := p.failedOwner(provider, workspace)
+	if !ok {
+		return invalid("There is no such failed make.")
+	}
+	if maker != person && !p.isAdmin(person) {
+		return fail(CodeNotPermitted, "Only the person who made it, or an admin, can delete it.")
+	}
+	name := strings.TrimPrefix(workspace, "failed-")
+	if err := p.forgetOneFailed(provider, name); err != nil {
+		p.log(fmt.Sprintf("workspace: delete the failed make %s/%s by %s: failed: %s", provider, name, who, errorWords(err)))
+		return err
+	}
+	p.mu.Lock()
+	kept := p.failedMakes[provider][:0:0]
+	for _, f := range p.failedMakes[provider] {
+		if f.info.ID != workspace {
+			kept = append(kept, f)
+		}
+	}
+	p.failedMakes[provider] = kept
+	p.mu.Unlock()
+	p.log(fmt.Sprintf("workspace: delete the failed make %s/%s by %s: ok", provider, name, who))
+	p.changed()
+	return nil
+}
+
+// forgetOneFailed takes the failed make called name out of the provider's record in the
+// store, again when another copy wrote first.
+func (p *Providers) forgetOneFailed(provider, name string) error {
+	key := failedMakesKey(provider)
+	ctx := context.Background()
+	for range 5 {
+		object, err := p.store.Get(ctx, key)
+		if err != nil {
+			return err
+		}
+		if object == nil {
+			return nil
+		}
+		var kept []keptFailedMake
+		_ = json.Unmarshal(object.Data, &kept)
+		left := kept[:0:0]
+		for _, k := range kept {
+			if k.Name != name {
+				left = append(left, k)
+			}
+		}
+		if len(left) == len(kept) {
+			return nil
+		}
+		data, _ := json.Marshal(left)
+		if _, err := p.store.Put(ctx, key, data, store.Matching(object.ETag)); err != nil {
+			var conflict *store.ConflictError
+			if errors.As(err, &conflict) {
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	return errors.New("another copy kept changing the record")
+}
+
 // failedOwner is who made the failed row, and whether it is one.
 func (p *Providers) failedOwner(provider, workspace string) (string, bool) {
 	p.mu.Lock()
