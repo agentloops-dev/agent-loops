@@ -146,7 +146,7 @@ test("the lead's words", () => {
 test("Start lead fills the lead skill's form", () => {
   const lead = p.leadStart({ prompt: "#3100: Work pages\n\nWork on this GitHub issue.", labels: ["#3100"], worktree: "3100 Work pages" },
     "https://github.com/alexec/Agents/issues/3100");
-  assert.equal(lead.prompt, "#3100: Work pages\n\nLead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`): https://github.com/alexec/Agents/issues/3100");
+  assert.equal(lead.prompt, "#3100: Work pages\n\nLead this epic: https://github.com/alexec/Agents/issues/3100");
   assert.deepEqual(lead.labels, ["#3100", "lead"]);
   assert.equal(lead.worktree, undefined);
 });
