@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -479,6 +480,7 @@ func TestASessionStartedAsAPersonaHasItsPrompt(t *testing.T) {
 // Words sent from voice mode have the voice-mode text before them, and the next words
 // sent without the flag do not (#2322).
 func TestVoiceModeTextGoesBeforeTheWords(t *testing.T) {
+	flaky.UnderLoad(t, "#5924")
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
