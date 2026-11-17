@@ -72,6 +72,8 @@ type forgeGitHubWrites interface {
 	Unassign(ctx context.Context, repo string, number int, logins []string) error
 	// The issue page's Assignees (#4403).
 	Assign(ctx context.Context, repo string, number int, logins []string) error
+	// The Priority issue field (#6091); has is false where the repo has none.
+	SetPriorityField(ctx context.Context, repo string, number int, priority string) (has bool, err error)
 }
 
 // forgeGitLabWrites is what the writes ask of GitLab; a test gives a fake.
@@ -102,6 +104,8 @@ type forgeLinearWrites interface {
 	AddChild(ctx context.Context, epic, title string, labels []string) (string, string, error)
 	SetParent(ctx context.Context, identifier, epic string) error
 	SetBlockedBy(ctx context.Context, identifier, blocker string, blocked bool) error
+	// SetPriority sets its priority (#6091).
+	SetPriority(ctx context.Context, identifier, priority string) error
 }
 
 func (d *Daemon) registerForgeWrites() {

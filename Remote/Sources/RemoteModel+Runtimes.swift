@@ -144,7 +144,7 @@ extension RemoteModel {
 
     func queuedLine(_ agent: Agent) -> String? { work.queuedLine(agent) }
 
-    func isBlocked(_ agent: Agent) -> Bool { work.openBlock(agent) != nil }
+    func isBlocked(_ agent: Agent) -> Bool { work.isHeld(agent) }
 
     /// End a block by hand (039), as the person. See the Mac's `carryOn`.
     func carryOn(_ agentID: UUID) async { _ = await send(Block.carryOnPrompt, to: agentID) }

@@ -185,5 +185,5 @@ extension AppModel {
     func canStop(_ agent: Agent) -> Bool { work.canStop(agent) }
     func blockLines(_ agent: Agent) -> [String] { work.blockLines(agent) }
     func queuedLine(_ agent: Agent) -> String? { work.queuedLine(agent) }
-    func isBlocked(_ agent: Agent) -> Bool { work.openBlock(agent) != nil }
+    func isBlocked(_ agent: Agent) -> Bool { work.isHeld(agent) }
 }

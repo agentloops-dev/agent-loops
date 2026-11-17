@@ -259,6 +259,23 @@ struct WorkListTests {
         #expect(order(.cost) == [4, 9, 1])
     }
 
+    /// Priority (#6087): not on hold first, then High, Medium, none, Low; in a priority, the last updated first.
+    @Test func prioritySortsHighFirstNoneBeforeLowAndOnHoldLast() {
+        func with(_ n: Int, _ priority: String?, hold: Bool = false, ago: Double = 0) -> DaemonAPI.ForgeItem {
+            var i = item(n, at: day.addingTimeInterval(-ago))
+            i.priority = priority
+            i.onHold = hold ? true : nil
+            return i
+        }
+        let rows = WorkList.merge([(host: .mac, items: [
+            with(1, "low"), with(2, nil), with(3, "high", ago: 3600), with(4, "medium"), with(5, "high"),
+            with(6, "high", hold: true), with(7, nil, hold: true, ago: 60),
+        ])], lineage: [])
+        #expect(WorkList.sort(rows, by: .priority).map { WorkList.number($0.node.ref) } == [5, 3, 4, 2, 1, 6, 7])
+        #expect(WorkList.Kind.issue.sorts.first == .priority)
+        #expect(WorkList.Sort.priority.title == "Priority")
+    }
+
     @Test func refsRepoShortNameAndForge() {
         #expect(WorkList.repo(of: "github:alexec/Agents#12") == "github:alexec/Agents")
         #expect(WorkList.repo(of: "gitlab:group/repo!45") == "gitlab:group/repo")

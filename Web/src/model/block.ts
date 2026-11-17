@@ -3,14 +3,22 @@
 // Fixtures/web/block (#157).
 import type { Agent, Block, Wait, WaitEnding } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
-import { isOpenBlock, isWaiting } from "./groups";
+import { isOpenBlock, isWaiting, resumesByItself } from "./groups";
 import { endingSummaries, outcomeHeadings } from "./status";
 
-/** AgentsModel.openBlock: a finished agent's wait that has not cleared, or an empty one for an event wait. Only a
- *  wait the app clears by itself (#1916): an old record's block with nothing to wait on is done. */
+/** AgentsModel.openBlock: a finished agent's block on sessions or a deadline that has not cleared. Only a wait the
+ *  app clears by itself (#1916): an old record's block with nothing to wait on is done. A report that waits with no
+ *  block is a wait on events, which has a card of its own: no block is made up for it (#6065). */
 export function openBlock(agent: Agent): Block | null {
-  if (agent.state !== "finished" || !isOpenBlock(agent.report) || !isWaiting(agent)) return null;
-  return agent.report?.block ?? { waits: [] };
+  if (agent.state !== "finished" || (agent.eventWait !== undefined && agent.eventWait.ending === undefined)) return null;
+  if (!resumesByItself(agent.report)) return null;
+  return agent.report?.block ?? null;
+}
+
+/** AgentsModel.isHeld: a finished agent's turn held until the app carries it on, by a block or a wait on events.
+ *  Carry On and Stop are for it. */
+export function isHeld(agent: Agent): boolean {
+  return agent.state === "finished" && isOpenBlock(agent.report) && isWaiting(agent);
 }
 
 /** WaitEnding.summary: how a waited-on agent ended, without its message. */

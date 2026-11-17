@@ -201,9 +201,9 @@ final class WorkTimelineState {
     }
 }
 
-/// Work ▸ Timeline (#4173): time across, each epic a filled block in its own row from when its first
-/// child starts to when its last one closes, a lighter tint with a dashed edge after Now (the
-/// forecast), then a thin bar to where it closes 8 times in 10 (#5506, Alex, 2026-11-14). A SwiftUI
+/// Work ▸ Timeline (#4173): time across, each epic a block in its own row: the ghost (a lighter tint)
+/// from when its first child was created to when its last one closes, solid only from when its first
+/// child started to when the work stopped (#6043), a dashed edge after Now (the forecast), then a thin bar to where it closes 8 times in 10 (#5506, Alex, 2026-11-14). A SwiftUI
 /// `Canvas` (spike #4171): the rows and the marks come from `WorkTimeline` in AgentsKitCore.
 struct WorkTimelinePane: View {
     let model: any WorkModel
@@ -649,9 +649,18 @@ private struct Drawing {
     var seen: ClosedRange<Double> { (offset - visible)...(offset + 2 * visible) }
 
     func block(_ line: WorkTimeline.Line) -> CGRect {
-        let sx = axis.x(line.start)
+        let sx = axis.x(line.from)
         return CGRect(x: sx, y: WorkTimeline.rowTop(line.row), width: max(axis.x(line.end) - sx, 2), height: WorkTimeline.blockHeight)
     }
+
+    /// The solid span, full height: from when the work started to when it stopped (#6043). Clip to it.
+    func solid(_ line: WorkTimeline.Line) -> CGRect {
+        let sx = axis.x(line.start)
+        return CGRect(x: sx, y: -100, width: max(axis.x(line.stoppedAt) - sx, 0), height: height + 200)
+    }
+
+    /// The ghost's tint: the lighter one the forecast had (#6043).
+    func ghost(_ line: WorkTimeline.Line) -> Color { colour(line).opacity(night ? 0.32 : 0.22) }
 
     /// The wait pill's words: 👤 and the number, no words (Alex, 2026-11-14).
     func waitPill(_ count: Int) -> Text { Text("\(Image(icon: "person.fill")) \(count)") }
@@ -660,8 +669,7 @@ private struct Drawing {
     func draw(_ gc: inout GraphicsContext) {
         let nowX = axis.x(now)
         gc.fill(Path(CGRect(x: 0, y: 0, width: axis.width, height: height)), with: .color(plot))
-        let shown = lines.filter { axis.x($0.start) <= seen.upperBound && axis.x(WorkTimeline.reach($0)) >= seen.lowerBound }
-        let past = Path(CGRect(x: -100, y: 0, width: max(nowX + 100, 0), height: height))
+        let shown = lines.filter { axis.x($0.from) <= seen.upperBound && axis.x(WorkTimeline.reach($0)) >= seen.lowerBound }
         let ahead = Path(CGRect(x: nowX, y: 0, width: max(axis.width - nowX + 100, 0), height: height))
         let left = offset, right = offset + visible
 
@@ -677,16 +685,20 @@ private struct Drawing {
                     layer.stroke(shape, with: .color(c.opacity(0.35)), lineWidth: 6)
                 }
             }
-            // Solid to Now.
+            // The ghost from created to closed (or Now, or the forecast), then solid only where the work
+            // happened, from started to stopped (#6043).
+            let solidRect = solid(line), work = Path(solidRect)
+            let idle = Path(CGRect(x: -100, y: -100, width: max(solidRect.minX + 100, 0), height: height + 200))
+                .union(Path(CGRect(x: solidRect.maxX, y: -100, width: max(axis.width - solidRect.maxX + 100, 0), height: height + 200)))
+            gc.fill(shape, with: .color(ghost(line)))
             gc.drawLayer { layer in
-                layer.clip(to: past)
+                layer.clip(to: work)
                 layer.fill(shape, with: .color(c))
             }
-            // After Now, the forecast: a lighter tint with a dashed edge.
+            // After Now, the forecast: the ghost with a dashed edge.
             if line.how == .forecast || { if case .waits = line.how { true } else { false } }() {
                 gc.drawLayer { layer in
                     layer.clip(to: ahead)
-                    layer.fill(shape, with: .color(c.opacity(night ? 0.32 : 0.22)))
                     layer.stroke(shape, with: .color(later(line)), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                 }
             }
@@ -700,10 +712,10 @@ private struct Drawing {
                 let x = WorkTimeline.dotX(dot, on: line, axis: axis)
                 let r = dot.closed ? 2.0 : 2.5
                 let circle = Path(ellipseIn: CGRect(x: x - r, y: WorkTimeline.dotY(line.row) - r, width: 2 * r, height: 2 * r))
-                let mark = x > nowX ? later(line) : .white
+                let mark = x >= solidRect.minX && x <= solidRect.maxX + 0.5 && solidRect.width > 0 ? Color.white : later(line)
                 if dot.closed { gc.fill(circle, with: .color(mark)) } else { gc.stroke(circle, with: .color(mark), lineWidth: 1.2) }
             }
-            // The words: the title in the block, white to Now and the colour after it; or after the block.
+            // The words: the title in the block, white on the solid span and the colour on the ghost; or after the block.
             var trailing = 0.0
             if case .waits(let n) = line.how {
                 trailing = pillWidth(n)
@@ -716,11 +728,11 @@ private struct Drawing {
             if let inside = words.inside {
                 let at = CGPoint(x: words.insideX, y: WorkTimeline.titleY(line.row))
                 gc.drawLayer { layer in
-                    layer.clip(to: past)
+                    layer.clip(to: work)
                     layer.draw(Text(inside).stepped(.fine).fontWeight(.semibold).foregroundStyle(.white), at: at, anchor: .leading)
                 }
                 gc.drawLayer { layer in
-                    layer.clip(to: ahead)
+                    layer.clip(to: idle)
                     layer.draw(Text(inside).stepped(.fine).fontWeight(.semibold).foregroundStyle(later(line)), at: at, anchor: .leading)
                 }
             }
@@ -734,7 +746,7 @@ private struct Drawing {
             if isWorking(line), !moving { drawHalfRing(&gc, line, x: nowX, turn: 0) }
             // → for a block that goes on past the right edge.
             if axis.x(WorkTimeline.reach(line)) > right {
-                gc.draw(Text("→").stepped(.fine).fontWeight(.bold).foregroundStyle(right - 10 > nowX ? later(line) : .white),
+                gc.draw(Text("→").stepped(.fine).fontWeight(.bold).foregroundStyle(right - 10 > solidRect.maxX || right - 10 < solidRect.minX ? later(line) : .white),
                         at: CGPoint(x: right - 10, y: mid))
             }
         }

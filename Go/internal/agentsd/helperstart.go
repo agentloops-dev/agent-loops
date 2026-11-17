@@ -24,6 +24,7 @@ type helperQueueState struct {
 	startingFromQueue map[wire.UUID]string // queued agents being started now, with the limitScope that held each place
 	reservedHelpers   map[string]int       // by limitScope: direct starts decided and not yet on the record
 	projectCounts     projectCounts        // each project's helpers on the other machines (#3281)
+	thereMachines     thereMachines        // the machines of the sessions started elsewhere (#5976)
 }
 
 // modeRanks is ModeLooseness: how much each mode lets an agent do without asking.

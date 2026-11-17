@@ -275,3 +275,83 @@ func (g *RealGitHub) SetBlockedBy(ctx context.Context, repo string, number int, 
 	}
 	return err
 }
+
+// priorityOptions are the names of the Priority issue field's options that each priority
+// writes, the first that the field has (#6091): high is High (Urgent is above it), and the read
+// takes Urgent and Highest as high too (#5747).
+var priorityOptions = map[string][]string{
+	"high":   {"High", "Urgent", "Highest"},
+	"medium": {"Medium"},
+	"low":    {"Low", "Lowest"},
+}
+
+// SetPriorityField sets issue number of repo's Priority issue field to priority (high, medium or
+// low), or clears it for "" (#6091). has is false, with no write, when the repo has no Priority
+// field, or the GitHub has no issue fields (GitHub Enterprise Server): the caller writes the
+// labels then.
+func (g *RealGitHub) SetPriorityField(ctx context.Context, repo string, number int, priority string) (has bool, err error) {
+	owner, name, err := ownerName(repo)
+	if err != nil {
+		return false, err
+	}
+	if g.noIssueFields.Load() {
+		return false, nil
+	}
+	const query = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
+  issue(number: $number) { id }
+  issueFields(first: 25) { nodes { ... on IssueFieldSingleSelect { id name options { id name } } } } } }`
+	var data struct {
+		Repository *struct {
+			Issue *struct {
+				ID string `json:"id"`
+			} `json:"issue"`
+			IssueFields struct {
+				Nodes []struct {
+					ID      string `json:"id"`
+					Name    string `json:"name"`
+					Options []struct {
+						ID   string `json:"id"`
+						Name string `json:"name"`
+					} `json:"options"`
+				} `json:"nodes"`
+			} `json:"issueFields"`
+		} `json:"repository"`
+	}
+	if err := g.graphql(ctx, query, map[string]any{"owner": owner, "name": name, "number": number}, &data); err != nil {
+		var ge *GitHubError
+		if errors.As(err, &ge) && ge.issueFields {
+			if strings.Contains(ge.Message, "doesn't exist on type") {
+				g.noIssueFields.Store(true)
+			}
+			return false, nil
+		}
+		return false, err
+	}
+	if data.Repository == nil || data.Repository.Issue == nil {
+		return false, &GitHubError{Kind: NotFound, Message: fmt.Sprintf("%s#%d is not an issue on GitHub", repo, number)}
+	}
+	issue := data.Repository.Issue.ID
+	for _, f := range data.Repository.IssueFields.Nodes {
+		if f.ID == "" || !strings.EqualFold(f.Name, priorityField) {
+			continue
+		}
+		if priority == "" {
+			const clear = `mutation($issue: ID!, $field: ID!) { deleteIssueFieldValue(input: {issueId: $issue, fieldId: $field}) { success } }`
+			var out map[string]any
+			return true, g.graphql(ctx, clear, map[string]any{"issue": issue, "field": f.ID}, &out)
+		}
+		for _, want := range priorityOptions[priority] {
+			for _, o := range f.Options {
+				if !strings.EqualFold(strings.TrimSpace(o.Name), want) {
+					continue
+				}
+				const set = `mutation($issue: ID!, $field: ID!, $option: ID!) { setIssueFieldValue(input: {issueId: $issue,
+  issueFields: [{fieldId: $field, singleSelectOptionId: $option}]}) { issue { number } } }`
+				var out map[string]any
+				return true, g.graphql(ctx, set, map[string]any{"issue": issue, "field": f.ID, "option": o.ID}, &out)
+			}
+		}
+		return true, &GitHubError{Kind: Failed, Message: fmt.Sprintf("the Priority field of %s has no option for %s", repo, priority)}
+	}
+	return false, nil
+}

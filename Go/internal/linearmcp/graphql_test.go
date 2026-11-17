@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -188,5 +189,31 @@ func TestAssignedIsToTheViewerFromTheSameHistory(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "h5" || got[0].data()["by"] != "bob" || got[0].data()["assignedAt"] == nil {
 		t.Fatalf("assigned %+v", got)
+	}
+}
+
+// #6091: a mutation forgets the shared reads, so the read after a write is Linear's new answer,
+// not the one from before it.
+func TestAMutationForgetsTheSharedReads(t *testing.T) {
+	var reads atomic.Int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "mutation") {
+			_, _ = io.WriteString(w, `{"data":{"issueUpdate":{"success":true}}}`)
+			return
+		}
+		reads.Add(1)
+		_, _ = io.WriteString(w, `{"data":{"viewer":{"id":"u"}}}`)
+	}))
+	defer s.Close()
+	l := NewRealLinear(s.URL, func() string { return "k" })
+	var out map[string]any
+	for _, q := range []string{"{ viewer { id } }", "{ viewer { id } }", "mutation { issueUpdate { success } }", "{ viewer { id } }"} {
+		if err := l.query(context.Background(), q, nil, &out); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if reads.Load() != 2 {
+		t.Fatalf("reads %d, want 2: the one after the mutation was the shared one", reads.Load())
 	}
 }

@@ -295,6 +295,9 @@ struct WebFixturesTests {
             (name, Self.agent(62, .finished, title: "Lead", report: Self.report(.waiting, "Waiting on the haikus.", block: block)))
         }
         blocked.append(("blocked on nothing named", Self.agent(62, .finished, title: "Lead", report: Self.report(.waiting))))
+        // A wait on events: its report waits with no block, and only the wait card shows (#6065).
+        blocked.append(("waiting on events, with no block", Self.agent(62, .finished, title: "Lead",
+                                                                       report: Self.report(.waiting), eventWait: Self.openWait)))
         blocked.append(("blocked, still running", Self.agent(62, .running, title: "Lead",
                                                              report: Self.report(.waiting, block: Block(waits: [one])))))
         let cases = try blocked.map { name, agent in
@@ -311,7 +314,7 @@ struct WebFixturesTests {
             if hasDeadline { lines.removeLast() }
             // The row's one line (#582), where it names someone.
             let names = model.openBlock(agent)?.block.waits.isEmpty == false
-            return .object(["isBlocked": .bool(model.openBlock(agent) != nil),
+            return .object(["isBlocked": .bool(model.openBlock(agent) != nil), "isHeld": .bool(model.isHeld(agent)),
                             "lines": .array(lines.map(JSONValue.string)), "hasDeadline": .bool(hasDeadline),
                             "waitLine": names ? .string(model.waitMark(of: agent)?.line ?? "") : .null,
                             "carryOnHelp": .string(AgentsModel.carryOnHelp(for: agent)),

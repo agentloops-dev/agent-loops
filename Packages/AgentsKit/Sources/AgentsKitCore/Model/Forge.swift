@@ -173,8 +173,9 @@ public extension DaemonAPI {
     /// its items have those dates; `children`, `linkedPulls` and `events` that an issue's read has
     /// them (#4373); `total` that it counts a list's items (#4396); `releases` that it has releases
     /// (#4426); a pull request's `branches`, `mergedBy`, `mergeCommit`, `size`, `reviewers`,
-    /// `closes` and `checkTimes` that it fills those (#4409); each is nil (none) from an earlier
-    /// daemon.
+    /// `closes` and `checkTimes` that it fills those (#4409); `priority` and `hold` that
+    /// `forge/priority` and `forge/hold` set an issue's priority and on hold (#6091); each is nil
+    /// (none) from an earlier daemon.
     struct ForgeCapabilities: Codable, Sendable, Hashable {
         public var forge: String
         public var issues: Bool
@@ -196,6 +197,8 @@ public extension DaemonAPI {
         public var reviewers: Bool?
         public var closes: Bool?
         public var checkTimes: Bool?
+        public var priority: Bool?
+        public var hold: Bool?
         public var commentCount: String
         public var commentsMost: Int?
 
@@ -204,7 +207,8 @@ public extension DaemonAPI {
                     commentsMost: Int? = nil, createdAt: Bool? = nil, closedAt: Bool? = nil, children: Bool? = nil,
                     linkedPulls: Bool? = nil, events: Bool? = nil, total: Bool? = nil, releases: Bool? = nil,
                     branches: Bool? = nil, mergedBy: Bool? = nil, mergeCommit: Bool? = nil, size: Bool? = nil,
-                    reviewers: Bool? = nil, closes: Bool? = nil, checkTimes: Bool? = nil) {
+                    reviewers: Bool? = nil, closes: Bool? = nil, checkTimes: Bool? = nil,
+                    priority: Bool? = nil, hold: Bool? = nil) {
             self.forge = forge
             self.issues = issues
             self.pulls = pulls
@@ -225,6 +229,8 @@ public extension DaemonAPI {
             self.reviewers = reviewers
             self.closes = closes
             self.checkTimes = checkTimes
+            self.priority = priority
+            self.hold = hold
             self.commentCount = commentCount
             self.commentsMost = commentsMost
         }
@@ -598,6 +604,31 @@ public extension DaemonAPI {
         }
     }
 
+    /// `forge/priority` (#6091): set an issue's priority to `high`, `medium` or `low`, or to none
+    /// when `priority` is nil, in the forge's own field where it has one, else by the labels
+    /// `priority:<priority>`.
+    struct ForgePriorityRequest: Codable, Sendable, Hashable {
+        public var node: LineageNode
+        public var priority: String?
+
+        public init(node: LineageNode, priority: String? = nil) {
+            self.node = node
+            self.priority = priority
+        }
+    }
+
+    /// `forge/hold` (#6091): put an issue on hold (`on`) or take it off hold, in the forge's own
+    /// field where it has one, else by the label on hold.
+    struct ForgeHoldRequest: Codable, Sendable, Hashable {
+        public var node: LineageNode
+        public var on: Bool
+
+        public init(node: LineageNode, on: Bool) {
+            self.node = node
+            self.on = on
+        }
+    }
+
     /// `forge/log`: the failed checks' logs, or one check's by name.
     struct ForgeLogRequest: Codable, Sendable, Hashable {
         public var node: LineageNode
@@ -943,6 +974,10 @@ public extension DaemonAPI.Method {
     static let forgeApprove = "forge/approve"
     /// `ForgeRequestChangesRequest` → `ForgeDone` (#5857).
     static let forgeRequestChanges = "forge/request-changes"
+    /// `ForgePriorityRequest` and `ForgeHoldRequest` → `ForgeDone` (#6091): an issue's priority
+    /// and on hold. Offered where its forge's `ForgeCapabilities` has `priority`, `hold`.
+    static let forgePriority = "forge/priority"
+    static let forgeHold = "forge/hold"
     static let forgeRerun = "forge/rerun"
     /// `ForgeNodeRequest` → `ForgeDone` (#4410): turn off a pull request's auto-merge, and mark
     /// a draft ready for review. Offered where the page's `actions` has `cancelAutoMerge`, `ready`.

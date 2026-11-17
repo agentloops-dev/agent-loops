@@ -80,9 +80,10 @@ type Comment struct {
 }
 
 // Transition is a move the issue's workflow allows now: its id, its name (as Start Progress)
-// and the status category it goes to (new, indeterminate or done).
+// and the status category it goes to (new, indeterminate or done), and To, the status's name
+// (as On hold, #6091).
 type Transition struct {
-	ID, Name, Category string
+	ID, Name, Category, To string
 }
 
 // ItemDetail is an issue with its description (Markdown), a page of its comments (Thread),
@@ -518,6 +519,7 @@ func (j *RealJira) Transitions(ctx context.Context, key string) ([]Transition, e
 			ID   string `json:"id"`
 			Name string `json:"name"`
 			To   *struct {
+				Name     string `json:"name"`
 				Category *struct {
 					Key string `json:"key"`
 				} `json:"statusCategory"`
@@ -530,6 +532,9 @@ func (j *RealJira) Transitions(ctx context.Context, key string) ([]Transition, e
 	list := []Transition{}
 	for _, t := range out.Transitions {
 		tr := Transition{ID: t.ID, Name: t.Name}
+		if t.To != nil {
+			tr.To = t.To.Name
+		}
 		if t.To != nil && t.To.Category != nil {
 			tr.Category = t.To.Category.Key
 		}
@@ -795,4 +800,21 @@ func (j *RealJira) BoardFilter(ctx context.Context, board string) (string, error
 		return "", &JiraError{Kind: Failed, Message: "Jira: board " + board + " has no filter"}
 	}
 	return config.Filter.ID, nil
+}
+
+// jiraPriorities are Jira's priority names for each priority (#6091); none clears the field.
+var jiraPriorities = map[string]string{"high": "High", "medium": "Medium", "low": "Low"}
+
+// SetPriority sets an issue's priority field: high, medium, low, or "" to clear it (#6091), which
+// a project that requires a priority refuses.
+func (j *RealJira) SetPriority(ctx context.Context, key, priority string) error {
+	var value any
+	if priority != "" {
+		name, ok := jiraPriorities[priority]
+		if !ok {
+			return &JiraError{Kind: Failed, Message: fmt.Sprintf("%q is not a priority", priority)}
+		}
+		value = map[string]string{"name": name}
+	}
+	return j.write(ctx, http.MethodPut, "/issue/"+url.PathEscape(key), map[string]any{"fields": map[string]any{"priority": value}}, nil)
 }

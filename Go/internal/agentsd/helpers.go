@@ -45,7 +45,13 @@ func (d *Daemon) helperLimitsIn(folder string) (running, notArchived, queued int
 // a project, those in every folder of the project here and on the other machines (#3281),
 // as last counted (countProject). A lead does not count.
 func (d *Daemon) helpersIn(folder string) []wire.Agent {
-	out := d.thereAgents(folder)
+	// The project's count goes first: it has each session's state as its machine says it,
+	// and uniqueAgents keeps the first of each id, not thereAgents' guess (#5976).
+	var out []wire.Agent
+	if c, ok := d.projectCountOf(folder); ok {
+		out = append(out, c.helpers...)
+	}
+	out = append(out, d.thereAgents(folder)...)
 	project := projectOfFolder(folder)
 	projects := projectsOfFolders{folder: project}
 	for _, a := range d.Store.LiveAgents() {
@@ -53,9 +59,6 @@ func (d *Daemon) helpersIn(folder string) []wire.Agent {
 			inLimitScope(folder, project, projects, &a) {
 			out = append(out, a)
 		}
-	}
-	if c, ok := d.projectCountOf(folder); ok {
-		out = append(out, c.helpers...)
 	}
 	return sortedByAge(uniqueAgents(out))
 }

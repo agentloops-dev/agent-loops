@@ -87,9 +87,11 @@ func (d *Daemon) projectCountOf(folder string) (c projectCount, ok bool) {
 }
 
 // countProject asks the control plane for the other machines' helpers of folder's project
-// when the last count is older than projectCountFresh. Call it before counting, never with
+// when the last count is older than projectCountFresh, and for the machines of the
+// sessions started elsewhere (checkThereMachines, #5976). Call it before counting, never with
 // queueMu held: it can wait up to projectSessionsAsk.
 func (d *Daemon) countProject(folder string) {
+	d.checkThereMachines()
 	project := projectOfFolder(folder)
 	if project == "" || d.askControl.Load() == nil {
 		return

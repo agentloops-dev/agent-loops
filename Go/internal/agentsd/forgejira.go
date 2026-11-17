@@ -34,6 +34,7 @@ func (jiraForge) Images() forgeImageHost { return jiraImages{} }
 func (jiraForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues:      true,
+		Priority: true, Hold: true,
 		Issue:       forgeActions{Comment: true, Label: true, Close: true, Reopen: true, Transition: true},
 		Avatars:     true,
 		StateReason: true,
@@ -283,4 +284,75 @@ func jiraStart(i wire.ForgeItem) *wire.ForgeStart {
 	key, _ := keyOfIssue(i.Node, "jira")
 	return &wire.ForgeStart{Prompt: fmt.Sprintf("%s: %s\n\nWork on this Jira issue: %s", key, i.Title, deref(i.URL)),
 		Labels: []string{key}, Worktree: optional(key + " " + i.Title)}
+}
+
+// jiraHoldLabel is the label a Jira issue is put on hold by where its workflow has no status
+// named On hold: a Jira label has no spaces, and the read takes on-hold as on hold too (#5747).
+const jiraHoldLabel = "on-hold"
+
+// SetPriority is the priority field where the project has one, else the labels (#6091).
+func (j jiraForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	jr, err := j.d.forgeJira()
+	if err != nil {
+		return err
+	}
+	d, err := jr.ItemPage(ctx, r.Key, "")
+	if err != nil {
+		return jiraNotFound("forge/priority", err)
+	}
+	if d.PriorityField {
+		return jr.SetPriority(ctx, r.Key, priority)
+	}
+	add, remove := priorityLabelEdit(d.Labels, priority)
+	if len(add)+len(remove) == 0 {
+		return nil
+	}
+	return jr.SetLabels(ctx, r.Key, add, remove)
+}
+
+// SetHold moves the issue to a status named On hold where its workflow allows that now, and
+// back to a To Do (else an In Progress) status that is not on hold; else it is the label
+// on-hold (#6091). Taking it off hold also takes off a hold label.
+func (j jiraForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	jr, err := j.d.forgeJira()
+	if err != nil {
+		return err
+	}
+	d, err := jr.ItemPage(ctx, r.Key, "")
+	if err != nil {
+		return jiraNotFound("forge/hold", err)
+	}
+	held := isHoldName(d.Status)
+	if on {
+		if held {
+			return nil
+		}
+		for _, t := range d.Transitions {
+			if isHoldName(t.To) {
+				return jr.Transition(ctx, r.Key, t.ID)
+			}
+		}
+	} else if held {
+		if err := jiraOffHold(ctx, jr, r.Key, d.Transitions); err != nil {
+			return err
+		}
+	}
+	add, remove := holdLabelEdit(d.Labels, on, jiraHoldLabel)
+	if len(add)+len(remove) == 0 {
+		return nil
+	}
+	return jr.SetLabels(ctx, r.Key, add, remove)
+}
+
+// jiraOffHold moves an issue in an On hold status by the first transition its workflow allows
+// to a To Do status, else to an In Progress one, that is not on hold.
+func jiraOffHold(ctx context.Context, jr forgeJira, key string, transitions []jiramcp.Transition) error {
+	for _, category := range []string{"new", "indeterminate"} {
+		for _, t := range transitions {
+			if t.Category == category && !isHoldName(t.To) {
+				return jr.Transition(ctx, key, t.ID)
+			}
+		}
+	}
+	return &forgeCannot{action: actionHold, reason: fmt.Sprintf("the workflow of %s has no move out of On hold now", key)}
 }

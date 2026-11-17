@@ -140,7 +140,8 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 // and show_file says no window is open (#5940).
 func clientAdded(t testing.TB, d *Daemon, c *conn) {
 	t.Helper()
-	for deadline := time.Now().Add(waitLimit(t)); ; time.Sleep(time.Millisecond) {
+	limit := waitLimit(t)
+	for deadline := time.Now().Add(limit); ; time.Sleep(time.Millisecond) {
 		d.mu.Lock()
 		added := false
 		for _, each := range d.clients {
@@ -151,7 +152,8 @@ func clientAdded(t testing.TB, d *Daemon, c *conn) {
 			return
 		}
 		if time.Now().After(deadline) {
-			waitFailed(t, "the daemon never added the test's window client")
+			acceptStacks(t)
+			waitFailed(t, "the daemon never added the test's window client in %v", limit)
 		}
 	}
 }

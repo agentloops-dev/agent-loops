@@ -22,6 +22,8 @@ type fakeForgeBoards struct {
 	wrote    []string
 	// blocked are the ids Blockers was asked about (#4242).
 	blocked []string
+	// noPriority says its work items' type has no Priority field (#6091).
+	noPriority bool
 }
 
 const boardsProjectName = "acme/web app"

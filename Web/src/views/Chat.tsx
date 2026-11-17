@@ -979,7 +979,6 @@ function WaitCard({ agent, title, disabled, continueNow, stop }: { agent: Agent;
   disabled: boolean; continueNow: () => Promise<void>; stop: () => Promise<void> }) {
   const busy = useSignal(false);
   const now = useSignal(Date.now());
-  const open = useNowOpen();
   useEffect(() => {
     const timer = window.setInterval(() => { now.value = Date.now(); }, 20_000);
     return () => window.clearInterval(timer);
@@ -1022,14 +1021,14 @@ function WaitCard({ agent, title, disabled, continueNow, stop }: { agent: Agent;
     );
   }
   // Any other wait is a part of the Now card (#5033): the waiting mark of #5022, what, how long,
-  // the bar to its deadline, its events when opened, and End Wait and Carry On, the primary last.
+  // the bar to its deadline, its events (always, #6065), and End Wait and Carry On, the primary last.
   return (
     <div class="now-part wait-card">
       {isLine ? <NowHead mark={<Icon name="clock" />} title={line ?? ""} /> : <>
         <NowHead mark={<span class="wait-card-broadcast waiting-beacon"><Beacon kind={eventWaitKind(agent)} /></span>}
           title={eventWaitCardTitle(wait)} meta={eventWaitTime(elapsed, total)} />
         {percent !== undefined && <NowBar fraction={percent / 100} label="Event wait time" />}
-        {open && summary}
+        {summary}
       </>}
       <p class="now-answers">
         <button disabled={disabled || busy.value} title={waitWords.endWaitHelp} onClick={endWait}>{waitWords.endWait}</button>

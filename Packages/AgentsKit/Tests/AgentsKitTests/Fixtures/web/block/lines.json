@@ -5,6 +5,7 @@
       "carryOnHelp" : "Stop waiting and carry on now",
       "hasDeadline" : false,
       "isBlocked" : true,
+      "isHeld" : true,
       "lines" : [
         "Carries on when all of these have finished",
         "Haiku one, renamed — still working",
@@ -125,6 +126,7 @@
       "carryOnHelp" : "Stop waiting and carry on now",
       "hasDeadline" : false,
       "isBlocked" : true,
+      "isHeld" : true,
       "lines" : [
         "Carries on when all of these have finished",
         "Haiku one, renamed — still working",
@@ -246,6 +248,7 @@
       "carryOnHelp" : "Stop waiting and carry on now",
       "hasDeadline" : false,
       "isBlocked" : true,
+      "isHeld" : true,
       "lines" : [
         "Carries on when any of these finishes",
         "Haiku one, renamed — still working",
@@ -367,6 +370,7 @@
       "carryOnHelp" : "Stop waiting and carry on now",
       "hasDeadline" : true,
       "isBlocked" : true,
+      "isHeld" : true,
       "lines" : [
         "Haiku one, renamed — still working"
       ],
@@ -474,6 +478,7 @@
       "carryOnHelp" : "Stop waiting and carry on now",
       "hasDeadline" : false,
       "isBlocked" : true,
+      "isHeld" : true,
       "lines" : [
         "Carries on when any of these finishes",
         "No outcome — finished without saying how it went",
@@ -667,6 +672,7 @@
       "carryOnHelp" : "Stop waiting and carry on now",
       "hasDeadline" : false,
       "isBlocked" : false,
+      "isHeld" : false,
       "lines" : [
 
       ],
@@ -787,6 +793,7 @@
       "carryOnHelp" : "Stop waiting and carry on now",
       "hasDeadline" : false,
       "isBlocked" : false,
+      "isHeld" : false,
       "lines" : [
 
       ],
@@ -884,6 +891,118 @@
       "carryOnHelp" : "Stop waiting and carry on now",
       "hasDeadline" : false,
       "isBlocked" : false,
+      "isHeld" : true,
+      "lines" : [
+
+      ],
+      "waitLine" : null
+    },
+    "input" : {
+      "agentID" : "00000000-0000-0000-0000-000000000062",
+      "agents" : [
+        {
+          "advertisedOptions" : [
+
+          ],
+          "availableCommands" : [
+
+          ],
+          "createdAt" : 812500000,
+          "cwd" : "file:///fixture/folder/",
+          "id" : "00000000-0000-0000-0000-000000000060",
+          "lastActivityAt" : 812500000,
+          "runtimeID" : "claude",
+          "startOptions" : {
+            "extraArguments" : [
+
+            ],
+            "values" : {
+
+            }
+          },
+          "state" : "running",
+          "title" : "Haiku one, renamed"
+        },
+        {
+          "advertisedOptions" : [
+
+          ],
+          "availableCommands" : [
+
+          ],
+          "createdAt" : 812500000,
+          "cwd" : "file:///fixture/folder/",
+          "id" : "00000000-0000-0000-0000-000000000061",
+          "lastActivityAt" : 812500000,
+          "report" : {
+            "at" : 812500060,
+            "message" : "It went.",
+            "outcome" : "done"
+          },
+          "runtimeID" : "claude",
+          "startOptions" : {
+            "extraArguments" : [
+
+            ],
+            "values" : {
+
+            }
+          },
+          "state" : "finished",
+          "title" : "Haiku two"
+        },
+        {
+          "advertisedOptions" : [
+
+          ],
+          "availableCommands" : [
+
+          ],
+          "createdAt" : 812500000,
+          "cwd" : "file:///fixture/folder/",
+          "eventWait" : {
+            "from" : 4,
+            "id" : "00000000-0000-0000-0000-000000000900",
+            "patterns" : [
+              {
+                "filters" : {
+
+                },
+                "name" : "ci.finished"
+              }
+            ],
+            "since" : 812500000
+          },
+          "id" : "00000000-0000-0000-0000-000000000062",
+          "lastActivityAt" : 812500000,
+          "report" : {
+            "at" : 812500060,
+            "message" : "It went.",
+            "outcome" : "waiting"
+          },
+          "runtimeID" : "claude",
+          "startOptions" : {
+            "extraArguments" : [
+
+            ],
+            "values" : {
+
+            }
+          },
+          "state" : "finished",
+          "title" : "Lead"
+        }
+      ]
+    },
+    "name" : "waiting on events, with no block"
+  },
+  {
+    "expected" : {
+      "cardTitle" : null,
+      "carryOnHelp" : "Stop waiting and carry on now",
+      "hasDeadline" : false,
+      "isBlocked" : false,
+      "isHeld" : false,
       "lines" : [
 
       ],
