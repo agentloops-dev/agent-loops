@@ -26,20 +26,7 @@ func anAgentIn(t *testing.T, d *Daemon, folder string) wire.UUID {
 
 func (c *conn) callErr(t *testing.T, id int, method string, params any) string {
 	t.Helper()
-	p, _ := json.Marshal(params)
-	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
-	c.in <- string(b)
-	for line := range c.out {
-		var m message
-		json.Unmarshal([]byte(line), &m)
-		if string(m.ID) == string(mustJSON(id)) {
-			if m.Error == nil {
-				t.Fatalf("%s: no error", method)
-			}
-			return m.Error.Error()
-		}
-	}
-	return ""
+	return c.callError(t, id, method, params).Error()
 }
 
 func TestFilesAreKeptToTheAgentsFolder(t *testing.T) {

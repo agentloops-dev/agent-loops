@@ -27,31 +27,6 @@ func formHolds(t *testing.T) (answered, left func()) {
 	return answered, left
 }
 
-// callError sends a call and is the error it answers with, or fails when it answers.
-func (c *conn) callError(t *testing.T, id int, method string, params any) *Error {
-	t.Helper()
-	p, _ := json.Marshal(params)
-	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
-	c.in <- string(b)
-	deadline := time.After(waitLimit(t))
-	for {
-		select {
-		case line := <-c.out:
-			var m message
-			json.Unmarshal([]byte(line), &m)
-			if string(m.ID) != string(mustJSON(id)) {
-				continue
-			}
-			if m.Error == nil {
-				t.Fatalf("%s answered %s", method, m.Result)
-			}
-			return m.Error
-		case <-deadline:
-			waitFailed(t, "%s: no answer", method)
-		}
-	}
-}
-
 func asked(form *wire.ElicitationRequest) func(string, json.RawMessage) bool {
 	return func(method string, p json.RawMessage) bool {
 		var n wire.ElicitationNotification
