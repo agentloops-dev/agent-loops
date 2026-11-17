@@ -254,6 +254,9 @@ export function eventWaitCardTitle(wait: EventWait): string {
  * WaitEventLine.lines (#2599, #2747): events from one source with the same filters share a line,
  * a session said by its title and an event by its catalogue meaning.
  */
+/** WaitEventLine.cardWords: events whose catalogue meaning is too long for a card's line (#6065). */
+const cardWords: Record<string, string> = { "agent.ended": "Session finished" };
+
 export function eventWaitSummaryLines(wait: EventWait, title: (id: string) => string | undefined): EventWaitSummaryLine[] {
   // A time is no event: the card's heading says it (#4843).
   if (isTimeWait(wait)) return [];
@@ -265,8 +268,11 @@ export function eventWaitSummaryLines(wait: EventWait, title: (id: string) => st
     const source = server
       ? servers.length > 0 ? servers.map(serverName).join(" or ") : "Connected tools"
       : waitSourceName(pattern.name);
-    const filterKeys = [...new Set([...Object.keys(pattern.filters), ...Object.keys(pattern.anyOf ?? {})])].sort();
-    const finisherID = pattern.name === "agent.finished" && Object.keys(pattern.anyOf ?? pattern.filters).length === 1
+    // A session waits in its own folder: the folder says nothing new (#6065).
+    const filterKeys = [...new Set([...Object.keys(pattern.filters), ...Object.keys(pattern.anyOf ?? {})])]
+      .filter((key) => key !== "folder").sort();
+    const finisherID = pattern.name === "agent.finished"
+      && Object.keys(pattern.anyOf ?? pattern.filters).filter((key) => key !== "folder").length === 1
       ? single(pattern, "agent") : undefined;
     const finisher = finisherID === undefined ? undefined : title(finisherID) ?? finisherID;
     const args = server
@@ -287,7 +293,7 @@ export function eventWaitSummaryLines(wait: EventWait, title: (id: string) => st
       if (!group.finishers.includes(finisher)) group.finishers.push(finisher);
       if (!group.phrases.some((phrase) => "finishers" in phrase)) group.phrases.push({ finishers: true });
     } else {
-      const words = server ? serverWords(pattern.name) : eventMeaning(pattern.name);
+      const words = server ? serverWords(pattern.name) : cardWords[pattern.name] ?? eventMeaning(pattern.name);
       if (!group.phrases.some((phrase) => "words" in phrase && phrase.words === words)) group.phrases.push({ words });
     }
   }

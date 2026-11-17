@@ -2220,10 +2220,18 @@ public final class AgentsModel {
     /// still says blocked — that is the resumed turn, and it is working.
     public func openBlock(_ agent: Agent) -> (report: WorkReport, block: Block)? {
         // Only a wait the app clears by itself (#1916): an old record's block with nothing to
-        // wait on is done, and has no Carry on.
-        guard agent.state == .finished, let report = agent.report, report.isOpenBlock, agent.isWaiting
+        // wait on is done, and has no Carry on. A report that waits with no block is a wait on
+        // events, which has a card of its own: no block is made up for it (#6065).
+        guard agent.state == .finished, agent.eventWait?.isOpen != true, let report = agent.report,
+              report.resumesByItself, let block = report.block
         else { return nil }
-        return (report, report.block ?? Block())
+        return (report, block)
+    }
+
+    /// Whether a finished agent's turn is held until the app carries it on: a block on
+    /// sessions or a deadline, or a wait on events. Carry On and Stop are for it.
+    public func isHeld(_ agent: Agent) -> Bool {
+        agent.state == .finished && agent.report?.isOpenBlock == true && agent.isWaiting
     }
 
     /// What an agent that is waited on is called now: its current title, or the one it
@@ -2302,7 +2310,7 @@ public final class AgentsModel {
         // A blocked chat too (039): it holds nothing, but a resume is coming, and Stop
         // is how the person calls it off.
         // And a queued one (#362): Stop takes it off the queue.
-        agent.state.holdsRuntime || agent.state == .queued || isComingBack(agent) || openBlock(agent) != nil
+        agent.state.holdsRuntime || agent.state == .queued || isComingBack(agent) || isHeld(agent)
     }
 
     /// The one thing every client says about a chat on its way back, so the window
