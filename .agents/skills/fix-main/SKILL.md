@@ -98,10 +98,11 @@ Do not rerun the failed jobs to find out (Rules). Read the failure and the batch
 1. Search for an open `bug` about the same test (`gh issue list --search "<test>
    in:title,body"`). When there is one, comment with the run's link and the failure lines.
    Else file one `bug`, with no milestone, the labels `bug` and `size:XS` and no priority (the quarantine
-   unblocks `main`; #5692), titled "Flaky
-   test: `<test>` fails under load on main". The body gives the job, the failure lines
-   from the log (in a fence), the run's link and why it is a flake (step 2.5). The bug
-   stays open: the bug lane (#4207) fixes the test later and removes the quarantine.
+   unblocks `main`; #5692), titled by what fails, not "flaky" ("`<test>` times out
+   waiting for <what>"). The body gives the job, the failure lines from the log (in a
+   fence), the run's link, why it is a flake (step 2.5) and the **probable cause**, with
+   what the log shows. The bug stays open: its root-cause lane (step 3.7) removes the
+   quarantine.
 2. Label the session `#<bug>` with `set_session_labels`.
 3. Move to a worktree of your own with `move_worktree` on a new branch
    `fix-main/quarantine-<bug>`. Run `git fetch origin` and `git rebase origin/main`.
@@ -121,7 +122,12 @@ Do not rerun the failed jobs to find out (Rules). Read the failure and the batch
    push, and open the PR with `gh pr create`: the body says `Refs #<bug>` (not `Fixes`:
    the bug is for the fix), the failing run and step 2.5's reason. Turn on squash
    auto-merge at once. Label the session `P#<quarantine pr>`.
-7. Go to step 6.
+7. **Start a root-cause lane at once (Alex, 2026-11-17, #6037).** Start a session on the
+   bug with `start_session` (on a Linux machine when the test is Go or web), or, when you
+   cannot start one, ask the bug lane's lead (#4207) with `message_session` to start it.
+   The lane finds the cause, fixes it and takes the quarantine out. A quarantine keeps
+   `main` green, but the bug it hides stays in the product until that lane lands.
+8. Go to step 6.
 
 ## 4. File a break
 

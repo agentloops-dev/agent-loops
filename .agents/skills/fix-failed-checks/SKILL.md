@@ -37,9 +37,10 @@ event's `pr` and your own branch.
    #5754): a rerun that passes hides a flake. When the default branch fails the same
    test, do step 2a. When a test failed that the change does not touch, and the failure
    is a time limit or a wait (a flake): file or update its `bug`, quarantine it on a PR
-   of its own as the `fix-main` skill's step 3 says (the bug stays open), comment on this
-   PR with the quarantine PR's link, and update this branch from the default branch once
-   it lands (2a, part 4). Any other failure is the change's: go to step 3. A runner or
+   of its own as the `fix-main` skill's step 3 says (the bug stays open), start its
+   root-cause lane at once as that step's part 7 says (#6037), comment on this PR with
+   the quarantine PR's link, and update this branch from the default branch once it
+   lands (2a, part 4). Any other failure is the change's: go to step 3. A runner or
    network problem with no test failed: file or update a `bug` for it, and push the next
    commit, or update the branch, when there is one.
 
