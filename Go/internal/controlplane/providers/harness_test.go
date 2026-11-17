@@ -204,8 +204,14 @@ type standIn struct {
 	// failCreate: Create fails with these words (#3972).
 	failCreate string
 	// createTakes: how long a Create takes; making and mostMaking count the Creates at once (#4706).
-	createTakes          time.Duration
+	createTakes        time.Duration
 	making, mostMaking int
+	// slowDelete: a deleted workspace is still in the next list, as DigitalOcean's droplet
+	// is (#6079), and a Delete of a workspace it does not have fails as the real one does.
+	slowDelete bool
+	lingering  []MachineInfo
+	// failDelete: Delete fails with these words.
+	failDelete string
 }
 
 func newStandIn(ws []MachineInfo) *standIn { return &standIn{workspaces: ws, firstBootRuns: true} }
@@ -228,7 +234,9 @@ func (s *standIn) Check() (Checked, error) {
 func (s *standIn) List() ([]MachineInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]MachineInfo{}, s.workspaces...), nil
+	out := append(append([]MachineInfo{}, s.workspaces...), s.lingering...)
+	s.lingering = nil
+	return out, nil
 }
 
 func (s *standIn) setState(id, state string) {
@@ -313,7 +321,17 @@ func (s *standIn) Create(name string, options any, firstBoot *string) (*MachineI
 func (s *standIn) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.failDelete != "" {
+		return &ProviderFailure{s.failDelete}
+	}
+	gone := s.find(id)
+	if s.slowDelete && gone == nil {
+		return &ProviderFailure{"There is no workspace " + id + "."}
+	}
 	s.deleted = append(s.deleted, id)
+	if s.slowDelete {
+		s.lingering = append(s.lingering, *gone)
+	}
 	var kept []MachineInfo
 	for _, w := range s.workspaces {
 		if w.ID != id {
