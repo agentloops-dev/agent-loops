@@ -80,10 +80,11 @@ event's `pr` and your own branch.
    in step 2, on a PR of its own, with its bug open. Run the check that failed, on your computer, when you
    can.
 5. **Push.** Commit with a message that says which check you fixed, and push to the same
-   branch. Never force-push. Before the push, take the lease `ci`, push, and release it (AGENTS.md, #5712;
+   branch. Never force-push. Before the push, run `scripts/checks.sh attest run` under the `build`
+   lease (#6059), then take the lease `ci`, push, and release it (AGENTS.md, #5712;
    the lease waits for an empty CI queue, #5709). On a conflict with `main`, `git merge origin/main` and push
    without running the tests again.
-   After the push, run `scripts/checks.sh attest` under the `build` lease (AGENTS.md,
+   Just after the push, run `scripts/checks.sh attest post` (AGENTS.md,
    "Verifying a lane's work", #5674): CI skips each task it covers (#5710). CI on `main`
    runs 10% of attested tasks again, and an attestation that it finds false revokes
    every attestation of the lane (#5723). A task that failed in this
