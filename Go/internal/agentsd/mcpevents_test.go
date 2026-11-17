@@ -15,7 +15,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -769,7 +768,6 @@ func TestAWaitOutlastsASignInThatFailsForAMoment(t *testing.T) {
 func TestAWaitEndsWhenItsServerStopsSending(t *testing.T) {
 	t.Parallel()
 
-	flaky.UnderLoad(t, "#5891")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
