@@ -36,9 +36,30 @@ event's `pr` and your own branch.
 2. **Decide.** Never run the failed jobs again to get to green (Alex, 2026-11-15,
    #5754): a rerun that passes hides a flake. When the default branch fails the same
    test, do step 2a. When a test failed that the change does not touch, and the failure
-   is a time limit or a wait (a flake), quarantine it in this branch (Alex, 2026-11-17,
-   #6063): file or update its `bug` (titled by what fails, with the probable cause from
-   the log), add `flaky.UnderLoad(t, "#<bug>")` (Go), `.flakyUnderLoad` (Swift) or
+   is a time limit or a wait (a flake), first run that test alone, 20 times, under the
+   "build" lease (#6129):
+
+   ```sh
+   # Go: the package path is from Go/; -run takes the test's whole name.
+   Go/scripts/go.sh test -race -count=20 -timeout=30m -run '^TestX$' ./internal/agentsd/
+   # Swift (Swift Testing): stops at the first failure.
+   AGENTS_QUARANTINE=0 scripts/build-cache.sh swift test --package-path Packages/AgentsKit \
+     --filter '<Suite type>/<test function>' --repeat-until fail --maximum-repetitions 20
+   # Web (node:test has no -count): stops at the first failure.
+   (cd Web && for i in $(seq 20); do node --test --test-force-exit \
+     --test-name-pattern='<the test name>' test/<file>.test.mjs || { echo "failed on run $i"; exit 1; }; done)
+   ```
+
+   The `fix-main` skill's step 3 says what each costs, and why Swift and web have no
+   `-race`. **When it fails alone,** in any of the 20 runs, it is a bug, not a flake: do
+   not quarantine it. When your change can cause it, it is the change's: go to step 3.
+   Else file or update its `bug`, titled by what is wrong ("`TestX`: <what is wrong>",
+   not "flaky"), with the command, how many runs failed and the failure lines; fix it in
+   this branch when the fix is small and clear (say so in the PR body), else hand it to
+   the epic's lead or the bug lane's lead (#4207) and wait for its fix to land. **When it
+   passes 20 of 20 alone,** quarantine it in this branch (Alex, 2026-11-17, #6063): file
+   or update its `bug` (titled by what fails, with the probable cause from the log, the
+   command and "passed 20 of 20 alone"), add `flaky.UnderLoad(t, "#<bug>")` (Go), `.flakyUnderLoad` (Swift) or
    `{ skip: flakyUnderLoad("#<bug>") }` (web) to that test, say so in the PR body, and
    push (step 5). Do not start a session for it, and do not wait for one. The bug stays
    open; the epic's lead or the bug lane's lead (#4207) starts its root-cause lane, not
