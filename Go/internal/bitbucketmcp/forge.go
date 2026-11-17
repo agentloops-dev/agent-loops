@@ -66,6 +66,11 @@ type Item struct {
 	// MergeCommit is the commit it made (#4409), as Bitbucket gives it (12 hex digits). Bitbucket
 	// says nobody that merged it.
 	HeadRef, BaseRef, MergeCommit string
+	// An issue's (#5747): Priority is high or low from its priority field (blocker and
+	// critical are high; major, the default, is none; minor and trivial are low), "" for none;
+	// OnHold says its state is on hold.
+	Priority string
+	OnHold   bool
 }
 
 // SearchPage is a page of a list, the last updated first. Cursors[i] goes on after Items[i],
@@ -261,6 +266,13 @@ func (i issueJSON) forgeItem(repo string) Item {
 	if i.Milestone != nil {
 		it.Milestone = i.Milestone.Name
 	}
+	switch i.Priority {
+	case "blocker", "critical":
+		it.Priority = "high"
+	case "minor", "trivial":
+		it.Priority = "low"
+	}
+	it.OnHold = i.State == "on hold"
 	return it
 }
 

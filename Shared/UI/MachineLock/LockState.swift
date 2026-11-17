@@ -16,7 +16,9 @@ import Observation
 ///
 /// Machines (#3491, D3, D8): a machine that asks is shown the same way and approved with an
 /// addMachine; a host code made here carries an invite this client put on the lock; and a
-/// secret is sealed only to a machine whose key its owner's lock names.
+/// secret is sealed only to a machine whose key its owner's lock names. A machine the control
+/// plane made, whose set-up compared its digits already (#5359, #5776), shows no card: a signer
+/// sends its nonce and, once the machine's reveal checks, signs its addMachine by itself.
 ///
 /// This Mac's own host (#4248): the window that makes the root puts an invite for it in the
 /// same lock/add and keeps it in the host's root, as a join code would, so the host adds
@@ -201,10 +203,34 @@ final class LockState {
         await refresh(control)
     }
 
-    /// The cards to show now: other clients' open requests.
+    /// The cards to show now: other clients' open requests. A compared machine's shows only
+    /// when approving it by itself failed, or its reveal did not check (#5776).
     func open(at now: Date = Date()) -> [DaemonAPI.LockJoinRequest] {
         guard place == .member else { return [] }
-        return requests.filter { $0.expires > now && $0.client != client }
+        return requests.filter {
+            $0.expires > now && $0.client != client && (!Self.compared($0) || failures[$0.request] != nil || step($0) == .mismatch)
+        }
+    }
+
+    /// A machine's request that the control plane marked compared (#5776).
+    static func compared(_ request: DaemonAPI.LockJoinRequest) -> Bool { request.machine != nil && request.compared == true }
+
+    /// A compared machine (#5776): this signer sends its nonce, then, once the machine showed
+    /// the nonce it committed to, signs its addMachine. The person compares nothing: the
+    /// machine showed the digits the control plane made from its join token. A request another
+    /// device answered is that device's to approve.
+    private func approveCompared(_ request: DaemonAPI.LockJoinRequest, on control: DaemonClient) async {
+        guard place == .member, Self.compared(request), request.expires > Date(), failures[request.request] == nil else { return }
+        switch step(request) {
+        case .waiting:
+            await compare(request, on: control)
+            // The machine may have shown its nonce while this device's was on its way.
+            if let latest = requests.first(where: { $0.request == request.request }), case .compare = step(latest) {
+                await approve(latest, on: control)
+            }
+        case .compare: await approve(request, on: control)
+        case .elsewhere, .revealing, .mismatch: return
+        }
     }
 
     func step(_ request: DaemonAPI.LockJoinRequest) -> Step {
@@ -227,6 +253,7 @@ final class LockState {
         let listed = try? await control.call(DaemonAPI.Method.lockJoinRequests, DaemonAPI.Empty(),
                                              returning: [DaemonAPI.LockJoinRequest].self)
         requests = listed ?? []
+        for request in requests { await approveCompared(request, on: control) }
     }
 
     /// A notification from the control plane. True when it was one of the lock's.
@@ -243,6 +270,7 @@ final class LockState {
                 requests.append(request)
             }
             await answerOwn(request, on: control)
+            await approveCompared(request, on: control)
         case DaemonAPI.Notification.controlLockJoinDecided:
             guard let decided = try? params?.decode(DaemonAPI.LockJoinDecided.self) else { return true }
             requests.removeAll { $0.request == decided.request }

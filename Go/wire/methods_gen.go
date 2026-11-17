@@ -44,6 +44,7 @@ var CallAgentsSetLabels = Method[SetLabelsRequest, Agent]{"agents/setLabels"}
 var CallAgentsSetLevels = Method[SetLevelsRequest, Agent]{"agents/setLevels"}
 var CallAgentsSetMuted = Method[SetMutedRequest, Empty]{"agents/setMuted"}
 var CallAgentsSetOption = Method[SetOptionRequest, []ConfigOption]{"agents/setOption"}
+var CallAgentsSetPriority = Method[SetPriorityRequest, Agent]{"agents/setPriority"}
 var CallAgentsSetSandbox = Method[SetSandboxRequest, Agent]{"agents/setSandbox"}
 var CallAgentsSetUnread = Method[SetUnreadRequest, Empty]{"agents/setUnread"}
 var CallAgentsStart = Method[StartRequest, UUID]{"agents/start"}

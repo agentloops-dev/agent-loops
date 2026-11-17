@@ -52,25 +52,36 @@ func withHierarchy(i *wire.ForgeItem, parent *wire.LineageNode, total, done int)
 			i.Standing = new(true)
 		}
 	}
-	withPriorityLabels(i)
 	i.Parent = parent
 	if total > 0 {
 		i.Progress = &wire.ForgeProgress{Done: int64(done), Total: int64(total)}
 	}
 }
 
-// withPriorityLabels sets an item's priority from its labels priority:high, priority:medium and
-// priority:low (any case), the higher of two, unless the forge's own priority field set it (#5688).
-func withPriorityLabels(i *wire.ForgeItem) {
-	if i.Priority != nil {
-		return
-	}
-	for _, p := range []string{"high", "medium", "low"} {
-		if hasLabel(*i, "priority:"+p) {
-			i.Priority = &p
-			return
+// forgeOwn says which of priority and on hold an item's forge has a field of its own for
+// (#5747): the labels are not read for those, so the two cannot disagree.
+type forgeOwn struct{ priority, hold bool }
+
+// withPlanLabels sets what the forge has no field of its own for, by own, from the item's
+// labels (#5688, #5747): its priority from priority:high, priority:medium and priority:low (any
+// case; the higher of two), and on hold from the label on hold (any case; on-hold too).
+func withPlanLabels(i *wire.ForgeItem, own forgeOwn) {
+	if !own.priority && i.Priority == nil {
+		for _, p := range []string{"high", "medium", "low"} {
+			if hasLabel(*i, "priority:"+p) {
+				i.Priority = &p
+				break
+			}
 		}
 	}
+	if !own.hold && slices.ContainsFunc(i.Labels, func(l wire.ForgeLabel) bool { return isHoldName(l.Name) }) {
+		i.OnHold = new(true)
+	}
+}
+
+// isHoldName says a label or a status names on hold: in any case, with a space, - or _.
+func isHoldName(name string) bool {
+	return strings.NewReplacer("-", " ", "_", " ").Replace(strings.ToLower(strings.TrimSpace(name))) == "on hold"
 }
 
 // featureName is the feature a label names: feature:work is work.

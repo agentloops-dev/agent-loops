@@ -196,6 +196,15 @@ type Agent struct {
 
 	Labels []SessionLabel `json:"labels,omitzero"`
 
+	// The priority the session goes by (#5846): prioritySet, else the highest priority of the issues it is labelled with (#n, and the issues a P#n closes), else its starter's, else none (absent). prioritySource says which. The daemon works it out; a client only reads it.
+	Priority *SessionPriority `json:"priority,omitzero"`
+
+	// The priority a person or an agent set on the session (agents/setPriority, start_session, set_session_priority); absent when it follows its issue. It wins until it is cleared, and it lasts a restart.
+	PrioritySet *SessionPriority `json:"prioritySet,omitzero"`
+
+	// Where priority comes from (#5846); absent is none.
+	PrioritySource *SessionPrioritySource `json:"prioritySource,omitzero"`
+
 	State AgentState `json:"state"`
 
 	RuntimeSessionID *string `json:"runtimeSessionID,omitzero"`
@@ -6166,7 +6175,7 @@ type ForgeImageRequest struct {
 	URL string `json:"url"`
 }
 
-// An issue or a pull request (a GitLab merge request) as its forge says it (#3129): one model for GitHub, GitLab, Linear and Jira (#3260), so one page draws each. node is its lineage node (kind issue or pr, ref github:issue:alexec/agents#12). state is open, closed or merged; status is the tracker's own name for its step, where its workflow has steps (a Jira status, as In Progress; one in Jira's Done category is closed). folder is a folder on this machine on its repo, to act from. labels have their #rrggbb colour where the forge gives one (#2956). The pull request's own fields: draft; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. The hierarchy (#3267): parent is the issue it is a sub-issue (a Linear or GitLab child) of; level is epic, story, task or spike, from its labels; feature is the name of its feature:<name> label; progress is a parent's closed children of all of them, where the forge says it: in a GitHub list, and on an issue's own read. standing says it has the label standing: a standing epic, whose plan is a query (#3659). authorAvatar is the author's picture, a URL that only forge/image reads (#4363), where the forge gives one (ForgeCapabilities.avatars). stateReason is why a closed issue closed (#4365): completed, not_planned or duplicate, where the forge says it (ForgeCapabilities.stateReason); absent on an open issue and on a pull request. createdAt is when it opened and closedAt when it closed or merged (#4373), where the forge says them (ForgeCapabilities.createdAt and closedAt); closedAt is absent while it is open. A pull request's branches (#4409): headRef is the branch it merges from and baseRef the one it merges into, where the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it is open or closed unmerged. priority is high, medium or low, absent for none (#5688): from Linear's and Jira's priority field (Urgent and High, Highest and High → high; Low and Lowest → low), and on the other forges from the labels priority:high, priority:medium and priority:low (any case; the higher of two). milestoneDue is the due date of the item's milestone, where the forge says it; absent with no milestone or no due date.
+// An issue or a pull request (a GitLab merge request) as its forge says it (#3129): one model for GitHub, GitLab, Linear and Jira (#3260), so one page draws each. node is its lineage node (kind issue or pr, ref github:issue:alexec/agents#12). state is open, closed or merged; status is the tracker's own name for its step, where its workflow has steps (a Jira status, as In Progress; one in Jira's Done category is closed). folder is a folder on this machine on its repo, to act from. labels have their #rrggbb colour where the forge gives one (#2956). The pull request's own fields: draft; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. The hierarchy (#3267): parent is the issue it is a sub-issue (a Linear or GitLab child) of; level is epic, story, task or spike, from its labels; feature is the name of its feature:<name> label; progress is a parent's closed children of all of them, where the forge says it: in a GitHub list, and on an issue's own read. standing says it has the label standing: a standing epic, whose plan is a query (#3659). authorAvatar is the author's picture, a URL that only forge/image reads (#4363), where the forge gives one (ForgeCapabilities.avatars). stateReason is why a closed issue closed (#4365): completed, not_planned or duplicate, where the forge says it (ForgeCapabilities.stateReason); absent on an open issue and on a pull request. createdAt is when it opened and closedAt when it closed or merged (#4373), where the forge says them (ForgeCapabilities.createdAt and closedAt); closedAt is absent while it is open. A pull request's branches (#4409): headRef is the branch it merges from and baseRef the one it merges into, where the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it is open or closed unmerged. priority is high, medium or low, absent for none (#5688, #5747): from the forge's own priority field where it has one, and then its labels are not read for it: Linear's (Urgent and High → high; Low → low), Jira's (Highest and High → high; Low and Lowest → low), GitHub's Priority issue field when the repo has it (Urgent and High → high), Bitbucket's (blocker and critical → high; major, the default, → none; minor and trivial → low) and Azure DevOps' Priority (1 → high; 2, the default, → none; 3 and 4 → low); elsewhere from the labels priority:high, priority:medium and priority:low (any case; the higher of two). milestoneDue is the due date of the item's milestone, where the forge says it; absent with no milestone or no due date. onHold says the item is on hold (#5747): Bitbucket's state on hold; elsewhere the label on hold (any case; on-hold too), and on Jira a status named On hold too; absent is false.
 type ForgeItem struct {
 	Node LineageNode `json:"node"`
 
@@ -6195,6 +6204,8 @@ type ForgeItem struct {
 	MilestoneDue *Date `json:"milestoneDue,omitzero"`
 
 	Priority *string `json:"priority,omitzero"`
+
+	OnHold *bool `json:"onHold,omitzero"`
 
 	CreatedAt *Date `json:"createdAt,omitzero"`
 
@@ -8177,7 +8188,7 @@ type LockJoinNonce struct {
 	Nonce Data `json:"nonce"`
 }
 
-// lock/joinRequests and control/lockJoinRequested (#3490): a client asking to join its person's lock, to every client of that person, and sent again in place as it goes on. client is the asking client's id, so it knows its own. nonce is the signer's, once one sent it (lock/joinAnswer), and answeredBy is that signer's client id; reveal is the asking client's nonce, once it showed it. Each screen makes the six digits from key, reveal and nonce. machine is set when a machine asks (#3491, D3): client is then the machine's id, kind is unknown, and a signer approves it with an addMachine whose key and sealing key are both key, the machine's own.
+// lock/joinRequests and control/lockJoinRequested (#3490): a client asking to join its person's lock, to every client of that person, and sent again in place as it goes on. client is the asking client's id, so it knows its own. nonce is the signer's, once one sent it (lock/joinAnswer), and answeredBy is that signer's client id; reveal is the asking client's nonce, once it showed it. Each screen makes the six digits from key, reveal and nonce. machine is set when a machine asks (#3491, D3): client is then the machine's id, kind is unknown, and a signer approves it with an addMachine whose key and sealing key are both key, the machine's own. compared is set on a machine's request when the control plane made that machine and its set-up's compare step showed the digits the control plane made from its join token (#5359, #5776): a signer then sends its nonce and, once the machine's reveal checks against its commitment, approves it by itself, with no card for the person. The control plane still signs nothing.
 type LockJoinRequest struct {
 	Request string `json:"request"`
 
@@ -8200,6 +8211,8 @@ type LockJoinRequest struct {
 	AnsweredBy *string `json:"answeredBy,omitzero"`
 
 	Reveal Data `json:"reveal,omitzero"`
+
+	Compared *bool `json:"compared,omitzero"`
 }
 
 // lock/join's answer (#3490): the request, and when it ends unanswered.
@@ -14678,6 +14691,21 @@ type SessionNotice struct {
 	Detail *string `json:"detail,omitzero"`
 }
 
+// A session's priority (#5846): the same three levels as an issue's (ForgeItem.priority), in the order high, medium, none, low.
+type SessionPriority string
+
+const SessionPriorityHigh SessionPriority = "high"
+const SessionPriorityMedium SessionPriority = "medium"
+const SessionPriorityLow SessionPriority = "low"
+
+// Where a session's priority comes from (#5846): set on it, its issue's, its starter's, or none.
+type SessionPrioritySource string
+
+const SessionPrioritySourceSet SessionPrioritySource = "set"
+const SessionPrioritySourceIssue SessionPrioritySource = "issue"
+const SessionPrioritySourceStarter SessionPrioritySource = "starter"
+const SessionPrioritySourceNone SessionPrioritySource = "none"
+
 // A secret kept for one session only (#3548): only that session's agent can use it (fill_secret, its environment, its MCP servers), and its host deletes it when the session is archived. No value.
 type SessionSecret struct {
 	AgentID UUID `json:"agentID"`
@@ -14830,6 +14858,13 @@ type SetPinnedRequest struct {
 	Folder URL `json:"folder"`
 
 	Pinned bool `json:"pinned"`
+}
+
+// agents/setPriority (#5847): the priority set on a session; with no priority (absent or null), the setting is cleared and the session follows its issue again ("From issue").
+type SetPriorityRequest struct {
+	AgentID UUID `json:"agentID"`
+
+	Priority *SessionPriority `json:"priority,omitzero"`
 }
 
 type SetProviderRequest struct {
@@ -15624,6 +15659,9 @@ type StartRequest struct {
 	Sandbox *SandboxChoice `json:"sandbox,omitzero"`
 
 	Labels []string `json:"labels"`
+
+	// The priority set on the new session (#5847), as agents/setPriority sets it; absent, it follows its issue, then its starter.
+	Priority *SessionPriority `json:"priority,omitzero"`
 
 	Persona *string `json:"persona,omitzero"`
 

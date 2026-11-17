@@ -309,6 +309,7 @@ func toolsBrief(browser, screen, bot, github bool) string {
 	lines := []string{
 		"- notify: tell me that something happened, when you have no question for me.",
 		"- set_session_labels: label this session #<n> for an issue or P#<n> for a pull request. This links them to it.",
+		"- set_session_priority: set this session's priority, or one you started (start_session takes priority too), when I give it one its issue does not: a higher one goes first for a shared resource. Leave it unset and it follows its issue, else its starter.",
 		"- docs_search, then docs_read: find the docs for your work, in this folder and its docs connectors.",
 		"- estimate_issue: say what an issue or an epic will cost and take.",
 		"- conflict_risk_analysis: before your first push and before auto-merge, ask which open pull requests your change would conflict with; it says go, wait for #N or stack on #N. Advice, not a gate.",

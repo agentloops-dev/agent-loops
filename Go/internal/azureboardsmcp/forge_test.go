@@ -462,3 +462,18 @@ func TestForgeItemDates(t *testing.T) {
 		}
 	}
 }
+
+// #5747: a work item's Priority field: 1 is high, 2 (the default) none, 3 and 4 low; a type
+// with no Priority field says so.
+func TestWorkItemPriority(t *testing.T) {
+	f := &RealBoards{Base: "https://dev.azure.com/"}
+	for raw, want := range map[string]string{"1": "high", "2": "", "3": "low", "4": "low", "": ""} {
+		w := workItemJSON{ID: 1, Fields: map[string]json.RawMessage{}}
+		if raw != "" {
+			w.Fields[fieldPriority] = json.RawMessage(raw)
+		}
+		if got := f.forgeItem("o", w, nil); got.Priority != want || got.PriorityField != (raw != "") {
+			t.Errorf("%q: %q %v", raw, got.Priority, got.PriorityField)
+		}
+	}
+}

@@ -395,6 +395,8 @@ type GitHubError struct {
 	// Refused is GitHub's own no (403 that is not a rate limit, or 404): the token reaches
 	// GitHub but not this, such as a repository where the App is not installed.
 	Refused bool
+	// issueFields says GitHub refused the issue fields a query asked for (#5747).
+	issueFields bool
 }
 
 func (e *GitHubError) Error() string { return e.Message }

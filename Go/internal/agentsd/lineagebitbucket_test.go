@@ -94,6 +94,9 @@ func TestLineageOnABitbucketFolder(t *testing.T) {
 		t.Errorf("the run: %v", active(d, pr))
 	}
 
+	// The issue's priority is asked for by the connection (#5847) before it goes.
+	d.lineageSettle(2 * time.Second)
+	d.resolveSettle(2 * time.Second)
 	// With no connection the folder is still on Bitbucket, by its host.
 	file.Delete(connections.Bitbucket)
 	if r := d.folderRepo(folder); r != (forgeRepo{"bitbucket", "walkalex/app"}) {

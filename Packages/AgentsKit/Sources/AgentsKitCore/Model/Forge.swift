@@ -39,8 +39,12 @@ public extension DaemonAPI {
         public var milestone: String?
         /// The milestone's due date, where the forge says it (#5688); no client shows it yet.
         public var milestoneDue: Date?
-        /// high, medium or low; nil for none (#5688). The labels `priority:…` give it on most forges.
+        /// high, medium or low; nil for none (#5688). The forge's own priority field gives it
+        /// where it has one, else the labels `priority:…` (#5747).
         public var priority: String?
+        /// On hold (#5747): Bitbucket's state on hold, else the label `on hold`; nil is not on
+        /// hold. No client shows it yet.
+        public var onHold: Bool?
         public var updatedAt: Date
         /// When it opened, and when it closed or merged (nil while open), where the forge says
         /// them (`ForgeCapabilities.createdAt` and `closedAt`; #4373).
