@@ -33,6 +33,12 @@ func waitLimit(t testing.TB) time.Duration {
 	return limit
 }
 
+// afterLimit is a channel that gets the time when waitLimit(t) has gone by: what a select
+// in a test waits on for its limit, in place of time.After of a fixed time (#6128).
+func afterLimit(t testing.TB) <-chan time.Time {
+	return time.After(waitLimit(t)) //nolint:forbidigo // the limit comes from t.Deadline(), not a fixed time
+}
+
 // leftBefore is the wait for a run with left to go: left less deadlineMargin, or half of
 // left when that is more.
 func leftBefore(left time.Duration) time.Duration {

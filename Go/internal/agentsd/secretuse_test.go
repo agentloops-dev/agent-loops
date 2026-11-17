@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -54,7 +53,7 @@ func replyOf(t *testing.T, done chan browserReply) browserReply {
 	select {
 	case r := <-done:
 		return r
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the call was never answered")
 	}
 	return browserReply{}

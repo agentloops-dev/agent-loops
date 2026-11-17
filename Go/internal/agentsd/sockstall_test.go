@@ -90,7 +90,7 @@ func TestAStalledSocketClientIsLetGo(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "Broadcast is held by a client that reads nothing")
 	}
 	// One stalled client: one call waits for its full queue, then it is gone. With no

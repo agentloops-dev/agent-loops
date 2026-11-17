@@ -111,7 +111,7 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 		if !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the wait was never answered")
 	}
 	n := 0
@@ -169,7 +169,7 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 		if !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the second wait was never answered")
 	}
 

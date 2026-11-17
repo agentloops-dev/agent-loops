@@ -516,7 +516,7 @@ func TestAWaitOnAServersEvent(t *testing.T) {
 		if !strings.HasPrefix(text, "Subscribed to pr.merged on ci (pr 5, repo alexec/Agents). pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the wait was never answered")
 	}
 	// Nothing holds the subscription now: it goes.
@@ -559,7 +559,7 @@ func TestAWaitLooksBackForAServersEventItMissed(t *testing.T) {
 			if !strings.Contains(text, "pr.merged happened at ") || position > 0 && !strings.Contains(text, fmt.Sprintf("(position %d)", position)) {
 				t.Fatal(text)
 			}
-		case <-time.After(waitLimit(t)):
+		case <-afterLimit(t):
 			waitFailed(t, "the wait was never answered")
 		}
 	}
@@ -751,7 +751,7 @@ func TestAWaitOutlastsASignInThatFailsForAMoment(t *testing.T) {
 		if !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the wait was never answered")
 	}
 	ci.mu.Lock()
@@ -792,7 +792,7 @@ func TestAWaitEndsWhenItsServerStopsSending(t *testing.T) {
 			!strings.Contains(text, "this token may not read alexec/Agents") {
 			t.Fatal(text)
 		}
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the wait was never told its server stopped")
 	}
 	if w := d.Store.Agent(a.ID).EventWait; w != nil && w.Ending == nil {
@@ -830,7 +830,7 @@ func TestAServerErrorIsTriedAgain(t *testing.T) {
 		if !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the wait was never answered")
 	}
 	ci.mu.Lock()
@@ -890,7 +890,7 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 		if !strings.Contains(text, "the server stopped sending it") {
 			t.Fatal(text)
 		}
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the wait was never told its server stopped")
 	}
 	ci.mu.Lock()
@@ -923,7 +923,7 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 		if strings.Contains(text, "stopped sending") || !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "the new wait was never answered")
 	}
 	// b's wait hears the same event. Wait for it, so Shutdown does not close b's connection
@@ -931,7 +931,7 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 	select {
 	case text := <-bText:
 		t.Log("b: " + text)
-	case <-time.After(waitLimit(t)):
+	case <-afterLimit(t):
 		waitFailed(t, "b's wait was never answered")
 	}
 }
