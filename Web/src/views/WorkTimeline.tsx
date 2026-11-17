@@ -16,7 +16,7 @@ import {
   Axis, blockHeight, blockWords, cardRow, colourIndex, dotX, dotY, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
   lastJoinedWords, landed as landedRefs, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping,
   packSpan, rangeSpan, rangeTitle, rangeWindow, reach, rgbOf, rowCount, rowGap, rowTop, sessionNodes, showTheWeek, startedBySessions,
-  timelineLines, timelineRanges, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineHit, type TimelineLine, type TimelineRange,
+  timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineHit, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
 import { go } from "../route";
 import { keepWork, keptWorkRead } from "../model/localCopy";
@@ -251,7 +251,7 @@ export function WorkTimeline({ store }: { store: Store }) {
           <>
             <FromDeviceStrip at={fromDevice.value && problems.length === 0 ? plotAt.value : undefined} />
             <ErrorStrip lines={problems} retry={refresh} at={stale.value || fromDevice.value ? plotAt.value : undefined} />
-            <Plot timeline={t ?? { epics: [], releases: [] }} loading={t === null} dim={stale.value}
+            <Plot timeline={t ?? { epics: [], releases: [] }} drawn={t !== null} reading={reading.value} dim={stale.value}
               working={t ? workingNow(t, sessions.value, Object.values(store.agents.value).flat()) : new Set()} />
           </>
         )}
@@ -271,11 +271,12 @@ function useMinute(): number {
 
 interface Hover { hit: TimelineHit; x: number; y: number }
 
-/** The plot; under 700 px the list of epics in its place (note 36). `loading`: the first read, the axis and Now with
- * grey blocks that shimmer in rows (S10). `dim`: the last plot under the error strip (S12). `working`: the epics and
+/** The plot; under 700 px the list of epics in its place (note 36). `drawn`: a read or a device's copy drew it;
+ * `reading`: a read of the window runs. Until one draws, or while one runs and no epic is in the window, the axis and
+ * Now with grey blocks that shimmer in rows (S10, #5925), never S11. `dim`: the last plot under the error strip (S12). `working`: the epics and
  * children a session is in a turn on now (#4265); their blocks glow. */
-function Plot({ timeline: t, loading, dim, working }: {
-  timeline: Timeline; loading: boolean; dim: boolean; working: ReadonlySet<string>;
+function Plot({ timeline: t, drawn, reading, dim, working }: {
+  timeline: Timeline; drawn: boolean; reading: boolean; dim: boolean; working: ReadonlySet<string>;
 }) {
   const now = useMinute();
   const scroller = useRef<HTMLDivElement>(null);
@@ -363,7 +364,9 @@ function Plot({ timeline: t, loading, dim, working }: {
   const d = new Drawing(lines, axis, now, height, offset, visible);
   const win = rangeWindow(range.value, anchor.value);
   const rows = epicRows(timelineLines(t, now), win, now);
-  const last = rows.length === 0 && !loading ? lastJoined(t, win.start) : undefined;
+  const shows = timelineShows(drawn, reading, rows.length);
+  const loading = shows === "loading";
+  const last = shows === "empty" ? lastJoined(t, win.start) : undefined;
   return (
     <div class={`timeline${dim ? " dim" : ""}`}>
       <div class="timeline-scroll" ref={scroller} onScroll={onScroll}>
@@ -381,7 +384,7 @@ function Plot({ timeline: t, loading, dim, working }: {
         </div>
       </div>
       {/* S11: no epic in the window, and the way to a wider one. */}
-      {rows.length === 0 && !loading && (
+      {shows === "empty" && (
         <div class="timeline-empty" role="status">
           <span class="strong">{noEpicsWords(range.value)}</span>
           {last !== undefined && <span class="quiet">{lastJoinedWords(last, now)}</span>}
