@@ -44,7 +44,10 @@ func (d *deliveries) waitTold(t *testing.T, host string, ok func(wire.MachineUse
 	t.Helper()
 	end := time.Minute
 	if deadline, set := t.Deadline(); set {
-		end = time.Until(deadline) - 10*time.Second
+		// Half of what is left when that is more (#6085): near the run's end, the time
+		// left less 10 s is zero or less, and the wait failed before a delivery could come.
+		left := time.Until(deadline)
+		end = max(left-10*time.Second, left/2)
 	}
 	gone := time.After(end)
 	for {
