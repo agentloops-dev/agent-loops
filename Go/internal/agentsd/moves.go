@@ -157,9 +157,11 @@ func (d *Daemon) askMove(id wire.UUID, move wire.PendingMove) (string, error) {
 		return "", worktreeFailed(whyCannotMove(a.RuntimeID))
 	}
 	folder := folderPath(a)
-	repo, ok := repositoryOf(folder)
-	if !ok {
-		return "", worktreeFailed("Moving needs a git repository, and " + filepath.Base(folder) + " is not in one.")
+	repo, err := findRepository(folder)
+	if err != nil {
+		return "", worktreeFailed(repositoryWords(err,
+			"Moving needs a git repository, and "+filepath.Base(folder)+" is not in one.",
+			"Nothing was moved: git could not read the repository of "+filepath.Base(folder)+", so try again. Git said:"))
 	}
 	cwd := store.FolderPath(a.Cwd)
 	if e := move.Target.Existing; e != nil && canonical(store.FolderPath(e.Value)) == canonical(repo.toplevel) {

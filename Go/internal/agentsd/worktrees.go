@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -172,9 +173,11 @@ func (d *Daemon) prepareWorktree(folder string, choice wire.WorktreeChoice, prom
 // checked out: the folder for a start, or the worktree an agent moves out of
 // (053), so its commits come along.
 func (d *Daemon) prepareWorktreeFrom(folder, from string, choice wire.WorktreeChoice, prompt string) (*wire.AgentWorktree, string, error) {
-	repo, ok := repositoryOf(folder)
-	if !ok {
-		return nil, "", worktreeFailed(folder + " is not in a git repository, so it has no worktrees.")
+	repo, err := findRepository(folder)
+	if err != nil {
+		return nil, "", worktreeFailed(repositoryWords(err,
+			folder+" is not in a git repository, so it has no worktrees.",
+			"No worktree was made: git could not read the repository of "+folder+", so try again. Git said:"))
 	}
 	folderURL := store.FolderURL(folder)
 	switch {
@@ -623,8 +626,11 @@ type removalFacts struct {
 
 func (d *Daemon) removalFacts(r wire.WorktreeRemovalRequest) (removalFacts, error) {
 	folder := store.FolderPath(r.Folder)
-	repo, ok := repositoryOf(folder)
-	if !ok {
+	repo, err := findRepository(folder)
+	if err != nil {
+		if !errors.Is(err, errNotARepository) {
+			return removalFacts{}, worktreeFailed(repositoryWords(err, "", "Nothing was removed: git could not read the repository of "+folder+", so try again. Git said:"))
+		}
 		return removalFacts{}, &Error{Code: wire.FailureNotAWorktree, Message: folder + " is not in a git repository."}
 	}
 	root := canonical(store.FolderPath(r.Root))
