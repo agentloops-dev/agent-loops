@@ -216,6 +216,24 @@ public enum WorkPlan {
         }
     }
 
+    /// The On hold chip's words and its tooltip (#6090), the same on every client.
+    public static let onHoldWords = "On hold"
+    public static let onHoldHelp = "On hold: not picked up next"
+
+    /// Whether an item is on hold (#5747): `ForgeItem.onHold`, which the label `on hold` also sets.
+    public static func onHold(_ item: DaemonAPI.ForgeItem) -> Bool { item.onHold == true }
+
+    /// The label chips of a row that has the On hold chip: the `on hold` label is not drawn again (#6090).
+    public static func labels(_ labels: [DaemonAPI.ForgeLabel], onHold: Bool) -> [DaemonAPI.ForgeLabel] {
+        onHold ? labels.filter { !isHoldLabel($0.name) } : labels
+    }
+
+    /// The label `on hold`, as the forges spell it.
+    static func isHoldLabel(_ name: String) -> Bool {
+        let words = name.lowercased().replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
+        return words.trimmingCharacters(in: .whitespaces) == "on hold"
+    }
+
     /// The most issues `forge/plan` reads for a standing epic's query.
     static let standingLimit = 100
 

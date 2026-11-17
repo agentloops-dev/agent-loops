@@ -74,6 +74,8 @@ public enum WorkList {
         public var labels: [DaemonAPI.ForgeLabel]
         /// high, medium or low, from `ForgeItem.priority` (#5690); nil for none.
         public var priority: String?
+        /// On hold, from `ForgeItem.onHold` (#6090): the row has the On hold chip.
+        public var onHold = false
         /// The ref's repo or tracker: github:alexec/Agents, linear:ENG (a Linear team, #3311), jira.
         public var repo: String
         public var author: String?
@@ -137,6 +139,7 @@ public enum WorkList {
                       status: item.status, comments: item.comments, checks: item.checks, review: item.review,
                       stateReason: item.stateReason, avatar: item.authorAvatar, created: item.createdAt, closed: item.closedAt)
             priority = item.priority
+            onHold = WorkPlan.onHold(item)
         }
 
         /// A row lineage alone knows: a release, named by its tag until the forge names it (#4426).
