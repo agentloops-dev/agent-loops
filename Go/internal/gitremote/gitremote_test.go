@@ -28,7 +28,7 @@ func TestURLs(t *testing.T) {
 	dir := t.TempDir()
 	git := func(args ...string) {
 		t.Helper()
-		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil { //nolint:gosec // git on the test's own temporary folder
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
