@@ -416,7 +416,12 @@ for linter in $linters; do
 		;;
 	esac
 	if ! have "$(tool "$linter")"; then
-		echo "== $linter: failed, as $(tool "$linter") is not on the PATH and could not be got"
+		if [ "$(uname -s)" = Darwin ]; then
+			echo "== $linter: failed, as $(tool "$linter") is not on the PATH and could not be got"
+		else
+			# On Linux lint.sh gets nothing itself: the job puts the pinned linters on the PATH (#5890).
+			echo "== $linter: failed, as $(tool "$linter") is not on the PATH; on Linux, run scripts/lint.sh --tools DIR $(tool "$linter") first and put DIR on the PATH"
+		fi
 		failed="$failed $linter"
 		continue
 	fi
