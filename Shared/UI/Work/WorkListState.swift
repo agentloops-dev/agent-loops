@@ -13,7 +13,7 @@ final class WorkListState {
     var filter = WorkList.Filter() { didSet { remember() } }
     /// The person's projects (#3283), as the model last said them, for the Project filter.
     var projects: [WorkList.Project] = []
-    var sort = WorkList.Sort.updated { didSet { remember() } }
+    var sort = WorkList.Sort.priority { didSet { remember() } }
     var lists: [(host: MachineRef, list: DaemonAPI.ForgeList)]?
     var lineage: [DaemonAPI.ReportNode] = []
     /// The boards the Board menu offers (#3282), read with the list.
