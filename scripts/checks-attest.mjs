@@ -6,11 +6,16 @@
 // test-result predicate. On the pull request, CI skips each task it covers (#5585,
 // scripts/ci-attested.mjs).
 //
-//   node scripts/checks-attest.mjs [--base REF] [--plan] [--no-post]
+//   node scripts/checks-attest.mjs [run | post] [--base REF] [--plan] [--no-post]
 //   node scripts/checks-attest.mjs --selftest
 //
+// Two steps (#6059), so the check run is there when CI's `changes` job reads it, about a minute
+// after the push: `run`, before the push, runs the tasks at the head commit and keeps the check
+// run on disk (`git rev-parse --git-path agents-attest/runs/<head sha>.json`); `post`, just after
+// the push, reads it, checks that the pull request's head is that commit and that no task's hash
+// changed, and posts it, in seconds. With no step, it does both, and needs the push first.
 // --plan prints the tasks, their hashes and why each runs (the inputs that changed), and runs
-// nothing. --no-post runs them and prints the statements in place of posting them.
+// nothing. --no-post runs them, keeps them and prints the statements in place of posting them.
 //
 // Rules (the epic's principles):
 // - The subject of a statement is the task and its Nx hash, nothing else (principle 3). The
@@ -256,57 +261,51 @@ function platform() {
   return `${os}-${process.arch}`;
 }
 
-async function main(argv) {
-  let base = null;
-  let planOnly = false;
-  let post = true;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--base") base = argv[++i];
-    else if (argv[i] === "--plan") planOnly = true;
-    else if (argv[i] === "--no-post") post = false;
-    else {
-      console.error("usage: scripts/checks.sh attest [--base REF] [--plan] [--no-post]");
-      return 2;
-    }
-  }
-  const dirty = () => sh("git", ["status", "--porcelain", "--untracked-files=normal"]);
-  if (!planOnly && dirty()) {
-    console.error("attest: the tree has changes that are not committed; the hashes would not be the head commit's. Commit first.");
-    return 2;
-  }
-  const env = nxEnv();
-  const headSha = sh("git", ["rev-parse", "HEAD"]);
-  base ??= sh("git", ["merge-base", "origin/main", "HEAD"]);
-  const changedFiles = sh("git", ["diff", "--name-only", base, "HEAD"]).split("\n").filter(Boolean);
+/** Where the run step keeps its result for a head commit, for the post step to read. */
+function keptPath(headSha) {
+  return join(root, sh("git", ["rev-parse", "--git-path", `agents-attest/runs/${headSha}.json`]));
+}
 
-  let pr = null;
-  if (post && !planOnly) {
-    const view = spawnSync("gh", ["pr", "view", "--json", "number,headRefOid,url"], { cwd: root, encoding: "utf8" });
-    if (view.status !== 0) {
-      console.error("attest: no pull request for this branch; push and open it first, or use --no-post");
-      return 2;
-    }
-    pr = JSON.parse(view.stdout);
-    if (pr.headRefOid !== headSha) {
-      console.error(`attest: the pull request's head is ${pr.headRefOid.slice(0, 12)}, this is ${headSha.slice(0, 12)}: push first`);
-      return 2;
-    }
-  }
-
+function hashesAt(base, env) {
   const hashed = execFileSync("node", [join(root, "scripts/nx-hashes.cjs"), "--affected", base, "--json", ...TARGETS], {
     cwd: root, encoding: "utf8", env, stdio: ["ignore", "pipe", "inherit"], maxBuffer: 256 * 1024 * 1024,
   });
+  return JSON.parse(hashed);
+}
+
+/** The pull request of this branch, when its head is headSha; else a message and null. */
+function pullRequestAt(headSha) {
+  const view = spawnSync("gh", ["pr", "view", "--json", "number,headRefOid,url"], { cwd: root, encoding: "utf8" });
+  if (view.status !== 0) {
+    console.error("attest: no pull request for this branch; push and open it first, or use `attest run`");
+    return null;
+  }
+  const pr = JSON.parse(view.stdout);
+  if (pr.headRefOid !== headSha) {
+    console.error(`attest: the pull request's head is ${pr.headRefOid.slice(0, 12)}, this is ${headSha.slice(0, 12)}: push first`);
+    return null;
+  }
+  return pr;
+}
+
+/**
+ * The run step (#6059): run the tasks at the head commit, before the push, and keep the check
+ * run's body on disk by head sha, with each task's hash. Returns {code, body}.
+ */
+async function runStep({ base, planOnly, env, headSha }) {
+  const changedFiles = sh("git", ["diff", "--name-only", base, "HEAD"]).split("\n").filter(Boolean);
   const tools = toolchain(env);
-  const planned = attestable(JSON.parse(hashed)).map((t) => ({ ...t, skip: skipFor(t, tools) }));
+  const planned = attestable(hashesAt(base, env)).map((t) => ({ ...t, skip: skipFor(t, tools) }));
   if (planned.length === 0) {
     console.log("attest: the change affects no test, vet or lint task; nothing to attest");
-    return 0;
+    if (!planOnly) keep(headSha, keptRun(headSha, base, null, null));
+    return { code: 0, body: null };
   }
   for (const t of planned) {
     const why = changedInputs(t, changedFiles);
     console.log(`${t.skip ? "skip" : "run "} ${t.id} ${t.hash}${t.skip ? ` (${t.skip})` : ""}: ${why.length} inputs changed${why.length ? ` (${why.slice(0, 3).join(", ")}${why.length > 3 ? ", …" : ""})` : ""}`);
   }
-  if (planOnly) return 0;
+  if (planOnly) return { code: 0, body: null };
 
   // Only the targets asked; their dependencies (wire:gen, …) run as Nx's dependsOn says.
   const runs = planned.filter((t) => !t.skip && TARGETS.includes(t.target)).map((t) => t.id);
@@ -321,7 +320,7 @@ async function main(argv) {
     ], { cwd: root, stdio: "inherit", env });
   }
   const results = await nxResults(planned.filter((t) => !t.skip), since);
-  const changedTree = dirty();
+  const changedTree = sh("git", ["status", "--porcelain", "--untracked-files=normal"]);
   const path = ledgerPath();
   const ledger = readLedger(path);
   let { verdicts, failed } = decide(planned, results, ledger);
@@ -356,12 +355,65 @@ async function main(argv) {
   const statements = verdicts.filter((v) => v.attested).map((v) => statement(v.task, ctx));
   const body = checkRun(verdicts, statements, ctx);
   for (const v of verdicts) console.log(`${v.attested ? "attested    " : "not attested"} ${v.task.id}: ${v.reason}`);
-  if (!post) {
-    console.log(JSON.stringify(body, null, 1));
+  keep(headSha, keptRun(headSha, base, repo, body));
+  return { code: 0, body };
+}
+
+function keep(headSha, kept) {
+  const path = keptPath(headSha);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(kept) + "\n");
+  console.log(`attest: kept the run for ${headSha.slice(0, 12)} in ${path}; push, then \`scripts/checks.sh attest post\``);
+}
+
+/** What the run step keeps: the check run, and the base it hashed from. */
+export function keptRun(headSha, base, repo, body) {
+  return { headSha, base, repo, body };
+}
+
+/**
+ * The statements whose subject hash is not the task's hash now (hashes: [{id, hash}]): a kept
+ * run is posted only when this is empty. A task that is not in hashes changed too.
+ */
+export function staleStatements(body, hashes) {
+  const now = new Map(hashes.map((t) => [t.id, t.hash]));
+  const stale = [];
+  for (const line of body.output.text.split("\n").slice(1, -1)) {
+    const subject = JSON.parse(line).subject[0];
+    if (now.get(subject.name) !== subject.digest.nxTaskHash) stale.push(`${subject.name} ${subject.digest.nxTaskHash} (now ${now.get(subject.name) ?? "not affected"})`);
+  }
+  return stale;
+}
+
+/**
+ * The post step (#6059): read the run kept for the head commit, check that the pull request's
+ * head is that commit and that no task's hash changed, and post the check run. Seconds, not
+ * minutes: it runs no task.
+ */
+function postStep({ env, headSha, pr }) {
+  const path = keptPath(headSha);
+  if (!existsSync(path)) {
+    console.error(`attest: no kept run for ${headSha.slice(0, 12)}: run \`scripts/checks.sh attest run\` at this commit first`);
+    return 2;
+  }
+  const kept = JSON.parse(readFileSync(path, "utf8"));
+  if (kept.headSha !== headSha) {
+    console.error(`attest: the kept run in ${path} is for ${String(kept.headSha).slice(0, 12)}, not ${headSha.slice(0, 12)}`);
+    return 2;
+  }
+  if (!kept.body) {
+    console.log("attest: the change affects no test, vet or lint task; nothing to post");
     return 0;
   }
-  const posted = spawnSync("gh", ["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"], {
-    cwd: root, encoding: "utf8", input: JSON.stringify(body),
+  pr ??= pullRequestAt(headSha);
+  if (!pr) return 2;
+  const stale = staleStatements(kept.body, attestable(hashesAt(kept.base, env)));
+  if (stale.length) {
+    console.error(`attest: these hashes changed since the run (a tool, a package or the environment?); run \`scripts/checks.sh attest run\` again:\n${stale.join("\n")}`);
+    return 2;
+  }
+  const posted = spawnSync("gh", ["api", "-X", "POST", `repos/${kept.repo}/check-runs`, "--input", "-"], {
+    cwd: root, encoding: "utf8", input: JSON.stringify(kept.body),
   });
   if (posted.status !== 0) {
     const said = `${posted.stdout ?? ""}${posted.stderr ?? ""}`.trim() || `gh exited ${posted.status ?? posted.signal}`;
@@ -370,12 +422,55 @@ async function main(argv) {
       : "it needs gh as the agents' bot, with Checks: write";
     console.error(`attest: could not post the check run: ${why}:\n${said}`);
     // The run's statements, so a lane can still see them.
-    console.log(JSON.stringify(body, null, 1));
+    console.log(JSON.stringify(kept.body, null, 1));
     return 1;
   }
   const run = JSON.parse(posted.stdout);
   console.log(`attest: posted ${run.name} as ${run.app?.slug ?? "?"} on PR #${pr.number}: ${run.html_url}`);
   return 0;
+}
+
+async function main(argv) {
+  let step = null;
+  let base = null;
+  let planOnly = false;
+  let post = true;
+  const usage = () => {
+    console.error("usage: scripts/checks.sh attest [run | post] [--base REF] [--plan] [--no-post]");
+    return 2;
+  };
+  for (let i = 0; i < argv.length; i++) {
+    if ((argv[i] === "run" || argv[i] === "post") && i === 0) step = argv[i];
+    else if (argv[i] === "--base") base = argv[++i];
+    else if (argv[i] === "--plan") planOnly = true;
+    else if (argv[i] === "--no-post") post = false;
+    else return usage();
+  }
+  if (step === "post" && (base || planOnly || !post)) return usage();
+  if (step === "run") post = false;
+  const dirty = () => sh("git", ["status", "--porcelain", "--untracked-files=normal"]);
+  if (!planOnly && dirty()) {
+    console.error("attest: the tree has changes that are not committed; the hashes would not be the head commit's. Commit first.");
+    return 2;
+  }
+  const env = nxEnv();
+  const headSha = sh("git", ["rev-parse", "HEAD"]);
+  if (step === "post") return postStep({ env, headSha });
+
+  // Both steps: refuse before the run when the pull request's head is not this commit.
+  let pr = null;
+  if (post && !planOnly) {
+    pr = pullRequestAt(headSha);
+    if (!pr) return 2;
+  }
+  base ??= sh("git", ["merge-base", "origin/main", "HEAD"]);
+  const { code, body } = await runStep({ base, planOnly, env, headSha });
+  if (code !== 0 || !body) return code;
+  if (!post) {
+    if (step !== "run") console.log(JSON.stringify(body, null, 1));
+    return 0;
+  }
+  return postStep({ env, headSha, pr });
 }
 
 // ---- Selftest (scripts/lint.sh runs it) ----
@@ -436,6 +531,9 @@ function selftest() {
   assert(body.name === "attestation/macos-arm64" && body.conclusion === "neutral", "the check run's name or conclusion");
   const lines = body.output.text.split("\n").slice(1, -1);
   assert(lines.length === 1 && JSON.parse(lines[0]).subject[0].name === "go:test", "the check run's statements");
+  assert(staleStatements(body, [{ id: "go:test", hash: "111" }]).length === 0, "a kept run at the same hash is stale");
+  assert(staleStatements(body, [{ id: "go:test", hash: "333" }]).length === 1, "a kept run at another hash is posted");
+  assert(staleStatements(body, []).length === 1, "a kept run for a task no longer affected is posted");
   console.log("checks-attest selftest: ok");
 }
 
