@@ -15,10 +15,11 @@ struct WorkTimelineTests {
                             state: state, updatedAt: now, feature: feature)
     }
 
-    static func child(_ n: Int, started: Double? = nil, closed: Double? = nil, forecast: Double? = nil,
+    /// `created` is when it was filed: by default when it started (or closed), so the ghost adds nothing.
+    static func child(_ n: Int, created: Double? = nil, started: Double? = nil, closed: Double? = nil, forecast: Double? = nil,
                       waits: Bool = false, reason: String? = nil) -> DaemonAPI.WorkTimelineChild {
         DaemonAPI.WorkTimelineChild(item: item(n, state: closed == nil ? "open" : "closed"), stateReason: reason,
-                                    createdAt: h(-100), startedAt: started.map(h), closedAt: closed.map(h),
+                                    createdAt: h(created ?? started ?? closed ?? forecast ?? -100), startedAt: started.map(h), closedAt: closed.map(h),
                                     waitsForPerson: waits ? true : nil, forecastAt: forecast.map(h))
     }
 
@@ -117,6 +118,48 @@ struct WorkTimelineTests {
         try #require(past.count == 3)
         #expect(past.map(\.how) == [.open, .waits(1), .open])
         #expect(past[0].dots.allSatisfy(\.closed) && past[0].band == nil)
+    }
+
+    /// #6043: the ghost from created to closed, solid only from started to stopped.
+    @Test func aBlockIsSolidFromStartedToStoppedAndGhostFromCreatedToClosed() throws {
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            // Open, nobody on it, its last close 3 h before Now: solid to there, the ghost to Now.
+            Self.epic(1, [Self.child(10, created: -12, started: -10, closed: -3), Self.child(11, created: -9)],
+                      segments: [(-10, nil)]),
+            // A child filed a day before it started: the ghost before the solid span.
+            Self.epic(2, [Self.child(12, created: -30, started: -6)], segments: [(-6, nil)]),
+            // Joined: ghost from created to started, solid to its last close.
+            Self.epic(3, [Self.child(13, created: -20, started: -15, closed: -14)], segments: [(-15, -14)]),
+            // Dropped: the same spans, in grey.
+            Self.epic(4, [Self.child(14, created: -8, started: -7, closed: -5)], segments: [(-7, -5)], reason: "not_planned"),
+        ])
+        let lines = WorkTimeline.lines(timeline, now: Self.now)
+        try #require(lines.count == 4)
+        let stopped = lines[0], filed = lines[1], joined = lines[2], dropped = lines[3]
+        #expect(stopped.createdAt == Self.h(-12) && stopped.start == Self.h(-10))
+        #expect(stopped.stoppedAt == Self.h(-3) && stopped.end == Self.now)
+        #expect(stopped.stopped(now: Self.now))
+        #expect(WorkTimeline.lineLine(stopped, now: Self.now) == "#1 · 1 of 2 · stopped 3 h ago · open")
+        #expect(WorkTimeline.spoken([stopped], now: Self.now).first?.words == "Issue 1, 1 of 2 done, open, stopped 3 h ago")
+        // The dots do not move: #10 is still at its close.
+        #expect(stopped.dots.map(\.at) == [Self.h(-3)])
+        #expect(filed.createdAt == Self.h(-30) && filed.start == Self.h(-6) && filed.stoppedAt == Self.h(-6))
+        #expect(joined.createdAt == Self.h(-20) && joined.start == Self.h(-15) && joined.stoppedAt == Self.h(-14)
+            && joined.end == Self.h(-14) && !joined.stopped(now: Self.now))
+        #expect(WorkTimeline.lineLine(joined, now: Self.now) == "#3 · 1 of 1 · closed 14 h ago")
+        #expect(dropped.how == .dropped && dropped.createdAt == Self.h(-8) && dropped.stoppedAt == Self.h(-5))
+        // A session in a turn on it: the work did not stop, solid to Now.
+        let working = try #require(WorkTimeline.lines(timeline, now: Self.now, working: ["github:alexec/Agents#11"]).first)
+        #expect(working.stoppedAt == Self.now && !working.stopped(now: Self.now))
+        #expect(WorkTimeline.lineLine(working, now: Self.now) == "#1 · 1 of 2 · open")
+        // The rows pack by the created time: #2 is filed before #1 starts, so it takes row 0.
+        let rows = WorkTimeline.layout(lines)
+        #expect(rows.first { $0.number == "#2" }?.row == 0)
+        // The block, its words and its hit start at the ghost.
+        let words = WorkTimeline.blockWords(filed, axis: Self.axis, measure: { Double($0.count) * 6 })
+        #expect(words.insideX == Self.axis.x(Self.h(-30)) + 6)
+        let y = WorkTimeline.rowTop(filed.row) + 4
+        #expect(WorkTimeline.hit((x: Self.axis.x(Self.h(-20)), y: y), lines: [filed], axis: Self.axis) == .line(filed))
     }
 
     @Test func aDroppedEpicEndsInACross() {
@@ -262,7 +305,7 @@ struct WorkTimelineTests {
         ])
         let line = WorkTimeline.lines(timeline, now: Self.now)[0]
         let words = WorkTimeline.lineLine(line, now: Self.now, calendar: calendar)
-        #expect(words.hasPrefix("#22 · 1 of 2 · closes about "))
+        #expect(words.hasPrefix("#22 · 1 of 2 · stopped 1 h ago · closes about "))
         #expect(words.hasSuffix(", 8 in 10"))
         #expect(WorkTimeline.errorWords(backtest) == "Past forecasts were off by ×2.2")
         let spoken = WorkTimeline.spoken([line], now: Self.now, calendar: calendar)
@@ -283,7 +326,7 @@ struct WorkTimelineTests {
         #expect(joined.dots.map { WorkTimeline.dotLine($0, now: Self.now) }
             == ["#31 · closed 2 h ago", "#32 · closed as not planned 1 h ago"])
         let waits = try #require(lines.first { $0.number == "#33" })
-        #expect(WorkTimeline.lineLine(waits, now: Self.now) == "#33 · 0 of 2 · 1 waits for you")
+        #expect(WorkTimeline.lineLine(waits, now: Self.now) == "#33 · 0 of 2 · stopped 3 h ago · 1 waits for you")
     }
 
     @Test func theTitleLineAndTheEmptyCardSayTheRange() {
