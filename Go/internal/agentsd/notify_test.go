@@ -126,6 +126,18 @@ func TestNoticeLineSaysWhereItWent(t *testing.T) {
 	if need == nil {
 		t.Fatalf("%+v", pending.Needs)
 	}
+	// reconsider writes the computer delivery after it unlocks, and another reconsider
+	// can have sent the notice to the window before notify's own did (#5978): the line
+	// can get it after "Sent.". Wait for it, so the device's delivery comes second.
+	waitFor(t, "a delivery to the computer", func() bool {
+		entries, _, _ := d.Store.Transcript(a.ID, 0)
+		for _, e := range entries {
+			if v := e.Kind.NoticeDelivered; v != nil && v.Value.To == wire.NoticeDeviceComputer {
+				return true
+			}
+		}
+		return false
+	})
 	told, _ := json.Marshal(wire.NoticeDelivered{Need: *need, To: wire.NoticeDeviceIPhone})
 	d.Told(wire.NotifyNoticesDelivered.Name, told)
 	d.Told(wire.NotifyNoticesDelivered.Name, told)
