@@ -3,8 +3,9 @@ package githubmcp
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 )
 
 // The reads that prove a folder's set-up (#1336): each slot reads one real thing (the newest
@@ -166,35 +167,15 @@ func (g *RealGitHub) AppPermissions(ctx context.Context, owner, slug string) (ma
 
 // RepoAt is the GitHub repo a folder pushes to, from its git remote (origin first).
 func RepoAt(ctx context.Context, folder string) (string, bool) {
-	for _, remote := range remotesAt(ctx, folder) {
-		out, err := gitIn(ctx, folder, "remote", "get-url", remote)
-		if err != nil {
-			continue
-		}
-		if name, ok := RepoOfRemote(strings.TrimSpace(out)); ok {
+	return RepoIn(gitremote.URLs(ctx, folder))
+}
+
+// RepoIn is RepoAt for remotes already read (gitremote.URLs).
+func RepoIn(remotes []string) (string, bool) {
+	for _, remote := range remotes {
+		if name, ok := RepoOfRemote(remote); ok {
 			return name, true
 		}
 	}
 	return "", false
-}
-
-func remotesAt(ctx context.Context, folder string) []string {
-	out, err := gitIn(ctx, folder, "remote")
-	if err != nil {
-		return nil
-	}
-	remotes := []string{}
-	for _, r := range strings.Fields(out) {
-		if r == "origin" {
-			remotes = append([]string{r}, remotes...)
-		} else {
-			remotes = append(remotes, r)
-		}
-	}
-	return remotes
-}
-
-func gitIn(ctx context.Context, folder string, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, "git", append([]string{"-C", folder}, args...)...).Output()
-	return string(out), err
 }

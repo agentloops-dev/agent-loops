@@ -609,10 +609,12 @@ func sameReading(a, b wire.AllowanceReading) bool {
 }
 
 // retryLater sends the same prompt again once a rate limit's wait is over, unless the
-// agent has moved on: stopped, archived, given another prompt, or already working.
+// agent has moved on: stopped, archived, given another prompt, or already working. The
+// refused turn itself can still be ending when the wait is over (a short wait, or a slow
+// end under load): that is not working, so its turn number, not running, says so (#6028).
 func (l *live) retryLater(at time.Time) {
 	l.mu.Lock()
-	stops, sent := l.stops, l.lastSent
+	stops, seq, sent := l.stops, l.turnSeq, l.lastSent
 	l.mu.Unlock()
 	if sent == nil {
 		return
@@ -624,7 +626,7 @@ func (l *live) retryLater(at time.Time) {
 			return
 		}
 		l.mu.Lock()
-		moved := l.stops != stops || l.running
+		moved := l.stops != stops || l.turnSeq != seq
 		l.mu.Unlock()
 		a := l.d.Store.Agent(l.id)
 		if moved || a == nil || a.State != wire.AgentStateStopped || a.EndedReason == nil || *a.EndedReason != wire.EndedReasonRateLimited ||
