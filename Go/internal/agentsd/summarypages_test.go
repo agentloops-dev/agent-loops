@@ -13,6 +13,8 @@ import (
 // their titles and writers; only the newest is unread, and reading it marks it and its
 // writer's session read.
 func TestSummaryPagesListAndRead(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()

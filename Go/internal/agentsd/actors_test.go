@@ -71,6 +71,8 @@ func TestAPersonsCallsPutTheirActorOnTheLog(t *testing.T) {
 
 // The same event from two people is two events, not one with a count.
 func TestTwoPeoplesEventsDoNotFold(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	draft := wire.EventDraft{Name: "server.offline", At: now(), Scope: macScope(), Sentence: "ci went offline.",
 		Details: map[string]string{"server": "ci"}}

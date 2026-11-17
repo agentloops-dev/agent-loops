@@ -42,6 +42,8 @@ func (f *fakeResolves) times(ref string) int {
 // #3089: lineage/walk resolves a GitHub issue's and pull request's title, state and labels
 // from the forge, cached so a second walk within resolveRecheck does not ask again.
 func TestLineageWalkResolvesForgeNodes(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -94,6 +96,8 @@ func TestLineageWalkResolvesForgeNodes(t *testing.T) {
 // A node with no folder signed in to its repo is not resolved: nothing is asked, and the
 // walk still answers.
 func TestLineageWalkSkipsResolvingWithNoFolder(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	issue := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#12"}
@@ -115,6 +119,8 @@ func TestLineageWalkSkipsResolvingWithNoFolder(t *testing.T) {
 // resolveWorkers at once, at most resolvePerWalk sent by one walk, and each node once however
 // many walks want it.
 func TestLineageWalkResolvesOffTheRequestPath(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -180,6 +186,8 @@ func TestLineageWalkResolvesOffTheRequestPath(t *testing.T) {
 }
 
 func TestNodeOfRepo(t *testing.T) {
+	t.Parallel()
+
 	for ref, kind := range map[string]string{
 		"github:issue:alexec/agents#12": "issue",
 		"github:issue:alexec/agents#13": "pr",
@@ -205,6 +213,8 @@ func TestNodeOfRepo(t *testing.T) {
 }
 
 func TestResolvedOf(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		kind, body, title, state string
 		labels                   []string
@@ -253,4 +263,46 @@ func sameStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// #5806: a failed ask does not replace an answer that came while it was asked (a list read
+// the node then), and replaces one from before it was asked.
+func TestAFailedAskKeepsANewerAnswer(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	folder := t.TempDir()
+	d.repos = map[string]forgeRepo{folder: {"github", "alexec/agents"}}
+	seeded(t, d, folder, nil)
+	issue := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#12"}
+	put := func(at time.Time) {
+		d.resolveMu.Lock()
+		d.resolveCache = map[wire.LineageNode]resolvedEntry{issue: {
+			resolved: wire.LineageResolved{Title: "Fix it"}, ok: true, at: at}}
+		d.resolveMu.Unlock()
+	}
+	d.resolveLookup = func(context.Context, string, forgeRepo, string, int) (wire.LineageResolved, error) {
+		put(time.Now())
+		return wire.LineageResolved{}, errNoForgeInTests
+	}
+	d.resolveNode(context.Background(), issue)
+	d.resolveMu.Lock()
+	e := d.resolveCache[issue]
+	d.resolveMu.Unlock()
+	if !e.ok || e.resolved.Title != "Fix it" {
+		t.Fatalf("the newer answer went: %+v", e)
+	}
+
+	put(time.Now().Add(-time.Hour))
+	d.resolveLookup = func(context.Context, string, forgeRepo, string, int) (wire.LineageResolved, error) {
+		return wire.LineageResolved{}, errNoForgeInTests
+	}
+	d.resolveNode(context.Background(), issue)
+	d.resolveMu.Lock()
+	e = d.resolveCache[issue]
+	d.resolveMu.Unlock()
+	if e.ok {
+		t.Fatalf("an answer from before the ask stayed: %+v", e)
+	}
 }

@@ -18,6 +18,8 @@ import (
 // fails anything closed (policy_test.go covers your layer's own signature checks instead).
 
 func TestCostIsBankedAndLimitsKept(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	defer d.Shutdown()
@@ -73,6 +75,8 @@ func sameZone(z *string) bool {
 // The histories say the zone their stamps are in, so a viewer elsewhere can move them into
 // its own day (#1267).
 func TestNamedZone(t *testing.T) {
+	t.Parallel()
+
 	utc := func() time.Time { return time.Date(2026, 10, 17, 2, 41, 0, 0, time.UTC) }
 	pdt := func() time.Time { return time.Date(2026, 10, 16, 19, 41, 0, 0, time.FixedZone("PDT", -7*3600)) }
 	noLink := func(string) (string, error) { return "", os.ErrNotExist }

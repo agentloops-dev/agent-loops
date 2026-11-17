@@ -20,6 +20,8 @@ import (
 
 // TestSentryEventsHelper is the sentry-mcp server, when the test below starts it.
 func TestSentryEventsHelper(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("AGENTS_SENTRY_HELPER") != "1" {
 		return
 	}
@@ -30,6 +32,8 @@ func TestSentryEventsHelper(t *testing.T) {
 }
 
 func TestAWaitOnANewSentryIssue(t *testing.T) {
+	t.Parallel()
+
 	var mu sync.Mutex
 	issues := []map[string]any{}
 	searches := 0

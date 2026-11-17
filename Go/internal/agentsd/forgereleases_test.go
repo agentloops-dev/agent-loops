@@ -178,6 +178,8 @@ func TestForgeReleasesOnForgejo(t *testing.T) {
 
 // #4426: a forge with no releases says so as forgeNone, with its reason.
 func TestForgeWithoutReleasesSaysWhy(t *testing.T) {
+	t.Parallel()
+
 	for _, f := range []Forge{bitbucketForge{}, azureDevOpsForge{}, linearForge{}, jiraForge{}, azureBoardsForge{}} {
 		_, err := f.Releases(context.Background(), nil, 1)
 		if f.Caps().Releases || !errors.Is(err, errForgeCannot) || cannotReason(f, err) == "" || cannotReason(f, err) == "the forge cannot releases" {

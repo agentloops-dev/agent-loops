@@ -95,6 +95,8 @@ func TestTheAgentHandsAStepToThePerson(t *testing.T) {
 }
 
 func TestDoneGivesThePageBack(t *testing.T) {
+	t.Parallel()
+
 	if got := handOffNoteFor("Sign in to GitLab", wire.AnswerElicitationRequestActionAccept,
 		map[string]wire.JSONValue{"outcome": wire.JSONValue(`"done"`)}); got != `The person did "Sign in to GitLab". The page is yours again: call browser_snapshot to see where it is now, and carry on from it.` {
 		t.Fatal(got)

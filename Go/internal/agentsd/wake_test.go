@@ -16,6 +16,8 @@ import (
 func percent(n int) *int { return &n }
 
 func TestVerdictFloorIsInclusive(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		working bool
 		p       mac.Power
@@ -146,6 +148,8 @@ func TestWakeHoldsForWorkThenTheGrace(t *testing.T) {
 }
 
 func TestWakeLetsALowBatteryGo(t *testing.T) {
+	t.Parallel()
+
 	m := &fakeMac{power: mac.Power{BatteryPercent: percent(15)}}
 	w := newWaker(t, m)
 	w.Revise(1, false)
@@ -161,6 +165,8 @@ func TestWakeLetsALowBatteryGo(t *testing.T) {
 }
 
 func TestWakeOffHoldsNothingAndOnPowerHoldsIdle(t *testing.T) {
+	t.Parallel()
+
 	m := &fakeMac{power: mac.Power{OnMains: true}}
 	w := newWaker(t, m)
 	w.Revise(1, false)
@@ -186,6 +192,8 @@ func TestWakeOffHoldsNothingAndOnPowerHoldsIdle(t *testing.T) {
 }
 
 func TestReadWakeSettingsForgives(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "wake.json")
 	if s := readWakeSettings(path); !reflect.DeepEqual(s, defaultWake()) {

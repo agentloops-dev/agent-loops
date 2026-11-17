@@ -80,6 +80,8 @@ func TestRetentionDeletesOldArchivedAgents(t *testing.T) {
 
 // What a crash left is swept at start, but not what was made since (#3649).
 func TestStartSweepsCrashLeftovers(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	old := time.Now().Add(-time.Hour)
@@ -107,6 +109,8 @@ func TestStartSweepsCrashLeftovers(t *testing.T) {
 // The hour's sweep lets go of a week-old run whose agent ended, and of an abandoned
 // transfer, without waiting for a start or the next send (#3649).
 func TestTheHourlySweepAppliesLateBounds(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ended := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State = wire.AgentStateFinished })

@@ -189,6 +189,8 @@ func TestACISecretsReadIsRecorded(t *testing.T) {
 
 // A sync of the person's secrets says what it added, replaced and removed here.
 func TestUserSecretChanges(t *testing.T) {
+	t.Parallel()
+
 	before := userSettingsSyncState{Secrets: []string{"A", "B", "C"}, Versions: map[string]int64{"A": 1, "B": 2, "C": 1}}
 	after := userSettingsSyncState{Secrets: []string{"A", "B", "D"}, Versions: map[string]int64{"A": 1, "B": 3, "D": 1}}
 	var got []string

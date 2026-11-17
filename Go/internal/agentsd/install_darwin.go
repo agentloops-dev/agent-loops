@@ -15,7 +15,7 @@ func (d *Daemon) registerInstall() {
 			folder = filepath.Join(filepath.Dir(filepath.Dir(exe)), "Resources", "toolsets")
 		}
 	}
-	d.serveInstall(filepath.Join(d.Store.Loc.Cache, "tools"), folder)
+	d.serveInstall(d.macToolsFolder(), folder)
 }
 
 // installDefaultToolsets leaves a Mac's runtimes to the person: the window offers Install.

@@ -12,6 +12,8 @@ import (
 
 // #5245: deploys/delivery's figures for each target, from the deploys kept and what each brings.
 func TestDeploysDelivery(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, "git@github.com:alexec/agents.git")})
@@ -69,6 +71,8 @@ func TestDeploysDelivery(t *testing.T) {
 // working out what each brings on its way, and sends again only when they changed, or on a
 // new link.
 func TestDeploysSyncSendsEveryDeploy(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, "git@github.com:alexec/agents.git")})

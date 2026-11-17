@@ -15,6 +15,8 @@ import (
 // Passages are runs of lines between blank lines, with a fence kept whole and its lines
 // counted from one (PassageTests).
 func TestPassagesSplitOnBlankLinesAndKeepFencesWhole(t *testing.T) {
+	t.Parallel()
+
 	got := splitPassages("\n# Title\n\nOne.\nTwo.\n\n\n```\na\n\nb\n```\n")
 	want := []passage{{"\n# Title", 1, 2}, {"One.\nTwo.", 4, 5}, {"```\na\n\nb\n```", 8, 12}}
 	if !slices.Equal(got, want) {
@@ -27,6 +29,8 @@ func TestPassagesSplitOnBlankLinesAndKeepFencesWhole(t *testing.T) {
 
 // What changed is said in passages of the new text (PassageTests, "What changed").
 func TestChangedPassagesAreThePassagesOfTheNewText(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		old, new string
 		want     []int
@@ -50,6 +54,8 @@ func TestChangedPassagesAreThePassagesOfTheNewText(t *testing.T) {
 // The note quotes each passage under its file, in line order, and says what to do
 // (specs/022-live-artifacts/contracts/daemon-api.md).
 func TestThePageEditNoteQuotesEachPassage(t *testing.T) {
+	t.Parallel()
+
 	if pageEditNote(nil, false) != "" {
 		t.Fatal("a note for nothing")
 	}
@@ -64,6 +70,8 @@ func TestThePageEditNoteQuotesEachPassage(t *testing.T) {
 // The person's edits are held until the agent's next turn and told once; past twenty the
 // note says to read the file.
 func TestPageEditsAreToldOnceAndBounded(t *testing.T) {
+	t.Parallel()
+
 	var p pageEdits
 	agent := wire.UUID("A")
 	p.remember(agent, "/p/n.md", "A\n\nB", "A\n\nB two")
@@ -120,6 +128,8 @@ func lineDiffTable(a, b []string) (inserted, removed map[int]bool) {
 
 // The bit table gives the whole table's answers, on lines with many repeats.
 func TestLineDiffMatchesTheWholeTable(t *testing.T) {
+	t.Parallel()
+
 	r := rand.New(rand.NewPCG(1, 2))
 	lines := func(n int) []string {
 		out := make([]string, n)

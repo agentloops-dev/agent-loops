@@ -112,6 +112,8 @@ struct SidebarSessionRow: View {
                             .foregroundStyle(Paper.tertiary)
                             .accessibilityLabel(MuteWords.muted)
                     }
+                    // High or low (#5849), as the Mac's row marks it.
+                    if let chip = WorkPriorityChip(agent) { chip }
                     // Voice mode listens in this chat (#2518), beside the mute mark.
                     if VoiceMode.shared.isOn(in: agent.id) {
                         ListeningMark()

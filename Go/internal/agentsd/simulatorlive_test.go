@@ -39,6 +39,8 @@ func fakeSimulator(t *testing.T, picture *atomic.Value) *atomic.Int64 {
 // A simulator lease (#4222) says which simulator: simulator:<udid> or the UDID alone, in any
 // case, is one resource of kind simulator.
 func TestASimulatorLeaseNamesTheSimulator(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	for _, given := range []string{"simulator:" + testSimulator, " " + strings.ToLower(testSimulator) + " "} {

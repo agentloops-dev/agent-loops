@@ -124,6 +124,8 @@ func TestADocsConnectorProvesItselfWithOneSearch(t *testing.T) {
 }
 
 func TestFirstDoc(t *testing.T) {
+	t.Parallel()
+
 	text := func(s string) string {
 		b, _ := json.Marshal(s)
 		return `{"content":[{"type":"text","text":` + string(b) + `}]}`

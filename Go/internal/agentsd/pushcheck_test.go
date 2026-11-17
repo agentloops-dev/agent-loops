@@ -81,6 +81,8 @@ func TestTheHostChecksTheAppCanPushBeforeASessionGetsItsToken(t *testing.T) {
 }
 
 func TestTheGrantSaysWhereForAnOrg(t *testing.T) {
+	t.Parallel()
+
 	got := appGrantWords("acme", "alexec", []string{"Contents"})
 	if got != "give agent-loops-dev Contents: Read and write at github.com/organizations/acme/settings/installations, then accept the new permissions" {
 		t.Fatalf("%q", got)

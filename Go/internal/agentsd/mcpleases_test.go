@@ -183,6 +183,8 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 // #4731: a subscription a workflow holds needs the event's data, so it polls whoever holds
 // the lease.
 func TestASubscriptionAWorkflowHoldsNeverStandsBy(t *testing.T) {
+	t.Parallel()
+
 	s := &mcpSubscription{workflows: []string{"w"}, waits: []wire.UUID{"a"}}
 	if s.mayStandBy() {
 		t.Fatal("a workflow's subscription stood by")

@@ -15,6 +15,8 @@ import (
 // TestFirstStartMovesEveryOldSetting writes every old file quickstart.md's slice 2 names,
 // asks for policy/yours, and checks each value landed and the old files are gone.
 func TestFirstStartMovesEveryOldSetting(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	os.MkdirAll(d.SettingsDir, 0o700)
@@ -73,6 +75,8 @@ func TestFirstStartMovesEveryOldSetting(t *testing.T) {
 // TestFirstStartMoveOnlyWhenTheOldFileExists: workflow-limit.json's total only moves when
 // the file is there at all (research R9).
 func TestFirstStartMoveOnlyWhenTheOldFileExists(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 
@@ -95,6 +99,8 @@ func TestFirstStartMoveOnlyWhenTheOldFileExists(t *testing.T) {
 // TestFirstStartMoveRunsOnce: a second read does not move already-moved files again, and
 // a value the person changes afterwards is not clobbered by a second move attempt.
 func TestFirstStartMoveRunsOnce(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	os.MkdirAll(d.SettingsDir, 0o700)
@@ -148,6 +154,8 @@ func assertMoved(t testing.TB, path string) {
 // next edit (cost/setLimits) keeps the old file, byte for byte, as
 // policy-yours.json.untrusted-<time> before it writes a new layer.
 func TestAnUntrustedLayerIsKeptAsideNotWrittenOver(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	d.SettingsDir = t.TempDir()
@@ -213,6 +221,8 @@ func untrustedLayer(t *testing.T) (*Daemon, *conn) {
 // on disk, with its rules in words; nothing applies until the person signs it again, and
 // then its rules are this Mac's own layer and the copy is not shown again.
 func TestAnUntrustedLayerIsShownAndSignedAgain(t *testing.T) {
+	t.Parallel()
+
 	d, c := untrustedLayer(t)
 
 	var state wire.YourPolicyState
@@ -253,6 +263,8 @@ func TestAnUntrustedLayerIsShownAndSignedAgain(t *testing.T) {
 // TestAnUntrustedLayerSetAsideChangesNothing (#3230): the person says no; the rules stay
 // unsigned and the copy is not shown again.
 func TestAnUntrustedLayerSetAsideChangesNothing(t *testing.T) {
+	t.Parallel()
+
 	d, c := untrustedLayer(t)
 
 	var state wire.YourPolicyState

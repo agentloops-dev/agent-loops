@@ -15,6 +15,8 @@ import (
 // file's whole diff; and ForkTests: a branch of the conversation as an agent of its own.
 
 func TestChangesAreTheReportedAndTheSeen(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
@@ -63,6 +65,8 @@ func TestChangesAreTheReportedAndTheSeen(t *testing.T) {
 }
 
 func TestReplayAccountsForEdits(t *testing.T) {
+	t.Parallel()
+
 	o := "b"
 	edits := []wire.ReportedEdit{{OldText: &o, NewText: "B"}}
 	if !replayAccounts(edits, "abc", "aBc") || replayAccounts(edits, "abc", "aBcd") || !replayAccounts(nil, "x", "x\n") {
@@ -74,6 +78,8 @@ func TestReplayAccountsForEdits(t *testing.T) {
 }
 
 func TestBranchingFromAPrompt(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	session := "fake-session"
