@@ -292,12 +292,16 @@ func (d *Daemon) startSession(caller wire.UUID, args map[string]json.RawMessage)
 		return "", err
 	}
 	effort := strings.TrimSpace(argString(args, "effort"))
+	priority, err := startPriority(args)
+	if err != nil {
+		return "", err
+	}
 	mode := inheritedMode(me, runtimeID)
 	if runtimeID == autoRuntimeID {
 		if effort != "" {
 			return "", Invalid("Nothing was started: on Auto the effort follows the model's level (fast, balanced or smart), so name no effort, or name a runtime.")
 		}
-		return d.startAutoHelper(me, args, prompt, model, labels)
+		return d.startAutoHelper(me, args, prompt, model, labels, priority)
 	}
 	if wanted := strings.TrimSpace(argString(args, "permission_mode")); wanted != "" {
 		own := inheritedMode(me, me.RuntimeID)
@@ -323,7 +327,7 @@ func (d *Daemon) startSession(caller wire.UUID, args map[string]json.RawMessage)
 	}
 	// Another machine has runtimes, folders and limits of its own (#2887).
 	if onMachine(args) != "" {
-		return d.startOnMachine(me, args, withEffort(helperRequest(runtimeID, "", prompt, model, mode, nil, labels), effortID, effort))
+		return d.startOnMachine(me, args, withPriority(withEffort(helperRequest(runtimeID, "", prompt, model, mode, nil, labels), effortID, effort), priority))
 	}
 	if why := d.unavailableRuntime(rt); why != "" {
 		return "", Invalid("Nothing was started: %s.", why)
@@ -336,7 +340,7 @@ func (d *Daemon) startSession(caller wire.UUID, args map[string]json.RawMessage)
 	}
 	d.countProject(folder)
 	if full, busy := d.helperHold(folder); full != "" || busy != "" || len(d.helperQueue(folder)) > 0 {
-		return d.queueHelper(me, prompt, runtimeID, model, effort, mode, worktree, labels, full, busy)
+		return d.queueHelper(me, prompt, runtimeID, model, effort, mode, worktree, labels, priority, full, busy)
 	}
 	scope := limitScope(folder)
 	d.queueMu.Lock()
@@ -350,7 +354,7 @@ func (d *Daemon) startSession(caller wire.UUID, args map[string]json.RawMessage)
 		d.reservedHelpers[scope]--
 		d.queueMu.Unlock()
 	}()
-	id, err := d.startFor(withEffort(helperRequest(runtimeID, folder, prompt, model, mode, worktree, labels), effortID, effort),
+	id, err := d.startFor(withPriority(withEffort(helperRequest(runtimeID, folder, prompt, model, mode, worktree, labels), effortID, effort), priority),
 		startedBy{agent: &caller, owner: wire.SessionLabelOwnerAgent})
 	if err != nil {
 		code, msg := errMessage(err)
@@ -389,6 +393,26 @@ func helperRequest(runtimeID, folder, prompt, model string, mode *string, worktr
 	return wire.StartRequest{RuntimeID: runtimeID, Cwd: store.FolderURL(folder), Prompt: prompt, Attachments: []wire.Attachment{},
 		StartOptions: wire.StartOptions{Values: values, ExtraArguments: []string{}}, AdditionalDirectories: []wire.URL{},
 		McpServers: []wire.MCPServer{}, Worktree: worktree, Labels: labels, Levels: levels}
+}
+
+// startPriority is start_session's priority (#5847): high, medium or low, set on the new
+// session; nil when it names none, and the session follows its issue, then its starter.
+func startPriority(args map[string]json.RawMessage) (*wire.SessionPriority, error) {
+	word := strings.TrimSpace(argString(args, "priority"))
+	if word == "" {
+		return nil, nil
+	}
+	p, ok := priorityOf(word)
+	if !ok {
+		return nil, Invalid("Nothing was started: priority is high, medium or low; leave it out and the session follows its issue's priority, else yours.")
+	}
+	return &p, nil
+}
+
+// withPriority is r with p set on the session it starts.
+func withPriority(r wire.StartRequest, p *wire.SessionPriority) wire.StartRequest {
+	r.Priority = p
+	return r
 }
 
 // helperEffort is start_session's effort (#5441) as the runtime's effort option takes it:
@@ -440,7 +464,7 @@ func withEffort(r wire.StartRequest, id, value string) wire.StartRequest {
 
 // queueHelper is queueHelper: a queued record, started by itself when there is a place.
 func (d *Daemon) queueHelper(caller *wire.Agent, prompt, runtimeID, model, effort string, mode *string, worktree *wire.WorktreeChoice,
-	labels []string, full, busy string) (string, error) {
+	labels []string, priority *wire.SessionPriority, full, busy string) (string, error) {
 	folder := folderPath(caller)
 	// why is the whole reason it waits: the machine first, then the places.
 	why := full
@@ -482,7 +506,7 @@ func (d *Daemon) queueHelper(caller *wire.Agent, prompt, runtimeID, model, effor
 	a := wire.Agent{ID: store.NewUUID(), RuntimeID: runtimeID, Cwd: store.FolderURL(folder), State: wire.AgentStateQueued,
 		AdvertisedOptions: []wire.ConfigOption{}, AvailableCommands: []wire.SlashCommand{},
 		StartOptions: wire.StartOptions{Values: map[string]wire.JSONValue{}, ExtraArguments: []string{}},
-		CreatedAt:    t, LastActivityAt: t, MadeInRoot: &d.Store.RootID, StartedByAgent: &caller.ID, Labels: given,
+		CreatedAt:    t, LastActivityAt: t, MadeInRoot: &d.Store.RootID, StartedByAgent: &caller.ID, Labels: given, PrioritySet: priority,
 		QueuedPrompts: []wire.QueuedPrompt{{ID: store.NewUUID(), Text: prompt, Attachments: []wire.Attachment{}, QueuedAt: t, From: wire.PromptOriginPerson}},
 		QueuedStart:   &wire.QueuedStart{RuntimeID: &rt, PermissionMode: mode, Worktree: worktree, Labels: labels}}
 	if model != "" {
@@ -781,7 +805,7 @@ func (d *Daemon) runtimeChoices(callerRuntime string) string {
 
 // startAutoHelper is start_session on Auto (#2658, FR-012): the levels in the shared words,
 // none looser than the caller's own permission mode, which it takes when it names none.
-func (d *Daemon) startAutoHelper(me *wire.Agent, args map[string]json.RawMessage, prompt, model string, labels []string) (string, error) {
+func (d *Daemon) startAutoHelper(me *wire.Agent, args map[string]json.RawMessage, prompt, model string, labels []string, priority *wire.SessionPriority) (string, error) {
 	var own *wire.PermissionLevel
 	if me.Levels != nil {
 		own = me.Levels.Permission
@@ -816,6 +840,7 @@ func (d *Daemon) startAutoHelper(me *wire.Agent, args map[string]json.RawMessage
 	}
 	if onMachine(args) != "" {
 		r := helperRequest(autoRuntimeID, "", prompt, "", nil, nil, labels)
+		r.Priority = priority
 		r.Levels = levels
 		d.helperRequests(&r, me)
 		return d.startOnMachine(me, args, r)
@@ -833,9 +858,10 @@ func (d *Daemon) startAutoHelper(me *wire.Agent, args map[string]json.RawMessage
 		if levels.Model != nil {
 			m = string(*levels.Model)
 		}
-		return d.queueHelper(me, prompt, autoRuntimeID, m, "", &w, worktree, labels, full, busy)
+		return d.queueHelper(me, prompt, autoRuntimeID, m, "", &w, worktree, labels, priority, full, busy)
 	}
 	r := helperRequest(autoRuntimeID, folder, prompt, "", nil, worktree, labels)
+	r.Priority = priority
 	r.Levels = levels
 	id, err := d.startFor(r, startedBy{agent: &me.ID, owner: wire.SessionLabelOwnerAgent})
 	if err != nil {

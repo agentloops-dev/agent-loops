@@ -850,6 +850,14 @@ func forgeLabelColor(c string) string {
 // resolvedFromForge keeps what the lists read in the lineage cache (#3089), so a walk to an
 // item a page has shown has its title without asking the forge again.
 func (d *Daemon) resolvedFromForge(items []wire.ForgeItem) {
+	if d.resolvedFromForgeLocked(items) {
+		d.refreshPrioritiesSoon()
+	}
+}
+
+// resolvedFromForgeLocked is resolvedFromForge under resolveMu; true when an issue's priority
+// changed, so the sessions on it are worked out again (#5847).
+func (d *Daemon) resolvedFromForgeLocked(items []wire.ForgeItem) (priorityChanged bool) {
 	now := nowFunc()
 	d.resolveMu.Lock()
 	defer d.resolveMu.Unlock()
@@ -875,9 +883,14 @@ func (d *Daemon) resolvedFromForge(items []wire.ForgeItem) {
 		if i.Milestone != nil {
 			milestone = *i.Milestone
 		}
+		priority := deref(i.Priority)
+		if priority != had.priority {
+			priorityChanged = true
+		}
 		d.resolveCache[i.Node] = resolvedEntry{resolved: wire.LineageResolved{Title: i.Title, State: &state, Labels: labels}, ok: true, at: now,
-			parent: parent, milestone: milestone}
+			parent: parent, milestone: milestone, priority: priority}
 	}
+	return priorityChanged
 }
 
 func (d *Daemon) forgeCached(key string) (forgeAnswer, bool) {

@@ -284,6 +284,20 @@ export interface Agent {
   cwd: URLString;
   title?: string;
   labels?: SessionLabel[];
+  /**
+   * The priority the session goes by (#5846): prioritySet, else the highest priority of the issues
+   * it is labelled with (#n, and the issues a P#n closes), else its starter's, else none (absent).
+   * prioritySource says which. The daemon works it out; a client only reads it.
+   */
+  priority?: SessionPriority;
+  /**
+   * The priority a person or an agent set on the session (agents/setPriority, start_session,
+   * set_session_priority); absent when it follows its issue. It wins until it is cleared, and it
+   * lasts a restart.
+   */
+  prioritySet?: SessionPriority;
+  /** Where priority comes from (#5846); absent is none. */
+  prioritySource?: SessionPrioritySource;
   state: AgentState;
   runtimeSessionID?: string;
   /**
@@ -13832,6 +13846,24 @@ export interface SessionNotice {
 }
 
 /**
+ * A session's priority (#5846): the same three levels as an issue's (ForgeItem.priority), in the
+ * order high, medium, none, low.
+ */
+export type SessionPriority =
+  | "high"
+  | "medium"
+  | "low";
+
+/**
+ * Where a session's priority comes from (#5846): set on it, its issue's, its starter's, or none.
+ */
+export type SessionPrioritySource =
+  | "set"
+  | "issue"
+  | "starter"
+  | "none";
+
+/**
  * A secret kept for one session only (#3548): only that session's agent can use it (fill_secret,
  * its environment, its MCP servers), and its host deletes it when the session is archived. No
  * value.
@@ -13983,6 +14015,15 @@ export interface SetPRCostCommentRequest {
 export interface SetPinnedRequest {
   folder: URLString;
   pinned: boolean;
+}
+
+/**
+ * agents/setPriority (#5847): the priority set on a session; with no priority (absent or null), the
+ * setting is cleared and the session follows its issue again ("From issue").
+ */
+export interface SetPriorityRequest {
+  agentID: UUID;
+  priority?: SessionPriority;
 }
 
 export interface SetProviderRequest {
@@ -14694,6 +14735,11 @@ export interface StartRequest {
   requestID?: UUID;
   sandbox?: SandboxChoice;
   labels: string[];
+  /**
+   * The priority set on the new session (#5847), as agents/setPriority sets it; absent, it follows
+   * its issue, then its starter.
+   */
+  priority?: SessionPriority;
   persona?: string;
   /**
    * The values in the shared words (#2658). With runtimeID auto, the daemon picks the runtime
@@ -16664,6 +16710,7 @@ export interface Methods {
   "agents/setLevels": { params: SetLevelsRequest; result: Agent };
   "agents/setMuted": { params: SetMutedRequest; result: Empty };
   "agents/setOption": { params: SetOptionRequest; result: ConfigOption[] };
+  "agents/setPriority": { params: SetPriorityRequest; result: Agent };
   "agents/setSandbox": { params: SetSandboxRequest; result: Agent };
   "agents/setUnread": { params: SetUnreadRequest; result: Empty };
   "agents/start": { params: StartRequest; result: UUID };
@@ -17137,6 +17184,7 @@ export const MethodTarget = {
   "agents/setLevels": "host",
   "agents/setMuted": "host",
   "agents/setOption": "host",
+  "agents/setPriority": "host",
   "agents/setSandbox": "host",
   "agents/setUnread": "host",
   "agents/start": "host",
@@ -17666,7 +17714,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AddFolderRequest: { required: ["folder"], optional: ["project"] },
   Admitted: { required: [], optional: ["client", "host"] },
   AdoptRequest: { required: ["runtimeID", "sessionID", "cwd"], optional: [] },
-  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project"] },
+  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project"] },
   AgentChanges: { required: ["epoch", "revision", "removed", "all"], optional: [] },
   AgentConfigEditorFile: { required: ["path", "content"], optional: [] },
   AgentConfigEditorRequest: { required: ["kind"], optional: ["folder"] },
@@ -18746,6 +18794,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetOptionRequest: { required: ["agentID", "optionID", "value"], optional: [] },
   SetPRCostCommentRequest: { required: ["folder", "prCostComment"], optional: [] },
   SetPinnedRequest: { required: ["folder", "pinned"], optional: [] },
+  SetPriorityRequest: { required: ["agentID"], optional: ["priority"] },
   SetProviderRequest: { required: ["runtimeID", "providerID"], optional: [] },
   SetSandboxRequest: { required: ["agentID"], optional: ["choice"] },
   SetUnreadRequest: { required: ["agentID", "unread"], optional: [] },
@@ -18824,7 +18873,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SlashCommand: { required: ["name"], optional: ["description", "inputHint"] },
   SpendCaps: { required: [], optional: ["dailyUSD"] },
   StartOptions: { required: ["values", "extraArguments"], optional: [] },
-  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "autoChose"] },
+  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "priority", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "autoChose"] },
   StartedFrom: { required: ["machine", "agent", "who"], optional: [] },
   StartedMachinePreview: { required: ["host", "name", "state", "unpushed"], optional: ["unknown"] },
   StartingPoint: { required: ["repository", "commit"], optional: [] },

@@ -209,6 +209,13 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     public var auto: AutoPick?
     /// The agent's own answer to permission requests (#2658); nil follows Settings.
     public var clientPermission: ClientPermissionMode?
+    /// The priority the session goes by (#5846), as the daemon works it out: `prioritySet`,
+    /// else its issue's, else its starter's; nil for none. `prioritySource` says which.
+    public var priority: SessionPriority?
+    /// The priority a person or an agent set on it; nil when it follows its issue.
+    public var prioritySet: SessionPriority?
+    /// Where `priority` comes from; nil is none.
+    public var prioritySource: SessionPrioritySource?
     /// The shared values it runs with now, where its own settings match one; a field that is
     /// nil shows Custom (#2658).
     public var levels: Levels?
@@ -399,6 +406,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         voiceHungUpAt = try c.decodeIfPresent(Date.self, forKey: .voiceHungUpAt)
         auto = try? c.decodeIfPresent(AutoPick.self, forKey: .auto)
         clientPermission = try? c.decodeIfPresent(ClientPermissionMode.self, forKey: .clientPermission)
+        priority = try? c.decodeIfPresent(SessionPriority.self, forKey: .priority)
+        prioritySet = try? c.decodeIfPresent(SessionPriority.self, forKey: .prioritySet)
+        prioritySource = try? c.decodeIfPresent(SessionPrioritySource.self, forKey: .prioritySource)
         levels = try? c.decodeIfPresent(Levels.self, forKey: .levels)
         // New in 011, and counted from nothing, so every record written before the
         // restart guard existed opens as a chat that has never been picked back up.
@@ -512,6 +522,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(voiceHungUpAt, forKey: .voiceHungUpAt)
         try c.encodeIfPresent(auto, forKey: .auto)
         try c.encodeIfPresent(clientPermission, forKey: .clientPermission)
+        try c.encodeIfPresent(priority, forKey: .priority)
+        try c.encodeIfPresent(prioritySet, forKey: .prioritySet)
+        try c.encodeIfPresent(prioritySource, forKey: .prioritySource)
         try c.encodeIfPresent(levels, forKey: .levels)
         if restartPickUps != 0 { try c.encode(restartPickUps, forKey: .restartPickUps) }
         try c.encodeIfPresent(report, forKey: .report)
@@ -556,6 +569,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         case voiceHungUpAt
         case auto
         case clientPermission
+        case priority, prioritySet, prioritySource
         case levels
         case worktree
         case pendingMove
