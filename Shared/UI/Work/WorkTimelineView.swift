@@ -213,6 +213,8 @@ struct WorkTimelinePane: View {
 
     @State private var position = ScrollPosition(edge: .leading)
     @State private var offset: Double = 0
+    /// How far the rows are scrolled down: the band names in the gutter follow them (#6089).
+    @State private var top: Double = 0
     @State private var hover: Hover?
 
     struct Hover: Equatable {
@@ -222,6 +224,8 @@ struct WorkTimelinePane: View {
 
     nonisolated static let axisHeight: Double = 26
     nonisolated static let footHeight: Double = 26
+    /// The gutter at the leading edge with each band's name (#6089).
+    nonisolated static let gutterWidth: Double = 64
 
     var body: some View {
         VStack(spacing: 0) {
@@ -352,7 +356,7 @@ struct WorkTimelinePane: View {
 
     private func plot(_ timeline: DaemonAPI.WorkTimeline, now: Date, drawn: Bool, reading: Bool) -> some View {
         GeometryReader { geo in
-            let visible = max(geo.size.width, 1)
+            let visible = max(geo.size.width - Self.gutterWidth, 1)
             let content = state.content
             let axis = WorkTimeline.Axis(interval: content, width: visible * content.duration / state.range.span)
             // The epics and children a session is in a turn on now (#4265): their open blocks glow.
@@ -368,7 +372,10 @@ struct WorkTimelinePane: View {
             let rows = max(WorkTimeline.rowCount(lines), 3)
             let height = max(WorkTimeline.rowTop(rows) + WorkTimeline.rowGap, geo.size.height - Self.axisHeight - Self.footHeight)
             let drawing = Drawing(lines: lines, axis: axis, now: now, height: height, offset: offset, visible: visible,
-                                  night: scheme == .dark, loading: loading, moving: !reduceMotion)
+                                  night: scheme == .dark, loading: loading, moving: !reduceMotion,
+                                  bands: loading ? [] : WorkTimeline.bands(lines))
+            HStack(spacing: 0) {
+            gutter(drawing)
             ScrollView(.horizontal) {
                 VStack(spacing: 0) {
                     // The axis at the top, the blocks under it, and Now's time at the foot (#5506).
@@ -378,6 +385,9 @@ struct WorkTimelinePane: View {
                     ScrollView(.vertical) {
                         canvas(drawing, timeline: timeline)
                             .frame(width: axis.width, height: height)
+                    }
+                    .onScrollGeometryChange(for: Double.self) { Double($0.contentOffset.y + $0.contentInsets.top) } action: { _, y in
+                        top = y
                     }
                     Canvas { context, _ in drawing.drawNow(&context) }
                         .frame(width: axis.width, height: Self.footHeight)
@@ -411,7 +421,37 @@ struct WorkTimelinePane: View {
                     emptyCard(timeline, now: now)
                 }
             }
+            }
         }
+    }
+
+    /// Each band's name, on its first row, with a rule above every band but the first (#6089). It
+    /// stays at the leading edge while the plot scrolls in time, and moves with the rows.
+    private func gutter(_ drawing: Drawing) -> some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: Self.axisHeight)
+            ZStack(alignment: .topLeading) {
+                ForEach(drawing.bands, id: \.band) { band in
+                    if band.row > 0 {
+                        Rectangle().fill(Paper.rule).frame(height: 1)
+                            .offset(y: WorkTimeline.bandRuleY(band.row) - top)
+                    }
+                    Text(band.words).appText(.fine).fontWeight(.semibold)
+                        .foregroundStyle(Drawing.bandTint(band.band).style(or: .secondary))
+                        .lineLimit(1)
+                        .padding(.leading, 12)
+                        .frame(height: WorkTimeline.blockHeight)
+                        .offset(y: WorkTimeline.rowTop(band.row) - top)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .clipped()
+            Color.clear.frame(height: Self.footHeight)
+        }
+        .frame(width: Self.gutterWidth)
+        .background(drawing.plot)
+        .overlay(alignment: .trailing) { Rectangle().fill(Paper.rule).frame(width: 1) }
     }
 
     /// S11: no epic in the window. The axis and Now stay; the card says when the last one
@@ -552,15 +592,18 @@ struct WorkTimelinePane: View {
         let glyph = AnyView(WorkStateIcon(kind: "issue", state: epic?.item.state ?? (line.open ? "open" : "closed"),
                                           stateReason: epic?.stateReason))
         return miniRow(glyph: glyph, title: line.title, labels: epic?.item.labels ?? [],
-                       line: WorkTimeline.lineLine(line, now: drawing.now))
+                       line: WorkTimeline.lineLine(line, now: drawing.now), priority: epic?.item.priority)
     }
 
-    private func miniRow(glyph: AnyView, title: String, labels: [DaemonAPI.ForgeLabel], line: String) -> some View {
+    private func miniRow(glyph: AnyView, title: String, labels: [DaemonAPI.ForgeLabel], line: String,
+                         priority: String? = nil) -> some View {
         let chips = WorkLook.shownLabels(labels, limit: WorkLook.rowChips)
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 glyph
                 Text(title).appText(.supporting).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
+                // The priority chip, as a Features row has it (#6089).
+                WorkPriorityChip(priority: priority)
             }
             if !chips.shown.isEmpty {
                 HStack(spacing: 4) {
@@ -604,6 +647,18 @@ private struct Drawing {
     var loading = false
     /// Not Reduce Motion: the working blocks' ◐ turns in the overlay, on the glow's clock.
     var moving = true
+    /// The priority bands in use (#6089): a rule above each but the first.
+    var bands: [WorkTimeline.Band] = []
+
+    /// A band's name and a chip's words take the priority chip's tint (#6089): High the failure's
+    /// red, Medium the warning's orange, Low, none and on hold plain.
+    static func bandTint(_ band: Int) -> StateTint {
+        switch band {
+        case 0: .failure
+        case 1: .warning
+        default: .none
+        }
+    }
 
     /// One breath of a working block's glow and one turn of its ◐, in seconds (#4265).
     static let pulsePeriod = 1.6
@@ -631,9 +686,10 @@ private struct Drawing {
     var plot: Color { night ? Self.navy : .white }
     var faint: Color { night ? Color(white: 0.6) : Color(white: 0.55) }
 
-    /// A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not planned.
+    /// A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not
+    /// planned or on hold (#6089).
     func colour(_ line: WorkTimeline.Line) -> Color {
-        Self.fills[line.how == .dropped ? Self.fills.count - 1 : WorkTimeline.colour(line.feature, of: Self.fills.count)]
+        Self.fills[line.how == .dropped || line.onHold ? Self.fills.count - 1 : WorkTimeline.colour(line.feature, of: Self.fills.count)]
     }
 
     /// The words and marks after Now, on the lighter tint: the colour itself by day, lighter at night
@@ -661,6 +717,12 @@ private struct Drawing {
         let past = Path(CGRect(x: -100, y: 0, width: max(nowX + 100, 0), height: height))
         let ahead = Path(CGRect(x: nowX, y: 0, width: max(axis.width - nowX + 100, 0), height: height))
         let left = offset, right = offset + visible
+
+        // A rule above each priority band but the first (#6089).
+        for band in bands where band.row > 0 {
+            let y = WorkTimeline.bandRuleY(band.row)
+            gc.fill(Path(CGRect(x: 0, y: y - 0.5, width: axis.width, height: 1)), with: .color(Paper.rule))
+        }
 
         for line in shown {
             let c = colour(line), rect = block(line)
@@ -721,6 +783,9 @@ private struct Drawing {
                     layer.draw(Text(inside).stepped(.fine).fontWeight(.semibold).foregroundStyle(later(line)), at: at, anchor: .leading)
                 }
             }
+            if let chip = words.chip {
+                drawChip(&gc, chip, line: line, x: words.chipX, y: words.chipInside ? WorkTimeline.titleY(line.row) : mid)
+            }
             if let outside = words.outside {
                 let text = line.how == .dropped
                     ? Text(outside).stepped(.fine).foregroundStyle(faint)
@@ -743,6 +808,24 @@ private struct Drawing {
         nowLine.move(to: CGPoint(x: nowX, y: 0))
         nowLine.addLine(to: CGPoint(x: nowX, y: height))
         gc.stroke(nowLine, with: .color(Self.nowGrey), lineWidth: 1.5)
+    }
+
+    /// The priority chip after a block's title (#6089): `WorkPriorityChip`'s look, drawn in the canvas,
+    /// on the plot's own background so it reads on any block; on hold has a dashed edge.
+    func drawChip(_ gc: inout GraphicsContext, _ words: String, line: WorkTimeline.Line, x: Double, y: Double) {
+        let width = WorkTimeline.chipWidth(words, measure: WorkTimelinePane.measure)
+        let rect = CGRect(x: x, y: y - 8, width: width, height: 16)
+        let shape = Path(roundedRect: rect, cornerRadius: 8)
+        let tint = Self.bandTint(line.priorityBand)
+        let edge: Color = switch tint {
+        case .failure: Paper.lineFailure
+        case .warning: Paper.lineWarning
+        default: faint
+        }
+        gc.fill(shape, with: .color(plot))
+        gc.stroke(shape, with: .color(edge), style: StrokeStyle(lineWidth: 1, dash: line.onHold ? [3, 2] : []))
+        gc.draw(Text(words).stepped(.fine).fontWeight(.medium).foregroundStyle(tint.color ?? faint),
+                at: CGPoint(x: rect.midX, y: y))
     }
 
     /// S10: grey blocks in rows, in the window, their grey breathing with the clock.
