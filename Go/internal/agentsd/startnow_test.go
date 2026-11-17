@@ -57,6 +57,8 @@ func TestStartNowGoesPastTheRunningLimitButNotTheTotal(t *testing.T) {
 
 // An agent's connection cannot start one now: only a person's click goes past the limit.
 func TestAnAgentCannotStartNow(t *testing.T) {
+	t.Parallel()
+
 	if RoleAgent.Allows("agents/startNow") {
 		t.Fatal("the agent role may call agents/startNow")
 	}

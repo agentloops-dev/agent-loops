@@ -10,6 +10,8 @@ import (
 
 // #3650: undo notes are capped as they are written, and still say "and others".
 func TestUndoNotesAreCappedOnWrite(t *testing.T) {
+	t.Parallel()
+
 	var u undoNotes
 	id := wire.UUID("A0000000-0000-4000-8000-000000000001")
 	var paths []string
@@ -28,6 +30,8 @@ func TestUndoNotesAreCappedOnWrite(t *testing.T) {
 
 // #3650: an archived agent's running cost, views' calls and undo notes are let go.
 func TestArchivingLetsGoOfAnAgentInMemory(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

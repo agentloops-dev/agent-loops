@@ -550,7 +550,7 @@ func (d *Daemon) queueHelper(caller *wire.Agent, prompt, runtimeID, model, effor
 	if busy != "" {
 		when = "once the machine has room and " + scopeWords(folder) + " has a place free"
 	}
-	note := fmt.Sprintf("Queued %s (id %s), %s in %s's queue: %sIt starts by itself, oldest first, "+when+". Wait for it with wait_for_event on agent.ended as for any session, or take it off the queue with stop_session. "+
+	note := fmt.Sprintf("Queued %s (id %s), %s in %s's queue: %sIt starts by itself, highest priority first, then the oldest, "+when+". Wait for it with wait_for_event on agent.ended as for any session, or take it off the queue with stop_session. "+
 		"%s now has %s.", quotedTitle(a.Title), a.ID, ordinal(position), scopeWords(folder), ahead, scopeTitle(folder), d.helperPlaces(folder))
 	d.checkQueueSoon(folder)
 	return note, nil

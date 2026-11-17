@@ -40,6 +40,8 @@ func TestHeardProjectsLeavesAV011FolderListAlone(t *testing.T) {
 // The forgejo server's list views (#3838) are the Tasks and Code review slots' pages, as the
 // gitlab server's are, pointed at the repository by its repo argument.
 func TestTheForgejoListsAreTheTasksAndCodeReviewSlotsPages(t *testing.T) {
+	t.Parallel()
+
 	for uri, want := range map[string]wire.ConnectorSlotKind{forgejomcp.IssuesURI: wire.ConnectorSlotKindTasks,
 		forgejomcp.PullsURI: wire.ConnectorSlotKindCodeReview} {
 		kind, provider, key, ok := viewSlot("agents/forgejo", uri)
@@ -55,6 +57,8 @@ func TestTheForgejoListsAreTheTasksAndCodeReviewSlotsPages(t *testing.T) {
 // The bitbucket server's list views (#3866) are the Tasks and Code review slots' pages, as the
 // forgejo server's are, pointed at the repository by its repo argument.
 func TestTheBitbucketListsAreTheTasksAndCodeReviewSlotsPages(t *testing.T) {
+	t.Parallel()
+
 	for uri, want := range map[string]wire.ConnectorSlotKind{bitbucketmcp.IssuesURI: wire.ConnectorSlotKindTasks,
 		bitbucketmcp.PullsURI: wire.ConnectorSlotKindCodeReview} {
 		kind, provider, key, ok := viewSlot("agents/bitbucket", uri)

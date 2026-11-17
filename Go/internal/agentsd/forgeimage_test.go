@@ -223,6 +223,8 @@ func TestForgeImageSendsTheTokenOnlyWhereNeeded(t *testing.T) {
 
 // #4009: the cache keeps at most forgeImagesKept images, the least recently read going first.
 func TestForgeImageCacheIsBounded(t *testing.T) {
+	t.Parallel()
+
 	var c forgeImageCache
 	for i := range forgeImagesKept + 1 {
 		c.put(string(rune('a'+i)), wire.ForgeImage{MimeType: "image/png", Data: []byte{1}})

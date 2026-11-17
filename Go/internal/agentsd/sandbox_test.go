@@ -16,6 +16,8 @@ import (
 // whose sandbox is on is not given off.
 
 func TestEachRuntimesSandboxAsItTakesIt(t *testing.T) {
+	t.Parallel()
+
 	l, meta := withSandbox(acp.Launch{Args: []string{"acp"}, Env: []string{"GEMINI_SANDBOX=true"}}, sessionMeta("claude"), "claude", wire.SandboxChoiceOff)
 	b, _ := json.Marshal(meta)
 	if string(b) != `{"claudeCode":{"options":{"disallowedTools":["Workflow","CronCreate","CronList","CronDelete","ScheduleWakeup","Monitor","RemoteTrigger","PushNotification","EnterWorktree","ExitWorktree"],"sandbox":{"enabled":false}}}}` || len(l.Args) != 1 {

@@ -21,7 +21,9 @@ import { Capability } from "../protocol/capabilities.generated";
 import { setShowsThoughts, showsThoughts, thoughtsItem } from "../model/thoughts";
 import { moveToMachine } from "./MoveToMachineDialog";
 import { ask } from "./MessageKinds";
-import { MenuKey } from "./ContextMenu";
+import { MenuKey, type MenuItem } from "./ContextMenu";
+import { Icon } from "./Icon";
+import { priorityChecked, priorityChoices, priorityMenu, priorityTitle } from "../model/sessionPriority";
 import { listKeyGlyph } from "../model/listKeys";
 import { canStartNow, startNowHelp, startNowLabel } from "../model/status";
 
@@ -170,6 +172,24 @@ async function stopAll(store: Store, host: string, agent: Agent) {
   }
 }
 
+/**
+ * Priority ▸ High, Medium, Low, From issue (or None) (#5849): a heading and its four items, with a tick on the one set
+ * (else From issue), as the window's and the Remote's Priority submenu (SessionPriorityMenu.swift). None on an
+ * archived session.
+ */
+export function priorityItems(store: Store, host: string, agent: Agent, disabled = false): MenuItem[] {
+  if (agent.state === "archived") return [];
+  const checked = priorityChecked(agent);
+  return [
+    { label: priorityMenu, heading: true, run: () => {} },
+    ...priorityChoices.map((choice) => ({
+      label: priorityTitle(choice, agent), checked: choice === checked, disabled,
+      help: choice === "follow" ? "Go by its issue's priority, or none" : `Set this session's priority to ${priorityTitle(choice, agent).toLowerCase()}`,
+      run: () => { if (choice !== checked) void store.setPriority(host, agent.id, choice === "follow" ? null : choice); },
+    })),
+  ];
+}
+
 /** `inChat`: the chat header's, whose Archive leaves the chat as the header's button does. */
 /** One of the chat header's own controls, in the ··· menu only below 760 (#981). */
 export type NarrowItem = { label: string; help?: string; checked: boolean; run: () => void };
@@ -249,6 +269,15 @@ export function SessionMenu({ store, host, agent, disabled, find, findsOnHost = 
                 else runSessionAction(store, host, agent, action, inChat);
               }}>{label}{shortcut && <MenuKey keys={shortcut} />}</button>
           ))}
+          {priorityItems(store, host, agent).map((item) => item.heading
+            ? [<hr key="priority-rule" />, <p key={item.label} class="context-menu-heading small" role="presentation">{item.label}</p>]
+            : (
+              <button key={item.label} role="menuitemcheckbox" aria-checked={item.checked} title={item.help}
+                onClick={() => {
+                  open.value = false;
+                  item.run();
+                }}><span class="tick" aria-hidden="true">{item.checked && <Icon name="check" />}</span>{item.label}</button>
+            ))}
         </div>
       )}
     </span>

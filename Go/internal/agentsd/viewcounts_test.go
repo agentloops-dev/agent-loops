@@ -18,6 +18,8 @@ import (
 // #2033: a server's list view row ends in the count its feeding tool says.
 
 func TestAViewsCountIsReadFromItsAnswer(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		result          string
 		count, attended int64 // -1: none

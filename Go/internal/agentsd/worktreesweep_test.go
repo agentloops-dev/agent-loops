@@ -77,6 +77,8 @@ func commitIn(t *testing.T, root, file string) {
 }
 
 func TestAnArchivedAgentsMergedCleanWorktreeIsRemoved(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	dir := repo(t)
 	a, root := laneWorktree(t, d, dir, "merged")
@@ -92,6 +94,8 @@ func TestAnArchivedAgentsMergedCleanWorktreeIsRemoved(t *testing.T) {
 }
 
 func TestAnArchivedAgentsUnmergedWorktreeGoesButItsBranchStays(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	dir := repo(t)
 	a, root := laneWorktree(t, d, dir, "unmerged")
@@ -110,6 +114,8 @@ func TestAnArchivedAgentsUnmergedWorktreeGoesButItsBranchStays(t *testing.T) {
 }
 
 func TestAWorktreeWithChangesGoesOnArchiveAndDelete(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	dir := repo(t)
 	commitIn(t, dir, "tracked.txt")
@@ -134,6 +140,8 @@ func TestAWorktreeWithChangesGoesOnArchiveAndDelete(t *testing.T) {
 }
 
 func TestAWorktreeAnotherAgentUsesIsKept(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	dir := repo(t)
 	a, root := laneWorktree(t, d, dir, "shared")
@@ -153,6 +161,8 @@ func TestAWorktreeAnotherAgentUsesIsKept(t *testing.T) {
 }
 
 func TestAnArchivedAgentDoesNotKeepAWorktree(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	dir := repo(t)
 	a, root := laneWorktree(t, d, dir, "restarted")
@@ -171,6 +181,8 @@ func TestAnArchivedAgentDoesNotKeepAWorktree(t *testing.T) {
 }
 
 func TestADeletedAgentsWorktreeGoesButItsUnmergedBranchStays(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	dir := repo(t)
 	a, root := laneWorktree(t, d, dir, "deleted")
@@ -186,6 +198,8 @@ func TestADeletedAgentsWorktreeGoesButItsUnmergedBranchStays(t *testing.T) {
 }
 
 func TestAWorktreeNotMadeByTheAppIsKept(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	dir := repo(t)
 	root := canonical(filepath.Join(t.TempDir(), "mine"))
@@ -199,6 +213,8 @@ func TestAWorktreeNotMadeByTheAppIsKept(t *testing.T) {
 }
 
 func TestAnAgentUnarchivedBeforeTheSweepKeepsItsWorktree(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	dir := repo(t)
 	a, root := laneWorktree(t, d, dir, "back")

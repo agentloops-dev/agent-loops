@@ -214,6 +214,8 @@ func TestTheCheckFollowsASecondMove(t *testing.T) {
 // #5335: the daemon reads a folder's origin again when it changes, so Work searches the new
 // name after `git remote set-url`, not the one it read at the start.
 func TestAFolderRepoFollowsANewOrigin(t *testing.T) {
+	t.Parallel()
+
 	d, err := New(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)

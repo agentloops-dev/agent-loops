@@ -14,6 +14,8 @@ import (
 // #5458: the order is AGENTS.md's: priority:high children first, then UI children (stories),
 // then the earliest milestone due date (none last), then the epic nearest to done.
 func TestRankSuggestionsOrder(t *testing.T) {
+	t.Parallel()
+
 	row := func(n string, high, ui bool, due string, done, total int64) suggestable {
 		return suggestable{item: wire.ForgeItem{Node: wire.LineageNode{Kind: "issue", Ref: "github:issue:a/b#" + n}}, high: high, ui: ui, due: due, done: done, tot: total}
 	}
@@ -38,6 +40,8 @@ func TestRankSuggestionsOrder(t *testing.T) {
 
 // #5458: only open children count, and a story is a UI child.
 func TestSuggestableOfReadsOpenChildren(t *testing.T) {
+	t.Parallel()
+
 	epic := wire.ForgeItem{Node: wire.LineageNode{Kind: "issue", Ref: "github:issue:a/b#1"}, Progress: &wire.ForgeProgress{Done: 2, Total: 5}}
 	child := func(state string, labels ...string) wire.ForgePlanChild {
 		var ls []wire.ForgeLabel

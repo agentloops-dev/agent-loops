@@ -21,6 +21,8 @@ func onceFile(at string, extra string) string {
 }
 
 func TestOnceIsReadAsATrigger(t *testing.T) {
+	t.Parallel()
+
 	w := parseWorkflow(onceFile("2026-11-13T09:15", "      grace: 30m\n"), "alarm", "/tmp/x")
 	if w.Problem != nil || len(w.Triggers) != 1 || !triggerSupported(w.Triggers[0]) || !onceOnly(w) {
 		t.Fatalf("%+v", w)
@@ -59,6 +61,8 @@ func TestOnceIsReadAsATrigger(t *testing.T) {
 }
 
 func TestLateWords(t *testing.T) {
+	t.Parallel()
+
 	for d, want := range map[time.Duration]string{20 * time.Second: "less than a minute", time.Minute: "1 minute", 12 * time.Minute: "12 minutes",
 		time.Hour: "1 hour", 125 * time.Minute: "2 hours 5 minutes", 72 * time.Hour: "3 days"} {
 		if got := lateWords(d); got != want {
@@ -155,6 +159,8 @@ func TestAnAlarmPastItsGraceIsMissed(t *testing.T) {
 
 // An agent's alarm is on once approved; one past its grace is refused when written.
 func TestAnAgentSetsAnAlarm(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -180,6 +186,8 @@ func TestAnAgentSetsAnAlarm(t *testing.T) {
 // A time wait that came while Agent Loops was off says how late, and past the grace that it
 // passed.
 func TestALateTimeWaitSaysHowLate(t *testing.T) {
+	t.Parallel()
+
 	deadline := wire.DateOf(time.Date(2026, 11, 12, 9, 0, 0, 0, time.Local))
 	w := &wire.EventWait{Patterns: []wire.EventPattern{{Name: timeReached}}, Deadline: &deadline}
 	if s := timedOutWords(w, wire.DateOf(deadline.Time().Add(10*time.Second))); !strings.HasPrefix(s, "The time you asked for has come (09:00)") {

@@ -113,6 +113,8 @@ func TestAWaitOnAgentEndedNamesItsSessions(t *testing.T) {
 
 // Every way a session ends is agent.ended, with how; a turn that ends waiting is not (#3799).
 func TestEndedHow(t *testing.T) {
+	t.Parallel()
+
 	report := func(o wire.WorkOutcome) *wire.Agent { return &wire.Agent{Report: &wire.WorkReport{Outcome: o}} }
 	for _, c := range []struct {
 		a    *wire.Agent

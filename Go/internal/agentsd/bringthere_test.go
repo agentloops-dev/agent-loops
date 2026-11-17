@@ -19,6 +19,8 @@ import (
 // the person is asked.
 
 func TestBringBackBringsTheBranchHere(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	src := repo(t)

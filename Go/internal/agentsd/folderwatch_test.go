@@ -173,6 +173,8 @@ func TestABranchAnAgentIsOnMovingIsRaised(t *testing.T) {
 }
 
 func TestWhatAFolderWatchLeavesOut(t *testing.T) {
+	t.Parallel()
+
 	for rel, skipped := range map[string]bool{
 		".git": false, ".git/refs": false, ".git/refs/heads": false, ".git/refs/heads/lanes": false,
 		".git/worktrees": false, ".git/worktrees/a": false, ".git/worktrees/a/logs": true,

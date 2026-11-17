@@ -161,6 +161,8 @@ func TestLineageLinksEachIssueToItsParent(t *testing.T) {
 }
 
 func TestIssueOnForgeOf(t *testing.T) {
+	t.Parallel()
+
 	got, subs, err := issueOnForgeOf([]byte(`{"number":3582,` +
 		`"parent_issue_url":"https://api.github.com/repos/alexec/Agents/issues/3579","sub_issues_summary":{"total":0}}`))
 	if err != nil || got.parent.Ref != "github:issue:alexec/agents#3579" || subs != 0 {

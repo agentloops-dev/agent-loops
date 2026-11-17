@@ -18,6 +18,8 @@ import (
 // turn moves browserUsedAt; and every pane hears who holds the browser.
 
 func TestATabIsTheSessionsThatOpenedIt(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	a, b := wire.UUID("A"), wire.UUID("B")
 
@@ -68,6 +70,8 @@ func TestATabIsTheSessionsThatOpenedIt(t *testing.T) {
 }
 
 func TestFramesGoOnlyToTheSessionsWatchers(t *testing.T) {
+	t.Parallel()
+
 	d, watchA := start(t, t.TempDir())
 	watchB := newConn()
 	go d.Accept(watchB)
@@ -144,6 +148,8 @@ func TestAPaneSaysWhichSessionHoldsTheBrowser(t *testing.T) {
 }
 
 func TestPlaywrightStartsOnTheSessionsTab(t *testing.T) {
+	t.Parallel()
+
 	list := "### Result\n- 0: [Other](https://other.example/)\n- 1: (current) [Mine](https://mine.example/)\n- 2: [Mine (again)](https://mine.example/)"
 	p := &tabsPlaywright{list: list}
 	startOnTab(context.Background(), p, "https://mine.example/")
@@ -197,6 +203,8 @@ func browserFrameOf(jpeg string, ack int64) browser.Frame {
 // A restart's stop can be heard after the next browser's tabs were followed (#5196): the
 // stop of the browser that went keeps the new one's tabs, owners and passkeys.
 func TestALateStopKeepsTheNextBrowsersTabs(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	a := wire.UUID("A")
 	d.tabsMu.Lock()

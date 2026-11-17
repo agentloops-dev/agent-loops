@@ -16,7 +16,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -373,7 +372,6 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 // FR-006: a control plane keeps one admin at least; a removed person's clients are cut
 // off and their machines leave, and the code they paired with does nothing again.
 func TestRolesAndRemoval(t *testing.T) {
-	flaky.UnderLoad(t, "#5843")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	_, alexWindow := p.client("Alex's Mac")
@@ -404,9 +402,14 @@ func TestRolesAndRemoval(t *testing.T) {
 	if p.s.Records().Host(samMachine.member.Host) != nil {
 		t.Fatal("Sam's machine is still there")
 	}
-	if _, err := sam.window.Call(context.Background(), "", "daemon/ping", nil); err == nil {
-		t.Fatal("Sam's window still talks")
-	}
+	// people/remove closes Sam's sockets before it replies (#5843); the wait is for the
+	// close to reach Sam's end of the socket.
+	p.waitFor(func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, err := sam.window.Call(ctx, "", "daemon/ping", nil)
+		return err != nil
+	}, "Sam's window cut off")
 	code, _ := controllink.ParseCode(shown.Text)
 	if _, err := controllink.PairClient(context.Background(), code, "Sam's phone"); err == nil {
 		t.Fatal("a removed person's code paired")

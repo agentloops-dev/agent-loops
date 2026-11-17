@@ -14,6 +14,8 @@ import (
 // a reply's chunks are one message, said.json is brought up to date from where it stopped and
 // kept within saidBytes, and agents/list's query keeps the sessions that match.
 func TestSaidSearch(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -63,6 +65,8 @@ func TestSaidSearch(t *testing.T) {
 }
 
 func TestBoundSaid(t *testing.T) {
+	t.Parallel()
+
 	big := strings.Repeat("x", saidBytes/2+1)
 	kept := boundSaid([]string{"old", big, big})
 	if len(kept) != 1 || kept[0] != big {
@@ -76,6 +80,8 @@ func TestBoundSaid(t *testing.T) {
 // place at the same size with one line fewer, so a cached index still counts the old lines and
 // a fresh scan does not.
 func TestSaidSearchKeepsTheOpenChatsLineIndex(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()

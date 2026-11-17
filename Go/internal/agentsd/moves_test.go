@@ -70,6 +70,8 @@ func TestAnAgentMovesIntoANewWorktreeWhenItsTurnEnds(t *testing.T) {
 }
 
 func TestAnAgentMovesIntoAnExistingWorktreeAtOnce(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
@@ -95,6 +97,8 @@ func TestAnAgentMovesIntoAnExistingWorktreeAtOnce(t *testing.T) {
 // A local branch's name moves into a new worktree on it, then into that worktree, and the
 // folder's own branch is refused (#3174): no agent runs git worktree add by hand.
 func TestAnAgentMovesOntoALocalBranch(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
@@ -145,6 +149,8 @@ func inAppWorktree(t *testing.T, d *Daemon) (wire.Agent, string, string) {
 }
 
 func TestLeavingWithRemoveOnceTheWorkIsPushed(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a, dir, cwd := inAppWorktree(t, d)
@@ -165,6 +171,8 @@ func TestLeavingWithRemoveOnceTheWorkIsPushed(t *testing.T) {
 }
 
 func TestLeavingWithRemoveIsRefusedWhileWorkIsNotPushed(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a, _, cwd := inAppWorktree(t, d)
@@ -191,6 +199,8 @@ func TestLeavingWithRemoveIsRefusedWhileWorkIsNotPushed(t *testing.T) {
 }
 
 func TestARuntimeThatCannotMoveIsNotOfferedTheTool(t *testing.T) {
+	t.Parallel()
+
 	for _, raw := range offeredTools(runtimeCanMove("grok"), false, false, false) {
 		if strings.Contains(string(raw), `"move_worktree"`) {
 			t.Fatal("offered to grok")

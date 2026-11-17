@@ -89,6 +89,8 @@ struct AgentCard: View {
                             .appText(.reading)
                             .fontWeight(agent.drawsUnread ? .semibold : .regular)
                             .lineLimit(2)
+                        // High or low (#5849), as the Mac's row and the Work rows mark it.
+                        if let chip = WorkPriorityChip(agent) { chip }
                         if let workflowName = startedByWorkflowName {
                             Image(icon: "flowchart")
                                 .appText(.fine)
@@ -252,7 +254,7 @@ struct AgentCard: View {
     /// Precise where the shape is not: which outcome, and why it stopped.
     private var accessibilityLabel: String {
         let words = model.queuedLine(agent) ?? StatusShape.words(row: agent, isComingBack: isComingBack)
-        return ([agent.title ?? "Untitled", agent.isMuted ? MuteWords.muted : nil,
+        return ([agent.title ?? "Untitled", SessionPriorityWords.help(agent), agent.isMuted ? MuteWords.muted : nil,
                  model.startedByAgentLabel(agent), words, agent.report?.message]
             .compactMap { $0 } + [model.work.waitMark(of: agent)?.detail, ArchiveRequestWords.line(agent),
                                 FileToSeeWords.line(agent)].compactMap { $0 })
@@ -306,6 +308,11 @@ struct AgentMenuItems: View {
         if agent.state != .archived {
             // No push or banner for it, and still in Needs You (#2003).
             MuteAgentButton(agent: agent)
+            // High, Medium, Low or From issue (#5849), as the Mac's row menu has it.
+            SessionPriorityMenu(agent: agent) { priority in
+                Task { await model.setPriority(agent.id, priority) }
+            }
+            .disabled(model.isStale(agent))
             // Each with the list's key (#4796), which works while the list has an iPad's keyboard.
             RenameAgentButton(agent: agent)
                 .keyboardShortcut(ListKey.rename.shortcut)

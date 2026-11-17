@@ -201,11 +201,12 @@ func (d *Daemon) request(id wire.UUID) *wire.Request {
 	return nil
 }
 
-// openFormRequest is the record for a form an agent shows: a question, a secret or a step.
-func (d *Daemon) openFormRequest(req wire.ElicitationRequest) {
+// formRequest is the record for a form an agent shows: a question, a secret or a step. It is
+// nil for a form that gets none. keepFormRequest keeps it and requestOpened says it.
+func (d *Daemon) formRequest(req wire.ElicitationRequest) *wire.Request {
 	a := d.Store.Agent(req.AgentID)
 	if a == nil || a.Purpose != nil {
-		return
+		return nil
 	}
 	kind, source, title := wire.RequestKindDecide, wire.RequestSourceQuestion, "A question"
 	if req.Message != nil && strings.TrimSpace(*req.Message) != "" {
@@ -222,19 +223,34 @@ func (d *Daemon) openFormRequest(req wire.ElicitationRequest) {
 	}
 	at := now()
 	asker := req.AgentID
-	r := &wire.Request{ID: req.ID, Kind: kind, Source: source, State: wire.RequestStateOpen, Title: title,
+	return &wire.Request{ID: req.ID, Kind: kind, Source: source, State: wire.RequestStateOpen, Title: title,
 		Detail: wire.RequestDetail{Elicitation: &req}, Folder: string(store.FolderURL(folderPath(a))), AskedBy: &asker,
 		Waiters: []wire.RequestWaiter{{Agent: asker, Since: at}}, AskedAt: at}
+}
+
+// keepFormRequest keeps a form's request, on disk too, and is a copy of it. showForm calls it
+// with the agent's lock held, as it shows the form (#5974): an answer that came between the
+// two found no request to end, and the request opened after it stayed open for ever.
+func (d *Daemon) keepFormRequest(r *wire.Request) wire.Request {
 	d.requests.mu.Lock()
+	defer d.requests.mu.Unlock()
 	if d.requests.byID == nil {
 		d.requests.byID = map[wire.UUID]*wire.Request{}
 	}
 	d.requests.byID[r.ID] = r
 	d.saveRequestLocked(r)
-	c := copyRequest(r)
-	d.requests.mu.Unlock()
+	return copyRequest(r)
+}
+
+// requestOpened tells the clients and raises request.opened, once the agent's lock is let go.
+// The clients get the request as it is now: an answer that came first ended it already.
+func (d *Daemon) requestOpened(opened wire.Request) {
+	c := opened
+	if cur := d.request(opened.ID); cur != nil {
+		c = *cur
+	}
 	Broadcast(d, wire.NotifyRequestsChanged, wire.RequestUpdate{Request: c})
-	d.raiseRequestEvent("request.opened", c, nil, nil)
+	d.raiseRequestEvent("request.opened", opened, nil, nil)
 }
 
 // addRequestWaiter is a session that joins an open request with wait_for_event.

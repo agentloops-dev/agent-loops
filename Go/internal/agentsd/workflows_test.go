@@ -14,6 +14,8 @@ import (
 )
 
 func TestWorkflowLimitsArePerFolderAndDoNotLimitApprovals(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	first := folder(t, c, 1)
@@ -93,6 +95,8 @@ func TestWorkflowLimitsArePerFolderAndDoNotLimitApprovals(t *testing.T) {
 // file new or changed since it was approved waiting for the person.
 
 func TestReadingAWorkflowFile(t *testing.T) {
+	t.Parallel()
+
 	w := parseWorkflow("---\nname: Morning check\non:\n  - schedule:\n      at: [\":00\", \":30\"]\n      between: 9-17:30\n      days: [mon, fri]\n  - agent.finished\ncooldown: 1h30m\nwhen-done: archive\nruns-on: [a, a, b]\nfancy: yes\n---\n\nCheck the build.\n", "morning-check", "/p")
 	if w.Problem != nil || w.Name != "Morning check" || len(w.Triggers) != 2 || *w.Cooldown != 5400 || *w.WhenDone != wire.WorkflowWhenDoneArchive ||
 		len(w.RunsOn) != 2 || w.Prompt != "Check the build.\n" || string(w.UnknownFields["fancy"]) != `"yes"` {
@@ -133,6 +137,8 @@ func TestReadingAWorkflowFile(t *testing.T) {
 }
 
 func TestOneKeyChangedAndNothingElse(t *testing.T) {
+	t.Parallel()
+
 	src := "---\nname: x   # the name\non: agent.finished\noptions:\n  fast: true\n---\nGo\n"
 	got, err := setFrontMatter("name", strPtr("y: z"), src)
 	if err != nil || got != "---\nname: \"y: z\"   # the name\non: agent.finished\noptions:\n  fast: true\n---\nGo\n" {
@@ -156,6 +162,8 @@ func TestOneKeyChangedAndNothingElse(t *testing.T) {
 }
 
 func TestWorkflowsWaitForThePersonsOK(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -220,6 +228,8 @@ func TestWorkflowsWaitForThePersonsOK(t *testing.T) {
 }
 
 func TestClearingMissedEventsLeavesTheWorkflow(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -240,6 +250,8 @@ func TestClearingMissedEventsLeavesTheWorkflow(t *testing.T) {
 // digest approval checks is of the bytes that were parsed, never of the file on disk now,
 // and a file that is a symlink or has a second hard link is not read at all.
 func TestAWorkflowThatIsALinkNeverRuns(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -319,6 +331,8 @@ func TestAWorkflowThatIsALinkNeverRuns(t *testing.T) {
 // workflow does, the change is shown with the skill's lines, and Undo puts the skill back.
 // A skill named outside .agents/skills, or through a link out of it, never runs.
 func TestAWorkflowWaitsWhenTheSkillItFollowsChanges(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

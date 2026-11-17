@@ -87,6 +87,8 @@ func TestAWorkflowRuns(t *testing.T) {
 // A mode the runtime does not offer stops the run, rather than leaving the agent in the
 // runtime's own default; with nothing offered yet, the mode is taken as offered.
 func TestAWorkflowModeTheRuntimeDoesNotOffer(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if id, why := d.offeredMode("grok", "auto"); id != "mode" || why != "" {
@@ -108,6 +110,8 @@ func TestAWorkflowModeTheRuntimeDoesNotOffer(t *testing.T) {
 }
 
 func TestAllowanceFailureDoesNotAutoarchiveWorkflowRun(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -184,6 +188,8 @@ func TestRunNowRetriesStoppedWorkflowOnCurrentRuntime(t *testing.T) {
 }
 
 func TestRunEndingBeforeAgentAttachmentReleasesRun(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

@@ -149,6 +149,8 @@ func TestAHandOffWithNoRealWindow(t *testing.T) {
 }
 
 func TestRealWindowWords(t *testing.T) {
+	t.Parallel()
+
 	if got := realWindowWords("https://accounts.google.com/v3/signin"); got != "the agents' Chrome window, in front (accounts.google.com)" {
 		t.Fatal(got)
 	}

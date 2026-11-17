@@ -87,6 +87,8 @@ func movingPairHeld(t *testing.T, hold chan struct{}) (here, there *Daemon, c *c
 }
 
 func TestMoveSessionTakesAHelperThereWithItsWork(t *testing.T) {
+	t.Parallel()
+
 	here, there, c, steps := movingPair(t)
 	src := repo(t)
 	sendGit(t, src, nil, "checkout", "-q", "-b", "fix-login")
@@ -178,6 +180,8 @@ func TestMoveSessionTakesAHelperThereWithItsWork(t *testing.T) {
 }
 
 func TestMoveSessionMovesItselfWhenTheTurnEnds(t *testing.T) {
+	t.Parallel()
+
 	here, there, c, steps := movingPair(t)
 	src := repo(t)
 	sendGit(t, src, nil, "checkout", "-q", "-b", "big-build")
@@ -269,6 +273,8 @@ func nextMove(c *conn, wait time.Duration) *wire.MoveNotification {
 // agents/moves finds it mid-move, a second move is refused, and the session stays here until
 // that machine has it.
 func TestPersonMovesASessionToAMachine(t *testing.T) {
+	t.Parallel()
+
 	hold := make(chan struct{})
 	here, there, c, steps := movingPairHeld(t, hold)
 	src := repo(t)

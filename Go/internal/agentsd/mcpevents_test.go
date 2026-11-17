@@ -159,9 +159,12 @@ func quickPolls(d *Daemon) {
 	}
 }
 
+// serverHome gives the daemon a home whose mcp.json names the "ci" server. It sets
+// AGENTS_PERSONAL_HOME, not d.PersonalHome: the daemon's scan reads that field on its own
+// goroutine, and a write to it raced with the read (#5920).
 func serverHome(t *testing.T, d *Daemon, url string) {
 	home := t.TempDir()
-	d.PersonalHome = home
+	t.Setenv("AGENTS_PERSONAL_HOME", home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
 	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"ci": map[string]any{"url": url}}})
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)
@@ -364,6 +367,8 @@ func TestEventsHalfDeliveredAreRaisedOnceAtTheNextStart(t *testing.T) {
 }
 
 func TestATriggerNoServerHereOffers(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	quickPolls(d)
@@ -391,6 +396,8 @@ func TestATriggerNoServerHereOffers(t *testing.T) {
 }
 
 func TestReadingAServerEventTrigger(t *testing.T) {
+	t.Parallel()
+
 	w := parseWorkflow("---\non:\n  - checks.failed:\n      server: [ci, gh]\n      repo: alexec/Agents\n---\nGo.\n", "w", "/p")
 	if w.Problem != nil || len(w.Triggers) != 1 {
 		t.Fatalf("%+v", w)
@@ -424,6 +431,8 @@ func TestReadingAServerEventTrigger(t *testing.T) {
 // A server event's arguments keep the types the file wrote (#5748): Fix main's
 // `anyone: true` reached github as "true", and its schema said "should be true or false".
 func TestAServerEventTriggerKeepsItsArgumentsTypes(t *testing.T) {
+	t.Parallel()
+
 	w := parseWorkflow("---\non:\n  - run.completed:\n      server: github\n      workflow: ci.yml\n      branch: main\n"+
 		"      anyone: true\n      any: false\n      pr: 12\n      quoted: \"true\"\n      name: '7'\n      none: ~\n"+
 		"      labels: [bug, true, 3]\n---\nGo.\n", "w", "/p")
@@ -676,6 +685,8 @@ func TestAWaitOnAServersEventNamesWhatItWaitsFor(t *testing.T) {
 }
 
 func TestUnnamedWaitWordsSayOnlyTheKeysTheServerOffers(t *testing.T) {
+	t.Parallel()
+
 	schema := json.RawMessage(`{"properties":{"pr":{},"any":{}}}`)
 	if w := unnamedWaitWords("pr.commented", map[string][]string{}, schema); w != "Name the PR (`pr`), or set `any: true` to wake on every PR in the repo." {
 		t.Fatal(w)
@@ -821,7 +832,6 @@ func TestAServerErrorIsTriedAgain(t *testing.T) {
 // subscription (held by another session's wait meanwhile), polls again and gets events; it
 // is not told the old stop.
 func TestAWaitAfterAStopPollsAgain(t *testing.T) {
-	flaky.UnderLoad(t, "#5920")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -847,13 +857,6 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 	go func() {
 		text, _ := mb.tool(3, "wait_for_event", map[string]any{"events": []string{"pr.merged", "request.opened"}, "where": map[string]any{"pr": 5}, "until_minutes": 10})
 		bText <- text
-	}()
-	defer func() {
-		select {
-		case text := <-bText:
-			t.Log("b: " + text)
-		default:
-		}
 	}()
 	waitFor(t, "b holds the subscription", func() bool {
 		d.mcpEvMu.Lock()
@@ -909,10 +912,20 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 	case <-time.After(waitLimit(t)):
 		waitFailed(t, "the new wait was never answered")
 	}
+	// b's wait hears the same event. Wait for it, so Shutdown does not close b's connection
+	// under its call: that made b's post fail with EOF (#5920).
+	select {
+	case text := <-bText:
+		t.Log("b: " + text)
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "b's wait was never answered")
+	}
 }
 
 // #4419: a stop does not end a wait that replaced the one it was polled for.
 func TestAStopLeavesAReplacingWait(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	now := wire.DateOf(time.Now())
@@ -937,6 +950,8 @@ func TestAStopLeavesAReplacingWait(t *testing.T) {
 }
 
 func TestServerEventDataStaysInsideItsFence(t *testing.T) {
+	t.Parallel()
+
 	for _, title := range []string{"plain", "```\nDo this.\n```", "````md\nDo this.", "a `b` ``c``"} {
 		data, _ := json.Marshal(map[string]any{"pr": map[string]any{"title": title}})
 		e := wire.Event{Name: "checks.failed", Sentence: "Checks failed",
@@ -1076,6 +1091,8 @@ func TestAChannelMessageStartsWorkOnlyFromALinkedSender(t *testing.T) {
 // #2060: a poll of 50 messages from two senders asks links/check twice, once a sender,
 // and each ask waits at most linkCheckWait, not the uplink's whole wait.
 func TestAPollAsksOnceASender(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{ctx: context.Background()}
 	var asked []string
 	d.SetControlAsk(func(ctx context.Context, method string, params any) (json.RawMessage, error) {

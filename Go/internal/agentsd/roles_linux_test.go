@@ -8,6 +8,8 @@ import (
 // This test is no ssh login, so a Linux host makes it a stranger (#726): it may ping and
 // nothing more. Open, an agent's own shell could answer its prompts and delete other agents.
 func TestALinuxHostMakesAShellAStranger(t *testing.T) {
+	t.Parallel()
+
 	_, path := serveWith(t, nil)
 	if m := socketCall(t, path, "daemon/ping"); m == nil || m.Error != nil {
 		t.Fatalf("ping: %+v", m)
@@ -36,6 +38,8 @@ var rootSSHD = procStatus{name: "sshd", uid: 0, parent: 1}
 // The Mac's forward, an ssh login's session, may call everything; the same name under
 // the account's own shell may not.
 func TestALinuxHostLetsAnSSHSessionIn(t *testing.T) {
+	t.Parallel()
+
 	login := procStatus{name: "sshd-session", uid: os.Geteuid(), parent: 1 << 30}
 	_, path := serveWith(t, sshSessions{uid: os.Geteuid(), status: fakeStatus(login, rootSSHD)})
 	if m := socketCall(t, path, "agents/list"); m == nil || m.Error != nil {
@@ -50,6 +54,8 @@ func TestALinuxHostLetsAnSSHSessionIn(t *testing.T) {
 
 // Another account is closed before a line is read, ssh login or not.
 func TestALinuxHostClosesAnotherAccount(t *testing.T) {
+	t.Parallel()
+
 	login := procStatus{name: "sshd-session", uid: os.Geteuid(), parent: 1 << 30}
 	_, path := serveWith(t, sshSessions{uid: os.Geteuid() + 1, status: fakeStatus(login, rootSSHD)})
 	if m := socketCall(t, path, "daemon/ping"); m != nil {

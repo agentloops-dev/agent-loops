@@ -13,6 +13,8 @@ import (
 // its first answer by a person, not a bot's or an agent's, and time/history says how long it
 // waited.
 func TestLineageApprovalWait(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	const url = "https://github.com/alexec/Agents/pull/9"
@@ -64,6 +66,8 @@ func TestLineageApprovalWait(t *testing.T) {
 }
 
 func TestPersonsAnswer(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		author, body string
 		want         bool

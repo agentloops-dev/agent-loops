@@ -13,6 +13,8 @@ import (
 )
 
 func TestTheWindowSavesTheSettingsTheHostHadNoWriteFor(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 
@@ -61,6 +63,8 @@ func TestTheWindowSavesTheSettingsTheHostHadNoWriteFor(t *testing.T) {
 }
 
 func TestRetentionDescribesADeleteUntilItIsConfirmed(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	old := wire.DateOf(time.Now().Add(-100 * 24 * time.Hour))
@@ -92,6 +96,8 @@ func TestRetentionDescribesADeleteUntilItIsConfirmed(t *testing.T) {
 }
 
 func TestAlwaysApproveAnswersBeforeACard(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if err := d.writeSetting("client-permissions.json", wire.ClientPermissionSettings{Cursor: "alwaysApprove", Grok: "default", Opencode: "default"}); err != nil {
@@ -130,6 +136,8 @@ func TestAlwaysApproveAnswersBeforeACard(t *testing.T) {
 }
 
 func TestAPersonMovesAndDoesNotCancelTheAgentsOwnMove(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
@@ -187,6 +195,8 @@ func TestGitFillStaysOffTheWindowAndAnswersTheControlPlane(t *testing.T) {
 // The app's own tools are allowed with no card, under Claude's name and Antigravity's
 // (agents_<tool>, #1361); a runtime's own tool with a look-alike name still asks.
 func TestAppToolTitlesAllowedWithNoCard(t *testing.T) {
+	t.Parallel()
+
 	for title, want := range map[string]bool{"mcp__agents__lease_resource": true, "agents_lease_resource": true,
 		"agents_show_file": true, "agents_browser_navigate": true, "agents_delete_everything": false,
 		"Run client_create_file?": false, "lease_resource": false} {

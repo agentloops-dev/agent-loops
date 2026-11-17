@@ -96,6 +96,8 @@ func TestWarmPoolCapOfZero(t *testing.T) {
 
 // backgroundHours is 1 to 24, 4 when missing, and a client that does not send it keeps it.
 func TestBackgroundHoursClamped(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		in   *int64
 		want int64
@@ -121,6 +123,8 @@ func TestBackgroundHoursClamped(t *testing.T) {
 // Background processes: under the runtime in a group of their own and not there as it
 // started, or orphans of such a group; never the runtime's own helpers in its group.
 func TestBackgroundProcessesOfARuntime(t *testing.T) {
+	t.Parallel()
+
 	table := map[int32]procInfo{
 		100: {parent: 1, name: "npm"},      // the runtime
 		101: {parent: 100, name: "node"},   // its own, in its group
@@ -149,6 +153,8 @@ func TestBackgroundProcessesOfARuntime(t *testing.T) {
 }
 
 func TestBackgroundNoteNamesTheProcesses(t *testing.T) {
+	t.Parallel()
+
 	got := backgroundNote(4, []acp.Command{{Line: "npm run dev"}, {Line: "gh run watch"}})
 	if want := "Released after 4 h idle; ended its background processes: `npm run dev`, `gh run watch`"; got != want {
 		t.Fatalf("%q", got)
@@ -326,6 +332,8 @@ func TestWarmPoolReleaseAfterMinutes(t *testing.T) {
 // The minutes are 0 to 1440, 10 when missing, and a client that does not send them (no
 // client shows them) keeps them; 0 is kept as 0.
 func TestReleaseAfterMinutesClamped(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		in   *int64
 		want int64
