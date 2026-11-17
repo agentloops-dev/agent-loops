@@ -16,7 +16,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -107,10 +106,10 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 	t.Parallel()
 
-	flaky.UnderLoad(t, "#5750")
 	var mu sync.Mutex
 	var forms []map[string]string
 	access := "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln"
+	polling := make(chan struct{})
 	entra := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		form := map[string]string{"path": r.URL.Path}
@@ -152,7 +151,16 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 	d.newDeviceFlow = func(wire.ConnectionProvider) *connections.DeviceFlow {
 		f := connections.NewAzureDevOpsEntraFlow("entra-app", "")
 		f.Base, f.HTTP = entra.URL+"/organizations/", entra.Client()
-		f.Sleep = func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
+		// The first poll waits here (#5750): the flow stays "waiting" until the test calls
+		// connections/sign-in/wait, so a slow runner cannot end the poll before sign-in answers.
+		f.Sleep = func(ctx context.Context, _ time.Duration) error {
+			select {
+			case <-polling:
+				return ctx.Err()
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
 		return f
 	}
 
@@ -168,6 +176,7 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 		started.VerificationURL != "https://microsoft.com/devicelogin" || started.Grant != wire.ConnectionSignInGrantDeviceCode {
 		t.Fatalf("started: %+v", started)
 	}
+	close(polling)
 	var done wire.ConnectionSignIn
 	for range 50 {
 		raw := c.call(t, 4, "connections/sign-in/wait", map[string]any{"flowID": started.FlowID})
