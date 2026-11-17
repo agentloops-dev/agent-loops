@@ -62,7 +62,7 @@ func TestConnectingJiraWithAtlassianSignIn(t *testing.T) {
 	atl := fakeAtlassian(t, &body, &auth)
 	defer atl.Close()
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	t.Setenv("AGENTS_ATLASSIAN_CLIENT_ID", "")
 	t.Setenv("AGENTS_ATLASSIAN_CLIENT_SECRET", "")
 	d, c := start(t, t.TempDir())

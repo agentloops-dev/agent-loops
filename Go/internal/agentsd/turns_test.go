@@ -511,10 +511,16 @@ func (f *fakeRuntime) form(ctx context.Context, session sdk.SessionId, withdraw 
 	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 }
 
-func fakeRuntimes(t *testing.T) {
+// fakeRuntimes has the daemons t starts run this test binary as every runtime, a fake ACP
+// one by AGENTS_FAKE_ACP=1 in the runtime's own environment. The process's stays as it was,
+// so the test can run in parallel (#5926).
+func fakeRuntimes(t testing.TB) {
+	t.Helper()
 	self, _ := os.Executable()
-	t.Setenv("AGENTS_FAKE_ACP", "1")
-	setFor(t, &locateFor, func(*runtimeDef) (string, []string, []string) { return self, nil, nil })
+	testHooksOf(t).change(func(h *testHooks) {
+		h.opts.locate = func(*runtimeDef) (string, []string, []string) { return self, nil, nil }
+		h.opts.runtimeEnv = []string{"AGENTS_FAKE_ACP=1"}
+	})
 }
 
 // notes collects the notifications a client hears.
@@ -549,6 +555,8 @@ func ended(id wire.UUID, state wire.AgentState) func(string, json.RawMessage) bo
 // A whole turn: the agent starts, the runtime asks, the card is answered, the turn ends
 // finished with a report from its last words, and the records on disk are today's.
 func TestATurnWithACard(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	work := t.TempDir()
@@ -608,6 +616,8 @@ func TestATurnWithACard(t *testing.T) {
 // A card the person denies, after which the runtime ends the turn with no word, as Copilot
 // does (#3722): the app starts it again, to carry on without that call.
 func TestADeniedCardThatEndsTheTurnCarriesOn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -642,6 +652,8 @@ func TestADeniedCardThatEndsTheTurnCarriesOn(t *testing.T) {
 
 // An allowed card, or a denied one the agent answers in words, sends nothing more.
 func TestACardAnsweredInWordsDoesNotCarryOn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -665,6 +677,8 @@ func TestACardAnsweredInWordsDoesNotCarryOn(t *testing.T) {
 }
 
 func TestStopEndsTheTurnCancelled(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -689,6 +703,8 @@ func TestStopEndsTheTurnCancelled(t *testing.T) {
 // A stop after kick and before the turn begins is not lost (#3621): under load the run
 // loop's goroutine starts late, and turn cleared the stop and worked on.
 func TestAStopBeforeTheTurnBeginsHolds(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -710,6 +726,8 @@ func TestAStopBeforeTheTurnBeginsHolds(t *testing.T) {
 // An admin's stop from the Console (#2435) reads as theirs, not "Stopped by you"; the
 // owner's next stop is the owner's again.
 func TestAnAdminsStopSaysSo(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -753,6 +771,8 @@ func TestAStartInAFolderThatIsNotThere(t *testing.T) {
 // A runtime with no sign-in ends the turn as not signed in, not as a crash, and its
 // account says so (#1430).
 func TestAStartWithNoSignIn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -781,6 +801,8 @@ func TestAStartWithNoSignIn(t *testing.T) {
 
 // Antigravity gets its own home in the root and the switches Swift gave it (049 D8).
 func TestAntigravityLaunchesInItsOwnHome(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, _ := start(t, root)
@@ -833,6 +855,8 @@ func TestOpenCodeLaunchesInItsOwnDataDirectory(t *testing.T) {
 // Antigravity 1.4.5 writes skills/system/run-workflow into the session's folder (#3731):
 // info/exclude keeps it out of git status, also in a subfolder, and once only.
 func TestAntigravityLaunchKeepsItsSkillsOutOfGit(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()

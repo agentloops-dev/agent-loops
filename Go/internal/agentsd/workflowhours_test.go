@@ -210,6 +210,8 @@ func TestCooldownWithHours(t *testing.T) {
 // An event outside the hours is held and said quietly; Run now runs; the held fire starts
 // once the hours open.
 func TestAFireOutsideHoursIsHeld(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

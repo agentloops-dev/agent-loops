@@ -245,8 +245,10 @@ func TestPersonas(t *testing.T) {
 }
 
 func TestPersonaFilesCanBeManagedInEachScope(t *testing.T) {
+	t.Parallel()
+
 	personal := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", personal)
+	personalHomeFor(t, personal)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

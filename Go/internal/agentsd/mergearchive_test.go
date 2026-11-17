@@ -122,6 +122,8 @@ func TestASessionIsArchivedWhenItsPullRequestMerges(t *testing.T) {
 // #2886: with no workflow and no wait, a session in a worktree is enough for this host to
 // hear its server's pr.merged, and a merge archives it.
 func TestAMergeHeardWithNoWorkflowArchivesItsSession(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)

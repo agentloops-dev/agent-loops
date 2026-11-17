@@ -31,7 +31,9 @@ func lastEnv(env []string, name string) string {
 // environment holds a grant and no token, each ask gets the token the host has now (a renewal
 // is seen at once, as an 8-hour session needs), and the grant is dead once the runtime ends.
 func TestAnAgentsGitAndGhAskForTheAppsToken(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}

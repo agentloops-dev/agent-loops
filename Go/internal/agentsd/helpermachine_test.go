@@ -143,6 +143,8 @@ func TestAnAgentStartsASessionOnAnotherMachine(t *testing.T) {
 }
 
 func TestASessionStartedFromAnotherMachineSaysWho(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -220,6 +222,8 @@ func TestTheFolderSwitchStartsOnAnotherMachineWithoutAsking(t *testing.T) {
 }
 
 func TestASessionAutoPickedSaysSoFirst(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

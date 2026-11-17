@@ -69,7 +69,8 @@ func start(t testing.TB, root string) (*Daemon, *conn) {
 // startWith is start on a context of the test's, as main's that a signal ends.
 func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) {
 	t.Helper()
-	d, err := New(ctx, root)
+	hooks := testHooksOf(t)
+	d, err := newWith(ctx, root, hooks.options())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,10 +80,11 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 	// Then no goroutine the daemon started may still run (#5653): one that does would write
 	// into the root as it goes, or read a setting the next test changes. It fails here, by
 	// where it started, not at TempDir's RemoveAll.
-	hooks := testHooksOf(t)
 	hooks.started()
+	hooks.add(d)
 	t.Cleanup(func() {
 		d.Shutdown()
+		hooks.remove(d)
 		if live := d.liveJobs(); len(live) > 0 {
 			t.Errorf("goroutines the daemon started still run after Shutdown:\n\t%s", strings.Join(live, "\n\t"))
 		}

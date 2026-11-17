@@ -13,6 +13,8 @@ import (
 // that wakes it, with the loop guard and the archived refused.
 
 func TestReadingAndMessagingSessions(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -86,6 +88,8 @@ func TestReadingAndMessagingSessions(t *testing.T) {
 // One queued message_session per sender and target: a second send is refused, replace
 // swaps the text in place, cancel takes it back, and a held looser message still counts (#2006).
 func TestOneQueuedMessagePerTarget(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

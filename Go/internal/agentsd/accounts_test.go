@@ -20,7 +20,7 @@ func TestAnAddedAccount(t *testing.T) {
 	fakeRuntimes(t)
 	root := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	os.MkdirAll(filepath.Join(home, ".claude", "skills"), 0o700)
 	os.WriteFile(filepath.Join(home, ".claude", "CLAUDE.md"), []byte("mine"), 0o600)

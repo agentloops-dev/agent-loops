@@ -88,6 +88,8 @@ func TestABranchsNoteComesAfterTheReply(t *testing.T) {
 }
 
 func TestAPageOfTurns(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -120,6 +122,8 @@ func TestAPageOfTurns(t *testing.T) {
 // turns, the rest are filled in behind it into turns.jsonl, the next look reads them
 // from there, and a kept turn that no longer matches its transcript is made again.
 func TestTurnsAreKept(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

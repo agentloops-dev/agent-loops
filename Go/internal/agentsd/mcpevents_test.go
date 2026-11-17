@@ -159,12 +159,12 @@ func quickPolls(d *Daemon) {
 	}
 }
 
-// serverHome gives the daemon a home whose mcp.json names the "ci" server. It sets
-// AGENTS_PERSONAL_HOME, not d.PersonalHome: the daemon's scan reads that field on its own
+// serverHome gives the daemon a home whose mcp.json names the "ci" server. It names the
+// home with personalHomeFor, not d.PersonalHome: the daemon's scan reads that field on its own
 // goroutine, and a write to it raced with the read (#5920).
 func serverHome(t *testing.T, d *Daemon, url string) {
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
 	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"ci": map[string]any{"url": url}}})
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)
@@ -196,6 +196,8 @@ func mcpEventsRaised(d *Daemon, id string) []wire.Event {
 }
 
 func TestAWorkflowHearsAServersEvent(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -322,6 +324,8 @@ func TestAWorkflowHearsAServersEvent(t *testing.T) {
 }
 
 func TestEventsHalfDeliveredAreRaisedOnceAtTheNextStart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -455,6 +459,8 @@ func TestAServerEventTriggerKeepsItsArgumentsTypes(t *testing.T) {
 }
 
 func TestAWaitOnAServersEvent(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -527,6 +533,8 @@ func TestAWaitOnAServersEvent(t *testing.T) {
 // came since; and a server's event raised while no wait was open answers the next wait at
 // once. What woke the agent never wakes it again.
 func TestAWaitLooksBackForAServersEventItMissed(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -718,6 +726,8 @@ func TestUnnamedWaitWordsSayOnlyTheKeysTheServerOffers(t *testing.T) {
 // from the same cursor, so a wait on pr.merged still wakes when the PR merges; it used to
 // stop the subscription for good, and the wait never woke.
 func TestAWaitOutlastsASignInThatFailsForAMoment(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -757,6 +767,8 @@ func TestAWaitOutlastsASignInThatFailsForAMoment(t *testing.T) {
 // #2491: a wait whose only subscription stops for good is told so at once, with the
 // server's words; it used to sit until its until_minutes.
 func TestAWaitEndsWhenItsServerStopsSending(t *testing.T) {
+	t.Parallel()
+
 	flaky.UnderLoad(t, "#5891")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -794,6 +806,8 @@ func TestAWaitEndsWhenItsServerStopsSending(t *testing.T) {
 // again, as a lost connection is; it used to stop the subscription for good, and every wait
 // on it was told the server stopped sending.
 func TestAServerErrorIsTriedAgain(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -832,6 +846,8 @@ func TestAServerErrorIsTriedAgain(t *testing.T) {
 // subscription (held by another session's wait meanwhile), polls again and gets events; it
 // is not told the old stop.
 func TestAWaitAfterAStopPollsAgain(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -979,6 +995,8 @@ func TestServerEventDataStaysInsideItsFence(t *testing.T) {
 // A workflow for both forges (#1633) listens to the server a folder has and says nothing of
 // the other, or of an event no server here offers, once one of its triggers is heard.
 func TestAWorkflowForTwoServersSaysNothingOfTheOneNotHere(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -1009,6 +1027,8 @@ func TestAWorkflowForTwoServersSaysNothingOfTheOneNotHere(t *testing.T) {
 // one from a linked sender fires the workflow and names the person. With no control plane
 // to ask, nothing starts either.
 func TestAChannelMessageStartsWorkOnlyFromALinkedSender(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

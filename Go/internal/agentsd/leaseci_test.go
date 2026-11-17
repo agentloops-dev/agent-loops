@@ -17,6 +17,8 @@ import (
 // reason; once none is, granted to one agent at a time. A queued run with no jobs (a ghost, #5676)
 // does not count, and is not read again. A folder not on GitHub is never held.
 func TestTheCILeaseWaitsWhileAJobIsQueued(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	var queued atomic.Bool

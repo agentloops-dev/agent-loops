@@ -16,10 +16,12 @@ import (
 // #2032: a connected server's list views are rows of their own, named by the service.
 
 func TestAServersListViewsShowWithoutAPinAndHide(t *testing.T) {
+	t.Parallel()
+
 	var calls atomic.Int32
 	server := fakeViewServer(t, &calls)
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"ci":{"url":"`+server.URL+`"},
 		"local":{"command":"local-server"}}}`), 0o644)

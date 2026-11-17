@@ -118,7 +118,7 @@ func jiraDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeJira, string) {
 	os.MkdirAll(filepath.Join(app, ".agents"), 0o755)
 	os.WriteFile(filepath.Join(app, ".agents", "folder.json"), []byte(`{"jiraProjects": ["proj", "not a project"]}`), 0o644)
 	c.call(t, 300, "folders/add", map[string]any{"folder": "file://" + app})
-	home := os.Getenv("AGENTS_PERSONAL_HOME")
+	home := d.personalHome()
 	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
 	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
 		[]byte("JIRA_URL=https://acme.atlassian.net/\nJIRA_EMAIL=kim@acme.com\nJIRA_API_TOKEN=tok\n"), 0o600)
@@ -129,6 +129,8 @@ func jiraDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeJira, string) {
 // model: a jira: node, the status beside the state, the fix version as the milestone, and the
 // folder that names its project. forge/pulls asks Jira nothing.
 func TestForgeIssuesReadsTheFoldersJiraProjects(t *testing.T) {
+	t.Parallel()
+
 	d, c, j, _ := jiraDaemon(t)
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("billing")}), &list)
@@ -162,6 +164,8 @@ func TestForgeIssuesReadsTheFoldersJiraProjects(t *testing.T) {
 // #3260: forge/issue reads a Jira issue with its body, comments, transitions and Start Agent;
 // one Jira does not have is invalid.
 func TestForgeReadsAJiraIssue(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _ := jiraDaemon(t)
 	var i wire.ForgeItemDetail
 	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "jira:issue:proj#PROJ-7"}}), &i)
@@ -186,6 +190,8 @@ func TestForgeReadsAJiraIssue(t *testing.T) {
 // #3260: a comment, labels, the label choices, a transition, and close and reopen by the
 // workflow's own transitions go to Jira; a transition on another forge is invalid.
 func TestForgeWritesOnAJiraIssue(t *testing.T) {
+	t.Parallel()
+
 	_, c, j, _ := jiraDaemon(t)
 	node := wire.LineageNode{Kind: "issue", Ref: "jira:issue:proj#PROJ-7"}
 	var done wire.ForgeDone
@@ -215,8 +221,10 @@ func TestForgeWritesOnAJiraIssue(t *testing.T) {
 
 // #3260: with no jira sign-in in the secrets, a Jira read says so; a list still reads the rest.
 func TestForgeJiraNotSignedIn(t *testing.T) {
-	_, c, _, _ := jiraDaemon(t)
-	os.Remove(filepath.Join(os.Getenv("AGENTS_PERSONAL_HOME"), ".agents-secrets", "secrets.env"))
+	t.Parallel()
+
+	d, c, _, _ := jiraDaemon(t)
+	os.Remove(filepath.Join(d.personalHome(), ".agents-secrets", "secrets.env"))
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(list.Errors) != 1 || list.Errors[0].Forge != "jira" || !strings.Contains(list.Errors[0].Message, "Jira is not signed in") {
@@ -227,6 +235,8 @@ func TestForgeJiraNotSignedIn(t *testing.T) {
 // #3260: a key label is a Jira issue in a folder that names its project, else a Linear one;
 // a PR's title and branch name the Jira keys of its folder's projects.
 func TestJiraKeysInLabelsTitlesAndBranches(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, app := jiraDaemon(t)
 	if n, _ := d.labelNode(app, "PROJ-7"); n.Ref != "jira:issue:proj#PROJ-7" {
 		t.Fatalf("PROJ-7 in a Jira folder: %+v", n)
@@ -248,6 +258,8 @@ func TestJiraKeysInLabelsTitlesAndBranches(t *testing.T) {
 
 // #3260: forge/plan reads a Jira parent's children in steps, by their Blocks links.
 func TestForgePlanReadsAJiraParent(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _ := jiraDaemon(t)
 	var plan wire.ForgePlan
 	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "jira:issue:proj#PROJ-7"}}), &plan)

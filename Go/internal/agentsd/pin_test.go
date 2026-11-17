@@ -147,6 +147,8 @@ func TestAMachineThatMustJoinRunsNothingUntilItHas(t *testing.T) {
 
 // A pin that does not say must join refuses nothing on its own.
 func TestAPinWithoutMustJoinRefusesNoWork(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

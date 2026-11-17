@@ -53,6 +53,8 @@ func startAgent(t *testing.T, c *conn, n int, cwd, prompt string) wire.UUID {
 // The queue is the daemon's: kept in agent.json while a turn runs, left where it is by a
 // stop, and the person's prompts go together as the next turn.
 func TestTheQueueOutlivesATurnAndGoesTogether(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -92,6 +94,8 @@ func TestTheQueueOutlivesATurnAndGoesTogether(t *testing.T) {
 // editQueued (#1552): the person's waiting prompt takes new words in its place; one not
 // waiting any more, or another agent's, says edited false and is left as it was.
 func TestEditQueued(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -124,6 +128,8 @@ func TestEditQueued(t *testing.T) {
 
 // sendNow with no turn running sends it first; mid-turn, a runtime that cannot steer says so.
 func TestSendNow(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -212,6 +218,8 @@ func TestLabels(t *testing.T) {
 }
 
 func TestUnarchiveAndDelete(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -286,6 +294,8 @@ func TestTouchedPaths(t *testing.T) {
 // A successor in the folder carries on the work of one whose folder went, and the
 // same start sent again is the agent it made.
 func TestContinueInFolder(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

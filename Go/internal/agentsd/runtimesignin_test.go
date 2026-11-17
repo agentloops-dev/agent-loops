@@ -283,6 +283,8 @@ func TestSignInTestsRunOnlyTheFakes(t *testing.T) {
 // Auto's machine pick (#5375): the control plane asks each machine on channel 0 which
 // runtimes are installed and signed in, and gets the list a client gets.
 func TestTheControlPlaneAsksWhichRuntimesAreReady(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

@@ -75,6 +75,8 @@ func deployApprovalsIn(d *Daemon, repo string) ([]wire.Approval, string) {
 // before; an answer to another wait, or Request Changes, is refused; Approve answers GitHub as
 // the person, and takes it out of the list.
 func TestWaitingDeployIsAnApprovalAnsweredOnGitHub(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	gh.waiting = map[string][]githubmcp.WaitingDeploy{
 		"alexec/agents": {waitingRelease(77, true)},
@@ -152,6 +154,8 @@ func TestWaitingDeployIsAnApprovalAnsweredOnGitHub(t *testing.T) {
 
 // #3587: with no GitHub connection, no deploy waits in Needs You.
 func TestWaitingDeploysNeedAConnection(t *testing.T) {
+	t.Parallel()
+
 	d, _, gh, file := forgeDaemon(t)
 	gh.waiting = map[string][]githubmcp.WaitingDeploy{"alexec/agents": {waitingRelease(77, true)}}
 	d.readDeploys(d.ctx)
@@ -167,6 +171,8 @@ func TestWaitingDeploysNeedAConnection(t *testing.T) {
 
 // #3932: GitHub's 403 to an answer says what the App needs, and the deploy stays listed.
 func TestRefusedDeployAnswerSaysWhatGitHubNeeds(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	gh.waiting = map[string][]githubmcp.WaitingDeploy{"alexec/agents": {waitingRelease(77, true)}}
 	gh.deployErr = &githubmcp.GitHubError{Kind: githubmcp.Failed, Message: "GitHub: HTTP 403", Refused: true}
@@ -201,6 +207,8 @@ func waitingApproval(id int64) githubmcp.WaitingDeploy {
 // is a Needs You approval of its folder as a reviewers' wait is; its reading says the workflow
 // Approve starts; Approve and Reject answer the Deployment, not a run's pending deployments.
 func TestApprovalDeployIsAnsweredWithItsWorkflow(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	gh.waiting = map[string][]githubmcp.WaitingDeploy{"alexec/agents": {waitingApproval(4242)}}
 	d.readDeploys(d.ctx)

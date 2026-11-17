@@ -167,6 +167,8 @@ func TestBackgroundNoteNamesTheProcesses(t *testing.T) {
 
 // A release ends the background processes it is given.
 func TestReleaseEndsBackgroundProcesses(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -215,7 +217,7 @@ func startsIn(file string) int {
 // A warm runtime takes the next turn when nothing changed; a changed start starts a new one.
 func TestWarmRuntimeReusedOnlyWhenNothingChanged(t *testing.T) {
 	fakeRuntimes(t)
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	starts := filepath.Join(t.TempDir(), "starts")
 	t.Setenv("AGENTS_FAKE_STARTS", starts)
 	d, c := start(t, t.TempDir())

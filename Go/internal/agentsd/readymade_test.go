@@ -17,6 +17,8 @@ import (
 // The ready-made workflows (#1342): each reads, is off, refers to its skill, and starts on
 // events that mcpcatalog counts for the Workflows level.
 func TestReadyMadeWorkflowsRead(t *testing.T) {
+	t.Parallel()
+
 	ids := readyMadeIDs()
 	if !slices.Equal(ids, []string{"address-review-comments", "answer-a-sign-up-code", "daily-checks", "daily-summary", "file-a-bug-from-sentry", "fix-failed-checks", "work-a-jira-issue", "work-a-linear-issue", "work-an-issue"}) {
 		t.Fatal(ids)
@@ -49,6 +51,8 @@ func TestReadyMadeWorkflowsRead(t *testing.T) {
 // Linear issue's Work a Linear issue, a Jira issue's Work a Jira issue (#3247), as all four
 // servers raise issue.labelled.
 func TestEachIssueWorkflowTakesItsServers(t *testing.T) {
+	t.Parallel()
+
 	for id, servers := range map[string][]string{"work-an-issue": {"github", "gitlab"}, "work-a-linear-issue": {"linear"}, "work-a-jira-issue": {"jira"}} {
 		text, _ := readyMadeText(id)
 		w := parseWorkflow(text, id, "/p")
@@ -63,6 +67,8 @@ func TestEachIssueWorkflowTakesItsServers(t *testing.T) {
 // The dev loop on both forges (#1633): each workflow hears the gitlab server too, and its
 // skill names the gitlab server's tools beside the github server's.
 func TestTheDevLoopWorkflowsHearGitLab(t *testing.T) {
+	t.Parallel()
+
 	for id, tools := range map[string][]string{
 		"work-an-issue":           {"get_issue", "comment_on_issue", "create_merge_request"},
 		"fix-failed-checks":       {"failed_log", "retry_pipeline", "comment_on_merge_request"},
@@ -89,6 +95,8 @@ func TestTheDevLoopWorkflowsHearGitLab(t *testing.T) {
 // Address review comments pushes in auto mode, so its skill acts only on the comments of
 // the folder's own people, on both forges: GitLab's trusted notes, GitHub's by association.
 func TestAddressReviewCommentsActsOnlyOnTheFoldersOwn(t *testing.T) {
+	t.Parallel()
+
 	_, skill := readyMadeText("address-review-comments")
 	for _, want := range []string{"`trusted: true`", "`author_association`", "`get_reviews`", "outside content"} {
 		if !strings.Contains(skill, want) {
@@ -101,6 +109,8 @@ func TestAddressReviewCommentsActsOnlyOnTheFoldersOwn(t *testing.T) {
 // acts, and its skill reads the issue as data and uses only the comments of the
 // repository's own people.
 func TestWorkAnIssueAsksBeforeItActs(t *testing.T) {
+	t.Parallel()
+
 	text, skill := readyMadeText("work-an-issue")
 	w := parseWorkflow(text, "work-an-issue", "/p")
 	if w.Settings.PermissionMode == nil || *w.Settings.PermissionMode != "ask" {
@@ -112,6 +122,8 @@ func TestWorkAnIssueAsksBeforeItActs(t *testing.T) {
 }
 
 func TestReadyMadeWorkflowsLiveInUserFolderAndFoldersUseThem(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -213,6 +225,8 @@ func fileHas(t *testing.T, path, want string) bool {
 }
 
 func TestReadyMadeSkillIsInstalledWhenItsWorkflowAlreadyExists(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -263,6 +277,8 @@ func TestPushesToAForgeInAWorktree(t *testing.T) {
 // sender the receiving server authenticated, and its skill names the tools it uses, never
 // one that sends mail, and passes on only a code.
 func TestAnswerASignUpCodeHearsOnlyItsSenders(t *testing.T) {
+	t.Parallel()
+
 	text, skill := readyMadeText("answer-a-sign-up-code")
 	w := parseWorkflow(text, "answer-a-sign-up-code", "/p")
 	if len(w.Triggers) < 2 {
@@ -320,6 +336,8 @@ func TestShutdownEndsTheWorkflowClock(t *testing.T) {
 // A copy the person did not edit takes a newer ready-made version, which waits for the
 // person's approval (#5091); an edited copy is left alone (#4048).
 func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()

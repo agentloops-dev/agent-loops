@@ -83,6 +83,8 @@ func listOne(t *testing.T, c *conn, folder wire.URL) wire.WorkflowSummary {
 
 // Due and approved: it fires once, inside its grace, and is archived with its run kept.
 func TestAnAlarmFiresOnceAndArchivesItself(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -129,6 +131,8 @@ func TestAnAlarmFiresOnceAndArchivesItself(t *testing.T) {
 
 // Past its grace, it is archived as missed and starts nothing.
 func TestAnAlarmPastItsGraceIsMissed(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

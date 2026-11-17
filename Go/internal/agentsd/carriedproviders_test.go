@@ -15,7 +15,7 @@ import (
 )
 
 func carriedDaemon(t *testing.T) (*Daemon, string) {
-	t.Setenv("AGENTS_PERSONAL_HOME", "")
+	personalHomeFor(t, "")
 	home := t.TempDir()
 	d := &Daemon{}
 	d.PersonalHome = home
@@ -24,6 +24,8 @@ func carriedDaemon(t *testing.T) (*Daemon, string) {
 
 // A host says it can carry a provider, so the control plane asks it (#3398).
 func TestAHostSaysItCarriesProviders(t *testing.T) {
+	t.Parallel()
+
 	d, _ := carriedDaemon(t)
 	d.handlers = map[string]Handler{}
 	if !slices.Contains(d.Capabilities(), wire.CapProvidersCarry1) {
@@ -44,6 +46,8 @@ func ask(t *testing.T, d *Daemon, method string, params any) wire.ProviderCarrie
 // A carried provider's secrets are kept on its machine, readable by its user only, and go
 // when the control plane says it was removed (#3398).
 func TestACarriedProvidersSecretsAreKeptHereAndForgotten(t *testing.T) {
+	t.Parallel()
+
 	d, home := carriedDaemon(t)
 	file := filepath.Join(home, ".agents-secrets", providers.SecretsFileName)
 	if out := ask(t, d, wire.CallProvidersKeepSecrets.Name, wire.ProviderSecretsKeep{Provider: "p1",
@@ -69,6 +73,8 @@ func TestACarriedProvidersSecretsAreKeptHereAndForgotten(t *testing.T) {
 // A call whose record is not the provider's is refused, and a provider that can't be
 // reached says so, with no secret's value in its words.
 func TestACarryIsRefusedOrFailsInWords(t *testing.T) {
+	t.Parallel()
+
 	d, _ := carriedDaemon(t)
 	record, _ := json.Marshal(providers.ProviderRecord{ID: "p2", Name: "Gone", Kind: providers.KindStdio,
 		Command: new("/no/such/provider")})

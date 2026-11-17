@@ -110,6 +110,8 @@ func TestOnlyTheNewestSummaryIsForReview(t *testing.T) {
 // Only a session in the home folder is offered write_daily_summary, and the workflow is never
 // copied into a project.
 func TestDailySummaryIsTheHomeFolders(t *testing.T) {
+	t.Parallel()
+
 	has := func(summarizes bool) bool {
 		for _, raw := range offeredTools(false, false, false, summarizes) {
 			var tool struct{ Name string }

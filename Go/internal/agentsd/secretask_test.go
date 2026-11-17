@@ -18,8 +18,10 @@ import (
 // to secrets.env, and the agent, the record and every other file under the root have only
 // its name.
 func TestAskingForASecret(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	root := t.TempDir()
 	d, c := start(t, root)
 	defer d.Shutdown()
@@ -99,7 +101,7 @@ func TestASecretLeftOpenBringsOnlyItsName(t *testing.T) {
 	_, left := formHolds(t)
 	left() // the call must outlast its hold
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	path := skillcatalog.SecretsPath(home)
 	env := skillcatalog.Secrets{}
 	env.Set("GITLAB_TOKEN", "old")

@@ -29,6 +29,8 @@ func reviewsIn(t *testing.T, d *Daemon, c *conn, id int, repo string) []wire.Rev
 // person (#5803), newest first, but not a draft, whatever their labels; a dismissed one is kept
 // out after the next read too, and the dismissal is kept on disk.
 func TestForReviewListsPullRequestsWaitingForApproval(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	pr := func(repo string, n int, updated string) githubmcp.Item {
 		return githubmcp.Item{Repo: repo, Number: n, PR: true, State: "open", Title: "PR " + updated,

@@ -53,8 +53,10 @@ func fakeSlackMCP(t *testing.T, calls *atomic.Int32) *httptest.Server {
 // events it declares; a read is not made again within five minutes; a connector that cannot
 // be reached fails the slot only when none read; and None is a skip a person can take back.
 func TestTheMessagingSlotReadsEachChatConnector(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "")

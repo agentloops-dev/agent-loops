@@ -232,6 +232,8 @@ func TestAProjectMemberOnAnotherMachineReadsButCannotStop(t *testing.T) {
 // A message from an agent of the project on another machine wakes a waiting session here
 // and is read, as its starter's is, not held as from a session gone (#5618).
 func TestAProjectMemberOnAnotherMachineMessagesAWaitingSession(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

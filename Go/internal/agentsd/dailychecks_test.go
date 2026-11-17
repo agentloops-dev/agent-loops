@@ -209,6 +209,8 @@ func TestSummaryAndChecksSchedulesTheChecks(t *testing.T) {
 // The Daily checks workflow is the home folder's, runs on one machine, in ask mode, every 4
 // hours but the summary's.
 func TestDailyChecksIsTheHomeFolders(t *testing.T) {
+	t.Parallel()
+
 	text, skill := readyMadeText(dailyChecksID)
 	w := parseWorkflow(text, dailyChecksID, "/p")
 	if w.Settings.PermissionMode == nil || *w.Settings.PermissionMode != "ask" || len(w.Triggers) != 5 {
@@ -241,6 +243,8 @@ func suggestionsIn(t *testing.T, c *conn, id int, folder string) []wire.CheckSug
 // newest first; Start opens a session with its prompt and takes it out; a dismissed one never
 // comes back, not in For Review, the next summary or a later check.
 func TestForReviewListsTheChecksSuggestionsWithStartAndDismiss(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

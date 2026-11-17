@@ -66,6 +66,8 @@ func TestDeclaringAResource(t *testing.T) {
 // A book the Swift host wrote is read, ended by the person, and handed on: the next in
 // line, with no wait open for it, is started again with the event (#2361).
 func TestABookSwiftWroteIsHandedOn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)

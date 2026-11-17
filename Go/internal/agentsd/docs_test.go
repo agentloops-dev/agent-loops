@@ -73,8 +73,10 @@ func fakeDocsServer(t *testing.T) *httptest.Server {
 // by its ref, from a folder or a connector; and a folder whose Docs slot is None gives no
 // source.
 func TestDocsListSearchAndRead(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "git@github.com:Alexec/Agents.git")
@@ -186,7 +188,9 @@ func TestDocsListSearchAndRead(t *testing.T) {
 
 // A folder with no forge remote names its docs by this machine and its name.
 func TestDocsOfAFolderWithNoForge(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "")

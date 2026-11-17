@@ -18,7 +18,7 @@ import (
 // adoServerDaemon is a daemon with one folder on an Azure DevOps Server and nothing connected.
 func adoServerDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeAzureDevOps, *connections.File) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -42,6 +42,8 @@ func pulls(t *testing.T, c *conn, id int) wire.ForgeList {
 }
 
 func TestAzureDevOpsConnectedAfterTheFolderListsItsPullRequests(t *testing.T) {
+	t.Parallel()
+
 	_, c, ado, file := adoServerDaemon(t)
 	pulls(t, c, 1)
 	if len(ado.searches) != 0 {
@@ -56,9 +58,11 @@ func TestAzureDevOpsConnectedAfterTheFolderListsItsPullRequests(t *testing.T) {
 
 // The connector's AZURE_DEVOPS_URL in the secrets finds the folder too, as its token is for it.
 func TestAzureDevOpsSecretsAfterTheFolderListItsPullRequests(t *testing.T) {
-	_, c, ado, _ := adoServerDaemon(t)
+	t.Parallel()
+
+	d, c, ado, _ := adoServerDaemon(t)
 	pulls(t, c, 1)
-	home := os.Getenv("AGENTS_PERSONAL_HOME")
+	home := d.personalHome()
 	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
 	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
 		[]byte("AZURE_DEVOPS_URL=https://tfs.example.com/tfs\nAZURE_DEVOPS_TOKEN=ado-secret\n"), 0o600)
@@ -69,6 +73,8 @@ func TestAzureDevOpsSecretsAfterTheFolderListItsPullRequests(t *testing.T) {
 }
 
 func TestForgejoConnectedAfterTheFolderListsItsPullRequests(t *testing.T) {
+	t.Parallel()
+
 	_, c, fj, file := forgejoDaemon(t)
 	forgejo, _, _ := file.Get(connections.Forgejo)
 	file.Delete(connections.Forgejo)
@@ -84,6 +90,8 @@ func TestForgejoConnectedAfterTheFolderListsItsPullRequests(t *testing.T) {
 }
 
 func TestGitLabConnectedAfterTheFolderListsItsMergeRequests(t *testing.T) {
+	t.Parallel()
+
 	d, c, _, gl, _, file := allForgesDaemon(t)
 	d.newForgeGitLab = func(string, string) forgeGitLab { return gl }
 	file.Delete(connections.GitLab)
@@ -100,6 +108,8 @@ func TestGitLabConnectedAfterTheFolderListsItsMergeRequests(t *testing.T) {
 }
 
 func TestBitbucketConnectedAfterTheFolderListsItsPullRequests(t *testing.T) {
+	t.Parallel()
+
 	_, c, bb, file := bitbucketDaemon(t)
 	bitbucket, _, _ := file.Get(connections.Bitbucket)
 	file.Delete(connections.Bitbucket)
@@ -117,6 +127,8 @@ func TestBitbucketConnectedAfterTheFolderListsItsPullRequests(t *testing.T) {
 // #4118: a folder on a self-hosted GitLab whose host does not say "gitlab" is GitLab's in
 // lineage while that GitLab is connected, as a Forgejo or an Azure DevOps Server of any name is.
 func TestLineageOnASelfHostedGitLabOfAnyName(t *testing.T) {
+	t.Parallel()
+
 	d, c, _, file := forgeDaemon(t)
 	folder := gitFolder(t, "git@git.corp.example:Platform/API.git")
 	c.call(t, 100, "folders/add", map[string]any{"folder": "file://" + folder})

@@ -40,6 +40,8 @@ func lastEvent(d *Daemon, name string) *wire.Event {
 }
 
 func TestARestartIsSaidAndAWaitOpenOverItIsTold(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	// The host before stopped cleanly three minutes ago, with a wait open.

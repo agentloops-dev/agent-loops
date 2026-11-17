@@ -228,7 +228,7 @@ func (g conformGitLab) Plan(_ context.Context, _ string, _ int) (gitlabmcp.Plan,
 // conformGitLabDaemon is a daemon with one folder on Group/App on the connected gitlab.com.
 func conformGitLabDaemon(t *testing.T) (*Daemon, *conn) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -313,7 +313,7 @@ func (g conformForgejo) Plan(_ context.Context, _ string, _ int) (forgejomcp.Pla
 // conformForgejoDaemon is a daemon with one folder on walkalex/App on the connected Forgejo.
 func conformForgejoDaemon(t *testing.T) (*Daemon, *conn) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -393,7 +393,7 @@ func (g conformBitbucket) ItemPage(_ context.Context, _ string, number int, pr b
 // conformBitbucketDaemon is a daemon with one folder on walkalex/App on Bitbucket Cloud.
 func conformBitbucketDaemon(t *testing.T) (*Daemon, *conn) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -458,7 +458,7 @@ func (g conformAzureDevOps) ItemPage(_ context.Context, _ string, number int, _ 
 // conformAzureDevOpsDaemon is a daemon with one folder on acme/Web App/App on Azure DevOps.
 func conformAzureDevOpsDaemon(t *testing.T) (*Daemon, *conn) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -530,7 +530,7 @@ func (g conformLinear) Plan(_ context.Context, identifier string) (linearmcp.Pla
 // its lists are of the whole workspace (#3311).
 func conformLinearDaemon(t *testing.T) (*Daemon, *conn) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -606,7 +606,7 @@ func (g conformJira) Plan(_ context.Context, key string) (jiramcp.Plan, error) {
 func conformJiraDaemon(t *testing.T) (*Daemon, *conn) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	fake := conformJira{&fakeForgeJira{}}
@@ -671,7 +671,7 @@ func (g conformBoards) ItemPage(_ context.Context, project string, id int, _ str
 func conformBoardsDaemon(t *testing.T) (*Daemon, *conn) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	fake := conformBoards{&fakeForgeBoards{}}

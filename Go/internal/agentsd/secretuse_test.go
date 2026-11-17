@@ -220,8 +220,10 @@ func TestAFlaggedCISecretWaitsOnAPerson(t *testing.T) {
 
 // #4015: only a person's own clients answer a secret's use and change its grants.
 func TestOnlyAPersonApprovesASecretsUse(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if err := d.saveSecret("GITLAB_PASSWORD", "sealed-value", true); err != nil {

@@ -114,9 +114,11 @@ func agentMessages(d *Daemon, id wire.UUID) string {
 // Grok as _meta.rules, Codex as session custom instructions, OpenCode as a file of its own
 // named in its configuration, and the rest before the first prompt. The transcript records only the person's words.
 func TestEachRuntimeHasTheBriefTheWayItTakesIt(t *testing.T) {
-	fakeRuntimes(t)
+	t.Parallel()
+
 	for _, rt := range catalog {
 		t.Run(rt.ID, func(t *testing.T) {
+			fakeRuntimes(t)
 			d, c := start(t, t.TempDir())
 			defer d.Shutdown()
 			os.WriteFile(d.resourcesFile(), []byte(`[{"name":"gpu","displayName":"GPU","description":"For training.","holders":1}]`), 0o644)
@@ -149,6 +151,8 @@ func TestEachRuntimeHasTheBriefTheWayItTakesIt(t *testing.T) {
 // A runtime with no system prompt has the brief before the words of its first prompt, and
 // not again.
 func TestCursorHasTheBriefInItsFirstPromptOnly(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -165,6 +169,8 @@ func TestCursorHasTheBriefInItsFirstPromptOnly(t *testing.T) {
 // What the person changed on a live page is told before the words of the agent's next
 // prompt, once.
 func TestAPageEditIsToldOnTheNextTurn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -339,6 +345,8 @@ func TestTheBriefNamesEveryAppTool(t *testing.T) {
 // #3712: the brief's start-a-new-app is a ready-made skill, so every person has it, and
 // it names only app tools that this host serves.
 func TestTheNewAppSkillIsReadyMade(t *testing.T) {
+	t.Parallel()
+
 	const id = "start-a-new-app"
 	found := false
 	for _, s := range readyMadeSkillIDs() {
@@ -434,8 +442,9 @@ func TestTheNewAppSkillKeepsTheFirstBuildTaskList(t *testing.T) {
 // The persona's prompt follows the brief: the folder's before the person's, its front
 // matter left out, none for a persona that is not there or an id that is a path (#760).
 func TestThePersonasPromptFollowsTheBrief(t *testing.T) {
+	t.Parallel()
+
 	folder, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
 	write := func(base, id, text string) {
 		os.MkdirAll(filepath.Join(base, ".agents", "personas"), 0o755)
 		os.WriteFile(filepath.Join(base, ".agents", "personas", id+".md"), []byte(text), 0o644)
@@ -445,7 +454,7 @@ func TestThePersonasPromptFollowsTheBrief(t *testing.T) {
 	write(home, "writer", "Write plainly.")
 	write(folder, "broken", "---\nname: Broken\n")
 	persona := func(id string) string {
-		return personaPrompt(&wire.Agent{Cwd: store.FolderURL(folder), Persona: &id})
+		return personaPrompt(&wire.Agent{Cwd: store.FolderURL(folder), Persona: &id}, home)
 	}
 	if persona("reviewer") != "Review as a sceptic." || persona("writer") != "Write plainly." ||
 		persona("broken") != "" || persona("nobody") != "" || persona("../reviewer") != "" {
@@ -482,6 +491,8 @@ func TestGroksRulesWriteOutTheAppsTools(t *testing.T) {
 
 // A session started as a persona keeps it, and has its prompt at the end of its brief.
 func TestASessionStartedAsAPersonaHasItsPrompt(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -502,6 +513,8 @@ func TestASessionStartedAsAPersonaHasItsPrompt(t *testing.T) {
 // Words sent from voice mode have the voice-mode text before them, and the next words
 // sent without the flag do not (#2322).
 func TestVoiceModeTextGoesBeforeTheWords(t *testing.T) {
+	t.Parallel()
+
 	flaky.UnderLoad(t, "#5924")
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())

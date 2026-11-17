@@ -31,6 +31,8 @@ func titledAs(title string, edits ...func(*wire.Agent)) func(*wire.Agent) {
 }
 
 func TestMessageWakesOnlyAnAgentNoLooser(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -147,6 +149,8 @@ func TestNextTurnPassesHeldMessagesOver(t *testing.T) {
 // A session that set the sender going takes its messages at once, whatever its mode: it
 // started the sender, or ran the workflow the sender belongs to (#1728). Others still wait.
 func TestMessageWakesTheSessionThatSetTheSenderGoing(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

@@ -21,7 +21,7 @@ func TestATerminalsAgentsSecretAsksAPerson(t *testing.T) {
 	parentCommand = func() string { return "/bin/zsh" }
 	defer func() { terminalHour, parentCommand = wasHour, wasParent }()
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, sock := serveWith(t, fixedPolicy{role: RoleStranger, ok: true})
 	const plain, flagged = "plain-4179-not-real", "flagged-4179-not-real"
 	if err := d.saveSecret("PLAIN_KEY", plain, false); err != nil {
