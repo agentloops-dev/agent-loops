@@ -63,8 +63,16 @@ func orgPlane(t *testing.T, prov *signintest.Provider, f *providersFake) (*plane
 
 // orgPlaneOn is orgPlane on the store st.
 func orgPlaneOn(t *testing.T, st store.Store, prov *signintest.Provider, f *providersFake) (*plane, *controllink.ClientMembership, *controllink.Session, *fakeDNS) {
+	return orgPlaneWith(t, st, prov, f, nil)
+}
+
+// orgPlaneWith is orgPlaneOn with change made to the plane's config as well.
+func orgPlaneWith(t *testing.T, st store.Store, prov *signintest.Provider, f *providersFake, change func(*Config)) (*plane, *controllink.ClientMembership, *controllink.Session, *fakeDNS) {
 	key := newKeeperKey()
 	p := startPlaneWith(t, st, controllink.NewPrivateKey(), func(c *Config) {
+		if change != nil {
+			change(c)
+		}
 		withKeeper(key)(c)
 		cfg := &signin.Config{}
 		if f != nil {
