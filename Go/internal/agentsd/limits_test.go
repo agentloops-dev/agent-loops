@@ -114,7 +114,9 @@ func saidIn(d *Daemon, id wire.UUID) (users, notes []string) {
 func TestARateLimitIsSentAgain(t *testing.T) {
 	fakeRuntimes(t)
 	old := rateLimitPolicy.delays
-	rateLimitPolicy.delays = []time.Duration{100 * time.Millisecond}
+	// No wait: the retry comes while the refused turn still ends, as a slow end does
+	// under load (#6028). It must not be lost.
+	rateLimitPolicy.delays = []time.Duration{0}
 	t.Cleanup(func() { rateLimitPolicy.delays = old })
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/url"
-	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 )
 
 // The reads that prove a repository's set-up on Azure DevOps (#3802), as the bitbucket
@@ -84,24 +85,13 @@ func (f *RealAzureDevOps) LastChecks(ctx context.Context, repo string) (*Newest,
 // RepoAt is the repository (organization/project/name) of the Azure DevOps at base that
 // folder's git remote names, origin first.
 func RepoAt(ctx context.Context, folder, base string) (string, bool) {
-	out, err := exec.CommandContext(ctx, "git", "-C", folder, "remote").Output()
-	if err != nil {
-		return "", false
-	}
-	names := []string{}
-	for _, r := range strings.Fields(string(out)) {
-		if r == "origin" {
-			names = append([]string{r}, names...)
-		} else {
-			names = append(names, r)
-		}
-	}
-	for _, name := range names {
-		out, err := exec.CommandContext(ctx, "git", "-C", folder, "remote", "get-url", name).Output()
-		if err != nil {
-			continue
-		}
-		if repo, ok := RepoOfRemote(base, strings.TrimSpace(string(out))); ok {
+	return RepoIn(gitremote.URLs(ctx, folder), base)
+}
+
+// RepoIn is RepoAt for remotes already read (gitremote.URLs).
+func RepoIn(remotes []string, base string) (string, bool) {
+	for _, remote := range remotes {
+		if repo, ok := RepoOfRemote(base, remote); ok {
 			return repo, true
 		}
 	}
