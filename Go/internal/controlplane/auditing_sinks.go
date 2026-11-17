@@ -48,7 +48,7 @@ func newAuditSinkState(name, copyID string) *auditSinkState {
 // followAuditSinks sets this copy's sinks from the record now, and again whenever it
 // changes, until the service stops.
 func (s *Service) followAuditSinks() {
-	t := time.NewTicker(auditSinksEvery)
+	t := time.NewTicker(s.backstop(auditSinksEvery))
 	defer t.Stop()
 	defer s.auditSinks.Stop()
 	for {
