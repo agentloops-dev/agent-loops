@@ -119,6 +119,8 @@ func TestPlanPoolHoursAndStop(t *testing.T) {
 }
 
 type fakePools struct {
+	dead          map[string]bool
+	bound         []string
 	made, deleted []string
 	failMake      error
 	stages        map[string]poolStage
@@ -149,7 +151,7 @@ func (f *fakePools) Stopped(person, pool, why string) {
 func testPools(t *testing.T) (*warmPools, *fakePools) {
 	t.Helper()
 	s := &Service{cfg: Config{Store: store.NewMemory(), Log: func(string) {}}, stop: make(chan struct{})}
-	f := &fakePools{stages: map[string]poolStage{}}
+	f := &fakePools{stages: map[string]poolStage{}, dead: map[string]bool{}}
 	return &warmPools{s: s, backend: f}, f
 }
 
@@ -230,5 +232,53 @@ func TestPoolStopsAfterThreeFailedMakes(t *testing.T) {
 	pool, err = w.set(ctx, "alex", wire.WarmPoolSet{ID: &p.ID, Name: "dev", Provider: "do", MinReady: 2, MaxSize: 3})
 	if err != nil || pool.State != wire.WarmPoolStateKeeping || len(f.made) != 2 {
 		t.Fatalf("a change starts it again: %v %+v", err, pool)
+	}
+}
+
+func (f *fakePools) Ping(provider, workspace string) bool { return !f.dead[workspace] }
+func (f *fakePools) Bind(person, provider, workspace string, stop *int) (string, error) {
+	f.bound = append(f.bound, person+":"+workspace)
+	return "host-" + workspace, nil
+}
+
+// #5365: a claim takes the oldest ready machine that answers, deletes one that does not, binds
+// it, and the pool makes a replacement; an empty pool falls back to a new machine.
+func TestClaimTakesOldestReadyAndReplacesIt(t *testing.T) {
+	t.Parallel()
+	w, f := testPools(t)
+	ctx := context.Background()
+	pool, err := w.set(ctx, "alex", wire.WarmPoolSet{Name: "dev", Provider: "do", MinReady: 2, MaxSize: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, tag, _ := w.read(ctx, pool.ID)
+	for i := range stored.Machines {
+		stored.Machines[i].MadeAt = poolNow.Add(time.Duration(i) * -time.Hour) // the last is the oldest
+		f.stages[stored.Machines[i].Workspace] = stageReady
+	}
+	if err := w.write(ctx, stored, tag); err != nil {
+		t.Fatal(err)
+	}
+	oldest, newer := stored.Machines[1].Workspace, stored.Machines[0].Workspace
+	f.dead[oldest] = true
+	got, err := w.claim(ctx, "alex", claim{Provider: "do"})
+	if err != nil || !got.FromPool || got.Workspace != newer {
+		t.Fatalf("the oldest did not answer, so the next is taken: %+v %v", got, err)
+	}
+	if len(f.deleted) != 1 || f.deleted[0] != oldest || len(f.bound) != 1 {
+		t.Fatalf("deleted %v bound %v", f.deleted, f.bound)
+	}
+	after, _, _ := w.read(ctx, pool.ID)
+	if len(after.Machines) != 2 || after.Machines[0].Workspace == newer || after.Machines[1].Workspace == newer {
+		t.Fatalf("a claimed machine leaves the pool and a new one is made: %+v", after.Machines)
+	}
+	// The pool's one machine is still setting up: the claim falls back to a new machine.
+	got, err = w.claim(ctx, "alex", claim{Provider: "do"})
+	if err != nil || got.FromPool || got.Note == "" || got.Host != "" {
+		t.Fatalf("an empty pool falls back and says so: %+v %v", got, err)
+	}
+	// Another provider or size matches no pool.
+	if got, _ = w.claim(ctx, "alex", claim{Provider: "do", Size: "big"}); got.FromPool {
+		t.Fatal("size must match")
 	}
 }
