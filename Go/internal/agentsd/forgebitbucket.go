@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -101,9 +102,13 @@ func (d *Daemon) bitbucketRepoAt(ctx context.Context, folder string) string {
 	if ok {
 		return at[1]
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	repo, _ := bitbucketmcp.RepoAt(gitCtx, folder)
+	remotes, err := folderRemotes(ctx, folder)
+	if err != nil {
+		// Not known: nothing is kept, so the next call reads again (#6064).
+		log.Printf("forge of %s: %v", folder, err)
+		return ""
+	}
+	repo, _ := bitbucketmcp.RepoIn(remotes)
 	d.forgeMu.Lock()
 	defer d.forgeMu.Unlock()
 	if d.forgeRoots == nil || len(d.forgeRoots) >= forgeCached {

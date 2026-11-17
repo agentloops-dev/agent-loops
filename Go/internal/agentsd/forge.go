@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"maps"
 	"net/http"
 	"os"
@@ -492,13 +493,17 @@ func (d *Daemon) gitlabProjectAt(ctx context.Context, folder, connected string) 
 	if ok {
 		return at[0], at[1]
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	remotes, err := folderRemotes(ctx, folder)
+	if err != nil {
+		// Not known: nothing is kept, so the next call reads again (#6064).
+		log.Printf("forge of %s: %v", folder, err)
+		return "", ""
+	}
 	var roots []string
 	if connected != "" {
 		roots = append(roots, connected)
 	}
-	root, project, _ = gitlabmcp.ProjectAt(gitCtx, folder, append(roots, connections.GitLabCom))
+	root, project, _ = gitlabmcp.ProjectIn(remotes, append(roots, connections.GitLabCom))
 	d.forgeMu.Lock()
 	defer d.forgeMu.Unlock()
 	if d.forgeRoots == nil || len(d.forgeRoots) >= forgeCached {

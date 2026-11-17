@@ -22,7 +22,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
-	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -626,11 +625,24 @@ func (d *Daemon) atConnectedRoot(f forge) forge {
 // repository on the connected Forgejo, codeberg.org, or a host named forgejo, gitea or
 // codeberg. Its connection, and whether there is one, come with it: a GitLab or Forgejo
 // connection counts only on its own root. The remotes are read once, with one git process
-// (#6027): a process for each forge and remote ran out of time under load.
-func (d *Daemon) forgeAt(ctx context.Context, folder string) (forge, connections.Connection, bool) {
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	remotes := gitremote.URLs(gitCtx, folder)
+// (#6027): a process for each forge and remote ran out of time under load. A read that
+// fails is an error, never GitHub (#6064): a slow git must not put a Forgejo folder on
+// GitHub; the client says so and the person tries again.
+func (d *Daemon) forgeAt(ctx context.Context, folder string) (forge, connections.Connection, bool, error) {
+	remotes, err := folderRemotes(ctx, folder)
+	if err != nil {
+		log.Printf("forge of %s: %v", folder, err)
+		return forge{}, connections.Connection{}, false, errRemotesUnknown
+	}
+	f, c, connected := d.forgeIn(remotes)
+	return f, c, connected, nil
+}
+
+// errRemotesUnknown is what a client sees when a folder's git remotes could not be read.
+var errRemotesUnknown = &Error{Code: CodeServer, Message: "Agent Loops could not read the git remotes of this folder. Try again."}
+
+// forgeIn is forgeAt for remotes already read.
+func (d *Daemon) forgeIn(remotes []string) (forge, connections.Connection, bool) {
 	github := forge{provider: wire.ConnectionProviderGithub, site: "github.com"}
 	if repo, ok := githubmcp.RepoIn(remotes); ok {
 		github.repo = repo
@@ -733,7 +745,10 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 	if err != nil {
 		return wire.ConnectorSetup{}, err
 	}
-	f, conn, connected := d.forgeAt(ctx, folder)
+	f, conn, connected, err := d.forgeAt(ctx, folder)
+	if err != nil {
+		return wire.ConnectorSetup{}, err
+	}
 	repo := f.repo
 	recForge := forgeName(f)
 	skipped := d.skippedSlots(folder)

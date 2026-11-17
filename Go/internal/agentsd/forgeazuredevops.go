@@ -3,13 +3,13 @@ package agentsd
 import (
 	"context"
 	"errors"
+	"log"
 	"net/url"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
-	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -92,9 +92,13 @@ func (d *Daemon) azureDevOpsRepoAt(ctx context.Context, folder string) (root, re
 	if ok {
 		return at[0], at[1]
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if f, found := d.azureDevOpsAtRoots(gitremote.URLs(gitCtx, folder), roots); found {
+	remotes, err := folderRemotes(ctx, folder)
+	if err != nil {
+		// Not known: nothing is kept, so the next call reads again (#6064).
+		log.Printf("forge of %s: %v", folder, err)
+		return "", ""
+	}
+	if f, found := d.azureDevOpsAtRoots(remotes, roots); found {
 		root, repo = f.root, f.repo
 	}
 	d.forgeMu.Lock()

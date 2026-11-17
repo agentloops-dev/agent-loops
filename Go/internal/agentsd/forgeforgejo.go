@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -100,13 +101,17 @@ func (d *Daemon) forgejoRepoAt(ctx context.Context, folder, connected string) (r
 	if ok {
 		return at[0], at[1]
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	remotes, err := folderRemotes(ctx, folder)
+	if err != nil {
+		// Not known: nothing is kept, so the next call reads again (#6064).
+		log.Printf("forge of %s: %v", folder, err)
+		return "", ""
+	}
 	roots := []string{connections.Codeberg}
 	if connected != "" {
 		roots = append([]string{connected}, roots...)
 	}
-	root, repo, _ = forgejomcp.RepoAt(gitCtx, folder, roots)
+	root, repo, _ = forgejomcp.RepoIn(remotes, roots)
 	d.forgeMu.Lock()
 	defer d.forgeMu.Unlock()
 	if d.forgeRoots == nil || len(d.forgeRoots) >= forgeCached {
