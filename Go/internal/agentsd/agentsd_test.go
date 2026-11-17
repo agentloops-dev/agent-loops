@@ -228,7 +228,9 @@ func TestAddAFolder(t *testing.T) {
 	os.Mkdir(work, 0o755)
 	d, c := start(t, root)
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + work}), &s)
+	if err := json.Unmarshal(c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + work}), &s); err != nil {
+		t.Fatal(err)
+	}
 	if s.Name != "hello" || !s.Exists {
 		t.Fatalf("%+v", s)
 	}
