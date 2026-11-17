@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -217,6 +218,36 @@ func TestRefreshLeavesTheConnectionOnANetworkFailure(t *testing.T) {
 	got, _, _ := s.Get(GitHub)
 	if got.Refresh != "ghr_old" || got.SignInAgain {
 		t.Fatalf("changed: %+v", got)
+	}
+}
+
+// Two stores on one file (two hosts of one person on Linux, or two Opens in one host) lose
+// no connection when they write at the same time (#5809): each write reads the file again
+// under a lock on its folder, not under the store's own mutex alone.
+func TestTwoFilesOnOnePathLoseNoConnection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".agents-secrets", FileName)
+	a, b := &File{Path: path}, &File{Path: path}
+	const each = 20
+	var wg sync.WaitGroup
+	for i := range each {
+		for which, s := range []*File{a, b} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				name := fmt.Sprintf("p%d-%d", which, i)
+				if err := s.Put(Connection{Provider: name, Login: name, Access: "x"}); err != nil {
+					t.Error(err)
+				}
+			}()
+		}
+	}
+	wg.Wait()
+	all, err := a.read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2*each {
+		t.Fatalf("kept %d of %d connections", len(all), 2*each)
 	}
 }
 

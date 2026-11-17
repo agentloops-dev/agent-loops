@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -173,8 +172,10 @@ func TestTeamPeopleFillsTheViewersJiraLoginFromTheAtlassianConnection(t *testing
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
-	file.Put(connections.Connection{Provider: atlassianConnection, Login: "Alex Collins", Access: "atl",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	if err := file.Put(connections.Connection{Provider: atlassianConnection, Login: "Alex Collins", Access: "atl",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
 	you, sam := true, "sam@example.com"
 	ask := askControl(func(context.Context, string, any) (json.RawMessage, error) {
 		return json.Marshal(wire.PeopleForViews{People: []wire.TeamPerson{
@@ -195,7 +196,9 @@ func TestTeamPeopleFillsTheViewersForgejoLoginFromTheForgejoConnection(t *testin
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
-	file.Put(connections.Connection{Provider: connections.Forgejo, Login: "alex", Access: "fj", ConnectedAt: time.Now()})
+	if err := file.Put(connections.Connection{Provider: connections.Forgejo, Login: "alex", Access: "fj", ConnectedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
 	you, sam := true, "sam"
 	ask := askControl(func(context.Context, string, any) (json.RawMessage, error) {
 		return json.Marshal(wire.PeopleForViews{People: []wire.TeamPerson{
@@ -212,13 +215,16 @@ func TestTeamPeopleFillsTheViewersForgejoLoginFromTheForgejoConnection(t *testin
 // The viewer's own blank Bitbucket and Azure DevOps logins come from this machine's Bitbucket
 // and Azure DevOps connections (#3853); another person's logins are theirs as kept.
 func TestTeamPeopleFillsTheViewersBitbucketAndAzureDevOpsLoginsFromTheConnections(t *testing.T) {
-	flaky.UnderLoad(t, "#5809")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
-	file.Put(connections.Connection{Provider: connections.Bitbucket, Login: "alex-bb", Access: "bb", ConnectedAt: time.Now()})
-	file.Put(connections.Connection{Provider: connections.AzureDevOps, Login: "Alex Collins", Access: "ado", ConnectedAt: time.Now()})
+	if err := file.Put(connections.Connection{Provider: connections.Bitbucket, Login: "alex-bb", Access: "bb", ConnectedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Put(connections.Connection{Provider: connections.AzureDevOps, Login: "Alex Collins", Access: "ado", ConnectedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
 	you, sam, samADO := true, "sam", "sam@example.com"
 	ask := askControl(func(context.Context, string, any) (json.RawMessage, error) {
 		return json.Marshal(wire.PeopleForViews{People: []wire.TeamPerson{
