@@ -76,6 +76,10 @@ func TestMain(m *testing.M) {
 	sharedToolsHome = filepath.Join(shared, "tools")
 	serverToolsHome = filepath.Dir(toolsetFolder("claude"))
 	resetToolsHomes()
+	// Nor starts a runtime installed on the machine (#5974): a CI runner's claude ran a turn
+	// for a test that did not call fakeRuntimes. A test sees the runtimes it made, as a Linux
+	// runner with none installed sees them, and fakeRuntimes gives it the fake.
+	locateFor = locateMadeByATest
 	code := m.Run()
 	if err := os.RemoveAll(shared); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "could not remove the shared toolsets folder: %v\n", err)
@@ -97,6 +101,37 @@ func resetToolsHomes() {
 
 // serverToolsHome is ~/.agents-server/tools of the test process's HOME (resetToolsHomes).
 var serverToolsHome string
+
+// locateMadeByATest is locate for a test: a runtime found outside the temporary folder and the
+// toolsets folders that the tests share (#4733), where every test makes its own, is installed
+// on the machine, so it is not found.
+func locateMadeByATest(r *runtimeDef) (string, []string, []string) {
+	path, args, looked := r.locate()
+	if path == "" || madeByATest(path, os.TempDir(), sharedToolsHome, serverToolsHome) {
+		return path, args, looked
+	}
+	return "", nil, append(append([]string{}, looked...), filepath.Dir(path)+" (installed on this machine, which a test never starts)")
+}
+
+// madeByATest is whether path is in one of dirs, as written or with its links followed.
+func madeByATest(path string, dirs ...string) bool {
+	in := func(p, dir string) bool { return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator)) }
+	abs, _ := filepath.Abs(path)
+	realPath, _ := filepath.EvalSymlinks(abs)
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		dir = filepath.Clean(dir)
+		realDir, _ := filepath.EvalSymlinks(dir)
+		for _, d := range []string{dir, realDir} {
+			if d != "" && (in(abs, d) || realPath != "" && in(realPath, d)) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 type fakeRuntime struct {
 	sdk.Agent // what it does not answer
