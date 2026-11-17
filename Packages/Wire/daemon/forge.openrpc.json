@@ -609,6 +609,31 @@
       }
     },
     {
+      "name": "forge/request-changes",
+      "x-capability": "forge-write/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/forge.schema.json#/definitions/ForgeRequestChangesRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ForgeDone"
+        }
+      }
+    },
+    {
       "name": "forge/rerun",
       "x-capability": "forge-write/1",
       "tags": [

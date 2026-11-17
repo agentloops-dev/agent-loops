@@ -300,6 +300,9 @@ func TestTheForgeWrites(t *testing.T) {
 	if u, err := fj.Approve(ctx, "acme/app", 8, "abc123"); err != nil || !strings.Contains(u, "pulls/8") {
 		t.Fatalf("an approval: %q %v", u, err)
 	}
+	if u, err := fj.RequestChanges(ctx, "acme/app", 8, "abc123", "Please rename it."); err != nil || !strings.Contains(u, "pulls/") {
+		t.Fatalf("request changes: %q %v", u, err)
+	}
 	same(t, f.sent, []string{
 		`POST repos/acme/app/issues/7/comments {"body":"Done"}`,
 		`POST repos/acme/app/issues/7/labels {"labels":["docs"]}`,
@@ -307,6 +310,7 @@ func TestTheForgeWrites(t *testing.T) {
 		`PATCH repos/acme/app/issues/7 {"state":"closed"}`,
 		`POST repos/acme/app/pulls/8/merge {"Do":"squash","delete_branch_after_merge":true,"head_commit_id":"abc123","merge_when_checks_succeed":true}`,
 		`POST repos/acme/app/pulls/8/reviews {"commit_id":"abc123","event":"APPROVED"}`,
+		`POST repos/acme/app/pulls/8/reviews {"body":"Please rename it.","commit_id":"abc123","event":"REQUEST_CHANGES"}`,
 	})
 	methods, err := fj.MergeMethods(ctx, "acme/app")
 	if err != nil {

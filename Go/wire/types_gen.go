@@ -5883,7 +5883,7 @@ type FoldersListRequest struct {
 	IncludeArchived bool `json:"includeArchived"`
 }
 
-// A write or a read that an item's page offers (#4329, #4361): forge/comment, forge/label, forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve, forge/rerun, forge/log, forge/diff, forge/add-child, forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410).
+// A write or a read that an item's page offers (#4329, #4361): forge/comment, forge/label, forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve, forge/request-changes (#5857), forge/rerun, forge/log, forge/diff, forge/add-child, forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410).
 type ForgeAction string
 
 const ForgeActionComment ForgeAction = "comment"
@@ -5895,6 +5895,7 @@ const ForgeActionTransition ForgeAction = "transition"
 const ForgeActionMerge ForgeAction = "merge"
 const ForgeActionAutoMerge ForgeAction = "autoMerge"
 const ForgeActionApprove ForgeAction = "approve"
+const ForgeActionRequestChanges ForgeAction = "requestChanges"
 const ForgeActionRerun ForgeAction = "rerun"
 const ForgeActionLog ForgeAction = "log"
 const ForgeActionDiff ForgeAction = "diff"
@@ -6610,6 +6611,15 @@ type ForgeReleasesRequest struct {
 	Folder *string `json:"folder,omitzero"`
 
 	Limit *int64 `json:"limit,omitzero"`
+}
+
+// forge/request-changes (#5857): request changes on a pull request at sha, the head commit its page shows (refused when the head moved). body is the review text, and it is required.
+type ForgeRequestChangesRequest struct {
+	Node LineageNode `json:"node"`
+
+	Sha string `json:"sha"`
+
+	Body string `json:"body"`
 }
 
 // A reviewer of a pull request (#4409): login is who; avatar their picture, a URL that only forge/image reads, where the forge gives one; state is their newest review, or pending while they are asked and have not answered, or were asked again since.

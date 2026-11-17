@@ -303,6 +303,7 @@ public extension DaemonAPI {
                 Row(Method.forgeClose, params: ForgeCloseRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeMerge, params: ForgeMergeRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeApprove, params: ForgeApproveRequest.self, result: ForgeDone.self, kind: .hostRequest),
+                Row(Method.forgeRequestChanges, params: ForgeRequestChangesRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeRerun, params: ForgeNodeRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeCancelAutoMerge, params: ForgeNodeRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeReady, params: ForgeNodeRequest.self, result: ForgeDone.self, kind: .hostRequest),
