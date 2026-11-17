@@ -39,7 +39,8 @@ func TestAnAgentStartsASessionOnAnotherMachine(t *testing.T) {
 	var starts []wire.MachineSessionStart
 	kept := false
 	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		call := params.(wire.MachineWorkspaceCall)
+		// Other jobs of the daemon ask too (user/setPolicy, #5793): they get the refusal below.
+		call, _ := params.(wire.MachineWorkspaceCall)
 		switch call.Method {
 		case "machines/forAgent":
 			return json.RawMessage(`{"providers":[],"hosts":[{"name":"pc","state":"online"},{"name":"laptop","state":"offline"}]}`), nil
@@ -142,6 +143,8 @@ func TestAnAgentStartsASessionOnAnotherMachine(t *testing.T) {
 }
 
 func TestASessionStartedFromAnotherMachineSaysWho(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -219,6 +222,8 @@ func TestTheFolderSwitchStartsOnAnotherMachineWithoutAsking(t *testing.T) {
 }
 
 func TestASessionAutoPickedSaysSoFirst(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

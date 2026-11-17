@@ -47,6 +47,8 @@ func TestAHostSaysItTakesASuspension(t *testing.T) {
 // FR-018: two running turns stop within 5 s; a queued prompt waits; new work, a prompt and
 // a workflow's run are refused; every agent and file stays. Off starts nothing by itself.
 func TestASuspendedPersonsWorkStops(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -101,6 +103,8 @@ func TestASuspendedPersonsWorkStops(t *testing.T) {
 // A suspended person's workflows are paused: a trigger is let go, by hand is refused, and none
 // runs by itself when the suspension ends.
 func TestASuspendedPersonsWorkflowsPause(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

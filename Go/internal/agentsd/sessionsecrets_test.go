@@ -16,8 +16,10 @@ import (
 // session's alone, never in secrets.env, and gone when the session is archived; then its
 // agent is told it expired.
 func TestASecretForThisSessionOnly(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	root := t.TempDir()
 	d, c := start(t, root)
 	defer d.Shutdown()
@@ -136,8 +138,10 @@ func TestASecretForThisSessionOnly(t *testing.T) {
 // Settings ▸ Secrets sets one for a session, and takes it out again; deleting the session
 // takes its file, names and all.
 func TestSessionSecretsFromSettings(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -183,8 +187,10 @@ func TestSessionSecretsFromSettings(t *testing.T) {
 
 // A session archived while the host was not running loses its secrets at the next start.
 func TestSessionSecretsAreSweptAtStart(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) {

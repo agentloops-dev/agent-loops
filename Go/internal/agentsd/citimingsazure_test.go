@@ -77,6 +77,8 @@ func (f *ciFakeAzure) TimingTimeline(_ context.Context, _ string, build int64, t
 }
 
 func TestCITimingsReadAzureDevOps(t *testing.T) {
+	t.Parallel()
+
 	d, _, ado, _ := azureDevOpsDaemon(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	fake := &ciFakeAzure{fakeForgeAzureDevOps: ado, t: t, now: now}

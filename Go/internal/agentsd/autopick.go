@@ -261,7 +261,7 @@ func (d *Daemon) pickRuntime(l wire.Levels, sandbox *wire.SandboxChoice, needs w
 			skip(id, "left out")
 			continue
 		}
-		if p, _, _ := locateFor(rt); p == "" {
+		if p, _, _ := d.locate(rt); p == "" {
 			skip(id, "not installed")
 			continue
 		}

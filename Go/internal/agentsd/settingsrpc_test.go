@@ -169,9 +169,8 @@ func TestAPersonMovesAndDoesNotCancelTheAgentsOwnMove(t *testing.T) {
 func TestGitFillStaysOffTheWindowAndAnswersTheControlPlane(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
-	c.in <- `{"jsonrpc":"2.0","id":1,"method":"git/fill","params":{"protocol":"https","host":"github.com"}}`
-	if line := <-c.out; !strings.Contains(line, "-32601") {
-		t.Fatalf("a window could read the password: %s", line)
+	if e := c.callError(t, 1, "git/fill", map[string]any{"protocol": "https", "host": "github.com"}); e.Code != -32601 {
+		t.Fatalf("a window could read the password: %+v", e)
 	}
 	setFor(t, &fillGitCredential, func(attributes string) (string, error) {
 		if attributes != "protocol=https\nhost=github.com\n\n" {

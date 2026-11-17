@@ -28,6 +28,8 @@ func milestoneNotices(d *Daemon) []postedNotice {
 // or before the due date, a milestone with no due date, or one whose scope still grows, gets
 // none; and spend makes a milestone's forecast again at most once an hour.
 func TestAMilestonePastItsDueDateTellsThePerson(t *testing.T) {
+	t.Parallel()
+
 	d, _, gh, _ := forgeDaemon(t)
 	lane := seeded(t, d, t.TempDir(), nil).ID
 	repo := "github:repo:#alexec/agents"

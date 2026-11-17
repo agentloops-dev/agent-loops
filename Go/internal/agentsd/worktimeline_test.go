@@ -27,6 +27,8 @@ func (f *fakeForgeGitHub) Timeline(_ context.Context, repo, _ string) (githubmcp
 // the open one's forecast; children that wait for a person are not forecast; the releases in
 // the window; the backtest; and a read again within forgeCacheFor asks GitHub nothing.
 func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	var folder string
 	for _, f := range d.folderPaths() {

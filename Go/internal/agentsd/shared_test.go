@@ -152,8 +152,10 @@ func TestSharedSnapshotSaysWhoGetsWhat(t *testing.T) {
 }
 
 func TestSharedSnapshotAnsweredOverTheSocket(t *testing.T) {
+	t.Parallel()
+
 	home := sharedHome(t)
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 
@@ -186,10 +188,12 @@ func TestSharedSnapshotAnsweredOverTheSocket(t *testing.T) {
 }
 
 func TestSharedSnapshotWithNoPersonalHome(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.PersonalHome = ""
-	t.Setenv("AGENTS_PERSONAL_HOME", "")
+	personalHomeFor(t, "")
 	raw := c.call(t, 1, "personal/shared", nil)
 	var s wire.SharedSnapshot
 	json.Unmarshal(raw, &s)

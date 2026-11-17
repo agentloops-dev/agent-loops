@@ -26,6 +26,8 @@ func run(t *testing.T, dir string, args ...string) {
 }
 
 func TestAnAgentMovesIntoANewWorktreeWhenItsTurnEnds(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()

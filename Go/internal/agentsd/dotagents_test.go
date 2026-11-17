@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -20,8 +21,14 @@ const readyMadeFixtureCommit = "0000000000000000000000000000000000f1x7"
 
 var readyMadeFixtureSet *readyMadeSet
 
+// readyMadeFixtureMu guards readyMadeFixtureSet: daemons of tests that run in parallel read
+// it at their start (#5926).
+var readyMadeFixtureMu sync.Mutex
+
 // readyMadeFixture is the fixture, read once.
 func readyMadeFixture() *readyMadeSet {
+	readyMadeFixtureMu.Lock()
+	defer readyMadeFixtureMu.Unlock()
 	if readyMadeFixtureSet == nil {
 		set, err := readReadyMadeDir(readyMadeFixtureDir)
 		if err != nil {

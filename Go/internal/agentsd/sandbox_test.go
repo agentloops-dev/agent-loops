@@ -53,6 +53,8 @@ func TestEachRuntimesSandboxAsItTakesIt(t *testing.T) {
 }
 
 func TestAnAgentsSandbox(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -88,6 +90,8 @@ func TestAnAgentsSandbox(t *testing.T) {
 }
 
 func TestASandboxThatCouldNotStart(t *testing.T) {
+	t.Parallel()
+
 	if got := sandboxMatch("claude", "\x1b[31mError: run failed. sandbox_apply: Operation not permitted\x1b[0m\nok"); got != "sandbox_apply: Operation not permitted" {
 		t.Fatalf("%q", got)
 	}

@@ -206,6 +206,8 @@ func writeHandover(t *testing.T, d *Daemon, h backgroundHandover) {
 // session gets the event, and a Claude session with no wait a prompt, as Claude would
 // have started itself.
 func TestAdoptedBackgroundEndsAfterARestart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

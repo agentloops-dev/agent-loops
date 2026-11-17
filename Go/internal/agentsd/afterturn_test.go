@@ -14,6 +14,8 @@ import (
 // Shutdown returns once the turns it stopped have written their endings and what follows
 // them, and starts nothing after (#1272).
 func TestShutdownWaitsForTheWritesAfterATurn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	var id wire.UUID

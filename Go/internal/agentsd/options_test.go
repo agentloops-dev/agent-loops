@@ -14,6 +14,8 @@ import (
 // commands, kept for the next form, which has them at once and hears of a change after.
 
 func TestAFormIsGivenWhatTheRuntimeOffers(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

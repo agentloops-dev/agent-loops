@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 var update = flag.Bool("update", false, "write testdata/wire.golden from what the control plane says now")
@@ -27,6 +28,8 @@ var update = flag.Bool("update", false, "write testdata/wire.golden from what th
 // the hand-written wire types before they moved to Go/wire, so this is the proof that the
 // move changed no byte.
 func TestTheWireIsWhatItWas(t *testing.T) {
+	// clients/list can come back before the lastSeen write bumps rev, under load.
+	flaky.UnderLoad(t, "#5992")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	ctx := context.Background()

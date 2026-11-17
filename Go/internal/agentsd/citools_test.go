@@ -49,6 +49,8 @@ func ciArgs(kv ...any) map[string]json.RawMessage {
 // value is in no result; set_ci_variable and set_environment_gate write what they are given;
 // each refuses what GitHub would refuse before it asks GitHub.
 func TestTheCIToolsWriteTheRepositorysSettings(t *testing.T) {
+	t.Parallel()
+
 	d, _, gh, _ := forgeDaemon(t)
 	a := seeded(t, d, gitFolder(t, "git@github.com:alexec/newapp.git"), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
 	for _, name := range []string{"set_ci_secret", "set_ci_variable", "set_environment_gate"} {
@@ -106,6 +108,8 @@ func TestTheCIToolsWriteTheRepositorysSettings(t *testing.T) {
 
 // With no GitHub connection the tools say so, and the brief names none of them.
 func TestTheCIToolsNeedGitHub(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, file := forgeDaemon(t)
 	file.Delete(connections.GitHub)
 	a := seeded(t, d, gitFolder(t, "git@github.com:alexec/newapp.git"), nil)

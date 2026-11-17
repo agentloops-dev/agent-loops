@@ -370,7 +370,7 @@ func (d *Daemon) installRuntime(c *Client, id string) (wire.RuntimeStatus, error
 		d.instMu.Unlock()
 		return d.statusOf(r), nil
 	}
-	path, _, _ := locateFor(r)
+	path, _, _ := d.locate(r)
 	installed := installedAt(r, path)
 	// The person's own copy of a runtime that prefers the app's is no reason not to install
 	// the app's (#4512).
@@ -487,7 +487,7 @@ func (d *Daemon) install(r *runtimeDef, recipe wire.RuntimeInstall, progress fun
 		}
 		return installFailed(fmt.Sprintf("Installing %s failed: %v", r.Name, err))
 	}
-	path, _, looked := locateFor(r)
+	path, _, looked := d.locate(r)
 	if path == "" {
 		if len(looked) > 4 {
 			looked = looked[:4]

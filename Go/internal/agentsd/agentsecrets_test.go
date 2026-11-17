@@ -70,8 +70,10 @@ func withPersonsApp(t *testing.T, d *Daemon) *personsApp {
 // machine keeps its own copy while the offer waits, also over the person's of that name;
 // the person's copy replaces it once the offer is taken, and one dropped with no copy goes.
 func TestAnAgentsSecretIsOfferedToThePersonsApps(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	_, public := machineKeys(t, root)
 	d, _ := start(t, root)
 	defer d.Shutdown()
@@ -137,8 +139,10 @@ func TestAnAgentsSecretIsOfferedToThePersonsApps(t *testing.T) {
 // connector form's secret (an MCP server names it) and not a name the control plane does not
 // take.
 func TestOldSavesAreOfferedButNotPasskeysOrConnectorSecrets(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	machineKeys(t, root)
 	if err := os.MkdirAll(filepath.Join(home, ".agents"), 0o700); err != nil {
 		t.Fatal(err)
@@ -178,8 +182,10 @@ func TestOldSavesAreOfferedButNotPasskeysOrConnectorSecrets(t *testing.T) {
 
 // On a control plane older than #5308, nothing is offered and the secret stays here.
 func TestNoOfferWithoutTheControlPlanesCapability(t *testing.T) {
+	t.Parallel()
+
 	root, home := t.TempDir(), t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	machineKeys(t, root)
 	d, _ := start(t, root)
 	defer d.Shutdown()

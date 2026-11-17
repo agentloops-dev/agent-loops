@@ -129,7 +129,7 @@ func (f *fakeForgeBitbucket) FailedLog(_ context.Context, repo string, run int, 
 // Bitbucket connection (an API token and its email) as a fake Bitbucket.
 func bitbucketDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeBitbucket, *connections.File) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -154,6 +154,8 @@ func bitbucketDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeBitbucket, *connec
 // #3786: forge/issues and forge/pulls list the repositories on Bitbucket with the GitHub
 // folder's.
 func TestForgeListsBitbucketRepositories(t *testing.T) {
+	t.Parallel()
+
 	_, c, bb, _ := bitbucketDaemon(t)
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("bug")}), &list)
@@ -188,6 +190,8 @@ func TestForgeListsBitbucketRepositories(t *testing.T) {
 
 // Without a Bitbucket connection the list says so for Bitbucket, and still lists GitHub's.
 func TestForgeListSaysBitbucketIsNotConnected(t *testing.T) {
+	t.Parallel()
+
 	_, c, bb, file := bitbucketDaemon(t)
 	file.Delete(connections.Bitbucket)
 	var list wire.ForgeList
@@ -201,6 +205,8 @@ func TestForgeListSaysBitbucketIsNotConnected(t *testing.T) {
 // says it; Start Agent names the issue; one Bitbucket does not have, or no folder is on, is
 // refused.
 func TestForgeReadsABitbucketIssueAndPullRequest(t *testing.T) {
+	t.Parallel()
+
 	_, c, bb, _ := bitbucketDaemon(t)
 	var issue wire.ForgeItemDetail
 	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "bitbucket:issue:walkalex/app#7"}}), &issue)
@@ -232,6 +238,8 @@ func TestForgeReadsABitbucketIssueAndPullRequest(t *testing.T) {
 // default method and refuses a merge when checks pass; rerun runs each failed Pipelines run
 // once; a pull request has no labels.
 func TestForgeWritesOnABitbucketItem(t *testing.T) {
+	t.Parallel()
+
 	_, c, bb, _ := bitbucketDaemon(t)
 	issue := wire.LineageNode{Kind: "issue", Ref: "bitbucket:issue:walkalex/app#7"}
 	pr := wire.LineageNode{Kind: "pr", Ref: "bitbucket:pr:walkalex/app#8"}
@@ -319,6 +327,8 @@ func TestBitbucketOfNode(t *testing.T) {
 
 // #3938: a list narrowed to a board has no Bitbucket items: Bitbucket has no boards.
 func TestABoardLeavesBitbucketOut(t *testing.T) {
+	t.Parallel()
+
 	d, _, bb, _ := bitbucketDaemon(t)
 	scope := bitbucketScope{root: bitbucketmcp.DefaultBase, repos: []string{"walkalex/App"}}
 	p, err := bitbucketForge{d: d}.List(context.Background(), scope, forgeFilter{Board: &forgeBoard{forge: "github"}}, "", 10)
@@ -330,6 +340,8 @@ func TestABoardLeavesBitbucketOut(t *testing.T) {
 // #3880: an open Bitbucket issue's feature:<name> component is a feature on Work ▸ Features,
 // with its open issues and no epics: Bitbucket has none.
 func TestForgeFeaturesCountBitbucketComponents(t *testing.T) {
+	t.Parallel()
+
 	_, c, bb, _ := bitbucketDaemon(t)
 	bb.labels = []string{"task", "feature:Export"}
 	var features wire.ForgeFeatures
@@ -352,6 +364,8 @@ func TestForgeFeaturesCountBitbucketComponents(t *testing.T) {
 
 // #3880: a Bitbucket issue has no plan, and forge/plan says why.
 func TestForgePlanRefusesABitbucketIssue(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _ := bitbucketDaemon(t)
 	e := c.callError(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "bitbucket:issue:walkalex/app#7"}})
 	if e == nil || !strings.Contains(e.Message, bitbucketNoPlan) {

@@ -57,6 +57,8 @@ func TestWorktreeNames(t *testing.T) {
 }
 
 func TestAStartInANewWorktreeAndItsRemoval(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

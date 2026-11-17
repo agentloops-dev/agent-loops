@@ -12,8 +12,10 @@ import (
 // secrets/localList with Ask before use on, a person turns it off there, and the person's
 // own secrets and every value stay out of the list.
 func TestLocalSecretsListsWhatAnAgentSaved(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	const value = "ghp_0123456789abcdefghijklmnop"

@@ -12,8 +12,10 @@ import (
 // and the call is kept with its ref for Lineage (#3308). A folder whose Docs slot is None has
 // nothing to search.
 func TestDocsSearchAndReadTools(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "git@github.com:Alexec/Agents.git")

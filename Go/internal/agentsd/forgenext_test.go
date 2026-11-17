@@ -89,6 +89,8 @@ func TestNextCompare(t *testing.T) {
 // reasons: not an epic, not assigned, not blocked by an open issue, not labelled on a session
 // that is not archived, not fixed by an open pull request; on hold ones come last, marked.
 func TestForgeNextOfAFolder(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	folder := agentsFolder(t, d)
 	year := time.Now().UTC().Year()
@@ -153,6 +155,8 @@ func TestForgeNextOfAFolder(t *testing.T) {
 // #5689: level epic gives the open epics in the same order, and an epic gives its children that
 // are ready, from its plan's blockers.
 func TestForgeNextOfEpicsAndOfAnEpic(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	folder := agentsFolder(t, d)
 	gh.epics = []githubmcp.Item{planIssue(40, "open", "epic"), planIssue(41, "open", "epic", "priority:high"),

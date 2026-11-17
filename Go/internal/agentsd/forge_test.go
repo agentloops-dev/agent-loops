@@ -163,7 +163,7 @@ func (f *fakeForgeGitHub) asked() ([]string, int) {
 // as a fake GitHub.
 func forgeDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeGitHub, *connections.File) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -187,6 +187,8 @@ func forgeDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeGitHub, *connections.F
 // each repo once, in the one model; the next page goes on from the cursor; the same list again
 // within forgeCacheFor asks GitHub nothing; and what a list read is in the lineage cache.
 func TestForgePullsListsEveryRepoInOneSearch(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &list)
@@ -237,6 +239,8 @@ func TestForgePullsListsEveryRepoInOneSearch(t *testing.T) {
 
 // One folder's list is its repo's only; issues are is:issue and state all has no state.
 func TestForgeIssuesOfOneFolder(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	var web string
 	for _, f := range d.folderPaths() {
@@ -254,6 +258,8 @@ func TestForgeIssuesOfOneFolder(t *testing.T) {
 // With no GitHub connection the list still answers, empty, and says why; nothing is kept, so
 // the next ask after connecting reads GitHub.
 func TestForgeListSaysGitHubIsNotConnected(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, file := forgeDaemon(t)
 	file.Delete(connections.GitHub)
 	var list wire.ForgeList
@@ -272,6 +278,8 @@ func TestForgeListSaysGitHubIsNotConnected(t *testing.T) {
 // What a list refuses: a limit over 100, a state it does not know, a cursor it did not give,
 // a folder not on this machine.
 func TestForgeListRefusals(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _ := forgeDaemon(t)
 	for i, r := range []wire.ForgeListRequest{{Limit: new(int64(101))}, {Limit: new(int64(0))}, {State: new("merged")},
 		{Cursor: new("not a cursor")}, {Folder: new("/no/such/folder")}} {
@@ -286,6 +294,8 @@ func TestForgeListRefusals(t *testing.T) {
 // forge/pull, an item GitHub does not have, a forge it does not know and a Linear pull request
 // are refused.
 func TestForgePullReadsOne(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	pr := wire.LineageNode{Kind: "pr", Ref: "github:pr:alexec/agents#12"}
 	var p wire.ForgeItemDetail
@@ -438,6 +448,8 @@ func allForgesDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeGitHub, *fakeForge
 // GitLab) and the folders' Linear teams, merges them by updatedAt, keeps limit, and each forge's
 // cursor goes on after the last of its own kept; a forge whose list ended is not asked again.
 func TestForgeIssuesMergesEveryForgeByTime(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, gl, ln, _ := allForgesDaemon(t)
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Limit: new(int64(3))}), &list)
@@ -481,6 +493,8 @@ func TestForgeIssuesMergesEveryForgeByTime(t *testing.T) {
 // forge/pulls asks no Linear: it has no pull requests. A GitLab merge request is a ! node with
 // a merge request's own fields.
 func TestForgePullsHasNoLinear(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _, ln, _ := allForgesDaemon(t)
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/pulls", wire.ForgeListRequest{}), &list)
@@ -492,6 +506,8 @@ func TestForgePullsHasNoLinear(t *testing.T) {
 
 // Without a GitLab connection a list says so for GitLab, and still lists the others.
 func TestForgeListSaysGitLabIsNotConnected(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, gl, _, file := allForgesDaemon(t)
 	file.Delete(connections.GitLab)
 	var list wire.ForgeList
@@ -506,6 +522,8 @@ func TestForgeListSaysGitLabIsNotConnected(t *testing.T) {
 // forge/issue a Linear issue, with the folder that names its team; ones the forge does not have,
 // and a project on another GitLab, are refused.
 func TestForgeReadsAGitLabAndALinearItem(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, gl, _, _ := allForgesDaemon(t)
 	mr := wire.LineageNode{Kind: "pr", Ref: "gitlab:mr:group/app#4"}
 	var p wire.ForgeItemDetail
@@ -544,6 +562,8 @@ func TestForgeReadsAGitLabAndALinearItem(t *testing.T) {
 // teams), each issue acting from a folder here, as its forge/issue does; with no Linear
 // connection it leaves Linear out, with no error.
 func TestForgeIssuesListsTheLinearWorkspace(t *testing.T) {
+	t.Parallel()
+
 	d, c, _, file := forgeDaemon(t)
 	ln := &fakeForgeLinear{}
 	d.newForgeLinear = func(string) forgeLinear { return ln }

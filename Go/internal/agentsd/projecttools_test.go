@@ -14,7 +14,9 @@ import (
 // file of their own, so that list is never written over and can still be moved to
 // folders.json by hand (#2707).
 func TestHeardProjectsLeavesAV011FolderListAlone(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	root := t.TempDir()
 	old := filepath.Join(root, "projects.json")
 	v011 := []byte(`[{"path":"/Users/alex/src/agents","archived":true,"helperLimits":{"running":3,"kept":5}}]`)

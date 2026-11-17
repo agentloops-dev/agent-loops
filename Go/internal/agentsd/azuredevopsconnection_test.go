@@ -79,7 +79,7 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 	}
 	// No Entra app in the machine's secrets (#4873): the sign-in uses the Agents app, in any
 	// work or school tenant; one in the secrets goes first.
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	t.Setenv("AGENTS_"+connections.AzureDevOpsClientIDName, "")
 	if f := d.deviceFlow(wire.ConnectionProviderAzuredevops); f.ClientID != connections.AzureDevOpsClientID ||
 		!strings.HasSuffix(f.Base, "/"+connections.EntraTenant+"/") {
@@ -261,8 +261,10 @@ func (f *fakeSetupAzureDevOps) LastChecks(ctx context.Context, repo string) (*az
 // fills the three slots, each proved by one read, a refusal says so, and the azuredevops
 // connector's events go on.
 func TestAnAzureDevOpsFoldersConnectorSetUp(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -334,7 +336,9 @@ func TestAnAzureDevOpsFoldersConnectorSetUp(t *testing.T) {
 // #3816: a folder that names its Azure Boards projects already keeps them; one that names Jira
 // projects or Linear teams for its tasks is given none.
 func TestAnAzureDevOpsSetUpKeepsTheFoldersBoardsProjects(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}

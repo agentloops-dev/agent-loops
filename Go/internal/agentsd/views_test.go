@@ -135,10 +135,12 @@ func fakeViewServer(t *testing.T, calls *atomic.Int32, catalogReadCounts ...*ato
 }
 
 func TestAPersonsServersViewIsDrawnOnceShownAndCallsOnlyItsOwnServer(t *testing.T) {
+	t.Parallel()
+
 	var calls, catalogReads atomic.Int32
 	server := fakeViewServer(t, &calls, &catalogReads)
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"ci":{"url":"`+server.URL+`"},
 		"local":{"command":"local-server"}}}`), 0o644)

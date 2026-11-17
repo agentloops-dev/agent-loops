@@ -123,8 +123,10 @@ func (f *fakeSetupForgejo) LastChecks(ctx context.Context, repo string) (*forgej
 // slots, each proved by one read, the forgejo connector's events go on, and a connection to
 // another Forgejo is not used here.
 func TestAForgejoFoldersConnectorSetUp(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}

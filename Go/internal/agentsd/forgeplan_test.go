@@ -144,6 +144,8 @@ func TestForgeItemsSayTheirHierarchy(t *testing.T) {
 // session labelled #<epic> and lead); the same plan again within forgeCacheFor asks GitHub
 // nothing, but its lead is read again.
 func TestForgePlanStepsAndLead(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	gh.plan = githubmcp.Plan{Epic: planIssue(3265, "open", "epic", "feature:work"), Children: []githubmcp.PlanChild{
 		{Item: planIssue(3268, "open", "story"), BlockedBy: []githubmcp.Ref{{Repo: "alexec/agents", Number: 3267, Open: true}}},
@@ -192,6 +194,8 @@ func TestForgePlanStepsAndLead(t *testing.T) {
 
 // #3267: GitLab's and Linear's plans are in the one model, each child with its parent.
 func TestForgePlanOnGitLabAndLinear(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _, _, _ := allForgesDaemon(t)
 	var plan wire.ForgePlan
 	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "gitlab:issue:group/app#5"}}), &plan)
@@ -211,6 +215,8 @@ func TestForgePlanOnGitLabAndLinear(t *testing.T) {
 // #3267: feature narrows a list to the label feature:<name>; forge/features counts the epics of
 // each feature, open and closed, by name.
 func TestForgeFeatureFilterAndFeatures(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	c.call(t, 1, "forge/issues", wire.ForgeListRequest{Feature: new("work")})
 	if searches, _ := gh.asked(); len(searches) != 1 || !strings.Contains(searches[0], `label:"feature:work"`) {

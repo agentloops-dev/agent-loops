@@ -27,6 +27,7 @@ import { nonePage, SummaryPage } from "./SummaryPage";
 import { WorkList, WorkPage } from "./Work";
 import { WorkReleasePage } from "./WorkRelease";
 import { WorkFeatures } from "./WorkFeatures";
+import { WorkNext } from "./WorkNext";
 import { WorkTimeline } from "./WorkTimeline";
 import { WorkDeploysPage } from "./WorkDeploysPage";
 import { DocPage, DocsList } from "./Docs";
@@ -362,6 +363,7 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         : page.draw.kind === "features" ? <WorkFeatures store={store} />
         : page.draw.kind === "timeline" ? <WorkTimeline store={store} />
         : page.draw.kind === "deploys" ? <WorkDeploysPage store={store} />
+        : page.draw.kind === "next" ? <WorkNext store={store} />
         // Every secret of the person's (#5257): theirs (#1760), a machine's for one session (#3548) and what agents saved
         // on that machine (#5122), in one list beside the selected one's detail. Settings ▸ You keeps a line to it.
         : page.draw.kind === "secrets" ? <SecretsPage store={store} down={down} />

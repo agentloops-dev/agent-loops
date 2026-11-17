@@ -53,6 +53,8 @@ func refusedByYou(t testing.TB, err error, rule string) {
 // TestYourLayerStopsAnAgentStart: your layer's runtimes allowlist (FR-002, "runtimes and
 // models allowed") refuses a start on a runtime it does not name.
 func TestYourLayerStopsAnAgentStart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -88,6 +90,8 @@ func TestYourLayerStopsAHelperStart(t *testing.T) {
 // on a runtime it does not name, the same path a helper's start takes (startedBy with no
 // agent: DaemonCore+Helpers' workflow shape).
 func TestYourLayerStopsAWorkflowRun(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -101,6 +105,8 @@ func TestYourLayerStopsAWorkflowRun(t *testing.T) {
 // Continue in New and Branch on a session whose runtime it no longer allows (the same
 // table TestEveryRuleAtEveryPath runs for the organisation).
 func TestYourLayerStopsContinueInNewAndBranch(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -121,6 +127,8 @@ func TestYourLayerStopsContinueInNewAndBranch(t *testing.T) {
 // TestYourLayerStopsALooserModeChange: your layer's permissionMode rule (FR-008) refuses a
 // person's own choice of a mode looser than it allows.
 func TestYourLayerStopsALooserModeChange(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -136,6 +144,8 @@ func TestYourLayerStopsALooserModeChange(t *testing.T) {
 // TestYourLayerStopsSandboxOff: your layer's sandbox rule (FR-002, new for your layer) set
 // to on refuses turning the command sandbox off.
 func TestYourLayerStopsSandboxOff(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -189,6 +199,8 @@ func TestYourLayerStopsAConnectorAddedByHand(t *testing.T) {
 // rule (FR-002) refuses a start once the day's, or an agent's, budget is reached (the turn
 // and day budgets).
 func TestYourLayerStopsTheDayBudget(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
@@ -201,6 +213,8 @@ func TestYourLayerStopsTheDayBudget(t *testing.T) {
 }
 
 func TestYourLayerStopsTheAgentBudget(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()

@@ -17,6 +17,8 @@ import (
 // once, said to the clients and kept.
 
 func TestAchievementsEarned(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

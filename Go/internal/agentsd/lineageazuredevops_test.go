@@ -60,6 +60,8 @@ func azureDevOpsFolder(t *testing.T, d *Daemon) string {
 // nodes, by its remote's host, with or without a connection. Its "#7" is the work item 7 of its
 // project on Azure Boards. Nothing is asked of gh or glab about them.
 func TestLineageOnAnAzureReposFolder(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, file := azureDevOpsDaemon(t)
 	folder := azureDevOpsFolder(t, d)
 	branch := "agents/7-fix"
@@ -107,6 +109,8 @@ func TestLineageOnAnAzureReposFolder(t *testing.T) {
 // #3952: lineage asks Azure DevOps, by its connection, for a pull request's title and state, a
 // release's pull requests, and the cost comment.
 func TestLineageAsksAzureDevOps(t *testing.T) {
+	t.Parallel()
+
 	d, _, ado, _ := azureDevOpsDaemon(t)
 	repo := azureDevOpsRepo
 	folder := azureDevOpsFolder(t, d)
@@ -182,6 +186,8 @@ func TestAzureReposAddresses(t *testing.T) {
 // #3952: an Azure Boards view of a work item lists the Azure Repos pull requests that fix it,
 // each with its address on Azure DevOps.
 func TestAnAzureBoardsViewListsItsAzureReposPullRequests(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, _ := azureDevOpsDaemon(t)
 	folder := azureDevOpsFolder(t, d)
 	a := seeded(t, d, folder, func(a *wire.Agent) {
@@ -218,8 +224,10 @@ func TestAnAzureBoardsViewListsItsAzureReposPullRequests(t *testing.T) {
 // read by the Server's root, so a repository named as its project (collection/_git/name) is
 // found, and the addresses lineage gives keep the root's path.
 func TestAzureReposAddressesOnAServerUnderAPath(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
@@ -284,6 +292,8 @@ func TestAzureReposAddressesOnAServerUnderAPath(t *testing.T) {
 // #4098: the azuredevops server's pull request page asks for lineage by its address: the
 // sessions on the pull request.
 func TestTheAzureDevOpsServersViewsAskForLineage(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, _ := azureDevOpsDaemon(t)
 	folder := azureDevOpsFolder(t, d)
 	a := seeded(t, d, folder, func(a *wire.Agent) {

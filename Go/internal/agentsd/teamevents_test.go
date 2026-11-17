@@ -21,6 +21,8 @@ import (
 // leaves the claim. A trigger the control plane sends runs here, unclaimed, when this
 // machine has the workflow and its trigger matches.
 func TestABotsMachineSendsTeamEventsAndKeepsItsOwn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -212,6 +214,8 @@ func TestAPersonsMachineSendsABotsSchedule(t *testing.T) {
 // sends each match to the control plane. Nothing of it runs here, by a trigger or by hand.
 // A server's event is one trigger whatever each machine's credentials were shown of it.
 func TestAPersonsMachineHearsABotsServerEventsAndOnlySendsThem(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
