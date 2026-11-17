@@ -106,7 +106,9 @@ starts lanes.
      - `required_check_failed`: follow `.agents/skills/fix-failed-checks/SKILL.md` on
        your branch for each of `failedChecks`. You fix your own PR's checks, also when a
        Fix failed checks workflow is on. When main fails the same test, do not fix it:
-       wait for main to go green, then run the checks again (its step 2a, #5589).
+       wait for main to go green, then run the checks again (its step 2a, #5589). When
+       a test fails that your change does not touch, do not push only to get a new run
+       (#5754): wait for that test's fix or quarantine, then update the branch.
      - `conflict` or `behind`: `git merge origin/main` (never a rebase, so no
        force-push), settle the conflict, push without running the tests again (AGENTS.md,
        "Lease `ci`…"), and run `scripts/rearm-automerge.sh <pr>`.
