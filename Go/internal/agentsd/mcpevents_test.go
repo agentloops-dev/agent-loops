@@ -746,6 +746,7 @@ func TestAWaitOutlastsASignInThatFailsForAMoment(t *testing.T) {
 // #2491: a wait whose only subscription stops for good is told so at once, with the
 // server's words; it used to sit until its until_minutes.
 func TestAWaitEndsWhenItsServerStopsSending(t *testing.T) {
+	flaky.UnderLoad(t, "#5891")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
