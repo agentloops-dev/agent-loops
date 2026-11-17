@@ -1,8 +1,7 @@
 // One event redraws what it changed, and the page holds a bounded amount (#170).
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { load } from "./load.mjs";
-import { flakyUnderLoad } from "./flaky.mjs";
 
 const {
   Work, Store, archivedPage, searchShown, keepingTurns, effect,
@@ -491,14 +490,19 @@ test("entries heard are kept for a page only while one is on its way (#214)", ()
   assert.deepEqual(work.entries.value.map((e) => e.id), ["e100"]);
 });
 
-test("a heartbeat answered with an error keeps the link (#214)", { skip: flakyUnderLoad("#5879") }, async () => {
+test("a heartbeat answered with an error keeps the link (#214)", async () => {
+  // The clock is a mock (#5879): with real 10–20 ms timers, a busy machine fired the answer
+  // after the heartbeat's time, and the test saw a redial that the link was right to make.
+  mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
   const sockets = [];
+  let beats = 0;
   const l = new w.Link({ url: "ws://localhost:1/v1/connect", origin: "http://localhost:1",
     keys: Object.assign(new w.MemoryKeyStore(), { record: { privateKey: {}, publicKey: {}, client: "C", control: "K", paired: "" } }),
     open: () => {
       const socket = { closed: null, onopen: null, onmessage: null, onclose: null, onerror: null,
         send(line) {
           const { m } = JSON.parse(line);
+          if (m.method === "control/status") beats++;
           setTimeout(() => this.onmessage?.({ data: JSON.stringify({ m: { jsonrpc: "2.0", id: m.id, error: { code: -32000, message: "busy" } } }) }), 1);
         },
         close(code) { this.closed = code; } };
@@ -508,12 +512,21 @@ test("a heartbeat answered with an error keeps the link (#214)", { skip: flakyUn
     },
     backoff: [0.01], heartbeat: { every: 10, within: 20 }, random: () => 0,
     authenticate: async () => ({ name: "test" }) });
-  l.start();
-  await wait(120);
-  assert.equal(sockets.length, 1, "never redialled");
-  assert.equal(sockets[0].closed, null);
-  assert.equal(l.state.kind, "open");
-  l.stop();
+  // One mock millisecond at a time, with the promises each one starts settled before the next.
+  const settle = async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  const advance = async (ms) => { for (let i = 0; i < ms; i++) { mock.timers.tick(1); await settle(); } };
+  try {
+    l.start();
+    await settle();
+    await advance(120);
+    assert.ok(beats >= 10, `heartbeats sent: ${beats}`);
+    assert.equal(sockets.length, 1, "never redialled");
+    assert.equal(sockets[0].closed, null);
+    assert.equal(l.state.kind, "open");
+  } finally {
+    l.stop();
+    mock.timers.reset();
+  }
 });
 
 test("a slow call waits longer than an ordinary one, unless a test says otherwise (#291)", () => {
