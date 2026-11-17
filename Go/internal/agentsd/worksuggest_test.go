@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
@@ -136,5 +137,36 @@ func TestWorkSuggestLeads(t *testing.T) {
 	gh.epics[1].SubTotal, gh.epics[1].SubDone = 2, 1
 	if out = read(5); len(out.Suggestions) != 3 || out.Suggestions[0].Node.Ref != "github:issue:alexec/agents#2" || out.More != 1 {
 		t.Fatalf("after a progress change: %+v", out)
+	}
+}
+
+// TestNoPersonalHomeWritesNoRelativePath: a scratch daemon with no personal home wrote
+// dismissed-leads.json into its working folder, the checkout it started from (#5815). The list
+// goes to its root, and the checks and summaries, which need a home, are not written.
+func TestNoPersonalHomeWritesNoRelativePath(t *testing.T) {
+	t.Parallel()
+
+	personalHomeFor(t, "")
+	root := t.TempDir()
+	d, _ := start(t, root)
+	t.Cleanup(d.Shutdown)
+
+	if p := d.dismissedLeadsPath(); p != filepath.Join(root, dismissedLeadsFile) {
+		t.Fatalf("dismissed leads at %q, not in the root", p)
+	}
+	if err := d.writeDismissedLeads(map[string]dismissedLead{"github:issue:o/r#1": {}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.readDismissedLeads(); len(got) != 1 {
+		t.Fatalf("read back %v", got)
+	}
+	if err := writeChecks("", checksRecord{}); err == nil {
+		t.Fatal("checks were written with no home")
+	}
+	if _, err := d.saveSummary(wire.UUID("x"), "# Daily summary\n", "", time.Now()); err == nil {
+		t.Fatal("a summary was saved with no home")
+	}
+	if summaryFiles("") != nil {
+		t.Fatal("summaries read from a relative path")
 	}
 }

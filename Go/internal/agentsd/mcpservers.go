@@ -55,6 +55,10 @@ func (d *Daemon) personalHome() string {
 	return d.PersonalHome
 }
 
+// errNoPersonalHome refuses a write under the personal home when there is none (a scratch
+// root): a path joined to "" is relative, the daemon's working folder (#5815).
+var errNoPersonalHome = errors.New("this machine has no personal home")
+
 // orderedKeys is the keys of a JSON object in the file's own order.
 func orderedKeys(raw json.RawMessage) []string {
 	dec := json.NewDecoder(bytes.NewReader(raw))
