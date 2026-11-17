@@ -14,3 +14,5 @@ Since #5653, a daemon's Shutdown waits for every goroutine started with `d.goJob
 - Never call Shutdown or `d.Quit` from inside a job: Shutdown waits for it.
 - In a test, change a package variable with `setFor(t, &v, x)` (testhooks_test.go): it puts the old value back only after the test's daemons are down. A `defer func() { v = was }()` runs before startWith's Shutdown cleanup.
 - A test failure "goroutines the daemon started still run after Shutdown" names the start site: make that goroutine end with `d.ctx`.
+- Since #6130, `TestEveryDaemonGoroutineIsCounted` (goroutines_test.go) fails on a new bare `go` or `safe.Go` in agentsd that `goroutinesNotCounted` does not list. List one there only with the reason Shutdown need not wait for it (joined, or ends when a value it alone owns closes). For work that must still be done after Shutdown (closing a screencast), use `d.goJobOrNow`.
+- TestMain fails the run with goleak when any goroutine outlives every test, by its "created by" site. In a test, drain a conn with `c.drain()`, never a bare `for range c.out` (nothing closes c.out), and open a channel with `channelTo(t, d)`, which closes it at cleanup.

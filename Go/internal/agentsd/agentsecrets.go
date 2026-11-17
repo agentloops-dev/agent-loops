@@ -52,7 +52,7 @@ func (d *Daemon) saveAgentSecret(agent wire.UUID, name, value string, needsAppro
 	}
 	d.secretChanged(agent, name, change, true)
 	d.mcpChanged()
-	go d.offerAgentSecret(agent, name, value, needsApproval)
+	d.goJob("offer agent secret", func() { d.offerAgentSecret(agent, name, value, needsApproval) })
 	return nil
 }
 

@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	goruntime "runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +19,7 @@ import (
 	"time"
 
 	sdk "github.com/coder/acp-go-sdk"
+	"go.uber.org/goleak"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -89,7 +90,22 @@ func TestMain(m *testing.M) {
 	// for a test that did not call fakeRuntimes. A test sees the runtimes it made, as a Linux
 	// runner with none installed sees them, and fakeRuntimes gives it the fake.
 	locateFor = locateMadeByATest
+	before := goleak.IgnoreCurrent()
 	code := m.Run()
+	if code == 0 {
+		// No goroutine outlives the run (#6130): startWith's cleanup names a daemon's own
+		// (d.goJob) by test; this finds any other, by where it was created. A kept-alive
+		// connection in an HTTP client's pool is not one: the default client's are let go
+		// first, and another client's (a test's own, a library's) waits for its server.
+		http.DefaultClient.CloseIdleConnections()
+		if err := goleak.Find(before,
+			goleak.IgnoreTopFunction("net/http.(*persistConn).readLoop"),
+			goleak.IgnoreTopFunction("net/http.(*persistConn).writeLoop"),
+		); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "goroutines still run after every test ended (#6130):\n%v\n", err)
+			code = 1
+		}
+	}
 	if err := os.RemoveAll(shared); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "could not remove the shared toolsets folder: %v\n", err)
 	}

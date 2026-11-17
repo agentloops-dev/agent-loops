@@ -37,10 +37,7 @@ func TestMessageWakesOnlyAnAgentNoLooser(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	// Its many turns would fill what the window is told.
-	go func() {
-		for range c.out {
-		}
-	}()
+	c.drain()
 	dir := t.TempDir()
 	sandboxed := func(a *wire.Agent) {
 		a.EffectiveSandbox = &wire.EffectiveSandbox{State: wire.SandboxStateOn, Requested: wire.SandboxChoiceOn}
@@ -154,10 +151,7 @@ func TestMessageWakesTheSessionThatSetTheSenderGoing(t *testing.T) {
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
-	go func() {
-		for range c.out {
-		}
-	}()
+	c.drain()
 	dir := t.TempDir()
 	lead := seeded(t, d, dir, titledAs("Lead", inMode("bypassPermissions")))
 	runner := seeded(t, d, dir, titledAs("Runner", inMode("bypassPermissions")))

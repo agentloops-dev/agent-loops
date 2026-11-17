@@ -57,6 +57,14 @@ func (d *Daemon) goJobAt(what, site string, fn func()) bool {
 	return true
 }
 
+// goJobOrNow is goJob for work that must still be done once the host has stopped, such as
+// closing what it held: after Shutdown it runs fn at once, on the caller's goroutine.
+func (d *Daemon) goJobOrNow(what string, fn func()) {
+	if !d.goJobAt(what, callerSite(1), fn) {
+		fn()
+	}
+}
+
 // jobFunc wraps fn (a timer's callback) with a recover, and counts it while it runs. A
 // callback that fires after Shutdown does nothing.
 func (d *Daemon) jobFunc(what string, fn func()) func() {

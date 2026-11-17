@@ -69,10 +69,12 @@ func (c *hostedViewConn) call(ctx context.Context, _ int, method string, params 
 		err    *Error
 	}
 	done := make(chan answer, 1)
-	go func() {
+	if !c.d.goJobAt("hosted view call", callerSite(0), func() {
 		r, e := c.d.hostedCall(c.h, method, raw)
 		done <- answer{r, e}
-	}()
+	}) {
+		return nil, &mcpCheckFailure{kind: "stopped", message: "The host is stopping."}
+	}
 	select {
 	case a := <-done:
 		if a.err != nil {
