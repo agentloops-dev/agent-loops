@@ -58,7 +58,7 @@ public struct WaitEventLine: Identifiable, Hashable, Sendable {
                 if !groups[index].finishers.contains(finisher) { groups[index].finishers.append(finisher) }
                 if !groups[index].phrases.contains(.finishers) { groups[index].phrases.append(.finishers) }
             } else {
-                let words = server == nil ? pattern.meaning : serverWords(pattern.name)
+                let words = server == nil ? (cardWords[pattern.name] ?? pattern.meaning) : serverWords(pattern.name)
                 if !groups[index].phrases.contains(.words(words)) { groups[index].phrases.append(.words(words)) }
             }
         }
@@ -73,6 +73,11 @@ public struct WaitEventLine: Identifiable, Hashable, Sendable {
                                  words: phrases.joined(separator: " or "), arguments: group.arguments, url: group.url)
         }
     }
+
+    /// Events whose catalogue meaning is written for the tool's docs, too long for a card's
+    /// line: "Agents · Session finished", not the whole of what agent.ended means (#6065).
+    /// The web page's is `cardWords` in `rowLines.ts`.
+    static let cardWords = ["agent.ended": "Session finished"]
 
     private struct Group {
         let id: String

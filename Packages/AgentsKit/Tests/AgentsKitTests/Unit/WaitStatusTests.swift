@@ -236,13 +236,15 @@ struct WaitStatusTests {
         #expect(lines[0].url == nil)
     }
 
-    /// A session waits in its own folder, so its line leaves the folder out (#6065).
+    /// A session waits in its own folder, so its line leaves the folder out, and says agent.ended
+    /// in a few words (#6065).
     @Test func theWaitCardLeavesOutTheFolder() {
         let wait = EventWait(patterns: [EventPattern("agent.ended", filters: ["folder": DetailFilter("/work/agents"),
                                                                               "repo": DetailFilter("alexec/Agents")])],
                              from: 0, since: since)
         let lines = WaitEventLine.lines(for: wait, names: { _ in nil })
         #expect(lines.map(\.arguments) == [["repo alexec/Agents"]])
+        #expect(lines.map { "\($0.source) · \($0.words)" } == ["Agents · Session finished"])
         let alone = EventWait(patterns: [EventPattern("agent.ended", filters: ["folder": DetailFilter("/work/agents")])],
                               from: 0, since: since)
         #expect(WaitEventLine.lines(for: alone, names: { _ in nil }).map(\.arguments) == [[]])
