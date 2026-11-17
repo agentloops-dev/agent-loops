@@ -159,9 +159,12 @@ func quickPolls(d *Daemon) {
 	}
 }
 
+// serverHome gives the daemon a home whose mcp.json names the "ci" server. It sets
+// AGENTS_PERSONAL_HOME, not d.PersonalHome: the daemon's scan reads that field on its own
+// goroutine, and a write to it raced with the read (#5920).
 func serverHome(t *testing.T, d *Daemon, url string) {
 	home := t.TempDir()
-	d.PersonalHome = home
+	t.Setenv("AGENTS_PERSONAL_HOME", home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
 	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"ci": map[string]any{"url": url}}})
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)
@@ -821,7 +824,6 @@ func TestAServerErrorIsTriedAgain(t *testing.T) {
 // subscription (held by another session's wait meanwhile), polls again and gets events; it
 // is not told the old stop.
 func TestAWaitAfterAStopPollsAgain(t *testing.T) {
-	flaky.UnderLoad(t, "#5920")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -847,13 +849,6 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 	go func() {
 		text, _ := mb.tool(3, "wait_for_event", map[string]any{"events": []string{"pr.merged", "request.opened"}, "where": map[string]any{"pr": 5}, "until_minutes": 10})
 		bText <- text
-	}()
-	defer func() {
-		select {
-		case text := <-bText:
-			t.Log("b: " + text)
-		default:
-		}
 	}()
 	waitFor(t, "b holds the subscription", func() bool {
 		d.mcpEvMu.Lock()
@@ -908,6 +903,14 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 		}
 	case <-time.After(waitLimit(t)):
 		waitFailed(t, "the new wait was never answered")
+	}
+	// b's wait hears the same event. Wait for it, so Shutdown does not close b's connection
+	// under its call: that made b's post fail with EOF (#5920).
+	select {
+	case text := <-bText:
+		t.Log("b: " + text)
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "b's wait was never answered")
 	}
 }
 
