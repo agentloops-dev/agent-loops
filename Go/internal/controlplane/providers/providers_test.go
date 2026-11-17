@@ -1690,15 +1690,16 @@ func TestDeleteOnAFailedMakesRowForgetsIt(t *testing.T) {
 	}
 }
 
-// An agent's delete reaches providers/deleteWorkspace only for a failed make's row (#6078):
-// a workspace the provider made is deleted by delete_machine on its host.
-func TestAnAgentDeletesOnlyAFailedMakesRow(t *testing.T) {
+// An agent's delete reaches providers/deleteWorkspace only for a failed make's row (#6078),
+// or a machine with no host that its person is shown (#6080): one it is not shown is
+// refused, and the provider is asked nothing.
+func TestAnAgentDeletesOnlyAFailedMakesRowOrAMachineItIsShown(t *testing.T) {
 	h := newHarness(t)
 	h.providers.hooks.OwnerOf = func(string) string { return "" }
 	id := h.add()
 	_, err := h.providers.AgentCall(devbox, "claude", MethodProvidersDeleteWorkspace,
 		rawOf(map[string]string{"id": id, "workspace": "ws-build-3"}), nil)
-	if err == nil || !strings.Contains(err.Error(), "not a make that failed") {
+	if failureOf(err) == nil || failureOf(err).Code != CodeNoSuchHost {
 		t.Fatalf("%v", err)
 	}
 	h.provider.mu.Lock()
