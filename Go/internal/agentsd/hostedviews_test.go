@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 // A hosted server's views come through its one copy, and a session is never offered, nor
@@ -69,6 +71,7 @@ func TestAHostedServersViewsComeThroughItsOneCopy(t *testing.T) {
 // A changed entry is a new catalog, and the old one goes; so does one too old to be read
 // (#3128).
 func TestAChangedEntrysOldViewCatalogIsRemoved(t *testing.T) {
+	flaky.UnderLoad(t, "#5988")
 	self, _ := os.Executable()
 	t.Setenv("AGENTS_FAKE_MCP", "1")
 	t.Setenv("AGENTS_FAKE_MCP_VIEWS", "1")

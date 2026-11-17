@@ -193,6 +193,7 @@ func (d *Daemon) resolveNode(ctx context.Context, n wire.LineageNode) {
 	ask := d.resolveLookup
 	d.resolveMu.Unlock()
 	folder := d.repoFolder(repo)
+	asked := nowFunc()
 	var r wire.LineageResolved
 	var err error
 	if folder == "" {
@@ -214,6 +215,12 @@ func (d *Daemon) resolveNode(ctx context.Context, n wire.LineageNode) {
 		d.resolveCache = map[wire.LineageNode]resolvedEntry{}
 	}
 	had, cached := d.resolveCache[n]
+	// A failed ask does not replace an answer that came while it was asked (#5806): a list
+	// read the node then, and its answer is newer than this failure.
+	if err != nil && cached && had.ok && had.at.After(asked) {
+		d.resolveMu.Unlock()
+		return
+	}
 	if !cached && len(d.resolveCache) >= resolvedCached {
 		d.dropOldestResolvedLocked()
 	}
