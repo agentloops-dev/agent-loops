@@ -123,6 +123,7 @@ func (forgejoForge) Images() forgeImageHost { return forgejoImages{} }
 func (forgejoForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues: true, PRs: true,
+		Priority: true, Hold: true,
 		Issue: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true},
 		PR: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, Merge: true, AutoMerge: true, Approve: true,
 			RequestChanges: true, Diff: true, CancelAutoMerge: true, Ready: true},
@@ -594,4 +595,13 @@ func (d *Daemon) forgejoFolder(ctx context.Context, repo, named, folder string) 
 func forgejoStart(i wire.ForgeItem, n int) *wire.ForgeStart {
 	return &wire.ForgeStart{Prompt: fmt.Sprintf("#%d: %s\n\nWork on this Forgejo issue: %s", n, i.Title, deref(i.URL)),
 		Labels: []string{"#" + strconv.Itoa(n)}, Worktree: optional(strconv.Itoa(n) + " " + i.Title)}
+}
+
+// SetPriority and SetHold are the labels: Forgejo has no field for either (#6091).
+func (g forgejoForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	return labelPriority(ctx, g, r, priority)
+}
+
+func (g forgejoForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	return labelHold(ctx, g, r, on)
 }

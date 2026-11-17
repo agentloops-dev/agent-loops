@@ -170,6 +170,9 @@ func (i *Installer) Install(ctx context.Context, params json.RawMessage) (any, e
 // are copied, and the host starts again with its root, membership and agents as they were.
 // name is the host's, as the control plane knows it. The answer is an install's:
 // {needsTrust, name} for a key to trust first, then {updated: true, name}.
+//
+// A host that says host.update/1 updates itself (#5788, epic #5785): this stays for one
+// too old to, which a release before its self-update is.
 func (i *Installer) Update(ctx context.Context, update wire.MachineUpdate, name string) (any, error) {
 	request := Request{Destination: update.Destination, Key: update.Key, Trust: update.Trust, Name: &name}
 	return i.run(ctx, request, false, string(update.Host))

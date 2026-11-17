@@ -46,6 +46,20 @@ struct WorkPlanTests {
         }
     }
 
+    /// #6090: the On hold chip reads `ForgeItem.onHold`, and its row does not draw the `on hold` label again.
+    @Test func theOnHoldChipReadsTheFieldAndDropsItsLabel() {
+        var item = DaemonAPI.ForgeItem(node: issue(1), title: "One", state: "open", updatedAt: day)
+        item.labels = [.init(name: "On-Hold"), .init(name: "bug")]
+        #expect(!WorkPlan.onHold(item))
+        #expect(WorkPlan.labels(item.labels, onHold: false).map(\.name) == ["On-Hold", "bug"])
+        item.onHold = true
+        #expect(WorkPlan.onHold(item))
+        #expect(WorkPlan.labels(item.labels, onHold: true).map(\.name) == ["bug"])
+        #expect(WorkList.Row(item, on: .mac).onHold)
+        #expect(WorkPlan.onHoldWords == "On hold")
+        #expect(WorkPlan.onHoldHelp == "On hold: not picked up next")
+    }
+
     @Test func thePROfAChildIsAnOpenOneFirstElseTheNewest() {
         let r = rollup(2, parts: [pr(10, outcome: "merged", at: 50), pr(11, at: 0), pr(12, outcome: "closed", at: 100)])
         #expect(WorkPlan.pr(r)?.node.ref == "github:alexec/Agents#11")

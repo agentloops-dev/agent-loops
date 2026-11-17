@@ -32,6 +32,7 @@ func (linearForge) Images() forgeImageHost { return linearImages{} }
 func (linearForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues:      true,
+		Priority: true, Hold: true,
 		Issue:       forgeActions{Comment: true, Label: true, Close: true, Reopen: true},
 		LabelColors: true,
 		Avatars:     true,
@@ -312,4 +313,18 @@ func linearStart(i wire.ForgeItem) *wire.ForgeStart {
 	identifier, _ := keyOfIssue(i.Node, "linear")
 	return &wire.ForgeStart{Prompt: fmt.Sprintf("%s: %s\n\nWork on this Linear issue: %s", identifier, i.Title, deref(i.URL)),
 		Labels: []string{identifier}, Worktree: optional(identifier + " " + i.Title)}
+}
+
+// SetPriority is Linear's own priority; SetHold the label on hold, as Linear has no hold state
+// (#6091).
+func (l linearForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	ln, err := l.d.forgeLinear()
+	if err != nil {
+		return err
+	}
+	return ln.SetPriority(ctx, r.Key, priority)
+}
+
+func (l linearForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	return labelHold(ctx, l, r, on)
 }

@@ -27,7 +27,8 @@ struct WorkReleaseLookTests {
         #expect(WorkList.sort(rows, by: .newest).map(\.title) == ["v0.10.0", "v0.9.0", "v0.8.1"])
         #expect(WorkList.Kind.release.sorts == [.newest, .cost])
         #expect(WorkList.Kind.release.defaultSort == .newest)
-        #expect(WorkList.Kind.issue.defaultSort == .updated)
+        #expect(WorkList.Kind.issue.defaultSort == .priority)
+        #expect(WorkList.Kind.pr.defaultSort == .updated)
     }
 
     @Test func latestAndPreviousAreByRepo() {

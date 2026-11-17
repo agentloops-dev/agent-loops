@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -186,5 +187,33 @@ func TestAHelperNamesANewWorktree(t *testing.T) {
 		if _, err := d.helperWorktree(refused, dir); err == nil || !strings.Contains(err.Error(), "there is no worktree called") {
 			t.Fatalf("%s: %v", refused, err)
 		}
+	}
+}
+
+// Only git's own "not a git repository" is the folder being in none: any other failure is
+// git's words, never the false "not in a git repository" (#6106).
+func TestARepositoryGitCannotReadIsNotCalledNone(t *testing.T) {
+	t.Parallel()
+
+	if _, err := findRepository(t.TempDir()); !errors.Is(err, errNotARepository) {
+		t.Fatalf("a plain folder: %v", err)
+	}
+	dir := repo(t)
+	if r, err := findRepository(dir); err != nil || canonical(r.toplevel) != canonical(dir) {
+		t.Fatalf("a repository: %+v %v", r, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[core\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := findRepository(dir)
+	if err == nil || errors.Is(err, errNotARepository) {
+		t.Fatalf("a config git cannot read: %v", err)
+	}
+	// A git the system cannot start says why, not only that it failed.
+	if _, err := git(filepath.Join(dir, "gone"), "status"); err == nil || !strings.Contains(err.Error(), "git status could not start: ") {
+		t.Fatalf("a git that did not start: %v", err)
+	}
+	if words := repositoryWords(err, "not in one", "Git said:"); !strings.HasPrefix(words, "Git said: ") || !strings.Contains(words, "config") {
+		t.Fatal(words)
 	}
 }

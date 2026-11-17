@@ -25,6 +25,8 @@ import (
 // fakeForgeGitHub is GitHub's search and item reads, and what each was asked.
 type fakeForgeGitHub struct {
 	mu       sync.Mutex
+	// priorityField says its repos have the Priority issue field (#6091).
+	priorityField bool
 	searches []string
 	items    int
 	// wrote are the writes asked for (#3130).

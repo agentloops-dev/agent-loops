@@ -290,3 +290,36 @@ struct WorkPriorityChip: View {
             .help(said ?? "Priority \(words.lowercased())")
     }
 }
+
+/// An item that is on hold (#6090), from `ForgeItem.onHold`: the label chip's look with no state
+/// tint (on hold is not a failure), a pause glyph before the words. Not on hold has no chip.
+struct WorkOnHoldChip: View {
+    /// On a selected row in a key window the chip goes white, as the row's text does.
+    @Environment(\.backgroundProminence) private var prominence
+
+    init?(_ item: DaemonAPI.ForgeItem) { self.init(onHold: WorkPlan.onHold(item)) }
+
+    init?(onHold: Bool) {
+        guard onHold else { return nil }
+    }
+
+    var body: some View {
+        let white = prominence == .increased
+        HStack(spacing: 3) {
+            Image(icon: "pause.fill").imageScale(.small)
+            Text(WorkPlan.onHoldWords).fontWeight(.medium)
+        }
+        .appText(.fine)
+        .lineLimit(1)
+        .padding(.horizontal, 6)
+        .frame(minHeight: 18)
+        .foregroundStyle(white ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+        .background(Capsule().fill(white ? .white.opacity(0.2) : Paper.well))
+        .overlay(Capsule().strokeBorder(white ? .white.opacity(0.6) : Paper.rule))
+        .fixedSize()
+        // One element with one label: a label stacked on a Text's own crashes AppKit's accessibility.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(WorkPlan.onHoldWords)
+        .help(WorkPlan.onHoldHelp)
+    }
+}

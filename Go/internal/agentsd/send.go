@@ -47,8 +47,9 @@ func (d *Daemon) outgoingFile(id wire.UUID) (string, error) {
 
 func sendRepository(folder wire.URL) (string, error) {
 	path := store.FolderPath(folder)
-	if _, ok := repositoryOf(path); !ok {
-		return "", Invalid("%s is not a Git repository.", shortPath(path))
+	if _, err := findRepository(path); err != nil {
+		return "", Invalid("%s", repositoryWords(err, shortPath(path)+" is not a Git repository.",
+			"Nothing was sent: git could not read the repository of "+shortPath(path)+", so try again. Git said:"))
 	}
 	return path, nil
 }

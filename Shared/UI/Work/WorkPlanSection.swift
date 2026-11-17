@@ -606,6 +606,7 @@ private struct WorkPlanRow<BlockedBy: View>: View {
                     line
                     Spacer(minLength: 8)
                     WorkPriorityChip(child.item)
+                    WorkOnHoldChip(child.item)
                     if let cost {
                         Text(cost).monospacedDigit().foregroundStyle(.secondary)
                     } else if let estimate {
@@ -666,6 +667,7 @@ private struct WorkPlanRow<BlockedBy: View>: View {
         parts.append(ref)
         parts.append(mark == .done ? words : [mark.words, words].compactMap { $0 }.joined(separator: ", "))
         parts.append(WorkPlan.priorityWords(child.item).map { "priority \($0.lowercased())" })
+        parts.append(WorkPlan.onHold(child.item) ? WorkPlan.onHoldWords.lowercased() : nil)
         parts.append(cost ?? estimate.map { "estimate \($0)" })
         return parts.compactMap { $0 }.joined(separator: ", ")
     }

@@ -36,8 +36,15 @@ public enum WorkList {
         /// A release's Newest is its version, the highest first (#4421).
         public var sorts: [Sort] { fromForge ? Sort.allCases : self == .release ? [.newest, .cost] : [.updated, .cost] }
 
-        /// The sort a list opens with: a release's is Newest.
-        public var defaultSort: Sort { self == .release ? .newest : .updated }
+        /// The sort a list opens with (#6087): an issue's is Priority, so High is at the top; a release's is
+        /// Newest. A pull request keeps Last updated, as its priority is rarely set.
+        public var defaultSort: Sort {
+            switch self {
+            case .issue: .priority
+            case .release: .newest
+            default: .updated
+            }
+        }
     }
 
     public enum State: String, CaseIterable, Sendable, Hashable {
@@ -50,10 +57,12 @@ public enum WorkList {
     }
 
     public enum Sort: String, CaseIterable, Sendable, Hashable {
-        case updated, newest, cost
+        /// Priority (#6087) is `forge/next`'s order (#5689): not on hold first, then High, Medium, none and Low.
+        case priority, updated, newest, cost
 
         public var title: String {
             switch self {
+            case .priority: "Priority"
             case .updated: "Last updated"
             case .newest: "Newest"
             case .cost: "Cost"
@@ -74,6 +83,9 @@ public enum WorkList {
         public var labels: [DaemonAPI.ForgeLabel]
         /// high, medium or low, from `ForgeItem.priority` (#5690); nil for none.
         public var priority: String?
+        /// On hold, from `ForgeItem.onHold` (#5747): Priority puts it below every other row (#6087),
+        /// and the row has the On hold chip (#6090).
+        public var onHold = false
         /// The ref's repo or tracker: github:alexec/Agents, linear:ENG (a Linear team, #3311), jira.
         public var repo: String
         public var author: String?
@@ -137,6 +149,7 @@ public enum WorkList {
                       status: item.status, comments: item.comments, checks: item.checks, review: item.review,
                       stateReason: item.stateReason, avatar: item.authorAvatar, created: item.createdAt, closed: item.closedAt)
             priority = item.priority
+            onHold = WorkPlan.onHold(item)
         }
 
         /// A row lineage alone knows: a release, named by its tag until the forge names it (#4426).
@@ -376,9 +389,26 @@ public enum WorkList {
     /// The total cost in one figure, for sorting: the sum of its currencies.
     private static func cost(_ r: Row) -> Decimal { r.lineage?.cost.total.cost.values.reduce(0, +) ?? 0 }
 
+    /// A priority's place in Priority's order (#6087), as `forge/next` has it: High, Medium, none, Low.
+    static func priorityRank(_ priority: String?) -> Int {
+        switch priority?.lowercased() {
+        case "high": 0
+        case "medium": 1
+        case "low": 3
+        default: 2
+        }
+    }
+
     public static func sort(_ rows: [Row], by sort: Sort) -> [Row] {
         let tie: (Row, Row) -> Bool = { a, b in a.updated != b.updated ? a.updated > b.updated : a.node.ref < b.node.ref }
         switch sort {
+        case .priority:
+            // Not on hold first, then by priority; in a priority, the last updated first.
+            return rows.sorted { a, b in
+                if a.onHold != b.onHold { return !a.onHold }
+                let (x, y) = (priorityRank(a.priority), priorityRank(b.priority))
+                return x != y ? x < y : tie(a, b)
+            }
         case .updated:
             return rows.sorted(by: tie)
         case .newest:

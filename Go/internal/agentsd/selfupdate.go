@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -49,6 +50,19 @@ import (
 // #5297). A release's copy that runs from an Agents.app or an Agents Host.app takes the new
 // name once (takeNewName), so an earlier install moves across with no step from the person,
 // and no second app stays beside it.
+//
+// A Linux machine updates itself by the same steps (#5788, epic #5785), with these
+// differences (selfupdate_linux.go):
+//
+//  1. it downloads the release's agentsd-linux-<arch>-<version>.tar.gz, and checks each
+//     program in it against its .sha256 too;
+//  2. it puts the new agentsd at bin/agentsd-<sha256>, beside this one; there is no
+//     signature to check, and the new copy says its version itself (--version);
+//  3. the "app" it swaps is bin/current, the link that systemd and the supervisor start:
+//     a link to the new agentsd takes its place in one step, and the MCP servers go in
+//     just before;
+//  4. the host ends with ExitRestart, and its service or its supervisor starts
+//     bin/current again.
 
 const selfUpdateFile = "self-update.json"
 
@@ -103,6 +117,14 @@ type selfUpdater struct {
 
 	// What the Mac does, replaced by a test.
 	fetch func(ctx context.Context, url, pin string, w io.Writer, limit int64) error
+	// asset is the release's file for this platform (releaseZip on a Mac).
+	asset func(version string) string
+	// open makes the new copy from a checked asset in work (unpackZip on a Mac); it is
+	// what takes the app's place.
+	open func(version, work, file string) (string, error)
+	// place, when set, puts what goes beside the new copy just before the swap (a Linux
+	// machine's MCP servers).
+	place func(work string) error
 	// control is where this Mac's control plane answers, one address after another, as
 	// {url, pin}; nil or empty when it has none.
 	control func() []releaseSource
@@ -127,7 +149,18 @@ type selfUpdater struct {
 
 type selfUpdateState struct {
 	updater *selfUpdater
+	// restart is an update put in place on Linux: the host ends with ExitRestart, and its
+	// service or supervisor starts bin/current again (#5788).
+	restart atomic.Bool
 }
+
+// ExitRestart is the status a Linux host ends with to be started again from bin/current
+// (#5788): systemd's Restart=always starts it whatever the status, and the supervisor
+// starts itself again from bin/current on this one, so it runs the new copy too.
+const ExitRestart = 75
+
+// RestartWanted is whether the host stopped to run the copy a self-update put in place.
+func (d *Daemon) RestartWanted() bool { return d.restart.Load() }
 
 type selfUpdateSettings struct {
 	AutoUpdate bool   `json:"autoUpdate"`
@@ -153,7 +186,8 @@ func writeSelfUpdateSettings(path string, s selfUpdateSettings) error {
 
 func newSelfUpdater(file, app, running string) *selfUpdater {
 	u := &selfUpdater{file: file, app: app, running: running, pause: 15 * time.Second,
-		fetch: fetchTo, public: releaseDownloads, writable: folderWritable, swap: exchangePaths, ctx: context.Background()}
+		fetch: fetchTo, asset: releaseZip, public: releaseDownloads, writable: folderWritable, swap: exchangePaths, ctx: context.Background()}
+	u.open = u.unpackZip
 	settings := readSelfUpdateSettings(file)
 	u.rolledBack = settings.RolledBack
 	u.status = wire.SelfUpdate{AutoUpdate: settings.AutoUpdate, State: wire.SelfUpdateStateUpToDate, Running: running}
@@ -240,7 +274,7 @@ func (u *selfUpdater) Named(version string) {
 		return
 	}
 	if version == u.rolledBack {
-		why := "Agent Loops " + version + " did not stay running here, so this Mac went back to " + u.running +
+		why := "Agent Loops " + version + " did not stay running here, so this machine went back to " + u.running +
 			". It waits for the next release."
 		u.set(func(s *wire.SelfUpdate) { s.State, s.Message = wire.SelfUpdateStateFailed, &why })
 		return
@@ -302,6 +336,11 @@ func (u *selfUpdater) update(version string) error {
 	u.set(func(s *wire.SelfUpdate) { s.State = wire.SelfUpdateStateWaiting })
 	if err := u.betweenTurns(); err != nil {
 		return err
+	}
+	if u.place != nil {
+		if err := u.place(work); err != nil {
+			return err
+		}
 	}
 	if err := u.putInPlace(version, work, next); err != nil {
 		return err
@@ -375,15 +414,15 @@ func (u *selfUpdater) betweenTurns() error {
 	}
 }
 
-// download fetches the release's zip and its sum, checks the one against the other, and
-// unpacks it in work. It is the new Agent Loops.app, which goes where this copy is, whatever
-// that is named.
+// download fetches the release's file and its sum, checks the one against the other, and
+// opens it in work. It is the new copy: on a Mac the new Agent Loops.app, which goes where
+// this copy is, whatever that is named.
 func (u *selfUpdater) download(version, work string) (string, error) {
 	var lastErr error
 	for _, src := range u.sources(version) {
-		zip, err := u.downloadFrom(src, version, work)
+		file, err := u.downloadFrom(src, version, work)
 		if err == nil {
-			return u.unpackZip(version, work, zip)
+			return u.open(version, work, file)
 		}
 		var refused *refusedDownload
 		if errors.As(err, &refused) {
@@ -422,10 +461,10 @@ func (e *refusedDownload) Error() string {
 	return "The download of release " + e.version + " does not match its checksum, so it was not installed."
 }
 
-// downloadFrom fetches the release's zip and its sum from one source, and checks the one
-// against the other. It is the zip's path.
+// downloadFrom fetches the release's file and its sum from one source, and checks the one
+// against the other. It is the file's path.
 func (u *selfUpdater) downloadFrom(src releaseSource, version, work string) (string, error) {
-	name := releaseZip(version)
+	name := u.asset(version)
 	var sums strings.Builder
 	if err := u.fetch(u.ctx, src.base+"SHA256SUMS", src.pin, &sums, 1<<16); err != nil {
 		return "", fmt.Errorf("Agent Loops could not download release %s's checksums: %w", version, err)
@@ -673,7 +712,54 @@ func (d *Daemon) toldRelease(params json.RawMessage) {
 		log.Printf("self-update: %s: %v", wire.NotifyMachineRelease.Name, err)
 		return
 	}
-	if u := d.selfUpdateState.updater; u != nil {
+	if u := d.updater; u != nil {
 		u.Named(r.Version)
 	}
+}
+
+// turnsRunning is how many agents are in a turn: one waiting on the person is too.
+// Only a self-update asks (serveSelfUpdate).
+func (d *Daemon) turnsRunning() int {
+	n := 0
+	for _, a := range d.Store.Agents() {
+		if d.turnIsRunning(a.ID) {
+			n++
+		}
+	}
+	return n
+}
+
+// serveSelfUpdate serves selfUpdate/status and selfUpdate/set for an updater.
+func (d *Daemon) serveSelfUpdate(u *selfUpdater) {
+	u.ctx = d.ctx
+	u.turns = d.turnsRunning
+	u.tell = func(s wire.SelfUpdate) { Broadcast(d, wire.NotifySelfUpdateChanged, s) }
+	d.updater = u
+	On(d, wire.CallSelfUpdateStatus, func(context.Context, *Client, wire.Empty) (wire.SelfUpdate, error) {
+		return u.Status(), nil
+	})
+	On(d, wire.CallSelfUpdateSet, func(_ context.Context, _ *Client, r wire.SelfUpdateSet) (wire.SelfUpdate, error) {
+		return u.Set(r)
+	})
+}
+
+// controlSources are the addresses of the control plane this host joined, from its root's
+// membership, or none when it has not joined one (#5786, #5788).
+func controlSources(root string) []releaseSource {
+	member, err := controllink.LoadMembership(root)
+	if err != nil || member == nil {
+		return nil
+	}
+	var out []releaseSource
+	for _, e := range member.EndpointsToDial() {
+		if !strings.HasPrefix(e.URL, "https://") && !strings.HasPrefix(e.URL, "http://") {
+			continue
+		}
+		src := releaseSource{base: e.URL}
+		if e.Pin != nil {
+			src.pin = *e.Pin
+		}
+		out = append(out, src)
+	}
+	return out
 }

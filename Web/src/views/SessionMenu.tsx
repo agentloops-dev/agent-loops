@@ -13,7 +13,7 @@ import { runtimeName } from "../model/orgPolicy";
 import type { Store } from "../model/store";
 import { asksToArchive, isOpenBlock, folderPath } from "../model/groups";
 import { keepLabel } from "../model/archiveWords";
-import { carryOnHelp, carryOnLabel, carryOnPrompt, openBlock } from "../model/block";
+import { carryOnHelp, carryOnLabel, carryOnPrompt, isHeld } from "../model/block";
 import { go, routeHash } from "../route";
 import { canStop, liveDescendants } from "../model/tree";
 import { isMuted, muteHelp, muteLabel, unmuteLabel } from "../model/mute";
@@ -41,7 +41,7 @@ export function sessionActions(agent: Agent, pinned?: boolean, started: readonly
   const found: { action: Action; label: string; help: string; shortcut?: string }[] = [];
   const holds = agent.state === "starting" || agent.state === "running" || agent.state === "waitingOnUser";
   // First, as the window's row menu has it (AgentRow's contextMenu); the strip in the chat has it too.
-  if (openBlock(agent)) found.push({ action: "carryOn", label: carryOnLabel, help: carryOnHelp(agent) });
+  if (isHeld(agent)) found.push({ action: "carryOn", label: carryOnLabel, help: carryOnHelp(agent) });
   // Ahead of the queue and past the running limit, by the person's own click (#5156), as AgentRow's menu.
   if (canStart && canStartNow(agent)) found.push({ action: "agents/startNow", label: startNowLabel, help: startNowHelp });
   if (holds || (agent.state === "finished" && isOpenBlock(agent.report))) {

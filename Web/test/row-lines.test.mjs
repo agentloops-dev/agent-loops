@@ -267,3 +267,13 @@ test("a wait on a time alone heads its card with the time, and has no event line
   const other = { id: "w", from: 0, since: 0, deadline: 1800, patterns: [{ name: "branch.moved", filters: {} }] };
   assert.equal(lines.eventWaitCardTitle(other), "Waiting for event");
 });
+
+test("the event wait card leaves out the folder a session waits in, and says agent.ended in a few words (#6065)", () => {
+  const wait = { id: "w", from: 0, since: 0, patterns: [
+    { name: "agent.ended", filters: { folder: "/work/agents", repo: "alexec/Agents" } },
+    { name: "agent.finished", filters: { folder: "/work/agents", agent: "a" } },
+  ] };
+  const said = lines.eventWaitSummaryLines(wait, (id) => (id === "a" ? "Fix login" : undefined));
+  assert.deepEqual(said.map((line) => line.arguments), [["repo alexec/Agents"], []]);
+  assert.equal(`${said[0].source} · ${said[0].words}`, "Agents · Session finished");
+});

@@ -72,6 +72,11 @@ type Forge interface {
 	Rerun(ctx context.Context, r forgeRef) (wire.ForgeDone, error)
 	AddChild(ctx context.Context, epic forgeRef, child forgeChild) (wire.ForgeDone, error)
 	SetBlockedBy(ctx context.Context, r, blocker forgeRef, blocked bool) error
+	// SetPriority sets an issue's priority (high, medium, low, or "" for none) and SetHold puts
+	// it on hold or takes it off (#6091): in the forge's own field where it has one, else by the
+	// labels (forgeprioritywrite.go).
+	SetPriority(ctx context.Context, r forgeRef, priority string) error
+	SetHold(ctx context.Context, r forgeRef, on bool) error
 }
 
 // forgeCaps is what a forge does, as data (#4329): the clients hide what it does not.
@@ -99,6 +104,9 @@ type forgeCaps struct {
 	Plan, BlockedBy, AddChild bool
 	// Releases: forge/releases and forge/release read its releases (#4426).
 	Releases bool
+	// Priority and Hold: forge/priority and forge/hold set an issue's priority and on hold
+	// (#6091).
+	Priority, Hold bool
 	// Reasons say why an action is missing, by the action's name, in the words a person reads,
 	// as bitbucketNoAutoMerge says it now.
 	Reasons map[string]string
@@ -158,6 +166,7 @@ func (c forgeCaps) wire(name string) wire.ForgeCapabilities {
 		on  bool
 		out **bool
 	}{{c.CreatedAt, &out.CreatedAt}, {c.ClosedAt, &out.ClosedAt}, {c.Children, &out.Children}, {c.LinkedPulls, &out.LinkedPulls}, {c.Events, &out.Events}, {c.Total, &out.Total}, {c.Releases, &out.Releases},
+		{c.Priority, &out.Priority}, {c.Hold, &out.Hold},
 		{c.Branches, &out.Branches}, {c.MergedBy, &out.MergedBy}, {c.MergeCommit, &out.MergeCommit}, {c.Size, &out.Size},
 		{c.Reviewers, &out.Reviewers}, {c.Closes, &out.Closes}, {c.CheckTimes, &out.CheckTimes}} {
 		if f.on {
@@ -327,6 +336,12 @@ func (forgeNone) AddChild(context.Context, forgeRef, forgeChild) (wire.ForgeDone
 }
 func (forgeNone) SetBlockedBy(context.Context, forgeRef, forgeRef, bool) error {
 	return cannot(actionBlockedBy)
+}
+func (forgeNone) SetPriority(context.Context, forgeRef, string) error {
+	return cannot(actionPriority)
+}
+func (forgeNone) SetHold(context.Context, forgeRef, bool) error {
+	return cannot(actionHold)
 }
 
 // forgeRef is an item on one forge: its node, and the forge's own parts of it. It is the key of
