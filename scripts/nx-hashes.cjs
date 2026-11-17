@@ -3,12 +3,13 @@
 // attestation names each task by this hash (scripts/checks.sh attest), and CI calculates it
 // again at the pull request's head commit to see which tasks the attestation covers (#5585).
 //
-//   node scripts/nx-hashes.cjs [--affected BASE] [--json] TARGET...
+//   node scripts/nx-hashes.cjs [--affected BASE] [--projects A,B] [--json] TARGET...
 //
 // Without --json: one "project:target hash" line per task, sorted. With --json: one array of
 // {id, project, target, hash, executor, tags, root, files, runtime, environment}: files is each
 // file input of the task, from the hash's own plan (for the "why": the inputs that changed). With --affected, only the projects that the change
-// since BASE affects, as `nx affected` gives them. The task graph has each task's dependencies
+// since BASE affects, as `nx affected` gives them. With --projects, only those of the projects
+// named (`checks.sh attest` hashes mac:build and remote:build, not every build; #6060). The task graph has each task's dependencies
 // too (wire:gen, design:gen, agentskit:test-unit under agentskit:test, …).
 //
 // The hash is the one Nx's cache uses, so the environment must be the run's: run it from
@@ -51,19 +52,21 @@ async function affectedProjects(graph, nxJson, base) {
   const args = process.argv.slice(2);
   let base;
   let json = false;
+  let only = null;
   for (;;) {
     if (args[0] === "--affected") { base = args[1]; args.splice(0, 2); }
+    else if (args[0] === "--projects") { only = new Set(args[1].split(",").filter(Boolean)); args.splice(0, 2); }
     else if (args[0] === "--json") { json = true; args.shift(); }
     else break;
   }
   if (args.length === 0) {
-    console.error("usage: nx-hashes.cjs [--affected BASE] [--json] TARGET...");
+    console.error("usage: nx-hashes.cjs [--affected BASE] [--projects A,B] [--json] TARGET...");
     process.exit(2);
   }
   const started = Date.now();
   const graph = await createProjectGraphAsync({ exitOnError: true });
   const nxJson = readNxJson();
-  const projects = base ? await affectedProjects(graph, nxJson, base) : Object.keys(graph.nodes);
+  const projects = (base ? await affectedProjects(graph, nxJson, base) : Object.keys(graph.nodes)).filter((p) => !only || only.has(p));
   // createTaskGraph refuses a project that has none of the targets.
   const withTargets = projects.filter((p) => args.some((t) => graph.nodes[p]?.data.targets?.[t]));
   const taskGraph = createTaskGraph(graph, {}, withTargets, args, undefined, {});

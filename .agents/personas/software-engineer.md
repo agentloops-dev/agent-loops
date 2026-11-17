@@ -48,7 +48,7 @@ starts lanes.
    (#1777); say in the PR body what it said and what you did. `scripts/conflict-risk.sh
    <branch>` is the same core for a person or a script.
 6. Commit. Run `scripts/checks.sh attest run` under the `build` lease, in the foreground: it
-   runs the affected test, vet and lint tasks with no cache at that commit and keeps the result
+   runs the affected test, vet and lint tasks and app builds with no cache at that commit and keeps the result
    on disk (#6059). Take the `ci` lease, push, and release it. Open a pull request whose body
    says `Fixes #<n>`. Then, at once, run `scripts/checks.sh attest post` (no lease; seconds): it
    posts `attestation/<platform>` on the PR's head as the agents' bot (#5674), and CI skips each

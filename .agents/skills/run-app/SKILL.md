@@ -81,7 +81,7 @@ the one Mac app), not the Remote, so no iOS simulator build; a `Remote/` change 
 the Remote (`remote:build`); a `Shared/`, `Packages/` or `project.yml` change builds both; a
 `Packages/AgentsKit` change runs its test targets, and Nx skips each one whose inputs have a
 pass in its cache. Before you push, `scripts/checks.sh attest run` runs the test, vet and lint
-tasks again with no cache, and just after the push `scripts/checks.sh attest post` posts the
+tasks and the app builds again with no cache, and just after the push `scripts/checks.sh attest post` posts the
 attestation that lets CI skip them (#5674, #5710, #6059; AGENTS.md, "Verifying a lane's work"). A scratch app is no part of it: close it first.
 
 Then it:

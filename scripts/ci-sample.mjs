@@ -19,7 +19,7 @@
 //
 // Only a task that this Linux job can run is sampled: one the lane attested on linux-x64, or a
 // task with no platform in its hash (web, repo-lint, wire, design). A task of an Xcode project
-// is for a macOS job (not yet sampled).
+// is for a macOS job (not yet sampled: #6077), as are mac:build and remote:build (#6060).
 //
 // The choice is a function of the after commit, the pull request and the task, so a rerun of
 // the job samples the same pairs.

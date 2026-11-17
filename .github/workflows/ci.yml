@@ -85,6 +85,7 @@ jobs:
       skip-linux: ${{ steps.affected.outputs.skip-linux }}
       skip-swift: ${{ steps.affected.outputs.skip-swift }}
       skip-gomac: ${{ steps.affected.outputs.skip-gomac }}
+      skip-apps: ${{ steps.affected.outputs.skip-apps }}
     steps:
       # The pull request's own commit, not its merge with main: the hashes are then the lane's
       # (#5584). The base for `nx affected` is its merge base with main.
@@ -111,7 +112,8 @@ jobs:
       # #5581 §3; scripts/ci-attested.mjs): a statement from the agents' bot, from a lane that is
       # not revoked (#5586: the revocation branch), whose task and Nx hash are the ones CI calculates now
       # at the head, PASSED. skip-<step> lists them and that step runs only the others; a macOS
-      # step with every task covered gets `skip` (swift, gomac, swiftlint), so `test` may not start at all.
+      # step with every task covered gets `skip` (swift, gomac, swiftlint, apps), so `test` and
+      # `apps` may not start at all (#6060: `apps` still starts for the marks).
       # A push to main and a run by hand skip nothing. With no accepted attestation, or when
       # GitHub does not answer, nothing is skipped (principle 11). The job summary lists each
       # skipped task and the check run that covers it.
@@ -147,6 +149,7 @@ jobs:
             grep -qx 'all-swift=true' <<<"$attested" && swift=skip
             grep -qx 'all-gomac=true' <<<"$attested" && gomac=skip
             grep -qx 'all-swiftlint=true' <<<"$attested" && swiftlint=skip
+            grep -qx 'all-apps=true' <<<"$attested" && apps=skip
           fi
           printf 'apps=%s\nswift=%s\ngo=%s\ngomac=%s\nmarks=%s\nswiftlint=%s\n' "$apps" "$swift" "$go" "$gomac" "$marks" "$swiftlint" | tee -a "$GITHUB_OUTPUT"
 
@@ -675,7 +678,8 @@ jobs:
       # mac:build and remote:build, one at a time (they share build/DerivedData), and the tasks
       # they depend on (wire:gen, design:gen, web:build). A build that fails on a restored
       # DerivedData gets one more go from clean (scripts/ci-clean-retry.sh says why); a task that
-      # passed is in the Nx cache, so the retry runs only what failed.
+      # passed is in the Nx cache, so the retry runs only what failed. On a pull request, not the
+      # builds that an attestation covers (SKIP, from `changes`; #6060).
       - name: Nx affected
         if: env.APPS != 'skip'
         id: nx
@@ -684,10 +688,13 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           RESTORED: ${{ steps.xcode-cache.outputs.cache-matched-key }}
+          SKIP: ${{ needs.changes.outputs.skip-apps }}
         run: |
           source scripts/ci-clean-retry.sh
           nx_apps() {
-            if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            if [[ -n "$SKIP" ]]; then
+              node scripts/ci-attested.mjs run --group apps --base "$BASE" --skip "$SKIP"
+            elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
               scripts/nx.sh affected -t build --exclude='*,!mac,!remote' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
             else
               scripts/nx.sh run-many -t build --projects=mac,remote --parallel=1 --output-style=stream

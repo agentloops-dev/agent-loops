@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // scripts/checks.sh attest (#5584, epic #5581 §1 and §2): run the affected test, vet and lint
-// tasks of this branch with Nx and no cache hits, then post one check run
+// tasks of this branch, and the app builds mac:build and remote:build (#6060), with Nx and no
+// cache hits, then post one check run
 // `attestation/<platform>` on the pull request's head commit, as the agents' bot. Its output
 // holds one in-toto Statement v1 for each task that passed on its first run, with the
 // test-result predicate. On the pull request, CI skips each task it covers (#5585,
@@ -40,6 +41,9 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TARGETS = ["test", "vet", "lint"];
+// The builds of CI's `apps` job (#6060): its Nx step builds only these, so only these of the
+// build target are attested (go:build and web:build are the Linux job's).
+const APP_PROJECTS = ["mac", "remote"];
 const STATEMENT = "https://in-toto.io/Statement/v1";
 const PREDICATE = "https://in-toto.io/attestation/test-result/v0.1";
 // Nx's task_history statuses for a result it took from a cache: never a first run.
@@ -50,6 +54,28 @@ const CACHED = new Set(["local-cache", "local-cache-kept-existing", "remote-cach
 /** The tasks to attest: each task of the graph that runs something (not a noop). */
 export function attestable(tasks) {
   return tasks.filter((t) => t.executor !== "nx:noop" && t.hash);
+}
+
+/** One list of the two hash runs (the checks, the app builds): a shared dependency once. */
+export function mergeTasks(...lists) {
+  const by = new Map();
+  for (const t of lists.flat()) if (!by.has(t.id)) by.set(t.id, t);
+  return [...by.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
+}
+
+/**
+ * The Nx runs for the planned tasks that are not skipped: the checks' targets over their
+ * projects, then the app builds (their dependencies run as Nx's dependsOn says).
+ */
+export function nxRuns(planned) {
+  const left = planned.filter((t) => !t.skip);
+  const isApp = (t) => t.target === "build" && APP_PROJECTS.includes(t.project);
+  const checks = [...new Set(left.filter((t) => TARGETS.includes(t.target)).map((t) => t.project))].sort();
+  const apps = [...new Set(left.filter(isApp).map((t) => t.project))].sort();
+  const runs = [];
+  if (checks.length) runs.push({ targets: TARGETS, projects: checks });
+  if (apps.length) runs.push({ targets: ["build"], projects: apps });
+  return runs;
 }
 
 /** The pin files a task's hash reads, from its file inputs. */
@@ -266,11 +292,12 @@ function keptPath(headSha) {
   return resolve(root, sh("git", ["rev-parse", "--git-path", `agents-attest/runs/${headSha}.json`]));
 }
 
+/** The checks' tasks and the app builds (#6060), with their hashes at the head. */
 function hashesAt(base, env) {
-  const hashed = execFileSync("node", [join(root, "scripts/nx-hashes.cjs"), "--affected", base, "--json", ...TARGETS], {
+  const hash = (args) => JSON.parse(execFileSync("node", [join(root, "scripts/nx-hashes.cjs"), "--affected", base, "--json", ...args], {
     cwd: root, encoding: "utf8", env, stdio: ["ignore", "pipe", "inherit"], maxBuffer: 256 * 1024 * 1024,
-  });
-  return JSON.parse(hashed);
+  }));
+  return mergeTasks(hash(TARGETS), hash(["--projects", APP_PROJECTS.join(","), "build"]));
 }
 
 /** The pull request of this branch, when its head is headSha; else a message and null. */
@@ -297,7 +324,7 @@ async function runStep({ base, planOnly, env, headSha }) {
   const tools = toolchain(env);
   const planned = attestable(hashesAt(base, env)).map((t) => ({ ...t, skip: skipFor(t, tools) }));
   if (planned.length === 0) {
-    console.log("attest: the change affects no test, vet or lint task; nothing to attest");
+    console.log("attest: the change affects no test, vet, lint or app build task; nothing to attest");
     if (!planOnly) keep(headSha, keptRun(headSha, base, null, null));
     return { code: 0, body: null };
   }
@@ -308,14 +335,11 @@ async function runStep({ base, planOnly, env, headSha }) {
   if (planOnly) return { code: 0, body: null };
 
   // Only the targets asked; their dependencies (wire:gen, …) run as Nx's dependsOn says.
-  const runs = planned.filter((t) => !t.skip && TARGETS.includes(t.target)).map((t) => t.id);
-  const parts = planned.filter((t) => !t.skip && !TARGETS.includes(t.target)).map((t) => t.id);
-  const projects = [...new Set(planned.filter((t) => !t.skip).map((t) => t.project))];
   const since = Date.now();
-  if (runs.length + parts.length > 0) {
+  for (const r of nxRuns(planned)) {
     // One task at a time, as CI runs them (#5632): a first run under load is a flake's chance.
     spawnSync(join(root, "scripts/nx.sh"), [
-      "run-many", "-t", ...TARGETS, `--projects=${projects.join(",")}`,
+      "run-many", "-t", ...r.targets, `--projects=${r.projects.join(",")}`,
       "--skip-nx-cache", "--nxBail=false", "--parallel=1", "--output-style=stream",
     ], { cwd: root, stdio: "inherit", env });
   }
@@ -512,6 +536,15 @@ function selftest() {
   assert(none.verdicts[0].attested === false, "a task with no result is attested");
   const skipped = decide([{ ...task, skip: "Xcode differs" }], new Map([["go:test", { status: "success", code: 0 }]]), new Set());
   assert(skipped.verdicts[0].attested === false, "a skipped task is attested");
+
+  // The app builds (#6060): mac:build and remote:build run after the checks, no other build.
+  const t = (id, extra = {}) => ({ id, project: id.split(":")[0], target: id.split(":")[1], hash: id, executor: "nx:run-commands", ...extra });
+  const merged = mergeTasks([t("go:test"), t("wire:gen")], [t("mac:build"), t("wire:gen"), t("web:build")]);
+  assert(merged.map((x) => x.id).join() === "go:test,mac:build,web:build,wire:gen", `the merged tasks: ${merged.map((x) => x.id)}`);
+  const plan = nxRuns([...merged, t("remote:build"), t("go:build"), t("codetext:test", { skip: "Xcode differs" })]);
+  assert(JSON.stringify(plan) === JSON.stringify([{ targets: TARGETS, projects: ["go"] }, { targets: ["build"], projects: ["mac", "remote"] }]), `the Nx runs: ${JSON.stringify(plan)}`);
+  assert(nxRuns([t("mac:build", { skip: "Xcode differs" })]).length === 0, "a skipped app build runs");
+  assert(JSON.stringify(nxRuns([t("remote:build")])) === JSON.stringify([{ targets: ["build"], projects: ["remote"] }]), "an app build alone");
 
   const ctx = {
     headSha: "a".repeat(40), headTree: "b".repeat(40), patchId: "c".repeat(40), platform: "macos-arm64",
