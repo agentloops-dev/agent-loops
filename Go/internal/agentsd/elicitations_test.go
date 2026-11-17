@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -72,7 +71,6 @@ func entryOf[T any](d *Daemon, id wire.UUID, pick func(wire.TranscriptEntryKind)
 
 func TestAFormIsHeldAndAnswered(t *testing.T) {
 	t.Parallel()
-	flaky.UnderLoad(t, "#6013")
 
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
@@ -107,9 +105,10 @@ func TestAFormIsHeldAndAnswered(t *testing.T) {
 		"content": map[string]any{}}); e.Message != "colour is needed" {
 		t.Fatalf("%+v", e)
 	}
-	c.call(t, 5, "elicitations/answer", map[string]any{"requestID": form.ID, "action": "accept",
-		"content": map[string]any{"colour": "blue"}})
-	c.until(t, "the end", ended(id, wire.AgentStateFinished))
+	// The answer lets the runtime go on, and its turn can end before the call's answer
+	// comes back: c.call reads past that agent/changed, so hear it in the same loop (#6013).
+	c.callHearing(t, 5, "elicitations/answer", map[string]any{"requestID": form.ID, "action": "accept",
+		"content": map[string]any{"colour": "blue"}}, "the end", ended(id, wire.AgentStateFinished))
 	// The record's last line follows the agent/changed that says it ended.
 	waitFor(t, "the ending recorded", func() bool { k := kinds(d, id); return len(k) > 0 && k[len(k)-1] == "stateChanged" })
 	if a := d.Store.Agent(id); a.Report == nil || a.Report.Message != "You chose blue." {
