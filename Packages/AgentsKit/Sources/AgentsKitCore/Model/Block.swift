@@ -50,11 +50,6 @@ public struct Block: Codable, Hashable, Sendable {
         case dropped
     }
 
-    /// The two refusals about a block's words, said once for the helper and the daemon.
-    public static let onlyWithBlocked =
-        "Nothing was recorded: waiting_on and wake_on only go with blocked."
-    public static let unknownWakeOn = "Nothing was recorded: wake_on has to be any or all."
-
     public var isOpen: Bool { clearedAt == nil }
 
     /// Every agent it waited on has ended. True of no waits at all, which is why
