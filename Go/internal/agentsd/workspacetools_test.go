@@ -429,8 +429,7 @@ func TestAMachineIsFoundByEitherName(t *testing.T) {
 		go func() { text, _ := m.tool(30+i, "delete_machine", map[string]any{"host": tc.name}); answered <- text }()
 		var pending []wire.ElicitationRequest
 		waitFor(t, "the card for "+tc.name, func() bool {
-			json.Unmarshal(c.call(t, 40+2*i, "elicitations/pending", nil), &pending)
-			return len(pending) == 1
+			return json.Unmarshal(c.call(t, 40+2*i, "elicitations/pending", nil), &pending) == nil && len(pending) == 1
 		})
 		if q := *pending[0].Mode.Form.Value.Properties[0].Title; q != tc.question {
 			t.Errorf("%s: card %q", tc.name, q)
