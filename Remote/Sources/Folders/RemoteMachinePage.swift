@@ -4,6 +4,8 @@ import SwiftUI
 /// One machine's page (#4034), as the window's (#3626) and the web page's: a summary first,
 /// its CPU, load and capacity (#4582), memory and worst disk (#3743), then its disks, then the runtimes
 /// installed there (#3629), with Sign In… and Update (#4035), and This Mac's resources (#4027).
+/// A machine that Agents set up shows its eight set-up steps first, with Try Again on a failed
+/// one, as the window's (#5357, #5366, #6012).
 /// The Agent Loops version it runs, since when and with what changes, comes after its disks (#5273).
 /// Read with `machine/usage` as it opens and every few seconds while it is open, never
 /// otherwise. Its worktrees and processes, its settings, and another machine's resources,
@@ -26,11 +28,24 @@ struct RemoteMachinePage: View {
         let words = model.need(of: host).map { MachineNeedWords.line($0, name: name, row: row) }
         ScrollViewReader { proxy in
             List {
+                if let row, let setup = row.setup {
+                    MachineSetupSection(row: row, setup: setup,
+                                        sessions: model.work.agents.count { $0.host == host },
+                                        onRetry: { Task { await model.retrySetup(host) } },
+                                        onDelete: { Task { await model.deleteMachine(host) } })
+                }
                 RemoteMachineSessionsSection(host: host)
                 if let row { MachineLabelsSection(row: row) { labels in Task { await model.setMachineLabels(host, labels) } } }
                 Section {
-                    Text(words ?? (offline ? "Offline" : "Online"))
-                        .foregroundStyle(offline ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(Paper.secondary))
+                    if let setup = row?.setup, !MachineSetupWords.foldedAway(setup) {
+                        // The chip (#5357): Setting up · 7 of 8, Set-up failed · step 3 of 8, Ready · 3 min 42 s.
+                        Text(MachineSetupWords.chip(setup))
+                            .foregroundStyle(MachineSetupWords.failedStep(setup) != nil
+                                             ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(Paper.secondary))
+                    } else {
+                        Text(words ?? (offline ? "Offline" : "Online"))
+                            .foregroundStyle(offline ? StateTint.failure.style(or: .secondary) : AnyShapeStyle(Paper.secondary))
+                    }
                     if offline {
                         Text("\(name) is offline, so it can’t say how it is doing now.").foregroundStyle(Paper.secondary)
                     } else if !answersUsage {

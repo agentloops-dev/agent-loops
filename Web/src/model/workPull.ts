@@ -32,6 +32,10 @@ export interface MergeBox {
   approved: boolean;
   /** The person opened it, so the forge takes no review from them: no Approve, and ownPullWords in its place. */
   ownPull: boolean;
+  /** Request changes is there: not on a draft, nor on the person's own pull request, and only where the forge offers it (#5857). */
+  requests: boolean;
+  /** Close pull request is there: not on a draft, including on the person's own pull request, and only where the forge offers close (#5857). */
+  closes: boolean;
   reruns: boolean;
   /** Resolve on GitHub: the branch has conflicts. */
   resolve: boolean;
@@ -69,6 +73,8 @@ export function mergeBox(d: ForgeItemDetail): MergeBox | undefined {
     merges: !draft && !conflicts && !auto && head && (offers(d, "merge") || offers(d, "autoMerge")),
     waits, approves: !draft && !own && head && offers(d, "approve"),
     approved: !draft && !own && approvedByViewer(d), ownPull: !draft && own,
+    requests: !draft && !own && head && offers(d, "requestChanges"),
+    closes: !draft && offers(d, "close"),
     reruns: failedChecks(d).length > 0 && offers(d, "rerun"), resolve: conflicts,
   };
 }

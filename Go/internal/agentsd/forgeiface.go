@@ -67,6 +67,8 @@ type Forge interface {
 	CancelAutoMerge(ctx context.Context, r forgeRef) error
 	Ready(ctx context.Context, r forgeRef) error
 	Approve(ctx context.Context, r forgeRef, sha string) (wire.ForgeDone, error)
+	// RequestChanges asks for changes at sha, with body as the review text (#5857).
+	RequestChanges(ctx context.Context, r forgeRef, sha, body string) (wire.ForgeDone, error)
 	Rerun(ctx context.Context, r forgeRef) (wire.ForgeDone, error)
 	AddChild(ctx context.Context, epic forgeRef, child forgeChild) (wire.ForgeDone, error)
 	SetBlockedBy(ctx context.Context, r, blocker forgeRef, blocked bool) error
@@ -104,7 +106,7 @@ type forgeCaps struct {
 
 // forgeActions are the writes a forge allows on one kind of item.
 type forgeActions struct {
-	Comment, Label, Assign, Close, Reopen, Transition, Merge, AutoMerge, Approve, Rerun, Log, Diff bool
+	Comment, Label, Assign, Close, Reopen, Transition, Merge, AutoMerge, Approve, RequestChanges, Rerun, Log, Diff bool
 	// CancelAutoMerge turns auto-merge off; Ready marks a draft ready for review (#4410).
 	CancelAutoMerge, Ready bool
 	// CloseNotPlanned: a close with reason not_planned (#4404).
@@ -126,6 +128,7 @@ const (
 	actionCancelAuto      = "cancelAutoMerge"
 	actionReady           = "ready"
 	actionApprove         = "approve"
+	actionRequestChanges  = "requestChanges"
 	actionRerun           = "rerun"
 	actionLog             = "log"
 	actionDiff            = "diff"
@@ -138,7 +141,7 @@ const (
 // on says whether the actions allow the action of that name.
 func (a forgeActions) on(action string) bool {
 	return map[string]bool{actionComment: a.Comment, actionLabel: a.Label, actionAssign: a.Assign, actionClose: a.Close, actionReopen: a.Reopen,
-		actionTransition: a.Transition, actionMerge: a.Merge, actionAutoMerge: a.AutoMerge, actionApprove: a.Approve,
+		actionTransition: a.Transition, actionMerge: a.Merge, actionAutoMerge: a.AutoMerge, actionApprove: a.Approve, actionRequestChanges: a.RequestChanges,
 		actionRerun: a.Rerun, actionLog: a.Log, actionDiff: a.Diff, actionCancelAuto: a.CancelAutoMerge, actionReady: a.Ready,
 		actionCloseNotPlanned: a.CloseNotPlanned}[action]
 }
@@ -192,6 +195,7 @@ func (c forgeCaps) itemActions(d wire.ForgeItemDetail) []wire.ForgeAction {
 		{wire.ForgeActionMerge, a.Merge && open},
 		{wire.ForgeActionAutoMerge, a.AutoMerge && open},
 		{wire.ForgeActionApprove, a.Approve && open},
+		{wire.ForgeActionRequestChanges, a.RequestChanges && open},
 		{wire.ForgeActionRerun, a.Rerun && open},
 		{wire.ForgeActionLog, a.Log},
 		{wire.ForgeActionDiff, a.Diff},
@@ -311,6 +315,9 @@ func (forgeNone) Ready(context.Context, forgeRef) error {
 }
 func (forgeNone) Approve(context.Context, forgeRef, string) (wire.ForgeDone, error) {
 	return wire.ForgeDone{}, cannot(actionApprove)
+}
+func (forgeNone) RequestChanges(context.Context, forgeRef, string, string) (wire.ForgeDone, error) {
+	return wire.ForgeDone{}, cannot(actionRequestChanges)
 }
 func (forgeNone) Rerun(context.Context, forgeRef) (wire.ForgeDone, error) {
 	return wire.ForgeDone{}, cannot(actionRerun)

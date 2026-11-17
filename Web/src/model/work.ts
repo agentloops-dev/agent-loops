@@ -463,6 +463,7 @@ export function doneWords(method: string, done: ForgeDone, reopened = false, mov
     case "forge/label": return "Labels changed.";
     case "forge/merge": return done.auto ? "Auto-merge is on: it merges when its checks pass." : "Merged.";
     case "forge/approve": return "Approved.";
+    case "forge/request-changes": return "Changes requested.";
     case "forge/add-child": return "Child added.";
     case "forge/blocked-by": return "Blocked by changed.";
     case "forge/close": return moved ? "Status changed." : reopened ? "Reopened." : "Closed.";

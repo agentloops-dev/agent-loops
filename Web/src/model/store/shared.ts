@@ -18,7 +18,15 @@ export function pruneFolderKeys(host: string, folders: readonly string[]): void 
 
 /** DaemonAPI.SandboxWillNotStart, a start's refusal when its runtime's sandbox will not start, with its sentence. */
 /** What New Machine makes, as its sheet has it (#4634). */
-export interface NewMachineDraft { provider: string; name: string; options: Record<string, JSONValue> }
+export interface NewMachineDraft {
+  provider: string;
+  name: string;
+  options: Record<string, JSONValue>;
+  /** Stop when idle, in minutes (0 is never), from the sheet's choice (#5354). */
+  stopWhenIdleMinutes?: number;
+  /** Start from a warm pool (#5354): claim a ready machine of this provider and size. */
+  fromPool?: boolean;
+}
 /** The New Machine sheet up (#4634): on a provider (none for the default one), or again on a refused make's choices. */
 export interface NewMachineAsk { provider?: string; again?: NewMachineDraft; problem?: string }
 export interface SandboxWillNotStart { runtimeID: string; detail: string; offOffered: boolean; message: string }

@@ -140,8 +140,9 @@
 .work-comment-me svg { display: block; fill: var(--paper-wash); }
 .work-comment-me svg .cut { fill: var(--paper-ground); stroke: none; }
 .work-comment-box-main { display: grid; gap: 6px; }
-.work-comment-box textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--paper-rule); border-radius: var(--radius-card);
+.work-comment-box textarea, .work-request textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--paper-rule); border-radius: var(--radius-card);
   background: var(--paper-raised); color: inherit; font: inherit; resize: vertical; }
+.work-request { display: grid; gap: 6px; }
 .work-comment-box .work-actions-bar button { display: inline-flex; gap: 6px; align-items: center; }
 .work-close-mark.open { color: var(--forge-done); }
 .work-close-mark.open.pull { color: var(--forge-closed); }
@@ -171,7 +172,7 @@
    when it can merge, red when a check failed or it has conflicts; under 700 px the box at the top, then Files changed
    as a row, and the checks row opens the Checks page. */
 .work-narrow-only { display: none; }
-.work-files button, .work-files-row button, .work-approve, .work-rerun { display: inline-flex; gap: 6px; align-items: center; }
+.work-files button, .work-files-row button, .work-approve, .work-rerun, .work-merge-buttons .work-actions-bar > button { display: inline-flex; gap: 6px; align-items: center; }
 .work-files-glyph, .work-branch-glyph { fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .work-files { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-end; flex: none; }
 .work-files-row { display: block; margin-top: 12px; }
@@ -263,11 +264,11 @@ button.work-merge-row:hover { background: var(--paper-wash); }
 @container (max-width: 699px) {
   .work-wide-only { display: none; }
   .work-narrow-only { display: block; margin-bottom: 12px; }
-  .work-merge-buttons .work-actions-bar { display: grid; grid-template-columns: 62fr 38fr; }
-  .work-merge-buttons .work-actions-bar > :only-child, .work-merge-buttons .work-actions-bar > .work-merge-button:last-child { grid-column: 1 / -1; }
+  .work-merge-buttons > .work-actions-bar { display: grid; grid-template-columns: 62fr 38fr; }
+  .work-merge-buttons > .work-actions-bar > :only-child, .work-merge-buttons > .work-actions-bar > .work-merge-button:last-child { grid-column: 1 / -1; }
   .work-merge-button { display: flex; }
   .work-merge-button > button:first-child { flex: 1; }
-  .work-merge-buttons .work-actions-bar > button { justify-content: center; padding: 8px; }
+  .work-merge-buttons > .work-actions-bar > button { justify-content: center; padding: 8px; }
 }
 /* The page's actions (#3130): a row of buttons, the merge button split for its other methods. */
 .work-actions { margin-top: 8px; }

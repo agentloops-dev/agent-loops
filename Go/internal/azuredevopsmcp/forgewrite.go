@@ -200,6 +200,26 @@ func (f *RealAzureDevOps) Approve(ctx context.Context, repo string, number int, 
 	return f.prURL(repo, number), nil
 }
 
+// RequestChanges votes waiting for the author (vote -5) at the head commit sha. The vote takes no
+// text, so the words go on as a comment first; a failed comment changes nothing.
+func (f *RealAzureDevOps) RequestChanges(ctx context.Context, repo string, number int, sha, body string) (string, error) {
+	if _, err := f.atHead(ctx, repo, number, sha); err != nil {
+		return "", err
+	}
+	if _, err := f.Comment(ctx, repo, number, body); err != nil {
+		return "", err
+	}
+	id, err := f.me(ctx, repo)
+	if err != nil {
+		return "", err
+	}
+	if err := f.send(ctx, http.MethodPut, api(fmt.Sprintf("%s/pullrequests/%d/reviewers/%s", repoPath(repo), number, url.PathEscape(id)), nil),
+		map[string]any{"vote": -5}, nil); err != nil {
+		return "", err
+	}
+	return f.prURL(repo, number), nil
+}
+
 // RetryBuild runs a build's failed jobs again, and says the build's page.
 func (f *RealAzureDevOps) RetryBuild(ctx context.Context, repo string, build int) (string, error) {
 	var b buildJSON

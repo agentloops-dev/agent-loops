@@ -44,6 +44,12 @@ public extension WorkLook {
         /// The person opened it, so the forge takes no review from them: no Approve, and
         /// `ownPullWords` in its place (#5804).
         public var ownPull: Bool
+        /// Request changes is there: not on a draft, nor on the person's own pull request, and
+        /// only where the forge offers it (#5857).
+        public var requests: Bool
+        /// Close pull request is there: not on a draft, including on the person's own pull
+        /// request, and only where the forge offers close (#5857).
+        public var closes: Bool
         public var reruns: Bool
         /// *Resolve on GitHub*: the branch has conflicts.
         public var resolve: Bool
@@ -84,7 +90,15 @@ public extension WorkLook {
                         merges: !draft && !conflicts && !auto && detail.head != nil,
                         waits: waits, approves: !draft && !own && detail.head != nil,
                         approved: !draft && !own && approvedByViewer(detail), ownPull: !draft && own,
+                        requests: !draft && !own && detail.head != nil && offers(detail, "requestChanges"),
+                        closes: !draft && offers(detail, "close"),
                         reruns: !WorkList.failedChecks(detail).isEmpty, resolve: conflicts)
+    }
+
+    /// Whether the page offers an action now (#4361). An earlier daemon sends no actions, and
+    /// then every action is offered. Approve keeps its own rule and does not use this.
+    static func offers(_ detail: DaemonAPI.ForgeItemDetail, _ action: String) -> Bool {
+        detail.actions.map { $0.contains(action) } ?? true
     }
 
     /// Approve's words: *Approved* once the person's own review approved it (#5804).

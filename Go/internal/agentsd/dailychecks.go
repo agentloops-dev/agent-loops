@@ -96,8 +96,13 @@ func checksPath(home string) string {
 	return filepath.Join(home, ".agents", "checks", "suggestions.json")
 }
 
+// readChecks and writeChecks need a home: with none, the path was relative and a scratch
+// daemon wrote into its working folder (#5815). With no home, no checks are kept.
 func readChecks(home string) checksRecord {
 	var r checksRecord
+	if home == "" {
+		return r
+	}
 	if b, err := os.ReadFile(checksPath(home)); err == nil {
 		_ = json.Unmarshal(b, &r)
 	}
@@ -105,6 +110,9 @@ func readChecks(home string) checksRecord {
 }
 
 func writeChecks(home string, r checksRecord) error {
+	if home == "" {
+		return errNoPersonalHome
+	}
 	if err := os.MkdirAll(filepath.Dir(checksPath(home)), 0o700); err != nil {
 		return err
 	}

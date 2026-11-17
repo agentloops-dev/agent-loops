@@ -40,6 +40,7 @@ type forgeForgejo interface {
 	CancelAutoMerge(ctx context.Context, repo string, number int) error
 	MarkReady(ctx context.Context, repo string, number int) error
 	Approve(ctx context.Context, repo string, number int, sha string) (string, error)
+	RequestChanges(ctx context.Context, repo string, number int, sha, body string) (string, error)
 	PRDiff(ctx context.Context, repo string, number int) (map[string]any, error)
 	// What lineage asks (lineageforgejo.go).
 	Node(ctx context.Context, repo string, number int) (forgejomcp.Node, error)
@@ -136,7 +137,7 @@ func (forgejoForge) Caps() forgeCaps {
 		Issues: true, PRs: true,
 		Issue: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true},
 		PR: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, Merge: true, AutoMerge: true, Approve: true,
-			Diff: true, CancelAutoMerge: true, Ready: true},
+			RequestChanges: true, Diff: true, CancelAutoMerge: true, Ready: true},
 		LabelColors: true,
 		Avatars:     true,
 		CreatedAt:   true, ClosedAt: true,
@@ -484,6 +485,18 @@ func (g forgejoForge) Approve(ctx context.Context, r forgeRef, sha string) (wire
 		return wire.ForgeDone{}, err
 	}
 	link, err := fj.Approve(ctx, named, r.Number, sha)
+	return wire.ForgeDone{URL: optional(link)}, err
+}
+
+func (g forgejoForge) RequestChanges(ctx context.Context, r forgeRef, sha, body string) (wire.ForgeDone, error) {
+	if !r.pr() {
+		return wire.ForgeDone{}, cannot(actionRequestChanges)
+	}
+	fj, named, _, err := g.of(ctx, "forge/request-changes", r)
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	link, err := fj.RequestChanges(ctx, named, r.Number, sha, body)
 	return wire.ForgeDone{URL: optional(link)}, err
 }
 

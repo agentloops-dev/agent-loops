@@ -355,7 +355,7 @@ public extension DaemonAPI {
     /// the default first (#3130); an issue's `start` is its new-agent form, and `transitions` the
     /// moves its workflow allows (Jira, #3260), in place of Close and Reopen. `actions` are what
     /// the page offers now, by name (comment, label, close, reopen, transition, merge, autoMerge,
-    /// approve, rerun, log, diff, addChild, blockedBy, assign, cancelAutoMerge, ready; #4361), as
+    /// approve, requestChanges, rerun, log, diff, addChild, blockedBy, assign, cancelAutoMerge, ready; #4361, #5857), as
     /// strings so a later daemon's new one does not break this decoder; nil from an earlier daemon. On an issue's read, where the
     /// forge says them (#4373): `children` are its sub-issues, `linkedPulls` the pull requests that
     /// close it, and `events` its timeline, oldest first; nil where the forge gives none. On a pull
@@ -581,6 +581,20 @@ public extension DaemonAPI {
         public init(node: LineageNode, sha: String) {
             self.node = node
             self.sha = sha
+        }
+    }
+
+    /// `forge/request-changes`: request changes at `sha`, the head the page shows. `body` is the
+    /// review text, and it is required (#5857).
+    struct ForgeRequestChangesRequest: Codable, Sendable, Hashable {
+        public var node: LineageNode
+        public var sha: String
+        public var body: String
+
+        public init(node: LineageNode, sha: String, body: String) {
+            self.node = node
+            self.sha = sha
+            self.body = body
         }
     }
 
@@ -927,6 +941,8 @@ public extension DaemonAPI.Method {
     static let forgeClose = "forge/close"
     static let forgeMerge = "forge/merge"
     static let forgeApprove = "forge/approve"
+    /// `ForgeRequestChangesRequest` → `ForgeDone` (#5857).
+    static let forgeRequestChanges = "forge/request-changes"
     static let forgeRerun = "forge/rerun"
     /// `ForgeNodeRequest` → `ForgeDone` (#4410): turn off a pull request's auto-merge, and mark
     /// a draft ready for review. Offered where the page's `actions` has `cancelAutoMerge`, `ready`.

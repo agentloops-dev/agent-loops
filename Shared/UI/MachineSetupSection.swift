@@ -2,14 +2,22 @@ import AgentsKitCore
 import SwiftUI
 
 /// A machine's set-up as steps on its page (#5357, epic #5353, boards 2 and 3): a mark, the
-/// name, one line and the time for each of the eight steps. A failed step stops the run, says
-/// why, and offers Try Again and Delete Machine…. After 24 hours the steps fold into one line.
-/// Read from the control plane's row, which it pushes as the machine changes.
-struct MachineSetupSection: View {
-    @Environment(AppModel.self) private var model
-    let host: MachineRef
+/// name, one line and the time for each of the eight steps; a step done in a warm pool says
+/// *pool* (#5366). A failed step stops the run, says why, and offers Try Again and Delete
+/// Machine…. After 24 hours the steps fold into one line. Read from the control plane's row,
+/// which it pushes as the machine changes. Drawn by the Mac window and the Remote (#6012); the
+/// window puts its sign-in cards under step 7 (#5361).
+struct MachineSetupSection<SignIn: View>: View {
     let row: DaemonAPI.ControlMachine
     let setup: DaemonAPI.MachineSetup
+    /// How many sessions run there, for Delete's question.
+    var sessions = 0
+    /// Try Again: the control plane runs the failed step and the ones after it.
+    let onRetry: () -> Void
+    /// Delete, once the person said yes.
+    let onDelete: () -> Void
+    /// Under step 7, Sign in to runtimes.
+    @ViewBuilder let signIn: () -> SignIn
 
     @State private var deleting = false
 
@@ -17,28 +25,30 @@ struct MachineSetupSection: View {
         if let folded = MachineSetupWords.foldedLine(setup) {
             Section("Agents") { Text(folded).foregroundStyle(.secondary) }
         } else {
-            // A second's tick, so a running step's time moves.
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                Section("Set-up") {
-                    ForEach(setup.steps) { step in
-                        stepRow(step, now: context.date)
-                        if step.id == "signIn" { MachineSignInCards(host: host) }
+            Section("Set-up") {
+                ForEach(setup.steps) { step in
+                    // A second's tick, so a running step's time moves. Inside the row, so the
+                    // section stays a section in a List (the Remote) and a Form (the Mac).
+                    TimelineView(.periodic(from: .now, by: 1)) { context in stepRow(step, now: context.date) }
+                    if step.id == "signIn" { signIn() }
+                }
+                if let failed = MachineSetupWords.failedStep(setup) {
+                    Text(failed.error ?? "\(MachineSetupWords.name(failed)) failed.")
+                        .foregroundStyle(StateTint.failure.style(or: .primary))
+                    HStack {
+                        Button("Try Again", action: onRetry)
+                        Button("Delete Machine…", role: .destructive) { deleting = true }
                     }
-                    if let failed = MachineSetupWords.failedStep(setup) {
-                        Text(failed.error ?? "\(MachineSetupWords.name(failed)) failed.")
-                            .foregroundStyle(StateTint.failure.style(or: .primary))
-                        HStack {
-                            Button("Try Again") { Task { await model.retrySetup(host) } }
-                            Button("Delete Machine…", role: .destructive) { deleting = true }
-                        }
-                    }
+                    #if os(iOS)
+                    .buttonStyle(.bordered)
+                    #endif
                 }
             }
             .confirmationDialog("Delete \(row.name)?", isPresented: $deleting, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { Task { await model.deleteMachine(host) } }
+                Button("Delete", role: .destructive, action: onDelete)
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text(MachineRowActions.deleteMessage(row, sessions: 0))
+                Text(MachineRowActions.deleteMessage(row, sessions: sessions))
             }
         }
     }
@@ -92,5 +102,13 @@ struct MachineSetupSection: View {
         case .failed: "Failed"
         case .waiting: "Not yet"
         }
+    }
+}
+
+extension MachineSetupSection where SignIn == EmptyView {
+    /// With nothing under step 7: the Remote signs a runtime in from its line under Runtimes.
+    init(row: DaemonAPI.ControlMachine, setup: DaemonAPI.MachineSetup, sessions: Int = 0,
+         onRetry: @escaping () -> Void, onDelete: @escaping () -> Void) {
+        self.init(row: row, setup: setup, sessions: sessions, onRetry: onRetry, onDelete: onDelete) { EmptyView() }
     }
 }

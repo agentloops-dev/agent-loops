@@ -169,6 +169,22 @@ func TestForgeWritesAreThePersons(t *testing.T) {
 		t.Error("auto-complete completed it now")
 	}
 	same(t, f.posted[6]["vote"], float64(10))
+	before := len(f.posted)
+	if _, err := ado.RequestChanges(ctx, repo, 3, "sha2", "Please rename it."); err == nil || !strings.Contains(err.Error(), "newer commit") {
+		t.Fatalf("request changes at an old head: %v", err)
+	}
+	if len(f.posted) != before {
+		t.Fatal("an old head wrote")
+	}
+	if url, err := ado.RequestChanges(ctx, repo, 3, "sha3", "Please rename it."); err != nil || !strings.HasSuffix(url, "/pullrequest/3") {
+		t.Fatalf("request changes %s %v", url, err)
+	}
+	same(t, f.posted[len(f.posted)-1]["vote"], float64(-5))
+	comments, _ := f.posted[len(f.posted)-2]["comments"].([]any)
+	comment, _ := comments[0].(map[string]any)
+	if comment["content"] != "Please rename it." {
+		t.Fatalf("the review text: %#v", f.posted[len(f.posted)-2])
+	}
 }
 
 // #3803: the merge methods are what the target branch's "Limit merge types" allows, every one

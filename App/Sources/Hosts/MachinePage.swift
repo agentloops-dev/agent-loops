@@ -57,7 +57,11 @@ struct MachinePage: View {
             ScrollViewReader { proxy in
                 Form {
                     if let row = model.hosts.controlRows[host], let setup = row.setup {
-                        MachineSetupSection(host: host, row: row, setup: setup)
+                        MachineSetupSection(row: row, setup: setup,
+                                            onRetry: { Task { await model.retrySetup(host) } },
+                                            onDelete: { Task { await model.deleteMachine(host) } }) {
+                            MachineSignInCards(host: host)
+                        }
                         // From a warm pool, or a claim that found it empty (#5366, board 4).
                         if let note = model.machinePoolNotes[row.name], !MachineSetupWords.foldedAway(setup) {
                             Section { Text(note).appText(.supporting).foregroundStyle(.secondary) }

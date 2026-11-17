@@ -105,6 +105,11 @@ func (f *fakeForgeAzureDevOps) Approve(_ context.Context, repo string, number in
 	return "https://dev.azure.com/acme/Web%20App/_git/App/pullrequest/3", nil
 }
 
+func (f *fakeForgeAzureDevOps) RequestChanges(_ context.Context, repo string, number int, sha, body string) (string, error) {
+	f.note(&f.wrote, fmt.Sprintf("request-changes %s#%d %s %s", repo, number, sha, body))
+	return "https://dev.azure.com/acme/Web%20App/_git/App/pullrequest/3", nil
+}
+
 func (f *fakeForgeAzureDevOps) PRDiff(context.Context, string, int) (map[string]any, error) {
 	return map[string]any{"files": []any{map[string]any{"path": "hello.txt", "change": "added", "additions": 1, "deletions": 0,
 		"hunks": []any{map[string]any{"oldStart": 1, "newStart": 1, "lines": []any{map[string]any{"kind": "added", "text": "hello"}}}}}}}, nil

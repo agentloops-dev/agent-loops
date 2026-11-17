@@ -544,6 +544,10 @@ export class Work {
    * again on the choices of a make the provider refused, with its reason. */
   readonly newMachineAsk = signal<NewMachineAsk | null>(null);
 
+  /** What a machine's page says of the warm pool it came from (#5354), by the machine's name: the pool replaced it, or
+   * no pool machine was ready and a new one is being made. */
+  readonly machinePoolNotes = signal<Readonly<Record<string, string>>>({});
+
   /** Prompts and starts the control plane keeps for a stopped workspace (#691 US3), every host's. */
   readonly kept = signal<readonly KeptRequest[]>([]);
 

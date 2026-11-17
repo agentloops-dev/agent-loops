@@ -5445,8 +5445,8 @@ export interface FoldersListRequest {
  * A write or a read that an item's page offers (#4329, #4361): forge/comment, forge/label,
  * forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason
  * not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve,
- * forge/rerun, forge/log, forge/diff, forge/add-child, forge/blocked-by, forge/assign (#4403),
- * forge/cancel-auto-merge and forge/ready (#4410).
+ * forge/request-changes (#5857), forge/rerun, forge/log, forge/diff, forge/add-child,
+ * forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410).
  */
 export type ForgeAction =
   | "comment"
@@ -5458,6 +5458,7 @@ export type ForgeAction =
   | "merge"
   | "autoMerge"
   | "approve"
+  | "requestChanges"
   | "rerun"
   | "log"
   | "diff"
@@ -6220,6 +6221,16 @@ export interface ForgeReleases {
 export interface ForgeReleasesRequest {
   folder?: string;
   limit?: number;
+}
+
+/**
+ * forge/request-changes (#5857): request changes on a pull request at sha, the head commit its page
+ * shows (refused when the head moved). body is the review text, and it is required.
+ */
+export interface ForgeRequestChangesRequest {
+  node: LineageNode;
+  sha: string;
+  body: string;
 }
 
 /**
@@ -16993,6 +17004,7 @@ export interface Methods {
   "forge/ready": { params: ForgeNodeRequest; result: ForgeDone };
   "forge/release": { params: ForgeReleaseRequest; result: ForgeReleaseDetail };
   "forge/releases": { params: ForgeReleasesRequest; result: ForgeReleases };
+  "forge/request-changes": { params: ForgeRequestChangesRequest; result: ForgeDone };
   "forge/rerun": { params: ForgeNodeRequest; result: ForgeDone };
   "governance/approvals": { params: Empty; result: CatalogApprovalList };
   "governance/decide": { params: CatalogDecide; result: CatalogRequest };
@@ -17045,6 +17057,7 @@ export interface Methods {
   "machines/listKept": { params: KeptListQuery; result: KeptList };
   "machines/remove": { params: MachineRequest; result: Empty };
   "machines/retryKept": { params: KeptRequestID; result: Empty };
+  "machines/retrySetup": { params: MachineRequest; result: Empty };
   "machines/setLabels": { params: MachineLabelsRequest; result: MachineLabelsResult };
   "machines/setMachineOptions": { params: MachineOptions; result: ControlMachine };
   "machines/start": { params: MachineRequest; result: ControlMachine };
@@ -17124,6 +17137,10 @@ export interface Methods {
   "policy/settleUntrustedYours": { params: SettleUntrustedYourPolicyRequest; result: YourPolicyState };
   "policy/stopAll": { params: PolicyStopAllRequest; result: PolicyKept };
   "policy/yours": { params: Empty; result: YourPolicyState };
+  "pool/claim": { params: WarmPoolClaim; result: WarmPoolClaimed };
+  "pool/delete": { params: WarmPoolRequest; result: Empty };
+  "pool/list": { params: Empty; result: WarmPools };
+  "pool/set": { params: WarmPoolSet; result: WarmPool };
   "preferences/get": { params: Empty; result: Record<string, JSONValue> };
   "preferences/set": { params: Record<string, JSONValue>; result: Record<string, JSONValue> };
   "presence/report": { params: PresenceReport; result: Empty };
@@ -17469,6 +17486,7 @@ export const MethodTarget = {
   "forge/ready": "host",
   "forge/release": "host",
   "forge/releases": "host",
+  "forge/request-changes": "host",
   "forge/rerun": "host",
   "governance/approvals": "control",
   "governance/decide": "control",
@@ -17521,6 +17539,7 @@ export const MethodTarget = {
   "machines/listKept": "control",
   "machines/remove": "control",
   "machines/retryKept": "control",
+  "machines/retrySetup": "control",
   "machines/setLabels": "control",
   "machines/setMachineOptions": "control",
   "machines/start": "control",
@@ -17600,6 +17619,10 @@ export const MethodTarget = {
   "policy/settleUntrustedYours": "host",
   "policy/stopAll": "control",
   "policy/yours": "host",
+  "pool/claim": "control",
+  "pool/delete": "control",
+  "pool/list": "control",
+  "pool/set": "control",
   "preferences/get": "host",
   "preferences/set": "host",
   "presence/report": "host",
@@ -18281,6 +18304,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeReleaseRequest: { required: ["node"], optional: [] },
   ForgeReleases: { required: ["releases"], optional: ["none", "errors"] },
   ForgeReleasesRequest: { required: [], optional: ["folder", "limit"] },
+  ForgeRequestChangesRequest: { required: ["node", "sha", "body"], optional: [] },
   ForgeReviewer: { required: ["login", "state"], optional: ["avatar"] },
   ForgeStanding: { required: ["labels", "any", "not", "lanes"], optional: ["milestone", "parent", "error"] },
   ForgeStart: { required: ["prompt", "labels"], optional: ["worktree"] },
