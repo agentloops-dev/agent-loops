@@ -102,7 +102,6 @@ func TestAnAgentMovesIntoAnExistingWorktreeAtOnce(t *testing.T) {
 // folder's own branch is refused (#3174): no agent runs git worktree add by hand.
 func TestAnAgentMovesOntoALocalBranch(t *testing.T) {
 	t.Parallel()
-	flaky.UnderLoad(t, "#6106")
 
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
