@@ -323,3 +323,71 @@ func TestAnAnswerWhileDeferredClearsIt(t *testing.T) {
 		t.Fatalf("deferred once ended: %+v", e)
 	}
 }
+
+// A form is shown and its request is opened in one step (#5974): a client that sees the card
+// and answers it at once leaves no open request behind. Before, the answer could come between
+// the two, so the request opened after it stayed open: a lost form (#4990) that a second
+// answer turned into a prompt, and a turn that the agent was never asked for.
+func TestAFormAnsweredAsItIsShownLeavesNoOpenRequest(t *testing.T) {
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	// What the daemon tells its client is not read here: drained, so no broadcast waits on it.
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-c.out:
+			case <-stop:
+				return
+			}
+		}
+	}()
+	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
+	l := d.live(a.ID)
+	l.mu.Lock()
+	l.inTurn = true
+	l.mu.Unlock()
+	q, _ := json.Marshal([]map[string]any{{"id": "go", "prompt": "Go?", "options": []map[string]string{{"id": "yes"}, {"id": "no"}}}})
+	for i := range 100 {
+		done := make(chan string, 1)
+		go func() {
+			note, _, _ := d.askForm(a.ID, map[string]json.RawMessage{"questions": q}, nil, time.Minute)
+			done <- note
+		}()
+		// The first look that sees the card answers it, as a window that polls does.
+		var id wire.UUID
+		for id == "" {
+			l.mu.Lock()
+			for each := range l.elicitations {
+				id = each
+				if d.request(each) == nil {
+					l.mu.Unlock()
+					t.Fatalf("round %d: the card is shown with no request", i)
+				}
+			}
+			l.mu.Unlock()
+		}
+		if err := d.answerElicitation(wire.AnswerElicitationRequest{RequestID: id, Action: wire.AnswerElicitationRequestActionAccept,
+			Content: map[string]wire.JSONValue{"go": wire.JSONValue(`"no"`)}}); err != nil {
+			t.Fatal(err)
+		}
+		<-done
+		if r := d.request(id); r == nil || r.State != wire.RequestStateAnswered {
+			t.Fatalf("round %d: %+v", i, r)
+		}
+		if lost := d.lostForms(""); len(lost) != 0 {
+			t.Fatalf("round %d: lost forms %+v", i, lost)
+		}
+	}
+	if q := d.Store.Agent(a.ID).QueuedPrompts; len(q) != 0 {
+		t.Fatalf("queued %+v", q)
+	}
+}
+
+// openFormRequest opens the request of a form that no agent holds: a lost form (#4990).
+func (d *Daemon) openFormRequest(req wire.ElicitationRequest) {
+	if r := d.formRequest(req); r != nil {
+		d.requestOpened(d.keepFormRequest(r))
+	}
+}

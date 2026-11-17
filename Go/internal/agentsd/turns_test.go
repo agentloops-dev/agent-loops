@@ -66,7 +66,39 @@ func TestMain(m *testing.M) {
 	runtimeVersion = func(string) string { return "" }
 	// Nor fetches the ready-made workflows from GitHub (#5091): every daemon has the fixture's.
 	useReadyMadeFixture()
+	// Nor starts a runtime installed on the machine (#5974): a CI runner's claude ran a turn
+	// for a test that did not call fakeRuntimes. A test sees the runtimes it made, as a Linux
+	// runner with none installed sees them, and fakeRuntimes gives it the fake.
+	locateFor = locateMadeByATest
 	os.Exit(m.Run())
+}
+
+// locateMadeByATest is locate for a test: a runtime found outside the temporary folder,
+// where every test makes its own, is installed on the machine, so it is not found.
+func locateMadeByATest(r *runtimeDef) (string, []string, []string) {
+	path, args, looked := r.locate()
+	if path == "" || madeByATest(path) {
+		return path, args, looked
+	}
+	return "", nil, append(append([]string{}, looked...), filepath.Dir(path)+" (installed on this machine, which a test never starts)")
+}
+
+// madeByATest is whether path is in the temporary folder, as written or with its links
+// followed.
+func madeByATest(path string) bool {
+	tmp := filepath.Clean(os.TempDir())
+	in := func(p, dir string) bool { return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator)) }
+	abs, _ := filepath.Abs(path)
+	if in(abs, tmp) {
+		return true
+	}
+	if realTmp, err := filepath.EvalSymlinks(tmp); err == nil {
+		if realPath, err := filepath.EvalSymlinks(abs); err == nil && in(realPath, realTmp) {
+			return true
+		}
+		return in(abs, realTmp)
+	}
+	return false
 }
 
 type fakeRuntime struct {
