@@ -35,7 +35,11 @@ func TestSetupReportsAreSentInOrderAfterTheHostHasJoined(t *testing.T) {
 	var got []string
 	refuse := true
 	var ask askControl = func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		r := params.(wire.MachineSetupReport)
+		// Other jobs of the daemon ask too (user/setPolicy, #5793): they are not set-up reports.
+		r, ok := params.(wire.MachineSetupReport)
+		if !ok {
+			return nil, errors.New("not a set-up report")
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		if method != wire.CallMachineSetupStep.Name {
