@@ -5,7 +5,8 @@
 // runs on a provider's workspace (#691, layouts.md L1): then a stopped or failed one offers Start,
 // and a starting one shows a spinner and how long so far. The words are OfflineWords.swift's.
 import { useEffect, useState } from "preact/hooks";
-import type { CapacityLevel, ControlMachine, DiskAlarm, MachineWorkspace, RuntimeStatus } from "../protocol/generated";
+import type { CapacityLevel, ControlMachine, DiskAlarm, MachineSetup, MachineWorkspace, RuntimeStatus } from "../protocol/generated";
+import { isSettingUp, setupSidebarLine } from "../model/machineSetup";
 import { fromWireDate } from "../protocol/dates";
 import type { Store } from "../model/store";
 import { headline, needWords } from "../model/disk";
@@ -57,6 +58,7 @@ export function footLine(host: ControlMachine): string {
 
 /** What a machine needs, as its row under Machines says it in one grey line (#3764; MachineNeed.swift). */
 export type MachineNeed = { kind: "offline" | "stopped" | "setupFailed" | "update" } | { kind: "disk"; alarm: DiskAlarm }
+  | { kind: "settingUp"; setup: MachineSetup }
   | { kind: "capacity"; level: CapacityLevel } | { kind: "signIn"; runtimes: string[] };
 
 /** Installed but not signed in, as its line on the machine's page says (#3629; RuntimeStatus.needsSignIn). */
@@ -67,10 +69,12 @@ export function needsSignIn(status: RuntimeStatus): boolean {
     && !status.signIn.signedIn && status.signIn.relayed !== true;
 }
 
-/** A machine's most urgent need (MachineNeed.most): offline, then stopped, then a set-up that failed,
+/** A machine's most urgent need (MachineNeed.most): its eight set-up steps while they run or after one failed (#5354), as
+ *  it has not joined yet; then offline, then stopped, then a set-up that failed,
  *  then its worst disk that is not OK (#3928), then an update, then a runtime's sign-in; null when it needs nothing. */
 export function machineNeed(host: ControlMachine | undefined, online: boolean, runtimes: readonly RuntimeStatus[],
   disks: readonly DiskAlarm[] = [], capacity?: CapacityLevel): MachineNeed | null {
+  if (host?.setup && isSettingUp(host.setup)) return { kind: "settingUp", setup: host.setup };
   if (!online) {
     const ws = host?.workspace;
     if (host && ws && (ws.problem || ["stopped", "starting", "stopping"].includes(host.state))) return { kind: "stopped" };
@@ -91,6 +95,7 @@ export function machineNeedLine(need: MachineNeed, host: ControlMachine): string
   switch (need.kind) {
     case "offline": case "stopped": return footLine(host);
     case "setupFailed": return `Setting up ${host.name} failed.`;
+    case "settingUp": return setupSidebarLine(need.setup);
     case "disk": return needWords(need.alarm);
     case "capacity": return levelWords(need.level) ?? "";
     case "update": return "Needs an update";

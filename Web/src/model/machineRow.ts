@@ -5,6 +5,7 @@ import type { CapacityLevel, ControlMachine, ProviderSummary, StartedMachinePrev
 import { addMachineWords } from "./addMachine";
 import { makers } from "./machineFromRepository";
 import { unpushedWords } from "./people";
+import { isPoolMachine } from "./warmPools";
 
 /** The dot's colour: green online, amber and turning while it changes, grey and hollow stopped, red offline or failed. */
 export type MachineDot = "online" | "busy" | "stopped" | "offline" | "attention";
@@ -103,7 +104,8 @@ export function removeQuestion(host: ControlMachine): string {
 /** A machine of the person's that has not joined (#4610, #4978), as the window's MachineMaking: Making… while the
  * control plane waits for one New Machine made, the reason and Delete once it gave up; grey and Not joined for one
  * Agents did not make (a codespace made on github.com, a stopped one), which a click joins. An empty provider is the
- * page's own row, before the control plane lists the machine. */
+ * page's own row, before the control plane lists the machine. A machine a warm pool holds has no row (#5354): nobody owns it
+ * until a claim, and the pool's card in Settings shows it. */
 export interface MachineMaking {
   provider: string;
   providerName: string;
@@ -126,13 +128,13 @@ export type MachineJoin = { joining: string | null } | { needsTrust: string } | 
  * page's own names the list does not have yet. Making… first, then the ones the control plane gave up on, then the ones
  * that never joined (#4978), each by name. A failed make is no machine. */
 export function makingRows(making: readonly string[], providers: readonly ProviderSummary[] | null,
-  hosts: readonly { name: string }[]): MachineMaking[] {
+  hosts: readonly { name: string }[], pools: readonly string[] = []): MachineMaking[] {
   const joined = (name: string) => hosts.some((h) => h.name === name);
   const rows: MachineMaking[] = [];
   for (const p of providers ?? []) {
     if (p.mayUse === false) continue;
     for (const w of p.workspaces) {
-      if (w.host || w.state === "failed" || joined(w.name)) continue;
+      if (w.host || w.state === "failed" || joined(w.name) || isPoolMachine(w.name, pools)) continue;
       rows.push({ provider: p.id, providerName: p.name, workspace: w.id, name: w.name, notJoined: w.notJoined ?? null,
         joinable: !(w.joining || w.notJoined), state: w.state, ssh: w.ssh ?? null, tunnel: w.tunnel ?? false,
         deletable: p.capabilities.includes("delete") });

@@ -3,6 +3,7 @@
 // List Again and Remove…, and on a workspace Add as Machine…, Link to Host…, Start, Stop, Stop when
 // idle and Unlink.
 // Add and Edit… choose the machine that carries it, and its card says which (#3496).
+import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { ControlMachine, ProviderSummary, MachineInfo } from "../protocol/generated";
 import type { Store } from "../model/store";
@@ -16,6 +17,7 @@ import { MachineDialog } from "./MachineDialog";
 import { makers } from "../model/machineFromRepository";
 import { adminsOnly, providerLine as groupLine } from "../model/teamGroups";
 import { ask } from "./MessageKinds";
+import { hasWarmPools, useWarmPools, WarmPoolsSection } from "./WarmPools";
 
 const time = (at: Date) => at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
@@ -29,6 +31,8 @@ export function ProvidersSection({ store }: { store: Store }) {
   const [said, setSaid] = useState<string | null>(null);
   // Lists every provider again when the page opens (FR-004).
   useEffect(() => { void store.providers.load(); }, []);
+  // The warm pools, read again every 30 s while the page is open (#5354).
+  useWarmPools(store);
   const off = store.providers.off.value;
   return (
     <section aria-labelledby="settings-providers">
@@ -37,8 +41,12 @@ export function ProvidersSection({ store }: { store: Store }) {
       {problem && <p class="hint failure">{problem}</p>}
       {said && <p class="hint failure">{said}</p>}
       {!off && providers?.map((p) => (
-        <ProviderCard key={p.id} store={store} provider={p} say={setSaid} edit={() => setEditing(p)}
-          link={(workspace) => setLinking({ provider: p, workspace })} install={(workspace) => setInstalling({ provider: p, workspace })} />
+        <Fragment key={p.id}>
+          <ProviderCard store={store} provider={p} say={setSaid} edit={() => setEditing(p)}
+            link={(workspace) => setLinking({ provider: p, workspace })} install={(workspace) => setInstalling({ provider: p, workspace })} />
+          {/* A provider that makes machines can keep some ready (#5354). */}
+          {hasWarmPools(store, p) && <WarmPoolsSection store={store} provider={p} />}
+        </Fragment>
       ))}
       {!off && (
         <>

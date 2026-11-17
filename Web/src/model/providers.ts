@@ -2,12 +2,15 @@
 // ControlSettingsModel: listed when Settings opens, kept by control/providersChanged, and each
 // change sent to the control plane. Secrets pass through in a request and are not kept here.
 import { signal } from "@preact/signals";
-import type { ControlMachine, Group, MachineRef, ProviderAdd, ProviderID, ProviderSummary } from "../protocol/generated";
+import type { ControlMachine, Group, MachineRef, ProviderAdd, ProviderID, ProviderOptions, ProviderSummary, WarmPool, WarmPoolClaim,
+  WarmPoolClaimed, WarmPoolSet } from "../protocol/generated";
 import { Failure } from "../protocol/generated";
 import type { Caller } from "../protocol/methods";
 import { CallFailed, LinkDown } from "../wire/link";
-import { describe } from "./errors";
+import { describe, methodNotFound } from "./errors";
 import { providerWords } from "./machineProviders";
+import { formFields } from "./machineFromRepository";
+import { hourly } from "./warmPools";
 
 /** A Stop that agents at work hold back: what to ask before stopping anyway (US4 AS4). */
 export interface StopAsk {
@@ -33,13 +36,24 @@ export class Providers {
   readonly off = signal<string | null>(null);
   /** The groups providers are given to (#1761): every one for an admin, a member's own. Empty from a control plane before groups. */
   readonly groups = signal<Group[]>([]);
+  /** The person's warm pools (#5354), as the control plane last listed them, and when (ms). */
+  readonly pools = signal<WarmPool[]>([]);
+  readonly poolsReadAt = signal<number | null>(null);
+  /** False on a control plane before warm pools: Warm Pools and Start from are not drawn. */
+  readonly poolsHere = signal(true);
+  /** Each provider's price an hour by size, from its New Machine form, for a pool's cost. */
+  readonly poolPrices = signal<Record<string, Record<string, number>>>({});
 
   constructor(private readonly caller: Caller) {}
 
   /** `control/providersChanged`. */
   take(params: unknown): void {
     const providers = (params as { providers?: ProviderSummary[] } | null)?.providers;
-    if (Array.isArray(providers)) this.list.value = providers;
+    if (Array.isArray(providers)) {
+      this.list.value = providers;
+      // A pool made since the last read names its machines, which the Machines group leaves out (#5354).
+      void this.loadPools();
+    }
   }
 
   /** Lists them, and asks every provider to list again (FR-004), as the page opens. */
@@ -49,6 +63,7 @@ export class Providers {
       this.problem.value = null;
       this.off.value = null;
       await this.loadGroups();
+      void this.loadPools();
     } catch (error) {
       this.list.value = [];
       if (error instanceof CallFailed && error.code === Failure.providersNeedOneCopy) this.off.value = error.message || providerWords.off;
@@ -229,5 +244,64 @@ export class Providers {
       if (!confirmed && error instanceof CallFailed && error.code === Failure.agentsWorking) return { host, question: error.message };
       return describe(error);
     }
+  }
+
+  /** A provider's New Machine form (#4634), for New Machine and a pool's size and region. */
+  options(provider?: string): Promise<ProviderOptions> {
+    return this.caller.call("providers/options", provider ? { id: provider as ProviderID } : {});
+  }
+
+  /** The person's warm pools (#5354), as the window's loadPools. A control plane before pools answers no such method, and
+   * they go; one that cannot be reached keeps the last list, with its time. */
+  async loadPools(): Promise<void> {
+    try {
+      this.pools.value = (await this.caller.call("pool/list", {})).pools;
+      this.poolsReadAt.value = Date.now();
+      this.poolsHere.value = true;
+    } catch (error) {
+      if (error instanceof CallFailed && error.code === methodNotFound) this.poolsHere.value = false;
+      return;
+    }
+    for (const provider of new Set(this.pools.value.map((p) => p.provider))) {
+      if (this.poolPrices.value[provider]) continue;
+      const options = await this.options(provider).catch(() => null);
+      if (!options) continue;
+      const prices: Record<string, number> = {};
+      for (const field of formFields(options.schema)) {
+        for (const [choice, cost] of Object.entries(field.costs ?? {})) {
+          const price = hourly(cost);
+          if (price !== null) prices[choice] = price;
+        }
+      }
+      this.poolPrices.value = { ...this.poolPrices.value, [provider]: prices };
+    }
+  }
+
+  /** Save on a warm pool's form: null once it is kept, or why not, in the control plane's words. */
+  async setPool(set: WarmPoolSet): Promise<string | null> {
+    try {
+      await this.caller.call("pool/set", set);
+      await this.loadPools();
+      return null;
+    } catch (error) {
+      return describe(error);
+    }
+  }
+
+  /** Delete… on a pool: it and its ready machines go; claimed machines stay. */
+  async deletePool(id: string): Promise<string | null> {
+    try {
+      await this.caller.call("pool/delete", { id });
+      await this.loadPools();
+      return null;
+    } catch (error) {
+      return describe(error);
+    }
+  }
+
+  /** Make with Start from a warm pool (#5354, spec "A claim"): the oldest ready machine of a pool of this provider and
+   * size, bound with the person's Stop when idle; with none ready by now, a new machine, and the answer says so. */
+  claim(claim: WarmPoolClaim): Promise<WarmPoolClaimed> {
+    return this.caller.call("pool/claim", claim);
   }
 }
