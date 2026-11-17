@@ -280,6 +280,30 @@ extension RemoteModel {
         }
     }
 
+    /// Continue in a new session (#5919): Auto, in the same worktree or folder, then this
+    /// chat is archived. Open the new session. A failed start leaves this chat as it is.
+    @discardableResult
+    func continueInNewSession(_ agentID: UUID) async -> Bool {
+        guard !isStale else {
+            problem = "Your Mac is not answering, so that could not be sent."
+            return false
+        }
+        do {
+            let id = try await sendOnce(DaemonAPI.Method.agentsContinueInNewSession,
+                                        DaemonAPI.ContinueInNewSessionRequest(agentID: agentID, requestID: UUID()))
+                .decode(UUID.self)
+            await loadWholeAgent(id)
+            selection = id
+            return true
+        } catch let error as JSONRPCError {
+            problem = error.message
+            return false
+        } catch {
+            problem = "That did not reach your Mac."
+            return false
+        }
+    }
+
     /// Carry on when the allowance is back, or no longer (#1859).
     func continueWhenBack(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsContinueWhenBack) }
 

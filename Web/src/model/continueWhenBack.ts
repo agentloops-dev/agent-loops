@@ -1,19 +1,42 @@
 // A chat paused by a spent allowance that can carry on by itself (#1859): ContinueWhenBackWords
-// (Shared/UI/ContinueWhenBackWords.swift), said the same here. Paused, the chat offers "Continue at
-// 07:00"; waiting, it says "Continues at 07:00" in the chat and on its row, with Cancel. The daemon
-// keeps the wait on agent.continueWhenBack.
+// (Shared/UI/ContinueWhenBackWords.swift), said the same here. Stopped, the line "Its allowance ran
+// out" offers "Continue at 07:00" and "Continue in new session" (#5919). Waiting, it says "Continues
+// at 07:00" in the chat and on its row, with Cancel, and the line offers nothing. The daemon keeps
+// the wait on agent.continueWhenBack.
 import type { Agent, RuntimeAllowances } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 import { switchTime } from "./switchNote";
+import { fields, type ChatTurn } from "./turns";
 
 export const continueCancelLabel = "Cancel";
-/** The strip over a paused chat, before it is asked to continue (ContinueWhenBackWords.paused). */
-export const continuePaused = "This runtime’s allowance is spent. The chat stopped.";
 export const continueHelp = "Sends “continue” in this chat when the allowance is back, or sooner if a turn on this runtime works.";
+/** Under the line, beside Continue at (ContinueWhenBackWords.inNewSession, #5919). */
+export const continueInNewSession = "Continue in new session";
+export const continueInNewSessionHelp = "Starts a new session on Auto that reads this one, then archives this chat.";
 
-/** Whether the chat offers the button: paused by a spent allowance, and not waiting yet. */
+/** Whether the chat offers the buttons: paused by a spent allowance, and not waiting yet. */
 export function offersContinue(agent: Agent): boolean {
   return agent.state === "stopped" && agent.endedReason === "allowanceSpent" && !agent.continueWhenBack;
+}
+
+/** The last "Its allowance ran out" line in these turns. A stored turn is read from its outcome. */
+export function allowanceOutLine(turns: readonly ChatTurn[]): string | null {
+  let found: string | null = null;
+  for (const turn of turns) {
+    const items = turn.items.length > 0 ? turn.items : turn.storedOutcome ?? [];
+    for (const item of items) {
+      if (item.kind !== "entry") continue;
+      const state = fields(item.entry, "stateChanged");
+      if (state?._0 === "stopped" && state.reason === "allowanceSpent") found = item.entry.id;
+    }
+  }
+  return found;
+}
+
+/** Whether this turn holds that line, so only it is drawn again when the title changes. */
+export function turnHoldsAllowance(turn: ChatTurn, id: string): boolean {
+  const items = turn.items.length > 0 ? turn.items : turn.storedOutcome ?? [];
+  return items.some((item) => item.kind === "entry" && item.entry.id === id);
 }
 
 /** The button: the provider's reset time when the page knows it. */

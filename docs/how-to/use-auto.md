@@ -82,7 +82,7 @@ On iPhone, the tables show one runtime at a time: choose the runtime, and its va
 - **The Auto chooser says "No runtime included".** Every runtime is turned off on the Auto
   page. Turn one on.
 - **The session ran out.** See [Keep going when a runtime runs out](keep-going-when-a-runtime-runs-out.md):
-  an Auto session offers **Continue on** the next runtime.
+  under **Its allowance ran out**, choose **Continue at 07:00** or **Continue in new session**.
 
 ## Related
 

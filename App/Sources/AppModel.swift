@@ -4915,6 +4915,24 @@ final class AppModel {
         if host == .mac { await refreshAgents() } else { await refreshServer(host) }
     }
 
+    /// Continue in a new session (#5919): Auto, in the same worktree or folder, then this
+    /// chat is archived. Open the new session. A failed start leaves this chat as it is.
+    @discardableResult
+    func continueInNewSession(_ agentID: UUID) async -> Bool {
+        var made: UUID?
+        let went = await attempt(on: host(ofAgent: agentID)) {
+            made = try await self.client(forAgent: agentID).call(
+                DaemonAPI.Method.agentsContinueInNewSession,
+                DaemonAPI.ContinueInNewSessionRequest(agentID: agentID, requestID: UUID()),
+                returning: UUID.self)
+        }
+        guard went, let made else { return false }
+        let host = host(ofAgent: agentID)
+        if host == .mac { await refreshAgents() } else { await refreshServer(host) }
+        selection = made
+        return true
+    }
+
     /// Carry on when the allowance is back, or no longer (#1859).
     func continueWhenBack(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsContinueWhenBack) }
     func cancelContinue(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsCancelContinue) }

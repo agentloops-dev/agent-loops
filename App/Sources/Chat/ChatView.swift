@@ -293,7 +293,26 @@ struct ChatView: View {
                 Self.openPolicy(action, model: model, requests: requests, openSettings: openSettings)
             },
             askForMore: { [model] in try await PolicyLayersWords.askForMore(on: model.controlRequests) },
-            undoTurn: undoTurn)
+            undoTurn: undoTurn,
+            allowanceOut: allowanceOut)
+    }
+
+    /// The buttons under "Its allowance ran out" (#5919). Nil unless this chat offers them
+    /// and the host can wait. **Continue in new session** is left out when the host is too old.
+    private var allowanceOut: AllowanceOutActions? {
+        guard let agent, ContinueWhenBackWords.offers(agent),
+              model.host(agent.host, has: Capability.chatContinueWhenBack1) else { return nil }
+        let id = agent.id
+        // A closure in a ternary does not take this type (#5919).
+        let startNew: (@MainActor () async -> Void)?
+        if model.host(agent.host, has: Capability.chatContinueInNewSession1) {
+            startNew = { [model] in _ = await model.continueInNewSession(id) }
+        } else {
+            startNew = nil
+        }
+        return AllowanceOutActions(resetsAt: model.runtimeAllowances?.resetsAt(agent.runtimeID),
+                                   wait: { [model] in await model.continueWhenBack(id) },
+                                   startNew: startNew)
     }
 
     /// Undo These Changes on a turn's card (#3437): not on an archived session, nor on a

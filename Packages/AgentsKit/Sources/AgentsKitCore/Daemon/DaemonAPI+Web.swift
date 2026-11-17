@@ -377,6 +377,9 @@ public extension DaemonAPI {
                     kind: .hostRequest),
                 // Continue in New (#999): a session whose account the organisation removed or refuses.
                 Row(Method.agentsContinueInNew, params: ContinueInNewRequest.self, result: UUID.self, kind: .hostRequest),
+                // Continue in a new session (#5919): a chat whose allowance ran out.
+                Row(Method.agentsContinueInNewSession, params: ContinueInNewSessionRequest.self, result: UUID.self,
+                    kind: .hostRequest),
                 Row(Method.agentsRecreateWorktree, params: AgentRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsContinueWhenBack, params: AgentRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsCancelContinue, params: AgentRequest.self, result: Agent.self, kind: .hostRequest),
