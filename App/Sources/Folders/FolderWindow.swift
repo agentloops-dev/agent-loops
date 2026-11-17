@@ -169,6 +169,7 @@ private struct FolderWindowColumns: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             FolderWindowSidebar(window: window, summary: summary)
+                .columnFloor()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
         } detail: {
             GeometryReader { pane in
