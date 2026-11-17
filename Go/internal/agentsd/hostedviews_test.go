@@ -74,6 +74,13 @@ func TestAHostedServersViewsComeThroughItsOneCopy(t *testing.T) {
 // A changed entry is a new catalog, and the old one goes; so does one too old to be read
 // (#3128).
 func TestAChangedEntrysOldViewCatalogIsRemoved(t *testing.T) {
+	// Diagnosis for #5988 only (draft PR): many tries in one CI run, not more pushes.
+	for i := range 25 {
+		t.Run(fmt.Sprint(i), changedEntrysOldViewCatalogIsRemoved)
+	}
+}
+
+func changedEntrysOldViewCatalogIsRemoved(t *testing.T) {
 	self, _ := os.Executable()
 	t.Setenv("AGENTS_FAKE_MCP", "1")
 	t.Setenv("AGENTS_FAKE_MCP_VIEWS", "1")
