@@ -122,6 +122,9 @@ func (d *Daemon) packThere(me *wire.Agent, machine string, pack wire.SendPackReq
 		receive.Patch = &id
 	}
 	var made wire.MachineFolderSent
+	if err := d.hostCtx().Err(); err != nil {
+		return wire.FolderSummary{}, &Error{Code: wire.FailureNotSupported, Message: "this machine stopped before the send was done."}
+	}
 	if err := d.askSend(me, wire.MachineFolderSend{Host: machine, Receive: &receive}, &made); err != nil {
 		return wire.FolderSummary{}, err
 	}
@@ -146,6 +149,10 @@ func (d *Daemon) uploadThere(me *wire.Agent, machine string, id wire.UUID, sent 
 	upload := store.NewUUID()
 	buf := make([]byte, sendThereParts)
 	for offset := int64(0); ; {
+		// A host that stops sends no more parts (#6001): Shutdown waits for this job.
+		if err := d.hostCtx().Err(); err != nil {
+			return "", &Error{Code: wire.FailureNotSupported, Message: "this machine stopped before the send was done."}
+		}
 		n, err := io.ReadFull(f, buf)
 		if n > 0 {
 			part := wire.ReceiveUploadRequest{Upload: upload, Offset: offset, Data: buf[:n]}
