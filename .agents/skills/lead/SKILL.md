@@ -24,7 +24,7 @@ its prompt is this one:
 
 > #<epic>: <epic title>
 >
-> Lead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`): <epic URL>
+> Lead this epic: <epic URL>
 
 Only one lead per epic: if a session labelled `#<epic>` and `lead` is not archived, do
 not start a second one.

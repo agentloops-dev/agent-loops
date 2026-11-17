@@ -269,8 +269,7 @@ private extension Canned {
             return DaemonAPI.WorkLeadSuggestion(
                 node: DaemonAPI.LineageNode(kind: "issue", ref: "example/shop#\(n)"), title: title, url: url,
                 folder: agentsFolder.path, due: due, done: done, total: total, standing: standing,
-                start: DaemonAPI.ForgeStart(prompt: "#\(n): \(title)\n\nLead this epic with the `lead` skill "
-                                            + "(`.agents/skills/lead/SKILL.md`): \(url)", labels: ["#\(n)", "lead"]))
+                start: DaemonAPI.ForgeStart(prompt: "#\(n): \(title)\n\nLead this epic: \(url)", labels: ["#\(n)", "lead"]))
         }
         let all = [
             epic(120, "Checkout redesign", done: 0, total: 8, due: "2026-12-04"),

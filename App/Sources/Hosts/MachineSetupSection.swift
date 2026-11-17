@@ -51,7 +51,7 @@ struct MachineSetupSection: View {
                 .accessibilityLabel(Self.stateWords(step.state))
             VStack(alignment: .leading, spacing: 2) {
                 Text(MachineSetupWords.name(step))
-                Text(MachineSetupWords.line(step))
+                Text(MachineSetupWords.line(step, now: now))
                     .appText(.fine)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

@@ -66,6 +66,12 @@ type Config struct {
 	Version   string
 	// How this Mac's host's join stands (#113): its root's control-join.json.
 	HostJoinFile string
+	// BackstopEvery is how often the reads that back up a change made by hand or by another
+	// copy run: the records (R4, 15 s), the host tunnels (15 s) and the audit sinks (30 s),
+	// and how long a SCIM token read is trusted (10 s, a bound on a missed revoke); each its
+	// own default when 0. A test that counts the store work of requests sets it
+	// long, so no backstop read falls in its window (#6004).
+	BackstopEvery time.Duration
 	// Where the Linux hosts it hands out are (ServerFiles.folder).
 	ServerFolder string
 	// Where the public releases' files are kept for the Macs' self-update (#5786): ""
@@ -509,12 +515,12 @@ func (s *Service) Start(ctx context.Context) (int, error) {
 			s.startWeb()
 		}
 	}
-	go s.refreshEvery(15 * time.Second)
+	go s.refreshEvery(s.backstop(15 * time.Second))
 	go s.sweepEveryHour()
 	s.startPools()
 	go s.signIns.checkEvery(time.Hour, s.stop)
 	if s.tunnels != nil {
-		s.tunnels.Start(0)
+		s.tunnels.Start(s.cfg.BackstopEvery)
 	}
 	if s.mesh != nil && s.phase.now() != phaseReceiving {
 		s.startMesh()
@@ -660,6 +666,14 @@ func (s *Service) setReady(ready bool) {
 	s.mu.Lock()
 	s.ready = ready
 	s.mu.Unlock()
+}
+
+// backstop is how often a backstop read runs: Config.BackstopEvery when set, else d.
+func (s *Service) backstop(d time.Duration) time.Duration {
+	if s.cfg.BackstopEvery > 0 {
+		return s.cfg.BackstopEvery
+	}
+	return d
 }
 
 // refreshEvery is the backstop for a change made by hand or by another copy (R4): the

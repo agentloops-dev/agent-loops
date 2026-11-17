@@ -5286,6 +5286,27 @@
       }
     },
     {
+      "name": "pool/claim",
+      "x-capability": "pools/1",
+      "description": "New Machine's Start from a warm pool (#5365, #5366): checks the oldest ready machine of a pool of this provider and size, takes it in one write, binds it to the person and has the pool replace it. With no ready machine it makes a new one and says so in note: a claim never waits on a pool.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/WarmPoolClaim"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/WarmPoolClaimed"
+        }
+      }
+    },
+    {
       "name": "pool/delete",
       "x-capability": "pools/1",
       "description": "Deletes a warm pool and its ready machines (#5363). Machines already claimed are unaffected.",

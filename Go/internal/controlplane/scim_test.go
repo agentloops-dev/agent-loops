@@ -674,7 +674,10 @@ func scimRequestCosts(t *testing.T, users, groups int) (storeCost, []time.Durati
 	t.Helper()
 	st := &costStore{Store: store.NewMemory()}
 	prov := signintest.NewProvider(t, "RS256", "")
-	p, _, owner, _ := orgPlaneOn(t, st, prov, nil)
+	// No backstop read in the window (the records and the tunnels every 15 s, the audit sinks
+	// every 30 s, the SCIM token after 10 s): their calls are the clock's, not the requests',
+	// and a slower run would make more of them (#6004).
+	p, _, owner, _ := orgPlaneWith(t, st, prov, nil, func(c *Config) { c.BackstopEvery = time.Hour })
 	addOrg(t, owner, prov, wire.OrgProviderJoinScim)
 	token, base := scimOn(t, owner, wire.SCIMMatchExternalId)
 	// The time each takes is measured here, not the rate the provider keeps to.
