@@ -387,6 +387,7 @@ func New(cfg Config) (*Service, error) {
 	}
 	s.releases = newReleaseFiles(cfg)
 	s.installer = &hostinstall.Installer{Codes: s.codes, ServerFolder: cfg.ServerFolder,
+		Releases:      s.releases.linux,
 		ToolsetFolder: cfg.ToolsetFolder,
 		Log:           func(format string, args ...any) { s.log(fmt.Sprintf(format, args...)) },
 		Progress: func(name, step string) {

@@ -7,7 +7,8 @@
 # With --join there is no code: the host asks to join as the person, shows a short code,
 # and waits until the person approves it on a client (#994).
 #
-# Installs the host (agentsd, Go since #1136) for this user in ~/.agents-server. With a
+# Installs the host (agentsd, Go since #1136) for this user in ~/.agents-server, from the
+# control plane, or from the public releases when it has no host for this machine (#5787). With a
 # host code, `agentsd install --join` then sets the machine up and starts the host (#5765);
 # with --join, this script starts it. It connects out to the control plane; nothing needs
 # to reach this machine. Run it again with a new code to join again. The Swift host, and
@@ -62,10 +63,43 @@ mkdir -p "$d/bin" "$d/root"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+# A file of the host: from the control plane's server folder, or, when that has no host for
+# this machine, from the release unpacked in $from.
+from=
+get() {
+    if [ -n "$from" ]; then cp "$from/${1#/v1/servers/}" "$2" 2>/dev/null; else fetch "$@"; fi
+}
+# The public releases (#5787, epic #5785). GitHub's certificate is public: the system's own
+# roots check it. AGENTS_RELEASE_DOWNLOADS replaces them, for a test or a mirror.
+releases=${AGENTS_RELEASE_DOWNLOADS:-https://github.com/agentloops-dev/agents-releases/releases/download}
+public() {
+    if command -v curl >/dev/null 2>&1; then curl -fsSL -o "$2" "$1"; else wget -q -O "$2" "$1"; fi
+}
+
 echo "Fetching the host for $arch-linux from $url…"
-fetch "/v1/servers/agentsd-linux-$arch.sha256" "$tmp/sha256" 2>/dev/null ||
-    { echo "This control plane offers no host for $arch-linux." >&2; exit 1; }
-fetch "/v1/servers/agentsd-linux-$arch" "$tmp/agentsd"
+if ! fetch "/v1/servers/agentsd-linux-$arch.sha256" "$tmp/sha256" 2>/dev/null; then
+    # No host for this machine on the control plane: the same files of the release it
+    # names, from the public releases, checked against that release's SHA256SUMS.
+    version=
+    fetch /v1/releases/VERSION "$tmp/VERSION" 2>/dev/null && version=$(tr -d ' \n' < "$tmp/VERSION")
+    case "$version" in
+        [0-9]*.[0-9]*.[0-9]*) ;;
+        *) echo "This control plane offers no host for $arch-linux." >&2; exit 1 ;;
+    esac
+    tarball="agentsd-linux-$arch-$version.tar.gz"
+    echo "This control plane has no host for $arch-linux; fetching release $version from $releases…"
+    { public "$releases/v$version/SHA256SUMS" "$tmp/SHA256SUMS" && public "$releases/v$version/$tarball" "$tmp/$tarball"; } ||
+        { echo "The releases offer no host $version for $arch-linux." >&2; exit 1; }
+    want=$(awk -v f="$tarball" '$2 == f || $2 == "*" f { print $1 }' "$tmp/SHA256SUMS")
+    [ -n "$want" ] && echo "$want  $tmp/$tarball" | sha256sum -c - >/dev/null ||
+        { echo "The download did not match its checksum." >&2; exit 1; }
+    mkdir "$tmp/release"
+    tar -xzf "$tmp/$tarball" -C "$tmp/release"
+    from="$tmp/release"
+    get "/v1/servers/agentsd-linux-$arch.sha256" "$tmp/sha256" ||
+        { echo "Release $version has no host for $arch-linux." >&2; exit 1; }
+fi
+get "/v1/servers/agentsd-linux-$arch" "$tmp/agentsd"
 sha=$(tr -d ' \n' < "$tmp/sha256")
 echo "$sha  $tmp/agentsd" | sha256sum -c - >/dev/null || { echo "The download did not match its checksum." >&2; exit 1; }
 chmod 700 "$tmp/agentsd"
@@ -73,15 +107,15 @@ mv "$tmp/agentsd" "$d/bin/agentsd-$sha"
 ln -sfn "agentsd-$sha" "$d/bin/current"
 
 # The MCP servers Agents ships (#700), beside agentsd, which puts its own folder first on
-# their PATH. One the control plane does not offer is left out, with a word.
+# their PATH, from the same place as the host. One that is not there is left out, with a word.
 for server in github-mcp linear-mcp gitlab-mcp email-mcp jira-mcp slack-mcp googlechat-mcp whatsapp-mcp sentry-mcp betterstack-mcp forgejo-mcp bitbucket-mcp azuredevops-mcp azureboards-mcp; do
-    if fetch "/v1/servers/$server-linux-$arch.sha256" "$tmp/$server.sha256" 2>/dev/null &&
-        fetch "/v1/servers/$server-linux-$arch" "$tmp/$server" 2>/dev/null &&
+    if get "/v1/servers/$server-linux-$arch.sha256" "$tmp/$server.sha256" 2>/dev/null &&
+        get "/v1/servers/$server-linux-$arch" "$tmp/$server" 2>/dev/null &&
         echo "$(tr -d ' \n' < "$tmp/$server.sha256")  $tmp/$server" | sha256sum -c - >/dev/null 2>&1; then
         chmod 700 "$tmp/$server"
         mv "$tmp/$server" "$d/bin/$server"
     else
-        echo "This control plane offers no $server for $arch-linux; the host runs without it." >&2
+        echo "There is no $server for $arch-linux; the host runs without it." >&2
     fi
 done
 
