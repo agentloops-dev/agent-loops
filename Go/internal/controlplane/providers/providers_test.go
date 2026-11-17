@@ -109,7 +109,7 @@ func TestProvidersAreReadBackAfterARestart(t *testing.T) {
 	id := h.add()
 	again := NewProviders(Config{Store: h.store, Records: h.records, Router: h.router, Methods: h.methods,
 		Timing: quickTiming(),
-		Hooks: Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
+		Hooks:  Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
 	again.Start()
 	defer again.Stop()
 	if s := again.Summaries(); len(s) != 1 || string(s[0].ID) != id {
@@ -605,6 +605,51 @@ func TestAMadeMachineThatNeverJoinsIsSaidAndCanBeDeleted(t *testing.T) {
 	}
 }
 
+// Delete on a made machine's row takes the row away at once, also when the provider's
+// next list still has the workspace, and a second Delete is done, not "There is no
+// workspace" (#6079).
+func TestADeletedWorkspaceLeavesItsRowAtOnceAndASecondDeleteIsDone(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	if _, err := h.create("build-4", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.provider.mu.Lock()
+	h.provider.slowDelete = true
+	h.provider.mu.Unlock()
+	listed := func() bool {
+		for _, s := range h.must(MethodProvidersList, nil).(map[string]any)["providers"].([]ProviderSummary) {
+			for _, w := range s.Workspaces {
+				if w.ID == "ws-build-4" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	// The Refresh just after the Delete gets the list that still has it.
+	h.must(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "ws-build-4"})
+	if listed() {
+		t.Fatal("the deleted workspace's row stayed")
+	}
+	// Delete again, as a person does when the row stays: the provider says it has none.
+	if _, err := h.call(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "ws-build-4"}); err != nil {
+		t.Fatalf("a second Delete failed: %v", err)
+	}
+	h.providers.Refresh(id)
+	if listed() {
+		t.Error("the deleted workspace came back")
+	}
+	// A Delete that fails while the provider still lists the workspace still fails.
+	h.provider.mu.Lock()
+	h.provider.failDelete = "The droplet is locked."
+	h.provider.mu.Unlock()
+	_, err := h.call(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "scratch-1"})
+	if err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("%v", err)
+	}
+}
+
 // A workspace a machine is linked to is not deleted by its row: Delete on the machine
 // does that, with the machine's backup first (#4610).
 func TestDeleteWorkspaceRefusesOneAMachineIsLinkedTo(t *testing.T) {
@@ -837,7 +882,7 @@ func TestAFailedMakeIsThereAfterARestart(t *testing.T) {
 	}
 	again := NewProviders(Config{Store: h.store, Records: h.records, Router: h.router, Methods: h.methods,
 		Timing: quickTiming(),
-		Hooks: Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
+		Hooks:  Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
 	again.Start()
 	defer again.Stop()
 	var names []string
