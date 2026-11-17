@@ -335,10 +335,11 @@ struct WorkTimelinePane: View {
                     WorkErrorStrip(lines: lines, read: state.stale || state.fromDevice ? state.plotRead : nil) { state.asked += 1 }
                         .padding(.horizontal, 16).padding(.vertical, 8)
                 }
-                // Once a minute; while the first read runs, often, so the grey blocks shimmer.
-                let loading = state.timeline == nil
-                TimelineView(.animation(minimumInterval: loading && !reduceMotion ? 1.0 / 20 : 60)) { context in
-                    plot(timeline, now: context.date, loading: loading)
+                // Once a minute; while a read runs, often, so the grey blocks shimmer when they draw.
+                let drawn = state.timeline != nil
+                let busy = !drawn || state.reading
+                TimelineView(.animation(minimumInterval: busy && !reduceMotion ? 1.0 / 20 : 60)) { context in
+                    plot(timeline, now: context.date, drawn: drawn, reading: state.reading)
                 }
                 .opacity(state.stale ? 0.5 : 1)
             }
@@ -349,7 +350,7 @@ struct WorkTimelinePane: View {
         (state.problem.map { $0.components(separatedBy: "\n") } ?? []) + (timeline.errors ?? [])
     }
 
-    private func plot(_ timeline: DaemonAPI.WorkTimeline, now: Date, loading: Bool) -> some View {
+    private func plot(_ timeline: DaemonAPI.WorkTimeline, now: Date, drawn: Bool, reading: Bool) -> some View {
         GeometryReader { geo in
             let visible = max(geo.size.width, 1)
             let content = state.content
@@ -360,6 +361,10 @@ struct WorkTimelinePane: View {
             // scrolls (#5506).
             let lines = WorkTimeline.layout(
                 WorkTimeline.overlapping(WorkTimeline.lines(timeline, now: now, working: working), WorkTimeline.packSpan(state.anchor)))
+            // S10 until a read draws, and while one runs with no epic in the window; S11 only after every read (#5925).
+            let shows = WorkTimeline.shows(drawn: drawn, reading: reading,
+                                           epics: WorkTimeline.overlapping(lines, state.range.window(now: state.anchor)).count)
+            let loading = shows == .loading
             let rows = max(WorkTimeline.rowCount(lines), 3)
             let height = max(WorkTimeline.rowTop(rows) + WorkTimeline.rowGap, geo.size.height - Self.axisHeight - Self.footHeight)
             let drawing = Drawing(lines: lines, axis: axis, now: now, height: height, offset: offset, visible: visible,
@@ -402,7 +407,7 @@ struct WorkTimelinePane: View {
             })
             .overlay {
                 // S11: no line in the window itself; the margin on each side is only for the scroll.
-                if !loading, WorkTimeline.overlapping(lines, state.range.window(now: state.anchor)).isEmpty {
+                if shows == .empty {
                     emptyCard(timeline, now: now)
                 }
             }
