@@ -230,7 +230,9 @@ go_kb() { kb_of "$CACHE/go"; }
 
 # go.sh's TMPDIR: each folder in it that nothing changed in for AGENTS_GO_TMP_HOURS (6)
 # hours. A running go test or build writes in its own folders all the time, so a folder
-# with no change for hours is one that a killed run left (#5722).
+# with no change for hours is one that a killed run left (#5722). Since #5726 each go.sh run
+# has a folder of its own there, removed when it ends and by the next run after a SIGKILL:
+# this is the second line, for what those leave.
 go_tmp() {
 	local tmp="$CACHE/go/tmp" mins d k n=0 freed=0
 	[ -d "$tmp" ] || return 0

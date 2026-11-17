@@ -80,9 +80,9 @@ changes (#5631): an `App/` or `Host/` change builds `AgentsHost` (`mac:build`, A
 the one Mac app), not the Remote, so no iOS simulator build; a `Remote/` change builds only
 the Remote (`remote:build`); a `Shared/`, `Packages/` or `project.yml` change builds both; a
 `Packages/AgentsKit` change runs its test targets, and Nx skips each one whose inputs have a
-pass in its cache. After you push, `scripts/checks.sh attest` runs the test, vet and lint
-tasks and the app builds again with no cache and posts the attestation that lets CI skip them (#5674, #5710;
-AGENTS.md, "Verifying a lane's work"). A scratch app is no part of it: close it first.
+pass in its cache. Before you push, `scripts/checks.sh attest run` runs the test, vet and lint
+tasks and the app builds again with no cache, and just after the push `scripts/checks.sh attest post` posts the
+attestation that lets CI skip them (#5674, #5710, #6059; AGENTS.md, "Verifying a lane's work"). A scratch app is no part of it: close it first.
 
 Then it:
 1. starts `agents-control serve --home $ROOT/control` on a free loopback port, with

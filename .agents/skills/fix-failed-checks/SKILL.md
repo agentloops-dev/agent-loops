@@ -1,6 +1,6 @@
 ---
 name: fix-failed-checks
-description: Find why a pull request's checks or a merge request's pipeline failed, fix it on its branch and push, or quarantine a flaky test the change does not touch on a pull request of its own (never a rerun, #5754). Use when the Fix failed checks workflow starts on checks.failed, when a lane's pr.blocked names required_check_failed, or when someone asks you to fix failed checks.
+description: Find why a pull request's checks or a merge request's pipeline failed, fix it on its branch and push, or quarantine a flaky test the change does not touch in the same branch (never a rerun, #5754). Use when the Fix failed checks workflow starts on checks.failed, when a lane's pr.blocked names required_check_failed, or when someone asks you to fix failed checks.
 ---
 
 # Fix failed checks
@@ -36,11 +36,13 @@ event's `pr` and your own branch.
 2. **Decide.** Never run the failed jobs again to get to green (Alex, 2026-11-15,
    #5754): a rerun that passes hides a flake. When the default branch fails the same
    test, do step 2a. When a test failed that the change does not touch, and the failure
-   is a time limit or a wait (a flake): file or update its `bug`, quarantine it on a PR
-   of its own as the `fix-main` skill's step 3 says (the bug stays open), start its
-   root-cause lane at once as that step's part 7 says (#6037), comment on this PR with
-   the quarantine PR's link, and update this branch from the default branch once it
-   lands (2a, part 4). Any other failure is the change's: go to step 3. A runner or
+   is a time limit or a wait (a flake), quarantine it in this branch (Alex, 2026-11-17,
+   #6063): file or update its `bug` (titled by what fails, with the probable cause from
+   the log), add `flaky.UnderLoad(t, "#<bug>")` (Go), `.flakyUnderLoad` (Swift) or
+   `{ skip: flakyUnderLoad("#<bug>") }` (web) to that test, say so in the PR body, and
+   push (step 5). Do not start a session for it, and do not wait for one. The bug stays
+   open; the epic's lead or the bug lane's lead (#4207) starts its root-cause lane, not
+   this lane. Any other failure is the change's: go to step 3. A runner or
    network problem with no test failed: file or update a `bug` for it, and push the next
    commit, or update the branch, when there is one.
 
@@ -77,13 +79,14 @@ event's `pr` and your own branch.
    newest commit.
 4. **Fix it.** Change only what makes the check pass. Never turn off, skip or weaken a
    check or a test to make it pass; the one exception is the quarantine of a flaky test
-   in step 2, on a PR of its own, with its bug open. Run the check that failed, on your computer, when you
+   in step 2, with its bug open. Run the check that failed, on your computer, when you
    can.
 5. **Push.** Commit with a message that says which check you fixed, and push to the same
-   branch. Never force-push. Before the push, take the lease `ci`, push, and release it (AGENTS.md, #5712;
+   branch. Never force-push. Before the push, run `scripts/checks.sh attest run` under the `build`
+   lease (#6059), then take the lease `ci`, push, and release it (AGENTS.md, #5712;
    the lease waits for an empty CI queue, #5709). On a conflict with `main`, `git merge origin/main` and push
    without running the tests again.
-   After the push, run `scripts/checks.sh attest` under the `build` lease (AGENTS.md,
+   Just after the push, run `scripts/checks.sh attest post` (AGENTS.md,
    "Verifying a lane's work", #5674): CI skips each task it covers (#5710). CI on `main`
    runs 10% of attested tasks again, and an attestation that it finds false revokes
    every attestation of the lane (#5723). A task that failed in this
