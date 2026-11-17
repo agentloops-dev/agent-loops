@@ -82,8 +82,8 @@ func newLinuxRig(t *testing.T, tarball, sumOf []byte) (r *linuxRig, fromControl,
 	}
 	old := newHost("0.11.0")
 	r = &linuxRig{bin: bin, current: filepath.Join(bin, "current"), oldName: "agentsd-" + linuxSum(old)}
-	os.WriteFile(filepath.Join(bin, r.oldName), old, 0o700)
-	os.WriteFile(filepath.Join(bin, "github-mcp"), []byte("old github"), 0o700)
+	must(t, os.WriteFile(filepath.Join(bin, r.oldName), old, 0o700)) //nolint:gosec // G306: a program, which runs
+	must(t, os.WriteFile(filepath.Join(bin, "github-mcp"), []byte("old github"), 0o700)) //nolint:gosec // G306: a program, which runs
 	if err := os.Symlink(r.oldName, r.current); err != nil {
 		t.Fatal(err)
 	}
@@ -99,9 +99,9 @@ func newLinuxRig(t *testing.T, tarball, sumOf []byte) (r *linuxRig, fromControl,
 		switch {
 		case ok && rest == "SHA256SUMS":
 			hits.Add(1)
-			w.Write([]byte(linuxSum(sumOf) + "  Agent-Loops-0.12.0.zip\n" + linuxSum(sumOf) + "  " + name + "\n"))
+			_, _ = w.Write([]byte(linuxSum(sumOf) + "  Agent-Loops-0.12.0.zip\n" + linuxSum(sumOf) + "  " + name + "\n"))
 		case ok && rest == name:
-			w.Write(tarball)
+			_, _ = w.Write(tarball)
 		default:
 			http.NotFound(w, req)
 		}
@@ -260,17 +260,24 @@ func TestRestartsItselfUnderASupervisor(t *testing.T) {
 	if restartsItself(root) {
 		t.Fatal("no service and no supervisor, but it says it restarts")
 	}
-	os.WriteFile(filepath.Join(root, "supervise.lock"), []byte("1"), 0o600)
+	must(t, os.WriteFile(filepath.Join(root, "supervise.lock"), []byte("1"), 0o600))
 	if os.Getppid() != 1 && restartsItself(root) {
 		t.Fatal("another process's supervisor was taken for this one's")
 	}
-	os.WriteFile(filepath.Join(root, "supervise.lock"), []byte(strconv.Itoa(os.Getppid())), 0o600)
+	must(t, os.WriteFile(filepath.Join(root, "supervise.lock"), []byte(strconv.Itoa(os.Getppid())), 0o600))
 	if !restartsItself(root) {
 		t.Fatal("the supervisor was not seen")
 	}
-	os.Remove(filepath.Join(root, "supervise.lock"))
+	_ = os.Remove(filepath.Join(root, "supervise.lock"))
 	t.Setenv("INVOCATION_ID", "abc")
 	if !restartsItself(root) {
 		t.Fatal("the systemd service was not seen")
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

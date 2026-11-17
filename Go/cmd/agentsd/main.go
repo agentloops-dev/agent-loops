@@ -170,7 +170,7 @@ func main() {
 	if d.RestartWanted() {
 		// A self-update put a new copy in bin/current (#5788): the service or the
 		// supervisor starts it.
-		lock.Close()
+		_ = lock.Close()
 		log.Printf("restarting to run the update")
 		os.Exit(agentsd.ExitRestart)
 	}

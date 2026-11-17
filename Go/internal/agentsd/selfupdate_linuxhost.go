@@ -37,7 +37,7 @@ func restartsItself(root string) bool {
 	if os.Getenv("INVOCATION_ID") != "" {
 		return true
 	}
-	b, err := os.ReadFile(filepath.Join(root, "supervise.lock"))
+	b, err := os.ReadFile(filepath.Join(root, "supervise.lock")) //nolint:gosec // G703: the host's own root
 	if err != nil {
 		return false
 	}
@@ -56,14 +56,14 @@ func openLinuxRelease(current, arch, version, work, file string) (string, error)
 	if err := linuxrelease.Unpack(file, out, arch, selfUpdateLimit); err != nil {
 		return "", fmt.Errorf("Agent Loops could not unpack release %s: %w", version, err) //nolint:staticcheck // ST1005: the person reads it as the update's message
 	}
-	os.Remove(file)
+	_ = os.Remove(file)
 	host := filepath.Join(out, "agentsd-linux-"+arch)
 	sha := linuxrelease.FileSum(host)
 	if sha == "" {
 		return "", fmt.Errorf("Release %s holds no host for %s-linux.", version, arch) //nolint:staticcheck // ST1005: the person reads it as the update's message
 	}
 	name := "agentsd-" + sha
-	if err := os.Chmod(host, 0o700); err != nil {
+	if err := os.Chmod(host, 0o700); err != nil { //nolint:gosec // G302: a program, which only this user runs
 		return "", err
 	}
 	if err := os.Rename(host, filepath.Join(filepath.Dir(current), name)); err != nil {
@@ -87,7 +87,7 @@ func placeLinuxServers(current, arch, work string) {
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-		if err := os.Chmod(src, 0o700); err == nil {
+		if err := os.Chmod(src, 0o700); err == nil { //nolint:gosec // G302: a program, which only this user runs
 			err = os.Rename(src, filepath.Join(filepath.Dir(current), program))
 			if err != nil {
 				log.Printf("self-update: %s did not go in place: %v", program, err)
@@ -130,7 +130,7 @@ func pruneOldHosts(current string) {
 	}
 	for _, e := range entries {
 		if hostBinary.MatchString(e.Name()) && e.Name() != filepath.Base(target) {
-			os.Remove(filepath.Join(filepath.Dir(current), e.Name()))
+			_ = os.Remove(filepath.Join(filepath.Dir(current), e.Name())) //nolint:gosec // G703: a name read from our own bin folder
 		}
 	}
 }

@@ -46,7 +46,7 @@ func (d *Daemon) registerSelfUpdate() {
 			case <-d.ctx.Done():
 			case <-time.After(selfUpdateHealthy):
 				for _, work := range keep {
-					os.RemoveAll(work)
+					_ = os.RemoveAll(work)
 				}
 				pruneOldHosts(current)
 			}
@@ -68,7 +68,7 @@ func (d *Daemon) registerSelfUpdate() {
 		if d.Quit == nil {
 			return fmt.Errorf("this host cannot stop itself")
 		}
-		d.selfUpdateState.restart.Store(true)
+		d.restart.Store(true)
 		d.Quit()
 		return nil
 	}

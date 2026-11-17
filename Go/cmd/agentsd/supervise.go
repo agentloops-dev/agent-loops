@@ -83,11 +83,11 @@ func supervise(args []string) {
 			// A self-update is in place: the supervisor starts again as the new copy too,
 			// which starts the host.
 			log.Printf("supervise: agentsd stopped to run its update; the supervisor starts again from %s", current)
-			os.Remove(lock)
+			_ = os.Remove(lock)
 			signal.Stop(sigs)
 			err := syscall.Exec(current, append([]string{current, "supervise"}, args...), os.Environ()) //nolint:gosec // G204: this host's own bin/current
 			log.Printf("supervise: could not start again from %s: %v", current, err)
-			os.WriteFile(lock, []byte(fmt.Sprint(os.Getpid())), 0o600)
+			_ = os.WriteFile(lock, []byte(fmt.Sprint(os.Getpid())), 0o600)
 			signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 			what = "a restart for its update"
 		} else if errors.As(err, &ee) {

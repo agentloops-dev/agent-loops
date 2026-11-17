@@ -160,7 +160,7 @@ type selfUpdateState struct {
 const ExitRestart = 75
 
 // RestartWanted is whether the host stopped to run the copy a self-update put in place.
-func (d *Daemon) RestartWanted() bool { return d.selfUpdateState.restart.Load() }
+func (d *Daemon) RestartWanted() bool { return d.restart.Load() }
 
 type selfUpdateSettings struct {
 	AutoUpdate bool   `json:"autoUpdate"`
@@ -712,7 +712,7 @@ func (d *Daemon) toldRelease(params json.RawMessage) {
 		log.Printf("self-update: %s: %v", wire.NotifyMachineRelease.Name, err)
 		return
 	}
-	if u := d.selfUpdateState.updater; u != nil {
+	if u := d.updater; u != nil {
 		u.Named(r.Version)
 	}
 }
@@ -734,7 +734,7 @@ func (d *Daemon) serveSelfUpdate(u *selfUpdater) {
 	u.ctx = d.ctx
 	u.turns = d.turnsRunning
 	u.tell = func(s wire.SelfUpdate) { Broadcast(d, wire.NotifySelfUpdateChanged, s) }
-	d.selfUpdateState.updater = u
+	d.updater = u
 	On(d, wire.CallSelfUpdateStatus, func(context.Context, *Client, wire.Empty) (wire.SelfUpdate, error) {
 		return u.Status(), nil
 	})
