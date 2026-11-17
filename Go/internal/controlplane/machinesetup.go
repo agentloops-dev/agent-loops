@@ -397,9 +397,23 @@ func (s *Service) setupStep(ctx context.Context, host string, report wire.Machin
 	}
 	if finished {
 		s.noteSetupTime(ctx, report.Step, took)
+		if report.Step == wire.MachineSetupStepIDCompare && s.madeAndCompared(ctx, host) {
+			s.lockJoins.compared(ctx, host)
+		}
 	}
 	s.setupChanged(ctx, host)
 	return nil
+}
+
+// madeAndCompared says whether host is a machine the control plane made whose compare step
+// is done (#5776): it showed the digits made from its join token, so it is the one that was
+// made (#5359). A signer adds it to the lock with no person to compare digits again.
+func (s *Service) madeAndCompared(ctx context.Context, host string) bool {
+	stored, _, err := s.readMachineSetup(ctx, host)
+	if err != nil || stored == nil || stored.Expect == "" {
+		return false
+	}
+	return stored.Steps[stepIndex(wire.MachineSetupStepIDCompare)].State == wire.MachineSetupStateDone
 }
 
 // retrySetup is machines/retrySetup.

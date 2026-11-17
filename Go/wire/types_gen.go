@@ -8186,7 +8186,7 @@ type LockJoinNonce struct {
 	Nonce Data `json:"nonce"`
 }
 
-// lock/joinRequests and control/lockJoinRequested (#3490): a client asking to join its person's lock, to every client of that person, and sent again in place as it goes on. client is the asking client's id, so it knows its own. nonce is the signer's, once one sent it (lock/joinAnswer), and answeredBy is that signer's client id; reveal is the asking client's nonce, once it showed it. Each screen makes the six digits from key, reveal and nonce. machine is set when a machine asks (#3491, D3): client is then the machine's id, kind is unknown, and a signer approves it with an addMachine whose key and sealing key are both key, the machine's own.
+// lock/joinRequests and control/lockJoinRequested (#3490): a client asking to join its person's lock, to every client of that person, and sent again in place as it goes on. client is the asking client's id, so it knows its own. nonce is the signer's, once one sent it (lock/joinAnswer), and answeredBy is that signer's client id; reveal is the asking client's nonce, once it showed it. Each screen makes the six digits from key, reveal and nonce. machine is set when a machine asks (#3491, D3): client is then the machine's id, kind is unknown, and a signer approves it with an addMachine whose key and sealing key are both key, the machine's own. compared is set on a machine's request when the control plane made that machine and its set-up's compare step showed the digits the control plane made from its join token (#5359, #5776): a signer then sends its nonce and, once the machine's reveal checks against its commitment, approves it by itself, with no card for the person. The control plane still signs nothing.
 type LockJoinRequest struct {
 	Request string `json:"request"`
 
@@ -8209,6 +8209,8 @@ type LockJoinRequest struct {
 	AnsweredBy *string `json:"answeredBy,omitzero"`
 
 	Reveal Data `json:"reveal,omitzero"`
+
+	Compared *bool `json:"compared,omitzero"`
 }
 
 // lock/join's answer (#3490): the request, and when it ends unanswered.

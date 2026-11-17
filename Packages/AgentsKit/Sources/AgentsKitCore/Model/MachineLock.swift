@@ -182,9 +182,13 @@ public extension DaemonAPI {
         public var answeredBy: String?
         /// The asking client's nonce, once it showed it.
         public var reveal: Data?
+        /// A machine the control plane made whose set-up showed the digits made from its join
+        /// token (#5359, #5776): a signer approves it with no card.
+        public var compared: Bool?
 
         public init(request: String, client: String, machine: String? = nil, name: String, kind: ClientRecord.Kind, key: Data,
-                    commitment: Data, expires: Date, nonce: Data? = nil, answeredBy: String? = nil, reveal: Data? = nil) {
+                    commitment: Data, expires: Date, nonce: Data? = nil, answeredBy: String? = nil, reveal: Data? = nil,
+                    compared: Bool? = nil) {
             self.request = request
             self.client = client
             self.machine = machine
@@ -196,6 +200,7 @@ public extension DaemonAPI {
             self.nonce = nonce
             self.answeredBy = answeredBy
             self.reveal = reveal
+            self.compared = compared
         }
 
         public var id: String { request }
