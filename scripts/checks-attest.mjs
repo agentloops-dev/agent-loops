@@ -35,7 +35,7 @@
 //   of the tree before.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -249,7 +249,7 @@ async function nxResults(planned, since) {
 }
 
 function ledgerPath() {
-  return join(root, sh("git", ["rev-parse", "--git-path", "agents-attest/failed"]));
+  return resolve(root, sh("git", ["rev-parse", "--git-path", "agents-attest/failed"]));
 }
 
 function readLedger(path) {
@@ -263,7 +263,7 @@ function platform() {
 
 /** Where the run step keeps its result for a head commit, for the post step to read. */
 function keptPath(headSha) {
-  return join(root, sh("git", ["rev-parse", "--git-path", `agents-attest/runs/${headSha}.json`]));
+  return resolve(root, sh("git", ["rev-parse", "--git-path", `agents-attest/runs/${headSha}.json`]));
 }
 
 function hashesAt(base, env) {
