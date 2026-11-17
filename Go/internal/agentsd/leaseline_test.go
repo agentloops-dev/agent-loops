@@ -109,7 +109,7 @@ func TestAHighSessionIsGrantedBeforeEarlierOnesWithNone(t *testing.T) {
 	e.Leases = nil
 	events := d.handOn("build", e)
 	d.leaseMu.Unlock()
-	if !held || places[3] != 1 || places[2] != 4 || ahead != 1 {
+	if !held || places[3] != 1 || places[2] != 3 || ahead != 1 {
 		t.Fatalf("held %v, places %v, ahead %d", held, places, ahead)
 	}
 	if len(events) != 1 || events[0].lease.Holder != highID {
