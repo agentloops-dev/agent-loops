@@ -522,7 +522,7 @@ func TestVoiceModeTextGoesBeforeTheWords(t *testing.T) {
 	id := startAgent(t, c, 1, t.TempDir(), "hi")
 	c.until(t, "the first end", ended(id, wire.AgentStateFinished))
 	c.callHearing(t, 2, "agents/prompt", map[string]any{"agentID": id, "text": "say your brief", "from": "person", "voice": true},
-		"the second end", ranThenEnded(id))
+		"the second end", ranThenEnded(t, id))
 	if said := agentMessages(d, id); strings.Count(said, "Before: ") != 1 || !strings.HasSuffix(said, "Before: "+voicePreface) {
 		t.Fatalf("said %q", said)
 	}
@@ -530,7 +530,7 @@ func TestVoiceModeTextGoesBeforeTheWords(t *testing.T) {
 		t.Fatalf("the person's words %q", u)
 	}
 	c.callHearing(t, 3, "agents/prompt", map[string]any{"agentID": id, "text": "say your brief", "from": "person"},
-		"the third end", ranThenEnded(id))
+		"the third end", ranThenEnded(t, id))
 	if said := agentMessages(d, id); strings.Count(said, "Before: ") != 2 || !strings.HasSuffix(said, "Before: ") {
 		t.Fatalf("said %q", said)
 	}
@@ -538,14 +538,16 @@ func TestVoiceModeTextGoesBeforeTheWords(t *testing.T) {
 
 // ranThenEnded hears the agent run and then finish: a "finished" agent/changed that
 // comes before it runs is the turn before's, not this one's.
-func ranThenEnded(id wire.UUID) func(string, json.RawMessage) bool {
+func ranThenEnded(t *testing.T, id wire.UUID) func(string, json.RawMessage) bool {
 	ran := false
 	return func(method string, p json.RawMessage) bool {
 		if method != "agent/changed" {
 			return false
 		}
 		var a wire.Agent
-		json.Unmarshal(p, &a)
+		if err := json.Unmarshal(p, &a); err != nil {
+			t.Fatalf("agent/changed %s: %v", p, err)
+		}
 		if a.ID != id {
 			return false
 		}
