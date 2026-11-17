@@ -70,6 +70,15 @@ export const promptingMethods = {
       ...(onAuto ? { auto: true } : {}) }, host);
   },
   /**
+   * Continue in a new session (#5919): Auto, in the same worktree or folder, then this chat is
+   * archived. Answers the new id, or null with `problem` saying why. A failed start archives nothing.
+   */
+  async continueInNewSession(this: Store, host: string, agentID: string): Promise<string | null> {
+    return this.act("agents/continueInNewSession", {
+      agentID: agentID as UUID, requestID: crypto.randomUUID().toUpperCase() as UUID,
+    }, host);
+  },
+  /**
    * Branch (#342): a new session that carries this one's history so far, the original left alone.
    * Answers its id, or null with `problem` saying why.
    */

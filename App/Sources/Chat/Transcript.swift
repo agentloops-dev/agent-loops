@@ -39,6 +39,8 @@ struct Transcript: View {
                        focusedEntry: popped == nil ? model.focusedEntry : nil,
                        focusedIndex: popped == nil ? model.focusedIndex : nil,
                        clearFocus: { if popped == nil { model.clearFocus() } },
+                       allowanceResetsAt: model.runtimeAllowances?.resetsAt(agent.runtimeID),
+                       allowanceCanStart: model.host(agent.host, has: Capability.chatContinueInNewSession1),
                        onFollowing: { page.isFollowingEnd = $0 })
             // Voice mode speaks a turn's reply when it ends (#2322).
             .voiceModeObserves(agent, items: page.transcriptItems, question: model.work.elicitation(for: agent.id),

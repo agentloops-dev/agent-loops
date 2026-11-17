@@ -12,6 +12,7 @@ var CallAgentsBranchFrom = Method[BranchFromRequest, UUID]{"agents/branchFrom"}
 var CallAgentsCancelContinue = Method[AgentRequest, Agent]{"agents/cancelContinue"}
 var CallAgentsContinueInFolder = Method[ContinueInFolderRequest, UUID]{"agents/continueInFolder"}
 var CallAgentsContinueInNew = Method[ContinueInNewRequest, UUID]{"agents/continueInNew"}
+var CallAgentsContinueInNewSession = Method[ContinueInNewSessionRequest, UUID]{"agents/continueInNewSession"}
 var CallAgentsContinueWhenBack = Method[AgentRequest, Agent]{"agents/continueWhenBack"}
 var CallAgentsDelete = Method[AgentRequest, Empty]{"agents/delete"}
 var CallAgentsDiscardDraft = Method[DiscardDraftRequest, Empty]{"agents/discardDraft"}

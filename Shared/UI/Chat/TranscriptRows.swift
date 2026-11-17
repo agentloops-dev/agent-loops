@@ -68,11 +68,22 @@ struct TurnView: View, Equatable {
     var row: TurnRows.Row? = nil
     /// Whether this is the turn's last row, which keeps the room after the turn.
     var isLastRow = true
+    /// The "Its allowance ran out" line in this turn, when the buttons sit under it (#5919).
+    /// Nil on every other turn, so a change of it draws only this one again.
+    var allowanceLine: UUID? = nil
+    /// When the allowance resets. The button reads the time from `ChatActions`; this is here
+    /// so the turn is drawn again when the time becomes known. `Equatable` would otherwise
+    /// keep **Continue when it is back**.
+    var allowanceAt: Date? = nil
+    /// Whether **Continue in new session** is offered. A host that gains the capability
+    /// draws the button: `Equatable` would otherwise keep the first set of buttons.
+    var allowanceCanStart = false
 
     nonisolated static func == (a: TurnView, b: TurnView) -> Bool {
         a.turn == b.turn && a.detail == b.detail && a.focusedRun == b.focusedRun && a.fetched == b.fetched
             && a.fetchFailed == b.fetchFailed && a.hasEarlier == b.hasEarlier && a.isLive == b.isLive
-            && a.row == b.row && a.isLastRow == b.isLastRow
+            && a.row == b.row && a.isLastRow == b.isLastRow && a.allowanceLine == b.allowanceLine
+            && a.allowanceAt == b.allowanceAt && a.allowanceCanStart == b.allowanceCanStart
     }
 
     /// The outcome the turn draws: none while the steps it shows before it are on their way.
@@ -155,6 +166,9 @@ struct TurnView: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The buttons under this turn's "Its allowance ran out" line (#5919). A turn that
+        // does not hold that line sets nil, so the line in another turn draws none.
+        .environment(\.allowanceOutLine, allowanceLine)
         // A row that goes on with a reply the row before it started: the room between its blocks.
         .padding(.top, pieces.first.map(Self.continues) == true ? 10 : 0)
         .padding(.bottom, isLastRow ? 14 : 0)
@@ -323,6 +337,7 @@ private struct StepRow: View {
 
 private struct EntryRow: View {
     @Environment(\.chatActions) private var actions
+    @Environment(\.allowanceOutLine) private var allowanceOutLine
     let entry: TranscriptEntry
 
     var body: some View {
@@ -456,7 +471,16 @@ private struct EntryRow: View {
         case .stateChanged(let state, let reason):
             // `.finished` is dropped by `TranscriptEntry.display`: the reply ending is
             // what says the turn did. The endings that mean something all reach here.
-            StateLine(state: state, reason: reason)
+            // The two buttons sit under the last "Its allowance ran out" line, and only
+            // while the chat offers them (#5919). A stored line of an older turn does not.
+            if let offer = actions.allowanceOut, entry.id == allowanceOutLine {
+                VStack(alignment: .leading, spacing: 8) {
+                    StateLine(state: state, reason: reason)
+                    AllowanceOutButtons(offer: offer)
+                }
+            } else {
+                StateLine(state: state, reason: reason)
+            }
 
         case .workReported(let report):
             WorkReportLine(report: report)
@@ -998,6 +1022,47 @@ struct QuietLine: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 14)
             }
+        }
+    }
+}
+
+/// **Continue at** and **Continue in new session**, under the allowance line (#5919).
+/// The time is read again each minute. Both stay disabled while a press is in flight.
+private struct AllowanceOutButtons: View {
+    let offer: AllowanceOutActions
+    @State private var busy = false
+
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { buttons(now: context.date) }
+                VStack(alignment: .leading, spacing: 8) { buttons(now: context.date) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func buttons(now: Date) -> some View {
+        Button(ContinueWhenBackWords.button(resetsAt: offer.resetsAt, now: now)) {
+            run(offer.wait)
+        }
+        .buttonStyle(.paperProminent)
+        .help(ContinueWhenBackWords.help)
+        .disabled(busy)
+        if let startNew = offer.startNew {
+            Button(ContinueWhenBackWords.inNewSession) { run(startNew) }
+                .buttonStyle(.paper)
+                .help(ContinueWhenBackWords.inNewSessionHelp)
+                .disabled(busy)
+        }
+    }
+
+    private func run(_ action: @escaping @MainActor () async -> Void) {
+        guard !busy else { return }
+        busy = true
+        Task {
+            await action()
+            busy = false
         }
     }
 }

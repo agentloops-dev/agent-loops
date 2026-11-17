@@ -21,6 +21,19 @@ test("an allowance failure offers Continue, at the reset time when it is known",
   assert.equal(w.offersContinue({ ...allowanceFailure, endedReason: "cancelled" }), false);
   assert.match(w.continueButton(new Date(2026, 9, 21, 7, 0), now), /^Continue at /);
   assert.equal(w.continueButton(null, now), "Continue when it is back");
+  assert.equal(w.continueInNewSession, "Continue in new session");
+});
+
+test("the buttons sit under the last allowance line, including a stored turn", () => {
+  const stopped = (id, reason) => ({ kind: "entry", id, entry: { id, at: 0, kind: { stateChanged: { _0: "stopped", reason } } } });
+  const older = { id: "t1", items: [stopped("e1", "allowanceSpent")] };
+  const stored = { id: "t2", items: [], storedOutcome: [stopped("e2", "allowanceSpent")] };
+  const other = { id: "t3", items: [stopped("e3", "cancelled")] };
+  assert.equal(w.allowanceOutLine([older, stored, other]), "e2");
+  assert.equal(w.turnHoldsAllowance(stored, "e2"), true);
+  assert.equal(w.turnHoldsAllowance(older, "e2"), false);
+  assert.equal(w.allowanceOutLine([other]), null);
+  assert.equal(w.allowanceOutLine([]), null);
 });
 
 test("a waiting chat says when it continues, on its row too, under Waiting", () => {

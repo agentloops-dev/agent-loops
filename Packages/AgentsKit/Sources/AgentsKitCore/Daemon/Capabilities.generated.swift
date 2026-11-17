@@ -34,6 +34,7 @@ public enum Capability {
     public static let changesUndo1 = "changes.undo/1"
     public static let changes1 = "changes/1"
     public static let chatBranch1 = "chat.branch/1"
+    public static let chatContinueInNewSession1 = "chat.continue-in-new-session/1"
     public static let chatContinueWhenBack1 = "chat.continue-when-back/1"
     public static let clientPermissions1 = "client-permissions/1"
     public static let clientTeam1 = "client.team/1"
@@ -260,6 +261,7 @@ public enum Capability {
         "agents/cancelContinue": "chat.continue-when-back/1",
         "agents/continueInFolder": "agents/1",
         "agents/continueInNew": "host.org-routes/1",
+        "agents/continueInNewSession": "chat.continue-in-new-session/1",
         "agents/continueWhenBack": "chat.continue-when-back/1",
         "agents/delete": "agents/1",
         "agents/discardDraft": "agents/1",

@@ -48,6 +48,13 @@ struct ChatTranscript: View {
     var clearFocus: () -> Void = {}
     /// How tall the visible part is. The phone sizes its first page to it.
     var onHeight: ((CGFloat) -> Void)? = nil
+    /// When this runtime's allowance resets, for **Continue at** under the line (#5919).
+    /// Nil until the client knows. Passed only into the turn that holds the line.
+    var allowanceResetsAt: Date? = nil
+    /// Whether the host can start the new session (`chat.continue-in-new-session/1`).
+    /// Passed only into the turn that holds the line, so that turn is drawn again when
+    /// the host gains it.
+    var allowanceCanStart = false
     /// Told whether the pane is following the end. The model lets the oldest entries
     /// go only while it is, so nothing leaves from above somebody reading back.
     var onFollowing: (Bool) -> Void = { _ in }
@@ -203,6 +210,18 @@ struct ChatTranscript: View {
 
     }
 
+    /// The allowance line when this turn holds it. Only that turn is told, so only it
+    /// is drawn again when the reset time arrives (#5919).
+    private static func allowanceLine(_ id: UUID?, in turn: ChatTurn) -> UUID? {
+        guard let id else { return nil }
+        let items = turn.items.isEmpty ? (turn.storedOutcome ?? []) : turn.items
+        let holds = items.contains { item in
+            guard case .entry(let entry) = item else { return false }
+            return entry.id == id
+        }
+        return holds ? id : nil
+    }
+
     /// Send now is for a turn that is running, on a runtime that said it takes words
     /// mid-turn. Starting is not running: there is no turn yet to send them into.
     private var canSendNow: Bool {
@@ -253,6 +272,8 @@ struct ChatTranscript: View {
         // mapped again for every row it drew (#90).
         let rows = self.rows
         let liveID = isWorking ? rows.last?.id : nil
+        // Nil once the chat is waiting, or the line is not loaded: the buttons are not drawn.
+        let allowanceID = ContinueWhenBackWords.offers(agent) ? ContinueWhenBackWords.allowanceLine(in: rows) : nil
         // The head (the load failure, the spinner for the page above), every turn, and the
         // foot (what waits to be sent, the working line, the cards), as the stack lays them out.
         let turnRows = cut(rows, liveID: liveID)
@@ -270,6 +291,7 @@ struct ChatTranscript: View {
                     // redraw: a reply arrives several chunks a second. Only the turns drawn.
                     ForEach(turnRows[Self.turns(drawn, of: turnRows.count)]) { part in
                         let turn = part.turn
+                        let onThisTurn = Self.allowanceLine(allowanceID, in: turn)
                         TurnView(turn: turn,
                                  detail: turnViews[turn.id] ?? .initial,
                                  focusedRun: focusedRun,
@@ -281,7 +303,10 @@ struct ChatTranscript: View {
                                  fetch: { await fetch(turn) },
                                  fetchEarlier: { await fetchEarlier(turn) },
                                  row: part.row,
-                                 isLastRow: part.isLast)
+                                 isLastRow: part.isLast,
+                                 allowanceLine: onThisTurn,
+                                 allowanceAt: onThisTurn == nil ? nil : allowanceResetsAt,
+                                 allowanceCanStart: onThisTurn != nil && allowanceCanStart)
                             .equatable()
                             .inColumn(column)
                             .layoutValue(key: TranscriptRowID.self, value: part.id)

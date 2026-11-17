@@ -3623,6 +3623,14 @@ type ContinueInNewRequest struct {
 	Auto *bool `json:"auto,omitzero"`
 }
 
+// agents/continueInNewSession (#5919): a chat whose allowance ran out continues in a new session on Auto, in the same worktree or the same folder.
+type ContinueInNewSessionRequest struct {
+	AgentID UUID `json:"agentID"`
+
+	// As StartRequest.requestID: a retry answers with the first new session.
+	RequestID *UUID `json:"requestID,omitzero"`
+}
+
 // When a chat paused by a spent allowance carries on by itself (#1859).
 type ContinueWhenBack struct {
 	// When it sends "continue": the provider's reset time, or the app's next check of the runtime.

@@ -4,7 +4,7 @@
 import { useSignal } from "@preact/signals";
 import { hostNeedsUpdate } from "../../model/capabilities";
 import { createContext } from "preact";
-import { useContext, useEffect, useRef } from "preact/hooks";
+import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type {
   AgentState, BackgroundItem, BudgetRequest, ContentBlock, EndedReason, FileReading, JSONValue, MessageSender, Plan, ToolCall, ToolCallContent, ToolCallLocation,
   PolicySetBy, SandboxFailureRecord, TranscriptEntry, UndoTurnResult, WorkReport,
@@ -35,6 +35,7 @@ import { terminalOutput } from "../../model/onTheMac";
 import { Icon } from "../Icon";
 import { nowPlan } from "../../model/nowWords";
 import { RecordLine } from "./RecordLine";
+import { continueHelp, continueInNewSession, continueInNewSessionHelp } from "../../model/continueWhenBack";
 
 /** The text of a message's blocks: text blocks as Markdown, anything else named. */
 export function Blocks({ blocks, text }: { blocks: ContentBlock[] | undefined; text: string }) {
@@ -167,8 +168,18 @@ export interface CallActions {
   showChanges?: ((path: string | null) => void) | undefined;
   /** Undo These Changes on a turn's card (ChatActions.undoTurn, #3437). Not on an archived session, nor a host too old. */
   undoTurn?: ((turn: string, confirmed: boolean) => Promise<UndoTurnResult>) | undefined;
+  /** The buttons under "Its allowance ran out" (ChatActions.allowanceOut, #5919). */
+  allowanceOut?: { wait: () => Promise<void>; startNew?: (() => Promise<void>) | undefined } | undefined;
 }
 export const CallActionsContext = createContext<CallActions | null>(null);
+
+/** The allowance line this turn holds, and the button's title (#5919). Null on every other turn. */
+export interface AllowanceOutOffer {
+  line: string;
+  title: string;
+  canStart: boolean;
+}
+export const AllowanceOutContext = createContext<AllowanceOutOffer | null>(null);
 
 /** An edit (DiffView): its path at the fine step, then its lines marked + and −, in a well. */
 export function EditDiff({ diff }: { diff: Extract<ToolCallContent, { type: "diff" }> }) {
@@ -360,8 +371,35 @@ function CopyMessage({ entry, quotes = false, branches = false }: { entry: Trans
 
 /** One entry, drawn as its kind is (EntryRow). Marked so Exchanged can bring it into view. */
 export function EntryRow({ entry }: { entry: TranscriptEntry }) {
-  const from = useContext(CallActionsContext)?.fromLine ?? ((sender) => fromLine([], sender));
-  return <div class="entry-mark" data-entry={entry.id}>{entryBody(entry, from)}</div>;
+  const actions = useContext(CallActionsContext);
+  const from = actions?.fromLine ?? ((sender) => fromLine([], sender));
+  const allowance = useContext(AllowanceOutContext);
+  const [busy, setBusy] = useState(false);
+  const offer = actions?.allowanceOut;
+  const run = (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    void action().finally(() => setBusy(false));
+  };
+  const startNew = offer?.startNew;
+  const buttons = allowance && offer && entry.id === allowance.line && kindOf(entry) === "stateChanged" ? (
+    <div class="allowance-out">
+      <button type="button" class="prominent" title={continueHelp} disabled={busy} onClick={() => run(offer.wait)}>
+        {allowance.title}
+      </button>
+      {allowance.canStart && startNew ? (
+        <button type="button" title={continueInNewSessionHelp} disabled={busy} onClick={() => run(startNew)}>
+          {continueInNewSession}
+        </button>
+      ) : null}
+    </div>
+  ) : null;
+  return (
+    <div class="entry-mark" data-entry={entry.id}>
+      {entryBody(entry, from)}
+      {buttons}
+    </div>
+  );
 }
 
 function entryBody(entry: TranscriptEntry, from: (sender: MessageSender | undefined) => string) {
@@ -544,10 +582,12 @@ export function ItemRow({ item, background }: { item: Item; background: readonly
  * A stored turn loads its last page once, and only near the end: every turn at once would fetch
  * them all. One the chat has let go shows Load steps instead of fetching itself (#291).
  */
-export const TurnView = memo(function TurnView({ turn, focusedRun, fetched, fetchFailed, hasEarlier, auto, isLive, background, loadDetail: loadTurn, loadEarlier }: {
+export const TurnView = memo(function TurnView({ turn, focusedRun, fetched, fetchFailed, hasEarlier, auto, isLive, background, loadDetail: loadTurn, loadEarlier, allowance = null }: {
   turn: ChatTurn; focusedRun: string | null; fetched: readonly Item[] | undefined; fetchFailed: boolean; hasEarlier: boolean; auto: boolean; isLive: boolean;
   background: readonly BackgroundItem[];
   loadDetail: (turn: ChatTurn) => Promise<void>; loadEarlier: (turn: ChatTurn) => Promise<void>;
+  /** Set only on the turn that holds the allowance line, so a memo bailout cannot hide the buttons (#5919). */
+  allowance?: AllowanceOutOffer | null;
 }) {
   const asked = useRef(false);
   const loading = useSignal(false);
@@ -573,6 +613,7 @@ export const TurnView = memo(function TurnView({ turn, focusedRun, fetched, fetc
     ask();
   }, [waiting, auto]);
   return (
+    <AllowanceOutContext.Provider value={allowance}>
     <article class="turn" aria-label="Turn" data-turn={turn.id}>
       {turn.ask && <ItemRow item={turn.ask} background={background} />}
       {stepCount !== 0 ? (
@@ -596,6 +637,7 @@ export const TurnView = memo(function TurnView({ turn, focusedRun, fetched, fetc
         </>
       )}
     </article>
+    </AllowanceOutContext.Provider>
   );
 });
 

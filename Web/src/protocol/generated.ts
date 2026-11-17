@@ -3381,6 +3381,16 @@ export interface ContinueInNewRequest {
   auto?: boolean;
 }
 
+/**
+ * agents/continueInNewSession (#5919): a chat whose allowance ran out continues in a new session on
+ * Auto, in the same worktree or the same folder.
+ */
+export interface ContinueInNewSessionRequest {
+  agentID: UUID;
+  /** As StartRequest.requestID: a retry answers with the first new session. */
+  requestID?: UUID;
+}
+
 /** When a chat paused by a spent allowance carries on by itself (#1859). */
 export interface ContinueWhenBack {
   /**
@@ -16693,6 +16703,7 @@ export interface Methods {
   "agents/cancelContinue": { params: AgentRequest; result: Agent };
   "agents/continueInFolder": { params: ContinueInFolderRequest; result: UUID };
   "agents/continueInNew": { params: ContinueInNewRequest; result: UUID };
+  "agents/continueInNewSession": { params: ContinueInNewSessionRequest; result: UUID };
   "agents/continueWhenBack": { params: AgentRequest; result: Agent };
   "agents/delete": { params: AgentRequest; result: Empty };
   "agents/discardDraft": { params: DiscardDraftRequest; result: Empty };
@@ -17167,6 +17178,7 @@ export const MethodTarget = {
   "agents/cancelContinue": "host",
   "agents/continueInFolder": "host",
   "agents/continueInNew": "host",
+  "agents/continueInNewSession": "host",
   "agents/continueWhenBack": "host",
   "agents/delete": "host",
   "agents/discardDraft": "host",
@@ -17951,6 +17963,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ContentBlockAnnotations: { required: [], optional: ["audience", "priority"] },
   ContinueInFolderRequest: { required: ["agentID", "text", "attachments"], optional: ["requestID"] },
   ContinueInNewRequest: { required: ["agentID"], optional: ["accountID", "requestID", "auto"] },
+  ContinueInNewSessionRequest: { required: ["agentID"], optional: ["requestID"] },
   ContinueWhenBack: { required: ["at", "resetKnown"], optional: [] },
   ControlAuth: { required: ["id", "nonce", "mac", "kind"], optional: ["epoch", "capabilities", "page", "publicKey"] },
   ControlClientChanged: { required: [], optional: ["client", "removed"] },

@@ -344,6 +344,32 @@
       }
     },
     {
+      "name": "agents/continueInNewSession",
+      "description": "Continue in a new session (#5919): a chat whose allowance ran out starts a new session on Auto in the same worktree, or in the same folder when it has none, with a prompt that reads this session, then this session is archived. The new session keeps this session's title. Refused when the allowance did not run out. A start that fails leaves this session as it is. The same requestID answers with the first new session.",
+      "x-capability": "chat.continue-in-new-session/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/sessions.schema.json#/definitions/ContinueInNewSessionRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/UUID"
+        }
+      }
+    },
+    {
       "name": "agents/continueWhenBack",
       "description": "A chat paused by a spent allowance carries on when the allowance is back (#1859): at the provider's reset time, or the app's next check, or as soon as a turn on that runtime works or the person marks it available. Refused for a chat that is not paused by a spent allowance.",
       "x-capability": "chat.continue-when-back/1",
