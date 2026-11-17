@@ -65,6 +65,8 @@ func reachText(t *testing.T, r wire.SharedReach) string {
 }
 
 func TestSharedSnapshotSaysWhoGetsWhat(t *testing.T) {
+	t.Parallel()
+
 	home := sharedHome(t)
 	present := rulesFor("claude", "codex", "copilot")
 	s := personalSnapshot(home, present, layoutRecord{Home: home}, nil, map[string]string{})

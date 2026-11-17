@@ -69,6 +69,8 @@ func appClient(t *testing.T, d *Daemon, id wire.UUID) *mcpClient {
 }
 
 func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
@@ -157,6 +159,8 @@ func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
 // offeredTools leaves drive_screen out unless desktop control is both available on this host
 // and turned on (#3004, FR-004): an agent never sees a tool it cannot use.
 func TestDriveScreenIsOfferedOnlyWhileDesktopControlIsOn(t *testing.T) {
+	t.Parallel()
+
 	offers := func(desktopControl bool) bool {
 		for _, raw := range offeredTools(false, false, desktopControl, false) {
 			if strings.Contains(string(raw), `"name":"drive_screen"`) {

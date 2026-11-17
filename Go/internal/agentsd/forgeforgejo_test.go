@@ -299,6 +299,8 @@ func TestForgeWritesOnAForgejoItem(t *testing.T) {
 }
 
 func TestForgejoOfNode(t *testing.T) {
+	t.Parallel()
+
 	for ref, want := range map[string]string{
 		"forgejo:issue:walkalex/app#7": "walkalex/app 7",
 		"forgejo:issue:a/b#0":          "",

@@ -87,6 +87,8 @@ func TestLineageSessionOpensTheIssuesItFiles(t *testing.T) {
 }
 
 func TestFilesIssue(t *testing.T) {
+	t.Parallel()
+
 	name := func(s string) *string { return &s }
 	for _, c := range []struct {
 		call wire.ToolCall

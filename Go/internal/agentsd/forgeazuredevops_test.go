@@ -264,6 +264,8 @@ func TestForgeWritesOnAnAzureDevOpsPullRequest(t *testing.T) {
 }
 
 func TestAzureDevOpsOfNode(t *testing.T) {
+	t.Parallel()
+
 	for ref, want := range map[string]string{
 		"azuredevops:pr:acme/web app/app#3": "acme/web app/app 3",
 		"azuredevops:pr:a/b/c#0":            "",

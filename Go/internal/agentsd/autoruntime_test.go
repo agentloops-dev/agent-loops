@@ -17,6 +17,8 @@ import (
 
 // SC-004, SC-005.
 func TestTheShippedAutoMapIsWholeAndSafe(t *testing.T) {
+	t.Parallel()
+
 	settings := wire.AutoSettings{}
 	for _, rt := range catalog {
 		for _, f := range autoFields {
@@ -59,6 +61,8 @@ func TestTheShippedAutoMapIsWholeAndSafe(t *testing.T) {
 
 // A model the runtime no longer offers is dropped, and Auto passes that runtime by (FR-020).
 func TestADroppedCell(t *testing.T) {
+	t.Parallel()
+
 	cat := "model"
 	offers := []wire.ConfigOption{{ID: "model", Name: "Model", Type: "select", Category: &cat,
 		Options: json.RawMessage(`[{"value":"sonnet","name":"Sonnet 5"},{"value":"opus[1m]","name":"Opus 5.5"}]`)}}
@@ -303,6 +307,8 @@ func TestAnAgentsOwnPermissionRequests(t *testing.T) {
 
 // Story 5: workflows take the shared words; on Auto, only them.
 func TestWorkflowWordsOnAuto(t *testing.T) {
+	t.Parallel()
+
 	read := func(src string) error {
 		m, err := yamlnode.MappingFrom(strings.Split(strings.TrimSpace(src), "\n"))
 		if err != nil {

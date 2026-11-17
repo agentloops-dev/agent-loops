@@ -15,6 +15,8 @@ import (
 )
 
 func TestSetupReportsAreSentInOrderAfterTheHostHasJoined(t *testing.T) {
+	t.Parallel()
+
 	file := filepath.Join(t.TempDir(), hostsetup.ReportsFile)
 	rep, err := hostsetup.NewReporter(filepath.Dir(file))
 	if err != nil {

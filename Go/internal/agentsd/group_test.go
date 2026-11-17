@@ -9,6 +9,8 @@ import (
 // A wait only the connected person can settle (#3051) shows as needing them, as a
 // question does, where an ordinary wait on events only shows as Waiting.
 func TestAWaitForThePersonNeedsAttention(t *testing.T) {
+	t.Parallel()
+
 	id := wire.UUID("A0000000-0000-4000-8000-000000000001")
 	yes := true
 	personWait := &wire.EventWait{ID: wire.UUID("B0000000-0000-4000-8000-000000000001"),
@@ -32,6 +34,8 @@ func TestAWaitForThePersonNeedsAttention(t *testing.T) {
 }
 
 func TestIsForPersonEvent(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		name string
 		want bool

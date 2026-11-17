@@ -117,6 +117,8 @@ func TestTheMessagingSlotReadsEachChatConnector(t *testing.T) {
 }
 
 func TestMessagingProof(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct{ raw, noun, want string }{
 		{`{"structuredContent":{"folders":[{},{}]},"content":[]}`, "folders", "2 folders"},
 		{`{"content":[{"type":"text","text":"[{\"id\":1}]"}]}`, "channels", "1 channel"},

@@ -14,6 +14,8 @@ import (
 // offered beside Claude's own, and a chat's switch is kept without asking Claude.
 
 func TestChromeIsAskedForOnlyByTrue(t *testing.T) {
+	t.Parallel()
+
 	raw := func(s string) map[string]wire.JSONValue {
 		return map[string]wire.JSONValue{"chrome": wire.JSONValue(s)}
 	}
@@ -28,6 +30,8 @@ func TestChromeIsAskedForOnlyByTrue(t *testing.T) {
 }
 
 func TestOnlyAClaudeSessionAskedForChromeGetsTheFlag(t *testing.T) {
+	t.Parallel()
+
 	a := &wire.Agent{RuntimeID: "claude", StartOptions: wire.StartOptions{Values: map[string]wire.JSONValue{}}}
 	if b, _ := json.Marshal(agentSessionMeta(a)); strings.Contains(string(b), "extraArgs") {
 		t.Fatalf("Chrome without asking: %s", b)
@@ -48,6 +52,8 @@ func TestOnlyAClaudeSessionAskedForChromeGetsTheFlag(t *testing.T) {
 }
 
 func TestUseChromeIsOfferedBesideClaudesOwnOptions(t *testing.T) {
+	t.Parallel()
+
 	model := wire.ConfigOption{ID: "model", Name: "Model", Type: "select"}
 	opts := withAppOptions("claude", nil, []wire.ConfigOption{model})
 	if len(opts) != 2 || opts[1].ID != "chrome" || string(opts[1].CurrentValue) != "false" {
@@ -64,6 +70,8 @@ func TestUseChromeIsOfferedBesideClaudesOwnOptions(t *testing.T) {
 }
 
 func TestAChatsUseChromeIsKeptWithoutAskingClaude(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -79,6 +87,8 @@ func TestAChatsUseChromeIsKeptWithoutAskingClaude(t *testing.T) {
 
 // The Runtimes page's note (#1946) looks for Claude Code's own host, not the desktop app's.
 func TestHasClaudeCodeHost(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	if hasClaudeCodeHost(dir) {
 		t.Fatal("an empty folder has no host")

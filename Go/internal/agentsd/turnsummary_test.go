@@ -26,6 +26,8 @@ func entriesOf(t *testing.T, lines ...string) []wire.TranscriptEntry {
 }
 
 func TestATurnSummarised(t *testing.T) {
+	t.Parallel()
+
 	es := entriesOf(t,
 		`{"userMessage":{"_0":"Fix it"}}`,
 		`{"stateChanged":{"_0":"running"}}`,
@@ -67,6 +69,8 @@ func TestATurnSummarised(t *testing.T) {
 
 // A branch's note comes after the reply it keeps and the report, not among the steps (#1749).
 func TestABranchsNoteComesAfterTheReply(t *testing.T) {
+	t.Parallel()
+
 	es := entriesOf(t,
 		`{"userMessage":{"_0":"Remember APPLE"}}`,
 		`{"toolCall":{"_0":{"toolCallID":"c1","title":"ls","kind":"execute","content":[],"locations":[]}}}`,

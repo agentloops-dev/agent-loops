@@ -64,6 +64,8 @@ func macSend(t *testing.T, c *conn, src string, have []string, changes bool, bra
 }
 
 func TestSendToHost(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	src := repo(t)
@@ -179,6 +181,8 @@ func TestSendToHost(t *testing.T) {
 }
 
 func TestSendToAFolderInTheWay(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dest := canonical(t.TempDir())
@@ -208,6 +212,8 @@ func TestSendToAFolderInTheWay(t *testing.T) {
 // forward only, also where a branch is checked out; the host's uncommitted changes come
 // back only when asked; the Mac's own changes or commits stop it with nothing changed.
 func TestBringBackFromHost(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	src := repo(t)
@@ -298,6 +304,8 @@ func TestBringBackFromHost(t *testing.T) {
 // An abandoned send (#1531): what it left in Outgoing and Incoming goes once nothing has
 // touched it for transferLimit, at the next send; a send that refuses removes its uploads.
 func TestAbandonedSendIsSwept(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	src := repo(t)

@@ -34,6 +34,8 @@ func (f *fakeForgeGitHub) Assign(_ context.Context, repo string, number int, log
 const todoBody = "Why.\n\n## What Alex does\n\n- [ ] Sign in to gitlab.com\n- [x] Make a token\n- [ ] Paste it\n\n## Notes\n\n- [ ] not a step\n"
 
 func TestChecklistIsReadAndTicked(t *testing.T) {
+	t.Parallel()
+
 	lines := checklistOf(todoBody)
 	if len(lines) != 3 || lines[0] != (wire.RequestChecklistLine{Text: "Sign in to gitlab.com"}) || !lines[1].Done {
 		t.Fatalf("%+v", lines)

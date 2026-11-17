@@ -11,6 +11,8 @@ import (
 )
 
 func TestVersionTagsOf(t *testing.T) {
+	t.Parallel()
+
 	out := "abc123\trefs/tags/v0.13.0\n" +
 		"def456\trefs/tags/v0.14.0\n" +
 		"aaa000\trefs/tags/v0.14.0^{}\n" + // the annotated tag's peeled commit: the same tag.
@@ -24,6 +26,8 @@ func TestVersionTagsOf(t *testing.T) {
 }
 
 func TestSortVersionTags(t *testing.T) {
+	t.Parallel()
+
 	tags := []string{"v0.14.1", "v0.9.0", "v0.14.0", "v0.2.3"}
 	sortVersionTags(tags)
 	want := []string{"v0.2.3", "v0.9.0", "v0.14.0", "v0.14.1"}
@@ -35,6 +39,8 @@ func TestSortVersionTags(t *testing.T) {
 }
 
 func TestSquashPRNumber(t *testing.T) {
+	t.Parallel()
+
 	if n, ok := squashPRNumber("github", "Lineage: release nodes (#3023)\n\nbody"); !ok || n != 3023 {
 		t.Fatalf("github: got %d, %v", n, ok)
 	}
@@ -56,6 +62,8 @@ func TestSquashPRNumber(t *testing.T) {
 }
 
 func TestCommitTimeOf(t *testing.T) {
+	t.Parallel()
+
 	gh, err := commitTimeOf("github", []byte(`{"commit":{"committer":{"date":"2026-10-29T10:00:00Z"}}}`))
 	if err != nil || !gh.Equal(time.Date(2026, 10, 29, 10, 0, 0, 0, time.UTC)) {
 		t.Fatalf("github: %v, %v", gh, err)
@@ -70,6 +78,8 @@ func TestCommitTimeOf(t *testing.T) {
 }
 
 func TestCompareCommitsOf(t *testing.T) {
+	t.Parallel()
+
 	gh, err := compareCommitsOf("github", []byte(`{"commits":[{"sha":"a1","commit":{"message":"x (#1)"}}]}`))
 	if err != nil || len(gh) != 1 || gh[0].SHA != "a1" || gh[0].Message != "x (#1)" {
 		t.Fatalf("github: %+v, %v", gh, err)
@@ -81,6 +91,8 @@ func TestCompareCommitsOf(t *testing.T) {
 }
 
 func TestCommitPRNumberOf(t *testing.T) {
+	t.Parallel()
+
 	if n, err := commitPRNumberOf("github", []byte(`[{"number":9}]`)); err != nil || n != 9 {
 		t.Fatalf("github: %d, %v", n, err)
 	}
@@ -134,6 +146,8 @@ func (f *fakeReleases) commitPR(_ context.Context, _ string, _ forgeRepo, sha st
 // a later tag links the PRs of the commits since the one before it, from a squash title's
 // "(#n)" or, when it has none, the forge's commits/<sha>/pulls. Each tag is done once: a second check asks the forge nothing more.
 func TestLinksReleasesFromTags(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	repo := forgeRepo{"github", "alexec/agents"}
@@ -182,6 +196,8 @@ func TestLinksReleasesFromTags(t *testing.T) {
 
 // #3023: lineage/cost on a release adds up its PRs and the issues those PRs fix, once each.
 func TestRollupOfARelease(t *testing.T) {
+	t.Parallel()
+
 	cost := wire.LineageCost{Cost: map[string]float64{"USD": 1}}
 	merged := lineage.OutcomeMerged
 	nodes := []wire.LineageCostNode{

@@ -12,6 +12,8 @@ import (
 // processes/list (#3453): the daemon first, then what it started, each followed by its
 // children; a session's runtime, its terminal and their children carry the session.
 func TestTheProcessTreeIsTheDaemonsInOrder(t *testing.T) {
+	t.Parallel()
+
 	a := wire.UUID("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
 	b := wire.UUID("BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")
 	parents := map[int32]int32{
@@ -65,6 +67,8 @@ func TestTheProcessTreeIsTheDaemonsInOrder(t *testing.T) {
 // The handler: the daemon (this test) first, a child it started under it, and the
 // machine's totals.
 func TestProcessesListsTheDaemonAndItsChildren(t *testing.T) {
+	t.Parallel()
+
 	child := exec.Command("sleep", "30")
 	if err := child.Start(); err != nil {
 		t.Skip("no sleep:", err)
@@ -99,6 +103,8 @@ func TestProcessesListsTheDaemonAndItsChildren(t *testing.T) {
 // machine/usage (#3626): the machine's totals, and every disk the daemon looked at, ok
 // ones too, so the page lists the root's volume when nothing is low.
 func TestMachineUsageHasTheTotalsAndEveryDisk(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	d.checkDisk()
 	var s wire.MachineUsageState

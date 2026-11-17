@@ -9,6 +9,8 @@ import (
 
 // The wake message says an MCP event's payload as YAML, not one line of JSON (#3569).
 func TestWakeWordsSayAPayloadAsYAML(t *testing.T) {
+	t.Parallel()
+
 	e := wire.Event{Name: "checks.failed", Position: 7, Sentence: "github reported checks.failed",
 		Details: map[string]string{
 			"event":   "checks.failed",
@@ -41,6 +43,8 @@ func TestWakeWordsSayAPayloadAsYAML(t *testing.T) {
 
 // A detail that is not a JSON object or list is said as it came.
 func TestDetailWordsLeaveTextAlone(t *testing.T) {
+	t.Parallel()
+
 	for _, v := range []string{"cd", "", "{not json", "[1,2] and more", "42"} {
 		if got := detailWords("k", v); got != "k: "+v {
 			t.Errorf("detailWords(%q) = %q", v, got)
@@ -51,6 +55,8 @@ func TestDetailWordsLeaveTextAlone(t *testing.T) {
 // wait_for_event's own answer says the plain details on its line and the payload below it as
 // YAML (#3569); an event with no payload reads as before.
 func TestMatchedWordsSayAPayloadAsYAML(t *testing.T) {
+	t.Parallel()
+
 	e := wire.Event{Name: "checks.passed", Position: 3, Sentence: "github reported checks.passed",
 		Details: map[string]string{"event": "checks.passed", "payload": `{"pr":{"number":3811}}`}}
 	got := matchedWords(e, nil)
@@ -66,6 +72,8 @@ func TestMatchedWordsSayAPayloadAsYAML(t *testing.T) {
 // The wake message puts its details in a yaml code block, so the chat draws them as YAML;
 // the event's line and sentence stay above it as text.
 func TestWakeWordsFenceTheDetailsAsYAML(t *testing.T) {
+	t.Parallel()
+
 	msg := "see ```x```"
 	e := wire.Event{Name: "pr.merged", Position: 2, Sentence: "PR 5 merged.",
 		Details: map[string]string{"pr": "5"}, Message: &msg}

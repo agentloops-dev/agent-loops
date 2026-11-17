@@ -171,6 +171,8 @@ func TestAMachineRefusesWhatTheControlPlaneForges(t *testing.T) {
 }
 
 func TestSignedRequestsFromAClientOrAMachineOfTheLock(t *testing.T) {
+	t.Parallel()
+
 	d, phone, peer, _ := lockedMachine(t)
 	c := channelTo(d)
 	signed := func(id int, key *ecdsa.PrivateKey, to, method string, params any) string {
@@ -218,6 +220,8 @@ func TestSignedRequestsFromAClientOrAMachineOfTheLock(t *testing.T) {
 // A person's set-up keeps working until they have a lock: a machine with none takes what
 // it took before, and says so at lock/hello.
 func TestAMachineWithNoLockTakesWhatItDidBefore(t *testing.T) {
+	t.Parallel()
+
 	d, _, _ := joinedMachine(t)
 	c := channelTo(d)
 	c.send(requestLine(1, "folders/list", map[string]any{}))
@@ -234,6 +238,8 @@ func TestAMachineWithNoLockTakesWhatItDidBefore(t *testing.T) {
 // After a restart the machine checks requests against the lock it kept, before the control
 // plane sends it again.
 func TestTheLockIsKeptAcrossARestart(t *testing.T) {
+	t.Parallel()
+
 	d, phone, _, _ := lockedMachine(t)
 	d.lockMu.Lock()
 	d.lockHeld, d.lockRead = nil, false
@@ -251,6 +257,8 @@ func TestTheLockIsKeptAcrossARestart(t *testing.T) {
 // plane cannot, nor can a client of the lock through it. After the reset the machine pins
 // the next lock on first use: the new lock the person started.
 func TestOnlyTheMachinesOwnAccountResetsItsLock(t *testing.T) {
+	t.Parallel()
+
 	d, phone, _, state := lockedMachine(t)
 	pinned := d.LockPin()
 
@@ -291,6 +299,8 @@ func TestOnlyTheMachinesOwnAccountResetsItsLock(t *testing.T) {
 }
 
 func TestLockResetOnDaemonSockAsksForTheLockAgain(t *testing.T) {
+	t.Parallel()
+
 	d, path := serveWith(t, fixedPolicy{role: RoleStranger, ok: true})
 	var mu sync.Mutex
 	var said []string
@@ -315,6 +325,8 @@ func TestLockResetOnDaemonSockAsksForTheLockAgain(t *testing.T) {
 // What a machine says unasked carries the channel's MAC too (#3541): a client with a channel
 // takes a notification only when it checks, in order with the answers.
 func TestWhatAMachineSaysUnaskedCarriesItsMAC(t *testing.T) {
+	t.Parallel()
+
 	d, phone, _, state := lockedMachine(t)
 	cp := channelTo(d)
 	phoneChannel := channelTo(d)
@@ -355,6 +367,8 @@ func TestWhatAMachineSaysUnaskedCarriesItsMAC(t *testing.T) {
 // #3542: the control plane may stop, unsigned, the writer of a provider draft it holds,
 // whose start a client of the lock signed; no other agent.
 func TestTheControlPlaneStopsOnlyADraftsWriter(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, _ := lockedMachine(t)
 	cwd := t.TempDir()
 	writer := seeded(t, d, cwd, func(a *wire.Agent) {
@@ -380,6 +394,8 @@ func TestTheControlPlaneStopsOnlyADraftsWriter(t *testing.T) {
 // control plane opened for another client than the lock's key, and writes the lock member's
 // client and name into the event; the person stays the control plane's word.
 func TestTheAuditNamesTheDeviceFromTheLock(t *testing.T) {
+	t.Parallel()
+
 	d, phone, _, state := lockedMachine(t)
 	d.RaiseByHand = true
 	said := func(client string) actorConn {

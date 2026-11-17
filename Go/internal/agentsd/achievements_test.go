@@ -49,6 +49,8 @@ func earned(d *Daemon, id string) bool {
 }
 
 func TestADeviceEarnsPairingAndAnsweringAway(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	mac := &Client{Role: RoleControl, conn: newConn(), d: d}
@@ -78,6 +80,8 @@ func TestADeviceEarnsPairingAndAnsweringAway(t *testing.T) {
 }
 
 func TestAPairedDeviceIsBackFilled(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "devices.json"), []byte(`[{"id":"11111111-2222-3333-4444-555555555555","publicKey":"AAAA",`+
 		`"name":"Phone","kind":"iPhone","announcedAt":1}]`), 0o644)
@@ -92,6 +96,8 @@ func TestAPairedDeviceIsBackFilled(t *testing.T) {
 }
 
 func TestACloudMachineStarted(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	listed := `{"providers":[{"id":"p","name":"DigitalOcean","canMake":false,"canDelete":false,"workspaces":[{"name":"box","state":"stopped"}]}]}`
@@ -126,6 +132,8 @@ func TestACloudMachineStarted(t *testing.T) {
 }
 
 func TestALandedPullRequestIsCounted(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -151,6 +159,8 @@ func TestALandedPullRequestIsCounted(t *testing.T) {
 }
 
 func TestMergedByDayCountsTheAppsBranchesOnce(t *testing.T) {
+	t.Parallel()
+
 	at := time.Date(2026, 3, 4, 12, 0, 0, 0, time.Local)
 	got := mergedByDay([]mergedPull{
 		{URL: "a", MergedAt: at, HeadRefName: "agents/one"},

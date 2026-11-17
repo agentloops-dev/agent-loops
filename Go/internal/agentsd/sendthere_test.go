@@ -20,6 +20,8 @@ import (
 // offline machine, refuses before the person is asked.
 
 func TestStartSessionSendsTheBranchFirst(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	src := repo(t)

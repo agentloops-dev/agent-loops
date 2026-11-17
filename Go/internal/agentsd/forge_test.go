@@ -583,6 +583,8 @@ func TestForgeIssuesListsTheLinearWorkspace(t *testing.T) {
 // mergeForgePages: a forge that failed is asked again from where it was, and with nothing else
 // going on there is no next page.
 func TestMergeForgePagesKeepsAFailedForgesPlace(t *testing.T) {
+	t.Parallel()
+
 	at := func(s string) wire.Date { return forgeDate(s) }
 	pages := []forgePage{
 		{forge: "github", items: []wire.ForgeItem{{UpdatedAt: at("2026-11-01T10:00:00Z")}}, cursors: []string{"g1"}},
@@ -597,6 +599,8 @@ func TestMergeForgePagesKeepsAFailedForgesPlace(t *testing.T) {
 // A cursor that an earlier daemon gave, with a field per forge, still reads (#4360), and one the
 // map gives has the same keys.
 func TestForgeCursorReadsAnEarlierDaemons(t *testing.T) {
+	t.Parallel()
+
 	was := base64.RawURLEncoding.EncodeToString([]byte(`{"github":"g1","azureboards":"b2","done":["jira"]}`))
 	c, err := cursorOf(&was)
 	if err != nil || c.At["github"] != "g1" || c.At["azureboards"] != "b2" || len(c.At) != 2 || !slices.Equal(c.Done, []string{"jira"}) {
@@ -613,6 +617,8 @@ func TestForgeCursorReadsAnEarlierDaemons(t *testing.T) {
 // after a forge is done still counts it; a forge with no count counts its items when its first
 // page is its last, and the list has no total while a forge has none.
 func TestListTotalsKeepEachForgesFirstCount(t *testing.T) {
+	t.Parallel()
+
 	item := wire.ForgeItem{UpdatedAt: forgeDate("2026-11-01T10:00:00Z")}
 	pages := []forgePage{
 		{forge: "github", items: []wire.ForgeItem{item}, next: "g1", total: new(57)},
@@ -649,6 +655,8 @@ func TestListTotalsKeepEachForgesFirstCount(t *testing.T) {
 
 // A label's colour reaches the wire as #rrggbb whatever form the forge gives it in (#4362).
 func TestForgeLabelColor(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"#d73a4a": "#d73a4a", "D73A4A": "#d73a4a", "#A2EEEF": "#a2eeef", " a2eeef ": "#a2eeef",
 		"": "", "red": "", "#fff": "", "#d73a4a00": "", "zzzzzz": "",

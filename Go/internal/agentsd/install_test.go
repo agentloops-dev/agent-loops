@@ -305,6 +305,8 @@ func TestAnInstallThatFailsSaysWhy(t *testing.T) {
 }
 
 func TestNPMProblems(t *testing.T) {
+	t.Parallel()
+
 	out := "npm error code E404\nnpm error 404 Not Found - GET https://registry/x\nnpm error A complete log of this run can be found in: /x\n"
 	if got := npmProblem(out, "Codex").Error(); got != "Installing Codex failed: 404 Not Found - GET https://registry/x" {
 		t.Fatal(got)
@@ -403,6 +405,8 @@ mkdir -p "$p/node_modules/@x/adapter/dist" && echo 'ok' > "$p/node_modules/@x/ad
 }
 
 func TestGlibcAtLeast(t *testing.T) {
+	t.Parallel()
+
 	for libc, want := range map[string]bool{"glibc 2.36": true, "glibc 2.28": true, "glibc 2.27": false, "glibc 3.0": true, "": false, "musl": false} {
 		if glibcAtLeast(libc, 2, 28) != want {
 			t.Fatalf("%q", libc)
@@ -411,6 +415,8 @@ func TestGlibcAtLeast(t *testing.T) {
 }
 
 func TestUntarXZStaysInside(t *testing.T) {
+	t.Parallel()
+
 	for _, files := range []map[string]string{{"n/../../escape*": "x"}, {"@n/bin/out": "../../../etc"}} {
 		file := filepath.Join(t.TempDir(), "a.tar.xz")
 		os.WriteFile(file, tarXZ(t, files), 0o644)
@@ -531,6 +537,8 @@ func TestClaudesFirstUseInstallsTheAppsCopy(t *testing.T) {
 // Dependabot bumps the adapter in package.json and its lock (#4512), and nothing else: the
 // manifest's packageVersion, which runtimes/list and the runtime check read, must say the same.
 func TestTheBundlesNodeToolsetsPinOneVersion(t *testing.T) {
+	t.Parallel()
+
 	for _, id := range []string{"claude", "codex"} {
 		dir := filepath.Join("../../../App/Resources/toolsets", id)
 		var manifest struct{ Package, PackageVersion string }

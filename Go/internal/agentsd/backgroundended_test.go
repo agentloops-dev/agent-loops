@@ -44,6 +44,8 @@ func woken(d *Daemon, id wire.UUID) bool {
 
 // A look gives what ended once: after processes were seen, and not before.
 func TestNoteBackgroundGivesWhatEndedOnce(t *testing.T) {
+	t.Parallel()
+
 	var p warmLive
 	if e := p.noteBackground(nil); e != nil {
 		t.Fatalf("nothing ran, yet %v", e)
@@ -61,6 +63,8 @@ func TestNoteBackgroundGivesWhatEndedOnce(t *testing.T) {
 }
 
 func TestCommandNamesShortensAndCounts(t *testing.T) {
+	t.Parallel()
+
 	cmds := []acp.Command{{Line: "a"}, {Line: "b"}, {Line: "c"}, {Line: strings.Repeat("x", 70)}, {Line: "e"}, {Line: "f"}}
 	got := commandNames(cmds)
 	if !strings.HasPrefix(got, "`a`, `b`, `c`, `"+strings.Repeat("x", 60)+"…`") || !strings.HasSuffix(got, ", and 2 more") {
@@ -165,6 +169,8 @@ func TestBackgroundWaitRefusedWhenNothingWouldEnd(t *testing.T) {
 }
 
 func TestBriefSaysToWaitOnlyWhereTheRuntimeDoesNotWakeItself(t *testing.T) {
+	t.Parallel()
+
 	if strings.Contains(eventsBriefFor("claude"), backgroundEndedEvent) {
 		t.Fatal("Claude wakes itself")
 	}
@@ -268,6 +274,8 @@ func TestAdoptionChecksTheStartTime(t *testing.T) {
 
 // A clean stop with nothing in the background leaves no background.json behind.
 func TestHandoverWithNothingWritesNothing(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	_ = os.WriteFile(d.backgroundPath(), []byte("{}"), 0o600)
 	d.Shutdown()

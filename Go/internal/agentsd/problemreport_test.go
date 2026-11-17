@@ -23,6 +23,8 @@ func problemFields(t *testing.T, link string) url.Values {
 }
 
 func TestProblemReportCutsTokensAndHomes(t *testing.T) {
+	t.Parallel()
+
 	token := "ghp_" + strings.Repeat("a", 36)
 	rt := "claude"
 	r := wire.ProblemReportRequest{
@@ -56,6 +58,8 @@ func TestProblemReportCutsTokensAndHomes(t *testing.T) {
 }
 
 func TestProblemReportWithoutLogOrWords(t *testing.T) {
+	t.Parallel()
+
 	got := problemReport(wire.ProblemReportRequest{Client: "Web page", ClientOS: "Safari"}, nil, "")
 	if got.Title != "A problem in Agent Loops" {
 		t.Errorf("title %q", got.Title)
@@ -66,6 +70,8 @@ func TestProblemReportWithoutLogOrWords(t *testing.T) {
 }
 
 func TestProblemReportLinkFitsGitHub(t *testing.T) {
+	t.Parallel()
+
 	var log []string
 	for i := 0; i < problemLogLines; i++ {
 		log = append(log, strings.Repeat("line ", 60))
@@ -82,6 +88,8 @@ func TestProblemReportLinkFitsGitHub(t *testing.T) {
 }
 
 func TestLastLogLines(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.log")
 	if lastLogLines(path, 3) != nil {

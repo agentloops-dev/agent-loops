@@ -18,6 +18,8 @@ import (
 // The daily summary (#3192): its session collects every folder's facts, and saves a page
 // of which the last 3 stay; no other session may.
 func TestDailySummaryCollectsAndKeepsThree(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -76,6 +78,8 @@ func TestDailySummaryCollectsAndKeepsThree(t *testing.T) {
 // Only the newest daily summary is in For Review (#3352): a new page takes its title, and
 // the older runs' pages that nobody opened are marked read; another session's file stays.
 func TestOnlyTheNewestSummaryIsForReview(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -132,6 +136,8 @@ func TestDailySummaryIsTheHomeFolders(t *testing.T) {
 // The daily summary's control (#3351) is the home folder's Daily summary workflow: Summary turns
 // it on at the time asked, Off turns it off and keeps the time.
 func TestDailySummaryControlIsTheWorkflow(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -170,6 +176,8 @@ func TestDailySummaryControlIsTheWorkflow(t *testing.T) {
 }
 
 func TestSetScheduleLineRefusesTwo(t *testing.T) {
+	t.Parallel()
+
 	two := "---\non:\n  - schedule:\n      at: \":00\"\n  - schedule:\n      at: \":30\"\n---\nbody\n"
 	if _, err := setScheduleLine("at", ":30", two); err == nil {
 		t.Fatal("changed one of two schedules")
@@ -185,6 +193,8 @@ func TestSetScheduleLineRefusesTwo(t *testing.T) {
 // asks each of them; their lines say the machine, a pull request merged in a checkout on two
 // machines is one, and a machine that is off is named, not left out.
 func TestDailySummaryHasTheOtherMachines(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -241,6 +251,8 @@ func TestDailySummaryHasTheOtherMachines(t *testing.T) {
 // landed with the sessions that made them under them, a workflow's runs as one line, and at
 // most a few other sessions.
 func TestDailySummaryIsAboutThePerson(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()

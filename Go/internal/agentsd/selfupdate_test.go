@@ -337,6 +337,8 @@ func TestSelfUpdateNeverAsksForAnAdministrator(t *testing.T) {
 }
 
 func TestEnclosingApp(t *testing.T) {
+	t.Parallel()
+
 	if got := enclosingApp("/Users/a/Applications/Agent Loops.app/Contents/Helpers/agentsd"); got != "/Users/a/Applications/Agent Loops.app" {
 		t.Fatal(got)
 	}
@@ -351,6 +353,8 @@ func TestEnclosingApp(t *testing.T) {
 // Agents' and Agents Host's copies take Agent Loops' name once (#5297, #4225), and only
 // when nothing else has it.
 func TestTakeNewName(t *testing.T) {
+	t.Parallel()
+
 	for _, oldName := range oldAppNames {
 		t.Run(oldName, func(t *testing.T) {
 			dir := t.TempDir()

@@ -11,6 +11,8 @@ import (
 // A goroutine the daemon started and nothing stopped is named by where it started (#5653), and
 // nothing starts once the host has stopped.
 func TestAGoroutineLeftRunningIsNamedByWhereItStarted(t *testing.T) {
+	t.Parallel()
+
 	d, err := New(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)

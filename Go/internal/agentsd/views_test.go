@@ -23,6 +23,8 @@ import (
 func ptr[T any](v T) *T { return &v }
 
 func TestAToolCallIsReadByItsShape(t *testing.T) {
+	t.Parallel()
+
 	servers := []string{"ci", "ci-board", "github"}
 	exact := shapeCandidates(wire.ToolCall{Title: "x", RawInput: json.RawMessage(`{"server":"ci","tool":"board","arguments":{"n":1}}`)}, servers)
 	if len(exact) != 1 || exact[0].server != "ci" || exact[0].tool != "board" || !exact[0].exact || string(exact[0].arguments) != `{"n":1}` {
@@ -63,6 +65,8 @@ func TestAToolCallIsReadByItsShape(t *testing.T) {
 }
 
 func TestAViewsPolicyKeepsOnlyPlainOrigins(t *testing.T) {
+	t.Parallel()
+
 	p := viewPolicy(json.RawMessage(`{"connectDomains":["https://API.example.com/","*","https:","https://*.cdn.example.com:8443"],
 		"resourceDomains":["'unsafe-eval'","wss://x.example.com; script-src *"],"frameDomains":[3]}`))
 	if strings.Join(p.ConnectDomains, " ") != "https://api.example.com https://*.cdn.example.com:8443" ||

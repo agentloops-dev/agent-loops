@@ -121,6 +121,8 @@ func TestAConversationTheRuntimeLostGoesOnInANewOne(t *testing.T) {
 }
 
 func TestOneCutOffThreeTimesAndOneCopiedInAreLeft(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	three := int64(3)
 	looping := leftWorking(t, root, wire.AgentStateRunning, "fake-session", func(a *wire.Agent) { a.RestartPickUps = &three })

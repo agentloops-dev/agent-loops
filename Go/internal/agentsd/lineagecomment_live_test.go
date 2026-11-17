@@ -25,6 +25,8 @@ import (
 // live tests (githubmcp, gitlabmcp) merge one each and log its number.
 
 func TestLiveCostComment(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct{ forge, cli, token, number, path, fallback string }{
 		{"github", "gh", "GH_TOKEN", "AGENTS_LIVE_GITHUB_PR", "AGENTS_LIVE_GITHUB_REPO", "alexec/agents-walk"},
 		{"gitlab", "glab", "GITLAB_TOKEN", "AGENTS_LIVE_GITLAB_MR", "AGENTS_LIVE_GITLAB_PROJECT", "agentstest-group/agents-walk"},

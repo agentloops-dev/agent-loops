@@ -54,6 +54,8 @@ func TestYoursWinsOverTheRepos(t *testing.T) {
 }
 
 func TestRepoFileRefusesNamesThatRunCode(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		name string
 		repo bool
