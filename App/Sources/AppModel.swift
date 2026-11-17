@@ -117,6 +117,12 @@ final class AppModel {
     /// How many New Machine calls wait for the provider's answer (#4610): a *Making…* row
     /// each, until the control plane lists the machine as joining.
     var machinesBeingMade = 0
+    /// What a machine's page says of the warm pool it came from (#5366), by the machine's name:
+    /// the pool replaced it, or no pool machine was ready and a new one is being made.
+    var machinePoolNotes: [String: String] = [:]
+    /// The names of the person's warm pools (#5366): their machines are not in the sidebar
+    /// until a claim makes one the person's.
+    var warmPoolNames: [String] = []
     /// Goes up on each `control/lineageChanged` (#4276): Work ▸ Timeline reads the sessions again.
     var lineageChanges = 0
     /// A runtime of this Mac's that refused for want of a sign-in: the window answers

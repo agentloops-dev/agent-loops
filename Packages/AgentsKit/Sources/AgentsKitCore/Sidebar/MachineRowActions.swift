@@ -142,10 +142,15 @@ public struct MachineMaking: Equatable, Sendable, Identifiable {
     /// same name has joined. The ones still making first, then the ones the control plane gave
     /// up on, then the ones that never joined (#4978), each by name. A failed make is not a
     /// machine: the New Machine sheet says why.
-    public static func rows(_ providers: [DaemonAPI.ProviderSummary], hostNames: Set<String>) -> [MachineMaking] {
+    /// `pools` are the names of the person's warm pools (#5366): a machine one holds has no row,
+    /// as nobody owns it until a claim; the pool's card in Settings shows it.
+    public static func rows(_ providers: [DaemonAPI.ProviderSummary], hostNames: Set<String>,
+                            pools: [String] = []) -> [MachineMaking] {
         var rows: [MachineMaking] = []
         for provider in providers {
-            for workspace in provider.workspaces where workspace.host == nil && !hostNames.contains(workspace.name) {
+            for workspace in provider.workspaces
+            where workspace.host == nil && !hostNames.contains(workspace.name)
+                && !WarmPoolWords.isPoolMachine(workspace.name, pools: pools) {
                 guard workspace.state != "failed" else { continue }
                 let making = workspace.joining == true || workspace.notJoined != nil
                 rows.append(MachineMaking(provider: provider.id, providerName: provider.name, workspace: workspace.id,

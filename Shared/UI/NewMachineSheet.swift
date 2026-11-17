@@ -18,6 +18,10 @@ struct NewMachineDraft: Equatable, Sendable {
     var stopWhenIdleMinutes: Int?
     /// The project folders on this Mac to send to it once it has joined (#5358).
     var projects: [URL] = []
+    /// Start from a warm pool (#5366): claim a ready machine of this provider and size.
+    var fromPool = false
+    /// The projects that pool sends already, by path: a claim's catch-up brings them up to date.
+    var poolProjects: [String] = []
 }
 
 /// What the Mac's New Machine asks besides the provider's size (#5358): a sleep time and
@@ -27,6 +31,8 @@ struct NewMachineChoices {
     var projects: [URL]
     /// Whether a project has uncommitted changes, which go with it.
     var hasChanges: @MainActor (URL) async -> Bool
+    /// The person's warm pools (#5366), for Start from; none on a control plane before pools.
+    var pools: @MainActor () async -> [DaemonAPI.WarmPool] = { [] }
 }
 
 /// The New Machine sheet up (#4634): for a provider (nil for the default one), or opened
@@ -71,6 +77,9 @@ struct NewMachineSheet: View {
     @State private var changed: Set<URL> = []
     @State private var working = false
     @State private var problem: String?
+    /// The person's warm pools, and whether Start from is on a pool (#5366).
+    @State private var pools: [DaemonAPI.WarmPool] = []
+    @State private var fromPool = true
     /// A make that failed opens the sheet again on its choices and its reason.
     private let again: NewMachineDraft?
 
@@ -141,10 +150,17 @@ struct NewMachineSheet: View {
                             #endif
                     }
                 }
+                if choices != nil, !loading, let pool = matchingPool {
+                    startFrom(pool)
+                }
                 if loading {
                     ProgressView().controlSize(.small)
                 } else {
                     ForEach(shownFields) { field in fieldView(field) }
+                    if choices != nil, !pools.filter({ $0.provider == provider }).isEmpty {
+                        Text("A pool has one size: choosing another size starts a new machine.")
+                            .appText(.fine).foregroundStyle(.secondary)
+                    }
                 }
                 if let choices {
                     Picker("Stop when idle", selection: $idleMinutes) {
@@ -161,9 +177,8 @@ struct NewMachineSheet: View {
                                                  })) {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(project.lastPathComponent)
-                                    if changed.contains(project) {
-                                        Text("Uncommitted changes go with it")
-                                            .appText(.fine).foregroundStyle(.secondary)
+                                    if let words = projectLine(project) {
+                                        Text(words).appText(.fine).foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -215,6 +230,54 @@ struct NewMachineSheet: View {
             guard let choices else { return }
             for project in choices.projects where await choices.hasChanges(project) { changed.insert(project) }
         }
+        .task {
+            guard let choices, again == nil || again?.fromPool == true else { return }
+            pools = await choices.pools()
+        }
+    }
+
+    /// The pool Start from offers (#5366, board 1): one of this provider and size, with a
+    /// ready machine if any has one. Nil when there is none, and Start from is not drawn.
+    private var matchingPool: DaemonAPI.WarmPool? {
+        WarmPoolWords.matching(pools, provider: provider, size: chosenSize).first
+    }
+
+    /// The size the form has chosen, as a pool names it.
+    private var chosenSize: String? {
+        shownFields.first.flatMap { chosen[$0.id]?.stringValue }
+    }
+
+    /// Whether Make claims from the pool: it is chosen, and has a ready machine.
+    private var claimsFromPool: Bool {
+        guard fromPool, let pool = matchingPool else { return false }
+        return (pool.ready ?? 0) > 0
+    }
+
+    /// Start from (#5366, board 1, note 1): the pool, with how many are ready and how soon,
+    /// or a new machine.
+    @ViewBuilder
+    private func startFrom(_ pool: DaemonAPI.WarmPool) -> some View {
+        let ready = (pool.ready ?? 0) > 0
+        Picker("Start from", selection: Binding(get: { ready && fromPool }, set: { fromPool = $0 })) {
+            Text("Warm pool “\(pool.name)” · \(WarmPoolWords.startFromLine(pool))").tag(true)
+                .selectionDisabled(!ready)
+            Text("A new machine · \(WarmPoolWords.newMachineLine)").tag(false)
+        }
+        #if os(macOS)
+        .pickerStyle(.radioGroup)
+        #else
+        .pickerStyle(.inline)
+        #endif
+    }
+
+    /// The line under a project: what the pool holds of it, and its uncommitted changes.
+    private func projectLine(_ project: URL) -> String? {
+        var parts: [String] = []
+        if claimsFromPool, matchingPool?.projects?.contains(project.path) == true { parts.append("in the pool") }
+        if changed.contains(project) { parts.append("uncommitted changes go with it") }
+        guard !parts.isEmpty else { return nil }
+        let line = parts.joined(separator: " · ")
+        return line.prefix(1).uppercased() + line.dropFirst()
     }
 
     /// The provider's refusal, what happens once it is made, and on iOS what it costs.
@@ -343,6 +406,10 @@ struct NewMachineSheet: View {
         if let choices {
             draft.stopWhenIdleMinutes = idleMinutes
             draft.projects = choices.projects.filter(sending.contains)
+            if claimsFromPool, let pool = matchingPool {
+                draft.fromPool = true
+                draft.poolProjects = pool.projects ?? []
+            }
         }
         Task {
             let refused = await make(draft)

@@ -17084,7 +17084,7 @@ type WakeState struct {
 	OnPower bool `json:"onPower"`
 }
 
-// A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
+// A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only. machines and claims are read-only too (#5366).
 type WarmPool struct {
 	ID string `json:"id"`
 
@@ -17130,6 +17130,49 @@ type WarmPool struct {
 
 	// Why the pool stopped making, in the provider's words.
 	StoppedBecause *string `json:"stoppedBecause,omitzero"`
+
+	// The machines the pool holds now, ready, setting up or failed (#5366): a line each on the pool's card.
+	Machines []WarmPoolMachine `json:"machines,omitzero"`
+
+	Claims *WarmPoolClaims `json:"claims,omitzero"`
+}
+
+// pool/claim (#5365, #5366): New Machine's Start from a warm pool. The oldest ready machine of a pool of this provider and size, bound to the person with their Stop when idle; with none ready, a new machine.
+type WarmPoolClaim struct {
+	Provider string `json:"provider"`
+
+	Size *string `json:"size,omitzero"`
+
+	Region *string `json:"region,omitzero"`
+
+	// Minutes; 0 is never. Absent keeps the machine's.
+	StopWhenIdle *int64 `json:"stopWhenIdle,omitzero"`
+}
+
+// What pool/claim gave: a pool's machine (fromPool, with its host) or a new machine being made, with note saying so.
+type WarmPoolClaimed struct {
+	// The machine's host id; absent for a new machine, which joins on its own.
+	Host *string `json:"host,omitzero"`
+
+	Workspace string `json:"workspace"`
+
+	Name string `json:"name"`
+
+	// The pool's name, when it came from one.
+	Pool *string `json:"pool,omitzero"`
+
+	FromPool bool `json:"fromPool"`
+
+	Note *string `json:"note,omitzero"`
+}
+
+// A pool's claims in the last seven days (#5366): how many, how many found it empty and fell back to a new machine, and the median time from a claim to the machine being ready, when any is.
+type WarmPoolClaims struct {
+	Count int64 `json:"count"`
+
+	Empty int64 `json:"empty"`
+
+	MedianSeconds *float64 `json:"medianSeconds,omitzero"`
 }
 
 // When a pool runs: on these weekdays (0 Sunday to 6 Saturday) from `from` to `to`, as HH:MM in `timezone` (an IANA name; UTC when absent). Outside them the ready machines are deleted and none are made. A pool with no hours runs every day.
@@ -17141,6 +17184,18 @@ type WarmPoolHours struct {
 	To string `json:"to"`
 
 	Timezone *string `json:"timezone,omitzero"`
+}
+
+// One machine a warm pool holds (#5366).
+type WarmPoolMachine struct {
+	Name string `json:"name"`
+
+	State string `json:"state"`
+
+	MadeAt Date `json:"madeAt"`
+
+	// What its set-up is doing now, as the running step's line says: installing Claude.
+	Detail *string `json:"detail,omitzero"`
 }
 
 type WarmPoolRequest struct {
