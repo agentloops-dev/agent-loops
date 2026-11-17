@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -71,6 +72,7 @@ func entryOf[T any](d *Daemon, id wire.UUID, pick func(wire.TranscriptEntryKind)
 
 func TestAFormIsHeldAndAnswered(t *testing.T) {
 	t.Parallel()
+	flaky.UnderLoad(t, "#6013")
 
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())

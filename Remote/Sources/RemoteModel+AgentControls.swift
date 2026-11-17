@@ -697,6 +697,43 @@ extension RemoteModel {
         ]
     }
 
+    /// The walk's machines that set themselves up (`-canned-setup`, #6012): one from a warm pool
+    /// at step 6, one that failed at step 3, beside the canned daemon's Mac.
+    private func cannedSetup() {
+        let now = Date()
+        func step(_ id: String, _ state: DaemonAPI.MachineSetupStep.State, _ from: TimeInterval?, _ took: TimeInterval?,
+                  detail: String? = nil, error: String? = nil, pool: Bool = false) -> DaemonAPI.MachineSetupStep {
+            let start = from.map { now.addingTimeInterval(-$0) }
+            return DaemonAPI.MachineSetupStep(id: id, state: state, startedAt: start,
+                                              endedAt: took.flatMap { took in start.map { $0.addingTimeInterval(took) } },
+                                              detail: detail, error: error, fromPool: pool ? true : nil)
+        }
+        let ids = ["create", "join", "install", "compare", "runtimes", "projects", "signIn", "smoke"]
+        var pooled = (0..<5).map { step(ids[$0], .done, 5400, 60, pool: true) }
+        pooled[0] = step("create", .done, 5400, 0, pool: true)
+        pooled += [step("projects", .running, 14, nil, detail: "Sending shop (2 of 3)"),
+                   step("signIn", .waiting, nil, nil), step("smoke", .waiting, nil, nil)]
+        let failed = [step("create", .done, 300, 41, detail: "e2-standard-4 in us-central1"),
+                      step("join", .done, 259, 12, detail: "Joined the control plane"),
+                      step("install", .failed, 247, 95, error: "apt-get could not reach the package mirror (exit 100)."),
+                      step("compare", .waiting, nil, nil), step("runtimes", .waiting, nil, nil),
+                      step("projects", .waiting, nil, nil), step("signIn", .waiting, nil, nil), step("smoke", .waiting, nil, nil)]
+        func row(_ id: String, _ name: String, _ steps: [DaemonAPI.MachineSetupStep], from: TimeInterval) -> DaemonAPI.ControlMachine {
+            var machine = DaemonAPI.ControlMachine(id: MachineRef(rawValue: id), name: name, platform: "linux", version: "0.0.0",
+                                                   state: "online", reach: "direct", machineID: nil)
+            machine.setup = DaemonAPI.MachineSetup(steps: steps, startedAt: now.addingTimeInterval(-from))
+            return machine
+        }
+        let home = MachineRef(rawValue: "walk-home")
+        controlHome = home
+        controlHosts = [
+            DaemonAPI.ControlMachine(id: home, name: "walk-mac", platform: "darwin", version: "0.0.0", state: "online",
+                                     reach: "direct", machineID: nil),
+            row("walk-pooled", "machine-3", pooled, from: 14),
+            row("walk-failed", "machine-4", failed, from: 300),
+        ]
+    }
+
     func openFromLaunchArguments() async {
         let arguments = ProcessInfo.processInfo.arguments
         func value(_ flag: String) -> String? {
@@ -708,6 +745,8 @@ extension RemoteModel {
         // `-canned-machines`: scratch machines with labels beside the canned daemon's Mac, for a walk of
         // the one machine picker (#5622): the canned daemon is one host with no control plane.
         if arguments.contains("-canned-machines") { cannedMachines() }
+        // `-canned-setup`: machines that set themselves up, for a walk of the steps and Try Again (#6012).
+        if arguments.contains("-canned-setup") { cannedSetup() }
         if let name = value("-folder"),
            let summary = work.folders.first(where: { $0.name == name }) {
             // Its page is New session (#366).

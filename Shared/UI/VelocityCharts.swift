@@ -21,12 +21,31 @@ struct VelocityChartsSection<Refresh: Equatable>: View {
     private var pageRead: Date? { read }
     @State private var range: VelocityChart.Range = .week
     @State private var picked: Date?
+    /// The last read failed (#5972): with no history, the page says so in place of the spinner;
+    /// with one, the line at the top says so beside its age.
+    @State private var failed = false
+    /// Try again's count, which reads again.
+    @State private var attempt = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let read = pageRead {
-                // How old what the page shows is (#5144): the oldest of its reads, at the top.
-                LastUpdateText(read: read).frame(maxWidth: .infinity, alignment: .trailing)
+                if failed, history != nil {
+                    // An earlier read on screen, and the last one failed (#5972): the words and its age.
+                    HStack(spacing: 8) {
+                        LastUpdateTimeline(read: read) { now in
+                            Text(LastUpdate.banner(Self.couldNotRead + ".", read: read, now: now))
+                                .appText(.fine)
+                                .foregroundStyle(Paper.secondary)
+                                .lineLimit(1)
+                        }
+                        Button(WorkLook.tryAgain) { attempt += 1 }.buttonStyle(.paper)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                } else {
+                    // How old what the page shows is (#5144): the oldest of its reads, at the top.
+                    LastUpdateText(read: read).frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
             Picker("Range", selection: $range) {
                 ForEach(VelocityChart.Range.allCases) { Text($0.rawValue).tag($0) }
@@ -35,17 +54,36 @@ struct VelocityChartsSection<Refresh: Equatable>: View {
             .labelsHidden()
             if let history {
                 VelocityChartBody(chart: VelocityChart(history, range: range), picked: $picked)
+            } else if failed {
+                // Nothing read, and the read failed (#5972): no spinner that never ends.
+                ContentUnavailableView {
+                    Label(Self.couldNotRead, icon: "exclamationmark.triangle")
+                } actions: {
+                    Button(WorkLook.tryAgain) { attempt += 1 }.buttonStyle(.paper)
+                }
+                .frame(maxWidth: .infinity, minHeight: 200)
             } else {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
             }
         }
         .onChange(of: range) { picked = nil }
-        .task(id: refresh) {
+        .task(id: Reading(refresh: refresh, attempt: attempt)) {
             if let loaded = await load() {
                 history = loaded
                 read = Date()
+                failed = false
+            } else if !Task.isCancelled {
+                failed = true
             }
         }
+    }
+
+    static var couldNotRead: String { "Could not read velocity" }
+
+    /// What starts a read: a change of `refresh`, or Try again.
+    private struct Reading: Equatable {
+        let refresh: Refresh
+        let attempt: Int
     }
 }
 

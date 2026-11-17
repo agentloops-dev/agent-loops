@@ -16,11 +16,8 @@ public enum SecretRevealWords {
 
     public static let shown = "Shown for 30 s. Your reveal is in the audit log."
     public static let copied = UserScopeWords.copied()
-    /// A copy of a plain field, which is not audited and not cleared.
-    public static let copiedPlain = "Copied."
     public static let noCopy = UserScopeWords.noCopyYet
     public static let didNotOpen = UserScopeWords.didNotOpen
-    public static let notCard = "This secret is not a card."
 
     /// What went wrong, in one line for the row (section 6).
     public static func failure(_ error: any Error) -> String {
