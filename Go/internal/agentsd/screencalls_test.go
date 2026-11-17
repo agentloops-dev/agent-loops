@@ -72,7 +72,7 @@ func prepareDrive(t *testing.T) {
 			builtDriveErr = err
 			return
 		}
-		dir, err := os.MkdirTemp("", "agents-drive-fake")
+		dir, err := runTempDir("agents-drive-fake")
 		if err != nil {
 			builtDriveErr = err
 			return

@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -24,7 +23,7 @@ func prepareWatch(t *testing.T) {
 			builtWatchErr = err
 			return
 		}
-		dir, err := os.MkdirTemp("", "agents-watch")
+		dir, err := runTempDir("agents-watch")
 		if err != nil {
 			builtWatchErr = err
 			return
