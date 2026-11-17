@@ -14,6 +14,13 @@ import (
 // A hosted server's views come through its one copy, and a session is never offered, nor
 // can call, a tool only a view may call (#1341).
 func TestAHostedServersViewsComeThroughItsOneCopy(t *testing.T) {
+	// Diagnosis for #5988 only (draft PR): many tries in one CI run, not more pushes.
+	for i := range 100 {
+		t.Run(fmt.Sprint(i), hostedServersViewsComeThroughItsOneCopy)
+	}
+}
+
+func hostedServersViewsComeThroughItsOneCopy(t *testing.T) {
 	self, _ := os.Executable()
 	t.Setenv("AGENTS_FAKE_MCP", "1")
 	t.Setenv("AGENTS_FAKE_MCP_VIEWS", "1")
@@ -75,7 +82,7 @@ func TestAHostedServersViewsComeThroughItsOneCopy(t *testing.T) {
 // (#3128).
 func TestAChangedEntrysOldViewCatalogIsRemoved(t *testing.T) {
 	// Diagnosis for #5988 only (draft PR): many tries in one CI run, not more pushes.
-	for i := range 25 {
+	for i := range 100 {
 		t.Run(fmt.Sprint(i), changedEntrysOldViewCatalogIsRemoved)
 	}
 }
