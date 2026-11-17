@@ -95,9 +95,10 @@ export const eventsMethods = {
     const history = await this.link.call("time/history", {}, host).catch(() => null);
     if (history) { this.time.value = { ...this.time.value, [host]: history }; this.usageRead(host, "time"); }
   },
-  /** A host too old to know the method leaves the Velocity page loading. */
+  /** A read that fails, or a host too old to know the method, marks the host's velocity failed (#5972). */
   async loadVelocity(this: Store, host: string): Promise<void> {
     const history = await this.link.call("velocity/history", {}, host).catch(() => null);
     if (history) { this.velocity.value = { ...this.velocity.value, [host]: history }; this.usageRead(host, "velocity"); }
+    if (Boolean(this.velocityFailed.value[host]) !== !history) this.velocityFailed.value = { ...this.velocityFailed.value, [host]: !history };
   },
 };
