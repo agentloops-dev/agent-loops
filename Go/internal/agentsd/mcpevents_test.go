@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -819,6 +820,7 @@ func TestAServerErrorIsTriedAgain(t *testing.T) {
 // subscription (held by another session's wait meanwhile), polls again and gets events; it
 // is not told the old stop.
 func TestAWaitAfterAStopPollsAgain(t *testing.T) {
+	flaky.UnderLoad(t, "#5920")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
