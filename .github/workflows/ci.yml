@@ -479,7 +479,90 @@ jobs:
         run: |
           # The batch is from the last green run on main, as `go`'s "Batch" step says.
           green=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json headSha --jq '.[0].headSha // empty' 2>/dev/null) || green=
-          node scripts/ci-sample.mjs run --before "${green:-$BEFORE}" --after "$GITHUB_SHA"
+          node scripts/ci-sample.mjs run --platform linux --before "${green:-$BEFORE}" --after "$GITHUB_SHA"
+
+  # The Xcode tasks (and the Go tasks a lane attested on a Mac) get the same sample on a macOS
+  # runner (#6077). A macOS minute costs about ten Linux ones, so: this Linux job of seconds
+  # says first whether the batch has such a task, and fixes the batch for the macOS job; that
+  # job reruns at most one task, each run at most 20 minutes (a run that hits the cap revokes
+  # nothing). Neither is a required check.
+  sample-macos-plan:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+      actions: read
+    outputs:
+      sampled: ${{ steps.plan.outputs.sampled }}
+      before: ${{ steps.plan.outputs.before }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: Web/.node-version
+          package-manager-cache: false
+      - name: Xcode tasks to sample
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          green=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json headSha --jq '.[0].headSha // empty' 2>/dev/null) || green=
+          node scripts/ci-sample.mjs run --platform macos --max 1 --dry --output --before "${green:-$BEFORE}" --after "$GITHUB_SHA"
+
+  # After `apps` and `test`, so it adds no load while the batch's own macOS checks run; not when
+  # either failed (main is broken then, a case for Fix main). A job they skipped is no failure.
+  sample-macos:
+    needs: [sample-macos-plan, apps, test]
+    if: ${{ always() && !cancelled() && needs.sample-macos-plan.result == 'success' && needs.sample-macos-plan.outputs.sampled != '0' && needs.apps.result != 'failure' && needs.test.result != 'failure' }}
+    runs-on: xcode-27
+    # One task at the merge commit, and at its parent only when it fails there: two runs of at
+    # most 20 minutes, and the set-up.
+    timeout-minutes: 50
+    permissions:
+      contents: write
+      issues: write
+      checks: read
+      pull-requests: read
+      actions: read
+    env:
+      NX_NO_CLOUD: "true"
+      NX_DAEMON: "false"
+      NX_LOAD_DOT_ENV_FILES: "false"
+      NX_TUI: "false"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Xcode
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
+      # What `apps` and `test-swift` set up: mac:build needs xcodegen, and the app and AgentsKit
+      # compile Metal.
+      - name: Tools
+        run: |
+          xcodebuild -version
+          brew install xcodegen &
+          xcodegen_pid=$!
+          xcodebuild -downloadComponent MetalToolchain
+          wait "$xcodegen_pid"
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: Web/.node-version
+          package-manager-cache: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+      - name: Sample the attested Xcode tasks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ needs.sample-macos-plan.outputs.before }}
+        run: node scripts/ci-sample.mjs run --platform macos --max 1 --minutes 20 --before "$BEFORE" --after "$GITHUB_SHA"
 
   # The Mac app and the Remote, as Nx's mac:build and remote:build (#5631): each an xcodebuild
   # through scripts/build-cache.sh, as a lane runs it, and the Blob's marks (#4615). A check main
