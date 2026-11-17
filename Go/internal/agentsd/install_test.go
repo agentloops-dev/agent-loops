@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/ulikunitz/xz"
 )
@@ -461,8 +461,18 @@ func TestAServerTakesNPXAsNoClaude(t *testing.T) {
 // installs the pinned toolset, runtimes/list says installing, and from then on the shim
 // runs the adapter with node, with no `npm exec` under it.
 func TestClaudesFirstUseInstallsTheAppsCopy(t *testing.T) {
-	flaky.UnderLoad(t, "#5825")
-	_, bundle := fakeVendors(t)
+	dist, bundle := fakeVendors(t)
+	// The Node download waits until the test has read Installing (#5825): with the fake
+	// toolset, the install could end before that read, and the read then said Available.
+	gate := make(chan struct{})
+	openGate := sync.OnceFunc(func() { close(gate) })
+	held := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-gate
+		dist.Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(held.Close)
+	t.Cleanup(openGate) // before held.Close, which waits for the held download
+	nodeDistURL = held.URL + "/"
 	own := t.TempDir()
 	os.WriteFile(filepath.Join(own, "npx"), []byte("#!/bin/sh\n"), 0o755)
 	oldShell := loginShellPath
@@ -489,6 +499,7 @@ func TestClaudesFirstUseInstallsTheAppsCopy(t *testing.T) {
 	if s := d.statusOf(r); s.Availability.Installing == nil {
 		t.Fatalf("runtimes/list says %+v while the app's copy installs", s.Availability)
 	}
+	openGate()
 	end := waitInstalled(t, c, "claude")
 	if end.Availability.Available == nil || end.Availability.Available.Path != appToolset(r) {
 		t.Fatalf("installed as %+v", end.Availability)

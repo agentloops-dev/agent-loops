@@ -12,7 +12,7 @@ import { backgroundAge, backgroundEnded, backgroundNoun, isRunning, subagentNoSt
 import { display, isPersonsAsk, isWorking, raisableStop, type ChatTurn, type Item } from "../model/turns";
 import { fromWireDate, toWireDate } from "../protocol/dates";
 import type { Agent, AppViewCall, BackgroundItem, ClientPermissionSettings, FileMentionDTO, FindMatch, FindResult, TranscriptEntry, TurnSummary, UUID } from "../protocol/generated";
-import { openTakeOver, replace, route } from "../route";
+import { go, openTakeOver, replace, route } from "../route";
 import { useWaitingCards, type WaitingCard } from "./Cards";
 import { OfflineStrip } from "./OfflineStrip";
 import { resourcesAsked } from "./Resources";
@@ -20,6 +20,7 @@ import { KeptBubbles } from "./Kept";
 import { folderStripApplies, MissingFolderStrip } from "./MissingFolder";
 import { accountMoveReason, AccountMoveStrip } from "./AccountMove";
 import { continueStripApplies, ContinueStrip } from "./ContinueStrip";
+import { allowanceOutLine, continueButton, offersContinue, resetsAt, turnHoldsAllowance } from "../model/continueWhenBack";
 import { Strips } from "./Strip";
 import { NowBar, NowFoot, NowHead, NowTop, useNowOpen } from "./Now";
 import { nowBackground, nowWorking } from "../model/nowWords";
@@ -172,6 +173,11 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
 
   // Each turn the same object until an entry lands in it, so only that one is drawn again (#170).
   const rows: ChatTurn[] = store.chatTurns.value;
+  // The buttons' title, and which turn holds the line. Read here so a later allowance
+  // redraws that turn: TurnView is memo, and a context change above it does not reach in.
+  const continueTitle = agent ? continueButton(resetsAt(store.runtimeAllowances.value[host], agent.runtimeID)) : "";
+  const spentLine = agent && offersContinue(agent) ? allowanceOutLine(rows) : null;
+  const canStartNew = store.has(host, Capability.chatContinueInNewSession1);
   // What a call's line asks of the background is only whether its call still runs: the list
   // changes when that does, and not with every other change to the agent.
   const allBackground = agent?.background;
@@ -228,11 +234,25 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
       undoTurn: agent && agent.state !== "archived" && store.has(host, Capability.changesUndo1)
         ? (turn, confirmed) => store.link.call("changes/undoTurn", { agentID: session as UUID, turn: turn as UUID, ...(confirmed ? { confirmed } : {}) }, host)
         : undefined,
+      // Under "Its allowance ran out" (#5919). The wait needs the old capability. The new
+      // session is left out when the host is too old. The title is a prop of the turn.
+      allowanceOut: agent && offersContinue(agent) && store.has(host, Capability.chatContinueWhenBack1) ? {
+        wait: () => store.continueWhenBack(host, session, true),
+        startNew: store.has(host, Capability.chatContinueInNewSession1) ? async () => {
+          const current = store.agent(host, session);
+          if (!current) return;
+          const folder = folderPath(current);
+          const id = await store.continueInNewSession(host, session);
+          if (id) go({ host, folder, session: id });
+        } : undefined,
+      } : undefined,
       // With no Mac, no window shows terminal output (#3425).
       hasMac: store.hasMac.value,
     };
-  }, [host, session, agent?.pendingSandboxFailure, down, !agent || agent.state === "archived", store.has(host, Capability.chatBranch1),
-    store.has(host, Capability.changesUndo1),
+  }, [host, session, agent?.pendingSandboxFailure, agent?.state, agent?.endedReason, agent?.continueWhenBack,
+    down, !agent || agent.state === "archived", store.has(host, Capability.chatBranch1),
+    store.has(host, Capability.changesUndo1), store.has(host, Capability.chatContinueWhenBack1),
+    store.has(host, Capability.chatContinueInNewSession1),
     store.hasMac.value]);
 
   const scroller = useRef<HTMLDivElement>(null);
@@ -710,6 +730,7 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
             fetched={fetched.value[turn.id] && shownItems(fetched.value[turn.id]!.items)} fetchFailed={!!failedTurns.value[turn.id]} hasEarlier={fetched.value[turn.id]?.hasEarlier ?? false}
             auto={i >= rows.length - openTurnsHeld}
             isLive={i === rows.length - 1 && live} background={background}
+            allowance={spentLine && turnHoldsAllowance(turn, spentLine) ? { line: spentLine, title: continueTitle, canStart: canStartNew } : null}
             loadDetail={turnActions.loadDetail} loadEarlier={turnActions.loadEarlier} />
         ))}
         {/* A prompt on its way (#4814): the person's bubble at once, dimmed until the host's own entry lands. */}

@@ -1,6 +1,15 @@
 import AgentsKitCore
 import SwiftUI
 
+/// The two buttons under "Its allowance ran out" (#5919). Nil draws neither. `startNew` is
+/// nil when the host cannot start the new session, and then only **Continue at** is drawn.
+struct AllowanceOutActions {
+    var resetsAt: Date?
+    var wait: @MainActor () async -> Void
+    /// Nil on a host without `chat.continue-in-new-session/1`.
+    var startNew: (@MainActor () async -> Void)?
+}
+
 /// What the shared chat views need from whichever app is drawing them (033).
 ///
 /// The transcript rows are one copy in both apps, and they touch the app in three places
@@ -116,10 +125,14 @@ struct ChatActions {
     /// open agent, by the turn, confirmed or not. Nil, where the host is too old or the
     /// session is archived, draws the card without it.
     var undoTurn: (@MainActor (UUID, Bool) async throws -> DaemonAPI.UndoTurnResult)? = nil
+    /// The buttons under "Its allowance ran out" (#5919). Nil draws neither.
+    var allowanceOut: AllowanceOutActions? = nil
 }
 
 extension EnvironmentValues {
     @Entry var chatActions = ChatActions()
+    /// The "Its allowance ran out" line the buttons sit under (#5919). Nil draws none.
+    @Entry var allowanceOutLine: UUID? = nil
     /// The open agent's background work (057), for a tool call to say it runs on.
     @Entry var backgroundWork: [BackgroundItem] = []
 }

@@ -415,6 +415,8 @@ private struct DashboardSessionLine: View {
             HStack(alignment: .center, spacing: 8) {
                 DashboardMark(mark: session.mark, agent: session.agent)
                 Text(title(agent)).lineLimit(1)
+                // High or low (#5849), as the session list marks it.
+                if let chip = WorkPriorityChip(agent) { chip }
                 Text(line(agent)).foregroundStyle(Paper.secondary).lineLimit(1)
                 Spacer(minLength: 8)
                 ActivityTime(date: agent.lastActivityAt)

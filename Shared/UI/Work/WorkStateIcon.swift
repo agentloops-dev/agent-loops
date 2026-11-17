@@ -237,6 +237,9 @@ struct WorkMoreChips: View {
 /// Medium the warning's orange, Low the plain chip. None has no chip.
 struct WorkPriorityChip: View {
     let words: String
+    /// The tooltip and spoken label; "Priority high" when nil. A session's says where its
+    /// priority comes from (#5849).
+    var said: String?
     /// On a selected row in a key window the chip goes white, as the row's text does.
     @Environment(\.backgroundProminence) private var prominence
 
@@ -245,6 +248,13 @@ struct WorkPriorityChip: View {
     init?(priority: String?) {
         guard let words = WorkPlan.priorityWords(priority) else { return nil }
         self.words = words
+    }
+
+    /// A session's chip (#5849): high and low only; medium and none show nothing.
+    init?(_ agent: Agent) {
+        guard let words = SessionPriorityWords.chip(agent) else { return nil }
+        self.words = words
+        said = SessionPriorityWords.help(agent)
     }
 
     private var tint: StateTint {
@@ -276,7 +286,7 @@ struct WorkPriorityChip: View {
             .fixedSize()
             // One element with one label: a label stacked on a Text's own crashes AppKit's accessibility.
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Priority \(words)")
-            .help("Priority \(words.lowercased())")
+            .accessibilityLabel(said ?? "Priority \(words)")
+            .help(said ?? "Priority \(words.lowercased())")
     }
 }

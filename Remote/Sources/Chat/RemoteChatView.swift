@@ -155,6 +155,8 @@ struct RemoteChatView: View {
                                // it is, and the page it asks for next should be sized to
                                // that (SC-007).
                                onHeight: { model.measure(transcriptHeight: $0) },
+                               allowanceResetsAt: model.runtimeAllowances?.resetsAt(agent.runtimeID),
+                               allowanceCanStart: model.host(agent.host, has: Capability.chatContinueInNewSession1),
                                onFollowing: { page.isFollowingEnd = $0 })
                     // Voice mode speaks a turn's reply when it ends (#2322).
                     .voiceModeObserves(agent, items: page.transcriptItems,
@@ -600,7 +602,26 @@ struct RemoteChatView: View {
             fromLine: { [model] sender in model.work.fromLine(sender) },
             // Ask for More on a Stopped by a policy card (#3262); the Remote has no Spending.
             askForMore: { [model] in try await PolicyLayersWords.askForMore(on: model.controlPlane) },
-            undoTurn: undoTurn)
+            undoTurn: undoTurn,
+            allowanceOut: allowanceOut)
+    }
+
+    /// The buttons under "Its allowance ran out" (#5919). Nil unless this chat offers them
+    /// and the host can wait. **Continue in new session** is left out when the host is too old.
+    private var allowanceOut: AllowanceOutActions? {
+        guard let agent, ContinueWhenBackWords.offers(agent),
+              model.host(agent.host, has: Capability.chatContinueWhenBack1) else { return nil }
+        let id = agent.id
+        // A closure in a ternary does not take this type (#5919).
+        let startNew: (@MainActor () async -> Void)?
+        if model.host(agent.host, has: Capability.chatContinueInNewSession1) {
+            startNew = { [model] in _ = await model.continueInNewSession(id) }
+        } else {
+            startNew = nil
+        }
+        return AllowanceOutActions(resetsAt: model.runtimeAllowances?.resetsAt(agent.runtimeID),
+                                   wait: { [model] in await model.continueWhenBack(id) },
+                                   startNew: startNew)
     }
 
     /// Undo These Changes on a turn's card (#3437): not on an archived session, nor on a
@@ -642,6 +663,8 @@ struct RemoteChatView: View {
                       isPinned: model.isPinned(agent),
                       canMute: model.canMute(agent),
                       isMuted: agent.isMuted,
+                      priorityChecked: SessionPriorityWords.checked(agent),
+                      priorityFollow: SessionPriorityWords.title(.follow, for: agent),
                       findsOnHost: findsInChat,
                       isPopped: popped != nil,
                       leavesChat: popped == nil || sceneFolder != nil,
@@ -693,6 +716,9 @@ struct ChatMenuState: Equatable {
     let isPinned: Bool
     let canMute: Bool
     let isMuted: Bool
+    /// Priority ▸ (#5849): the item with the check, and "From issue" or "None".
+    let priorityChecked: SessionPriorityWords.Choice
+    let priorityFollow: String
     /// Whether the chat's host can find: on one too old (#1748) the item is greyed, with
     /// the update help, not left out (#1867).
     let findsOnHost: Bool
@@ -772,6 +798,11 @@ private struct ChatMenu: View, Equatable {
                 // As the Mac's Session menu has them (#342, #751).
                 Button("Rename…", icon: "pencil") {
                     if let agent = model.work.agent(id) { model.askToRename(agent) }
+                }
+                .disabled(state.isStale)
+                // High, Medium, Low or From issue (#5849), as the Mac's Session menu has it.
+                SessionPriorityMenu(checked: state.priorityChecked, followTitle: state.priorityFollow) { priority in
+                    Task { await model.setPriority(id, priority) }
                 }
                 .disabled(state.isStale)
                 if state.canMute {

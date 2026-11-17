@@ -754,6 +754,23 @@
       ],
       "additionalProperties": false
     },
+    "ContinueInNewSessionRequest": {
+      "type": "object",
+      "description": "agents/continueInNewSession (#5919): a chat whose allowance ran out continues in a new session on Auto, in the same worktree or the same folder.",
+      "properties": {
+        "agentID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "requestID": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "As StartRequest.requestID: a retry answers with the first new session."
+        }
+      },
+      "required": [
+        "agentID"
+      ],
+      "additionalProperties": false
+    },
     "ContinueWhenBack": {
       "type": "object",
       "description": "When a chat paused by a spent allowance carries on by itself (#1859).",

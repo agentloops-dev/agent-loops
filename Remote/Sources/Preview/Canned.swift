@@ -102,6 +102,10 @@ enum Canned {
                 // in the background, the Now card's detail at the foot.
                 agent.goal = Goal(objective: "Both platforms build from one package", status: .active,
                                   tokensUsed: 41_000, tokenBudget: 200_000)
+                // High from its issue (#5849): the row's chip and Priority ▸ From issue (High).
+                agent.labels = [SessionLabel(value: "#412", owner: .agent)]
+                agent.priority = .high
+                agent.prioritySource = .issue
                 agent.background = [BackgroundItem(id: "sub-1", kind: .subagent, name: "reviewer",
                                                    detail: "Review the split for missing imports",
                                                    startedAt: ago(2))]

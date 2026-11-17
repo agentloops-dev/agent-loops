@@ -177,6 +177,19 @@ public extension DaemonAPI {
             self.auto = auto
         }
     }
+
+    /// `agents/continueInNewSession` (#5919): a chat whose allowance ran out continues in a
+    /// new session on Auto, in the same worktree or the same folder. Answered with the new
+    /// agent's id. The same `requestID` answers with the first new session.
+    struct ContinueInNewSessionRequest: Codable, Sendable {
+        public var agentID: UUID
+        /// As `StartRequest.requestID`: a retry answers with the first new session.
+        public var requestID: UUID?
+        public init(agentID: UUID, requestID: UUID? = nil) {
+            self.agentID = agentID
+            self.requestID = requestID
+        }
+    }
 }
 
 public extension DaemonAPI.Method {
@@ -184,6 +197,8 @@ public extension DaemonAPI.Method {
     static let runtimesSetDefaultAccount = "runtimes/setDefaultAccount"
     /// `ContinueInNewRequest` → the new agent's id (#999).
     static let agentsContinueInNew = "agents/continueInNew"
+    /// `ContinueInNewSessionRequest` → the new agent's id (#5919).
+    static let agentsContinueInNewSession = "agents/continueInNewSession"
 }
 
 /// The id `runtimes/setDefaultAccount` names a runtime's own sign-in by (#999).

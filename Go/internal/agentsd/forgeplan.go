@@ -36,6 +36,7 @@ func (d *Daemon) registerForgePlans() {
 		return d.forgeFeatures(ctx, r)
 	})
 	d.registerForgePlanWrites()
+	d.registerForgeNext()
 }
 
 // withHierarchy sets an issue's level and feature from its labels, and its parent and progress.
@@ -106,49 +107,53 @@ type planRef struct {
 
 // forgePlan is an epic's plan: its children in steps, and its lead.
 func (d *Daemon) forgePlan(ctx context.Context, r wire.ForgePlanRequest) (wire.ForgePlan, error) {
-	const method = "forge/plan"
-	if r.Node.Kind != lineage.KindIssue {
-		return wire.ForgePlan{}, Invalid("%s: the node's kind is %s, not issue", method, r.Node.Kind)
-	}
-	key, _ := json.Marshal([]any{method, r.Node.Ref})
-	var epic wire.ForgeItem
-	var children []planChild
-	var standing *wire.ForgeStanding
-	if a, ok := d.forgeCached(string(key)); ok && a.plan != nil {
-		epic, children, standing = a.plan.epic, a.plan.children, a.plan.standing
-	} else {
-		var err error
-		if f, ref, ok := d.forgeOwning(r.Node); ok {
-			var a forgePlanAnswer
-			a, err = f.Plan(ctx, ref)
-			epic, children, err = a.epic, a.children, forgeCannotErr(method, f, err)
-		} else {
-			return wire.ForgePlan{}, Invalid("%s: %s is not an issue on GitHub, GitLab, Forgejo, Linear, Jira or Azure Boards", method, r.Node.Ref)
-		}
-		if err != nil {
-			return wire.ForgePlan{}, err
-		}
-		// A standing epic's plan is its query's issues, not its sub-issues (#3661), and it has
-		// no "done of total".
-		if epic.Standing != nil && *epic.Standing {
-			var q wire.ForgeStanding
-			if q, children, err = d.standingPlan(ctx, method, epic); err != nil {
-				return wire.ForgePlan{}, err
-			}
-			standing, epic.Progress = &q, nil
-		}
-		d.forgeRemember(string(key), forgeAnswer{plan: &forgePlanAnswer{epic: epic, children: children, standing: standing}})
-		items := []wire.ForgeItem{epic}
-		for _, c := range children {
-			items = append(items, c.item)
-		}
-		d.resolvedFromForge(items)
+	epic, children, standing, err := d.forgePlanRead(ctx, "forge/plan", r.Node)
+	if err != nil {
+		return wire.ForgePlan{}, err
 	}
 	out := planOf(epic, children, standing != nil)
 	out.Standing = standing
 	// The lead is this machine's, read each time: it starts and ends more often than a plan changes.
 	out.Lead = d.leadOf(r.Node)
 	return out, nil
+}
+
+// forgePlanRead is an epic and its children with their blockers, as forge/plan reads them (from
+// the forge cache within its minute), and a standing epic's query (nil for any other epic).
+func (d *Daemon) forgePlanRead(ctx context.Context, method string, node wire.LineageNode) (wire.ForgeItem, []planChild, *wire.ForgeStanding, error) {
+	if node.Kind != lineage.KindIssue {
+		return wire.ForgeItem{}, nil, nil, Invalid("%s: the node's kind is %s, not issue", method, node.Kind)
+	}
+	key, _ := json.Marshal([]any{"forge/plan", node.Ref})
+	if a, ok := d.forgeCached(string(key)); ok && a.plan != nil {
+		return a.plan.epic, a.plan.children, a.plan.standing, nil
+	}
+	f, ref, ok := d.forgeOwning(node)
+	if !ok {
+		return wire.ForgeItem{}, nil, nil, Invalid("%s: %s is not an issue on GitHub, GitLab, Forgejo, Linear, Jira or Azure Boards", method, node.Ref)
+	}
+	a, err := f.Plan(ctx, ref)
+	if err != nil {
+		return wire.ForgeItem{}, nil, nil, forgeCannotErr(method, f, err)
+	}
+	epic, children := a.epic, a.children
+	var standing *wire.ForgeStanding
+	// A standing epic's plan is its query's issues, not its sub-issues (#3661), and it has
+	// no "done of total".
+	if epic.Standing != nil && *epic.Standing {
+		var q wire.ForgeStanding
+		if q, children, err = d.standingPlan(ctx, method, epic); err != nil {
+			return wire.ForgeItem{}, nil, nil, err
+		}
+		standing, epic.Progress = &q, nil
+	}
+	d.forgeRemember(string(key), forgeAnswer{plan: &forgePlanAnswer{epic: epic, children: children, standing: standing}})
+	items := []wire.ForgeItem{epic}
+	for _, c := range children {
+		items = append(items, c.item)
+	}
+	d.resolvedFromForge(items)
+	return epic, children, standing, nil
 }
 
 // planOf puts children in steps: a child's step is one more than the last step of the children

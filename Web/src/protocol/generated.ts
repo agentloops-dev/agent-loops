@@ -3381,6 +3381,16 @@ export interface ContinueInNewRequest {
   auto?: boolean;
 }
 
+/**
+ * agents/continueInNewSession (#5919): a chat whose allowance ran out continues in a new session on
+ * Auto, in the same worktree or the same folder.
+ */
+export interface ContinueInNewSessionRequest {
+  agentID: UUID;
+  /** As StartRequest.requestID: a retry answers with the first new session. */
+  requestID?: UUID;
+}
+
 /** When a chat paused by a spent allowance carries on by itself (#1859). */
 export interface ContinueWhenBack {
   /**
@@ -6042,6 +6052,46 @@ export interface ForgeMergeRequest {
   auto?: boolean;
 }
 
+/**
+ * forge/next (#5689): the work that is ready, in one order, at most 100 rows. The top row that is
+ * not on hold is the next one to pick up. readAt is when this answer was made; the forge reads in
+ * it may be up to the forge cache's minute older. errors says a forge that could not be read, as
+ * ForgeList's does; the rows of the others still come.
+ */
+export interface ForgeNext {
+  rows: ForgeNextRow[];
+  readAt: WireDate;
+  errors?: ForgeListError[];
+}
+
+/**
+ * forge/next (#5689): the folder whose work is read. epic (an issue's lineage node) gives only that
+ * epic's children, or a standing epic's query (#3661). level epic gives the open epics instead of
+ * the issues, in the same order, to choose which epic gets a lead; it takes no epic.
+ */
+export interface ForgeNextRequest {
+  folder: string;
+  epic?: LineageNode;
+  level?: string;
+}
+
+/**
+ * A row of forge/next (#5689): an item that is ready (open, not an epic unless the level is epic,
+ * no open blocked by, and not taken: no session on this machine that is not archived is labelled
+ * with it, no open pull request fixes it, and it has no assignee), or one that is on hold and
+ * otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high,
+ * medium, none, low; then the milestone's due date, the earliest first, no due date last; then the
+ * oldest (createdAt, then the lowest number). reasons are short words for the keys that put it
+ * there, as priority high, milestone Work, due 20 Nov, and oldest (when its age put it above the
+ * next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
+ */
+export interface ForgeNextRow {
+  item: ForgeItem;
+  place: number;
+  reasons: string[];
+  onHold: boolean;
+}
+
 /** forge/labels, forge/rerun and forge/diff (#3130): the issue or pull request. */
 export interface ForgeNodeRequest {
   node: LineageNode;
@@ -6052,8 +6102,9 @@ export interface ForgeNodeRequest {
  * step, in the forge's order within a step. steps are the children of each step, the first first.
  * lead is the session on this machine, not archived, that works on the epic in lineage (its label
  * #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661):
- * its children are then the open issues of its query, not its sub-issues, at most 100, in order
- * (priority, then the oldest), all in one step 1; its item has no progress.
+ * its children are then the open issues of its query, not its sub-issues, at most 100, in the order
+ * of forge/next (#5689: not on hold first, then priority, the milestone's due date and the oldest),
+ * all in one step 1; its item has no progress.
  */
 export interface ForgePlan {
   item: ForgeItem;
@@ -16693,6 +16744,7 @@ export interface Methods {
   "agents/cancelContinue": { params: AgentRequest; result: Agent };
   "agents/continueInFolder": { params: ContinueInFolderRequest; result: UUID };
   "agents/continueInNew": { params: ContinueInNewRequest; result: UUID };
+  "agents/continueInNewSession": { params: ContinueInNewSessionRequest; result: UUID };
   "agents/continueWhenBack": { params: AgentRequest; result: Agent };
   "agents/delete": { params: AgentRequest; result: Empty };
   "agents/discardDraft": { params: DiscardDraftRequest; result: Empty };
@@ -16880,6 +16932,7 @@ export interface Methods {
   "forge/listAll": { params: ForgeListAllRequest; result: ForgeListAll };
   "forge/log": { params: ForgeLogRequest; result: ForgeLog };
   "forge/merge": { params: ForgeMergeRequest; result: ForgeDone };
+  "forge/next": { params: ForgeNextRequest; result: ForgeNext };
   "forge/plan": { params: ForgePlanRequest; result: ForgePlan };
   "forge/pull": { params: ForgeItemRequest; result: ForgeItemDetail };
   "forge/pulls": { params: ForgeListRequest; result: ForgeList };
@@ -17167,6 +17220,7 @@ export const MethodTarget = {
   "agents/cancelContinue": "host",
   "agents/continueInFolder": "host",
   "agents/continueInNew": "host",
+  "agents/continueInNewSession": "host",
   "agents/continueWhenBack": "host",
   "agents/delete": "host",
   "agents/discardDraft": "host",
@@ -17354,6 +17408,7 @@ export const MethodTarget = {
   "forge/listAll": "control",
   "forge/log": "host",
   "forge/merge": "host",
+  "forge/next": "host",
   "forge/plan": "host",
   "forge/pull": "host",
   "forge/pulls": "host",
@@ -17951,6 +18006,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ContentBlockAnnotations: { required: [], optional: ["audience", "priority"] },
   ContinueInFolderRequest: { required: ["agentID", "text", "attachments"], optional: ["requestID"] },
   ContinueInNewRequest: { required: ["agentID"], optional: ["accountID", "requestID", "auto"] },
+  ContinueInNewSessionRequest: { required: ["agentID"], optional: ["requestID"] },
   ContinueWhenBack: { required: ["at", "resetKnown"], optional: [] },
   ControlAuth: { required: ["id", "nonce", "mac", "kind"], optional: ["epoch", "capabilities", "page", "publicKey"] },
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
@@ -18156,6 +18212,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeLogRequest: { required: ["node"], optional: ["check"] },
   ForgeLogins: { required: [], optional: ["github", "gitlab", "linear", "jira", "forgejo", "bitbucket", "azureDevOps"] },
   ForgeMergeRequest: { required: ["node", "sha"], optional: ["method", "auto"] },
+  ForgeNext: { required: ["rows", "readAt"], optional: ["errors"] },
+  ForgeNextRequest: { required: ["folder"], optional: ["epic", "level"] },
+  ForgeNextRow: { required: ["item", "place", "reasons", "onHold"], optional: [] },
   ForgeNodeRequest: { required: ["node"], optional: [] },
   ForgePlan: { required: ["item", "children", "steps"], optional: ["lead", "standing"] },
   ForgePlanChild: { required: ["item", "blockedBy", "step"], optional: ["blockedOutside"] },

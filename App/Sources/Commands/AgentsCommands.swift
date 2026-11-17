@@ -300,6 +300,12 @@ struct AgentsCommands: Commands {
             Button(MuteWords.label(muted: muted)) { act { await model.setMuted($0.id, !muted) } }
                 .help(MuteWords.help(muted: muted))
                 .disabled(agent.map { !model.canMute($0) } ?? true)
+            // High, Medium, Low or From issue (#5849), as the row's menu has it.
+            if let agent, agent.state != .archived {
+                SessionPriorityMenu(agent: agent) { priority in
+                    Task { await model.setPriority(agent.id, priority) }
+                }
+            }
             // The person's title (#751), edited in the key window's toolbar.
             Button("Rename…") { rename() }
             .disabled(agent == nil || agent?.state == .archived)

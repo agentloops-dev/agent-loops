@@ -143,6 +143,13 @@ func samePriority[T comparable](a, b *T) bool {
 // nil), then of the sessions those whose priority changed started, priorityHops deep. Not under
 // any lock: it reads the folders' git remotes and saves records.
 func (d *Daemon) refreshPriorities(only map[wire.UUID]bool) {
+	moved := false
+	// A lease's line and the start queue go by the priority (#5848): a change moves a waiter.
+	defer func() {
+		if moved {
+			d.reorderLines()
+		}
+	}()
 	for range priorityHops {
 		changed := map[wire.UUID]bool{}
 		for _, a := range d.Store.Agents() {
@@ -160,6 +167,7 @@ func (d *Daemon) refreshPriorities(only map[wire.UUID]bool) {
 		if len(changed) == 0 {
 			return
 		}
+		moved = true
 		only = map[wire.UUID]bool{}
 		for _, a := range d.Store.Agents() {
 			if a.StartedByAgent != nil && changed[*a.StartedByAgent] {

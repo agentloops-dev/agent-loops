@@ -13,6 +13,7 @@ var startsAgent = methodSet(
 	"agents/branchFrom",
 	"agents/continueInFolder",
 	"agents/continueInNew",
+	"agents/continueInNewSession",
 	"agents/fork",
 	"agents/start",
 )

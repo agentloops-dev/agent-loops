@@ -280,6 +280,30 @@ extension RemoteModel {
         }
     }
 
+    /// Continue in a new session (#5919): Auto, in the same worktree or folder, then this
+    /// chat is archived. Open the new session. A failed start leaves this chat as it is.
+    @discardableResult
+    func continueInNewSession(_ agentID: UUID) async -> Bool {
+        guard !isStale else {
+            problem = "Your Mac is not answering, so that could not be sent."
+            return false
+        }
+        do {
+            let id = try await sendOnce(DaemonAPI.Method.agentsContinueInNewSession,
+                                        DaemonAPI.ContinueInNewSessionRequest(agentID: agentID, requestID: UUID()))
+                .decode(UUID.self)
+            await loadWholeAgent(id)
+            selection = id
+            return true
+        } catch let error as JSONRPCError {
+            problem = error.message
+            return false
+        } catch {
+            problem = "That did not reach your Mac."
+            return false
+        }
+    }
+
     /// Carry on when the allowance is back, or no longer (#1859).
     func continueWhenBack(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsContinueWhenBack) }
 
@@ -533,6 +557,22 @@ extension RemoteModel {
             }
         }
         if sent { offer(undo) }
+    }
+
+    /// Priority ▸ from the card's or the chat's ··· menu (#5849): a level set on the session, or
+    /// nil to follow its issue again. Its host's agent.updated then redraws the chip.
+    func setPriority(_ agentID: UUID, _ priority: SessionPriority?) async {
+        let host = work.agent(agentID)?.host ?? .mac
+        guard !isStale(on: host) else {
+            problem = notAnswering(host, "that could not be sent.")
+            return
+        }
+        do {
+            let request = DaemonAPI.SetPriorityRequest(agentID: agentID, priority: priority)
+            try await client(for: request).call(DaemonAPI.Method.agentsSetPriority, request)
+        } catch {
+            problem = away(error, "that could not be sent.") ?? "That did not reach your Mac."
+        }
     }
 
     /// Whether this session's host can mute it: one from before #2003 cannot.

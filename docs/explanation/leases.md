@@ -110,8 +110,20 @@ the agent out of the line. If the agent waits for something else instead, it kee
 and the app starts it again when its turn comes. The line and the wait both outlive a restart
 of Agent Loops.
 
-The line stays first come, first served, but an agent that loses its place through no act of
-its own keeps the time it first asked (#4041):
+The line goes by the session's priority first (#5848): a `high` session is ahead of a
+`medium` one, then a session with no priority, then a `low` one. The priority is the one the
+session goes by now (set on it, from its issue, or from the session that started it), so a
+session whose priority changes while it waits moves in the line. Within one priority, a wait
+with a `by` goes first, the earliest `by` first (#4268), then whoever asked first. A holder is
+never disturbed: a higher priority takes the next free place, never one that is held. The
+lease's reply says why when others are ahead: "3rd in line; 2 sessions with a higher priority
+are ahead". Each grant from the line records how long it waited and its priority in its
+`lease.granted` event, so the wait of a low-priority session can be measured. The start queue
+for sessions that other sessions start goes the same way: the highest priority first, then
+the oldest.
+
+Within one priority, an agent that loses its place through no act of its own keeps the time
+it first asked (#4041):
 
 - **A restart.** If the line and the agent's wait do not agree after Agent Loops starts again, the
   app ends the wait and tells the agent to ask again. When it asks again for the same

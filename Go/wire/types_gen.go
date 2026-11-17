@@ -3623,6 +3623,14 @@ type ContinueInNewRequest struct {
 	Auto *bool `json:"auto,omitzero"`
 }
 
+// agents/continueInNewSession (#5919): a chat whose allowance ran out continues in a new session on Auto, in the same worktree or the same folder.
+type ContinueInNewSessionRequest struct {
+	AgentID UUID `json:"agentID"`
+
+	// As StartRequest.requestID: a retry answers with the first new session.
+	RequestID *UUID `json:"requestID,omitzero"`
+}
+
 // When a chat paused by a spent allowance carries on by itself (#1859).
 type ContinueWhenBack struct {
 	// When it sends "continue": the provider's reset time, or the app's next check of the runtime.
@@ -6447,12 +6455,41 @@ type ForgeMergeRequest struct {
 	Auto *bool `json:"auto,omitzero"`
 }
 
+// forge/next (#5689): the work that is ready, in one order, at most 100 rows. The top row that is not on hold is the next one to pick up. readAt is when this answer was made; the forge reads in it may be up to the forge cache's minute older. errors says a forge that could not be read, as ForgeList's does; the rows of the others still come.
+type ForgeNext struct {
+	Rows []ForgeNextRow `json:"rows"`
+
+	ReadAt Date `json:"readAt"`
+
+	Errors []ForgeListError `json:"errors,omitzero"`
+}
+
+// forge/next (#5689): the folder whose work is read. epic (an issue's lineage node) gives only that epic's children, or a standing epic's query (#3661). level epic gives the open epics instead of the issues, in the same order, to choose which epic gets a lead; it takes no epic.
+type ForgeNextRequest struct {
+	Folder string `json:"folder"`
+
+	Epic *LineageNode `json:"epic,omitzero"`
+
+	Level *string `json:"level,omitzero"`
+}
+
+// A row of forge/next (#5689): an item that is ready (open, not an epic unless the level is epic, no open blocked by, and not taken: no session on this machine that is not archived is labelled with it, no open pull request fixes it, and it has no assignee), or one that is on hold and otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high, medium, none, low; then the milestone's due date, the earliest first, no due date last; then the oldest (createdAt, then the lowest number). reasons are short words for the keys that put it there, as priority high, milestone Work, due 20 Nov, and oldest (when its age put it above the next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
+type ForgeNextRow struct {
+	Item ForgeItem `json:"item"`
+
+	Place int64 `json:"place"`
+
+	Reasons []string `json:"reasons"`
+
+	OnHold bool `json:"onHold"`
+}
+
 // forge/labels, forge/rerun and forge/diff (#3130): the issue or pull request.
 type ForgeNodeRequest struct {
 	Node LineageNode `json:"node"`
 }
 
-// forge/plan (#3267): an epic and its plan. children are its sub-issues (at most 100), step by step, in the forge's order within a step. steps are the children of each step, the first first. lead is the session on this machine, not archived, that works on the epic in lineage (its label #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661): its children are then the open issues of its query, not its sub-issues, at most 100, in order (priority, then the oldest), all in one step 1; its item has no progress.
+// forge/plan (#3267): an epic and its plan. children are its sub-issues (at most 100), step by step, in the forge's order within a step. steps are the children of each step, the first first. lead is the session on this machine, not archived, that works on the epic in lineage (its label #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661): its children are then the open issues of its query, not its sub-issues, at most 100, in the order of forge/next (#5689: not on hold first, then priority, the milestone's due date and the oldest), all in one step 1; its item has no progress.
 type ForgePlan struct {
 	Item ForgeItem `json:"item"`
 

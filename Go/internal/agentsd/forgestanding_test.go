@@ -78,7 +78,7 @@ func TestStandingMatchesAndOrder(t *testing.T) {
 	}
 	items := []wire.ForgeItem{item("30", "", "bug"), item("12", "", "priority:low"), item("40", "", "priority:high"),
 		item("25", "", "priority:medium"), item("9", "", "bug"), item("31", "", "Priority:High")}
-	standingOrder(items)
+	nextOrder(items)
 	got := []string{}
 	for _, i := range items {
 		got = append(got, strings.TrimPrefix(i.Node.Ref, "github:issue:alexec/agents#"))
