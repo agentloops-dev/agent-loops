@@ -3,7 +3,6 @@ package agentsd
 import (
 	"context"
 	"errors"
-	"log"
 	"net/url"
 	"slices"
 	"strings"
@@ -85,29 +84,11 @@ func (d *Daemon) azureDevOpsToken(root string) string {
 // after the folder was added is a new key, so it is read again (#4072).
 func (d *Daemon) azureDevOpsRepoAt(ctx context.Context, folder string) (root, repo string) {
 	roots := d.azureDevOpsRoots()
-	key := "azuredevops " + folder + " " + strings.Join(roots, " ")
-	d.forgeMu.Lock()
-	at, ok := d.forgeRoots[key]
-	d.forgeMu.Unlock()
-	if ok {
-		return at[0], at[1]
-	}
-	remotes, err := folderRemotes(ctx, folder)
-	if err != nil {
-		// Not known: nothing is kept, so the next call reads again (#6064).
-		log.Printf("forge of %s: %v", folder, err)
-		return "", ""
-	}
-	if f, found := d.azureDevOpsAtRoots(remotes, roots); found {
-		root, repo = f.root, f.repo
-	}
-	d.forgeMu.Lock()
-	defer d.forgeMu.Unlock()
-	if d.forgeRoots == nil || len(d.forgeRoots) >= forgeCached {
-		d.forgeRoots = map[string][2]string{}
-	}
-	d.forgeRoots[key] = [2]string{root, repo}
-	return root, repo
+	at := d.forgeRootAt(ctx, "azuredevops "+folder+" "+strings.Join(roots, " "), folder, func(remotes []string) [2]string {
+		f, _ := d.azureDevOpsAtRoots(remotes, roots)
+		return [2]string{f.root, f.repo}
+	})
+	return at[0], at[1]
 }
 
 // azureDevOpsNoIssues is why Azure Repos has no issue, plan or transition: its issues are Azure

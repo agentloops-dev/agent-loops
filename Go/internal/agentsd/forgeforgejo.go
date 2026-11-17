@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -94,31 +93,15 @@ func (d *Daemon) forgejoRoot() (connections.Connection, string) {
 // forgejoRepoAt is the Forgejo a folder's remote is on (connected first, then Codeberg, then a
 // host named forgejo, gitea or codeberg), and its repository there; read once, as GitLab's.
 func (d *Daemon) forgejoRepoAt(ctx context.Context, folder, connected string) (root, repo string) {
-	key := "forgejo " + folder + " " + connected
-	d.forgeMu.Lock()
-	at, ok := d.forgeRoots[key]
-	d.forgeMu.Unlock()
-	if ok {
-		return at[0], at[1]
-	}
-	remotes, err := folderRemotes(ctx, folder)
-	if err != nil {
-		// Not known: nothing is kept, so the next call reads again (#6064).
-		log.Printf("forge of %s: %v", folder, err)
-		return "", ""
-	}
-	roots := []string{connections.Codeberg}
-	if connected != "" {
-		roots = append([]string{connected}, roots...)
-	}
-	root, repo, _ = forgejomcp.RepoIn(remotes, roots)
-	d.forgeMu.Lock()
-	defer d.forgeMu.Unlock()
-	if d.forgeRoots == nil || len(d.forgeRoots) >= forgeCached {
-		d.forgeRoots = map[string][2]string{}
-	}
-	d.forgeRoots[key] = [2]string{root, repo}
-	return root, repo
+	at := d.forgeRootAt(ctx, "forgejo "+folder+" "+connected, folder, func(remotes []string) [2]string {
+		roots := []string{connections.Codeberg}
+		if connected != "" {
+			roots = append([]string{connected}, roots...)
+		}
+		root, repo, _ := forgejomcp.RepoIn(remotes, roots)
+		return [2]string{root, repo}
+	})
+	return at[0], at[1]
 }
 
 // onGitHubOrGitLab says r is a GitHub or GitLab repo, which the Forgejo lists leave to theirs.
