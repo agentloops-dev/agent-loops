@@ -93,10 +93,7 @@ func TestOneQueuedMessagePerTarget(t *testing.T) {
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
-	go func() {
-		for range c.out {
-		}
-	}()
+	c.drain()
 	dir := t.TempDir()
 	lead := seeded(t, d, dir, titledAs("Lead", inMode("default")))
 	other := seeded(t, d, dir, titledAs("Other", inMode("default")))

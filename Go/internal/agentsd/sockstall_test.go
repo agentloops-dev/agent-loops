@@ -29,10 +29,7 @@ func TestAStalledSocketClientIsLetGo(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	usePolicy(t, d, fixedPolicy{role: RoleControl, ok: true})
 	// The test's own connection is read too: only the socket's client stalls.
-	go func() {
-		for range c.out {
-		}
-	}()
+	c.drain()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	dir, err := os.MkdirTemp("", "sock") // short: a Unix socket's path is at most 104 bytes

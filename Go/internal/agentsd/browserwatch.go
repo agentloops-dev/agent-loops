@@ -159,21 +159,22 @@ func (d *Daemon) watchBrowser(c *Client, agent wire.UUID, width, height int64) w
 	last := sc.last
 	w.mu.Unlock()
 	if dropped != nil {
-		go dropped.Close()
+		d.goJobOrNow("close dropped screencast", func() { dropped.Close() })
 	}
 	if !again {
 		d.goJob("tellBrowserHolder", func() { d.tellBrowserHolder() })
 	}
 	if last != nil && (!again || moved) {
 		// Its ack is answered by the next frame's; this one asks Chromium for nothing.
-		go Notify(c, wire.NotifyBrowserFrame, *last)
+		frame := *last
+		d.goJob("send last browser frame", func() { Notify(c, wire.NotifyBrowserFrame, frame) })
 	}
 	if cast != nil {
-		go func() {
+		d.goJob("resize screencast", func() {
 			if err := cast.Resize(width, height); err != nil {
 				log.Printf("browser: couldn't resize the screencast: %v", err)
 			}
-		}()
+		})
 	} else if state.Status == wire.BrowserStatusRunning {
 		d.goJob("startBrowserCast", func() { d.startBrowserCast(agent) })
 	}
@@ -273,7 +274,7 @@ func (d *Daemon) unwatchBrowser(c *Client) {
 	cast := w.dropScreenIfUnwatchedLocked(v.agent)
 	w.mu.Unlock()
 	if cast != nil {
-		go cast.Close()
+		d.goJobOrNow("close unwatched screencast", func() { cast.Close() })
 	}
 }
 
@@ -378,7 +379,7 @@ func (d *Daemon) sessionTabChanged(agent wire.UUID) {
 	d.tellBrowserStateLocked(agent)
 	w.mu.Unlock()
 	if old != nil {
-		go old.Close()
+		d.goJobOrNow("close old screencast", func() { old.Close() })
 	}
 	d.startBrowserCast(agent)
 }
@@ -444,7 +445,7 @@ func (d *Daemon) browserDriveEnded(agent wire.UUID) {
 	cast := w.dropScreenIfUnwatchedLocked(agent)
 	w.mu.Unlock()
 	if cast != nil {
-		go cast.Close()
+		d.goJobOrNow("close undriven screencast", func() { cast.Close() })
 	}
 }
 
@@ -526,7 +527,7 @@ func (d *Daemon) browserChanged(running bool, endpoint string) {
 	}
 	w.mu.Unlock()
 	for _, cast := range casts {
-		go cast.Close()
+		d.goJobOrNow("close stopped screencast", func() { cast.Close() })
 	}
 }
 

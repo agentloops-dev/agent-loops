@@ -774,13 +774,15 @@ func (l *live) turn() bool {
 	promptCtx, endPrompt := context.WithCancel(ctx)
 	var refused atomic.Pointer[string]
 	if a.RuntimeID == "opencode" {
-		go watchOpenCodeRefusal(promptCtx, openCodeLog(openCodeLogDir(s.Getenv)), string(s.ID),
-			func() time.Time { return time.Unix(0, l.lastUpdate.Load()) },
-			func(said string) {
-				refused.Store(&said)
-				_ = s.Cancel(promptCtx)
-				endPrompt()
-			})
+		d.goJob("watch OpenCode refusal", func() {
+			watchOpenCodeRefusal(promptCtx, openCodeLog(openCodeLogDir(s.Getenv)), string(s.ID),
+				func() time.Time { return time.Unix(0, l.lastUpdate.Load()) },
+				func(said string) {
+					refused.Store(&said)
+					_ = s.Cancel(promptCtx)
+					endPrompt()
+				})
+		})
 	}
 	r, err := s.Prompt(promptCtx, acpBlocks(bs))
 	endPrompt()

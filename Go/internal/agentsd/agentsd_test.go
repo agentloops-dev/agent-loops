@@ -15,11 +15,28 @@ import (
 
 // conn is a client's end of a connection, in memory.
 type conn struct {
-	in  chan string
-	out chan string
+	in   chan string
+	out  chan string
+	gone chan struct{} // closed once the daemon has shut down: drain stops
 }
 
-func newConn() *conn { return &conn{in: make(chan string, 64), out: make(chan string, 64)} }
+func newConn() *conn {
+	return &conn{in: make(chan string, 64), out: make(chan string, 64), gone: make(chan struct{})}
+}
+
+// drain reads and drops what the daemon says on c, until the test's daemon has shut down
+// (#6130): a bare `for range c.out` never ends, as nothing closes c.out.
+func (c *conn) drain() {
+	go func() {
+		for {
+			select {
+			case <-c.out:
+			case <-c.gone:
+				return
+			}
+		}
+	}()
+}
 
 // Write gives up on a line nobody reads within 5 s: a test that has its answer stops
 // reading, and a watch's notification blocked on it held Shutdown for ever.
@@ -109,8 +126,10 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 	// where it started, not at TempDir's RemoveAll.
 	hooks.started()
 	hooks.add(d)
+	c := newConn()
 	t.Cleanup(func() {
 		d.Shutdown()
+		close(c.gone)
 		hooks.remove(d)
 		if live := d.liveJobs(); len(live) > 0 {
 			t.Errorf("goroutines the daemon started still run after Shutdown:\n\t%s", strings.Join(live, "\n\t"))
@@ -120,7 +139,6 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 	})
 	// As main does at each start (#4177): a fixture's secrets.env goes into sealed.json.
 	d.MoveSecretsFile()
-	c := newConn()
 	go d.Accept(c)
 	t.Cleanup(func() { close(c.in) })
 	clientAdded(t, d, c)
