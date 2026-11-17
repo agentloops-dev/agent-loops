@@ -64,19 +64,23 @@ func (h *sendsHeard) call(t *testing.T, id int, method string, params any) json.
 	}
 }
 
-// next is the next send/changed, or nil after wait.
-func (h *sendsHeard) next(wait time.Duration) *wire.SendNotification {
-	for deadline := time.After(wait); len(h.held) == 0; {
+// next is the next send/changed. It waits as the other helpers do (#5632): the first one
+// after the answer comes only when sendPack's git steps are done, which take longer than
+// 10 s on a runner under load (#6001). When it waits too long, waitFailed shows every
+// goroutine's stack: a send still in git, or a line that went nowhere.
+func (h *sendsHeard) next(t *testing.T, what string) wire.SendNotification {
+	t.Helper()
+	for deadline := time.After(waitLimit(t)); len(h.held) == 0; {
 		select {
 		case line := <-h.c.out:
 			h.keep(line)
 		case <-deadline:
-			return nil
+			waitFailed(t, "no %s", what)
 		}
 	}
 	n := h.held[0]
 	h.held = h.held[1:]
-	return &n
+	return n
 }
 
 func TestFoldersSendSendsOnItsOwn(t *testing.T) {
@@ -179,9 +183,8 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	// The parts go, and each says how far the send is.
 	var last *wire.SendNotification
 	for last == nil || last.Sent < last.Total || last.Total == 0 {
-		if last = heard.next(10 * time.Second); last == nil {
-			t.Fatal("no send/changed")
-		}
+		n := heard.next(t, "send/changed")
+		last = &n
 		if last.Finished {
 			t.Fatalf("finished before the receive: %+v", last)
 		}
@@ -199,10 +202,9 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 		t.Fatal(e.Message)
 	}
 	close(receiving)
-	for last == nil || !last.Finished {
-		if last = heard.next(10 * time.Second); last == nil {
-			t.Fatal("no finished send/changed")
-		}
+	for !last.Finished {
+		n := heard.next(t, "finished send/changed")
+		last = &n
 	}
 	if last.Problem != nil || last.Received == nil || last.Received.Folder.Folder != store.FolderURL(there) {
 		t.Fatalf("%+v", last)
