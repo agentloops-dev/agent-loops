@@ -370,7 +370,7 @@ func TestDeleteMachineOnAFailedMakeDeletesItsRow(t *testing.T) {
 	go func() { text, _ := m.tool(2, "delete_machine", map[string]any{"host": "pool-1-1b71be"}); answered <- text }()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		_ = json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	if f := pending[0].Mode.Form.Value; !strings.Contains(*f.Properties[0].Title, "DigitalOcean never made it, so nothing is deleted there") {
