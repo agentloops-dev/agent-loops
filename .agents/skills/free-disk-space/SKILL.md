@@ -67,6 +67,8 @@ that a running build uses, and Go's build cache while Go runs. The Swift part an
 each have a bound of their own, so a large Go cache never costs the Swift one. It also
 removes each folder in Go's temp folder (`go/tmp`) that nothing changed in for 6 hours:
 a `go test` or build that is killed leaves them there (12.8 GB on 2026-11-15, #5722).
+Since #5726 each `go.sh` run has a folder of its own there, which it removes when it ends,
+and the next run removes a SIGKILLed run's: little is left for the prune.
 
 ```sh
 scripts/build-cache.sh prune                                # low: 15 GB, of it Go 3 GB

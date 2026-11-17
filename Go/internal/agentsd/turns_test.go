@@ -13,6 +13,7 @@ import (
 	goruntime "runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -84,7 +85,38 @@ func TestMain(m *testing.M) {
 	if err := os.RemoveAll(shared); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "could not remove the shared toolsets folder: %v\n", err)
 	}
+	removeRunTempDirs()
 	os.Exit(code)
+}
+
+// runTempDirs are the folders that live for the whole run, not one test (the helpers that
+// prepareWatch and prepareDrive build once): TestMain removes them when the run ends (#5726).
+var (
+	runTempDirsMu sync.Mutex
+	runTempDirs   []string
+)
+
+// runTempDir makes a folder for the whole run, which TestMain removes after m.Run.
+func runTempDir(pattern string) (string, error) {
+	dir, err := os.MkdirTemp("", pattern)
+	if err != nil {
+		return "", err
+	}
+	runTempDirsMu.Lock()
+	runTempDirs = append(runTempDirs, dir)
+	runTempDirsMu.Unlock()
+	return dir, nil
+}
+
+func removeRunTempDirs() {
+	runTempDirsMu.Lock()
+	defer runTempDirsMu.Unlock()
+	for _, dir := range runTempDirs {
+		if err := os.RemoveAll(dir); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "could not remove %s: %v\n", dir, err)
+		}
+	}
+	runTempDirs = nil
 }
 
 // resetToolsHomes puts the tools folders back as a daemon of this process starts with them:
