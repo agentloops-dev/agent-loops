@@ -404,6 +404,10 @@ func (d *Daemon) thereStatus(caller wire.UUID, s startedThere) string {
 // (P20261030-1), not one after another: one slow machine must not hold up every other
 // session's check.
 func (d *Daemon) askThereWaits() {
+	// A host with no store has no waits to ask about (#5806): a job must not panic.
+	if d.Store == nil {
+		return
+	}
 	var wg sync.WaitGroup
 	for _, a := range d.Store.Agents() {
 		if !isOpenBlock(a.Report) || a.Report.Block == nil {

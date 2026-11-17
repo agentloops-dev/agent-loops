@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -206,7 +205,6 @@ func TestPruneCost(t *testing.T) {
 func TestSentCostSaysSessionsAndResolved(t *testing.T) {
 	t.Parallel()
 
-	flaky.UnderLoad(t, "#5806")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -242,6 +240,9 @@ func TestSentCostSaysSessionsAndResolved(t *testing.T) {
 		t.Fatal("sent again with nothing changed")
 	}
 
+	// The first send asked the forge for #12 (the backfill, #3562): its failed answer comes
+	// before the one set here, not after it (#5806).
+	d.resolveSettle(5 * time.Second)
 	state := "open"
 	d.resolveMu.Lock()
 	d.resolveCache = map[wire.LineageNode]resolvedEntry{issue: {
