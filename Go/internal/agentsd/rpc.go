@@ -322,13 +322,23 @@ func (d *Daemon) ServeSocket(ctx context.Context, path string) error {
 	os.Chmod(path, 0o600)
 	policy := d.socketPolicy()
 	log.Printf("socket: %s", policy.Summary())
-	d.goJob("socket close", func() { <-ctx.Done(); l.Close() })
+	// Shutdown ends the accept loop too, not only the caller's ctx (#5812): a loop left
+	// running past it took connections in the next test.
+	d.goJob("socket close", func() {
+		select {
+		case <-ctx.Done():
+		case <-d.hostCtx().Done():
+		}
+		l.Close()
+	})
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			return err
 		}
-		d.goJob("socket accept", func() { d.acceptSocket(c, policy) })
+		if !d.goJobAt("socket accept", callerSite(0), func() { d.acceptSocket(c, policy) }) {
+			c.Close() // the host is going
+		}
 	}
 }
 
