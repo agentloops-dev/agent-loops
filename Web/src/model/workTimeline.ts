@@ -552,6 +552,14 @@ export function epicRows(lines: readonly TimelineLine[], window: Interval, now: 
     .map((line) => ({ line, line2: line2(line) }));
 }
 
+/** What the plot shows (#5925): `loading` (S10) while no read has drawn yet, or while any read of the window runs and no
+ * epic is in it; `empty` (S11) only when every read ended and the window has none; else the epics. A device's copy with
+ * no epic is not "no epic" while the machines are read. */
+export function timelineShows(drawn: boolean, reading: boolean, rows: number): "loading" | "empty" | "epics" {
+  if (rows > 0) return "epics";
+  return !drawn || reading ? "loading" : "empty";
+}
+
 /** When the last line before `at` joined, for the empty card (S11); undefined when the read has none. */
 export function lastJoined(timeline: WorkTimeline, at: number): number | undefined {
   const joined = timeline.epics.flatMap((e) => e.segments).flatMap((s) => { const c = ms(s.closedAt); return c !== undefined && c < at ? [c] : []; });

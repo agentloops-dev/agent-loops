@@ -279,6 +279,20 @@ test("an empty window says when the last epic joined, and the week is a click aw
   assert.equal(t.noProjectTitle, "No project to draw");
 });
 
+test("the window is loading, not empty, until every read ended (#5925)", () => {
+  const win = t.rangeWindow("twoDays", now);
+  const rows = (timeline) => t.epicRows(t.timelineLines(timeline, now), win, now).length;
+  // Two reads: the first machine answers with no epic, the second with one.
+  const first = { epics: [], releases: [] };
+  const both = t.mergeTimelines([first, { epics: [epic(42, [child(1, { started: -2 })], [[-2, null]])], releases: [] }]);
+  assert.equal(t.timelineShows(false, true, 0), "loading");
+  assert.equal(t.timelineShows(true, true, rows(first)), "loading");
+  assert.equal(t.timelineShows(true, true, rows(both)), "epics");
+  assert.equal(t.timelineShows(true, false, rows(both)), "epics");
+  // Only once every read ended does an empty window say so (S11).
+  assert.equal(t.timelineShows(true, false, rows(first)), "empty");
+});
+
 test("machines merge each epic and release once", () => {
   const a = { epics: [epic(23, [child(1, { closed: -1 })], [[-2, -1]])], releases: [{ tag: "v2", at: wire(-1), repo: "a/b" }], errors: ["x"] };
   const b = { epics: [epic(23, [child(1, { closed: -1 })], [[-2, -1]])],

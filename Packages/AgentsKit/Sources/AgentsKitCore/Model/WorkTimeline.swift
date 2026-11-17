@@ -613,6 +613,17 @@ public enum WorkTimeline {
         timeline.epics.flatMap(\.segments).compactMap(\.closedAt).filter { $0 < date }.max()
     }
 
+    /// What the plot shows (#5925): grey blocks that shimmer (S10) while no read has drawn yet, or while
+    /// any read of the window runs and no epic is in it; the empty card (S11) only when every read
+    /// ended and the window has none; else the epics. A device's copy with no epic is not "no epic"
+    /// while the machines are read.
+    public enum Shows: Sendable, Equatable { case loading, empty, epics }
+
+    public static func shows(drawn: Bool, reading: Bool, epics: Int) -> Shows {
+        if epics > 0 { return .epics }
+        return !drawn || reading ? .loading : .empty
+    }
+
     /// The empty card (S11): "No epic in these 2 days", and "The last one joined 4 d ago." when known.
     public static func noEpicsWords(_ range: Range) -> String { "No epic in \(range.these)" }
 
