@@ -34,8 +34,10 @@ if [[ -d $build ]]; then
 		# differs: BSD (macOS) -f, GNU (Linux) -c.
 		if stat -f '%m' "$build" >/dev/null 2>&1; then fmt=(-f '%m %z %N'); else fmt=(-c '%Y %s %n'); fi
 		over=$(( (aged - max_mb) * 1024 * 1024 ))
+		# awk reads to the end and stops printing, never exits early: an early exit sends
+		# SIGPIPE to sort, and pipefail fails the step (#5922).
 		find "$build" -mindepth 2 -type f -print0 | xargs -0 stat "${fmt[@]}" | sort -n \
-			| awk -v over="$over" '{ if (freed >= over) exit; freed += $2; sub(/^[0-9]+ [0-9]+ /, ""); print }' \
+			| awk -v over="$over" 'freed >= over { next } { freed += $2; sub(/^[0-9]+ [0-9]+ /, ""); print }' \
 			| tr '\n' '\0' | xargs -0 rm -f
 	fi
 	echo "go-build: ${before} MB, ${aged} MB after removing entries unused for ${hours} h, $(mb "$build") MB saved (cap ${max_mb} MB)."
