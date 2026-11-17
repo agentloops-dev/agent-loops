@@ -1980,8 +1980,13 @@ func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin
 			s.madeMachineJoined(ctx, host, controllink.TokenCode(controllink.CodeSecret(private, id)))
 		}
 		// A host an install made the code for a workspace for is linked to it (#3871): its
-		// name may not be the one the install asked for.
-		if w := stored.Workspace; w != nil && s.providers != nil {
+		// name may not be the one the install asked for. A machine a provider made is linked to
+		// the workspace its set-up keeps (#6075), with no wait in memory that a restart loses.
+		w := stored.Workspace
+		if w == nil && stored.MadeHost != "" {
+			w = s.madeWorkspace(ctx, host)
+		}
+		if w != nil && s.providers != nil {
 			go s.providers.LinkJoined(host, w.Provider, w.Workspace, w.Trust)
 		}
 		return result, nil

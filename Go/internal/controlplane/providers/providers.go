@@ -121,6 +121,11 @@ type Hooks struct {
 	// SetupStep keeps a step of a made machine's set-up (#5765, epic #5353): 1, create
 	// machine, as the provider makes it, and 2, join machine, until it joins. Nil keeps none.
 	SetupStep func(host string, report wire.MachineSetupReport)
+	// MadeFor keeps, in the store, the workspace a made machine's host id is for, as soon as
+	// the provider has made it (#6075): the host that joins as that id is linked to it by its
+	// code, also after the control plane restarted and lost linkWhenJoined's wait. Nil keeps
+	// none.
+	MadeFor func(host, provider, workspace string)
 	// BackUp makes a backup of the host, and waits for it, before its workspace is deleted
 	// (#1815). False when the host can't make one: it is offline, or older than backups.
 	// Nil makes none.
@@ -301,6 +306,9 @@ func NewProviders(cfg Config) *Providers {
 	}
 	if h.SetupStep == nil {
 		h.SetupStep = func(string, wire.MachineSetupReport) {}
+	}
+	if h.MadeFor == nil {
+		h.MadeFor = func(string, string, string) {}
 	}
 	if h.OwnerOf == nil {
 		h.OwnerOf = func(string) string { return "" }
@@ -1885,6 +1893,9 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	p.log(fmt.Sprintf("workspace: create %s (%s/%s) by %s: ok in %s%s", name, id, found.ID, who,
 		secondsSince(began), joiningWords))
 	if runs {
+		if madeHost != "" {
+			p.hooks.MadeFor(madeHost, id, found.ID)
+		}
 		for _, c := range request.Clones {
 			if c = trimSpaces(c); c != "" {
 				clones = append(clones, c)
@@ -1959,7 +1970,10 @@ func (p *Providers) LinkJoined(host, provider, workspace, trust string) {
 	}
 }
 
-// linkWhenJoined links a made workspace's host once it has joined, within the start's time.
+// linkWhenJoined links a made workspace's host once it has joined, within the start's time,
+// and clones its repositories. The join itself links a host whose code names its workspace
+// (MadeFor, #6075), so this wait, kept only in memory, is needed for the link only when the
+// control plane keeps no set-up; it still does the clones.
 func (p *Providers) linkWhenJoined(name string) {
 	began := time.Now()
 	var last *joining
@@ -1972,14 +1986,21 @@ func (p *Providers) linkWhenJoined(name string) {
 		}
 		last = wanted
 		for _, h := range p.records.Hosts() {
-			if h.Name == name && LinkOf(&h) == nil {
-				p.mu.Lock()
-				delete(p.joining, name)
-				p.mu.Unlock()
-				p.link(MachineLink{Host: wire.MachineRef(h.ID), Provider: wire.ProviderID(wanted.provider), Workspace: wanted.workspace})
-				p.clone(wanted.clones, h.ID, name, wanted.caller)
-				return
+			ours := (wanted.host != "" && h.ID == wanted.host) || h.Name == name
+			if !ours {
+				continue
 			}
+			// Linked to this workspace already: by its code, as it joined (#6075).
+			link := LinkOf(&h)
+			if link != nil && (link.Provider != wanted.provider || link.Workspace != wanted.workspace) {
+				continue
+			}
+			p.mu.Lock()
+			delete(p.joining, name)
+			p.mu.Unlock()
+			p.LinkJoined(h.ID, wanted.provider, wanted.workspace, "")
+			p.clone(wanted.clones, h.ID, name, wanted.caller)
+			return
 		}
 		if !p.sleep(p.timing.LookEvery) {
 			return

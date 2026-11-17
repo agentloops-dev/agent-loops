@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -221,4 +222,44 @@ func TestALateJoinMakesAFailedJoinStepDone(t *testing.T) {
 	if setup.Steps[1].State != wire.MachineSetupStateDone || setup.Steps[1].Error != nil {
 		t.Fatalf("join: %+v", setup.Steps[1])
 	}
+}
+
+// #6075: a machine a provider made is linked to its workspace as it joins, by the set-up its
+// host id keeps, also when the control plane restarted between the make and the join and so
+// lost the wait it kept in memory.
+func TestAMadeMachineIsLinkedAsItJoinsAfterARestart(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	ctx := context.Background()
+	record := `{"id":"do-1","name":"DigitalOcean","kind":"http","url":"http://127.0.0.1:9/","secretNames":[],` +
+		`"capabilities":["create"],"contract":1,"rev":1}`
+	if _, err := st.Put(ctx, providers.ProviderKey("do-1"), []byte(record), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	private := controllink.NewPrivateKey()
+	withProviders := func(c *Config) { c.ProviderHome = t.TempDir() }
+	before := startPlaneWith(t, st, private, withProviders)
+	const made = "madehost6075"
+	shown, err := before.s.Codes().Issue(withMadeMachine(ctx, made), true, false, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := controllink.ParseCode(shown.Text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What providers/create does once the provider has made it.
+	before.s.madeStep(made, rep(wire.MachineSetupStepIDCreate, wire.MachineSetupStateRunning))
+	before.s.madeFor(made, "do-1", "ws-6075")
+	before.s.Stop()
+
+	after := startPlaneWith(t, st, private, withProviders)
+	code.URL = after.url
+	if host, _, _ := after.rawHostWith("pool-2-6924c0", code); host != made {
+		t.Fatalf("joined as %q", host)
+	}
+	waitFor(t, func() bool {
+		link := providers.LinkOf(after.s.Records().Host(made))
+		return link != nil && link.Provider == "do-1" && link.Workspace == "ws-6075"
+	})
 }
