@@ -9,6 +9,7 @@ import type { Lease, ResourceState } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 import { resourcesHint } from "../model/onTheMac";
 import { heldForCapacityWords } from "../model/capacity";
+import { SessionPriorityChip } from "./SessionRow";
 
 /** "14:05", twenty-four hours, as LeaseWords.clock says it to agents and the Mac. */
 function clock(at: number): string {
@@ -53,7 +54,11 @@ export function Resources({ store, host }: { store: Store; host: string }) {
           <p class="quiet small" key={lease.holder}>{holderName(store, host, lease.holder)} until {clock(lease.expiresAt)}</p>
         ))}
         {state.line.length > 0 && (
-          <p class="quiet small">{state.line.length} waiting: {state.line.map((m) => holderName(store, host, m.agentID)).join(", ")}</p>
+          <p class="quiet small">{state.line.length} waiting: {state.line.map((m, i) => {
+            // Each waiter's priority chip (#5849): the line goes by it (#5848).
+            const agent = store.agent(host, m.agentID);
+            return <span key={m.agentID}>{i > 0 && ", "}{holderName(store, host, m.agentID)}{agent && <> <SessionPriorityChip agent={agent} /></>}</span>;
+          })}</p>
         )}
         {/* A line that waits for the machine, not for a holder (#4748). */}
         {state.capacityWait && <p class="quiet small">{heldForCapacityWords(state.capacityWait)}</p>}

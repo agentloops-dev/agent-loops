@@ -535,6 +535,22 @@ extension RemoteModel {
         if sent { offer(undo) }
     }
 
+    /// Priority ▸ from the card's or the chat's ··· menu (#5849): a level set on the session, or
+    /// nil to follow its issue again. Its host's agent.updated then redraws the chip.
+    func setPriority(_ agentID: UUID, _ priority: SessionPriority?) async {
+        let host = work.agent(agentID)?.host ?? .mac
+        guard !isStale(on: host) else {
+            problem = notAnswering(host, "that could not be sent.")
+            return
+        }
+        do {
+            let request = DaemonAPI.SetPriorityRequest(agentID: agentID, priority: priority)
+            try await client(for: request).call(DaemonAPI.Method.agentsSetPriority, request)
+        } catch {
+            problem = away(error, "that could not be sent.") ?? "That did not reach your Mac."
+        }
+    }
+
     /// Whether this session's host can mute it: one from before #2003 cannot.
     func canMute(_ agent: Agent) -> Bool {
         agent.state != .archived && host(agent.host, has: Capability.mute1)

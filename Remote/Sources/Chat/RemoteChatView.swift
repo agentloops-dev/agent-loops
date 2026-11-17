@@ -642,6 +642,8 @@ struct RemoteChatView: View {
                       isPinned: model.isPinned(agent),
                       canMute: model.canMute(agent),
                       isMuted: agent.isMuted,
+                      priorityChecked: SessionPriorityWords.checked(agent),
+                      priorityFollow: SessionPriorityWords.title(.follow, for: agent),
                       findsOnHost: findsInChat,
                       isPopped: popped != nil,
                       leavesChat: popped == nil || sceneFolder != nil,
@@ -693,6 +695,9 @@ struct ChatMenuState: Equatable {
     let isPinned: Bool
     let canMute: Bool
     let isMuted: Bool
+    /// Priority ▸ (#5849): the item with the check, and "From issue" or "None".
+    let priorityChecked: SessionPriorityWords.Choice
+    let priorityFollow: String
     /// Whether the chat's host can find: on one too old (#1748) the item is greyed, with
     /// the update help, not left out (#1867).
     let findsOnHost: Bool
@@ -772,6 +777,11 @@ private struct ChatMenu: View, Equatable {
                 // As the Mac's Session menu has them (#342, #751).
                 Button("Rename…", icon: "pencil") {
                     if let agent = model.work.agent(id) { model.askToRename(agent) }
+                }
+                .disabled(state.isStale)
+                // High, Medium, Low or From issue (#5849), as the Mac's Session menu has it.
+                SessionPriorityMenu(checked: state.priorityChecked, followTitle: state.priorityFollow) { priority in
+                    Task { await model.setPriority(id, priority) }
                 }
                 .disabled(state.isStale)
                 if state.canMute {
