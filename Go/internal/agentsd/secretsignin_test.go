@@ -8,7 +8,9 @@ import (
 // runtime. A name with Ask before use off is given with its value; one with it on is named
 // and never given; a name not set is only looked for.
 func TestSignInKeyGivesAKeyThatDoesNotAsk(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	d, _ := serveWith(t, fixedPolicy{role: RoleControl, ok: true})
 	const plain, flagged = "plain-5361-not-real", "flagged-5361-not-real"
 	if err := d.saveSecret("OPENAI_API_KEY", plain, false); err != nil {

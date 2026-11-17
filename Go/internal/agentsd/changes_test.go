@@ -122,6 +122,8 @@ func TestBranchingFromAPrompt(t *testing.T) {
 // A branch's record goes to its runtime with its first prompt, and is never kept on the
 // queued prompt, which every client is sent on each change (#1851).
 func TestABranchsRecordIsNotQueued(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -170,6 +172,8 @@ func TestABranchsRecordIsNotQueued(t *testing.T) {
 }
 
 func TestForkingAConversation(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

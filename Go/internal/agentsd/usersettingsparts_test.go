@@ -13,8 +13,10 @@ import (
 // The parts person, auto and retention (#5573): the Mac sets each once at the control plane,
 // and each machine keeps it as its own call would have.
 func TestPersonAutoAndRetentionPartsAreKept(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, _ := start(t, root)
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
@@ -50,6 +52,8 @@ func TestPersonAutoAndRetentionPartsAreKept(t *testing.T) {
 // The Mac sends the name it resolved. A machine whose own settings give that name already, as
 // the Mac's own host does with no name set, keeps its settings: the account's name stays its rule.
 func TestPersonPartLeavesTheSameNameAsItIs(t *testing.T) {
+	t.Parallel()
+
 	u, err := user.Current()
 	first := ""
 	if err == nil && len(strings.Fields(u.Name)) > 0 {
@@ -59,7 +63,7 @@ func TestPersonPartLeavesTheSameNameAsItIs(t *testing.T) {
 		t.Skip("this account has no full name")
 	}
 	root := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, _ := start(t, root)
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

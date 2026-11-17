@@ -26,6 +26,8 @@ func someone() *wire.AuditActor {
 // #1751: the events a person's call raises carry the actor the control plane gave its
 // channel into events.jsonl; what the agent does by itself carries none.
 func TestAPersonsCallsPutTheirActorOnTheLog(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, _ := start(t, root)

@@ -23,6 +23,8 @@ func listedRequests(t *testing.T, c *conn, id int, state string) []wire.Request 
 }
 
 func TestARequestIsOpenedKeptAndAnswered(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -70,6 +72,8 @@ func TestARequestIsOpenedKeptAndAnswered(t *testing.T) {
 }
 
 func TestADroppedRequestTakesItsFormDown(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -90,6 +94,8 @@ func TestADroppedRequestTakesItsFormDown(t *testing.T) {
 }
 
 func TestTwoSessionsThatWaitOnOneRequestBothWake(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -227,6 +233,8 @@ func isNeed(d *Daemon, id wire.UUID) bool {
 }
 
 func TestARequestDeferredToATimeComesBack(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -312,6 +320,8 @@ func TestADeferralSurvivesARestart(t *testing.T) {
 }
 
 func TestAnAnswerWhileDeferredClearsIt(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

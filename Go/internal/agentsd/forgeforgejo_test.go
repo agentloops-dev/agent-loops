@@ -160,7 +160,7 @@ func (f *fakeForgeForgejo) SetBlockedBy(_ context.Context, repo string, number i
 // Codeberg, and one on GitHub, with a Forgejo connection as a fake Forgejo.
 func forgejoDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeForgejo, *connections.File) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -186,6 +186,8 @@ func forgejoDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeForgejo, *connection
 // #3753: forge/issues and forge/pulls list the repositories on the connected Forgejo, with the
 // GitHub folder's, and leave out the Codeberg folder, whose remote is on another Forgejo.
 func TestForgeListsTheConnectedForgejosRepositories(t *testing.T) {
+	t.Parallel()
+
 	_, c, fj, _ := forgejoDaemon(t)
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("bug")}), &list)
@@ -216,6 +218,8 @@ func TestForgeListsTheConnectedForgejosRepositories(t *testing.T) {
 
 // Without a Forgejo connection the list says so for Forgejo, and still lists GitHub's.
 func TestForgeListSaysForgejoIsNotConnected(t *testing.T) {
+	t.Parallel()
+
 	_, c, fj, file := forgejoDaemon(t)
 	file.Delete(connections.Forgejo)
 	var list wire.ForgeList
@@ -228,6 +232,8 @@ func TestForgeListSaysForgejoIsNotConnected(t *testing.T) {
 // forge/issue and forge/pull read a Forgejo item at the connected Forgejo, in the repository as
 // its folder's remote says it; Start Agent names the issue; one Forgejo does not have is refused.
 func TestForgeReadsAForgejoIssueAndPullRequest(t *testing.T) {
+	t.Parallel()
+
 	_, c, fj, _ := forgejoDaemon(t)
 	var issue wire.ForgeItemDetail
 	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "forgejo:issue:walkalex/app#7"}}), &issue)
@@ -258,6 +264,8 @@ func TestForgeReadsAForgejoIssueAndPullRequest(t *testing.T) {
 // The Work pages' writes on a Forgejo item go to the connected Forgejo; a merge takes the
 // repository's default method; rerun is refused, as Forgejo's API has none.
 func TestForgeWritesOnAForgejoItem(t *testing.T) {
+	t.Parallel()
+
 	_, c, fj, _ := forgejoDaemon(t)
 	issue := wire.LineageNode{Kind: "issue", Ref: "forgejo:issue:walkalex/app#7"}
 	pr := wire.LineageNode{Kind: "pr", Ref: "forgejo:pr:walkalex/app#8"}
@@ -323,6 +331,8 @@ func TestForgejoOfNode(t *testing.T) {
 // #3835: a Forgejo epic's plan is the issues it depends on, in steps by their own dependencies;
 // a blocker outside the plan is said; the children say the epic is their parent.
 func TestForgePlanReadsAForgejoEpic(t *testing.T) {
+	t.Parallel()
+
 	_, c, fj, _ := forgejoDaemon(t)
 	epic := wire.LineageNode{Kind: "issue", Ref: "forgejo:issue:walkalex/app#1"}
 	var plan wire.ForgePlan
@@ -356,6 +366,8 @@ func TestForgePlanReadsAForgejoEpic(t *testing.T) {
 
 // forge/features counts a Forgejo epic under its feature:<name> label.
 func TestForgeFeaturesCountForgejoEpics(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _ := forgejoDaemon(t)
 	var features wire.ForgeFeatures
 	json.Unmarshal(c.call(t, 1, "forge/features", wire.ForgeFeaturesRequest{}), &features)
@@ -373,6 +385,8 @@ func TestForgeFeaturesCountForgejoEpics(t *testing.T) {
 // Add child makes the Forgejo epic depend on a new issue (in the epic's feature) or one that is
 // there; Blocked by makes a child depend on another, or no longer.
 func TestForgePlanWritesOnAForgejoEpic(t *testing.T) {
+	t.Parallel()
+
 	_, c, fj, _ := forgejoDaemon(t)
 	epic := wire.LineageNode{Kind: "issue", Ref: "forgejo:issue:walkalex/app#1"}
 	var done wire.ForgeDone
@@ -410,6 +424,8 @@ func TestForgePlanWritesOnAForgejoEpic(t *testing.T) {
 
 // A list narrowed to a board has no Forgejo items: Forgejo's API cannot read its project boards.
 func TestABoardLeavesForgejoOut(t *testing.T) {
+	t.Parallel()
+
 	d, _, fj, _ := forgejoDaemon(t)
 	scope := forgejoScope{root: "http://localhost:3753/", repos: []string{"walkalex/App"}}
 	p, err := forgejoForge{d: d}.List(context.Background(), scope, forgeFilter{Board: &forgeBoard{forge: "forgejo"}}, "", 10)
@@ -422,6 +438,8 @@ func TestABoardLeavesForgejoOut(t *testing.T) {
 // folder on the connected Forgejo while it is connected, and a Codeberg folder by its host.
 // Nothing is asked of gh or glab about them.
 func TestLineageOnAForgejoFolder(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, file := forgejoDaemon(t)
 	var connected, codeberg string
 	for _, f := range d.folderPaths() {

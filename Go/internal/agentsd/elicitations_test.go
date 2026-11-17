@@ -70,6 +70,8 @@ func entryOf[T any](d *Daemon, id wire.UUID, pick func(wire.TranscriptEntryKind)
 }
 
 func TestAFormIsHeldAndAnswered(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -132,6 +134,8 @@ func TestAFormIsHeldAndAnswered(t *testing.T) {
 // A runtime's own form declined with a reason (#4039): the runtime hears a bare decline,
 // as its protocol has no words for one, and the reason comes to the agent as its next prompt.
 func TestADeclinedRuntimeFormBringsItsReasonAsAPrompt(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -148,6 +152,8 @@ func TestADeclinedRuntimeFormBringsItsReasonAsAPrompt(t *testing.T) {
 }
 
 func TestStoppingAnAgentTakesItsFormDownWithIt(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -181,6 +187,8 @@ func TestStoppingAnAgentTakesItsFormDownWithIt(t *testing.T) {
 }
 
 func TestAWithdrawnFormTakesTheAgentOutOfWaiting(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

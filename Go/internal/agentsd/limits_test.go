@@ -44,6 +44,8 @@ func TestALimitInWords(t *testing.T) {
 }
 
 func TestACreditGoneStopsTheAgent(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -131,6 +133,8 @@ func TestARateLimitIsSentAgain(t *testing.T) {
 }
 
 func TestATypedLimitStopsTheAgentUntilItsReset(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -153,6 +157,8 @@ func TestATypedLimitStopsTheAgentUntilItsReset(t *testing.T) {
 }
 
 func TestPaidOverageTakesTheRuntimeOutAndTheTurnStands(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

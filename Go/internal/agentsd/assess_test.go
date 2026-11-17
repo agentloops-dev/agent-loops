@@ -18,6 +18,8 @@ import (
 // as answered, and the score is taken from that record, not the agent's word.
 
 func TestARuntimeAssessedFromTheRecord(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

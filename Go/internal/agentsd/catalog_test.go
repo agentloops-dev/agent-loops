@@ -108,7 +108,7 @@ func serveCatalog(t *testing.T) *catalogStub {
 func TestASkillSearchedPreviewedAddedAndUpdated(t *testing.T) {
 	stub := serveCatalog(t)
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	t.Setenv("XDG_STATE_HOME", "")
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -188,7 +188,7 @@ func TestASkillSearchedPreviewedAddedAndUpdated(t *testing.T) {
 func TestASkillPreviewedFromTheTarballWhenGitHubLimitsRequests(t *testing.T) {
 	stub := serveCatalog(t)
 	stub.rateLimited.Store(true)
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	result := wire.CatalogResult{ID: "fixture-owner/fixture-skills/plain", Name: "plain", Owner: "fixture-owner",
@@ -201,8 +201,10 @@ func TestASkillPreviewedFromTheTarballWhenGitHubLimitsRequests(t *testing.T) {
 }
 
 func TestThePersonsOwnMarketplaces(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var list wire.MarketplacesListAnswer

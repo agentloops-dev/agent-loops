@@ -135,7 +135,7 @@ func (d *Daemon) runtimeAllowances() wire.RuntimeAllowances {
 	keys := map[string]bool{}
 	installed := map[string]bool{}
 	for i := range catalog {
-		if p, _, _ := locateFor(&catalog[i]); p != "" {
+		if p, _, _ := d.locate(&catalog[i]); p != "" {
 			keys[ownKey(catalog[i].ID)] = true
 			installed[catalog[i].ID] = true
 		}

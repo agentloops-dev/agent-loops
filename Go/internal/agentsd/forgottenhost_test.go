@@ -12,6 +12,8 @@ import (
 // lane whose pull request landed while the host was down is not picked up.
 
 func TestAForgottenHostPicksNobodyUp(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	id := leftWorking(t, root, wire.AgentStateRunning, "fake-session", nil)
@@ -74,6 +76,8 @@ func TestTheWorkflowClockWaitsForTheMembership(t *testing.T) {
 }
 
 func TestALaneWhosePullRequestMergedIsNotPickedUp(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	id := leftWorking(t, root, wire.AgentStateRunning, "fake-session", func(a *wire.Agent) {

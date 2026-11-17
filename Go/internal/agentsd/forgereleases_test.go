@@ -76,6 +76,8 @@ func releaseTags(rs []wire.ForgeRelease) string {
 // newest first (a draft by when it was made), marks each repo's latest, and says that Linear,
 // which the folders reach, has none; the same list within a minute asks GitHub nothing.
 func TestForgeReleasesListsEveryForge(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _, _, _ := allForgesDaemon(t)
 	var list wire.ForgeReleases
 	if err := json.Unmarshal(c.call(t, 1, "forge/releases", wire.ForgeReleasesRequest{}), &list); err != nil {
@@ -110,6 +112,8 @@ func TestForgeReleasesListsEveryForge(t *testing.T) {
 // #4426: forge/release is a release, the release before it and the pull requests between them,
 // from the squash titles, on GitHub and GitLab; a draft and the first release have no range.
 func TestForgeReleaseReadsItsPullRequests(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _, _, _ := allForgesDaemon(t)
 	var got wire.ForgeReleaseDetail
 	json.Unmarshal(c.call(t, 1, "forge/release", wire.ForgeReleaseRequest{Node: wire.LineageNode{Kind: "release", Ref: "github:release:alexec/agents#v0.17.0"}}), &got)
@@ -153,6 +157,8 @@ func TestForgeReleaseReadsItsPullRequests(t *testing.T) {
 
 // #4426: Forgejo's releases are its connected repository's, and a release's range is asked of it.
 func TestForgeReleasesOnForgejo(t *testing.T) {
+	t.Parallel()
+
 	_, c, fj, _ := forgejoDaemon(t)
 	var list wire.ForgeReleases
 	json.Unmarshal(c.call(t, 1, "forge/releases", wire.ForgeReleasesRequest{}), &list)

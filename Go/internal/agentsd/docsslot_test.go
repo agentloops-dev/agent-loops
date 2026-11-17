@@ -17,8 +17,10 @@ import (
 // connector in mcp.json fills it beside the folder; a skip is kept in .agents/folder.json;
 // and it never turns on the forge's events.
 func TestTheDocsSlot(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "")

@@ -20,8 +20,10 @@ import (
 // its row says so, a session sends its bearer, and signing out takes it away.
 
 func TestSigningInToAnMCPServer(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	var srv *httptest.Server
 	var verifierSeen, resourceSeen atomic.Value
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

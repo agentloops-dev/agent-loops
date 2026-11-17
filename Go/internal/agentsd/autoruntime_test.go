@@ -99,6 +99,8 @@ func out(d *Daemon, runtime string, rateLimited bool) {
 }
 
 func TestAutoPicksTheRuntime(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -139,6 +141,8 @@ func TestAutoPicksTheRuntime(t *testing.T) {
 }
 
 func TestAutoWhenNoRuntimeCan(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -171,6 +175,8 @@ func TestAutoWhenNoRuntimeCan(t *testing.T) {
 // A picture goes to a runtime that takes pictures (#3162): one that said it does not is passed
 // by, at the start and in the preview; one not started yet is not passed by on a guess.
 func TestAutoPassesByARuntimeThatTakesNoPictures(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -213,6 +219,8 @@ func TestAutoPassesByARuntimeThatTakesNoPictures(t *testing.T) {
 // The person's own cell wins, on Auto and on a named runtime (FR-016, FR-018); a native value
 // in the start wins over a level (the ⋯ own menu).
 func TestTheMappingsAreThePersons(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -247,6 +255,8 @@ func TestTheMappingsAreThePersons(t *testing.T) {
 // since, or a record from before levels were kept, said Custom for a mode a cell now gives
 // (#5730). auto/set and a branch match them again.
 func TestLevelsFollowTheMappings(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -288,6 +298,8 @@ func TestLevelsFollowTheMappings(t *testing.T) {
 
 // A per-agent answer to permission requests, before the person's in Settings (FR-019).
 func TestAnAgentsOwnPermissionRequests(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -364,6 +376,8 @@ func TestWorkflowWordsOnAuto(t *testing.T) {
 // FR-022: an Auto session whose runtime ran out carries on where Auto would start one now,
 // with its values, only when asked.
 func TestContinueOnAuto(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -383,6 +397,8 @@ func TestContinueOnAuto(t *testing.T) {
 // A helper on Auto asks unless its starter approves every request itself: Grok's Approve
 // for me is Always Approve, which runs shell commands Claude's Accept edits asks about.
 func TestAnAutoHelperAsksLikeItsStarter(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

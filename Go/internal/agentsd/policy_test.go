@@ -91,6 +91,8 @@ func startParams(dir, runtime string, values map[string]any) map[string]any {
 
 // US1: with no control plane, or a control plane with no policy, nothing changes (SC-001).
 func TestNoPolicyChangesNothing(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -120,6 +122,8 @@ func TestNoPolicyChangesNothing(t *testing.T) {
 // T015, US6: the policy is kept on disk, 0600; a forged, missing, older or edited copy
 // starts no work; a newer one and the same one signed again are taken (SC-005).
 func TestThePolicyFileIsKeptAndChecked(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -235,6 +239,8 @@ func TestAPolicyOfTheOldKeyIsTrusted30Days(t *testing.T) {
 // reason policy and the rule's name; a helper's and a workflow's mode falls to the
 // ceiling. Then a looser policy gives back each choice, unchanged (FR-011).
 func TestEveryRuleAtEveryPath(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -430,6 +436,8 @@ func TestEveryRuleAtEveryPath(t *testing.T) {
 // T014, FR-012: a running agent meets a new policy at its next turn: its mode goes down
 // to the ceiling, with a line in its chat; a runtime now refused waits, and says why.
 func TestARunningAgentMeetsANewPolicyAtItsNextTurn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -473,6 +481,8 @@ func TestARunningAgentMeetsANewPolicyAtItsNextTurn(t *testing.T) {
 // the mode ceiling: refused to a person, dropped from a helper's or a workflow's start,
 // marked in the lists, and turned off before a running agent's next turn.
 func TestApprovingEveryRequestIsUnderTheModeCeiling(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -525,6 +535,8 @@ func TestApprovingEveryRequestIsUnderTheModeCeiling(t *testing.T) {
 // An agent started with no model chosen runs on the runtime's own: once the runtime says
 // it, a model the policy refuses holds the first turn, as at the start of any turn.
 func TestTheRuntimesOwnModelIsCheckedBeforeTheFirstTurn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -634,6 +646,8 @@ func TestMarkingTheModelsGrowsWithTheList(t *testing.T) {
 // agents, prompts and workflow runs, keeps what is queued, and when it is turned off
 // starts nothing by itself.
 func TestTheKillSwitch(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -675,6 +689,8 @@ func TestTheKillSwitch(t *testing.T) {
 
 // T017, US4, SC-006: budgets on the machine.
 func TestMachineBudgets(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()
@@ -732,6 +748,8 @@ func TestMachineBudgets(t *testing.T) {
 
 // T018: a capability the policy requires that this machine lacks refuses every start.
 func TestAMissingCapabilityRefusesEveryStart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	d, c := joined(t, t.TempDir(), k)
@@ -773,6 +791,8 @@ func TestARollupRowCarriesLimitTokens(t *testing.T) {
 // saved Yes answers nothing, setting one is refused, and the state says who set it. A
 // helper or a workflow's agent never takes the person's from Settings.
 func TestAlwaysApproveIsUnderTheModeCeiling(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	k := newControlKeys(t)
 	root := t.TempDir()

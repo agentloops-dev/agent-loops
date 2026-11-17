@@ -57,6 +57,8 @@ func (f *fakeRuntime) UnstableDisableProvider(context.Context, sdk.UnstableDisab
 }
 
 func TestSigningARuntimeInAndOut(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -96,6 +98,8 @@ func TestSigningARuntimeInAndOut(t *testing.T) {
 }
 
 func TestChoosingARuntimesProvider(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

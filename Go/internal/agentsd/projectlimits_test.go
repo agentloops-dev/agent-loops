@@ -18,6 +18,8 @@ import (
 // count, and a machine the control plane does not answer counts alone and says so.
 
 func TestHelperLimitsCountAcrossTheProject(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()

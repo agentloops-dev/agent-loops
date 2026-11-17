@@ -30,6 +30,8 @@ func (m *mcpClient) tool(id int, name string, args map[string]any) (string, bool
 }
 
 func TestAgentsTakeTurnsWithAResource(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -112,6 +114,8 @@ func TestAgentsTakeTurnsWithAResource(t *testing.T) {
 // Stop Waiting, and cancel_wait, take an agent out of the line; a wait that replaces its
 // place keeps it, and its turn starts it again all the same (#2361).
 func TestAPlaceInLineIsAWait(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -169,6 +173,8 @@ func TestAPlaceInLineIsAWait(t *testing.T) {
 // is still started when its turn comes, and a wait whose place was lost ends, the agent
 // started again and told why (#2361). The Linux agentsd is this one.
 func TestALineOutlivesARestart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	dir := t.TempDir()
@@ -301,6 +307,8 @@ func sameLine(a, b []wire.UUID) bool {
 // #4041: after a restart, an agent whose place was lost and asks again goes back at the
 // askedAt of its wait, in front of one that asked after it.
 func TestALostPlaceIsKeptOverARestart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	dir := t.TempDir()

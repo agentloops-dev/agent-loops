@@ -155,6 +155,8 @@ func TestListThereAsksEveryMachineAtOnce(t *testing.T) {
 }
 
 func TestOnlyTheStarterReachesASessionFromAnotherMachine(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

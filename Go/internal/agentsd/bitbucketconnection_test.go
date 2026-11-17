@@ -139,8 +139,10 @@ func (f *fakeSetupBitbucket) LastChecks(ctx context.Context, repo string) (*bitb
 // the three slots with the email it was made with, each proved by one read, a tracker that is
 // off says so, and the bitbucket connector's events go on.
 func TestABitbucketFoldersConnectorSetUp(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}

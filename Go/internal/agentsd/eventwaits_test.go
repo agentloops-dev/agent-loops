@@ -144,6 +144,8 @@ func TestAHeldWaitWakesTheAgentLater(t *testing.T) {
 // #3797: a wait on branch.moved names the branch or sets any: true; any is no detail of the
 // event, so a wait with it still wakes.
 func TestABranchWaitNamesTheBranchOrSetsAny(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -282,6 +284,8 @@ func aPersonEventsServer(t *testing.T) *httptest.Server {
 // A wait on review.requested, which is always about the connected account (#2034), sets
 // ForPerson on the record, unlike an ordinary server event (#3051).
 func TestAWaitOnAPersonEventIsMarkedForPerson(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	gh := aPersonEventsServer(t)

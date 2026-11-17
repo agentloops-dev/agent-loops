@@ -54,6 +54,8 @@ func TestEveryRunSaysWhyItStarted(t *testing.T) {
 
 // A schedule's fire that queues keeps its time, so the run it becomes says which run it is.
 func TestAQueuedRunSaysWhyItStarted(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

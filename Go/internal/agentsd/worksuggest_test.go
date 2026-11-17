@@ -64,6 +64,8 @@ func TestSuggestableOfReadsOpenChildren(t *testing.T) {
 // others come at most 3, with the rest counted; Start lead's form is filled; a dismissed epic
 // stays out until its progress changes, not its update time (#5731); and an epic with a lead has no dismissal.
 func TestWorkSuggestLeads(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	epic := func(n int, title string) githubmcp.Item {
 		i := planIssue(n, "open", "epic")

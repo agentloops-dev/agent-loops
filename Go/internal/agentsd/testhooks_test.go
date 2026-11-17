@@ -1,6 +1,8 @@
 package agentsd
 
 import (
+	"os"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -13,6 +15,15 @@ type testHooks struct {
 	mu       sync.Mutex
 	daemons  int
 	restores []func()
+	// opts are what startWith gives the test's daemons (#5926): a personal home and fake
+	// runtimes of their own, not the process's, so the test can run in parallel.
+	opts startOptions
+	// homeNamed is whether personalHomeFor named opts.namedHome; without it a daemon reads
+	// AGENTS_PERSONAL_HOME, as New does.
+	homeNamed bool
+	// running are the test's daemons that have not shut down: a change of the options goes to
+	// them too.
+	running []*Daemon
 }
 
 var testHooksBook sync.Map // testing.TB → *testHooks
@@ -43,6 +54,56 @@ func (h *testHooks) stopped() {
 	for i := len(run) - 1; i >= 0; i-- {
 		run[i]()
 	}
+}
+
+// options is what the test's next daemon starts with.
+func (h *testHooks) options() startOptions {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	o := h.opts
+	if !h.homeNamed {
+		o.namedHome = os.Getenv("AGENTS_PERSONAL_HOME")
+	}
+	return o
+}
+
+// change changes the options of the test's daemons: those it starts next, and those that
+// run, as a change of the process's environment once did.
+func (h *testHooks) change(f func(*testHooks)) {
+	h.mu.Lock()
+	f(h)
+	running := slices.Clone(h.running)
+	named, home, locate, env := h.homeNamed, h.opts.namedHome, h.opts.locate, h.opts.runtimeEnv
+	h.mu.Unlock()
+	for _, d := range running {
+		o := d.startOpts()
+		if named {
+			o.namedHome = home
+		}
+		o.locate, o.runtimeEnv = locate, env
+		d.opts.Store(&o)
+	}
+}
+
+// add and remove keep the test's running daemons.
+func (h *testHooks) add(d *Daemon) {
+	h.mu.Lock()
+	h.running = append(h.running, d)
+	h.mu.Unlock()
+}
+
+func (h *testHooks) remove(d *Daemon) {
+	h.mu.Lock()
+	h.running = slices.DeleteFunc(h.running, func(each *Daemon) bool { return each == d })
+	h.mu.Unlock()
+}
+
+// personalHomeFor names home as the personal home of the daemons t starts, as
+// AGENTS_PERSONAL_HOME does for the process's, and "" as none named. Unlike t.Setenv it
+// leaves the test free to run in parallel (#5926).
+func personalHomeFor(t testing.TB, home string) {
+	t.Helper()
+	testHooksOf(t).change(func(h *testHooks) { h.opts.namedHome, h.homeNamed = home, true })
 }
 
 // setFor sets *v to x for the rest of t, and puts the old value back after t's daemons have

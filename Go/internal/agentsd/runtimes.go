@@ -262,7 +262,7 @@ func (d *Daemon) runtimeStatuses() []wire.RuntimeStatus {
 	out := []wire.RuntimeStatus{}
 	for i := range catalog {
 		r := &catalog[i]
-		path, _, looked := locateFor(r)
+		path, _, looked := d.locate(r)
 		s := wire.RuntimeStatus{Runtime: r.Runtime, CheckedAt: now()}
 		if path != "" {
 			s.Availability.Available = &wire.RuntimeAvailabilityAvailable{Path: path}
@@ -299,6 +299,14 @@ func (d *Daemon) runtimeStatuses() []wire.RuntimeStatus {
 // locateFor finds a runtime; a test sets it to start a fake one.
 var locateFor = func(r *runtimeDef) (string, []string, []string) { return r.locate() }
 
+// locate is locateFor, or the daemon's own locator when a test gave it one (#5926).
+func (d *Daemon) locate(r *runtimeDef) (string, []string, []string) {
+	if locate := d.startOpts().locate; locate != nil {
+		return locate(r)
+	}
+	return locateFor(r)
+}
+
 func (d *Daemon) launchFor(r *runtimeDef, dir string) (acp.Launch, error) {
 	return d.launchAs(r, dir, nil)
 }
@@ -312,7 +320,7 @@ func (d *Daemon) launchAs(r *runtimeDef, dir string, account *wire.AccountProfil
 // launchOn is launchAs for a session: an org account's relay counts the session's tokens
 // (#999). An org account is reached through the model relay, never the 056 relay (D8).
 func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfile, agent wire.UUID) (acp.Launch, error) {
-	path, args, looked := locateFor(r)
+	path, args, looked := d.locate(r)
 	// Until the app's copy is whole, the person's own (npx) still runs this session.
 	installing := d.installOnFirstUse(r)
 	if path == "" {
@@ -396,6 +404,7 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		d.linkShared(*account)
 		env = withAccount(env, account)
 	}
+	env = append(env, d.startOpts().runtimeEnv...)
 	l := withToolPolicy(acp.Launch{Command: path, Args: args, Env: env, Dir: dir, Name: r.Name}, r.ID)
 	for _, f := range toolPolicyFiles[r.ID] {
 		file := filepath.Join(root, "runtimes", f.name)
