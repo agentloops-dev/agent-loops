@@ -16,8 +16,10 @@ import (
 // approval for every reader of secrets.env: d.secrets(), the readers that look a name up,
 // and localSecret. It is no flagged secret.
 func TestAnUnflaggedRecordOpensWithNoApproval(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	const value = "glpat-4176-not-real"
@@ -66,8 +68,10 @@ func TestAnUnflaggedRecordOpensWithNoApproval(t *testing.T) {
 // #4176: the flag is bound in the associated data: a record whose flag is changed by hand
 // does not open, either way.
 func TestAnUnflaggedRecordsFlagChangedByHandDoesNotOpen(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if err := d.saveSealedSecret(home, "PLAIN_TOKEN", "plain-value", "", false); err != nil {
@@ -92,8 +96,10 @@ func TestAnUnflaggedRecordsFlagChangedByHandDoesNotOpen(t *testing.T) {
 // #4176: a Linux machine with no control plane keeps a secret with the flag off: it has no
 // release layer, so it needs no control plane and no signed approval.
 func TestALinuxMachineWithNoControlPlaneKeepsAnUnflaggedSecret(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.secretReleaseOn = new(true)
@@ -124,8 +130,10 @@ func (unreadableKey) Save([]byte) error { return errors.New("not saved") }
 // #4176, #4045: when this machine's key does not read, every secret in the store says the
 // same clear error, flag on or off, and nothing is read as set.
 func TestAnUnreadableKeyGivesOneErrorForEverySecret(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if err := d.saveSealedSecret(home, "PLAIN_TOKEN", "plain-value", "", false); err != nil {
@@ -160,8 +168,10 @@ func TestAnUnreadableKeyGivesOneErrorForEverySecret(t *testing.T) {
 // secrets.env found at start is sealed into it and removed, at each start that finds one.
 // After a start, no file under the home holds a value as plain text.
 func TestNoSecretsEnvAfterAStart(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	path := skillcatalog.SecretsPath(home)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
@@ -239,12 +249,14 @@ func TestNoSecretsEnvAfterAStart(t *testing.T) {
 // #4177: a start whose key does not read leaves secrets.env as it is, and its readers read
 // it until a start moves it.
 func TestAMoveWithNoKeyKeepsTheFile(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	path := skillcatalog.SecretsPath(home)
 	os.MkdirAll(filepath.Dir(path), 0o700)
 	os.WriteFile(path, []byte("OLD_TOKEN=old-value\n"), 0o600)
-	d, err := New(context.Background(), t.TempDir())
+	d, err := newWith(context.Background(), t.TempDir(), testHooksOf(t).options())
 	if err != nil {
 		t.Fatal(err)
 	}

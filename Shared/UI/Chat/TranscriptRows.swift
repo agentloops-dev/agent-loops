@@ -68,11 +68,22 @@ struct TurnView: View, Equatable {
     var row: TurnRows.Row? = nil
     /// Whether this is the turn's last row, which keeps the room after the turn.
     var isLastRow = true
+    /// The "Its allowance ran out" line in this turn, when the buttons sit under it (#5919).
+    /// Nil on every other turn, so a change of it draws only this one again.
+    var allowanceLine: UUID? = nil
+    /// When the allowance resets. The button reads the time from `ChatActions`; this is here
+    /// so the turn is drawn again when the time becomes known. `Equatable` would otherwise
+    /// keep **Continue when it is back**.
+    var allowanceAt: Date? = nil
+    /// Whether **Continue in new session** is offered. A host that gains the capability
+    /// draws the button: `Equatable` would otherwise keep the first set of buttons.
+    var allowanceCanStart = false
 
     nonisolated static func == (a: TurnView, b: TurnView) -> Bool {
         a.turn == b.turn && a.detail == b.detail && a.focusedRun == b.focusedRun && a.fetched == b.fetched
             && a.fetchFailed == b.fetchFailed && a.hasEarlier == b.hasEarlier && a.isLive == b.isLive
-            && a.row == b.row && a.isLastRow == b.isLastRow
+            && a.row == b.row && a.isLastRow == b.isLastRow && a.allowanceLine == b.allowanceLine
+            && a.allowanceAt == b.allowanceAt && a.allowanceCanStart == b.allowanceCanStart
     }
 
     /// The outcome the turn draws: none while the steps it shows before it are on their way.
@@ -124,7 +135,7 @@ struct TurnView: View, Equatable {
                 }
                 if detail.showsSteps, stepCount != 0 {
                     if waiting, fetchFailed {
-                        RecordLine(icon: LineGlyph.loadFailure, detail: "These steps did not load.",
+                        RecordLine(detail: "These steps did not load.",
                                    action: StripButton(title: "Try Again") { Task { await fetch() } })
                     } else if waiting {
                         ProgressView().controlSize(.small)
@@ -155,6 +166,9 @@ struct TurnView: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The buttons under this turn's "Its allowance ran out" line (#5919). A turn that
+        // does not hold that line sets nil, so the line in another turn draws none.
+        .environment(\.allowanceOutLine, allowanceLine)
         // A row that goes on with a reply the row before it started: the room between its blocks.
         .padding(.top, pieces.first.map(Self.continues) == true ? 10 : 0)
         .padding(.bottom, isLastRow ? 14 : 0)
@@ -281,7 +295,7 @@ private struct LiveLine: View {
 
     var body: some View {
         if case .toolRun(_, let calls) = item, let call = calls.last {
-            RecordLine(icon: LineGlyph.tool(call.kind), detail: call.turnLine, oneLine: true)
+            RecordLine(detail: call.turnLine, oneLine: true)
         } else {
             StepRow(item: item)
         }
@@ -323,6 +337,7 @@ private struct StepRow: View {
 
 private struct EntryRow: View {
     @Environment(\.chatActions) private var actions
+    @Environment(\.allowanceOutLine) private var allowanceOutLine
     let entry: TranscriptEntry
 
     var body: some View {
@@ -388,7 +403,7 @@ private struct EntryRow: View {
 
         case .toolCall(let call), .toolCallUpdate(let call):
             // Reached only when something splits a run; a run is drawn by ToolRunRow.
-            RecordLine(icon: LineGlyph.tool(call.kind), detail: call.line, oneLine: true)
+            RecordLine(detail: call.line, oneLine: true)
 
         case .planUpdated(let plan):
             // One line that opens to the steps (#5033): the plan as it is now is in the top card.
@@ -405,15 +420,15 @@ private struct EntryRow: View {
             ServedRequestLine(request: request)
 
         case .elicitationAsked(let request):
-            RecordLine(icon: LineGlyph.asked, head: "Asked", detail: request.title)
+            RecordLine(head: "Asked", detail: request.title)
 
         case .elicitationAnswered(_, let summary, let answers):
             if answers.isEmpty {
-                RecordLine(icon: LineGlyph.answered, detail: summary)
+                RecordLine(detail: summary)
             } else {
                 // "You answered", which opens to each answer under the question it answers
                 // (#5036): the Ask that asked is gone.
-                RecordLine(icon: LineGlyph.answered, head: "You answered",
+                RecordLine(head: "You answered",
                            detail: answers.count == 1 ? answers[0].question : "\(answers.count) questions",
                            openHelp: ("Show the answers", "Hide the answers")) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -429,9 +444,9 @@ private struct EntryRow: View {
 
         case .compaction(let status, let summary, _, let error):
             if summary.isEmpty {
-                RecordLine(icon: LineGlyph.compaction, detail: CompactionLine.words(status: status, error: error))
+                RecordLine(detail: CompactionLine.words(status: status, error: error))
             } else {
-                RecordLine(icon: LineGlyph.compaction, detail: CompactionLine.words(status: status, error: error),
+                RecordLine(detail: CompactionLine.words(status: status, error: error),
                            openHelp: ("Show the summary", "Hide the summary")) {
                     BlocksView(blocks: summary).foregroundStyle(.secondary)
                 }
@@ -441,11 +456,12 @@ private struct EntryRow: View {
             NoticeLine(notice: notice)
 
         case .permissionAsked(let request):
-            RecordLine(icon: LineGlyph.asked, head: "Asked", detail: request.toolCall.title)
+            RecordLine(head: "Asked", detail: request.toolCall.title)
 
-        case .permissionAnswered(let optionID, let name):
-            // An answered Ask leaves one Line (#5036): "You chose ‹option›".
-            RecordLine(icon: LineGlyph.answered, lead: "You chose", head: name ?? optionID)
+        case .permissionAnswered(let optionID, let name, let answeredBy, let answeredByTitle):
+            // An answered Ask leaves one Line (#5036): "You chose ‹option›", or the
+            // session that started this one when it answered (#5440): "‹Lead› chose ‹option›".
+            RecordLine(lead: TranscriptEntry.chooser(answeredBy: answeredBy, title: answeredByTitle), head: name ?? optionID)
 
         case .optionChanged:
             // Dropped by `TranscriptEntry.display` before it gets here. Plumbing: the
@@ -455,13 +471,22 @@ private struct EntryRow: View {
         case .stateChanged(let state, let reason):
             // `.finished` is dropped by `TranscriptEntry.display`: the reply ending is
             // what says the turn did. The endings that mean something all reach here.
-            StateLine(state: state, reason: reason)
+            // The two buttons sit under the last "Its allowance ran out" line, and only
+            // while the chat offers them (#5919). A stored line of an older turn does not.
+            if let offer = actions.allowanceOut, entry.id == allowanceOutLine {
+                VStack(alignment: .leading, spacing: 8) {
+                    StateLine(state: state, reason: reason)
+                    AllowanceOutButtons(offer: offer)
+                }
+            } else {
+                StateLine(state: state, reason: reason)
+            }
 
         case .workReported(let report):
             WorkReportLine(report: report)
 
         case .runtimeNote(let text):
-            RecordLine(icon: LineGlyph.note, detail: text)
+            RecordLine(detail: text)
 
         case .sandboxFailure(let record):
             SandboxFailureCard(record: record)
@@ -506,7 +531,7 @@ private struct NoticeLine: View {
     let notice: SessionNotice
 
     var body: some View {
-        RecordLine(icon: LineGlyph.notice(notice), head: notice.title, detail: notice.detail,
+        RecordLine(head: notice.title, detail: notice.detail,
                    tone: notice.isError ? .failure : .plain)
     }
 }
@@ -518,7 +543,7 @@ private struct ThoughtLine: View {
     let text: String
 
     var body: some View {
-        RecordLine(icon: LineGlyph.thought, detail: TranscriptItem.thoughtLine(text), oneLine: true,
+        RecordLine(detail: TranscriptItem.thoughtLine(text), oneLine: true,
                    openHelp: ("Show the whole thought", "Hide the thought")) {
             Text(text)
                 .appText(.reading)
@@ -540,7 +565,7 @@ private struct WorkReportLine: View {
     var body: some View {
         // No attention tint (#5036): "Waiting on your answer" has its Ask under it, so the
         // yellow is said there, once.
-        RecordLine(icon: LineGlyph.report(report.outcome), head: report.outcome.heading, detail: report.message)
+        RecordLine(head: report.outcome.heading, detail: report.message)
     }
 }
 
@@ -787,14 +812,14 @@ private struct ToolCallLine: View {
 
     var body: some View {
         if let onClick {
-            RecordLine(icon: LineGlyph.tool(call.kind), detail: words, oneLine: true,
+            RecordLine(detail: words, oneLine: true,
                        onClick: onClick, clickHelp: "Show the whole run")
         } else if hasDetail {
-            RecordLine(icon: LineGlyph.tool(call.kind), detail: words, oneLine: true,
+            RecordLine(detail: words, oneLine: true,
                        openHelp: ("Show the argument and the return", "Hide the argument and the return"),
                        isFocused: isFocused) { detail }
         } else {
-            RecordLine(icon: LineGlyph.tool(call.kind), detail: words, oneLine: true)
+            RecordLine(detail: words, oneLine: true)
         }
     }
 
@@ -990,14 +1015,54 @@ struct QuietLine: View {
     var body: some View {
         TimelineView(.everyMinute) { context in
             if let line = ActivityWords.quiet(since: since, startedAt: startedAt, now: context.date) {
-                // A Line with no glyph (#5036): under the words of the lines above it.
+                // Under the words of the lines above it (#5036).
                 Text(line)
                     .appText(.fine)
                     .foregroundStyle(.tertiary)
-                    .padding(.leading, RecordLine<EmptyView>.glyphWidth + RecordLine<EmptyView>.gap)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 14)
             }
+        }
+    }
+}
+
+/// **Continue at** and **Continue in new session**, under the allowance line (#5919).
+/// The time is read again each minute. Both stay disabled while a press is in flight.
+private struct AllowanceOutButtons: View {
+    let offer: AllowanceOutActions
+    @State private var busy = false
+
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { buttons(now: context.date) }
+                VStack(alignment: .leading, spacing: 8) { buttons(now: context.date) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func buttons(now: Date) -> some View {
+        Button(ContinueWhenBackWords.button(resetsAt: offer.resetsAt, now: now)) {
+            run(offer.wait)
+        }
+        .buttonStyle(.paperProminent)
+        .help(ContinueWhenBackWords.help)
+        .disabled(busy)
+        if let startNew = offer.startNew {
+            Button(ContinueWhenBackWords.inNewSession) { run(startNew) }
+                .buttonStyle(.paper)
+                .help(ContinueWhenBackWords.inNewSessionHelp)
+                .disabled(busy)
+        }
+    }
+
+    private func run(_ action: @escaping @MainActor () async -> Void) {
+        guard !busy else { return }
+        busy = true
+        Task {
+            await action()
+            busy = false
         }
     }
 }
@@ -1008,17 +1073,7 @@ private struct StateLine: View {
 
     var body: some View {
         // The one place in the transcript a colour earns itself: something went wrong.
-        RecordLine(icon: icon, head: text, tone: isFailure ? .failure : .plain)
-    }
-
-    private var icon: String {
-        if isFailure { return LineGlyph.failed }
-        switch state {
-        case .stopped: return LineGlyph.stopped
-        case .archived: return "archivebox"
-        case .finished: return "checkmark.circle"
-        default: return LineGlyph.note
-        }
+        RecordLine(head: text, tone: isFailure ? .failure : .plain)
     }
 
     private var isFailure: Bool {

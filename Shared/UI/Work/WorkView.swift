@@ -4,7 +4,7 @@ import SwiftUI
 /// Work (#3119, spec 3100), as the web page's Work section: Issues and Pull requests from every
 /// machine's forges (`forge/issues`, `forge/pulls`), one row per ref, with what lineage knows
 /// (`reports/nodes`) under each title; Releases from lineage alone. A row opens the
-/// item's page; Back and Forward go along the places, as a browser's. One view for the Mac's
+/// item's page; Back and Forward go along the places, as a browser's (on the Mac, the window's, #5784). One view for the Mac's
 /// window and the Remote (#3256): on a phone the filters scroll sideways and a row wraps.
 struct WorkView: View {
     let model: any WorkModel
@@ -15,12 +15,18 @@ struct WorkView: View {
     var body: some View {
         let place = model.workPlace
         Group {
-            if place.ref != nil, place.kind == .release {
+            if place.files {
+                WorkFilesPage(model: model, place: place).id(place)
+            } else if place.ref != nil, place.kind == .release {
                 WorkReleasePage(model: model, place: place).id(place)
             } else if place.ref != nil {
                 WorkItemPage(model: model, place: place).id(place)
             } else if place.kind == .feature {
                 WorkFeaturesPane(model: model, state: model.workLists.features)
+            } else if place.kind == .deploy {
+                #if os(macOS)
+                WorkDeploysPane(model: model, state: model.workLists.deploys)
+                #endif
             } else if place.kind == .timeline {
                 #if os(macOS)
                 WorkTimelinePane(model: model, state: model.workLists.timeline)
@@ -58,21 +64,22 @@ struct WorkView: View {
         return place.kind.title
     }
 
+    /// The Remote's list has Back and Forward along Work's places; the Mac window's are its own,
+    /// along every page (#5784).
     private static func history(_ place: WorkPlace) -> Bool {
         #if os(iOS)
         place.ref == nil
         #else
-        true
+        false
         #endif
     }
 
-    /// Back and Forward: beside the window's title on the Mac, at the bar's end on the Remote,
-    /// whose start is its own way back to the sidebar.
+    /// Back and Forward at the bar's end on the Remote, whose start is its own way back to the sidebar.
     private static var historyPlacement: ToolbarItemPlacement {
         #if os(iOS)
         .topBarTrailing
         #else
-        .navigation
+        .automatic
         #endif
     }
 }
@@ -85,6 +92,7 @@ extension WorkList.Kind {
         case .pr: "arrow.triangle.pull"
         case .feature: "sparkles"
         case .release: "shippingbox"
+        case .deploy: "server.rack"
         case .timeline: "timeline.selection"
         }
     }
@@ -95,6 +103,7 @@ extension WorkList.Kind {
         case .pr: "Every pull request in your folders’ repos, and what agents spent on each"
         case .feature: "Each feature label on your epics, with its epics and their leads"
         case .release: "The releases lineage knows, and what went into each"
+        case .deploy: "Every component in every environment: what is live, since when, and what goes next"
         case .timeline: "Your epics in time: when each started, what closed, and when it is forecast to close"
         }
     }
@@ -111,6 +120,9 @@ private struct WorkListPane: View {
     private let compact = false
     @Environment(\.openSettings) private var openSettings
     #endif
+    /// Next ↗ on the Issues list (#5691): set only while this Mac can open the web page (#4937).
+    @Environment(\.openWebPlace) private var openWebPlace
+    @State private var nextProblem: String?
     /// Back from an item's page gives the list the keys, so ↑ and ↓ go on from the row left.
     @FocusState private var focused: Bool
 
@@ -142,6 +154,9 @@ private struct WorkListPane: View {
         #endif
         // Refresh in the toolbar; a phone has pull to refresh in its place (lists.md section 3).
         .toolbar {
+            if kind == .issue, let openWebPlace {
+                ToolbarItem(placement: .primaryAction) { nextLink(openWebPlace) }
+            }
             if !compact {
                 ToolbarItem(placement: .primaryAction) {
                     WorkRefreshButton(running: list.reading || list.loadingMore) { list.asked += 1 }
@@ -150,6 +165,22 @@ private struct WorkListPane: View {
         }
         .workTask(id: list.ask) { await list.load(model: model) }
         .onChange(of: model.workProjects, initial: true) { _, projects in list.projects = projects }
+    }
+
+    /// **Next ↗** (#5691): Work ▸ Next on the web page, for the Project filter's project, else the
+    /// only one. A Web + Mac link (#4937, Lead role, #5290): the Remote sets no `openWebPlace`.
+    private func nextLink(_ open: OpenWebPlace) -> some View {
+        let projects = list.projectRepos.map(\.project)
+        let project = projects.first { $0.id == list.filter.project } ?? (projects.count == 1 ? projects.first : nil)
+        return Button("\(NextLink.title) ↗") {
+            Task { nextProblem = await open.run(NextLink.place(project: project)) }
+        }
+        .help(NextLink.help)
+        .alert(NextLink.cannotOpen, isPresented: Binding(get: { nextProblem != nil }, set: { if !$0 { nextProblem = nil } })) {
+            Button("OK") { nextProblem = nil }
+        } message: {
+            Text(nextProblem ?? "")
+        }
     }
 
     /// The filter bar (lists.md section 1): the search field, Project, State, Repo, Label,
@@ -297,6 +328,8 @@ private struct WorkListPane: View {
     private func rowsList(_ shown: [WorkList.Row], lines: [String]) -> some View {
         let several = Set(list.all.map(\.repo)).count > 1
         let latest = kind == .release ? WorkReleaseLook.latest(list.all) : []
+        // The sessions this app knows, of every machine (#5453): a row shows the one that works on its item now.
+        let agents = kind == .release ? [] : model.workAgents
         return ScrollViewReader { reader in
             selectable {
                 if list.fromDevice {
@@ -307,7 +340,9 @@ private struct WorkListPane: View {
                 }
                 ForEach(shown) { row in
                     Button { open(row.id) } label: {
-                        WorkItemRow(row: row, several: several, compact: compact, latest: latest.contains(row.id), pick: pick)
+                        WorkItemRow(row: row, several: several, compact: compact, latest: latest.contains(row.id), pick: pick,
+                                    session: kind == .release ? nil : WorkFeatures.workingSession(on: row.node, in: agents),
+                                    openSession: { model.openWorkSession($0) })
                     }
                     .buttonStyle(WorkRowButtonStyle())
                     .environment(\.workPictures, row.host.map { WorkPictures(model: model, host: $0) })

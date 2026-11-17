@@ -9,10 +9,11 @@ import Observation
 @Observable
 final class WorkListState {
     let kind: WorkList.Kind
-    var filter = WorkList.Filter()
+    /// The filters and the sort are kept for the next launch (#5451), and the list opens with them.
+    var filter = WorkList.Filter() { didSet { remember() } }
     /// The person's projects (#3283), as the model last said them, for the Project filter.
     var projects: [WorkList.Project] = []
-    var sort = WorkList.Sort.updated
+    var sort = WorkList.Sort.updated { didSet { remember() } }
     var lists: [(host: MachineRef, list: DaemonAPI.ForgeList)]?
     var lineage: [DaemonAPI.ReportNode] = []
     /// The boards the Board menu offers (#3282), read with the list.
@@ -46,7 +47,14 @@ final class WorkListState {
 
     init(kind: WorkList.Kind) {
         self.kind = kind
-        sort = kind.defaultSort
+        let kept = WorkRemembered.list(WorkRememberedStore.kept(kind), kind: kind)
+        filter = kept.filter
+        sort = kept.sort
+    }
+
+    /// Keeps what the list has now for the next launch; the defaults remove it.
+    private func remember() {
+        WorkRememberedStore.keep(WorkRemembered.words(filter, sort: sort, kind: kind), for: kind)
     }
 
     struct Ask: Equatable {
@@ -183,22 +191,33 @@ final class WorkListState {
             readBoards = await model.workBoards()
             guard ask == mine else { return }
         }
+        let machines = model.workMachines(board: board)
+        let ids = machines.map(\.id)
         var got: [(host: MachineRef, list: DaemonAPI.ForgeList)] = []
-        await withTaskGroup(of: (MachineRef, DaemonAPI.ForgeList).self) { group in
-            for machine in model.workMachines(board: board) {
-                group.addTask {
-                    do {
-                        return (machine.id, try await model.forgeList(kind, .init(state: state, limit: 100,
-                                                                                  board: board.isEmpty ? nil : board),
-                                                                      on: machine.id))
-                    } catch {
-                        return (machine.id, .init(errors: [.init(forge: "", message: error.localizedDescription)]))
-                    }
+        if !ids.isEmpty {
+            // Every machine's list in one call to the control plane (#5592), which waits for a slow machine at most 5 s;
+            // with none, a call to each machine. The rows read before stay until it answers.
+            do {
+                if let all = try await model.controlAll(DaemonAPI.Method.forgeListAll,
+                                                        Self.listAllRequest(kind, state: state, board: board),
+                                                        returning: DaemonAPI.ForgeListAll.self) {
+                    got = WorkList.hostLists(all, hosts: ids)
+                } else {
+                    got = await readEach(machines, .init(state: state, limit: 100, board: board.isEmpty ? nil : board),
+                                         model: model, mine: mine, known: known)
                 }
+            } catch {
+                got = ids.map { ($0, .init(errors: [.init(forge: "", message: error.localizedDescription)])) }
             }
-            for await (host, list) in group { got.append((host, list)) }
         }
         guard ask == mine else { return }
+        // One machine's answer for a forge is enough: the others' errors for it go (#5449).
+        let shown = WorkList.shownErrors(got.map { ($0.list.items.map(\.node.ref), $0.list.errors ?? []) })
+        got = got.enumerated().map { i, entry in
+            var list = entry.list
+            list.errors = shown[i].isEmpty ? nil : shown[i]
+            return (entry.host, list)
+        }
         if kind == .issue, !readBoards.isEmpty || !fromDevice { boards = readBoards }
         // Every machine failed over this device's copy: its rows stay, dimmed under what the forges said, with no
         // next page (#4392, #4930), as the web page keeps them.
@@ -223,6 +242,48 @@ final class WorkListState {
         }
     }
 
+    /// forge/listAll's request (#5592) for a kind's list: its state, a page of 100, the board when one is chosen, and
+    /// `pages`, each machine still to read and its cursor, for the next page.
+    static func listAllRequest(_ kind: WorkList.Kind, state: String, board: String,
+                               pages: [DaemonAPI.MachineCursor]? = nil) -> DaemonAPI.ForgeListAllRequest {
+        .init(kind: kind == .pr ? "pulls" : "issues", state: state, board: board.isEmpty ? nil : board, limit: 100, pages: pages)
+    }
+
+    /// Each machine's list, a call to each, with no control plane. Each machine's rows draw as it answers (#5449): the
+    /// first machine that answers for a forge is enough, and a slow or offline one does not hold the list. The others
+    /// keep the rows they had; errors wait for all.
+    private func readEach(_ machines: [(id: MachineRef, name: String)], _ request: DaemonAPI.ForgeListRequest,
+                          model: any WorkModel, mine: Ask, known: (nodes: [DaemonAPI.ReportNode], cursor: String?))
+        async -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
+        let kind = kind
+        var got: [(host: MachineRef, list: DaemonAPI.ForgeList)] = []
+        await withTaskGroup(of: (MachineRef, DaemonAPI.ForgeList).self) { group in
+            for machine in machines {
+                group.addTask {
+                    do {
+                        return (machine.id, try await model.forgeList(kind, request, on: machine.id))
+                    } catch {
+                        return (machine.id, .init(errors: [.init(forge: "", message: error.localizedDescription)]))
+                    }
+                }
+            }
+            for await (host, list) in group {
+                got.append((host, list))
+                guard ask == mine, got.count < machines.count, !list.items.isEmpty else { continue }
+                var drawn = got.map { entry in
+                    var quiet = entry.list
+                    quiet.errors = nil
+                    return (host: entry.host, list: quiet)
+                }
+                drawn += (lists ?? []).filter { had in !got.contains { $0.host == had.host } }
+                lineage = known.nodes
+                lineageCursor = known.cursor
+                lists = drawn
+            }
+        }
+        return got
+    }
+
     /// The machines answered for what is asked: the rows are theirs now.
     private func answered(_ wanted: String) {
         shownFor = wanted
@@ -238,11 +299,25 @@ final class WorkListState {
         defer { loadingMore = false }
         do {
             if kind.fromForge {
+                let had = lists ?? []
+                let board = filter.board
+                let pages = had.compactMap { entry in entry.list.cursor.map { DaemonAPI.MachineCursor(machine: entry.host, cursor: $0) } }
+                // Each machine's next page in one call to the control plane (#5592). A forge or a machine that could not
+                // read its next page says so: the rows and the cursor stay, so Try again reads it again.
+                if let all = try await model.controlAll(DaemonAPI.Method.forgeListAll,
+                                                        Self.listAllRequest(kind, state: filter.state.forge, board: board,
+                                                                            pages: pages),
+                                                        returning: DaemonAPI.ForgeListAll.self) {
+                    let (next, problem) = WorkList.addPages(all, to: had)
+                    lists = next
+                    pageProblem = problem
+                    return
+                }
                 var next: [(host: MachineRef, list: DaemonAPI.ForgeList)] = []
-                for entry in lists ?? [] {
+                for entry in had {
                     guard let cursor = entry.list.cursor else { next.append(entry); continue }
                     let page = try await model.forgeList(kind, .init(state: filter.state.forge, cursor: cursor, limit: 100,
-                                                                     board: filter.board.isEmpty ? nil : filter.board),
+                                                                     board: board.isEmpty ? nil : board),
                                                          on: entry.host)
                     next.append((entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors)))
                 }
@@ -266,6 +341,8 @@ final class WorkLists {
     #if os(macOS)
     /// Work ▸ Timeline (#4173): the Mac's alone for now (remote: by design).
     let timeline = WorkTimelineState()
+    /// Work ▸ Deploys (#5270): Mac + web, so not on the Remote.
+    let deploys = WorkDeploysState()
     #endif
     private var byKind: [WorkList.Kind: WorkListState] = [:]
 
@@ -274,5 +351,16 @@ final class WorkLists {
         let state = WorkListState(kind: kind)
         byKind[kind] = state
         return state
+    }
+}
+
+/// Where the Work pages keep what they had when last left (#5451): this app's defaults.
+enum WorkRememberedStore {
+    static func kept(_ kind: WorkList.Kind) -> String? { WindowDefaults.store.string(forKey: WorkRemembered.key(kind)) }
+
+    static func keep(_ words: String, for kind: WorkList.Kind) {
+        let key = WorkRemembered.key(kind)
+        guard WindowDefaults.store.string(forKey: key) != words else { return }
+        if words.isEmpty { WindowDefaults.store.removeObject(forKey: key) } else { WindowDefaults.store.set(words, forKey: key) }
     }
 }

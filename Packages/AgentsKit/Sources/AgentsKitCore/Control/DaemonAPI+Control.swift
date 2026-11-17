@@ -4,11 +4,15 @@ import Foundation
 public extension DaemonAPI.Method {
     static let controlStatus = "control/status"
     static let hostsList = "machines/list"
+    /// `{machines, set?, add?, remove?}`: a person's labels on one machine or many (#5284).
+    static let hostsSetLabels = "machines/setLabels"
     static let hostsStartEnroll = "machines/startEnroll"
     static let hostsInstall = "machines/install"
     static let hostsCheckAgain = "machines/checkAgain"
     static let hostsUpdate = "machines/update"
     static let hostsRemove = "machines/remove"
+    /// Try Again on a machine's set-up (#5357).
+    static let hostsRetrySetup = "machines/retrySetup"
     /// `{host, from, runtime, allowed}`: whether `host` may use `from`'s sign-in for a
     /// runtime, relayed through the control plane (058, T091). An operator's, after the
     /// window asked the person.
@@ -276,6 +280,51 @@ public extension DaemonAPI {
         }
     }
 
+    /// One step of a machine's set-up (#5357), as `MachineSetupStep` on the wire.
+    struct MachineSetupStep: Codable, Sendable, Hashable, Identifiable {
+        public enum State: String, Codable, Sendable {
+            case waiting, running, done, failed
+            case needsYou = "needs-you"
+        }
+
+        /// `create`, `join`, `install`, `compare`, `runtimes`, `projects`, `signIn` or `smoke`.
+        public var id: String
+        public var state: State
+        public var startedAt: Date?
+        public var endedAt: Date?
+        /// One line of what it is doing or did.
+        public var detail: String?
+        /// Why it failed, in the words of the provider or the machine.
+        public var error: String?
+        public var fromPool: Bool?
+        public var slower: Bool?
+
+        public init(id: String, state: State, startedAt: Date? = nil, endedAt: Date? = nil, detail: String? = nil,
+                    error: String? = nil, fromPool: Bool? = nil, slower: Bool? = nil) {
+            self.id = id
+            self.state = state
+            self.startedAt = startedAt
+            self.endedAt = endedAt
+            self.detail = detail
+            self.error = error
+            self.fromPool = fromPool
+            self.slower = slower
+        }
+    }
+
+    /// How a machine's set-up stands (#5357): `MachineSetup` on the wire.
+    struct MachineSetup: Codable, Sendable, Hashable {
+        public var steps: [MachineSetupStep]
+        public var startedAt: Date
+        public var readyAt: Date?
+
+        public init(steps: [MachineSetupStep], startedAt: Date, readyAt: Date? = nil) {
+            self.steps = steps
+            self.startedAt = startedAt
+            self.readyAt = readyAt
+        }
+    }
+
     /// One row of `machines/list`.
     struct ControlMachine: Codable, Sendable, Hashable, Identifiable {
         public var id: MachineRef
@@ -307,6 +356,18 @@ public extension DaemonAPI {
         /// Of the control plane's required capabilities, the ones it does not have: it is
         /// then `needsUpdate`.
         public var missing: [String]?
+        /// How its set-up stands: the eight steps (#5357); nil for a machine that was never set up by Agents.
+        public var setup: MachineSetup?
+        /// Its labels (#5284): key or key=value, the provider's (`os=`, `arch=`, `provider=`) and a person's.
+        public var labels: [String]?
+        /// The labels its provider sets itself; a person cannot change them.
+        public var autoLabels: [String]?
+
+        /// The labels a person set: all of them but the provider's.
+        public var ownLabels: [String] {
+            let auto = Set((autoLabels ?? []).map { $0.lowercased() })
+            return (labels ?? []).filter { !auto.contains($0.lowercased()) }
+        }
 
         /// Whether the host answers calls: `online`, or `needsUpdate`, which is connected and
         /// serves what its list says (#1771). Its features are gated by `has(_:)`.
@@ -332,6 +393,71 @@ public extension DaemonAPI {
             self.state = state
             self.reach = reach
             self.machineID = machineID
+        }
+    }
+
+    /// `machines/list` with a query (#5283): what the Machines page asks for (`MachineListQuery`).
+    /// Every field is optional; a control plane with `machines/2` then answers `MachineList`.
+    struct MachineListQuery: Codable, Sendable, Hashable {
+        public enum Sort: String, Codable, Sendable, CaseIterable {
+            case name, state, lastSeen, version
+        }
+
+        public var query: String?
+        public var state: String?
+        public var labels: [String]?
+        public var provider: String?
+        public var os: String?
+        public var version: String?
+        public var sort: Sort?
+        public var limit: Int?
+        public var cursor: String?
+
+        public init(query: String? = nil, state: String? = nil, labels: [String]? = nil, provider: String? = nil,
+                    os: String? = nil, version: String? = nil, sort: Sort? = nil, limit: Int? = nil, cursor: String? = nil) {
+            self.query = query
+            self.state = state
+            self.labels = labels
+            self.provider = provider
+            self.os = os
+            self.version = version
+            self.sort = sort
+            self.limit = limit
+            self.cursor = cursor
+        }
+    }
+
+    /// For each filter, how many machines have each of its values (`MachineCounts`).
+    struct MachineCounts: Codable, Sendable, Hashable {
+        public var state: [String: Int]?
+        public var labels: [String: Int]?
+        public var provider: [String: Int]?
+        public var os: [String: Int]?
+        public var version: [String: Int]?
+
+        public init(state: [String: Int]? = nil, labels: [String: Int]? = nil, provider: [String: Int]? = nil,
+                    os: [String: Int]? = nil, version: [String: Int]? = nil) {
+            self.state = state
+            self.labels = labels
+            self.provider = provider
+            self.os = os
+            self.version = version
+        }
+    }
+
+    /// A page of `machines/list` (#5283): the machines, the next page's cursor (none on the
+    /// last), how many match in all, and the counts (`MachineList`).
+    struct MachineList: Codable, Sendable, Hashable {
+        public var machines: [ControlMachine]
+        public var next: String?
+        public var total: Int
+        public var counts: MachineCounts
+
+        public init(machines: [ControlMachine], next: String? = nil, total: Int, counts: MachineCounts) {
+            self.machines = machines
+            self.next = next
+            self.total = total
+            self.counts = counts
         }
     }
 
@@ -496,6 +622,24 @@ public extension DaemonAPI {
     struct ClientRequest: Codable, Sendable, Hashable {
         public var client: UUID
         public init(client: UUID) { self.client = client }
+    }
+
+    /// machines/setLabels (#5284). `set` replaces a machine's labels; `add` and `remove` change them.
+    struct MachineLabelsRequest: Codable, Sendable, Hashable {
+        public var machines: [MachineRef]
+        public var set: [String]?
+        public var add: [String]?
+        public var remove: [String]?
+        public init(machines: [MachineRef], set: [String]? = nil, add: [String]? = nil, remove: [String]? = nil) {
+            self.machines = machines
+            self.set = set
+            self.add = add
+            self.remove = remove
+        }
+    }
+
+    struct MachineLabelsResult: Codable, Sendable, Hashable {
+        public var changed: Int
     }
 
     struct MachineRequest: Codable, Sendable, Hashable {

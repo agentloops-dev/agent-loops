@@ -66,8 +66,18 @@ type Config struct {
 	Version   string
 	// How this Mac's host's join stands (#113): its root's control-join.json.
 	HostJoinFile string
+	// BackstopEvery is how often the reads that back up a change made by hand or by another
+	// copy run: the records (R4, 15 s), the host tunnels (15 s) and the audit sinks (30 s);
+	// each its own default when 0. A test that counts the store work of requests sets it
+	// long, so no backstop read falls in its window (#6004).
+	BackstopEvery time.Duration
 	// Where the Linux hosts it hands out are (ServerFiles.folder).
 	ServerFolder string
+	// Where the public releases' files are kept for the Macs' self-update (#5786): ""
+	// keeps none, and a Mac then takes its release from the public releases itself.
+	ReleaseFolder string
+	// Where those files come from: ReleaseDownloads when empty (a test says another).
+	ReleaseSource string
 	// Where the runtimes' toolsets machines/install puts on a server are (#1136): "" puts none.
 	ToolsetFolder string
 	// The web remote's loopback listener (071): Web/dist and the port, or nil for none,
@@ -116,6 +126,9 @@ type Config struct {
 	// Start empty, for a handover to fill (R16): no settings made, every member refused,
 	// only the copy handing over answered, until it says take over.
 	Receive bool
+	// The clock builds/sync bounds its days by (#5654); nil is time.Now. A test sets one
+	// fixed time for itself and the plane, so a run across midnight UTC sees one day.
+	Now func() time.Time
 	// Serve, even if this copy was forwarding when it stopped (--no-forwarding).
 	NoForwarding bool
 	// The proxies whose X-Forwarded-For names a socket's source (Caddy on a public
@@ -157,12 +170,16 @@ type WebConfig struct {
 // Service is ControlService.
 type Service struct {
 	cfg Config
+	// The public releases' files kept for the Macs (#5786).
+	releases *releaseFiles
 	// The control key, and the one before a rotation (#997): read with currentKeys.
 	keyBook
 	// The Multiplier of each person, by their lineage objects' tags (#3903).
 	multiplierBook
 	// Each machine's hints and the newest operation on each secret (#4158): memory only.
 	secretInfoBook
+	// Each machine's capacity and each person's last start, for Auto (#5374): memory only.
+	autoBook
 	origin  string
 	copyID  string
 	records *records.Records
@@ -183,6 +200,8 @@ type Service struct {
 	pushes *pushes
 	// This copy's Web Push to browsers (#1486); nil with no VAPID key.
 	webPush *webPushes
+	// The compares of two Agents versions' commits (#5273).
+	agentsCompares agentsCompareBook
 	// What each host last listed (#962), for machines/lastHeard.
 	copies *hostCopies
 	// The reverse tunnels this copy holds for servers behind a bastion (#435): a single
@@ -190,6 +209,8 @@ type Service struct {
 	tunnels *hosttunnels.Tunnels
 	// Machine providers (#691): only on a single copy with a home for their secrets.
 	providers *providers.Providers
+	// Warm pools (#5363): with the providers, on a single copy.
+	pools *warmPools
 	// The other copies over this store, and the leases (US3); nil for a single copy.
 	mesh *mesh
 	// The origin peers dial, which a copy's key exchange is bound to.
@@ -363,6 +384,7 @@ func New(cfg Config) (*Service, error) {
 	if s.tunnels != nil {
 		tunnels = s.tunnels
 	}
+	s.releases = newReleaseFiles(cfg)
 	s.installer = &hostinstall.Installer{Codes: s.codes, ServerFolder: cfg.ServerFolder,
 		ToolsetFolder: cfg.ToolsetFolder,
 		Log:           func(format string, args ...any) { s.log(fmt.Sprintf(format, args...)) },
@@ -492,14 +514,19 @@ func (s *Service) Start(ctx context.Context) (int, error) {
 			s.startWeb()
 		}
 	}
-	go s.refreshEvery(15 * time.Second)
+	go s.refreshEvery(s.backstop(15 * time.Second))
 	go s.sweepEveryHour()
+	s.startPools()
 	go s.signIns.checkEvery(time.Hour, s.stop)
 	if s.tunnels != nil {
-		s.tunnels.Start(0)
+		s.tunnels.Start(s.cfg.BackstopEvery)
 	}
 	if s.mesh != nil && s.phase.now() != phaseReceiving {
 		s.startMesh()
+	}
+	if s.mesh == nil {
+		// With copies, startMesh's own tells it too.
+		s.router.OnLocalEnded(s.uplinkEnded)
 	}
 	if s.providers != nil && s.phase.now() != phaseReceiving {
 		s.providers.Start()
@@ -638,6 +665,14 @@ func (s *Service) setReady(ready bool) {
 	s.mu.Lock()
 	s.ready = ready
 	s.mu.Unlock()
+}
+
+// backstop is how often a backstop read runs: Config.BackstopEvery when set, else d.
+func (s *Service) backstop(d time.Duration) time.Duration {
+	if s.cfg.BackstopEvery > 0 {
+		return s.cfg.BackstopEvery
+	}
+	return d
 }
 
 // refreshEvery is the backstop for a change made by hand or by another copy (R4): the
@@ -819,6 +854,7 @@ func (s *Service) startMesh() {
 	m := s.mesh
 	s.router.OnLocalEnded(func(host string) {
 		s.log("host " + host + " disconnected")
+		s.uplinkEnded(host)
 		if epoch := m.leases.release(context.Background(), host); epoch != 0 {
 			m.released(host, epoch)
 		}
@@ -1020,7 +1056,7 @@ func (s *Service) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			plain(w, http.StatusServiceUnavailable, "the store can't be reached\n")
 		}
-	case (path == "/v1/install.sh" || strings.HasPrefix(path, "/v1/servers/") || strings.HasPrefix(path, "/v1/toolsets/")) && !s.mayDownload(r):
+	case (path == "/v1/install.sh" || strings.HasPrefix(path, "/v1/servers/") || strings.HasPrefix(path, "/v1/releases/") || strings.HasPrefix(path, "/v1/toolsets/")) && !s.mayDownload(r):
 		plain(w, http.StatusTooManyRequests, "too many downloads from this address; try again in a minute\n")
 	case path == "/v1/install.sh":
 		w.Header().Set("Content-Type", "text/x-shellscript")
@@ -1034,6 +1070,8 @@ func (s *Service) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(downloadWriteTimeout))
 		w.Write(data)
+	case strings.HasPrefix(path, "/v1/releases/"):
+		s.releases.serve(w, r)
 	case strings.HasPrefix(path, "/v1/toolsets/"):
 		data, ok := toolsetFile(strings.TrimPrefix(path, "/v1/toolsets/"), s.cfg.ToolsetFolder)
 		if !ok {
@@ -1880,7 +1918,10 @@ func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin
 		// set-up's is (data-model.md).
 		home := s.cfg.MachineID != "" && a.MachineID == s.cfg.MachineID && s.records.Host("mac") == nil
 		want := records.NewHostID()
-		if home {
+		if stored.MadeHost != "" {
+			// A machine the control plane made joins as the host its set-up is kept for (#5765).
+			want = stored.MadeHost
+		} else if home {
 			want = "mac"
 		}
 		sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Host: &want})
@@ -1931,6 +1972,12 @@ func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin
 		s.router.Know(host)
 		s.router.HoldToOwners()
 		s.log("host " + a.Name + " enrolled as " + host)
+		// A machine the control plane made: it has joined (step 2), and its token's digits are
+		// what the host must show at the compare step (#5359, #5765).
+		if stored.Made {
+			private, _ := s.codes.keys()
+			s.madeMachineJoined(ctx, host, controllink.TokenCode(controllink.CodeSecret(private, id)))
+		}
 		// A host an install made the code for a workspace for is linked to it (#3871): its
 		// name may not be the one the install asked for.
 		if w := stored.Workspace; w != nil && s.providers != nil {

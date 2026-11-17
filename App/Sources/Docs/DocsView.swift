@@ -23,19 +23,31 @@ final class DocsListState {
 
     var ask: [String] { [String(asked)] }
 
+    /// Most pages of docs/listAll one read follows: the control plane asks the machines, at most 500 docs a page.
+    static let mostPages = 4
+
+    /// Every machine's docs in one call to the control plane (#5571), the next pages while there are some, up to
+    /// mostPages, as the web page reads them.
     func load(model: AppModel) async {
-        let machines = model.docsMachines
         let asked = asked
         lists = nil
         var read: [DocsList.HostDocs] = []
-        for machine in machines {
+        if model.docsMachines.isEmpty {
+            // No machine reads docs: nothing to ask.
+        } else if let control = model.controlRequests {
             do {
-                let got = try await model.docs(DaemonAPI.Method.docsList, DaemonAPI.DocsListRequest(limit: 500),
-                                               returning: DaemonAPI.DocsList.self, on: machine.id)
-                for doc in got.docs where listedOn[doc.ref] == nil { listedOn[doc.ref] = machine.id }
-                read.append(.init(host: machine.id, name: machine.name, docs: got.docs, sources: got.sources))
+                var cursor: String?
+                for _ in 0..<Self.mostPages {
+                    let got = try await control.call(DaemonAPI.Method.docsListAll,
+                                                     DaemonAPI.DocsListAllRequest(limit: 500, cursor: cursor),
+                                                     returning: DaemonAPI.DocsListAll.self)
+                    read = DocsList.hostDocs(got, into: read, thisMac: model.thisMacHostID)
+                    for d in got.docs where listedOn[d.doc.ref] == nil { listedOn[d.doc.ref] = d.machine }
+                    cursor = got.cursor
+                    if cursor == nil { break }
+                }
             } catch {
-                read.append(.init(host: machine.id, name: machine.name, problem: error.localizedDescription))
+                read = [.init(host: MachineRef(rawValue: ""), name: "Control plane", problem: error.localizedDescription)]
             }
         }
         await readProjectNames(model: model)
@@ -97,9 +109,9 @@ final class DocsListState {
     }
 }
 
-/// Docs (#3321, spec 3319), as the web page's Docs section: every machine's docs (`docs/list`),
+/// Docs (#3321, spec 3319), as the web page's Docs section: every machine's docs (`docs/listAll`, one call, #5571),
 /// grouped by source (each project once, #3408), a folder's by its subfolders, with a Project filter; search (`docs/search`) with each match's line
-/// and snippet; and a doc's page (`docs/read`), read only. Back and Forward go along the places.
+/// and snippet; and a doc's page (`docs/read`), read only. The window's Back and Forward go along the places (#5784).
 struct DocsView: View {
     @Environment(AppModel.self) private var model
 
@@ -112,17 +124,8 @@ struct DocsView: View {
                 DocsListPane(list: model.docsList)
             }
         }
+        // Back and Forward are the window's, along every page (#5784).
         .navigationTitle("Docs")
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Button { model.docsHistory.back() } label: { Image(toolbarIcon: "chevron.left") }
-                    .disabled(!model.docsHistory.canGoBack)
-                    .help("Back")
-                Button { model.docsHistory.forward() } label: { Image(toolbarIcon: "chevron.right") }
-                    .disabled(!model.docsHistory.canGoForward)
-                    .help("Forward")
-            }
-        }
     }
 }
 

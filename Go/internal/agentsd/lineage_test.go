@@ -10,6 +10,8 @@ import (
 // #2348: a person's connection links a session to an issue and a PR, walks from the issue,
 // ends a link, and finds it all again after the host starts again.
 func TestLineageOverTheWire(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	issue := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#2348"}

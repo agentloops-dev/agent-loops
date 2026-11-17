@@ -15,12 +15,12 @@ import type {
 import { describe } from "../../model/errors";
 import { absolutePath } from "../../model/fileWatch";
 import {
-  backToYours, banner, behindLine, cappedByYours, choice, count, folderFile, folderIsKept, folderName, foldersLine, folderWaits, foot,
+  backToYours, banner, behindLine, behindMore, cappedByYours, choice, count, folderFile, folderIsKept, folderName, foldersLine, folderWaits, foot,
   isLooser, keptNotUsed, layerLine, moneyValue, notSet, openFolder, organisationItem, organisationTitle, policyFolderOf, policyItem,
   rowsIn, rulesCount, sameAsYoursLine, sections, sectionTitles, setAside, setting, signAgain, title, tokensValue, toolsFoot, ruleValue,
   untrustedLine, untrustedNone, untrustedRule, untrustedTitle, whereFrom, yoursIsKept, type Row,
 } from "../../model/policyLayers";
-import { go, route } from "../../route";
+import { go, route, routeHash } from "../../route";
 import { PolicySource } from "./PolicySource";
 import { GuardedChangeCard } from "../GuardedChange";
 import { useSettingsMachine } from "./SettingsMachine";
@@ -121,7 +121,7 @@ function Layer({ store, host, down, folder }: { store: Store; host: string; down
                 <button type="button" class="link" onClick={() => document.getElementById("settings-policy")?.scrollIntoView()}>{organisationTitle}</button>
               )}
               <FolderList store={store} host={host} folders={eff.foldersWithRules} />
-              {behindLine(eff.behind) && <p class="hint" role="status">{behindLine(eff.behind)}</p>}
+              {behindLine(eff.behind) && <p class="hint" role="status">{behindLine(eff.behind)}{behindMore(eff.behind) && <>{" "}<a href={routeHash(behindMore(eff.behind)!.to)}>Show all {eff.behind.length}</a></>}</p>}
             </MessageBanner>
           ) : (
             <MessageBanner tone="neutral" name="policy-banner">
@@ -246,9 +246,24 @@ function Control({ id, row, rule, folder, yours, editable, set }: { id: string; 
   const unset = folder ? sameAsYoursLine(row, rule) : `${notSet} (${row.unset})`;
   // The reason on a dimmed value, but not on the layer's own, whose cap line is under the row.
   const reason = (v: JSONValue) => isLooser(row, v, rule?.cap) && rule?.capLine && v !== yours ? ` — ${rule.capLine}` : "";
+  // A number of things (helpers, workflows, notices) is a whole number to type or step, with no top but the cap's
+  // (#5561); the cool-down, whose values are presets, stays a menu.
+  if (row.kind.kind === "count" && !row.kind.higherIsTighter) {
+    const cap = typeof rule?.cap === "number" ? rule.cap : undefined;
+    return (
+      <input id={id} type="number" inputMode="numeric" min={1} step={1} max={cap} disabled={!editable}
+        placeholder={unset} value={yours === undefined ? "" : String(yours)}
+        onChange={(e) => {
+          const raw = e.currentTarget.value.trim();
+          if (raw === "") { set(undefined); return; }
+          const n = Number(raw);
+          if (Number.isInteger(n) && n >= 1 && !isLooser(row, n, rule?.cap)) set(n);
+        }} />
+    );
+  }
   switch (row.kind.kind) {
-    case "choice":
-    case "count": {
+    case "count":
+    case "choice": {
       const values: JSONValue[] = row.kind.kind === "choice" ? row.kind.order : row.kind.numbers;
       const all = typeof yours === "number" && !values.includes(yours) ? [...values, yours].sort((a, b) => Number(a) - Number(b)) : values;
       const words = (v: JSONValue) => row.kind.kind === "choice" ? choice(row.rule, String(v)) : count(row.rule, Number(v));

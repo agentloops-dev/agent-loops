@@ -12,6 +12,8 @@ import (
 // #2019, M5: what a machine reports is each server and skill from a catalogue, personal
 // and in its folders, once each, with no folder.
 func TestTheGovernanceReportIsTheCatalogueSidecars(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	root := d.Store.Loc.Root
 	home, app := t.TempDir(), filepath.Join(t.TempDir(), "app")
@@ -51,6 +53,8 @@ func TestTheGovernanceReportIsTheCatalogueSidecars(t *testing.T) {
 // path prunes the sidecar) is not reported, personal or in a folder. An mcp.json that is
 // not valid settles nothing, so its entries stay.
 func TestTheGovernanceReportDropsAServerGoneFromMCPJSON(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	root := d.Store.Loc.Root
 	home, app := t.TempDir(), filepath.Join(t.TempDir(), "app")

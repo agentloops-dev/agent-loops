@@ -4,7 +4,7 @@
 import { useSignal } from "@preact/signals";
 import { hostNeedsUpdate } from "../../model/capabilities";
 import { createContext } from "preact";
-import { useContext, useEffect, useRef } from "preact/hooks";
+import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import type {
   AgentState, BackgroundItem, BudgetRequest, ContentBlock, EndedReason, FileReading, JSONValue, MessageSender, Plan, ToolCall, ToolCallContent, ToolCallLocation,
   PolicySetBy, SandboxFailureRecord, TranscriptEntry, UndoTurnResult, WorkReport,
@@ -34,7 +34,8 @@ import { memo } from "../../render/memo";
 import { terminalOutput } from "../../model/onTheMac";
 import { Icon } from "../Icon";
 import { nowPlan } from "../../model/nowWords";
-import { lineGlyph, RecordLine } from "./RecordLine";
+import { RecordLine } from "./RecordLine";
+import { continueHelp, continueInNewSession, continueInNewSessionHelp } from "../../model/continueWhenBack";
 
 /** The text of a message's blocks: text blocks as Markdown, anything else named. */
 export function Blocks({ blocks, text }: { blocks: ContentBlock[] | undefined; text: string }) {
@@ -103,7 +104,7 @@ function Exchanged({ title, value }: { title: string; value: JSONValue }) {
 
 /** The plan as the agent sent it, in the transcript: one line, "Plan · 5 steps", that opens to the steps then. */
 function PlanLine({ plan }: { plan: Plan }) {
-  return <RecordLine icon={lineGlyph.plan} detail={nowPlan(plan)} openTitles={["Show the plan's steps", "Hide the plan's steps"]}
+  return <RecordLine detail={nowPlan(plan)} openTitles={["Show the plan's steps", "Hide the plan's steps"]}
     more={<PlanView plan={plan} />} />;
 }
 
@@ -128,7 +129,7 @@ export function PlanView({ plan }: { plan: Plan }) {
 
 // No attention tint (#5036): "Waiting on your answer" has its Ask under it, so the yellow is said there, once.
 function ReportLine({ report }: { report: WorkReport }) {
-  return <RecordLine icon={lineGlyph.report(report.outcome)} head={outcomeHeadings[report.outcome]} detail={report.message} />;
+  return <RecordLine head={outcomeHeadings[report.outcome]} detail={report.message} />;
 }
 
 /**
@@ -167,8 +168,18 @@ export interface CallActions {
   showChanges?: ((path: string | null) => void) | undefined;
   /** Undo These Changes on a turn's card (ChatActions.undoTurn, #3437). Not on an archived session, nor a host too old. */
   undoTurn?: ((turn: string, confirmed: boolean) => Promise<UndoTurnResult>) | undefined;
+  /** The buttons under "Its allowance ran out" (ChatActions.allowanceOut, #5919). */
+  allowanceOut?: { wait: () => Promise<void>; startNew?: (() => Promise<void>) | undefined } | undefined;
 }
 export const CallActionsContext = createContext<CallActions | null>(null);
+
+/** The allowance line this turn holds, and the button's title (#5919). Null on every other turn. */
+export interface AllowanceOutOffer {
+  line: string;
+  title: string;
+  canStart: boolean;
+}
+export const AllowanceOutContext = createContext<AllowanceOutOffer | null>(null);
 
 /** An edit (DiffView): its path at the fine step, then its lines marked + and −, in a well. */
 export function EditDiff({ diff }: { diff: Extract<ToolCallContent, { type: "diff" }> }) {
@@ -191,11 +202,10 @@ export function ToolCallLine({ call, text, focused = false, background, onClick 
   const hasDetail = (call.content ?? []).length > 0 || (call.locations ?? []).length > 0
     || call.rawInput !== undefined || call.rawOutput !== undefined;
   const words = (text ?? callLine(call)) + runsOn;
-  const glyph = lineGlyph.tool(call.kind);
-  if (onClick) return <RecordLine icon={glyph} detail={words} oneLine onClick={onClick} clickTitle="Show the whole run" extra="call" />;
-  if (!hasDetail) return <RecordLine icon={glyph} detail={words} oneLine extra="call" />;
+  if (onClick) return <RecordLine detail={words} oneLine onClick={onClick} clickTitle="Show the whole run" extra="call" />;
+  if (!hasDetail) return <RecordLine detail={words} oneLine extra="call" />;
   return (
-    <RecordLine icon={glyph} detail={words} oneLine focused={focused} extra="call"
+    <RecordLine detail={words} oneLine focused={focused} extra="call"
       openTitles={["Show the argument and the return", "Hide the argument and the return"]}
       more={
             <div class="call-detail">
@@ -261,7 +271,7 @@ function SandboxFailureCard({ record }: { record: SandboxFailureRecord }) {
   const hasMore = !!record.detail || offer || !!actions?.sandboxSetBy;
   // A failed Line (#5036): the title in red, what happened, and the error a click away.
   return (
-    <RecordLine icon={lineGlyph.failed} head={words.title} detail={words.body} failure extra="sandbox-failure"
+    <RecordLine head={words.title} detail={words.body} failure extra="sandbox-failure"
       openTitles={["Show error details", "Hide error details"]}
       more={hasMore ? (
         <>
@@ -361,8 +371,35 @@ function CopyMessage({ entry, quotes = false, branches = false }: { entry: Trans
 
 /** One entry, drawn as its kind is (EntryRow). Marked so Exchanged can bring it into view. */
 export function EntryRow({ entry }: { entry: TranscriptEntry }) {
-  const from = useContext(CallActionsContext)?.fromLine ?? ((sender) => fromLine([], sender));
-  return <div class="entry-mark" data-entry={entry.id}>{entryBody(entry, from)}</div>;
+  const actions = useContext(CallActionsContext);
+  const from = actions?.fromLine ?? ((sender) => fromLine([], sender));
+  const allowance = useContext(AllowanceOutContext);
+  const [busy, setBusy] = useState(false);
+  const offer = actions?.allowanceOut;
+  const run = (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    void action().finally(() => setBusy(false));
+  };
+  const startNew = offer?.startNew;
+  const buttons = allowance && offer && entry.id === allowance.line && kindOf(entry) === "stateChanged" ? (
+    <div class="allowance-out">
+      <button type="button" class="prominent" title={continueHelp} disabled={busy} onClick={() => run(offer.wait)}>
+        {allowance.title}
+      </button>
+      {allowance.canStart && startNew ? (
+        <button type="button" title={continueInNewSessionHelp} disabled={busy} onClick={() => run(startNew)}>
+          {continueInNewSession}
+        </button>
+      ) : null}
+    </div>
+  ) : null;
+  return (
+    <div class="entry-mark" data-entry={entry.id}>
+      {entryBody(entry, from)}
+      {buttons}
+    </div>
+  );
 }
 
 function entryBody(entry: TranscriptEntry, from: (sender: MessageSender | undefined) => string) {
@@ -388,7 +425,7 @@ function entryBody(entry: TranscriptEntry, from: (sender: MessageSender | undefi
     case "toolCallUpdate":
       {
         const call = (fields(entry, "toolCall") ?? fields(entry, "toolCallUpdate"))!._0;
-        return <RecordLine icon={lineGlyph.tool(call.kind)} detail={callLine(call)} oneLine />;
+        return <RecordLine detail={callLine(call)} oneLine />;
       }
     case "planUpdated":
       // One line that opens to the steps (#5033): the plan as it is now is in the top Now card.
@@ -400,17 +437,16 @@ function entryBody(entry: TranscriptEntry, from: (sender: MessageSender | undefi
         : [request.kind.runCommand.command, ...request.kind.runCommand.args].join(" ");
       const how = "refused" in request.outcome ? `refused: ${request.outcome.refused.reason}`
         : "failed" in request.outcome ? `failed: ${request.outcome.failed.message}` : "";
-      const glyph = lineGlyph.tool("readFile" in request.kind ? "read" : "writeFile" in request.kind ? "edit" : "execute");
-      return how ? <RecordLine icon={glyph} head={what} detail={how} failure /> : <RecordLine icon={glyph} detail={what} />;
+      return how ? <RecordLine head={what} detail={how} failure /> : <RecordLine detail={what} />;
     }
     case "elicitationAsked":
-      return <RecordLine icon={lineGlyph.asked} head="Asked" detail={elicitationTitle(fields(entry, "elicitationAsked")!._0)} />;
+      return <RecordLine head="Asked" detail={elicitationTitle(fields(entry, "elicitationAsked")!._0)} />;
     case "elicitationAnswered": {
       const answered = fields(entry, "elicitationAnswered")!;
-      if (!answered.answers?.length) return <RecordLine icon={lineGlyph.answered} detail={answered.summary} />;
+      if (!answered.answers?.length) return <RecordLine detail={answered.summary} />;
       // "You answered", which opens to each answer under the question it answers (#5036): the Ask that asked is gone.
       return (
-        <RecordLine icon={lineGlyph.answered} head="You answered"
+        <RecordLine head="You answered"
           detail={answered.answers.length === 1 ? answered.answers[0]!.question : `${answered.answers.length} questions`}
           openTitles={["Show the answers", "Hide the answers"]}
           more={<div class="answers">
@@ -423,33 +459,33 @@ function entryBody(entry: TranscriptEntry, from: (sender: MessageSender | undefi
     case "compaction": {
       const compaction = fields(entry, "compaction")!;
       return (
-        <RecordLine icon={lineGlyph.compaction} detail={compactionLine(compaction.status, compaction.error)}
+        <RecordLine detail={compactionLine(compaction.status, compaction.error)}
           openTitles={["Show the summary", "Hide the summary"]}
           more={compaction.summary.length > 0 ? <div class="quiet"><Blocks blocks={compaction.summary} text="" /></div> : undefined} />
       );
     }
     case "notice": {
       const notice = fields(entry, "notice")!._0;
-      return <RecordLine icon={lineGlyph.notice(notice.severity)} head={notice.title} detail={notice.detail} failure={notice.severity === "error"} />;
+      return <RecordLine head={notice.title} detail={notice.detail} failure={notice.severity === "error"} />;
     }
     case "permissionAsked":
-      return <RecordLine icon={lineGlyph.asked} head="Asked" detail={fields(entry, "permissionAsked")!._0.toolCall.title} />;
+      return <RecordLine head="Asked" detail={fields(entry, "permissionAsked")!._0.toolCall.title} />;
     case "permissionAnswered": {
       const answered = fields(entry, "permissionAnswered")!;
-      // An answered Ask leaves one Line (#5036): "You chose ‹option›".
-      return <RecordLine icon={lineGlyph.answered} lead="You chose" head={answered.optionName ?? answered.optionID} />;
+      // An answered Ask leaves one Line (#5036): "You chose ‹option›", or "‹Lead› chose
+      // ‹option›" when the session that started this one answered it (#5440).
+      return <RecordLine lead={chooser(answered.answeredBy, answered.answeredByTitle)}
+        head={answered.optionName ?? answered.optionID} />;
     }
     case "stateChanged": {
       const state = fields(entry, "stateChanged")!;
       const failed = state.reason === "processDied" || state.reason === "daemonGone";
-      const glyph = failed ? lineGlyph.failed : state._0 === "stopped" ? lineGlyph.stopped : state._0 === "archived" ? "archive"
-        : state._0 === "finished" ? "circle-check" : lineGlyph.note;
-      return <RecordLine icon={glyph} head={stateWords(state._0, state.reason)} failure={failed} />;
+      return <RecordLine head={stateWords(state._0, state.reason)} failure={failed} />;
     }
     case "workReported":
       return <ReportLine report={fields(entry, "workReported")!._0} />;
     case "runtimeNote":
-      return <RecordLine icon={lineGlyph.note} detail={fields(entry, "runtimeNote")!._0} />;
+      return <RecordLine detail={fields(entry, "runtimeNote")!._0} />;
     case "sandboxFailure":
       return <SandboxFailureCard record={fields(entry, "sandboxFailure")!._0} />;
     case "policyStopped":
@@ -465,7 +501,7 @@ function entryBody(entry: TranscriptEntry, from: (sender: MessageSender | undefi
       // What the agent told the person (#2805): Shared/UI/Chat/NotifiedLine.swift.
       const notice = fields(entry, "notified")!._0;
       const said = [...(notice.body !== undefined ? [notice.body] : []), noticeClock(fromWireDate(entry.at)), noticeOutcome(notice)];
-      return <RecordLine icon={lineGlyph.notified} head={notice.title} detail={said.join(" · ")} extra="notice-line" />;
+      return <RecordLine head={notice.title} detail={said.join(" · ")} extra="notice-line" />;
     }
     case "background": {
       // As the window's line: how it started or ended, a failure in the failure tint (#253).
@@ -482,7 +518,7 @@ function BackgroundEntryLine({ item }: { item: BackgroundItem }) {
   const steps = useContext(CallActionsContext)?.subagentSteps;
   const failed = item.state === "failed";
   return (
-    <RecordLine icon={failed ? lineGlyph.failed : lineGlyph.background} detail={backgroundEntryLine(item)} failure={failed}
+    <RecordLine detail={backgroundEntryLine(item)} failure={failed}
       action={item.kind === "subagent" && steps ? { label: "Steps", title: "See what this subagent did", run: () => steps(item) } : undefined} />
   );
 }
@@ -497,13 +533,13 @@ export function elicitationTitle(request: { message?: string; mode: { form: { _0
  * whole of it a click away, as a call's argument and return are.
  */
 function ThoughtLine({ text }: { text: string }) {
-  return <RecordLine icon={lineGlyph.thought} detail={thoughtLine(text)} oneLine extra="thought"
+  return <RecordLine detail={thoughtLine(text)} oneLine extra="thought"
     openTitles={["Show the whole thought", "Hide the thought"]} more={<p class="quiet">{text}</p>} />;
 }
 
 /** A running turn's latest call, in one line, until the turn has its outcome (LiveLine). */
 function LiveRunLine({ call }: { call: ToolCall }) {
-  return <RecordLine icon={lineGlyph.tool(call.kind)} detail={turnLine(call)} oneLine extra="live" />;
+  return <RecordLine detail={turnLine(call)} oneLine extra="live" />;
 }
 
 /**
@@ -546,10 +582,12 @@ export function ItemRow({ item, background }: { item: Item; background: readonly
  * A stored turn loads its last page once, and only near the end: every turn at once would fetch
  * them all. One the chat has let go shows Load steps instead of fetching itself (#291).
  */
-export const TurnView = memo(function TurnView({ turn, focusedRun, fetched, fetchFailed, hasEarlier, auto, isLive, background, loadDetail: loadTurn, loadEarlier }: {
+export const TurnView = memo(function TurnView({ turn, focusedRun, fetched, fetchFailed, hasEarlier, auto, isLive, background, loadDetail: loadTurn, loadEarlier, allowance = null }: {
   turn: ChatTurn; focusedRun: string | null; fetched: readonly Item[] | undefined; fetchFailed: boolean; hasEarlier: boolean; auto: boolean; isLive: boolean;
   background: readonly BackgroundItem[];
   loadDetail: (turn: ChatTurn) => Promise<void>; loadEarlier: (turn: ChatTurn) => Promise<void>;
+  /** Set only on the turn that holds the allowance line, so a memo bailout cannot hide the buttons (#5919). */
+  allowance?: AllowanceOutOffer | null;
 }) {
   const asked = useRef(false);
   const loading = useSignal(false);
@@ -575,12 +613,13 @@ export const TurnView = memo(function TurnView({ turn, focusedRun, fetched, fetc
     ask();
   }, [waiting, auto]);
   return (
+    <AllowanceOutContext.Provider value={allowance}>
     <article class="turn" aria-label="Turn" data-turn={turn.id}>
       {turn.ask && <ItemRow item={turn.ask} background={background} />}
       {stepCount !== 0 ? (
         waiting ? (loading.value || (auto && !asked.current) ? <p class="quiet">Loading…</p>
           // A read that failed says so, as the window's turn does, rather than a bare Load steps (#544).
-          : fetchFailed ? <div role="status"><RecordLine icon={lineGlyph.loadFailure} detail="These steps did not load."
+          : fetchFailed ? <div role="status"><RecordLine detail="These steps did not load."
             action={{ label: "Try Again", run: ask }} /></div>
           : <button class="steps-control" onClick={ask}>Load steps</button>) : (
           <>
@@ -598,5 +637,13 @@ export const TurnView = memo(function TurnView({ turn, focusedRun, fetched, fetc
         </>
       )}
     </article>
+    </AllowanceOutContext.Provider>
   );
 });
+
+/** Who chose on an answered permission card (#5036, #5440): TranscriptEntry.chooser's words. */
+function chooser(answeredBy: string | undefined, title: string | undefined): string {
+  if (answeredBy === undefined) return "You chose";
+  const name = (title ?? "").trim();
+  return `${name === "" ? "The session that started it" : name} chose`;
+}

@@ -19,37 +19,12 @@ import (
 // It starts as answered. Set it only while no call is in flight.
 func formHolds(t *testing.T) (answered, left func()) {
 	t.Helper()
-	was := formHoldLimit
-	t.Cleanup(func() { formHoldLimit = was })
+	// Put back after the test's daemons are down, which read it (#5653).
+	setFor(t, &formHoldLimit, formHoldLimit)
 	answered = func() { formHoldLimit = time.Minute }
 	left = func() { formHoldLimit = 300 * time.Millisecond }
 	answered()
 	return answered, left
-}
-
-// callError sends a call and is the error it answers with, or fails when it answers.
-func (c *conn) callError(t *testing.T, id int, method string, params any) *Error {
-	t.Helper()
-	p, _ := json.Marshal(params)
-	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
-	c.in <- string(b)
-	deadline := time.After(5 * time.Second)
-	for {
-		select {
-		case line := <-c.out:
-			var m message
-			json.Unmarshal([]byte(line), &m)
-			if string(m.ID) != string(mustJSON(id)) {
-				continue
-			}
-			if m.Error == nil {
-				t.Fatalf("%s answered %s", method, m.Result)
-			}
-			return m.Error
-		case <-deadline:
-			t.Fatalf("%s: no answer", method)
-		}
-	}
 }
 
 func asked(form *wire.ElicitationRequest) func(string, json.RawMessage) bool {
@@ -95,6 +70,8 @@ func entryOf[T any](d *Daemon, id wire.UUID, pick func(wire.TranscriptEntryKind)
 }
 
 func TestAFormIsHeldAndAnswered(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -157,6 +134,8 @@ func TestAFormIsHeldAndAnswered(t *testing.T) {
 // A runtime's own form declined with a reason (#4039): the runtime hears a bare decline,
 // as its protocol has no words for one, and the reason comes to the agent as its next prompt.
 func TestADeclinedRuntimeFormBringsItsReasonAsAPrompt(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -173,6 +152,8 @@ func TestADeclinedRuntimeFormBringsItsReasonAsAPrompt(t *testing.T) {
 }
 
 func TestStoppingAnAgentTakesItsFormDownWithIt(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -206,6 +187,8 @@ func TestStoppingAnAgentTakesItsFormDownWithIt(t *testing.T) {
 }
 
 func TestAWithdrawnFormTakesTheAgentOutOfWaiting(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -231,6 +214,8 @@ func TestAWithdrawnFormTakesTheAgentOutOfWaiting(t *testing.T) {
 }
 
 func TestAFormOutsideATurnIsNotHeld(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	l := d.live("8C1F6A1E-0000-4000-8000-000000000001")
@@ -246,6 +231,8 @@ func TestAFormOutsideATurnIsNotHeld(t *testing.T) {
 // ElicitationSchemaTests: the schema's own order, titled choices, the free-text box that
 // goes with the question before it, and the checks.
 func TestAFormIsReadAsSwiftReadsIt(t *testing.T) {
+	t.Parallel()
+
 	req, ok := parseElicitation(json.RawMessage(`{"message":"Two things","requestId":"r1","requestedSchema":{
 		"title":"Setup","propertyOrder":["question_0","question_0_custom","question_1","when","count","ok","tags"],
 		"required":["question_0","count"],
@@ -317,9 +304,9 @@ func TestAFormIsReadAsSwiftReadsIt(t *testing.T) {
 
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(waitLimit(t)); !ok(); time.Sleep(20 * time.Millisecond) {
 		if time.Now().After(deadline) {
-			t.Fatalf("never %s", what)
+			waitFailed(t, "never %s", what)
 		}
 	}
 }

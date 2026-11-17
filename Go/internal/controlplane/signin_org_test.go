@@ -58,8 +58,21 @@ func (d *fakeDNS) set(name string, values ...string) {
 // orgPlane is a plane with a keeper, the fake provider's TLS trusted, the built-in fakes
 // turned on, and the fake DNS. Its owner's window is returned.
 func orgPlane(t *testing.T, prov *signintest.Provider, f *providersFake) (*plane, *controllink.ClientMembership, *controllink.Session, *fakeDNS) {
+	return orgPlaneOn(t, store.NewMemory(), prov, f)
+}
+
+// orgPlaneOn is orgPlane on the store st.
+func orgPlaneOn(t *testing.T, st store.Store, prov *signintest.Provider, f *providersFake) (*plane, *controllink.ClientMembership, *controllink.Session, *fakeDNS) {
+	return orgPlaneWith(t, st, prov, f, nil)
+}
+
+// orgPlaneWith is orgPlaneOn with change made to the plane's config as well.
+func orgPlaneWith(t *testing.T, st store.Store, prov *signintest.Provider, f *providersFake, change func(*Config)) (*plane, *controllink.ClientMembership, *controllink.Session, *fakeDNS) {
 	key := newKeeperKey()
-	p := startPlaneWith(t, store.NewMemory(), controllink.NewPrivateKey(), func(c *Config) {
+	p := startPlaneWith(t, st, controllink.NewPrivateKey(), func(c *Config) {
+		if change != nil {
+			change(c)
+		}
 		withKeeper(key)(c)
 		cfg := &signin.Config{}
 		if f != nil {

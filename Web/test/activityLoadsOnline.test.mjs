@@ -8,5 +8,6 @@ const source = readFileSync(new URL("../src/views/Activity.tsx", import.meta.url
 test("an Activity page loads again when the online machines change", () => {
   const view = source.slice(source.indexOf("export function ActivityPageView"));
   assert.match(view, /const online = hosts\.map\(\(h\) => h\.id\)\.join\(","\);/);
-  assert.match(view, /store\.loadEvents\(host\.id, 100\)[\s\S]*?\}, \[page, online\]\);/);
+  // Every machine's events in one call (#5592).
+  assert.match(view, /store\.loadEventsAll\(hosts\.map\(\(h\) => h\.id\), 100\)[\s\S]*?\}, \[page, online\]\);/);
 });

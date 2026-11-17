@@ -33,6 +33,8 @@ func me() uint32 { return uint32(os.Getuid()) }
 
 // FR-026: the file is used only when its owner (root) owns it and nobody else can write it.
 func TestThePinFileIsReadOnlyWhenRootOwnsIt(t *testing.T) {
+	t.Parallel()
+
 	body := `{"controlPlane": {"address": "control.acme.dev", "key": "abc"}, "mustJoin": true}`
 	pin, err := ReadPinFile(writePin(t, body, 0o644), me())
 	if err != nil || pin == nil || pin.Address != "control.acme.dev" || pin.Key != "abc" || !pin.MustJoin {
@@ -74,6 +76,8 @@ func TestARuleInThePinFileIsIgnoredAndSaidOnce(t *testing.T) {
 // US7 AS2: a code or a join for another address or key is refused, and says which control
 // plane is required; the pinned one, by its key or its key id, is admitted.
 func TestAPinAdmitsOnlyItsControlPlane(t *testing.T) {
+	t.Parallel()
+
 	k, other := newControlKeys(t), newControlKeys(t)
 	pin := &MachinePin{Address: "control.acme.dev", Key: controllink.B64URL(k.public)}
 	if err := pin.Admits(k.public, "https://control.acme.dev:8443"); err != nil {
@@ -143,6 +147,8 @@ func TestAMachineThatMustJoinRunsNothingUntilItHas(t *testing.T) {
 
 // A pin that does not say must join refuses nothing on its own.
 func TestAPinWithoutMustJoinRefusesNoWork(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

@@ -95,7 +95,7 @@ struct WorkItemPage: View {
                                 mergeBox(box, detail.got, on: detail.host)
                             }
                             if let detail, detail.got.item.node.kind == "pr" {
-                                WorkFilesChanged(model: model, host: detail.host, detail: detail.got, compact: true)
+                                WorkFilesChanged(model: model, detail: detail.got, compact: true)
                             }
                             // An epic's Plan before the panel's rows: it is what a person opens an epic for (epic.md note 15).
                             plan
@@ -154,22 +154,13 @@ struct WorkItemPage: View {
     // MARK: Toolbar (Mac)
 
     #if os(macOS)
-    /// The place, *Issues › #4331* (Issues opens the list), then Previous and Next and Refresh at
-    /// the toolbar's end, as the list has Refresh (#4400 notes 1 to 3).
+    /// The place, *Issues › #4331* (Issues opens the list), or the trail through the feature and
+    /// the epic, *Features › Work › Epic #5448 › #5452* (#5452), then Previous and Next and Refresh
+    /// at the toolbar's end, as the list has Refresh (#4400 notes 1 to 3).
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
-            HStack(spacing: 4) {
-                Button(place.kind.title) { model.showWork(WorkPlace(kind: place.kind)) }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("All \(place.kind.title.lowercased())")
-                Image(icon: "chevron.compact.right").foregroundStyle(.tertiary).accessibilityHidden(true)
-                Text(WorkList.shortRef(node.ref)).fontWeight(.semibold).monospacedDigit()
-            }
-            .appText(.reading)
-            .lineLimit(1)
-            .fixedSize()
+            WorkTrailView(model: model, parts: trail).fixedSize()
         }
         // With no title in the toolbar, they would follow the place: the spacer keeps them at its end.
         ToolbarSpacer(.flexible)
@@ -226,6 +217,24 @@ struct WorkItemPage: View {
     }
     #endif
 
+    /// The page's trail (#5452): through its feature and its epic once the item is read.
+    private var trail: [WorkTrail.Part] {
+        WorkTrail.parts(kind: place.kind, ref: node.ref, feature: item?.feature, parent: item?.parent)
+    }
+
+    #if os(iOS)
+    /// The Remote's trail, a line above the title (#5452): the whole of it on an iPad, and the
+    /// page and the part above it on a phone, by its width. None for a page in no feature or
+    /// epic: the bar's ‹ Issues says it all.
+    @ViewBuilder
+    private var trailLine: some View {
+        let parts = compact ? WorkTrail.short(trail) : trail
+        if trail.count > 2 {
+            WorkTrailView(model: model, parts: parts)
+        }
+    }
+    #endif
+
     private var forgeURL: URL? { item?.url.flatMap(URL.init(string:)) ?? row?.url ?? WorkList.url(node) }
 
     // MARK: Header
@@ -233,6 +242,9 @@ struct WorkItemPage: View {
     private var header: some View {
         let title = item?.title ?? row?.title
         return VStack(alignment: .leading, spacing: 8) {
+            #if os(iOS)
+            trailLine
+            #endif
             if narrow {
                 titleLine(title)
                 stateLine
@@ -244,7 +256,7 @@ struct WorkItemPage: View {
                     if isEpic { leadButton }
                     if let start = startOffer { startButton(start) }
                     if let detail, detail.got.item.node.kind == "pr" {
-                        WorkFilesChanged(model: model, host: detail.host, detail: detail.got)
+                        WorkFilesChanged(model: model, detail: detail.got)
                     }
                 }
                 stateLine
@@ -349,7 +361,7 @@ struct WorkItemPage: View {
             }
             .buttonStyle(.paperProminent)
             .controlSize(compact ? .large : .regular)
-            .help("The new-session form in this epic's folder, filled in for a lead with the lead skill")
+            .help("The new-session form in this epic's folder, filled in for a lead")
         }
     }
 
@@ -887,6 +899,10 @@ struct WorkItemPage: View {
         let trends = openWebPlace.flatMap { open in
             BuildTrendsLink.run(in: pipeline.compactMap(\.node)).flatMap(BuildTrendsLink.place(run:)).map { (open, $0) }
         }
+        // Live in ↗ on a merged pull request (#5243): where its change is live, on the web page's same page.
+        let deploys = item?.state == "merged" ? openWebPlace.flatMap { open in
+            DeploysLink.place(kind: node.kind, ref: node.ref).map { (open, $0) }
+        } : nil
         return HStack(alignment: .firstTextBaseline, spacing: 0) {
             text
             if let trends {
@@ -897,6 +913,16 @@ struct WorkItemPage: View {
                 .linkStyle()
                 .appText(.fine)
                 .help(BuildTrendsLink.help(kind: node.kind))
+                .fixedSize()
+            }
+            if let deploys {
+                Text(" · ").appText(.fine).foregroundStyle(.secondary)
+                Button("\(DeploysLink.title(kind: node.kind)) ↗") {
+                    Task { trendsProblem = await deploys.0.run(deploys.1) }
+                }
+                .linkStyle()
+                .appText(.fine)
+                .help(DeploysLink.help(kind: node.kind))
                 .fixedSize()
             }
         }
@@ -960,20 +986,40 @@ struct WorkItemPage: View {
             detailRead = at
             fromDevice = true
         }
-        var last: String?
-        for machine in machines {
-            do {
-                let got = try await model.forgeItem(node, cursor: nil, on: machine.id)
-                guard asked == mine else { return }
-                detail = (machine.id, got)
-                detailRead = Date()
-                fromDevice = false
-                forgeProblem = nil
-                model.keepWork(KeptItem(host: machine.id, got: got), .item, node.ref)
-                return
-            } catch {
-                last = WorkList.failureWords(error)
+        // Every machine at once, and the first that answers wins (#5449): a slow or offline machine does not hold the
+        // page, and an error shows only when no machine read it.
+        let (node, model) = (node, model)
+        let (won, last) = await withTaskGroup(of: (MachineRef, Result<DaemonAPI.ForgeItemDetail, Error>).self,
+                                              returning: ((host: MachineRef, got: DaemonAPI.ForgeItemDetail)?, String?).self) { group in
+            for machine in machines {
+                group.addTask {
+                    do {
+                        return (machine.id, .success(try await model.forgeItem(node, cursor: nil, on: machine.id)))
+                    } catch {
+                        return (machine.id, .failure(error))
+                    }
+                }
             }
+            var last: String?
+            for await (host, result) in group {
+                switch result {
+                case let .success(got):
+                    group.cancelAll()
+                    return ((host, got), last)
+                case let .failure(error):
+                    last = WorkList.failureWords(error)
+                }
+            }
+            return (nil, last)
+        }
+        if let won {
+            guard asked == mine else { return }
+            detail = won
+            detailRead = Date()
+            fromDevice = false
+            forgeProblem = nil
+            model.keepWork(KeptItem(host: won.host, got: won.got), .item, node.ref)
+            return
         }
         guard asked == mine else { return }
         forgeProblem = last ?? WorkList.notReadHere

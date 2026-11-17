@@ -163,7 +163,7 @@ jobs:
     permissions:
       contents: write
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v6
         with:
@@ -183,6 +183,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: Web/.node-version
+          # Not its pnpm cache: scripts/pnpm.sh installs pnpm (#5628).
+          package-manager-cache: false
 
       # Go for what Agents Host carries: agentsd, agents-control and the MCP servers (#1314).
       - uses: actions/setup-go@v6
@@ -252,6 +254,27 @@ jobs:
               "${notes[@]}" --verify-tag
           fi
 
+      # The public download (#2145): the same files go to the releases-only repo, so the
+      # download works when this repo is private. It needs RELEASES_TOKEN (a fine-grained
+      # token with Contents: write on that repo) in the `release` environment; without it the
+      # step says so and the release still stands.
+      - name: Copy the release to the public releases repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          PUBLIC_REPO: agentloops-dev/agents-releases
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::warning::RELEASES_TOKEN is not set: $TAG is not copied to $PUBLIC_REPO (#2145)"
+            exit 0
+          fi
+          cd build/release
+          if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --clobber --repo "$PUBLIC_REPO"
+          else
+            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --repo "$PUBLIC_REPO" \
+              --title "Agent Loops ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
   # The Remote on TestFlight (#914). It needs nothing from the other jobs, and a
   # failure here leaves the GitHub release as it is.
   testflight:
@@ -259,7 +282,7 @@ jobs:
     timeout-minutes: 90
     environment: release
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       # First, so a missing secret is one clear line rather than a signing error later.
       - name: The App Store secrets are there
@@ -360,9 +383,10 @@ jobs:
           swift scripts/asc-builds.swift "${TAG#v}" "${{ github.run_number }}" --wait 45
 
       # What this run deployed, for Lineage (#3584): Agents reads the notice from the run, so App
-      # Store Connect's key stays here.
+      # Store Connect's key stays here. It names its environment, testflight= (#5242): this job's
+      # forge environment is `release`, which holds secrets and is not a place.
       - name: Say the deploy
-        run: echo "::notice title=deploy::testflight:com.alexecollins.agents.remote/${{ github.run_number }}"
+        run: echo "::notice title=deploy::testflight=testflight:com.alexecollins.agents.remote/${{ github.run_number }}"
 
       - name: Logs
         if: failure()

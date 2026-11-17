@@ -45,6 +45,8 @@ func (f *fakeForgeLinear) SetBlockedBy(_ context.Context, identifier, blocker st
 // sub-issue, or moves one that is there under the epic (#12, owner/repo#12 or its URL); Blocked
 // by adds and takes off links, each on the forge, and the plan is read again after a write.
 func TestPlanWritesGoToGitHub(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	gh.plan = githubmcp.Plan{Epic: planIssue(3265, "open", "epic", "feature:work")}
 	epic := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#3265"}
@@ -77,6 +79,8 @@ func TestPlanWritesGoToGitHub(t *testing.T) {
 // #3271: Linear takes the same: a new child in the epic's team, a child moved by its key or URL,
 // a block by key.
 func TestPlanWritesGoToLinear(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _, ln, _ := allForgesDaemon(t)
 	epic := wire.LineageNode{Kind: "issue", Ref: "linear:issue:eng#ENG-5"}
 	c.call(t, 1, "forge/add-child", wire.ForgeAddChildRequest{Node: epic, Title: new("New")})
@@ -96,6 +100,8 @@ func TestPlanWritesGoToLinear(t *testing.T) {
 // issue, both, an unknown level, an issue that is not one, the epic as its own child, a blocker on
 // another forge or the child itself, a pull request, GitLab and Jira; and no agent may call one.
 func TestPlanWritesRefuseWhatIsWrong(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _, ln, _ := allForgesDaemon(t)
 	epic := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#3265"}
 	for i, ask := range []struct {

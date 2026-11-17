@@ -23,6 +23,7 @@ import { shortAgo } from "../model/activity";
 import { FilterChip } from "./Labels";
 import { runningTool, runningToolLabel, sessionMark, type SessionMark } from "../model/sidebar";
 import { isMuted, muteMark, mutedHelp, mutedWords } from "../model/mute";
+import { priorityChip, priorityHelp } from "../model/sessionPriority";
 import { callLine } from "../model/turns";
 import { leadProgressSpoken } from "../model/leadProgress";
 import { Glyph, Icon } from "./Icon";
@@ -254,6 +255,8 @@ export function SessionRow({ agent, chosen, onPick, going, extras, inSidebar = f
           {extras?.startedByAgent && (
             <span class="started-by" role="img" title={extras.startedByAgent} aria-label={extras.startedByAgent}>⇆</span>
           )}
+          {/* High or low (#5849), as the Work rows mark an issue's (#5690): medium and none show nothing. */}
+          <SessionPriorityChip agent={agent} />
           {/* Mute Notifications (#2003): a bell with a slash, as the window's row has it. */}
           {isMuted(agent) && <span class="started-by muted" role="img" title={mutedHelp} aria-label={mutedWords}>{muteMark}</span>}
           {/* A file it showed that the person has not looked at (#1802): a mark, never Needs you. */}
@@ -301,4 +304,12 @@ export function SessionRow({ agent, chosen, onPick, going, extras, inSidebar = f
       })() : <time class="when" dateTime={activity.toISOString()} title={activity.toLocaleString()}>{shortAgo(activity)}</time>}
     </button>
   );
+}
+
+/** A session's priority chip (#5849): the Work rows' look, with where it comes from in its tooltip. */
+export function SessionPriorityChip({ agent }: { agent: Agent }) {
+  const words = priorityChip(agent);
+  if (!words) return null;
+  const said = priorityHelp(agent) ?? words;
+  return <span class={`work-label work-priority session-priority is-${words.toLowerCase()}`} title={said} aria-label={said}>{words}</span>;
 }

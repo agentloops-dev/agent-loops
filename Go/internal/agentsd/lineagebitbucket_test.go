@@ -57,6 +57,8 @@ func bitbucketFolder(t *testing.T, d *Daemon) string {
 // #3879: lineage takes a Bitbucket folder's labels and pull request events as Bitbucket nodes,
 // by its remote's host, with or without a connection. Nothing is asked of gh or glab about them.
 func TestLineageOnABitbucketFolder(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, file := bitbucketDaemon(t)
 	folder := bitbucketFolder(t, d)
 	branch := "agents/7-fix"
@@ -94,6 +96,9 @@ func TestLineageOnABitbucketFolder(t *testing.T) {
 		t.Errorf("the run: %v", active(d, pr))
 	}
 
+	// The issue's priority is asked for by the connection (#5847) before it goes.
+	d.lineageSettle(2 * time.Second)
+	d.resolveSettle(2 * time.Second)
 	// With no connection the folder is still on Bitbucket, by its host.
 	file.Delete(connections.Bitbucket)
 	if r := d.folderRepo(folder); r != (forgeRepo{"bitbucket", "walkalex/app"}) {
@@ -104,6 +109,8 @@ func TestLineageOnABitbucketFolder(t *testing.T) {
 // #3879: lineage asks the connected Bitbucket, by its connection, for a node's title and state,
 // a release's pull requests, and the cost comment.
 func TestLineageAsksBitbucket(t *testing.T) {
+	t.Parallel()
+
 	d, _, bb, _ := bitbucketDaemon(t)
 	repo := forgeRepo{"bitbucket", "walkalex/app"}
 	folder := bitbucketFolder(t, d)
@@ -145,6 +152,8 @@ func TestLineageAsksBitbucket(t *testing.T) {
 
 // #3879: the bitbucket server's views ask for lineage by an issue's or a pull request's address.
 func TestTheBitbucketServersViewsAskForLineage(t *testing.T) {
+	t.Parallel()
+
 	d, _, _, _ := bitbucketDaemon(t)
 	folder := bitbucketFolder(t, d)
 	a := seeded(t, d, folder, func(a *wire.Agent) {

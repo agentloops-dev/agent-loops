@@ -14,6 +14,9 @@ struct PromptBar: View {
     @Environment(\.chatActions) private var chatActions
     /// Set in a window of its own (#826): this bar is that session's.
     @Environment(\.poppedChat) private var popped
+    /// In New Session in Background's window (#5798): always a new session, in that window's folder.
+    @Environment(\.startsInBackground) private var startsInBackground
+    @Environment(\.windowFolder) private var windowFolder
     @Environment(\.openURL) private var openURL
     @Environment(\.openSettings) private var openSettings
     /// Whether the folder is the caller's to decide rather than this bar's.
@@ -61,7 +64,11 @@ struct PromptBar: View {
     @State private var sending = 0
     @State private var sendingIsSlow = false
 
-    private var agent: Agent? { popped.map { model.work.agent($0.id) } ?? model.selectedAgent }
+    private var agent: Agent? {
+        // The background window's bar is never the main window's session's (#5798).
+        if startsInBackground { return nil }
+        return popped.map { model.work.agent($0.id) } ?? model.selectedAgent
+    }
     private var isNew: Bool { agent == nil }
 
     /// What the runtime behind this bar's agent, or the draft, says it will take.
@@ -80,7 +87,9 @@ struct PromptBar: View {
     private var draftKey: DraftKey {
         if let agent { return .agent(agent.id) }
         // The project's (#5376): On ▾ moves to its folder on another machine, the words stay.
-        guard folderIsFixed, let key = model.selectedFolderKey else { return .newAgent(folder: nil) }
+        guard folderIsFixed, let key = (startsInBackground ? windowFolder : nil) ?? model.selectedFolderKey else {
+            return .newAgent(folder: nil)
+        }
         return .newSession(in: key, folders: model.liveFolders)
     }
 
@@ -103,8 +112,13 @@ struct PromptBar: View {
     private func takeFocusIfAsked() {
         guard requests.wantsPromptFocus, folderIsFixed else { return }
         requests.wantsPromptFocus = false
-        // After the page has settled: from inside a chat, this bar is already there under
-        // the chat, and focus asked for before the chat has popped off it lands nowhere.
+        // At once (#5845): a new window's first focus is the first field of its key view
+        // loop, the labels field above this one, and what is typed before the focus moves
+        // goes there. Where the bar is already in place (the background window, a page
+        // with no chat on it), this takes it before the first key.
+        focused = true
+        // And again after the page has settled: from inside a chat, this bar is already there
+        // under the chat, and focus asked for before the chat has popped off it lands nowhere.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true }
     }
 

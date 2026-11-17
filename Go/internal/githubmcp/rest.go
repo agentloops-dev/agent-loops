@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
@@ -35,6 +36,9 @@ type RealGitHub struct {
 	// Repo is the repo the server's folder pushes to, read from git once it is needed.
 	Repo        func(ctx context.Context) (string, error)
 	IssueReader IssueReader
+
+	// noIssueFields says this GitHub has no issue fields, so queries leave them out (#5747).
+	noIssueFields atomic.Bool
 
 	mu        sync.Mutex
 	etags     map[string]etagged

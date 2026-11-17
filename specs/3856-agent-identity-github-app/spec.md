@@ -7,12 +7,12 @@ The github MCP server (`Go/internal/githubmcp`, `Go/cmd/github-mcp`) embeds the 
 `github-mcp-server` as a library, with the toolsets `context, repos, issues, pull_requests,
 actions, labels` (`upstream.go:26`), and adds its own tools and its events. It reads its
 token from the host's connections store (`githubmcp.Token()`, `rest.go:1142`). Today that
-token is a user token of the GitHub App `agents-loops`, from the device flow
+token is a user token of the GitHub App `agent-loops-dev`, from the device flow
 (`Go/internal/connections/github.go`).
 
 Two identities follow from the epic's design:
 
-- **User token** (design 1, the default): the `agents-loops` App, acting as the person.
+- **User token** (design 1, the default): the `agent-loops-dev` App, acting as the person.
 - **Bot** (design 2, optional): `<login>-agents[bot]`, an App that the person makes with the
   manifest flow, with installation tokens made from its private key on the person's machine.
 
@@ -29,6 +29,7 @@ Two identities follow from the epic's design:
 | `get_file_contents`, `list_branches`, `list_commits`, `get_commit`, `list_tags`, `get_tag`, releases, `search_code`, `Compare`, `Tags` | Contents: read |
 | `create_or_update_file`, `delete_file`, `push_files`, `create_branch`, a git push over HTTPS; merge and the branch delete after it (`merge_pr`, `MergeBy`, auto-merge) | Contents: write (with Pull requests: write for a merge) |
 | The checks in `show_pull_request`, `show_pull_requests`, `run.completed` (check runs, annotations) | Checks: read |
+| `scripts/checks.sh attest` posts the check run `attestation/<platform>` (#5584, epic #5581) | Checks: write |
 | The status rollup in the same views (`statusCheckRollup` includes commit statuses, for example CodeRabbit's) | Commit statuses: read |
 | `failed_log`, `actions_list`, `actions_get`, `get_job_logs`, events `checks.failed`, `checks.passed`, `run.completed`, `deploy.waiting` | Actions: read |
 | `rerun_failed`, `actions_run_trigger` (dispatch, rerun, cancel) | Actions: write |
@@ -54,7 +55,7 @@ the bot has since #4291.
   "contents": "write",
   "pull_requests": "write",
   "issues": "write",
-  "checks": "read",
+  "checks": "write",
   "statuses": "read",
   "actions": "write",
   "workflows": "write"
@@ -70,12 +71,16 @@ Decided: the bot gets **Actions: write**, because a lane reruns failed checks ev
 environment and no deploy approval: an environment's required reviewers still stop a
 dispatched deploy. Alex can overrule; then `rerun_failed` uses the user token.
 
-Decided: **Checks: read, not write**, because no tool makes a check run. Alex can overrule.
+Decided: **Checks: write** (was read, while no tool made a check run), because a lane's
+`scripts/checks.sh attest` posts its attestation as a check run as the bot, and CI trusts only
+the bot's (#5584, epic #5581 principle 6). Checks: write makes and edits check runs only; it
+gives no secret, environment or merge. An App made before it asks the person to accept the
+new permission. Alex can overrule.
 
 Decided: the tools that need a forbidden permission (`set_ci_secret`, `set_ci_variable`,
 `set_environment_gate`, `make_app_repository`, deploy Approve and Reject, `merge_pr` and
 `review_pr` in the hosted views, teams) **keep the person's user token** of
-`agents-loops`, and never use the bot. They are person actions already, or tools that the app
+`agent-loops-dev`, and never use the bot. They are person actions already, or tools that the app
 gates. GitHub limits a user token to the person's rights (question 3), so this gives the
 agents no more than the person. Alex can overrule.
 
@@ -93,7 +98,7 @@ the bot. A bot's PR still merges only after a person approves it (`main`'s rules
 waits for a person. A bot made before #4291 gets the permission on github.com: on its App's
 **Permissions & events**, set Workflows to Read and write, then accept it on the install.
 
-### The `agents-loops` App (user tokens)
+### The `agent-loops-dev` App (user tokens)
 
 The user token can only do what the App also has. For every tool above to work, the App
 needs every permission in the table except Workflows (a lane pushes a workflow file with
@@ -140,7 +145,7 @@ never do more than the person, and can do less.
 
 **Badge: yes for comments, issues, pull requests and reviews; no for commits.** An issue, a
 comment, a pull request or a review made with a user token shows the person as the author and
-the App's badge ("with agents-loops"). The REST API gives it as `performed_via_github_app`
+the App's badge ("with agent-loops-dev"). The REST API gives it as `performed_via_github_app`
 on issues and issue comments. A commit has no badge: a commit made through the contents API
 names the person, and a git push keeps the local author. The epic's commit trailer is
 therefore necessary.

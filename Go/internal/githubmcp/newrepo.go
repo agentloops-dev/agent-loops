@@ -76,6 +76,8 @@ func (g *RealGitHub) makeRepository(ctx context.Context, owner, name string, fie
 			if json.Unmarshal(b, &found) != nil {
 				err = &GitHubError{Kind: Failed, Message: "GitHub: the new repository's answer was not JSON"}
 			}
+		} else if errors.As(err, &ge) && (ge.Refused || ge.Kind == NotFound) {
+			err = &CannotMakeError{FullName: full, Err: err}
 		}
 		made = err == nil
 	}
@@ -87,3 +89,18 @@ func (g *RealGitHub) makeRepository(ctx context.Context, owner, name string, fie
 	}
 	return Repository{FullName: found.FullName, CloneURL: found.CloneURL, Private: found.Private, Login: me.Login, UserID: me.ID}, made, nil
 }
+
+// CannotMakeError is GitHub's refusal to make a repository as the person: the GitHub App's
+// user token has no Administration permission, and the App does not get it (#5563), so the
+// person makes the repository on github.com. A personal access token with the repo scope can
+// still make it. It wraps GitHub's own error.
+type CannotMakeError struct {
+	FullName string
+	Err      error
+}
+
+func (e *CannotMakeError) Error() string {
+	return "GitHub did not let the connection make " + e.FullName + ": " + e.Err.Error()
+}
+
+func (e *CannotMakeError) Unwrap() error { return e.Err }

@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -91,7 +90,7 @@ func (d *Daemon) startSend(r wire.SendRequest) (wire.SendSummary, error) {
 
 	pack := wire.SendPackRequest{Folder: s.Folder, Branches: r.Branches, LeavingOut: heads, IncludeChanges: r.IncludeChanges}
 	receive := wire.ReceiveRequest{Folder: destination, Checkout: r.Checkout, Origin: r.Origin}
-	safe.Go("send "+path+" to "+name, func() {
+	d.goJob("send "+path+" to "+name, func() {
 		made, err := d.packThere(personSending, machine, pack, receive, func(done, total int64) {
 			d.sendMu.Lock()
 			n.Sent, n.Total = done, total

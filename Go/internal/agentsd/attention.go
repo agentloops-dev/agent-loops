@@ -101,6 +101,9 @@ type attentionState struct {
 	tellControl atomic.Pointer[func(method string, params any)]
 	// askControl asks the control plane on channel 0 and waits (workspacetools.go).
 	askControl atomic.Pointer[askControl]
+	// personApprovals are the person's approvals taken from the control plane (#5462).
+	personApprovals   personApprovals
+	personApprovalsOn sync.Once
 	// controlCapabilities is what the control plane said it can do (#4100), the uplink's
 	// ControlCapabilities; nil off a control plane.
 	controlCapabilities atomic.Pointer[func() []string]
@@ -661,12 +664,12 @@ func (d *Daemon) reconsider() {
 		if wait {
 			if d.settling[t] == nil {
 				due := max(0, n.RaisedAt.Time().Add(settlingPause).Sub(at))
-				d.settling[t] = time.AfterFunc(due, func() {
+				d.settling[t] = time.AfterFunc(due, d.jobFunc("attention timer", func() {
 					d.attentionMu.Lock()
 					delete(d.settling, t)
 					d.attentionMu.Unlock()
 					d.reconsider()
-				})
+				}))
 			}
 			continue
 		}
@@ -773,7 +776,7 @@ func (d *Daemon) SetControl(tell func(method string, params any)) {
 func (d *Daemon) ControlUplinkChanged(up bool) {
 	// The control plane holds this machine's bus subscriptions only while it is connected.
 	if up {
-		go d.sendBusSubscriptions(true)
+		d.goJob("sendBusSubscriptions", func() { d.sendBusSubscriptions(true) })
 	}
 	if !up || d.tellControl.Load() == nil {
 		return

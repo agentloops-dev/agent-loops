@@ -284,6 +284,20 @@ export interface Agent {
   cwd: URLString;
   title?: string;
   labels?: SessionLabel[];
+  /**
+   * The priority the session goes by (#5846): prioritySet, else the highest priority of the issues
+   * it is labelled with (#n, and the issues a P#n closes), else its starter's, else none (absent).
+   * prioritySource says which. The daemon works it out; a client only reads it.
+   */
+  priority?: SessionPriority;
+  /**
+   * The priority a person or an agent set on the session (agents/setPriority, start_session,
+   * set_session_priority); absent when it follows its issue. It wins until it is cleared, and it
+   * lasts a restart.
+   */
+  prioritySet?: SessionPriority;
+  /** Where priority comes from (#5846); absent is none. */
+  prioritySource?: SessionPrioritySource;
   state: AgentState;
   runtimeSessionID?: string;
   /**
@@ -539,6 +553,34 @@ export interface AgentRequest {
 }
 
 /**
+ * machine/offerSecret (#5308, specs/5308-agent-secrets-sync): a secret an agent saved on this
+ * machine, sealed by the machine to each of its person's clients (machine/secretClients) and to
+ * nothing else, info com.alexecollins.agents.agentsecret.v1, associated data agentsecret.v1|<person
+ * id>|<machine id>|<recipient>|<name>|<offer>, with |ask at the end when needsApproval is on. A
+ * client of the person's opens it and sets it as one of theirs (user/setSecret with offer). The
+ * control plane never has the value. A newer offer of the same name from the same machine replaces
+ * it.
+ */
+export interface AgentSecretOffer {
+  /** The machine's own id for this offer, new for each save. */
+  offer: UUID;
+  name: UserSecretName;
+  /** Ask before use (#4014), as the machine keeps it: bound into the associated data. */
+  needsApproval?: boolean;
+  /**
+   * A secret's description (#4167): one or two sentences on what it is and what it is for, such as
+   * which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a
+   * value. Left out when it has none.
+   */
+  description?: string;
+  /** The session whose agent saved it, for the audit and the row. */
+  agent?: UUID;
+  savedAt: string;
+  /** By client recipient (c:<CLIENT UUID>). */
+  sealed: Record<string, SealedEnvelope>;
+}
+
+/**
  * A state this build does not know reads as `stopped` (Agent's init(from:)), with endedReason
  * `unrecognised`.
  */
@@ -568,6 +610,43 @@ export interface AgentWorktree {
   base?: string;
   madeByApp: boolean;
   folder: URLString;
+}
+
+/**
+ * One change in Agents between two versions (#5273): a commit of agentloops-dev/agent-loops, its
+ * PR's number when its squash title says one, its title (the first line of its message) and when it
+ * was made.
+ */
+export interface AgentsChange {
+  number?: number;
+  title: string;
+  sha: string;
+  date?: WireDate;
+}
+
+/**
+ * The changes in Agents from version base to version head (#5273), from GitHub's compare of their
+ * commits: ahead is how many commits head has that base has not, behind how many base has that head
+ * has not (a machine behind another). changes are head's new commits, newest first, at most the
+ * request's limit (all, up to 1,000, with none); complete is false when there were more.
+ */
+export interface AgentsChanges {
+  base: string;
+  head: string;
+  ahead: number;
+  behind: number;
+  changes: AgentsChange[];
+  complete: boolean;
+}
+
+/**
+ * machines/agentsChanges (#5273): the changes from one Agents version to another, as a machine says
+ * them (0.18.0, 0.18.1-dev.544+g8162a5a06). limit bounds the changes; with none, all, up to 1,000.
+ */
+export interface AgentsChangesRequest {
+  base: string;
+  head: string;
+  limit?: number;
 }
 
 /**
@@ -994,6 +1073,66 @@ export type AutoField =
   | "permission"
   | "permissionRequests"
   | "sandbox";
+
+/**
+ * Why no machine fits: none has the project, none has the runtime installed and signed in, or every
+ * machine with the project is offline.
+ */
+export type AutoMachineNone =
+  | "noFolder"
+  | "noRuntime"
+  | "offline";
+
+/**
+ * The answer of sessions/previewStart (#5374): the pick, or why none fits. The control plane makes
+ * the reason line; a client draws what it is given. The pick at start may differ if the state
+ * moved.
+ */
+export interface AutoMachinePick {
+  /** The machine chosen; absent when none fits. */
+  machine?: MachineRef;
+  machineName?: string;
+  /** The tier the pick came from. */
+  tier?: CapacityLevel;
+  reason?: AutoMachineReason;
+  /** Its 5-minute load per core, when known. */
+  loadPerCore?: number;
+  /**
+   * The commit the session's fresh worktree starts from. Set by the host at start; absent in a
+   * preview.
+   */
+  commit?: string;
+  /**
+   * The one-line reason, "Auto chose Mac mini: you last started here.", or the none-fits sentence.
+   */
+  text?: string;
+  /** Set when no machine fits. */
+  none?: AutoMachineNone;
+  /** With none offline: the names of the offline machines that have the project. */
+  offline?: string[];
+  /**
+   * True when the project has one machine only: no Auto row and no line, the machine is just shown.
+   */
+  single?: boolean;
+}
+
+/**
+ * Why Auto chose: the person last started this project there, or it was the least loaded by
+ * 5-minute load per core.
+ */
+export type AutoMachineReason =
+  | "lastUsed"
+  | "leastLoaded";
+
+/**
+ * sessions/previewStart and a start with machine auto (#5374, specs/5373-auto-machine): which
+ * machine Auto would pick for a project and a runtime.
+ */
+export interface AutoMachineRequest {
+  /** The project id. */
+  project: string;
+  runtimeID: string;
+}
 
 /**
  * One cell of Settings ▸ Agent Runtimes ▸ Auto ▸ Mappings (#2658): what a level is on one runtime.
@@ -1664,13 +1803,13 @@ export interface BuildsFigures {
  * the range's figures and each day's, the change points found in the range (on the default branch,
  * whatever the branch filter), and the job that waited longest for a runner. readAt is when this
  * machine last read the forge's runs (Last update); filledFrom is the oldest day the backfill
- * reached, absent before it starts. reader is github or gitlab, or none when Agents does not read
- * CI timings from the repository's forge.
+ * reached, absent before it starts. reader is github, gitlab, azuredevops, bitbucket or forgejo, or
+ * none when Agents does not read CI timings from the repository's forge.
  */
 export interface BuildsHistory {
   repo: string;
   defaultBranch?: string;
-  reader: "azuredevops" | "github" | "gitlab" | "none";
+  reader: "azuredevops" | "bitbucket" | "forgejo" | "github" | "gitlab" | "none";
   workflows: string[];
   jobs: string[];
   branches: string[];
@@ -2072,6 +2211,15 @@ export type CapacityLevel =
   | "ok"
   | "near"
   | "full";
+
+/**
+ * machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per
+ * core, on connect and when either moves enough to matter.
+ */
+export interface CapacityReport {
+  level: CapacityLevel;
+  loadPerCore5?: number;
+}
 
 /**
  * capacity/state and capacity/changed (#4748): the machine's level, pushed when it moves, so a
@@ -2934,6 +3082,17 @@ export interface ConnectionsList {
   providers?: ConnectionProvider[];
 }
 
+/**
+ * connections/listAll (#5592): each machine's connections/list. unreached is the machines that have
+ * the method but did not answer (offline, too slow or an error); notAsked counts the machines past
+ * the most one call asks (50), as in DocsListAll.
+ */
+export interface ConnectionsListAll {
+  lists: MachineConnections[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+}
+
 /** A GitHub Codespace for a folder's repository (#1591). */
 export interface ConnectorCodespace {
   id: string;
@@ -3222,6 +3381,16 @@ export interface ContinueInNewRequest {
   auto?: boolean;
 }
 
+/**
+ * agents/continueInNewSession (#5919): a chat whose allowance ran out continues in a new session on
+ * Auto, in the same worktree or the same folder.
+ */
+export interface ContinueInNewSessionRequest {
+  agentID: UUID;
+  /** As StartRequest.requestID: a retry answers with the first new session. */
+  requestID?: UUID;
+}
+
 /** When a chat paused by a spent allowance carries on by itself (#1859). */
 export interface ContinueWhenBack {
   /**
@@ -3343,6 +3512,32 @@ export interface ControlMachine {
   missing?: string[];
   /** The user who owns the machine (#994). */
   owner?: string;
+  /**
+   * The machine's capacity level as it last pushed it (#4578, #5374). Absent from a host older than
+   * #4578 or before its first look: it counts as ok, last among the ok ones. It can be stale by the
+   * host's look interval (15 s) and the push; capacityAt says when it was heard.
+   */
+  capacity?: CapacityLevel;
+  /** Its 5-minute load per core when it last pushed (#5374). */
+  loadPerCore5?: number;
+  /**
+   * When the control plane last heard its capacity. A figure older than 2 minutes is never trusted
+   * by Auto (specs/5373-auto-machine).
+   */
+  capacityAt?: WireDate;
+  /**
+   * How its set-up stands, while it sets itself up and after (#5355). Absent for a machine that was
+   * not set up by the control plane.
+   */
+  setup?: MachineSetup;
+  /**
+   * Its labels (#5284): key or key=value, sorted. The ones its provider sets (os=, arch=,
+   * provider=) come first in autoLabels and are here too; a person adds others with
+   * machines/setLabels.
+   */
+  labels?: string[];
+  /** The labels its provider sets itself (os=, arch=, provider=): a person cannot change them. */
+  autoLabels?: string[];
 }
 
 /** control/moved: where the control plane is now (T085). */
@@ -3681,6 +3876,62 @@ export interface DeployComponent {
 }
 
 /**
+ * One environment a deploy is part-of, in a DeployDeliveryFact (#5496): its name, its lineage ref
+ * and its tier.
+ */
+export interface DeployDeliveryEnvironment {
+  name: string;
+  ref: string;
+  tier: EnvironmentTier;
+}
+
+/**
+ * One deploy a machine keeps (lineage-deploys.json, #5241), as deploys/delivery's figures need it
+ * (#5496): its lineage ref, its component (owner/name), its state, when it ended (its finish, else
+ * its start), whether a succeeded one is a rollback, the merge times of the PRs it brings (when the
+ * forge said them), the times health signals were seen in it, and its environments. Only refs,
+ * names, states and times (principle 7).
+ */
+export interface DeployDeliveryFact {
+  ref: string;
+  component: string;
+  state: DeployState;
+  at: WireDate;
+  rollback?: boolean;
+  merges?: WireDate[];
+  health?: WireDate[];
+  environments: DeployDeliveryEnvironment[];
+}
+
+/**
+ * One target's DORA figures in deploys/delivery (#5245, spec 5239-deploy-model): a component (the
+ * repo, by default) in one environment, from the deploys this machine keeps. ended is the deploys
+ * that succeeded or failed in the range (a cancelled one is neither), failed those that failed,
+ * rollbacks the succeeded ones that put an older release back. deploymentFrequency is the succeeded
+ * deploys a week; leadTime is a PR's merge to the first succeeded deploy that brings it, the median
+ * and p90; changeFailureRate is the failed deploys and rollbacks over the ended ones, 0 to 1;
+ * recoveryTime is a failed deploy's end, or a health signal seen in a deploy, to the next succeeded
+ * deploy, the median. Each has a series of its weeks and DORA 2024's band, as Planning's Delivery
+ * row has them.
+ */
+export interface DeployDeliveryTarget {
+  /** The component's id: owner/name for a repo. */
+  component: string;
+  /** The environment's name: github-releases, app-store. */
+  environment: string;
+  /** The environment's lineage ref, github:environment:<owner>/<repo>#<name>. */
+  environmentRef: string;
+  tier: EnvironmentTier;
+  ended: number;
+  failed: number;
+  rollbacks: number;
+  deploymentFrequency: LineageDeliveryFigure;
+  leadTime: LineageDeliveryFigure;
+  changeFailureRate: LineageDeliveryFigure;
+  recoveryTime: LineageDeliveryFigure;
+}
+
+/**
  * A place where components run (#5262), shared by many components and repos: GitHub's and GitLab's
  * environments, Argo CD's destination, Kargo's Stage's place, TestFlight. name is its name in
  * system; tier is GitLab's five, other when a system does not say. ephemeral is true for a preview
@@ -3705,6 +3956,19 @@ export interface DeployEvent {
   environment: string;
   tier: EnvironmentTier;
   outcome?: DeployOutcome;
+}
+
+/**
+ * A deploy as deploys/targets says it on its target (#5270): the deploy; release is the lineage ref
+ * of its release when a v* tag names its version, for the release's page. A live one has since (the
+ * first deploy of its newest unbroken run there) and share (its per cent of the traffic, 100 with
+ * no split).
+ */
+export interface DeployOnTarget {
+  deploy: Deploy;
+  release?: string;
+  since?: WireDate;
+  share?: number;
 }
 
 /** How a deploy that did not succeed ended, as deploy.failed says it. */
@@ -3742,6 +4006,29 @@ export interface DeployTarget {
 }
 
 /**
+ * One target in deploys/targets (#5270): its component, its environment (the environment node's
+ * name, with its tier) and its labels; live are the versions that run there now, the most traffic
+ * first; next are the deploys that wait or run to go there, oldest first (#5246).
+ */
+export interface DeployTargetNow {
+  target: DeployTarget;
+  live: DeployOnTarget[];
+  next: DeployOnTarget[];
+}
+
+/**
+ * deploys/targets (#5270, Work ▸ Deploys): every target this host keeps deploys of, with its live
+ * and next versions, as lineage computes them (#5246). at is when it was read.
+ */
+export interface DeployTargets {
+  targets: DeployTargetNow[];
+  at: WireDate;
+}
+
+/** deploys/targets (#5270): no parameters. */
+export interface DeployTargetsRequest {}
+
+/**
  * The set of artifacts that go out together (#5262); one artifact is the simple case. name is set
  * for a Release (v0.18.0), a Kargo alias, an Octopus release; system and id are set when the
  * version is a thing of its own there (Kargo's Freight, Octopus's Release). ref is a Release's ref
@@ -3753,6 +4040,45 @@ export interface DeployVersion {
   system?: string;
   id?: string;
   ref?: string;
+}
+
+/**
+ * deploys/delivery's answer (#5245): the targets with a deploy that ended in [since, at],
+ * production first, then by tier and the most deploys. resolving is true while what some deploys
+ * bring is still being asked of the forge, so lead time may grow on the next read. deploys is how
+ * many deploys this machine keeps, of every target and age, so a page can pick the machine that
+ * knows most. From deploys/deliveryAll (#5496), deploys is how many deploys the copies of the
+ * machines in the scope keep, each once.
+ */
+export interface DeploysDelivery {
+  since: WireDate;
+  at: WireDate;
+  windowDays: number;
+  deploys: number;
+  targets: DeployDeliveryTarget[];
+  resolving?: boolean;
+}
+
+/**
+ * deploys/delivery (#5245): the DORA figures of each target this machine keeps deploys of, over the
+ * range (day is the last 7 days, as week), of one tier or of every tier when none is said. scope is
+ * for deploys/deliveryAll (#5496): whose machines' copies the control plane reads, as
+ * reports/value's; a machine leaves it out.
+ */
+export interface DeploysDeliveryRequest {
+  range: ReportRange;
+  tier?: EnvironmentTier;
+  scope?: ReportScope;
+}
+
+/**
+ * deploys/sync (#5496): every deploy a machine keeps, at most 1,000, in place of the control
+ * plane's copy of that machine's deploys. resolving is true while what some deploys bring is still
+ * being asked of the forge.
+ */
+export interface DeploysSync {
+  deploys: DeployDeliveryFact[];
+  resolving?: boolean;
 }
 
 /**
@@ -3952,6 +4278,33 @@ export interface Doc {
 export interface DocsList {
   docs: Doc[];
   sources: DocsSource[];
+  cursor?: string;
+}
+
+/**
+ * docs/listAll (#5571): a page of docs from the caller's machines, the last updated first, each
+ * with its machine. unreached is the machines that have docs but did not answer (offline or too
+ * slow); their docs are not in docs. sources are those of the machines that answered this page: the
+ * first page has every machine's. notAsked counts the machines past the most one call asks (50).
+ * cursor is the next page, absent at the end.
+ */
+export interface DocsListAll {
+  docs: MachineDoc[];
+  sources: MachineDocsSource[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+  cursor?: string;
+}
+
+/**
+ * docs/listAll (#5571): the docs of the caller's machines in one call. limit is 1 to 500, 200 when
+ * not said; it bounds the page, not each machine, and a cursor goes with the same limit. source
+ * narrows to one DocsSource id.
+ */
+export interface DocsListAllRequest {
+  source?: string;
+  limit?: number;
+  /** Opaque: the last page's cursor, as the answer gave it. Absent for the first page. */
   cursor?: string;
 }
 
@@ -4371,6 +4724,143 @@ export interface EntryNotification {
 }
 
 /**
+ * env/changed (#5259): a file of variables changed on this machine, so the Environment page reads
+ * env/list again. folder is the folder whose .agents/env changed; yours is ~/.agents/env.
+ */
+export interface EnvChanged {
+  /** The folder, as a path, whose .agents/env changed. */
+  folder?: string;
+  /** ~/.agents/env changed. */
+  yours?: boolean;
+}
+
+/**
+ * One file of variables (#5259): ~/.agents/env (yours) or a folder's .agents/env (repo), as this
+ * machine reads it.
+ */
+export interface EnvFile {
+  layer: EnvLayer;
+  /** The file's path on this machine. */
+  path: string;
+  /** For repo: the folder, as a path. */
+  folder?: string;
+  /** The file is there. */
+  exists: boolean;
+  variables: EnvVariable[];
+  /**
+   * Why the file is not read, in words: it is over 64 KB or has over 500 variables. variables is
+   * then empty, and a session gets nothing from it.
+   */
+  problem?: string;
+  /** For repo: the file has changes that git has not committed. */
+  uncommitted?: boolean;
+  /**
+   * For yours: the file differs from what the person's settings last wrote to it, so this machine
+   * uses the edited file. The page offers Keep for All Machines (user/setSettings with the
+   * environment part) and Discard (env/discard).
+   */
+  changedByHand?: boolean;
+}
+
+/**
+ * Where a variable comes from (#5259), the lowest first: the login environment, the folder's
+ * .agents/env, then ~/.agents/env. The later wins. Agents' own variables come after all of them and
+ * are not listed.
+ */
+export type EnvLayer =
+  | "login"
+  | "repo"
+  | "yours";
+
+/**
+ * env/list's answer (#5259): ~/.agents/env first, then each known folder's .agents/env (one with no
+ * file is left out unless env/list named it).
+ */
+export interface EnvList {
+  files: EnvFile[];
+}
+
+/** env/list (#5259). With folder, only ~/.agents/env and that folder's file. */
+export interface EnvListRequest {
+  /** A folder, as a path or a file URL. */
+  folder?: string;
+}
+
+/** env/resolve (#5259): a folder, or a running session's folder. */
+export interface EnvResolveRequest {
+  /** A folder, as a path or a file URL. */
+  folder?: string;
+  agentID?: UUID;
+}
+
+/**
+ * env/resolve's answer (#5259), "As a session sees it": each name of the two files, the value a
+ * session in the folder gets, and the layer that wins. A name only the login environment has is not
+ * listed, nor any login value.
+ */
+export interface EnvResolved {
+  /** The folder, as a path. */
+  folder: string;
+  variables: EnvResolvedVariable[];
+}
+
+/** One name as a session sees it (#5259). */
+export interface EnvResolvedVariable {
+  name: string;
+  /** The value a session gets. Absent when no layer gives it (each is refused). */
+  value?: string;
+  /** The layer that wins. Absent when no layer gives it. */
+  layer?: EnvLayer;
+  /** The lower layers that also set it, and that it wins over. */
+  over?: EnvLayer[];
+  /** The state of the variable in the winning layer, or, when none gives it, in the highest. */
+  state: EnvVariableState;
+  /** Why it is not given, in words. */
+  reason?: string;
+}
+
+/** One variable of a file (#5259). */
+export interface EnvVariable {
+  name: string;
+  value: string;
+  /** The # comment line just above it, without the #. */
+  description?: string;
+  /** Its line in the file, from 1. */
+  line: number;
+  state: EnvVariableState;
+  /** Why it is refused or blocked, or why it looks like a secret, in words. */
+  reason?: string;
+}
+
+/**
+ * What a session gets of a variable (#5259): given; refused, a name Agents or the system own, or
+ * that a repo's file may not set; secretLooking, given, but its value looks like a secret, so the
+ * page shows it in Needs you (revoke it when it is in a repo's file, move it when it is in yours);
+ * policyBlocked, the organisation's environment rule does not allow it.
+ */
+export type EnvVariableState =
+  | "given"
+  | "refused"
+  | "secretLooking"
+  | "policyBlocked";
+
+/**
+ * env/write (#5259): add, change or remove one variable of a folder's .agents/env, keeping the
+ * other lines and comments. The file is left not committed. ~/.agents/env is the person's settings:
+ * a client changes it with user/setSettings, part environment. Refused when the name is not allowed
+ * in a repo's file or the value looks like a secret.
+ */
+export interface EnvWriteRequest {
+  /** The folder, as a path or a file URL. */
+  folder: string;
+  name: string;
+  /** The new value. Absent removes the variable and its description. */
+  value?: string;
+  /** The # comment line above it, one line. Absent keeps the one there; empty removes it. */
+  description?: string;
+}
+
+/**
  * An environment's tier, as GitLab's five (#5262). A tier this build does not know reads as
  * `other`.
  */
@@ -4539,6 +5029,26 @@ export interface EventsChange {
   waiting: WaitingAgent[];
 }
 
+/**
+ * events/listAll (#5592): each machine's newest EventsPage. unreached is the machines that have the
+ * method but did not answer (offline, too slow or an error); notAsked counts the machines past the
+ * most one call asks (50), as in DocsListAll.
+ */
+export interface EventsListAll {
+  pages: MachineEventsPage[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+}
+
+/**
+ * events/listAll (#5592): the newest page of each of the caller's machines' events/list in one
+ * call. limit is each machine's, as in EventsListRequest, 50 when not said, at most 100. An older
+ * page is one machine's, by events/list.
+ */
+export interface EventsListAllRequest {
+  limit?: number;
+}
+
 export interface EventsListRequest {
   before?: number;
   limit: number;
@@ -4568,6 +5078,17 @@ export interface FeatureUsage {
   /** YYYY-MM-DD in the host's zone. */
   since?: string;
   features: FeatureUse[];
+}
+
+/**
+ * reports/featuresAll (#5592): each machine's reports/features. unreached is the machines that have
+ * the method but did not answer (offline, too slow or an error); notAsked counts the machines past
+ * the most one call asks (50), as in DocsListAll.
+ */
+export interface FeatureUsageAll {
+  usage: MachineFeatureUsage[];
+  unreached: ProjectMachine[];
+  notAsked: number;
 }
 
 /** One feature's uses (#2165). clients is who used it: mac, remote, web, agent or workflow. */
@@ -4833,6 +5354,11 @@ export interface FolderMCPServer {
   entryDigest: string;
   signIn?: MCPSignInState;
   views?: string;
+  /**
+   * Where this machine's approval came from when it is another machine's of the same person
+   * (#5462).
+   */
+  approvedFrom?: string;
 }
 
 export interface FolderPins {
@@ -4989,6 +5515,17 @@ export interface ForgeBlockedByRequest {
  */
 export interface ForgeBoards {
   boards: ProjectBoard[];
+}
+
+/**
+ * forge/boardsAll (#5592): each machine's forge/boards. unreached is the machines that have the
+ * method but did not answer (offline, too slow or an error); notAsked counts the machines past the
+ * most one call asks (50), as in DocsListAll.
+ */
+export interface ForgeBoardsAll {
+  boards: MachineForgeBoards[];
+  unreached: ProjectMachine[];
+  notAsked: number;
 }
 
 /**
@@ -5197,8 +5734,8 @@ export interface ForgeFeature {
 /**
  * forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or
  * closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull
- * requests labelled needs-approval (#4115), so a client finds the sessions labelled P#<n> for them;
- * errors says a forge that could not be read, as in ForgeList.
+ * requests with a review requested from the person (#4115, #5803), so a client finds the sessions
+ * labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
  */
 export interface ForgeFeatures {
   features: ForgeFeature[];
@@ -5256,7 +5793,16 @@ export interface ForgeImageRequest {
  * the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row
  * where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the
  * commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it
- * is open or closed unmerged.
+ * is open or closed unmerged. priority is high, medium or low, absent for none (#5688, #5747): from
+ * the forge's own priority field where it has one, and then its labels are not read for it:
+ * Linear's (Urgent and High → high; Low → low), Jira's (Highest and High → high; Low and Lowest →
+ * low), GitHub's Priority issue field when the repo has it (Urgent and High → high), Bitbucket's
+ * (blocker and critical → high; major, the default, → none; minor and trivial → low) and Azure
+ * DevOps' Priority (1 → high; 2, the default, → none; 3 and 4 → low); elsewhere from the labels
+ * priority:high, priority:medium and priority:low (any case; the higher of two). milestoneDue is
+ * the due date of the item's milestone, where the forge says it; absent with no milestone or no due
+ * date. onHold says the item is on hold (#5747): Bitbucket's state on hold; elsewhere the label on
+ * hold (any case; on-hold too), and on Jira a status named On hold too; absent is false.
  */
 export interface ForgeItem {
   node: LineageNode;
@@ -5271,6 +5817,9 @@ export interface ForgeItem {
   authorAvatar?: string;
   assignees: string[];
   milestone?: string;
+  milestoneDue?: WireDate;
+  priority?: "high" | "medium" | "low";
+  onHold?: boolean;
   createdAt?: WireDate;
   closedAt?: WireDate;
   updatedAt: WireDate;
@@ -5307,10 +5856,13 @@ export interface ForgeItem {
  * none. On a pull request's read (#4409), where the forge says them (ForgeCapabilities): additions,
  * deletions and commits are its size; reviewers are the people asked to review it and the people
  * who reviewed it, each once with their newest state; closes are the issues it closes when it
- * merges.
+ * merges. viewer is the login this machine reads and writes the forge as (#5804), the one
+ * forge/approve reviews as, so a client knows which reviewer and which author is the person; absent
+ * where the connection does not say it, and from an earlier daemon.
  */
 export interface ForgeItemDetail {
   item: ForgeItem;
+  viewer?: string;
   body: string;
   comments: ForgeComment[];
   cursor?: string;
@@ -5400,6 +5952,32 @@ export interface ForgeList {
 }
 
 /**
+ * forge/listAll (#5592): each machine's ForgeList, as it answered, in the order of the caller's
+ * machines. The machines list the same repos, so a client merges the items by ref. unreached is the
+ * machines that have the method but did not answer (offline, too slow or an error); notAsked counts
+ * the machines past the most one call asks (50), as in DocsListAll.
+ */
+export interface ForgeListAll {
+  lists: MachineForgeList[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+}
+
+/**
+ * forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's
+ * machines in one call. state, board and limit are as in ForgeListRequest, for each machine. pages,
+ * for a next page, names the machines to ask and each one's cursor, as its last list gave it;
+ * without pages every machine is asked for its first page.
+ */
+export interface ForgeListAllRequest {
+  kind: "issues" | "pulls";
+  state?: string;
+  board?: string;
+  limit?: number;
+  pages?: MachineCursor[];
+}
+
+/**
  * A forge forge/issues or forge/pulls could not read (#3129): forge is github, gitlab or linear.
  */
 export interface ForgeListError {
@@ -5474,6 +6052,46 @@ export interface ForgeMergeRequest {
   auto?: boolean;
 }
 
+/**
+ * forge/next (#5689): the work that is ready, in one order, at most 100 rows. The top row that is
+ * not on hold is the next one to pick up. readAt is when this answer was made; the forge reads in
+ * it may be up to the forge cache's minute older. errors says a forge that could not be read, as
+ * ForgeList's does; the rows of the others still come.
+ */
+export interface ForgeNext {
+  rows: ForgeNextRow[];
+  readAt: WireDate;
+  errors?: ForgeListError[];
+}
+
+/**
+ * forge/next (#5689): the folder whose work is read. epic (an issue's lineage node) gives only that
+ * epic's children, or a standing epic's query (#3661). level epic gives the open epics instead of
+ * the issues, in the same order, to choose which epic gets a lead; it takes no epic.
+ */
+export interface ForgeNextRequest {
+  folder: string;
+  epic?: LineageNode;
+  level?: string;
+}
+
+/**
+ * A row of forge/next (#5689): an item that is ready (open, not an epic unless the level is epic,
+ * no open blocked by, and not taken: no session on this machine that is not archived is labelled
+ * with it, no open pull request fixes it, and it has no assignee), or one that is on hold and
+ * otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high,
+ * medium, none, low; then the milestone's due date, the earliest first, no due date last; then the
+ * oldest (createdAt, then the lowest number). reasons are short words for the keys that put it
+ * there, as priority high, milestone Work, due 20 Nov, and oldest (when its age put it above the
+ * next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
+ */
+export interface ForgeNextRow {
+  item: ForgeItem;
+  place: number;
+  reasons: string[];
+  onHold: boolean;
+}
+
 /** forge/labels, forge/rerun and forge/diff (#3130): the issue or pull request. */
 export interface ForgeNodeRequest {
   node: LineageNode;
@@ -5484,8 +6102,9 @@ export interface ForgeNodeRequest {
  * step, in the forge's order within a step. steps are the children of each step, the first first.
  * lead is the session on this machine, not archived, that works on the epic in lineage (its label
  * #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661):
- * its children are then the open issues of its query, not its sub-issues, at most 100, in order
- * (priority, then the oldest), all in one step 1; its item has no progress.
+ * its children are then the open issues of its query, not its sub-issues, at most 100, in the order
+ * of forge/next (#5689: not on hold first, then priority, the milestone's due date and the oldest),
+ * all in one step 1; its item has no progress.
  */
 export interface ForgePlan {
   item: ForgeItem;
@@ -5966,6 +6585,21 @@ export interface KeptDelivered {
 
 export interface KeptList {
   kept: KeptRequest[];
+  /** The cursor of the next page; absent on the last (#5283). */
+  next?: string;
+  /** For each kind, how many kept requests match the other filters (#5283). */
+  counts?: { kind: Record<string, number> };
+}
+
+/**
+ * machines/listKept (#5283): optional. `query` matches the text, kind or machine; `kind` one kind;
+ * `limit` is 1 to 200 (default 200); `cursor` is the previous answer's `next`.
+ */
+export interface KeptListQuery {
+  query?: string;
+  kind?: string;
+  limit?: number;
+  cursor?: string;
 }
 
 export interface KeptRequest {
@@ -6173,7 +6807,10 @@ export interface LineageCostNode {
    * start when askedAt is unknown.
    */
   openedAt?: WireDate;
-  /** When a PR was labelled needs-approval (#4553), from pr.labelled: the approval wait's start. */
+  /**
+   * When a review was first requested from the person on a PR (#4553, #5803), from
+   * review.requested: the approval wait's start.
+   */
   askedAt?: WireDate;
   /**
    * A PR's first answer by a person (#4553): the first pr.reviewed or pr.commented at or after the
@@ -6251,9 +6888,9 @@ export interface LineageDelivery {
    */
   flowEfficiency: LineageDeliveryFigure;
   /**
-   * The approval wait (#4553), in seconds: from a PR's needs-approval label (its opening when the
-   * label is unknown) to its first answer by a person; the median, and p90. Counted by the answer's
-   * time.
+   * The approval wait (#4553), in seconds: from the review requested from the person on a PR (its
+   * opening when no request is known, #5803) to its first answer by a person; the median, and p90.
+   * Counted by the answer's time.
    */
   approvalWait: LineageDeliveryFigure;
   /**
@@ -6498,6 +7135,17 @@ export interface LineageForecast {
   assumes?: LineageForecastAssumes;
   /** What the request's what-if moved (#4531); every figure is then the what-if's. */
   whatIf?: LineageForecastWhatIfEffect;
+}
+
+/**
+ * lineage/forecastAll (#5592): each machine's lineage/forecast for the same request. unreached is
+ * the machines that have the method but did not answer (offline, too slow or an error); notAsked
+ * counts the machines past the most one call asks (50), as in DocsListAll.
+ */
+export interface LineageForecastAll {
+  forecasts: MachineLineageForecast[];
+  unreached: ProjectMachine[];
+  notAsked: number;
 }
 
 /**
@@ -6793,6 +7441,11 @@ export interface LineageResolved {
    * rate.
    */
   createdAt?: WireDate;
+  /**
+   * A deploy node's last event (#5243): its target (component, environment and tier), version,
+   * times and url, so a Work page's Deployed and Live in rows say them. Only on a deploy node.
+   */
+  deploy?: Deploy;
 }
 
 /** A runtime of lineage/figures' sessions, and how many of them it ran (#4427). */
@@ -7259,7 +7912,11 @@ export interface LockJoinNonce {
  * answeredBy is that signer's client id; reveal is the asking client's nonce, once it showed it.
  * Each screen makes the six digits from key, reveal and nonce. machine is set when a machine asks
  * (#3491, D3): client is then the machine's id, kind is unknown, and a signer approves it with an
- * addMachine whose key and sealing key are both key, the machine's own.
+ * addMachine whose key and sealing key are both key, the machine's own. compared is set on a
+ * machine's request when the control plane made that machine and its set-up's compare step showed
+ * the digits the control plane made from its join token (#5359, #5776): a signer then sends its
+ * nonce and, once the machine's reveal checks against its commitment, approves it by itself, with
+ * no card for the person. The control plane still signs nothing.
  */
 export interface LockJoinRequest {
   request: string;
@@ -7273,6 +7930,7 @@ export interface LockJoinRequest {
   nonce?: Base64;
   answeredBy?: string;
   reveal?: Base64;
+  compared?: boolean;
 }
 
 /** lock/join's answer (#3490): the request, and when it ends unanswered. */
@@ -7743,6 +8401,45 @@ export interface MachineAccountsCall {
   remove?: AccountKey[];
 }
 
+/**
+ * machines/agents (#5273, spec 5239 board 6): a machine page's Agents section. version is what the
+ * machine runs, since the first machine/hello at it; previous is the version before. changes are
+ * the changes since previous, the newest few (machines/agentsChanges gives all); absent when there
+ * is no previous or GitHub could not say, and changesError says why in the second case. history is
+ * the versions it ran, newest first, at most 20. others are the person's other machines, each with
+ * its version.
+ */
+export interface MachineAgents {
+  host: MachineRef;
+  version: string;
+  since?: WireDate;
+  previous?: string;
+  changes?: AgentsChanges;
+  changesError?: string;
+  history: MachineAgentsVersion[];
+  others: MachineAgentsOther[];
+}
+
+/**
+ * Another of the person's machines on a machine's page (#5273): its version, since when, and how
+ * many changes it is ahead of and behind the page's machine. ahead and behind are absent when
+ * GitHub could not say (a version with no commit, GitHub not answering).
+ */
+export interface MachineAgentsOther {
+  host: MachineRef;
+  name: string;
+  version: string;
+  since?: WireDate;
+  ahead?: number;
+  behind?: number;
+}
+
+/** One version a machine ran (#5273) and when it came: the first machine/hello at it. */
+export interface MachineAgentsVersion {
+  version: string;
+  since?: WireDate;
+}
+
 /** machines/announce, on an enrolment connection. */
 export interface MachineAnnounce {
   publicKey: Base64;
@@ -7800,12 +8497,73 @@ export interface MachineClients {
   user?: string;
 }
 
+/** A machine's ConnectionsList in connections/listAll (#5592). */
+export interface MachineConnections {
+  machine: MachineRef;
+  machineName: string;
+  connections: ConnectionsList;
+}
+
+/** A conversation of messages/conversationsAll (#5571) with the machine whose connector has it. */
+export interface MachineConversation {
+  machine: MachineRef;
+  machineName: string;
+  conversation: MessagesConversation;
+}
+
+/**
+ * For each filter, how many machines have each of its values, among those every other filter lets
+ * through (so a chip says what picking it would show). A machine with no value for a filter is not
+ * counted in it.
+ */
+export interface MachineCounts {
+  state: Record<string, number>;
+  labels: Record<string, number>;
+  provider: Record<string, number>;
+  os: Record<string, number>;
+  version: Record<string, number>;
+}
+
+/** A machine and the cursor of its next page (#5592). */
+export interface MachineCursor {
+  machine: MachineRef;
+  cursor: string;
+}
+
+/** A doc of docs/listAll (#5571) with the machine that has it. */
+export interface MachineDoc {
+  machine: MachineRef;
+  machineName: string;
+  doc: Doc;
+}
+
+/** A source of docs/listAll (#5571) with the machine whose folders or connectors it is. */
+export interface MachineDocsSource {
+  machine: MachineRef;
+  machineName: string;
+  source: DocsSource;
+}
+
 /**
  * machines/startEnroll (#1761): with as, a bot's machine code, an admin's only. Without, the
  * caller's own, as before.
  */
 export interface MachineEnroll {
   as?: string;
+}
+
+/** A machine's EventsPage in events/listAll (#5592). */
+export interface MachineEventsPage {
+  machine: MachineRef;
+  machineName: string;
+  page: EventsPage;
+}
+
+/** A machine's FeatureUsage in reports/featuresAll (#5592). */
+export interface MachineFeatureUsage {
+  machine: MachineRef;
+  machineName: string;
+  usage: FeatureUsage;
 }
 
 /**
@@ -7837,6 +8595,20 @@ export interface MachineFolderSent {
   facts?: SendFacts;
   pack?: SendPack;
   read?: SendRead;
+}
+
+/** A machine's ForgeBoards in forge/boardsAll (#5592). */
+export interface MachineForgeBoards {
+  machine: MachineRef;
+  machineName: string;
+  boards: ForgeBoards;
+}
+
+/** A machine's ForgeList in forge/listAll (#5592). */
+export interface MachineForgeList {
+  machine: MachineRef;
+  machineName: string;
+  list: ForgeList;
 }
 
 /** machine/hello, on every connect of an uplink. `implementation` is `swift` or `go` (#1134). */
@@ -7956,11 +8728,36 @@ export interface MachineJoinTicket {
   expires: WireDate;
 }
 
+/**
+ * machines/setLabels (#5284): the person's labels on one or many machines. `set` replaces them;
+ * `add` and `remove` change them. A label is a key or key=value of letters, digits and . _ / -, at
+ * most 20 on a machine; os, arch and provider are the provider's. A machine that is not the
+ * caller's is left out.
+ */
+export interface MachineLabelsRequest {
+  machines: MachineRef[];
+  set?: string[];
+  add?: string[];
+  remove?: string[];
+}
+
+/** machines/setLabels: how many machines changed. */
+export interface MachineLabelsResult {
+  changed: number;
+}
+
 export interface MachineLastHeard {
   host: MachineRef;
   folders?: FolderSummary[];
   agents?: Agent[];
   heardAt?: WireDate;
+}
+
+/** A machine's LineageForecast in lineage/forecastAll (#5592). */
+export interface MachineLineageForecast {
+  machine: MachineRef;
+  machineName: string;
+  forecast: LineageForecast;
 }
 
 /**
@@ -7975,6 +8772,47 @@ export interface MachineLink {
   startWhenUsed?: boolean;
   stopWhenIdleMinutes?: number;
   trust?: string;
+}
+
+/**
+ * machines/list (#5283) when it was given a query: a page of machines, the cursor of the next page
+ * (absent on the last), how many match in all, and the counts for each filter's values.
+ */
+export interface MachineList {
+  machines: ControlMachine[];
+  next?: string;
+  total: number;
+  counts: MachineCounts;
+}
+
+/**
+ * machines/list (#5283): what to show, as the Machines page asks for it. Every field is optional;
+ * with none, the answer is the plain array of up to 200 machines, as before. `query` matches a
+ * name, id or label, any case. `state`, `provider`, `os` and `version` each match one value;
+ * `labels` matches a machine that has every one. `sort` is name (the default), state, lastSeen
+ * (latest first) or version. `limit` is 1 to 200 (default 200); `cursor` is the previous answer's
+ * `next`.
+ */
+export interface MachineListQuery {
+  query?: string;
+  state?: string;
+  labels?: string[];
+  provider?: string;
+  os?: string;
+  version?: string;
+  sort?: "name" | "state" | "lastSeen" | "version";
+  limit?: number;
+  cursor?: string;
+}
+
+/**
+ * A connector of messages/conversationsAll (#5571) that failed or did not answer in time, with its
+ * machine.
+ */
+export interface MachineMessagesError {
+  machine: MachineRef;
+  machineName: string;
+  error: MessagesError;
 }
 
 /** machines/setMachineOptions. stopWhenIdleMinutes 0 turns it off. */
@@ -8073,6 +8911,70 @@ export interface MachineSessionStart {
   host: string;
   start: StartRequest;
 }
+
+/**
+ * How a machine's set-up stands (#5355, epic #5353): the eight steps in order, and when it began
+ * and was ready. Steps 5 and 6 may run together.
+ */
+export interface MachineSetup {
+  steps: MachineSetupStep[];
+  startedAt: WireDate;
+  readyAt?: WireDate;
+}
+
+/**
+ * machine/setupStep: a step of the installer on the machine (agents-host install --join), as it
+ * starts, goes on and ends (#5355).
+ */
+export interface MachineSetupReport {
+  step: MachineSetupStepID;
+  state: MachineSetupState;
+  detail?: string;
+  error?: string;
+  fromPool?: boolean;
+  /**
+   * The digits the host shows for its join token (controllink.TokenCode), said with the compare
+   * step: the control plane compares them with the ones it made (#5359).
+   */
+  code?: string;
+}
+
+export type MachineSetupState =
+  | "waiting"
+  | "running"
+  | "needs-you"
+  | "done"
+  | "failed";
+
+/**
+ * One step: detail is one line of what it is doing now or did; error is why it failed, in the words
+ * of the provider or the machine; fromPool says a warm pool did it before the machine was asked
+ * for; slower is true for a running step over 3 times its median (at least 2 minutes).
+ */
+export interface MachineSetupStep {
+  id: MachineSetupStepID;
+  state: MachineSetupState;
+  startedAt?: WireDate;
+  endedAt?: WireDate;
+  detail?: string;
+  error?: string;
+  fromPool?: boolean;
+  slower?: boolean;
+}
+
+/**
+ * The eight steps, in order: create machine, join machine, install Agents, compare digits, install
+ * runtimes, send projects, sign in to runtimes, smoke session.
+ */
+export type MachineSetupStepID =
+  | "create"
+  | "join"
+  | "install"
+  | "compare"
+  | "runtimes"
+  | "projects"
+  | "signIn"
+  | "smoke";
 
 /**
  * machine/status on channel 0 (#691 US4): each agent working or waiting on a person, and the next
@@ -8192,6 +9094,31 @@ export interface MachineUserSettings {
    * them. Never a value.
    */
   waiting?: UserSecretAbout[];
+  /**
+   * This machine's offers (machine/offerSecret, #5308) that still wait for the person's client.
+   * Left out when none waits.
+   */
+  offersWaiting?: WaitingOffer[];
+}
+
+/**
+ * machines/versions (#5272, spec 5239, "Alex's question"): the Agents versions a machine ran, from
+ * its machine/hello. version is the one it said last; firstSeen is the first time the control plane
+ * heard it at that version, and seen the last. deploys are the changes of version the control plane
+ * saw, newest first, at most 20: each an observed deploy (observed: true, state succeeded) of the
+ * component agents to the environment machines, its target labelled machine=<host>, from the last
+ * time the old version was seen (started) to the first machine/hello at the new one (finished).
+ * Each version's artifact is its commit: the tag vX.Y.Z for X.Y.Z, the sha after +g for
+ * X.Y.Z-dev.N+g<sha>. previous is the version it ran before version, when the control plane saw the
+ * change.
+ */
+export interface MachineVersions {
+  host: MachineRef;
+  version: string;
+  firstSeen?: WireDate;
+  seen?: WireDate;
+  previous?: string;
+  deploys: Deploy[];
 }
 
 export interface MachineWorkspace {
@@ -8373,6 +9300,31 @@ export interface MessagesConversations {
   conversations: MessagesConversation[];
   cursor?: string;
   errors?: MessagesError[];
+}
+
+/**
+ * messages/conversationsAll (#5571): a page of conversations from the caller's machines, the newest
+ * first, each with its machine. errors says a connector that failed. unreached and notAsked are as
+ * in DocsListAll. cursor is the next page, absent at the end.
+ */
+export interface MessagesConversationsAll {
+  conversations: MachineConversation[];
+  errors: MachineMessagesError[];
+  unreached: ProjectMachine[];
+  notAsked: number;
+  cursor?: string;
+}
+
+/**
+ * messages/conversationsAll (#5571): the conversations of the caller's machines in one call. limit
+ * is 1 to 100, 20 when not said; it bounds the page, not each machine, and a cursor goes with the
+ * same limit. unread: only the conversations with unread messages.
+ */
+export interface MessagesConversationsAllRequest {
+  unread?: boolean;
+  limit?: number;
+  /** Opaque: the last page's cursor, as the answer gave it. Absent for the first page. */
+  cursor?: string;
 }
 
 /**
@@ -9509,6 +10461,43 @@ export interface PermissionRequest {
   options: PermissionOption[];
   askedAt: WireDate;
   subagent?: string;
+}
+
+/**
+ * A person's approval of one file's content (#5462, epic #5281), signed by the machine that
+ * approved it. kind is "workflow" (a workflow file with the skills it names) or "connector" (one
+ * entry of .agents/mcp.json); digest is the hash the approving machine saw, so a changed file has
+ * another digest and is not covered. sig is ECDSA P-256 (r then s) with SHA-256 over
+ * "agents-approval/1\n", the person, kind, digest, host and at, each ended by a newline but the
+ * last (at in decimal). A machine takes one only when the machine lock it pinned names key as one
+ * of the person's machines. The control plane keeps and sends them, and signs nothing.
+ */
+export interface PersonApproval {
+  kind: "workflow" | "connector";
+  digest: string;
+  /** What the file is called, to say where an approval came from. */
+  name?: string;
+  /** The approving machine's id. */
+  host: string;
+  /** The approving machine's name when it approved. */
+  hostName?: string;
+  /** Seconds since 1970. */
+  at: number;
+  key: Base64;
+  sig: Base64;
+}
+
+/** approvals/list (#5462): every approval kept for the caller's person, at most 2000. */
+export interface PersonApprovals {
+  approvals: PersonApproval[];
+}
+
+/**
+ * approvals/put (#5462): approvals a machine signed, at most 50 at a time. The control plane keeps
+ * the first of each kind and digest.
+ */
+export interface PersonApprovalsPut {
+  approvals: PersonApproval[];
 }
 
 export interface PersonClient {
@@ -11005,6 +11994,7 @@ export interface QueuedStart {
   runtimeID?: string;
   permissionMode?: string;
   model?: string;
+  effort?: string;
   worktree?: WorktreeChoice;
   labels: string[];
 }
@@ -11357,7 +12347,7 @@ export interface ReportNodesQuery {
   sort?: ReportNodesSort;
   cursor?: string;
   limit?: number;
-  /** Me, a group or the organisation (#1804). */
+  /** Me or the organisation (#1804). */
   scope?: ReportScope;
 }
 
@@ -11381,16 +12371,9 @@ export type ReportPage =
   | "workflows"
   | "value";
 
-/** Who sees what in Reports (#1804), set by an admin in Console ▸ Report Policy. */
+/** The organisation's budget in Reports (#1804), set by an admin in Console ▸ Report Policy. */
 export interface ReportPolicy {
-  /**
-   * A group lead sees the group's totals only, with no person or machine named. An admin always
-   * sees each person.
-   */
-  totalsOnly: boolean;
-  /** Each group's leads, by group id: users who see the group's reports. */
-  leads: Record<string, string[]>;
-  /** A budget for a calendar month in US dollars, by group id, or "org" for the organisation. */
+  /** A budget for a calendar month in US dollars, by "org" for the organisation. */
   budgetsUSD: Record<string, number>;
 }
 
@@ -11402,7 +12385,7 @@ export interface ReportQuery {
   range: ReportRange;
   /** For reports/export; CSV when absent. */
   format?: ReportFormat;
-  /** Me, a group or the organisation (#1804). */
+  /** Me or the organisation (#1804). */
   scope?: ReportScope;
 }
 
@@ -11440,11 +12423,6 @@ export interface ReportRow {
   workingSeconds: number;
   /** Waiting for the person: TimeBucket's person. */
   waitingSeconds: number;
-  /**
-   * The groups the person is in (#1804), by id, for a group or organisation scope; absent when the
-   * person is hidden.
-   */
-  groups?: string[];
   /** What the agents did (#2019): sessions, pull requests and waits. */
   counts?: ReportCounts;
   folder: string;
@@ -11460,15 +12438,21 @@ export interface ReportRow {
 /** Whose rows a report adds up (#1804). */
 export interface ReportScope {
   kind: ReportScopeKind;
-  /** The group's id, for kind group. */
-  group?: string;
+  /**
+   * The project's id, for kind project (#5277): the rows whose folder is in the project, on every
+   * machine.
+   */
+  project?: string;
 }
 
-/** Me (the caller's own machines), a group's people, or every person (#1804). */
+/**
+ * Me (the caller's own machines), every person (#1804), or a project's folders on every machine
+ * (#5277). There is no group lens (#5278).
+ */
 export type ReportScopeKind =
   | "me"
-  | "group"
-  | "org";
+  | "org"
+  | "project";
 
 /** A scope the caller may see, with its name (#1804). */
 export interface ReportScopeOption {
@@ -11476,10 +12460,7 @@ export interface ReportScopeOption {
   name: string;
 }
 
-/**
- * reports/scopes' answer (#1804): Me, each group the caller leads (every group for an admin), and
- * the organisation for an admin.
- */
+/** reports/scopes' answer (#1804): Me, every project (#5277), and the organisation for an admin. */
 export interface ReportScopes {
   scopes: ReportScopeOption[];
   admin: boolean;
@@ -11610,8 +12591,8 @@ export interface Request {
   /** The session that asked. */
   askedBy?: UUID;
   /**
-   * A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request
-   * labelled needs-approval.
+   * A forge item's (#3865): an issue labelled alex-todo or needs-account, or a pull request with a
+   * review requested from the person (#5803).
    */
   forge?: RequestForge;
   /** Every session that waits on it; the asker first. Kept as history once it ends. */
@@ -11641,8 +12622,9 @@ export interface RequestAnswer {
 }
 
 /**
- * A needs-approval pull request's answer: approve adds approved, changes adds changes-wanted; the
- * note is the person's comment on it.
+ * An answer to a pull request with a review requested from the person (#5803): only their review of
+ * the head, approve an Approve and changes a Request changes; the note is the review's words. Their
+ * own pull request takes no review from them.
  */
 export interface RequestApprovalAnswer {
   action: "approve" | "changes";
@@ -11694,7 +12676,10 @@ export interface RequestForge {
   item: "issue" | "pr";
   number: number;
   url: string;
-  /** alex-todo, needs-account or needs-approval. */
+  /**
+   * alex-todo or needs-account on an issue; review-requested on a pull request with a review
+   * requested from the person (#5803), which is no label.
+   */
   label: string;
   /** An issue's lines under its first "## What <name> does" heading. */
   checklist: RequestChecklistLine[];
@@ -11944,8 +12929,8 @@ export interface ReviewOpenRequest {
 }
 
 /**
- * An open pull request labelled needs-approval, a UI change waiting for the person (#2811), in the
- * sidebar's For Review (#3330) until it is labelled approved or changes-wanted, is closed, or is
+ * An open pull request with a review requested from the person (#5803), a UI change waiting for
+ * them (#2811), in the sidebar's For Review (#3330) until they review it, it is closed, or it is
  * dismissed.
  */
 export interface ReviewPull {
@@ -12451,6 +13436,42 @@ export interface SecretNeedsApprovalRequest {
 }
 
 /**
+ * One row of user/secretOffers (#5308): a secret an agent saved on one of the person's machines
+ * that is not one of theirs yet. mine is this client's copy, to open and set with user/setSecret
+ * and offer; left out when the machine did not seal one to this client. conflict is true when the
+ * person already has a secret of that name: then it waits for Keep Yours (user/dropSecretOffer) or
+ * Use the Agent's, and is never set on its own. Never a value.
+ */
+export interface SecretOffer {
+  offer: UUID;
+  name: UserSecretName;
+  machine: MachineRef;
+  machineName: string;
+  agent?: UUID;
+  savedAt: string;
+  needsApproval?: boolean;
+  /**
+   * A secret's description (#4167): one or two sentences on what it is and what it is for, such as
+   * which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a
+   * value. Left out when it has none.
+   */
+  description?: string;
+  conflict?: boolean;
+  mine?: SealedEnvelope;
+}
+
+/** user/dropSecretOffer (#5308): Keep Yours. The offer goes; the person's secret stays as it is. */
+export interface SecretOfferRequest {
+  offer: UUID;
+}
+
+/** user/secretOffers (#5308). user is the person, as the associated data names them. */
+export interface SecretOffers {
+  user?: string;
+  offers: SecretOffer[];
+}
+
+/**
  * One read or change of a secret on a machine (#4156). Never the value, never its hint: only the
  * name, and where it went.
  */
@@ -12525,6 +13546,38 @@ export interface SecretReleaseKey {
  */
 export interface SecretReleased {
   key: Base64;
+}
+
+/**
+ * Where a person's secret came from (#5308): an agent saved it on this machine, and a client of the
+ * person's took it. Kept until the secret is set again without an offer.
+ */
+export interface SecretSavedBy {
+  machine: MachineRef;
+  /** The machine's name when it was saved. */
+  name: string;
+  agent?: UUID;
+  at: string;
+}
+
+/**
+ * secrets/signInKey's answer: the first of the runtime's secret names that is set here with Ask
+ * before use off, with its value; else none, and the names that were looked for. A name with Ask
+ * before use on is never read: it is in refused, so the step can say so.
+ */
+export interface SecretSignInKey {
+  name?: string;
+  value?: string;
+  looked: string[];
+  refused: string[];
+}
+
+/**
+ * secrets/signInKey (#5361): the key a person has in Secrets for a runtime, for step 7 of a
+ * machine's set-up.
+ */
+export interface SecretSignInKeyRequest {
+  runtimeID: string;
 }
 
 /**
@@ -12855,6 +13908,24 @@ export interface SessionNotice {
 }
 
 /**
+ * A session's priority (#5846): the same three levels as an issue's (ForgeItem.priority), in the
+ * order high, medium, none, low.
+ */
+export type SessionPriority =
+  | "high"
+  | "medium"
+  | "low";
+
+/**
+ * Where a session's priority comes from (#5846): set on it, its issue's, its starter's, or none.
+ */
+export type SessionPrioritySource =
+  | "set"
+  | "issue"
+  | "starter"
+  | "none";
+
+/**
  * A secret kept for one session only (#3548): only that session's agent can use it (fill_secret,
  * its environment, its MCP servers), and its host deletes it when the session is archived. No
  * value.
@@ -13006,6 +14077,15 @@ export interface SetPRCostCommentRequest {
 export interface SetPinnedRequest {
   folder: URLString;
   pinned: boolean;
+}
+
+/**
+ * agents/setPriority (#5847): the priority set on a session; with no priority (absent or null), the
+ * setting is cleared and the session follows its issue again ("From issue").
+ */
+export interface SetPriorityRequest {
+  agentID: UUID;
+  priority?: SessionPriority;
 }
 
 export interface SetProviderRequest {
@@ -13717,6 +14797,11 @@ export interface StartRequest {
   requestID?: UUID;
   sandbox?: SandboxChoice;
   labels: string[];
+  /**
+   * The priority set on the new session (#5847), as agents/setPriority sets it; absent, it follows
+   * its issue, then its starter.
+   */
+  priority?: SessionPriority;
   persona?: string;
   /**
    * The values in the shared words (#2658). With runtimeID auto, the daemon picks the runtime
@@ -13735,6 +14820,12 @@ export interface StartRequest {
    * An agent on another machine started it, through the control plane (#2887): its chat says who.
    */
   startedFrom?: StartedFrom;
+  /**
+   * The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini:
+   * you last started here.": the session's chat says it first. A client sends what
+   * sessions/previewStart gave in text.
+   */
+  autoChose?: string;
 }
 
 /**
@@ -14043,7 +15134,7 @@ export type TranscriptEntryKind =
   | { compaction: { status: string; summary: ContentBlock[]; id?: string; error?: string } }
   | { notice: { _0: SessionNotice } }
   | { permissionAsked: { _0: PermissionRequest } }
-  | { permissionAnswered: { optionID: string; optionName?: string } }
+  | { permissionAnswered: { optionID: string; optionName?: string; answeredBy?: UUID; answeredByTitle?: string } }
   | { optionChanged: { id: string; value: JSONValue } }
   | { stateChanged: { _0: AgentState; reason?: EndedReason } }
   | { background: { _0: BackgroundItem } }
@@ -14273,13 +15364,6 @@ export interface UsageReport {
   admin: boolean;
   /** The scope the rows are of (#1804). */
   scope?: ReportScope;
-  /**
-   * The rows say no person and no machine (#1804): a group lead's view when the policy says totals
-   * only.
-   */
-  personsHidden?: boolean;
-  /** The name of each group the rows name (#1804). */
-  groupNames?: Record<string, string>;
   /** The scope's budget for a calendar month, in US dollars (#1804); absent when it has none. */
   budgetUSD?: number;
   /**
@@ -14361,6 +15445,15 @@ export interface UserAgentConfig {
   personas?: Record<string, string>;
   /** ~/.agents/skills/<name>/SKILL.md, by name. */
   skills?: Record<string, string>;
+}
+
+/**
+ * The environment part of user settings (#5259): ~/.agents/env, whole, as text, so its comments and
+ * order are kept. Written to that file on every machine of the person. Not sealed: the control
+ * plane refuses a value that looks like a secret.
+ */
+export interface UserEnvironment {
+  text: string;
 }
 
 /**
@@ -14523,6 +15616,7 @@ export interface UserSecretRow {
    * value. Left out when it has none.
    */
   description?: string;
+  savedBy?: SecretSavedBy;
 }
 
 /**
@@ -14550,6 +15644,11 @@ export interface UserSecretSet {
    * value. Left out when it has none.
    */
   description?: string;
+  /**
+   * An offer this secret takes (#5308): an agent saved it on a machine, and this client opened it
+   * and sealed it to every machine and client. The offer then goes.
+   */
+  offer?: UUID;
 }
 
 /**
@@ -14576,6 +15675,26 @@ export interface UserSettings {
    * workflow's hours: with no time-zone: go by it.
    */
   timeZone?: JSONValue;
+  /**
+   * ~/.agents/env (#5259), as a UserEnvironment: written to that file on each of the person's
+   * machines. The control plane refuses a value that looks like a secret.
+   */
+  environment?: JSONValue;
+  /**
+   * What agents call the person (#121, #5573), as a PersonSettings with the name resolved on their
+   * Mac: each machine writes it as person/set does.
+   */
+  person?: JSONValue;
+  /**
+   * Auto's order, Include switches and own cells (#2658, FR-017; #5573), as an AutoSettings: each
+   * machine keeps it as auto/set does, with its own runtimes kept.
+   */
+  auto?: JSONValue;
+  /**
+   * How long archived agents are kept (051, #5573), as a RetentionSettings: each machine applies it
+   * as a confirmed retention/set. The person confirmed it on their Mac.
+   */
+  retention?: JSONValue;
   /**
    * #2957, research R11: your layer, as a SignedYourPolicy. Only the keeper sets it
    * (user/setPolicy); a client cannot (user/setSettings refuses this part).
@@ -14604,8 +15723,9 @@ export interface UserSettingsPart {
 
 /**
  * A part of a person's user settings (#1760, #2410). Each part has one fixed scope: MCP servers,
- * agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) and the
- * time zone (#4818) follow the person. Resources belong to each machine. policy (#2957) is set only
+ * agent configuration, runtimes, cost limits, notices (#2859), outside accounts (#3967) the time
+ * zone (#4818), the environment (#5259), and what agents call the person, Auto's settings and
+ * retention (#5573) follow the person. Resources belong to each machine. policy (#2957) is set only
  * by the keeper, through user/setPolicy; user/setSettings refuses it.
  */
 export type UserSettingsPartName =
@@ -14616,7 +15736,11 @@ export type UserSettingsPartName =
   | "notifications"
   | "accounts"
   | "timeZone"
-  | "policy";
+  | "environment"
+  | "policy"
+  | "person"
+  | "auto"
+  | "retention";
 
 /**
  * user/suspended (#1002, FR-018): to each machine of a suspended person, at hello before its
@@ -14771,6 +15895,15 @@ export interface WaitingAgent {
 }
 
 /**
+ * An offer of this machine's that waits for the person's client (#5308): the machine keeps its own
+ * copy of the name until it is gone from offersWaiting.
+ */
+export interface WaitingOffer {
+  name: UserSecretName;
+  offer: UUID;
+}
+
+/**
  * Whether this Mac is kept awake for agents, and for how long after they stop (024), as wake.json
  * in the root.
  */
@@ -14811,6 +15944,153 @@ export interface WakeState {
   since?: WireDate;
   graceUntil?: WireDate;
   onPower: boolean;
+}
+
+/**
+ * A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept
+ * made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in
+ * to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a
+ * claimed machine leaves the pool and does not count). target is written by the control plane and
+ * is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
+ * machines and claims are read-only too (#5366).
+ */
+export interface WarmPool {
+  id: string;
+  name: string;
+  scope: WarmPoolScope;
+  /** The machine provider's id: only a provider can make machines. */
+  provider: string;
+  size?: string;
+  region?: string;
+  /** The runtimes to install; none means those of the pool's projects. */
+  runtimes?: string[];
+  /** The project folders to send, at their last commit. */
+  projects?: string[];
+  /** Machines kept ready (set up, unclaimed). 0 makes nothing. At most maxSize. */
+  minReady: number;
+  /** The most machines held at once, ready or being set up. At least 1. */
+  maxSize: number;
+  /** What the pool aims at: minReady, until auto-scale writes it. */
+  target: number;
+  /** Seconds after which a ready machine is replaced. Default 86400 (24 hours). */
+  replaceAfter?: number;
+  hours?: WarmPoolHours;
+  state: WarmPoolState;
+  ready?: number;
+  settingUp?: number;
+  /** Makes that failed in a row. Three stop the pool. */
+  failedMakes?: number;
+  /** Why the pool stopped making, in the provider's words. */
+  stoppedBecause?: string;
+  /**
+   * The machines the pool holds now, ready, setting up or failed (#5366): a line each on the pool's
+   * card.
+   */
+  machines?: WarmPoolMachine[];
+  claims?: WarmPoolClaims;
+}
+
+/**
+ * pool/claim (#5365, #5366): New Machine's Start from a warm pool. The oldest ready machine of a
+ * pool of this provider and size, bound to the person with their Stop when idle; with none ready, a
+ * new machine.
+ */
+export interface WarmPoolClaim {
+  provider: string;
+  size?: string;
+  region?: string;
+  /** Minutes; 0 is never. Absent keeps the machine's. */
+  stopWhenIdle?: number;
+}
+
+/**
+ * What pool/claim gave: a pool's machine (fromPool, with its host) or a new machine being made,
+ * with note saying so.
+ */
+export interface WarmPoolClaimed {
+  /** The machine's host id; absent for a new machine, which joins on its own. */
+  host?: string;
+  workspace: string;
+  name: string;
+  /** The pool's name, when it came from one. */
+  pool?: string;
+  fromPool: boolean;
+  note?: string;
+}
+
+/**
+ * A pool's claims in the last seven days (#5366): how many, how many found it empty and fell back
+ * to a new machine, and the median time from a claim to the machine being ready, when any is.
+ */
+export interface WarmPoolClaims {
+  count: number;
+  empty: number;
+  medianSeconds?: number;
+}
+
+/**
+ * When a pool runs: on these weekdays (0 Sunday to 6 Saturday) from `from` to `to`, as HH:MM in
+ * `timezone` (an IANA name; UTC when absent). Outside them the ready machines are deleted and none
+ * are made. A pool with no hours runs every day.
+ */
+export interface WarmPoolHours {
+  days: number[];
+  from: string;
+  to: string;
+  timezone?: string;
+}
+
+/** One machine a warm pool holds (#5366). */
+export interface WarmPoolMachine {
+  name: string;
+  state: "ready" | "setting-up" | "failed";
+  madeAt: WireDate;
+  /** What its set-up is doing now, as the running step's line says: installing Claude. */
+  detail?: string;
+}
+
+export interface WarmPoolRequest {
+  id: string;
+}
+
+/** Whose pool it is. Only user is built (#5353). */
+export type WarmPoolScope =
+  | "user"
+  | "project"
+  | "org";
+
+/**
+ * pool/set: makes a pool, or changes the one with this id. The control plane writes target, state
+ * and the counts. Min must not be above max, and max is at least 1.
+ */
+export interface WarmPoolSet {
+  /** Absent makes a new pool. */
+  id?: string;
+  name: string;
+  scope?: WarmPoolScope;
+  provider: string;
+  size?: string;
+  region?: string;
+  runtimes?: string[];
+  projects?: string[];
+  minReady: number;
+  maxSize: number;
+  replaceAfter?: number;
+  hours?: WarmPoolHours;
+}
+
+/**
+ * keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed
+ * in a row, see stoppedBecause. empty: minReady is 0.
+ */
+export type WarmPoolState =
+  | "keeping"
+  | "off-hours"
+  | "stopped"
+  | "empty";
+
+export interface WarmPools {
+  pools: WarmPool[];
 }
 
 /**
@@ -14862,6 +16142,14 @@ export type Weekday =
   | "thu"
   | "fri"
   | "sat";
+
+/**
+ * work/dismiss-lead (#5458): hide an epic from the suggestions until the epic changes or a lead of
+ * it ends. The list is the person's, kept on this machine.
+ */
+export interface WorkDismissLeadRequest {
+  node: LineageNode;
+}
 
 /**
  * A feature in work/features (#4586): feature is it as forge/features says it. epics are its open
@@ -14916,6 +16204,30 @@ export interface WorkFeaturesRequest {
 }
 
 /**
+ * An open epic with no lead, as work/suggest-leads says it (#5458, epic #5457). node, title and url
+ * are the epic's; folder is a folder on this machine on its repo; milestone is its name and due its
+ * due date (YYYY-MM-DD) where the forge says them. done and total are its children closed and all
+ * (0 and 0 for a standing epic, whose plan is a query). high says an open child has the label
+ * priority:high, and ui that an open child is a story (a person can see or use it: a client
+ * changes); the order says why. start is the new-agent form Start lead fills: the prompt, the
+ * labels #<n> and lead, and no worktree. It starts nothing.
+ */
+export interface WorkLeadSuggestion {
+  node: LineageNode;
+  title: string;
+  url?: string;
+  folder?: string;
+  milestone?: string;
+  due?: string;
+  done: number;
+  total: number;
+  high?: boolean;
+  ui?: boolean;
+  standing?: boolean;
+  start: ForgeStart;
+}
+
+/**
  * How a turn ended (#1916): only a question needs the person. A value this build does not know,
  * such as an old record's `blocked`, `stuck` or `partly_done`, reads as `done`.
  */
@@ -14930,6 +16242,28 @@ export interface WorkReport {
   message: string;
   at: WireDate;
   block?: Block;
+}
+
+/**
+ * work/suggest-leads (#5458): New Session's Suggested section, from the forge's open epics and this
+ * machine's sessions. suggestions are at most 3 epics with no lead (no session that is not archived
+ * has both #<epic> and lead), ranked: an epic with priority:high children first, then one with UI
+ * children, then the earliest milestone due date, then the one nearest to done. more is how many
+ * more there are, for N more in Work. An epic the person dismissed is left out until its progress
+ * changes (done or total children; not its update time, #5731) or a lead of it has ended. errors
+ * say a forge that could not be read.
+ */
+export interface WorkSuggestLeads {
+  suggestions: WorkLeadSuggestion[];
+  more: number;
+  errors?: ForgeListError[];
+}
+
+/**
+ * work/suggest-leads (#5458): the epics of every folder on this machine, or of one folder's repo.
+ */
+export interface WorkSuggestLeadsRequest {
+  folder?: string;
 }
 
 /**
@@ -15315,6 +16649,11 @@ export interface WorkflowSummary {
   offReason?: WorkflowOffReason;
   standingAgentID?: UUID;
   mcpTriggers?: MCPTriggerStatus[];
+  /**
+   * Where this machine's approval came from when it is another machine's of the same person
+   * (#5462), such as "Approved by you on Studio, 2026-11-14".
+   */
+  approvedFrom?: string;
 }
 
 export type WorkflowTrigger = WorkflowTriggerStored;
@@ -15459,6 +16798,7 @@ export interface Methods {
   "agents/cancelContinue": { params: AgentRequest; result: Agent };
   "agents/continueInFolder": { params: ContinueInFolderRequest; result: UUID };
   "agents/continueInNew": { params: ContinueInNewRequest; result: UUID };
+  "agents/continueInNewSession": { params: ContinueInNewSessionRequest; result: UUID };
   "agents/continueWhenBack": { params: AgentRequest; result: Agent };
   "agents/delete": { params: AgentRequest; result: Empty };
   "agents/discardDraft": { params: DiscardDraftRequest; result: Empty };
@@ -15487,6 +16827,7 @@ export interface Methods {
   "agents/setLevels": { params: SetLevelsRequest; result: Agent };
   "agents/setMuted": { params: SetMutedRequest; result: Empty };
   "agents/setOption": { params: SetOptionRequest; result: ConfigOption[] };
+  "agents/setPriority": { params: SetPriorityRequest; result: Agent };
   "agents/setSandbox": { params: SetSandboxRequest; result: Agent };
   "agents/setUnread": { params: SetUnreadRequest; result: Empty };
   "agents/start": { params: StartRequest; result: UUID };
@@ -15550,6 +16891,7 @@ export interface Methods {
   "connections/bot/start": { params: ConnectionBotStartRequest; result: ConnectionBotStart };
   "connections/disconnect": { params: ConnectionProviderRequest; result: ConnectionDisconnectAnswer };
   "connections/list": { params: Empty; result: ConnectionsList };
+  "connections/listAll": { params: Empty; result: ConnectionsListAll };
   "connections/sign-in": { params: ConnectionProviderRequest; result: ConnectionSignIn };
   "connections/sign-in/cancel": { params: ConnectionSignInFlowRequest; result: ConnectionSignIn };
   "connections/sign-in/complete": { params: ConnectionSignInCompleteRequest; result: ConnectionSignIn };
@@ -15576,19 +16918,28 @@ export interface Methods {
   "daemon/policyState": { params: Empty; result: PolicyState };
   "dailySummary/setSettings": { params: DailySummarySettings; result: DailySummarySettings };
   "dailySummary/settings": { params: Empty; result: DailySummarySettings };
+  "deploys/delivery": { params: DeploysDeliveryRequest; result: DeploysDelivery };
+  "deploys/deliveryAll": { params: DeploysDeliveryRequest; result: DeploysDelivery };
+  "deploys/targets": { params: DeployTargetsRequest; result: DeployTargets };
   "desktopControl/resume": { params: AgentRequest; result: Empty };
   "desktopControl/set": { params: DesktopControlSettings; result: DesktopControlSettings };
   "desktopControl/state": { params: Empty; result: DesktopControlSettings };
   "desktopControl/takeOver": { params: AgentRequest; result: Empty };
   "disk/state": { params: Empty; result: DiskState };
   "docs/list": { params: DocsListRequest; result: DocsList };
+  "docs/listAll": { params: DocsListAllRequest; result: DocsListAll };
   "docs/read": { params: DocsReadRequest; result: DocsReading };
   "docs/search": { params: DocsSearchRequest; result: DocsSearch };
   "dropbox/put": { params: DropboxPutRequest; result: DropboxPutResponse };
   "elicitations/answer": { params: AnswerElicitationRequest; result: Empty };
   "elicitations/pending": { params: Empty; result: ElicitationRequest[] };
+  "env/discard": { params: Empty; result: Empty };
+  "env/list": { params: EnvListRequest; result: EnvList };
+  "env/resolve": { params: EnvResolveRequest; result: EnvResolved };
+  "env/write": { params: EnvWriteRequest; result: Empty };
   "events/cancelWait": { params: CancelWaitRequest; result: WaitingAgent[] };
   "events/list": { params: EventsListRequest; result: EventsPage };
+  "events/listAll": { params: EventsListAllRequest; result: EventsListAll };
   "files/browse": { params: FilesBrowseRequest; result: DirectoryListing };
   "files/complete": { params: FileCompletionRequest; result: FileCompletions };
   "files/diagnostics": { params: FileDiagnosticsRequest; result: FileDiagnostics };
@@ -15621,6 +16972,7 @@ export interface Methods {
   "forge/assign": { params: ForgeAssignRequest; result: ForgeDone };
   "forge/blocked-by": { params: ForgeBlockedByRequest; result: ForgeDone };
   "forge/boards": { params: ForgeBoardsRequest; result: ForgeBoards };
+  "forge/boardsAll": { params: Empty; result: ForgeBoardsAll };
   "forge/cancel-auto-merge": { params: ForgeNodeRequest; result: ForgeDone };
   "forge/close": { params: ForgeCloseRequest; result: ForgeDone };
   "forge/comment": { params: ForgeCommentRequest; result: ForgeDone };
@@ -15631,8 +16983,10 @@ export interface Methods {
   "forge/issues": { params: ForgeListRequest; result: ForgeList };
   "forge/label": { params: ForgeLabelRequest; result: ForgeDone };
   "forge/labels": { params: ForgeNodeRequest; result: ForgeLabels };
+  "forge/listAll": { params: ForgeListAllRequest; result: ForgeListAll };
   "forge/log": { params: ForgeLogRequest; result: ForgeLog };
   "forge/merge": { params: ForgeMergeRequest; result: ForgeDone };
+  "forge/next": { params: ForgeNextRequest; result: ForgeNext };
   "forge/plan": { params: ForgePlanRequest; result: ForgePlan };
   "forge/pull": { params: ForgeItemRequest; result: ForgeItemDetail };
   "forge/pulls": { params: ForgeListRequest; result: ForgeList };
@@ -15654,6 +17008,7 @@ export interface Methods {
   "lineage/estimate": { params: LineageEstimateRequest; result: LineageEstimate };
   "lineage/figures": { params: LineageNodeRequest; result: LineageFigures };
   "lineage/forecast": { params: LineageForecastRequest; result: LineageForecast };
+  "lineage/forecastAll": { params: LineageForecastRequest; result: LineageForecastAll };
   "lineage/sessions": { params: LineageSessionsRequest; result: LineageSessions };
   "lineage/sessionsOn": { params: LineageSessionsOnRequest; result: LineageSessionsOn };
   "lineage/walk": { params: LineageNodeRequest; result: LineageGraph };
@@ -15673,6 +17028,8 @@ export interface Methods {
   "lock/joinReveal": { params: LockJoinNonce; result: Empty };
   "lock/reset": { params: Empty; result: Empty };
   "machine/usage": { params: Empty; result: MachineUsageState };
+  "machines/agents": { params: MachineRequest; result: MachineAgents };
+  "machines/agentsChanges": { params: AgentsChangesRequest; result: AgentsChanges };
   "machines/approveJoin": { params: JoinRequestDecide; result: JoinApproved };
   "machines/checkAgain": { params: MachineRequest; result: Empty };
   "machines/deleteMachine": { params: MachineRequest; result: Empty };
@@ -15684,10 +17041,11 @@ export interface Methods {
   "machines/lastHeard": { params: MachineRequest; result: MachineLastHeard };
   "machines/lendGit": { params: LendGit; result: Empty };
   "machines/link": { params: MachineLink; result: ControlMachine };
-  "machines/list": { params: Empty; result: ControlMachine[] };
-  "machines/listKept": { params: Empty; result: KeptList };
+  "machines/list": { params: MachineListQuery; result: ControlMachine[] | MachineList };
+  "machines/listKept": { params: KeptListQuery; result: KeptList };
   "machines/remove": { params: MachineRequest; result: Empty };
   "machines/retryKept": { params: KeptRequestID; result: Empty };
+  "machines/setLabels": { params: MachineLabelsRequest; result: MachineLabelsResult };
   "machines/setMachineOptions": { params: MachineOptions; result: ControlMachine };
   "machines/start": { params: MachineRequest; result: ControlMachine };
   "machines/startEnroll": { params: MachineEnroll; result: ControlCodeShown };
@@ -15695,13 +17053,16 @@ export interface Methods {
   "machines/unlink": { params: MachineRequest; result: ControlMachine };
   "machines/update": { params: MachineUpdate; result: JSONValue };
   "marketplaces/list": { params: MarketplacesListRequest; result: MarketplacesListAnswer };
+  "mcp/approve": { params: MCPApproveRequest; result: MCPListAnswer };
   "mcp/health": { params: Empty; result: MCPHealthSnapshot };
   "mcp/health/check": { params: MCPHealthCheckRequest; result: MCPHealthSnapshot };
   "mcp/hosted": { params: Empty; result: HostedMCPSnapshot };
+  "mcp/list": { params: MCPListRequest; result: MCPListAnswer };
   "mcp/remove": { params: MCPRemoveRequest; result: MCPRemoveAnswer };
   "mcp/setToolLevel": { params: MCPSetToolLevelRequest; result: MCPToolsAnswer };
   "mcp/tools": { params: MCPToolsRequest; result: MCPToolsAnswer };
   "messages/conversations": { params: MessagesConversationsRequest; result: MessagesConversations };
+  "messages/conversationsAll": { params: MessagesConversationsAllRequest; result: MessagesConversationsAll };
   "messages/markAllRead": { params: MessagesMarkAllReadRequest; result: MessagesMarkedAllRead };
   "messages/read": { params: MessagesReadRequest; result: MessagesRead };
   "messages/reply": { params: MessagesReplyRequest; result: MessagesReplied };
@@ -15788,6 +17149,7 @@ export interface Methods {
   "reports/deleteView": { params: ReportViewID; result: ReportViews };
   "reports/export": { params: ReportQuery; result: ReportExport };
   "reports/features": { params: Empty; result: FeatureUsage };
+  "reports/featuresAll": { params: Empty; result: FeatureUsageAll };
   "reports/nodes": { params: ReportNodesQuery; result: ReportNodes };
   "reports/policy": { params: Empty; result: ReportPolicy };
   "reports/problem": { params: ProblemReportRequest; result: ProblemReport };
@@ -15828,6 +17190,7 @@ export interface Methods {
   "secrets/sessionRemove": { params: SessionSecretRemoveRequest; result: SessionSecrets };
   "secrets/sessionSet": { params: SessionSecretSetRequest; result: SessionSecrets };
   "secrets/setNeedsApproval": { params: SecretNeedsApprovalRequest; result: Empty };
+  "sessions/previewStart": { params: AutoMachineRequest; result: AutoMachinePick };
   "settings/passThrough": { params: Empty; result: PassThroughState };
   "signIn/approve": { params: SignInDecide; result: Empty };
   "signIn/configure": { params: SignInConfigure; result: SignInProviders };
@@ -15859,9 +17222,11 @@ export interface Methods {
   "surface/identify": { params: SurfaceIdentification; result: Empty };
   "time/history": { params: Empty; result: TimeHistory };
   "usage/history": { params: Empty; result: UsageHistory };
+  "user/dropSecretOffer": { params: SecretOfferRequest; result: Empty };
   "user/removeSecret": { params: UserSecretRequest; result: Empty };
   "user/sealedSecret": { params: UserSealedSecretRequest; result: UserSealedSecret };
   "user/secretNames": { params: Empty; result: UserSecretNames };
+  "user/secretOffers": { params: Empty; result: SecretOffers };
   "user/secretRecipients": { params: Empty; result: SealRecipients };
   "user/setSecret": { params: UserSecretSet; result: Empty };
   "user/setSettings": { params: UserSettingsPart; result: Empty };
@@ -15874,7 +17239,9 @@ export interface Methods {
   "views/show": { params: ViewShowRequest; result: Empty };
   "wake/set": { params: WakeSettings; result: WakeSettings };
   "wake/settings": { params: Empty; result: WakeSettings };
+  "work/dismiss-lead": { params: WorkDismissLeadRequest; result: ForgeDone };
   "work/features": { params: WorkFeaturesRequest; result: WorkFeatures };
+  "work/suggest-leads": { params: WorkSuggestLeadsRequest; result: WorkSuggestLeads };
   "work/timeline": { params: WorkTimelineRequest; result: WorkTimeline };
   "workflows/approve": { params: WorkflowApproveRequest; result: WorkflowSummary };
   "workflows/archive": { params: WorkflowArchiveRequest; result: WorkflowSummary };
@@ -15907,6 +17274,7 @@ export const MethodTarget = {
   "agents/cancelContinue": "host",
   "agents/continueInFolder": "host",
   "agents/continueInNew": "host",
+  "agents/continueInNewSession": "host",
   "agents/continueWhenBack": "host",
   "agents/delete": "host",
   "agents/discardDraft": "host",
@@ -15935,6 +17303,7 @@ export const MethodTarget = {
   "agents/setLevels": "host",
   "agents/setMuted": "host",
   "agents/setOption": "host",
+  "agents/setPriority": "host",
   "agents/setSandbox": "host",
   "agents/setUnread": "host",
   "agents/start": "host",
@@ -15998,6 +17367,7 @@ export const MethodTarget = {
   "connections/bot/start": "host",
   "connections/disconnect": "host",
   "connections/list": "host",
+  "connections/listAll": "control",
   "connections/sign-in": "host",
   "connections/sign-in/cancel": "host",
   "connections/sign-in/complete": "host",
@@ -16024,19 +17394,28 @@ export const MethodTarget = {
   "daemon/policyState": "host",
   "dailySummary/setSettings": "host",
   "dailySummary/settings": "host",
+  "deploys/delivery": "host",
+  "deploys/deliveryAll": "control",
+  "deploys/targets": "host",
   "desktopControl/resume": "host",
   "desktopControl/set": "host",
   "desktopControl/state": "host",
   "desktopControl/takeOver": "host",
   "disk/state": "host",
   "docs/list": "host",
+  "docs/listAll": "control",
   "docs/read": "host",
   "docs/search": "host",
   "dropbox/put": "host",
   "elicitations/answer": "host",
   "elicitations/pending": "host",
+  "env/discard": "host",
+  "env/list": "host",
+  "env/resolve": "host",
+  "env/write": "host",
   "events/cancelWait": "host",
   "events/list": "host",
+  "events/listAll": "control",
   "files/browse": "host",
   "files/complete": "host",
   "files/diagnostics": "host",
@@ -16069,6 +17448,7 @@ export const MethodTarget = {
   "forge/assign": "host",
   "forge/blocked-by": "host",
   "forge/boards": "host",
+  "forge/boardsAll": "control",
   "forge/cancel-auto-merge": "host",
   "forge/close": "host",
   "forge/comment": "host",
@@ -16079,8 +17459,10 @@ export const MethodTarget = {
   "forge/issues": "host",
   "forge/label": "host",
   "forge/labels": "host",
+  "forge/listAll": "control",
   "forge/log": "host",
   "forge/merge": "host",
+  "forge/next": "host",
   "forge/plan": "host",
   "forge/pull": "host",
   "forge/pulls": "host",
@@ -16102,6 +17484,7 @@ export const MethodTarget = {
   "lineage/estimate": "host",
   "lineage/figures": "host",
   "lineage/forecast": "host",
+  "lineage/forecastAll": "control",
   "lineage/sessions": "host",
   "lineage/sessionsOn": "control",
   "lineage/walk": "host",
@@ -16121,6 +17504,8 @@ export const MethodTarget = {
   "lock/joinReveal": "control",
   "lock/reset": "control",
   "machine/usage": "host",
+  "machines/agents": "control",
+  "machines/agentsChanges": "control",
   "machines/approveJoin": "control",
   "machines/checkAgain": "control",
   "machines/deleteMachine": "control",
@@ -16136,6 +17521,7 @@ export const MethodTarget = {
   "machines/listKept": "control",
   "machines/remove": "control",
   "machines/retryKept": "control",
+  "machines/setLabels": "control",
   "machines/setMachineOptions": "control",
   "machines/start": "control",
   "machines/startEnroll": "control",
@@ -16143,13 +17529,16 @@ export const MethodTarget = {
   "machines/unlink": "control",
   "machines/update": "control",
   "marketplaces/list": "host",
+  "mcp/approve": "host",
   "mcp/health": "host",
   "mcp/health/check": "host",
   "mcp/hosted": "host",
+  "mcp/list": "host",
   "mcp/remove": "host",
   "mcp/setToolLevel": "host",
   "mcp/tools": "host",
   "messages/conversations": "host",
+  "messages/conversationsAll": "control",
   "messages/markAllRead": "host",
   "messages/read": "host",
   "messages/reply": "host",
@@ -16236,6 +17625,7 @@ export const MethodTarget = {
   "reports/deleteView": "control",
   "reports/export": "control",
   "reports/features": "host",
+  "reports/featuresAll": "control",
   "reports/nodes": "control",
   "reports/policy": "control",
   "reports/problem": "host",
@@ -16276,6 +17666,7 @@ export const MethodTarget = {
   "secrets/sessionRemove": "host",
   "secrets/sessionSet": "host",
   "secrets/setNeedsApproval": "host",
+  "sessions/previewStart": "control",
   "settings/passThrough": "host",
   "signIn/approve": "control",
   "signIn/configure": "control",
@@ -16307,9 +17698,11 @@ export const MethodTarget = {
   "surface/identify": "host",
   "time/history": "host",
   "usage/history": "host",
+  "user/dropSecretOffer": "control",
   "user/removeSecret": "control",
   "user/sealedSecret": "control",
   "user/secretNames": "control",
+  "user/secretOffers": "control",
   "user/secretRecipients": "control",
   "user/setSecret": "control",
   "user/setSettings": "control",
@@ -16322,7 +17715,9 @@ export const MethodTarget = {
   "views/show": "host",
   "wake/set": "host",
   "wake/settings": "host",
+  "work/dismiss-lead": "host",
   "work/features": "host",
+  "work/suggest-leads": "host",
   "work/timeline": "host",
   "workflows/approve": "host",
   "workflows/archive": "host",
@@ -16397,6 +17792,7 @@ export interface Notifications {
   "dailySummary/changed": DailySummarySettings;
   "desktopControl/liveFrame": DesktopControlLiveFrame;
   "disk/changed": DiskState;
+  "env/changed": EnvChanged;
   "events/changed": EventsChange;
   "files/changed": FilesChangedNotification;
   "folder/changed": FolderSummary;
@@ -16438,7 +17834,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AddFolderRequest: { required: ["folder"], optional: ["project"] },
   Admitted: { required: [], optional: ["client", "host"] },
   AdoptRequest: { required: ["runtimeID", "sessionID", "cwd"], optional: [] },
-  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project"] },
+  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project"] },
   AgentChanges: { required: ["epoch", "revision", "removed", "all"], optional: [] },
   AgentConfigEditorFile: { required: ["path", "content"], optional: [] },
   AgentConfigEditorRequest: { required: ["kind"], optional: ["folder"] },
@@ -16452,8 +17848,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AgentMachinesProvider: { required: ["id", "name", "canMake", "canDelete", "workspaces"], optional: ["options"] },
   AgentRemovedNotification: { required: ["agentID"], optional: [] },
   AgentRequest: { required: ["agentID"], optional: [] },
+  AgentSecretOffer: { required: ["offer", "name", "savedAt", "sealed"], optional: ["needsApproval", "description", "agent"] },
   AgentStopRequest: { required: ["agentID"], optional: ["byAdmin"] },
   AgentWorktree: { required: ["name", "root", "madeByApp", "folder"], optional: ["branch", "base"] },
+  AgentsChange: { required: ["title", "sha"], optional: ["number", "date"] },
+  AgentsChanges: { required: ["base", "head", "ahead", "behind", "changes", "complete"], optional: [] },
+  AgentsChangesRequest: { required: ["base", "head"], optional: ["limit"] },
   AgentsExport: { required: ["file", "agents", "name"], optional: [] },
   AgentsExportRequest: { required: [], optional: ["agentID", "folder"] },
   AgentsImportRequest: { required: ["upload"], optional: ["folder"] },
@@ -16494,6 +17894,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AuditSinksState: { required: ["sinks"], optional: [] },
   AuthStatus: { required: ["kind", "label"], optional: [] },
   AuthenticateRequest: { required: ["runtimeID", "methodID"], optional: ["accountID"] },
+  AutoMachinePick: { required: [], optional: ["machine", "machineName", "tier", "reason", "loadPerCore", "commit", "text", "none", "offline", "single"] },
+  AutoMachineRequest: { required: ["project", "runtimeID"], optional: [] },
   AutoMapping: { required: ["runtimeID", "field", "level", "words", "mark"], optional: ["native", "note"] },
   AutoMappings: { required: ["cells", "choices"], optional: [] },
   AutoNativeChoice: { required: ["runtimeID", "field", "native", "words"], optional: [] },
@@ -16574,6 +17976,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   BusSubscription: { required: ["id"], optional: ["provider", "type", "topics", "subject"] },
   CancelWaitRequest: { required: ["agentID"], optional: [] },
   CapReached: { required: ["user", "name", "spentUSD", "capUSD", "until"], optional: ["group"] },
+  CapacityReport: { required: ["level"], optional: ["loadPerCore5"] },
   CapacityState: { required: ["level"], optional: ["words"] },
   CatalogApproval: { required: ["kind", "name", "by", "at"], optional: ["source", "group", "groupName", "user", "userName"] },
   CatalogApprovalList: { required: ["approvals"], optional: [] },
@@ -16642,6 +18045,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ConnectionTokenAnswer: { required: [], optional: ["connection", "error"] },
   ConnectionTokenRequest: { required: ["provider", "token"], optional: ["url", "user"] },
   ConnectionsList: { required: ["connections"], optional: ["providers"] },
+  ConnectionsListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
   ConnectorCodespace: { required: ["id", "name", "repository", "state", "ssh"], optional: ["ref"] },
   ConnectorCodespaces: { required: ["codespaces"], optional: ["repository", "message"] },
   ConnectorCodespacesRequest: { required: ["folder", "action"], optional: ["id", "name"] },
@@ -16656,6 +18060,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ContentBlockAnnotations: { required: [], optional: ["audience", "priority"] },
   ContinueInFolderRequest: { required: ["agentID", "text", "attachments"], optional: ["requestID"] },
   ContinueInNewRequest: { required: ["agentID"], optional: ["accountID", "requestID", "auto"] },
+  ContinueInNewSessionRequest: { required: ["agentID"], optional: ["requestID"] },
   ContinueWhenBack: { required: ["at", "resetKnown"], optional: [] },
   ControlAuth: { required: ["id", "nonce", "mac", "kind"], optional: ["epoch", "capabilities", "page", "publicKey"] },
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
@@ -16664,7 +18069,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "missing", "owner"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
   ControlNewKey: { required: ["key", "proof"], optional: [] },
   ControlNotice: { required: ["kind", "words"], optional: ["user", "group"] },
@@ -16691,10 +18096,20 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   DeployCheck: { required: ["kind", "system", "when", "state", "rawState"], optional: ["id", "name", "url"] },
   DeployCheckEvent: { required: ["check", "target", "component", "environment", "tier"], optional: ["deploy"] },
   DeployComponent: { required: ["system", "id"], optional: ["kind", "name", "repo"] },
+  DeployDeliveryEnvironment: { required: ["name", "ref", "tier"], optional: [] },
+  DeployDeliveryFact: { required: ["ref", "component", "state", "at", "environments"], optional: ["rollback", "merges", "health"] },
+  DeployDeliveryTarget: { required: ["component", "environment", "environmentRef", "tier", "ended", "failed", "rollbacks", "deploymentFrequency", "leadTime", "changeFailureRate", "recoveryTime"], optional: [] },
   DeployEnvironment: { required: ["system", "name", "tier"], optional: ["ephemeral", "url"] },
   DeployEvent: { required: ["deploy", "component", "environment", "tier"], optional: ["outcome"] },
+  DeployOnTarget: { required: ["deploy"], optional: ["release", "since", "share"] },
   DeployTarget: { required: ["component", "environment"], optional: ["labels", "system", "id", "ref"] },
+  DeployTargetNow: { required: ["target", "live", "next"], optional: [] },
+  DeployTargets: { required: ["targets", "at"], optional: [] },
+  DeployTargetsRequest: { required: [], optional: [] },
   DeployVersion: { required: ["artifacts"], optional: ["name", "system", "id", "ref"] },
+  DeploysDelivery: { required: ["since", "at", "windowDays", "deploys", "targets"], optional: ["resolving"] },
+  DeploysDeliveryRequest: { required: ["range"], optional: ["tier", "scope"] },
+  DeploysSync: { required: ["deploys"], optional: ["resolving"] },
   DesktopControlLiveFrame: { required: ["agentID", "capturedAt"], optional: ["image", "locked", "narration"] },
   DesktopControlPause: { required: ["app", "pausedAt"], optional: [] },
   DesktopControlSettings: { required: ["enabled"], optional: ["mode"] },
@@ -16717,6 +18132,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   DiskWorktree: { required: ["name", "bytes", "partial"], optional: [] },
   Doc: { required: ["ref", "title", "source"], optional: ["folder", "path", "url", "updated"] },
   DocsList: { required: ["docs", "sources"], optional: ["cursor"] },
+  DocsListAll: { required: ["docs", "sources", "unreached", "notAsked"], optional: ["cursor"] },
+  DocsListAllRequest: { required: [], optional: ["source", "limit", "cursor"] },
   DocsListRequest: { required: [], optional: ["folder", "source", "cursor", "limit"] },
   DocsMatch: { required: ["snippet"], optional: ["line"] },
   DocsReadRequest: { required: ["ref"], optional: ["from", "to"] },
@@ -16750,6 +18167,15 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ElicitationSecret: { required: ["name", "isSet"], optional: ["url", "canBeSessionOnly", "canAskBeforeUse", "description"] },
   Empty: { required: [], optional: [] },
   EntryNotification: { required: ["agentID", "entry"], optional: ["index", "oversized"] },
+  EnvChanged: { required: [], optional: ["folder", "yours"] },
+  EnvFile: { required: ["layer", "path", "exists", "variables"], optional: ["folder", "problem", "uncommitted", "changedByHand"] },
+  EnvList: { required: ["files"], optional: [] },
+  EnvListRequest: { required: [], optional: ["folder"] },
+  EnvResolveRequest: { required: [], optional: ["folder", "agentID"] },
+  EnvResolved: { required: ["folder", "variables"], optional: [] },
+  EnvResolvedVariable: { required: ["name", "state"], optional: ["value", "layer", "over", "reason"] },
+  EnvVariable: { required: ["name", "value", "line", "state"], optional: ["description", "reason"] },
+  EnvWriteRequest: { required: ["folder", "name"], optional: ["value", "description"] },
   Event: { required: ["position", "name", "at", "count", "scope", "sentence", "details", "chainDepth", "consequences"], optional: ["lastAt", "publisher", "message", "actor", "specversion", "id", "type", "provider", "topic", "subject", "source", "time", "producer", "data"] },
   EventDraft: { required: ["name", "at", "scope", "sentence", "details", "chainDepth"], optional: ["message"] },
   EventPattern: { required: ["name", "filters"], optional: ["anyOf", "provider", "topics", "subject", "debounce"] },
@@ -16757,9 +18183,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   EventRaiseRequest: { required: ["draft"], optional: ["consequences"] },
   EventWait: { required: ["id", "patterns", "from", "since"], optional: ["deadline", "ending", "resumePromptID", "serverEvents", "forPerson"] },
   EventsChange: { required: ["waiting"], optional: ["event"] },
+  EventsListAll: { required: ["pages", "unreached", "notAsked"], optional: [] },
+  EventsListAllRequest: { required: [], optional: ["limit"] },
   EventsListRequest: { required: ["limit"], optional: ["before", "scope", "groups"] },
   EventsPage: { required: ["events", "waiting", "hasMore"], optional: ["producer"] },
   FeatureUsage: { required: ["days", "features"], optional: ["since"] },
+  FeatureUsageAll: { required: ["usage", "unreached", "notAsked"], optional: [] },
   FeatureUse: { required: ["method", "week", "quarter", "clients"], optional: ["lastUsed"] },
   FileCompletion: { required: ["label"], optional: ["insert", "detail"] },
   FileCompletionRequest: { required: ["agentID", "path", "text", "line", "column"], optional: [] },
@@ -16789,7 +18218,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   Folder: { required: ["folder", "addedAt"], optional: ["archivedAt", "helperLimits", "diskSpace", "pinned", "prCostComment", "workingHours"] },
   FolderDetection: { required: ["enabled", "paths"], optional: [] },
   FolderHunk: { required: ["oldStart", "newStart", "noNewlineAtEnd", "lines"], optional: [] },
-  FolderMCPServer: { required: ["name", "summary", "approval", "missingSecrets", "secretNames", "entryDigest"], optional: ["managed", "signIn", "views"] },
+  FolderMCPServer: { required: ["name", "summary", "approval", "missingSecrets", "secretNames", "entryDigest"], optional: ["managed", "signIn", "views", "approvedFrom"] },
   FolderPins: { required: ["folder", "pins"], optional: ["sessions", "workflows", "views", "reviews", "suggestions"] },
   FolderPlugin: { required: ["folder", "name", "carries", "folderPath"], optional: ["awaitingApproval"] },
   FolderRemovedNotification: { required: ["folder"], optional: [] },
@@ -16803,6 +18232,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeAssignRequest: { required: ["node"], optional: ["add", "remove"] },
   ForgeBlockedByRequest: { required: ["node"], optional: ["add", "remove"] },
   ForgeBoards: { required: ["boards"], optional: [] },
+  ForgeBoardsAll: { required: ["boards", "unreached", "notAsked"], optional: [] },
   ForgeBoardsRequest: { required: [], optional: ["folder"] },
   ForgeCapabilities: { required: ["forge", "issues", "pulls", "labelColors", "avatars", "stateReason", "commentCount"], optional: ["createdAt", "closedAt", "children", "linkedPulls", "events", "total", "releases", "branches", "mergedBy", "mergeCommit", "size", "reviewers", "closes", "checkTimes", "commentsMost"] },
   ForgeCheck: { required: ["name", "state"], optional: ["url", "startedAt", "finishedAt"] },
@@ -16819,8 +18249,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeFeaturesRequest: { required: [], optional: ["folder", "board"] },
   ForgeImage: { required: ["mimeType", "data"], optional: [] },
   ForgeImageRequest: { required: ["url"], optional: [] },
-  ForgeItem: { required: ["node", "title", "state", "labels", "assignees", "updatedAt", "comments"], optional: ["stateReason", "status", "url", "folder", "author", "authorAvatar", "milestone", "createdAt", "closedAt", "draft", "checks", "review", "mergeable", "autoMerge", "headRef", "baseRef", "mergedBy", "mergeCommit", "parent", "level", "feature", "progress", "standing"] },
-  ForgeItemDetail: { required: ["item", "body", "comments"], optional: ["cursor", "checks", "reviewThreads", "filesChanged", "additions", "deletions", "commits", "reviewers", "closes", "head", "mergeMethods", "start", "transitions", "actions", "children", "linkedPulls", "events"] },
+  ForgeItem: { required: ["node", "title", "state", "labels", "assignees", "updatedAt", "comments"], optional: ["stateReason", "status", "url", "folder", "author", "authorAvatar", "milestone", "milestoneDue", "priority", "onHold", "createdAt", "closedAt", "draft", "checks", "review", "mergeable", "autoMerge", "headRef", "baseRef", "mergedBy", "mergeCommit", "parent", "level", "feature", "progress", "standing"] },
+  ForgeItemDetail: { required: ["item", "body", "comments"], optional: ["viewer", "cursor", "checks", "reviewThreads", "filesChanged", "additions", "deletions", "commits", "reviewers", "closes", "head", "mergeMethods", "start", "transitions", "actions", "children", "linkedPulls", "events"] },
   ForgeItemRequest: { required: ["node"], optional: ["cursor"] },
   ForgeLabel: { required: ["name"], optional: ["color"] },
   ForgeLabelRequest: { required: ["node"], optional: ["add", "remove"] },
@@ -16828,12 +18258,17 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeLead: { required: ["session", "state"], optional: ["title"] },
   ForgeLinked: { required: ["node", "title", "state"], optional: ["url"] },
   ForgeList: { required: ["items"], optional: ["cursor", "total", "errors", "forges"] },
+  ForgeListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
+  ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "limit", "pages"] },
   ForgeListError: { required: ["forge", "message"], optional: [] },
   ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board"] },
   ForgeLog: { required: ["text"], optional: [] },
   ForgeLogRequest: { required: ["node"], optional: ["check"] },
   ForgeLogins: { required: [], optional: ["github", "gitlab", "linear", "jira", "forgejo", "bitbucket", "azureDevOps"] },
   ForgeMergeRequest: { required: ["node", "sha"], optional: ["method", "auto"] },
+  ForgeNext: { required: ["rows", "readAt"], optional: ["errors"] },
+  ForgeNextRequest: { required: ["folder"], optional: ["epic", "level"] },
+  ForgeNextRow: { required: ["item", "place", "reasons", "onHold"], optional: [] },
   ForgeNodeRequest: { required: ["node"], optional: [] },
   ForgePlan: { required: ["item", "children", "steps"], optional: ["lead", "standing"] },
   ForgePlanChild: { required: ["item", "blockedBy", "step"], optional: ["blockedOutside"] },
@@ -16880,7 +18315,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   JoinedFolder: { required: ["folder", "name", "project"], optional: [] },
   KeepRequest: { required: ["host", "method", "params"], optional: ["signed"] },
   KeptDelivered: { required: ["host", "id"], optional: ["agentID"] },
-  KeptList: { required: ["kept"], optional: [] },
+  KeptList: { required: ["kept"], optional: ["next", "counts"] },
+  KeptListQuery: { required: [], optional: ["query", "kind", "limit", "cursor"] },
   KeptRequest: { required: ["id", "host", "kind", "text", "at"], optional: ["agentID", "folder", "runtimeID", "failed"] },
   KeptRequestID: { required: ["host", "id"], optional: [] },
   LabelVocabularyRequest: { required: ["folder"], optional: [] },
@@ -16909,6 +18345,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LineageEstimateRequest: { required: ["node"], optional: ["startAt"] },
   LineageFigures: { required: ["node", "cost", "sessions", "running", "runtimes"], optional: ["leadTimeSeconds", "limited", "delivery"] },
   LineageForecast: { required: ["at", "windowDays", "landings", "burn", "serviceLevels"], optional: ["node", "milestone", "lands", "noForecast", "toComplete", "kept", "spend", "overhead", "assumes", "whatIf"] },
+  LineageForecastAll: { required: ["forecasts", "unreached", "notAsked"], optional: [] },
   LineageForecastAssumes: { required: ["lanes", "peakLanes", "runtimes"], optional: [] },
   LineageForecastBurn: { required: ["credentialKey", "window", "used", "at", "resetsAt", "lasts"], optional: ["runsOutAt"] },
   LineageForecastKept: { required: ["at", "p50", "p85", "windowDays", "share", "open"], optional: [] },
@@ -16928,7 +18365,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LineageNodeRequest: { required: ["node"], optional: ["depth"] },
   LineageOverhead: { required: ["windowDays", "linked", "unlinked", "uncounted"], optional: ["currency", "unlinkedRatio", "epicRatio"] },
   LineagePRCI: { required: ["headSha"], optional: ["pushedAt", "greenAt"] },
-  LineageResolved: { required: ["title"], optional: ["state", "labels", "createdAt"] },
+  LineageResolved: { required: ["title"], optional: ["state", "labels", "createdAt", "deploy"] },
   LineageRuntimeCount: { required: ["runtimeID", "sessions"], optional: [] },
   LineageSessionIssue: { required: ["node"], optional: ["title"] },
   LineageSessionMatch: { required: ["agentID", "on"], optional: [] },
@@ -16964,7 +18401,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LockJoinDecided: { required: ["request", "result"], optional: [] },
   LockJoinEnd: { required: ["request"], optional: [] },
   LockJoinNonce: { required: ["request", "nonce"], optional: [] },
-  LockJoinRequest: { required: ["request", "client", "name", "kind", "key", "commitment", "expires"], optional: ["machine", "nonce", "answeredBy", "reveal"] },
+  LockJoinRequest: { required: ["request", "client", "name", "kind", "key", "commitment", "expires"], optional: ["machine", "nonce", "answeredBy", "reveal", "compared"] },
   LockJoinStarted: { required: ["request", "expires"], optional: [] },
   LockSignature: { required: ["at", "key", "sig"], optional: ["to"] },
   MCPAddAnswer: { required: [], optional: ["server", "error"] },
@@ -17012,14 +18449,27 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MacPathRequest: { required: ["path"], optional: ["app"] },
   MacTerminalRequest: { required: [], optional: ["path"] },
   MachineAccountsCall: { required: [], optional: ["add", "ops", "remove"] },
+  MachineAgents: { required: ["host", "version", "history", "others"], optional: ["since", "previous", "changes", "changesError"] },
+  MachineAgentsOther: { required: ["host", "name", "version"], optional: ["since", "ahead", "behind"] },
+  MachineAgentsVersion: { required: ["version"], optional: ["since"] },
   MachineAnnounce: { required: ["publicKey", "name", "platform", "version", "machineID"], optional: ["implementation"] },
   MachineBotKey: { required: ["host"], optional: ["copy", "drop"] },
   MachineCatalog: { required: ["items"], optional: [] },
   MachineClient: { required: ["id", "kind", "publicKey"], optional: ["person"] },
   MachineClients: { required: ["clients"], optional: ["user"] },
+  MachineConnections: { required: ["machine", "machineName", "connections"], optional: [] },
+  MachineConversation: { required: ["machine", "machineName", "conversation"], optional: [] },
+  MachineCounts: { required: ["state", "labels", "provider", "os", "version"], optional: [] },
+  MachineCursor: { required: ["machine", "cursor"], optional: [] },
+  MachineDoc: { required: ["machine", "machineName", "doc"], optional: [] },
+  MachineDocsSource: { required: ["machine", "machineName", "source"], optional: [] },
   MachineEnroll: { required: [], optional: ["as"] },
+  MachineEventsPage: { required: ["machine", "machineName", "page"], optional: [] },
+  MachineFeatureUsage: { required: ["machine", "machineName", "usage"], optional: [] },
   MachineFolderSend: { required: ["host"], optional: ["state", "upload", "receive", "facts", "pack", "read", "moveIn"] },
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read"] },
+  MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
+  MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
   MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
   MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined"] },
@@ -17028,8 +18478,14 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineJoinDecision: { required: ["result"], optional: ["host", "controlKey", "name"] },
   MachineJoinStatus: { required: ["member", "connected", "at"], optional: ["problem"] },
   MachineJoinTicket: { required: ["request", "code", "expires"], optional: [] },
+  MachineLabelsRequest: { required: ["machines"], optional: ["set", "add", "remove"] },
+  MachineLabelsResult: { required: ["changed"], optional: [] },
   MachineLastHeard: { required: ["host"], optional: ["folders", "agents", "heardAt"] },
+  MachineLineageForecast: { required: ["machine", "machineName", "forecast"], optional: [] },
   MachineLink: { required: ["host", "provider", "workspace"], optional: ["startWhenUsed", "stopWhenIdleMinutes", "trust"] },
+  MachineList: { required: ["machines", "total", "counts"], optional: ["next"] },
+  MachineListQuery: { required: [], optional: ["query", "state", "labels", "provider", "os", "version", "sort", "limit", "cursor"] },
+  MachineMessagesError: { required: ["machine", "machineName", "error"], optional: [] },
   MachineOptions: { required: ["host"], optional: ["startWhenUsed", "stopWhenIdleMinutes", "startForSchedules"] },
   MachinePolicy: { required: [], optional: ["policy", "signature", "none"] },
   MachineProjects: { required: ["projects"], optional: [] },
@@ -17041,6 +18497,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSecretOpsCall: { required: ["ops"], optional: ["held"] },
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
+  MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
+  MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code"] },
+  MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
   MachineSummaryFacts: { required: ["machine", "machineName"], optional: ["facts", "unreached"] },
@@ -17050,7 +18509,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineUsage: { required: ["cpuPercent", "cpuCount", "memoryUsed", "memoryTotal"], optional: ["loadPerCore", "loadPerCore5", "memoryPressure", "swapUsedPercent", "capacity"] },
   MachineUsageState: { required: ["machine", "disks"], optional: [] },
   MachineUser: { required: ["user", "kind", "name", "labels"], optional: ["capReachedUntil", "bots"] },
-  MachineUserSettings: { required: ["user", "settings", "secrets"], optional: ["waiting"] },
+  MachineUserSettings: { required: ["user", "settings", "secrets"], optional: ["waiting", "offersWaiting"] },
+  MachineVersions: { required: ["host", "version", "deploys"], optional: ["firstSeen", "seen", "previous"] },
   MachineWorkspace: { required: ["provider", "providerName", "workspace", "workspaceName", "workspaceState", "canStart", "canStop", "startWhenUsed", "current"], optional: ["hostState", "phase", "since", "problem", "stoppedBy", "stopWhenIdleMinutes", "cost", "idleTimeoutMinutes", "startForSchedules", "tellsSchedule", "nextWorkflow", "nextWorkflowAt", "wakeAt"] },
   MachineWorkspaceCall: { required: ["agent", "method", "params"], optional: ["deliver"] },
   MachinesSummaryFacts: { required: ["machines"], optional: [] },
@@ -17067,6 +18527,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MessageSender: { required: ["agentID", "title"], optional: [] },
   MessagesConversation: { required: ["server", "folder", "conversation"], optional: ["replyAs"] },
   MessagesConversations: { required: ["conversations"], optional: ["cursor", "errors"] },
+  MessagesConversationsAll: { required: ["conversations", "errors", "unreached", "notAsked"], optional: ["cursor"] },
+  MessagesConversationsAllRequest: { required: [], optional: ["unread", "limit", "cursor"] },
   MessagesConversationsRequest: { required: [], optional: ["folder", "cursor", "limit", "unread"] },
   MessagesError: { required: ["server", "folder", "message"], optional: [] },
   MessagesMarkAllReadRequest: { required: [], optional: ["folder"] },
@@ -17143,6 +18605,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   PermissionNotification: { required: ["agentID", "requestID"], optional: ["request"] },
   PermissionOption: { required: ["optionID", "name", "kind"], optional: [] },
   PermissionRequest: { required: ["id", "agentID", "toolCall", "options", "askedAt"], optional: ["subagent"] },
+  PersonApproval: { required: ["kind", "digest", "host", "at", "key", "sig"], optional: ["name", "hostName"] },
+  PersonApprovals: { required: ["approvals"], optional: [] },
+  PersonApprovalsPut: { required: ["approvals"], optional: [] },
   PersonClient: { required: ["id", "name", "kind"], optional: [] },
   PersonEndRequest: { required: ["name"], optional: ["agentID"] },
   PersonInvite: { required: ["name", "role"], optional: [] },
@@ -17280,7 +18745,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ProviderWorkspaceRequest: { required: ["id", "workspace"], optional: [] },
   PushToken: { required: ["environment"], optional: ["token"] },
   QueuedPrompt: { required: ["id", "text", "attachments", "queuedAt", "from"], optional: ["preface", "sender"] },
-  QueuedStart: { required: ["labels"], optional: ["runtimeID", "permissionMode", "model", "worktree"] },
+  QueuedStart: { required: ["labels"], optional: ["runtimeID", "permissionMode", "model", "effort", "worktree"] },
   QuickAnswer: { required: ["kind", "id", "title", "isDestructive"], optional: ["field"] },
   QuitRequest: { required: ["stopAgents"], optional: [] },
   RateLimitInfo: { required: [], optional: ["status", "resetsAt", "rateLimitType", "utilization", "overageStatus", "overageResetsAt", "isUsingOverage", "overageInUse", "overageDisabledReason"] },
@@ -17313,10 +18778,10 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ReportNodeCost: { required: ["own", "total", "waste"], optional: [] },
   ReportNodes: { required: ["nodes", "limited", "unresolved"], optional: ["cursor"] },
   ReportNodesQuery: { required: ["kind"], optional: ["state", "repo", "label", "since", "sort", "cursor", "limit", "scope"] },
-  ReportPolicy: { required: ["totalsOnly", "leads", "budgetsUSD"], optional: [] },
+  ReportPolicy: { required: ["budgetsUSD"], optional: [] },
   ReportQuery: { required: ["range"], optional: ["format", "scope"] },
-  ReportRow: { required: ["at", "person", "personName", "host", "hostName", "runtime", "cost", "inputTokens", "outputTokens", "thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "turns", "unpricedTurns", "workingSeconds", "waitingSeconds", "folder"], optional: ["workflow", "groups", "counts", "project", "projectName"] },
-  ReportScope: { required: ["kind"], optional: ["group"] },
+  ReportRow: { required: ["at", "person", "personName", "host", "hostName", "runtime", "cost", "inputTokens", "outputTokens", "thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "turns", "unpricedTurns", "workingSeconds", "waitingSeconds", "folder"], optional: ["workflow", "counts", "project", "projectName"] },
+  ReportScope: { required: ["kind"], optional: ["project"] },
   ReportScopeOption: { required: ["scope", "name"], optional: [] },
   ReportScopes: { required: ["scopes", "admin"], optional: [] },
   ReportValue: { required: ["range", "scope", "total", "waste", "unlinked", "perMergedPR", "prsMerged", "prsClosed", "prsReverted", "failedChecks", "issues", "releases"], optional: ["loaded", "overhead", "leadTimeSeconds", "cycleTimeSeconds", "estimateError", "forecastScore", "openEpics", "delivery", "limited"] },
@@ -17399,10 +18864,16 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SecretLastOp: { required: ["what", "at"], optional: ["agent"] },
   SecretLeftOn: { required: ["host", "name", "at"], optional: [] },
   SecretNeedsApprovalRequest: { required: ["name", "needsApproval"], optional: ["agentID"] },
+  SecretOffer: { required: ["offer", "name", "machine", "machineName", "savedAt"], optional: ["agent", "needsApproval", "description", "conflict", "mine"] },
+  SecretOfferRequest: { required: ["offer"], optional: [] },
+  SecretOffers: { required: ["offers"], optional: ["user"] },
   SecretOperation: { required: ["name", "what", "at"], optional: ["use", "place", "agent", "count"] },
   SecretRelease: { required: ["name", "encapsulated", "approval"], optional: [] },
   SecretReleaseKey: { required: ["publicKey"], optional: [] },
   SecretReleased: { required: ["key"], optional: [] },
+  SecretSavedBy: { required: ["machine", "name", "at"], optional: ["agent"] },
+  SecretSignInKey: { required: ["looked", "refused"], optional: ["name", "value"] },
+  SecretSignInKeyRequest: { required: ["runtimeID"], optional: [] },
   SecretTerminalRequest: { required: ["name"], optional: ["command"] },
   SecretTerminalValue: { required: [], optional: ["value", "request", "words"] },
   SecretsLeft: { required: ["host", "name", "secrets"], optional: [] },
@@ -17447,6 +18918,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetOptionRequest: { required: ["agentID", "optionID", "value"], optional: [] },
   SetPRCostCommentRequest: { required: ["folder", "prCostComment"], optional: [] },
   SetPinnedRequest: { required: ["folder", "pinned"], optional: [] },
+  SetPriorityRequest: { required: ["agentID"], optional: ["priority"] },
   SetProviderRequest: { required: ["runtimeID", "providerID"], optional: [] },
   SetSandboxRequest: { required: ["agentID"], optional: ["choice"] },
   SetUnreadRequest: { required: ["agentID", "unread"], optional: [] },
@@ -17525,7 +18997,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SlashCommand: { required: ["name"], optional: ["description", "inputHint"] },
   SpendCaps: { required: [], optional: ["dailyUSD"] },
   StartOptions: { required: ["values", "extraArguments"], optional: [] },
-  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "persona", "levels", "purpose", "accountID", "voice", "startedFrom"] },
+  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "priority", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "autoChose"] },
   StartedFrom: { required: ["machine", "agent", "who"], optional: [] },
   StartedMachinePreview: { required: ["host", "name", "state", "unpushed"], optional: ["unknown"] },
   StartingPoint: { required: ["repository", "commit"], optional: [] },
@@ -17572,11 +19044,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   Usage: { required: ["used", "size", "at"], optional: ["cost"] },
   UsageBucket: { required: ["cost", "inputTokens", "outputTokens", "thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "turns", "unpricedTurns"], optional: [] },
   UsageHistory: { required: ["hours", "days", "now"], optional: ["timeZone"] },
-  UsageReport: { required: ["range", "rows", "admin"], optional: ["scope", "personsHidden", "groupNames", "budgetUSD", "monthSpentUSD"] },
+  UsageReport: { required: ["range", "rows", "admin"], optional: ["scope", "budgetUSD", "monthSpentUSD"] },
   UsageRollup: { required: ["hours", "days"], optional: ["work"] },
   UsageRollupPeriod: { required: ["at", "rows"], optional: [] },
   UsageRollupRow: { required: ["runtime", "cost", "inputTokens", "outputTokens", "thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "turns", "unpricedTurns", "workingSeconds", "waitingSeconds", "folder"], optional: ["workflow", "counts", "limitTokens", "route"] },
   UserAgentConfig: { required: [], optional: ["instructions", "personas", "skills"] },
+  UserEnvironment: { required: ["text"], optional: [] },
   UserPartHere: { required: ["part", "value"], optional: ["leftOut"] },
   UserPartRequest: { required: ["part"], optional: [] },
   UserSealedSecret: { required: ["name", "version", "sealed"], optional: ["kind", "needsApproval"] },
@@ -17586,9 +19059,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   UserSecretAbout: { required: ["name"], optional: ["kind", "description", "needsApproval"] },
   UserSecretNames: { required: ["secrets"], optional: [] },
   UserSecretRequest: { required: ["name"], optional: [] },
-  UserSecretRow: { required: ["name", "updated", "machines"], optional: ["kind", "created", "hint", "lastOp", "backedUp", "leftOn", "version", "waiting", "needsApproval", "description"] },
-  UserSecretSet: { required: ["name", "version", "values"], optional: ["kind", "needsApproval", "description"] },
-  UserSettings: { required: [], optional: ["mcpServers", "agentConfig", "agentConfigFiles", "runtimes", "costLimits", "notifications", "accounts", "timeZone", "policy", "updated"] },
+  UserSecretRow: { required: ["name", "updated", "machines"], optional: ["kind", "created", "hint", "lastOp", "backedUp", "leftOn", "version", "waiting", "needsApproval", "description", "savedBy"] },
+  UserSecretSet: { required: ["name", "version", "values"], optional: ["kind", "needsApproval", "description", "offer"] },
+  UserSettings: { required: [], optional: ["mcpServers", "agentConfig", "agentConfigFiles", "runtimes", "costLimits", "notifications", "accounts", "timeZone", "environment", "person", "auto", "retention", "policy", "updated"] },
   UserSettingsChanged: { required: [], optional: ["parts", "agentConfigFiles", "secrets"] },
   UserSettingsPart: { required: ["part", "value"], optional: [] },
   UserSuspended: { required: ["user", "provider", "at"], optional: ["off"] },
@@ -17609,18 +19082,32 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitServerEvent: { required: ["trigger", "servers"], optional: [] },
   WaitStatus: { required: ["line", "mark", "cancellable"], optional: [] },
   WaitingAgent: { required: ["agentID", "title", "folder", "status"], optional: [] },
+  WaitingOffer: { required: ["name", "offer"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
+  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "machines", "claims"] },
+  WarmPoolClaim: { required: ["provider"], optional: ["size", "region", "stopWhenIdle"] },
+  WarmPoolClaimed: { required: ["workspace", "name", "fromPool"], optional: ["host", "pool", "note"] },
+  WarmPoolClaims: { required: ["count", "empty"], optional: ["medianSeconds"] },
+  WarmPoolHours: { required: ["days", "from", "to"], optional: ["timezone"] },
+  WarmPoolMachine: { required: ["name", "state", "madeAt"], optional: ["detail"] },
+  WarmPoolRequest: { required: ["id"], optional: [] },
+  WarmPoolSet: { required: ["name", "provider", "minReady", "maxSize"], optional: ["id", "scope", "size", "region", "runtimes", "projects", "replaceAfter", "hours"] },
+  WarmPools: { required: ["pools"], optional: [] },
   WebPagePairing: { required: ["url"], optional: [] },
   WebPushKey: { required: [], optional: ["publicKey"] },
   WebPushSubscription: { required: [], optional: ["endpoint", "p256dh", "auth"] },
   WebRemoteStatus: { required: ["port", "served"], optional: ["reason", "detail"] },
   WebServe: { required: ["on"], optional: [] },
+  WorkDismissLeadRequest: { required: ["node"], optional: [] },
   WorkFeature: { required: ["feature", "epics", "loose"], optional: [] },
   WorkFeatureEpic: { required: ["item", "steps"], optional: ["step", "blockedOutside", "forecast", "children"] },
   WorkFeatures: { required: ["features"], optional: ["approvals", "errors"] },
   WorkFeaturesRequest: { required: [], optional: ["folder", "board"] },
+  WorkLeadSuggestion: { required: ["node", "title", "done", "total", "start"], optional: ["url", "folder", "milestone", "due", "high", "ui", "standing"] },
   WorkReport: { required: ["outcome", "message", "at"], optional: ["block"] },
+  WorkSuggestLeads: { required: ["suggestions", "more"], optional: ["errors"] },
+  WorkSuggestLeadsRequest: { required: [], optional: ["folder"] },
   WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors"] },
   WorkTimelineBacktest: { required: ["error", "width", "cuts", "holds", "epics", "at"], optional: [] },
   WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson", "forecastAt"] },
@@ -17645,7 +19132,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkflowSchedule: { required: ["minutes", "hours", "startMinute", "endMinute", "days"], optional: [] },
   WorkflowSettings: { required: ["options", "labels"], optional: ["permissionMode", "runtimeID", "model", "effort", "permissionRequests", "sandbox"] },
   WorkflowSettingsRequest: { required: ["folder", "workflowID", "settings"], optional: ["cooldown", "hours", "labels", "whenDone", "continueWhenBack", "runsOn"] },
-  WorkflowSummary: { required: ["workflow", "isArchived", "isEnabled", "nextFireAtByTrigger", "isRunning", "holdsAFire", "queued"], optional: ["scope", "content", "overLimit", "totalLimit", "nextFireAt", "lastOutcome", "causingEvent", "causingEventName", "hearsFor", "readyMadeUpdatedAt", "newerReadyMade", "awaitingApproval", "deniedHere", "lastFiredAt", "lastFiredBy", "cooldownEndsAt", "hoursOpenAt", "offReason", "standingAgentID", "mcpTriggers"] },
+  WorkflowSummary: { required: ["workflow", "isArchived", "isEnabled", "nextFireAtByTrigger", "isRunning", "holdsAFire", "queued"], optional: ["scope", "content", "overLimit", "totalLimit", "nextFireAt", "lastOutcome", "causingEvent", "causingEventName", "hearsFor", "readyMadeUpdatedAt", "newerReadyMade", "awaitingApproval", "deniedHere", "lastFiredAt", "lastFiredBy", "cooldownEndsAt", "hoursOpenAt", "offReason", "standingAgentID", "mcpTriggers", "approvedFrom"] },
   WorkflowWriteRequest: { required: ["workflowID", "content"], optional: [] },
   WorkflowsListRequest: { required: [], optional: ["folder", "scope"] },
   WorktreeRemovalRequest: { required: ["root", "confirmed", "folder"], optional: [] },

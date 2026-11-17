@@ -24,7 +24,7 @@ its prompt is this one:
 
 > #<epic>: <epic title>
 >
-> Lead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`): <epic URL>
+> Lead this epic: <epic URL>
 
 Only one lead per epic: if a session labelled `#<epic>` and `lead` is not archived, do
 not start a second one.
@@ -36,13 +36,13 @@ not start a second one.
 - **Change only the plan.** You can file, label and comment on issues, add sub-issues,
   and set "blocked by". Do not change the epic's goal or a child's scope: when that
   must change, ask Alex.
-- **Follow AGENTS.md** for the order of work, "Questions that already have an answer"
-  and "Decide and tell". The lead does not count as a lane; its lanes count towards the
-  folder's lane and open-PR limits.
+- **Follow AGENTS.md** for "Questions that already have an answer" and "Decide and
+  tell". The order of work is `forge/next` ("The order", below). The lead does not
+  count as a lane; its lanes count towards the folder's lane and open-PR limits.
 - **Places:** the folder's limits give places, not another agent. Start no new lane
   while more than the folder's open-PR limit of pull requests are open: land first. A PR
-  labelled `needs-approval` does not count: it waits for Alex, and its lane holds no
-  running place.
+  with a review requested from Alex (`gh pr view <n> --json reviewRequests`) does not
+  count: it waits for Alex, and its lane holds no running place.
 - **Wait with `wait_for_event`, never by polling.** To wait on lanes themselves, wait on
   `agent.ended` alone, with `agent` their ids and `wake_on: any`.
 - **Name people in questions:** "Claude (the epic's lead) will…", "Alex, do you want…?".
@@ -69,18 +69,60 @@ gh api repos/agentloops-dev/agent-loops/issues/<child>/dependencies/blocked_by \
   or an open PR that fixes it (`gh pr list --search "<child> in:body"`). Such a child is
   taken (AGENTS.md, "An issue is taken"): do not start a second lane on it.
 
+## The order: `forge/next`
+
+The order of work is the one order of `forge/next` (#5689, #5692), the same order as Work's
+**Next**: not on hold first; then priority `high`, `medium`, none, `low`; then the
+milestone's due date, the earliest first, no milestone last; then the oldest (then the
+lowest number). Do not work out an order of your own from prose. `forge/next` with `epic`
+gives the epic's children that are ready (open, no open blocker, not taken, no assignee),
+and those on hold, in that order, with the reasons for each place; a standing epic's
+query comes in the same order. Its top row that is not on hold is the next one.
+
+Until the lead can call `forge/next`, read the ready children (step 1) and sort them in
+the same order with `gh` and `jq`. This reads the labels only; the daemon also reads
+GitHub's **Priority** issue field where the repo has one (#5747):
+
+```zsh
+gh issue list --limit 100 --json number,title,labels,milestone,createdAt \
+  --search "is:open -label:epic parent-issue:agentloops-dev/agent-loops#$epic" | jq -r '
+  def rank: ([.labels[].name] as $l
+    | if ($l|index("priority:high")) then 0 elif ($l|index("priority:medium")) then 1
+      elif ($l|index("priority:low")) then 3 else 2 end);
+  map(. + {hold: ([.labels[].name|ascii_downcase]|any(. == "on hold" or . == "on-hold")),
+           due: (.milestone.dueOn // "9999")})
+  | sort_by([.hold, rank, .due, .createdAt, .number])
+  | .[] | "\(.number)\(if .hold then " (on hold)" else "" end) \(.title)"'
+```
+
+For a standing epic, put its query in `--search` in place of `parent-issue:…`.
+
 ## 2. Start the lanes
 
-For each ready child that is open and not taken, in the AGENTS.md order (`priority:high`,
-then UI changes, bugs before features, then the rest):
+For each free place, take the top row of `forge/next` for this epic that is not on hold
+(#5692, "The order", above), and do these steps for it. Never start a lane on a row that is
+on hold: it sorts below every other row, and waits for Alex.
 
 1. Assign it: `gh issue edit <child> --add-assignee alexec`.
+   Before you start a lane on a child whose work is on a branch or an open PR, call
+   `conflict_risk_analysis` with `diff` the branch and `depends_on` the blocker PRs (#5473).
+   On `wait for #N`, hold the lane until #N lands (wait on its `pr.closed`); on `stack on
+   #N`, tell the lane to base on #N's branch (#1777). A child with no branch yet has nothing
+   to run: the lane runs it itself. It is advice, never a gate.
 2. Start its lane with `start_session`, with the prompt and labels from
    `.agents/personas/software-engineer.md`. The first line of the prompt is
    `#<child>: <title>`, then a blank line and the persona's instructions; put nothing
    before the issue number and title. Title `#<child>: <title>`, worktree
    `fix-github-issue-<child>` (a bug) or `work-github-issue-<child>` (anything else), no
-   runtime.
+   runtime. Add to the prompt: before you start and before each push, lease `ci`, do the
+   step, release it; on a conflict
+   with `main`, `git merge origin/main` and push without running the tests again (#5712).
+   A lead runs on any machine; it writes no code and holds no build lease (#5877).
+   **A `linux-ok` child** (AGENTS.md, "Plans", #5810) goes to a Linux machine when one is
+   free: call `list_machines`, and when a Linux machine is online, pass it as `machine` to
+   `start_session`. This keeps the Mac's build lease free for the Swift lanes. When no
+   Linux machine is online, or its start fails, start the lane on the Mac, as before. A
+   child without `linux-ok` always runs on the Mac.
 3. If `start_session` refuses (the folder's limits are full), unassign the child and
    start no more until a lane ends.
 4. After the epic's first lane starts, ask `estimate_issue` for the epic once. This keeps
@@ -97,7 +139,7 @@ with a form for the rest), then close it. Otherwise give it a lane as above.
 ## 3. Wait
 
 End each pass with one `wait_for_event` call: `events: ["issue.closed", "pr.merged",
-"checks.failed", "pr.conflicted"]`, `where: {"issue": [<open children>], "fixes": ["#<child>",
+"pr.blocked"]`, `where: {"issue": [<open children>], "fixes": ["#<child>",
 …]}`, `until_minutes: 60`. Then end your turn. The wait names this epic's children (#3797):
 `issue` for `issue.closed`, and `fixes` for the PR events, which match a PR whose body
 closes one of them, so you know the child before its lane opens the PR. Each event takes
@@ -105,9 +147,19 @@ only the keys it has. A wait that names nothing is refused. When you start again
 
 - **`issue.closed` or `pr.merged`** of a child: read the plan again (step 1) and start
   the lanes of the children that are now ready (step 2).
-- **`checks.failed` or `pr.conflicted`** on a child's PR: its lane fixes it. If the lane
+- **`pr.blocked`** on a child's PR (#5321: a conflict, a failed required check, changes
+  requested, auto-merge off; its `reasons` say which): its lane fixes it. If the lane
   has ended or stopped, message it about its own PR (`message_session`), never to widen
-  its work. Leave a PR labelled `needs-approval` alone: it waits for Alex.
+  its work. Leave a PR with a review requested from Alex alone: it waits for Alex. A failed
+  check that main also fails, with the same test, is not the lane's to fix: the lane
+  waits for main to go green, then runs its checks again (`fix-failed-checks`, step 2a,
+  #5589). Do not message the lane, and do not start a lane to fix main: the Fix main
+  lane does it (#5581, §6). Wait again.
+- **The wait is refused** with "No server here offers pr.blocked" (#5437: the
+  installed app is older than #5321): wait instead on `["issue.closed", "pr.merged",
+  "checks.failed", "pr.conflicted"]`, with the same `where`, and use that list for the
+  rest of this session. `checks.failed` and `pr.conflicted` on a child's PR are
+  `pr.blocked` above.
 - **An event that is not about this epic** (a PR that fixes a child and something else):
   wait again.
 - **The time limit:** run `scripts/rearm-automerge.sh --stalled`, read the plan again,
@@ -118,8 +170,8 @@ only the keys it has. A wait that names nothing is refused. When you start again
 - **New work that a lane finds** (a follow-up, a missing part, a bug in the epic's work):
   file it as a new child. Look for a duplicate first (`gh issue list --search`). Give it
   its level (`story`, `task`, `spike`, or `bug`), its type label, the epic's `feature:`
-  label, and the epic's milestone (a bug gets none, unless it blocks
-  the milestone's goal). Then add it to the epic and set what it waits for:
+  label, its `size:`, a priority (AGENTS.md, "Set a priority when you file"), and the
+  epic's milestone (a bug gets none, unless it blocks the milestone's goal). Then add it to the epic and set what it waits for:
 
   ```zsh
   id=$(gh api repos/agentloops-dev/agent-loops/issues/<new> -q .id)
@@ -175,9 +227,8 @@ gh issue list --limit 100 --json number,title,labels,assignees \
   --search "is:open -label:epic label:bug no:milestone"
 ```
 
-- **The order:** `priority:high`, then `priority:medium`, then no priority, then
-  `priority:low`; in each, the lowest number first (the spec's order, which the forge's
-  priority already holds; no RICE of your own).
+- **The order:** the one order of `forge/next` ("The order", above): on hold last, then
+  priority, the milestone's due date and the oldest.
 - **Ready** is an issue with no open blocker (`dependencies/blocked_by`, as in step 1).
 - **No block, a second block or an unknown field** (`forge/plan` says it in
   `standing.error`): start no lanes. Say it in a comment on the epic once, and ask the
@@ -186,8 +237,8 @@ gh issue list --limit 100 --json number,title,labels,assignees \
 **Start the lanes (step 2).** Run at most `lanes` lanes at once (the block's `lanes:`,
 else 1), and never more than the folder's lane limit. Count the lanes you started that
 have not ended. Take the ready issues from the top of the order that are not taken, as
-step 2 says, until that count is `lanes`. Take an issue only in the AGENTS.md order: a
-`priority:high` issue or a UI change before the rest. When places run short,
+step 2 says, until that count is `lanes`, in the order of `forge/next`, and never one on
+hold. When places run short,
 a standing epic's lane waits before a milestone epic's lane (AGENTS.md): start no new
 lane while a milestone epic's lane is queued, and start a paused one again only when a
 lane ends.
@@ -200,7 +251,7 @@ lanes' own issues. A wait takes one label, so the time limit catches the issues 
 other labels.
 
 ```json
-{"events": ["pr.merged", "checks.failed", "pr.conflicted",
+{"events": ["pr.merged", "pr.blocked",
             "issue.opened", "issue.labelled", "issue.closed"],
  "where": {"fixes": ["#<issue of a lane>", …], "label": "bug"},
  "until_minutes": 60}

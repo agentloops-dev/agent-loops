@@ -6,11 +6,11 @@ import UIKit
 /// Working, Unread — then a group per folder, its sessions newest first with their state
 /// the row's mark, its workflows, and one Archived row opening a page; then the archived
 /// folders, folded, each with Unarchive (#343). Never more than two levels deep (#495).
-/// A folder's Sessions starts with New Session (#5267).
+/// New Session and New Machine are in the + at the top (#5447), and a folder's long press.
 ///
 /// The rules are the Mac's own, from `SidebarFolderFold`, `SidebarSmartRow`,
 /// `SidebarOrder` and `SidebarFolds` in AgentsKitCore: the same groups, order, pins and
-/// folds, kept the same way. Usage, connectors and folder management are Mac + web (#2798); the Multiplier is first under Status (#4116), and Velocity after it (#4758). The views are this device's: on an iPad the list sits beside
+/// folds, kept the same way. Usage, connectors and folder management are Mac + web (#2798); the Achievements page is first under Status (#4116), and Velocity after it (#4758). The views are this device's: on an iPad the list sits beside
 /// what it picked; on an iPhone it is the screen the app opens on and a pick is pushed
 /// over it. Swipe actions and a long press stand in for the Mac's context menus.
 struct RemoteSidebar: View {
@@ -33,6 +33,12 @@ struct RemoteSidebar: View {
     @AppStorage("showsWork") private var showsWork = true
     /// Machines (#4034), open until folded, and kept so, as the window keeps it.
     @AppStorage("showsMachines") private var showsMachines = true
+    /// The machines pinned to the group (#5286), a machine on each line, as the window keeps them.
+    @AppStorage(MachinePins.key) private var machinePins = ""
+    /// All Machines (N) tapped: the group draws every machine, until the Machines page (#5568).
+    @State private var showsAllMachines = false
+    /// Reports (#5454), open until folded, and kept so, as the window keeps it.
+    @AppStorage("showsReports") private var showsReports = true
     /// The smart groups turned off in Settings ▸ Sidebar (#846).
     @AppStorage(SidebarSmartRow.offDefaultsKey) private var smartOff = SidebarSmartRow.offAtFirst
     /// Settings (#846), opened from the sidebar's foot.
@@ -55,6 +61,15 @@ struct RemoteSidebar: View {
     /// up, in the warning tint (#3956).
     private var runtimesTally: RuntimeTally? {
         RuntimeTally(model.runtimes, allowances: model.runtimeAllowances)
+    }
+
+    /// The Machines group's rows (#5286): at most seven, This Mac, pinned and busy first.
+    private var machineRows: MachinesGroup.Rows {
+        let pins = Set(MachinePins.pinned(machinePins))
+        let listed = model.machines.map { host in
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
+        }
+        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count, all: showsAllMachines)
     }
 
     private var servers: [MachineRef] {
@@ -126,6 +141,18 @@ struct RemoteSidebar: View {
                     }
                 }
             }
+            // A secret an agent saved on a machine of the person's, until it is theirs (#5308). The
+            // Remote does not seal, so it shows the card and the choice is made on the Mac or the web.
+            if !model.userScope.offers.isEmpty {
+                Section {
+                    ForEach(model.userScope.offers) { offer in
+                        SecretOfferCard(offer: offer, isAnswering: false, failure: nil, choose: nil)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                    }
+                }
+            }
             // A new client that signed in with GitHub as this person (#995), beside them.
             let signingIn = model.signIn.open()
             if !signingIn.isEmpty {
@@ -155,20 +182,12 @@ struct RemoteSidebar: View {
             }
 
             if !model.folders.isEmpty {
-                // The daily summary's page (#3721), while the daily summary is on. New Session is
-                // the first row of each folder's Sessions (#5267), and a folder's long press.
-                if model.dailySummarySettings?.mode.writesPages == true {
-                    Section {
-                        SummaryRowLabel(newest: model.summaryPages.first)
-                            .accessibilityHint("Opens your daily summary")
-                            .activityIcon(SummaryRowLabel.systemImage).appText(.supporting).paperTag(SidebarItem.summary)
-                    }
-                }
-
+                // Work, Status, Machines, then Reports, as the window has them (#5454). New Session
+                // is in the + (#5447), and a folder's long press.
                 // Work (#3119, #3256): a row per list, as the window has them (#4004), above
                 // Status, Features too (#3269). No Timeline: it is the Mac's.
                 Section(isExpanded: $showsWork) {
-                    ForEach(WorkList.Kind.allCases.filter { $0 != .timeline }) { kind in
+                    ForEach(WorkList.Kind.allCases.filter { $0 != .timeline && $0 != .deploy }) { kind in
                         HStack { Text(kind.title); Spacer() }
                             .accessibilityHint(kind.sidebarHelp)
                             .activityIcon(kind.sidebarIcon).appText(.supporting).paperTag(SidebarItem.work(kind))
@@ -182,48 +201,84 @@ struct RemoteSidebar: View {
                 // Pages about all the work rather than one folder, above the smart
                 // groups, as the window has them (#495). Plain titles beside their icons
                 // in the accent (#155). It folds, as a folder does.
+                // Runtimes, Events, Secrets and Accounts, in the window's order (#5454).
                 Section(isExpanded: $showsStatus) {
-                    // The Multiplier page (#4116), first, as the window has it first under Usage.
-                    MultiplierRow().accessibilityHint(MultiplierRow.help)
-                        .activityIcon("multiply.circle").appText(.supporting).paperTag(SidebarItem.multiplier)
-                    // Velocity (#4758): the Multiplier's PRs over time, the one Usage page the
-                    // Remote has (tier Core), after the Multiplier as the window has it in Usage.
-                    HStack { Text("Velocity"); Spacer() }
-                        .accessibilityHint("The pull requests that landed, over time")
-                        .activityIcon("arrow.triangle.merge").appText(.supporting).paperTag(SidebarItem.velocity)
-                    EventsRow().activityIcon("list.bullet.rectangle").appText(.supporting).paperTag(SidebarItem.events)
                     RuntimesRow().activityIcon("cpu", warns: runtimesTally.map { $0.noneWorking || $0.isLow } ?? false,
                                                tint: runtimesTally?.isLow == true ? .warning : .failure)
                         .appText(.supporting).paperTag(SidebarItem.runtimes)
+                    EventsRow().activityIcon("list.bullet.rectangle").appText(.supporting).paperTag(SidebarItem.events)
                     // What happened last to the person's secrets and accounts (#4161), as the window's.
                     ForEach([StatusSecretsKind.secrets, .accounts], id: \.self) { kind in
                         StatusSecretsRow(kind: kind, state: model.userScope) { model.work.agent($0)?.title }
                             .activityIcon(kind.systemImage)
-                            .appText(.supporting).paperTag(kind == .secrets ? SidebarItem.secretsStatus : .accountsStatus)
+                            .appText(.supporting).paperTag(kind.sidebarItem)
                     }
+                    // The plain variables sessions get (#5260), as the window's.
+                    StatusSecretsRow(kind: .environment, state: model.userScope)
+                        .activityIcon(StatusSecretsKind.environment.systemImage)
+                        .appText(.supporting).paperTag(SidebarItem.environmentStatus)
                 } header: {
                     Text("Status")
                 }
 
                 // A row per machine (#4034), each its page, as the window's (#3973).
                 if !model.machines.isEmpty {
+                    // At most seven rows, then All Machines (N) (#5286).
+                    let rows = machineRows
                     Section(isExpanded: $showsMachines) {
-                        ForEach(model.machines, id: \.self) { host in
+                        ForEach(rows.machines, id: \.self) { host in
                             RemoteMachineRow(host: host).paperTag(SidebarItem.machine(host))
                         }
                         // The machines New Machine is making, and the ones the control plane
                         // gave up waiting for (#4612), and every other machine of the person's that
                         // never joined (#4978): a row each until a machine of the name joins.
-                        ForEach(0..<model.machinesBeingMade, id: \.self) { _ in
+                        let unnamed = min(model.machinesBeingMade, rows.making)
+                        ForEach(0..<unnamed, id: \.self) { _ in
                             RemoteMakingMachineRow(making: nil)
                         }
-                        ForEach(model.machinesMaking) { making in
+                        ForEach(model.machinesMaking.prefix(rows.making - unnamed)) { making in
                             RemoteMakingMachineRow(making: making)
                         }
-                        NewMachineRow()
+                        if rows.bounded || showsAllMachines {
+                            Button {
+                                showsAllMachines.toggle()
+                            } label: {
+                                HStack {
+                                    Text(showsAllMachines ? MachinesGroup.fewerTitle : MachinesGroup.allTitle(rows.total))
+                                        .foregroundStyle(Paper.secondary)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .activityIcon(showsAllMachines ? "chevron.up" : "ellipsis.circle")
+                            .appText(.supporting)
+                            .listRowBackground(Color.clear)
+                            .accessibilityHint(showsAllMachines ? "Shows seven machines again" : "Shows every machine")
+                        }
                     } header: {
                         Text("Machines")
                     }
+                }
+
+                // Reports (#5454), after Machines, as the window has them: the pages that report
+                // on the work. Cost, Tokens and Time are the Mac's and the web's (their tier).
+                Section(isExpanded: $showsReports) {
+                    // The Achievements page (#4116), first, as the window has it.
+                    AchievementsRow().accessibilityHint(AchievementsRow.help)
+                        .activityIcon("multiply.circle").appText(.supporting).paperTag(SidebarItem.achievements)
+                    // Velocity (#4758): the Multiplier's PRs over time (tier Core).
+                    HStack { Text("Velocity"); Spacer() }
+                        .accessibilityHint("The pull requests that landed, over time")
+                        .activityIcon("arrow.triangle.merge").appText(.supporting).paperTag(SidebarItem.velocity)
+                    // The daily summary's page (#3721), a report too, while the daily summary is on.
+                    if model.dailySummarySettings?.mode.writesPages == true {
+                        SummaryRowLabel(newest: model.summaryPages.first)
+                            .accessibilityHint("Opens your daily summary")
+                            .activityIcon(SummaryRowLabel.systemImage).appText(.supporting).paperTag(SidebarItem.summary)
+                    }
+                } header: {
+                    Text("Reports")
                 }
 
                 // Pinned, Needs You, Working, Unread: a group each across every folder
@@ -257,7 +312,8 @@ struct RemoteSidebar: View {
             let offline = showsMachines && !model.machines.isEmpty ? [] : servers.filter { model.hostIsOffline($0) }
             if !offline.isEmpty {
                 Section {
-                    ForEach(offline, id: \.self) { host in
+                    // At most seven, as the Machines group (#5286), then how many more.
+                    ForEach(offline.prefix(MachinesGroup.limit), id: \.self) { host in
                         // One on a stopped workspace says so, with Start, as its strip (#961).
                         let row = model.controlHost(host)
                         HStack(spacing: 8) {
@@ -277,6 +333,11 @@ struct RemoteSidebar: View {
                                     .accessibilityLabel("Start \(model.hostLabel(host))")
                             }
                         }
+                    }
+                    if offline.count > MachinesGroup.limit {
+                        Label(MachinesGroup.moreOffline(offline.count - MachinesGroup.limit), icon: "bolt.horizontal.circle")
+                            .appText(.fine)
+                            .foregroundStyle(Paper.secondary)
                     }
                 }
             }
@@ -311,7 +372,7 @@ struct RemoteSidebar: View {
         .background(Paper.sidebar)
         .toolbarBackground(Paper.sidebar, for: .navigationBar)
         .navigationTitle("Agent Loops")
-        // Add Folder… and Clone Git URL… on a machine (#4036), as the window's File menu.
+        // The + (#5447): New Session, Add Folder… and Clone Git URL… on a machine (#4036), New Machine.
         .toolbar {
             if !model.needsPairing {
                 ToolbarItem(placement: .primaryAction) { NewFolderMenu() }
@@ -339,7 +400,8 @@ struct RemoteSidebar: View {
             // Not over a machine's ask to join (#994): the card is the list's, and the
             // waiting view in the middle would lie over the rows under it.
             if model.folders.isEmpty, model.people.open().isEmpty, model.people.openLinks().isEmpty, model.signIn.open().isEmpty,
-               model.lock.open().isEmpty, !model.lock.showsThisDevice, model.lock.recoveryCard == .none {
+               model.lock.open().isEmpty, !model.lock.showsThisDevice, model.lock.recoveryCard == .none,
+               model.userScope.offers.isEmpty {
                 Waiting()
             }
         }
@@ -933,18 +995,12 @@ struct RemoteFolderFold: View {
     /// only layout (#2381); not in a folder's own scene, whose group is Sessions already.
     @ViewBuilder
     private func sessionsFold(_ fold: SidebarFolderFold) -> some View {
-        // With New Session in it (#5267), a folder with no live session has the fold too.
-        let grouped = !inScene && (!fold.sessions.isEmpty || fold.showsNewSession)
+        let grouped = !inScene && !fold.sessions.isEmpty
         let isOpen = !grouped || fold.isSearching || folds.isOpen(key, .sessions)
         if grouped {
             SidebarFoldRow(title: "Sessions", count: fold.sessions.count, isOpen: isOpen) {
                 folds.set(key, .sessions, open: !isOpen)
             }
-        }
-        // New Session, the fold's first row (#5267), as Machines has New Machine. In a
-        // folder's own scene, the Sessions group's first row.
-        if isOpen && fold.showsNewSession {
-            NewSessionRow(folder: key, isNested: grouped)
         }
         // A closed fold has no rows at all (#237).
         ForEach(isOpen ? SidebarTree.rows(fold.sessions, in: model.work, folds: folds) : []) { row in
@@ -1200,38 +1256,6 @@ struct NewSessionButton: View {
             Label("New Session", icon: "plus")
         }
         .disabled(model.isStale)
-    }
-}
-
-/// The first row of a folder's Sessions (#5267; was the sidebar's first row, #495, #498): a
-/// new session in that folder, drawn as Machines' New Machine row. It carries the folder's
-/// own item, which the list lights while that form is open.
-private struct NewSessionRow: View {
-    @Environment(RemoteModel.self) private var model
-    let folder: FolderKey
-    /// In its folder's Sessions fold: one level in, as a session's row (#2312).
-    var isNested = false
-    /// The sessions' mark well, as `SidebarSessionRow` scales it.
-    @ScaledMetric private var scale: CGFloat = 1
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(icon: "square.and.pencil")
-                .sidebarMark(Paper.accent)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-            Text("New Session")
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, isNested ? 20 * scale + 10 : 0)
-        .appText(.supporting)
-        .foregroundStyle(model.isStale ? .secondary : .primary)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("New Session")
-        .accessibilityHint("Starts a new session in this folder")
-        .paperTag(SidebarItem.folder(folder))
-        .selectionDisabled(model.isStale)
     }
 }
 

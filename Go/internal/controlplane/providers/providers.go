@@ -116,8 +116,11 @@ type Hooks struct {
 	// given, sent with each call and kept by neither side; nil for a kept provider.
 	Connect func(record ProviderRecord, secrets map[string]string) (Provider, error)
 	// HostCommand is the one line that installs a host with a new host code, for a new
-	// workspace's first boot (US5).
-	HostCommand func(person string) (string, error)
+	// workspace's first boot (US5), and the host id the machine joins as with it (#5765).
+	HostCommand func(person string) (command, host string, err error)
+	// SetupStep keeps a step of a made machine's set-up (#5765, epic #5353): 1, create
+	// machine, as the provider makes it, and 2, join machine, until it joins. Nil keeps none.
+	SetupStep func(host string, report wire.MachineSetupReport)
 	// BackUp makes a backup of the host, and waits for it, before its workspace is deleted
 	// (#1815). False when the host can't make one: it is offline, or older than backups.
 	// Nil makes none.
@@ -190,6 +193,8 @@ type heldProvider struct {
 type joining struct {
 	provider  string
 	workspace string
+	// host is the id it joins as, whose set-up step 2 fails when it does not join (#5765).
+	host string
 	// What it clones once it has joined (#1122), as the client that made it.
 	clones []string
 	caller *Caller
@@ -290,9 +295,12 @@ func NewProviders(cfg Config) *Providers {
 		h.InstalledOver = func(string) string { return "" }
 	}
 	if h.HostCommand == nil {
-		h.HostCommand = func(string) (string, error) {
-			return "", providerFailure("This control plane can’t give out host codes.")
+		h.HostCommand = func(string) (string, string, error) {
+			return "", "", providerFailure("This control plane can’t give out host codes.")
 		}
+	}
+	if h.SetupStep == nil {
+		h.SetupStep = func(string, wire.MachineSetupReport) {}
 	}
 	if h.OwnerOf == nil {
 		h.OwnerOf = func(string) string { return "" }
@@ -1775,7 +1783,7 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	}
 	// The install line holds a host code: passed on, never logged.
 	// The workspace's machine is the starter's (FR-028).
-	command, err := p.hooks.HostCommand(person)
+	command, madeHost, err := p.hooks.HostCommand(person)
 	if err != nil {
 		var f *Failure
 		if errors.As(err, &f) {
@@ -1817,6 +1825,10 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	}
 	var made *MachineInfo
 	var runs bool
+	// Step 1 of its set-up (#5765), from the press of Make: waiting for an earlier make on the
+	// same provider is part of it.
+	p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateRunning,
+		"Asking "+provider.Name+" for "+name, "")
 	turn := p.makeTurn(id)
 	turn.Lock()
 	_, err = p.providerCall(id, func(c Provider) (any, error) {
@@ -1828,7 +1840,14 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	if err != nil {
 		p.log(fmt.Sprintf("workspace: create %s at %s by %s: failed: %s", name, provider.Name, who, errorWords(err)))
 		p.failed(id, name, person, errorWords(err))
+		p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateFailed, "", errorWords(err))
 		return nil, err
+	}
+	p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone,
+		"Made at "+provider.Name+" in "+secondsSince(began), "")
+	if runs {
+		p.setupStep(madeHost, wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning,
+			"Waiting for "+name+" to start and join", "")
 	}
 	p.madeOn(person, id, used)
 	p.usedName(person, name)
@@ -1872,7 +1891,7 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 			}
 		}
 		p.mu.Lock()
-		p.joining[name] = &joining{provider: id, workspace: found.ID, clones: clones, caller: caller}
+		p.joining[name] = &joining{provider: id, workspace: found.ID, host: madeHost, clones: clones, caller: caller}
 		p.mu.Unlock()
 		go p.linkWhenJoined(name)
 	}
@@ -1980,10 +1999,26 @@ func (p *Providers) linkWhenJoined(name string) {
 		waited := durationWords(p.timing.GiveUp)
 		p.log(fmt.Sprintf("workspace: %s was made but didn't join in %s", name, waited))
 		// Said to every client (#4610): the row says so, with Delete, not only the log.
-		p.gaveUp(last.provider, last.workspace, name,
-			fmt.Sprintf("Made at %s, but it didn’t join in %s. Delete it, or check its install and register it by hand.",
-				providerName, waited))
+		reason := fmt.Sprintf("Made at %s, but it didn’t join in %s. Delete it, or check its install and register it by hand.",
+			providerName, waited)
+		p.gaveUp(last.provider, last.workspace, name, reason)
+		p.setupStep(last.host, wire.MachineSetupStepIDJoin, wire.MachineSetupStateFailed, "", reason)
 	}
+}
+
+// setupStep says one step of a made machine's set-up (#5765), when it has a host id.
+func (p *Providers) setupStep(host string, step wire.MachineSetupStepID, state wire.MachineSetupState, detail, problem string) {
+	if host == "" {
+		return
+	}
+	report := wire.MachineSetupReport{Step: step, State: state}
+	if detail != "" {
+		report.Detail = &detail
+	}
+	if problem != "" {
+		report.Error = &problem
+	}
+	p.hooks.SetupStep(host, report)
 }
 
 // gaveUp keeps a make the control plane stopped waiting for (#4610), so that its row says

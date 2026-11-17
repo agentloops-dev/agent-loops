@@ -104,7 +104,11 @@ test("a step counts its children, and one all done starts folded", () => {
   assert.equal(p.startsFolded(plan.steps[1], plan), false);
   assert.equal(p.moreWords(19), "9 more");
   assert.equal(p.moreWords(10), undefined);
-  assert.equal(p.priorityLabel(item(5, "open", { labels: [{ name: "bug" }, { name: "priority:high" }] }))?.name, "priority:high");
+  // The chip reads ForgeItem.priority, not the label's name (#5690).
+  assert.equal(p.priorityWords(item(5, "open", { labels: [{ name: "priority:high" }] }).priority), undefined);
+  assert.equal(p.priorityWords("high"), "High");
+  assert.equal(p.priorityWords("medium"), "Medium");
+  assert.equal(p.priorityWords("low"), "Low");
 });
 
 test("a standing epic's header has no end", () => {
@@ -142,7 +146,7 @@ test("the lead's words", () => {
 test("Start lead fills the lead skill's form", () => {
   const lead = p.leadStart({ prompt: "#3100: Work pages\n\nWork on this GitHub issue.", labels: ["#3100"], worktree: "3100 Work pages" },
     "https://github.com/alexec/Agents/issues/3100");
-  assert.equal(lead.prompt, "#3100: Work pages\n\nLead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`): https://github.com/alexec/Agents/issues/3100");
+  assert.equal(lead.prompt, "#3100: Work pages\n\nLead this epic: https://github.com/alexec/Agents/issues/3100");
   assert.deepEqual(lead.labels, ["#3100", "lead"]);
   assert.equal(lead.worktree, undefined);
 });

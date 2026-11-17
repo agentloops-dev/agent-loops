@@ -417,11 +417,15 @@
     "title": "Hang up voice mode"
   },
   {
-    "description": "Start another session in this folder, with a prompt of its own, to do a part of the work that can run alongside the rest. It starts in this folder, or, with machine, on another of the person's machines, in this project's folder there (or in folder), and appears in the person's list of sessions, marked as started by you. The person can open it, talk to it, stop it or archive it at any time.\n\nThis folder has two limits on sessions started by sessions, counting every one here, which only the person sets (in Folder Settings): how many may be running — working, waiting on a question, or waiting to carry on by itself — and how many may exist not yet archived, where stopped, finished and asking-to-be-archived ones still count. A start that would break either is queued instead, saying which: nothing runs yet, and it starts by itself, oldest first, once a running place and a not-archived place are both free, behind the working and waiting ones. So you can queue work up front rather than wait and try again; wait for a queued session with wait_for_event on agent.ended as for any other. A third limit says how many may be queued; past it a start is refused. Use list_sessions with started_by me to see yours and how many places of each are in use. Stop one with stop_session when its part is no longer wanted: that frees its running place, and it keeps its other place until it is archived. Once its work is merged or abandoned, call archive_session on it to free that place too (at once where the person allows it, otherwise by asking them); archive a finished session rather than removing its worktree under it.\n\nOn another machine (list_machines names them), for work that has to run there, such as a bug only that machine shows: the person is asked first, on your question card, and nothing starts without their yes. With machine alone it starts in this project's folder on that machine; folder, a path on that machine, picks another, such as a folder of another project. It has the code already, or, with send, the branch you are on goes there first, with its uncommitted changes, as the person's Send to ‹machine›… does: the folder is made if it is not there, and a folder there with work of its own is never overwritten. A stopped machine is started, and the session starts when it connects. This folder's limits count it, and a start past them is refused there rather than queued. list_sessions with started_by me, read_session, message_session, wait_for_event on agent.ended, stop_session and archive_session reach it by its id, through the control plane, and only you can; its end comes back to that wait. One started while its machine was stopped has no id yet, so they don't reach it. Say in its prompt what to do with its result, such as push a branch or open a pull request; the person sees it under that machine.\n\nStart one only when part of the work can genuinely run alongside the rest. Do not start one for work you could simply do yourself. The session you start cannot start sessions of its own.\n\nReturns the new session's id, which stop_session and archive_session take.",
+    "description": "Start another session in this folder, with a prompt of its own, to do a part of the work that can run alongside the rest. It starts in this folder, or, with machine, on another of the person's machines, in this project's folder there (or in folder), and appears in the person's list of sessions, marked as started by you. The person can open it, talk to it, stop it or archive it at any time.\n\nThis folder has two limits on sessions started by sessions, counting every one here, which only the person sets (in Folder Settings): how many may be running — working, waiting on a question, or waiting to carry on by itself — and how many may exist not yet archived, where stopped, finished and asking-to-be-archived ones still count. A start that would break either is queued instead, saying which: nothing runs yet, and it starts by itself, highest priority first, then the oldest, once a running place and a not-archived place are both free, behind the working and waiting ones. So you can queue work up front rather than wait and try again; wait for a queued session with wait_for_event on agent.ended as for any other. A third limit says how many may be queued; past it a start is refused. Use list_sessions with started_by me to see yours and how many places of each are in use. Stop one with stop_session when its part is no longer wanted: that frees its running place, and it keeps its other place until it is archived. Once its work is merged or abandoned, call archive_session on it to free that place too (at once where the person allows it, otherwise by asking them); archive a finished session rather than removing its worktree under it.\n\nOn another machine (list_machines names them), for work that has to run there, such as a bug only that machine shows: the person is asked first, on your question card, and nothing starts without their yes. With machine alone it starts in this project's folder on that machine; folder, a path on that machine, picks another, such as a folder of another project. It has the code already, or, with send, the branch you are on goes there first, with its uncommitted changes, as the person's Send to ‹machine›… does: the folder is made if it is not there, and a folder there with work of its own is never overwritten. A stopped machine is started, and the session starts when it connects. This folder's limits count it, and a start past them is refused there rather than queued. list_sessions with started_by me, read_session, message_session, wait_for_event on agent.ended, stop_session and archive_session reach it by its id, through the control plane, and only you can; its end comes back to that wait. One started while its machine was stopped has no id yet, so they don't reach it. Say in its prompt what to do with its result, such as push a branch or open a pull request; the person sees it under that machine.\n\nStart one only when part of the work can genuinely run alongside the rest. Do not start one for work you could simply do yourself. The session you start cannot start sessions of its own.\n\nReturns the new session's id, which stop_session and archive_session take.",
     "inputSchema": {
       "properties": {
         "description": {
           "description": "Why you are making this call, in one short sentence for the person.",
+          "type": "string"
+        },
+        "effort": {
+          "description": "Optional. The effort, as a workflow's `effort:`: one of the values or names the start form offers for that runtime (such as low, medium or high). One the runtime does not offer is refused, naming the ones it does. Leave out for the model's usual effort. On Auto the effort follows the model's level, so name none.",
           "type": "string"
         },
         "folder": {
@@ -445,6 +449,15 @@
         },
         "permission_mode": {
           "description": "Optional. The runtime's own permission mode, as a workflow's `permission-mode:` — e.g. a read-only or plan mode. Leave out to start it in the mode you are in now, when it runs on your runtime.",
+          "type": "string"
+        },
+        "priority": {
+          "description": "Optional: high, medium or low, set on the new session. Leave out and it follows its issue's priority, else yours.",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
           "type": "string"
         },
         "prompt": {
@@ -536,6 +549,37 @@
     },
     "name": "set_session_labels",
     "title": "Label this session"
+  },
+  {
+    "description": "Set or clear the priority of this session or one you started: high, medium or low, or issue to follow its issue's priority again (else its starter's). A session with a higher priority goes first when sessions wait for the same resource. A priority set here wins over its issue's until it is cleared.",
+    "inputSchema": {
+      "properties": {
+        "description": {
+          "description": "Why you are making this call, in one short sentence for the person.",
+          "type": "string"
+        },
+        "id": {
+          "description": "The id start_session or list_sessions gave. Leave out for yourself.",
+          "type": "string"
+        },
+        "priority": {
+          "description": "high, medium or low; issue clears the set priority.",
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "issue"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "priority"
+      ],
+      "type": "object"
+    },
+    "name": "set_session_priority",
+    "title": "Set a session's priority"
   },
   {
     "description": "Move once this turn ends: into a git worktree of this folder, or back to the folder. Do it when the work turns into a change that should be on its own branch, or when asked. You are started again there to carry on, or stay there if you asked to be archived. Nothing uncommitted comes with you, and a new worktree starts from the commit you have checked out: commit first. Give neither argument to take back a move you asked for. Not with a wait.",
@@ -646,6 +690,40 @@
     },
     "name": "message_session",
     "title": "Tell another session something"
+  },
+  {
+    "description": "Answer a permission card of a session you started with start_session (#5440), on the same card the person sees: they can answer it first, and when you answer, it closes on every client and the session's chat says you chose. You can allow only once, and only what your own permission mode would let you do without asking (a read, an edit, a command, by the mode's rank), never more than the policy allows; you can always deny. A step that is hard to undo is not yours to answer and stays with the person: a delete, a file outside that session's folder, a force push or a branch or tag deleted, a hard reset or clean, an rm, a publish (npm, cargo, docker push, a release, a new repository, gh api or curl that writes), or a payment. agent.asked_permission wakes you with the request's id in request and the tool in tool. The answer is in the record, by your name.",
+    "inputSchema": {
+      "properties": {
+        "answer": {
+          "description": "allow (once) or deny.",
+          "enum": [
+            "allow",
+            "deny"
+          ],
+          "type": "string"
+        },
+        "description": {
+          "description": "Why you are making this call, in one short sentence for the person.",
+          "type": "string"
+        },
+        "id": {
+          "description": "The session's id, as start_session or list_sessions gave it.",
+          "type": "string"
+        },
+        "request": {
+          "description": "The permission request's id, as agent.asked_permission gave it in request. Needed only when that session waits on more than one.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "answer"
+      ],
+      "type": "object"
+    },
+    "name": "answer_permission",
+    "title": "Answer a permission card of a session you started"
   },
   {
     "description": "Take a turn with something on this Mac that only one agent should use at a time: a simulator, a browser, the screen (mouse, keyboard, front window), or anything you name, such as a port. Lease it before you use it, and release it as soon as you are done. If you already hold it, this extends your lease. If someone else holds it, you join its line and are told your place at once; you will get a lease.granted event when it is yours. End your turn, and you will be started again with it. Stop Waiting or cancel_wait leaves the line. Take several resources in the same order every time. Use list_resources to see the names. The person may have declared resources, such as \"build\", each with a description of when to take it and how many agents may hold it at once: lease a declared resource whenever its description applies to what you are about to do.",
@@ -771,7 +849,7 @@
         },
         "where": {
           "type": "object",
-          "description": "Narrow them: agent on agent.ended (the sessions, by id or exact title), branch on branch.moved, why on person.away and person.back. A list means any. For an MCP event, its own keys."
+          "description": "Narrow them: agent on agent.ended (the sessions, by id or exact title), branch on branch.moved, why on person.away and person.back. A list means any. For an MCP event, its own keys; a forge's pr takes a list too, as pr: [5317, 5318]."
         },
         "until_minutes": {
           "type": "integer",
@@ -1229,6 +1307,35 @@
     }
   },
   {
+    "name": "conflict_risk_analysis",
+    "title": "Check a change against the open pull requests",
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "Before your first push, and before you turn on auto-merge, ask which open pull requests this change would conflict with. It merges your diff against every open request of this folder's repo with git merge-tree (no files are touched), leaves out each request's own conflicts with the default branch and files a command regenerates, and gives one advice per request and overall: go, wait for #N (it lands soon: rebase once on a clean base), or stack on #N (your change builds on it: base your branch on its branch, no auto-merge until it lands). The advice is advisory, never a gate. It works with any forge the folder's repo is on, and ends with the report as JSON.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "Why you are making this call, in one short sentence for the person.",
+          "type": "string"
+        },
+        "diff": {
+          "type": "string",
+          "description": "What to check: a pushed branch, a tag or a commit. Leave it out, or say working-tree, for this folder's working tree with its uncommitted and new files."
+        },
+        "depends_on": {
+          "type": "string",
+          "description": "Optional: the request numbers this change builds on, such as \"5420, 5431\"."
+        },
+        "ignore": {
+          "type": "string",
+          "description": "Optional: more files that a command regenerates, as comma separated globs. A folder can list them in .agents/folder.json under regeneratedFiles."
+        }
+      }
+    }
+  },
+  {
     "name": "set_ci_secret",
     "title": "Set a CI secret",
     "annotations": {
@@ -1339,7 +1446,7 @@
       "destructiveHint": false,
       "openWorldHint": true
     },
-    "description": "Make a new app's GitHub repository from a starter, with the person's GitHub connection, and clone it on this machine as a folder, so it shows in the session list on every client. The repository is private. The app pushes the starter as its first commit on main, with the values filled in. A step that is done already is skipped: a repository that is there is used, one with commits keeps them, and a clone already in place becomes the folder. So after a step fails, call it again. For an iPhone app and a web service, make two repositories.",
+    "description": "Make a new app's GitHub repository from a starter, with the person's GitHub connection, and clone it on this machine as a folder, so it shows in the session list on every client. The repository is private. The app pushes the starter as its first commit on main, with the values filled in. When GitHub does not let the connection make it (the GitHub App cannot make repositories), nothing is made and the answer says the person's step: a hand_to_person card on github.com/new from the template, then the GitHub App installed on the new repository; call it again after that, and it fills in the values over the template's files. A step that is done already is skipped: a repository that is there is used, one with commits keeps them, and a clone already in place becomes the folder. So after a step fails, call it again. For an iPhone app and a web service, make two repositories.",
     "inputSchema": {
       "type": "object",
       "properties": {

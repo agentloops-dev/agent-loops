@@ -24,6 +24,11 @@ final class RemoteModel {
     /// drawn at launch before the Mac answers. The Mac always wins.
     @ObservationIgnored var localCopy: LocalCopyKeeper?
     var labelVocabularies: [URL: [String]] = [:]
+    /// The Secrets (#5257), Accounts (#5258) and Environment (#5260) pages' selected items, so a link from one, or from
+    /// the ⌘K menu (#5261), opens an item on another.
+    var secretsSelection: String?
+    var accountsSelection: String?
+    var environmentSelection: String?
     @ObservationIgnored var attentionRefreshTask: Task<Void, Never>?
 
     /// Whether the Mac is answering, and when it last did.
@@ -609,6 +614,12 @@ final class RemoteModel {
 
     var offeredStart: OfferedStart?
 
+    /// New Session's Suggested section (#5460), by folder: the last read, when it was read, and
+    /// whether it is this showing's own (else it is the device's copy, with its "Last update").
+    var startSuggestions: [FolderKey: SuggestionsRead] = [:]
+    /// Why a folder's first Suggested read failed, while there is no read to show (#5790).
+    var startSuggestionsFailed: [FolderKey: String] = [:]
+
     /// The offered worktree's name, chosen once the page's repository has answered: before
     /// then the page has no Worktree row, and opening it puts the place back.
     @ObservationIgnored var offeredWorktree: (folder: FolderKey, choice: WorktreeChoice)?
@@ -647,6 +658,12 @@ final class RemoteModel {
 
     /// What Auto would pick now for the page, for "Auto (Claude)".
     var startAutoPreview: AutoPreview?
+    /// Which machine Auto would pick for the page's project (#5375), from the control plane;
+    /// nil with no control plane, one that does not know it, or no project.
+    var startAutoMachine: DaemonAPI.AutoMachinePick?
+    /// The folder whose machine the person named by hand in On (#5375): Auto is off for that
+    /// page only, and is on again after the next start.
+    var startNamedMachine: FolderKey?
 
     /// What the page's attachments need its runtime to take (#3162): Auto's preview picks a
     /// runtime that takes them, as the start does.

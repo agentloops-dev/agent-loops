@@ -29,6 +29,8 @@ func (k *fakeKeychain) password(service string) (string, error) {
 }
 
 func TestSignupSecretName(t *testing.T) {
+	t.Parallel()
+
 	for domain, want := range map[string]string{
 		"gitlab.com":              "GITLAB_PASSWORD",
 		"digitalocean.com":        "DIGITALOCEAN_PASSWORD",
@@ -46,6 +48,8 @@ func TestSignupSecretName(t *testing.T) {
 }
 
 func TestSignupServicesReadsNoValue(t *testing.T) {
+	t.Parallel()
+
 	dump := []byte(`keychain: "/Users/x/Library/Keychains/login.keychain-db"
 attributes:
     "acct"<blob>="agents@example.com"
@@ -66,7 +70,7 @@ attributes:
 // that does not read is left for the next start.
 func TestMoveSignupKeychain(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if err := d.saveSecret("GITLAB_PASSWORD", "newer-reset-not-real", true); err != nil {
@@ -78,9 +82,8 @@ func TestMoveSignupKeychain(t *testing.T) {
 		"agents-signup:atlassian.com":     "",
 		"agents-signup:okta-integrator-1": "okta-5043-not-real",
 	}}
-	old := signupKeychain
-	signupKeychain = k
-	defer func() { signupKeychain = old }()
+	setFor[keychainItems](t, &signupKeychain, k)
+	setFor(t, &signupKeychainIsThePersons, func(*Daemon) bool { return true })
 
 	n, err := d.moveSignupKeychain()
 	if err != nil || n != 2 {
@@ -113,4 +116,45 @@ func TestMoveSignupKeychain(t *testing.T) {
 	if n, _ := d.moveSignupKeychain(); n != 0 || !slices.Equal(k.reads, []string{"agents-signup:atlassian.com"}) {
 		t.Fatalf("%d %v", n, k.reads)
 	}
+}
+
+// #5758: a scratch personal home, or a scratch root, never lists or reads the login
+// Keychain, and copies nothing into its store.
+func TestScratchHomeCopiesNoSignupKeychain(t *testing.T) {
+	for _, named := range []bool{true, false} {
+		home := t.TempDir()
+		if named {
+			personalHomeFor(t, home)
+		} else {
+			personalHomeFor(t, "")
+		}
+		d, _ := start(t, t.TempDir())
+		d.PersonalHome = home
+		k := &listCountingKeychain{fakeKeychain: fakeKeychain{items: map[string]string{
+			"agents-signup:atlassian.com": "atlassian-5758-not-real",
+		}}}
+		setFor[keychainItems](t, &signupKeychain, k)
+
+		n, err := d.moveSignupKeychain()
+		d.Shutdown()
+		if err != nil || n != 0 {
+			t.Fatalf("named home %v: %d %v", named, n, err)
+		}
+		if k.lists != 0 || len(k.reads) != 0 {
+			t.Errorf("named home %v: the Keychain was listed %d times, read %v", named, k.lists, k.reads)
+		}
+		if secretIsSet(home, "ATLASSIAN_PASSWORD") {
+			t.Errorf("named home %v: a scratch home took the person's password", named)
+		}
+	}
+}
+
+type listCountingKeychain struct {
+	fakeKeychain
+	lists int
+}
+
+func (k *listCountingKeychain) services() ([]string, error) {
+	k.lists++
+	return k.fakeKeychain.services()
 }

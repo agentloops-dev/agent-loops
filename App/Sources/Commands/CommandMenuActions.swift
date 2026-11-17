@@ -7,6 +7,8 @@ enum MenuKeys {
     static let commandMenu = KeyboardShortcut("k")
     static let newSession = KeyboardShortcut("n")
     static let newWorktreeSession = KeyboardShortcut("n", modifiers: [.command, .option])
+    /// New Session in Background (#5798): a window of its own, and the main window stays.
+    static let newBackgroundSession = KeyboardShortcut("n", modifiers: [.command, .shift])
     static let addFolder = KeyboardShortcut("o")
     static let cloneFolder = KeyboardShortcut("o", modifiers: [.command, .shift])
     /// New App… (#5132): Let's build your idea, again.
@@ -28,6 +30,9 @@ enum MenuKeys {
     static let nextNeedingAttention = KeyboardShortcut("j")
     static let nextSession = KeyboardShortcut(.downArrow, modifiers: [.command, .option])
     static let previousSession = KeyboardShortcut(.upArrow, modifiers: [.command, .option])
+    /// Go ▸ Back and Forward along every page (#5784), as Finder and Safari.
+    static let back = KeyboardShortcut("[")
+    static let forward = KeyboardShortcut("]")
 
     /// A folder's key in Go, ⌃⌘1 to ⌃⌘9, by its place in the list; nil after the ninth.
     static func folder(at index: Int) -> KeyboardShortcut? {
@@ -37,7 +42,8 @@ enum MenuKeys {
 }
 
 /// The command menu's items on the Mac: the actions the menu bar gave, then the sessions, the
-/// folders and the Work lists' issues and pull requests, the nearest first.
+/// folders, the person's secrets, accounts and environment variables (#5261), and the Work lists'
+/// issues and pull requests, the nearest first.
 @MainActor
 enum CommandMenuItems {
     static func items(_ model: AppModel, actions: [CommandMenuAction]) -> [CommandFinder.Item] {
@@ -60,7 +66,7 @@ enum CommandMenuItems {
         }
         // The open folder's sessions first, then the actions, then each other folder's sessions.
         return sessions(folders.filter { $0.key == here }) + actions.map(\.item)
-            + sessions(folders.filter { $0.key != here }) + folderItems
+            + sessions(folders.filter { $0.key != here }) + folderItems + model.userScope.commandMenuItems
             + workItems(model, .issue) + workItems(model, .pr)
     }
 
@@ -76,6 +82,15 @@ enum CommandMenuItems {
     static func open(_ item: CommandFinder.Item, _ model: AppModel) {
         if let place = CommandMenuWork.place(of: item) {
             model.showWork(place)
+            return
+        }
+        // A secret, an account or a variable opens on its page, selected (#5261).
+        if let place = CommandMenuSetup.place(of: item) {
+            switch place.page {
+            case .secrets: model.showSecrets(item: place.id)
+            case .accounts: model.showAccounts(item: place.id)
+            case .environment: model.showEnvironment(item: place.id)
+            }
             return
         }
         let (prefix, rest) = CommandMenuID.split(item.id)

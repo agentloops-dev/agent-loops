@@ -73,6 +73,9 @@ func (d *Daemon) askSecret(id wire.UUID, args map[string]json.RawMessage) (strin
 	if !answered {
 		return formStillOpen, nil
 	}
+	if r.dismissed {
+		return dismissedSecretWords(name), nil
+	}
 	return d.secretNote(id, name, r.action, r.reason), nil
 }
 
@@ -161,7 +164,7 @@ func (d *Daemon) saveAskedSecret(agent wire.UUID, s wire.ElicitationSecret, cont
 	if askedSessionOnly(content) {
 		return d.setSessionSecret(agent, s.Name, v, description, ask)
 	}
-	if err := d.saveSecret(s.Name, v, ask); err != nil {
+	if err := d.saveAgentSecret(agent, s.Name, v, ask); err != nil {
 		return Invalid("%s was not saved: %s", s.Name, err.Error())
 	}
 	if given || description != "" {

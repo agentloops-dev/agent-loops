@@ -21,6 +21,8 @@ type SearchFilter struct {
 	PRs                                      bool
 	State                                    string
 	Label, Assignee, Query, Feature, Project string
+	// Reviewer is a login a review is requested from (#5803), "" for any.
+	Reviewer string
 }
 
 // Item is an issue or a pull request as the forge reads list it.
@@ -30,6 +32,12 @@ type Item struct {
 	PR     bool
 	// State is open, closed or merged.
 	State, Title, URL, Author, Milestone, UpdatedAt string
+	// MilestoneDue is the milestone's due date, "" for none (#5688).
+	MilestoneDue string
+	// An issue's Priority is high, medium or low from the org's Priority issue field (Urgent
+	// and High are high), "" for none; PriorityField says its repo has that field (#5747).
+	Priority      string
+	PriorityField bool
 	// CreatedAt is when it opened; ClosedAt when it closed or merged, "" while open (#4373).
 	CreatedAt, ClosedAt string
 	// AuthorAvatar is the author's picture (avatars.githubusercontent.com), "" for none (#4363).
@@ -158,11 +166,17 @@ const assigneeFields = `... on User { login } ... on Bot { login } ... on Manneq
 // itemFields are what an issue and a pull request both say, in a search and on their own. Their
 // states are of two types, so each has its own name: issueState and pullState.
 const itemFields = `number title url createdAt closedAt updatedAt author { login __typename avatarUrl } repository { nameWithOwner }
-  ` + labelFields + ` assignees(first: 20) { nodes { login } } milestone { title } commentCount: comments { totalCount }`
+  ` + labelFields + ` assignees(first: 20) { nodes { login } } milestone { title dueOn } commentCount: comments { totalCount }`
 
 // issueFields are an issue's own: its parent and how many of its sub-issues are closed (#3267),
 // and why it closed (#4365).
-const issueFields = `parent { number repository { nameWithOwner } } subIssuesSummary { total completed } stateReason`
+const issueFields = `parent { number repository { nameWithOwner } } subIssuesSummary { total completed } stateReason ` + priorityFields
+
+// priorityFields are an issue's issue fields, and the ones its repo has, for its Priority
+// (#5747). A GitHub with no issue fields (GitHub Enterprise Server) refuses them, so
+// graphqlFields asks again without them.
+const priorityFields = `fieldRepo: repository { issueFields(first: 25) { nodes { ... on IssueFieldSingleSelect { name } } } }
+  issueFieldValues(first: 25) { nodes { ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldSingleSelect { name } } } } }`
 
 // pullFields are a pull request's own, for a list: its checks in one word, not each of them.
 const pullFields = `isDraft mergeable reviewDecision autoMergeRequest { enabledAt } headRefName baseRefName
@@ -218,6 +232,7 @@ type gqlItem struct {
 	} `json:"assignees"`
 	Milestone *struct {
 		Title string `json:"title"`
+		DueOn string `json:"dueOn"`
 	} `json:"milestone"`
 	CommentCount struct {
 		TotalCount int `json:"totalCount"`
@@ -251,6 +266,52 @@ type gqlItem struct {
 		Total     int `json:"total"`
 		Completed int `json:"completed"`
 	} `json:"subIssuesSummary"`
+	FieldRepo *struct {
+		IssueFields struct {
+			Nodes []struct {
+				Name string `json:"name"`
+			} `json:"nodes"`
+		} `json:"issueFields"`
+	} `json:"fieldRepo"`
+	FieldValues *struct {
+		Nodes []struct {
+			Name  string `json:"name"`
+			Field *struct {
+				Name string `json:"name"`
+			} `json:"field"`
+		} `json:"nodes"`
+	} `json:"issueFieldValues"`
+}
+
+// priorityField is the name of the issue field that says an issue's priority (#5747).
+const priorityField = "Priority"
+
+// priority is an issue's from its Priority issue field: Urgent and High are high, Medium is
+// medium, Low is low, and any other option none; has says its repo has that field.
+func (n gqlItem) priority() (p string, has bool) {
+	if n.FieldRepo != nil {
+		for _, f := range n.FieldRepo.IssueFields.Nodes {
+			has = has || strings.EqualFold(f.Name, priorityField)
+		}
+	}
+	if n.FieldValues == nil {
+		return "", has
+	}
+	for _, v := range n.FieldValues.Nodes {
+		if v.Field == nil || !strings.EqualFold(v.Field.Name, priorityField) {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(v.Name)) {
+		case "urgent", "highest", "high":
+			return "high", true
+		case "medium":
+			return "medium", true
+		case "low", "lowest":
+			return "low", true
+		}
+		return "", true
+	}
+	return "", has
 }
 
 func (n gqlItem) item() Item {
@@ -266,7 +327,7 @@ func (n gqlItem) item() Item {
 		i.Assignees = append(i.Assignees, a.Login)
 	}
 	if n.Milestone != nil {
-		i.Milestone = n.Milestone.Title
+		i.Milestone, i.MilestoneDue = n.Milestone.Title, n.Milestone.DueOn
 	}
 	if n.Parent != nil && n.Parent.Number > 0 {
 		i.ParentRepo, i.ParentNumber = n.Parent.Repository.NameWithOwner, n.Parent.Number
@@ -278,6 +339,7 @@ func (n gqlItem) item() Item {
 		if i.State == "closed" {
 			i.StateReason = stateReasonOf(n.StateReason)
 		}
+		i.Priority, i.PriorityField = n.priority()
 		return i
 	}
 	i.Draft, i.AutoMerge, i.Review = n.IsDraft, n.AutoMerge != nil, strings.ToLower(n.Review)
@@ -340,6 +402,10 @@ func SearchQuery(repos []string, f SearchFilter) string {
 	if f.Assignee != "" {
 		words = append(words, "assignee:"+f.Assignee)
 	}
+	if f.Reviewer != "" {
+		// Asked of the person, not of a team of theirs; GitHub drops it once they review.
+		words = append(words, "user-review-requested:"+f.Reviewer)
+	}
 	if f.Project != "" {
 		words = append(words, "project:"+f.Project)
 	}
@@ -372,7 +438,7 @@ func (g *RealGitHub) Search(ctx context.Context, repos []string, f SearchFilter,
 			} `json:"edges"`
 		} `json:"search"`
 	}
-	if err := g.graphql(ctx, searchQuery, vars, &data); err != nil {
+	if err := g.graphqlFields(ctx, searchQuery, vars, &data); err != nil {
 		return SearchPage{}, err
 	}
 	p := SearchPage{Items: []Item{}, Cursors: []string{}, Total: &data.Search.IssueCount}
@@ -453,7 +519,7 @@ func (g *RealGitHub) ItemPage(ctx context.Context, repo string, number int, befo
 			mergeSettings
 		} `json:"repository"`
 	}
-	if err := g.graphql(ctx, itemQuery, vars, &data); err != nil {
+	if err := g.graphqlFields(ctx, itemQuery, vars, &data); err != nil {
 		return ItemDetail{}, err
 	}
 	if data.Repository == nil || data.Repository.Item == nil {

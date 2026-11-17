@@ -18,6 +18,8 @@ struct FolderListView: View {
     @AppStorage("showsArchivedFolders", store: WindowDefaults.store) private var showsArchived = false
     /// Machines, open until folded, and kept so (#3626).
     @AppStorage("showsMachines", store: WindowDefaults.store) private var showsMachines = true
+    /// The machines pinned to the group (#5286), a machine on each line.
+    @AppStorage(MachinePins.key, store: WindowDefaults.store) private var machinePins = ""
     /// Status, open until folded, and kept so: its key from before #3633 (#3998).
     @AppStorage("showsStatus", store: WindowDefaults.store) private var showsStatus = true
     /// The Work group (#4004), open the first time: folded, it hides what the one Work row showed.
@@ -67,6 +69,15 @@ struct FolderListView: View {
     /// This Mac, when it is one of the machines, then the others by name (#3626).
     private var machines: [MachineRef] {
         (model.hasMacHost ? [.mac] : []) + model.hosts.servers
+    }
+
+    /// The Machines group's rows (#5286): at most seven, This Mac, pinned and busy first.
+    private var machineRows: MachinesGroup.Rows {
+        let pins = Set(MachinePins.pinned(machinePins))
+        let listed = machines.map { host in
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
+        }
+        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count)
     }
 
     /// No runtime can be started on: Runtimes' icon says so in red (#587); one nearly used
@@ -120,6 +131,18 @@ struct FolderListView: View {
                     }
                 }
             }
+            // A secret an agent saved on a machine of the person's, until it is theirs (#5308).
+            if !model.userScope.offers.isEmpty {
+                Section {
+                    ForEach(model.userScope.offers) { offer in
+                        SecretOfferCard(offer: offer, isAnswering: model.userScope.answeringOffers.contains(offer.offer),
+                                        failure: model.userScope.offerFailures[offer.offer],
+                                        choose: { use in Task { await model.chooseSecretOffer(offer, useTheAgents: use) } })
+                            .listRowSeparator(.hidden)
+                            .selectionDisabled()
+                    }
+                }
+            }
             // A new client that signed in with GitHub as this person (#995), beside them.
             let signingIn = model.signIn.open()
             if !signingIn.isEmpty {
@@ -166,7 +189,7 @@ struct FolderListView: View {
             if let achievement = model.achievementCard {
                 Section {
                     AchievementCard(achievement: achievement,
-                                  open: { model.dismissAchievement(achievement); picked = [.multiplier] },
+                                  open: { model.dismissAchievement(achievement); picked = [.achievements] },
                                   dismiss: { model.dismissAchievement(achievement) })
                         .listRowSeparator(.hidden)
                         .selectionDisabled()
@@ -177,6 +200,13 @@ struct FolderListView: View {
             // page keeps its list's row picked. New Session is the first row of each folder's
             // Sessions (#5267), so the rows with no header went: Docs and Messages are Work's first.
             Section(isExpanded: $showsWorkLists) {
+                // The Dashboard (#5534, a PoC): each work item on this Mac and its sessions, with
+                // what waits on the person answered in place. First, as the page the window opens
+                // to and the way back to it (#5696).
+                HStack { Text("Dashboard").foregroundStyle(.primary); Spacer() }
+                    .help("Each work item on this Mac, its sessions, pull request and checks, and what waits on you")
+                    .activityIcon("square.grid.2x2")
+                    .appText(.supporting).sidebarInk(.dashboard).tag(SidebarItem.dashboard)
                 // Docs (#3321): the folders' docs and the docs connectors'.
                 HStack { Text("Docs").foregroundStyle(.primary); Spacer() }
                     .help("Every folder’s Markdown docs and your docs connectors’ pages, read only")
@@ -216,11 +246,15 @@ struct FolderListView: View {
                 // What happened last to the person's secrets and accounts (#4161): the newest's age, and
                 // the one read last in grey. The mark keeps its plain tint; "not backed up" is on the page.
                 ForEach([StatusSecretsKind.secrets, .accounts], id: \.self) { kind in
-                    let item: SidebarItem = kind == .secrets ? .secretsStatus : .accountsStatus
+                    let item = kind.sidebarItem
                     StatusSecretsRow(kind: kind, state: model.userScope) { model.work.agent($0)?.title }
                         .activityIcon(kind.systemImage)
                         .appText(.supporting).sidebarInk(item).tag(item)
                 }
+                // The plain variables sessions get (#5260): a page to find, add and edit them.
+                StatusSecretsRow(kind: .environment, state: model.userScope)
+                    .activityIcon(StatusSecretsKind.environment.systemImage)
+                    .appText(.supporting).sidebarInk(.environmentStatus).tag(SidebarItem.environmentStatus)
             } header: {
                 Text("Status").appText(.supporting)
             }
@@ -228,33 +262,37 @@ struct FolderListView: View {
             // A row per machine (#3626), each its page: CPU, memory and disks. Its icon says
             // its kind and, in its colour, its state (#4113).
             if !machines.isEmpty {
+                // At most seven rows, then All Machines (N) (#5286).
+                let rows = machineRows
                 Section(isExpanded: $showsMachines) {
-                    ForEach(machines, id: \.self) { host in
+                    ForEach(rows.machines, id: \.self) { host in
                         MachineRow(host: host) { picked = [.machine(host)] }
                             .appText(.supporting).sidebarInk(.machine(host)).tag(SidebarItem.machine(host))
                     }
                     // The machines New Machine is making, and the ones the control plane gave up
                     // waiting for (#4610), and every other machine of the person's that never
                     // joined, a click to join it (#4978): a row each until a machine of the name joins.
-                    ForEach(0..<model.machinesBeingMade, id: \.self) { _ in
+                    let unnamed = min(model.machinesBeingMade, rows.making)
+                    ForEach(0..<unnamed, id: \.self) { _ in
                         MakingMachineRow(making: nil).appText(.supporting)
                     }
-                    ForEach(model.machinesMaking) { making in
+                    ForEach(model.machinesMaking.prefix(rows.making - unnamed)) { making in
                         MakingMachineRow(making: making).appText(.supporting)
                     }
-                    // + New Machine, the group's last row, as the Remote's (#4034, #5265).
-                    if ControlConfig.endpoint != nil {
-                        NewMachineRow().appText(.supporting)
-                    }
+                    // The Machines page (#5567): every machine, with a search, filters and actions on many.
+                    // Past seven machines it says how many there are (#5286).
+                    Text(rows.bounded ? MachinesGroup.allTitle(rows.total) : "All Machines").activityIcon("list.bullet.rectangle")
+                        .help("Every machine: search, filter, and start, stop or delete many at once")
+                        .appText(.supporting).sidebarInk(.allMachines).tag(SidebarItem.allMachines)
                 } header: {
                     MachinesHeader()
                 }
             }
 
             Section(isExpanded: $showsUsage) {
-                // The way back to the page the window opens to (#3986), always first.
-                MultiplierRow().activityIcon("multiply.circle")
-                    .appText(.supporting).sidebarInk(.multiplier).tag(SidebarItem.multiplier)
+                // The Achievements page (#3986), always first.
+                AchievementsRow().activityIcon("multiply.circle")
+                    .appText(.supporting).sidebarInk(.achievements).tag(SidebarItem.achievements)
                 SpendingRow(selection: $selection).activityIcon("dollarsign.circle",
                                                                 warns: model.costState?.daySpendIsCloseToFull == true)
                     .appText(.supporting).sidebarInk(.spending).tag(SidebarItem.spending)
@@ -430,6 +468,10 @@ struct FolderListView: View {
             searchFocused = true
             requests.wantsSessionSearchFocus = false
         }
+        // The + over the sidebar (#5447), always shown: every "new", as the web's + menu has them.
+        .toolbar {
+            ToolbarItem { NewItemsMenu() }
+        }
         // A folder dragged in from Finder becomes a folder, as File ▸ Add Folder
         // Folder… does. Folders only: a file is not somewhere to work. A file dropped on
         // a folder's or a session's row goes into its drop box instead (#231).
@@ -455,11 +497,13 @@ struct FolderListView: View {
             if let folder = requests.dropboxFolder { DropboxSheet(folder: folder).paperSheet() }
         }
         .sendToHostSheet(requests)
+        .machinePickerSheet(requests)
         .bringBackSheet(requests)
         // New Machine (#4634): the defaults chosen, Make to confirm.
         .sheet(item: Binding(get: { model.newMachineAsk }, set: { model.newMachineAsk = $0 })) { ask in
             NewMachineSheet(providers: model.machineProviders, provider: ask.provider, again: ask.again,
-                            problem: ask.problem, load: { await model.newMachineForm($0) }) { draft in
+                            problem: ask.problem, choices: model.newMachineChoices,
+                            load: { await model.newMachineForm($0) }) { draft in
                 model.makeMachine(draft)
                 return nil
             }
@@ -664,7 +708,7 @@ struct FolderFold: View {
                 get: { isOpen },
                 set: { folds.set(key, open: $0) })) {
                 // Folded, nothing at all is under the heading (#356): see `isUnfolded`.
-                // A session starts from New Session, the first row of Sessions (#5267), or the menu.
+                // A session starts from New Session in the toolbar's + (#5447), ⌘N or the menu.
                 // The folder's pinned pages (#159), before its sessions. Not while
                 // searching: the search is for sessions.
                 if fold.showsPinnedPages {
@@ -678,18 +722,12 @@ struct FolderFold: View {
                 // started it, folded (#835). Under a Sessions row, as the workflows are
                 // under theirs (#2312), the only layout (#2381); not in a folder's own
                 // window, whose group is headed Sessions already.
-                // With New Session in it (#5267), a folder with no live session has the fold too.
-                let grouped = !inWindow && (!fold.sessions.isEmpty || fold.showsNewSession)
+                let grouped = !inWindow && !fold.sessions.isEmpty
                 let sessionsOpen = !grouped || fold.isSearching || folds.isOpen(key, .sessions)
                 if grouped {
                     SidebarFoldRow(title: "Sessions", count: fold.sessions.count, isOpen: Binding(
                         get: { sessionsOpen },
                         set: { folds.set(key, .sessions, open: $0) }))
-                }
-                // New Session, the fold's first row (#5267), as the Remote's Machines group has New
-                // Machine. In a folder's own window, the Sessions group's first row.
-                if sessionsOpen && fold.showsNewSession {
-                    NewSessionRow(folder: key, isNested: grouped)
                 }
                 // A closed fold has no rows at all (#237).
                 ForEach(FoldedRow.rows(sessionsOpen ? SidebarTree.rows(fold.sessions, in: model.work, folds: folds) : [],
@@ -830,42 +868,6 @@ private struct IssueGroupHeading: View {
 private struct ConnectorsRead: Equatable {
     var connected: Bool
     var folders: [FolderKey]
-}
-
-/// The first row of a folder's Sessions (#5267; was the sidebar's first row, #495): a new
-/// session in that folder, as ⌘N starts one, with the keyboard in the prompt. It carries the
-/// folder's own item, which the sidebar lights while its new session is open.
-private struct NewSessionRow: View {
-    @Environment(AppModel.self) private var model
-    @Environment(WindowRequests.self) private var requests
-    let folder: FolderKey
-    /// In its folder's Sessions fold: one level in, under the word Sessions, as a session's row.
-    var isNested = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(icon: "square.and.pencil")
-                .sidebarMark(Paper.accent)
-                .frame(width: 16)
-                .accessibilityHidden(true)
-            Text("New Session")
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, isNested ? 22 : 0)
-        .appText(.supporting)
-        .contentShape(Rectangle())
-        .help("Start a new session in this folder")
-        // Every click, not only a changed selection: the row may already be the lit one
-        // while the prompt has lost the keyboard. See `FolderRow` before #375.
-        .simultaneousGesture(TapGesture().onEnded {
-            model.showFolder(folder)
-            requests.focusPrompt()
-        })
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("New Session")
-        .sidebarInk(.folder(folder)).tag(SidebarItem.folder(folder))
-    }
 }
 
 /// One session under its folder: the sessions column's row, tagged into the sidebar's
@@ -1039,20 +1041,21 @@ private struct FolderMenu: View {
             .disabled(model.hostUnreachable(summary.host) || !summary.exists)
         ShowHiddenViewsButton(folder: summary.key)
         // This Mac's repository, sent to a server and added there (#1123).
-        if model.canSend(from: summary.host) {
-            ForEach(model.sendTargets, id: \.self) { host in
-                Button("Send to \(model.hosts.label(host))…") {
-                    requests.sendToHost = SendToHostRequest(folder: summary.folder.folder, from: summary.host, host: host)
+        // One item each, which opens the one machine picker (#5621).
+        if model.canSend(from: summary.host), !model.sendTargets.isEmpty {
+            Button(MachinePickerAsk.sendMenu) {
+                requests.machinePicker = .send(model.sendTargets) {
+                    requests.sendToHost = SendToHostRequest(folder: summary.folder.folder, from: summary.host, host: $0)
                 }
-                .disabled(!summary.exists)
             }
+            .disabled(!summary.exists)
             // The server's branches, brought back into this Mac's repository (#1473).
-            ForEach(model.sendTargets, id: \.self) { host in
-                Button("Bring Back from \(model.hosts.label(host))…") {
-                    requests.bringBackFromHost = BringBackFromHostRequest(folder: summary.folder.folder, from: summary.host, host: host)
+            Button(MachinePickerAsk.bringBackMenu) {
+                requests.machinePicker = .send(model.sendTargets, bringBack: true) {
+                    requests.bringBackFromHost = BringBackFromHostRequest(folder: summary.folder.folder, from: summary.host, host: $0)
                 }
-                .disabled(!summary.exists)
             }
+            .disabled(!summary.exists)
         }
         Divider()
         // To the top of the sidebar, above the folders that are not.
@@ -1138,30 +1141,63 @@ private struct NewMachineItems: View {
     }
 }
 
-/// + New Machine, the Machines group's last row (#5265), as the Remote's (#4034): a click
-/// opens New Machine's sheet on the default provider (#4634), with the options used last;
-/// its menu offers New Machine on ▸ when there are two or more providers.
-private struct NewMachineRow: View {
-    @Environment(AppModel.self) private var model
+/// Add Folder On… and Clone Folder On… a server (037), in the File menu and the toolbar's +
+/// (#5447): each opens the one machine picker (#5621); nothing with no server.
+struct FolderOnMenus: View {
+    let model: AppModel
+    let requests: WindowRequests
 
     var body: some View {
-        Button { model.newMachine() } label: {
-            HStack(spacing: 6) {
-                Image(icon: "plus")
-                    .sidebarMark(Paper.accent)
-                    .frame(width: 16)
-                    .accessibilityHidden(true)
-                // Primary ink: a row with no tag in the sidebar's list draws grey, as if disabled.
-                Text("New Machine")
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
+        if !model.hosts.servers.isEmpty {
+            Button("Add Folder On…") { ask("Add a Folder On", then: { .chooseFolder($0) }) }
+            Button("Clone Folder On…") { ask("Clone a Folder On", then: { .clone($0) }) }
         }
-        .buttonStyle(.plain)
-        .help("New Machine: choose what the provider makes, starting from the options used last")
-        .contextMenu { NewMachineItems() }
+    }
+
+    private func ask(_ title: String, then sheet: @escaping (MachineRef) -> WindowRequests.FolderSheet) {
+        let servers = Set(model.hosts.servers.filter { !model.hostUnreachable($0) })
+        requests.machinePicker = MachinePickerAsk(title: title, keep: { servers.contains($0.id) }) {
+            requests.folderSheet = sheet($0)
+        }
+    }
+}
+
+/// The + in the toolbar over the sidebar (#5447), as the web page's + at the head of its folders
+/// column (`NewFolderMenu`): New Session, in the folder last started in or the one selected
+/// (#628); Add Folder… and Clone Folder from Git URL…, with their On menus for a server, as the
+/// File menu has them; New App…; and New Machine, on ▸ with two or more providers. ⌘N and the
+/// File menu keep theirs.
+private struct NewItemsMenu: View {
+    @Environment(AppModel.self) private var model
+    @Environment(WindowRequests.self) private var requests
+
+    var body: some View {
+        Menu {
+            Button("New Session") {
+                guard let folder = model.newSessionFolder else { return }
+                model.showFolder(folder)
+                requests.focusPrompt()
+            }
+            .disabled(model.newSessionFolder == nil)
+            Divider()
+            Button("Add Folder…") { requests.folderSheet = .chooseFolder() }
+            Button("Clone Folder from Git URL…") { requests.folderSheet = .clone() }
+            FolderOnMenus(model: model, requests: requests)
+            // Let's build your idea, again (#5132), as File ▸ New App….
+            Button(FirstBuild.newAppItem) { model.newApp() }
+                .disabled(model.needsFirstRun || model.asksFirstBuild)
+            // A machine is made by a machine provider of the control plane: with none, no item.
+            if ControlConfig.endpoint != nil {
+                Divider()
+                NewMachineItems()
+            }
+        } label: {
+            Label("New", toolbarIcon: "plus")
+        }
+        .menuIndicator(.hidden)
+        .help("New Session, Add Folder…, Clone Folder from Git URL…, New App… or New Machine…")
+        .accessibilityLabel("New")
+        .task { await model.loadMachineProviders() }
     }
 }
 
@@ -1191,7 +1227,9 @@ private struct SidebarFoot: View {
                 }
                 .padding(.horizontal, 14)
             }
-            ForEach(showsMachines ? [] : model.hosts.servers.filter { model.hostUnreachable($0) }, id: \.self) { host in
+            // At most seven, as the Machines group (#5286), then how many more.
+            let offline = showsMachines ? [] : model.hosts.servers.filter { model.hostUnreachable($0) }
+            ForEach(offline.prefix(MachinesGroup.limit), id: \.self) { host in
                 // A server gone quiet greys its folders; its row under Machines says why (#3764).
                 // With that group folded, this says it, once, where the Mac's own state is said.
                 // One on a stopped workspace says so, with Start (#961).
@@ -1213,6 +1251,13 @@ private struct SidebarFoot: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 4)
+            }
+            if offline.count > MachinesGroup.limit {
+                Label(MachinesGroup.moreOffline(offline.count - MachinesGroup.limit), icon: "bolt.horizontal.circle")
+                    .appText(.fine)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
             }
             // A file this Mac keeps that could not be read (#205): why paired devices or
             // folders may have gone from view, and that what they held is kept.

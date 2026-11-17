@@ -90,7 +90,7 @@ client offers every feature, and a call that the host does not know fails as it 
 
 ## Where the names come from
 
-The schema owns the names. Each method and notification in `Packages/Wire/*.openrpc.json` has
+The schema owns the names. Each method and notification in `Packages/Wire/*.openrpc.json` and `Packages/Wire/daemon/*.openrpc.json` has
 `x-capability`, and `scripts/wire.sh gen` makes the constants for Go, Swift and TypeScript
 (`Go/wire/capabilities_gen.go`, `Capabilities.generated.swift`,
 `Web/src/protocol/capabilities.generated.ts`). The generator refuses a method without one.
@@ -140,7 +140,7 @@ gets `-32074`. When only one person is left, they work again.
   (`files/1` and `files/2`) until the old one is removed. When no other method names the old
   number, the document declares it in `x-declared-capabilities`, as `attention/1` is.
 
-CI's `lint` job runs `scripts/wire.sh compat` when `Packages/Wire` changes. It compares each
+CI's `go` job runs `scripts/wire.sh compat` when `Packages/Wire` changes. It compares each
 method's params with the last release tag, and fails when they changed in one of these ways
 with the same `x-capability`. The failure names the method, the change and the number to raise
 to (`providers/1` → `providers/2`).
@@ -152,7 +152,7 @@ to (`providers/1` → `providers/2`).
 The required set is the only window of versions that work together: it moves only when an old
 capability number is removed.
 
-CI's `skew` job (`scripts/skew-test.sh`, #1767) checks this on every change to the Go code. It joins
+CI's `go` job (`scripts/skew-test.sh`, #1767) checks this on every change to the Go code. It joins
 the last release's `agentsd` to the new control plane, which must not call it out of date
 unless the required set moved, and pairs the new client with the last release's control plane,
 which must answer it. It also lists what the clients hide for the older host.

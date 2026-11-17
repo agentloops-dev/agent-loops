@@ -26,23 +26,12 @@ func anAgentIn(t *testing.T, d *Daemon, folder string) wire.UUID {
 
 func (c *conn) callErr(t *testing.T, id int, method string, params any) string {
 	t.Helper()
-	p, _ := json.Marshal(params)
-	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
-	c.in <- string(b)
-	for line := range c.out {
-		var m message
-		json.Unmarshal([]byte(line), &m)
-		if string(m.ID) == string(mustJSON(id)) {
-			if m.Error == nil {
-				t.Fatalf("%s: no error", method)
-			}
-			return m.Error.Error()
-		}
-	}
-	return ""
+	return c.callError(t, id, method, params).Error()
 }
 
 func TestFilesAreKeptToTheAgentsFolder(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	work, _ := store.Resolve(t.TempDir())
 	os.Mkdir(filepath.Join(work, "sub"), 0o755)
@@ -88,6 +77,8 @@ func TestFilesAreKeptToTheAgentsFolder(t *testing.T) {
 
 // A link is listed under its own path, not its target's (#1265); the folder's own links are resolved.
 func TestBrowseListsALinkUnderItsOwnPath(t *testing.T) {
+	t.Parallel()
+
 	_, c := start(t, t.TempDir())
 	real, _ := store.Resolve(t.TempDir())
 	os.WriteFile(filepath.Join(real, "AGENTS.md"), []byte("# hi\n"), 0o644)
@@ -174,7 +165,7 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 	c.send(string(b))
 	answered, heard := false, false
-	for deadline := time.After(20 * time.Second); !answered || !heard; {
+	for deadline := time.After(waitLimit(t)); !answered || !heard; {
 		select {
 		case line := <-c.out:
 			var m message
@@ -189,7 +180,7 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 				heard = ok(m.Method, m.Params)
 			}
 		case <-deadline:
-			t.Fatalf("%s: answered %v, heard %s %v", method, answered, what, heard)
+			waitFailed(t, "%s: answered %v, heard %s %v", method, answered, what, heard)
 		}
 	}
 }

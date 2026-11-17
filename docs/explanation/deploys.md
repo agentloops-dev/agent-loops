@@ -75,6 +75,32 @@ sets the first job's Deployment `inactive` when the second ends, so it does not 
 A target can also report what it runs (Argo CD's live state, a machine's version when it
 connects). A change in that report is a deploy with `observed: true`.
 
+### A machine's Agents versions
+
+Each host says its version in `machine/hello` on each connect. The control plane keeps each
+change of it as an observed deploy (#5272), so a machine's page can say "this version, with
+these changes, since time X" (#5273):
+
+- **The model:** the component is **Agents** (`agents`: agentsd and, on a Mac, the app that
+  carries it), the environment is `machines`, and each machine is a target with the label
+  `machine=<host>`. The deploy's state is `succeeded`, `rawState` is `observed`.
+- **Since when:** a deploy starts at the last time the old version was seen (its last hello,
+  or the end of its uplink) and ends at the first hello at the new one. An update restarts
+  the host, so the time is known to within seconds.
+- **The commit:** `0.18.0` is the tag `v0.18.0`; `0.18.1-dev.544+g8162a5a06` is the sha
+  after `+g` (`scripts/version.sh`). That is the version's one artifact, so the changes
+  between two versions are the forge's compare of their commits.
+- **Bounded:** one object for each machine, `v1/machine-versions/<host>.json`, with the
+  last 20 deploys. It goes when the machine is removed.
+- **Read:** `machines/versions` gives the version now, when it was first and last seen, and
+  the deploys, newest first, to the machine's own person.
+- **The page (#5273):** `machines/agents` gives a machine page's **Agent Loops** section: the
+  version, since when, the version before and the newest changes since it, the history, and the
+  person's other machines with how many changes each is ahead or behind. `machines/agentsChanges`
+  gives every change between two versions (up to 1,000), newest first. Both come from GitHub's
+  compare of the two commits in `agentloops-dev/agent-loops`, asked with no token (the repo is
+  public) and kept in memory, at most 256 compares, as two commits' compare never changes.
+
 ## Events
 
 The sources send these events, from each system's MCP server:
@@ -164,13 +190,67 @@ The deploy events make the lineage nodes (#5241). The code is
   build that goes to TestFlight and then to the App Store is one artifact in two deploys.
 - **A deploy's details** (its artifacts, state, start and end) are not links. The host
   keeps each deploy's last event in `<root>/lineage-deploys.json`, at most 1,000. A walk
-  gives them as the deploy's resolved title (*v0.18.0 to testflight*), state and labels.
-- **Computed, not stored:** a succeeded deploy's state is `replaced` when a newer deploy
-  succeeded in each of its environments. It has the label `rollback` when its release is
+  gives them as the deploy's resolved title (*v0.18.0 to testflight*), state and labels,
+  and the deploy itself (`LineageResolved.deploy`, #5243), from which a release's **Deployed** and a
+  pull request's **Live in** on the web page's Work pages draw a row for each environment.
+- **Computed, not stored:** a succeeded deploy's state is `replaced` when it is no longer
+  live in any of its environments. It has the label `rollback` when its release is
   older than the release it replaced. **What a deploy brings** is the PRs between the last
   deploy that succeeded in the same environment and this deploy, from the forge's compare
   of their commits. A walk gives them as `brings` links with the source `computed`. The
   host works them out in the background and never stores them.
+- **Live and next versions (#5246),** as GitOps Promoter's active and proposed, are
+  computed too. A target is the environment node with the deploy's target labels. Its
+  live versions are the newest succeeded deploy's, at its `share` (100 % with none), then
+  older succeeded deploys of other versions until the shares make 100 %: a canary is live
+  beside the version it splits with. A live version's "since" is the first deploy of its
+  newest unbroken run. Its next versions are the deploys that wait or run there and began
+  after the newest live deploy began; what one brings is its `brings`. A walk from an
+  environment gives them as `live` links (at: since) and `next` links (at: the start),
+  source `computed`. A live deploy with less than all the traffic has the label
+  `share:<per cent>`, and a succeeded deploy is `replaced` when it is live nowhere. The
+  live version of the target before it in a path comes with promotion order.
+- **Work ▸ Deploys (#5270)** reads `deploys/targets`: every target the host keeps deploys of,
+  each with its live versions (share and since) and its next deploys, as above. The target is
+  in the environment node's name, with its tier by that name when the job's notice moved it.
+  The Mac window and the web page draw it as a grid: environments across in tier order,
+  components down.
 - **Old nodes:** before #5241, a `deploy` node was an artifact (`testflight:deploy:…#812`),
   `part-of` a `target`, and a release was `deployed-as` it. Nothing makes those now. They
   are read until they age out of the store's bounds.
+
+## The DORA figures of each environment
+
+Reports ▸ Delivery ▸ Environments on the web page (#5245) shows the four DORA figures for each
+target: a component (its repo) in one environment. A host answers `deploys/delivery` from
+the deploys it keeps (`Go/internal/agentsd/deploydelivery.go`).
+
+- **The control plane's copy (#5496):** each host sends every deploy it keeps
+  (`deploys/sync`, `Go/internal/agentsd/deploysync.go`), as the figures need it: its ref,
+  component, state, end, rollback, the merge times of what it brings, the health signals
+  seen in it and its environments. It goes whole, a few seconds after a deploy event or
+  after what a deploy brings is known, hourly, and on each new link. The control plane keeps
+  it per machine in `v1/deploys/<machine>.json`, in place of the last send
+  (`Go/internal/controlplane/deploys.go`), and answers `deploys/deliveryAll` over the
+  machines in a scope, each deploy once, with the same code as the host
+  (`lineage.DeploysDeliveryOf`). So the page works for a group or org and while a machine
+  sleeps. With an older control plane, the page asks each machine and takes the one that
+  keeps the most deploys.
+- **A host works out what its deploys of the last 90 days bring** for the copy, 20 at a
+  time, so the copy has lead time with no page open on that machine.
+
+| Figure | How it is counted |
+|---|---|
+| Deploy frequency | the deploys that succeeded, a week |
+| Lead time for changes | a PR's merge (its commit's time on the branch, from the forge's compare) to the first succeeded deploy that brings it; the median and p90 |
+| Change failure rate | the failed deploys and the rollbacks, of the deploys that succeeded or failed (a cancelled one is neither) |
+| Time to restore | a failed deploy's end, or a health signal `seen-in` a deploy, to the next succeeded deploy; the median |
+
+- **The tier** is the forge's for the forge's own environment (GitHub's production
+  environments, and names such as `production` or `prod`). An environment that a deploy
+  notice names gets its tier from its name, else `other`. The page shows `production` first,
+  and the Tier filter shows another tier or every tier.
+- **Lead time fills in:** what a deploy brings is asked of the forge in the background, at
+  most 20 deploys a read, newest first. The answer says `resolving` until they are all
+  known, and the page reads again.
+- **Fewer than 5 deploys** that ended in the range: the figures are dimmed, with the count.

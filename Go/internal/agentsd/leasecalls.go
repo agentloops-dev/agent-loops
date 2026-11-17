@@ -64,13 +64,25 @@ func extendedWords(l wire.Lease, capped bool) string {
 	return s
 }
 
-func inLineWords(held string, place int) string {
-	return held + ". You are " + ordinal(place) + " in line. You will get a lease.granted event when it is yours. " +
+// placeWords is "3rd in line", and why when sessions with a higher priority are ahead (#5848).
+func placeWords(place, higher int) string {
+	s := ordinal(place) + " in line"
+	switch {
+	case higher == 1:
+		s += "; 1 session with a higher priority is ahead"
+	case higher > 1:
+		s += fmt.Sprintf("; %d sessions with a higher priority are ahead", higher)
+	}
+	return s
+}
+
+func inLineWords(held string, place, higher int) string {
+	return held + ". You are " + placeWords(place, higher) + ". You will get a lease.granted event when it is yours. " +
 		"End your turn, and you will be started again with it."
 }
 
-func notWaitingInLineWords(held string, place int) string {
-	return held + ". You are " + ordinal(place) + " in line."
+func notWaitingInLineWords(held string, place, higher int) string {
+	return held + ". You are " + placeWords(place, higher) + "."
 }
 
 func leftLineWords(display string) string { return "You left the line for " + display + "." }
@@ -164,6 +176,9 @@ func (d *Daemon) resolveResource(given string) (wire.ResourceName, wire.Resource
 	if name == capacityResource {
 		return name, "named", capacityDisplay(), true
 	}
+	if isCI(name) {
+		return name, "named", ciDisplay(name), true
+	}
 	if udid := simulatorLease(name); udid != "" {
 		// One lease for each simulator, whether the agent names it with simulator: or not.
 		return wire.ResourceName(simulatorLeasePrefix + strings.ToLower(udid)), "simulator", "Simulator " + udid, true
@@ -201,6 +216,11 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 
 	// A simulator by its name, found before the lock: simctl takes a moment.
 	simulator := simulatorDisplay(given)
+	// ci is its folder's repository's, and its queue is read before the lock (#5678).
+	given = d.ciLeaseName(agent, given)
+	if n, _ := resourceName(given); isCI(n) {
+		d.ciQueueNow(n)
+	}
 	d.leaseMu.Lock()
 	loaded := d.loadLeases()
 	name, kind, display, ok := d.resolveResource(given)
@@ -252,6 +272,7 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 		reply = grantedWords(l, capped)
 		d.takeKept(agent, name, t)
 	default:
+		orderLine(e, d.lineRank)
 		if j := lineIndex(e, agent); j >= 0 {
 			place = j + 1
 			queued = wait
@@ -261,11 +282,15 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 			if kept, ok := d.takeKept(agent, name, t); ok && kept < t {
 				asked = kept
 			}
-			place = joinLine(e, waiter{AgentID: agent, AskedAt: asked, Minutes: minutes, By: by})
+			place = joinLine(e, waiter{AgentID: agent, AskedAt: asked, Minutes: minutes, By: by}, d.lineRank)
 			queued = true
 		}
 	}
 	d.store(name, e)
+	higher := 0
+	if place > 0 {
+		higher = higherAhead(e, agent, d.lineRank)
+	}
 	held := d.heldWords(name, e.DisplayName)
 	// A free place held back by the machine's level says why (#4579), and a line now waits
 	// for the machine.
@@ -275,12 +300,16 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 			d.capDraining = true
 		}
 	}
+	// A free place held back by the repository's CI says why (#5678).
+	if why := d.ciHeld(name); reply == "" && !e.full() && why != "" {
+		held = why
+	}
 	switch {
 	case reply != "":
 	case queued:
-		reply = inLineWords(held, place)
+		reply = inLineWords(held, place, higher)
 	case place > 0:
-		reply = notWaitingInLineWords(held, place)
+		reply = notWaitingInLineWords(held, place, higher)
 	default:
 		reply = held + ". You are not in line."
 	}
@@ -349,6 +378,7 @@ func (d *Daemon) releaseResource(agent wire.UUID, args map[string]json.RawMessag
 	if d.Store.Agent(agent) == nil {
 		return "", &Error{Code: CodeNoSuchAgent, Message: leaseNoCall}
 	}
+	given = d.ciLeaseName(agent, given)
 	d.leaseMu.Lock()
 	loaded := d.loadLeases()
 	name, _, display, _ := d.resolveResource(given)

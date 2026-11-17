@@ -1,9 +1,8 @@
-// Work ▸ Timeline (#4206), as the window's WorkTimeline in AgentsKitCore (#4173,
-// specs/time-stream/wireframe.md sections 2, 7, 9 and 12): the epics as lines that leave the
-// releases line when their first child starts and join it when their last child closes, on a
-// linear time axis. The range, the lines, their lanes, the marks and the words; the view draws them
-// in SVG. Times are milliseconds since 1970.
-import type { Agent, ForgeLabel, LineageNode, LineageSessionOn, WireDate, WorkTimeline, WorkTimelineBacktest, WorkTimelineRelease } from "../protocol/generated";
+// Work ▸ Timeline (#4206), as the window's WorkTimeline in AgentsKitCore (#4173): each epic a filled
+// block in its own row, from when its first child starts to when its last child closes, on a linear
+// time axis (#5506, Alex, 2026-11-14). The range, the blocks, their rows, the marks and the words; the
+// view draws them in SVG. Times are milliseconds since 1970.
+import type { Agent, ForgeLabel, LineageNode, LineageSessionOn, WireDate, WorkTimeline, WorkTimelineBacktest } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 import { shortAge, shortRef } from "./work";
 import { sessionIdOf } from "../protocol/ref";
@@ -64,9 +63,9 @@ export class Axis {
   }
 }
 
-/** How an epic's line ends: joined (its last child closed), dropped (closed as not planned: ✕, no
- * join), forecast (dashed to a hollow ring), waits (children wait for the person: a pill, no join),
- * open (nothing to forecast: it stops at Now). */
+/** How an epic's block ends: joined (its last child closed), dropped (closed as not planned: grey, then
+ * ✕), forecast (a lighter tint with a dashed edge after Now), waits (children wait for the person: a
+ * pill after it), open (nothing to forecast: it stops at Now). */
 export type TimelineEnd = { how: "joined" } | { how: "dropped" } | { how: "forecast" } | { how: "waits"; count: number } | { how: "open" };
 
 /** A child's dot on its line: filled when closed, hollow when forecast. */
@@ -92,14 +91,12 @@ export interface TimelineLine {
   /** The epic and its open children that a session is in a turn on now (#4265): the line pulses and a
    * ring turns at Now while it is above 0. */
   working: number;
-  /** 1, 2, … above the releases line, −1, −2, … below. */
-  lane: number;
+  /** The row, 0 at the top (#5506). */
+  row: number;
 }
 
-/** The figures of a label: `#n · 6 of 8`. */
+/** The figures of a hover card: `#n · 6 of 8`. A block shows its title only (Alex, 2026-11-14). */
 export const figures = (l: TimelineLine) => `${l.number} · ${l.done} of ${l.total}`;
-/** The label: the name, then the figures. */
-export const label = (l: TimelineLine) => `${l.title}  ${figures(l)}`;
 /** Whether a line runs on (it has not ended). */
 export const isOpen = (l: TimelineLine) => l.how.how === "forecast" || l.how.how === "waits" || l.how.how === "open";
 
@@ -169,14 +166,14 @@ export function timelineLines(timeline: WorkTimeline, now: number, forecast = tr
       return [{
         id: `${epic.item.node.ref}/${i}`, epic: epic.item.node.ref, segment: i, title: epic.item.title,
         number: shortRef(epic.item.node.ref), feature: epic.item.feature, done, total, start, end, how, band,
-        dots: dots.sort((a, b) => a.at - b.at), working: worked, lane: 0,
+        dots: dots.sort((a, b) => a.at - b.at), working: worked, row: 0,
       }];
     });
   });
 }
 
-/** Where a line's drawing ends: its end or its band's, whichever is later. */
-const reach = (l: TimelineLine) => Math.max(l.end, l.band?.end ?? l.end);
+/** Where a block's drawing ends: its end or its band's, whichever is later. */
+export const reach = (l: TimelineLine) => Math.max(l.end, l.band?.end ?? l.end);
 
 /** Only the lines that overlap the window (Alex, 2026-11-08). A line that waits for the person has
  * no end, so it is drawn while it is open. */
@@ -184,99 +181,104 @@ export function overlapping(lines: readonly TimelineLine[], window: Interval): T
   return lines.filter((l) => l.start <= window.end && (l.how.how === "waits" ? Infinity : reach(l)) >= window.start);
 }
 
-/** The fork's and the join's width, in pixels: 12 and 4 for each lane (section 12, item 2). */
-export const riser = (lane: number) => 12 + 4 * Math.abs(lane);
+/** The widest range: the rows are packed over its span, so they are the same in every range (#5506). */
+const widest: TimelineRange = "week";
 
-/** The lanes nearest the releases line first, above and below in turn: 1, −1, 2, −2, … */
-export const laneAt = (i: number) => i % 2 === 0 ? i / 2 + 1 : -(Math.floor(i / 2) + 1);
+/** The gap after a block in its row, in time: 2 % of the widest range (#5506). */
+export const packGap = rangeSpan[widest] / 50;
+
+/** What a read covers and the rows are packed over: the widest range's window around `anchor`, and its width on
+ * each side to scroll through. It holds every narrower range's window around the same anchor, so a change of range
+ * packs the same epics the same way (#5506). */
+export function packSpan(anchor: number): Interval {
+  const w = rangeWindow(widest, anchor);
+  return { start: w.start - rangeSpan[widest], end: w.end + rangeSpan[widest] };
+}
 
 const byStart = (a: TimelineLine, b: TimelineLine) => a.start - b.start || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-/** Put each line on the free lane nearest the releases line, sorted by start (section 9). A lane is
- * free when its last line has joined and that line's label has ended: `labelWidth` measures a label
- * in pixels, and `gap` keeps a little air after each. */
-export function layout(lines: readonly TimelineLine[], axis: Axis, labelWidth: (l: TimelineLine) => number, gap = 8): TimelineLine[] {
-  const busy = new Map<number, number>();
+/** Put each block in the first row that is free at its start, sorted by start, then by id (#5506). It packs in time,
+ * not in pixels: a row is busy until the block's reach and `gap` after it, so the rows do not change with the range. A
+ * block that waits for the person has no end: it holds its row while it is open. A label outside a block takes no room. */
+export function layout(lines: readonly TimelineLine[], gap = packGap): TimelineLine[] {
+  const busy: number[] = [];
   return [...lines].sort(byStart).map((line) => {
-    const startX = axis.x(line.start);
-    let i = 0;
-    while ((busy.get(laneAt(i)) ?? -Infinity) > startX) i++;
-    const lane = laneAt(i);
-    const labelEnd = startX + riser(lane) + labelWidth(line);
-    const ends = line.how.how === "waits" ? Infinity : Math.max(axis.x(line.end), line.band ? axis.x(line.band.end) : -Infinity);
-    busy.set(lane, Math.max(labelEnd, ends) + gap);
-    return { ...line, lane };
+    let row = 0;
+    while ((busy[row] ?? -Infinity) > line.start) row++;
+    busy[row] = line.how.how === "waits" ? Infinity : reach(line) + gap;
+    return { ...line, row };
   });
 }
 
-/** The lanes in use, above and below: the plot is as tall as the higher of the two sides. */
-export function lanes(lines: readonly TimelineLine[]): { above: number; below: number } {
-  return { above: Math.max(0, ...lines.map((l) => l.lane)), below: Math.max(0, ...lines.map((l) => -l.lane)) };
+/** The rows in use. */
+export const rowCount = (lines: readonly TimelineLine[]) => Math.max(0, ...lines.map((l) => l.row + 1));
+
+/** A block's geometry, in pixels (#5506): 28 high, 8 between rows, the first row 12 from the top. */
+export const blockHeight = 28;
+export const rowGap = 8;
+export const plotTop = 12;
+/** A row's top. */
+export const rowTop = (row: number) => plotTop + row * (blockHeight + rowGap);
+/** Where the dots go: in the block's lower half. */
+export const dotY = (row: number) => rowTop(row) + blockHeight - 7;
+/** Where the title goes: in the block's upper half. */
+export const titleY = (row: number) => rowTop(row) + 11;
+/** The title's inset from the block's leading edge. */
+export const titleInset = 6;
+
+/** The next block's start in the same row, after `line`'s: a label outside `line` stops before it. */
+export function nextInRow(lines: readonly TimelineLine[], line: TimelineLine): number | undefined {
+  const after = lines.filter((l) => l.row === line.row && l.start > line.start).map((l) => l.start);
+  return after.length > 0 ? Math.min(...after) : undefined;
 }
 
-/** A join on the releases line: one ring, or one ring with a count for joins within 6 px of each
- * other (section 12, item 5). `lines` are the lines' ids. */
-export interface TimelineJoin { at: number; lines: string[]; forecast: boolean }
-
-export function joins(lines: readonly TimelineLine[], axis: Axis, within = 6): TimelineJoin[] {
-  const rings = lines.flatMap((l): TimelineJoin[] => l.how.how === "joined" ? [{ at: l.end, lines: [l.id], forecast: false }]
-    : l.how.how === "forecast" ? [{ at: l.end, lines: [l.id], forecast: true }] : []).sort((a, b) => a.at - b.at);
-  const out: TimelineJoin[] = [];
-  for (const ring of rings) {
-    const prev = out[out.length - 1];
-    if (prev && prev.forecast === ring.forecast && axis.x(ring.at) - axis.x(prev.at) < within) prev.lines.push(...ring.lines);
-    else out.push({ ...ring, lines: [...ring.lines] });
-  }
-  return out;
-}
-
-/** How far a line's label may run from `x`: the whole line, to its end (Alex, 2026-11-10). It runs
- * past Now and over its band, on its halo; a pill where the line waits is after its end. */
-export function labelRoom(line: TimelineLine, x: number, axis: Axis): number {
-  return axis.x(line.end) - x;
-}
-
-/** Where a dot is drawn: at its time, held to the stretch of the line that is on its lane, so no dot
- * is on the fork's or the join's curve, off the line (Alex, 2026-11-10). */
+/** Where a dot is drawn: at its time, held inside its block. */
 export function dotX(dot: TimelineDot, line: TimelineLine, axis: Axis): number {
-  const r = riser(line.lane);
   const sx = axis.x(line.start), ex = Math.max(axis.x(line.end), sx);
-  const from = sx + r;
-  const to = line.how.how === "joined" || line.how.how === "forecast" ? Math.max(ex - r, from) : Math.max(ex, from);
-  return Math.min(Math.max(axis.x(dot.at), from), to);
+  const from = sx + 4;
+  return Math.min(Math.max(axis.x(dot.at), from), Math.max(ex - 4, from));
 }
 
-/** What a label says: the name, whole or cut short with "…", or "" for none; then the figures. */
-export interface LabelWords {
-  title: string;
-  figures: string;
-}
-
-/** A label's words as one string. */
-export const labelText = (w: LabelWords) => (w.title ? `${w.title}  ${w.figures}` : w.figures);
-
-/** The label that fits `room`: the whole one, then the name cut short with "…" before the figures,
- * then the figures alone, then nothing. */
-export function fitLabel(line: TimelineLine, room: number, measure: (s: string) => number): LabelWords | undefined {
-  const f = figures(line);
-  if (measure(label(line)) <= room) return { title: line.title, figures: f };
-  const title = Array.from(line.title);
+/** `text` whole when it fits `room`, else cut short with "…", else undefined. */
+export function cut(text: string, room: number, measure: (s: string) => number): string | undefined {
+  if (measure(text) <= room) return text;
+  const chars = Array.from(text);
   let best: string | undefined;
   let low = 1;
-  let high = title.length - 1;
+  let high = chars.length - 1;
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
-    const cut = title.slice(0, mid).join("").trim();
-    if (cut && measure(`${cut}…  ${f}`) <= room) {
-      best = `${cut}…`;
+    const c = chars.slice(0, mid).join("").trim();
+    if (c && measure(`${c}…`) <= room) {
+      best = `${c}…`;
       low = mid + 1;
     } else {
       high = mid - 1;
     }
   }
-  if (best) return { title: best, figures: f };
-  if (measure(f) <= room) return { title: "", figures: f };
-  return undefined;
+  return best;
+}
+
+/** What a closed-as-not-planned block says after it. */
+export const droppedWords = "✕ closed as not planned";
+
+/** A block's words (#5506). `inside`: its title in it, from `insideX` (held at the visible left edge, with ←, when the
+ * block starts before it). `outside`: what goes after the block, from `outsideX`: the title when the block is too
+ * narrow for it, and "✕ closed as not planned"; cut with "…" before the next block in the row. `trailing` is the
+ * width of what is drawn after the block first (the wait pill). */
+export interface BlockWords { inside: string | undefined; insideX: number; arrow: boolean; outside: string | undefined; outsideX: number }
+
+export function blockWords(line: TimelineLine, axis: Axis, measure: (s: string) => number,
+                           { next, left = -Infinity, trailing = 0 }: { next?: number | undefined; left?: number; trailing?: number } = {}): BlockWords {
+  const sx = axis.x(line.start), ex = Math.max(axis.x(line.end), sx);
+  const fits = measure(line.title) + 2 * titleInset <= ex - sx;
+  const arrow = fits && sx < left;
+  const insideX = (arrow ? left : sx) + titleInset;
+  const inside = fits ? cut(arrow ? `← ${line.title}` : line.title, ex - insideX - titleInset, measure) : undefined;
+  const outsideX = axis.x(reach(line)) + 6 + (trailing > 0 ? trailing + 6 : 0);
+  const words = [fits ? "" : line.title, line.how.how === "dropped" ? droppedWords : ""].filter((w) => w).join("  ");
+  const room = (next === undefined ? Infinity : axis.x(next) - 6) - outsideX;
+  return { inside, insideX, arrow, outside: words ? cut(words, room, measure) : undefined, outsideX };
 }
 
 // Colours
@@ -290,44 +292,50 @@ export function colourIndex(feature: string | undefined, count: number): number 
   return hash % (count - 1);
 }
 
+/** The WCAG contrast of two sRGB colours, each 0–255. */
+export function contrast(a: readonly number[], b: readonly number[]): number {
+  const lum = (c: readonly number[]) => {
+    const [r, g, bl] = c.map((v) => { const x = v / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * bl!;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
+/** A feature's colour darkened, a step towards black at a time, until white text on it has 4.5:1 (#5506): orange
+ * becomes a burnt orange, teal a deep teal; a colour that has it already stays. */
+export function forWhiteText(rgb: readonly number[]): number[] {
+  const white = [255, 255, 255];
+  let c = [...rgb];
+  for (let k = 0; k < 40 && contrast(c, white) < 4.5; k++) c = c.map((v) => v * 0.97);
+  return c.map((v) => Math.round(v));
+}
+
+/** `#rrggbb` as [r, g, b], and back. */
+export const rgbOf = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+export const hexOf = (rgb: readonly number[]) => `#${rgb.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+
 // Hit testing
 
-/** What the pointer is on: a dot within 10 px, else a join or a release, else a line within 8 px. */
+/** What the pointer is on: a dot within 6 px, else a block (with its band and pill, a few pixels around it). */
 export type TimelineHit =
   | { kind: "dot"; line: TimelineLine; dot: TimelineDot }
-  | { kind: "line"; line: TimelineLine }
-  | { kind: "join"; join: TimelineJoin }
-  | { kind: "release"; release: WorkTimelineRelease };
+  | { kind: "line"; line: TimelineLine };
 
-/** `trunk` is the releases line's y; a lane is `laneHeight` from the next. */
-export function hit(p: { x: number; y: number }, lines: readonly TimelineLine[], releases: readonly WorkTimelineRelease[],
-                    axis: Axis, trunk: number, laneHeight: number): TimelineHit | undefined {
-  const y = (lane: number) => trunk - lane * laneHeight;
+export function hit(p: { x: number; y: number }, lines: readonly TimelineLine[], axis: Axis): TimelineHit | undefined {
   let best: [number, TimelineHit] | undefined;
   for (const line of lines) {
     for (const dot of line.dots) {
-      const d = Math.hypot(dotX(dot, line, axis) - p.x, y(line.lane) - p.y);
-      if (d <= 10 && d < (best?.[0] ?? Infinity)) best = [d, { kind: "dot", line, dot }];
+      const d = Math.hypot(dotX(dot, line, axis) - p.x, dotY(line.row) - p.y);
+      if (d <= 6 && d < (best?.[0] ?? Infinity)) best = [d, { kind: "dot", line, dot }];
     }
   }
   if (best) return best[1];
-  for (const join of joins(lines, axis)) {
-    const d = Math.hypot(axis.x(join.at) - p.x, trunk - p.y);
-    if (d <= 10 && d < (best?.[0] ?? Infinity)) best = [d, { kind: "join", join }];
-  }
-  for (const release of releases) {
-    const d = Math.hypot(axis.x(ms(release.at)!) - p.x, trunk - p.y);
-    if (d <= 10 && d < (best?.[0] ?? Infinity)) best = [d, { kind: "release", release }];
-  }
-  if (best) return best[1];
-  for (const line of lines) {
-    const from = axis.x(line.start) + riser(line.lane);
-    const joinsTrunk = line.how.how === "joined" || line.how.how === "forecast";
-    const to = joinsTrunk ? axis.x(line.end) - riser(line.lane) : axis.x(line.end);
-    const dy = Math.abs(y(line.lane) - p.y);
-    if (dy <= 8 && p.x >= from - 8 && p.x <= Math.max(from, to) + 8 && dy < (best?.[0] ?? Infinity)) best = [dy, { kind: "line", line }];
-  }
-  return best?.[1];
+  const line = lines.find((l) => {
+    const top = rowTop(l.row);
+    return p.y >= top && p.y <= top + blockHeight && p.x >= axis.x(l.start) - 2 && p.x <= axis.x(reach(l)) + 2;
+  });
+  return line ? { kind: "line", line } : undefined;
 }
 
 // Words
@@ -340,13 +348,14 @@ export function timeWords(t: number, now: number): string {
     ? { hour: "numeric", minute: "2-digit" } : { weekday: "short", hour: "numeric", minute: "2-digit" });
 }
 
-/** "3 wait for you": the pill where a line stops for the person. */
+/** "3 wait for you": the hover card and the list, where a block waits for the person; its pill says 👤 and the
+ * number only (Alex, 2026-11-14). */
 export const waitWords = (count: number) => `${count} wait${count === 1 ? "s" : ""} for you`;
 
 /** "Past forecasts were off by ×2.2". */
 export const errorWords = (b: WorkTimelineBacktest) => `Past forecasts were off by ×${b.error.toFixed(1)}`;
 
-/** The hover card on a forecast join (section 12, item 8). */
+/** The words for a forecast end (section 12, item 8). */
 export function joinWords(line: TimelineLine, backtest: WorkTimelineBacktest | undefined, now: number): string[] {
   const out = [`Closes about ${timeWords(line.end, now)}`];
   if (line.band) out.push(`8 times in 10 between ${timeWords(line.band.start, now)} and ${timeWords(line.band.end, now)}`);
@@ -374,8 +383,8 @@ export function lineWords(line: TimelineLine, backtest: WorkTimelineBacktest | u
 }
 
 /** A row of the hover card, on three lines (Alex, 2026-11-10): the state glyph and the title; the label
- * chips, where the wire has them; then the prediction, in the window's words. A release has no glyph. */
-export interface CardRow { state?: "open" | "closed"; title: string; labels: ForgeLabel[]; line: string }
+ * chips, where the wire has them; then the prediction, in the window's words. No cost (Alex, 2026-11-14). */
+export interface CardRow { state: "open" | "closed"; title: string; labels: ForgeLabel[]; line: string }
 
 /** "2 h ago", or "just now". */
 function agoWords(t: number, now: number): string {
@@ -389,7 +398,7 @@ export function dotLine(dot: TimelineDot, now: number): string {
   return `${dot.number} · ${state}`;
 }
 
-/** On an epic's line or its join: "#4250 · 11 of 16 · closes about 5:00 PM · 3:00 PM–9:00 PM, 8 in 10". */
+/** On an epic's block: "#4250 · 11 of 16 · closes about 5:00 PM · 3:00 PM–9:00 PM, 8 in 10". */
 export function lineLine(line: TimelineLine, now: number): string {
   const out = [figures(line)];
   switch (line.how.how) {
@@ -405,9 +414,8 @@ export function lineLine(line: TimelineLine, now: number): string {
   return out.join(" · ");
 }
 
-/** The hover card's rows: one for a dot, a line or a release, one for each line of a join. The
- * backtest is not in it: it is the title line's help. */
-export function cardRows(h: TimelineHit, lines: readonly TimelineLine[], timeline: WorkTimeline, now: number): CardRow[] {
+/** The hover card's row, for a dot or a block. The backtest is not in it: it is the title line's help. */
+export function cardRow(h: TimelineHit, timeline: WorkTimeline, now: number): CardRow {
   const lineRow = (l: TimelineLine): CardRow => {
     const epic = timeline.epics.find((e) => e.item.node.ref === l.epic);
     return { state: (epic?.item.state ?? (isOpen(l) ? "open" : "closed")) === "open" ? "open" : "closed", title: l.title,
@@ -416,11 +424,9 @@ export function cardRows(h: TimelineHit, lines: readonly TimelineLine[], timelin
   switch (h.kind) {
     case "dot": {
       const child = timeline.epics.flatMap((e) => e.children).find((c) => c.item.node.ref === h.dot.ref);
-      return [{ state: h.dot.closed ? "closed" : "open", title: h.dot.title, labels: child?.item.labels ?? [], line: dotLine(h.dot, now) }];
+      return { state: h.dot.closed ? "closed" : "open", title: h.dot.title, labels: child?.item.labels ?? [], line: dotLine(h.dot, now) };
     }
-    case "line": return [lineRow(h.line)];
-    case "join": return h.join.lines.flatMap((id) => { const l = lines.find((x) => x.id === id); return l ? [lineRow(l)] : []; });
-    case "release": return [{ title: h.release.tag, labels: [], line: `${h.release.repo} · released ${agoWords(ms(h.release.at)!, now)}` }];
+    case "line": return lineRow(h.line);
   }
 }
 
@@ -515,9 +521,6 @@ export function sessionNodes(timeline: WorkTimeline): LineageNode[] {
     .filter((n) => !seen.has(n.ref) && seen.add(n.ref)).slice(0, 500);
 }
 
-/** The epic a line's id (`<ref>/<segment>`) is of. */
-export const epicOf = (id: string) => id.slice(0, id.lastIndexOf("/"));
-
 /** The children that closed since the last read of the same epics: their dots pulse once. */
 export function landed(before: WorkTimeline, after: WorkTimeline): string[] {
   const was = new Set(before.epics.flatMap((e) => e.children).filter((c) => c.closedAt !== undefined).map((c) => c.item.node.ref));
@@ -547,6 +550,14 @@ export function epicRows(lines: readonly TimelineLine[], window: Interval, now: 
   return overlapping(lines, window)
     .sort((a, b) => rank(a) - rank(b) || (rank(a) === 3 ? b.end - a.end : a.end - b.end) || a.title.localeCompare(b.title))
     .map((line) => ({ line, line2: line2(line) }));
+}
+
+/** What the plot shows (#5925): `loading` (S10) while no read has drawn yet, or while any read of the window runs and no
+ * epic is in it; `empty` (S11) only when every read ended and the window has none; else the epics. A device's copy with
+ * no epic is not "no epic" while the machines are read. */
+export function timelineShows(drawn: boolean, reading: boolean, rows: number): "loading" | "empty" | "epics" {
+  if (rows > 0) return "epics";
+  return !drawn || reading ? "loading" : "empty";
 }
 
 /** When the last line before `at` joined, for the empty card (S11); undefined when the read has none. */

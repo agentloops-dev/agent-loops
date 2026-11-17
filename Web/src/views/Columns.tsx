@@ -16,6 +16,7 @@ import { Banner } from "./Banner";
 import { Chat } from "./Chat";
 import { NewAgent } from "./NewAgent";
 import { NewFolderDialog } from "./NewFolder";
+import { BackgroundStartDialog } from "./BackgroundStart";
 import { DropboxDialog } from "./DropboxDialog";
 import { ReportProblemDialog } from "./ReportProblemDialog";
 import { MoveToMachineDialog } from "./MoveToMachineDialog";
@@ -26,7 +27,6 @@ import { Alerts, Toasts } from "./MessageKinds";
 import { FilesPane } from "./FilesPane";
 import { WorkflowPage } from "./WorkflowPage";
 import { PinnedPage } from "./Pins";
-import { SummaryPage } from "./SummaryPage";
 import { ArchivedSessionsPage } from "./ArchivedSessionsPage";
 import { ArchivedWorkflowsPage } from "./ArchivedWorkflowsPage";
 import { MCPServersPage } from "./MCPServers";
@@ -54,9 +54,7 @@ export function Columns({ session, store }: { session: Session; store: Store }) 
   // What a narrow window shows: the list, or what the route opens in the chat's place.
   const section = sectionOf(r);
   const agentsPage = section === "agents" && !r.host ? navPages.agents.find((p) => p.id === r.section) : undefined;
-  // The Summary page (#3721), from the Summary row at the top of the sidebar.
-  const summary = section === "agents" && !r.host && r.section === "summary";
-  const depth = section !== "agents" || agentsPage || summary || r.session || r.workflow || r.page || r.compose || r.archive || r.mcp || r.review ? "chat" : "list";
+  const depth = section !== "agents" || agentsPage || r.session || r.workflow || r.page || r.compose || r.archive || r.mcp || r.review ? "chat" : "list";
   const folder = r.host && r.folder
     ? (store.folders.value[r.host] ?? []).find((p) => folderKey(p.folder.folder) === folderKey(r.folder!))
     : undefined;
@@ -99,7 +97,6 @@ export function Columns({ session, store }: { session: Session; store: Store }) 
         : section !== "agents" ? <SectionPage store={store} section={section} down={down} /> : <div class="columns with-sidebar" aria-busy={down}>
         <Sidebar session={session} store={store} linkDown={down} />
         {agentsPage ? <PageView store={store} page={agentsPage} down={down} />
-          : summary ? <SummaryPage store={store} />
           : r.host && r.folder && folder && r.review ? (
             <ReviewPage key={`${r.host}|${r.review}`} store={store} host={r.host} folder={folder.folder.folder} folderName={folder.name}
               id={r.review} down={down || !store.hostIsOnline(r.host)} />
@@ -129,6 +126,7 @@ export function Columns({ session, store }: { session: Session; store: Store }) 
         {r.host && r.session && r.files && <FilesPane store={store} host={r.host} session={r.session} />}
       </div>}
       <NewFolderDialog store={store} />
+      <BackgroundStartDialog store={store} />
       <DropboxDialog store={store} />
       <ReportProblemDialog store={store} />
       <MoveToMachineDialog store={store} />

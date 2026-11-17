@@ -44,6 +44,7 @@ private actor FakeState {
     private(set) var forms: [ElicitationRequest] = [Canned.form]
     private var multiplierAsks = 0
     private var merged = false
+    private var dismissedLeads: Set<String> = []
 
     func hold(_ connection: JSONRPCConnection) {
         self.connection = connection
@@ -150,6 +151,16 @@ private actor FakeState {
                 await change(request?.agentID) { $0.isMuted = request?.muted == true }
                 return .success(.object([:]))
 
+            // Priority ▸ (#5849): set wins; cleared, a scratch session has no issue to follow.
+            case DaemonAPI.Method.agentsSetPriority:
+                let request = try params?.decode(DaemonAPI.SetPriorityRequest.self)
+                await change(request?.agentID) {
+                    $0.prioritySet = request?.priority
+                    $0.priority = request?.priority
+                    $0.prioritySource = request?.priority == nil ? nil : .set
+                }
+                return .success(.object([:]))
+
             case DaemonAPI.Method.agentsRename:
                 let request = try params?.decode(DaemonAPI.RenameRequest.self)
                 await change(request?.agentID) { $0.rename(to: request.flatMap { Agent.cleanedTitle($0.title) }) }
@@ -168,6 +179,15 @@ private actor FakeState {
             // Velocity (#4758): 13 weeks of scratch PRs, or none with `-fakeMultiplier none`.
             case DaemonAPI.Method.velocityHistory:
                 return .success(try JSONValue.encoding(Canned.velocity))
+
+            // New Session's Suggested section (#5460): `-fakeSuggest none`, `one`, or more than 3 (the default).
+            case DaemonAPI.Method.workSuggestLeads:
+                return .success(try JSONValue.encoding(Canned.suggestions(dismissed: dismissedLeads)))
+            case DaemonAPI.Method.workDismissLead:
+                if let node = (try? params?.decode(DaemonAPI.WorkDismissLeadRequest.self))?.node {
+                    dismissedLeads.insert(node.ref)
+                }
+                return .success(.object([:]))
 
             default:
                 return .failure(JSONRPCError(code: -32601, message: "Not in the fake: \(method)"))
@@ -234,6 +254,35 @@ private actor FakeState {
     /// an actor, so this is a hop rather than a call.
     private func tell(_ method: String, _ params: JSONValue?) async {
         try? connection?.notify(method, params)
+    }
+}
+
+/// New Session's Suggested section (#5460), all scratch: `-fakeSuggest none` (every epic has a
+/// lead), `one`, or five epics with no lead, 3 drawn and 2 more (the default).
+private extension Canned {
+    static let suggestShape = UserDefaults.standard.string(forKey: "fakeSuggest") ?? "many"
+
+    static func suggestions(dismissed: Set<String>) -> DaemonAPI.WorkSuggestLeads {
+        func epic(_ n: Int, _ title: String, done: Int, total: Int, due: String? = nil, standing: Bool? = nil)
+            -> DaemonAPI.WorkLeadSuggestion {
+            let url = "https://github.com/example/shop/issues/\(n)"
+            return DaemonAPI.WorkLeadSuggestion(
+                node: DaemonAPI.LineageNode(kind: "issue", ref: "example/shop#\(n)"), title: title, url: url,
+                folder: agentsFolder.path, due: due, done: done, total: total, standing: standing,
+                start: DaemonAPI.ForgeStart(prompt: "#\(n): \(title)\n\nLead this epic: \(url)", labels: ["#\(n)", "lead"]))
+        }
+        let all = [
+            epic(120, "Checkout redesign", done: 0, total: 8, due: "2026-12-04"),
+            epic(131, "Gift cards", done: 17, total: 19, due: "2026-12-06"),
+            epic(144, "Search filters", done: 11, total: 12),
+            epic(150, "Bug lane", done: 0, total: 0, standing: true),
+            epic(162, "Order history export", done: 2, total: 6),
+        ].filter { !dismissed.contains($0.node.ref) }
+        switch suggestShape {
+        case "none": return DaemonAPI.WorkSuggestLeads()
+        case "one": return DaemonAPI.WorkSuggestLeads(suggestions: Array(all.prefix(1)))
+        default: return DaemonAPI.WorkSuggestLeads(suggestions: Array(all.prefix(3)), more: max(0, all.count - 3))
+        }
     }
 }
 

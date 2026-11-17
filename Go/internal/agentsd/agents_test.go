@@ -53,6 +53,8 @@ func startAgent(t *testing.T, c *conn, n int, cwd, prompt string) wire.UUID {
 // The queue is the daemon's: kept in agent.json while a turn runs, left where it is by a
 // stop, and the person's prompts go together as the next turn.
 func TestTheQueueOutlivesATurnAndGoesTogether(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -92,6 +94,8 @@ func TestTheQueueOutlivesATurnAndGoesTogether(t *testing.T) {
 // editQueued (#1552): the person's waiting prompt takes new words in its place; one not
 // waiting any more, or another agent's, says edited false and is left as it was.
 func TestEditQueued(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -124,6 +128,8 @@ func TestEditQueued(t *testing.T) {
 
 // sendNow with no turn running sends it first; mid-turn, a runtime that cannot steer says so.
 func TestSendNow(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -153,6 +159,8 @@ func TestSendNow(t *testing.T) {
 }
 
 func TestRenameAndHandBack(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	runtimeTitle := "From the runtime"
@@ -174,6 +182,8 @@ func TestRenameAndHandBack(t *testing.T) {
 }
 
 func TestLabels(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -208,6 +218,8 @@ func TestLabels(t *testing.T) {
 }
 
 func TestUnarchiveAndDelete(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -245,6 +257,8 @@ func TestUnarchiveAndDelete(t *testing.T) {
 }
 
 func TestAnOptionWithNoSessionIsAStartOption(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -258,6 +272,8 @@ func TestAnOptionWithNoSessionIsAStartOption(t *testing.T) {
 }
 
 func TestTouchedPaths(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -278,6 +294,8 @@ func TestTouchedPaths(t *testing.T) {
 // A successor in the folder carries on the work of one whose folder went, and the
 // same start sent again is the agent it made.
 func TestContinueInFolder(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -312,6 +330,8 @@ func TestContinueInFolder(t *testing.T) {
 // TestArchivedListIsNewestArchivedFirst: an archived-only page is in order of when each was
 // archived, not of last activity (#2153), and goes on from its cursor in that order.
 func TestArchivedListIsNewestArchivedFirst(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	hour := wire.Date(3600)

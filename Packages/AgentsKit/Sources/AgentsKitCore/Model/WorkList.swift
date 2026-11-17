@@ -8,8 +8,10 @@ public enum WorkList {
     /// Work's lists, in the order of its tabs, by the lineage kind each holds.
     public enum Kind: String, CaseIterable, Identifiable, Sendable, Hashable, Codable {
         /// Features (#3269) are the `feature:` labels on the epics, not a lineage kind: an epic opens as an issue.
+        /// Deploys (#5270) is every component in every environment (`WorkDeploys`), Mac + web; its
+        /// raw value is lineage's deploy kind, but a deploy node opens no Work page.
         /// Timeline (#4173) is the epics on a time axis, the Mac's alone for now (`WorkTimeline`).
-        case issue, pr, feature, release, timeline
+        case issue, pr, feature, release, deploy, timeline
 
         public var id: Self { self }
 
@@ -19,6 +21,7 @@ public enum WorkList {
             case .pr: "Pull requests"
             case .feature: "Features"
             case .release: "Releases"
+            case .deploy: "Deploys"
             case .timeline: "Timeline"
             }
         }
@@ -69,6 +72,8 @@ public enum WorkList {
         /// The tracker's own name for its step (a Jira status, #3260), shown in place of `state`.
         public var status: String?
         public var labels: [DaemonAPI.ForgeLabel]
+        /// high, medium or low, from `ForgeItem.priority` (#5690); nil for none.
+        public var priority: String?
         /// The ref's repo or tracker: github:alexec/Agents, linear:ENG (a Linear team, #3311), jira.
         public var repo: String
         public var author: String?
@@ -131,6 +136,7 @@ public enum WorkList {
                       lineage: lineage,
                       status: item.status, comments: item.comments, checks: item.checks, review: item.review,
                       stateReason: item.stateReason, avatar: item.authorAvatar, created: item.createdAt, closed: item.closedAt)
+            priority = item.priority
         }
 
         /// A row lineage alone knows: a release, named by its tag until the forge names it (#4426).
@@ -298,6 +304,45 @@ public enum WorkList {
         return lists.flatMap { $0 }.filter { seen.insert($0.url).inserted }
     }
 
+    /// forge/boardsAll's answer (#5592) as one list, as the web page's `loadBoards`: only the machines in `hosts`, in
+    /// their order (the home one first, so the same board keeps the same name), each board once.
+    public static func mergeBoards(_ got: DaemonAPI.ForgeBoardsAll, hosts: [MachineRef]) -> [DaemonAPI.ProjectBoard] {
+        let by = Dictionary(got.boards.map { ($0.machine, $0.boards.boards) }, uniquingKeysWith: { a, _ in a })
+        return mergeBoards(hosts.compactMap { by[$0] })
+    }
+
+    /// What a machine the control plane could not reach for a list says (#5592), as the web page's `notAnswered`.
+    public static let didNotAnswer = "It did not answer."
+
+    /// forge/listAll's answer (#5592) as each of `hosts`' list, in their order, as the web page's `hostListsOf`. A
+    /// machine the control plane could not reach has an error for all its forges (forge ""); one it names that is not of
+    /// `hosts` is left out, as it was not asked before.
+    public static func hostLists(_ got: DaemonAPI.ForgeListAll, hosts: [MachineRef])
+        -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
+        var by = Dictionary(got.lists.map { ($0.machine, $0.list) }, uniquingKeysWith: { a, _ in a })
+        for u in got.unreached { by[u.machine] = .init(errors: [.init(forge: "", message: didNotAnswer)]) }
+        return hosts.compactMap { host in by[host].map { (host, $0) } }
+    }
+
+    /// forge/listAll's next pages (#5592) added to each machine's list, as the web page's `loadMore`: a machine with no
+    /// cursor, or that could not read its next page, keeps its rows and cursor, so Try again reads it again; `problem` says
+    /// what could not be read, nil when all was.
+    public static func addPages(_ got: DaemonAPI.ForgeListAll, to lists: [(host: MachineRef, list: DaemonAPI.ForgeList)])
+        -> (lists: [(host: MachineRef, list: DaemonAPI.ForgeList)], problem: String?) {
+        let by = Dictionary(got.lists.map { ($0.machine, $0.list) }, uniquingKeysWith: { a, _ in a })
+        var failed = got.unreached.isEmpty ? [] : ["\(got.unreached.map(\.machineName).joined(separator: ", ")): \(didNotAnswer)"]
+        let next = lists.map { entry -> (host: MachineRef, list: DaemonAPI.ForgeList) in
+            guard entry.list.cursor != nil, let page = by[entry.host] else { return entry }
+            if page.items.isEmpty, let errors = page.errors, !errors.isEmpty {
+                failed += errors.map(\.message)
+                return entry
+            }
+            return (entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors,
+                                      total: entry.list.total))
+        }
+        return (next, failed.isEmpty ? nil : failed.joined(separator: "; "))
+    }
+
     /// A board's name in the Board menu, from the boards read; the url when it is not one of them.
     public static func boardName(_ url: String, in boards: [DaemonAPI.ProjectBoard]) -> String {
         boards.first { $0.url == url }?.name ?? url
@@ -415,6 +460,25 @@ public enum WorkList {
                                     "azureboards": "Azure Boards", "forgejo": "Forgejo", "bitbucket": "Bitbucket",
                                     "azuredevops": "Azure DevOps"]
 
+    /// The forge of a ref: "github" of "github:pr:alexec/agents#1" and of the older "github:alexec/Agents#1".
+    public static func refForge(_ ref: String) -> String {
+        ref.firstIndex(of: ":").map { String(ref[..<$0]) } ?? ""
+    }
+
+    /// The errors a Work page shows of each machine's answer, by index (#5449): the refs it read and the forges it
+    /// could not read (forge "" when the machine itself did not answer). One machine's answer for a forge is enough:
+    /// a machine's error for a forge shows only when no other machine read an item of that forge, and a machine that
+    /// did not answer shows only when no other machine answered. As shownErrors on the web page.
+    public static func shownErrors(_ answers: [(refs: [String], errors: [DaemonAPI.ForgeListError])]) -> [[DaemonAPI.ForgeListError]] {
+        let answered = answers.map { !$0.errors.contains { $0.forge.isEmpty } }
+        let read = answers.map { Set($0.refs.map(refForge)) }
+        return answers.indices.map { i in
+            answers[i].errors.filter { e in
+                !answers.indices.contains { j in j != i && (e.forge.isEmpty ? answered[j] : read[j].contains(e.forge)) }
+            }
+        }
+    }
+
     /// A forge that could not be read: "GitHub on Studio: not connected".
     public static func errorWords(_ e: DaemonAPI.ForgeListError, machine: String?) -> String {
         "\(forgeTitle[e.forge] ?? e.forge)\(machine.map { " on \($0)" } ?? ""): \(e.message)"
@@ -467,7 +531,7 @@ public enum WorkList {
 
     /// The Work list a node's page is in: an issue, a PR or a release; nil for any other.
     public static func kind(of node: DaemonAPI.LineageNode) -> Kind? {
-        Kind(rawValue: node.kind).flatMap { $0 == .feature || $0 == .timeline ? nil : $0 }
+        Kind(rawValue: node.kind).flatMap { $0 == .feature || $0 == .deploy || $0 == .timeline ? nil : $0 }
     }
 
     // MARK: Actions (#3130)
@@ -533,11 +597,15 @@ public struct WorkPlace: Hashable, Sendable {
     /// The page was opened from its kind's list (#3257), so it has Previous and Next through it.
     /// A page opened from a lineage link or an address has not.
     public var fromList: Bool
+    /// A pull request's Files changed page (#5474), pushed in the place of its page: Back goes
+    /// to the pull request.
+    public var files: Bool
 
-    public init(kind: WorkList.Kind, ref: String? = nil, fromList: Bool = false) {
+    public init(kind: WorkList.Kind, ref: String? = nil, fromList: Bool = false, files: Bool = false) {
         self.kind = kind
         self.ref = ref
         self.fromList = fromList && ref != nil
+        self.files = files && kind == .pr && ref != nil
     }
 
     public var node: DaemonAPI.LineageNode? { ref.map { DaemonAPI.LineageNode(kind: kind.rawValue, ref: $0) } }

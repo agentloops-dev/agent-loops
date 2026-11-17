@@ -29,6 +29,8 @@ func readPolicyJSON(t *testing.T, dir string) string {
 // TestSetFolderPolicyWritesAStableOrder covers FR-014: only the rules the folder sets,
 // sorted keys, two-space indents, a trailing newline.
 func TestSetFolderPolicyWritesAStableOrder(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -55,6 +57,8 @@ func TestSetFolderPolicyWritesAStableOrder(t *testing.T) {
 
 // TestAFolderPolicyThatOnlyTightensAppliesAtOnce covers research R10's fast path.
 func TestAFolderPolicyThatOnlyTightensAppliesAtOnce(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -77,6 +81,8 @@ func TestAFolderPolicyThatOnlyTightensAppliesAtOnce(t *testing.T) {
 // approved copy applies, and the guarded-file actions (readGuardedChange, keepGuardedChange,
 // undoGuardedChange) behave as .agents/folder.json's guard does (#502).
 func TestAFolderPolicyThatLoosensWaits(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -115,6 +121,8 @@ func TestAFolderPolicyThatLoosensWaits(t *testing.T) {
 
 // TestAnInvalidFolderPolicyIsPendingWithTheReason: not JSON, or a value out of range.
 func TestAnInvalidFolderPolicyIsPendingWithTheReason(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -142,6 +150,8 @@ func TestAnInvalidFolderPolicyIsPendingWithTheReason(t *testing.T) {
 // the rules it knows (policylayers.Validate's own behaviour, exercised through the folder
 // layer).
 func TestAnUnknownFolderRuleIsIgnored(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -159,6 +169,8 @@ func TestAnUnknownFolderRuleIsIgnored(t *testing.T) {
 // TestAFolderValueLooserThanYoursIsKept covers US3 scenario 6: the folder's own choice is
 // kept in .agents/policy.json, but your tighter layer decides the effective value.
 func TestAFolderValueLooserThanYoursIsKept(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -194,6 +206,8 @@ func TestAFolderValueLooserThanYoursIsKept(t *testing.T) {
 // rule capped by your layer, named "Your policy"; and policy/yours carries the signed copy
 // the Mac window passes to a server.
 func TestPolicyEffectiveForAClient(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

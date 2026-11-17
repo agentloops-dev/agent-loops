@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
@@ -52,6 +53,9 @@ type resolvedEntry struct {
 	parent *wire.LineageNode
 	// milestone is an issue's milestone, as a forge list last said it (#4620); a lookup keeps it.
 	milestone string
+	// priority is an issue's priority (#5847): a forge list's ForgeItem.priority, or a lookup's
+	// priority: label; a lookup with no such label keeps a forge field's (sessionpriority.go).
+	priority string
 }
 
 type lineageResolveBook struct {
@@ -67,6 +71,12 @@ type lineageResolveBook struct {
 	resolveIdle chan struct{}
 	// resolveLookup, when set, is asked in place of forgeResolveNode.
 	resolveLookup resolveLookup
+	// priorityQueued is true while a refresh of every session's priority waits on the linker
+	// (refreshPrioritiesSoon), so a burst of reads costs one (#5847).
+	priorityQueued atomic.Bool
+	// priorityMu holds one refreshPriorities at a time: each reads a session, works out its
+	// priority and writes it, and two at once lose an update (#5980).
+	priorityMu sync.Mutex
 }
 
 // resolvedGraph is g with resolved filled in from the cache, at once. The nodes the cache
@@ -135,7 +145,7 @@ func (d *Daemon) askResolveLocked(ask []wire.LineageNode) {
 	}
 	for _, n := range ask {
 		d.resolveAsking[n] = true
-		go d.resolveInBackground(n)
+		d.goJob("resolveInBackground", func() { d.resolveInBackground(n) })
 	}
 }
 
@@ -183,6 +193,7 @@ func (d *Daemon) resolveNode(ctx context.Context, n wire.LineageNode) {
 	ask := d.resolveLookup
 	d.resolveMu.Unlock()
 	folder := d.repoFolder(repo)
+	asked := nowFunc()
 	var r wire.LineageResolved
 	var err error
 	if folder == "" {
@@ -200,15 +211,41 @@ func (d *Daemon) resolveNode(ctx context.Context, n wire.LineageNode) {
 		log.Printf("lineage: resolving %s: %v", n.Ref, err)
 	}
 	d.resolveMu.Lock()
-	defer d.resolveMu.Unlock()
 	if d.resolveCache == nil {
 		d.resolveCache = map[wire.LineageNode]resolvedEntry{}
 	}
 	had, cached := d.resolveCache[n]
+	// A failed ask does not replace an answer that came while it was asked (#5806): a list
+	// read the node then, and its answer is newer than this failure.
+	if err != nil && cached && had.ok && had.at.After(asked) {
+		d.resolveMu.Unlock()
+		return
+	}
 	if !cached && len(d.resolveCache) >= resolvedCached {
 		d.dropOldestResolvedLocked()
 	}
-	d.resolveCache[n] = resolvedEntry{resolved: r, ok: err == nil, at: nowFunc(), parent: had.parent, milestone: had.milestone}
+	priority := had.priority
+	if err == nil {
+		priority = lookedUpPriority(had, r.Labels)
+	}
+	d.resolveCache[n] = resolvedEntry{resolved: r, ok: err == nil, at: nowFunc(), parent: had.parent, milestone: had.milestone, priority: priority}
+	d.resolveMu.Unlock()
+	if !cached || priority != had.priority {
+		d.refreshPrioritiesSoon()
+	}
+}
+
+// lookedUpPriority is a node's priority after a lookup that read labels: its priority: label;
+// with none, what a forge list said when that was its forge's own field rather than a label the
+// node has lost since.
+func lookedUpPriority(had resolvedEntry, labels []string) string {
+	if p := priorityOfLabels(labels); p != "" {
+		return p
+	}
+	if had.priority != "" && priorityOfLabels(had.resolved.Labels) != had.priority {
+		return had.priority
+	}
+	return ""
 }
 
 // dropOldestResolvedLocked makes room for one more cached node.

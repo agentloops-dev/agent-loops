@@ -96,6 +96,11 @@ var own = methodSet(
 	"devices/list",
 	"devices/startPairing",
 	"devices/stopPairing",
+	"connections/listAll",
+	"docs/listAll",
+	"events/listAll",
+	"forge/boardsAll",
+	"forge/listAll",
 	"governance/approvals",
 	"governance/decide",
 	"governance/request",
@@ -117,6 +122,9 @@ var own = methodSet(
 	"machines/lendGit",
 	"machines/lendSignIn",
 	"machines/list",
+	"messages/conversationsAll",
+	"lineage/forecastAll",
+	"reports/featuresAll",
 	"machines/remove",
 	"machines/sshHosts",
 	"machines/startEnroll",
@@ -125,6 +133,7 @@ var own = methodSet(
 	"lineage/walkAll",
 	"builds/historyAll",
 	"builds/runAll",
+	"deploys/deliveryAll",
 	"links/approve",
 	"links/deny",
 	"links/list",
@@ -162,6 +171,10 @@ var own = methodSet(
 	"policy/requests",
 	"policy/set",
 	"policy/stopAll",
+	"pool/claim",
+	"pool/delete",
+	"pool/list",
+	"pool/set",
 	"projects/list",
 	"projects/remove",
 	"projects/sessions",
@@ -182,6 +195,7 @@ var own = methodSet(
 	"scim/tokens/revoke",
 	"sealing/add",
 	"sealing/work",
+	"sessions/previewStart",
 	"signIn/addToMe",
 	"signIn/approve",
 	"signIn/configure",
@@ -203,9 +217,11 @@ var own = methodSet(
 	"signIn/removeFromMe",
 	"signIn/requests",
 	"signIn/ticket",
+	"user/dropSecretOffer",
 	"user/removeSecret",
 	"user/sealedSecret",
 	"user/secretNames",
+	"user/secretOffers",
 	"user/secretRecipients",
 	"user/setAgentConfigFile",
 	"user/setSecret",
@@ -265,6 +281,8 @@ var writes = methodSet(
 	"machines/lendGit",
 	"machines/lendSignIn",
 	"machines/remove",
+	"machines/retrySetup",
+	"machines/setLabels",
 	"machines/startEnroll",
 	"machines/update",
 	"links/approve",
@@ -288,6 +306,9 @@ var writes = methodSet(
 	"policy/refuseMore",
 	"policy/set",
 	"policy/stopAll",
+	"pool/claim",
+	"pool/delete",
+	"pool/set",
 	"projects/remove",
 	"projects/set",
 	"projects/setBoards",
@@ -313,6 +334,7 @@ var writes = methodSet(
 	"signIn/orgStart",
 	"signIn/removeFromMe",
 	"signIn/ticket",
+	"user/dropSecretOffer",
 	"user/removeSecret",
 	"user/setAgentConfigFile",
 	"user/setSecret",
@@ -385,7 +407,7 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 	case "control/status":
 		return m.status(from), nil
 	case "machines/list":
-		return m.hostList(from), nil
+		return m.hostList(from, params)
 	case "clients/list", "devices/list":
 		// The caller's person's own clients (#994).
 		out := []wire.ClientRecord{}
@@ -402,12 +424,20 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.groupsMethod(ctx, method, params, from)
 	case "projects/list", "projects/set", "projects/remove", "projects/setSlot", "projects/setBoards", "projects/sessions":
 		return m.projectsMethod(ctx, method, params, from)
+	case wire.CallSessionsPreviewStart.Name:
+		request, err := require[wire.AutoMachineRequest](params, "AutoMachineRequest")
+		if err != nil {
+			return nil, err
+		}
+		return m.previewStart(ctx, request, from)
 	case "scim/set", "scim/tokens/list", "scim/tokens/make", "scim/tokens/revoke":
 		return m.scimMethod(ctx, method, params, from)
 	case "bots/make", "bots/setCaps", "bots/stopRun":
 		return m.botsMethod(ctx, method, params, from)
 	case "policy/get", "policy/mine", "policy/set", "policy/stopAll", "policy/raise":
 		return m.policyMethod(ctx, method, params, from)
+	case "pool/list", "pool/set", "pool/delete", "pool/claim":
+		return m.poolMethod(ctx, method, params, from)
 	case "policy/askForMore", "policy/requests", "policy/refuseMore":
 		return m.policyAskMethod(ctx, method, params, from)
 	case "orgRoutes/mine", "orgRoutes/list", "orgRoutes/set", "orgRoutes/replaceKey", "orgRoutes/check", "orgRoutes/remove",
@@ -417,10 +447,17 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.sealingMethod(ctx, method, params, from)
 	case wire.CallBusLog.Name:
 		return m.busLogMethod(ctx, params, from)
+	case wire.CallDocsListAll.Name, wire.CallMessagesConversationsAll.Name:
+		return m.fanMethod(ctx, method, params, from)
+	case wire.CallForgeListAll.Name, wire.CallForgeBoardsAll.Name, wire.CallLineageForecastAll.Name, wire.CallReportsFeaturesAll.Name,
+		wire.CallEventsListAll.Name, wire.CallConnectionsListAll.Name:
+		return m.fanAllMethod(ctx, method, params, from)
 	case "lineage/walkAll", "lineage/sessionsOn":
 		return m.lineageReadMethod(ctx, method, params, from)
 	case wire.CallBuildsHistoryAll.Name, wire.CallBuildsRunAll.Name:
 		return m.buildsReadMethod(ctx, method, params, from)
+	case wire.CallDeploysDeliveryAll.Name:
+		return m.deploysReadMethod(ctx, params, from)
 	case "links/list", "links/requests", "links/approve", "links/deny", "links/remove":
 		return m.linksMethod(ctx, method, params, from)
 	case "lock/get", "lock/add", "lock/reset":
@@ -436,7 +473,7 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 	case "reports/usage", "reports/export", "reports/value", "reports/nodes":
 		return m.reportMethod(ctx, method, params, from)
 	case "user/settings", "user/setAgentConfigFile", "user/setSettings", "user/setSecret", "user/removeSecret", "user/secretNames",
-		"user/secretRecipients", "user/sealedSecret":
+		"user/secretRecipients", "user/sealedSecret", "user/secretOffers", "user/dropSecretOffer":
 		return m.userMethod(ctx, method, params, from)
 	case "machines/joinRequests":
 		return m.s.joins.list(ctx, m.callerPerson(from))
@@ -570,6 +607,18 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 			return nil, &RPCError{Code: wire.FailureNoSuchHost, Message: "There is no such host."}
 		}
 		return m.s.installer.Update(ctx, request, h.Name)
+	case "machines/setLabels":
+		request, err := require[wire.MachineLabelsRequest](params, "MachineLabelsRequest")
+		if err != nil {
+			return nil, err
+		}
+		answer, err := m.setLabels(ctx, request, from)
+		if answer.Changed > 0 {
+			for _, id := range request.Machines {
+				m.s.announce("hostEnrolled", string(id), from.Client)
+			}
+		}
+		return answer, err
 	case "machines/checkAgain":
 		request, err := require[wire.MachineRequest](params, "MachineRequest")
 		if err != nil {
@@ -663,6 +712,20 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 			return nil, fail(noSuchHost, "No machine is called %s.", host)
 		}
 		return map[string]any{}, nil
+	case "machines/retrySetup":
+		// Try Again on a machine's set-up (#5355).
+		request, err := require[wire.MachineRequest](params, "MachineRequest")
+		if err != nil {
+			return nil, err
+		}
+		host, err := m.ownHostNamed(from, string(request.Host))
+		if err != nil {
+			return nil, err
+		}
+		if m.records.Host(host) == nil || !m.owns(from, host) {
+			return nil, fail(noSuchHost, "No machine is called %s.", host)
+		}
+		return map[string]any{}, m.s.retrySetup(ctx, host)
 	case "machines/deletePreview":
 		// Delete's question (#3979): the worktrees on the machine with work not pushed.
 		request, err := require[wire.MachineRequest](params, "MachineRequest")
@@ -688,6 +751,45 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 			return nil, fail(noSuchHost, "No machine is called %s.", host)
 		}
 		return m.s.copies.lastHeard(host), nil
+	case "machines/versions":
+		// The Agents versions it ran (#5272), for its page (#5273).
+		request, err := require[wire.MachineRequest](params, "MachineRequest")
+		if err != nil {
+			return nil, err
+		}
+		host, err := m.ownHostNamed(from, string(request.Host))
+		if err != nil {
+			return nil, err
+		}
+		if m.records.Host(host) == nil || !m.owns(from, host) {
+			return nil, fail(noSuchHost, "No machine is called %s.", host)
+		}
+		return m.s.machineVersions(ctx, host)
+	case "machines/agents":
+		// A machine page's Agents section (#5273).
+		request, err := require[wire.MachineRequest](params, "MachineRequest")
+		if err != nil {
+			return nil, err
+		}
+		host, err := m.ownHostNamed(from, string(request.Host))
+		if err != nil {
+			return nil, err
+		}
+		if m.records.Host(host) == nil || !m.owns(from, host) {
+			return nil, fail(noSuchHost, "No machine is called %s.", host)
+		}
+		return m.machineAgents(ctx, host, from)
+	case "machines/agentsChanges":
+		// The changes between two Agents versions (#5273): public, from GitHub.
+		request, err := require[wire.AgentsChangesRequest](params, "AgentsChangesRequest")
+		if err != nil {
+			return nil, err
+		}
+		limit := 0
+		if request.Limit != nil {
+			limit = max(int(*request.Limit), 0)
+		}
+		return m.s.agentsChanges(ctx, request.Base, request.Head, limit)
 	}
 	if workspaceMethods[method] {
 		if m.s.providers == nil {
@@ -754,15 +856,22 @@ func (m *Methods) SetWeb(status *web.Status) {
 }
 
 // hostList is the caller's own machines (#994): another's are in People, by name and
-// state only.
-func (m *Methods) hostList(from Caller) []wire.ControlMachine {
-	out := []wire.ControlMachine{}
-	for _, h := range m.records.Hosts() {
-		if m.owns(from, h.ID) {
-			out = append(out, m.hostRow(h))
+// state only. With no query it is every one, up to the cap, as an array; with one (#5283) it
+// is a page, filtered and sorted, with the counts for each filter's values.
+func (m *Methods) hostList(from Caller, params json.RawMessage) (any, error) {
+	var query wire.MachineListQuery
+	if len(bytes.TrimSpace(params)) > 0 && string(bytes.TrimSpace(params)) != "null" {
+		if err := json.Unmarshal(params, &query); err != nil {
+			return nil, fail(invalidParams, "machines/list: %v", err)
 		}
 	}
-	return out
+	var rows []machineFacts
+	for _, h := range m.records.Hosts() {
+		if m.owns(from, h.ID) {
+			rows = append(rows, m.machineFactsOf(h))
+		}
+	}
+	return m.listMachines(rows, query)
 }
 
 // ownHostNamed is a machine as a caller names it: by its id, or by the name of one of the
@@ -812,6 +921,11 @@ func (m *Methods) removeHost(ctx context.Context, host string, from Caller) (boo
 	_ = m.s.cfg.Store.Delete(ctx, governanceHostKey(host))
 	// Its folders, which no list shows again (#3125); the sweep deletes one this misses.
 	_ = m.s.cfg.Store.Delete(ctx, projectFoldersKey(host))
+	// Its Agents versions (#5272).
+	_ = m.s.cfg.Store.Delete(ctx, machineVersionsKey(host))
+	// Its set-up (#5355).
+	_ = m.s.cfg.Store.Delete(ctx, machineSetupKey(host))
+	m.s.forgetCapacity(host)
 	if m.s.providers != nil && m.s.providers.Kept() != nil {
 		m.s.providers.Kept().Forget(host)
 	}
@@ -843,7 +957,13 @@ func (m *Methods) hostRow(h records.MachineRecord) wire.ControlMachine {
 	}
 	m.mu.Unlock()
 	sort.Slice(row.GitAsks, func(i, j int) bool { return row.GitAsks[i].Server < row.GitAsks[j].Server })
+	if n, ok := m.s.capacityOf(h.ID); ok {
+		level, at := n.level, wire.DateOf(n.at)
+		row.Capacity, row.LoadPerCore5, row.CapacityAt = &level, n.load5, &at
+	}
+	row.Labels, row.AutoLabels = machineLabels(h), autoLabels(h)
 	row.Workspace = m.router.Workspace(h.ID)
+	row.Setup = m.s.machineSetup(context.Background(), h.ID)
 	if m.s.tunnels != nil {
 		row.Tunnel = m.s.tunnels.State(h.ID)
 	}
@@ -1124,6 +1244,7 @@ var startsWork = methodSet(
 	"backups/upload",
 	"git/credential",
 	"links/check",
+	"machine/offerSecret",
 	"machine/pairWebPage",
 	"tunnel/open",
 	"workflows/claimRun",
@@ -1147,6 +1268,13 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		}
 		// What this control plane can do, so the host asks only what it answers (#4100).
 		return wire.MachineHelloAnswer{Capabilities: capabilities()}, m.hello(ctx, host, hello)
+	case wire.CallMachineCapacity.Name:
+		report, err := require[wire.CapacityReport](params, "CapacityReport")
+		if err != nil {
+			return nil, err
+		}
+		m.s.noteCapacity(host, report, time.Now())
+		return wire.Empty{}, nil
 	case "folders/detected":
 		// Once: from now on its folders are the person's to add and remove (#429).
 		if record := m.records.Host(host); record != nil && record.DetectFolders != nil && *record.DetectFolders {
@@ -1197,6 +1325,13 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 			m.s.userChanged(user, []wire.UserSettingsPartName{wire.UserSettingsPartNamePolicy}, false, host)
 		}
 		return map[string]any{}, nil
+	case wire.CallMachineSetupStep.Name:
+		// A step of the installer on the machine (#5355).
+		report, err := require[wire.MachineSetupReport](params, "MachineSetupReport")
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{}, m.s.setupStep(ctx, host, report)
 	case "machine/policyApplied":
 		applied, err := require[wire.PolicyApplied](params, "PolicyApplied")
 		if err != nil {
@@ -1253,7 +1388,13 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		if err != nil {
 			return nil, err
 		}
-		return m.s.keepBuildsSync(ctx, host, sync, time.Now())
+		return m.s.keepBuildsSync(ctx, host, sync, m.s.now())
+	case wire.CallDeploysSync.Name:
+		sync, err := require[wire.DeploysSync](params, "DeploysSync")
+		if err != nil {
+			return nil, err
+		}
+		return m.s.keepDeploysSync(ctx, host, sync, time.Now())
 	case "lineage/sync":
 		sync, err := require[wire.LineageSync](params, "LineageSync")
 		if err != nil {
@@ -1273,6 +1414,16 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 			go m.s.checkCaps(owner)
 		}
 		return map[string]any{}, nil
+	case wire.CallApprovalsList.Name:
+		person := m.s.ownerOf(host)
+		return m.s.listApprovals(ctx, person)
+	case wire.CallApprovalsPut.Name:
+		// A person's approvals (#5462): signed by the machine, sent to the person's others.
+		put, err := require[wire.PersonApprovalsPut](params, "PersonApprovalsPut")
+		if err != nil {
+			return nil, err
+		}
+		return m.s.putApprovals(ctx, host, put)
 	case wire.CallBusPublish.Name:
 		// The event bus (#4729): events this machine recorded, envelope only.
 		publish, err := require[wire.BusPublish](params, "BusPublish")
@@ -1341,6 +1492,10 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 			m.s.userChanged(user, []wire.UserSettingsPartName{wire.UserSettingsPartNameAccounts}, false, host)
 		}
 		return listed, nil
+	case wire.CallMachineOfferSecret.Name:
+		return m.offerSecret(ctx, host, params)
+	case wire.CallMachineSecretClients.Name:
+		return m.secretClients(host)
 	case "machine/secretOps":
 		// What the machine's agents did with its person's secrets (#4156): the audit keeps each.
 		request, err := require[wire.MachineSecretOpsCall](params, "MachineSecretOpsCall")
@@ -1471,6 +1626,11 @@ func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHell
 		return err
 	}
 	m.noteCapabilities(host, hello.Capabilities, hello.Version)
+	// A new version is an observed deploy (#5272); a store that does not take it costs the
+	// hello nothing.
+	if err := m.s.noteVersion(ctx, host, hello.Version, time.Now()); err != nil {
+		m.s.log("could not keep " + host + "'s version: " + err.Error())
+	}
 	if changed {
 		m.router.BroadcastHost(host, "control/hostChanged", m.router.Described(host))
 	}

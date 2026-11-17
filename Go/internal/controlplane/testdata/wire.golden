@@ -20,13 +20,15 @@ control/status
     ]
   },
   "capabilities": [
+    "approvals/1",
     "attention/1",
     "attention/2",
     "audit.sinks/1",
+    "auto-machine/1",
     "backups.store/1",
     "bots/1",
     "builds.copy/1",
-    "builds.read/1",
+    "builds.read/2",
     "clients/1",
     "connections.botkey/1",
     "console/1",
@@ -35,6 +37,9 @@ control/status
     "control.plane-move/1",
     "control.rotate/1",
     "control/1",
+    "deploys.copy/1",
+    "deploys.read/1",
+    "docs.all/1",
     "events.audit/1",
     "events.bus/1",
     "events.leases/1",
@@ -59,6 +64,7 @@ control/status
     "hosts.join/1",
     "lineage.graph/1",
     "lineage.read/1",
+    "lineage.read/2",
     "links/1",
     "liveactivity/1",
     "lock-join/1",
@@ -66,8 +72,12 @@ control/status
     "lock/1",
     "machine.accounts/1",
     "machine.accounts/2",
+    "machine.agent-secrets/1",
     "machine/1",
+    "machines.all/1",
     "machines/1",
+    "machines/2",
+    "messages.all/1",
     "multiplier/1",
     "notices/1",
     "org-identity/1",
@@ -75,17 +85,21 @@ control/status
     "people/1",
     "policy.ask/1",
     "policy/1",
+    "pools/1",
     "projects.boards/1",
     "projects.sessions/1",
     "projects/1",
     "providers/1",
     "providers/2",
     "readapi/1",
-    "reports.nodes/1",
+    "reports.nodes/2",
     "reports.scope/1",
-    "reports.value/1",
+    "reports.scope/2",
+    "reports.value/2",
     "reports.views/1",
+    "reports.views/2",
     "reports/1",
+    "reports/2",
     "sealing/1",
     "sessions.elsewhere/1",
     "sessions.on-machine/1",
@@ -97,7 +111,9 @@ control/status
     "user/1",
     "user/2",
     "user/3",
-    "user/4"
+    "user/4",
+    "user/5",
+    "user/6"
   ],
   "required": {
     "host": [
@@ -127,7 +143,15 @@ machines/list
     "reach": "dialOut",
     "machineID": "MACHINE-2",
     "implementation": "go",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=linux"
+    ],
+    "autoLabels": [
+      "os=linux",
+      "arch=arm64"
+    ]
   },
   {
     "id": "<host b>",
@@ -137,7 +161,15 @@ machines/list
     "state": "online",
     "reach": "dialOut",
     "machineID": "RAW-MAC",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=macos"
+    ],
+    "autoLabels": [
+      "os=macos",
+      "arch=arm64"
+    ]
   },
   {
     "id": "mac",
@@ -148,7 +180,15 @@ machines/list
     "reach": "dialOut",
     "machineID": "MACHINE-1",
     "implementation": "go",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=linux"
+    ],
+    "autoLabels": [
+      "os=linux",
+      "arch=arm64"
+    ]
   }
 ]
 
@@ -248,13 +288,15 @@ control/status
     ]
   },
   "capabilities": [
+    "approvals/1",
     "attention/1",
     "attention/2",
     "audit.sinks/1",
+    "auto-machine/1",
     "backups.store/1",
     "bots/1",
     "builds.copy/1",
-    "builds.read/1",
+    "builds.read/2",
     "clients/1",
     "connections.botkey/1",
     "console/1",
@@ -263,6 +305,9 @@ control/status
     "control.plane-move/1",
     "control.rotate/1",
     "control/1",
+    "deploys.copy/1",
+    "deploys.read/1",
+    "docs.all/1",
     "events.audit/1",
     "events.bus/1",
     "events.leases/1",
@@ -287,6 +332,7 @@ control/status
     "hosts.join/1",
     "lineage.graph/1",
     "lineage.read/1",
+    "lineage.read/2",
     "links/1",
     "liveactivity/1",
     "lock-join/1",
@@ -294,8 +340,12 @@ control/status
     "lock/1",
     "machine.accounts/1",
     "machine.accounts/2",
+    "machine.agent-secrets/1",
     "machine/1",
+    "machines.all/1",
     "machines/1",
+    "machines/2",
+    "messages.all/1",
     "multiplier/1",
     "notices/1",
     "org-identity/1",
@@ -303,17 +353,21 @@ control/status
     "people/1",
     "policy.ask/1",
     "policy/1",
+    "pools/1",
     "projects.boards/1",
     "projects.sessions/1",
     "projects/1",
     "providers/1",
     "providers/2",
     "readapi/1",
-    "reports.nodes/1",
+    "reports.nodes/2",
     "reports.scope/1",
-    "reports.value/1",
+    "reports.scope/2",
+    "reports.value/2",
     "reports.views/1",
+    "reports.views/2",
     "reports/1",
+    "reports/2",
     "sealing/1",
     "sessions.elsewhere/1",
     "sessions.on-machine/1",
@@ -325,7 +379,9 @@ control/status
     "user/1",
     "user/2",
     "user/3",
-    "user/4"
+    "user/4",
+    "user/5",
+    "user/6"
   ],
   "required": {
     "host": [
@@ -361,7 +417,15 @@ machines/list
       "github.com": "mac"
     },
     "implementation": "go",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=linux"
+    ],
+    "autoLabels": [
+      "os=linux",
+      "arch=arm64"
+    ]
   },
   {
     "id": "<host b>",
@@ -371,7 +435,15 @@ machines/list
     "state": "online",
     "reach": "dialOut",
     "machineID": "RAW-MAC",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=macos"
+    ],
+    "autoLabels": [
+      "os=macos",
+      "arch=arm64"
+    ]
   },
   {
     "id": "mac",
@@ -382,7 +454,15 @@ machines/list
     "reach": "dialOut",
     "machineID": "MACHINE-1",
     "implementation": "go",
-    "owner": "<uuid>"
+    "owner": "<uuid>",
+    "labels": [
+      "arch=arm64",
+      "os=linux"
+    ],
+    "autoLabels": [
+      "os=linux",
+      "arch=arm64"
+    ]
   }
 ]
 

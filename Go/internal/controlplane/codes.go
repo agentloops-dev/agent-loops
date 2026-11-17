@@ -49,7 +49,13 @@ type storedCode struct {
 	// The workspace an install made a host code for (#3871): the host that joins with it is
 	// linked to it, whatever name the host joins with.
 	Workspace *codeWorkspace `json:"workspace,omitempty"`
-	Expires   records.Stamp  `json:"expires"`
+	// Made says the control plane made the machine this host code is for (a provider's), so
+	// the host's digits for the token are compared with its own (#5359).
+	Made bool `json:"made,omitempty"`
+	// MadeHost is the host id a made machine joins as (#5765): its set-up began, under that
+	// id, when the machine was asked for.
+	MadeHost string        `json:"madeHost,omitempty"`
+	Expires  records.Stamp `json:"expires"`
 }
 
 // codeWorkspace is a provider's workspace that a host code is for, and the host key the
@@ -124,6 +130,8 @@ func (c *Codes) issue(ctx context.Context, host, browser bool, lifetime time.Dur
 	if host {
 		stored.Purpose = "host"
 		stored.Workspace = codeWorkspaceOf(ctx)
+		stored.MadeHost = madeMachine(ctx)
+		stored.Made = stored.MadeHost != ""
 	} else if browser {
 		yes := true
 		stored.Browser = &yes

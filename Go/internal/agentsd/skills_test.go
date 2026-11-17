@@ -19,6 +19,8 @@ import (
 var lockTime = time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
 
 func TestAFoldersSkillsListedAndOneTakenOut(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -77,7 +79,7 @@ func TestAFoldersSkillsListedAndOneTakenOut(t *testing.T) {
 	if e.Code != wire.FailureCatalogRefused {
 		t.Fatalf("%+v", e)
 	}
-	t.Setenv("AGENTS_PERSONAL_HOME", "")
+	personalHomeFor(t, "")
 	if d.personalHome() == "" {
 		e = c.callError(t, 7, "skills/list", map[string]any{"destination": map[string]any{"kind": "personal"}})
 		if e.Message != "This copy of the app has no personal ~/.agents." {
@@ -87,6 +89,8 @@ func TestAFoldersSkillsListedAndOneTakenOut(t *testing.T) {
 }
 
 func TestAFolderPluginWaitsUntilApproved(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()

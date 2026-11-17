@@ -371,7 +371,6 @@ struct WorkPlanSection: View {
             cost: WorkPlan.costWords(rollup),
             estimate: child.item.state == "open" ? estimate.flatMap(WorkPlan.estimateWords) : nil,
             estimateRange: estimate.flatMap(EstimateWords.rangeWords),
-            priority: plan.standing == nil ? nil : WorkPlan.priority(child.item),
             open: { model.showWork(WorkPlace(kind: .issue, ref: child.item.node.ref)) },
             openLane: lane.map { lane in { model.openWorkSession(lane.id) } },
             laneTitle: lane?.title,
@@ -538,7 +537,6 @@ private struct WorkPlanRow<BlockedBy: View>: View {
     let cost: String?
     let estimate: String?
     let estimateRange: String?
-    let priority: DaemonAPI.ForgeLabel?
     let open: () -> Void
     let openLane: (() -> Void)?
     let laneTitle: String?
@@ -607,7 +605,7 @@ private struct WorkPlanRow<BlockedBy: View>: View {
                 HStack(spacing: 4) {
                     line
                     Spacer(minLength: 8)
-                    if let priority { WorkLabelChip(label: priority).fixedSize() }
+                    WorkPriorityChip(child.item)
                     if let cost {
                         Text(cost).monospacedDigit().foregroundStyle(.secondary)
                     } else if let estimate {
@@ -667,7 +665,7 @@ private struct WorkPlanRow<BlockedBy: View>: View {
         if let pr { parts.append("pull request \(WorkList.shortRef(pr.node.ref)) \(pr.outcome ?? "open")") }
         parts.append(ref)
         parts.append(mark == .done ? words : [mark.words, words].compactMap { $0 }.joined(separator: ", "))
-        parts.append(priority?.name)
+        parts.append(WorkPlan.priorityWords(child.item).map { "priority \($0.lowercased())" })
         parts.append(cost ?? estimate.map { "estimate \($0)" })
         return parts.compactMap { $0 }.joined(separator: ", ")
     }

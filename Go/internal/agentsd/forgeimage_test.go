@@ -76,6 +76,8 @@ func imageDaemon(t *testing.T, answers map[string]func() *http.Response) (*conn,
 // signed private-user-images URL with no token, and is given as its bytes, typed from them; the
 // same image again asks nothing.
 func TestForgeImageReadsAGitHubAttachment(t *testing.T) {
+	t.Parallel()
+
 	signed := "https://private-user-images.githubusercontent.com/1/abc.png?jwt=signed"
 	c, web := imageDaemon(t, map[string]func() *http.Response{
 		"https://github.com/user-attachments/assets/abc": redirectTo(signed),
@@ -98,6 +100,8 @@ func TestForgeImageReadsAGitHubAttachment(t *testing.T) {
 // redirects (blob, then raw, then raw.githubusercontent.com) with the token on each, as a
 // private repo needs; a /raw/ link is read too.
 func TestForgeImageReadsAGitHubBlobLink(t *testing.T) {
+	t.Parallel()
+
 	blob := "https://github.com/alexec/Agents/blob/screenshots/pr-4520/mac-ready.png?raw=true"
 	raw := "https://github.com/alexec/Agents/raw/screenshots/pr-4520/mac-ready.png"
 	file := "https://raw.githubusercontent.com/alexec/Agents/screenshots/pr-4520/mac-ready.png"
@@ -130,6 +134,8 @@ func TestForgeImageReadsAGitHubBlobLink(t *testing.T) {
 // #4522: a blob link without raw=true is GitHub's HTML page, and a repo path with a missing or
 // dot segment is not a file; all are refused with no request made.
 func TestForgeImageRefusesOtherGitHubRepoPaths(t *testing.T) {
+	t.Parallel()
+
 	c, web := imageDaemon(t, nil)
 	for i, u := range []string{
 		"https://github.com/alexec/Agents/blob/main/x.png",
@@ -153,6 +159,8 @@ func TestForgeImageRefusesOtherGitHubRepoPaths(t *testing.T) {
 // #4009: a host off the list, a github.com page that is not an image path, plain http and a
 // redirect off the list are refused; the first three with no request made.
 func TestForgeImageRefusesHostsOffTheList(t *testing.T) {
+	t.Parallel()
+
 	c, web := imageDaemon(t, map[string]func() *http.Response{
 		"https://github.com/alexec/agents/assets/1/x.png": redirectTo("https://evil.example/x.png"),
 		"https://evil.example/x.png":                      imageAnswer("image/png", pngBytes),
@@ -177,6 +185,8 @@ func TestForgeImageRefusesHostsOffTheList(t *testing.T) {
 // #4009: an SVG is refused, also when its server says it is a PNG; so is an image past the cap,
 // whether its length says so or not.
 func TestForgeImageRefusesSVGAndBigImages(t *testing.T) {
+	t.Parallel()
+
 	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
 	big := append(append([]byte(nil), pngBytes...), make([]byte, forgeImageMost)...)
 	c, _ := imageDaemon(t, map[string]func() *http.Response{
@@ -204,6 +214,8 @@ func TestForgeImageRefusesSVGAndBigImages(t *testing.T) {
 // #4009: the token goes to github.com and raw.githubusercontent.com only, never to the avatars
 // or user-images hosts.
 func TestForgeImageSendsTheTokenOnlyWhereNeeded(t *testing.T) {
+	t.Parallel()
+
 	urls := []string{"https://raw.githubusercontent.com/a/b/main/x.png", "https://avatars.githubusercontent.com/u/1?v=4",
 		"https://user-images.githubusercontent.com/1/x.png"}
 	answers := map[string]func() *http.Response{}
@@ -223,6 +235,8 @@ func TestForgeImageSendsTheTokenOnlyWhereNeeded(t *testing.T) {
 
 // #4009: the cache keeps at most forgeImagesKept images, the least recently read going first.
 func TestForgeImageCacheIsBounded(t *testing.T) {
+	t.Parallel()
+
 	var c forgeImageCache
 	for i := range forgeImagesKept + 1 {
 		c.put(string(rune('a'+i)), wire.ForgeImage{MimeType: "image/png", Data: []byte{1}})
@@ -251,6 +265,8 @@ func TestForgeImageCacheIsBounded(t *testing.T) {
 // Forgejo's (on http too, its own root), Azure DevOps' and a Jira Data Center's. Only Azure
 // DevOps and Jira get a token, each its own; a host or path off the lists asks nothing.
 func TestForgeImageReadsEachForgesAvatars(t *testing.T) {
+	t.Parallel()
+
 	d, c, _, file := forgeDaemon(t)
 	web := &fakeImageWeb{answers: map[string]func() *http.Response{}}
 	d.forgeImageTransport = web
@@ -263,7 +279,7 @@ func TestForgeImageReadsEachForgesAvatars(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	secrets := filepath.Join(os.Getenv("AGENTS_PERSONAL_HOME"), ".agents-secrets")
+	secrets := filepath.Join(d.personalHome(), ".agents-secrets")
 	os.MkdirAll(secrets, 0o700)
 	os.WriteFile(filepath.Join(secrets, "secrets.env"), []byte("AZURE_DEVOPS_URL=https://dev.azure.com/\nAZURE_DEVOPS_TOKEN=ado\n"+
 		"JIRA_URL=https://jira.acme.test/jira\nJIRA_API_TOKEN=pat\n"), 0o600)
@@ -326,6 +342,8 @@ func TestForgeImageReadsEachForgesAvatars(t *testing.T) {
 // attachments, Azure DevOps' work item and pull request attachments, Linear's uploads, and Jira's
 // attachments. Every forge in the registry gives its image hosts.
 func TestForgeImageReadsEachForgesAttachments(t *testing.T) {
+	t.Parallel()
+
 	d, c, _, file := forgeDaemon(t)
 	for _, f := range d.forges() {
 		if f.Images() == nil {
@@ -345,7 +363,7 @@ func TestForgeImageReadsEachForgesAttachments(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	secrets := filepath.Join(os.Getenv("AGENTS_PERSONAL_HOME"), ".agents-secrets")
+	secrets := filepath.Join(d.personalHome(), ".agents-secrets")
 	os.MkdirAll(secrets, 0o700)
 	os.WriteFile(filepath.Join(secrets, "secrets.env"), []byte("AZURE_DEVOPS_URL=https://dev.azure.com/\nAZURE_DEVOPS_TOKEN=ado\n"+
 		"JIRA_URL=https://jira.acme.test/jira\nJIRA_API_TOKEN=pat\n"), 0o600)

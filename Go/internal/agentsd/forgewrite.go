@@ -57,6 +57,8 @@ type forgeGitHubWrites interface {
 	SetBlockedBy(ctx context.Context, repo string, number int, blockerRepo string, blockerNumber int, blocked bool) error
 	// A waiting deploy's answer (#3587).
 	ReviewDeployments(ctx context.Context, repo string, runID int, environments []int64, approve bool, comment string) error
+	// A deploy waiting for an approval in Agent Loops, on any GitHub plan (#5564).
+	AnswerApproval(ctx context.Context, repo string, a githubmcp.DeployApproval, approve bool, comment string) error
 	// A repository's CI settings, for the app tools (#3706).
 	SetActionsSecret(ctx context.Context, repo, name, value string) error
 	SetActionsVariable(ctx context.Context, repo, name, value string) (bool, error)

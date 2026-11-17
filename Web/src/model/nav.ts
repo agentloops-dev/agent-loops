@@ -3,7 +3,7 @@
 // every other section is a list of pages beside the page open. A section or page only an admin can
 // use is left out for a member; the control plane still checks each call's role itself.
 import type { ActivityPage } from "../route";
-import { reportSections, type Section } from "./console";
+import { featuresSection, reportSections, type Section } from "./console";
 import { workKinds, workKindTitle, type WorkKind } from "./work";
 
 export type NavSection = "overview" | "agents" | "work" | "machines" | "workflows" | "reports" | "requests" | "people" | "status" | "settings";
@@ -24,17 +24,20 @@ export type PageDraw =
   | { kind: "console"; id: string }
   | { kind: "report"; section: Section }
   | { kind: "builds" }
+  | { kind: "delivery" }
+  | { kind: "summary" }
   | { kind: "work"; work: WorkKind }
   | { kind: "features" }
   | { kind: "timeline" }
+  | { kind: "deploys" }
+  | { kind: "next" }
   | { kind: "docs" }
   | { kind: "messages" }
   | { kind: "machine"; host: string }
   | { kind: "secrets" }
+  | { kind: "environment" }
   | { kind: "accounts" }
-  | { kind: "statusList"; list: "secrets" | "accounts" }
-  | { kind: "multiplier" }
-  | { kind: "usage" | "machines" | "workflows" | "settings" };
+  | { kind: "machines" | "workflows" | "settings" };
 
 export interface NavPage {
   id: string;
@@ -44,7 +47,7 @@ export interface NavPage {
   /** Only an admin sees it in the list; a member who opens it by its address is told why. */
   admin?: boolean;
   /** A page under another of the list (#5178): its row is indented under that page's, and its address is the
-   * other page's item, #/reports/value/builds. */
+   * other page's item, #/reports/delivery/builds. */
   under?: string;
   draw: PageDraw;
 }
@@ -62,7 +65,8 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   // Every issue and pull request from the forges, with lineage on top, and the releases lineage knows
   // (#3119). The page's id is the lineage kind, so #/work/pr/<ref> is a PR's page.
   // Features (#3269) after Pull requests: the feature:<name> labels on the epics, not a lineage kind.
-  // Timeline (#4206) after Releases: the epics in time, from work/timeline.
+  // Deploys (#5270) after Releases: every component in every environment, from deploys/targets.
+  // Timeline (#4206) after Deploys: the epics in time, from work/timeline.
   // Docs and Messages first (#5267), as the window's Work group has them; were sections of their own.
   work: [
     // The folders' docs and the docs connectors' (#3321, spec 3319); #/work/docs/<ref> is a doc's page.
@@ -71,8 +75,13 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
     { id: "messages", title: "Messages", group: "Work", draw: { kind: "messages" } },
     ...workKinds.flatMap((k): NavPage[] => [
       { id: k, title: workKindTitle[k], group: "Work", draw: { kind: "work", work: k } },
+      // Next (#5691) after Issues: the ready work in one order, with the reason for each place, from forge/next.
+      ...k === "issue" ? [{ id: "next", title: "Next", group: "Work", draw: { kind: "next" } } satisfies NavPage] : [],
       ...k === "pr" ? [{ id: "features", title: "Features", group: "Work", draw: { kind: "features" } } satisfies NavPage] : [],
-      ...k === "release" ? [{ id: "timeline", title: "Timeline", group: "Work", draw: { kind: "timeline" } } satisfies NavPage] : [],
+      ...k === "release" ? [
+        { id: "deploys", title: "Deploys", group: "Work", draw: { kind: "deploys" } } satisfies NavPage,
+        { id: "timeline", title: "Timeline", group: "Work", draw: { kind: "timeline" } } satisfies NavPage,
+      ] : [],
     ]),
   ],
   machines: [
@@ -85,12 +94,18 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   reports: [
     ...reportSections.flatMap((s): NavPage[] => [
       { id: s.id, title: s.title, group: s.group, draw: { kind: "report", section: s } },
-      // Build trends (#5178, spec 5166) under Planning: #/reports/value/builds.
-      ...s.id === "value" ? [{ id: "builds", title: "Builds", group: s.group, under: "value", draw: { kind: "builds" } } satisfies NavPage] : [],
+      // Build trends (#5178, spec 5166) and the DORA figures of each environment (#5245, spec 5239 board 5) under Delivery
+      // (#5280; were under Planning): #/reports/delivery/builds, #/reports/delivery/environments.
+      ...s.id === "delivery" ? [
+        { id: "builds", title: "Builds", group: s.group, under: "delivery", draw: { kind: "builds" } },
+        { id: "environments", title: "Environments", group: s.group, under: "delivery", draw: { kind: "delivery" } },
+      ] satisfies NavPage[] : [],
+      // The daily summary's page (#3721) after Outcomes, whose Me lens has Multiplier and Velocity: a report, as the
+      // window's and the Remote's Reports have it (#5729; was a row at the top of the Agents sidebar). Listed only while
+      // the daily summary is on (shownWhile).
+      ...s.id === "outcomes" ? [{ id: "summary", title: "Summary", group: s.group, draw: { kind: "summary" } } satisfies NavPage] : [],
     ]),
-    // The Multiplier page first (#3990), as the window's first row under Usage; it took the Achievements page's place.
-    { id: "multiplier", title: "Multiplier", group: "Yours", draw: { kind: "multiplier" } },
-    { id: "usage", title: "Usage", group: "Yours", draw: { kind: "usage" } },
+    // Multiplier and Usage went into the Me lens of Outcomes, Spend and Time (#5280): an old address opens there (movedReport).
     adminPage("audit", "Audit", "Records"),
   ],
   requests: [adminPage("requests", "Requests", "Requests")],
@@ -100,17 +115,27 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   status: [
     { id: "runtimes", title: "Runtimes", group: "Status", draw: { kind: "activity", page: "runtimes" } },
     { id: "events", title: "Events", group: "Status", draw: { kind: "activity", page: "events" } },
-    // What happened last to the person's secrets and accounts (#4161): read only, a press opens Settings ▸ You.
-    { id: "secrets", title: "Secrets", group: "Status", draw: { kind: "statusList", list: "secrets" } },
-    { id: "accounts", title: "Accounts", group: "Status", draw: { kind: "statusList", list: "accounts" } },
+    // Every secret (#5257) and every outside account (#5258) of the person's, to find, see, add, edit and remove, at
+    // #/secrets and #/accounts.
+    { id: "secrets", title: "Secrets", group: "Status", draw: { kind: "secrets" } },
+    { id: "accounts", title: "Accounts", group: "Status", draw: { kind: "accounts" } },
+    // The plain variables sessions get when their agent starts (#5260): ~/.agents/env and each repo's .agents/env, at #/environment.
+    { id: "environment", title: "Environment", group: "Status", draw: { kind: "environment" } },
+    // Which features the apps and agents used on the person's machines (#2165): about the product and the machines, not
+    // about work, so it left Reports (#5280).
+    { id: "features", title: featuresSection.title, group: "Status", draw: { kind: "report", section: featuresSection } },
   ],
   // You first (#3998), as the window's Settings rail: the person's own connectors, their secrets and cards, which go to every
   // machine of theirs (#3632), and their outside accounts (#3967), kept and sent as their secrets are. Was Your setup.
   // Settings itself is still the page the section opens on (settingsHome).
   settings: [
     { id: "mcp", title: "Connectors", group: "You", draw: { kind: "activity", page: "mcp" } },
+    // Opens Status ▸ Secrets (#5257): #/settings/secrets is the Secrets page's address too, for people who look in Settings.
     { id: "secrets", title: "Secrets", group: "You", draw: { kind: "secrets" } },
+    // Opens Status ▸ Accounts (#5258), as Secrets does.
     { id: "accounts", title: "Accounts", group: "You", draw: { kind: "accounts" } },
+    // Opens Status ▸ Environment (#5260), as Secrets opens its page: the window's Settings ▸ You has Open Environment.
+    { id: "environment", title: "Environment", group: "You", draw: { kind: "environment" } },
     { id: "settings", title: "Settings", group: "Settings", draw: { kind: "settings" } },
     adminPage("policy", "Policy", "Organisation"),
     adminPage("modelAccess", "Model Access", "Organisation"),
@@ -178,13 +203,45 @@ export function groupedPages(list: readonly NavPage[]): [string, NavPage[]][] {
   return [...out];
 }
 
-/** Usage's panes: Activity's Cost, Tokens and Time, then Velocity, the PRs that landed (#4598). */
+/** Usage's panes: Activity's Cost, Tokens and Time, then Velocity, the PRs that landed (#4598). Since #5280 each is in the
+ * Me lens of the report it repeats (usageReport). */
 export type UsagePane = "spending" | "tokens" | "time" | "velocity";
 export const usagePanes: readonly UsagePane[] = ["spending", "tokens", "time", "velocity"];
 export const usagePaneTitle: Record<UsagePane, string> = { spending: "Cost", tokens: "Tokens", time: "Time", velocity: "Velocity" };
 
+/** The report whose Me lens draws each of Usage's panes (#5280): Cost and Tokens on Spend, Time on Time, Velocity on Outcomes. */
+export const usageReport: Record<UsagePane, string> = { spending: "spend", tokens: "spend", time: "time", velocity: "outcomes" };
+
+/** The panes of Usage that a report's Me lens draws (#5280), in Usage's order. */
+export function usagePanesOf(report: string): UsagePane[] {
+  return usagePanes.filter((p) => usageReport[p] === report);
+}
+
+/** The query of a Reports page in the Me lens, named, so the lens last chosen does not take its place (#5279). */
+export const meLens = "lens=me";
+
+/** Where a Reports page that moved in #5280 (or before) is now: Planning's parts, Usage, Multiplier and Features. undefined
+ * for a page that did not move. */
+export function movedReport(page: string, item: string | undefined): { nav: "reports" | "status"; section: string; item?: string; query?: string } | undefined {
+  switch (page) {
+    // Planning (#4528) is Delivery, Forecast and Estimates; its pages Builds and Delivery are under Delivery.
+    case "value":
+      if (item === "builds") return { nav: "reports", section: "delivery", item };
+      if (item === "delivery") return { nav: "reports", section: "delivery", item: "environments" };
+      return { nav: "reports", section: "delivery" };
+    // Usage and Multiplier were the person's own: they open in the Me lens, whatever lens was chosen last.
+    case "usage": return { nav: "reports", section: "spend", query: meLens };
+    // The Multiplier page took the Achievements page's place (#3990).
+    case "multiplier": case "achievements": return { nav: "reports", section: "outcomes", query: meLens };
+    case "features": return { nav: "status", section: "features" };
+    // Events left Reports ▸ Records for Status (#3998).
+    case "events": return { nav: "status", section: "events" };
+    default: return undefined;
+  }
+}
+
 /** Where an address from before #2141 goes now: `#/console/<page>` and `#/a/<page>`. */
-export function movedPage(app: "console" | "a", page: string | undefined): { nav?: NavSection; section?: string; usage?: UsagePane } {
+export function movedPage(app: "console" | "a", page: string | undefined): { nav?: NavSection; section?: string; usage?: UsagePane; query?: string } {
   if (app === "console") {
     switch (page) {
       case undefined: case "overview": return {};
@@ -205,8 +262,8 @@ export function movedPage(app: "console" | "a", page: string | undefined): { nav
     // Worktrees (#3627) and resources (#3629) are on each machine's page now.
     case "worktrees": case "resources": return { nav: "machines", section: "machines" };
     case "events": return { nav: "status", section: page };
-    case "achievements": return { nav: "reports", section: "multiplier" };
-    case "spending": case "tokens": case "time": case "velocity": return { nav: "reports", section: "usage", usage: page };
+    case "achievements": return { nav: "reports", section: "outcomes", query: meLens };
+    case "spending": case "tokens": case "time": case "velocity": return { nav: "reports", section: usageReport[page], usage: page, query: meLens };
     default: return {};
   }
 }

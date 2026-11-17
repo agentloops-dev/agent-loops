@@ -12,6 +12,8 @@ import (
 // US1 (#1001, slice a2): a GitHub token the runtime streams in two chunks is redacted
 // whole, on disk and to the clients; the word the turn ends on is not lost.
 func TestATokenSplitOverTwoChunksIsRedacted(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root, work := t.TempDir(), t.TempDir()
 	d, c := start(t, root)
@@ -46,6 +48,8 @@ func TestATokenSplitOverTwoChunksIsRedacted(t *testing.T) {
 }
 
 func TestSplitHeld(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string][2]string{
 		"":                       {"", ""},
 		"Hello there.":           {"Hello ", "there."},

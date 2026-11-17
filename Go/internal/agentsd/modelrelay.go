@@ -35,7 +35,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -121,7 +120,7 @@ func (d *Daemon) relay() (*modelRelay, error) {
 		ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0),
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12}}
 	tlsLn := tls.NewListener(ln, r.srv.TLSConfig)
-	safe.Go("model relay", func() { r.srv.Serve(tlsLn) })
+	d.goJob("model relay", func() { r.srv.Serve(tlsLn) })
 	d.modelRelay = r
 	log.Printf("model relay: on 127.0.0.1:%d", r.port)
 	return r, nil

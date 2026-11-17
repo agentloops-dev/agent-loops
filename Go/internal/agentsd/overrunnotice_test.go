@@ -25,6 +25,8 @@ func overrunNotices(d *Daemon) []postedNotice {
 // on the epic's lead, kept as told; the same threshold again says nothing, and 3× says it
 // once more. With no session of the epic that is not archived, nothing is told yet.
 func TestAnEpicPastTwiceItsEstimateTellsThePerson(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()

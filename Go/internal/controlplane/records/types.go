@@ -166,7 +166,9 @@ type MachineRecord struct {
 	Workspace json.RawMessage
 	// When its key stops being accepted (#997), as ClientRecord.Expires.
 	Expires *Stamp
-	Extra   Extra
+	// The labels a person set (#5284), key or key=value, sorted; the provider's are not here.
+	Labels []string
+	Extra  Extra
 }
 
 type hostJSON struct {
@@ -188,6 +190,7 @@ type hostJSON struct {
 	DetectFolders *bool             `json:"detectFolders,omitempty"`
 	Workspace     json.RawMessage   `json:"workspace,omitempty"`
 	Expires       *Stamp            `json:"expires,omitempty"`
+	Labels        []string          `json:"labels,omitempty"`
 }
 
 // dialOut is MachineReach.dialOut: every host connects out now (058, T073); a record that
@@ -197,7 +200,7 @@ var dialOut = json.RawMessage(`{"dialOut":{}}`)
 func (h MachineRecord) MarshalJSON() ([]byte, error) {
 	return encodeKeeping(hostJSON{h.ID, h.Name, h.PublicKey, dialOut, h.Platform, h.Version, h.Installed, h.MachineID,
 		h.SignInFrom, h.GitFrom, h.Owner, h.Rev, h.Forgotten, h.ForgottenAt, h.KnownEpoch, h.DetectFolders,
-		h.Workspace, h.Expires}, h.Extra)
+		h.Workspace, h.Expires, h.Labels}, h.Extra)
 }
 
 func (h *MachineRecord) UnmarshalJSON(data []byte) error {
@@ -207,7 +210,7 @@ func (h *MachineRecord) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*h = MachineRecord{j.ID, j.Name, j.PublicKey, j.Platform, j.Version, j.Installed, j.MachineID, j.SignInFrom,
-		j.GitFrom, j.Owner, j.Rev, j.Forgotten, j.ForgottenAt, j.KnownEpoch, j.DetectFolders, j.Workspace, j.Expires, extra}
+		j.GitFrom, j.Owner, j.Rev, j.Forgotten, j.ForgottenAt, j.KnownEpoch, j.DetectFolders, j.Workspace, j.Expires, j.Labels, extra}
 	return nil
 }
 

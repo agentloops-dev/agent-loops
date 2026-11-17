@@ -25,9 +25,56 @@
       "name": "machine.accounts/1",
       "by": "control",
       "description": "The control plane still answers machine/accounts with add and ops (#3967). machine.accounts/2 (#5253): it also takes remove, which an older control plane does not know."
+    },
+    {
+      "name": "user/3",
+      "by": "control",
+      "description": "The control plane still reads user/setSettings as 0.19.0 sent it. user/5 (#5259): a client may send the part environment, which an older control plane does not know (user/4, user/sealedSecret, shipped in 0.19.0 without it). user/6 (#5573): it may also send the parts person, auto and retention, which an older control plane refuses; the Mac then sends them to each machine itself."
     }
   ],
   "methods": [
+    {
+      "name": "approvals/list",
+      "x-capability": "approvals/1",
+      "description": "A machine, on its channel 0 (#5462): the approvals of the caller's person, each signed by the machine that made it. The machine takes one only for a file with the same digest, and only when its pinned machine lock names the signer.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/workflows.schema.json#/definitions/PersonApprovals"
+        }
+      }
+    },
+    {
+      "name": "approvals/put",
+      "x-capability": "approvals/1",
+      "description": "A machine, on its channel 0 (#5462): approvals it signed. The control plane keeps the first of each kind and digest, up to 2000 for a person; it signs nothing.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/workflows.schema.json#/definitions/PersonApprovalsPut"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/workflows.schema.json#/definitions/PersonApprovals"
+        }
+      }
+    },
     {
       "name": "attention/need",
       "x-capability": "attention/2",
@@ -331,7 +378,7 @@
     },
     {
       "name": "builds/historyAll",
-      "x-capability": "builds.read/1",
+      "x-capability": "builds.read/2",
       "description": "builds/history over the control plane's copy (#5232): the runs of every machine in the scope that sends the repository's build timings, one for each ci-run ref and attempt, so a machine that sleeps is still in it.",
       "tags": [
         {
@@ -357,7 +404,7 @@
     },
     {
       "name": "builds/runAll",
-      "x-capability": "builds.read/1",
+      "x-capability": "builds.read/2",
       "description": "builds/run over the control plane's copy (#5232), as builds/historyAll reads it.",
       "tags": [
         {
@@ -787,6 +834,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/connections.schema.json#/definitions/WebPushKey"
+        }
+      }
+    },
+    {
+      "name": "connections/listAll",
+      "description": "The connections of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ConnectionsListAll"
         }
       }
     },
@@ -1984,6 +2057,105 @@
       ]
     },
     {
+      "name": "deploys/deliveryAll",
+      "x-capability": "deploys.read/1",
+      "description": "deploys/delivery over the control plane's copy (#5496): the deploys of every machine in the scope that sends them, each once, so Delivery works for a group or org and while a machine sleeps.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/DeploysDeliveryRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/DeploysDelivery"
+        }
+      }
+    },
+    {
+      "name": "deploys/sync",
+      "x-capability": "deploys.copy/1",
+      "description": "A host, on its channel 0 (#5496): every deploy it keeps, as deploys/delivery's figures need them, a few seconds after a change and when it connects, in place of the control plane's copy of its deploys. The copy keeps the machine store's bound.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/DeploysSync"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "docs/listAll",
+      "description": "The docs of the caller's machines in one call, with a cap and a cursor (#5571).",
+      "x-capability": "docs.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/DocsListAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/DocsListAll"
+        }
+      }
+    },
+    {
+      "name": "events/listAll",
+      "description": "The newest events of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/EventsListAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/EventsListAll"
+        }
+      }
+    },
+    {
       "name": "folders/detect",
       "x-capability": "folders/1",
       "description": "To a host just added, from a control plane before #656.",
@@ -2017,6 +2189,58 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "forge/boardsAll",
+      "description": "The boards of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ForgeBoardsAll"
+        }
+      }
+    },
+    {
+      "name": "forge/listAll",
+      "description": "The issues or pull requests of the caller's machines in one call, each machine's page (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ForgeListAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ForgeListAll"
         }
       }
     },
@@ -2341,8 +2565,34 @@
       }
     },
     {
+      "name": "lineage/forecastAll",
+      "description": "lineage/forecast of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/lineage.schema.json#/definitions/LineageForecastRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/LineageForecastAll"
+        }
+      }
+    },
+    {
       "name": "lineage/sessionsOn",
-      "x-capability": "lineage.read/1",
+      "x-capability": "lineage.read/2",
       "description": "The sessions on every machine in a scope that lineage links to these nodes (#4276), with when each started on them and its state now, from the merged copy: a machine that sleeps is still in it.",
       "tags": [
         {
@@ -2389,7 +2639,7 @@
     },
     {
       "name": "lineage/walkAll",
-      "x-capability": "lineage.read/1",
+      "x-capability": "lineage.read/2",
       "description": "lineage/walk over the merged copy of every machine's lineage in a scope (#4276), with each session's state now.",
       "tags": [
         {
@@ -2798,6 +3048,27 @@
       }
     },
     {
+      "name": "machine/capacity",
+      "x-capability": "auto-machine/1",
+      "description": "A host, on its channel 0 (#5374): its capacity level and 5-minute load per core. Machines/list carries them in each machine's row.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/CapacityReport"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "machine/clients",
       "x-capability": "machine/1",
       "description": "To every host, on its channel 0, when it connects and when a window is paired or forgotten (#1118): the windows it may let in on its local socket.",
@@ -2984,6 +3255,27 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/JSONValue"
+        }
+      }
+    },
+    {
+      "name": "machine/offerSecret",
+      "x-capability": "machine.agent-secrets/1",
+      "description": "A machine, on its channel 0 (#5308): a secret an agent saved on it, sealed to its person's clients only. The control plane keeps the envelopes, writes an audit entry (An agent saved a secret: the name, the machine and the session, never the value), and tells the person's clients (control/sealingWanted). A client of the person's makes it one of theirs.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/AgentSecretOffer"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },
@@ -3178,6 +3470,27 @@
       ]
     },
     {
+      "name": "machine/secretClients",
+      "x-capability": "machine.agent-secrets/1",
+      "description": "A machine, on its channel 0 (#5308): its person's clients that have a key, each {id, name, publicKey}, and user, the person's id, to seal an agent's secret to (machine/offerSecret). Never another machine: a machine only receives from machines.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/SealRecipients"
+        }
+      }
+    },
+    {
       "name": "machine/secretKey",
       "x-capability": "host.secret-release/1",
       "description": "A Linux machine, on its channel 0 (#4058): the public half of its release key, made the first time it asks. It seals each value with Ask before use to it as well as to its own key, so the machine alone cannot open the value.",
@@ -3241,6 +3554,27 @@
       }
     },
     {
+      "name": "machine/setupStep",
+      "x-capability": "machine/1",
+      "description": "A host, while agents-host install --join runs on it (#5355): a step started, going on, done or failed. The control plane keeps each step's start and end, so the time to ready is measured.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/MachineSetupReport"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "machine/status",
       "x-capability": "machine/1",
       "description": "A host, on its channel 0 (#691 US4).",
@@ -3292,6 +3626,58 @@
           }
         }
       ]
+    },
+    {
+      "name": "machines/agents",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "A machine page's Agents section (#5273): its version, since when, the changes since the version before, its history and the person's other machines.",
+      "x-capability": "machines/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/MachineAgents"
+        }
+      }
+    },
+    {
+      "name": "machines/agentsChanges",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "The changes in Agents from one version to another (#5273), newest first, from GitHub's compare of their commits.",
+      "x-capability": "machines/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/AgentsChangesRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/AgentsChanges"
+        }
+      }
     },
     {
       "name": "machines/announce",
@@ -3700,7 +4086,7 @@
     },
     {
       "name": "machines/list",
-      "x-capability": "machines/1",
+      "x-capability": "machines/2",
       "tags": [
         {
           "name": "web"
@@ -3710,25 +4096,32 @@
       "params": [
         {
           "name": "params",
-          "required": true,
+          "required": false,
           "schema": {
-            "$ref": "schema/core.schema.json#/definitions/Empty"
+            "$ref": "schema/org.schema.json#/definitions/MachineListQuery"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "type": "array",
-          "items": {
-            "$ref": "schema/org.schema.json#/definitions/ControlMachine"
-          }
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "schema/org.schema.json#/definitions/ControlMachine"
+              }
+            },
+            {
+              "$ref": "schema/org.schema.json#/definitions/MachineList"
+            }
+          ]
         }
       }
     },
     {
       "name": "machines/listKept",
-      "x-capability": "machines/1",
+      "x-capability": "machines/2",
       "tags": [
         {
           "name": "web"
@@ -3738,9 +4131,9 @@
       "params": [
         {
           "name": "params",
-          "required": true,
+          "required": false,
           "schema": {
-            "$ref": "schema/core.schema.json#/definitions/Empty"
+            "$ref": "schema/workflows.schema.json#/definitions/KeptListQuery"
           }
         }
       ],
@@ -3844,6 +4237,27 @@
       }
     },
     {
+      "name": "machines/retrySetup",
+      "x-capability": "machines/1",
+      "description": "Try Again on a machine's set-up (#5355): runs the failed step and the ones after it. Every step is safe to run again.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "machines/sendFolder",
       "x-capability": "folders.to-machine/1",
       "description": "Through machine/machines only: one step of an agent's start_session with send (#2929), which sends this folder's branch to another of the person's machines, as Send to ‹machine›… does, or of its bring_back (#2947), which brings a branch back from there, as Bring Back from ‹machine›… does, or of its move_session (#3717), which moves a session there after its branch. The control plane sends that machine's folders/receiveState, folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or agents/moveIn; the machine has to be online.",
@@ -3903,6 +4317,31 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "machines/setLabels",
+      "x-capability": "machines/2",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/MachineLabelsRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/MachineLabelsResult"
         }
       }
     },
@@ -4121,6 +4560,53 @@
         }
       },
       "description": "Update a server's host over ssh (#1766): its server and key given again, the host key checked as at an install, the server's root checked to be this host's, then the control plane's agentsd, MCP servers and toolsets copied and the host started again. The answer is an install's: {needsTrust, name} first for a key not yet trusted, then {updated: true, name}."
+    },
+    {
+      "name": "machines/versions",
+      "description": "A machine's Agents versions and each change of them, as observed deploys (#5272), for its page (#5273).",
+      "x-capability": "machines/1",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/MachineRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/MachineVersions"
+        }
+      }
+    },
+    {
+      "name": "messages/conversationsAll",
+      "description": "The conversations of the caller's machines in one call, with a cap and a cursor (#5571).",
+      "x-capability": "messages.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/MessagesConversationsAllRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/MessagesConversationsAll"
+        }
+      }
     },
     {
       "name": "multiplier/count",
@@ -4800,6 +5286,90 @@
       }
     },
     {
+      "name": "pool/claim",
+      "x-capability": "pools/1",
+      "description": "New Machine's Start from a warm pool (#5365, #5366): checks the oldest ready machine of a pool of this provider and size, takes it in one write, binds it to the person and has the pool replace it. With no ready machine it makes a new one and says so in note: a claim never waits on a pool.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/WarmPoolClaim"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/WarmPoolClaimed"
+        }
+      }
+    },
+    {
+      "name": "pool/delete",
+      "x-capability": "pools/1",
+      "description": "Deletes a warm pool and its ready machines (#5363). Machines already claimed are unaffected.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/WarmPoolRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "pool/list",
+      "x-capability": "pools/1",
+      "description": "The person's warm pools (#5363): each with how many machines are ready and being set up.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/WarmPools"
+        }
+      }
+    },
+    {
+      "name": "pool/set",
+      "x-capability": "pools/1",
+      "description": "Makes a warm pool or changes one (#5363). Min ready must not be above max size; max size is at least 1. A change takes effect at once: the pool's reconcile loop runs.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/WarmPoolSet"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/WarmPool"
+        }
+      }
+    },
+    {
       "name": "projects/joined",
       "x-capability": "projects/1",
       "description": "A host, on its channel 0 (#2317): every folder it has and the project id each names. The control plane adopts the ids it does not know, and answers with those projects' slots (#2669).",
@@ -5423,7 +5993,7 @@
     },
     {
       "name": "reports/export",
-      "x-capability": "reports/1",
+      "x-capability": "reports/2",
       "tags": [
         {
           "name": "web"
@@ -5447,8 +6017,34 @@
       }
     },
     {
+      "name": "reports/featuresAll",
+      "description": "reports/features of the caller's machines in one call (#5592).",
+      "x-capability": "machines.all/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/FeatureUsageAll"
+        }
+      }
+    },
+    {
       "name": "reports/nodes",
-      "x-capability": "reports.nodes/1",
+      "x-capability": "reports.nodes/2",
       "description": "The lineage nodes of one kind in a scope (#3118): issues, PRs or releases, with their cost, sessions and lead time, filtered, sorted and in pages of at most 100, from the machines' lineage nodes as reports/value reads them.",
       "tags": [
         {
@@ -5500,7 +6096,7 @@
     },
     {
       "name": "reports/saveView",
-      "x-capability": "reports.views/1",
+      "x-capability": "reports.views/2",
       "description": "Keeps a view of Reports for the caller (#2019): a new one with no id, or changes the one with its id. At most 50; a scope the caller may see.",
       "tags": [
         {
@@ -5552,8 +6148,8 @@
     },
     {
       "name": "reports/setPolicy",
-      "x-capability": "reports.scope/1",
-      "description": "Changes who sees what in Reports (#1804): totals only, group leads and budgets. Admins only.",
+      "x-capability": "reports.scope/2",
+      "description": "Changes the organisation budget in Reports (#1804). Admins only.",
       "tags": [
         {
           "name": "web"
@@ -5578,7 +6174,7 @@
     },
     {
       "name": "reports/usage",
-      "x-capability": "reports/1",
+      "x-capability": "reports/2",
       "tags": [
         {
           "name": "web"
@@ -5603,7 +6199,7 @@
     },
     {
       "name": "reports/value",
-      "x-capability": "reports.value/1",
+      "x-capability": "reports.value/2",
       "description": "What the work in a scope cost and delivered (#2351): cost per merged PR, per issue and per release, waste and lead time, from the machines' lineage nodes.",
       "tags": [
         {
@@ -5806,6 +6402,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/reports.schema.json#/definitions/SealingWork"
+        }
+      }
+    },
+    {
+      "name": "sessions/previewStart",
+      "x-capability": "auto-machine/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "Which machine Auto picks for a project and runtime, or why none fits (#5374, specs/5373-auto-machine). Advisory: a start with machine auto uses the same rule at start.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/AutoMachineRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/AutoMachinePick"
         }
       }
     },
@@ -6397,6 +7019,32 @@
       }
     },
     {
+      "name": "user/dropSecretOffer",
+      "x-capability": "user/5",
+      "description": "A person's: Keep Yours (#5308). The agent's offer goes, and the person's secret of that name stays as it is on every machine.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/SecretOfferRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "user/removeSecret",
       "x-capability": "user/2",
       "tags": [
@@ -6469,6 +7117,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/org.schema.json#/definitions/UserSecretNames"
+        }
+      }
+    },
+    {
+      "name": "user/secretOffers",
+      "x-capability": "user/5",
+      "description": "A person's: the secrets agents saved on their machines that are not theirs yet (#5308), each with this client's copy. A Mac window or a web page sets each one with no conflict (user/setSecret with offer); a conflict waits for the person.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/SecretOffers"
         }
       }
     },
@@ -6568,7 +7242,7 @@
     },
     {
       "name": "user/setSettings",
-      "x-capability": "user/3",
+      "x-capability": "user/6",
       "tags": [
         {
           "name": "web"

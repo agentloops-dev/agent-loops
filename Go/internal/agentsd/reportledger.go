@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -222,7 +221,7 @@ func (d *Daemon) reportChangedLocked() {
 		return
 	}
 	if d.reportSave == nil {
-		d.reportSave = time.AfterFunc(reportSaveAfter, d.flushReport)
+		d.reportSave = time.AfterFunc(reportSaveAfter, d.jobFunc("reportledger timer", d.flushReport))
 	}
 }
 
@@ -413,13 +412,13 @@ func (d *Daemon) sendReport() {
 
 // startReports sends what is unsent now, and starts the hourly send once.
 func (d *Daemon) startReports() {
-	safe.Go("usage rollup", d.sendReport)
+	d.goJob("usage rollup", d.sendReport)
 	// And the lineage changed since (#4275), on the same clock in case a send failed.
-	safe.Go("lineage sync", d.sendLineage)
+	d.goJob("lineage sync", d.sendLineage)
 	// And the build timings changed since (#5232), the same way.
-	safe.Go("build timings sync", d.sendCITimings)
+	d.goJob("build timings sync", d.sendCITimings)
 	// What it has from a catalogue (#2019, M5), on the same clock.
-	safe.Go("governance report", d.sendGovernanceReport)
+	d.goJob("governance report", d.sendGovernanceReport)
 	d.reportTick.Do(func() {
 		d.goLoop("usage rollup clock", func(ctx context.Context) {
 			tick := time.NewTicker(reportEvery)
@@ -433,6 +432,7 @@ func (d *Daemon) startReports() {
 					d.sendGovernanceReport()
 					d.sendLineage()
 					d.sendCITimings()
+					d.sendDeploys(false)
 				}
 			}
 		})

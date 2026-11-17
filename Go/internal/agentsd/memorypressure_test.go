@@ -13,9 +13,8 @@ func TestWarmPoolKeepsNoneUnderMemoryPressure(t *testing.T) {
 	fakeRuntimes(t)
 	var mu sync.Mutex
 	pressure := ""
-	pressureNow = func() string { mu.Lock(); defer mu.Unlock(); return pressure }
-	was := pressureNow
-	t.Cleanup(func() { pressureNow = was })
+	was := setPressureNow(func() string { mu.Lock(); defer mu.Unlock(); return pressure })
+	t.Cleanup(func() { setPressureNow(was) })
 	set := func(p string) { mu.Lock(); pressure = p; mu.Unlock() }
 	var b bytes.Buffer
 	var bmu sync.Mutex
@@ -61,5 +60,7 @@ func TestWarmPoolKeepsNoneUnderMemoryPressure(t *testing.T) {
 
 // machinePressure reads this machine without failing; what it says depends on the machine.
 func TestMachinePressureReads(t *testing.T) {
+	t.Parallel()
+
 	t.Log(machinePressure())
 }

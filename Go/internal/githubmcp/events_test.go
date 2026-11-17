@@ -75,6 +75,9 @@ type fakePR struct {
 	state              string // open, merged or closed
 	mergedAt, closedAt string
 	conflicts          *bool
+	// blocking is what stops it merging (#5321); skip is a draft or a review requested from a person.
+	blocking mcpevents.Blocking
+	skip     bool
 }
 
 func newFake() *fakeGitHub { return &fakeGitHub{prs: map[int]*fakePR{}} }
@@ -281,6 +284,18 @@ func (f *fakeGitHub) ClosedPRs(_ context.Context, _, since string) ([]MergedPR, 
 	return merged, closed, false, nil
 }
 
+func (f *fakeGitHub) BlockedPRs(context.Context, string) ([]BlockedPR, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []BlockedPR
+	for _, p := range f.prs {
+		if p.state == "open" {
+			out = append(out, BlockedPR{PR: p.pr, Blocking: p.blocking, Skip: p.skip || p.draft, Trusted: p.trusted})
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeGitHub) ConflictPRs(context.Context, string) ([]ConflictPR, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -469,7 +484,7 @@ func TestEventsListGivesEveryEventPollOnlyWithTheirSchemas(t *testing.T) {
 		_, hasMine := props["mine"]
 		// Every event about one PR names it by mine too (#3797), and all of them take any.
 		named := map[string]bool{"checks.failed": true, "checks.passed": true, "pr.merged": true, "pr.closed": true,
-			"pr.conflicted": true, "pr.commented": true, "pr.labelled": true, "pr.unlabelled": true, "pr.reviewed": true,
+			"pr.conflicted": true, "pr.blocked": true, "pr.commented": true, "pr.labelled": true, "pr.unlabelled": true, "pr.reviewed": true,
 			"review.posted": true, "review.comment": true}
 		equal(t, hasMine, named[name], name+" mine")
 		_, hasFixes := props["fixes"]
@@ -489,12 +504,12 @@ func TestEventsListGivesEveryEventPollOnlyWithTheirSchemas(t *testing.T) {
 				equal(t, props[filter].(map[string]any)["type"], "string", name+" "+filter)
 			}
 		} else {
-			equal(t, props["pr"].(map[string]any)["type"], "integer", name+" pr")
+			equal(t, props["pr"].(map[string]any)["type"], []any{"integer", "array"}, name+" pr")
 		}
 	}
 	sort.Strings(names)
 	equal(t, names, []string{"checks.failed", "checks.passed", "deploy.failed", "deploy.started", "deploy.succeeded", "deploy.waiting", "issue.assigned", "issue.closed", "issue.commented", "issue.labelled", "issue.opened",
-		"pr.closed", "pr.commented", "pr.conflicted", "pr.labelled", "pr.merged", "pr.opened", "pr.reviewed", "pr.unlabelled", "review.comment", "review.posted",
+		"pr.blocked", "pr.closed", "pr.commented", "pr.conflicted", "pr.labelled", "pr.merged", "pr.opened", "pr.reviewed", "pr.unlabelled", "review.comment", "review.posted",
 		"review.requested", "run.completed"}, "names")
 }
 
@@ -592,6 +607,29 @@ func TestRunCompletedRaisesAnyConclusionOncePerAttempt(t *testing.T) {
 	h.fake.addCompleted(9203, 1, "release-dry-run.yml", "main", h.at(12), "cancelled", true)
 	h.fake.addCompleted(9204, 1, "release-dry-run.yml", "main", h.at(12), "success", true)
 	equal(t, ids(h.poll("run.completed", byID, firstByID["cursor"])), []string{"run.completed:" + repo + ":9203:1"}, "by run id")
+}
+
+// #5775: conclusion raises only the runs that ended so, one conclusion or a list, and the
+// cursor still moves past the others; a conclusion GitHub has no such name for is refused.
+func TestRunCompletedRaisesOnlyTheConclusionsAskedFor(t *testing.T) {
+	h := newHarness(t)
+	red := map[string]any{"repo": repo, "workflow": "ci.yml", "branch": "main", "conclusion": []any{"failure", "timed_out"}}
+	one := map[string]any{"repo": repo, "workflow": "ci.yml", "branch": "main", "conclusion": "cancelled"}
+	first, firstOne := h.poll("run.completed", red, nil), h.poll("run.completed", one, nil)
+	h.fake.addCompleted(9300, 1, "ci.yml", "main", h.at(5), "success", true)
+	h.fake.addCompleted(9301, 1, "ci.yml", "main", h.at(5), "failure", true)
+	h.fake.addCompleted(9302, 1, "ci.yml", "main", h.at(5), "cancelled", true)
+	h.fake.addCompleted(9303, 1, "ci.yml", "main", h.at(5), "timed_out", true)
+	h.fake.addCompleted(9304, 1, "ci.yml", "main", h.at(5), "skipped", true)
+	raised := h.poll("run.completed", red, first["cursor"])
+	equal(t, ids(raised), []string{"run.completed:" + repo + ":9301:1", "run.completed:" + repo + ":9303:1"}, "failure and timed_out only")
+	equal(t, ids(h.poll("run.completed", one, firstOne["cursor"])), []string{"run.completed:" + repo + ":9302:1"}, "one conclusion")
+	h.fake.addCompleted(9301, 2, "ci.yml", "main", h.at(9), "success", true)
+	equal(t, ids(h.poll("run.completed", red, raised["cursor"])), []string{}, "a green rerun is not raised")
+	_, err := h.rpc(map[string]any{"name": "run.completed", "arguments": map[string]any{"repo": repo, "conclusion": "red"}})
+	if err == nil || err.Code != -32602 || !strings.Contains(err.Message, "conclusion must be a run's conclusion, as failure") {
+		t.Fatalf("got %v, want -32602 on conclusion", err)
+	}
 }
 
 // #3587: a run waiting for an environment's reviewers is raised once per run, attempt and set
@@ -738,6 +776,30 @@ func TestPRAndBranchNarrow(t *testing.T) {
 	equal(t, ids(h.poll("checks.failed", byPR, a["cursor"])), want, "pr")
 	equal(t, ids(h.poll("checks.failed", both, b["cursor"])), want, "both")
 	equal(t, ids(h.poll("checks.failed", crossed, c["cursor"])), []string{}, "crossed")
+}
+
+// pr takes a list (#5436): a lane waits on its own PR and a fix for main in one wait.
+func TestPRTakesAList(t *testing.T) {
+	h := newHarness(t)
+	for _, n := range []int{403, 404, 405} {
+		h.fake.addPR(n, fmt.Sprintf("agents/pr-%d", n), nil)
+	}
+	two := map[string]any{"repo": repo, "pr": []any{403, 404}}
+	checks, merged := h.poll("checks.failed", two, nil), h.poll("pr.merged", two, nil)
+	for _, n := range []int{403, 404, 405} {
+		h.fake.addRun(9000+n, fmt.Sprintf("agents/pr-%d", n), h.at(5), n, true)
+		h.fake.edit(n, func(p *fakePR) { p.state, p.mergedAt = "merged", h.at(6) })
+	}
+	equal(t, ids(h.poll("checks.failed", two, checks["cursor"])),
+		[]string{"checks.failed:" + repo + ":9403:1", "checks.failed:" + repo + ":9404:1"}, "checks.failed")
+	equal(t, ids(h.poll("pr.merged", two, merged["cursor"])),
+		[]string{"pr.merged:" + repo + ":403", "pr.merged:" + repo + ":404"}, "pr.merged")
+	for _, bad := range []any{[]any{}, []any{403, "404"}, []any{0}} {
+		_, err := h.rpc(map[string]any{"name": "pr.merged", "arguments": map[string]any{"repo": repo, "pr": bad}, "cursor": nil})
+		if err == nil || err.Code != -32602 || err.Message != "pr must be a positive integer or a list of them" {
+			t.Fatalf("%v: %v", bad, err)
+		}
+	}
 }
 
 func TestIssueEventsLabelsAndReasons(t *testing.T) {
@@ -906,7 +968,7 @@ func TestBadArgumentsAreInvalidParamsAnUnknownEventIsItsOwnCode(t *testing.T) {
 	for _, name := range []string{"checks.failed", "pr.merged"} {
 		for _, pr := range []any{"551", 0, -1, 1.5} {
 			check(map[string]any{"name": name, "arguments": map[string]any{"repo": repo, "pr": pr}, "cursor": nil}, -32602,
-				"pr must be a positive integer")
+				"pr must be a positive integer or a list of them")
 		}
 	}
 	check(map[string]any{"name": "checks.failed", "arguments": map[string]any{"repo": "not a repo"}, "cursor": nil}, -32602,
@@ -939,6 +1001,102 @@ func TestPRConflictedRaisesAPROncePerConflictNewOnesOnly(t *testing.T) {
 	clean := h.poll("pr.conflicted", all, still["cursor"])
 	set(721, new(true))
 	equal(t, len(ids(h.poll("pr.conflicted", all, clean["cursor"]))), 1, "conflicting anew is raised again")
+}
+
+func TestPRBlockedRaisesOncePerHeadAndReasons(t *testing.T) {
+	h := newHarness(t)
+	set := func(b mcpevents.Blocking) { h.fake.edit(731, func(p *fakePR) { p.blocking = b }) }
+	all := map[string]any{"repo": repo, "any": true}
+	h.fake.addPR(730, "agents/old", func(p *fakePR) { p.blocking = mcpevents.Blocking{HeadSHA: "a", Conflict: true} })
+	h.fake.addPR(731, "agents/fresh", func(p *fakePR) { p.blocking = mcpevents.Blocking{HeadSHA: "a"} })
+	first := h.poll("pr.blocked", all, nil)
+	equal(t, ids(first), []string{}, "one already blocked is known")
+
+	failed := mcpevents.Blocking{HeadSHA: "a", FailedChecks: []mcpevents.FailedCheck{{Name: "go", URL: "https://ci/go"}}}
+	set(failed)
+	raised := h.poll("pr.blocked", all, first["cursor"])
+	e := eventsOf(raised)
+	if len(e) != 1 || !strings.HasPrefix(e[0]["eventId"].(string), "pr.blocked:"+repo+":731:a:required_check_failed:") {
+		t.Fatalf("raised %v", ids(raised))
+	}
+	data := e[0]["data"].(map[string]any)
+	equal(t, data["reasons"], []any{"required_check_failed"}, "reasons")
+	equal(t, data["headSha"], "a", "headSha")
+	equal(t, data["failedChecks"], []any{map[string]any{"name": "go", "url": "https://ci/go"}}, "failedChecks")
+	equal(t, data["pr"].(map[string]any)["number"], float64(731), "pr")
+	if data["blockedAt"] == "" || data["blockedAt"] == nil {
+		t.Fatal("no blockedAt")
+	}
+
+	// A rerun on the same head: running, then failed again, is no new one.
+	set(mcpevents.Blocking{HeadSHA: "a", ChecksRunning: true})
+	rerun := h.poll("pr.blocked", all, raised["cursor"])
+	set(failed)
+	again := h.poll("pr.blocked", all, rerun["cursor"])
+	equal(t, append(ids(rerun), ids(again)...), []string{}, "a rerun that fails again on the same head")
+
+	// A new reason is a new one; so is a new head with the same reason.
+	both := failed
+	both.ChangesRequested, both.ReviewURL = true, "https://github.com/r/1"
+	set(both)
+	changed := h.poll("pr.blocked", all, again["cursor"])
+	e = eventsOf(changed)
+	if len(e) != 1 {
+		t.Fatalf("new reason raised %v", ids(changed))
+	}
+	equal(t, e[0]["data"].(map[string]any)["reasons"], []any{"required_check_failed", "changes_requested"}, "two reasons")
+	equal(t, e[0]["data"].(map[string]any)["reviewUrl"], "https://github.com/r/1", "reviewUrl")
+	both.HeadSHA = "b"
+	set(both)
+	pushed := h.poll("pr.blocked", all, changed["cursor"])
+	equal(t, len(ids(pushed)), 1, "a new head")
+
+	// Unblocked, then blocked again on a new head, is raised again; a skipped PR never is.
+	set(mcpevents.Blocking{HeadSHA: "c"})
+	clean := h.poll("pr.blocked", all, pushed["cursor"])
+	equal(t, ids(clean), []string{}, "not blocked")
+	h.fake.edit(731, func(p *fakePR) { p.blocking = mcpevents.Blocking{HeadSHA: "c", Behind: true}; p.skip = true })
+	skipped := h.poll("pr.blocked", all, clean["cursor"])
+	equal(t, ids(skipped), []string{}, "a review requested from a person, or a draft, is never blocked")
+	h.fake.edit(731, func(p *fakePR) { p.skip = false })
+	equal(t, len(ids(h.poll("pr.blocked", all, skipped["cursor"]))), 1, "blocked anew")
+}
+
+func TestBlockedNodeReadsGitHubsState(t *testing.T) {
+	var nodes []blockedNode
+	raw := `[{"number": 1, "headRefOid": "h", "mergeable": "CONFLICTING", "mergeStateStatus": "BEHIND", "reviewDecision": "CHANGES_REQUESTED",
+	  "reviewRequests": {"nodes": [{"asCodeOwner": true, "requestedReviewer": {"__typename": "User"}}, {"requestedReviewer": {"__typename": "Team"}}]},
+	  "latestReviews": {"nodes": [{"state": "APPROVED", "url": "u1"}, {"state": "CHANGES_REQUESTED", "url": "u2"}]},
+	  "timelineItems": {"nodes": [{"__typename": "AutoMergeDisabledEvent"}]},
+	  "baseRef": {"rules": {"nodes": [{"parameters": {"requiredStatusChecks": [{"context": "go"}, {"context": "lint"}]}}, {"parameters": null}]},
+	    "branchProtectionRule": {"requiredStatusCheckContexts": ["legacy"]}},
+	  "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+	    {"__typename": "CheckRun", "name": "go", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "go-url"},
+	    {"__typename": "CheckRun", "name": "go-darwin", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "x"},
+	    {"__typename": "CheckRun", "name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS"},
+	    {"__typename": "StatusContext", "context": "legacy", "state": "ERROR", "targetUrl": "legacy-url"}]}}}}]}},
+	 {"number": 2, "headRefOid": "h", "mergeable": "MERGEABLE", "isDraft": true, "autoMergeRequest": {"enabledAt": "t"},
+	  "timelineItems": {"nodes": [{"__typename": "AutoMergeDisabledEvent"}]},
+	  "baseRef": {"rules": {"nodes": [{"parameters": {"requiredStatusChecks": [{"context": "go"}]}}]}},
+	  "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+	    {"__typename": "CheckRun", "name": "go", "status": "COMPLETED", "conclusion": "FAILURE"},
+	    {"__typename": "CheckRun", "name": "go", "status": "IN_PROGRESS"}]}}}}]}},
+	 {"number": 3, "headRefOid": "h", "mergeable": "CONFLICTING",
+	  "reviewRequests": {"nodes": [{"asCodeOwner": false, "requestedReviewer": {"__typename": "User"}}]}}]`
+	if err := json.Unmarshal([]byte(raw), &nodes); err != nil {
+		t.Fatal(err)
+	}
+	prs := blockedPRs(nodes)
+	b := prs[0].Blocking
+	equal(t, b.Reasons(), []string{"conflict", "required_check_failed", "changes_requested", "automerge_disabled", "behind"}, "every reason")
+	equal(t, b.FailedChecks, []mcpevents.FailedCheck{{Name: "go", URL: "go-url"}, {Name: "legacy", URL: "legacy-url"}}, "only required checks")
+	equal(t, b.ReviewURL, "u2", "the review that asks for changes")
+	equal(t, prs[0].Skip, false, "not skipped: a code owner's and a team's requests wait for no one person")
+	b = prs[1].Blocking
+	equal(t, b.Reasons(), []string(nil), "a rerun still running; auto-merge on")
+	equal(t, b.ChecksRunning, true, "running")
+	equal(t, prs[1].Skip, true, "a draft")
+	equal(t, prs[2].Skip, true, "a review requested from a person (#5803)")
 }
 
 func TestPROpenedRaisesAReadyPROnceAndADraftWhenMarkedReady(t *testing.T) {

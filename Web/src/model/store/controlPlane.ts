@@ -1,12 +1,14 @@
 // Part of the Store (#5384): controlPlane.
 import type { Agent } from "../../protocol/generated";
-import { sealWork } from "../../wire/sealing";
+import { openOffer, sealSecret, sealWork } from "../../wire/sealing";
+import type { SecretOffer } from "../../protocol/generated";
 import { describe } from "../errors";
 import { fromWireDate } from "../../protocol/dates";
 import { openCaps } from "../teamGroups";
 import { knowPublicViews } from "../../place";
 import { hostAnswers } from "../capabilities";
 import { Capability } from "../../protocol/capabilities.generated";
+import { machineRows } from "./shared";
 import { providerManaged, withoutJoin } from "../people";
 import { orgNames } from "../signIn";
 import { withoutRequest } from "../channelLinks";
@@ -23,10 +25,59 @@ export const controlPlaneMethods = {
     if (!this.planeHas(Capability.sealing1)) return;
     const record = await this.link.keyRecord();
     const work = record ? await this.link.call("sealing/work", {}).catch(() => null) : null;
+    await this.loadSecretOffers().catch(() => undefined);
     if (!record || !work || work.items.length === 0) return;
     const checked = { items: await Promise.all(work.items.map(async (item) => ({ ...item, missing: await this.signedRecipients(item.missing) }))) };
     const items = await sealWork(record, { items: checked.items.filter((item) => item.missing.length > 0) });
     if (items.length > 0) await this.link.call("sealing/add", { items }).catch(() => undefined);
+  },
+  /**
+   * The secrets agents saved on the person's machines (#5308): read, and each one whose name is not one of the
+   * person's taken at once, as Add a Secret sets one. A conflict waits for Keep Yours or Use the Agent's.
+   */
+  async loadSecretOffers(this: Store): Promise<void> {
+    if (!this.planeHas(Capability.user5)) return;
+    const listed = await this.link.call("user/secretOffers", {}).catch(() => null);
+    if (!listed) return;
+    this.secretOffersUser = listed.user ?? "";
+    this.secretOffers.value = listed.offers;
+    let took = false;
+    for (const offer of listed.offers) {
+      if (offer.conflict || !offer.mine) continue;
+      if (await this.takeSecretOffer(offer, null).then(() => true, () => false)) took = true;
+    }
+    if (took) {
+      const again = await this.link.call("user/secretOffers", {}).catch(() => null);
+      if (again) this.secretOffers.value = again.offers;
+    }
+  },
+  /**
+   * Makes an agent's secret one of the person's (#5308): this page opens its own copy, in memory, and seals the
+   * value to every machine the lock names and every app of the person's, with the same Ask before use and
+   * description. version is the kept one plus one for Use the Agent's; null for a name the person has none of.
+   */
+  async takeSecretOffer(this: Store, offer: SecretOffer, kept: number | null): Promise<void> {
+    const record = await this.link.keyRecord();
+    if (!record) throw new Error("This browser has no key to open the secret with.");
+    const value = await openOffer(record, this.secretOffersUser, offer);
+    const version = kept === null ? Date.now() : kept + 1;
+    const { recipients, user } = await this.link.call("user/secretRecipients", {});
+    const ask = offer.needsApproval === true;
+    const values = await sealSecret(user ?? "", offer.name, version, value, await this.signedRecipients(recipients), ask);
+    await this.link.call("user/setSecret", { name: offer.name, version, values, offer: offer.offer,
+      ...(ask ? { needsApproval: true } : {}), ...(offer.description ? { description: offer.description } : {}) });
+  },
+  /** Use the Agent's (#5308): the agent's value replaces the person's, on every machine. */
+  async useAgentsSecret(this: Store, offer: SecretOffer): Promise<void> {
+    const { secrets } = await this.link.call("user/secretNames", {});
+    const kept = secrets.find((row) => row.name === offer.name)?.version ?? null;
+    await this.takeSecretOffer(offer, kept);
+    await this.loadSecretOffers();
+  },
+  /** Keep Yours (#5308): the agent's offer goes, and the person's secret stays as it is. */
+  async keepYourSecret(this: Store, offer: SecretOffer): Promise<void> {
+    await this.link.call("user/dropSecretOffer", { offer: offer.offer });
+    await this.loadSecretOffers();
   },
   /**
    * The recipients this page may seal a secret to (#3491, D8): a machine only when its owner's
@@ -60,10 +111,10 @@ export const controlPlaneMethods = {
         this.loadPeople().then(() => Promise.all([this.loadLinkRequests(), this.loadGovernanceRequests(), this.loadBudgetRequests(),
           this.loadRemoveRequests()])),
         this.loadSignInRequests()]);
-      this.takeHosts(hosts);
+      this.takeHosts(machineRows(hosts));
       // A machine this device's copy drew that the control plane no longer lists goes (#4790).
       for (const host of this.fromDevice.value) {
-        if (hosts.some((h) => h.id === host)) continue;
+        if (machineRows(hosts).some((h) => h.id === host)) continue;
         this.forgetHost(host);
         this.answered(host);
       }

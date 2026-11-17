@@ -3,6 +3,8 @@ package agentsd
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +49,8 @@ func deployEvent(t *testing.T, name string, id int, env, sha, tag string, run in
 // the environment once it ends, so the deploy leaves the forge environment for it; a started
 // polled late takes back nothing.
 func TestLineageDeployNodesFromDeployEvents(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	t0 := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
@@ -77,6 +81,11 @@ func TestLineageDeployNodesFromDeployEvents(t *testing.T) {
 	if r.Title != "v0.18.0 to testflight" || r.State == nil || *r.State != "succeeded" || r.CreatedAt == nil || *r.CreatedAt != wire.DateOf(t0) {
 		t.Fatalf("resolved %+v", r)
 	}
+	// #5243: the deploy itself, for the Work pages' rows: its environment, times and job.
+	if r.Deploy == nil || r.Deploy.Target.Environment.Name != "release" || r.Deploy.Finished == nil ||
+		*r.Deploy.Finished != wire.DateOf(t0.Add(time.Minute)) || r.Deploy.URL == nil {
+		t.Fatalf("resolved deploy %+v", r.Deploy)
+	}
 	d.deployBookMu.Lock()
 	arts := d.deploysFileLocked().Deploys[deploy.Ref].Deploy.Version.Artifacts
 	d.deployBookMu.Unlock()
@@ -104,6 +113,8 @@ func TestLineageDeployNodesFromDeployEvents(t *testing.T) {
 // older release than the one it replaced is a rollback; and what a deploy brings is the PRs
 // between the deploy before it and it, worked out in the background, never stored.
 func TestLineageDeployReplacedRollbackAndBrings(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, "git@github.com:alexec/agents.git")})
@@ -171,6 +182,8 @@ func TestLineageDeployReplacedRollbackAndBrings(t *testing.T) {
 }
 
 func TestDeployNotice(t *testing.T) {
+	t.Parallel()
+
 	for notice, want := range map[string]string{
 		"testflight=testflight:com.example.app/42": "testflight testflight:artifact:com.example.app#42",
 		"testflight:com.example.app/42":            "testflight testflight:artifact:com.example.app#42",
@@ -190,5 +203,141 @@ func TestDeployNotice(t *testing.T) {
 		if got != want {
 			t.Errorf("deployNotice(%q) = %q, want %q", notice, got, want)
 		}
+	}
+}
+
+// #5246: an environment's live and next versions, as GitOps Promoter's active and proposed,
+// computed from its deploys: a walk from the environment gives them as live and next links.
+// A canary is live beside the version it splits with, each at its share; a redeploy of the live
+// version keeps its since; a waiting deploy older than the live one is not next; and the next
+// deploy brings the PRs since the live version.
+func TestLineageDeployLiveAndNext(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, "git@github.com:alexec/agents.git")})
+	forge := &fakeReleases{
+		compares:  map[string][]compareCommit{"bbb..ccc": {{SHA: "s1", Message: "Deploys: live and next (#5246)"}}},
+		commitPRs: map[string]int{},
+		asked:     map[string]int{},
+	}
+	d.releaseCompare, d.releaseCommitPR = forge.compare, forge.commitPR
+	t0 := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	env := wire.LineageNode{Kind: lineage.KindEnvironment, Ref: "github:environment:alexec/agents#production"}
+	walk := func() (map[string]bool, wire.LineageGraph) {
+		t.Helper()
+		g := d.deployGraph(d.lineage().Walk(env, 1))
+		got := map[string]bool{}
+		for _, l := range g.Links {
+			if l.From == env && (l.Rel == lineage.RelLive || l.Rel == lineage.RelNext) {
+				got[l.Rel+" "+l.To.Ref+" "+l.At.Time().Format("15:04")] = true
+			}
+		}
+		return got, g
+	}
+	at := func(m int) time.Time { return t0.Add(time.Duration(m) * time.Minute) }
+
+	// A deploy that waits from before v0.18.0 went out is never approved: it is not next.
+	d.lineageEvent(deployEvent(t, "deploy.waiting", 1, "production", "zzz", "v0.17.0", 9, wire.DeployStateWaiting, at(0), time.Time{}))
+	d.lineageEvent(deployEvent(t, "deploy.succeeded", 2, "production", "aaa", "v0.18.0", 10, wire.DeployStateSucceeded, at(10), at(11)))
+	d.lineageEvent(deployEvent(t, "deploy.succeeded", 3, "production", "aaa", "v0.18.0", 11, wire.DeployStateSucceeded, at(20), at(21)))
+	d.lineageSettle(5 * time.Second)
+	got, _ := walk()
+	wantLinks(t, got, "live github:deploy:alexec/agents#3 10:11")
+
+	// v0.19.0 goes out as a canary at 10 %: both are live.
+	canary := deployEvent(t, "deploy.succeeded", 4, "production", "bbb", "v0.19.0", 12, wire.DeployStateSucceeded, at(30), at(31))
+	canary.Details["payload"] = strings.Replace(canary.Details["payload"], `"state":`, `"share":10,"state":`, 1)
+	d.lineageEvent(canary)
+	// v0.20.0 waits for its approval: next.
+	d.lineageEvent(deployEvent(t, "deploy.waiting", 5, "production", "ccc", "v0.20.0", 13, wire.DeployStateWaiting, at(40), time.Time{}))
+	d.lineageSettle(5 * time.Second)
+	got, g := walk()
+	wantLinks(t, got,
+		"live github:deploy:alexec/agents#4 10:31",
+		"live github:deploy:alexec/agents#3 10:11",
+		"next github:deploy:alexec/agents#5 10:40")
+	if l := g.Resolved["github:deploy:alexec/agents#4"].Labels; !slices.Equal(l, []string{"share:10"}) {
+		t.Fatalf("canary labels %v, want share:10", l)
+	}
+	if l := g.Resolved["github:deploy:alexec/agents#3"].Labels; !slices.Equal(l, []string{"share:90"}) {
+		t.Fatalf("stable labels %v, want share:90", l)
+	}
+	if s := g.Resolved["github:deploy:alexec/agents#3"].State; s == nil || *s != "succeeded" {
+		t.Fatalf("stable state %v: live at 90 %% is not replaced", s)
+	}
+
+	// What the next version brings: the PRs since the live version before it.
+	d.deploySettle(5 * time.Second)
+	_, g = walk()
+	brings := map[string]bool{}
+	for _, l := range g.Links {
+		if l.Rel == lineage.RelBrings && l.From.Ref == "github:deploy:alexec/agents#5" {
+			brings[l.To.Ref] = true
+		}
+	}
+	wantLinks(t, brings, "github:pr:alexec/agents#5246")
+
+	// v0.20.0 goes out at 100 %: it alone is live, nothing is next, and the others are replaced.
+	d.lineageEvent(deployEvent(t, "deploy.succeeded", 5, "production", "ccc", "v0.20.0", 13, wire.DeployStateSucceeded, at(40), at(45)))
+	d.lineageSettle(5 * time.Second)
+	got, g = walk()
+	wantLinks(t, got, "live github:deploy:alexec/agents#5 10:45")
+	for _, ref := range []string{"github:deploy:alexec/agents#3", "github:deploy:alexec/agents#4"} {
+		if s := g.Resolved[ref].State; s != nil && *s != "replaced" {
+			t.Fatalf("%s state %s, want replaced", ref, *s)
+		}
+	}
+
+	// Another target of the same environment node, told apart by its labels, has its own live
+	// version.
+	eu := deployEvent(t, "deploy.succeeded", 6, "production", "bbb", "v0.19.0", 14, wire.DeployStateSucceeded, at(50), at(51))
+	eu.Details["payload"] = strings.Replace(eu.Details["payload"], `"environment":{`, `"labels":{"region":"eu"},"environment":{`, 1)
+	d.lineageEvent(eu)
+	d.lineageSettle(5 * time.Second)
+	got, _ = walk()
+	wantLinks(t, got,
+		"live github:deploy:alexec/agents#5 10:45",
+		"live github:deploy:alexec/agents#6 10:51")
+}
+
+// #5270: deploys/targets says every target, in the environment its job's notice names, with
+// its live versions (the most traffic first), since when, its next deploys, and the release.
+func TestDeployTargets(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	t0 := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	at := func(m int) time.Time { return t0.Add(time.Duration(m) * time.Minute) }
+	d.lineageEvent(deployEvent(t, "deploy.succeeded", 1, "release", "aaa", "v0.18.0", 10, wire.DeployStateSucceeded, at(0), at(1),
+		"testflight=testflight:com.example.remote/812"))
+	d.lineageEvent(deployEvent(t, "deploy.succeeded", 2, "production", "aaa", "v0.18.0", 11, wire.DeployStateSucceeded, at(10), at(11)))
+	canary := deployEvent(t, "deploy.succeeded", 3, "production", "bbb", "v0.19.0", 12, wire.DeployStateSucceeded, at(20), at(21))
+	canary.Details["payload"] = strings.Replace(canary.Details["payload"], `"state":`, `"share":10,"state":`, 1)
+	d.lineageEvent(canary)
+	d.lineageEvent(deployEvent(t, "deploy.waiting", 4, "production", "ccc", "v0.20.0", 13, wire.DeployStateWaiting, at(30), time.Time{}))
+	d.lineageSettle(5 * time.Second)
+
+	got := d.deployTargets()
+	var lines []string
+	for _, tn := range got.Targets {
+		line := tn.Target.Environment.Name + " " + string(tn.Target.Environment.Tier) + ":"
+		for _, l := range tn.Live {
+			line += fmt.Sprintf(" live %s %v%% since %s release %s", *l.Deploy.Version.Name, *l.Share, l.Since.Time().Format("15:04"), *l.Release)
+		}
+		for _, n := range tn.Next {
+			line += " next " + *n.Deploy.Version.Name + " " + string(n.Deploy.State)
+		}
+		lines = append(lines, line)
+	}
+	want := []string{
+		"production other: live v0.18.0 90% since 10:11 release github:release:alexec/agents#v0.18.0" +
+			" live v0.19.0 10% since 10:21 release github:release:alexec/agents#v0.19.0 next v0.20.0 waiting",
+		"testflight other: live v0.18.0 100% since 10:01 release github:release:alexec/agents#v0.18.0",
+	}
+	if !slices.Equal(lines, want) {
+		t.Fatalf("targets\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
 	}
 }

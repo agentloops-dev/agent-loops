@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -239,7 +238,7 @@ func (d *Daemon) StartLocal(ctx context.Context, member *controllink.Membership,
 	d.localKey = append([]byte(nil), member.ControlKey...)
 	d.localMu.Unlock()
 	host := member.Host
-	safe.Go("local", func() {
+	d.goJob("local", func() {
 		said := false
 		for ctx.Err() == nil {
 			d.localMu.Lock()
@@ -290,13 +289,13 @@ func (d *Daemon) ServeLocal(ctx context.Context, path, host string, private []by
 	os.Chmod(path, 0o600)
 	policy := d.socketPolicy()
 	log.Printf("local: a window on this Mac may connect at %s", path)
-	safe.Go("local close", func() { <-ctx.Done(); l.Close(); os.Remove(path) })
+	d.goJob("local close", func() { <-ctx.Done(); l.Close(); os.Remove(path) })
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			return err
 		}
-		safe.Go("local accept", func() { d.acceptLocal(c, policy, host, private) })
+		d.goJob("local accept", func() { d.acceptLocal(c, policy, host, private) })
 	}
 }
 
@@ -335,6 +334,15 @@ func (d *Daemon) acceptLocal(c net.Conn, policy SocketPolicy, host string, priva
 	}
 	d.localConns[sc] = client
 	d.localMu.Unlock()
+	if d.suspension() != nil {
+		// Suspended after the exchange said ok and before the window was in localConns
+		// (#5744): closeLocalWindows did not see it, so it is cut off here.
+		d.localMu.Lock()
+		delete(d.localConns, sc)
+		d.localMu.Unlock()
+		sc.Close()
+		return
+	}
 	log.Printf("local: window %s connected", client)
 	defer func() {
 		d.localMu.Lock()

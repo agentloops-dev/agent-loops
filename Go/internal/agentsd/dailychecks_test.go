@@ -18,6 +18,8 @@ import (
 // keeps suggestions, the newest of a folder and title in place of the old one, and the next
 // summary lists them.
 func TestDailyChecksKeepSuggestionsForTheSummary(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -87,6 +89,8 @@ func TestDailyChecksKeepSuggestionsForTheSummary(t *testing.T) {
 // What gh says is wrong in a quiet folder: the newest failed run of a workflow on the default
 // branch, a pull request in conflict or a week old, and an issue that no session has.
 func TestForgeChecksReadGH(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -128,6 +132,8 @@ esac
 
 // Off turns the Daily checks off too: they report through the summary (#3355).
 func TestDailySummaryOffTurnsChecksOff(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -149,6 +155,8 @@ func TestDailySummaryOffTurnsChecksOff(t *testing.T) {
 // #3395: Summary and checks turns the Daily checks on every few hours from the summary's time,
 // never at it; a new time or interval moves them, and Summary only turns them off.
 func TestSummaryAndChecksSchedulesTheChecks(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -201,6 +209,8 @@ func TestSummaryAndChecksSchedulesTheChecks(t *testing.T) {
 // The Daily checks workflow is the home folder's, runs on one machine, in ask mode, every 4
 // hours but the summary's.
 func TestDailyChecksIsTheHomeFolders(t *testing.T) {
+	t.Parallel()
+
 	text, skill := readyMadeText(dailyChecksID)
 	w := parseWorkflow(text, dailyChecksID, "/p")
 	if w.Settings.PermissionMode == nil || *w.Settings.PermissionMode != "ask" || len(w.Triggers) != 5 {
@@ -233,6 +243,8 @@ func suggestionsIn(t *testing.T, c *conn, id int, folder string) []wire.CheckSug
 // newest first; Start opens a session with its prompt and takes it out; a dismissed one never
 // comes back, not in For Review, the next summary or a later check.
 func TestForReviewListsTheChecksSuggestionsWithStartAndDismiss(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

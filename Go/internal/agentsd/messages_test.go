@@ -138,8 +138,10 @@ func conversationAt(source, id, at string) wire.MessagingConversation {
 // out with no error, and one that cannot be reached is left out with its error.
 // messages/read reads one conversation from its connector, as outside content.
 func TestMessagesMergeEveryContractConnector(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "")
@@ -240,6 +242,8 @@ func TestMessagesMergeEveryContractConnector(t *testing.T) {
 // A connector whose page is kept only in part is asked for the same page again, and what was
 // kept is skipped; one that failed is asked again from where it was.
 func TestMergeMessagesPages(t *testing.T) {
+	t.Parallel()
+
 	a := messagesConnector{name: "slack", folder: "/f", scope: "~"}
 	b := messagesConnector{name: "email", folder: "/f", scope: "/f"}
 	bad := messagesConnector{name: "gmail", folder: "/f", scope: "~"}
@@ -267,8 +271,10 @@ func TestMergeMessagesPages(t *testing.T) {
 // thread and a connector with no such tool mark nothing. messages/markAllRead marks all of
 // every connector that can, and leaves the others out.
 func TestMessagesMarkRead(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := gitFolder(t, "")

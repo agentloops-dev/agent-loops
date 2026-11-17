@@ -92,6 +92,16 @@ enum Paper {
     static let forgeFillClosed = Color(light: 0xCF222E, dark: 0xDA3633)
     static let forgeFillDraft = Color(light: 0x59636E, dark: 0x6E7681)
 
+    /// A diff's added and removed lines (`design/tokens.json`'s `color.diff`, #5474): the
+    /// line's wash, the bar at its edge, and the mark on the words that changed. The + and −
+    /// signs always go with the colour.
+    static let diffAddedWash = Color(light: 0xE6FFEC, dark: 0x1D2E1F)
+    static let diffAddedBar = Color(light: 0x4AC26B, dark: 0x2EA043)
+    static let diffAddedWord = Color(light: 0xABF2BC, dark: 0x22502A)
+    static let diffRemovedWash = Color(light: 0xFFEBE9, dark: 0x3B2220)
+    static let diffRemovedBar = Color(light: 0xFF8182, dark: 0xF85149)
+    static let diffRemovedWord = Color(light: 0xFFCECB, dark: 0x73302C)
+
     /// Corner radii: code, control (chips, rail), card (rows, wells), and a pill for a
     /// state badge.
     enum Radius {
@@ -442,6 +452,36 @@ struct PaperSelectionRow: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: Paper.Radius.control))
             .padding(.horizontal, 10)
+    }
+}
+
+/// The tinted edge of a card (#5669; `docs/reference/design-system.md`, "Edges"): a 3 pt
+/// band of the card's own rounded shape at its leading side, so it follows the corners and
+/// thins to nothing round them. It is the card's shape less the same shape moved 3 pt in,
+/// which is what the web's `box-shadow: inset 3px 0 0` draws. A 3 pt bar cannot have the
+/// card's radius, so a bar was a straight line that stopped short of the curved border.
+struct PaperEdge: Shape {
+    var cornerRadius: CGFloat
+    var width: CGFloat = 3
+
+    func path(in rect: CGRect) -> Path {
+        let card = RoundedRectangle(cornerRadius: cornerRadius).path(in: rect)
+        return card.subtracting(card.offsetBy(dx: width, dy: 0))
+    }
+}
+
+extension View {
+    /// Draws `PaperEdge` in `color` over the card, on its leading side in either direction.
+    /// Put it after the card's border, so the edge is on top of it.
+    func paperEdge(_ color: Color?, cornerRadius: CGFloat) -> some View {
+        overlay {
+            if let color {
+                PaperEdge(cornerRadius: cornerRadius)
+                    .fill(color)
+                    .flipsForRightToLeftLayoutDirection(true)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 }
 

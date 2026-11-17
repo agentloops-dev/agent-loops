@@ -1,0 +1,92 @@
+import Foundation
+
+/// The sidebar's Machines group (#5286, epic #5281), on the Mac window and the Remote, as the
+/// web page's `machinesGroup.ts`: at most seven rows, in this order: This Mac, the pinned
+/// machines, the machines with something going on (it needs something, or sessions work or wait
+/// there), the machines being made, then the rest. With more than seven, one row
+/// **All Machines (N)** comes after them. A person with seven or fewer sees every one, and no
+/// such row. The limit is always seven, also for 2,000 machines, so the rule is the same for all.
+public enum MachinesGroup {
+    /// The most rows the group draws before All Machines (N).
+    public static let limit = 7
+
+    /// One machine of the group, as the client knows it now.
+    public struct Machine: Equatable, Sendable {
+        public var host: MachineRef
+        public var pinned: Bool
+        /// It needs something (a problem, an update, a sign-in), it is starting, or sessions
+        /// work or wait for the person there.
+        public var active: Bool
+
+        public init(host: MachineRef, pinned: Bool = false, active: Bool = false) {
+            self.host = host
+            self.pinned = pinned
+            self.active = active
+        }
+    }
+
+    /// What the group draws.
+    public struct Rows: Equatable, Sendable {
+        /// The machines' rows, in the order drawn.
+        public var machines: [MachineRef]
+        /// How many of the machines being made get a row, after the machines'.
+        public var making: Int
+        /// Every machine, with the ones being made: the N of All Machines (N).
+        public var total: Int
+        /// Whether the group stops short: All Machines (N) is drawn.
+        public var bounded: Bool { machines.count + making < total }
+    }
+
+    /// The rows of the group. `machines` is in the order the client lists them (This Mac, then
+    /// by name); `making` is how many machines New Machine is making or that never joined.
+    /// `all` draws every one (the Remote, until its Machines page: #5568).
+    public static func rows(_ machines: [Machine], making: Int, all: Bool = false) -> Rows {
+        let total = machines.count + making
+        guard !all, total > limit else {
+            return Rows(machines: machines.map(\.host), making: making, total: total)
+        }
+        let rank = { (m: Machine) -> Int in
+            if m.host == .mac { return 0 }
+            if m.pinned { return 1 }
+            return m.active ? 2 : 4
+        }
+        // A stable order: within a rank, the order the client gave.
+        let ranked = machines.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
+        let first = ranked.filter { rank($0) < 4 }.prefix(limit)
+        let madeRows = min(making, limit - first.count)
+        let rest = ranked.filter { rank($0) == 4 }.prefix(limit - first.count - madeRows)
+        return Rows(machines: (first + rest).map(\.host), making: madeRows, total: total)
+    }
+
+    /// The row's words: "All Machines (124)".
+    public static func allTitle(_ total: Int) -> String { "All Machines (\(total))" }
+    /// The sidebar foot's line past seven offline machines, while the group is folded.
+    public static func moreOffline(_ count: Int) -> String {
+        count == 1 ? "1 more machine is offline" : "\(count) more machines are offline"
+    }
+    /// The words of the row that folds the group again, while it draws every machine.
+    public static let fewerTitle = "Fewer Machines"
+}
+
+/// The machines a person pinned on this device (#5286, #5287): **Pin to Sidebar** in a machine's
+/// menu. They come after This Mac in the Machines group and first in the machine picker. Kept in
+/// defaults as one string, a machine on each line, so `@AppStorage` keeps a view in step, as the
+/// web page keeps them in `localStorage` (`agents.machinePicker.pinned`).
+public enum MachinePins {
+    public static let key = "machinePicker.pinned"
+
+    /// The pinned machines in `stored`, the defaults' string.
+    public static func pinned(_ stored: String) -> [MachineRef] {
+        stored.split(separator: "\n").map { MachineRef(rawValue: String($0)) }
+    }
+
+    /// `stored` with the machine pinned, or let go when it is pinned.
+    public static func toggled(_ host: MachineRef, in stored: String) -> String {
+        var now = pinned(stored)
+        if let at = now.firstIndex(of: host) { now.remove(at: at) } else { now.append(host) }
+        return now.map(\.rawValue).joined(separator: "\n")
+    }
+
+    /// The menu item's words.
+    public static func menuTitle(pinned: Bool) -> String { pinned ? "Unpin from Sidebar" : "Pin to Sidebar" }
+}

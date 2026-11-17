@@ -262,7 +262,7 @@ func (d *Daemon) runtimeStatuses() []wire.RuntimeStatus {
 	out := []wire.RuntimeStatus{}
 	for i := range catalog {
 		r := &catalog[i]
-		path, _, looked := locateFor(r)
+		path, _, looked := d.locate(r)
 		s := wire.RuntimeStatus{Runtime: r.Runtime, CheckedAt: now()}
 		if path != "" {
 			s.Availability.Available = &wire.RuntimeAvailabilityAvailable{Path: path}
@@ -299,6 +299,14 @@ func (d *Daemon) runtimeStatuses() []wire.RuntimeStatus {
 // locateFor finds a runtime; a test sets it to start a fake one.
 var locateFor = func(r *runtimeDef) (string, []string, []string) { return r.locate() }
 
+// locate is locateFor, or the daemon's own locator when a test gave it one (#5926).
+func (d *Daemon) locate(r *runtimeDef) (string, []string, []string) {
+	if locate := d.startOpts().locate; locate != nil {
+		return locate(r)
+	}
+	return locateFor(r)
+}
+
 func (d *Daemon) launchFor(r *runtimeDef, dir string) (acp.Launch, error) {
 	return d.launchAs(r, dir, nil)
 }
@@ -312,7 +320,7 @@ func (d *Daemon) launchAs(r *runtimeDef, dir string, account *wire.AccountProfil
 // launchOn is launchAs for a session: an org account's relay counts the session's tokens
 // (#999). An org account is reached through the model relay, never the 056 relay (D8).
 func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfile, agent wire.UUID) (acp.Launch, error) {
-	path, args, looked := locateFor(r)
+	path, args, looked := d.locate(r)
 	// Until the app's copy is whole, the person's own (npx) still runs this session.
 	installing := d.installOnFirstUse(r)
 	if path == "" {
@@ -327,6 +335,10 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 	if account == nil && d.signInRefusedHere(r.ID) {
 		env = withoutRuntimeVariables(env)
 	}
+	// The repo's .agents/env, then the person's ~/.agents/env (#5259): after the login
+	// environment, before Agents' own, which come after and win. A name Agents sets is refused
+	// in both files, so this never sets what follows.
+	env = d.withPersonEnv(env, dir)
 	// The shipped MCP servers sit beside agentsd (~/.agents-server/bin), last on PATH.
 	if self, err := os.Executable(); err == nil {
 		env = appendPath(env, filepath.Dir(self))
@@ -371,6 +383,17 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		env = append(env, "GEMINI_HOME="+d.appHomes()["antigravity"], "AGY_ACP_DISABLE_WORKSPACE_TRUST=1",
 			"AGY_ACP_FORCE_FILE_STORAGE=1")
 		excludeAntigravitySkills(dir)
+	case "opencode":
+		// This copy opens its own database. A newer OpenCode on the PATH migrates
+		// ~/.local/share/opencode, and 1.18 then exits on initialize with
+		// "no such column: project_id". The person's sign-in stays in that directory.
+		// This process does not copy it. A value from the login shell or ~/.agents/env
+		// would point this copy at that database, so it is dropped.
+		data := d.appHomes()["opencode"]
+		if err := os.MkdirAll(data, 0o700); err != nil {
+			return acp.Launch{}, err
+		}
+		env = append(without(env, "XDG_DATA_HOME"), "XDG_DATA_HOME="+data)
 	}
 	if isOrgAccount(account) {
 		var err error
@@ -381,6 +404,7 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		d.linkShared(*account)
 		env = withAccount(env, account)
 	}
+	env = append(env, d.startOpts().runtimeEnv...)
 	l := withToolPolicy(acp.Launch{Command: path, Args: args, Env: env, Dir: dir, Name: r.Name}, r.ID)
 	for _, f := range toolPolicyFiles[r.ID] {
 		file := filepath.Join(root, "runtimes", f.name)

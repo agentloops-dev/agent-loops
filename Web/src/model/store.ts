@@ -43,6 +43,7 @@ export { Work } from "./store/work";
 export { folderKey } from "./groups";
 
 /** The reducer, fed by the link: everything loaded on each connection, then kept by notifications. */
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: the interface Store below names the methods that the store's parts add to this class
 export class Store extends Work {
   /** The control plane's workspace providers (#1808), for Settings ▸ Control plane. */
   readonly providers: Providers;
@@ -203,6 +204,7 @@ export class Store extends Work {
       }
       if (method === "control/userSettingsChanged") {
         this.userScopeChanges.value += 1;
+        void this.loadSecretOffers();
         return;
       }
       if (method === "control/secretsLeft") {
@@ -244,7 +246,7 @@ export class Store extends Work {
       if (host) this.apply(method, params, host);
       if (host && method === "daemon/policyStateChanged") {
         // The marks on the lists change with the policy, and the page hears no change of them (#998).
-        void this.loadRuntimes(host);
+        void this.loadRuntimes(host, this.detailed.has(host));
         void this.loadCost(host);
       }
     });
@@ -261,6 +263,9 @@ export class Store extends Work {
 
   /** What is running, by host or "*" for everything, and whether it was asked for again meanwhile. */
   running = new Map<string, { done: Promise<void>; again: boolean }>();
+
+  /** The hosts a page has shown this connection: they take a host's own settings and page reads (#5291). */
+  detailed = new Set<string>();
 
   settling = new Map<string, ReturnType<typeof setTimeout>>();
 

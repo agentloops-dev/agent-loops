@@ -188,6 +188,8 @@ var (
 // #3130: an issue's comment, labels and close go to GitHub with the host's connection; a write
 // forgets what the reads kept, so the page's next read shows it.
 func TestForgeIssueWritesGoToGitHub(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: ghIssue})
 	_, before := gh.asked()
@@ -224,6 +226,8 @@ func TestForgeIssueWritesGoToGitHub(t *testing.T) {
 // #4404: a GitHub issue closes as not planned, and its open page offers it; a pull request, a
 // reason with a reopen, and a forge that keeps no reason (GitLab) are refused, each saying why.
 func TestForgeCloseAsNotPlanned(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, gl, _, _ := allForgesDaemon(t)
 	var page wire.ForgeItemDetail
 	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: ghIssue}), &page)
@@ -261,6 +265,8 @@ func TestForgeCloseAsNotPlanned(t *testing.T) {
 
 // #3130: an issue's page brings the new-agent form for Start Agent, as the issues view fills it.
 func TestForgeIssueBringsStartAgent(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _ := forgeDaemon(t)
 	var got wire.ForgeItemDetail
 	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: ghIssue}), &got)
@@ -279,6 +285,8 @@ func TestForgeIssueBringsStartAgent(t *testing.T) {
 // #3130: a pull request merges at the head the page showed, by the repo's default method when
 // none is said; approve names the head; rerun and the log take the failing checks' Actions runs.
 func TestForgePullWritesGoToGitHub(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	c.call(t, 1, "forge/merge", wire.ForgeMergeRequest{Node: ghPull, Sha: "abc"})
 	rebase := wire.ForgeMergeMethodRebase
@@ -314,6 +322,8 @@ func TestForgePullWritesGoToGitHub(t *testing.T) {
 // #4410: a pull request's auto-merge turns off and a draft is marked ready, on GitHub; an issue
 // is refused before GitHub is asked, and Bitbucket, which has no auto-merge, says why.
 func TestForgeCancelAutoMergeAndReady(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	c.call(t, 1, "forge/cancel-auto-merge", wire.ForgeNodeRequest{Node: ghPull})
 	c.call(t, 2, "forge/ready", wire.ForgeNodeRequest{Node: ghPull})
@@ -335,6 +345,8 @@ func TestForgeCancelAutoMergeAndReady(t *testing.T) {
 // #4410: the page offers Turn off auto-merge only while it is on, and Ready for review only on a
 // draft, and neither once the pull request is closed.
 func TestForgeItemActionsFollowAutoMergeAndDraft(t *testing.T) {
+	t.Parallel()
+
 	caps := githubForge{}.Caps()
 	for _, tc := range []struct {
 		state       string
@@ -362,6 +374,8 @@ func TestForgeItemActionsFollowAutoMergeAndDraft(t *testing.T) {
 // #3130: a write says what is wrong with it, and asks the forge nothing: an empty comment, no
 // label, a merge with no head, a pull request's action on an issue, a forge it does not know.
 func TestForgeWritesRefuseWhatIsWrong(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	for i, ask := range []struct {
 		method string
@@ -388,6 +402,8 @@ func TestForgeWritesRefuseWhatIsWrong(t *testing.T) {
 
 // #3130: an agent's connection may call none of the writes: a person writes, from their own page.
 func TestForgeWritesAreNotAnAgents(t *testing.T) {
+	t.Parallel()
+
 	for _, m := range []string{"forge/comment", "forge/label", "forge/assign", "forge/close", "forge/merge", "forge/cancel-auto-merge", "forge/ready", "forge/approve", "forge/rerun"} {
 		if RoleAgent.Allows(m) {
 			t.Fatalf("an agent may call %s", m)
@@ -399,6 +415,8 @@ func TestForgeWritesAreNotAnAgents(t *testing.T) {
 // methods (no rebase), its retry and log of the head pipeline; a Linear issue's comment, labels
 // and close; a merge on Linear is refused.
 func TestForgeWritesGoToGitLabAndLinear(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, gl, ln, _ := allForgesDaemon(t)
 	mr := wire.LineageNode{Kind: "pr", Ref: "gitlab:mr:group/app#4"}
 	c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: mr, Body: "Fine."})

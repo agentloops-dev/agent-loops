@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"maps"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -31,8 +31,8 @@ import (
 //   - Its details (the artifacts, the state, the start and the end) are not links: each deploy's
 //     last event is kept in <root>/lineage-deploys.json, at most deploysKept, and a walk says them
 //     as the deploy's resolved title, state and labels.
-//   - Computed, never stored: a succeeded deploy is replaced when a newer one succeeded in each
-//     of its environments; it is a rollback when its release is older than the one it replaced;
+//   - Computed, never stored: a succeeded deploy is replaced when it is live in none of its
+//     environments (#5246, below); it is a rollback when its release is older than the one it replaced;
 //     and what it brings is the PRs between the last deploy that succeeded in the same
 //     environment and it, from the forge's compare of their commits, as a release's are.
 //   - Old target nodes and deployed-as links (#3584, #3657) are read until they age out.
@@ -40,8 +40,9 @@ import (
 const (
 	// deploysKept bounds lineage-deploys.json: the deploys seen longest ago go first.
 	deploysKept = 1_000
-	// bringsCached bounds the brings cache: the deploys asked longest ago go first.
-	bringsCached = 500
+	// bringsCached bounds the brings cache: the deploys asked longest ago go first. As many as
+	// are kept, so deploys/delivery's lead time does not ask the same deploys again (#5245).
+	bringsCached = deploysKept
 	// mostBroughtShown bounds the PRs a walk's answer says one deploy brings.
 	mostBroughtShown = 100
 	// bringsWorkers is how many compares run at once.
@@ -65,8 +66,10 @@ type deploysFile struct {
 type bringsEntry struct {
 	prev string
 	prs  []int
-	ok   bool
-	at   time.Time
+	// merged is each PR's merge, its commit's time on the branch, when the forge said it.
+	merged map[int]time.Time
+	ok     bool
+	at     time.Time
 }
 
 type lineageDeployBook struct {
@@ -165,6 +168,8 @@ func (d *Daemon) lineageDeployEvent(e wire.Event) {
 	}
 	deploy := repo.node(lineage.KindDeploy, "deploy", r.ID)
 	rec := d.keepDeploy(deploy.Ref, deployRecord{Deploy: p.Deploy, Environments: envs, Seen: wire.DateOf(nowFunc())})
+	// The control plane's copy of the deploys (#5496).
+	d.deploySyncSoon()
 	at := deployTime(rec)
 	var version wire.LineageNode
 	if v := rec.Deploy.Version; v.Name != nil && *v.Name != "" {
@@ -276,25 +281,27 @@ func deployBeforeLocked(f *deploysFile, ref string, rec deployRecord) (string, d
 	return best, bestRec, best != ""
 }
 
-// replacedLocked is whether a newer deploy succeeded in each of rec's environments.
+// replacedLocked is whether a succeeded deploy is live in none of its environments: a newer
+// one took all of its target's traffic (#5246).
 func replacedLocked(f *deploysFile, ref string, rec deployRecord) bool {
 	if rec.Deploy.State != wire.DeployStateSucceeded || len(rec.Environments) == 0 {
 		return false
 	}
-	at := deployTime(rec)
+	return liveShareLocked(f, ref, rec) == nil
+}
+
+// liveShareLocked is the share of the traffic that ref has where it is live, in per cent, the
+// most of its environments'; nil when it is live in none.
+func liveShareLocked(f *deploysFile, ref string, rec deployRecord) *float64 {
+	var most *float64
 	for _, env := range rec.Environments {
-		newer := false
-		for k, o := range f.Deploys {
-			if k != ref && o.Deploy.State == wire.DeployStateSucceeded && slices.Contains(o.Environments, env) && deployTime(o).After(at) {
-				newer = true
-				break
+		for _, l := range liveLocked(f, env) {
+			if l.ref == ref && (most == nil || l.share > *most) {
+				most = new(l.share)
 			}
 		}
-		if !newer {
-			return false
-		}
 	}
-	return true
+	return most
 }
 
 // rollbackLocked is whether rec is a rollback: its system says so, or it succeeded with a
@@ -316,7 +323,8 @@ func rollbackLocked(f *deploysFile, ref string, rec deployRecord) bool {
 
 // deployResolvedLocked is a deploy's details as a walk says them: its version and environments as the
 // title, its state (replaced for a succeeded deploy a newer one replaced), rollback as a label,
-// and its start.
+// share:<per cent> as a label when it is live with less than all the traffic, its start, and the
+// deploy itself, for the Work pages' Deployed and Live in rows (#5243).
 func deployResolvedLocked(f *deploysFile, ref string, rec deployRecord) wire.LineageResolved {
 	what := ""
 	if v := rec.Deploy.Version; v.Name != nil {
@@ -335,14 +343,19 @@ func deployResolvedLocked(f *deploysFile, ref string, rec deployRecord) wire.Lin
 	if replacedLocked(f, ref, rec) {
 		state = "replaced"
 	}
-	out := wire.LineageResolved{Title: title, State: &state, CreatedAt: rec.Deploy.Started}
+	dep := rec.Deploy
+	out := wire.LineageResolved{Title: title, State: &state, CreatedAt: rec.Deploy.Started, Deploy: &dep}
 	if rollbackLocked(f, ref, rec) {
 		out.Labels = []string{"rollback"}
+	}
+	if share := liveShareLocked(f, ref, rec); share != nil && *share < 100 {
+		out.Labels = append(out.Labels, "share:"+strconv.FormatFloat(*share, 'f', -1, 64))
 	}
 	return out
 }
 
-// deployGraph adds to g the details of each deploy in it and what each brings, from the cache.
+// deployGraph adds to g the details of each deploy in it and what each brings, from the cache,
+// and each environment's live and next deploys as live and next links (#5246).
 // A deploy whose brings the cache lacks, or holds for another deploy before it, or past
 // resolveRecheck, is worked out in the background, and resolving says some are still to come.
 func (d *Daemon) deployGraph(g wire.LineageGraph) wire.LineageGraph {
@@ -361,6 +374,27 @@ func (d *Daemon) deployGraph(g wire.LineageGraph) wire.LineageGraph {
 	}
 	d.deployBookMu.Lock()
 	f := d.deploysFileLocked()
+	// An environment's live and next deploys (#5246), so the deploy pass resolves them and
+	// works out what each brings.
+	for _, n := range slices.Clone(g.Nodes) {
+		if n.Kind != lineage.KindEnvironment {
+			continue
+		}
+		add := func(ref, rel string, at time.Time) {
+			dep := wire.LineageNode{Kind: lineage.KindDeploy, Ref: ref}
+			if !in[dep] {
+				in[dep] = true
+				g.Nodes = append(g.Nodes, dep)
+			}
+			g.Links = append(g.Links, wire.LineageLink{From: n, To: dep, Rel: rel, Source: lineage.SourceComputed, At: wire.DateOf(at)})
+		}
+		for _, l := range liveLocked(f, n.Ref) {
+			add(l.ref, lineage.RelLive, l.since)
+		}
+		for _, k := range nextLocked(f, n.Ref) {
+			add(k, lineage.RelNext, deployStart(f.Deploys[k]))
+		}
+	}
 	for _, n := range slices.Clone(g.Nodes) {
 		rec, ok := f.Deploys[n.Ref]
 		if n.Kind != lineage.KindDeploy || !ok {
@@ -413,7 +447,7 @@ func (d *Daemon) deployGraph(g wire.LineageGraph) wire.LineageGraph {
 		}
 		for _, a := range asks {
 			d.bringsAsking[a.ref] = true
-			safe.Go("deploy brings", func() { d.workOutBrings(a.ref, a.prev, a.repo, a.base, a.head) })
+			d.goJob("deploy brings", func() { d.workOutBrings(a.ref, a.prev, a.repo, a.base, a.head) })
 		}
 	}
 	d.deployBookMu.Unlock()
@@ -432,13 +466,13 @@ func (d *Daemon) workOutBrings(ref, prev string, repo forgeRepo, base, head stri
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	prs, ok := d.prsBetween(ctx, repo, base, head)
+	prs, merged, ok := d.prsBetween(ctx, repo, base, head)
 	d.deployBookMu.Lock()
 	defer d.deployBookMu.Unlock()
 	if d.brings == nil {
 		d.brings = map[string]bringsEntry{}
 	}
-	d.brings[ref] = bringsEntry{prev: prev, prs: prs, ok: ok, at: nowFunc()}
+	d.brings[ref] = bringsEntry{prev: prev, prs: prs, merged: merged, ok: ok, at: nowFunc()}
 	if len(d.brings) > bringsCached {
 		oldest := ""
 		for k, e := range d.brings {
@@ -453,15 +487,17 @@ func (d *Daemon) workOutBrings(ref, prev string, repo forgeRepo, base, head stri
 		close(d.bringsIdle)
 		d.bringsIdle = nil
 	}
+	// The copy's lead time, and the next deploys to work out (#5496).
+	d.deploySyncSoon()
 }
 
 // prsBetween is the PRs of the commits after base up to head, by their squash titles or the
-// forge's commits/<sha>/pulls, as a release's (lineagerelease.go); ok is false when the forge
-// could not say.
-func (d *Daemon) prsBetween(ctx context.Context, repo forgeRepo, base, head string) ([]int, bool) {
+// forge's commits/<sha>/pulls, as a release's (lineagerelease.go), and each one's merge: the
+// time of its first commit there that the forge dated. ok is false when the forge could not say.
+func (d *Daemon) prsBetween(ctx context.Context, repo forgeRepo, base, head string) ([]int, map[int]time.Time, bool) {
 	folder := d.repoFolder(repo)
 	if folder == "" {
-		return nil, false
+		return nil, nil, false
 	}
 	compare, commitPR := forgeCompareCommits, forgeCommitPR
 	if c, ok := d.connectionAsks(repo.forge); ok {
@@ -476,10 +512,11 @@ func (d *Daemon) prsBetween(ctx context.Context, repo forgeRepo, base, head stri
 	commits, err := compare(ctx, folder, repo, base, head)
 	if err != nil {
 		log.Printf("lineage: the commits of %s %s..%s: %v", repo.path, base, head, err)
-		return nil, false
+		return nil, nil, false
 	}
 	commits = commits[:min(len(commits), releaseCommitsMax)]
 	var prs []int
+	merged := map[int]time.Time{}
 	for _, c := range commits {
 		n, found := squashPRNumber(repo.forge, c.Message)
 		if !found {
@@ -490,8 +527,11 @@ func (d *Daemon) prsBetween(ctx context.Context, repo forgeRepo, base, head stri
 		if n > 0 && !slices.Contains(prs, n) {
 			prs = append(prs, n)
 		}
+		if _, dated := merged[n]; n > 0 && !dated && !c.At.IsZero() {
+			merged[n] = c.At
+		}
 	}
-	return prs, true
+	return prs, merged, true
 }
 
 // deploySettle waits up to wait for the deploys whose brings are being worked out.
@@ -506,4 +546,142 @@ func (d *Daemon) deploySettle(wait time.Duration) {
 	case <-idle:
 	case <-time.After(wait):
 	}
+}
+
+// A target's live and next versions (#5246, spec 5239-deploy-model, "What is computed, not
+// stored"), as GitOps Promoter's active and proposed. Computed from the kept deploys, never
+// stored, because a deploy found late changes them. A target is one environment node (the
+// repo × the environment) with the deploy's target labels (region, cluster…); with none, the
+// environment node is the target.
+//
+//   - Live: the newest succeeded deploy's version, at its share (100 % with none), then older
+//     succeeded deploys of other versions until the shares make 100 % (a canary, a Cloud Run
+//     split). Since is the first of the newest unbroken run of deploys of that version.
+//   - Next: the deploys waiting or running there that began after the newest live deploy
+//     began. What one brings is its brings: the PRs from the live version before it.
+//   - The live version of the target before it in a path comes when promotion order does.
+
+// liveVersion is one version live in a target: the deploy that put it there, since when, and
+// its share of the traffic in per cent.
+type liveVersion struct {
+	ref   string
+	rec   deployRecord
+	since time.Time
+	share float64
+}
+
+// targetLabels is a deploy's target labels as one string, to tell the targets of one
+// environment node apart.
+func targetLabels(dep wire.Deploy) string {
+	keys := slices.Sorted(maps.Keys(dep.Target.Labels))
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k + "=" + dep.Target.Labels[k] + "\n")
+	}
+	return b.String()
+}
+
+// deployVersionKey is what tells two versions apart: the name, else the commit, else the
+// artifacts' ids.
+func deployVersionKey(dep wire.Deploy) string {
+	if v := dep.Version.Name; v != nil && *v != "" {
+		return "name:" + *v
+	}
+	if sha := deploySHA(dep); sha != "" {
+		return "commit:" + sha
+	}
+	ids := make([]string, 0, len(dep.Version.Artifacts))
+	for _, a := range dep.Version.Artifacts {
+		ids = append(ids, a.Kind+":"+a.ID)
+	}
+	return "artifacts:" + strings.Join(ids, ",")
+}
+
+// targetDeploysLocked is env's deploys for each target, by its labels, newest first (by
+// deployTime, then by ref so the order is stable).
+func targetDeploysLocked(f *deploysFile, env string) map[string][]string {
+	out := map[string][]string{}
+	for k, o := range f.Deploys {
+		if slices.Contains(o.Environments, env) {
+			t := targetLabels(o.Deploy)
+			out[t] = append(out[t], k)
+		}
+	}
+	for _, refs := range out {
+		sort.Slice(refs, func(i, j int) bool {
+			a, b := deployTime(f.Deploys[refs[i]]), deployTime(f.Deploys[refs[j]])
+			if !a.Equal(b) {
+				return a.After(b)
+			}
+			return refs[i] > refs[j]
+		})
+	}
+	return out
+}
+
+// liveOfTargetLocked is the live versions of one target, from its deploys newest first.
+func liveOfTargetLocked(f *deploysFile, refs []string) []liveVersion {
+	var live []liveVersion
+	at := map[string]int{}
+	total := 0.0
+	for _, k := range refs {
+		o := f.Deploys[k]
+		if o.Deploy.State != wire.DeployStateSucceeded {
+			continue
+		}
+		v := deployVersionKey(o.Deploy)
+		if i, ok := at[v]; ok {
+			live[i].since = deployTime(o)
+			continue
+		}
+		if total >= 100 {
+			// Older deploys of a live version move its since back, until another version.
+			break
+		}
+		share := 100.0
+		if o.Deploy.Share != nil && *o.Deploy.Share > 0 && *o.Deploy.Share < 100 {
+			share = *o.Deploy.Share
+		}
+		share = min(share, 100-total)
+		total += share
+		at[v] = len(live)
+		live = append(live, liveVersion{ref: k, rec: o, since: deployTime(o), share: share})
+	}
+	return live
+}
+
+// liveLocked is the versions live in env now, in each of its targets.
+func liveLocked(f *deploysFile, env string) []liveVersion {
+	var out []liveVersion
+	for _, refs := range targetDeploysLocked(f, env) {
+		out = append(out, liveOfTargetLocked(f, refs)...)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ref < out[j].ref })
+	return out
+}
+
+// nextLocked is the deploys that will put the next versions in env, in each of its targets:
+// those waiting or running that began after its newest live deploy began, oldest first.
+func nextLocked(f *deploysFile, env string) []string {
+	var out []string
+	for _, refs := range targetDeploysLocked(f, env) {
+		var after time.Time
+		if live := liveOfTargetLocked(f, refs); len(live) > 0 {
+			after = deployStart(live[0].rec)
+		}
+		for _, k := range refs {
+			o := f.Deploys[k]
+			if (o.Deploy.State == wire.DeployStateWaiting || o.Deploy.State == wire.DeployStateRunning) && !deployStart(o).Before(after) {
+				out = append(out, k)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := deployStart(f.Deploys[out[i]]), deployStart(f.Deploys[out[j]])
+		if !a.Equal(b) {
+			return a.Before(b)
+		}
+		return out[i] < out[j]
+	})
+	return out
 }

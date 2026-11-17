@@ -75,6 +75,8 @@ func TestTheCheckLearnsAMoveFromGitHub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A daemon left running scans on its clock into a later test's AGENTS_PERSONAL_HOME (#5368).
+	t.Cleanup(d.Shutdown)
 	d.repoAliasAPI = srv.URL
 	pr := wire.LineageNode{Kind: "pr", Ref: "github:pr:alexec/agents#12"}
 	for _, to := range []wire.LineageNode{{Kind: "issue", Ref: "github:issue:alexec/agents#1"}, {Kind: "issue", Ref: "github:issue:alexec/stays#2"}} {
@@ -113,6 +115,8 @@ func TestTheLedgerNamesAMovedRepoByItsNameNow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A daemon left running scans on its clock into a later test's AGENTS_PERSONAL_HOME (#5368).
+	t.Cleanup(d.Shutdown)
 	merged, ended, last := "merged", wire.DateOf(nowFunc()), wire.DateOf(nowFunc())
 	earlier, parent := last-3600, "github:issue:alexec/agents#1"
 	pr := func(ref string, at wire.Date, cost float64) wire.LineageCostNode {
@@ -188,6 +192,8 @@ func TestTheCheckFollowsASecondMove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A daemon left running scans on its clock into a later test's AGENTS_PERSONAL_HOME (#5368).
+	t.Cleanup(d.Shutdown)
 	d.repoAliasAPI = srv.URL
 	pr := wire.LineageNode{Kind: "pr", Ref: "github:pr:alexec/agents#12"}
 	if _, err := d.lineage().Link(wire.LineageLinkRequest{From: pr, To: wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#1"},
@@ -208,10 +214,14 @@ func TestTheCheckFollowsASecondMove(t *testing.T) {
 // #5335: the daemon reads a folder's origin again when it changes, so Work searches the new
 // name after `git remote set-url`, not the one it read at the start.
 func TestAFolderRepoFollowsANewOrigin(t *testing.T) {
+	t.Parallel()
+
 	d, err := New(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A daemon left running scans on its clock into a later test's AGENTS_PERSONAL_HOME (#5368).
+	t.Cleanup(d.Shutdown)
 	folder := gitFolder(t, "https://github.com/alexec/Agents.git")
 	if got := d.folderRepo(folder).path; !strings.EqualFold(got, "alexec/agents") {
 		t.Fatalf("before: %q", got)
@@ -239,6 +249,8 @@ func TestWorkSearchesAMovedRepoByItsNameNow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A daemon left running scans on its clock into a later test's AGENTS_PERSONAL_HOME (#5368).
+	t.Cleanup(d.Shutdown)
 	folder := gitFolder(t, "https://github.com/alexec/Agents.git")
 	repoalias.Add("github", "alexec/agents", "agentloops-dev/agents", nowFunc())
 	repoalias.Add("github", "agentloops-dev/agents", "agentloops-dev/agent-loops", nowFunc())

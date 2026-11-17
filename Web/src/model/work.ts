@@ -3,7 +3,7 @@
 // (reports/nodes: cost, sessions, lead time) on top. Releases come from reports/nodes alone in v1. As
 // WorkList has it on the window.
 import type {
-  ForgeCheck, ForgeComment, ForgeDone, ForgeEvent, ForgeItem, ForgeItemDetail, ForgeLabel, ForgeListError, ForgeListRequest, ForgeMergeMethod,
+  ForgeCheck, ForgeComment, ForgeDone, ForgeEvent, ForgeItem, ForgeItemDetail, ForgeLabel, ForgeListAllRequest, MachineRef, ForgeListError, ForgeListRequest, ForgeMergeMethod,
   LineageNode, ProjectBoard, ReportNode,
 } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
@@ -45,6 +45,8 @@ export interface WorkRow {
   /** The tracker's own name for its step (a Jira status, #3260), shown in place of state. */
   status?: string | undefined;
   labels: ForgeLabel[];
+  /** high, medium or low, from ForgeItem.priority (#5690); absent for none. */
+  priority?: ForgeItem["priority"];
   /** The ref's repo or tracker: github:alexec/Agents, linear:ENG (a Linear team, #3311), jira. */
   repo: string;
   author?: string | undefined;
@@ -132,7 +134,7 @@ const unix = (at: number) => fromWireDate(at as never).getTime() / 1000;
 /** A row from the forge's item, with its lineage when there is any. */
 export function forgeRow(item: ForgeItem, host: string, lineage?: ReportNode): WorkRow {
   return {
-    node: item.node, title: item.title, state: item.state, stateReason: item.stateReason, status: item.status, labels: item.labels,
+    node: item.node, title: item.title, state: item.state, stateReason: item.stateReason, status: item.status, labels: item.labels, priority: item.priority,
     repo: repoOf(item.node.ref), author: item.author, avatar: item.authorAvatar, assignees: item.assignees, updated: unix(item.updatedAt),
     created: item.createdAt === undefined ? undefined : unix(item.createdAt), closed: item.closedAt === undefined ? undefined : unix(item.closedAt),
     url: item.url, host, folder: item.folder, draft: item.draft, comments: item.comments, checks: item.checks, review: item.review, lineage,
@@ -235,6 +237,15 @@ export function withBoard<T extends object>(request: T, board: string): T & { bo
 /** forge/issues' and forge/pulls' request: the state, a page of 100, the board when one is chosen, the next page's cursor. */
 export function forgeListRequest(state: string, board: string, cursor?: string): ForgeListRequest {
   return withBoard({ state, limit: 100, ...cursor ? { cursor } : {} }, board);
+}
+
+/** forge/listAll's request (#5592): forge/issues' or forge/pulls' of every machine in one call; `pages`, for the next page,
+ * names each machine still to read and its cursor. */
+export function forgeListAllRequest(kind: WorkKind, state: string, board: string, pages?: readonly { host: string; cursor: string }[]): ForgeListAllRequest {
+  return withBoard({
+    kind: kind === "issue" ? "issues" as const : "pulls" as const, state, limit: 100,
+    ...pages ? { pages: pages.map((p) => ({ machine: p.host as MachineRef, cursor: p.cursor })) } : {},
+  }, board);
 }
 
 /** The boards of several machines (forge/boards, #3282) as one list: each once, by url, in the order first read,
@@ -345,6 +356,22 @@ export function lineageWords(n: ReportNode | undefined): string | undefined {
   if (spent(n.cost.waste)) parts.push(`waste ${costWords(n.cost.waste)}`);
   if (n.leadTimeSeconds !== undefined) parts.push(`lead time ${leadWords(n.leadTimeSeconds)}`);
   return parts.length === 0 ? undefined : parts.join(" · ");
+}
+
+/** The forge of a ref: "github" of "github:pr:alexec/agents#1" and of the older "github:alexec/Agents#1". */
+export const refForge = (ref: string) => ref.slice(0, Math.max(0, ref.indexOf(":")));
+
+/** One machine's answer to a Work read (#5449): the refs it read, and the forges it could not read (forge "" when the
+ * machine itself did not answer). */
+export interface ForgeAnswer { refs: readonly string[]; errors: readonly ForgeListError[] }
+
+/** The errors a Work page shows of each machine's answer, by index (#5449). One machine's answer for a forge is enough:
+ * a machine's error for a forge shows only when no other machine read an item of that forge, and a machine that did
+ * not answer shows only when no other machine answered. As WorkList.shownErrors on the window. */
+export function shownErrors(answers: readonly ForgeAnswer[]): ForgeListError[][] {
+  const answered = answers.map((a) => !a.errors.some((e) => e.forge === ""));
+  const read = answers.map((a) => new Set(a.refs.map(refForge)));
+  return answers.map((a, i) => a.errors.filter((e) => !answers.some((_, j) => j !== i && (e.forge === "" ? answered[j] : read[j]!.has(e.forge)))));
 }
 
 /** A forge that could not be read: "GitHub on Studio: not connected". */

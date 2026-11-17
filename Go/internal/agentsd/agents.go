@@ -101,6 +101,9 @@ func (d *Daemon) registerAgents() {
 	On(d, wire.CallAgentsContinueInNew, func(ctx context.Context, c *Client, r wire.ContinueInNewRequest) (wire.UUID, error) {
 		return d.continueInNew(r)
 	})
+	On(d, wire.CallAgentsContinueInNewSession, func(ctx context.Context, c *Client, r wire.ContinueInNewSessionRequest) (wire.UUID, error) {
+		return d.continueInNewSession(r)
+	})
 }
 
 func unqueued(queue []wire.QueuedPrompt, id wire.UUID) []wire.QueuedPrompt {
@@ -228,7 +231,7 @@ func (d *Daemon) bargeIn(id wire.UUID, seq int) {
 		return
 	}
 	l.cancel()
-	go func() {
+	d.goJob("barge in", func() {
 		for range bargeInTries {
 			select {
 			case <-d.ctx.Done():
@@ -243,7 +246,7 @@ func (d *Daemon) bargeIn(id wire.UUID, seq int) {
 				return
 			}
 		}
-	}()
+	})
 }
 
 // How often, and how many times, a barge-in looks for the stopped turn to have ended:
@@ -732,6 +735,80 @@ func (d *Daemon) continueInNew(r wire.ContinueInNewRequest) (wire.UUID, error) {
 		d.change(id, func(s *wire.Agent) { s.Title, s.TitleIsPersons = a.Title, a.TitleIsPersons })
 	}
 	return id, nil
+}
+
+// continueInNewSession is agents/continueInNewSession (#5919). A chat whose allowance ran
+// out starts a new session on Auto in the same worktree, or in the same folder when it has
+// none. The prompt tells the new session to read this one. This session is archived only
+// after that start is saved, so the worktree sweep keeps the worktree. A start that fails
+// leaves this session as it is. The same requestID answers with the first new session,
+// also after this one is archived.
+func (d *Daemon) continueInNewSession(r wire.ContinueInNewSessionRequest) (wire.UUID, error) {
+	// A retry of a start that already happened answers with that session. When this chat
+	// is still paused, the first try's archive did not finish, so this try archives it.
+	if r.RequestID != nil {
+		var existing wire.UUID
+		for _, s := range d.Store.Agents() {
+			if s.StartRequestID != nil && *s.StartRequestID == *r.RequestID {
+				existing = s.ID
+				break
+			}
+		}
+		if existing != "" {
+			if a := d.Store.Agent(r.AgentID); a != nil && a.State != wire.AgentStateArchived {
+				if !pausedBySpentAllowance(a) {
+					return "", &Error{Code: CodeInvalidParams, Message: "Only a chat whose allowance ran out can continue in a new session."}
+				}
+				if err := d.archive(r.AgentID); err != nil {
+					return "", err
+				}
+			}
+			return existing, nil
+		}
+	}
+	a := d.Store.Agent(r.AgentID)
+	if a == nil {
+		return "", noSuchAgent()
+	}
+	if !pausedBySpentAllowance(a) {
+		return "", &Error{Code: CodeInvalidParams, Message: "Only a chat whose allowance ran out can continue in a new session."}
+	}
+	start := wire.StartRequest{RuntimeID: autoRuntimeID, Cwd: a.Cwd, Prompt: continueInNewSessionPrompt(a),
+		Attachments: []wire.Attachment{}, StartOptions: wire.StartOptions{Values: map[string]wire.JSONValue{}, ExtraArguments: []string{}},
+		RequestID: r.RequestID}
+	if a.Worktree != nil {
+		start.Cwd = a.Worktree.Folder
+		start.Worktree = &wire.WorktreeChoice{Existing: &wire.WorktreeChoiceExisting{Value: a.Worktree.Root}}
+	}
+	id, err := d.start(start)
+	if err != nil {
+		return "", err
+	}
+	d.change(id, func(s *wire.Agent) {
+		if a.Title != nil && strings.TrimSpace(*a.Title) != "" {
+			s.Title, s.TitleIsPersons = a.Title, a.TitleIsPersons
+			return
+		}
+		s.Title, s.TitleIsPersons = nil, nil
+	})
+	if err := d.archive(r.AgentID); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// continueInNewSessionPrompt is the new session's first prompt (#5919): the title in
+// straight quotes when the chat has one, else the id alone, and the worktree or the folder.
+func continueInNewSessionPrompt(a *wire.Agent) string {
+	name := string(a.ID)
+	if a.Title != nil && strings.TrimSpace(*a.Title) != "" {
+		name = `"` + *a.Title + `" (` + string(a.ID) + `)`
+	}
+	place := "You're in the same folder."
+	if a.Worktree != nil {
+		place = "You're in the same worktree."
+	}
+	return "Continue session " + name + " by using tool read_session to understand the work. " + place
 }
 
 // continueInFolder starts a successor in the folder that reads this session and

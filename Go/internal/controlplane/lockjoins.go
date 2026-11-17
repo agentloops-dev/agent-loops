@@ -126,8 +126,26 @@ func (j *lockJoins) row(r lockJoinRecord) wire.LockJoinRequest {
 	if r.Machine {
 		host := wire.MachineRef(r.Client)
 		row.Machine = &host
+		if j.s.madeAndCompared(context.Background(), r.Client) {
+			row.Compared = optional(true)
+		}
 	}
 	return row
+}
+
+// compared is a machine's compare step done with the digits the control plane made (#5776):
+// each open request of that machine is told again, now marked compared, so a signer
+// approves it with no card for the person.
+func (j *lockJoins) compared(ctx context.Context, host string) {
+	all, err := j.all(ctx)
+	if err != nil {
+		return
+	}
+	for _, r := range all {
+		if r.Machine && r.Client == host && j.open(r) {
+			j.changed(r, host)
+		}
+	}
 }
 
 // tell is a request's change, to the person's clients here, and to the machine that asks

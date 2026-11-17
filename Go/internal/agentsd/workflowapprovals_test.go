@@ -13,6 +13,8 @@ import (
 // A workflow waiting for an OK is in the folder's guarded changes, its approvals and
 // Needs You, as on the Swift host (#1322); Approve, Deny and Undo settle it from there.
 func TestAWaitingWorkflowIsInTheFoldersApprovals(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

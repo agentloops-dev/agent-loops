@@ -7,7 +7,10 @@ import Foundation
 public extension DaemonAPI {
     /// A part of the user settings. Each keeps the shape its file has on a machine.
     enum UserSettingsPartName: String, Codable, Sendable, Hashable, CaseIterable {
-        case mcpServers, agentConfig, runtimes, costLimits, notifications, accounts, timeZone
+        case mcpServers, agentConfig, runtimes, costLimits, notifications, accounts, timeZone, environment
+        /// What agents call the person, Auto's settings and retention (#5573): set once by the
+        /// Mac, which the control plane sends to each machine, in place of a call to each.
+        case person, auto, retention
     }
 
     /// The timeZone part (#4818): the person's time zone, which their Mac sets from its own
@@ -66,12 +69,25 @@ public extension DaemonAPI {
         public var accounts: JSONValue?
         /// The person's time zone (#4818), as a `UserTimeZone`.
         public var timeZone: JSONValue?
+        /// `~/.agents/env` (#5259), as a `UserEnvironment`: written to that file on each of the person's machines.
+        public var environment: JSONValue?
+        /// What agents call the person (#5573), as a `PersonSettings` with the name resolved on the Mac.
+        public var person: JSONValue?
+        /// Auto's settings (#5573), as an `AutoSettings`.
+        public var auto: JSONValue?
+        /// How long archived agents are kept (#5573), as a `RetentionSettings`.
+        public var retention: JSONValue?
         public var updated: String?
 
         public init(mcpServers: JSONValue? = nil, agentConfig: JSONValue? = nil, agentConfigFiles: AgentConfigFiles? = nil, runtimes: JSONValue? = nil,
                     costLimits: JSONValue? = nil, notifications: JSONValue? = nil, accounts: JSONValue? = nil, timeZone: JSONValue? = nil,
+                    environment: JSONValue? = nil, person: JSONValue? = nil, auto: JSONValue? = nil, retention: JSONValue? = nil,
                     updated: String? = nil) {
+            self.person = person
+            self.auto = auto
+            self.retention = retention
             self.timeZone = timeZone
+            self.environment = environment
             self.mcpServers = mcpServers
             self.agentConfig = agentConfig
             self.agentConfigFiles = agentConfigFiles
@@ -91,6 +107,10 @@ public extension DaemonAPI {
             case .notifications: notifications
             case .accounts: accounts
             case .timeZone: timeZone
+            case .environment: environment
+            case .person: person
+            case .auto: auto
+            case .retention: retention
             }
         }
     }
@@ -194,15 +214,18 @@ public extension DaemonAPI {
         public var needsApproval: Bool?
         /// What it is for (#4167): not secret, and not sealed. nil has none.
         public var description: String?
+        /// The agent's offer this set takes (#5308); nil for Add a Secret.
+        public var offer: String?
 
         public init(name: String, version: Int, values: [String: Envelope], kind: String? = nil, needsApproval: Bool? = nil,
-                    description: String? = nil) {
+                    description: String? = nil, offer: String? = nil) {
             self.name = name
             self.version = version
             self.values = values
             self.kind = kind
             self.needsApproval = needsApproval
             self.description = description
+            self.offer = offer
         }
     }
 
@@ -307,6 +330,8 @@ public extension DaemonAPI {
         public var lastOp: SecretLastOp? = nil
         /// False when one copy only opens (#4158).
         public var backedUp: Bool? = nil
+        /// Where it came from (#5308): an agent saved it on a machine.
+        public var savedBy: SecretSavedBy? = nil
 
         public var id: String { name }
         public var isCard: Bool { kind == CardSecret.kind }
@@ -471,7 +496,7 @@ public enum UserScopeWords {
     /// Under a secret that was on a machine since removed (FR-026).
     public static func leftOn(_ row: DaemonAPI.UserSecretRow) -> String? {
         guard let left = row.leftOn, !left.isEmpty else { return nil }
-        let names = left.map(\.name).joined(separator: ", ")
+        let names = MachineNames.words(left.map(\.name))
         return "It was on \(names), which was removed. Change it where it was issued, then replace it here."
     }
 

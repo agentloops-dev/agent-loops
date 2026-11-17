@@ -34,19 +34,31 @@ page.
 - **A control plane that keeps no reports** (one from before #1811) says so, and says to
   update it.
 
+## Reports' pages, by question (#5280)
+
+The list groups Reports' pages by the question each answers (spec #5276, option A): **Cost**
+(Spend), **Output** (Outcomes, Delivery), **Time** (Time), **Plan** (Forecast, Estimates), **Use**
+(Adoption, Runtimes, Workflows) and **Saved** (Saved Views); Audit is under Records, for admins.
+Usage and Multiplier are no longer pages: in the Me lens, Spend, Time and Outcomes end with **On
+your machines**, the charts of the pane each repeats (Cost and Tokens on Spend, Time on Time, the
+Multiplier and Velocity on Outcomes). Features is Status ▸ Features: it is about the product and
+the machines, not about work. An old `#/reports/usage`, `#/reports/multiplier` or
+`#/reports/features` opens its new place. The Mac's Cost ▸ Open Reports opens Spend in the Me lens,
+as before.
+
 ## Reports ▸ Spend, on the web page
 
 Reports is one of the control plane's three apps on the web page, beside Workspace and the
 [Console](console.md) (#1804). Its page **Spend** is the Reports pane with a scope:
 
 - **Me:** your own machines, as the Cost page's Reports pane on all three clients.
-- **A group:** each group you lead, or every group for an admin. A lead sees each person,
-  or with Totals Only no person and no machine named. **By** also has Group.
 - **The organisation:** everyone, for an admin only.
 - **A budget:** when the scope has one (Console ▸ Report Policy), the page shows the spend
   of this calendar month (UTC) against it, with a forecast to the end of the month. The
   control plane adds up the month (`monthSpentUSD`, #2057).
-- **CSV** names each person's groups.
+
+There is no group lens (#5278): Reports adds up Me and the organisation only. A saved view of a
+group opens as Me and says so.
 
 The Mac and the Remote show the Me scope only, also of the pages below (#2183).
 
@@ -80,16 +92,19 @@ Three more pages of Reports (#2019), with the same scopes:
   when it ends in an error that nobody chose (`agent.failed`).
 - **Adoption** (R5): each week (Monday, UTC), newest first: the active people, the
   sessions a person, and the runtimes and workflows in use. A person is active in a week
-  when one of their machines, or a bot's, ran a turn. With Totals Only, a lead sees the
-  sessions, not the people.
+  when one of their machines, or a bot's, ran a turn.
 - **Workflows** (R6): each workflow's runs (`workflow.ran`), its failed runs (its agent
   ended in an error), the cost of a run and the time working a run. By Workflow first. The
   most failed runs come first. By Person shows each bot's runs under its name.
 
-## Reports ▸ Planning, on the web page (#2351, #4528)
+## Reports ▸ Delivery, Forecast and Estimates, on the web page (#2351, #4528, #5280)
 
-Value before #4528. What the work cost and what it delivered, then what comes next. Its page id is still
-`value`, so saved views and links keep working. The cost part: from the cost on the links (#2350). The control
+Planning until #5280, Value before #4528: three pages from `reports/value` now. **Delivery** (under
+Output) is what the work cost and delivered: the headline, waste, lead time, all in, unlinked, the
+DORA figures and the issues and releases, with **Builds** and **Environments** under it. **Forecast**
+(under Plan) is what comes next and What if. **Estimates** (under Plan) is how the estimates and
+forecasts scored. A saved view's page is still `value` on the wire and opens Delivery, and an old
+`#/reports/value`, `#/reports/value/builds` or `#/reports/value/delivery` opens its new place. The cost part: from the cost on the links (#2350). The control
 plane adds up the nodes that the scope's machines send (`v1/lineage/<host>.json`); the
 machines' copies of one node add up, as each banked its own turns.
 
@@ -213,10 +228,7 @@ machines' copies of one node add up, as each banked its own turns.
 
 - **The Cost page's Reports pane** shows your own machines, also for an admin, and says
   "Your machines" (#2071).
-- **Reports ▸ Spend** on the web page names its scope: your machines, a group's people's,
-  or everyone's. Only an admin sees everyone's.
-- **A group's lead** sees the group's people in Reports ▸ Spend, as Console ▸ Report Policy
-  says.
+- **Reports ▸ Spend** on the web page names its scope: your machines or everyone's. Only an admin sees everyone's.
 
 ## Methods
 
@@ -225,10 +237,9 @@ machines' copies of one node add up, as each banked its own turns.
 - `reports/export` with a range and a format: `csv` (the default) or `jsonl`. The CSV has
   a cost column for each currency, such as `costUSD`, then `workflow` and the counts
   (`sessions`, `failedSessions`, `prsOpened`, `prsMerged`, `prsReverted`, `mergeSeconds`,
-  `waits`, `workflowRuns`, `workflowFailures`; blank from a machine before #2019), then
-  `groups`.
+  `waits`, `workflowRuns`, `workflowFailures`; blank from a machine before #2019).
 
-- `reports/value` (#2351) with a range and a scope: Reports ▸ Planning (`ReportValue`), with
+- `reports/value` (#2351) with a range and a scope: Reports ▸ Delivery, Forecast and Estimates (`ReportValue`), with
   `forecastScore` and `openEpics` (#4528), and `delivery` (#4555): a `ReportDelivery` a repo.
 - `reports/views`, `reports/saveView` (a view with no `id` is new) and `reports/deleteView`
   (#2019): the caller's saved views.
@@ -248,8 +259,7 @@ curl -H "Authorization: Bearer agread_…" \
 - `range` is `day`, `week`, `month` (the default) or `threeMonths`, as for `reports/usage`.
 - `format` is `json` (the default, the same answer as `reports/usage`), `csv` or `jsonl`
   (the same as `reports/export`).
-- `group=<id>` reads one group's rows instead of the organisation's.
-- `report=delivery` (#4555) reads Reports ▸ Planning's delivery figures instead, in JSON only:
+- `report=delivery` (#4555) reads Reports ▸ Delivery's DORA figures instead, in JSON only:
   `{"delivery": [ReportDelivery, …]}`, a repo each.
 - **A token reads these reports and nothing else.** It opens no socket and calls no
   method.
@@ -286,6 +296,6 @@ Prometheus metrics (`AGENTS_CONTROL_METRICS`, #2176).
 
 ## See also
 
-- [The Console](console.md): Report Policy, the leads and the budgets.
+- [The Console](console.md): Report Policy and the organisation's budget.
 
 - [Events](events.md): the audit, which says who did what.

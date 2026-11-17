@@ -52,7 +52,7 @@ func (f *fakeSetupGitHub) LastRun(ctx context.Context, repo string) (*githubmcp.
 }
 
 func (f *fakeSetupGitHub) AppReach(ctx context.Context, repo, slug string) (bool, int, error) {
-	return repo == "alexec/agents-walk" && slug == "agents-loops", 3, f.fail("reach")
+	return repo == "alexec/agents-walk" && slug == "agent-loops-dev", 3, f.fail("reach")
 }
 
 func (f *fakeSetupGitHub) AppPermissions(ctx context.Context, owner, slug string) (map[string]string, error) {
@@ -91,8 +91,10 @@ func slotsByKind(s wire.ConnectorSetup) map[wire.ConnectorSlotKind]wire.Connecto
 // connector's events go on once, a read that does not reach GitHub keeps a tick, and a skip
 // is kept in .agents/folder.json and counts.
 func TestAFoldersConnectorSetUp(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -200,7 +202,9 @@ func TestAFoldersConnectorSetUp(t *testing.T) {
 // A host with no personal home can't add the connector: the page says why in words, with no
 // wire code in them.
 func TestEventsThatCannotBeTurnedOnSayWhy(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", "")
+	t.Parallel()
+
+	personalHomeFor(t, "")
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -221,7 +225,9 @@ func TestEventsThatCannotBeTurnedOnSayWhy(t *testing.T) {
 
 // A remote on neither forge (#1632: a gitlab.com one is GitLab's set-up now).
 func TestASetUpWithNoGitHubRemote(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -279,8 +285,10 @@ func (f *fakeSetupGitLab) LastPipeline(ctx context.Context, folder string) (*git
 // slots, each proved by one read, the gitlab connector's events go on, and a connection to
 // another GitLab is not used here.
 func TestAGitLabFoldersConnectorSetUp(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -349,8 +357,10 @@ func TestAGitLabFoldersConnectorSetUp(t *testing.T) {
 // not set is the folder's own; the folder cannot skip a slot the project sets; the Pull
 // requests page follows the project; the slots are kept across a restart.
 func TestAProjectsSlotsFillItsFolders(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	root := t.TempDir()
 	d, c := start(t, root)
 	defer d.Shutdown()

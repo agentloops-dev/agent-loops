@@ -1,0 +1,59 @@
+{
+  "name": "mac",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "App",
+  "tags": [
+    "xcode"
+  ],
+  "implicitDependencies": [
+    "agentskit",
+    "codetext",
+    "go",
+    "web",
+    "wire",
+    "design",
+    "host",
+    "shared-ui",
+    "scripts",
+    "workspace"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "parallelism": false,
+      "options": {
+        "commands": [
+          "xcodegen generate --quiet",
+          "mkdir -p App/Resources/servers",
+          "scripts/build-cache.sh xcodebuild build -project Agents.xcodeproj -scheme AgentsHost -destination 'platform=macOS' -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO"
+        ],
+        "parallel": false,
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": [
+        "sharedGlobals",
+        "xcode-project",
+        "{projectRoot}/**/*",
+        "!{projectRoot}/Resources/servers/**/*",
+        "{workspaceRoot}/Host/**/*",
+        "{workspaceRoot}/Go/**/*",
+        "!{workspaceRoot}/Go/out/**/*",
+        "!{workspaceRoot}/Go/coverage.out",
+        "!{workspaceRoot}/Go/internal/controlplane/walk/observability/run/**/*",
+        "go-toolchain",
+        "{workspaceRoot}/scripts/check-window-defaults.py",
+        "{workspaceRoot}/scripts/web.sh",
+        "{workspaceRoot}/scripts/node.sh",
+        "{workspaceRoot}/scripts/go-agentsd.sh",
+        "{workspaceRoot}/scripts/go-control.sh",
+        "{workspaceRoot}/scripts/go-github-mcp.sh",
+        "{workspaceRoot}/scripts/version.sh"
+      ],
+      "dependsOn": [
+        "wire:gen",
+        "design:gen",
+        "web:build"
+      ]
+    }
+  }
+}

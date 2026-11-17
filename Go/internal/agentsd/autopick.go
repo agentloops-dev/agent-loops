@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -38,6 +39,20 @@ func (d *Daemon) autoSettings() wire.AutoSettings {
 // setAutoSettings is auto/set: runtimes this host does not know are kept, so a Mac that
 // sends the same file to each machine does not lose a server's runtime (FR-017).
 func (d *Daemon) setAutoSettings(in wire.AutoSettings) (wire.AutoSettings, error) {
+	in = normalAuto(in)
+	if err := d.writeSetting("auto.json", in); err != nil {
+		return wire.AutoSettings{}, &Error{Code: wire.FailureCouldNotSave, Message: "auto.json: " + err.Error()}
+	}
+	st := d.autoSettings()
+	Broadcast(d, wire.NotifyAutoChanged, st)
+	// A cell that moved changes which value a running agent's own settings are (#5730).
+	d.goJob("rematch levels", d.rematchLevels)
+	return st, nil
+}
+
+// normalAuto is Auto's settings as auto.json keeps them: no setBy, each runtime once, and
+// only the cells a field has.
+func normalAuto(in wire.AutoSettings) wire.AutoSettings {
 	in.SetBy = nil
 	seen := map[string]bool{}
 	order := []string{}
@@ -58,12 +73,7 @@ func (d *Daemon) setAutoSettings(in wire.AutoSettings) (wire.AutoSettings, error
 		}
 	}
 	in.Overrides = overrides
-	if err := d.writeSetting("auto.json", in); err != nil {
-		return wire.AutoSettings{}, &Error{Code: wire.FailureCouldNotSave, Message: "auto.json: " + err.Error()}
-	}
-	st := d.autoSettings()
-	Broadcast(d, wire.NotifyAutoChanged, st)
-	return st, nil
+	return in
 }
 
 // autoOrder is every runtime this host knows, in the person's order, then the shipped one.
@@ -251,7 +261,7 @@ func (d *Daemon) pickRuntime(l wire.Levels, sandbox *wire.SandboxChoice, needs w
 			skip(id, "left out")
 			continue
 		}
-		if p, _, _ := locateFor(rt); p == "" {
+		if p, _, _ := d.locate(rt); p == "" {
 			skip(id, "not installed")
 			continue
 		}
@@ -351,7 +361,25 @@ func applyLevels(runtimeID string, l wire.Levels, values map[string]wire.JSONVal
 // matchLevels is the values an agent runs with now, where its own settings match a cell of
 // its runtime: Custom (absent) where none does.
 func (d *Daemon) matchLevels(a *wire.Agent) *wire.Levels {
+	return d.matchLevelsWith(a, d.autoSettings())
+}
+
+// rematchLevels matches every live agent's levels again, with the Auto settings now
+// (#5730): a record keeps the levels it was given when it last changed, so a mapping the
+// person changed since, or a record from before levels were kept, said Custom for a mode
+// that a cell gives.
+func (d *Daemon) rematchLevels() {
 	settings := d.autoSettings()
+	for _, a := range d.Store.LiveAgents() {
+		// A queued record's mode is in its QueuedStart until it starts, and matched then.
+		if a.RuntimeID == autoRuntimeID || a.State == wire.AgentStateQueued || reflect.DeepEqual(a.Levels, d.matchLevelsWith(&a, settings)) {
+			continue
+		}
+		d.changeAgent(a.ID, false, func(a *wire.Agent) { a.Levels = d.matchLevelsWith(a, settings) })
+	}
+}
+
+func (d *Daemon) matchLevelsWith(a *wire.Agent, settings wire.AutoSettings) *wire.Levels {
 	offers := a.AdvertisedOptions
 	if len(offers) == 0 {
 		offers = d.runtimeOffers(a.RuntimeID)

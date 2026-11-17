@@ -66,6 +66,8 @@ func TestGroksToolPolicy(t *testing.T) {
 // Copilot is launched without the person's software-factory server or its built-in MCP
 // servers, and without session_store_sql or its own workflow tools; it has no _meta.
 func TestCopilotsToolPolicy(t *testing.T) {
+	t.Parallel()
+
 	l, _ := launchOf(t, "copilot")
 	want := []string{"--disable-mcp-server", "software-factory", "--disable-builtin-mcps", "--excluded-tools", "session_store_sql", "dynamic_workflows_manage", "run_dynamic_workflow"}
 	if !slices.Equal(l.Args, want) {
@@ -83,6 +85,8 @@ func TestCopilotsToolPolicy(t *testing.T) {
 // Antigravity's lever is _meta.agy.disabledTools, and nothing is denied since its
 // sub-agents came back: no _meta at all rather than an empty list, and nothing at launch.
 func TestAntigravitysToolPolicy(t *testing.T) {
+	t.Parallel()
+
 	if m := sessionMeta("antigravity"); m != nil {
 		t.Fatal(m)
 	}
@@ -109,6 +113,8 @@ func TestOpenCodesToolPolicy(t *testing.T) {
 // Codex's switches ride in CODEX_CONFIG on every launch (#1432), and Cursor, with no
 // lever, is launched as it is.
 func TestCodexAndCursorsToolPolicy(t *testing.T) {
+	t.Parallel()
+
 	l, _ := launchOf(t, "codex")
 	if v, ok := envValue(l.Env, "CODEX_CONFIG"); !ok || !strings.Contains(v, `"default_mode_request_user_input":true`) {
 		t.Fatalf("%q", l.Env)

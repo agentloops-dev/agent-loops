@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	// The control plane's server can have no zone files; a report's time zone must read the
+	// same there as on a Mac (#5515, as agentsd's #4818).
+	_ "time/tzdata"
+
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -39,9 +43,9 @@ func ReadHistoryAsk(r wire.BuildsHistoryRequest) (HistoryAsk, error) {
 }
 
 // Reads says a machine reads CI timings from forge (GitHub #5177, GitLab #5221, Azure DevOps
-// #5222), so the history of its repositories has a reader.
+// #5222, Bitbucket #5223, Forgejo #5224), so the history of its repositories has a reader.
 func Reads(forge string) bool {
-	return forge == "github" || forge == "gitlab" || forge == "azuredevops"
+	return forge == "github" || forge == "gitlab" || forge == "azuredevops" || forge == "bitbucket" || forge == "forgejo"
 }
 
 // EmptyHistory is the answer for a repository with no runs: reader none, as for a forge

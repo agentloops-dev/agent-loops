@@ -19,6 +19,8 @@ import (
 // TestLanguageServerHelper is a fake language server when AGENTS_FAKE_LSP is set: each line
 // holding TODO is a warning, and it asks the client for its configuration once.
 func TestLanguageServerHelper(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("AGENTS_FAKE_LSP") != "1" {
 		return
 	}
@@ -83,14 +85,12 @@ func TestLanguageServerHelper(t *testing.T) {
 // a language with no server, or none installed, said.
 func TestLanguageServerDiagnostics(t *testing.T) {
 	t.Setenv("AGENTS_FAKE_LSP", "1")
-	was := installedCommand
-	installedCommand = func(s languageServerSpec) []string {
+	setFor(t, &installedCommand, func(s languageServerSpec) []string {
 		if s.name == "gopls" {
 			return []string{os.Args[0], "-test.run=^TestLanguageServerHelper$"}
 		}
 		return nil
-	}
-	defer func() { installedCommand = was }()
+	})
 	pool := &languageServers{running: map[string]*languageServer{}}
 	defer pool.stopAll()
 	root := t.TempDir()
@@ -123,14 +123,12 @@ func TestLanguageServerDiagnostics(t *testing.T) {
 func TestLanguageServerStartingIsNotNoProblems(t *testing.T) {
 	t.Setenv("AGENTS_FAKE_LSP", "1")
 	t.Setenv("AGENTS_FAKE_LSP_SILENT", "1")
-	was := installedCommand
-	installedCommand = func(s languageServerSpec) []string {
+	setFor(t, &installedCommand, func(s languageServerSpec) []string {
 		if s.name == "gopls" {
 			return []string{os.Args[0], "-test.run=^TestLanguageServerHelper$"}
 		}
 		return nil
-	}
-	defer func() { installedCommand = was }()
+	})
 	pool := &languageServers{running: map[string]*languageServer{}}
 	defer pool.stopAll()
 	root := t.TempDir()
@@ -149,6 +147,8 @@ func TestLanguageServerStartingIsNotNoProblems(t *testing.T) {
 }
 
 func TestReadFrame(t *testing.T) {
+	t.Parallel()
+
 	r := bufio.NewReader(strings.NewReader("Content-Type: x\r\nContent-Length: 2\r\n\r\n{}rest"))
 	if b, err := readFrame(r); err != nil || string(b) != "{}" {
 		t.Fatalf("%q %v", b, err)
@@ -159,11 +159,9 @@ func TestReadFrame(t *testing.T) {
 // placeholder, the label alone when that is all there is to write.
 func TestLanguageServerCompletion(t *testing.T) {
 	t.Setenv("AGENTS_FAKE_LSP", "1")
-	was := installedCommand
-	installedCommand = func(s languageServerSpec) []string {
+	setFor(t, &installedCommand, func(s languageServerSpec) []string {
 		return []string{os.Args[0], "-test.run=^TestLanguageServerHelper$"}
-	}
-	defer func() { installedCommand = was }()
+	})
 	pool := &languageServers{running: map[string]*languageServer{}}
 	defer pool.stopAll()
 	root := t.TempDir()
@@ -181,15 +179,13 @@ func TestLanguageServerCompletion(t *testing.T) {
 func TestSlowStartHoldsUpNoOtherServer(t *testing.T) {
 	t.Setenv("AGENTS_FAKE_LSP", "1")
 	var swiftStarts atomic.Int32
-	was := installedCommand
-	installedCommand = func(s languageServerSpec) []string {
+	setFor(t, &installedCommand, func(s languageServerSpec) []string {
 		if s.name == "sourcekit-lsp" {
 			swiftStarts.Add(1)
 			return []string{"/bin/sleep", "3"} // never answers initialize, and ends in 3 s
 		}
 		return []string{os.Args[0], "-test.run=^TestLanguageServerHelper$"}
-	}
-	defer func() { installedCommand = was }()
+	})
 	pool := &languageServers{running: map[string]*languageServer{}}
 	defer pool.stopAll()
 	root := t.TempDir()

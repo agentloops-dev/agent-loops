@@ -16,6 +16,8 @@ import (
 // the ends a wait comes to.
 
 func TestAWaitSaysWhatIsWrongWithIt(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	m := appClient(t, d, seeded(t, d, t.TempDir(), nil).ID)
@@ -47,8 +49,7 @@ func TestAWaitSaysWhatIsWrongWithIt(t *testing.T) {
 
 // A Linux server refuses a wait on only what a Mac raises; a Mac holds it (#3288).
 func TestAMacOnlyWaitIsRefusedOnlyOnAServer(t *testing.T) {
-	was := hostIsMac
-	defer func() { hostIsMac = was }()
+	setFor(t, &hostIsMac, hostIsMac)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -76,6 +77,8 @@ func TestAMacOnlyWaitIsRefusedOnlyOnAServer(t *testing.T) {
 }
 
 func TestAWaitIsAnsweredByItsEvent(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -107,9 +110,7 @@ func TestAWaitIsAnsweredByItsEvent(t *testing.T) {
 
 func TestAHeldWaitWakesTheAgentLater(t *testing.T) {
 	fakeRuntimes(t)
-	was := eventHoldLimit
-	eventHoldLimit = 300 * time.Millisecond
-	defer func() { eventHoldLimit = was }()
+	setFor(t, &eventHoldLimit, 300*time.Millisecond)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -143,6 +144,8 @@ func TestAHeldWaitWakesTheAgentLater(t *testing.T) {
 // #3797: a wait on branch.moved names the branch or sets any: true; any is no detail of the
 // event, so a wait with it still wakes.
 func TestABranchWaitNamesTheBranchOrSetsAny(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -172,12 +175,14 @@ func TestABranchWaitNamesTheBranchOrSetsAny(t *testing.T) {
 		if !strings.Contains(text, "branch.moved happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("any: true never woke")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "any: true never woke")
 	}
 }
 
 func TestAWaitEnds(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -279,6 +284,8 @@ func aPersonEventsServer(t *testing.T) *httptest.Server {
 // A wait on review.requested, which is always about the connected account (#2034), sets
 // ForPerson on the record, unlike an ordinary server event (#3051).
 func TestAWaitOnAPersonEventIsMarkedForPerson(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	gh := aPersonEventsServer(t)

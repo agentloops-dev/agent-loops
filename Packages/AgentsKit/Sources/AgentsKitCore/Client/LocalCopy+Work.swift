@@ -18,8 +18,12 @@ extension LocalCopy {
         case features
         /// Work ▸ Timeline (`work/timeline`, the Mac's).
         case timeline
+        /// Work ▸ Deploys (`deploys/targets`, the Mac's).
+        case deploys
         /// The boards (`forge/boards`).
         case boards
+        /// New Session's Suggested section (`work/suggest-leads`, #5457), by folder.
+        case suggestions
         /// A forge's picture (`forge/image`), by URL: it does not change. Kept to its own cap.
         case image
 
@@ -30,7 +34,9 @@ extension LocalCopy {
             case .plan: 50
             case .features: 10
             case .timeline: 20
+            case .deploys: 5
             case .boards: 10
+            case .suggestions: 10
             case .image: 2000
             }
         }

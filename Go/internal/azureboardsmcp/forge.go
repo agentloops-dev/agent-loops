@@ -59,6 +59,10 @@ type Item struct {
 	// children and the closed ones, where the read says them (a plan's).
 	Parent            int
 	SubTotal, SubDone int
+	// Priority is high or low from the Priority field (1 is high; 2, the default, is none; 3
+	// and 4 are low), "" for none; PriorityField says the work item has that field (#5747).
+	Priority      string
+	PriorityField bool
 }
 
 // SearchPage is a page of a list, the last changed first. Cursors[i] goes on after Items[i],
@@ -113,6 +117,8 @@ const (
 	fieldReason   = "System.Reason"
 	// fieldStateChanged is when its state last changed: on a closed work item, when it closed.
 	fieldStateChanged = "Microsoft.VSTS.Common.StateChangeDate"
+	// fieldPriority is 1 to 4, 1 the highest; a type with no priority leaves it out (#5747).
+	fieldPriority = "Microsoft.VSTS.Common.Priority"
 	// The links a plan reads and writes: a child's parent, and a work item's predecessor
 	// (the one it waits for, as Jira's "is blocked by").
 	relParent      = "System.LinkTypes.Hierarchy-Reverse"
@@ -121,7 +127,7 @@ const (
 )
 
 // forgeFields are what a forge read asks for.
-var forgeFields = append(slices.Clone(itemFields), fieldProject, fieldComments, fieldParent, fieldReason, fieldStateChanged)
+var forgeFields = append(slices.Clone(itemFields), fieldProject, fieldComments, fieldParent, fieldReason, fieldStateChanged, fieldPriority)
 
 // patch is a JSON Patch, which Azure DevOps changes a work item by.
 type patch []map[string]any
@@ -196,6 +202,15 @@ func (f *RealBoards) forgeItem(org string, w workItemJSON, states map[string]map
 	}
 	if a := w.who(fieldAssigned).person(); a != nil {
 		i.Assignees = append(i.Assignees, a.name())
+	}
+	if _, ok := w.Fields[fieldPriority]; ok {
+		i.PriorityField = true
+		switch w.number(fieldPriority) {
+		case 1:
+			i.Priority = "high"
+		case 3, 4:
+			i.Priority = "low"
+		}
 	}
 	return i
 }

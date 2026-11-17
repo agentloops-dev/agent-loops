@@ -54,13 +54,15 @@ final class SecretShowState {
     }
 
     /// Reveal, or Hide when it shows already. Reveal on another row hides the first.
-    func toggle(_ row: DaemonAPI.UserSecretRow, on control: DaemonClient?) async {
+    /// `account` names the account it was opened from, for the audit entry (#5116).
+    func toggle(_ row: DaemonAPI.UserSecretRow, account: DaemonAPI.UserSealedSecretRequest.Account? = nil,
+                on control: DaemonClient?) async {
         if shown?.name == row.name {
             hide()
             return
         }
         hide()
-        guard let value = await fetch(row, purpose: .reveal, part: nil, on: control) else { return }
+        guard let value = await fetch(row, purpose: .reveal, part: nil, account: account, on: control) else { return }
         shown = Shown(name: row.name, version: row.version ?? 0, value: value, card: row.isCard ? CardSecret(value: value) : nil,
                       until: Date().addingTimeInterval(TimeInterval(UserScopeWords.shownSeconds)))
         let name = row.name
@@ -73,9 +75,10 @@ final class SecretShowState {
     }
 
     /// Copy: the value, or a card's part (the row's Copy is the card number). It does not reveal.
-    func copy(_ row: DaemonAPI.UserSecretRow, part: DaemonAPI.UserSealedSecretRequest.Part? = nil, on control: DaemonClient?) async {
+    func copy(_ row: DaemonAPI.UserSecretRow, part: DaemonAPI.UserSealedSecretRequest.Part? = nil,
+              account: DaemonAPI.UserSealedSecretRequest.Account? = nil, on control: DaemonClient?) async {
         let part = part ?? (row.isCard ? .number : nil)
-        guard let value = await fetch(row, purpose: .copy, part: part, on: control) else { return }
+        guard let value = await fetch(row, purpose: .copy, part: part, account: account, on: control) else { return }
         let text: String
         if row.isCard {
             guard let card = CardSecret(value: value) else {
@@ -113,7 +116,8 @@ final class SecretShowState {
     }
 
     private func fetch(_ row: DaemonAPI.UserSecretRow, purpose: DaemonAPI.UserSealedSecretRequest.Purpose,
-                       part: DaemonAPI.UserSealedSecretRequest.Part?, on control: DaemonClient?) async -> String? {
+                       part: DaemonAPI.UserSealedSecretRequest.Part?, account: DaemonAPI.UserSealedSecretRequest.Account?,
+                       on control: DaemonClient?) async -> String? {
         guard let control else {
             problems[row.name] = "The control plane can’t be reached."
             return nil
@@ -131,7 +135,7 @@ final class SecretShowState {
                                                 returning: DaemonAPI.SealRecipients.self).user
             }
             let sealed = try await control.call(DaemonAPI.Method.userSealedSecret,
-                                                DaemonAPI.UserSealedSecretRequest(name: row.name, purpose: purpose, part: part),
+                                                DaemonAPI.UserSealedSecretRequest(name: row.name, purpose: purpose, part: part, account: account),
                                                 returning: DaemonAPI.UserSealedSecret.self)
             do {
                 return try ClientSealing.open(sealed, user: person ?? "", with: key, client: client)

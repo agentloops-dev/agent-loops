@@ -46,10 +46,10 @@ type mcpBook struct {
 	mcpLoaded    bool
 }
 
-// personalHome is StoreLocations.personalHome: AGENTS_PERSONAL_HOME, or the person's
-// home on a server.
+// personalHome is StoreLocations.personalHome: the home AGENTS_PERSONAL_HOME named at the
+// start, or the person's home on a server.
 func (d *Daemon) personalHome() string {
-	if h := os.Getenv("AGENTS_PERSONAL_HOME"); h != "" {
+	if h := d.startOpts().namedHome; h != "" {
 		return h
 	}
 	return d.PersonalHome
@@ -346,6 +346,7 @@ func (d *Daemon) mcpApprovalsLocked() (approved map[string]string, begun, unread
 // waiting and those missing a secret.
 func (d *Daemon) folderMCP(folder string, secrets map[string]string, flagged func(string) bool) (servers []mcpEntry, waiting, missing []string, problem string) {
 	entries, problem := readMCPFile(filepath.Join(folder, ".agents", "mcp.json"))
+	d.adoptSharedMCPFolder(folder)
 	d.mcpMu.Lock()
 	approved, _, _ := d.mcpApprovalsLocked()
 	d.mcpMu.Unlock()

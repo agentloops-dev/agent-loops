@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -172,7 +171,7 @@ func (d *Daemon) prCostChanged(nodes []wire.LineageNode) {
 
 func (d *Daemon) prCommentSoonLocked() {
 	if d.commentTimer == nil {
-		d.commentTimer = time.AfterFunc(prCommentAfter, func() { safe.Go("pr cost comments", d.flushPRComments) })
+		d.commentTimer = time.AfterFunc(prCommentAfter, d.jobFunc("lineagecomment timer", func() { d.goJob("pr cost comments", d.flushPRComments) }))
 	}
 }
 

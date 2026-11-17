@@ -17,7 +17,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -549,7 +548,7 @@ func (d *Daemon) lineageDo(f func()) bool {
 	if d.linkerJobs == nil {
 		d.linkerJobs = make(chan func(), lineageJobsHeld)
 		jobs := d.linkerJobs
-		safe.Go("lineage links", func() {
+		d.goJob("lineage links", func() {
 			for job := range jobs {
 				job()
 			}
@@ -654,7 +653,10 @@ func (d *Daemon) noteLineage(before *wire.Agent, a wire.Agent) {
 		workflow = a.StartedByWorkflow
 	}
 	archived := before != nil && was.State != wire.AgentStateArchived && a.State == wire.AgentStateArchived
-	if len(added) == 0 && len(removed) == 0 && helper == nil && run == nil && workflow == nil && !archived {
+	// A new record, a change of its labels, its starter or its set priority works its priority
+	// out again (#5847), after the links below.
+	priority := before == nil || len(added) > 0 || len(removed) > 0 || helper != nil || !samePriority(was.PrioritySet, a.PrioritySet)
+	if len(added) == 0 && len(removed) == 0 && helper == nil && run == nil && workflow == nil && !archived && !priority {
 		return
 	}
 	folder := folderPath(&a)
@@ -708,6 +710,9 @@ func (d *Daemon) noteLineage(before *wire.Agent, a wire.Agent) {
 		if archived {
 			d.endLinks(s, func(l wire.LineageLink) bool { return l.From == s })
 		}
+		if priority {
+			d.refreshPriorities(map[wire.UUID]bool{a.ID: true})
+		}
 	})
 }
 
@@ -756,7 +761,8 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 		d.lineageCIEvent(e)
 		// A run finished: the build timings read it soon (#5177).
 		d.kickCITimings()
-	case "deploy.started", "deploy.succeeded", "deploy.failed":
+	case "deploy.waiting", "deploy.started", "deploy.succeeded", "deploy.failed":
+		// deploy.waiting makes a node only when it carries its deploy (#5246).
 		d.lineageDeployEvent(e)
 		return
 	case "health.issue_new", "health.issue_regressed":
@@ -765,7 +771,7 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 	case "health.incident_started":
 		d.lineageIncidentEvent(e)
 		return
-	case "pr.labelled", "pr.reviewed", "pr.commented":
+	case "review.requested", "pr.reviewed", "pr.commented":
 		d.lineageApprovalEvent(e)
 		return
 	}
@@ -815,6 +821,10 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 					d.noteIssueParent(folder, r, n)
 				}
 			}
+		}
+		if len(p.PR.Fixes) > 0 {
+			// A session labelled P#n goes by the priority of the issues it fixes (#5847).
+			defer d.refreshPrioritiesSoon()
 		}
 		// A Jira key in its title or branch, of a project its repo's folder names (#3260): a PR
 		// is never on the Jira site, so this is the way its cost reaches the Jira issue.

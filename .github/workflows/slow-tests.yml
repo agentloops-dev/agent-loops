@@ -7,6 +7,10 @@ on:
         description: Run only the Swift coverage jobs, as the nightly run does (#3442).
         type: boolean
         default: false
+      nx:
+        description: Run only the Nx run with no cache, as the nightly run does (#5629).
+        type: boolean
+        default: false
   schedule:
     - cron: '17 9 * * *'
 
@@ -15,11 +19,11 @@ permissions:
 
 jobs:
   slow-tests:
-    if: github.event_name == 'workflow_dispatch' && !inputs.coverage
+    if: github.event_name == 'workflow_dispatch' && !inputs.coverage && !inputs.nx
     runs-on: xcode-27
     timeout-minutes: 20
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       AGENTS_RUN_SLOW: "1"
     steps:
       - uses: actions/checkout@v6
@@ -42,15 +46,21 @@ jobs:
           exit $status
 
   # The wall-clock budgets (#225): held only here and by scripts/perf-tests.sh on a quiet
-  # Mac. Everywhere else these tests check what they compute and print the time.
+  # Mac, the Go ones with no -race (#5911). Everywhere else these tests check what they
+  # compute and print the time.
   perf-tests:
-    if: github.event_name == 'workflow_dispatch' && !inputs.coverage
+    if: github.event_name == 'workflow_dispatch' && !inputs.coverage && !inputs.nx
     runs-on: xcode-27
     timeout-minutes: 20
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v6
+
+      # Go for the Go tests that hold a budget (#5911), as go.mod names it.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Go/go.mod
 
       - name: Run the performance budgets
         run: scripts/perf-tests.sh
@@ -68,7 +78,7 @@ jobs:
   # swap. That C is not ours to cover, so CodeText builds its C with no coverage map:
   # its Swift is still measured, and the whole test step takes seconds.
   coverage-swift:
-    if: github.event_name == 'schedule' || inputs.coverage
+    if: github.event_name == 'schedule' || (inputs.coverage && !inputs.nx)
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +94,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.minutes }}
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v6
 
@@ -144,3 +154,98 @@ jobs:
           # The profiles are under .build, which upload-artifact skips as hidden otherwise.
           include-hidden-files: true
           retention-days: 14
+
+  # Every Nx task on main with no cache (#5629, rule 6 of epic #5627): the one check for an input
+  # that nobody declared. Nx hashes only the inputs that project.json names, so a task that reads
+  # something else gets a cached pass when that thing changes (the spike's false pass, #5613).
+  # Here the task runs, and when it fails at a hash where main's cache has a pass, an input is
+  # missing: this files a bug that names the task. The tasks and the runners are the ci.yml go
+  # and test jobs'. It saves no cache.
+  nx-no-cache:
+    if: github.event_name == 'schedule' || inputs.nx
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runs-on: ubuntu-latest
+            exclude: ""
+          - os: macos
+            runs-on: macos-latest
+            exclude: --exclude=web
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      issues: write
+    env:
+      # Rule 2 of #5627: never Nx Cloud; no .env file, which no hash reads.
+      NX_NO_CLOUD: "true"
+      NX_DAEMON: "false"
+      NX_LOAD_DOT_ENV_FILES: "false"
+      NX_TUI: "false"
+    steps:
+      - name: Nx's folders
+        run: |
+          echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
+          echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: Web/.node-version
+          package-manager-cache: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+      # main's newest Nx cache, as ci.yml saves it: the passes to compare with.
+      - name: Restore main's Nx cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/nx
+          key: nx-${{ matrix.os }}-${{ github.sha }}
+          restore-keys: nx-${{ matrix.os }}-
+      - name: Install from the lockfile
+        timeout-minutes: 5
+        run: |
+          scripts/pnpm.sh install --frozen-lockfile
+          scripts/pnpm.sh audit signatures
+      # Before the run, which may write its own results over them.
+      - name: The cached passes
+        run: node scripts/nx-undeclared.mjs passes > "$RUNNER_TEMP/passes.txt"
+      - name: Every task, with no cache
+        id: run
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == macos ]]; then
+            export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
+          fi
+          scripts/nx.sh run-many -t gen,build,vet,lint,test ${{ matrix.exclude }} --skip-nx-cache \
+            --parallel=1 --output-style=stream
+      - name: File a bug for each input that nobody declared
+        if: ${{ failure() && steps.run.outcome == 'failure' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OS: ${{ matrix.os }}
+        shell: bash
+        run: |
+          node scripts/nx-undeclared.mjs compare "$RUNNER_TEMP/passes.txt" > "$RUNNER_TEMP/undeclared.txt"
+          while read -r -u 3 task hash; do
+            title="Nx: $task fails with no cache at a hash that has a cached pass (an input is not declared)"
+            echo "::error::$task failed at $hash, where main's cache has a pass: an input is not declared."
+            if [[ -n "$(gh issue list --state open --label bug --search "in:title \"Nx: $task fails\"" --json number -q '.[].number')" ]]; then
+              echo "An open bug already names $task."
+              continue
+            fi
+            cat > "$RUNNER_TEMP/body.md" <<BODY
+          The nightly run on \`main\` with no Nx cache (#5629) ran \`$task\` on $OS, and it failed. Its hash, \`$hash\`, has a pass in main's cache, so an earlier run with the same inputs passed: the task reads something that its \`project.json\` does not name as an input.
+
+          Find what the task reads (a file, a tool's version, an environment variable) and add it to the task's \`inputs\`, so its hash changes when that thing does (rules 3, 4 and 6 of epic #5627). Then run \`scripts/nx.sh run $task --skip-nx-cache\`.
+
+          Run: $RUN_URL
+          BODY
+            gh issue create --title "$title" --label bug --label size:S --label feature:build \
+              --body-file "$RUNNER_TEMP/body.md"
+          done 3< "$RUNNER_TEMP/undeclared.txt"

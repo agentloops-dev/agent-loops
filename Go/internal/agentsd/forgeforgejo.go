@@ -561,11 +561,13 @@ func forgejoItemOf(i forgejomcp.Item, folder string) wire.ForgeItem {
 		out.Draft, out.AutoMerge = new(i.Draft), new(i.AutoMerge)
 		out.Checks, out.Review, out.Mergeable = optional(i.Checks), optional(i.Review), optional(i.Mergeable)
 		withPullRefs(&out, i.HeadRef, i.BaseRef, i.MergedBy, i.MergeCommit)
+		withPlanLabels(&out, forgeOwn{})
 		return out
 	}
 	// An issue's level and feature are its labels'; Forgejo has no parent, and a list does not
 	// read an epic's children (forgejoForge.Plan does).
 	withHierarchy(&out, nil, 0, 0)
+	withPlanLabels(&out, forgeOwn{})
 	return out
 }
 

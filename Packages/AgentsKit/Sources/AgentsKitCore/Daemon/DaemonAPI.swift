@@ -26,6 +26,9 @@ public enum DaemonAPI {
         public static let runtimesSignInStart = "runtimes/signInStart"
         public static let runtimesSignInFinish = "runtimes/signInFinish"
         public static let runtimesSignInKey = "runtimes/signInKey"
+        /// The key a person has in Secrets for a runtime, to sign it in on a machine being set up
+        /// (#5361): `SecretSignInKeyRequest` → `SecretSignInKey`. Asked of this Mac's host.
+        public static let secretsSignInKey = "secrets/signInKey"
         public static let sessionsList = "sessions/list"
         public static let sessionsAdopt = "sessions/adopt"
         public static let sessionsDelete = "sessions/delete"
@@ -116,6 +119,7 @@ public enum DaemonAPI {
         /// right after `mailbox/carry`.
         public static let agentsStart = "agents/start"
         public static let agentsSetLabels = "agents/setLabels"
+        public static let agentsSetPriority = "agents/setPriority"
         public static let agentsLabelVocabulary = "agents/labelVocabulary"
         public static let agentsPrompt = "agents/prompt"
         public static let agentsUnqueue = "agents/unqueue"
@@ -153,6 +157,11 @@ public enum DaemonAPI {
         /// The same over the control plane's copy (#5232), while the machine sleeps.
         public static let buildsHistoryAll = "builds/historyAll"
         public static let buildsRunAll = "builds/runAll"
+        /// The DORA figures of each environment (#5245, spec 5239 board 5), for Reports ▸ Planning ▸
+        /// Delivery on the web page; tier web+link, so Swift has no types for it.
+        public static let deploysDelivery = "deploys/delivery"
+        /// The same over the control plane's copy (#5496), for a group or org and while the machine sleeps.
+        public static let deploysDeliveryAll = "deploys/deliveryAll"
         public static let simulatorsList = "simulators/list"
         public static let simulatorsBoot = "simulators/boot"
         public static let simulatorsShutdown = "simulators/shutdown"
@@ -521,6 +530,13 @@ public enum DaemonAPI {
         /// Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): the secrets a machine keeps for itself,
         /// which agents saved there. The person's own clients only.
         public static let secretsLocalList = "secrets/localList"
+        /// Status ▸ Environment (#5259, #5260): a machine's `~/.agents/env` and each folder's `.agents/env`, one
+        /// variable of a folder's file changed, what a session there gets, and a hand edit of `~/.agents/env` undone.
+        /// The person's own clients only.
+        public static let envList = "env/list"
+        public static let envWrite = "env/write"
+        public static let envResolve = "env/resolve"
+        public static let envDiscard = "env/discard"
         public static let desktopControlState = "desktopControl/state"
         public static let desktopControlSet = "desktopControl/set"
         public static let desktopControlResume = "desktopControl/resume"
@@ -570,6 +586,8 @@ public enum DaemonAPI {
 
     public enum Notification {
         public static let agentChanged = "agent/changed"
+        /// A file of variables changed on a machine (#5259): the Environment page reads `env/list` again.
+        public static let envChanged = "env/changed"
         public static let agentEntry = "agent/entry"
         /// The live tile's frame for an agent holding the screen (#3004, US4).
         public static let desktopControlLiveFrame = "desktopControl/liveFrame"
@@ -1127,6 +1145,8 @@ public enum DaemonAPI {
         public var sandbox: SandboxChoice?
         /// Labels chosen by the person on the new-session form.
         public var labels: [String]
+        /// The priority set on the new session (#5847); nil follows its issue, then its starter.
+        public var priority: SessionPriority?
         /// The persona picked on the form (#760), by id. Its settings are already in
         /// the rest of the request; this brings its prompt.
         public var persona: String?
@@ -1140,6 +1160,9 @@ public enum DaemonAPI {
         /// The values in the shared words (#2658). With `runtimeID` "auto" the daemon picks
         /// the runtime.
         public var levels: Levels?
+        /// The line the control plane made when Auto picked this machine (#5375): the
+        /// session's chat says it first.
+        public var autoChose: String?
 
         public init(runtimeID: String, cwd: URL, prompt: String,
                     attachments: [Attachment] = [],
@@ -1148,8 +1171,10 @@ public enum DaemonAPI {
                     worktree: WorktreeChoice? = nil, requestID: UUID? = nil,
                     sandbox: SandboxChoice? = nil, labels: [String] = [], persona: String? = nil,
                     purpose: AgentPurpose? = nil, accountID: String? = nil, voice: Bool? = nil,
-                    levels: Levels? = nil) {
+                    levels: Levels? = nil, autoChose: String? = nil, priority: SessionPriority? = nil) {
+            self.priority = priority
             self.levels = levels
+            self.autoChose = autoChose
             self.accountID = accountID
             self.voice = voice
             self.persona = persona
@@ -1190,6 +1215,8 @@ public enum DaemonAPI {
             accountID = try c.decodeIfPresent(String.self, forKey: .accountID)
             voice = try c.decodeIfPresent(Bool.self, forKey: .voice)
             levels = try c.decodeIfPresent(Levels.self, forKey: .levels)
+            autoChose = try c.decodeIfPresent(String.self, forKey: .autoChose)
+            priority = try? c.decodeIfPresent(SessionPriority.self, forKey: .priority)
         }
 
         /// What goes to the runtime: the words, then whatever was attached.
@@ -1311,6 +1338,18 @@ public enum DaemonAPI {
             self.agentID = agentID
             self.add = add
             self.remove = remove
+        }
+    }
+
+    /// agents/setPriority (#5847): the priority set on one session; nil clears it, and the
+    /// session follows its issue again ("From issue").
+    public struct SetPriorityRequest: Codable, Sendable {
+        public var agentID: UUID
+        public var priority: SessionPriority?
+
+        public init(agentID: UUID, priority: SessionPriority?) {
+            self.agentID = agentID
+            self.priority = priority
         }
     }
 
@@ -2506,6 +2545,27 @@ public enum DaemonAPI {
         public init(runtimeID: String, key: String) {
             self.runtimeID = runtimeID
             self.key = key
+        }
+    }
+
+    /// `secrets/signInKey` (#5361): the runtime to find a key for.
+    public struct SecretSignInKeyRequest: Codable, Sendable {
+        public var runtimeID: String
+        public init(runtimeID: String) { self.runtimeID = runtimeID }
+    }
+
+    /// The first of the runtime's secret names that is set with Ask before use off, with its value; else
+    /// none. A name with Ask before use on is never given: it is in `refused`.
+    public struct SecretSignInKey: Codable, Sendable, Equatable {
+        public var name: String?
+        public var value: String?
+        public var looked: [String]
+        public var refused: [String]
+        public init(name: String? = nil, value: String? = nil, looked: [String] = [], refused: [String] = []) {
+            self.name = name
+            self.value = value
+            self.looked = looked
+            self.refused = refused
         }
     }
 

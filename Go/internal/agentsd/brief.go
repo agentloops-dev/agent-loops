@@ -56,7 +56,10 @@ const leasesBrief = "Lease a shared resource with lease_resource before using it
 	// The machine's capacity (#4579).
 	"A lease or a start can wait for the machine, not only for a holder: before heavy work " +
 	"that no declared resource names (a long test suite, a Chromium, a simulator, a script that " +
-	"builds), lease capacity, which goes in line while the machine is near or at capacity."
+	"builds), lease capacity, which goes in line while the machine is near or at capacity. " +
+	// The repository's CI (#5678).
+	"Before you start work on an issue, and before you push or open a pull request, lease ci " +
+	"and release it at once: it goes in line while the repository's CI has any job queued."
 
 // endingBrief names the three ways a turn ends (#1801). Without it an agent learnt about
 // archiving only from archive_session's description, and one that had finished with
@@ -155,7 +158,7 @@ func (d *Daemon) brief(a *wire.Agent) string {
 	if c := firstPromptCards[a.RuntimeID]; c != "" {
 		parts = append(parts, c)
 	}
-	if p := personaPrompt(a); p != "" {
+	if p := personaPrompt(a, d.personaHome()); p != "" {
 		parts = append(parts, p)
 	}
 	return strings.Join(parts, "\n\n")
@@ -274,7 +277,9 @@ func workflowsBrief(runtimeID string) string {
 const helpersBrief = "For work that can run alongside yours, use start_session within my limits " +
 	"on how many may run and be kept. Stop the sessions you started with stop_session when they are done, and " +
 	"archive them once their work is merged or abandoned. Do not start one for work you could " +
-	"simply do yourself."
+	"simply do yourself. When one you started asks for a permission (agent.asked_permission), you may " +
+	"answer its card with answer_permission, as I would: allow only what your own mode would let you do " +
+	"without asking; a step that is hard to undo stays with me."
 
 // sessionsBrief is Briefing.sessions (065): the person says "continue Login redirect" to
 // whichever chat they opened. Archiving this session is in endingBrief now.
@@ -304,8 +309,10 @@ func toolsBrief(browser, screen, bot, github bool) string {
 	lines := []string{
 		"- notify: tell me that something happened, when you have no question for me.",
 		"- set_session_labels: label this session #<n> for an issue or P#<n> for a pull request. This links them to it.",
+		"- set_session_priority: set this session's priority, or one you started (start_session takes priority too), when I give it one its issue does not: a higher one goes first for a shared resource. Leave it unset and it follows its issue, else its starter.",
 		"- docs_search, then docs_read: find the docs for your work, in this folder and its docs connectors.",
 		"- estimate_issue: say what an issue or an epic will cost and take.",
+		"- conflict_risk_analysis: before your first push and before auto-merge, ask which open pull requests your change would conflict with; it says go, wait for #N or stack on #N. Advice, not a gate.",
 		"- manage_accounts: my outside accounts (gitlab.com, AWS…): find one before you make one, and add the one you make.",
 		"- manage_connectors: this folder's connectors (.agents/mcp.json). approve asks me to approve one that waits, as manage_workflows enable asks me to turn on a workflow that is mine to turn on: wait for my answer, never click Approve for me.",
 		"- agents-secret NAME, a command on your PATH: the value of one of my secrets that does not ask before use, for your own command, " +
@@ -386,7 +393,7 @@ func appToolServed(name string) bool {
 // personaPrompt is the prompt of the persona the agent was started as (#760): the folder's
 // .agents/personas/<id>.md, else the person's, read now so an edit reaches the next
 // conversation. None for a persona that is not there or will not parse.
-func personaPrompt(a *wire.Agent) string {
+func personaPrompt(a *wire.Agent, home string) string {
 	if a.Persona == nil {
 		return ""
 	}
@@ -394,7 +401,7 @@ func personaPrompt(a *wire.Agent) string {
 	if id == "" || strings.Contains(id, "/") || strings.HasPrefix(id, ".") {
 		return ""
 	}
-	for _, from := range []struct{ base, origin string }{{folderPath(a), "folder"}, {personaHome(), "personal"}} {
+	for _, from := range []struct{ base, origin string }{{folderPath(a), "folder"}, {home, "personal"}} {
 		if from.base == "" {
 			continue
 		}

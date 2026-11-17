@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"bufio"
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -95,11 +93,11 @@ func (d *Daemon) serverViews(folder string, f pinsFile) []wire.PinView {
 // readServerViews reads s's views in the background, and says folder's pins again once
 // they are read. A server that failed is not asked again for five minutes (loadViewCatalog).
 func (d *Daemon) readServerViews(s viewServer, folder string) {
-	safe.Go("server views", func() {
+	d.goJob("server views", func() {
 		if d.pinsHaveStopped() {
 			return
 		}
-		if d.loadViewCatalog(context.Background(), s) != nil {
+		if d.loadViewCatalog(d.hostCtx(), s) != nil {
 			d.pinsChanged(folder)
 		}
 	})

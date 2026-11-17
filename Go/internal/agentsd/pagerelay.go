@@ -55,7 +55,7 @@ func (d *Daemon) StartPage(ctx context.Context, private []byte, folder string, p
 	}
 	served.Store(int64(listener.Port()))
 	log.Printf("page: served at %s", listener.Origin())
-	safe.Go("page listener", func() {
+	d.goJob("page listener", func() {
 		<-ctx.Done()
 		listener.Stop()
 	})
@@ -88,7 +88,7 @@ func (d *Daemon) carryPage(ctx context.Context, page *websocket.Conn, private []
 	done := make(chan struct{}, 2)
 	// The page's lines: to this host's channel, or to the control plane. The only one that
 	// hands the channel anything, so the one that closes it.
-	safe.Go("page up", func() {
+	d.goJob("page up", func() {
 		defer func() { done <- struct{}{} }()
 		defer local.Close()
 		for {
@@ -110,7 +110,7 @@ func (d *Daemon) carryPage(ctx context.Context, page *websocket.Conn, private []
 		}
 	})
 	// The control plane's lines to the page; the one that says it is answered here is not.
-	safe.Go("page down", func() {
+	d.goJob("page down", func() {
 		defer func() { done <- struct{}{} }()
 		// Where the exchange is: the page's ok not yet seen, the line after it next, or past.
 		const beforeOK, afterOK, past = 0, 1, 2

@@ -5,13 +5,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { load } from "./load.mjs";
+import { eventually } from "./eventually.mjs";
 
 delete globalThis.BroadcastChannel;
 const { Session } = await load("src/session.ts");
 const { approvalCode } = await load("src/wire/signIn.ts");
 const w = await load("test/wire.ts");
 const v = JSON.parse(readFileSync(new URL("./vectors.json", import.meta.url)));
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const origin = "https://agents.example.com";
 const control = w.unhex(v.control.public);
 const b64 = (bytes) => w.base64url(bytes);
@@ -54,20 +54,23 @@ function controlPlane(answer) {
   };
 }
 
-function session(net) {
+/** A session whose link is stopped when the test ends, also when an assert fails first. */
+function session(t, net) {
   const keys = new w.MemoryKeyStore();
-  return { keys, session: new Session(keys, origin, () => net.open(), new w.MemoryPendingStore()) };
+  const s = new Session(keys, origin, () => net.open(), new w.MemoryPendingStore());
+  t.after(() => s.link.stop());
+  return { keys, session: s };
 }
 
-test("the code shows while it waits, and approved, the new key is this browser's", async () => {
+test("the code shows while it waits, and approved, the new key is this browser's", async (t) => {
   let approve;
   const net = controlPlane((m, socket) => {
     socket.say({ jsonrpc: "2.0", method: "control/signInWaiting", params: { code: "K7Q2MX", expires: "2026-10-22T00:00:00Z" } });
     approve = () => socket.say({ jsonrpc: "2.0", id: m.id, result: { client: socket.sent[0].auth.id.slice(2) } });
   });
-  const { keys, session: s } = session(net);
+  const { keys, session: s } = session(t, net);
   const going = s.askToPair("  sam@example.com ");
-  await wait(100);
+  await eventually(() => s.askCode.value && net.made[0].sent[1]);
   const ask = net.made[0].sent[1];
   assert.equal(ask.method, "signIn/ask");
   assert.deepEqual(ask.params, { account: "sam@example.com", name: "A browser" });
@@ -81,18 +84,17 @@ test("the code shows while it waits, and approved, the new key is this browser's
   assert.equal(s.askCode.value, null);
   assert.equal(keys.record.client, net.made[0].sent[0].auth.id.slice(2));
   assert.equal(keys.record.control, b64(control));
-  await wait(50);
+  await eventually(() => net.made[1]?.sent[0]);
   assert.equal(net.made[1].sent[0].auth.id, "c:" + keys.record.client);
-  s.link.stop();
 });
 
-test("Cancel closes the wait and says nothing; running out says so", async () => {
-  const net = controlPlane((m, socket) => {
+test("Cancel closes the wait and says nothing; running out says so", async (t) => {
+  const net = controlPlane((_m, socket) => {
     socket.say({ jsonrpc: "2.0", method: "control/signInWaiting", params: { code: "K7Q2MX", expires: "2026-10-22T00:00:00Z" } });
   });
-  const { keys, session: s } = session(net);
+  const { keys, session: s } = session(t, net);
   const going = s.askToPair("nobody@example.com");
-  await wait(100);
+  await eventually(() => s.askCode.value);
   s.cancelAsk();
   await going;
   assert.equal(net.made[0].closed, true);
@@ -101,7 +103,7 @@ test("Cancel closes the wait and says nothing; running out says so", async () =>
 
   const late = controlPlane((m, socket) => socket.say({ jsonrpc: "2.0", id: m.id,
     error: { code: -32010, message: "Nobody approved the sign-in within 10 minutes. Sign in again." } }));
-  const other = session(late);
+  const other = session(t, late);
   await other.session.askToPair("sam");
   assert.match(other.session.pairingError.value, /within 10 minutes/);
   assert.equal(other.keys.record, null);

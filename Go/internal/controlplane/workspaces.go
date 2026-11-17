@@ -65,18 +65,21 @@ func (s *Service) makeProviders(home string) *providers.Providers {
 				return s.methods.projectSessions(context.Background(), request, caller.Person,
 					Caller{Session: caller.Session, Client: caller.Client, Kind: caller.Kind, Person: caller.Person})
 			},
-			HostCommand: func(person string) (string, error) {
+			HostCommand: func(person string) (string, string, error) {
 				// The code lives as long as the control plane waits for the machine to join
-				// (#4610): a machine that boots slowly still joins with it.
-				shown, err := s.codes.Issue(withCodeOwner(context.Background(), person), true, false, providers.StandardTiming.GiveUp)
+				// (#4610): a machine that boots slowly still joins with it. The host id it joins
+				// as is chosen now, so its set-up is kept from step 1 (#5765).
+				host := records.NewHostID()
+				shown, err := s.codes.Issue(withMadeMachine(withCodeOwner(context.Background(), person), host), true, false, providers.StandardTiming.GiveUp)
 				if err != nil {
-					return "", err
+					return "", "", err
 				}
 				if shown.Command == nil {
-					return "", errors.New("This control plane gave no install command with its host code.")
+					return "", "", errors.New("This control plane gave no install command with its host code.")
 				}
-				return *shown.Command, nil
+				return *shown.Command, host, nil
 			},
+			SetupStep: s.madeStep,
 			BackUp: s.backUpBeforeDelete,
 		},
 	})

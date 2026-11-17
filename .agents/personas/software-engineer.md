@@ -14,7 +14,13 @@ starts lanes.
    issue or decide features.
 2. Read the issue. If it has no assignee, assign `alexec` with `gh issue edit`.
 3. Work in the worktree you started in, or move to one with the app's
-   `move_worktree`. Never run `git worktree add` (#615).
+   `move_worktree`. Never run `git worktree add` (#615). Before your first edit, run
+   `git fetch origin` and `git rebase origin/main`: a new worktree starts from the local
+   `HEAD` it was made from, and that `main` can be old (#5638).
+   Before this step, and before each push (steps 5 and 6), lease `ci` with `lease_resource`,
+   do the step, and release it (AGENTS.md, "Landing a change", #5712; the lease waits for
+   an empty CI queue, #5709). On a conflict with `main`, `git merge origin/main`, settle it
+   and push without running the tests again.
 4. Fix that issue. Follow AGENTS.md. Verify only what you touch. Use
    `scripts/build-cache.sh` for builds and tests, and hold the `build` lease only while
    that command runs. Run every build, test and lint in the foreground, with a timeout
@@ -24,8 +30,28 @@ starts lanes.
 5. Run the unit tests for what you touched. For a change that needs to be seen working,
    use the run-app skill on a scratch root for `App/`, `Host/`, `Go/`, `Remote/`, or
    `Packages/AgentsKit`. Close the scratch app before you commit.
-   Before a push that changes `Go/`, run `scripts/go-changed.sh` under the `build` lease.
-6. Commit, push, and open a pull request whose body says `Fixes #<n>`. Turn on squash
+   Before your first push, run `git fetch origin` and `git rebase origin/main` again,
+   and settle any conflict on your branch (#5668). `main` moves while you work: a PR
+   that opens in conflict runs CI for nothing, and `affected` compares with a stale
+   `origin/main`. Do it again before a later push when `main` has moved.
+   Then, before a push, run `scripts/nx.sh affected -t gen build vet lint test` under the `build`
+   lease: the tasks of what your branch changes, Go, the web app, the Mac app, the Remote
+   and the Swift packages alike (AGENTS.md, "Verifying a lane's work").
+   After each push, attest it (step 6): CI then skips what your attestation covers.
+   Before your first push, and again before you turn on auto-merge, call the agent tool
+   `conflict_risk_analysis` (`diff`: your branch, or leave it out for the working tree;
+   `depends_on`: the PRs you build on). It says **go**, **wait for #N** or **stack on #N**
+   against the open PRs, on any forge (#5473, `specs/5389-conflict-risk-analysis`). It is
+   advice, not a gate: on `wait`, rebase once #N lands; on `stack`, base on #N's branch
+   (#1777); say in the PR body what it said and what you did. `scripts/conflict-risk.sh
+   <branch>` is the same core for a person or a script.
+6. Commit, push, and open a pull request whose body says `Fixes #<n>`. Then run
+   `scripts/checks.sh attest` under the `build` lease, in the foreground: it runs the
+   affected test, vet and lint tasks with no cache and posts `attestation/<platform>` on
+   the PR's head as the agents' bot (#5674), and CI skips each task it covers (#5710).
+   It refuses to run before the PR's head is your commit. Do it again after each later
+   push that changes a task's inputs. CI on `main` runs 10% of attested tasks again; a
+   false attestation revokes every attestation of your lane (#5723). Turn on squash
    auto-merge at once. **A UI enhancement is different** (an `enhancement` that changes
    `App/Sources`, `Remote/Sources`, `Shared/UI` or `Web/src`; AGENTS.md, "A UI
    enhancement waits for Alex", #2811, #3474):
@@ -41,39 +67,62 @@ starts lanes.
    - Not needed (copy, colour, spacing, fonts, icons, the look or state of an existing
      control, empty states, polish): turn on squash auto-merge at once and go on to
      step 7, as for a bug fix.
-   - Needed: open the PR with auto-merge **off** and the label `needs-approval`.
+   - Needed: open the PR with auto-merge **off**, as the agents' bot, and request Alex's
+     review: `gh pr edit <n> --add-reviewer alexec` (epic #5802). Add no label.
    - Needed: fix nothing until Alex answers: no CI fixes, rebases or conflict fixes. Wait with
      `wait_for_event` on `pr.reviewed`, `pr.commented` and `pr.closed`, `where: {"pr": <n>}`,
      and end your turn (#2838, #3860): each wakes you with the review or the comment itself
      (author, state, url, body), so there is no timer to re-check on and no need to re-read
      the PR by hand. A comment you write as `alexec` starts with `<!-- agent -->`
      (AGENTS.md, "Who an agent posts as"): `pr.commented` leaves those out, and a bot's,
-     so a comment it raises is always Alex's.
-   - Alex approves: a review with **Approve** (`pr.reviewed`, state `approved`) on the
-     bot's PR, or a comment such as "I approve these screenshots, ship it" on a PR posted
-     as `alexec`, who cannot review their own. Add `approved`, remove `needs-approval`,
-     write `Alex approved (<review or comment link>)` in the PR body, fix the checks,
-     rebase, turn on squash auto-merge and go on to step 7.
+     so a comment it raises is always Alex's. Do not add `pr.blocked` to this wait: a PR
+     with a review requested from a person is never blocked (#5803), so it cannot fire.
+   - Alex approves: only Alex's own review with **Approve** (`pr.reviewed`, state
+     `approved`), from github.com or from Approve in the app, which makes the same review.
+     Write `Alex approved (<review link>)` in the PR body, fix the checks, merge main in
+     (`git merge origin/main`, never a rebase), turn on squash auto-merge and go on to step 7. A comment, a message in chat or a label does
+     not approve: when Alex says "approved" that way, ask on the PR for a review with
+     Approve, and wait again.
    - Alex asks for changes: a review with **Request changes** (state `changes_requested`)
-     or any other comment. Add `changes-wanted`, make the changes, take a new set of
-     screenshots, remove `changes-wanted`, say on the PR what you changed and wait again.
-     A review with only words (state `commented`) is a comment. When you cannot tell which
-     one Alex means, ask on the PR.
+     or any other comment. Make the changes, take a new set of screenshots, say on the PR
+     what you changed, request Alex's review again (`gh pr edit <n> --add-reviewer
+     alexec`) and wait again. A review with only words (state `commented`) is a comment.
+     When you cannot tell what Alex wants changed, ask on the PR.
    - Closed: Alex dropped it. Go to step 9.
 7. Wait for the pull request to merge. Use one `wait_for_event` call with
-   `events: ["pr.merged", "pr.closed", "checks.failed", "checks.passed", "pr.conflicted"]`,
+   `events: ["pr.merged", "pr.closed", "pr.blocked", "pr.commented", "checks.passed"]`,
    `where: {"pr": <n>}` and `until_minutes: 60`, and end your turn. Any one of the
    events starts you again. Then do what the event says:
    - `pr.merged`: go on to step 8.
    - `pr.closed` (closed without a merge): go to step 9.
-   - `checks.failed`: follow `.agents/skills/fix-failed-checks/SKILL.md` on your
-     branch, push, and wait again. You fix your own PR's checks, also when a Fix failed
-     checks workflow is on.
+   - `pr.commented`: a comment from Alex (`pr.commented` leaves out the agents' own). A
+     comment does not block the PR, so `pr.blocked` does not fire for it. Read it. When it
+     asks for a change, turn off auto-merge (`gh pr merge --disable-auto <n>`), make the
+     change, say on the PR what you changed, turn auto-merge on again, and wait again.
+     When it asks for nothing, wait again.
+   - `pr.blocked` (#5321): the PR cannot merge until you act. Do what each of its
+     `reasons` says (`docs/reference/events.md`, "Blocked pull requests"), push once,
+     and wait again:
+     - `required_check_failed`: follow `.agents/skills/fix-failed-checks/SKILL.md` on
+       your branch for each of `failedChecks`. You fix your own PR's checks, also when a
+       Fix failed checks workflow is on. When main fails the same test, do not fix it:
+       wait for main to go green, then run the checks again (its step 2a, #5589).
+     - `conflict` or `behind`: `git merge origin/main` (never a rebase, so no
+       force-push), settle the conflict, push without running the tests again (AGENTS.md,
+       "Lease `ci`…"), and run `scripts/rearm-automerge.sh <pr>`.
+     - `changes_requested`: read the review (`reviewUrl`), make the changes, and say on
+       the PR what you changed.
+     - `automerge_disabled`: find out why (`gh pr view <n>`), fix that, and turn on
+       squash auto-merge again.
    - `checks.passed` (#3035): run `scripts/rearm-automerge.sh --stalled`, and wait
      again — checks going green is exactly when a clean PR can be left unmerged
      (#1741), so this wakes for that without waiting for the time limit.
-   - `pr.conflicted`: rebase onto main, push, run `scripts/rearm-automerge.sh <pr>`, and
-     wait again.
+   - **The wait is refused** with "No server here offers pr.blocked" (#5437: the
+     installed app is older than #5321): wait instead on
+     `["pr.merged", "pr.closed", "pr.commented", "checks.failed", "checks.passed", "pr.conflicted"]`,
+     with the same `where` and `until_minutes`, and use that list for the rest of this
+     session. `checks.failed` is `required_check_failed` above, and `pr.conflicted` is
+     `conflict`.
    - No event before the time limit: run `scripts/rearm-automerge.sh --stalled`, and
      wait again.
 

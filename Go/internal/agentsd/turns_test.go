@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -46,12 +47,12 @@ func TestMain(m *testing.M) {
 	// layer turns it on for its daemon (releaseOn).
 	releaseLayerHere = false
 	// The machine's memory pressure does not move a test's warm pool (#4514).
-	pressureNow = func() string { return "" }
+	setPressureNow(func() string { return "" })
 	// The browser is Chrome for Testing, which a test fakes: never the machine's own Google
 	// Chrome, which GitHub's Linux runners have, with Xvfb (#5227).
 	browser.FindChrome = func() string { return "" }
 	// Nor does the load of the machine a test runs on raise machine.busy (#4578).
-	capacitySampler = func(context.Context) capacitySample { return capacitySample{} }
+	setCapacitySampler(func(context.Context) capacitySample { return capacitySample{} })
 	// No test asks the person's gh about merged pull requests unless it says so.
 	findGH = func() string { return "" }
 	// Nor asks the forge for an issue's parent (#3582): a test sets issueLookup.
@@ -66,7 +67,70 @@ func TestMain(m *testing.M) {
 	runtimeVersion = func(string) string { return "" }
 	// Nor fetches the ready-made workflows from GitHub (#5091): every daemon has the fixture's.
 	useReadyMadeFixture()
-	os.Exit(m.Run())
+	// Every daemon of the process has one Mac toolsets folder, not its root's own, so tests that
+	// run side by side do not change where the others look (#4733).
+	shared, err := os.MkdirTemp("", "agentsd-tools-")
+	if err != nil {
+		panic(err)
+	}
+	sharedToolsHome = filepath.Join(shared, "tools")
+	serverToolsHome = filepath.Dir(toolsetFolder("claude"))
+	resetToolsHomes()
+	// Nor starts a runtime installed on the machine (#5974): a CI runner's claude ran a turn
+	// for a test that did not call fakeRuntimes. A test sees the runtimes it made, as a Linux
+	// runner with none installed sees them, and fakeRuntimes gives it the fake.
+	locateFor = locateMadeByATest
+	code := m.Run()
+	if err := os.RemoveAll(shared); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "could not remove the shared toolsets folder: %v\n", err)
+	}
+	os.Exit(code)
+}
+
+// resetToolsHomes puts the tools folders back as a daemon of this process starts with them:
+// after a test whose HOME or folders were its own, so that the tests that run side by side
+// next find them as they are and do not each write them (#4733).
+func resetToolsHomes() {
+	switch goruntime.GOOS {
+	case "darwin":
+		setToolsHomes(sharedToolsHome, sharedToolsHome, false)
+	case "linux":
+		setToolsHomes("", serverToolsHome, true)
+	}
+}
+
+// serverToolsHome is ~/.agents-server/tools of the test process's HOME (resetToolsHomes).
+var serverToolsHome string
+
+// locateMadeByATest is locate for a test: a runtime found outside the temporary folder and the
+// toolsets folders that the tests share (#4733), where every test makes its own, is installed
+// on the machine, so it is not found.
+func locateMadeByATest(r *runtimeDef) (string, []string, []string) {
+	path, args, looked := r.locate()
+	if path == "" || madeByATest(path, os.TempDir(), sharedToolsHome, serverToolsHome) {
+		return path, args, looked
+	}
+	return "", nil, append(append([]string{}, looked...), filepath.Dir(path)+" (installed on this machine, which a test never starts)")
+}
+
+// madeByATest is whether path is in one of dirs, as written or with its links followed.
+func madeByATest(path string, dirs ...string) bool {
+	in := func(p, dir string) bool { return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator)) }
+	abs, _ := filepath.Abs(path)
+	realPath, _ := filepath.EvalSymlinks(abs)
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		dir = filepath.Clean(dir)
+		realDir, _ := filepath.EvalSymlinks(dir)
+		for _, d := range []string{dir, realDir} {
+			if d != "" && (in(abs, d) || realPath != "" && in(realPath, d)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type fakeRuntime struct {
@@ -447,18 +511,22 @@ func (f *fakeRuntime) form(ctx context.Context, session sdk.SessionId, withdraw 
 	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 }
 
-func fakeRuntimes(t *testing.T) {
+// fakeRuntimes has the daemons t starts run this test binary as every runtime, a fake ACP
+// one by AGENTS_FAKE_ACP=1 in the runtime's own environment. The process's stays as it was,
+// so the test can run in parallel (#5926).
+func fakeRuntimes(t testing.TB) {
+	t.Helper()
 	self, _ := os.Executable()
-	t.Setenv("AGENTS_FAKE_ACP", "1")
-	old := locateFor
-	locateFor = func(*runtimeDef) (string, []string, []string) { return self, nil, nil }
-	t.Cleanup(func() { locateFor = old })
+	testHooksOf(t).change(func(h *testHooks) {
+		h.opts.locate = func(*runtimeDef) (string, []string, []string) { return self, nil, nil }
+		h.opts.runtimeEnv = []string{"AGENTS_FAKE_ACP=1"}
+	})
 }
 
 // notes collects the notifications a client hears.
 func (c *conn) until(t *testing.T, what string, ok func(method string, params json.RawMessage) bool) {
 	t.Helper()
-	deadline := time.After(20 * time.Second)
+	deadline := time.After(waitLimit(t))
 	for {
 		select {
 		case line := <-c.out:
@@ -468,7 +536,7 @@ func (c *conn) until(t *testing.T, what string, ok func(method string, params js
 				return
 			}
 		case <-deadline:
-			t.Fatalf("never heard %s", what)
+			waitFailed(t, "never heard %s", what)
 		}
 	}
 }
@@ -487,6 +555,8 @@ func ended(id wire.UUID, state wire.AgentState) func(string, json.RawMessage) bo
 // A whole turn: the agent starts, the runtime asks, the card is answered, the turn ends
 // finished with a report from its last words, and the records on disk are today's.
 func TestATurnWithACard(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	work := t.TempDir()
@@ -546,6 +616,8 @@ func TestATurnWithACard(t *testing.T) {
 // A card the person denies, after which the runtime ends the turn with no word, as Copilot
 // does (#3722): the app starts it again, to carry on without that call.
 func TestADeniedCardThatEndsTheTurnCarriesOn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -580,6 +652,8 @@ func TestADeniedCardThatEndsTheTurnCarriesOn(t *testing.T) {
 
 // An allowed card, or a denied one the agent answers in words, sends nothing more.
 func TestACardAnsweredInWordsDoesNotCarryOn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -603,6 +677,8 @@ func TestACardAnsweredInWordsDoesNotCarryOn(t *testing.T) {
 }
 
 func TestStopEndsTheTurnCancelled(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -627,6 +703,8 @@ func TestStopEndsTheTurnCancelled(t *testing.T) {
 // A stop after kick and before the turn begins is not lost (#3621): under load the run
 // loop's goroutine starts late, and turn cleared the stop and worked on.
 func TestAStopBeforeTheTurnBeginsHolds(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -648,6 +726,8 @@ func TestAStopBeforeTheTurnBeginsHolds(t *testing.T) {
 // An admin's stop from the Console (#2435) reads as theirs, not "Stopped by you"; the
 // owner's next stop is the owner's again.
 func TestAnAdminsStopSaysSo(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -674,6 +754,8 @@ func TestAnAdminsStopSaysSo(t *testing.T) {
 }
 
 func TestAStartInAFolderThatIsNotThere(t *testing.T) {
+	t.Parallel()
+
 	_, c := start(t, t.TempDir())
 	c.in <- `{"jsonrpc":"2.0","id":1,"method":"agents/start","params":{"runtimeID":"claude","cwd":"file:///no/such","prompt":"x"}}`
 	for line := range c.out {
@@ -689,6 +771,8 @@ func TestAStartInAFolderThatIsNotThere(t *testing.T) {
 // A runtime with no sign-in ends the turn as not signed in, not as a crash, and its
 // account says so (#1430).
 func TestAStartWithNoSignIn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -717,6 +801,8 @@ func TestAStartWithNoSignIn(t *testing.T) {
 
 // Antigravity gets its own home in the root and the switches Swift gave it (049 D8).
 func TestAntigravityLaunchesInItsOwnHome(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, _ := start(t, root)
@@ -734,9 +820,43 @@ func TestAntigravityLaunchesInItsOwnHome(t *testing.T) {
 	}
 }
 
+// OpenCode's own copy gets a data directory in the root, and no XDG_DATA_HOME from the
+// login shell. It then does not open ~/.local/share/opencode, which a newer OpenCode
+// migrates until this copy exits with "no such column: project_id".
+func TestOpenCodeLaunchesInItsOwnDataDirectory(t *testing.T) {
+	fakeRuntimes(t)
+	root := t.TempDir()
+	d, _ := start(t, root)
+	defer d.Shutdown()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "person"))
+	l, err := d.launchFor(runtimeByID("opencode"), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "runtimes", "opencode", "data")
+	n := 0
+	for _, kv := range l.Env {
+		if !strings.HasPrefix(kv, "XDG_DATA_HOME=") {
+			continue
+		}
+		n++
+		if kv != "XDG_DATA_HOME="+want {
+			t.Fatalf("%s", kv)
+		}
+	}
+	if n != 1 {
+		t.Fatalf("XDG_DATA_HOME count %d in\n%s", n, strings.Join(l.Env, "\n"))
+	}
+	if _, err := os.Stat(want); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Antigravity 1.4.5 writes skills/system/run-workflow into the session's folder (#3731):
 // info/exclude keeps it out of git status, also in a subfolder, and once only.
 func TestAntigravityLaunchKeepsItsSkillsOutOfGit(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -764,6 +884,8 @@ func TestAntigravityLaunchKeepsItsSkillsOutOfGit(t *testing.T) {
 }
 
 func TestRuntimesList(t *testing.T) {
+	t.Parallel()
+
 	_, c := start(t, t.TempDir())
 	var rs []wire.RuntimeStatus
 	json.Unmarshal(c.call(t, 1, "runtimes/list", nil), &rs)
@@ -778,6 +900,8 @@ func TestRuntimesList(t *testing.T) {
 }
 
 func TestAToolCallIsRecordedAsSwiftRecordsIt(t *testing.T) {
+	t.Parallel()
+
 	tc := toolCall(sdk.SessionToolCallUpdate{ToolCallId: "c1", Status: sdk.Ptr(sdk.ToolCallStatusCompleted),
 		RawOutput: map[string]any{"ok": true}, Meta: map[string]any{"x": 1}})
 	if tc.Title != "Tool call" || *tc.ToolCallID != "c1" || *tc.Status != "completed" || string(tc.RawOutput) != `{"ok":true}` {
@@ -793,6 +917,8 @@ func TestAToolCallIsRecordedAsSwiftRecordsIt(t *testing.T) {
 }
 
 func TestAToolCallLeavesBigImagesOutOfTheTranscript(t *testing.T) {
+	t.Parallel()
+
 	shot := strings.Repeat("A", 200<<10)
 	small := strings.Repeat("B", 100)
 	tc := toolCall(sdk.SessionToolCallUpdate{ToolCallId: "c1", Status: sdk.Ptr(sdk.ToolCallStatusCompleted),

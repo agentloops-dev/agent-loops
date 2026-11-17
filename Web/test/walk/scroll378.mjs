@@ -131,7 +131,7 @@ try {
   await key("Home", 36); await sleep(700); let k3 = await geo(); const homeMin = await page.eval(`window.__min`);
   await key("End", 35); await sleep(700); let k4 = await geo();
   await page.eval(`window.__min = Infinity`);
-  await key("ArrowUp", 38, 4); await sleep(700); let k5 = await geo(); const upMin = await page.eval(`window.__min`);
+  await key("ArrowUp", 38, 4); await sleep(700); await geo(); const upMin = await page.eval(`window.__min`);
   await key("ArrowDown", 40, 4); await sleep(700); let k6 = await geo();
   await key(" ", 32, 8); await sleep(500); let k7 = await geo();
   note("6 keyboard", pageUp > 100 && k2.top > k1.top && homeMin < 5 && k4.fromBottom <= 1 && upMin < 5 && k6.fromBottom <= 1 && k7.top < k6.top,

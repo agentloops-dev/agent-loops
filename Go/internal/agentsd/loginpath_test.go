@@ -11,6 +11,8 @@ import (
 // A bare command is found on the given PATH, not this process's (#1382): launchd starts
 // agentsd with the system's folders only, where no node or npx is.
 func TestLoginCommandFindsABareNameOnTheGivenPath(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	tool := filepath.Join(dir, "some-tool")
 	if err := os.WriteFile(tool, []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -30,6 +32,8 @@ func TestLoginCommandFindsABareNameOnTheGivenPath(t *testing.T) {
 }
 
 func TestLoginEnvironmentHasTheUsualFolders(t *testing.T) {
+	t.Parallel()
+
 	for _, kv := range loginEnvironment() {
 		if dirs, ok := strings.CutPrefix(kv, "PATH="); ok {
 			for _, want := range []string{"/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"} {
@@ -46,6 +50,8 @@ func TestLoginEnvironmentHasTheUsualFolders(t *testing.T) {
 // A shipped MCP server is named by its bare name in .agents/mcp.json: the folder beside
 // agentsd is first on an MCP server's PATH, ahead of a stale copy elsewhere (#1389).
 func TestAnMCPServersPathStartsBesideAgentsd(t *testing.T) {
+	t.Parallel()
+
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +68,8 @@ func TestAnMCPServersPathStartsBesideAgentsd(t *testing.T) {
 }
 
 func TestPrependPathMovesTheFolderFirst(t *testing.T) {
+	t.Parallel()
+
 	env := prependPath([]string{"HOME=/h", "PATH=/a:/ours:/b"}, "/ours")
 	if env[1] != "PATH=/ours:/a:/b" {
 		t.Fatalf("%v", env)

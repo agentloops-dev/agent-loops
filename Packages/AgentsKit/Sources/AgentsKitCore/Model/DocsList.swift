@@ -40,6 +40,28 @@ public enum DocsList {
         }
     }
 
+    /// What a machine that did not answer docs/listAll says (#5571).
+    public static let didNotAnswer = "It did not answer."
+
+    /// docs/listAll's page (#5571) as one HostDocs for each machine it names, as the web page's `hostDocsOf`: the control
+    /// plane asks the machines once, and a machine it could not reach has a line saying so. A later page of the same read
+    /// is added to `into`. `thisMac` is named "This Mac" and comes first, so its copy of a doc is the one kept; then the
+    /// others by name.
+    public static func hostDocs(_ got: DaemonAPI.DocsListAll, into: [HostDocs] = [], thisMac: MachineRef? = nil) -> [HostDocs] {
+        var by = Dictionary(into.map { ($0.host, $0) }, uniquingKeysWith: { a, _ in a })
+        func add(_ host: MachineRef, _ name: String, _ change: (inout HostDocs) -> Void) {
+            var list = by[host] ?? HostDocs(host: host, name: host == thisMac ? "This Mac" : name)
+            change(&list)
+            by[host] = list
+        }
+        for s in got.sources { add(s.machine, s.machineName) { $0.sources.append(s.source) } }
+        for d in got.docs { add(d.machine, d.machineName) { $0.docs.append(d.doc) } }
+        for u in got.unreached { add(u.machine, u.machineName) { $0.problem = didNotAnswer } }
+        return by.values.sorted {
+            ($0.host == thisMac ? 0 : 1, $0.name, $0.host.rawValue) < ($1.host == thisMac ? 0 : 1, $1.name, $1.host.rawValue)
+        }
+    }
+
     /// The project a folder is in (#3408), as the list names it: its id, and its name.
     public struct Project: Hashable, Sendable, Identifiable {
         public var id: String

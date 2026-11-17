@@ -25,24 +25,29 @@ func reviewsIn(t *testing.T, d *Daemon, c *conn, id int, repo string) []wire.Rev
 	return nil
 }
 
-// #3330: For Review lists each folder's open pull requests labelled needs-approval, newest
-// first, but not one labelled approved or changes-wanted too, nor a draft; a dismissed one is
-// kept out after the next read too, and the dismissal is kept on disk.
+// #3330: For Review lists each folder's open pull requests with a review requested from the
+// person (#5803), newest first, but not a draft, whatever their labels; a dismissed one is kept
+// out after the next read too, and the dismissal is kept on disk.
 func TestForReviewListsPullRequestsWaitingForApproval(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
-	pr := func(repo string, n int, updated string, labels ...string) githubmcp.Item {
+	pr := func(repo string, n int, updated string) githubmcp.Item {
 		return githubmcp.Item{Repo: repo, Number: n, PR: true, State: "open", Title: "PR " + updated,
 			URL:    fmt.Sprintf("https://github.com/%s/pull/%d", repo, n),
-			Author: "alexec", Labels: append([]string{"needs-approval"}, labels...), UpdatedAt: updated + "T10:00:00Z"}
+			Author: "alexec", UpdatedAt: updated + "T10:00:00Z"}
 	}
 	older, newer := pr("alexec/agents", 1, "2026-11-01"), pr("alexec/agents", 2, "2026-11-02")
-	approved, wanted := pr("alexec/agents", 3, "2026-11-03", "approved"), pr("alexec/agents", 4, "2026-11-03", "changes-wanted")
 	draft := pr("alexec/agents", 5, "2026-11-03")
 	draft.Draft = true
 	web := pr("alexec/web", 6, "2026-11-01")
-	gh.reviews = []githubmcp.Item{newer, older, approved, wanted, draft, web}
+	gh.reviews = []githubmcp.Item{newer, older, draft, web}
 
 	d.readReviews(d.ctx)
+	if searches, _ := gh.asked(); len(searches) != 1 || !strings.Contains(searches[0], " user-review-requested:alexec ") ||
+		strings.Contains(searches[0], "label:") {
+		t.Fatalf("one search for the person's requested reviews: %q", searches)
+	}
 	got := reviewsIn(t, d, c, 1, "alexec/agents")
 	if len(got) != 2 || got[0].Number != 2 || got[1].Number != 1 || got[0].Repo != "alexec/agents" ||
 		string(got[0].URL) != newer.URL || deref(got[0].Author) != "alexec" || got[0].Title != newer.Title ||

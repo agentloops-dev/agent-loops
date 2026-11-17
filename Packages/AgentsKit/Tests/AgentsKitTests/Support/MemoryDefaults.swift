@@ -36,32 +36,3 @@ final class MemoryDefaults: UserDefaults, @unchecked Sendable {
         lock.withLock { values }
     }
 }
-
-@Suite("Memory defaults")
-struct MemoryDefaultsTests {
-    @Test func keepsWhatIsSetAndNothingElse() {
-        let defaults = MemoryDefaults()
-        defaults.set(Data([1, 2]), forKey: "data")
-        defaults.set(["a", "b"], forKey: "strings")
-        #expect(defaults.data(forKey: "data") == Data([1, 2]))
-        #expect(defaults.stringArray(forKey: "strings") == ["a", "b"])
-        #expect(Set(defaults.dictionaryRepresentation().keys) == ["data", "strings"],
-                "nothing from the app's own domains")
-        defaults.removeObject(forKey: "data")
-        #expect(defaults.data(forKey: "data") == nil)
-        #expect(MemoryDefaults().stringArray(forKey: "strings") == nil, "each is its own")
-    }
-
-    /// No test makes an on-disk suite: each one is a plist that outlives the run.
-    @Test func noTestMakesADefaultsSuiteOnDisk() throws {
-        let tests = URL(filePath: #filePath)
-            .deletingLastPathComponent()      // Support
-            .deletingLastPathComponent()      // AgentsKitTests
-        let files = try #require(FileManager.default.enumerator(at: tests, includingPropertiesForKeys: nil))
-        let offenders = files.compactMap { $0 as? URL }
-            .filter { $0.pathExtension == "swift" && $0.lastPathComponent != "MemoryDefaults.swift" }
-            .filter { (try? String(contentsOf: $0, encoding: .utf8))?.contains("UserDefaults(suiteName:") == true }
-            .map(\.lastPathComponent)
-        #expect(offenders.isEmpty, "use MemoryDefaults()")
-    }
-}

@@ -123,7 +123,7 @@ func (f *fakeForgeAzureDevOps) FailedLog(_ context.Context, repo string, build i
 // Azure DevOps connection to dev.azure.com as a fake Azure DevOps.
 func azureDevOpsDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeAzureDevOps, *connections.File) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -148,6 +148,8 @@ func azureDevOpsDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeAzureDevOps, *co
 // #3803: forge/pulls lists the repositories on Azure DevOps with the GitHub folder's;
 // forge/issues does not ask Azure Repos, whose issues are Azure Boards' work items.
 func TestForgeListsAzureDevOpsPullRequests(t *testing.T) {
+	t.Parallel()
+
 	_, c, ado, _ := azureDevOpsDaemon(t)
 	var pulls wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/pulls", wire.ForgeListRequest{Label: new("ui")}), &pulls)
@@ -174,6 +176,8 @@ func TestForgeListsAzureDevOpsPullRequests(t *testing.T) {
 
 // Without a token for its Azure DevOps the list says so for Azure DevOps, and still lists GitHub's.
 func TestForgeListSaysAzureDevOpsIsNotConnected(t *testing.T) {
+	t.Parallel()
+
 	_, c, ado, file := azureDevOpsDaemon(t)
 	file.Delete(connections.AzureDevOps)
 	var list wire.ForgeList
@@ -186,6 +190,8 @@ func TestForgeListSaysAzureDevOpsIsNotConnected(t *testing.T) {
 // forge/pull reads an Azure Repos pull request in the repository as its folder's remote says
 // it; one Azure DevOps does not have, or no folder is on, is refused.
 func TestForgeReadsAnAzureDevOpsPullRequest(t *testing.T) {
+	t.Parallel()
+
 	_, c, ado, _ := azureDevOpsDaemon(t)
 	var pr wire.ForgeItemDetail
 	json.Unmarshal(c.call(t, 1, "forge/pull", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "pr", Ref: "azuredevops:pr:acme/web app/app#3"}}), &pr)
@@ -211,6 +217,8 @@ func TestForgeReadsAnAzureDevOpsPullRequest(t *testing.T) {
 // The Work pages' writes on an Azure Repos pull request go to Azure DevOps; a merge takes the
 // branch's first method, or completes on its own with auto; rerun runs each failed build once.
 func TestForgeWritesOnAnAzureDevOpsPullRequest(t *testing.T) {
+	t.Parallel()
+
 	_, c, ado, _ := azureDevOpsDaemon(t)
 	pr := wire.LineageNode{Kind: "pr", Ref: "azuredevops:pr:acme/web app/app#3"}
 	var done wire.ForgeDone
@@ -264,6 +272,8 @@ func TestForgeWritesOnAnAzureDevOpsPullRequest(t *testing.T) {
 }
 
 func TestAzureDevOpsOfNode(t *testing.T) {
+	t.Parallel()
+
 	for ref, want := range map[string]string{
 		"azuredevops:pr:acme/web app/app#3": "acme/web app/app 3",
 		"azuredevops:pr:a/b/c#0":            "",
@@ -289,6 +299,8 @@ func TestAzureDevOpsOfNode(t *testing.T) {
 // #4055: a Pull requests list narrowed to a board lists Azure Repos pull requests only for an
 // Azure DevOps board, and then only the repositories of its project, on its Azure DevOps.
 func TestABoardNarrowsAzureReposToItsProject(t *testing.T) {
+	t.Parallel()
+
 	d, _, ado, _ := azureDevOpsDaemon(t)
 	scope := azureDevOpsScope{root: azuredevopsmcp.DefaultBase, repos: []string{"Acme/Web/app", "acme/web/site", "acme/Ops/infra"},
 		folderOf: map[string]string{}}

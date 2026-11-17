@@ -17,6 +17,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/redact"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -69,8 +70,10 @@ var appToolMethods = map[string]string{
 	"list_sessions":          "sessions/list",
 	"read_session":           "sessions/read",
 	"message_session":        "sessions/message",
+	"answer_permission":      "permissions/answer",
 	"cancel_message":         "sessions/cancelMessage",
 	"set_session_labels":     "sessions/setLabels",
+	"set_session_priority":   "sessions/setPriority",
 	"move_worktree":          "worktrees/move",
 	"show_file":              "files/show",
 	"ask_question":           "questions/ask",
@@ -100,6 +103,7 @@ var appToolMethods = map[string]string{
 	"docs_search":            "docs/search",
 	"docs_read":              "docs/read",
 	"estimate_issue":         "issues/estimate",
+	"conflict_risk_analysis": "risks/conflictAnalysis",
 	"set_ci_secret":          "secrets/setCI",
 	"set_ci_variable":        "variables/setCI",
 	"set_environment_gate":   "environments/setGate",
@@ -277,8 +281,6 @@ func (d *Daemon) dropOldAssessments() {
 var escalationTools = map[string]string{"claude": "AskUserQuestion", "cursor": "AskQuestion", "codex": "request_user_input",
 	"antigravity": "ask_question"}
 
-var cheapWords = []string{"haiku", "nano", "flash-lite", "lite", "mini", "flash", "small"}
-
 // assessModel is the model asked for, the runtime's own default for "default", or else
 // the cheapest it offers by the first of cheapWords any of its models carries.
 func assessModel(asked *string, options []wire.ConfigOption) *string {
@@ -289,58 +291,7 @@ func assessModel(asked *string, options []wire.ConfigOption) *string {
 		v := strings.TrimSpace(*asked)
 		return &v
 	}
-	var model *wire.ConfigOption
-	for i := range options {
-		if options[i].Type == "select" && options[i].Category != nil && *options[i].Category == "model" {
-			model = &options[i]
-			break
-		}
-	}
-	if model == nil {
-		for i := range options {
-			if options[i].Type == "select" && options[i].ID == "model" {
-				model = &options[i]
-				break
-			}
-		}
-	}
-	if model == nil {
-		return nil
-	}
-	type choice struct{ value, words string }
-	var choices []choice
-	var walk func(raw json.RawMessage)
-	walk = func(raw json.RawMessage) {
-		var list []json.RawMessage
-		if json.Unmarshal(raw, &list) != nil {
-			return
-		}
-		for _, item := range list {
-			var c struct {
-				Value   json.RawMessage `json:"value"`
-				Name    string          `json:"name"`
-				Options json.RawMessage `json:"options"`
-			}
-			json.Unmarshal(item, &c)
-			var v string
-			if json.Unmarshal(c.Value, &v) == nil {
-				choices = append(choices, choice{v, strings.ToLower(v + " " + c.Name)})
-			}
-			if len(c.Options) > 0 {
-				walk(c.Options)
-			}
-		}
-	}
-	walk(json.RawMessage(model.Options))
-	for _, w := range cheapWords {
-		for _, c := range choices {
-			if strings.Contains(c.words, w) {
-				v := c.value
-				return &v
-			}
-		}
-	}
-	return nil
+	return hostsetup.CheapestModel(options)
 }
 
 // freshReportPath is .agents/reviews/runtimes/<runtime>-<date>.md, or the first -2, -3 …

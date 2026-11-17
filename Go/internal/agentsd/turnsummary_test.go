@@ -26,6 +26,8 @@ func entriesOf(t *testing.T, lines ...string) []wire.TranscriptEntry {
 }
 
 func TestATurnSummarised(t *testing.T) {
+	t.Parallel()
+
 	es := entriesOf(t,
 		`{"userMessage":{"_0":"Fix it"}}`,
 		`{"stateChanged":{"_0":"running"}}`,
@@ -67,6 +69,8 @@ func TestATurnSummarised(t *testing.T) {
 
 // A branch's note comes after the reply it keeps and the report, not among the steps (#1749).
 func TestABranchsNoteComesAfterTheReply(t *testing.T) {
+	t.Parallel()
+
 	es := entriesOf(t,
 		`{"userMessage":{"_0":"Remember APPLE"}}`,
 		`{"toolCall":{"_0":{"toolCallID":"c1","title":"ls","kind":"execute","content":[],"locations":[]}}}`,
@@ -84,6 +88,8 @@ func TestABranchsNoteComesAfterTheReply(t *testing.T) {
 }
 
 func TestAPageOfTurns(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -116,6 +122,8 @@ func TestAPageOfTurns(t *testing.T) {
 // turns, the rest are filled in behind it into turns.jsonl, the next look reads them
 // from there, and a kept turn that no longer matches its transcript is made again.
 func TestTurnsAreKept(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

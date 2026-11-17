@@ -55,14 +55,12 @@ test("an export is named by its range and day", () => {
   assert.equal(r.exportName("threeMonths", "jsonl", new Date(2026, 0, 2)), "report-threeMonths-2026-01-02.jsonl");
 });
 
-test("scopes (#1804): a group dimension past Me, none naming a person when hidden, a budget's words", () => {
-  assert.deepEqual(r.scopedDimensions({ scope: { kind: "me" } }), ["person", "project", "folder", "machine", "runtime"]);
-  assert.deepEqual(r.scopedDimensions({ scope: { kind: "org" } }), ["person", "project", "folder", "machine", "runtime", "group"]);
-  assert.deepEqual(r.scopedDimensions({ scope: { kind: "group", group: "g" }, personsHidden: true }), ["project", "folder", "runtime", "group"]);
-  assert.equal(r.scopeKey({ kind: "group", group: "g1" }), "group:g1");
-  const rows = [row({ groups: ["g1", "g2"], cost: { USD: 2 } }), row({ person: "al", personName: "Al", groups: [], cost: { USD: 1 } })];
-  const t = r.reportTotals(rows, "group", (id) => id, { g1: "Platform", g2: "Web" });
-  assert.deepEqual(t.groups.map((g) => [g.name, g.cost.USD]), [["Platform", 2], ["Web", 2], ["No group", 1]]);
+test("scopes (#1804): the ways to add up, a budget's words, a group view (#5278)", () => {
+  assert.equal(r.scopeKey({ kind: "org" }), "org");
+  assert.equal(r.isGroupView({ scope: { kind: "group", group: "g1" } }), true);
+  assert.equal(r.isGroupView({ scope: { kind: "me" } }), false);
+  const rows = [row({ cost: { USD: 2 } }), row({ person: "al", personName: "Al", cost: { USD: 1 } })];
+  const t = r.reportTotals(rows, "person");
   assert.equal(t.total.cost.USD, 3, "the total counts each row once");
   const now = new Date(Date.UTC(2026, 9, 11, 0, 0, 0));
   assert.equal(r.forecastUSD(100, now), 310);
@@ -72,18 +70,16 @@ test("scopes (#1804): a group dimension past Me, none naming a person when hidde
 test("each scope is named on the pane (#2071)", () => {
   assert.equal(r.scopeNote({ kind: "me" }), "Your machines.");
   assert.equal(r.scopeNote({ kind: "org" }), "Everyone’s machines.");
-  assert.equal(r.scopeNote({ kind: "group", group: "g1" }, "Platform"), "The machines of Platform’s people.");
   assert.match(r.meNote(true), /^Your machines\. .*Reports ▸ Spend/);
-  // Only an admin or a group's lead is sent to Reports ▸ Spend (#2200).
-  assert.equal(r.meNote(false), "Your machines. An admin or a group’s lead sees more.");
+  // Only an admin is sent to Reports ▸ Spend (#2200).
+  assert.equal(r.meNote(false), "Your machines. An admin sees more.");
   assert.doesNotMatch(r.meNote(false), /Reports ▸ Spend/);
 });
 
 test("a late answer to another scope is not taken for this one (#2201)", () => {
   assert.equal(r.sameScope(undefined, { kind: "me" }), true);
   assert.equal(r.sameScope({ kind: "me" }, { kind: "org" }), false);
-  assert.equal(r.sameScope({ kind: "group", group: "g1" }, { kind: "group", group: "g2" }), false);
-  assert.equal(r.sameScope({ kind: "group", group: "g1" }, { kind: "group", group: "g1" }), true);
+  assert.equal(r.sameScope({ kind: "org" }, { kind: "org" }), true);
 });
 
 // Outcomes and Time (#2019): the counts each machine adds to its rows.
@@ -179,4 +175,23 @@ test("the address's range opens the page on it, and an unknown one is left out",
   assert.equal(r.rangeAsked("range=year"), undefined);
   assert.equal(r.rangeAsked(""), undefined);
   assert.equal(r.rangeAsked(undefined), undefined);
+});
+
+test("the lens is in the address, and Me leaves it out (#5279)", () => {
+  assert.deepEqual(r.lensAsked(undefined), { kind: "me" });
+  assert.deepEqual(r.lensAsked("range=week"), { kind: "me" });
+  assert.deepEqual(r.lensAsked("lens=org"), { kind: "org" });
+  assert.deepEqual(r.lensAsked("lens=project:p1&range=week"), { kind: "project", project: "p1" });
+  assert.deepEqual(r.lensAsked("lens=project:"), { kind: "me" });
+  assert.equal(r.lensQuery("range=week", { kind: "project", project: "p1" }), "range=week&lens=project:p1");
+  assert.equal(r.lensQuery("lens=org&range=week", { kind: "me" }), "range=week");
+  assert.equal(r.lensQuery(undefined, { kind: "me" }), "");
+});
+
+test("the title names the lens, and By leaves out its dimension (#5279)", () => {
+  assert.equal(r.lensTitle("Spend", { kind: "me" }, undefined), "Spend");
+  assert.equal(r.lensTitle("Spend", { kind: "project", project: "p1" }, "Agents"), "Spend · Project Agents");
+  assert.equal(r.lensTitle("Spend", { kind: "org" }, undefined), "Spend · Organisation");
+  assert.ok(!r.dimensionsFor({ kind: "project", project: "p1" }).includes("project"));
+  assert.ok(r.dimensionsFor({ kind: "me" }).includes("project"));
 });

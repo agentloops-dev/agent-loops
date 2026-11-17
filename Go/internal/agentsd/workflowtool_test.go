@@ -63,6 +63,8 @@ func TestAnAgentWritesAWorkflow(t *testing.T) {
 // An agent runs a workflow as Run now does (#1524), but never one waiting for the person's
 // OK or turned off, never one that runs in its triggering agent, and never past the chain limit.
 func TestAnAgentRunsAWorkflow(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -117,6 +119,8 @@ func TestAnAgentRunsAWorkflow(t *testing.T) {
 // not (#1730). No workflow here answers agent.finished, which would prompt the run's
 // session again and take it out of the archive.
 func TestTheSessionThatRanAWorkflowArchivesIt(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

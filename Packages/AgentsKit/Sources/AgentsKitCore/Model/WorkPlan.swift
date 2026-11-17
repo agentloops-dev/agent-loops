@@ -202,9 +202,18 @@ public enum WorkPlan {
         count > standingShown ? "\(count - standingShown) more" : nil
     }
 
-    /// A child's `priority:` label, for a standing epic's row (epic.md note 18).
-    public static func priority(_ item: DaemonAPI.ForgeItem) -> DaemonAPI.ForgeLabel? {
-        item.labels.first { $0.name.lowercased().hasPrefix("priority:") }
+    /// An item's priority chip in words, from `ForgeItem.priority` (#5690), not a label's name:
+    /// *High*, *Medium* or *Low*; nil for none, which has no chip.
+    public static func priorityWords(_ item: DaemonAPI.ForgeItem) -> String? { priorityWords(item.priority) }
+
+    /// *High*, *Medium* or *Low* for a `ForgeItem.priority`; nil for none.
+    public static func priorityWords(_ priority: String?) -> String? {
+        switch priority?.lowercased() {
+        case "high": "High"
+        case "medium": "Medium"
+        case "low": "Low"
+        default: nil
+        }
     }
 
     /// The most issues `forge/plan` reads for a standing epic's query.
@@ -310,12 +319,12 @@ public enum WorkPlan {
             : DaemonAPI.ForgeBlockedByRequest(node: child.item.node, remove: [blocker])
     }
 
-    /// Start lead's form (the `lead` skill's "Starting a lead"): the issue's own first line, the
-    /// skill and the epic's address, its labels and `lead`, and no worktree.
+    /// Start lead's form (the `lead` skill's "Starting a lead"): the issue's own first line,
+    /// "Lead this epic" and the epic's address, its labels and `lead`, and no worktree.
     public static func leadStart(_ start: DaemonAPI.ForgeStart, url: String?) -> DaemonAPI.ForgeStart {
         let first = start.prompt.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? start.prompt
-        let skill = "Lead this epic with the `lead` skill (`.agents/skills/lead/SKILL.md`)"
-        let prompt = "\(first)\n\n\(skill)" + (url.map { ": \($0)" } ?? ".")
+        let lead = "Lead this epic"
+        let prompt = "\(first)\n\n\(lead)" + (url.map { ": \($0)" } ?? ".")
         return DaemonAPI.ForgeStart(prompt: prompt, labels: start.labels + (start.labels.contains("lead") ? [] : ["lead"]))
     }
 }

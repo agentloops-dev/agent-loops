@@ -51,6 +51,8 @@ func rowsByName(a wire.MCPToolsAnswer) map[string]wire.MCPToolRow {
 }
 
 func TestToolInfosReadTheAnnotationsSafely(t *testing.T) {
+	t.Parallel()
+
 	got := toolInfos([]json.RawMessage{
 		json.RawMessage(`{"name":"r","annotations":{"readOnlyHint":true}}`),
 		json.RawMessage(`{"name":"w"}`),
@@ -65,6 +67,8 @@ func TestToolInfosReadTheAnnotationsSafely(t *testing.T) {
 }
 
 func TestAConnectorsToolsHaveTheirDefaultLevels(t *testing.T) {
+	t.Parallel()
+
 	d := withGitHubConnector(t)
 	a, err := d.mcpTools(personal, "github")
 	if err != nil {
@@ -86,6 +90,8 @@ func TestAConnectorsToolsHaveTheirDefaultLevels(t *testing.T) {
 }
 
 func TestSetToolLevelWritesYourLayer(t *testing.T) {
+	t.Parallel()
+
 	d := withGitHubConnector(t)
 	mac := &Client{Role: RoleControl}
 	tool := "delete_repo"
@@ -120,6 +126,8 @@ func TestSetToolLevelWritesYourLayer(t *testing.T) {
 }
 
 func TestAFoldersLayerOnlyMakesAToolTighter(t *testing.T) {
+	t.Parallel()
+
 	d := withGitHubConnector(t)
 	mac := &Client{Role: RoleControl}
 	folder := repo(t)
@@ -144,6 +152,8 @@ func TestAFoldersLayerOnlyMakesAToolTighter(t *testing.T) {
 }
 
 func TestAToolsLevelAnswersItsPermissionRequest(t *testing.T) {
+	t.Parallel()
+
 	d := withGitHubConnector(t)
 	mac := &Client{Role: RoleControl}
 	tool := "delete_repo"
@@ -179,6 +189,8 @@ func TestAToolsLevelAnswersItsPermissionRequest(t *testing.T) {
 }
 
 func TestOffToolsGoToEachRuntimeInItsOwnForm(t *testing.T) {
+	t.Parallel()
+
 	off := [][2]string{{"github", "delete_repo"}}
 	_, meta := withToolLevels(acp.Launch{}, sessionMeta("claude"), "claude", off)
 	denied := meta["claudeCode"].(map[string]any)["options"].(map[string]any)["disallowedTools"].([]string)

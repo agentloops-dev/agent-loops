@@ -151,6 +151,85 @@
       ],
       "additionalProperties": false
     },
+    "AgentsChange": {
+      "type": "object",
+      "description": "One change in Agents between two versions (#5273): a commit of agentloops-dev/agent-loops, its PR's number when its squash title says one, its title (the first line of its message) and when it was made.",
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        },
+        "date": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        }
+      },
+      "required": [
+        "title",
+        "sha"
+      ],
+      "additionalProperties": false
+    },
+    "AgentsChanges": {
+      "type": "object",
+      "description": "The changes in Agents from version base to version head (#5273), from GitHub's compare of their commits: ahead is how many commits head has that base has not, behind how many base has that head has not (a machine behind another). changes are head's new commits, newest first, at most the request's limit (all, up to 1,000, with none); complete is false when there were more.",
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "head": {
+          "type": "string"
+        },
+        "ahead": {
+          "type": "integer"
+        },
+        "behind": {
+          "type": "integer"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AgentsChange"
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "base",
+        "head",
+        "ahead",
+        "behind",
+        "changes",
+        "complete"
+      ],
+      "additionalProperties": false
+    },
+    "AgentsChangesRequest": {
+      "type": "object",
+      "description": "machines/agentsChanges (#5273): the changes from one Agents version to another, as a machine says them (0.18.0, 0.18.1-dev.544+g8162a5a06). limit bounds the changes; with none, all, up to 1,000.",
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "head": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "base",
+        "head"
+      ],
+      "additionalProperties": false
+    },
     "AnnounceReply": {
       "type": "object",
       "description": "What devices/announce answers: the device's record.",
@@ -199,6 +278,89 @@
       "required": [
         "agentID",
         "reportPath"
+      ],
+      "additionalProperties": false
+    },
+    "AutoMachineNone": {
+      "type": "string",
+      "enum": [
+        "noFolder",
+        "noRuntime",
+        "offline"
+      ],
+      "description": "Why no machine fits: none has the project, none has the runtime installed and signed in, or every machine with the project is offline."
+    },
+    "AutoMachinePick": {
+      "type": "object",
+      "description": "The answer of sessions/previewStart (#5374): the pick, or why none fits. The control plane makes the reason line; a client draws what it is given. The pick at start may differ if the state moved.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef",
+          "description": "The machine chosen; absent when none fits."
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "tier": {
+          "$ref": "#/definitions/CapacityLevel",
+          "description": "The tier the pick came from."
+        },
+        "reason": {
+          "$ref": "#/definitions/AutoMachineReason"
+        },
+        "loadPerCore": {
+          "type": "number",
+          "description": "Its 5-minute load per core, when known."
+        },
+        "commit": {
+          "type": "string",
+          "description": "The commit the session's fresh worktree starts from. Set by the host at start; absent in a preview."
+        },
+        "text": {
+          "type": "string",
+          "description": "The one-line reason, \"Auto chose Mac mini: you last started here.\", or the none-fits sentence."
+        },
+        "none": {
+          "$ref": "#/definitions/AutoMachineNone",
+          "description": "Set when no machine fits."
+        },
+        "offline": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "With none offline: the names of the offline machines that have the project."
+        },
+        "single": {
+          "type": "boolean",
+          "description": "True when the project has one machine only: no Auto row and no line, the machine is just shown."
+        }
+      },
+      "additionalProperties": false
+    },
+    "AutoMachineReason": {
+      "type": "string",
+      "enum": [
+        "lastUsed",
+        "leastLoaded"
+      ],
+      "description": "Why Auto chose: the person last started this project there, or it was the least loaded by 5-minute load per core."
+    },
+    "AutoMachineRequest": {
+      "type": "object",
+      "description": "sessions/previewStart and a start with machine auto (#5374, specs/5373-auto-machine): which machine Auto would pick for a project and a runtime.",
+      "properties": {
+        "project": {
+          "type": "string",
+          "description": "The project id."
+        },
+        "runtimeID": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "runtimeID"
       ],
       "additionalProperties": false
     },
@@ -645,6 +807,22 @@
         "full"
       ]
     },
+    "CapacityReport": {
+      "type": "object",
+      "description": "machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per core, on connect and when either moves enough to matter.",
+      "properties": {
+        "level": {
+          "$ref": "#/definitions/CapacityLevel"
+        },
+        "loadPerCore5": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "additionalProperties": false
+    },
     "CapacityState": {
       "type": "object",
       "description": "capacity/state and capacity/changed (#4748): the machine's level, pushed when it moves, so a machine's row says it with no page open.",
@@ -952,6 +1130,33 @@
       ],
       "additionalProperties": false
     },
+    "ConnectionsListAll": {
+      "type": "object",
+      "description": "connections/listAll (#5592): each machine's connections/list. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.",
+      "properties": {
+        "lists": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineConnections"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "lists",
+        "unreached",
+        "notAsked"
+      ],
+      "additionalProperties": false
+    },
     "DaemonStatus": {
       "type": "object",
       "properties": {
@@ -1085,6 +1290,61 @@
       },
       "additionalProperties": false
     },
+    "DocsListAll": {
+      "type": "object",
+      "description": "docs/listAll (#5571): a page of docs from the caller's machines, the last updated first, each with its machine. unreached is the machines that have docs but did not answer (offline or too slow); their docs are not in docs. sources are those of the machines that answered this page: the first page has every machine's. notAsked counts the machines past the most one call asks (50). cursor is the next page, absent at the end.",
+      "properties": {
+        "docs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineDoc"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineDocsSource"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "docs",
+        "sources",
+        "unreached",
+        "notAsked"
+      ],
+      "additionalProperties": false
+    },
+    "DocsListAllRequest": {
+      "type": "object",
+      "description": "docs/listAll (#5571): the docs of the caller's machines in one call. limit is 1 to 500, 200 when not said; it bounds the page, not each machine, and a cursor goes with the same limit. source narrows to one DocsSource id.",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Opaque: the last page's cursor, as the answer gave it. Absent for the first page."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
     "DropboxPutRequest": {
       "type": "object",
       "properties": {
@@ -1117,6 +1377,71 @@
       },
       "required": [
         "path"
+      ],
+      "additionalProperties": false
+    },
+    "EventsListAll": {
+      "type": "object",
+      "description": "events/listAll (#5592): each machine's newest EventsPage. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.",
+      "properties": {
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineEventsPage"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pages",
+        "unreached",
+        "notAsked"
+      ],
+      "additionalProperties": false
+    },
+    "EventsListAllRequest": {
+      "type": "object",
+      "description": "events/listAll (#5592): the newest page of each of the caller's machines' events/list in one call. limit is each machine's, as in EventsListRequest, 50 when not said, at most 100. An older page is one machine's, by events/list.",
+      "properties": {
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "FeatureUsageAll": {
+      "type": "object",
+      "description": "reports/featuresAll (#5592): each machine's reports/features. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.",
+      "properties": {
+        "usage": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineFeatureUsage"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "usage",
+        "unreached",
+        "notAsked"
       ],
       "additionalProperties": false
     },
@@ -1202,6 +1527,92 @@
       ],
       "additionalProperties": false
     },
+    "ForgeBoardsAll": {
+      "type": "object",
+      "description": "forge/boardsAll (#5592): each machine's forge/boards. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.",
+      "properties": {
+        "boards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineForgeBoards"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "boards",
+        "unreached",
+        "notAsked"
+      ],
+      "additionalProperties": false
+    },
+    "ForgeListAll": {
+      "type": "object",
+      "description": "forge/listAll (#5592): each machine's ForgeList, as it answered, in the order of the caller's machines. The machines list the same repos, so a client merges the items by ref. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.",
+      "properties": {
+        "lists": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineForgeList"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "lists",
+        "unreached",
+        "notAsked"
+      ],
+      "additionalProperties": false
+    },
+    "ForgeListAllRequest": {
+      "type": "object",
+      "description": "forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board and limit are as in ForgeListRequest, for each machine. pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "issues",
+            "pulls"
+          ]
+        },
+        "state": {
+          "type": "string"
+        },
+        "board": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineCursor"
+          }
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
     "FoundFolder": {
       "type": "object",
       "properties": {
@@ -1229,6 +1640,33 @@
       ],
       "additionalProperties": false
     },
+    "LineageForecastAll": {
+      "type": "object",
+      "description": "lineage/forecastAll (#5592): each machine's lineage/forecast for the same request. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.",
+      "properties": {
+        "forecasts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineLineageForecast"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "forecasts",
+        "unreached",
+        "notAsked"
+      ],
+      "additionalProperties": false
+    },
     "MacPathRequest": {
       "type": "object",
       "description": "mac/reveal, mac/open: a path on the host; app names the app to open it with.",
@@ -1253,6 +1691,95 @@
           "type": "string"
         }
       },
+      "additionalProperties": false
+    },
+    "MachineAgents": {
+      "type": "object",
+      "description": "machines/agents (#5273, spec 5239 board 6): a machine page's Agents section. version is what the machine runs, since the first machine/hello at it; previous is the version before. changes are the changes since previous, the newest few (machines/agentsChanges gives all); absent when there is no previous or GitHub could not say, and changesError says why in the second case. history is the versions it ran, newest first, at most 20. others are the person's other machines, each with its version.",
+      "properties": {
+        "host": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "version": {
+          "type": "string"
+        },
+        "since": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "previous": {
+          "type": "string"
+        },
+        "changes": {
+          "$ref": "#/definitions/AgentsChanges"
+        },
+        "changesError": {
+          "type": "string"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineAgentsVersion"
+          }
+        },
+        "others": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineAgentsOther"
+          }
+        }
+      },
+      "required": [
+        "host",
+        "version",
+        "history",
+        "others"
+      ],
+      "additionalProperties": false
+    },
+    "MachineAgentsOther": {
+      "type": "object",
+      "description": "Another of the person's machines on a machine's page (#5273): its version, since when, and how many changes it is ahead of and behind the page's machine. ahead and behind are absent when GitHub could not say (a version with no commit, GitHub not answering).",
+      "properties": {
+        "host": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "since": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "ahead": {
+          "type": "integer"
+        },
+        "behind": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "MachineAgentsVersion": {
+      "type": "object",
+      "description": "One version a machine ran (#5273) and when it came: the first machine/hello at it.",
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "since": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        }
+      },
+      "required": [
+        "version"
+      ],
       "additionalProperties": false
     },
     "MachineAnnounce": {
@@ -1332,6 +1859,107 @@
       ],
       "additionalProperties": false
     },
+    "MachineConnections": {
+      "type": "object",
+      "description": "A machine's ConnectionsList in connections/listAll (#5592).",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "connections": {
+          "$ref": "connections.schema.json#/definitions/ConnectionsList"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "connections"
+      ],
+      "additionalProperties": false
+    },
+    "MachineConversation": {
+      "type": "object",
+      "description": "A conversation of messages/conversationsAll (#5571) with the machine whose connector has it.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "conversation": {
+          "$ref": "connections.schema.json#/definitions/MessagesConversation"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "conversation"
+      ],
+      "additionalProperties": false
+    },
+    "MachineCursor": {
+      "type": "object",
+      "description": "A machine and the cursor of its next page (#5592).",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "cursor"
+      ],
+      "additionalProperties": false
+    },
+    "MachineDoc": {
+      "type": "object",
+      "description": "A doc of docs/listAll (#5571) with the machine that has it.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "doc": {
+          "$ref": "files.schema.json#/definitions/Doc"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "doc"
+      ],
+      "additionalProperties": false
+    },
+    "MachineDocsSource": {
+      "type": "object",
+      "description": "A source of docs/listAll (#5571) with the machine whose folders or connectors it is.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "mcp.schema.json#/definitions/DocsSource"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "source"
+      ],
+      "additionalProperties": false
+    },
     "MachineEnroll": {
       "type": "object",
       "description": "machines/startEnroll (#1761): with as, a bot's machine code, an admin's only. Without, the caller's own, as before.",
@@ -1341,6 +1969,48 @@
         }
       },
       "required": [],
+      "additionalProperties": false
+    },
+    "MachineEventsPage": {
+      "type": "object",
+      "description": "A machine's EventsPage in events/listAll (#5592).",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "page": {
+          "$ref": "workflows.schema.json#/definitions/EventsPage"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "page"
+      ],
+      "additionalProperties": false
+    },
+    "MachineFeatureUsage": {
+      "type": "object",
+      "description": "A machine's FeatureUsage in reports/featuresAll (#5592).",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "reports.schema.json#/definitions/FeatureUsage"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "usage"
+      ],
       "additionalProperties": false
     },
     "MachineFolderSend": {
@@ -1397,6 +2067,48 @@
           "$ref": "#/definitions/SendRead"
         }
       },
+      "additionalProperties": false
+    },
+    "MachineForgeBoards": {
+      "type": "object",
+      "description": "A machine's ForgeBoards in forge/boardsAll (#5592).",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "boards": {
+          "$ref": "forge.schema.json#/definitions/ForgeBoards"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "boards"
+      ],
+      "additionalProperties": false
+    },
+    "MachineForgeList": {
+      "type": "object",
+      "description": "A machine's ForgeList in forge/listAll (#5592).",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "list": {
+          "$ref": "forge.schema.json#/definitions/ForgeList"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "list"
+      ],
       "additionalProperties": false
     },
     "MachineHello": {
@@ -1561,6 +2273,27 @@
       ],
       "additionalProperties": false
     },
+    "MachineLineageForecast": {
+      "type": "object",
+      "description": "A machine's LineageForecast in lineage/forecastAll (#5592).",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "forecast": {
+          "$ref": "lineage.schema.json#/definitions/LineageForecast"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "forecast"
+      ],
+      "additionalProperties": false
+    },
     "MachineLink": {
       "type": "object",
       "description": "machines/link. A machine whose ssh host key the control plane has not trusted yet (one that joined with the command, #3379) is refused -32069 hostKeyToTrust, data {fingerprint}, until trust is that fingerprint: the key is then kept for the machine's ssh start.",
@@ -1588,6 +2321,27 @@
         "host",
         "provider",
         "workspace"
+      ],
+      "additionalProperties": false
+    },
+    "MachineMessagesError": {
+      "type": "object",
+      "description": "A connector of messages/conversationsAll (#5571) that failed or did not answer in time, with its machine.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "error": {
+          "$ref": "connections.schema.json#/definitions/MessagesError"
+        }
+      },
+      "required": [
+        "machine",
+        "machineName",
+        "error"
       ],
       "additionalProperties": false
     },
@@ -1732,6 +2486,118 @@
       ],
       "additionalProperties": false
     },
+    "MachineSetup": {
+      "type": "object",
+      "description": "How a machine's set-up stands (#5355, epic #5353): the eight steps in order, and when it began and was ready. Steps 5 and 6 may run together.",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineSetupStep"
+          }
+        },
+        "startedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "readyAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        }
+      },
+      "required": [
+        "steps",
+        "startedAt"
+      ],
+      "additionalProperties": false
+    },
+    "MachineSetupReport": {
+      "type": "object",
+      "description": "machine/setupStep: a step of the installer on the machine (agents-host install --join), as it starts, goes on and ends (#5355).",
+      "properties": {
+        "step": {
+          "$ref": "#/definitions/MachineSetupStepID"
+        },
+        "state": {
+          "$ref": "#/definitions/MachineSetupState"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "fromPool": {
+          "type": "boolean"
+        },
+        "code": {
+          "type": "string",
+          "description": "The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359)."
+        }
+      },
+      "required": [
+        "step",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "MachineSetupState": {
+      "type": "string",
+      "enum": [
+        "waiting",
+        "running",
+        "needs-you",
+        "done",
+        "failed"
+      ]
+    },
+    "MachineSetupStep": {
+      "type": "object",
+      "description": "One step: detail is one line of what it is doing now or did; error is why it failed, in the words of the provider or the machine; fromPool says a warm pool did it before the machine was asked for; slower is true for a running step over 3 times its median (at least 2 minutes).",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/MachineSetupStepID"
+        },
+        "state": {
+          "$ref": "#/definitions/MachineSetupState"
+        },
+        "startedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "endedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "fromPool": {
+          "type": "boolean"
+        },
+        "slower": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "MachineSetupStepID": {
+      "type": "string",
+      "description": "The eight steps, in order: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session.",
+      "enum": [
+        "create",
+        "join",
+        "install",
+        "compare",
+        "runtimes",
+        "projects",
+        "signIn",
+        "smoke"
+      ]
+    },
     "MachineStatus": {
       "type": "object",
       "description": "machine/status on channel 0 (#691 US4): each agent working or waiting on a person, and the next scheduled workflow.",
@@ -1850,6 +2716,39 @@
       ],
       "additionalProperties": false
     },
+    "MachineVersions": {
+      "type": "object",
+      "description": "machines/versions (#5272, spec 5239, \"Alex's question\"): the Agents versions a machine ran, from its machine/hello. version is the one it said last; firstSeen is the first time the control plane heard it at that version, and seen the last. deploys are the changes of version the control plane saw, newest first, at most 20: each an observed deploy (observed: true, state succeeded) of the component agents to the environment machines, its target labelled machine=<host>, from the last time the old version was seen (started) to the first machine/hello at the new one (finished). Each version's artifact is its commit: the tag vX.Y.Z for X.Y.Z, the sha after +g for X.Y.Z-dev.N+g<sha>. previous is the version it ran before version, when the control plane saw the change.",
+      "properties": {
+        "host": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "version": {
+          "type": "string"
+        },
+        "firstSeen": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "seen": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "previous": {
+          "type": "string"
+        },
+        "deploys": {
+          "type": "array",
+          "items": {
+            "$ref": "core.schema.json#/definitions/Deploy"
+          }
+        }
+      },
+      "required": [
+        "host",
+        "version",
+        "deploys"
+      ],
+      "additionalProperties": false
+    },
     "MachinesSummaryFacts": {
       "type": "object",
       "description": "machines/summaryFacts (#3354): the daily summary's facts from each of the person's other machines, by name.",
@@ -1886,6 +2785,61 @@
         "warn",
         "critical"
       ]
+    },
+    "MessagesConversationsAll": {
+      "type": "object",
+      "description": "messages/conversationsAll (#5571): a page of conversations from the caller's machines, the newest first, each with its machine. errors says a connector that failed. unreached and notAsked are as in DocsListAll. cursor is the next page, absent at the end.",
+      "properties": {
+        "conversations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineConversation"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineMessagesError"
+          }
+        },
+        "unreached": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectMachine"
+          }
+        },
+        "notAsked": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversations",
+        "errors",
+        "unreached",
+        "notAsked"
+      ],
+      "additionalProperties": false
+    },
+    "MessagesConversationsAllRequest": {
+      "type": "object",
+      "description": "messages/conversationsAll (#5571): the conversations of the caller's machines in one call. limit is 1 to 100, 20 when not said; it bounds the page, not each machine, and a cursor goes with the same limit. unread: only the conversations with unread messages.",
+      "properties": {
+        "unread": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Opaque: the last page's cursor, as the answer gave it. Absent for the first page."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
     },
     "MissingFolder": {
       "type": "object",
@@ -4445,6 +5399,336 @@
         "agentsInFlight",
         "heldBackByBattery",
         "onPower"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPool": {
+      "type": "object",
+      "description": "A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only. machines and claims are read-only too (#5366).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/definitions/WarmPoolScope"
+        },
+        "provider": {
+          "type": "string",
+          "description": "The machine provider's id: only a provider can make machines."
+        },
+        "size": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The runtimes to install; none means those of the pool's projects."
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The project folders to send, at their last commit."
+        },
+        "minReady": {
+          "type": "integer",
+          "description": "Machines kept ready (set up, unclaimed). 0 makes nothing. At most maxSize."
+        },
+        "maxSize": {
+          "type": "integer",
+          "description": "The most machines held at once, ready or being set up. At least 1."
+        },
+        "target": {
+          "type": "integer",
+          "description": "What the pool aims at: minReady, until auto-scale writes it."
+        },
+        "replaceAfter": {
+          "type": "number",
+          "description": "Seconds after which a ready machine is replaced. Default 86400 (24 hours)."
+        },
+        "hours": {
+          "$ref": "#/definitions/WarmPoolHours"
+        },
+        "state": {
+          "$ref": "#/definitions/WarmPoolState"
+        },
+        "ready": {
+          "type": "integer"
+        },
+        "settingUp": {
+          "type": "integer"
+        },
+        "failedMakes": {
+          "type": "integer",
+          "description": "Makes that failed in a row. Three stop the pool."
+        },
+        "stoppedBecause": {
+          "type": "string",
+          "description": "Why the pool stopped making, in the provider's words."
+        },
+        "machines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WarmPoolMachine"
+          },
+          "description": "The machines the pool holds now, ready, setting up or failed (#5366): a line each on the pool's card."
+        },
+        "claims": {
+          "$ref": "#/definitions/WarmPoolClaims"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "scope",
+        "provider",
+        "minReady",
+        "maxSize",
+        "target",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolClaim": {
+      "type": "object",
+      "description": "pool/claim (#5365, #5366): New Machine's Start from a warm pool. The oldest ready machine of a pool of this provider and size, bound to the person with their Stop when idle; with none ready, a new machine.",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "stopWhenIdle": {
+          "type": "integer",
+          "description": "Minutes; 0 is never. Absent keeps the machine's."
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolClaimed": {
+      "type": "object",
+      "description": "What pool/claim gave: a pool's machine (fromPool, with its host) or a new machine being made, with note saying so.",
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "The machine's host id; absent for a new machine, which joins on its own."
+        },
+        "workspace": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "pool": {
+          "type": "string",
+          "description": "The pool's name, when it came from one."
+        },
+        "fromPool": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspace",
+        "name",
+        "fromPool"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolClaims": {
+      "type": "object",
+      "description": "A pool's claims in the last seven days (#5366): how many, how many found it empty and fell back to a new machine, and the median time from a claim to the machine being ready, when any is.",
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "empty": {
+          "type": "integer"
+        },
+        "medianSeconds": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "count",
+        "empty"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolHours": {
+      "type": "object",
+      "description": "When a pool runs: on these weekdays (0 Sunday to 6 Saturday) from `from` to `to`, as HH:MM in `timezone` (an IANA name; UTC when absent). Outside them the ready machines are deleted and none are made. A pool with no hours runs every day.",
+      "properties": {
+        "days": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "days",
+        "from",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolMachine": {
+      "type": "object",
+      "description": "One machine a warm pool holds (#5366).",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "setting-up",
+            "failed"
+          ]
+        },
+        "madeAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "detail": {
+          "type": "string",
+          "description": "What its set-up is doing now, as the running step's line says: installing Claude."
+        }
+      },
+      "required": [
+        "name",
+        "state",
+        "madeAt"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolScope": {
+      "type": "string",
+      "description": "Whose pool it is. Only user is built (#5353).",
+      "enum": [
+        "user",
+        "project",
+        "org"
+      ]
+    },
+    "WarmPoolSet": {
+      "type": "object",
+      "description": "pool/set: makes a pool, or changes the one with this id. The control plane writes target, state and the counts. Min must not be above max, and max is at least 1.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Absent makes a new pool."
+        },
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/definitions/WarmPoolScope"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minReady": {
+          "type": "integer"
+        },
+        "maxSize": {
+          "type": "integer"
+        },
+        "replaceAfter": {
+          "type": "number"
+        },
+        "hours": {
+          "$ref": "#/definitions/WarmPoolHours"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "minReady",
+        "maxSize"
+      ],
+      "additionalProperties": false
+    },
+    "WarmPoolState": {
+      "type": "string",
+      "description": "keeping: the pool makes and replaces. off-hours: outside its hours. stopped: three makes failed in a row, see stoppedBecause. empty: minReady is 0.",
+      "enum": [
+        "keeping",
+        "off-hours",
+        "stopped",
+        "empty"
+      ]
+    },
+    "WarmPools": {
+      "type": "object",
+      "properties": {
+        "pools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WarmPool"
+          }
+        }
+      },
+      "required": [
+        "pools"
       ],
       "additionalProperties": false
     },

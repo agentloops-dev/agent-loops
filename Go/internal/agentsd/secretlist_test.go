@@ -12,8 +12,10 @@ import (
 // kept, and list_secrets gives every secret's name and description, the session's own and the
 // person's that are not here yet too, never a value.
 func TestListSecretsGivesNamesAndDescriptionsNeverAValue(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })

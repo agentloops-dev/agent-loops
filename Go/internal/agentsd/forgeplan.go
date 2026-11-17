@@ -36,6 +36,7 @@ func (d *Daemon) registerForgePlans() {
 		return d.forgeFeatures(ctx, r)
 	})
 	d.registerForgePlanWrites()
+	d.registerForgeNext()
 }
 
 // withHierarchy sets an issue's level and feature from its labels, and its parent and progress.
@@ -56,6 +57,32 @@ func withHierarchy(i *wire.ForgeItem, parent *wire.LineageNode, total, done int)
 	if total > 0 {
 		i.Progress = &wire.ForgeProgress{Done: int64(done), Total: int64(total)}
 	}
+}
+
+// forgeOwn says which of priority and on hold an item's forge has a field of its own for
+// (#5747): the labels are not read for those, so the two cannot disagree.
+type forgeOwn struct{ priority, hold bool }
+
+// withPlanLabels sets what the forge has no field of its own for, by own, from the item's
+// labels (#5688, #5747): its priority from priority:high, priority:medium and priority:low (any
+// case; the higher of two), and on hold from the label on hold (any case; on-hold too).
+func withPlanLabels(i *wire.ForgeItem, own forgeOwn) {
+	if !own.priority && i.Priority == nil {
+		for _, p := range []string{"high", "medium", "low"} {
+			if hasLabel(*i, "priority:"+p) {
+				i.Priority = &p
+				break
+			}
+		}
+	}
+	if !own.hold && slices.ContainsFunc(i.Labels, func(l wire.ForgeLabel) bool { return isHoldName(l.Name) }) {
+		i.OnHold = new(true)
+	}
+}
+
+// isHoldName says a label or a status names on hold: in any case, with a space, - or _.
+func isHoldName(name string) bool {
+	return strings.NewReplacer("-", " ", "_", " ").Replace(strings.ToLower(strings.TrimSpace(name))) == "on hold"
 }
 
 // featureName is the feature a label names: feature:work is work.
@@ -80,49 +107,53 @@ type planRef struct {
 
 // forgePlan is an epic's plan: its children in steps, and its lead.
 func (d *Daemon) forgePlan(ctx context.Context, r wire.ForgePlanRequest) (wire.ForgePlan, error) {
-	const method = "forge/plan"
-	if r.Node.Kind != lineage.KindIssue {
-		return wire.ForgePlan{}, Invalid("%s: the node's kind is %s, not issue", method, r.Node.Kind)
-	}
-	key, _ := json.Marshal([]any{method, r.Node.Ref})
-	var epic wire.ForgeItem
-	var children []planChild
-	var standing *wire.ForgeStanding
-	if a, ok := d.forgeCached(string(key)); ok && a.plan != nil {
-		epic, children, standing = a.plan.epic, a.plan.children, a.plan.standing
-	} else {
-		var err error
-		if f, ref, ok := d.forgeOwning(r.Node); ok {
-			var a forgePlanAnswer
-			a, err = f.Plan(ctx, ref)
-			epic, children, err = a.epic, a.children, forgeCannotErr(method, f, err)
-		} else {
-			return wire.ForgePlan{}, Invalid("%s: %s is not an issue on GitHub, GitLab, Forgejo, Linear, Jira or Azure Boards", method, r.Node.Ref)
-		}
-		if err != nil {
-			return wire.ForgePlan{}, err
-		}
-		// A standing epic's plan is its query's issues, not its sub-issues (#3661), and it has
-		// no "done of total".
-		if epic.Standing != nil && *epic.Standing {
-			var q wire.ForgeStanding
-			if q, children, err = d.standingPlan(ctx, method, epic); err != nil {
-				return wire.ForgePlan{}, err
-			}
-			standing, epic.Progress = &q, nil
-		}
-		d.forgeRemember(string(key), forgeAnswer{plan: &forgePlanAnswer{epic: epic, children: children, standing: standing}})
-		items := []wire.ForgeItem{epic}
-		for _, c := range children {
-			items = append(items, c.item)
-		}
-		d.resolvedFromForge(items)
+	epic, children, standing, err := d.forgePlanRead(ctx, "forge/plan", r.Node)
+	if err != nil {
+		return wire.ForgePlan{}, err
 	}
 	out := planOf(epic, children, standing != nil)
 	out.Standing = standing
 	// The lead is this machine's, read each time: it starts and ends more often than a plan changes.
 	out.Lead = d.leadOf(r.Node)
 	return out, nil
+}
+
+// forgePlanRead is an epic and its children with their blockers, as forge/plan reads them (from
+// the forge cache within its minute), and a standing epic's query (nil for any other epic).
+func (d *Daemon) forgePlanRead(ctx context.Context, method string, node wire.LineageNode) (wire.ForgeItem, []planChild, *wire.ForgeStanding, error) {
+	if node.Kind != lineage.KindIssue {
+		return wire.ForgeItem{}, nil, nil, Invalid("%s: the node's kind is %s, not issue", method, node.Kind)
+	}
+	key, _ := json.Marshal([]any{"forge/plan", node.Ref})
+	if a, ok := d.forgeCached(string(key)); ok && a.plan != nil {
+		return a.plan.epic, a.plan.children, a.plan.standing, nil
+	}
+	f, ref, ok := d.forgeOwning(node)
+	if !ok {
+		return wire.ForgeItem{}, nil, nil, Invalid("%s: %s is not an issue on GitHub, GitLab, Forgejo, Linear, Jira or Azure Boards", method, node.Ref)
+	}
+	a, err := f.Plan(ctx, ref)
+	if err != nil {
+		return wire.ForgeItem{}, nil, nil, forgeCannotErr(method, f, err)
+	}
+	epic, children := a.epic, a.children
+	var standing *wire.ForgeStanding
+	// A standing epic's plan is its query's issues, not its sub-issues (#3661), and it has
+	// no "done of total".
+	if epic.Standing != nil && *epic.Standing {
+		var q wire.ForgeStanding
+		if q, children, err = d.standingPlan(ctx, method, epic); err != nil {
+			return wire.ForgeItem{}, nil, nil, err
+		}
+		standing, epic.Progress = &q, nil
+	}
+	d.forgeRemember(string(key), forgeAnswer{plan: &forgePlanAnswer{epic: epic, children: children, standing: standing}})
+	items := []wire.ForgeItem{epic}
+	for _, c := range children {
+		items = append(items, c.item)
+	}
+	d.resolvedFromForge(items)
+	return epic, children, standing, nil
 }
 
 // planOf puts children in steps: a child's step is one more than the last step of the children
@@ -263,7 +294,35 @@ type featureItems struct {
 	epics, loose map[string][]wire.ForgeItem
 }
 
+// featuresRead is what forgeFeaturesRead gives, as the calls that share it get it.
+type featuresRead struct {
+	out   wire.ForgeFeatures
+	items featureItems
+}
+
+// forgeFeaturesRead is forge/features with the items it read. Calls for the same folder and board
+// at once share one read (#5450), so a client that asks forge/features to draw its rows and
+// work/features to fill them reads the forge once; what it gives is shared, so a caller copies a
+// slice before it adds to it. A caller whose ctx ends stops waiting; the read goes on for the others.
 func (d *Daemon) forgeFeaturesRead(ctx context.Context, r wire.ForgeFeaturesRequest) (wire.ForgeFeatures, featureItems, error) {
+	key := deref(r.Folder) + "\x00" + deref(r.Board)
+	got := d.featureReads.DoChan(key, func() (any, error) {
+		out, items, err := d.forgeFeaturesReadOnce(context.WithoutCancel(ctx), r)
+		return featuresRead{out, items}, err
+	})
+	select {
+	case <-ctx.Done():
+		return wire.ForgeFeatures{}, featureItems{}, ctx.Err()
+	case res := <-got:
+		if res.Err != nil {
+			return wire.ForgeFeatures{}, featureItems{}, res.Err
+		}
+		read := res.Val.(featuresRead)
+		return read.out, read.items, nil
+	}
+}
+
+func (d *Daemon) forgeFeaturesReadOnce(ctx context.Context, r wire.ForgeFeaturesRequest) (wire.ForgeFeatures, featureItems, error) {
 	out := wire.ForgeFeatures{Features: []wire.ForgeFeature{}}
 	items := featureItems{epics: map[string][]wire.ForgeItem{}, loose: map[string][]wire.ForgeItem{}}
 	by := map[string]*wire.ForgeFeature{}
@@ -331,12 +390,16 @@ func (d *Daemon) forgeFeaturesRead(ctx context.Context, r wire.ForgeFeaturesRequ
 	slices.SortFunc(out.Features, func(a, b wire.ForgeFeature) int {
 		return cmp.Or(cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.Name, b.Name))
 	})
-	// The pull requests that wait for Alex's approval (#3474). A forge with no pull requests, or
-	// none labelled so, has none: this read adds no error of its own to the features.
-	if prs, err := d.forgeList(ctx, true, wire.ForgeListRequest{Folder: r.Folder, State: new("open"), Label: new("needs-approval"),
-		Limit: new(int64(forgeListMost))}); err == nil {
-		for _, p := range prs.Items {
-			out.Approvals = append(out.Approvals, p.Node.Ref)
+	// The pull requests that wait for the person's approval (#3474): a review requested from them
+	// (#5803). A forge with no pull requests, or none asked so, has none: this read adds no error
+	// of its own to the features.
+	if login := d.reviewer(); login != "" {
+		prs, err := d.forgeListAsked(ctx, true, wire.ForgeListRequest{Folder: r.Folder, State: new("open"),
+			Limit: new(int64(forgeListMost))}, login)
+		if err == nil {
+			for _, p := range prs.Items {
+				out.Approvals = append(out.Approvals, p.Node.Ref)
+			}
 		}
 	}
 	return out, items, nil

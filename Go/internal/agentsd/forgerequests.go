@@ -16,27 +16,39 @@ import (
 )
 
 // Forge requests (#3865, spec 3862 §4): a GitHub issue labelled alex-todo or needs-account,
-// with its "## What Alex does" checklist, or a pull request labelled needs-approval, with its
-// screenshots, is a request like an agent's question. A sweep every forgeRequestEvery lists
-// the open items with each label (forge/issues and forge/pulls, so one search for every folder)
-// and opens, updates or ends their records. Answered in the app, the answer goes back to
-// GitHub as the person: a ticked line ticks the issue's line, the last one takes the label and
-// the person off and says so in a comment; an approval comments (a review on the agents'
-// bot's PR, #3860) and sets approved or changes-wanted. The labels then only mirror the request, and a label set by hand still
-// opens or ends it at the next sweep.
+// with its "## What Alex does" checklist, or an open, non-draft pull request with a review
+// requested from the person (#5803), with its screenshots, is a request like an agent's
+// question. A sweep every forgeRequestEvery lists the open items of each source (forge/issues
+// and forge/pulls, so one search for every folder) and opens, updates or ends their records.
+// Answered in the app, the answer goes back to GitHub as the person: a ticked line ticks the
+// issue's line, the last one takes the label and the person off and says so in a comment; an
+// approval is only the person's review of the head (Approve, or Request changes with the note),
+// the one way a pull request is approved (epic #5802). A pull request's request ends when
+// GitHub says the person reviewed it, or the request was taken off, at the next sweep.
 
-// forgeRequestLabel is a label that makes a request, on an issue or a pull request.
+// forgeRequestLabel is what makes a request: a label on an issue, or a review requested from
+// the person on a pull request (label is then reviewRequested, which is no forge label).
 type forgeRequestLabel struct {
 	label string
 	pr    bool
 	kind  wire.RequestKind
 }
 
-// forgeRequestLabels are the three labels (spec 3862 §4: a fixed set, not a setting).
+// reviewRequested is a pull request request's source (#5803): a review requested from the person.
+const reviewRequested = "review-requested"
+
+// forgeRequestLabels are the two labels and the requested review (spec 3862 §4: a fixed set,
+// not a setting).
 var forgeRequestLabels = []forgeRequestLabel{
 	{"alex-todo", false, wire.RequestKindStep},
 	{"needs-account", false, wire.RequestKindAccount},
-	{reviewLabel, true, wire.RequestKindApprove},
+	{reviewRequested, true, wire.RequestKindApprove},
+}
+
+// of says a request is of this source. Every pull request's request is of the requested review,
+// also one opened before #5803 by the needs-approval label, so it ends by the review too.
+func (l forgeRequestLabel) of(f *wire.RequestForge) bool {
+	return f != nil && (f.Label == l.label || l.pr && f.Item == lineage.KindPR)
 }
 
 var (
@@ -128,41 +140,48 @@ func allDone(lines []wire.RequestChecklistLine) bool {
 // sweepForgeRequests lists each label's open items once and brings the records in step.
 func (d *Daemon) sweepForgeRequests(ctx context.Context) {
 	for _, l := range forgeRequestLabels {
-		list, err := d.forgeList(ctx, l.pr, wire.ForgeListRequest{State: new("open"), Label: new(l.label), Limit: new(int64(forgeListMost))})
+		var list wire.ForgeList
+		var err error
+		if l.pr {
+			login := d.reviewer()
+			if login == "" {
+				continue
+			}
+			list, err = d.forgeListAsked(ctx, true, wire.ForgeListRequest{State: new("open"), Limit: new(int64(forgeListMost))}, login)
+		} else {
+			list, err = d.forgeList(ctx, false, wire.ForgeListRequest{State: new("open"), Label: new(l.label), Limit: new(int64(forgeListMost))})
+		}
 		if err != nil {
 			continue
 		}
 		seen := map[string]bool{}
 		for _, i := range list.Items {
 			repo, number, ok := nodeOfRepo(i.Node)
-			if !ok || repo.forge != "github" || i.URL == nil || i.Folder == nil || i.State != "open" {
-				continue
-			}
-			if l.pr && slices.ContainsFunc(i.Labels, func(x wire.ForgeLabel) bool { return slices.Contains(reviewAnswered, x.Name) }) {
+			if !ok || repo.forge != "github" || i.URL == nil || i.Folder == nil || i.State != "open" || i.Draft != nil && *i.Draft {
 				continue
 			}
 			seen[*i.URL] = true
 			d.forgeRequestSeen(ctx, l, i, repo, number)
 		}
-		// Only a whole list says an item lost its label: a forge that could not be read, or a
-		// list cut at its page, ends nothing.
+		// Only a whole list says an item lost its label or its requested review: a forge that
+		// could not be read, or a list cut at its page, ends nothing.
 		if len(list.Errors) > 0 || list.Cursor != nil {
 			continue
 		}
 		for _, r := range d.listRequests(wire.RequestsListStateOpen, "") {
-			if r.Forge != nil && r.Forge.Label == l.label && !seen[r.Forge.URL] {
+			if l.of(r.Forge) && !seen[r.Forge.URL] {
 				d.forgeRequestGone(ctx, r)
 			}
 		}
 	}
 }
 
-// openForgeRequest is the open request for an item and label, or nil.
-func (d *Daemon) openForgeRequest(url, label string) *wire.Request {
+// openForgeRequest is the open request for an item and source, or nil.
+func (d *Daemon) openForgeRequest(url string, l forgeRequestLabel) *wire.Request {
 	d.requests.mu.Lock()
 	defer d.requests.mu.Unlock()
 	for _, r := range d.requests.byID {
-		if r.State == wire.RequestStateOpen && r.Forge != nil && r.Forge.URL == url && r.Forge.Label == label {
+		if r.State == wire.RequestStateOpen && l.of(r.Forge) && r.Forge.URL == url {
 			c := copyRequest(r)
 			return &c
 		}
@@ -174,7 +193,7 @@ func (d *Daemon) openForgeRequest(url, label string) *wire.Request {
 // item changed since.
 func (d *Daemon) forgeRequestSeen(ctx context.Context, l forgeRequestLabel, i wire.ForgeItem, repo forgeRepo, number int) {
 	at := now()
-	old := d.openForgeRequest(*i.URL, l.label)
+	old := d.openForgeRequest(*i.URL, l)
 	if old != nil && old.Forge.UpdatedAt != nil && *old.Forge.UpdatedAt == i.UpdatedAt {
 		d.requests.mu.Lock()
 		if r := d.requests.byID[old.ID]; r != nil && r.Forge != nil {
@@ -229,9 +248,10 @@ func (d *Daemon) forgeRequestSeen(ctx context.Context, l forgeRequestLabel, i wi
 	}
 }
 
-// forgeRequestGone ends the request for an item the sweep no longer lists with its label:
-// closed, it is answered when every line is ticked and else dropped; open, the label came off
-// (or a pull request got approved or changes-wanted), and it is answered.
+// forgeRequestGone ends the request for an item the sweep no longer lists with its label or its
+// requested review: closed, it is answered when every line is ticked and else dropped; open,
+// the label came off, or the person reviewed the pull request (the review is the answer) or the
+// request was taken off, and it is answered.
 func (d *Daemon) forgeRequestGone(ctx context.Context, r wire.Request) {
 	kind := map[string]string{"issue": lineage.KindIssue, "pr": lineage.KindPR}[r.Forge.Item]
 	repo := forgeRepo{r.Forge.Provider, r.Forge.Repo}
@@ -248,15 +268,41 @@ func (d *Daemon) forgeRequestGone(ctx context.Context, r wire.Request) {
 		d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyForgeClosed, nil)
 	case detail.Item.State != "open":
 		d.endRequest(r.ID, wire.RequestStateAnswered, new("Closed with every step done"), "", nil)
-	default:
-		answer := "The label " + r.Forge.Label + " was taken off"
-		for _, l := range detail.Item.Labels {
-			if slices.Contains(reviewAnswered, l.Name) {
-				answer = map[string]string{"approved": "approve", "changes-wanted": "changes"}[l.Name]
-			}
+	case kind == lineage.KindPR:
+		answer, ok := reviewAnswer(detail.Reviewers, d.reviewer())
+		if !ok {
+			return
 		}
 		d.endRequest(r.ID, wire.RequestStateAnswered, &answer, "", nil)
+	default:
+		answer := "The label " + r.Forge.Label + " was taken off"
+		d.endRequest(r.ID, wire.RequestStateAnswered, &answer, "", nil)
 	}
+}
+
+// reviewAnswer is a pull request request's answer from its reviewers (#5803): the person's
+// newest review, approve, changes or commented, or the request taken off with none. Not ok while
+// the person is still asked, or with no person to read.
+func reviewAnswer(reviewers []wire.ForgeReviewer, login string) (string, bool) {
+	if login == "" {
+		return "", false
+	}
+	for _, rv := range reviewers {
+		if !strings.EqualFold(rv.Login, login) {
+			continue
+		}
+		switch rv.State {
+		case wire.ForgeReviewerStateApproved:
+			return "approve", true
+		case wire.ForgeReviewerStateChangesRequested:
+			return "changes", true
+		case wire.ForgeReviewerStateCommented:
+			return "commented", true
+		default:
+			return "", false
+		}
+	}
+	return "The review request was taken off", true
 }
 
 // answerForgeRequest is requests/answer for a forge request: a checklist or an approval, sent
@@ -317,8 +363,6 @@ func (d *Daemon) answerForgeRequest(ctx context.Context, rec wire.Request, a wir
 	case a.Approval != nil && f.Item == lineage.KindPR:
 		action := a.Approval.Action
 		note := strings.TrimSpace(deref(a.Approval.Note))
-		add := "approved"
-		remove := []string{f.Label}
 		switch action {
 		case "approve":
 			if note == "" {
@@ -328,7 +372,6 @@ func (d *Daemon) answerForgeRequest(ctx context.Context, rec wire.Request, a wir
 			if note == "" {
 				return wire.RequestUpdate{}, Invalid("Say what to change in the note.")
 			}
-			add, remove = "changes-wanted", nil
 		default:
 			return wire.RequestUpdate{}, Invalid("An approval is approve or changes, not %q.", action)
 		}
@@ -336,18 +379,17 @@ func (d *Daemon) answerForgeRequest(ctx context.Context, rec wire.Request, a wir
 		if err != nil {
 			return wire.RequestUpdate{}, err
 		}
-		// Another's PR, as the agents' bot's (#3860): a real review of the head commit, which
-		// GitHub's approval rule and a required review count. The person's own PR takes no review from
-		// them, so there it is the person's own comment, with no <!-- agent --> mark.
-		if c, ok := d.githubConnection(); ok && c.Login != "" && page.Author != "" && page.Head != "" && !strings.EqualFold(page.Author, c.Login) {
-			_, err = gh.ReviewPR(ctx, f.Repo, number, page.Head, action == "approve", note)
-		} else {
-			_, err = gh.CommentOnPR(ctx, f.Repo, number, note)
+		login := d.reviewer()
+		if login == "" || page.Head == "" {
+			return wire.RequestUpdate{}, Invalid("Connect GitHub as yourself to review %s.", f.URL)
 		}
-		if err != nil {
-			return wire.RequestUpdate{}, err
+		// The one way a pull request is approved (epic #5802): the person's own review of the head
+		// commit, which GitHub's approval rule and a required review count (#3860). GitHub takes
+		// no review of a pull request from its author.
+		if strings.EqualFold(page.Author, login) {
+			return wire.RequestUpdate{}, Invalid("You opened this pull request, so you cannot approve it.")
 		}
-		if err := gh.SetLabels(ctx, f.Repo, number, []string{add}, remove); err != nil {
+		if _, err := gh.ReviewPR(ctx, f.Repo, number, page.Head, action == "approve", note); err != nil {
 			return wire.RequestUpdate{}, err
 		}
 		answer = action + ": " + note

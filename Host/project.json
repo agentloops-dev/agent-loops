@@ -1,0 +1,7 @@
+{
+  "name": "host",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "Host",
+  "tags": ["inputs-only"],
+  "targets": {}
+}

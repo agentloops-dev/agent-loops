@@ -1,0 +1,7 @@
+{
+  "name": "docs-parts",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "root": "docs-parts",
+  "tags": ["inputs-only"],
+  "targets": {}
+}

@@ -1,18 +1,18 @@
 // Cost ▸ Reports (#1811), as the window's and the Remote's ReportsPane: usage, cost and time by
 // person, project, folder, machine and runtime, added up on the control plane from what each machine
 // sends each hour. Cost ▸ Reports shows the caller's own machines (Me, #2071); Reports ▸ Spend
-// has a scope, Me, a group or the organisation, and names it.
+// has a scope, Me or the organisation, and names it.
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import { signal, useSignal } from "@preact/signals";
-import { go, route, routeHash } from "../route";
+import { go, replace, route, routeHash, usageAsked } from "../route";
 import { hasPage } from "../model/work";
 import type { Store } from "../model/store";
 import type { FeatureUsage, LineageForecast, ReportDelivery, LineageForecastAssumes, LineageForecastWhatIfEffect, LineageNode, MachineRef, ReportFormat, ReportPage, ReportRange, ReportRow, ReportScope, ReportScopeOption, ReportValue, ReportValueRow, ReportView,
   UsageReport } from "../protocol/generated";
 import { CallFailed } from "../wire/link";
-import { adoption, adoptionLine, rangeAsked, barCaption, adoptionNote, budgetWords, dimensionTitle, empty, exportName, groupNote, hiddenNote, line, meNote,
+import { adoption, adoptionLine, rangeAsked, barCaption, adoptionNote, budgetWords, dimensionTitle, empty, exportName, groupViewNote, isGroupView, line, meNote,
   memberNote, noOutcomes, noWorkflows, outcomeLine, outcomeTotals, outcomesNote, rangeSpan, ranges, reportTotals, runtimeLine,
-  runtimesNote, sameScope, spendBarCaption, scopeKey, scopeNote, scopedDimensions, share, timeLine, timeNote, utcNote, waitingShare, weekTitle, workflowLine,
+  runtimesNote, sameScope, spendBarCaption, scopeKey, lensAsked, lensQuery, dimensionsFor, scopeNote, share, timeLine, timeNote, utcNote, waitingShare, weekTitle, workflowLine,
   workflowRows, workflowsNote, deleteViewWords, digestText, noCopy, noViews, noViewsHere, viewBy, viewWords, viewsNote } from "../model/reports";
 import type { OutcomeGroup, OutcomeOrder, ReportDimension, ReportGroup } from "../model/reports";
 import { featureLine, featureUnused, featuresNote, mergeFeatures, noFeatures } from "../model/features";
@@ -22,11 +22,15 @@ import {
   unlinkedLine, valueHeadline, valueNote, wasteLine,
 } from "../model/value";
 import { assumesLine, burnLine, burnRuntime, forecastScoreLine, landsLine, laneOptions, loadedLine, mergeBurns, mixOptions, nextNote, noNext,
-  noNextHere, noNextOffline, serviceLevelLine, spendLines, whatIfLines, whatIfNote, whatIfOf } from "../model/planning";
+  noNextHere, noNextOffline, noScores, serviceLevelLine, spendLines, whatIfLines, whatIfNote, whatIfOf } from "../model/planning";
 import { deliveryCards, deliveryNote, noDelivery, repoTitle, sparkPath } from "../model/delivery";
+import { deploysQuery } from "../model/deploys";
 import { buildsLinkQuery } from "../model/builds";
 import { Capability } from "../protocol/capabilities.generated";
 import type { Section } from "../model/console";
+import { usagePaneTitle, usagePanesOf } from "../model/nav";
+import { ActivityPageView } from "./Activity";
+import { MultiplierPage } from "./Multiplier";
 import { Choice } from "./Choice";
 import { ask } from "./MessageKinds";
 
@@ -93,12 +97,11 @@ export function ReportsPane({ store, runtimeName, scope, seesMore, initial }: { 
       problem.value = sentence(error);
     }
   };
-  const ways = scopedDimensions(shown);
-  // A way the scope does not offer (a person, with nobody named) falls back to the first.
+  const ways = dimensionsFor(scope);
   const way = ways.includes(by.value) ? by.value : ways[0]!;
   // Added up once per report and way, not at each draw (#2057).
   const names = store.runtimes.value;
-  const totals = useMemo(() => shown ? reportTotals(shown.rows, way, runtimeName, shown.groupNames ?? {}) : null, [shown, way, names]);
+  const totals = useMemo(() => shown ? reportTotals(shown.rows, way, runtimeName) : null, [shown, way, names]);
   const row = (g: ReportGroup, bar: number | null) => (
     <li key={g.id} class={bar === null ? "report-total" : ""}>
       <span class={bar === null ? "strong" : ""}>{g.name}</span>
@@ -130,8 +133,6 @@ export function ReportsPane({ store, runtimeName, scope, seesMore, initial }: { 
             </ul>
           )}
           {totals.groups.length > 0 && <p class="quiet small">{spendBarCaption}</p>}
-          {shown.personsHidden && <p class="quiet small">{hiddenNote}</p>}
-          {way === "group" && <p class="quiet small">{groupNote}</p>}
           <p class="quiet small">{`${note(shown, scope, more)} ${utcNote}`}</p>
         </>
       )}
@@ -145,7 +146,7 @@ function note(shown: UsageReport, scope: ReportScope | undefined, more: boolean)
   if (!scope) return meNote(more);
   const of = shown.scope ?? scope;
   if (of.kind === "me" && !more) return memberNote;
-  return scopeNote(of, of.group ? shown.groupNames?.[of.group] : undefined);
+  return scopeNote(of);
 }
 
 type CountsKind = "outcomes" | "time" | "runtimes" | "workflows";
@@ -219,13 +220,13 @@ function SavedPage({ store, scopes }: { store: Store; scopes: readonly ReportSco
   useEffect(() => {
     store.link.call("reports/views", {}).then((r) => { views.value = r.views; }, (e: unknown) => { views.value = []; failed(e); });
   }, []);
-  const scopeName = (v: ReportView) => scopes.find((o) => scopeKey(o.scope) === scopeKey(v.scope))?.name ?? "A scope you no longer see";
+  const scopeName = (v: ReportView) => isGroupView(v) ? "Me" : scopes.find((o) => scopeKey(o.scope) === scopeKey(v.scope))?.name ?? "A scope you no longer see";
   const open = (v: ReportView) => {
     opened.value = v;
-    go({ nav: "reports", section: v.page });
+    go({ nav: "reports", section: viewSection(v.page) });
   };
   const digest = async (v: ReportView) => {
-    const text = store.link.call("reports/usage", { range: v.range, scope: v.scope }).then((r) => digestText(v, scopeName(v), r));
+    const text = store.link.call("reports/usage", { range: v.range, scope: isGroupView(v) ? { kind: "me" } : v.scope }).then((r) => digestText(v, scopeName(v), r));
     try {
       // Safari refuses a write that comes after an await (#2263): give the clipboard the promise of the text at once.
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
@@ -274,6 +275,36 @@ function SavedPage({ store, scopes }: { store: Store; scopes: readonly ReportSco
   );
 }
 
+/** The page a saved view opens (#5280): Planning's views ("value" on the wire) open Delivery, its first part. */
+export function viewSection(page: ReportPage): string {
+  return page === "value" ? "delivery" : page;
+}
+
+/** The Me lens's own part of Spend, Time and Outcomes (#5280): what was Reports ▸ Usage (#956, #4598), Activity's Cost,
+ * Tokens, Time and Velocity, the pane of each that the page repeats, from the person's own machines; and on Outcomes the
+ * Multiplier (#3990), which was a page of its own. */
+function YoursPart({ store, section }: { store: Store; section: string }) {
+  const panes = usagePanesOf(section);
+  const asked = usageAsked.peek();
+  const pane = useSignal(asked && panes.includes(asked) ? asked : panes[0]);
+  if (!pane.value) return null;
+  return (
+    <section class="report-yours" aria-label="On your machines">
+      <h2 class="section-head">On your machines</h2>
+      {section === "outcomes" && <MultiplierPage store={store} inReports />}
+      {panes.length > 1 && (
+        <div class="tabs" role="tablist" aria-label="Show">
+          {panes.map((p) => (
+            <button key={p} role="tab" aria-selected={pane.value === p} class={pane.value === p ? "on" : ""}
+              onClick={() => { pane.value = p; usageAsked.value = undefined; }}>{usagePaneTitle[p]}</button>
+          ))}
+        </div>
+      )}
+      <div class="usage-pane"><ActivityPageView key={pane.value} store={store} page={pane.value} inReport /></div>
+    </section>
+  );
+}
+
 function RangePicker({ range, from = 0 }: { range: { value: ReportRange }; from?: number }) {
   return (
     <Choice label="Range" value={range.value} options={ranges.slice(from).map((r) => [r, rangeSpan[r]] as const)} onPick={(r) => { range.value = r; }} />
@@ -288,11 +319,10 @@ function CountsPane({ store, runtimeName, scope, kind, initial }: { store: Store
   const range = useSignal<ReportRange>(initial?.range ?? "week");
   const by = useSignal<ReportDimension>(initial?.by ?? page.by);
   const { problem, shown } = useReport(store, range.value, scope);
-  const scoped = scopedDimensions(shown);
-  const ways = kind === "workflows" ? ["workflow" as const, ...scoped] : scoped;
+  const ways = kind === "workflows" ? ["workflow" as const, ...dimensionsFor(scope)] : dimensionsFor(scope);
   const way = ways.includes(by.value) ? by.value : ways[0]!;
   const names = store.runtimes.value;
-  const totals = useMemo(() => shown ? outcomeTotals(page.rows(shown.rows), way, page.order, runtimeName, shown.groupNames ?? {}) : null,
+  const totals = useMemo(() => shown ? outcomeTotals(page.rows(shown.rows), way, page.order, runtimeName) : null,
     [shown, way, names, kind]);
   const row = (g: OutcomeGroup, total: boolean) => (
     <li key={g.id} class={total ? "report-total" : ""}>
@@ -321,9 +351,7 @@ function CountsPane({ store, runtimeName, scope, kind, initial }: { store: Store
           )}
           {!page.nothing(totals.total) && <p class="quiet small">{page.caption}</p>}
           <p class="quiet small">{page.note}</p>
-          {shown.personsHidden && <p class="quiet small">{hiddenNote}</p>}
-          {way === "group" && <p class="quiet small">{groupNote}</p>}
-          {scope && <p class="quiet small">{`${scopeNote(scope, scope.group ? shown.groupNames?.[scope.group] : undefined)} ${utcNote}`}</p>}
+          {scope && <p class="quiet small">{`${scopeNote(scope)} ${utcNote}`}</p>}
         </>
       )}
     </div>
@@ -334,7 +362,7 @@ function CountsPane({ store, runtimeName, scope, kind, initial }: { store: Store
 function AdoptionPane({ store, scope, initial }: { store: Store; scope: ReportScope | undefined; initial?: Initial | undefined }) {
   const range = useSignal<ReportRange>(initial?.range ?? "month");
   const { problem, shown } = useReport(store, range.value, scope);
-  const weeks = useMemo(() => shown ? adoption(shown.rows, shown.personsHidden === true) : null, [shown]);
+  const weeks = useMemo(() => shown ? adoption(shown.rows) : null, [shown]);
   return (
     <div class="reports-pane">
       <div class="reports-head">
@@ -357,20 +385,22 @@ function AdoptionPane({ store, scope, initial }: { store: Store; scope: ReportSc
             </ul>
           )}
           <p class="quiet small">{adoptionNote}</p>
-          {shown.personsHidden && <p class="quiet small">{hiddenNote}</p>}
-          {scope && <p class="quiet small">{scopeNote(scope, scope.group ? shown.groupNames?.[scope.group] : undefined)}</p>}
+          {scope && <p class="quiet small">{scopeNote(scope)}</p>}
         </>
       )}
     </div>
   );
 }
 
-/** Reports ▸ Planning (#4528; Value before, #2351): what the work cost and delivered, from the machines' lineage
- * nodes: cost per merged pull request, all in beside it, waste and lead time; then what comes next, from
- * lineage/forecast (#4526): the burn against each allowance, the spend at this pace, the service levels and when each
- * open epic lands; then how the estimates and the forecasts scored; then each issue and release (#3023), the most
- * costly first. */
-function PlanningPane({ store, scope, initial }: { store: Store; scope: ReportScope | undefined; initial?: Initial | undefined }) {
+/** Planning's three pages since #5280 (were Reports ▸ Planning, #4528; Value before, #2351), each from reports/value. */
+type ValuePart = "delivery" | "forecast" | "estimates";
+
+/** Reports ▸ Output ▸ Delivery, ▸ Plan ▸ Forecast and ▸ Plan ▸ Estimates (#5280), from the machines' lineage nodes as
+ * reports/value adds them up. Delivery: what the work cost and delivered (cost per merged pull request, all in beside it,
+ * waste and lead time), the DORA figures of each repo (#4555), then each issue and release (#3023), the most costly first.
+ * Forecast: what comes next, from lineage/forecast (#4526): the burn against each allowance, the spend at this pace, the
+ * service levels and when each open epic lands, and What if (#4531). Estimates: how the estimates and the forecasts scored. */
+function ValuePane({ store, scope, part, initial }: { store: Store; scope: ReportScope | undefined; part: ValuePart; initial?: Initial | undefined }) {
   const range = useSignal<ReportRange>(initial?.range ?? "month");
   const value = useSignal<ReportValue | null>(null);
   const problem = useSignal<string | null>(null);
@@ -409,51 +439,59 @@ function PlanningPane({ store, scope, initial }: { store: Store; scope: ReportSc
   const empty = shown && shown.issues.length === 0 && shown.prsMerged + shown.prsClosed === 0;
   return (
     <div class="reports-pane">
-      <div class="reports-head">
-        <RangePicker range={range} />
-        {scope && <SaveView store={store} page="value" scope={scope} range={range.value} />}
-      </div>
-      <p class="quiet small">{rangeSpan[range.value]}</p>
+      {/* What comes next is the machines' last 14 days, whatever the range: Forecast has none to pick. */}
+      {part !== "forecast" && (
+        <div class="reports-head">
+          <RangePicker range={range} />
+          {/* A saved view's page is still "value" on the wire: it opens Delivery (viewSection). */}
+          {scope && part === "delivery" && <SaveView store={store} page="value" scope={scope} range={range.value} />}
+        </div>
+      )}
+      {part !== "forecast" && <p class="quiet small">{rangeSpan[range.value]}</p>}
       {problem.value && <p class="hint">{problem.value}</p>}
-      {!shown && !problem.value && <p class="hint">Loading…</p>}
-      {empty && <p class="hint">{noValue}</p>}
-      {shown && !empty && (
-        <ul class="report-list">
-          <li class="report-total"><span class="strong">{valueHeadline(shown)}</span><span class="quiet small">{wasteLine(shown)}</span></li>
-          {loaded && <li><span>{loaded}</span></li>}
-          {lead && <li><span>{lead}</span></li>}
-          {unlinked && <li><span class="quiet">{unlinked}</span></li>}
-        </ul>
-      )}
-      {shown?.delivery && <DeliveryPart delivery={shown.delivery} range={range.value} />}
-      <NextPart store={store} epics={shown?.openEpics ?? []} />
-      {(estimates || forecasts) && <h3>How the estimates and forecasts scored</h3>}
-      {(estimates || forecasts) && (
-        <ul class="report-list">
-          {forecasts && <li><span>{forecasts}</span></li>}
-          {estimates && <li><span>{estimates}</span></li>}
-          {coverage && <li><span class="quiet small">{coverage}</span></li>}
-          {landsAt && <li><span class="quiet small">{landsAt}</span></li>}
-        </ul>
-      )}
-      {shown && !empty && shown.issues.length > 0 && <h3>Issues</h3>}
-      {shown && !empty && shown.issues.length > 0 && <ul class="report-list">{shown.issues.map(row)}</ul>}
-      {shown && !empty && shown.releases.length > 0 && <h3>Releases</h3>}
-      {shown && !empty && shown.releases.length > 0 && <ul class="report-list">{shown.releases.map(row)}</ul>}
-      {shown?.limited && <p class="quiet small">The 100 most costly of each.</p>}
-      <p class="quiet small">{valueNote}</p>
-      {scope && <p class="quiet small">{scopeNote(scope, undefined)}</p>}
+      {!shown && !problem.value && part !== "forecast" && <p class="hint">Loading…</p>}
+      {part === "delivery" && <>
+        {empty && <p class="hint">{noValue}</p>}
+        {shown && !empty && (
+          <ul class="report-list">
+            <li class="report-total"><span class="strong">{valueHeadline(shown)}</span><span class="quiet small">{wasteLine(shown)}</span></li>
+            {loaded && <li><span>{loaded}</span></li>}
+            {lead && <li><span>{lead}</span></li>}
+            {unlinked && <li><span class="quiet">{unlinked}</span></li>}
+          </ul>
+        )}
+        {shown?.delivery && <DeliveryPart delivery={shown.delivery} range={range.value} />}
+        {shown && !empty && shown.issues.length > 0 && <h3>Issues</h3>}
+        {shown && !empty && shown.issues.length > 0 && <ul class="report-list">{shown.issues.map(row)}</ul>}
+        {shown && !empty && shown.releases.length > 0 && <h3>Releases</h3>}
+        {shown && !empty && shown.releases.length > 0 && <ul class="report-list">{shown.releases.map(row)}</ul>}
+        {shown?.limited && <p class="quiet small">The 100 most costly of each.</p>}
+        <p class="quiet small">{valueNote}</p>
+      </>}
+      {part === "forecast" && <NextPart store={store} epics={shown?.openEpics ?? []} />}
+      {part === "estimates" && shown && <>
+        {!estimates && !forecasts && <p class="hint">{noScores}</p>}
+        {(estimates || forecasts) && (
+          <ul class="report-list">
+            {forecasts && <li><span>{forecasts}</span></li>}
+            {estimates && <li><span>{estimates}</span></li>}
+            {coverage && <li><span class="quiet small">{coverage}</span></li>}
+            {landsAt && <li><span class="quiet small">{landsAt}</span></li>}
+          </ul>
+        )}
+      </>}
+      {scope && <p class="quiet small">{scopeNote(scope)}</p>}
     </div>
   );
 }
 
-/** Reports ▸ Planning's Delivery row (#4555): a card a figure for each repo the scope merged most in, with its
+/** Reports ▸ Delivery's DORA row (#4555; was Planning's): a card a figure for each repo the scope merged most in, with its
  * 4-week figure, a line of its weeks and DORA 2024's band where one exists. A repo's name heads its row only when
  * there are more than one. */
 function DeliveryPart({ delivery, range }: { delivery: readonly ReportDelivery[]; range: ReportRange }) {
   return (
     <>
-      <h3>Delivery</h3>
+      <h3>DORA figures</h3>
       {delivery.length === 0 && <p class="hint">{noDelivery}</p>}
       {delivery.map((d) => (
         <section key={d.repo} class="delivery-repo">
@@ -474,7 +512,7 @@ function DeliveryPart({ delivery, range }: { delivery: readonly ReportDelivery[]
                   {c.band && <span class="delivery-band">{`DORA: ${c.band}`}</span>}
                   {/* The way in to Builds (#5178, spec 5166 board 4 note 5), with the card's repo and the range. */}
                   {c.key === "ciTimeToGreen" && (
-                    <a class="small" href={routeHash({ nav: "reports", section: "value", item: "builds", query: buildsLinkQuery(d.repo, range) })}>Build trends ›</a>
+                    <a class="small" href={routeHash({ nav: "reports", section: "delivery", item: "builds", query: buildsLinkQuery(d.repo, range) })}>Build trends ›</a>
                   )}
                 </li>
               );
@@ -483,11 +521,13 @@ function DeliveryPart({ delivery, range }: { delivery: readonly ReportDelivery[]
         </section>
       ))}
       {delivery.length > 0 && <p class="quiet small">{deliveryNote}</p>}
+      {/* The figures of each environment, from the deploys themselves (#5245, spec 5239 board 5). */}
+      <p class="small"><a href={routeHash({ nav: "reports", section: "delivery", item: "environments", query: deploysQuery({ range: range === "day" ? "week" : range, tier: "production" }) })}>The DORA figures of each environment ›</a></p>
     </>
   );
 }
 
-/** What comes next on Reports ▸ Planning (#4528), from lineage/forecast on the person's own machines: each
+/** Reports ▸ Forecast (#5280; was what comes next on Reports ▸ Planning, #4528), from lineage/forecast on the person's own machines: each
  * allowance's burn, the newest reading of it from any machine; the spend and the service levels of the machine with
  * the most landings (this Mac first); and when each open epic lands, from that machine. What if (#4531): a lane limit
  * and a runtime mix, asked of every machine, move the figures; the mix to pick from is the main machine's. */
@@ -510,10 +550,12 @@ function NextPart({ store, epics }: { store: Store; epics: readonly LineageNode[
     // A new what-if keeps the figures on screen until its answer comes; the epics say they are forecasting.
     lands.value = {};
     const ask = whatIf ? { whatIf } : {};
-    void Promise.all(hosts.map((host) => store.link.call("lineage/forecast", ask, host).then((forecast) => ({ host, forecast }), () => null)))
+    // Every machine's forecast in one call to the control plane (#5592).
+    const asked = new Set<string>(hosts);
+    void store.link.call("lineage/forecastAll", ask).then((all) => all.forecasts, () => [])
       .then((got) => {
         if (!live) return;
-        const answers = got.filter((g): g is { host: MachineRef; forecast: LineageForecast } => g !== null);
+        const answers = got.filter((g) => asked.has(g.machine)).map((g) => ({ host: g.machine, forecast: g.forecast }));
         all.value = answers;
         const main = mainForecast(answers, store.macHostID.value);
         if (!main) return;
@@ -528,15 +570,14 @@ function NextPart({ store, epics }: { store: Store; epics: readonly LineageNode[
       });
     return () => { live = false; };
   }, [hosts.join(" "), epicKey, whatIfKey]);
-  if (hosts.length === 0) return <><h3>What comes next</h3><p class="hint">{answering.length === 0 ? noNextOffline : noNextHere}</p></>;
-  if (all.value === null) return <><h3>What comes next</h3><p class="hint">Loading…</p></>;
+  if (hosts.length === 0) return <p class="hint">{answering.length === 0 ? noNextOffline : noNextHere}</p>;
+  if (all.value === null) return <p class="hint">Loading…</p>;
   const main = mainForecast(all.value, store.macHostID.value);
   const burns = mergeBurns(all.value.map((a) => a.forecast));
   const spend = main ? spendLines(main.forecast) : [];
   const levels = main?.forecast.serviceLevels ?? [];
   return (
     <>
-      <h3>What comes next</h3>
       {burns.length === 0 && spend.length === 0 && levels.length === 0 && <p class="hint">{noNext}</p>}
       {(burns.length > 0 || spend.length > 0) && (
         <ul class="report-list">
@@ -598,7 +639,7 @@ function mainForecast<T extends { host: MachineRef; forecast: LineageForecast }>
   return here ?? [...answers].sort((a, b) => b.forecast.landings - a.forecast.landings)[0];
 }
 
-/** Reports ▸ Features (#2165), as the window's: which methods the clients and agents called on the
+/** Status ▸ Features (#2165; Reports ▸ Features until #5280), as the window's: which methods the clients and agents called on the
  * person's own machines, from each machine's counts added up, the least used first. The counts stay
  * on the machines, so it has no scope. */
 function FeaturesPane({ store }: { store: Store }) {
@@ -606,8 +647,10 @@ function FeaturesPane({ store }: { store: Store }) {
   const hosts = store.hosts.value.filter((h) => hostAnswers(h.state)).map((h) => h.id);
   useEffect(() => {
     usage.value = null;
-    void Promise.all(hosts.map((host) => store.link.call("reports/features", {}, host).catch(() => null))).then((all) => {
-      usage.value = mergeFeatures(all.filter((u): u is FeatureUsage => u !== null));
+    // Every machine's counts in one call to the control plane (#5592).
+    const asked = new Set<string>(hosts);
+    void store.link.call("reports/featuresAll", {}).then((all) => all.usage, () => []).then((all) => {
+      usage.value = mergeFeatures(all.filter((u) => asked.has(u.machine)).map((u) => u.usage));
     });
   }, [hosts.join(" ")]);
   const shown = usage.value;
@@ -647,11 +690,48 @@ function Budget({ spent, budget }: { spent: number; budget: number }) {
   );
 }
 
-/** A page of Reports (#1804), the control plane's app beside the Workspace and the Console: Me, a
- * group the person leads (every group for an admin) or the organisation, as reports/scopes offers them. */
+/** The lens bar's lens, named for the page's title: "Spend · Project Agents" (#5279). Set by the page, read by the frame. */
+export const lensName = signal<string | undefined>(undefined);
+/** The lens the person last chose, which stays when they go to another page (#5279). */
+const lastLens = signal<ReportScope>({ kind: "me" });
+
+/** One lens bar at the top of every page of Reports (#5279): Me · Project ▾ · Organisation. Below 760 it is one menu. */
+function LensBar({ options, current, onPick }: { options: readonly ReportScopeOption[]; current: string; onPick: (scope: ReportScope) => void }) {
+  const at = (key: string) => options.find((o) => scopeKey(o.scope) === key)?.scope;
+  const projects = options.filter((o) => o.scope.kind === "project");
+  const me = options.find((o) => o.scope.kind === "me");
+  const org = options.find((o) => o.scope.kind === "org");
+  const onProject = current.startsWith("project:");
+  const words = options.find((o) => scopeKey(o.scope) === current);
+  return (
+    <div class="lens-bar" role="group" aria-label="Lens">
+      <span class="lens-wide">
+        <span class="choice-name">Lens</span>
+        {me && <button class={`lens-seg${current === "me" ? " on" : ""}`} aria-pressed={current === "me"} onClick={() => onPick(me.scope)}>Me</button>}
+        {projects.length > 0 && (
+          <label class={`lens-seg lens-project${onProject ? " on" : ""}`}>
+            <select aria-label="Project" value={onProject ? current : ""} onChange={(e) => { const next = at((e.currentTarget as HTMLSelectElement).value); if (next) onPick(next); }}>
+              {!onProject && <option value="" disabled>Project ▾</option>}
+              {projects.map((o) => <option key={scopeKey(o.scope)} value={scopeKey(o.scope)}>{onProject ? `Project: ${o.name}` : o.name}</option>)}
+            </select>
+          </label>
+        )}
+        {org && <button class={`lens-seg${current === "org" ? " on" : ""}`} aria-pressed={current === "org"} onClick={() => onPick(org.scope)}>Organisation</button>}
+      </span>
+      <span class="lens-narrow">
+        <Choice label="Lens" value={current} options={options.map((o) => [scopeKey(o.scope), o.scope.kind === "project" ? `Project ${o.name}` : o.name] as const)}
+          {...(words ? { title: words.name } : {})} onPick={(k) => { const next = at(k); if (next) onPick(next); }} />
+      </span>
+    </div>
+  );
+}
+
+const valueParts: Record<ValuePart, true> = { delivery: true, forecast: true, estimates: true };
+
+/** A page of Reports (#1804), the control plane's app beside the Workspace and the Console: Me, a project
+ * or the organisation, as reports/scopes offers them (#5279). */
 export function ReportsPage({ store, section, down }: { store: Store; section: Section; down: boolean }) {
   const scopes = useSignal<ReportScopeOption[] | null>(null);
-  const picked = useSignal<string>("me");
   // The runtimes' names, from each machine that answers.
   useEffect(() => { if (!down) for (const host of store.hosts.value) void store.loadRuntimes(host.id); }, [down]);
   const changes = store.peopleChanges.value;
@@ -660,31 +740,44 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
     // A control plane before scopes: Me, as Cost ▸ Reports has it.
     void store.link.call("reports/scopes", {}).then((r) => { scopes.value = r.scopes; }, () => { scopes.value = []; });
   }, [down, changes]);
+  const setLens = (lens: ReportScope) => {
+    lastLens.value = lens;
+    const r = route.value;
+    replace({ ...r, query: lensQuery(r.query, lens) || undefined });
+  };
   // A saved view opens its page on its scope, range and way (#2019); the next page opens as before.
-  const view = opened.value && opened.value.page === section.id ? opened.value : null;
+  const view = opened.value && viewSection(opened.value.page) === section.id ? opened.value : null;
   useEffect(() => {
-    if (view) picked.value = scopeKey(view.scope);
-    else if (opened.value && opened.value.page !== section.id) opened.value = null;
+    if (view) setLens(isGroupView(view) ? { kind: "me" } : view.scope);
+    else if (opened.value && viewSection(opened.value.page) !== section.id) opened.value = null;
   }, [view?.id, section.id]);
+  // The lens stays when the person goes to another page: an address with none takes the last one chosen (#5279).
+  const named = new URLSearchParams(route.value.query ?? "").has("lens");
+  useEffect(() => { if (!named && !view && lastLens.value.kind !== "me" && section.id !== "features") setLens(lastLens.value); }, [section.id]);
   // Cost's Open Reports on the Mac (#4938) names the range in the address: #/reports/spend?range=month.
   const asked = rangeAsked(route.value.query);
   const initial = view ? { range: view.range, by: viewBy(view) } : asked ? { range: asked } : undefined;
   const list = scopes.value ?? [];
-  const option = list.find((o) => scopeKey(o.scope) === picked.value) ?? list[0];
+  const wanted = scopeKey(lensAsked(route.value.query));
+  // A lens the person cannot see is not offered: the page shows Me.
+  const option = list.find((o) => scopeKey(o.scope) === wanted) ?? list.find((o) => o.scope.kind === "me") ?? list[0];
+  useEffect(() => { lensName.value = option?.scope.kind === "project" && section.id !== "features" ? option.name : undefined; return () => { lensName.value = undefined; }; }, [option?.name, option && scopeKey(option.scope)]);
+  const bar = section.id !== "saved" && section.id !== "features" && list.length > 0;
+  const lens = option?.scope;
   return (
     <>
-      {list.length > 1 && section.id !== "saved" && section.id !== "features" && (
-        <Choice label="Scope" class="report-scopes" value={option ? scopeKey(option.scope) : picked.value}
-          options={list.map((o) => [scopeKey(o.scope), o.name] as const)} onPick={(k) => { picked.value = k; }} />
-      )}
+      {bar && <LensBar options={list} current={option ? scopeKey(option.scope) : "me"} onPick={setLens} />}
+      {view && isGroupView(view) && <p class="quiet small" role="status">{groupViewNote}</p>}
       {section.id === "features" ? <FeaturesPane store={store} />
         : scopes.value !== null && (section.id === "saved" ? <SavedPage store={store} scopes={list} />
         : section.id in countsPages
-        ? <CountsPane key={`${section.id}:${view?.id ?? ""}`} store={store} runtimeName={runtimeNameIn(store)} scope={option?.scope}
+        ? <CountsPane key={`${section.id}:${view?.id ?? ""}:${wanted}`} store={store} runtimeName={runtimeNameIn(store)} scope={lens}
           kind={section.id as CountsKind} initial={initial} />
-        : section.id === "value" ? <PlanningPane key={view?.id ?? ""} store={store} scope={option?.scope} initial={initial} />
-        : section.id === "adoption" ? <AdoptionPane key={view?.id ?? ""} store={store} scope={option?.scope} initial={initial} />
-        : <ReportsPane key={view?.id ?? asked ?? ""} store={store} runtimeName={runtimeNameIn(store)} scope={option?.scope} seesMore={list.length > 1} initial={initial} />)}
+        : section.id in valueParts ? <ValuePane key={`${section.id}:${view?.id ?? ""}:${wanted}`} store={store} scope={lens}
+          part={section.id as ValuePart} initial={initial} />
+        : section.id === "adoption" ? <AdoptionPane key={`${view?.id ?? ""}:${wanted}`} store={store} scope={lens} initial={initial} />
+        : <ReportsPane key={`${view?.id ?? asked ?? ""}:${wanted}`} store={store} runtimeName={runtimeNameIn(store)} scope={lens} seesMore={list.length > 1} initial={initial} />)}
+      {scopes.value !== null && (!lens || lens.kind === "me") && usagePanesOf(section.id).length > 0 && <YoursPart key={section.id} store={store} section={section.id} />}
     </>
   );
 }

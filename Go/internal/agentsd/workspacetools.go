@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -41,7 +40,7 @@ func (d *Daemon) SetControlAsk(ask askControl) {
 	}
 	d.askControl.Store(&ask)
 	// What ended on other machines while this one was away (#2927).
-	safe.Go("ask how sessions elsewhere stand", d.askThereWaits)
+	d.goJob("ask how sessions elsewhere stand", d.askThereWaits)
 }
 
 // SetControlCapabilities is how this host reads what its control plane said it can do
@@ -55,6 +54,19 @@ func (d *Daemon) SetControlCapabilities(list func() []string) {
 func (d *Daemon) controlHas(capability string) bool {
 	list := d.controlCapabilities.Load()
 	return list != nil && wire.Has((*list)(), capability)
+}
+
+// ControlCapabilitiesKnown is told when the control plane said what it can do on a new link
+// (#5410). That answer comes after the link is up, so the sends that ControlUplinkChanged
+// starts found no capability yet: those that need one go again now.
+func (d *Daemon) ControlCapabilitiesKnown() {
+	d.sendBusSubscriptions(true)
+	d.sendLineage()
+	d.sendCITimings()
+	// The deploys go whole on each new link (#5496): a new control plane has no copy.
+	d.sendDeploys(true)
+	d.personApprovalsOn.Do(d.watchPersonApprovals)
+	d.goJob("refreshPersonApprovals", func() { d.refreshPersonApprovals() })
 }
 
 // askWorkspaces is one machine/machines call for an agent, named for the control plane's log.

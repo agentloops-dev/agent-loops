@@ -18,6 +18,7 @@ idea, in the folder's own `.agents` folder.
 | `personas/` | Personas you can start an agent as | You |
 | `plugins/` | Plugins every agent gets | **Settings ▸ Agent Configuration** |
 | `mcp.json` | Connectors (MCP servers) every agent gets. Secrets are named as `${NAME}`, never held. | You, or **Settings ▸ Agent Configuration** |
+| `env` | Environment variables every session gets, `NAME=value` ([below](#env)). Plain text: never a secret. | You, or the person's settings on every machine |
 | `marketplaces.json` | Which marketplaces are on | **Manage Marketplaces…** |
 | `settings/` | The settings below, one file each | The app |
 
@@ -26,6 +27,55 @@ Agent Loops app writes. **Agent configuration, MCP servers, runtime choices and 
 have one fixed scope: they belong to you and sync to every machine of yours. Runtime
 sign-ins stay on each machine. Resources are stored in each machine's `resources.json` and
 do not sync (#2410).
+
+## `env`
+
+Environment variables for sessions (#5259). There are two files of the same format:
+
+- **`~/.agents/env`**, yours. It is part of your settings, so it follows you: the control
+  plane keeps it and writes it to every machine of yours. When you edit it by hand on one
+  machine, that machine uses the edited file, and the Environment page offers **Keep for All
+  Machines** or **Discard**.
+- **`<folder>/.agents/env`**, the repo's. Commit it with the folder's code, beside
+  `.agents/mcp.json`; a branch can change it. It is read from the folder or worktree that
+  the session runs in. Many repos are public, so never put a secret in it.
+
+The format is one `NAME=value` per line. A `# comment` line just above a variable is its
+description. Blank lines are allowed. `export ` and one pair of quotes around a value are
+accepted and removed. There is no `${OTHER}` expansion. When a name is on two lines, the
+later line wins.
+
+**What a session gets.** A runtime's process starts with the login environment, then the
+repo's file, then yours, then Agents' own variables: yours wins over the repo's. The
+runtime's tools, the MCP servers it starts and its terminals inherit them, and so does your
+own terminal in that folder. Nothing else that agentsd runs gets them (git, `gh`, the
+daemon's own MCP servers). A process keeps its variables until its agent starts again.
+
+**Names that are refused** stay in the file, are not given, and `env/list` says why:
+
+- in either file: `PATH`, `HOME`, `USER`, `SHELL`, `TMPDIR`, `AGENTS_*`, `CLAUDE_*`,
+  `CODEX_*`, `GEMINI_*`, `ANTHROPIC_*`, `OPENAI_*`, and the names that point a runtime at
+  its model, account or sandbox (`AWS_*`, `GOOGLE_*`, `GH_TOKEN` and the like);
+- in a repo's file also: `NODE_OPTIONS`, `LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`, `ZDOTDIR`,
+  `PYTHONSTARTUP`, `PYTHONPATH`, `PERL5OPT`, `PERL5LIB`, `RUBYOPT` and `GIT_*`, because a
+  cloned repo is not trusted;
+- a name that the organisation's environment rule (`environment.passThrough`) does not allow.
+
+**A value that looks like a secret** (a secret's name, such as `…_TOKEN`, or a token's
+shape) is refused when a client writes it. In a file edited by hand it is still given, and
+the Environment page shows it in Needs you: revoke it when it is in a repo's file, and move
+it to a secret when it is in yours.
+
+**Bounds:** a file of at most 64 KB and 500 variables, and a value of at most 4 KB. A larger
+file is not read, and the page says why.
+
+**The wire** (`Packages/Wire`, capability `env/1`), the person's own clients only:
+`env/list` (each file, with every variable's name, value, description, line and state),
+`env/write` (one variable of a repo's file, the other lines kept, left not committed; the
+audit keeps the name), `env/resolve` (for a folder or a running session, the value and the
+layer that wins each name), `env/discard` (write `~/.agents/env` again from your settings)
+and the notice `env/changed`. Yours is changed with `user/setSettings`, part `environment`,
+which the audit keeps by name too.
 
 ## `settings/`
 
@@ -45,6 +95,12 @@ A file you change by hand counts at once, without a restart. A file that cannot 
 set aside as `<name>.corrupt-<time>`, and the setting goes back to its default. For
 `host.json`, the file is left as it is, and Agent Loops starts with the defaults until you
 mend the file or remove it.
+
+`retention.json`, `person.json`, `client-permissions.json`, `sandbox.json` and `auto.json`
+follow you to each of your machines. Your Mac sets each one once on the control plane
+(`user/setSettings`, parts `retention`, `person`, `runtimes` and `auto`), and the control
+plane sends it to each machine when it joins and when it changes (`machine/userSettings`).
+A machine that is older than these parts gets one call from your Mac instead (#5573).
 
 `limits.json`, `workflow-limit.json` and `runtime-environment.json` are not read now. On
 the first start, Agent Loops moves what they hold into `policy-yours.json` and renames each one

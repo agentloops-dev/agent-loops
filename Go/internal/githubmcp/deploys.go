@@ -34,6 +34,10 @@ type WaitingDeploy struct {
 	Reviewers []string
 	// CanApprove says whether the connection's owner may approve every one of Environments.
 	CanApprove bool
+	// Approval is set for a deploy that waits for an approval in Agent Loops, not for an
+	// environment's reviewers (#5564): Run is then the Deployment's (no id), Environments its one
+	// environment (no id), and the answer is AnswerApproval, not ReviewDeployments.
+	Approval *DeployApproval
 }
 
 // EnvironmentIDs is what an answer names.
@@ -56,6 +60,9 @@ func (w WaitingDeploy) EnvironmentNames() string {
 
 // key tells one wait from the next of the same run: an attempt, then the environments.
 func (w WaitingDeploy) key() string {
+	if w.Approval != nil {
+		return fmt.Sprintf("deployment:%d", w.Approval.Deployment.ID)
+	}
 	ids := make([]string, len(w.Environments))
 	for i, e := range w.Environments {
 		ids[i] = fmt.Sprint(e.ID)
@@ -74,10 +81,14 @@ func (w WaitingDeploy) data() map[string]any {
 		reviewers = []string{}
 	}
 	c := w.Run
-	return map[string]any{"run": map[string]any{
+	out := map[string]any{"run": map[string]any{
 		"id": c.Run.ID, "attempt": c.Run.Attempt, "name": c.Run.Name, "workflow": c.Workflow, "event": c.Event,
 		"branch": c.Run.Branch, "headSha": c.Run.HeadSHA, "url": c.Run.URL, "actor": c.Actor,
 	}, "environments": envs, "reviewers": reviewers, "canApprove": w.CanApprove, "waitingSince": c.Run.UpdatedAt}
+	if a := w.Approval; a != nil {
+		out["approval"] = map[string]any{"deployment": a.Deployment.ID, "workflow": a.Workflow}
+	}
+	return out
 }
 
 // pendingJSON is one of a run's pending deployments, as GitHub's API lists them.
@@ -97,8 +108,9 @@ type pendingJSON struct {
 	} `json:"reviewers"`
 }
 
-// WaitingDeploys are the repo's runs waiting for an environment's reviewers: only workflow's
-// (a file name) when it is set, only branch's (a branch or a tag) when it is set.
+// WaitingDeploys are the repo's runs waiting for an environment's reviewers, then its
+// Deployments waiting for an approval in Agent Loops (#5564, approvals.go): only workflow's (a
+// file name) when it is set, only branch's (a branch or a tag) when it is set.
 func (g *RealGitHub) WaitingDeploys(ctx context.Context, repo, workflow, branch string) ([]WaitingDeploy, error) {
 	if _, _, err := ownerName(repo); err != nil {
 		return nil, err
@@ -139,7 +151,11 @@ func (g *RealGitHub) WaitingDeploys(ctx context.Context, repo, workflow, branch 
 			out = append(out, w)
 		}
 	}
-	return out, nil
+	approvals, err := g.approvalDeploys(ctx, repo, workflow, branch)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, approvals...), nil
 }
 
 // ReviewDeployments approves or rejects a run's wait on environments, as the person: GitHub

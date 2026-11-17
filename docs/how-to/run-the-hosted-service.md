@@ -385,7 +385,7 @@ one line per event, and never a code, a key, a token or an email address.
 | `AGENTS_CONTROL_KMS` | The KMS key that seals each account's control key |
 | `AGENTS_HOSTED_DOMAIN` | The sign-up and account pages' name |
 | `AGENTS_HOSTED_ACCOUNTS_DOMAIN` | The control planes are at `<account>.` this name; the pages' name when unset |
-| `AGENTS_HOSTED_GITHUB_CLIENT_ID` | The GitHub App's client id; `agents-loops`'s when unset |
+| `AGENTS_HOSTED_GITHUB_CLIENT_ID` | The GitHub App's client id; `agent-loops-dev`'s when unset |
 | `AGENTS_HOSTED_GITHUB_SECRET` | Its client secret; GitHub is not offered without it |
 | `AGENTS_HOSTED_APPLE_SERVICES_ID` | Sign in with Apple's Services ID; Apple is offered with this and the next three |
 | `AGENTS_HOSTED_APPLE_TEAM_ID` | The Apple Developer team that has the Services ID |

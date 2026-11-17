@@ -34,6 +34,8 @@ func (c *toldStatus) all() []wire.MachineStatus {
 // comes, again only when it changes, and again whole when the uplink comes back; busy while
 // an agent works, idle once none does, with the next scheduled workflow.
 func TestAHostTellsItsControlPlaneWhetherItIsIdle(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)

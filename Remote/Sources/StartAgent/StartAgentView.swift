@@ -62,6 +62,10 @@ struct StartAgentView: View {
             focused = true
         }
         .onChange(of: model.offeredStart) { takeOffer() }
+        // Read each time the page comes, and when its folder's host comes back (#5460).
+        .task(id: SuggestionsAsk(key: key, can: model.suggestsLeads(on: key.host))) {
+            await model.loadSuggestions(in: key)
+        }
         // Share ▸ Agent Loops while this page is already on screen (#4915).
         .onChange(of: model.sharedArrivals) { takeShared() }
         // Voice mode turned on in a chat (another window on an iPad): one listener (#2445).
@@ -111,6 +115,8 @@ struct StartAgentView: View {
             // Project, then On (#3279): not in a folder's own scene, which is the folder.
             if sceneFolder == nil { ProjectRows(folder: key) }
             personaHeading
+            // Suggested (#5460): open epics with no lead, a tap fills the form as Start lead does.
+            SuggestedLeadsSection(key: key) { fill($0.start) }
             // Starts kept for this folder's stopped workspace (#691 US3, layouts.md L6a): the
             // agent each makes opens once the host is up.
             if case let starts = model.keptStarts(in: folder), !starts.isEmpty {
@@ -174,8 +180,8 @@ struct StartAgentView: View {
                     if !usable.isEmpty {
                         // Centred under the folder when it fits; a menu of them when it does not (#2795).
                         ViewThatFits(in: .horizontal) {
-                            personaPicker(usable, picked: picked)
-                            personaPicker(usable, picked: picked, menu: true)
+                            PersonaPicker(usable, picked: model.startPersona) { pickPersona($0) }
+                            PersonaPicker(usable, picked: model.startPersona, menu: true) { pickPersona($0) }
                         }
                     }
                     // What the live pick picked and the word, so the person sees what to change (#4559).
@@ -203,40 +209,10 @@ struct StartAgentView: View {
         }
     }
 
-    static let noPersona = "No persona"
-
-    /// Segments, or a menu: the picked one's name and a chevron, where they do not fit (#2795).
-    /// No Auto segment (#4721): the prompt's words pick one live until one is picked by hand.
-    @ViewBuilder
-    private func personaPicker(_ usable: [Persona], picked: Persona?, menu: Bool = false) -> some View {
-        let picker = Picker("Persona", selection: Binding<Persona.Segment>(
-            get: { Persona.Segment(picked: model.startPersona) },
-            set: { segment in
-                switch segment {
-                case .none: pickPersona(nil)
-                case .persona(let id): pickPersona(usable.first { $0.id == id })
-                }
-            }
-        )) {
-            Text(Self.noPersona).tag(Persona.Segment.none)
-            ForEach(usable) { persona in
-                Text(persona.name).tag(Persona.Segment.persona(persona.id))
-            }
-        }
-        let shown = picked?.name ?? Self.noPersona
-        if menu {
-            picker
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityLabel("Persona: \(shown)")
-        } else {
-            picker
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize(horizontal: true, vertical: false)
-                .accessibilityLabel("Persona: \(shown)")
-        }
+    /// What the Suggested read waits on: the folder, and whether its host can answer now.
+    private struct SuggestionsAsk: Equatable {
+        let key: FolderKey
+        let can: Bool
     }
 
     /// Every setting the persona names, and its labels beside any already there, in place
@@ -261,9 +237,18 @@ struct StartAgentView: View {
     /// labels beside any already there. Its worktree is the model's to choose.
     private func takeOffer() {
         guard let start = model.takeOfferedStart(in: key) else { return }
-        text = start.prompt
+        fill(prompt: start.prompt, labels: start.labels)
+    }
+
+    /// A Suggested row's Start lead (#5460): as a view's offer, with no worktree.
+    private func fill(_ start: DaemonAPI.ForgeStart) {
+        fill(prompt: start.prompt, labels: start.labels)
+    }
+
+    private func fill(prompt: String, labels: [String]) {
+        text = prompt
         // Held to what a session takes, as a label typed here is.
-        draftLabels += SessionLabelPolicy.accepted(start.labels, existing: draftLabels)
+        draftLabels += SessionLabelPolicy.accepted(labels, existing: draftLabels)
         focused = true
     }
 

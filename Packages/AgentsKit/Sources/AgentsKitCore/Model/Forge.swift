@@ -37,6 +37,14 @@ public extension DaemonAPI {
         public var assignees: [String]
         /// The wire's, for the standing epics' queries; the app does not show it (#3878).
         public var milestone: String?
+        /// The milestone's due date, where the forge says it (#5688); no client shows it yet.
+        public var milestoneDue: Date?
+        /// high, medium or low; nil for none (#5688). The forge's own priority field gives it
+        /// where it has one, else the labels `priority:…` (#5747).
+        public var priority: String?
+        /// On hold (#5747): Bitbucket's state on hold, else the label `on hold`; nil is not on
+        /// hold. No client shows it yet.
+        public var onHold: Bool?
         public var updatedAt: Date
         /// When it opened, and when it closed or merged (nil while open), where the forge says
         /// them (`ForgeCapabilities.createdAt` and `closedAt`; #4373).
@@ -353,8 +361,11 @@ public extension DaemonAPI {
     /// close it, and `events` its timeline, oldest first; nil where the forge gives none. On a pull
     /// request's read (#4409): `additions`, `deletions` and `commits` are its size, `reviewers`
     /// each person asked or who reviewed, once, and `closes` the issues it closes when it merges.
+    /// `viewer` is the login this machine reads and writes the forge as (#5804), the one
+    /// `forge/approve` reviews as; nil where the connection does not say it.
     struct ForgeItemDetail: Codable, Sendable, Hashable {
         public var item: ForgeItem
+        public var viewer: String?
         public var body: String
         public var comments: [ForgeComment]
         public var cursor: String?
@@ -381,8 +392,9 @@ public extension DaemonAPI {
                     transitions: [ForgeTransition]? = nil, actions: [String]? = nil, children: [ForgeLinked]? = nil,
                     linkedPulls: [ForgeLinked]? = nil, events: [ForgeEvent]? = nil, additions: Int? = nil,
                     deletions: Int? = nil, commits: Int? = nil, reviewers: [ForgeReviewer]? = nil,
-                    closes: [ForgeLinked]? = nil) {
+                    closes: [ForgeLinked]? = nil, viewer: String? = nil) {
             self.item = item
+            self.viewer = viewer
             self.body = body
             self.comments = comments
             self.cursor = cursor
@@ -842,8 +854,8 @@ public extension DaemonAPI {
         }
     }
 
-    /// The features, by name; `approvals` are the open pull requests labelled needs-approval
-    /// (#4115); `errors` says a forge that could not be read.
+    /// The features, by name; `approvals` are the open pull requests with a review requested
+    /// from the person (#4115, #5803); `errors` says a forge that could not be read.
     struct ForgeFeatures: Codable, Sendable, Hashable {
         public var features: [ForgeFeature]
         public var approvals: [String]?
@@ -852,6 +864,50 @@ public extension DaemonAPI {
         public init(features: [ForgeFeature] = [], approvals: [String]? = nil, errors: [ForgeListError]? = nil) {
             self.features = features
             self.approvals = approvals
+            self.errors = errors
+        }
+    }
+}
+
+/// `forge/next` (#5689): the work that is ready, in one order, with the reason for each place.
+public extension DaemonAPI {
+    /// `forge/next`'s question: the folder; one epic's children, or the open epics (`level: "epic"`).
+    struct ForgeNextRequest: Codable, Sendable, Hashable {
+        public var folder: String
+        public var epic: LineageNode?
+        public var level: String?
+
+        public init(folder: String, epic: LineageNode? = nil, level: String? = nil) {
+            self.folder = folder
+            self.epic = epic
+            self.level = level
+        }
+    }
+
+    /// A row: the item, its place (1 first), the reasons for it, and whether it is on hold.
+    struct ForgeNextRow: Codable, Sendable, Hashable {
+        public var item: ForgeItem
+        public var place: Int
+        public var reasons: [String]
+        public var onHold: Bool
+
+        public init(item: ForgeItem, place: Int, reasons: [String] = [], onHold: Bool = false) {
+            self.item = item
+            self.place = place
+            self.reasons = reasons
+            self.onHold = onHold
+        }
+    }
+
+    /// The rows, at most 100, when they were read, and the forges that could not be read.
+    struct ForgeNext: Codable, Sendable, Hashable {
+        public var rows: [ForgeNextRow]
+        public var readAt: Date
+        public var errors: [ForgeListError]?
+
+        public init(rows: [ForgeNextRow] = [], readAt: Date, errors: [ForgeListError]? = nil) {
+            self.rows = rows
+            self.readAt = readAt
             self.errors = errors
         }
     }
@@ -884,6 +940,8 @@ public extension DaemonAPI.Method {
     static let forgeDiff = "forge/diff"
     /// `ForgePlanRequest` → `ForgePlan`, `ForgeFeaturesRequest` → `ForgeFeatures` (#3267).
     static let forgePlan = "forge/plan"
+    /// `ForgeNextRequest` → `ForgeNext` (#5689).
+    static let forgeNext = "forge/next"
     static let forgeFeatures = "forge/features"
     /// `ForgeBoardsRequest` → `ForgeBoards` (#3282).
     static let forgeBoards = "forge/boards"

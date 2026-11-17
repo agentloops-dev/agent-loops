@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -19,6 +20,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/envfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -33,6 +35,10 @@ import (
 //	notifications <settings>/display.json's noticeBurst and noticeCooldownMinutes (#2859)
 //	resources     <root>/resources.json
 //	secrets       ~/.agents-secrets/sealed.json, sealed (#4177)
+//	environment   ~/.agents/env, unless it was changed by hand here (#5259, environment.go)
+//	person        <settings>/person.json, unless this machine already says the same (#5573)
+//	auto          <settings>/auto.json, as auto/set keeps it (#5573)
+//	retention     <settings>/retention.json, as a confirmed retention/set (#5573)
 //
 // <root>/user-settings-sync.json stores sync metadata: secret names and the agentConfig
 // files written. A machine does not send its own agent configuration files to the person's
@@ -59,9 +65,18 @@ type userSettingsSyncState struct {
 	// TimeZone is the person's timeZone part (#4818): the zone of a workflow's hours: with
 	// no time-zone:. "" is none, and this host's own zone.
 	TimeZone string `json:"timeZone,omitempty"`
+	// EnvDigest is the SHA-256 of what the environment part last wrote to ~/.agents/env
+	// (#5259), so an edit by hand is told from it; EnvText is that text, for Discard. A value
+	// that looks like a secret is refused by the control plane, so neither holds one.
+	EnvDigest string `json:"envDigest,omitempty"`
+	EnvText   string `json:"envText,omitempty"`
 }
 
 type userScopeState struct {
+	// agentOffersMu makes one offer of an agent's secret at a time (#5308).
+	agentOffersMu sync.Mutex
+	// personMu is person.json's (person/set and the part person, #5573).
+	personMu    sync.Mutex
 	userScopeMu sync.Mutex
 	userMark    *userSettingsSyncState
 	personTZ    atomic.Pointer[string]
@@ -108,12 +123,18 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	// A person's Set, Replace… and Remove… in Settings ▸ Secrets (#4156), raised once the lock
 	// is let go. The control plane's audit has them already, from the person's own call.
 	var changes []secretChange
+	envChanged := false
 	defer func() {
+		if envChanged {
+			d.tellEnvChanged("", true)
+		}
 		for _, c := range changes {
 			d.secretChanged("", c.name, c.what, false)
 		}
 		// What this machine holds now, with each hint and last operation (#4158).
-		go d.tellSecretsHeld()
+		d.goJob("tellSecretsHeld", func() { d.tellSecretsHeld() })
+		// An agent's secret here that is not offered yet goes to the person's apps (#5308).
+		d.goJob("offerWaitingAgentSecrets", func() { d.offerWaitingAgentSecrets() })
 	}()
 	d.userScopeMu.Lock()
 	defer d.userScopeMu.Unlock()
@@ -149,10 +170,30 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	if partSent(s.Policy) {
 		note(wire.UserSettingsPartNamePolicy, d.applyYoursFromControlPlane(s.Policy))
 	}
+	if partSent(s.Environment) {
+		changed, err := d.writeYoursEnvLocked(home, s.Environment, before, &mark)
+		envChanged = changed
+		note(wire.UserSettingsPartNameEnvironment, err)
+	}
+	// person, auto and retention (#5573): the Mac sets each once, here, in place of a call to
+	// each of the person's machines.
+	if partSent(s.Person) {
+		note(wire.UserSettingsPartNamePerson, d.applyPersonPart(s.Person))
+	}
+	if partSent(s.Auto) {
+		note(wire.UserSettingsPartNameAuto, d.applyAutoPart(s.Auto))
+	}
+	if partSent(s.Retention) {
+		note(wire.UserSettingsPartNameRetention, d.applyRetentionPart(s.Retention))
+	}
 	// timeZone (#4818): the zone of a workflow's hours: with no time-zone:.
 	mark.TimeZone = zoneOfPart(s.TimeZone)
 	opened, flagged, versions, kept, hints := d.openUserSecrets(u, before)
-	names, err := d.syncUserSecrets(home, opened, flagged, before.Secrets, kept)
+	coming := map[string]bool{}
+	for _, w := range u.Waiting {
+		coming[string(w.Name)] = true
+	}
+	names, err := d.syncUserSecrets(home, opened, flagged, before.Secrets, kept, u.OffersWaiting, coming)
 	for i := range opened {
 		opened[i].Value = ""
 	}
@@ -175,6 +216,12 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	}
 	if err == nil && before.User == u.User {
 		changes = userSecretChanges(before, mark)
+		// A name an agent's secret keeps here while its offer waits (#5308) was not removed.
+		held := readSealedSecrets(home).Secrets
+		changes = slices.DeleteFunc(changes, func(c secretChange) bool {
+			_, ok := held[c.name]
+			return c.what == wire.SecretOperationWhatRemoved && ok
+		})
 	}
 	mark.About, mark.Waiting = secretsAbout(u.Secrets, names), u.Waiting
 	if err != nil {
@@ -193,6 +240,19 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
 	}
+	return nil
+}
+
+// saveUserMarkLocked writes the mark and keeps it. Called with userScopeMu held.
+func (d *Daemon) saveUserMarkLocked(mark userSettingsSyncState) error {
+	b, err := diskjson.Marshal(mark)
+	if err != nil {
+		return err
+	}
+	if err := store.WriteAtomically(d.userSettingsSyncPath(), b, 0o644); err != nil {
+		return err
+	}
+	d.userMark = &mark
 	return nil
 }
 
@@ -409,6 +469,60 @@ func (d *Daemon) writeRuntimeChoices(raw wire.JSONValue) error {
 	return nil
 }
 
+// applyPersonPart is the part person (#5573): what agents call the person, with the name
+// their Mac resolved. A machine whose own settings already give that name and those
+// pronouns keeps them as they are, so the Mac's own "the account's first name" stays.
+func (d *Daemon) applyPersonPart(raw wire.JSONValue) error {
+	var p wire.PersonSettings
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return errors.New("not a person's settings")
+	}
+	d.personMu.Lock()
+	here := readPerson(d.personFile())
+	d.personMu.Unlock()
+	if personSays(here) == personSays(p) {
+		return nil
+	}
+	_, err := d.setPerson(p)
+	return err
+}
+
+// personSays is what an agent is told of the person: the effective name and the pronouns.
+func personSays(p wire.PersonSettings) [2]string {
+	pronouns := ""
+	if p.Pronouns != nil {
+		pronouns = strings.TrimSpace(*p.Pronouns)
+	}
+	return [2]string{personName(p.Name), pronouns}
+}
+
+// applyAutoPart is the part auto (#5573): Auto's settings, kept as auto/set keeps them.
+func (d *Daemon) applyAutoPart(raw wire.JSONValue) error {
+	var a wire.AutoSettings
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return errors.New("not Auto's settings")
+	}
+	if reflect.DeepEqual(normalAuto(a), d.autoSettings()) {
+		return nil
+	}
+	_, err := d.setAutoSettings(a)
+	return err
+}
+
+// applyRetentionPart is the part retention (#5573): how long archived agents are kept, as
+// a confirmed retention/set, since the person confirmed it on their Mac.
+func (d *Daemon) applyRetentionPart(raw wire.JSONValue) error {
+	var r wire.RetentionSettings
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return errors.New("not retention settings")
+	}
+	if d.retentionState().Settings.KeepFor == r.KeepFor {
+		return nil
+	}
+	_, err := d.setRetention(wire.RetentionSetRequest{Settings: r, Confirmed: true})
+	return err
+}
+
 // applyYoursFromControlPlane is the part policy from the control plane (#2957, research
 // R11): a copy of your layer, applied as a non-keeper machine does (applySignedYours),
 // pinning the person key on first use when this machine has none pinned yet.
@@ -520,7 +634,7 @@ func (d *Daemon) userPartHere(part wire.UserSettingsPartName) (wire.UserPartHere
 }
 
 // secretLooking is a header or variable whose value is a secret by its name.
-var secretLooking = regexp.MustCompile(`(?i)(token|secret|key|password|passwd|auth|bearer|cookie|credential)`)
+var secretLooking = envfile.SecretLookingName
 
 // tokensInClear refuses servers with a secret written in clear in an env or a header: in
 // the user settings it would be kept unsealed. Its words name the server and the key,

@@ -11,7 +11,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,9 +57,7 @@ func TestTheBundlesToolsetsLoad(t *testing.T) {
 		t.Fatal("kinds")
 	}
 	// A Mac's recipes: on Linux, every test host's start made the switch a server's.
-	old := serverToolsets
-	serverToolsets = false
-	t.Cleanup(func() { serverToolsets = old })
+	setFor(t, &serverToolsets, false)
 	d := &Daemon{}
 	d.toolsets = ts
 	if d.recipe("claude") == nil || d.recipe("opencode") == nil || d.recipe("grok").Script == nil || d.recipe("nothing") != nil {
@@ -115,6 +115,44 @@ func install(t *testing.T, c *conn, n int, id string) wire.RuntimeStatus {
 	return waitInstalled(t, c, id)
 }
 
+// installAnswered is install with its answer too: the answer and the ending, which can come
+// in either order. With c.call, then waitInstalled, an install that ended before its answer
+// went had its ending dropped as a notification, and the wait said "no ending" (#5744).
+func installAnswered(t *testing.T, c *conn, n int, id string) (answer, end wire.RuntimeStatus) {
+	t.Helper()
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": n, "method": "runtimes/install",
+		"params": map[string]any{"runtimeID": id}})
+	c.in <- string(b)
+	answered, ended := false, false
+	deadline := time.After(20 * time.Second)
+	for !answered || !ended {
+		select {
+		case line := <-c.out:
+			var m struct {
+				ID     json.RawMessage    `json:"id"`
+				Method string             `json:"method"`
+				Result json.RawMessage    `json:"result"`
+				Error  *Error             `json:"error"`
+				Params wire.RuntimeStatus `json:"params"`
+			}
+			json.Unmarshal([]byte(line), &m)
+			switch {
+			case string(m.ID) == strconv.Itoa(n):
+				if m.Error != nil {
+					t.Fatalf("%s: %v", id, m.Error)
+				}
+				json.Unmarshal(m.Result, &answer)
+				answered = true
+			case m.Method == "runtime/changed" && m.Params.Runtime.ID == id && m.Params.Availability.Installing == nil:
+				end, ended = m.Params, true
+			}
+		case <-deadline:
+			t.Fatalf("%s: answered %v, ended %v", id, answered, ended)
+		}
+	}
+	return answer, end
+}
+
 func waitInstalled(t *testing.T, c *conn, id string) wire.RuntimeStatus {
 	t.Helper()
 	deadline := time.After(20 * time.Second)
@@ -146,12 +184,10 @@ func TestInstallTheAppsOwnCopies(t *testing.T) {
 	}
 
 	for i, id := range []string{"codex", "opencode"} {
-		var s wire.RuntimeStatus
-		json.Unmarshal(c.call(t, i+1, "runtimes/install", map[string]any{"runtimeID": id}), &s)
+		s, end := installAnswered(t, c, i+1, id)
 		if s.Availability.Installing == nil {
 			t.Fatalf("%s: answered %+v", id, s.Availability)
 		}
-		end := waitInstalled(t, c, id)
 		if end.Availability.Available == nil || !strings.HasSuffix(end.Availability.Available.Path, "/current/bin/"+runtimeByID(id).Executable) {
 			t.Fatalf("%s: %+v", id, end.Availability)
 		}
@@ -163,7 +199,9 @@ func TestInstallTheAppsOwnCopies(t *testing.T) {
 	}
 	// runtimes/list offers the button, and says the copy is the one the app carries.
 	var list []wire.RuntimeStatus
-	json.Unmarshal(c.call(t, 9, "runtimes/list", nil), &list)
+	if err := json.Unmarshal(c.call(t, 9, "runtimes/list", nil), &list); err != nil {
+		t.Fatal(err)
+	}
 	for _, s := range list {
 		if s.Runtime.ID == "codex" && (s.Runtime.Install == nil || s.Availability.Available == nil || s.Outdated) {
 			t.Fatalf("codex listed as %+v", s)
@@ -267,6 +305,8 @@ func TestAnInstallThatFailsSaysWhy(t *testing.T) {
 }
 
 func TestNPMProblems(t *testing.T) {
+	t.Parallel()
+
 	out := "npm error code E404\nnpm error 404 Not Found - GET https://registry/x\nnpm error A complete log of this run can be found in: /x\n"
 	if got := npmProblem(out, "Codex").Error(); got != "Installing Codex failed: 404 Not Found - GET https://registry/x" {
 		t.Fatal(got)
@@ -365,6 +405,8 @@ mkdir -p "$p/node_modules/@x/adapter/dist" && echo 'ok' > "$p/node_modules/@x/ad
 }
 
 func TestGlibcAtLeast(t *testing.T) {
+	t.Parallel()
+
 	for libc, want := range map[string]bool{"glibc 2.36": true, "glibc 2.28": true, "glibc 2.27": false, "glibc 3.0": true, "": false, "musl": false} {
 		if glibcAtLeast(libc, 2, 28) != want {
 			t.Fatalf("%q", libc)
@@ -373,6 +415,8 @@ func TestGlibcAtLeast(t *testing.T) {
 }
 
 func TestUntarXZStaysInside(t *testing.T) {
+	t.Parallel()
+
 	for _, files := range []map[string]string{{"n/../../escape*": "x"}, {"@n/bin/out": "../../../etc"}} {
 		file := filepath.Join(t.TempDir(), "a.tar.xz")
 		os.WriteFile(file, tarXZ(t, files), 0o644)
@@ -423,7 +467,18 @@ func TestAServerTakesNPXAsNoClaude(t *testing.T) {
 // installs the pinned toolset, runtimes/list says installing, and from then on the shim
 // runs the adapter with node, with no `npm exec` under it.
 func TestClaudesFirstUseInstallsTheAppsCopy(t *testing.T) {
-	_, bundle := fakeVendors(t)
+	dist, bundle := fakeVendors(t)
+	// The Node download waits until the test has read Installing (#5825): with the fake
+	// toolset, the install could end before that read, and the read then said Available.
+	gate := make(chan struct{})
+	openGate := sync.OnceFunc(func() { close(gate) })
+	held := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-gate
+		dist.Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(held.Close)
+	t.Cleanup(openGate) // before held.Close, which waits for the held download
+	nodeDistURL = held.URL + "/"
 	own := t.TempDir()
 	os.WriteFile(filepath.Join(own, "npx"), []byte("#!/bin/sh\n"), 0o755)
 	oldShell := loginShellPath
@@ -450,6 +505,7 @@ func TestClaudesFirstUseInstallsTheAppsCopy(t *testing.T) {
 	if s := d.statusOf(r); s.Availability.Installing == nil {
 		t.Fatalf("runtimes/list says %+v while the app's copy installs", s.Availability)
 	}
+	openGate()
 	end := waitInstalled(t, c, "claude")
 	if end.Availability.Available == nil || end.Availability.Available.Path != appToolset(r) {
 		t.Fatalf("installed as %+v", end.Availability)
@@ -481,6 +537,8 @@ func TestClaudesFirstUseInstallsTheAppsCopy(t *testing.T) {
 // Dependabot bumps the adapter in package.json and its lock (#4512), and nothing else: the
 // manifest's packageVersion, which runtimes/list and the runtime check read, must say the same.
 func TestTheBundlesNodeToolsetsPinOneVersion(t *testing.T) {
+	t.Parallel()
+
 	for _, id := range []string{"claude", "codex"} {
 		dir := filepath.Join("../../../App/Resources/toolsets", id)
 		var manifest struct{ Package, PackageVersion string }

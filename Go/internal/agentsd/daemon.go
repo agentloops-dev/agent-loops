@@ -4,20 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
+	"golang.org/x/sync/singleflight"
 )
 
 // Daemon is one host: its root, the clients connected to it, and what it serves them.
 type Daemon struct {
-	ctx      context.Context
+	ctx context.Context
+	// opts are the daemon's own (#5926): set by New, and changed only by a test, as a test
+	// once changed the process's environment while its daemon ran.
+	opts     atomic.Pointer[startOptions]
 	Store    *store.Store
 	handlers map[string]Handler
 
@@ -32,6 +37,10 @@ type Daemon struct {
 
 	// erasures is the queue of runtime copies of deleted agents to erase (#1001).
 	erasures eraser
+
+	// featureReads shares one forge/features read between the calls that ask for it at once
+	// (#5450): the window asks forge/features and work/features together, to draw the rows first.
+	featureReads singleflight.Group
 
 	// Tunneler opens tunnels through the control plane, to a host that lends a sign-in;
 	// nil when this host has no control plane.
@@ -127,7 +136,11 @@ type Daemon struct {
 	lineageBook
 	// The build timings (#5177).
 	ciTimingsBook
+	// The queue of each repository's CI, for the ci lease (#5678).
+	ciQueueBook
 	ciSyncBook
+	// The control plane's copy of the deploys (#5496).
+	deploySyncBook
 	// The events this machine publishes on the bus (#4729).
 	busBook
 	// Subscriptions on the bus, and the bursts debounce holds (#4730).
@@ -181,19 +194,50 @@ type Daemon struct {
 	// Only the keeper signs with it.
 	PersonKey controllink.PersonKeyStore
 	yourPolicyBook
+	jobBook
 }
 
 // New opens the root and registers every method this host serves.
+// startOptions is what one daemon has from its start (#5926), before New starts its first
+// goroutine, in place of what the process's environment and package variables say: tests run
+// daemons side by side in one process, each with its own.
+type startOptions struct {
+	// namedHome is the personal home AGENTS_PERSONAL_HOME names, "" when none is named.
+	namedHome string
+	// locate finds a runtime in place of locateFor; nil is locateFor. A test's starts a fake.
+	locate func(*runtimeDef) (string, []string, []string)
+	// runtimeEnv goes into each runtime's environment, after the rest.
+	runtimeEnv []string
+}
+
+// startOpts are the daemon's start options now: none for a Daemon made without New.
+func (d *Daemon) startOpts() startOptions {
+	if o := d.opts.Load(); o != nil {
+		return *o
+	}
+	return startOptions{}
+}
+
+// New is a daemon on root, with the personal home AGENTS_PERSONAL_HOME names.
 func New(ctx context.Context, root string) (*Daemon, error) {
+	return newWith(ctx, root, startOptions{namedHome: os.Getenv("AGENTS_PERSONAL_HOME")})
+}
+
+// newWith is New with its options given, not read from the process.
+func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, error) {
 	st, err := store.Open(root)
 	if err != nil {
 		return nil, err
 	}
+	// Shutdown ends this ctx last, so a goroutine that waits on d.ctx ends with the host (#5653).
+	ctx, cancel := context.WithCancel(ctx)
 	d := &Daemon{ctx: ctx, Store: st, handlers: map[string]Handler{}, clients: map[int64]*Client{}, unknown: map[string]int{},
 		lives: map[wire.UUID]*live{}, relays: map[string]*relay{}, sent: map[wire.UUID]bool{},
 		watches: map[string]*folderWatch{}, interests: map[string][]interest{}, shells: map[shellKey]*shell{},
 		SettingsDir: filepath.Join(st.Loc.Root, "settings"), HostKey: controllink.HostKeyFile{Root: st.Loc.Root},
 		PersonKey: controllink.PersonKeyFile{Root: st.Loc.Root}}
+	d.opts.Store(&opts)
+	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
 	// The sweep of roots that are gone finds this root's own folders by this (#3746).
 	if err := store.MarkOwnFolders(st.Loc); err != nil {
@@ -224,13 +268,13 @@ func New(ctx context.Context, root string) (*Daemon, error) {
 	d.checkEveryQueue()
 	// A place another machine of the project frees (#3281).
 	d.checkProjectQueues()
+	// Levels kept by a host before this one, or with Auto settings since changed (#5730).
+	d.rematchLevels()
 	d.restoreRuns()
 	d.startWorkflowClock()
 	// Each folder's one watch (#173), which the first workflow scan starts too.
 	d.kickFolderWatches()
-	if done := ctx.Done(); done != nil {
-		safe.Go("folder watches end", func() { <-done; d.stopFolderWatches() })
-	}
+	d.goJob("folder watches end", func() { <-ctx.Done(); d.stopFolderWatches() })
 	d.checkAchievementsSoon()
 	d.countMergedPRsEveryHour()
 	d.checkReleaseTagsEveryHour()
@@ -410,6 +454,9 @@ func (d *Daemon) Shutdown() {
 	d.writeHeld()
 	// The archived agents' summaries, so the next start trusts them all (#4653).
 	d.Store.FlushSummaries()
+	// Last: every goroutine the host started has ended, so none writes into the root or
+	// reads a setting after this returns (#5653).
+	d.waitJobs(jobLimit)
 }
 
 // once is true the first time a sendID is seen: a window sends a prompt again for 30 s

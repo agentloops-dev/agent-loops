@@ -13,9 +13,7 @@ func TestTheMachineWatchIsHeard(t *testing.T) {
 	asked := filepath.Join(dir, "asked")
 	helper := filepath.Join(dir, "agents-watch")
 	os.WriteFile(helper, []byte("#!/bin/sh\necho \"$@\" > "+asked+"\nprintf 'back:locked\\000\\000ready\\000sleep\\000wake\\000away:idle\\000'\ncat > /dev/null\n"), 0o755)
-	old := watchHelper
-	watchHelper = func() string { return helper }
-	defer func() { watchHelper = old }()
+	setFor(t, &watchHelper, func() string { return helper })
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	locked := "locked"

@@ -40,9 +40,7 @@ func starterTemplate(t *testing.T, repo string, files map[string]string) {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	old := starterGitBase
-	starterGitBase = "file://" + base
-	t.Cleanup(func() { starterGitBase = old })
+	setFor(t, &starterGitBase, "file://"+base)
 }
 
 // A small web-service-like template: its own README and CI under .starterignore, a binary
@@ -59,6 +57,8 @@ var webTemplate = map[string]string{
 }
 
 func TestStarterRepo(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"iphone-app": "agentloops-dev/iphone-app-starter", "web-service": "agentloops-dev/web-service-starter",
 		"someone/my-starter": "someone/my-starter",
@@ -128,6 +128,8 @@ func TestFillStarterFillsEveryPlaceholder(t *testing.T) {
 }
 
 func TestWithoutStarterIgnoredWithNoIgnoreFile(t *testing.T) {
+	t.Parallel()
+
 	files := map[string][]byte{"a": nil, ".github/README.md": nil}
 	if got := withoutStarterIgnored(files); len(got) != 2 {
 		t.Errorf("got %v", got)

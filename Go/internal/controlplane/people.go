@@ -440,6 +440,10 @@ func (m *Methods) removePerson(ctx context.Context, user string, from Caller) er
 			m.s.announce("clientForgotten", c.ID, from.Client)
 		}
 	}
+	// Their open windows lose access before the reply, not some time after it: forget
+	// closes a client's sockets on a goroutine of its own (#5843). The caller is never the
+	// removed person, so its reply still goes.
+	m.router.CutOffPerson(user)
 	for _, h := range m.records.Hosts() {
 		if m.s.ownerOf(h.ID) != user {
 			continue
@@ -620,4 +624,19 @@ func (s *Service) joinCommand(person string) string {
 		return ""
 	}
 	return JoinCommand(s.codes.URL, s.codes.Pin, person)
+}
+
+// madeMachineKey carries, through a context, that a host code is for a machine the control
+// plane makes (#5359), and the host id it joins as (#5765): chosen when the code is made, so
+// the machine's set-up is kept from step 1, before the machine has joined.
+type madeMachineKey struct{}
+
+func withMadeMachine(ctx context.Context, host string) context.Context {
+	return context.WithValue(ctx, madeMachineKey{}, host)
+}
+
+// madeMachine is the host id a code for a made machine joins as, or "".
+func madeMachine(ctx context.Context) string {
+	host, _ := ctx.Value(madeMachineKey{}).(string)
+	return host
 }

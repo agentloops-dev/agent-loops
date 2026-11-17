@@ -37,6 +37,8 @@ func tellDaemon(t *testing.T, n int) (*Daemon, []wire.UUID) {
 // A slow tell for one session does not hold another session's change (#4509): agentMu
 // covers only the save.
 func TestASlowTellDoesNotHoldAnotherSessionsChange(t *testing.T) {
+	t.Parallel()
+
 	d, ids := tellDaemon(t, 2)
 	slow, other := ids[0], ids[1]
 	held, release := make(chan struct{}), make(chan struct{})
@@ -71,6 +73,8 @@ func TestASlowTellDoesNotHoldAnotherSessionsChange(t *testing.T) {
 // One agent's changes are told in the order they were saved, also when the tells race
 // (#4509).
 func TestOneAgentsChangesAreToldInOrder(t *testing.T) {
+	t.Parallel()
+
 	d, ids := tellDaemon(t, 1)
 	id := ids[0]
 	var mu sync.Mutex

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -16,6 +17,8 @@ import (
 
 // SC-004, SC-005.
 func TestTheShippedAutoMapIsWholeAndSafe(t *testing.T) {
+	t.Parallel()
+
 	settings := wire.AutoSettings{}
 	for _, rt := range catalog {
 		for _, f := range autoFields {
@@ -58,6 +61,8 @@ func TestTheShippedAutoMapIsWholeAndSafe(t *testing.T) {
 
 // A model the runtime no longer offers is dropped, and Auto passes that runtime by (FR-020).
 func TestADroppedCell(t *testing.T) {
+	t.Parallel()
+
 	cat := "model"
 	offers := []wire.ConfigOption{{ID: "model", Name: "Model", Type: "select", Category: &cat,
 		Options: json.RawMessage(`[{"value":"sonnet","name":"Sonnet 5"},{"value":"opus[1m]","name":"Opus 5.5"}]`)}}
@@ -94,6 +99,8 @@ func out(d *Daemon, runtime string, rateLimited bool) {
 }
 
 func TestAutoPicksTheRuntime(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -134,6 +141,8 @@ func TestAutoPicksTheRuntime(t *testing.T) {
 }
 
 func TestAutoWhenNoRuntimeCan(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -166,6 +175,8 @@ func TestAutoWhenNoRuntimeCan(t *testing.T) {
 // A picture goes to a runtime that takes pictures (#3162): one that said it does not is passed
 // by, at the start and in the preview; one not started yet is not passed by on a guess.
 func TestAutoPassesByARuntimeThatTakesNoPictures(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -208,6 +219,8 @@ func TestAutoPassesByARuntimeThatTakesNoPictures(t *testing.T) {
 // The person's own cell wins, on Auto and on a named runtime (FR-016, FR-018); a native value
 // in the start wins over a level (the ⋯ own menu).
 func TestTheMappingsAreThePersons(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -238,8 +251,55 @@ func TestTheMappingsAreThePersons(t *testing.T) {
 	}
 }
 
+// A record keeps the levels it was given when it last changed: a cell the person moved
+// since, or a record from before levels were kept, said Custom for a mode a cell now gives
+// (#5730). auto/set and a branch match them again.
+func TestLevelsFollowTheMappings(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := t.TempDir()
+	// Claude's own Auto mode: no shipped cell gives it, so Custom, and no levels kept.
+	a := seeded(t, d, dir, func(a *wire.Agent) { a.StartOptions.Values["mode"] = jsonString("auto") })
+	permission := func(id wire.UUID) *wire.PermissionLevel {
+		if l := d.Store.Agent(id).Levels; l != nil {
+			return l.Permission
+		}
+		return nil
+	}
+	if d.rematchLevels(); permission(a.ID) != nil {
+		t.Fatalf("auto is no shipped cell: %v", *permission(a.ID))
+	}
+	auto := map[string]any{"options": map[string]any{"mode": "auto"}}
+	c.call(t, 1, "auto/set", map[string]any{"order": []string{}, "excluded": []string{},
+		"overrides": []any{map[string]any{"runtimeID": "claude", "field": "permission", "level": "approveForMe", "native": auto}}})
+	until(t, "Approve for me", func() bool {
+		p := permission(a.ID)
+		return p != nil && *p == wire.PermissionLevelApproveForMe
+	})
+	// A branch says the mode it runs in, not Custom.
+	b := seeded(t, d, dir, func(a *wire.Agent) { a.StartOptions.Values["mode"] = jsonString("plan") })
+	if _, err := d.Store.Append(b.ID, wire.TranscriptEntry{ID: store.NewUUID(), At: now(),
+		Kind: wire.TranscriptEntryKind{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _, _ := d.Store.Transcript(b.ID, 0)
+	id, err := d.branchFrom(wire.BranchFromRequest{AgentID: b.ID, EntryID: entries[0].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := permission(id); p == nil || *p != wire.PermissionLevelPlan {
+		t.Fatalf("branch: %v", p)
+	}
+}
+
 // A per-agent answer to permission requests, before the person's in Settings (FR-019).
 func TestAnAgentsOwnPermissionRequests(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -259,6 +319,8 @@ func TestAnAgentsOwnPermissionRequests(t *testing.T) {
 
 // Story 5: workflows take the shared words; on Auto, only them.
 func TestWorkflowWordsOnAuto(t *testing.T) {
+	t.Parallel()
+
 	read := func(src string) error {
 		m, err := yamlnode.MappingFrom(strings.Split(strings.TrimSpace(src), "\n"))
 		if err != nil {
@@ -314,6 +376,8 @@ func TestWorkflowWordsOnAuto(t *testing.T) {
 // FR-022: an Auto session whose runtime ran out carries on where Auto would start one now,
 // with its values, only when asked.
 func TestContinueOnAuto(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -333,6 +397,8 @@ func TestContinueOnAuto(t *testing.T) {
 // A helper on Auto asks unless its starter approves every request itself: Grok's Approve
 // for me is Always Approve, which runs shell commands Claude's Accept edits asks about.
 func TestAnAutoHelperAsksLikeItsStarter(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

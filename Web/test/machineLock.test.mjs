@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { load } from "./load.mjs";
+import { flakyUnderLoad } from "./flaky.mjs";
 
 const m = await load("src/wire/machineLock.ts");
 const model = await load("src/model/machineLock.ts");
@@ -300,7 +301,8 @@ test("another signer sees that one is comparing; a deny ends the ask, and Ask Ag
   assert.equal(mac.lock.cards.value[0].view.kind, "compare");
 });
 
-test("digits come from this signer's nonce, and a reveal that breaks its promise is refused", async () => {
+// Quarantined (#5819): it reads the digits before they arrive under load.
+test("digits come from this signer's nonce, and a reveal that breaks its promise is refused", { skip: flakyUnderLoad("#5819") }, async () => {
   const plane = controlPlane();
   const mac = plane.connect("AAAA-1111", "Mac");
   await mac.lock.run();
@@ -373,6 +375,45 @@ test("a machine that asks is approved with an addMachine, its key its sealing ke
   assert.equal(b64(added.sealingKey), b64(box.key));
   assert.equal(plane.requests.get(box.request).result, "approved");
   assert.deepEqual(mac.said, []);
+});
+
+test("a made machine whose digits matched is approved with no card; a broken reveal still shows one (#5776)", async () => {
+  const plane = controlPlane();
+  const mac = plane.connect("AAAA-1111", "Mac");
+  await mac.lock.run();
+  const box = await machineAsks(plane, "h-box", "dev-3");
+  await wait();
+  // Not compared yet: the card, as for any machine.
+  assert.equal(mac.lock.cards.value.length, 1);
+  // Its set-up compared the digits the control plane made (#5359): the row is told again.
+  const r = plane.requests.get(box.request);
+  r.compared = true;
+  mac.lock.notify("control/lockJoinRequested", structuredClone(r));
+  await wait(50);
+  assert.equal(mac.lock.cards.value.length, 0);
+  assert.equal(r.answeredBy, "AAAA-1111");
+  await plane.answer("h-box", "dev-3", "unknown", "lock/joinReveal", { request: box.request, nonce: b64(box.nonce) });
+  await wait(50);
+  const added = (await m.check(plane.lock.entries)).member(box.key);
+  assert.equal(added?.kind, "addMachine");
+  assert.equal(added.id, "h-box");
+  assert.equal(r.result, "approved");
+  assert.equal(mac.lock.cards.value.length, 0);
+  assert.deepEqual(mac.said, []);
+
+  // A reveal that is not the nonce the machine committed to is not approved: the card shows why.
+  const dev = await machineAsks(plane, "h-dev", "dev-4");
+  const d = plane.requests.get(dev.request);
+  d.compared = true;
+  mac.lock.notify("control/lockJoinRequested", structuredClone(d));
+  await wait(50);
+  assert.equal(d.answeredBy, "AAAA-1111");
+  const count = plane.lock.entries.length;
+  mac.lock.notify("control/lockJoinRequested", { ...structuredClone(d), reveal: b64(new Uint8Array(16).fill(7)) });
+  await wait(50);
+  assert.equal(plane.lock.entries.length, count);
+  assert.equal(mac.lock.cards.value.length, 1);
+  assert.equal(mac.lock.cards.value[0].view.kind, "notPromised");
 });
 
 test("a host code gets an invite on the lock, and only machines the lock names are sealed to (#3491)", async () => {

@@ -4,7 +4,8 @@
 import type { ComponentChildren } from "preact";
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
-import type { ForgeLabel } from "../protocol/generated";
+import type { ForgeItem, ForgeLabel } from "../protocol/generated";
+import { priorityWords } from "../model/epicPlan";
 import { LastUpdate } from "./LastUpdate";
 import { MessageBanner } from "./MessageKinds";
 import { avatarHue, chipColours, labelScope, stateGlyph, stateGlyphWords, type StateGlyph } from "../model/work";
@@ -56,6 +57,15 @@ export function LabelChip({ label, pick }: { label: ForgeLabel; pick?: ((name: s
       title={pick ? `Show only ${label.name}` : undefined}
       onClick={pick ? (e) => { e.stopPropagation(); e.preventDefault(); pick(label.name); } : undefined}>{words}</span>
   );
+}
+
+/** An item's priority (#5690), from ForgeItem.priority: the label chip's look, with the state tint in its text and
+ * line, never in its fill: High the failure's red, Medium the warning's orange, Low the plain chip. None has no chip. */
+export function PriorityChip({ priority }: { priority: ForgeItem["priority"] }) {
+  const words = priorityWords(priority);
+  if (!words) return null;
+  return <span class={`work-label work-priority is-${words.toLowerCase()}`} title={`Priority ${words.toLowerCase()}`}
+    aria-label={`Priority ${words.toLowerCase()}`}>{words}</span>;
 }
 
 /** Reads a forge's picture by its URL (forge/image on the machine that read the item, #4363), as a URL the page can draw. */
@@ -132,17 +142,17 @@ export function FilterMenu({ label, value, choices, any, always, standard, onPic
   useEffect(() => {
     if (!open.value) return;
     const close = (e: Event) => { if (!anchor.current?.contains(e.target as Node)) open.value = null; };
-    const escape = (e: KeyboardEvent) => { if (e.key === "Escape") { open.value = null; anchor.current?.querySelector("button")?.focus(); } };
+    const onEscape = (e: KeyboardEvent) => { if (e.key === "Escape") { open.value = null; anchor.current?.querySelector("button")?.focus(); } };
     const away = () => { open.value = null; };
     addEventListener("pointerdown", close);
-    addEventListener("keydown", escape);
+    addEventListener("keydown", onEscape);
     addEventListener("resize", away);
     // A scroll of the page moves the button from under the list; the list's own scroll does not.
     const scrolled = (e: Event) => { if (!menu.current?.contains(e.target as Node)) away(); };
     addEventListener("scroll", scrolled, true);
     menu.current?.querySelector<HTMLElement>("[aria-checked=true], [role=menuitemradio]")?.focus();
     return () => {
-      removeEventListener("pointerdown", close); removeEventListener("keydown", escape);
+      removeEventListener("pointerdown", close); removeEventListener("keydown", onEscape);
       removeEventListener("resize", away); removeEventListener("scroll", scrolled, true);
     };
   }, [open.value !== null]);

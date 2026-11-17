@@ -10,13 +10,14 @@
 import { effect, signal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import { keepWork, keptWorkRead } from "../model/localCopy";
-import type { Agent, ForgeFeature, ForgeItem, ForgePlan } from "../protocol/generated";
+import type { Agent, ForgeFeature, ForgeFeatures, ForgeItem, ForgeListError, ForgePlan } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
-import { boardChoices, boardName, errorWords, labelColor, noForgeHere, shortRef, withBoard } from "../model/work";
-import { ErrorStrip, FromDeviceStrip, LabelChip, PlaceholderRows, RefreshButton, StateIcon } from "./WorkParts";
+import { boardChoices, boardName, errorWords, labelColor, noForgeHere, shortRef, shownErrors, withBoard } from "../model/work";
+import { ErrorStrip, FromDeviceStrip, LabelChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon } from "./WorkParts";
 import { boardHosts, boards, forgeHosts, listHosts, loadBoards } from "../model/workLists";
 import { Choice } from "./Work";
+import { choiceFrom, choiceWords, rememberEach, remembered } from "../model/workRemembered";
 import {
   type Delivery, type FeatureGroup, type InFlight, addDelivery, deliveryShares, deliveryWords, epicLead, epicsDone, epicsDoneWords,
   featureFlight, featureFlightWords, featureGroups, featureSessions, featureTitle, flightOrder, flightShown, flightShownPhone, groupWords,
@@ -29,7 +30,7 @@ import { Icon } from "./Icon";
 
 // The list's state lives for the tab, so Back from an epic's page finds it as it was left.
 const features = signal<ForgeFeature[] | null>(null);
-/** The open pull requests labelled needs-approval, of every machine (#4115). */
+/** The open pull requests with a review requested from the person, of every machine (#4115, #5803). */
 const approvals = signal<string[]>([]);
 const errors = signal<string[]>([]);
 /** The features a person opened (true) or folded (false), until the page is read again (note 3). */
@@ -47,8 +48,9 @@ const itemReads = new Set<string>();
 const asked = signal(0);
 /** Whether a read of the features runs, for Refresh's spin. */
 const reading = signal(false);
-/** The board chosen, by its url; empty for all. */
-const board = signal("");
+/** The board chosen, by its url; empty for all. It opens with the board it had when last left (#5451). */
+const board = signal<string>(choiceFrom(remembered("features"), "board", ""));
+rememberEach("features", () => choiceWords({ board: board.value }, { board: "" }));
 let read: string | undefined;
 /** The features on screen came from this device's copy (#4930), until the machines answer. */
 const fromDevice = signal(false);
@@ -108,29 +110,45 @@ async function loadFeatures(store: Store) {
       features.value = null;
     }
   }
-  const got = await Promise.all(hosts.map(async (h) => {
-    try {
-      return { host: h, list: await store.link.call("forge/features", withBoard({}, on), h.id) };
-    } catch (e) {
-      return { host: h, list: { features: [], errors: [{ forge: "", message: describe(e) }] } };
+  // The first machine to answer draws the page (#5449), and each one after adds its features: a slow or offline machine
+  // does not hold it. One machine's answer for a forge is enough, so the errors wait for every machine.
+  const got: { host: (typeof hosts)[number]; list: ForgeFeatures }[] = [];
+  let first = true;
+  const draw = (all: boolean) => {
+    if (first) {
+      first = false;
+      approvals.value = [];
+      items.value = {};
+      plans.value = {};
+      planning.clear();
+      itemReads.clear();
+      featureOpen.value = {};
+      shownFor = on;
+      fromDevice.value = false;
     }
+    // Kept only once every machine answered.
+    answered = all;
+    if (all) reading.value = false;
+    const shown = all ? shownErrors(got.map(({ list }) => ({ refs: list.features.flatMap((f) => f.refs ?? []), errors: list.errors ?? [] })))
+      : got.map(() => []);
+    errors.value = got.flatMap(({ host }, i) => shown[i]!.map((e) => errorWords(e, hosts.length > 1 ? host.name : undefined)));
+    features.value = mergeFeatures(got.map(({ list }) => list.features));
+    approvals.value = got.flatMap(({ list }) => list.approvals ?? []);
+    // Every feature's issues at once, so a bar and its epics draw without a click; Finished has no open issue.
+    for (const f of features.value) if (!itemReads.has(f.name.toLowerCase()) && (f.open > 0 || (f.issues ?? 1) > 0)) void readItems(store, f.name);
+  };
+  await Promise.all(hosts.map(async (h) => {
+    let list: ForgeFeatures;
+    try {
+      list = await store.link.call("forge/features", withBoard({}, on), h.id);
+    } catch (e) {
+      list = { features: [], errors: [{ forge: "", message: describe(e) }] };
+    }
+    got.push({ host: h, list });
+    if (asked.value === mine && board.value === on && got.length < hosts.length && list.features.length > 0) draw(false);
   }));
   if (asked.value !== mine || board.value !== on) return;
-  reading.value = false;
-  approvals.value = [];
-  items.value = {};
-  plans.value = {};
-  planning.clear();
-  itemReads.clear();
-  featureOpen.value = {};
-  shownFor = on;
-  answered = true;
-  fromDevice.value = false;
-  errors.value = got.flatMap(({ host, list }) => (list.errors ?? []).map((e) => errorWords(e, hosts.length > 1 ? host.name : undefined)));
-  features.value = mergeFeatures(got.map(({ list }) => list.features));
-  approvals.value = got.flatMap(({ list }) => list.approvals ?? []);
-  // Every feature's issues at once, so a bar and its epics draw without a click; Finished has no open issue.
-  for (const f of features.value) if (f.open > 0 || (f.issues ?? 1) > 0) void readItems(store, f.name);
+  draw(true);
 }
 
 /** An opened feature's open issues from every machine. */
@@ -139,17 +157,31 @@ async function readItems(store: Store, name: string) {
   const mine = asked.value;
   const on = board.value;
   const hosts = listHosts(store, on);
-  const got = await Promise.all(hosts.map(async (h) => {
+  // Each machine's issues draw as it answers (#5449); an error shows once every machine answered, and only for a forge
+  // that no machine read.
+  const got: { host: string; machine: string | undefined; items: ForgeItem[]; errors: ForgeListError[] }[] = [];
+  const key = name.toLowerCase();
+  const draw = (all: boolean) => {
+    const shown = all ? shownErrors(got.map((g) => ({ refs: g.items.map((i) => i.node.ref), errors: g.errors }))) : got.map(() => []);
+    items.value = { ...items.value, [key]: {
+      items: got.flatMap((g) => g.items.map((item) => ({ host: g.host, item }))),
+      errors: got.flatMap((g, i) => shown[i]!.map((e) => e.forge !== "" ? errorWords(e, g.machine) : g.machine ? `${g.machine}: ${e.message}` : e.message)),
+    } };
+  };
+  await Promise.all(hosts.map(async (h) => {
     const machine = hosts.length > 1 ? h.name : undefined;
+    let one: (typeof got)[number];
     try {
       const list = await store.link.call("forge/issues", withBoard({ state: "open", limit: 100, feature: name }, on), h.id);
-      return { items: list.items.map((item) => ({ host: h.id, item })), errors: (list.errors ?? []).map((e) => errorWords(e, machine)) };
+      one = { host: h.id, machine, items: list.items, errors: list.errors ?? [] };
     } catch (e) {
-      return { items: [], errors: [machine ? `${machine}: ${describe(e)}` : describe(e)] };
+      one = { host: h.id, machine, items: [], errors: [{ forge: "", message: describe(e) }] };
     }
+    got.push(one);
+    if (asked.value === mine && board.value === on && got.length < hosts.length && one.items.length > 0) draw(false);
   }));
   if (asked.value !== mine || board.value !== on) return;
-  items.value = { ...items.value, [name.toLowerCase()]: { items: got.flatMap((g) => g.items), errors: got.flatMap((g) => g.errors) } };
+  draw(true);
 }
 
 /** An open feature's epics' plans, each read once until the page is read again (note 16: until work/features, #4586). */
@@ -163,6 +195,16 @@ function readPlans(store: Store, epics: readonly { host: string; item: ForgeItem
       if (asked.value === mine) plans.value = { ...plans.value, [ref]: got };
     });
   }
+}
+
+/** The feature a page's trail opened (#5452), in lower case, until its group is open and its row scrolled to. */
+const revealing = signal<string | undefined>(undefined);
+
+/** Open a feature from a page's trail (#5452): open, its group too, and scrolled to when the list draws it. */
+export function revealFeature(name: string) {
+  const key = name.toLowerCase();
+  featureOpen.value = { ...featureOpen.value, [key]: true };
+  revealing.value = key;
 }
 
 function toggle(name: string, isOpen: boolean) {
@@ -217,6 +259,15 @@ function FeatureGroups({ store, list }: { store: Store; list: ForgeFeature[] }) 
   const groups = featureGroups(list, agents, approvals.value);
   const present = groups.map((g) => g.group);
   const waiting = new Set(approvals.value.map((r) => `P${shortRef(r)}`));
+  // A page's trail opened a feature (#5452): its group opens, then its row scrolls into view, once.
+  const asked = revealing.value;
+  const askedGroup = asked ? groups.find((g) => g.features.some((f) => f.name.toLowerCase() === asked))?.group : undefined;
+  useEffect(() => {
+    if (!asked || !askedGroup) return;
+    revealing.value = undefined;
+    groupOpen.value = { ...groupOpen.peek(), [askedGroup]: true };
+    requestAnimationFrame(() => document.querySelector(`[data-feature="${CSS.escape(asked)}"]`)?.scrollIntoView({ block: "start" }));
+  }, [asked, askedGroup]);
   return (
     <>
       {groups.map(({ group, features: shown }) => {
@@ -286,7 +337,7 @@ function FeatureRow({ store, feature, agents, group, approvals: waiting, startOp
   if (group === "idle") { const u = updatedWords(feature); if (u) line2.push(u); }
   const legacy = delivery === undefined || delivery.total === 0 ? epicsDone(feature) : undefined;
   return (
-    <li>
+    <li data-feature={key}>
       <button type="button" class="work-feature-head" aria-expanded={isOpen} onClick={() => toggle(feature.name, isOpen)}
         title={isOpen ? `Fold ${feature.name}` : `Show ${feature.name}'s epics in flight`}>
         <Icon name={isOpen ? "chevron-down" : "chevron-right"} class="chevron" />
@@ -360,6 +411,7 @@ function EpicLine({ epic, plan, flight, delivery, agents }: {
           <span class="work-title"><ForgeTitle text={epic.title} /></span> <span class="quiet">{shortRef(epic.node.ref)}</span>
           {where && <span class="where quiet"> {where}</span>}
         </span>
+        <PriorityChip priority={epic.priority} />
         <span class="work-feature-epic-end small">
           <DeliveryBar delivery={delivery} />
           <span class="figures quiet" title="Sub-issues closed, of all">{`${delivery.done} of ${delivery.total}`}</span>
@@ -410,6 +462,7 @@ function FlightLine({ flight, phone }: { flight: InFlight; phone: boolean }) {
         <span class="mark" role="img" aria-label={mark === "attention" ? "Needs you" : "Working"}><Icon name={mark === "attention" ? "triangle-alert" : "loader-circle"} /></span>
         <span class="name"><span class="ref quiet">{shortRef(item.node.ref)}</span> <ForgeTitle text={item.title} /></span>
         <span class="words"><span class="sep" aria-hidden="true">· </span>{words}</span>
+        <PriorityChip priority={item.priority} />
         {pr && <span class="pr small"><StateIcon kind="pr" state="open" size={12} />{pr}</span>}
       </a>
     </li>

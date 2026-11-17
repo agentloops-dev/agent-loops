@@ -125,6 +125,8 @@ type fakeHost struct {
 	private []byte
 	// agents is its agents/list answer, as a function of the request; nil answers [].
 	agents func(params json.RawMessage) any
+	// answers is its answer to other methods, as a function of the request (#5571).
+	answers map[string]func(params json.RawMessage) any
 }
 
 func (p *plane) host(machine string) *fakeHost { return p.hostWith(machine, nil) }
@@ -187,7 +189,12 @@ func (p *plane) serveHost(root string, member *controllink.Membership, private [
 			json.Unmarshal([]byte(line), &m)
 			h.mu.Lock()
 			agents := h.agents
+			own := h.answers[m.Method]
 			h.mu.Unlock()
+			if own != nil {
+				c.Write(reply(m.ID, own(m.Params)))
+				continue
+			}
 			if m.Method == "agents/list" && agents != nil {
 				c.Write(reply(m.ID, agents(m.Params)))
 				continue
@@ -752,8 +759,12 @@ func (p *plane) rawHost(name string) (string, *controllink.Lines) {
 
 // rawHostKey is rawHost, with the key the host proves itself with.
 func (p *plane) rawHostKey(name string) (string, *controllink.Lines, []byte) {
+	return p.rawHostWith(name, p.code(true))
+}
+
+// rawHostWith is rawHostKey with a host code the test made.
+func (p *plane) rawHostWith(name string, code *controllink.Code) (string, *controllink.Lines, []byte) {
 	ctx := context.Background()
-	code := p.code(true)
 	private := controllink.NewPrivateKey()
 	public, _ := controllink.PublicKey(private)
 	l, _, err := controllink.Join(ctx, code.URL, "", controllink.Credentials{Identity: "e:" + code.ID(),

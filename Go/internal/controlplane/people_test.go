@@ -295,7 +295,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 
 	// Methods that name no machine: answered for the caller alone.
 	namesNone := map[string]bool{
-		"daemon/ping": true, "control/status": true, "machines/list": true, "machines/startEnroll": true, "machines/install": true,
+		"daemon/ping": true, "control/status": true, "machines/list": true, "machines/setLabels": true, "machines/startEnroll": true, "machines/install": true,
 		"machines/detect": true, "machines/sshHosts": true, "control/setFolderDetection": true, "clients/list": true,
 		"clients/startPairing": true, "clients/stopPairing": true, "clients/setGrant": true, "clients/forget": true,
 		"clients/connections": true, "clients/forgetSelf": true, "clients/setPushToken": true, "clients/setActivityToken": true, "clients/setWebPush": true, "clients/webPushKey": true, "devices/list": true,
@@ -308,7 +308,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 		"providers/list": true, "providers/refresh": true, "providers/add": true, "providers/update": true,
 		"providers/remove": true, "providers/options": true, "providers/runtimes": true, "providers/draftStart": true,
 		"providers/draftAnswer": true, "providers/draftCancel": true, "providers/draftSigned": true, "providers/create": true, "providers/deleteWorkspace": true, "providers/makeDefault": true, "machines/listKept": true,
-		"machines/retryKept": true, "machines/dropKept": true, "reports/usage": true, "reports/export": true, "reports/value": true, "reports/nodes": true, "lineage/walkAll": true, "lineage/sessionsOn": true, "builds/historyAll": true, "builds/runAll": true, "bus/log": true,
+		"machines/retryKept": true, "machines/dropKept": true, "reports/usage": true, "reports/export": true, "reports/value": true, "reports/nodes": true, "lineage/walkAll": true, "lineage/sessionsOn": true, "builds/historyAll": true, "builds/runAll": true, "deploys/deliveryAll": true, "bus/log": true,
 		"user/settings": true, "user/setSettings": true, "user/setAgentConfigFile": true, "user/setSecret": true, "user/removeSecret": true,
 		"user/secretNames": true, "groups/list": true, "groups/set": true, "groups/remove": true,
 		"providers/setGroup": true, "bots/make": true, "bots/setCaps": true,
@@ -320,15 +320,17 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 		"signIn/domains/list": true, "signIn/domains/claim": true, "signIn/domains/check": true, "signIn/domains/set": true,
 		"signIn/domains/preview": true, "signIn/domains/remove": true,
 		"policy/get": true, "policy/mine": true, "policy/set": true, "policy/stopAll": true, "policy/raise": true,
+		"pool/list": true, "pool/set": true, "pool/delete": true, "pool/claim": true,
 		"policy/askForMore": true, "policy/requests": true, "policy/refuseMore": true,
 		"orgRoutes/mine": true, "orgRoutes/list": true, "orgRoutes/set": true, "orgRoutes/replaceKey": true,
 		"orgRoutes/check": true, "orgRoutes/remove": true, "orgRoutes/recipients": true, "orgRoutes/sealed": true,
-		"sealing/work": true, "sealing/add": true, "user/secretRecipients": true, "user/sealedSecret": true,
+		"sealing/work": true, "sealing/add": true, "user/secretRecipients": true, "user/sealedSecret": true, "user/secretOffers": true, "user/dropSecretOffer": true,
 		"lock/get": true, "lock/add": true, "lock/join": true, "lock/joinRequests": true, "lock/joinAnswer": true,
 		"lock/joinReveal": true, "lock/joinDeny": true, "lock/reset": true,
 		"scim/set": true, "scim/tokens/list": true, "scim/tokens/make": true, "scim/tokens/revoke": true,
 		"groups/setRole": true, "people/removeRequests": true,
-		"projects/list": true, "projects/set": true, "projects/remove": true, "projects/setSlot": true, "projects/setBoards": true, "projects/sessions": true,
+		"projects/list": true, "projects/set": true, "projects/remove": true, "projects/setSlot": true, "projects/setBoards": true, "projects/sessions": true, "sessions/previewStart": true, "docs/listAll": true, "messages/conversationsAll": true,
+		"forge/listAll": true, "forge/boardsAll": true, "lineage/forecastAll": true, "reports/featuresAll": true, "events/listAll": true, "connections/listAll": true,
 		"governance/usage": true, "governance/request": true, "governance/requests": true, "governance/decide": true,
 		"governance/approvals": true, "governance/revoke": true,
 		"readApi/list": true, "readApi/make": true, "readApi/revoke": true,
@@ -400,9 +402,14 @@ func TestRolesAndRemoval(t *testing.T) {
 	if p.s.Records().Host(samMachine.member.Host) != nil {
 		t.Fatal("Sam's machine is still there")
 	}
-	if _, err := sam.window.Call(context.Background(), "", "daemon/ping", nil); err == nil {
-		t.Fatal("Sam's window still talks")
-	}
+	// people/remove closes Sam's sockets before it replies (#5843); the wait is for the
+	// close to reach Sam's end of the socket.
+	p.waitFor(func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, err := sam.window.Call(ctx, "", "daemon/ping", nil)
+		return err != nil
+	}, "Sam's window cut off")
 	code, _ := controllink.ParseCode(shown.Text)
 	if _, err := controllink.PairClient(context.Background(), code, "Sam's phone"); err == nil {
 		t.Fatal("a removed person's code paired")

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -455,6 +456,11 @@ func (m mergeRequest) mr() MR {
 
 func (m mergeRequest) draft() bool { return m.Draft || m.WorkInProgress }
 
+// personAsked says a person, not a bot, is a reviewer of it (#5803): it waits for them.
+func (m mergeRequest) personAsked() bool {
+	return slices.ContainsFunc(m.Reviewers, func(u user) bool { return !u.Bot && u.Username != "" })
+}
+
 // conflicts says whether it conflicts with its target; nil while GitLab works it out.
 func (m mergeRequest) conflicts() *bool {
 	switch m.DetailedMergeStatus {
@@ -468,6 +474,32 @@ func (m mergeRequest) conflicts() *bool {
 		return nil
 	}
 	return new(m.HasConflicts)
+}
+
+// blocking is why it cannot merge until its author acts (#5321), as detailed_merge_status
+// says: one reason at a time, conflict first.
+func (m mergeRequest) blocking() mcpevents.Blocking {
+	b := mcpevents.Blocking{HeadSHA: m.SHA}
+	if c := m.conflicts(); c == nil {
+		b.Unknown = true
+	} else {
+		b.Conflict = *c
+	}
+	switch m.DetailedMergeStatus {
+	case "need_rebase":
+		b.Behind = true
+	case "ci_must_pass":
+		url := m.WebURL + "/pipelines"
+		if m.HeadPipeline != nil && m.HeadPipeline.WebURL != "" {
+			url = m.HeadPipeline.WebURL
+		}
+		b.FailedChecks = []mcpevents.FailedCheck{{Name: "pipeline", URL: url}}
+	case "ci_still_running":
+		b.ChecksRunning = true
+	case "requested_changes":
+		b.ChangesRequested = true
+	}
+	return b
 }
 
 func (m mergeRequest) mergeSHA() string {
@@ -575,7 +607,8 @@ func (g *RealGitLab) OpenMRs(ctx context.Context, project string) ([]OpenMR, err
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, OpenMR{MR: m.mr(), Author: m.Author.Username, Draft: m.draft(), Conflicts: m.conflicts(), Trusted: trusted})
+			out = append(out, OpenMR{MR: m.mr(), Author: m.Author.Username, Draft: m.draft(), Conflicts: m.conflicts(), Trusted: trusted,
+				Blocking: m.blocking(), SkipsBlocked: mcpevents.SkipsBlocked(m.draft(), m.personAsked())})
 		}
 		if len(list) < perPage {
 			break

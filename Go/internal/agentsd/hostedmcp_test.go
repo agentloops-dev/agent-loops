@@ -135,6 +135,8 @@ func TestAHostedServerIsSharedRestartedAndLetGo(t *testing.T) {
 // A session is handed a hosted entry as an http server on the endpoint, its token as the
 // bearer, and one the host has no room for as it is.
 func TestASessionIsHandedAHostedServersRoute(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	// An entry that says it is the host's copy is not, in a session.
@@ -204,6 +206,8 @@ func (d *Daemon) hostedState(path string) wire.HostedMCPState {
 // The host's copy of each server is told by one name: the GitLab server's person-only tools
 // are kept out of a session's copy as the GitHub server's are.
 func TestEveryServerKnowsTheHostsCopyByOneName(t *testing.T) {
+	t.Parallel()
+
 	if gitlabmcp.HostedEnv != githubmcp.HostedEnv {
 		t.Fatalf("%s is not %s", gitlabmcp.HostedEnv, githubmcp.HostedEnv)
 	}
@@ -211,6 +215,8 @@ func TestEveryServerKnowsTheHostsCopyByOneName(t *testing.T) {
 
 // One write over a server log's limit goes in parts (#3687): neither file passes it.
 func TestAWriteOverTheMCPLogLimitIsSplit(t *testing.T) {
+	t.Parallel()
+
 	l := &hostedLog{path: filepath.Join(t.TempDir(), "mcp-logs", "srv-1.log")}
 	l.write([]byte("first\n"))
 	l.write(bytes.Repeat([]byte("e"), 2*hostedLogLimit+10))

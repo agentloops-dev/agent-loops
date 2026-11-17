@@ -1,6 +1,7 @@
 // Add a Machine… (#2131): one sheet with three ways in, a provider first; then a server, by one
 // command; then a machine that runs agentsd by hand, by a machine code (another Mac pairs by Pair a Mac…, #4285). Connectors set-up ▸ Where agents run says the machine the
 // folder is on and what else is yours. The window's and the Remote's AddMachine.swift is the same.
+import { namesWords } from "./machineNames";
 
 export type AddMachineWay = "provider" | "server" | "code";
 export const addMachineWays: readonly AddMachineWay[] = ["provider", "server", "code"];
@@ -46,7 +47,7 @@ export const whereAgentsRun = {
   /** The slot's line: why it runs there, and what else is yours. */
   line(others: readonly string[], providers: readonly string[]): string {
     const parts = ["Agents run where this folder is."];
-    if (others.length) parts.push(`Your other machines: ${others.join(", ")}.`);
+    if (others.length) parts.push(`Your other machines: ${namesWords(others)}.`);
     if (providers.length) parts.push(`Providers: ${providers.join(", ")}.`);
     return parts.join(" ");
   },

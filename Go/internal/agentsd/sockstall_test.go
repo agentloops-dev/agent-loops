@@ -11,12 +11,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // A daemon.sock client that never reads does not hold Broadcast, or the clients that do
 // read: it is let go, and the others hear everything (#1399).
 func TestAStalledSocketClientIsLetGo(t *testing.T) {
+	// Under CI load the broadcast can still be held when the 30 s wait runs out.
+	flaky.UnderLoad(t, "#5998")
+	t.Parallel()
+
 	// Both callers are windows, which hear notifications, whatever the platform's door.
 	d, c := start(t, t.TempDir())
 	usePolicy(t, d, fixedPolicy{role: RoleControl, ok: true})

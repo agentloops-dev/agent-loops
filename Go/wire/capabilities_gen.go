@@ -17,6 +17,7 @@ const CapArtifact1 = "artifact/1"
 const CapAttention1 = "attention/1"
 const CapAttention2 = "attention/2"
 const CapAuditSinks1 = "audit.sinks/1"
+const CapAutoMachine1 = "auto-machine/1"
 const CapAuto1 = "auto/1"
 const CapBackupsStore1 = "backups.store/1"
 const CapBackups1 = "backups/1"
@@ -25,13 +26,14 @@ const CapBringBack1 = "bring.back/1"
 const CapBrowser1 = "browser/1"
 const CapBrowser2 = "browser/2"
 const CapBuildsCopy1 = "builds.copy/1"
-const CapBuildsRead1 = "builds.read/1"
-const CapBuildsTrends1 = "builds.trends/1"
+const CapBuildsRead2 = "builds.read/2"
+const CapBuildsTrends2 = "builds.trends/2"
 const CapCapacity1 = "capacity/1"
 const CapCatalog1 = "catalog/1"
 const CapChangesUndo1 = "changes.undo/1"
 const CapChanges1 = "changes/1"
 const CapChatBranch1 = "chat.branch/1"
+const CapChatContinueInNewSession1 = "chat.continue-in-new-session/1"
 const CapChatContinueWhenBack1 = "chat.continue-when-back/1"
 const CapClientPermissions1 = "client-permissions/1"
 const CapClientTeam1 = "client.team/1"
@@ -55,12 +57,18 @@ const CapCost1 = "cost/1"
 const CapCredentials1 = "credentials/1"
 const CapDaemon1 = "daemon/1"
 const CapDailySummary1 = "daily-summary/1"
+const CapDeploysCopy1 = "deploys.copy/1"
+const CapDeploysDelivery1 = "deploys.delivery/1"
+const CapDeploysRead1 = "deploys.read/1"
+const CapDeploysTargets1 = "deploys.targets/1"
 const CapDevice1 = "device/1"
 const CapDevices1 = "devices/1"
 const CapDisk1 = "disk/1"
+const CapDocsAll1 = "docs.all/1"
 const CapDocs1 = "docs/1"
 const CapDropbox1 = "dropbox/1"
 const CapElicitations1 = "elicitations/1"
+const CapEnv1 = "env/1"
 const CapEventsAudit1 = "events.audit/1"
 const CapEventsBus1 = "events.bus/1"
 const CapEventsLeases1 = "events.leases/1"
@@ -103,14 +111,17 @@ const CapHostPolicy1 = "host.policy/1"
 const CapHostSecretApproval1 = "host.secret-approval/1"
 const CapHostSecretGrants1 = "host.secret-grants/1"
 const CapHostSecretRelease1 = "host.secret-release/1"
+const CapHostSecretSignIn1 = "host.secret-sign-in/1"
 const CapHostSecretTerminal1 = "host.secret-terminal/1"
 const CapHostSessionSecrets1 = "host.session-secrets/1"
 const CapHostSuspend1 = "host.suspend/1"
 const CapHostTeam1 = "host.team/1"
 const CapHostUpdate1 = "host.update/1"
+const CapHostUserParts1 = "host.user-parts/1"
 const CapHostUserSettings1 = "host.user-settings/1"
 const CapHostUserSettings2 = "host.user-settings/2"
 const CapHostUserSettings3 = "host.user-settings/3"
+const CapHostUserSettings4 = "host.user-settings/4"
 const CapHostWebPairing1 = "host.web-pairing/1"
 const CapHostWire1 = "host.wire/1"
 const CapHostsJoin1 = "hosts.join/1"
@@ -120,6 +131,7 @@ const CapLineageFigures1 = "lineage.figures/1"
 const CapLineageForecast1 = "lineage.forecast/1"
 const CapLineageGraph1 = "lineage.graph/1"
 const CapLineageRead1 = "lineage.read/1"
+const CapLineageRead2 = "lineage.read/2"
 const CapLineageSessions1 = "lineage.sessions/1"
 const CapLineage1 = "lineage/1"
 const CapLinks1 = "links/1"
@@ -131,13 +143,17 @@ const CapLock1 = "lock/1"
 const CapMac1 = "mac/1"
 const CapMachineAccounts1 = "machine.accounts/1"
 const CapMachineAccounts2 = "machine.accounts/2"
+const CapMachineAgentSecrets1 = "machine.agent-secrets/1"
 const CapMachineUsage1 = "machine.usage/1"
 const CapMachine1 = "machine/1"
+const CapMachinesAll1 = "machines.all/1"
 const CapMachines1 = "machines/1"
+const CapMachines2 = "machines/2"
 const CapMailbox1 = "mailbox/1"
 const CapMarketplaces1 = "marketplaces/1"
 const CapMcpToolLevels1 = "mcp.tool-levels/1"
 const CapMcp1 = "mcp/1"
+const CapMessagesAll1 = "messages.all/1"
 const CapMessagesMarkRead1 = "messages.mark-read/1"
 const CapMessagesReply1 = "messages.reply/1"
 const CapMessages1 = "messages/1"
@@ -161,6 +177,7 @@ const CapPlugins1 = "plugins/1"
 const CapPolicyAsk1 = "policy.ask/1"
 const CapPolicy1 = "policy/1"
 const CapPool1 = "pool/1"
+const CapPools1 = "pools/1"
 const CapPreferences1 = "preferences/1"
 const CapPresence1 = "presence/1"
 const CapProcesses1 = "processes/1"
@@ -173,12 +190,15 @@ const CapProviders1 = "providers/1"
 const CapProviders2 = "providers/2"
 const CapReadapi1 = "readapi/1"
 const CapRelay1 = "relay/1"
-const CapReportsNodes1 = "reports.nodes/1"
+const CapReportsNodes2 = "reports.nodes/2"
 const CapReportsProblem1 = "reports.problem/1"
 const CapReportsScope1 = "reports.scope/1"
-const CapReportsValue1 = "reports.value/1"
+const CapReportsScope2 = "reports.scope/2"
+const CapReportsValue2 = "reports.value/2"
 const CapReportsViews1 = "reports.views/1"
+const CapReportsViews2 = "reports.views/2"
 const CapReports1 = "reports/1"
+const CapReports2 = "reports/2"
 const CapRequestsDefer1 = "requests.defer/1"
 const CapRequests1 = "requests/1"
 const CapResourcesLeases1 = "resources.leases/1"
@@ -217,10 +237,13 @@ const CapUser1 = "user/1"
 const CapUser2 = "user/2"
 const CapUser3 = "user/3"
 const CapUser4 = "user/4"
+const CapUser5 = "user/5"
+const CapUser6 = "user/6"
 const CapVelocity1 = "velocity/1"
 const CapViews1 = "views/1"
 const CapWake1 = "wake/1"
 const CapWorkFeatures1 = "work.features/1"
+const CapWorkSuggestLeads1 = "work.suggest-leads/1"
 const CapWorkTimeline1 = "work.timeline/1"
 const CapWorkflow1 = "workflow/1"
 const CapWorkflows1 = "workflows/1"
@@ -237,6 +260,7 @@ var HostCapabilities = pairs([][2]string{
 	{"agents/cancelContinue", "chat.continue-when-back/1"},
 	{"agents/continueInFolder", "agents/1"},
 	{"agents/continueInNew", "host.org-routes/1"},
+	{"agents/continueInNewSession", "chat.continue-in-new-session/1"},
 	{"agents/continueWhenBack", "chat.continue-when-back/1"},
 	{"agents/delete", "agents/1"},
 	{"agents/discardDraft", "agents/1"},
@@ -269,6 +293,7 @@ var HostCapabilities = pairs([][2]string{
 	{"agents/setLevels", "auto/1"},
 	{"agents/setMuted", "mute/1"},
 	{"agents/setOption", "agents/1"},
+	{"agents/setPriority", "agents/1"},
 	{"agents/setSandbox", "agents/1"},
 	{"agents/setUnread", "agents/1"},
 	{"agents/start", "agents/1"},
@@ -302,8 +327,8 @@ var HostCapabilities = pairs([][2]string{
 	{"browser/watch", "browser/1"},
 	{"browserControl/set", "host.drive-approval/1"},
 	{"browserControl/state", "host.drive-approval/1"},
-	{"builds/history", "builds.trends/1"},
-	{"builds/run", "builds.trends/1"},
+	{"builds/history", "builds.trends/2"},
+	{"builds/run", "builds.trends/2"},
 	{"capacity/state", "capacity/1"},
 	{"catalog/destination-state", "catalog/1"},
 	{"catalog/preview", "catalog/1"},
@@ -342,6 +367,8 @@ var HostCapabilities = pairs([][2]string{
 	{"daemon/status", "daemon/1"},
 	{"dailySummary/setSettings", "daily-summary/1"},
 	{"dailySummary/settings", "daily-summary/1"},
+	{"deploys/delivery", "deploys.delivery/1"},
+	{"deploys/targets", "deploys.targets/1"},
 	{"desktopControl/resume", "host.desktop-control/1"},
 	{"desktopControl/set", "host.desktop-control/1"},
 	{"desktopControl/state", "host.desktop-control/1"},
@@ -356,6 +383,10 @@ var HostCapabilities = pairs([][2]string{
 	{"dropbox/put", "dropbox/1"},
 	{"elicitations/answer", "elicitations/1"},
 	{"elicitations/pending", "elicitations/1"},
+	{"env/discard", "env/1"},
+	{"env/list", "env/1"},
+	{"env/resolve", "env/1"},
+	{"env/write", "env/1"},
 	{"events/cancelWait", "events/1"},
 	{"events/list", "events/1"},
 	{"events/raise", "events/1"},
@@ -418,6 +449,7 @@ var HostCapabilities = pairs([][2]string{
 	{"forge/labels", "forge-write/1"},
 	{"forge/log", "forge-write/1"},
 	{"forge/merge", "forge-write/1"},
+	{"forge/next", "forge/1"},
 	{"forge/plan", "forge/1"},
 	{"forge/pull", "forge/1"},
 	{"forge/pulls", "forge/1"},
@@ -565,6 +597,7 @@ var HostCapabilities = pairs([][2]string{
 	{"secrets/sessionRemove", "host.session-secrets/1"},
 	{"secrets/sessionSet", "host.session-secrets/1"},
 	{"secrets/setNeedsApproval", "host.secret-approval/1"},
+	{"secrets/signInKey", "host.secret-sign-in/1"},
 	{"secrets/terminalValue", "host.secret-terminal/1"},
 	{"selfUpdate/set", "host.update/1"},
 	{"selfUpdate/status", "host.update/1"},
@@ -572,7 +605,7 @@ var HostCapabilities = pairs([][2]string{
 	{"sessions/delete", "sessions/1"},
 	{"sessions/list", "sessions/1"},
 	{"settings/passThrough", "host.policy/1"},
-	{"settings/userPart", "host.user-settings/3"},
+	{"settings/userPart", "host.user-settings/4"},
 	{"shell/attach", "shell/1"},
 	{"shell/close", "shell/1"},
 	{"shell/detach", "shell/1"},
@@ -611,7 +644,9 @@ var HostCapabilities = pairs([][2]string{
 	{"wake/set", "wake/1"},
 	{"wake/settings", "wake/1"},
 	{"wake/state", "wake/1"},
+	{"work/dismiss-lead", "work.suggest-leads/1"},
 	{"work/features", "work.features/1"},
+	{"work/suggest-leads", "work.suggest-leads/1"},
 	{"work/timeline", "work.timeline/1"},
 	{"workflows/approve", "workflows/1"},
 	{"workflows/archive", "workflows/1"},
@@ -657,6 +692,7 @@ var HostCapabilities = pairs([][2]string{
 	{"desktopControl/liveFrame", "host.desktop-control/1"},
 	{"device/changed", "device/1"},
 	{"disk/changed", "disk/1"},
+	{"env/changed", "env/1"},
 	{"events/changed", "events/1"},
 	{"files/changed", "files/1"},
 	{"folder/changed", "folder/1"},
@@ -720,6 +756,7 @@ var HostNotifications = set([]string{
 	"desktopControl/liveFrame",
 	"device/changed",
 	"disk/changed",
+	"env/changed",
 	"events/changed",
 	"files/changed",
 	"folder/changed",
@@ -759,6 +796,8 @@ var HostNotifications = set([]string{
 
 // ControlCapabilities is the capability of each method and notification in control.openrpc.json.
 var ControlCapabilities = pairs([][2]string{
+	{"approvals/list", "approvals/1"},
+	{"approvals/put", "approvals/1"},
 	{"attention/need", "attention/2"},
 	{"attention/turn", "liveactivity/1"},
 	{"audit/export", "events.audit/1"},
@@ -772,8 +811,8 @@ var ControlCapabilities = pairs([][2]string{
 	{"bots/make", "bots/1"},
 	{"bots/setCaps", "bots/1"},
 	{"bots/stopRun", "bots/1"},
-	{"builds/historyAll", "builds.read/1"},
-	{"builds/runAll", "builds.read/1"},
+	{"builds/historyAll", "builds.read/2"},
+	{"builds/runAll", "builds.read/2"},
 	{"builds/sync", "builds.copy/1"},
 	{"bus/lease", "events.leases/1"},
 	{"bus/log", "events.bus/1"},
@@ -791,6 +830,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"clients/startPairing", "clients/1"},
 	{"clients/stopPairing", "clients/1"},
 	{"clients/webPushKey", "clients/1"},
+	{"connections/listAll", "machines.all/1"},
 	{"console/fleet", "console/1"},
 	{"console/live", "console/1"},
 	{"console/stopAgent", "console/1"},
@@ -807,7 +847,13 @@ var ControlCapabilities = pairs([][2]string{
 	{"control/setFolderDetection", "control/1"},
 	{"control/setWeb", "control.local/1"},
 	{"control/status", "control/1"},
+	{"deploys/deliveryAll", "deploys.read/1"},
+	{"deploys/sync", "deploys.copy/1"},
+	{"docs/listAll", "docs.all/1"},
+	{"events/listAll", "machines.all/1"},
 	{"folders/detected", "folders/1"},
+	{"forge/boardsAll", "machines.all/1"},
+	{"forge/listAll", "machines.all/1"},
 	{"git/credential", "git/1"},
 	{"governance/approvals", "governance/1"},
 	{"governance/decide", "governance/1"},
@@ -821,9 +867,10 @@ var ControlCapabilities = pairs([][2]string{
 	{"groups/set", "groups/1"},
 	{"groups/setRole", "org-identity/1"},
 	{"handover/status", "handover/1"},
-	{"lineage/sessionsOn", "lineage.read/1"},
+	{"lineage/forecastAll", "machines.all/1"},
+	{"lineage/sessionsOn", "lineage.read/2"},
 	{"lineage/sync", "lineage.graph/1"},
-	{"lineage/walkAll", "lineage.read/1"},
+	{"lineage/walkAll", "lineage.read/2"},
 	{"links/approve", "links/1"},
 	{"links/check", "links/1"},
 	{"links/deny", "links/1"},
@@ -839,22 +886,28 @@ var ControlCapabilities = pairs([][2]string{
 	{"lock/joinReveal", "lock-join/1"},
 	{"lock/reset", "lock-reset/1"},
 	{"machine/accounts", "machine.accounts/2"},
+	{"machine/capacity", "auto-machine/1"},
 	{"machine/hello", "machine/1"},
 	{"machine/lockAdd", "host.lock/2"},
 	{"machine/lockAgain", "host.lock/4"},
 	{"machine/lockJoin", "host.lock/2"},
 	{"machine/lockJoinReveal", "host.lock/2"},
 	{"machine/machines", "machine/1"},
+	{"machine/offerSecret", "machine.agent-secrets/1"},
 	{"machine/orgRouteCheck", "host.org-routes/2"},
 	{"machine/orgRoutesAgain", "host.org-routes/2"},
 	{"machine/orgRoutesApplied", "host.org-routes/2"},
 	{"machine/pairWebPage", "host.web-pairing/1"},
 	{"machine/policyApplied", "host.policy/1"},
 	{"machine/providerDraft", "machine/1"},
+	{"machine/secretClients", "machine.agent-secrets/1"},
 	{"machine/secretKey", "host.secret-release/1"},
 	{"machine/secretOps", "machine/1"},
 	{"machine/secretRelease", "host.secret-release/1"},
+	{"machine/setupStep", "machine/1"},
 	{"machine/status", "machine/1"},
+	{"machines/agents", "machines/1"},
+	{"machines/agentsChanges", "machines/1"},
 	{"machines/announce", "machines/1"},
 	{"machines/approveJoin", "hosts.join/1"},
 	{"machines/botKey", "connections.botkey/1"},
@@ -872,15 +925,17 @@ var ControlCapabilities = pairs([][2]string{
 	{"machines/lendGit", "machines/1"},
 	{"machines/lendSignIn", "machines/1"},
 	{"machines/link", "machines/1"},
-	{"machines/list", "machines/1"},
-	{"machines/listKept", "machines/1"},
+	{"machines/list", "machines/2"},
+	{"machines/listKept", "machines/2"},
 	{"machines/projectFolders", "sessions.project/1"},
 	{"machines/projectSessions", "sessions.project/1"},
 	{"machines/remove", "machines/1"},
 	{"machines/retryKept", "machines/1"},
+	{"machines/retrySetup", "machines/1"},
 	{"machines/sendFolder", "folders.to-machine/1"},
 	{"machines/sessionCall", "sessions.elsewhere/1"},
 	{"machines/sessionEnded", "sessions.elsewhere/1"},
+	{"machines/setLabels", "machines/2"},
 	{"machines/setMachineOptions", "machines/1"},
 	{"machines/sshHosts", "machines/1"},
 	{"machines/start", "machines/1"},
@@ -890,6 +945,8 @@ var ControlCapabilities = pairs([][2]string{
 	{"machines/summaryFacts", "summary.machines/1"},
 	{"machines/unlink", "machines/1"},
 	{"machines/update", "machines/1"},
+	{"machines/versions", "machines/1"},
+	{"messages/conversationsAll", "messages.all/1"},
 	{"multiplier/count", "multiplier/1"},
 	{"notices/take", "notices/1"},
 	{"orgRoutes/check", "org-routes/2"},
@@ -916,6 +973,10 @@ var ControlCapabilities = pairs([][2]string{
 	{"policy/requests", "policy.ask/1"},
 	{"policy/set", "policy/1"},
 	{"policy/stopAll", "policy/1"},
+	{"pool/claim", "pools/1"},
+	{"pool/delete", "pools/1"},
+	{"pool/list", "pools/1"},
+	{"pool/set", "pools/1"},
 	{"projects/joined", "projects/1"},
 	{"projects/list", "projects/1"},
 	{"projects/remove", "projects/1"},
@@ -942,14 +1003,15 @@ var ControlCapabilities = pairs([][2]string{
 	{"readApi/make", "readapi/1"},
 	{"readApi/revoke", "readapi/1"},
 	{"reports/deleteView", "reports.views/1"},
-	{"reports/export", "reports/1"},
-	{"reports/nodes", "reports.nodes/1"},
+	{"reports/export", "reports/2"},
+	{"reports/featuresAll", "machines.all/1"},
+	{"reports/nodes", "reports.nodes/2"},
 	{"reports/policy", "reports.scope/1"},
-	{"reports/saveView", "reports.views/1"},
+	{"reports/saveView", "reports.views/2"},
 	{"reports/scopes", "reports.scope/1"},
-	{"reports/setPolicy", "reports.scope/1"},
-	{"reports/usage", "reports/1"},
-	{"reports/value", "reports.value/1"},
+	{"reports/setPolicy", "reports.scope/2"},
+	{"reports/usage", "reports/2"},
+	{"reports/value", "reports.value/2"},
 	{"reports/views", "reports.views/1"},
 	{"scim/set", "org-identity/1"},
 	{"scim/tokens/list", "org-identity/1"},
@@ -957,6 +1019,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"scim/tokens/revoke", "org-identity/1"},
 	{"sealing/add", "sealing/1"},
 	{"sealing/work", "sealing/1"},
+	{"sessions/previewStart", "auto-machine/1"},
 	{"signIn/addToMe", "signin/1"},
 	{"signIn/approve", "signin/1"},
 	{"signIn/ask", "signin.ask/1"},
@@ -981,14 +1044,16 @@ var ControlCapabilities = pairs([][2]string{
 	{"signIn/ticket", "org-identity/1"},
 	{"tunnel/open", "tunnel/1"},
 	{"usage/rollup", "reports/1"},
+	{"user/dropSecretOffer", "user/5"},
 	{"user/removeSecret", "user/2"},
 	{"user/sealedSecret", "user/4"},
 	{"user/secretNames", "user/2"},
+	{"user/secretOffers", "user/5"},
 	{"user/secretRecipients", "user/2"},
 	{"user/setAgentConfigFile", "user/1"},
 	{"user/setPolicy", "host.policy-layers/1"},
 	{"user/setSecret", "user/2"},
-	{"user/setSettings", "user/3"},
+	{"user/setSettings", "user/6"},
 	{"user/settings", "user/1"},
 	{"workflows/claimRun", "bots/1"},
 	{"workflows/fire", "events.team/1"},
@@ -1121,6 +1186,7 @@ var DeclaredCapabilities = map[string][]string{
 	"control": {
 		"attention/1",
 		"machine.accounts/1",
+		"user/3",
 	},
 	"host": {
 		"host.wire/1",
@@ -1139,5 +1205,7 @@ var DeclaredCapabilities = map[string][]string{
 		"host.user-settings/2",
 		"host.lock/1",
 		"host.lock/2",
+		"host.user-settings/3",
+		"host.user-parts/1",
 	},
 }

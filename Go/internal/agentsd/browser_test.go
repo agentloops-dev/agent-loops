@@ -13,6 +13,8 @@ import (
 // The machine's browser (#3533): its lease, and the toolset this binary carries.
 
 func TestTheBrowserIsALeaseOfItsOwn(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var snap wire.LeaseSnapshot
@@ -43,6 +45,8 @@ func TestTheBrowserIsALeaseOfItsOwn(t *testing.T) {
 }
 
 func TestTheBrowserToolsetIsCarried(t *testing.T) {
+	t.Parallel()
+
 	folder := t.TempDir()
 	if err := writeBrowserToolset(filepath.Join(folder, browserToolsetID)); err != nil {
 		t.Fatal(err)
@@ -78,15 +82,15 @@ func TestTheBrowserToolsetIsCarried(t *testing.T) {
 func TestTheBrowserNeedsAToolsHome(t *testing.T) {
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
-	old := toolsHome
-	toolsHome = ""
-	t.Cleanup(func() { toolsHome = old })
+	setFor(t, &toolsHome, "")
 	if _, err := d.browser.Endpoint(nil); err == nil || err.Error() != "The browser can't be installed on this Mac." && err.Error() != "The browser can't be installed on this server." {
 		t.Fatal(err)
 	}
 }
 
 func TestBrowserStateBeforeTheDownload(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var st wire.BrowserState

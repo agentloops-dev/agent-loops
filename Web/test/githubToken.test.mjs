@@ -8,7 +8,7 @@ const c = await load("src/model/connectorSetup.ts");
 
 test("a GitHub connection by the App says the App's user token", () => {
   const conn = { provider: "github", login: "octocat", state: "connected", connectedAt: 0,
-    installURL: "https://github.com/apps/agents-loops/installations/new" };
+    installURL: "https://github.com/apps/agent-loops-dev/installations/new" };
   assert.equal(c.connectionNote(conn), "App user token · renews by itself · posts show the App");
 });
 

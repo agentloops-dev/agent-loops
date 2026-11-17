@@ -14,6 +14,8 @@ import (
 // The editor (#2630) lists, saves and deletes Markdown files in a project's skills and
 // personas, and refuses any path out of its section.
 func TestTheAgentConfigEditorKeepsToItsSection(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	folder := t.TempDir()
 	anAgentIn(t, d, folder)
@@ -66,6 +68,8 @@ func TestTheAgentConfigEditorKeepsToItsSection(t *testing.T) {
 // (#2762), and nothing is written; a skill's other files and a body with no front
 // matter save as they are.
 func TestTheAgentConfigEditorRefusesFrontMatterItCannotRead(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	folder := t.TempDir()
 	anAgentIn(t, d, folder)

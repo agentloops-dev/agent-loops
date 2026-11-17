@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import AgentsKitCore
 
-/// Work ▸ Timeline's layout (#4173, specs/time-stream/wireframe.md sections 2, 7, 9 and 12).
+/// Work ▸ Timeline's layout (#4173; blocks in rows, #5506).
 @Suite("Work timeline")
 struct WorkTimelineTests {
     typealias Node = DaemonAPI.LineageNode
@@ -138,91 +138,99 @@ struct WorkTimelineTests {
         #expect(lines.map(\.number) == ["#10", "#11"])
     }
 
-    @Test func eachLineTakesTheFreeLaneNearestTheReleasesLine() {
+    @Test func eachBlockTakesTheFirstRowFreeAtItsStartPackedInTime() {
         let timeline = DaemonAPI.WorkTimeline(epics: [
             Self.epic(12, [Self.child(40, started: -20, closed: -10)], segments: [(-20, -10)]),
             Self.epic(13, [Self.child(41, started: -18, closed: -12)], segments: [(-18, -12)]),
-            Self.epic(14, [Self.child(42, started: -16, closed: -14)], segments: [(-16, -14)]),
-            // Starts after #12's line and label have ended: lane 1 is free again.
+            Self.epic(14, [Self.child(42, started: -11, closed: -9)], segments: [(-11, -9)]),
+            // Starts 5 h after #12 ends, more than the gap: row 0 is free again.
             Self.epic(15, [Self.child(43, started: -5, closed: -1)], segments: [(-5, -1)]),
         ])
-        let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now), axis: Self.axis,
-                                        labelWidth: { _ in 60 })
-        #expect(lines.map(\.lane) == [1, -1, 2, 1])
-        #expect(WorkTimeline.lanes(lines) == (above: 2, below: 1))
-        // A long label keeps its lane busy after its line has joined.
-        let wide = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now), axis: Self.axis,
-                                       labelWidth: { _ in 400 })
-        #expect(wide.map(\.lane) == [1, -1, 2, -2])
+        let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))
+        #expect(lines.map(\.row) == [0, 1, 2, 0])
+        #expect(WorkTimeline.rowCount(lines) == 3)
+        #expect(WorkTimeline.rowCount([]) == 0)
+        // The gap is 2 % of the widest range: #14 starts 1 h after #12 ends, so it does not take row 0.
+        #expect(WorkTimeline.packGap == 7 * 86_400 / 50)
+        // A block that waits for the person holds its row while it is open.
+        let waits = WorkTimeline.layout(WorkTimeline.lines(DaemonAPI.WorkTimeline(epics: [
+            Self.epic(16, [Self.child(44, started: -30, waits: true)], segments: [(-30, nil)]),
+            Self.epic(17, [Self.child(45, started: -1, closed: -0.5)], segments: [(-1, -0.5)]),
+        ]), now: Self.now))
+        #expect(waits.map(\.row) == [0, 1])
     }
 
-    @Test func theRiserIsInPoints() {
-        #expect(WorkTimeline.riser(1) == 16)
-        #expect(WorkTimeline.riser(-9) == 48)
-    }
-
-    @Test func joinsWithinSixPointsAreOneRingWithACount() {
-        let at = Self.h(5)
-        let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(4), mid: at, high: Self.h(6))
+    @Test func theRowsDoNotChangeBetweenRangesForTheSameRead() {
+        let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(4), mid: Self.h(6), high: Self.h(10))
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(16, [Self.child(50, started: -2, forecast: 5)], segments: [(-2, nil)], forecast: forecast),
-            Self.epic(17, [Self.child(51, started: -3, forecast: 5)], segments: [(-3, nil)], forecast: forecast),
-            Self.epic(18, [Self.child(52, started: -9, closed: -1)], segments: [(-9, -1)]),
+            Self.epic(1, [Self.child(10, started: -150, closed: -100)], segments: [(-150, -100)]),
+            Self.epic(2, [Self.child(11, started: -120, closed: -2)], segments: [(-120, -2)]),
+            Self.epic(3, [Self.child(12, started: -90, closed: -60)], segments: [(-90, -60)]),
+            Self.epic(4, [Self.child(13, started: -20), Self.child(14, forecast: 6)], segments: [(-20, nil)], forecast: forecast),
+            Self.epic(5, [Self.child(15, started: -5, closed: -1)], segments: [(-5, -1)]),
         ])
-        let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now), axis: Self.axis, labelWidth: { _ in 10 })
-        let joins = WorkTimeline.joins(lines, axis: Self.axis)
-        #expect(joins.count == 2)
-        #expect(joins.last?.lines.count == 2 && joins.last?.forecast == true)
+        let lines = WorkTimeline.lines(timeline, now: Self.now)
+        // Every range's window, and its scroll on each side, is inside the span the rows are packed over.
+        let span = WorkTimeline.packSpan(Self.now)
+        for range in WorkTimeline.Range.allCases {
+            let window = range.window(now: Self.now)
+            #expect(window.start.addingTimeInterval(-range.span) >= span.start && window.end.addingTimeInterval(range.span) <= span.end)
+        }
+        func rows() -> [String: Int] {
+            Dictionary(uniqueKeysWithValues: WorkTimeline.layout(WorkTimeline.overlapping(lines, span)).map { ($0.number, $0.row) })
+        }
+        // The same in 1 Day, 2 Days and Week: the packing has no range and no points in it.
+        for _ in WorkTimeline.Range.allCases { #expect(rows() == ["#1": 0, "#2": 1, "#3": 0, "#4": 0, "#5": 2]) }
     }
 
-    @Test func aLabelRunsTheWholeLinePastNow() {
-        // Alex, 2026-11-10: the label is as long as the line, not cut at Now or the band.
-        let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(3), mid: Self.h(5), high: Self.h(8))
-        let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(19, [Self.child(60, started: -1, forecast: 5)], segments: [(-1, nil)], forecast: forecast),
-        ])
-        let line = WorkTimeline.lines(timeline, now: Self.now)[0]
+    @Test func aBlocksTitleIsInItOrAfterItCutBeforeTheNextBlock() throws {
         let measure: (String) -> Double = { Double($0.count) * 6 }
-        let x = Self.axis.x(line.start)
-        let room = WorkTimeline.labelRoom(line, from: x, axis: Self.axis)
-        #expect(room == Self.axis.x(line.end) - x)
-        #expect(room == 120)
-        #expect(WorkTimeline.label(line, room: room, measure: measure)?.text == "Issue…  #19 · 0 of 1")
-        #expect(WorkTimeline.label(line, room: 80, measure: measure)?.text == "#19 · 0 of 1")
-        #expect(WorkTimeline.label(line, room: 10, measure: measure) == nil)
-        #expect(WorkTimeline.label(line, room: .infinity, measure: measure)?.text == "Issue 19  #19 · 0 of 1")
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            Self.epic(19, [Self.child(60, started: -9, closed: -1)], segments: [(-9, -1)]),
+            Self.epic(20, [Self.child(61, started: -24, closed: -23.5)], segments: [(-24, -23.5)]),
+            Self.epic(21, [Self.child(62, started: -20, closed: -19)], segments: [(-20, -19)], reason: "not_planned"),
+        ])
+        let lines = WorkTimeline.lines(timeline, now: Self.now)
+        let wide = lines[0], narrow = lines[1], dropped = lines[2]
+        // 8 h is 160 pt: "Issue 19" fits, 6 pt in.
+        let inside = WorkTimeline.blockWords(wide, axis: Self.axis, measure: measure)
+        #expect(inside.inside == "Issue 19" && inside.insideX == Self.axis.x(wide.start) + 6 && inside.outside == nil)
+        // Half an hour is 10 pt: the title goes after the block, cut before the next block in the row.
+        let after = WorkTimeline.blockWords(narrow, axis: Self.axis, measure: measure)
+        #expect(after.inside == nil && after.outside == "Issue 20" && after.outsideX == Self.axis.x(narrow.end) + 6)
+        #expect(WorkTimeline.blockWords(narrow, axis: Self.axis, measure: measure, next: Self.h(-21.6)).outside == "Iss…")
+        #expect(WorkTimeline.blockWords(narrow, axis: Self.axis, measure: measure, next: Self.h(-23.4)).outside == nil)
+        // Closed as not planned: "✕ closed as not planned" after the block.
+        #expect(WorkTimeline.blockWords(dropped, axis: Self.axis, measure: measure).outside == "Issue 21  ✕ closed as not planned")
+        // A block that starts before the left edge keeps its title at the edge, after ←, cut to what is left of it.
+        let edge = WorkTimeline.blockWords(wide, axis: Self.axis, measure: measure, left: Self.axis.x(Self.h(-4)))
+        #expect(edge.arrow && edge.insideX == Self.axis.x(Self.h(-4)) + 6 && edge.inside == "← Issue…")
+        // The wait pill goes first: the words after it.
+        #expect(WorkTimeline.blockWords(narrow, axis: Self.axis, measure: measure, trailing: 30).outsideX == Self.axis.x(narrow.end) + 42)
+        #expect(WorkTimeline.cut("Issue 19", room: 0, measure: measure) == nil)
     }
 
-    @Test func aDotIsOnTheStretchOfItsLineThatIsOnItsLane() {
-        // Alex, 2026-11-10: no dot on the fork's or the join's curve, off the line.
+    @Test func whiteTextHasFourAndAHalfToOneOnEveryFeaturesColour() {
+        let colours: [[Double]] = [[0, 122, 255], [255, 149, 0], [52, 199, 89], [48, 176, 199], [0, 199, 190], [142, 142, 147]]
+        for rgb in colours.map({ $0.map { $0 / 255 } }) {
+            let dark = WorkTimeline.forWhiteText(rgb)
+            #expect(WorkTimeline.contrast(dark, [1, 1, 1]) >= 4.5)
+            #expect(zip(dark, rgb).allSatisfy { $0 <= $1 })
+        }
+        // A colour that has it already stays as it is.
+        let indigo = [88.0, 86, 214].map { $0 / 255 }
+        #expect(WorkTimeline.forWhiteText(indigo) == indigo)
+    }
+
+    @Test func aDotIsHeldInsideItsBlock() {
         let timeline = DaemonAPI.WorkTimeline(epics: [
             Self.epic(24, [Self.child(70, closed: -30), Self.child(71, started: -10, closed: -6),
                            Self.child(72, started: -9, closed: -2)], segments: [(-10, -2)]),
         ])
-        let line = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now), axis: Self.axis, labelWidth: { _ in 10 })[0]
-        let r = WorkTimeline.riser(line.lane)
-        let from = Self.axis.x(line.start) + r, to = Self.axis.x(line.end) - r
+        let line = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))[0]
+        let from = Self.axis.x(line.start) + 4, to = Self.axis.x(line.end) - 4
         let xs = line.dots.map { WorkTimeline.dotX($0, on: line, axis: Self.axis) }
         #expect(xs == [from, Self.axis.x(Self.h(-6)), to])
-    }
-
-    @Test func aLongTitleIsCutWithAnEllipsisSoTheLabelFitsItsLine() {
-        let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(19, [Self.child(60, started: -9, closed: -1)], segments: [(-9, -1)]),
-        ])
-        let line = WorkTimeline.lines(timeline, now: Self.now)[0]
-        let measure: (String) -> Double = { Double($0.count) * 6 }
-        let x = Self.axis.x(line.start)
-        // A closed line: the label stops at its end, not after it.
-        let room = WorkTimeline.labelRoom(line, from: x, axis: Self.axis)
-        #expect(room == Self.axis.x(line.end) - x)
-        // "Issue 19  #19 · 1 of 1" is 22 characters; 20 keep "Issue…" and the figures.
-        let words = WorkTimeline.label(line, room: 20 * 6, measure: measure)
-        #expect(words?.title == "Issue…")
-        #expect(words?.text == "Issue…  #19 · 1 of 1")
-        // Room for one letter and "…": the name keeps one; less, and only the figures.
-        #expect(WorkTimeline.label(line, room: 16 * 6, measure: measure)?.text == "I…  #19 · 1 of 1")
-        #expect(WorkTimeline.label(line, room: 15 * 6, measure: measure)?.text == "#19 · 1 of 1")
     }
 
     @Test func aFeatureKeepsItsColour() {
@@ -231,20 +239,16 @@ struct WorkTimelineTests {
         #expect((0..<11).contains(WorkTimeline.colour("autonomy", of: 12)))
     }
 
-    @Test func theHitIsTheNearestDotThenTheLine() {
+    @Test func theHitIsTheNearestDotThenTheBlock() {
         let timeline = DaemonAPI.WorkTimeline(epics: [
             Self.epic(21, [Self.child(80, started: -10, closed: -6)], segments: [(-10, -2)]),
-        ], releases: [.init(tag: "v1.2.0", at: Self.h(-12), repo: "alexec/Agents")])
-        let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now), axis: Self.axis, labelWidth: { _ in 10 })
-        let trunk = 200.0, lane = 30.0
-        let y = trunk - lane
-        func hit(_ x: Double, _ y: Double) -> WorkTimeline.Hit? {
-            WorkTimeline.hit((x, y), lines: lines, releases: timeline.releases, axis: Self.axis, trunk: trunk, laneHeight: lane)
-        }
-        if case .dot(_, let dot) = hit(Self.axis.x(Self.h(-6)) + 3, y) { #expect(dot.number == "#80") } else { Issue.record("no dot") }
-        if case .line(let line) = hit(Self.axis.x(Self.h(-4)), y + 5) { #expect(line.number == "#21") } else { Issue.record("no line") }
-        if case .release(let r) = hit(Self.axis.x(Self.h(-12)), trunk) { #expect(r.tag == "v1.2.0") } else { Issue.record("no release") }
-        #expect(hit(Self.axis.x(Self.h(-4)), y - 20) == nil)
+        ])
+        let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))
+        func hit(_ x: Double, _ y: Double) -> WorkTimeline.Hit? { WorkTimeline.hit((x, y), lines: lines, axis: Self.axis) }
+        if case .dot(_, let dot) = hit(Self.axis.x(Self.h(-6)) + 3, WorkTimeline.dotY(0)) { #expect(dot.number == "#80") } else { Issue.record("no dot") }
+        if case .line(let line) = hit(Self.axis.x(Self.h(-4)), WorkTimeline.rowTop(0) + 4) { #expect(line.number == "#21") } else { Issue.record("no block") }
+        #expect(hit(Self.axis.x(Self.h(-4)), WorkTimeline.rowTop(1) + 4) == nil)
+        #expect(hit(Self.axis.x(Self.now), WorkTimeline.rowTop(0) + 4) == nil)
     }
 
     @Test func theWordsSayAbout() throws {
@@ -280,9 +284,6 @@ struct WorkTimelineTests {
             == ["#31 · closed 2 h ago", "#32 · closed as not planned 1 h ago"])
         let waits = try #require(lines.first { $0.number == "#33" })
         #expect(WorkTimeline.lineLine(waits, now: Self.now) == "#33 · 0 of 2 · 1 waits for you")
-        let release = DaemonAPI.WorkTimelineRelease(tag: "v1", at: Self.h(-3), repo: "alexec/Agents")
-        #expect(WorkTimeline.releaseLine(release, now: Self.now) == "alexec/Agents · released 3 h ago")
-        #expect(WorkTimeline.releaseLine(.init(tag: "v2", at: Self.now, repo: "a/b"), now: Self.now) == "a/b · released just now")
     }
 
     @Test func theTitleLineAndTheEmptyCardSayTheRange() {
@@ -300,6 +301,21 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.lastJoined(timeline, before: Self.h(-200)) == nil)
         let lines = WorkTimeline.lines(timeline, now: Self.now)
         #expect(WorkTimeline.epicCount(lines, in: WorkTimeline.Range.twoDays.window(now: Self.now)) == 1)
+    }
+
+    /// #5925: two reads, the first with no epic and the second with one; S11 never shows between them.
+    @Test func theWindowIsLoadingNotEmptyUntilEveryReadEnded() {
+        let window = WorkTimeline.Range.twoDays.window(now: Self.now)
+        func count(_ t: DaemonAPI.WorkTimeline) -> Int { WorkTimeline.epicCount(WorkTimeline.lines(t, now: Self.now), in: window) }
+        let first = DaemonAPI.WorkTimeline(epics: [], releases: [])
+        let both = WorkTimeline.merge([first, DaemonAPI.WorkTimeline(
+            epics: [Self.epic(44, [Self.child(45, started: -2)], segments: [(-2, nil)])], releases: [])])
+        #expect(WorkTimeline.shows(drawn: false, reading: true, epics: 0) == .loading)
+        #expect(WorkTimeline.shows(drawn: true, reading: true, epics: count(first)) == .loading)
+        #expect(WorkTimeline.shows(drawn: true, reading: true, epics: count(both)) == .epics)
+        #expect(WorkTimeline.shows(drawn: true, reading: false, epics: count(both)) == .epics)
+        // Only once every read ended does an empty window say so (S11).
+        #expect(WorkTimeline.shows(drawn: true, reading: false, epics: count(first)) == .empty)
     }
 
     @Test func machinesMergeEachEpicAndReleaseOnce() {

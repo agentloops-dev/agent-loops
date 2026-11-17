@@ -16,9 +16,7 @@ import (
 // asNotWakingItself makes the fake runtime one that does not start itself again when its
 // background command ends, as Codex does not (#4577).
 func asNotWakingItself(t *testing.T) {
-	was := wakesItself
-	wakesItself = func(string) bool { return false }
-	t.Cleanup(func() { wakesItself = was })
+	setFor(t, &wakesItself, func(string) bool { return false })
 }
 
 // backgroundEvents is the agent.background_ended events on the log for the agent.
@@ -46,6 +44,8 @@ func woken(d *Daemon, id wire.UUID) bool {
 
 // A look gives what ended once: after processes were seen, and not before.
 func TestNoteBackgroundGivesWhatEndedOnce(t *testing.T) {
+	t.Parallel()
+
 	var p warmLive
 	if e := p.noteBackground(nil); e != nil {
 		t.Fatalf("nothing ran, yet %v", e)
@@ -63,6 +63,8 @@ func TestNoteBackgroundGivesWhatEndedOnce(t *testing.T) {
 }
 
 func TestCommandNamesShortensAndCounts(t *testing.T) {
+	t.Parallel()
+
 	cmds := []acp.Command{{Line: "a"}, {Line: "b"}, {Line: "c"}, {Line: strings.Repeat("x", 70)}, {Line: "e"}, {Line: "f"}}
 	got := commandNames(cmds)
 	if !strings.HasPrefix(got, "`a`, `b`, `c`, `"+strings.Repeat("x", 60)+"…`") || !strings.HasSuffix(got, ", and 2 more") {
@@ -78,9 +80,7 @@ func TestBackgroundEndedWakesTheWaitingSession(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := warmAgent(t, d, c, t.TempDir())
-	was := eventHoldLimit
-	eventHoldLimit = 200 * time.Millisecond
-	t.Cleanup(func() { eventHoldLimit = was })
+	setFor(t, &eventHoldLimit, 200*time.Millisecond)
 	m := appClient(t, d, id)
 	m.post("initialize", map[string]any{}, 1)
 	// No pass after the first turn looks between the seen command and the wait.
@@ -125,9 +125,7 @@ func TestBackgroundEndedWakesOnlyItsOwnSession(t *testing.T) {
 	l.pool.seen = []acp.Command{{Pid: 999999, Line: "npm run build"}}
 	l.mu.Unlock()
 	d.warmMu.Unlock()
-	was := eventHoldLimit
-	eventHoldLimit = 200 * time.Millisecond
-	t.Cleanup(func() { eventHoldLimit = was })
+	setFor(t, &eventHoldLimit, 200*time.Millisecond)
 	m := appClient(t, d, other)
 	m.post("initialize", map[string]any{}, 1)
 	// The other waits on agent.background_ended, which a pattern alone would match for mine.
@@ -171,6 +169,8 @@ func TestBackgroundWaitRefusedWhenNothingWouldEnd(t *testing.T) {
 }
 
 func TestBriefSaysToWaitOnlyWhereTheRuntimeDoesNotWakeItself(t *testing.T) {
+	t.Parallel()
+
 	if strings.Contains(eventsBriefFor("claude"), backgroundEndedEvent) {
 		t.Fatal("Claude wakes itself")
 	}
@@ -206,6 +206,8 @@ func writeHandover(t *testing.T, d *Daemon, h backgroundHandover) {
 // session gets the event, and a Claude session with no wait a prompt, as Claude would
 // have started itself.
 func TestAdoptedBackgroundEndsAfterARestart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -274,6 +276,8 @@ func TestAdoptionChecksTheStartTime(t *testing.T) {
 
 // A clean stop with nothing in the background leaves no background.json behind.
 func TestHandoverWithNothingWritesNothing(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	_ = os.WriteFile(d.backgroundPath(), []byte("{}"), 0o600)
 	d.Shutdown()

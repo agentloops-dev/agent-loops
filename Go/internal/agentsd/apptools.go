@@ -16,7 +16,6 @@ import (
 	sdk "github.com/coder/acp-go-sdk"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -69,6 +68,7 @@ type appTool struct {
 func appToolCalls() []appTool {
 	return []appTool{
 		{"set_session_labels", (*Daemon).setSessionLabels},
+		{"set_session_priority", (*Daemon).setSessionPriority},
 		{"lease_resource", (*Daemon).leaseResourceTool},
 		{"release_resource", (*Daemon).releaseResource},
 		{"list_resources", (*Daemon).listResources},
@@ -84,6 +84,7 @@ func appToolCalls() []appTool {
 		{"list_sessions", (*Daemon).listSessions},
 		{"read_session", (*Daemon).readSession},
 		{"message_session", (*Daemon).messageSession},
+		{"answer_permission", (*Daemon).answerPermission},
 		{"cancel_message", (*Daemon).cancelMessage},
 		{"archive_session", (*Daemon).archiveSession},
 		{"stop_session", (*Daemon).stopSession},
@@ -105,6 +106,7 @@ func appToolCalls() []appTool {
 		{"docs_search", (*Daemon).docsSearchTool},
 		{"docs_read", (*Daemon).docsReadTool},
 		{"estimate_issue", (*Daemon).estimateIssueTool},
+		{"conflict_risk_analysis", (*Daemon).conflictRiskTool},
 		{"set_ci_secret", (*Daemon).setCISecret},
 		{"set_ci_variable", (*Daemon).setCIVariable},
 		{"set_environment_gate", (*Daemon).setEnvironmentGate},
@@ -131,7 +133,7 @@ func (d *Daemon) startAppTools() (int, error) {
 	d.appPort = l.Addr().(*net.TCPAddr).Port
 	d.appStarted = true
 	srv := d.appServer
-	safe.Go("app tools", func() {
+	d.goJob("app tools", func() {
 		if err := srv.Serve(l); err != nil && err != http.ErrServerClosed {
 			log.Printf("app tools: %v", err)
 		}

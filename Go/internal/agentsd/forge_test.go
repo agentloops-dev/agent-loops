@@ -41,7 +41,7 @@ type fakeForgeGitHub struct {
 	// timeline is what Timeline gives, and timelines how often it was asked (#4172).
 	timeline  githubmcp.Timeline
 	timelines int
-	// reviews are what a list of the label needs-approval gives (#3330).
+	// reviews are what a list by a requested reviewer gives (#3330, #5803).
 	reviews []githubmcp.Item
 	// waiting are each repo's deploys waiting for a reviewer (#3587).
 	waiting map[string][]githubmcp.WaitingDeploy
@@ -50,6 +50,10 @@ type fakeForgeGitHub struct {
 	// bare is the repository MakeRepository gives as the clone address, and made the ones it made (#3708).
 	bare string
 	made []string
+	// cannotMake, when set, is GitHub refusing to make a repository as the person: the GitHub
+	// App has no Administration permission (#5563). byPerson are the ones the person made.
+	cannotMake bool
+	byPerson   []string
 	// public are the repositories MakePublicRepository was asked for, and private the ones
 	// there already that are private (#4921).
 	public  []string
@@ -61,11 +65,15 @@ type fakeForgeGitHub struct {
 	states map[int]string
 	// authors are ItemPage's author by number, when set (#3860); its head is then h<number>.
 	authors map[int]string
+	// reviewers are ItemPage's reviewers by number, when set (#5803).
+	reviewers map[int][]githubmcp.Reviewer
 	// labeled are what a list of a label gives, when set for that label (#3661).
 	labeled map[string][]githubmcp.Item
 	// milestones are what Milestones gives, and milestoneReads how often it was asked (#4654).
 	milestones     []githubmcp.Milestone
 	milestoneReads int
+	// hold, when set, keeps every Search waiting until it is closed (#5450).
+	hold chan struct{}
 }
 
 func (f *fakeForgeGitHub) Milestones(context.Context, string) ([]githubmcp.Milestone, error) {
@@ -76,6 +84,12 @@ func (f *fakeForgeGitHub) Milestones(context.Context, string) ([]githubmcp.Miles
 }
 
 func (f *fakeForgeGitHub) Search(_ context.Context, repos []string, sf githubmcp.SearchFilter, after string, first int) (githubmcp.SearchPage, error) {
+	if f.hold != nil {
+		f.mu.Lock()
+		f.searches = append(f.searches, "held")
+		f.mu.Unlock()
+		<-f.hold
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.searches = append(f.searches, strings.Join(repos, ",")+" "+githubmcp.SearchQuery(repos, sf)+" after="+after)
@@ -88,7 +102,7 @@ func (f *fakeForgeGitHub) Search(_ context.Context, repos []string, sf githubmcp
 	if f.open != nil && sf.Label == "" && sf.State == "open" && !sf.PRs {
 		return githubmcp.SearchPage{Items: f.open}, nil
 	}
-	if sf.Label == "needs-approval" {
+	if sf.Reviewer != "" {
 		return githubmcp.SearchPage{Items: f.reviews}, nil
 	}
 	if sf.Label == "alex-todo" {
@@ -114,12 +128,14 @@ func (f *fakeForgeGitHub) ItemPage(_ context.Context, repo string, number int, b
 	body, hasBody := f.bodies[number]
 	state := f.states[number]
 	author := f.authors[number]
+	reviewers := f.reviewers[number]
 	f.mu.Unlock()
 	if hasBody {
 		if state == "" {
 			state = "open"
 		}
-		d := githubmcp.ItemDetail{Item: githubmcp.Item{Repo: repo, Number: number, PR: number == 12, State: state, Title: "Item", Author: author, UpdatedAt: "2026-11-01T10:00:00Z"}, Body: body}
+		d := githubmcp.ItemDetail{Item: githubmcp.Item{Repo: repo, Number: number, PR: number == 12, State: state, Title: "Item", Author: author, UpdatedAt: "2026-11-01T10:00:00Z"},
+			Body: body, Reviewers: reviewers}
 		if author != "" {
 			d.Head = fmt.Sprintf("h%d", number)
 		}
@@ -147,7 +163,7 @@ func (f *fakeForgeGitHub) asked() ([]string, int) {
 // as a fake GitHub.
 func forgeDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeGitHub, *connections.File) {
 	t.Helper()
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	d, c := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -171,6 +187,8 @@ func forgeDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeGitHub, *connections.F
 // each repo once, in the one model; the next page goes on from the cursor; the same list again
 // within forgeCacheFor asks GitHub nothing; and what a list read is in the lineage cache.
 func TestForgePullsListsEveryRepoInOneSearch(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &list)
@@ -221,6 +239,8 @@ func TestForgePullsListsEveryRepoInOneSearch(t *testing.T) {
 
 // One folder's list is its repo's only; issues are is:issue and state all has no state.
 func TestForgeIssuesOfOneFolder(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	var web string
 	for _, f := range d.folderPaths() {
@@ -238,6 +258,8 @@ func TestForgeIssuesOfOneFolder(t *testing.T) {
 // With no GitHub connection the list still answers, empty, and says why; nothing is kept, so
 // the next ask after connecting reads GitHub.
 func TestForgeListSaysGitHubIsNotConnected(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, file := forgeDaemon(t)
 	file.Delete(connections.GitHub)
 	var list wire.ForgeList
@@ -256,6 +278,8 @@ func TestForgeListSaysGitHubIsNotConnected(t *testing.T) {
 // What a list refuses: a limit over 100, a state it does not know, a cursor it did not give,
 // a folder not on this machine.
 func TestForgeListRefusals(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _ := forgeDaemon(t)
 	for i, r := range []wire.ForgeListRequest{{Limit: new(int64(101))}, {Limit: new(int64(0))}, {State: new("merged")},
 		{Cursor: new("not a cursor")}, {Folder: new("/no/such/folder")}} {
@@ -270,6 +294,8 @@ func TestForgeListRefusals(t *testing.T) {
 // forge/pull, an item GitHub does not have, a forge it does not know and a Linear pull request
 // are refused.
 func TestForgePullReadsOne(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	pr := wire.LineageNode{Kind: "pr", Ref: "github:pr:alexec/agents#12"}
 	var p wire.ForgeItemDetail
@@ -283,6 +309,10 @@ func TestForgePullReadsOne(t *testing.T) {
 	}
 	if len(p.Checks) != 1 || p.Checks[0].State != "failing" || *p.ReviewThreads != 2 || *p.FilesChanged != 5 {
 		t.Fatalf("checks: %+v", p)
+	}
+	// #5804: the login the connection writes as, so a client knows which reviewer is the person.
+	if deref(p.Viewer) != "alexec" {
+		t.Fatalf("viewer: %v", p.Viewer)
 	}
 	c.call(t, 2, "forge/pull", wire.ForgeItemRequest{Node: pr})
 	if _, items := gh.asked(); items != 1 {
@@ -418,6 +448,8 @@ func allForgesDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeGitHub, *fakeForge
 // GitLab) and the folders' Linear teams, merges them by updatedAt, keeps limit, and each forge's
 // cursor goes on after the last of its own kept; a forge whose list ended is not asked again.
 func TestForgeIssuesMergesEveryForgeByTime(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, gl, ln, _ := allForgesDaemon(t)
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Limit: new(int64(3))}), &list)
@@ -461,6 +493,8 @@ func TestForgeIssuesMergesEveryForgeByTime(t *testing.T) {
 // forge/pulls asks no Linear: it has no pull requests. A GitLab merge request is a ! node with
 // a merge request's own fields.
 func TestForgePullsHasNoLinear(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _, ln, _ := allForgesDaemon(t)
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 1, "forge/pulls", wire.ForgeListRequest{}), &list)
@@ -472,6 +506,8 @@ func TestForgePullsHasNoLinear(t *testing.T) {
 
 // Without a GitLab connection a list says so for GitLab, and still lists the others.
 func TestForgeListSaysGitLabIsNotConnected(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, gl, _, file := allForgesDaemon(t)
 	file.Delete(connections.GitLab)
 	var list wire.ForgeList
@@ -486,6 +522,8 @@ func TestForgeListSaysGitLabIsNotConnected(t *testing.T) {
 // forge/issue a Linear issue, with the folder that names its team; ones the forge does not have,
 // and a project on another GitLab, are refused.
 func TestForgeReadsAGitLabAndALinearItem(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, gl, _, _ := allForgesDaemon(t)
 	mr := wire.LineageNode{Kind: "pr", Ref: "gitlab:mr:group/app#4"}
 	var p wire.ForgeItemDetail
@@ -524,6 +562,8 @@ func TestForgeReadsAGitLabAndALinearItem(t *testing.T) {
 // teams), each issue acting from a folder here, as its forge/issue does; with no Linear
 // connection it leaves Linear out, with no error.
 func TestForgeIssuesListsTheLinearWorkspace(t *testing.T) {
+	t.Parallel()
+
 	d, c, _, file := forgeDaemon(t)
 	ln := &fakeForgeLinear{}
 	d.newForgeLinear = func(string) forgeLinear { return ln }
@@ -563,6 +603,8 @@ func TestForgeIssuesListsTheLinearWorkspace(t *testing.T) {
 // mergeForgePages: a forge that failed is asked again from where it was, and with nothing else
 // going on there is no next page.
 func TestMergeForgePagesKeepsAFailedForgesPlace(t *testing.T) {
+	t.Parallel()
+
 	at := func(s string) wire.Date { return forgeDate(s) }
 	pages := []forgePage{
 		{forge: "github", items: []wire.ForgeItem{{UpdatedAt: at("2026-11-01T10:00:00Z")}}, cursors: []string{"g1"}},
@@ -577,6 +619,8 @@ func TestMergeForgePagesKeepsAFailedForgesPlace(t *testing.T) {
 // A cursor that an earlier daemon gave, with a field per forge, still reads (#4360), and one the
 // map gives has the same keys.
 func TestForgeCursorReadsAnEarlierDaemons(t *testing.T) {
+	t.Parallel()
+
 	was := base64.RawURLEncoding.EncodeToString([]byte(`{"github":"g1","azureboards":"b2","done":["jira"]}`))
 	c, err := cursorOf(&was)
 	if err != nil || c.At["github"] != "g1" || c.At["azureboards"] != "b2" || len(c.At) != 2 || !slices.Equal(c.Done, []string{"jira"}) {
@@ -593,6 +637,8 @@ func TestForgeCursorReadsAnEarlierDaemons(t *testing.T) {
 // after a forge is done still counts it; a forge with no count counts its items when its first
 // page is its last, and the list has no total while a forge has none.
 func TestListTotalsKeepEachForgesFirstCount(t *testing.T) {
+	t.Parallel()
+
 	item := wire.ForgeItem{UpdatedAt: forgeDate("2026-11-01T10:00:00Z")}
 	pages := []forgePage{
 		{forge: "github", items: []wire.ForgeItem{item}, next: "g1", total: new(57)},
@@ -629,6 +675,8 @@ func TestListTotalsKeepEachForgesFirstCount(t *testing.T) {
 
 // A label's colour reaches the wire as #rrggbb whatever form the forge gives it in (#4362).
 func TestForgeLabelColor(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]string{
 		"#d73a4a": "#d73a4a", "D73A4A": "#d73a4a", "#A2EEEF": "#a2eeef", " a2eeef ": "#a2eeef",
 		"": "", "red": "", "#fff": "", "#d73a4a00": "", "zzzzzz": "",

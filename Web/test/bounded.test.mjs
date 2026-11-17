@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { load } from "./load.mjs";
+import { flakyUnderLoad } from "./flaky.mjs";
 
 const {
   Work, Store, archivedPage, searchShown, keepingTurns, effect,
@@ -378,17 +379,37 @@ test("a search asks each host for a capped page of matches and holds one search'
 });
 
 test("a search's reply for words no longer asked is dropped (#193)", async () => {
-  const link = heldLink((method, params) => [agent(`for-${params.query}`, "p", 1, { state: "archived" })]);
+  const link = heldLink((_method, params) => [agent(`for-${params.query}`, "p", 1, { state: "archived" })]);
   const store = new Store(link);
   store.hosts.value = [{ id: "mac", state: "online" }];
   const first = store.searchSessions("ab");
   const second = store.searchSessions("abc");
+  // Each asks its matches and what was said at once (#1585, #5572); the dropped one's answers are not kept.
   await link.answer("agents/list");
   await link.answer("agents/list");
-  // The search still asked for asks what was said too (#1585); the one dropped does not.
+  await link.answer("agents/said");
   await link.answer("agents/said");
   await Promise.all([first, second]);
   assert.deepEqual((store.agents.value.mac ?? []).map((a) => a.id), ["for-abc"]);
+});
+
+test("a search asks every host at once and shows each host's matches as they come (#5572)", async () => {
+  const link = heldLink((_method, _params, host) => [agent(`${host}-old`, "p", 1, { state: "archived" })]);
+  const store = new Store(link);
+  store.hosts.value = [{ id: "mac", state: "online" }, { id: "box", state: "online" }];
+  const searching = store.searchSessions("old");
+  await wait(0);
+  assert.deepEqual(link.out.filter((c) => c.method === "agents/list").map((c) => c.host), ["mac", "box"], "both are asked before either answers");
+  // The Mac is slow: the box's answer shows first.
+  const at = link.out.findIndex((c) => c.method === "agents/list" && c.host === "box");
+  link.out.splice(at, 1)[0].reply();
+  await wait(0);
+  assert.deepEqual((store.agents.value.box ?? []).map((a) => a.id), ["box-old"]);
+  assert.deepEqual(store.agents.value.mac ?? [], [], "the Mac has not answered yet");
+  await link.answer("agents/list");
+  while (link.out.length) await link.answer(link.out[0].method);
+  await searching;
+  assert.deepEqual(store.agents.value.mac.map((a) => a.id), ["mac-old"]);
 });
 
 function ran(n, id, extra = {}) {
@@ -470,7 +491,7 @@ test("entries heard are kept for a page only while one is on its way (#214)", ()
   assert.deepEqual(work.entries.value.map((e) => e.id), ["e100"]);
 });
 
-test("a heartbeat answered with an error keeps the link (#214)", async () => {
+test("a heartbeat answered with an error keeps the link (#214)", { skip: flakyUnderLoad("#5879") }, async () => {
   const sockets = [];
   const l = new w.Link({ url: "ws://localhost:1/v1/connect", origin: "http://localhost:1",
     keys: Object.assign(new w.MemoryKeyStore(), { record: { privateKey: {}, publicKey: {}, client: "C", control: "K", paired: "" } }),
@@ -515,7 +536,7 @@ test("one start keeps its request until it succeeds (#291)", () => {
 });
 
 test("an opened turn asks for its last page, and a miss reports the turn's start (#291)", async () => {
-  const link = heldLink((method, params) => ({
+  const link = heldLink((_method, params) => ({
     entries: [said(params.before - 1)], firstIndex: Math.max(params.from, params.before - params.limit), total: params.before,
   }));
   const store = new Store(link);

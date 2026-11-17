@@ -3,7 +3,7 @@
 // Things-style since #495 (#499): Agents'
 // filters, a machine and a state (#2141); then what wants the person across every folder — Pinned, Needs You, Working, Unread — each drawn
 // only with something in it (#507), Needs You with what waits for an OK after its sessions (#773); then a group per folder, its sessions newest started first
-// with their state the row's mark under a Sessions fold that starts with New Session (#5267), its Workflows fold (#885), and one Archived row opening a page; then the
+// with their state the row's mark under a Sessions fold, its Workflows fold (#885), and one Archived row opening a page; then the
 // archived folders, Live Now (an admin's) and Projects (#2141); and at the foot what the hosts and
 // this browser are doing. The Activity pages are in Machines and Reports since #2141. Never more than three
 // levels deep: a folder's Workflows fold (#885) is the third. No host headings: a server's folder reads `host:Folder`. A folder's row only
@@ -17,7 +17,6 @@ import { signal, useSignal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { byBack, laterWords } from "../model/later";
-import { nonePage } from "./SummaryPage";
 import { FolderSettingsModal, ProjectSettingsModal } from "./ProjectSettings";
 import { projectSettingsWords } from "../model/projectSettings";
 import { actDoing, type Store } from "../model/store";
@@ -51,7 +50,7 @@ import { putFilesInDropbox, useDropboxDrop } from "./DropboxDialog";
 import { exportFromMenu, importFromMenu } from "../model/exports";
 import { rowExtras, SessionRow } from "./SessionRow";
 import { prefetchOnHover } from "./hoverPrefetch";
-import { canMoveOn, openInNewTab, RenameInput, runSessionAction, sessionActions, startedBy } from "./SessionMenu";
+import { canMoveOn, openInNewTab, priorityItems, RenameInput, runSessionAction, sessionActions, startedBy } from "./SessionMenu";
 import { markAgentOf, treeRows, type TreeRow } from "../model/tree";
 import { WorkflowRow } from "./WorkflowRow";
 import { footLine, offersStart } from "./OfflineStrip";
@@ -63,6 +62,7 @@ import { CheckSuggestionRow } from "./CheckSuggestion";
 import { JoinRequests } from "./JoinRequest";
 import { LinkRequests } from "./ChannelLinks";
 import { SignInRequests } from "./SignInRequests";
+import { SecretOffers } from "./SecretOffers";
 import { LockJoins } from "./LockJoins";
 import { approvalID, failedRuns, opensItsSubject } from "../model/approvals";
 import { memo } from "../render/memo";
@@ -70,6 +70,7 @@ import { ask } from "./MessageKinds";
 import { laterRequestOf, useListKeys } from "./ListKeys";
 import { laterTime, listKeyGlyph } from "../model/listKeys";
 import { Glyph, Icon, type IconName } from "./Icon";
+import { MachinePicker } from "./MachinePicker";
 
 
 /** Folder Settings asked for another folder of the project, from Project Settings' Folders (#3280). */
@@ -247,14 +248,14 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
       </header>
       {!held && <AgentFilters store={store} />}
       <div class="scroll" onKeyDown={(e) => moveWithKeys(e)}>
-        {/* The daily summary's page (#3721), above the smart groups, while the daily summary is on. */}
-        {!held && <SummaryRow store={store} />}
         {/* A machine asking to join (#994): at the top, whatever groups are on, and with no folder yet. */}
         {!held && <JoinRequests store={store} down={linkDown} />}
         {/* A channel identity asking to act as this person (#1762), beside the machines. */}
         {!held && <LinkRequests store={store} down={linkDown} />}
         {/* A new client that signed in with GitHub as this person (#995), beside them. */}
         {!held && <SignInRequests store={store} down={linkDown} />}
+        {/* A secret an agent saved on a machine of the person's, until it is theirs (#5308). */}
+        {!held && <SecretOffers store={store} down={linkDown} />}
         {/* This device in its person's machine lock, and the devices that ask to join it (#3490). */}
         {!held && <LockJoins store={store} down={linkDown} />}
         {/* Pinned, Needs You, Working, Unread: a group each across every folder and host (#495, #773),
@@ -344,33 +345,12 @@ function AgentFilters({ store }: { store: Store }) {
   return (
     <div class="agent-filters" role="group" aria-label="Filters">
       {(hosts.length > 1 || machine !== null) && (
-        <select aria-label="Machine" value={machine ?? ""} onChange={(e) => setMachineFilter((e.currentTarget as HTMLSelectElement).value || null)}>
-          <option value="">Every machine</option>
-          {hosts.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-        </select>
+        <MachinePicker store={store} label="Machine" value={machine} any="Every machine" onPick={setMachineFilter} />
       )}
       <select aria-label="State" value={stateFilter.value} onChange={(e) => setStateFilter((e.currentTarget as HTMLSelectElement).value as StateFilter)}>
         {stateFilters.map((f) => <option key={f} value={f}>{stateFilterTitle[f]}</option>)}
       </select>
     </div>
-  );
-}
-
-/** The Summary row (#3721), as the Mac's and the Remote's SummaryRowLabel: the newest page's title
- *  under it and a dot while that page is unread. Only while the daily summary is on. */
-function SummaryRow({ store }: { store: Store }) {
-  const settings = store.dailySummary.value;
-  if (!settings || settings.mode === "off") return null;
-  const newest = store.summaryPages.value[0];
-  const chosen = route.value.nav === "agents" && route.value.section === "summary";
-  return (
-    <button class={`row activity-row summary-row${chosen ? " chosen" : ""}${newest?.unread ? " unread" : ""}`}
-      aria-current={chosen} title="Your daily summary: what landed, what failed and what waits on you"
-      onClick={() => go({ nav: "agents", section: "summary" })}>
-      <Icon name="sun" class="activity-icon" />
-      <span class="title">Summary{newest?.unread && <span class="dot" aria-label="Unread" />}</span>
-      <span class="small quiet line">{newest?.title ?? nonePage}</span>
-    </button>
   );
 }
 
@@ -754,20 +734,7 @@ const FolderFold = memo(function FolderFold({ store, host, folder: summary, quer
   // Under a Sessions row, as the workflows are under theirs (#2312), the only layout (#2381); not in a
   // tab of the folder alone, whose group is headed Sessions already. A search holds it open.
   const here = r.host === host.id && r.folder !== undefined && folderKey(r.folder) === folderKey(folder);
-  // With New Session first in it (#5267), a folder with no live session has the fold too; a search, for sessions, hides the row.
-  const groupsSessions = !isAlone && (sessions.length > 0 || !searching);
-  const composing = here && !!r.compose && !r.session && !r.workflow && !r.page && !r.archive && !r.mcp;
-  const newSession = !searching && (
-    <div class="nav-item new-session-item">
-      <div class={`row new-session${composing ? " chosen" : ""}`}>
-        <button class="pick" aria-current={composing} disabled={down} title="Start a new session in this folder"
-          onClick={() => go({ host: host.id, folder, compose: true })}>
-          <Icon name="square-pen" class="pin-mark" />
-          <span class="title">New Session</span>
-        </button>
-      </div>
-    </div>
-  );
+  const groupsSessions = !isAlone && sessions.length > 0;
   const sessionsOpen = searching || folds.isSessionsOpen(host.id, folder);
   const nameMatches = label.toLowerCase().includes(query.toLowerCase());
   if (searching && sessions.length === 0 && archived.length === 0 && byIssue.length === 0 && workflows.length === 0
@@ -882,8 +849,8 @@ const FolderFold = memo(function FolderFold({ store, host, folder: summary, quer
           tabIndex={-1} disabled={searching} onClick={() => fold(!unfolded)}><Icon name={unfolded ? "chevron-down" : "chevron-right"} /></button>
         <button class="pick" aria-expanded={unfolded} data-fold="folder" title={folderPath(folder)}
           onClick={(e) => {
-            // The row folds or unfolds, and nothing else (#375): a session starts from New Session,
-            // the first row of its Sessions (#5267). Not when the arrow keys land here (a click with no detail): moving
+            // The row folds or unfolds, and nothing else (#375): a session starts from New Session
+            // in the + (#5447) or the folder's menu. Not when the arrow keys land here (a click with no detail): moving
             // through the list folds nothing.
             if (e.detail > 0 && !searching) fold(!unfolded);
           }}
@@ -912,9 +879,9 @@ const FolderFold = memo(function FolderFold({ store, host, folder: summary, quer
               <summary data-fold="sessions" aria-label={`Sessions, ${sessions.length}`}>
                 Sessions<span class="count">{sessions.length}</span>
               </summary>
-              {sessionsOpen && <>{newSession}{sessionRows.map((tree) => row(tree.agent, tree))}</>}
+              {sessionsOpen && sessionRows.map((tree) => row(tree.agent, tree))}
             </details>
-          ) : <>{newSession}{sessionRows.map((tree) => row(tree.agent, tree))}</>}
+          ) : sessionRows.map((tree) => row(tree.agent, tree))}
           {/* A search for an epic (#3900): a heading for each issue, the epic's own first, held open as a search holds Sessions. */}
           {byIssue.map((group) => (
             <div class="issue-group" role="group" key={group.issue.node.ref} aria-label={`${group.title}, ${group.sessions.length}`}>
@@ -1064,6 +1031,8 @@ export const SidebarSession = memo(function SidebarSession({ store, host, folder
     })),
     // A question it asked, out of Needs You for an hour, as l does (#4796).
     ...laterItem(store, host, agent, down),
+    // High, Medium, Low or From issue (#5849), as the window's row menu has it.
+    ...priorityItems(store, host, agent, down || !!store.onItsWay.value[agent.id]),
     // Its record and transcript as a .tar.gz (#1001), as the window's Export….
     ...(store.has(host, Capability.agentsExport1) ? [
       { label: "Export…", help: "Download this session as a .tar.gz", disabled: down || !!store.exportImport.value,
@@ -1137,7 +1106,7 @@ function folderPath(folder: string): string {
 /** Every row the keys move through, in the order shown. */
 function navRows(list: HTMLElement): HTMLElement[] {
   return [...list.querySelectorAll<HTMLElement>(
-    ".nav-item .row.new-session .pick, .activity .row, details.smart > summary, details.sessions > summary, details.workflows > summary, .folder-fold > .row.folder .pick, .nav-item .row.pin .pick, .nav-item .row.session, .nav-item .row.workflow .pick, .nav-item .row.page-row .pick, details.archived > summary",
+    ".activity .row, details.smart > summary, details.sessions > summary, details.workflows > summary, .folder-fold > .row.folder .pick, .nav-item .row.pin .pick, .nav-item .row.session, .nav-item .row.workflow .pick, .nav-item .row.page-row .pick, details.archived > summary",
   )].filter((el) => el.offsetParent !== null);
 }
 

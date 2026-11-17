@@ -16,6 +16,8 @@ import (
 // answers in the agent's words.
 
 func TestShowingAFile(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
@@ -49,6 +51,8 @@ func TestShowingAFile(t *testing.T) {
 }
 
 func TestSuggestingTheNextPrompt(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -66,6 +70,8 @@ func TestSuggestingTheNextPrompt(t *testing.T) {
 }
 
 func TestHangingUpVoiceMode(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -83,6 +89,8 @@ func TestHangingUpVoiceMode(t *testing.T) {
 }
 
 func TestAskingThePersonAForm(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
@@ -227,6 +235,8 @@ func TestAMessageDismissesTheQuestions(t *testing.T) {
 // A decline can say why (#4039): the agent reads the reason, and the record keeps it in the
 // person's bubble.
 func TestDecliningAFormSaysWhy(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
@@ -254,6 +264,40 @@ func TestDecliningAFormSaysWhy(t *testing.T) {
 	})
 	if got == nil || got.Summary != "You declined the agent's form" || len(got.Answers) != 1 ||
 		got.Answers[0] != (wire.ElicitationAnswer{Question: "You declined the agent's form, because", Answer: "The colour is set in the spec already."}) {
+		t.Fatalf("%+v", got)
+	}
+}
+
+// Dismiss (#5295): the client's cancel closes the card with no answer, the agent reads that
+// the person replies in a message, and the record says they dismissed it.
+func TestDismissingAFormLeavesTheReplyToTheNextMessage(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
+	m := appClient(t, d, a.ID)
+	m.post("initialize", map[string]any{}, 1)
+	l := d.live(a.ID)
+	l.mu.Lock()
+	l.inTurn = true
+	l.mu.Unlock()
+	question := map[string]any{"questions": []any{map[string]any{"id": "colour", "prompt": "Which colour?"}}}
+	answered := make(chan string, 1)
+	go func() { text, _ := m.tool(2, "ask_question", question); answered <- text }()
+	var pending []wire.ElicitationRequest
+	waitFor(t, "the form", func() bool {
+		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		return len(pending) == 1
+	})
+	c.call(t, 2, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "cancel", "content": map[string]any{}})
+	if text := <-answered; text != dismissedWords {
+		t.Fatal(text)
+	}
+	got := entryOf(d, a.ID, func(k wire.TranscriptEntryKind) *wire.TranscriptEntryKindElicitationAnswered {
+		return k.ElicitationAnswered
+	})
+	if got == nil || got.Summary != "You dismissed the question" || len(got.Answers) != 0 {
 		t.Fatalf("%+v", got)
 	}
 }

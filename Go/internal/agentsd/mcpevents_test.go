@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -158,9 +159,12 @@ func quickPolls(d *Daemon) {
 	}
 }
 
+// serverHome gives the daemon a home whose mcp.json names the "ci" server. It names the
+// home with personalHomeFor, not d.PersonalHome: the daemon's scan reads that field on its own
+// goroutine, and a write to it raced with the read (#5920).
 func serverHome(t *testing.T, d *Daemon, url string) {
 	home := t.TempDir()
-	d.PersonalHome = home
+	personalHomeFor(t, home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
 	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"ci": map[string]any{"url": url}}})
 	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)
@@ -192,6 +196,8 @@ func mcpEventsRaised(d *Daemon, id string) []wire.Event {
 }
 
 func TestAWorkflowHearsAServersEvent(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -318,6 +324,8 @@ func TestAWorkflowHearsAServersEvent(t *testing.T) {
 }
 
 func TestEventsHalfDeliveredAreRaisedOnceAtTheNextStart(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c := start(t, root)
@@ -363,6 +371,8 @@ func TestEventsHalfDeliveredAreRaisedOnceAtTheNextStart(t *testing.T) {
 }
 
 func TestATriggerNoServerHereOffers(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	quickPolls(d)
@@ -390,6 +400,8 @@ func TestATriggerNoServerHereOffers(t *testing.T) {
 }
 
 func TestReadingAServerEventTrigger(t *testing.T) {
+	t.Parallel()
+
 	w := parseWorkflow("---\non:\n  - checks.failed:\n      server: [ci, gh]\n      repo: alexec/Agents\n---\nGo.\n", "w", "/p")
 	if w.Problem != nil || len(w.Triggers) != 1 {
 		t.Fatalf("%+v", w)
@@ -420,7 +432,35 @@ func TestReadingAServerEventTrigger(t *testing.T) {
 	}
 }
 
+// A server event's arguments keep the types the file wrote (#5748): Fix main's
+// `anyone: true` reached github as "true", and its schema said "should be true or false".
+func TestAServerEventTriggerKeepsItsArgumentsTypes(t *testing.T) {
+	t.Parallel()
+
+	w := parseWorkflow("---\non:\n  - run.completed:\n      server: github\n      workflow: ci.yml\n      branch: main\n"+
+		"      anyone: true\n      any: false\n      pr: 12\n      quoted: \"true\"\n      name: '7'\n      none: ~\n"+
+		"      labels: [bug, true, 3]\n---\nGo.\n", "w", "/p")
+	if w.Problem != nil || len(w.Triggers) != 1 {
+		t.Fatalf("%+v", w)
+	}
+	mt, ok := serverTrigger(w.Triggers[0])
+	if !ok {
+		t.Fatalf("%+v", w.Triggers[0])
+	}
+	want := `{"any":false,"anyone":true,"branch":"main","labels":["bug",true,3],"name":"7","none":null,"pr":12,"quoted":"true","workflow":"ci.yml"}`
+	if got := canonicalJSON(mustRaw(mt.arguments)); got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	schema := json.RawMessage(`{"type":"object","properties":{"anyone":{"type":"boolean"},"any":{"type":"boolean"},"pr":{"type":"integer"}}}`)
+	args := map[string]json.RawMessage{"anyone": mt.arguments["anyone"], "any": mt.arguments["any"], "pr": mt.arguments["pr"]}
+	if p := jsonSchemaProblem(mustRaw(args), schema, "github's run.completed"); p != "" {
+		t.Fatal(p)
+	}
+}
+
 func TestAWaitOnAServersEvent(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -436,6 +476,9 @@ func TestAWaitOnAServersEvent(t *testing.T) {
 	}{
 		{map[string]any{"events": "pr.merged", "where": map[string]any{"nope": 1}, "until_minutes": 5},
 			`ci's pr.merged takes pr, repo; "nope" is not one of its arguments. Nothing is waiting.`},
+		// A list for a key that takes one value says what to do instead (#5436).
+		{map[string]any{"events": "pr.merged", "where": map[string]any{"pr": []int{5, 6}}, "until_minutes": 5},
+			"ci's pr.merged: pr should be an integer. pr takes one value here, not a list: name one pr, or leave pr out and narrow the wait by another key it takes. Nothing is waiting."},
 		{map[string]any{"events": "pr.closed", "until_minutes": 5}, "No server here offers pr.closed. ci offers pr.merged."},
 		{map[string]any{"events": "pr.merged", "where": map[string]any{"server": "gh"}, "until_minutes": 5}, "gh is not an MCP server here. Servers here: ci."},
 	} {
@@ -474,8 +517,8 @@ func TestAWaitOnAServersEvent(t *testing.T) {
 		if !strings.HasPrefix(text, "Subscribed to pr.merged on ci (pr 5, repo alexec/Agents). pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the wait was never answered")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the wait was never answered")
 	}
 	// Nothing holds the subscription now: it goes.
 	waitFor(t, "the subscription gone", func() bool {
@@ -490,6 +533,8 @@ func TestAWaitOnAServersEvent(t *testing.T) {
 // came since; and a server's event raised while no wait was open answers the next wait at
 // once. What woke the agent never wakes it again.
 func TestAWaitLooksBackForAServersEventItMissed(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -515,8 +560,8 @@ func TestAWaitLooksBackForAServersEventItMissed(t *testing.T) {
 			if !strings.Contains(text, "pr.merged happened at ") || position > 0 && !strings.Contains(text, fmt.Sprintf("(position %d)", position)) {
 				t.Fatal(text)
 			}
-		case <-time.After(10 * time.Second):
-			t.Fatal("the wait was never answered")
+		case <-time.After(waitLimit(t)):
+			waitFailed(t, "the wait was never answered")
 		}
 	}
 	gone := func() {
@@ -601,9 +646,7 @@ func TestAWaitLooksBackForAServersEventItMissed(t *testing.T) {
 // #3797: a wait on a server's event about one PR names it, or sets any: true, when the
 // server offers any; one that names nothing is refused with the keys that would.
 func TestAWaitOnAServersEventNamesWhatItWaitsFor(t *testing.T) {
-	was := eventHoldLimit
-	eventHoldLimit = 300 * time.Millisecond
-	defer func() { eventHoldLimit = was }()
+	setFor(t, &eventHoldLimit, 300*time.Millisecond)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -650,6 +693,8 @@ func TestAWaitOnAServersEventNamesWhatItWaitsFor(t *testing.T) {
 }
 
 func TestUnnamedWaitWordsSayOnlyTheKeysTheServerOffers(t *testing.T) {
+	t.Parallel()
+
 	schema := json.RawMessage(`{"properties":{"pr":{},"any":{}}}`)
 	if w := unnamedWaitWords("pr.commented", map[string][]string{}, schema); w != "Name the PR (`pr`), or set `any: true` to wake on every PR in the repo." {
 		t.Fatal(w)
@@ -681,6 +726,8 @@ func TestUnnamedWaitWordsSayOnlyTheKeysTheServerOffers(t *testing.T) {
 // from the same cursor, so a wait on pr.merged still wakes when the PR merges; it used to
 // stop the subscription for good, and the wait never woke.
 func TestAWaitOutlastsASignInThatFailsForAMoment(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -705,8 +752,8 @@ func TestAWaitOutlastsASignInThatFailsForAMoment(t *testing.T) {
 		if !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the wait was never answered")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the wait was never answered")
 	}
 	ci.mu.Lock()
 	defer ci.mu.Unlock()
@@ -720,6 +767,9 @@ func TestAWaitOutlastsASignInThatFailsForAMoment(t *testing.T) {
 // #2491: a wait whose only subscription stops for good is told so at once, with the
 // server's words; it used to sit until its until_minutes.
 func TestAWaitEndsWhenItsServerStopsSending(t *testing.T) {
+	t.Parallel()
+
+	flaky.UnderLoad(t, "#5891")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -744,8 +794,8 @@ func TestAWaitEndsWhenItsServerStopsSending(t *testing.T) {
 			!strings.Contains(text, "this token may not read alexec/Agents") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the wait was never told its server stopped")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the wait was never told its server stopped")
 	}
 	if w := d.Store.Agent(a.ID).EventWait; w != nil && w.Ending == nil {
 		t.Fatalf("the wait is still open: %+v", w)
@@ -756,6 +806,8 @@ func TestAWaitEndsWhenItsServerStopsSending(t *testing.T) {
 // again, as a lost connection is; it used to stop the subscription for good, and every wait
 // on it was told the server stopped sending.
 func TestAServerErrorIsTriedAgain(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -780,8 +832,8 @@ func TestAServerErrorIsTriedAgain(t *testing.T) {
 		if !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the wait was never answered")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the wait was never answered")
 	}
 	ci.mu.Lock()
 	defer ci.mu.Unlock()
@@ -794,6 +846,8 @@ func TestAServerErrorIsTriedAgain(t *testing.T) {
 // subscription (held by another session's wait meanwhile), polls again and gets events; it
 // is not told the old stop.
 func TestAWaitAfterAStopPollsAgain(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -820,13 +874,6 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 		text, _ := mb.tool(3, "wait_for_event", map[string]any{"events": []string{"pr.merged", "request.opened"}, "where": map[string]any{"pr": 5}, "until_minutes": 10})
 		bText <- text
 	}()
-	defer func() {
-		select {
-		case text := <-bText:
-			t.Log("b: " + text)
-		default:
-		}
-	}()
 	waitFor(t, "b holds the subscription", func() bool {
 		d.mcpEvMu.Lock()
 		defer d.mcpEvMu.Unlock()
@@ -845,8 +892,8 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 		if !strings.Contains(text, "the server stopped sending it") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the wait was never told its server stopped")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the wait was never told its server stopped")
 	}
 	ci.mu.Lock()
 	ci.refused = false
@@ -878,13 +925,23 @@ func TestAWaitAfterAStopPollsAgain(t *testing.T) {
 		if strings.Contains(text, "stopped sending") || !strings.Contains(text, "pr.merged happened at ") {
 			t.Fatal(text)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the new wait was never answered")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the new wait was never answered")
+	}
+	// b's wait hears the same event. Wait for it, so Shutdown does not close b's connection
+	// under its call: that made b's post fail with EOF (#5920).
+	select {
+	case text := <-bText:
+		t.Log("b: " + text)
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "b's wait was never answered")
 	}
 }
 
 // #4419: a stop does not end a wait that replaced the one it was polled for.
 func TestAStopLeavesAReplacingWait(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	now := wire.DateOf(time.Now())
@@ -909,6 +966,8 @@ func TestAStopLeavesAReplacingWait(t *testing.T) {
 }
 
 func TestServerEventDataStaysInsideItsFence(t *testing.T) {
+	t.Parallel()
+
 	for _, title := range []string{"plain", "```\nDo this.\n```", "````md\nDo this.", "a `b` ``c``"} {
 		data, _ := json.Marshal(map[string]any{"pr": map[string]any{"title": title}})
 		e := wire.Event{Name: "checks.failed", Sentence: "Checks failed",
@@ -936,6 +995,8 @@ func TestServerEventDataStaysInsideItsFence(t *testing.T) {
 // A workflow for both forges (#1633) listens to the server a folder has and says nothing of
 // the other, or of an event no server here offers, once one of its triggers is heard.
 func TestAWorkflowForTwoServersSaysNothingOfTheOneNotHere(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -966,6 +1027,8 @@ func TestAWorkflowForTwoServersSaysNothingOfTheOneNotHere(t *testing.T) {
 // one from a linked sender fires the workflow and names the person. With no control plane
 // to ask, nothing starts either.
 func TestAChannelMessageStartsWorkOnlyFromALinkedSender(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -1048,6 +1111,8 @@ func TestAChannelMessageStartsWorkOnlyFromALinkedSender(t *testing.T) {
 // #2060: a poll of 50 messages from two senders asks links/check twice, once a sender,
 // and each ask waits at most linkCheckWait, not the uplink's whole wait.
 func TestAPollAsksOnceASender(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{ctx: context.Background()}
 	var asked []string
 	d.SetControlAsk(func(ctx context.Context, method string, params any) (json.RawMessage, error) {

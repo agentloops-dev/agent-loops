@@ -15,6 +15,8 @@ import (
 // The person's attention (#2805): a burst, then one notice back each cool-down, never
 // the whole burst at the end of one.
 func TestNoticesComeBackOneAtATime(t *testing.T) {
+	t.Parallel()
+
 	d := &Daemon{}
 	at := time.Unix(1_000_000, 0)
 	for i := 2; i >= 0; i-- {
@@ -40,6 +42,8 @@ func TestNoticesComeBackOneAtATime(t *testing.T) {
 }
 
 func TestNotifyingThePerson(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	if _, err := d.setPreferences(map[string]wire.JSONValue{noticeBurstKey: json.RawMessage("2")}); err != nil {
@@ -105,9 +109,7 @@ func TestNotifyingThePerson(t *testing.T) {
 // says where it went: the computer once the window has it, then the device the control
 // plane says, each once.
 func TestNoticeLineSaysWhereItWent(t *testing.T) {
-	was := settlingPause
-	settlingPause = 0
-	defer func() { settlingPause = was }()
+	setFor(t, &settlingPause, 0)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -128,6 +130,18 @@ func TestNoticeLineSaysWhereItWent(t *testing.T) {
 	if need == nil {
 		t.Fatalf("%+v", pending.Needs)
 	}
+	// reconsider writes the computer delivery after it unlocks, and another reconsider
+	// can have sent the notice to the window before notify's own did (#5978): the line
+	// can get it after "Sent.". Wait for it, so the device's delivery comes second.
+	waitFor(t, "a delivery to the computer", func() bool {
+		entries, _, _ := d.Store.Transcript(a.ID, 0)
+		for _, e := range entries {
+			if v := e.Kind.NoticeDelivered; v != nil && v.Value.To == wire.NoticeDeviceComputer {
+				return true
+			}
+		}
+		return false
+	})
 	told, _ := json.Marshal(wire.NoticeDelivered{Need: *need, To: wire.NoticeDeviceIPhone})
 	d.Told(wire.NotifyNoticesDelivered.Name, told)
 	d.Told(wire.NotifyNoticesDelivered.Name, told)
@@ -157,6 +171,8 @@ func TestNoticeLineSaysWhereItWent(t *testing.T) {
 // set in a client go into your layer (#2957) and are pushed on, as every change to it is
 // (user/setPolicy), not by the old dedicated user/setNoticeLimits call, which is gone.
 func TestNoticeLimitsFollowThePerson(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()

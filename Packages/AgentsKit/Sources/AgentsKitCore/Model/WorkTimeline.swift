@@ -148,12 +148,12 @@ public extension DaemonAPI.Method {
     static let workTimeline = "work/timeline"
 }
 
-// MARK: - The layout (#4173, specs/time-stream/wireframe.md sections 2, 7, 9 and 12)
+// MARK: - The layout (#4173, #5506)
 
-/// Work ▸ Timeline (#4173): the epics as lines that leave the releases line when their first child
-/// starts and join it when their last child closes, on a linear time axis. This is the part both
-/// clients share (the web page gets a TypeScript copy later): the range, the lines, their lanes, the
-/// marks and the words. The Mac draws it with a `Canvas`.
+/// Work ▸ Timeline (#4173): each epic a filled block in its own row, from when its first child starts
+/// to when its last child closes, on a linear time axis (#5506, Alex, 2026-11-14). This is the part
+/// both clients share (the web page has a TypeScript copy, `Web/src/model/workTimeline.ts`): the
+/// range, the blocks, their rows, the marks and the words. The Mac draws it with a `Canvas`.
 public enum WorkTimeline {
     /// The toolbar's range. 1 Day and 2 Days keep Now in the centre; Week puts it at three quarters,
     /// as the forecast reaches only about 1.5 days ahead (Alex, 2026-11-09, #4173).
@@ -237,15 +237,15 @@ public enum WorkTimeline {
         }
     }
 
-    /// How an epic's line ends.
+    /// How an epic's block ends (#5506).
     public enum End: Sendable, Hashable {
-        /// Its last child closed: it joins the releases line.
+        /// Its last child closed: the block ends there.
         case joined
-        /// Closed as not planned: it ends in ✕ and never joins.
+        /// Closed as not planned: a grey block, then "✕ closed as not planned".
         case dropped
-        /// Forecast: a dashed line to a hollow ring on the releases line.
+        /// Forecast: a lighter tint with a dashed edge after Now.
         case forecast
-        /// Children wait for the person: it stops at a pill and does not join.
+        /// Children wait for the person: a pill after it, 👤 and the number.
         case waits(Int)
         /// Open, with nothing to forecast: it stops at Now.
         case open
@@ -283,13 +283,12 @@ public enum WorkTimeline {
         /// The epic and its open children that a session is in a turn on now (#4265): the line
         /// pulses and a ring turns at Now while it is above 0.
         public var working: Int
-        /// The lane: 1, 2, … above the releases line, −1, −2, … below.
-        public var lane: Int = 0
+        /// The row, 0 at the top (#5506).
+        public var row: Int = 0
 
         public var id: String { "\(epic.ref)/\(segment)" }
 
-        /// The label: the name, then `#n · 6 of 8`; a short one cuts the name with "…".
-        public var label: String { "\(title)  \(figures)" }
+        /// The hover card's figures, `#n · 6 of 8`. A block shows its title only (Alex, 2026-11-14).
         public var figures: String { "\(number) · \(done) of \(total)" }
 
         /// Whether the line runs past `date` (it has not ended by then).
@@ -370,118 +369,126 @@ public enum WorkTimeline {
         }
     }
 
+    /// Where a block's drawing ends: its end or its band's, whichever is later.
+    public static func reach(_ line: Line) -> Date { max(line.end, line.band?.end ?? line.end) }
+
     /// Only the lines that overlap the window (Alex, 2026-11-08). A line that waits for the person
     /// has no end, so it is drawn while it is open.
     public static func overlapping(_ lines: [Line], _ window: DateInterval) -> [Line] {
         lines.filter { line in
             let end: Date
-            if case .waits = line.how { end = .distantFuture } else { end = max(line.end, line.band?.end ?? line.end) }
+            if case .waits = line.how { end = .distantFuture } else { end = reach(line) }
             return line.start <= window.end && end >= window.start
         }
     }
 
-    /// The fork's and the join's width, in points: 12 pt and 4 pt for each lane (section 12, item 2).
-    public static func riser(_ lane: Int) -> Double { 12 + 4 * Double(abs(lane)) }
+    /// The widest range: the rows are packed over its span, so they are the same in every range (#5506).
+    static let widest = Range.week
 
-    /// The lanes nearest the releases line first, above and below in turn: 1, −1, 2, −2, …
-    static func lane(_ i: Int) -> Int { i % 2 == 0 ? i / 2 + 1 : -(i / 2 + 1) }
+    /// The gap after a block in its row, in time: 2 % of the widest range (#5506).
+    public static let packGap: TimeInterval = widest.span / 50
 
-    /// Put each line on the free lane nearest the releases line, sorted by start (section 9). A lane
-    /// is free when its last line has joined and that line's label has ended: `labelWidth` measures
-    /// a label in points, and `gap` keeps a little air after each.
-    public static func layout(_ lines: [Line], axis: Axis, labelWidth: (Line) -> Double, gap: Double = 8) -> [Line] {
-        var busy: [Int: Double] = [:]
+    /// What a read covers and the rows are packed over: the widest range's window around `anchor`,
+    /// and its width on each side to scroll through. It holds every narrower range's window around
+    /// the same anchor, so a change of range packs the same epics the same way (#5506).
+    public static func packSpan(_ anchor: Date) -> DateInterval {
+        let window = widest.window(now: anchor)
+        return DateInterval(start: window.start.addingTimeInterval(-widest.span), end: window.end.addingTimeInterval(widest.span))
+    }
+
+    /// Put each block in the first row that is free at its start, sorted by start, then by id
+    /// (#5506). It packs in time, not in points: a row is busy until the block's reach and `gap`
+    /// after it, so the rows do not change with the range. A block that waits for the person has no
+    /// end: it holds its row while it is open. A label outside a block takes no room.
+    public static func layout(_ lines: [Line], gap: TimeInterval = packGap) -> [Line] {
+        var busy: [Date] = []
         return lines.sorted { ($0.start, $0.id) < ($1.start, $1.id) }.map { line in
             var placed = line
-            let startX = axis.x(line.start)
-            var i = 0
-            while let until = busy[lane(i)], until > startX { i += 1 }
-            placed.lane = lane(i)
-            let labelEnd = startX + riser(placed.lane) + labelWidth(line)
-            let endX = axis.x(line.end)
-            let bandEnd = line.band.map { axis.x($0.end) } ?? endX
-            let ends: Double
-            if case .waits = line.how { ends = .infinity } else { ends = max(endX, bandEnd) }
-            busy[placed.lane] = max(labelEnd, ends) + gap
+            var row = 0
+            while row < busy.count, busy[row] > line.start { row += 1 }
+            let until: Date
+            if case .waits = line.how { until = .distantFuture } else { until = reach(line).addingTimeInterval(gap) }
+            if row == busy.count { busy.append(until) } else { busy[row] = until }
+            placed.row = row
             return placed
         }
     }
 
-    /// Where a dot is drawn: at its time, held to the stretch of the line that is on its lane, so
-    /// no dot is on the fork's or the join's curve, off the line (Alex, 2026-11-10).
+    /// The rows in use.
+    public static func rowCount(_ lines: [Line]) -> Int { (lines.map(\.row).max() ?? -1) + 1 }
+
+    /// A block's geometry, in points (#5506): 28 high, 8 between rows, the first row 12 from the top.
+    public static let blockHeight: Double = 28
+    public static let rowGap: Double = 8
+    public static let plotTop: Double = 12
+    /// A row's top.
+    public static func rowTop(_ row: Int) -> Double { plotTop + Double(row) * (blockHeight + rowGap) }
+    /// Where the dots go: in the block's lower half.
+    public static func dotY(_ row: Int) -> Double { rowTop(row) + blockHeight - 7 }
+    /// Where the title goes: in the block's upper half.
+    public static func titleY(_ row: Int) -> Double { rowTop(row) + 11 }
+    /// The title's inset from the block's leading edge.
+    public static let titleInset: Double = 6
+
+    /// The next block's start in the same row, after `line`'s: a label outside `line` stops before it.
+    public static func nextInRow(_ lines: [Line], after line: Line) -> Date? {
+        lines.filter { $0.row == line.row && $0.start > line.start }.map(\.start).min()
+    }
+
+    /// Where a dot is drawn: at its time, held inside its block.
     public static func dotX(_ dot: Dot, on line: Line, axis: Axis) -> Double {
-        let r = riser(line.lane)
         let sx = axis.x(line.start), ex = max(axis.x(line.end), sx)
-        let from = sx + r
-        let to = line.how == .joined || line.how == .forecast ? max(ex - r, from) : max(ex, from)
-        return min(max(axis.x(dot.at), from), to)
+        let from = sx + 4
+        return min(max(axis.x(dot.at), from), max(ex - 4, from))
     }
 
-    /// The lanes in use, above and below: the plot is as tall as the higher of the two sides.
-    public static func lanes(_ lines: [Line]) -> (above: Int, below: Int) {
-        (lines.map(\.lane).filter { $0 > 0 }.max() ?? 0, -(lines.map(\.lane).filter { $0 < 0 }.min() ?? 0))
-    }
-
-    /// A join on the releases line: one ring, or one ring with a count for joins within 6 pt of
-    /// each other (section 12, item 5).
-    public struct Join: Sendable, Hashable {
-        public var at: Date
-        public var lines: [String]
-        public var forecast: Bool
-    }
-
-    public static func joins(_ lines: [Line], axis: Axis, within: Double = 6) -> [Join] {
-        let rings = lines.compactMap { line -> Join? in
-            switch line.how {
-            case .joined: Join(at: line.end, lines: [line.id], forecast: false)
-            case .forecast: Join(at: line.end, lines: [line.id], forecast: true)
-            default: nil
-            }
-        }.sorted { $0.at < $1.at }
-        var out: [Join] = []
-        for ring in rings {
-            if let last = out.last, last.forecast == ring.forecast, axis.x(ring.at) - axis.x(last.at) < within {
-                out[out.count - 1].lines += ring.lines
-            } else {
-                out.append(ring)
-            }
-        }
-        return out
-    }
-
-    /// How far a line's label may run from `x`: the whole line, to its end (Alex, 2026-11-10). It
-    /// runs past Now and over its band, on its halo; a pill where the line waits is after its end.
-    public static func labelRoom(_ line: Line, from x: Double, axis: Axis) -> Double {
-        axis.x(line.end) - x
-    }
-
-    /// What a label says: the name, whole or cut short with "…", or "" for none; then the figures.
-    public struct Words: Sendable, Hashable {
-        public var title: String
-        public var figures: String
-        public var text: String { title.isEmpty ? figures : "\(title)  \(figures)" }
-    }
-
-    /// The label that fits `room`: the whole one, then the name cut short with "…" before the
-    /// figures, then the figures alone, then nothing.
-    public static func label(_ line: Line, room: Double, measure: (String) -> Double) -> Words? {
-        if measure(line.label) <= room { return Words(title: line.title, figures: line.figures) }
-        let title = Array(line.title)
+    /// `text` whole when it fits `room`, else cut short with "…", else nil.
+    public static func cut(_ text: String, room: Double, measure: (String) -> Double) -> String? {
+        if measure(text) <= room { return text }
+        let chars = Array(text)
         var best: String?
-        var low = 1, high = title.count - 1
+        var low = 1, high = chars.count - 1
         while low <= high {
             let mid = (low + high) / 2
-            let cut = String(title[..<mid]).trimmingCharacters(in: .whitespaces)
-            if !cut.isEmpty, measure("\(cut)…  \(line.figures)") <= room {
-                best = cut + "…"
+            let c = String(chars[..<mid]).trimmingCharacters(in: .whitespaces)
+            if !c.isEmpty, measure("\(c)…") <= room {
+                best = c + "…"
                 low = mid + 1
             } else {
                 high = mid - 1
             }
         }
-        if let best { return Words(title: best, figures: line.figures) }
-        if measure(line.figures) <= room { return Words(title: "", figures: line.figures) }
-        return nil
+        return best
+    }
+
+    /// What a closed-as-not-planned block says after it.
+    public static let droppedWords = "✕ closed as not planned"
+
+    /// A block's words (#5506). `inside`: its title in it, from `insideX` (held at the visible left
+    /// edge, with ←, when the block starts before it). `outside`: what goes after the block, from
+    /// `outsideX`: the title when the block is too narrow for it, and "✕ closed as not planned"; cut
+    /// with "…" before the next block in the row.
+    public struct BlockWords: Sendable, Hashable {
+        public var inside: String?
+        public var insideX: Double
+        public var arrow: Bool
+        public var outside: String?
+        public var outsideX: Double
+    }
+
+    /// `trailing` is the width of what is drawn after the block first (the wait pill).
+    public static func blockWords(_ line: Line, axis: Axis, measure: (String) -> Double, next: Date? = nil,
+                                  left: Double = -.infinity, trailing: Double = 0) -> BlockWords {
+        let sx = axis.x(line.start), ex = max(axis.x(line.end), sx)
+        let fits = measure(line.title) + 2 * titleInset <= ex - sx
+        let arrow = fits && sx < left
+        let insideX = (arrow ? left : sx) + titleInset
+        let inside = fits ? cut(arrow ? "← \(line.title)" : line.title, room: ex - insideX - titleInset, measure: measure) : nil
+        let outsideX = axis.x(reach(line)) + 6 + (trailing > 0 ? trailing + 6 : 0)
+        let words = [fits ? "" : line.title, line.how == .dropped ? droppedWords : ""].filter { !$0.isEmpty }.joined(separator: "  ")
+        let room = (next.map { axis.x($0) - 6 } ?? .infinity) - outsideX
+        return BlockWords(inside: inside, insideX: insideX, arrow: arrow,
+                          outside: words.isEmpty ? nil : cut(words, room: room, measure: measure), outsideX: outsideX)
     }
 
     // MARK: - Colours
@@ -495,46 +502,50 @@ public enum WorkTimeline {
         return Int(hash % UInt32(count - 1))
     }
 
+    /// The WCAG contrast of two sRGB colours, each 0–1.
+    public static func contrast(_ a: [Double], _ b: [Double]) -> Double {
+        func lum(_ c: [Double]) -> Double {
+            let l = c.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+            return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]
+        }
+        let x = lum(a), y = lum(b)
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
+
+    /// A feature's colour darkened, a step towards black at a time, until white text on it has 4.5:1
+    /// (#5506): orange becomes a burnt orange, teal a deep teal; a colour that has it already stays.
+    public static func forWhiteText(_ rgb: [Double]) -> [Double] {
+        var c = rgb
+        var k = 0
+        while k < 40, contrast(c, [1, 1, 1]) < 4.5 {
+            c = c.map { $0 * 0.97 }
+            k += 1
+        }
+        return c
+    }
+
     // MARK: - Hit testing
 
-    /// What the pointer is on: a dot within 10 pt, else a line within 8 pt, else a release or a join.
+    /// What the pointer is on: a dot within 6 pt, else a block (with its band, a few points round it).
     public enum Hit: Sendable, Hashable {
         case dot(Line, Dot)
         case line(Line)
-        case join(Join)
-        case release(DaemonAPI.WorkTimelineRelease)
     }
 
-    /// `y` is the lane's centre, from the releases line; `laneHeight` the points between lanes.
-    public static func hit(_ point: (x: Double, y: Double), lines: [Line], releases: [DaemonAPI.WorkTimelineRelease],
-                           axis: Axis, trunk: Double, laneHeight: Double) -> Hit? {
-        func y(_ lane: Int) -> Double { trunk - Double(lane) * laneHeight }
+    public static func hit(_ point: (x: Double, y: Double), lines: [Line], axis: Axis) -> Hit? {
         var best: (Double, Hit)?
         for line in lines {
             for dot in line.dots {
-                let d = hypot(dotX(dot, on: line, axis: axis) - point.x, y(line.lane) - point.y)
-                if d <= 10, d < best?.0 ?? .infinity { best = (d, .dot(line, dot)) }
+                let d = hypot(dotX(dot, on: line, axis: axis) - point.x, dotY(line.row) - point.y)
+                if d <= 6, d < best?.0 ?? .infinity { best = (d, .dot(line, dot)) }
             }
         }
         if let best { return best.1 }
-        for join in joins(lines, axis: axis) {
-            let d = hypot(axis.x(join.at) - point.x, trunk - point.y)
-            if d <= 10, d < best?.0 ?? .infinity { best = (d, .join(join)) }
-        }
-        for release in releases {
-            let d = hypot(axis.x(release.at) - point.x, trunk - point.y)
-            if d <= 10, d < best?.0 ?? .infinity { best = (d, .release(release)) }
-        }
-        if let best { return best.1 }
-        for line in lines {
-            let from = axis.x(line.start) + riser(line.lane)
-            let to = line.how == .joined || line.how == .forecast ? axis.x(line.end) - riser(line.lane) : axis.x(line.end)
-            let dy = abs(y(line.lane) - point.y)
-            if dy <= 8, point.x >= from - 8, point.x <= max(from, to) + 8, dy < best?.0 ?? .infinity {
-                best = (dy, .line(line))
-            }
-        }
-        return best?.1
+        return lines.first { line in
+            let top = rowTop(line.row)
+            return point.y >= top && point.y <= top + blockHeight
+                && point.x >= axis.x(line.start) - 2 && point.x <= axis.x(reach(line)) + 2
+        }.map(Hit.line)
     }
 
     // MARK: - Words
@@ -545,7 +556,8 @@ public enum WorkTimeline {
         return date.formatted(Date.FormatStyle(timeZone: calendar.timeZone).weekday(.abbreviated).hour().minute())
     }
 
-    /// "3 wait for you": the pill where a line stops for the person.
+    /// "3 wait for you": the hover card and VoiceOver, where a block waits for the person; its pill
+    /// says 👤 and the number only (Alex, 2026-11-14).
     public static func waitWords(_ count: Int) -> String { "\(count) wait\(count == 1 ? "s" : "") for you" }
 
     /// "Past forecasts were off by ×2.2".
@@ -562,7 +574,7 @@ public enum WorkTimeline {
         return "\(dot.number) · \(state)"
     }
 
-    /// On an epic's line or its join: "#4250 · 11 of 16 · closes about 5:00 PM · 3:00 PM–9:00 PM, 8 in 10".
+    /// On an epic's block: "#4250 · 11 of 16 · closes about 5:00 PM · 3:00 PM–9:00 PM, 8 in 10".
     public static func lineLine(_ line: Line, now: Date, calendar: Calendar = .current) -> String {
         var out = [line.figures]
         switch line.how {
@@ -577,11 +589,6 @@ public enum WorkTimeline {
         case .open: out.append("open")
         }
         return out.joined(separator: " · ")
-    }
-
-    /// On a release's pill: "alexec/Agents · released 3 h ago".
-    public static func releaseLine(_ release: DaemonAPI.WorkTimelineRelease, now: Date) -> String {
-        "\(release.repo) · released \(agoWords(release.at, now: now))"
     }
 
     /// "2 h ago", or "just now".
@@ -604,6 +611,17 @@ public enum WorkTimeline {
     /// When the last line before `date` joined, for the empty card (S11); nil when the read has none.
     public static func lastJoined(_ timeline: DaemonAPI.WorkTimeline, before date: Date) -> Date? {
         timeline.epics.flatMap(\.segments).compactMap(\.closedAt).filter { $0 < date }.max()
+    }
+
+    /// What the plot shows (#5925): grey blocks that shimmer (S10) while no read has drawn yet, or while
+    /// any read of the window runs and no epic is in it; the empty card (S11) only when every read
+    /// ended and the window has none; else the epics. A device's copy with no epic is not "no epic"
+    /// while the machines are read.
+    public enum Shows: Sendable, Equatable { case loading, empty, epics }
+
+    public static func shows(drawn: Bool, reading: Bool, epics: Int) -> Shows {
+        if epics > 0 { return .epics }
+        return !drawn || reading ? .loading : .empty
     }
 
     /// The empty card (S11): "No epic in these 2 days", and "The last one joined 4 d ago." when known.

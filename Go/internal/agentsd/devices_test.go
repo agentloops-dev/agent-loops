@@ -23,6 +23,8 @@ func announcement(id string, key byte) map[string]any {
 const phone = "11111111-2222-3333-4444-555555555555"
 
 func TestABoundConnectionSpeaksForOneDevice(t *testing.T) {
+	t.Parallel()
+
 	d, mac := startDevices(t)
 	// The Mac's window puts the phone on record; the phone's own connection then speaks as it.
 	mac.call(t, 4, "devices/announce", announcement(phone, 1))
@@ -68,6 +70,8 @@ func TestABoundConnectionSpeaksForOneDevice(t *testing.T) {
 }
 
 func TestDevicesKeepWhatALaterBuildWrote(t *testing.T) {
+	t.Parallel()
+
 	d, mac := startDevices(t)
 	os.WriteFile(filepath.Join(d.Store.Loc.Root, "devices.json"),
 		[]byte(`[{"id":"`+phone+`","publicKey":"AQE=","name":"Old","kind":"iPad","announcedAt":1,"wants":["x"]},{"id":"bad"},"nope"]`), 0o644)

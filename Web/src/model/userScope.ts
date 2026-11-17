@@ -2,10 +2,12 @@
 // in Packages/AgentsKit): the secrets and settings the control plane keeps for the person and
 // sends to each machine of theirs. Settings ▸ You ▸ Secrets (#3632).
 import type { SecretsLeft, UserSecretRow } from "../protocol/generated";
+import { namesWords } from "./machineNames";
 
 export const secretsTitle = "Secrets";
 export const addSecret = "Add a Secret…";
 export const secretsFoot = "A secret is sealed in this app to each of your own machines and apps; the control plane "
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: ${NAME} is the words a person types, not a placeholder of ours
   + "cannot open it. Write ${NAME} for it in an MCP server's env or headers. You can reveal and copy it here, and each "
   + "reveal and copy is in the audit log. Agents never get a value from here. To change it, replace it.";
 
@@ -89,7 +91,7 @@ export function nextVersion(row: Pick<UserSecretRow, "version"> | null, now: num
 export function leftOn(row: Pick<UserSecretRow, "leftOn">): string | null {
   const left = row.leftOn ?? [];
   if (left.length === 0) return null;
-  return `It was on ${left.map((l) => l.name).join(", ")}, which was removed. Change it where it was issued, then replace it here.`;
+  return `It was on ${namesWords(left.map((l) => l.name))}, which was removed. Change it where it was issued, then replace it here.`;
 }
 
 /** When a machine of yours went with secrets on it (control/secretsLeft). */

@@ -16,9 +16,7 @@ import (
 // is told, watching silences it, a look reads it, and the notes outlive a restart.
 
 func shortPause(t *testing.T) {
-	old := settlingPause
-	settlingPause = 150 * time.Millisecond
-	t.Cleanup(func() { settlingPause = old })
+	setFor(t, &settlingPause, 150*time.Millisecond)
 }
 
 func attentionNote(want func(wire.AttentionNotification) bool) func(string, json.RawMessage) bool {
@@ -73,6 +71,8 @@ func TestACardReachesTheWindowAfterThePause(t *testing.T) {
 // phone's Needs you and the widget it writes are drawn from what it was told, and a change
 // kept on the Mac must leave both.
 func TestEveryClientHearsANeedShownNowhereAndItsEnd(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -149,6 +149,8 @@ func TestWatchingSilencesItAndALookReadsAReport(t *testing.T) {
 }
 
 func TestQuickAnswersForAForm(t *testing.T) {
+	t.Parallel()
+
 	two, _ := parseElicitation(json.RawMessage(`{"message":"Colour?","requestedSchema":{"propertyOrder":["question_0","question_0_custom"],"properties":{"question_0":{"type":"string","enum":["red","blue"]},"question_0_custom":{"type":"string"}}}}`), "A")
 	if a := formAnswers(two); len(a) != 2 || *a[0].Field != "question_0" || a[1].Title != "blue" {
 		t.Fatalf("%+v", a)
@@ -170,6 +172,8 @@ func TestQuickAnswersForAForm(t *testing.T) {
 // The push's waiting count is what needs the person; an unread finish is only a mark
 // on its row (#1565).
 func TestWaitingCountLeavesOutUnreadFinishes(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	yes := true

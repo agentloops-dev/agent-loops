@@ -13,6 +13,8 @@ import (
 
 // #2941: a page's address is its issue or pull request, as lineage refs name it.
 func TestNodeOfURL(t *testing.T) {
+	t.Parallel()
+
 	for raw, want := range map[string]string{
 		"https://github.com/alexec/Agents/issues/7":                   "issue github:issue:alexec/agents#7",
 		"https://github.com/alexec/Agents/pull/9/files":               "pr github:pr:alexec/agents#9",
@@ -47,6 +49,8 @@ func TestNodeOfURL(t *testing.T) {
 // #2941: an issue's section names the sessions on it and on its PRs, the helpers they
 // started, and each PR's end and cost.
 func TestAnIssuesLineageSection(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -114,6 +118,8 @@ func TestAnIssuesLineageSection(t *testing.T) {
 
 // #2941: only the github, gitlab and linear servers' views may ask; the answer is a tool result.
 func TestOnlyOurServersViewsAskForLineage(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	server := func(command string) viewServer {
@@ -143,6 +149,8 @@ func TestOnlyOurServersViewsAskForLineage(t *testing.T) {
 // #3247: a session labelled PROJ-12 is in the record as linear:PROJ-12, so the Jira page's
 // section for PROJ-12 reads that one, under its own ref.
 func TestAJiraIssuesLineageReadsItsKeysSessions(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := t.TempDir()
@@ -169,6 +177,8 @@ func TestAJiraIssuesLineageReadsItsKeysSessions(t *testing.T) {
 // #3834: a node's address on each forge; a Forgejo's is on the page's own host, as its node
 // does not say one.
 func TestRefURL(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		kind, ref, base, want string
 	}{

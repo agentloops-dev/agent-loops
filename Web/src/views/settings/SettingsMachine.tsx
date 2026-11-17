@@ -2,6 +2,8 @@
 // drawn; with no Mac, a Machine menu of the machines there are (one choice for every pane), or why
 // there is none yet.
 import { signal } from "@preact/signals";
+import { useEffect } from "preact/hooks";
+import { MachinePicker } from "../MachinePicker";
 import type { Store } from "../../model/store";
 import { machineLabel, noMachineYet, settingsMachine, settingsMachines } from "../../model/settingsMachine";
 
@@ -17,14 +19,15 @@ export function useSettingsMachine(store: Store) {
   const machines = settingsMachines(store.hosts.value, macID);
   const machine = settingsMachine(machines, chosen.value, store.plane.value?.homeHost);
   const isMac = machine?.id === macID;
+  // The machine these panes show takes its own settings (#5291).
+  const shown = machine?.id;
+  useEffect(() => { if (shown && store.hostIsOnline(shown)) void store.loadRuntimes(shown); }, [shown]);
   // Before the first machines/list and control/status there is nothing to say yet.
   const loading = !machine && store.hosts.value.length === 0 && !store.plane.value;
   const picker = isMac ? null : loading ? <p class="hint">Loading…</p> : !machine ? <p class="hint">{noMachineYet}</p> : (
     <label class="setting">{machineLabel}{" "}
-      <select value={machine.id} disabled={machines.length < 2}
-        onChange={(event) => { chosen.value = event.currentTarget.value; }}>
-        {machines.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-      </select>
+      <MachinePicker store={store} label={machineLabel} value={machine.id} disabled={machines.length < 2}
+        skip={(h) => !machines.some((m) => m.id === h.id)} onPick={(id) => { if (id) chosen.value = id; }} />
     </label>
   );
   return { host: machine?.id, name: machine?.name, isMac, picker };

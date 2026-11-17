@@ -163,9 +163,10 @@ struct WorkMergeBox: View {
                         Button(WorkLook.resolveOnForge(node.ref)) { openURL(url.appendingPathComponent("conflicts")) }
                     }
                     if box.approves, let head = detail.head {
-                        Button("Approve", icon: "checkmark") {
+                        Button(WorkLook.approveWords(approved: box.approved), icon: "checkmark") {
                             act(DaemonAPI.Method.forgeApprove, DaemonAPI.ForgeApproveRequest(node: node, sha: head))
                         }
+                        .disabled(box.approved)
                     }
                     if box.reruns {
                         Button("Rerun failed", icon: "arrow.clockwise") {
@@ -178,6 +179,9 @@ struct WorkMergeBox: View {
                 #if os(iOS)
                 .buttonStyle(.bordered)
                 #endif
+            }
+            if box.ownPull, writes, !waiting {
+                Text(WorkLook.ownPullWords).appText(.supporting).foregroundStyle(.secondary)
             }
             if let said {
                 Text(said.words).appText(.supporting).foregroundStyle((said.failed ? StateTint.failure : .none).style(or: .secondary))
@@ -226,18 +230,21 @@ struct WorkMergeBox: View {
         .controlSize(.large)
     }
 
-    /// Approve; beside Merge it is its word alone, so Merge keeps its words.
+    /// Approve; beside Merge it is its word alone, so Merge keeps its words. *Approved* keeps its
+    /// check, and does nothing, once the person approved (#5804).
     private func approveButton(glyph: Bool) -> some View {
-        Button {
+        let words = WorkLook.approveWords(approved: box.approved)
+        return Button {
             if let head = detail.head {
                 act(DaemonAPI.Method.forgeApprove, DaemonAPI.ForgeApproveRequest(node: node, sha: head))
             }
         } label: {
             Group {
-                if glyph { Label("Approve", icon: "checkmark") } else { Text("Approve") }
+                if glyph || box.approved { Label(words, icon: "checkmark") } else { Text(words) }
             }
             .frame(maxWidth: .infinity)
         }
+        .disabled(box.approved)
     }
 
     private var rerunButton: some View {
@@ -356,67 +363,39 @@ struct WorkMergeBox: View {
 }
 
 /// Files changed 6 (#4406, pull-request.md note 5): a bordered button at the title's trailing end
-/// (a full-width row on a narrow page) that opens the diff (`forge/diff`) as a sheet.
+/// (a full-width row on a narrow page) that pushes the Files changed page in the pull request's
+/// place (`WorkFilesPage`), which reads the diff (`forge/diff`): the Mac (#5478) and the Remote (#5479).
 struct WorkFilesChanged: View {
     let model: any WorkModel
-    let host: MachineRef
     let detail: DaemonAPI.ForgeItemDetail
     var compact = false
 
-    @Environment(\.openURL) private var openURL
-    @State private var diff: AppViewDiff?
-    @State private var loading = false
-    @State private var problem: String?
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if compact {
-                Button { Task { await showDiff() } } label: {
-                    HStack {
-                        Label("Files changed", icon: "doc.on.doc")
-                        Spacer()
-                        if loading { ProgressView().controlSize(.small) }
-                        if let n = detail.filesChanged { Text("\(n)").foregroundStyle(.secondary).monospacedDigit() }
-                        Image(icon: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
-                    }
-                    .appText(.supporting)
-                    .padding(.horizontal, 12).padding(.vertical, 10)
-                    .contentShape(Rectangle())
+        if compact {
+            Button { showFiles() } label: {
+                HStack {
+                    Label("Files changed", icon: "doc.on.doc")
+                    Spacer()
+                    if let n = detail.filesChanged { Text("\(n)").foregroundStyle(.secondary).monospacedDigit() }
+                    Image(icon: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
                 }
-                .buttonStyle(.plain)
-                .background(RoundedRectangle(cornerRadius: Paper.Radius.card).fill(Paper.well))
-            } else {
-                Button { Task { await showDiff() } } label: {
-                    HStack(spacing: 6) {
-                        Label(WorkLook.filesChanged(detail.filesChanged), icon: "doc.on.doc")
-                        if loading { ProgressView().controlSize(.small) }
-                    }
-                }
-                .buttonStyle(.bordered)
-                .help("The pull request's diff")
+                .appText(.supporting)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .contentShape(Rectangle())
             }
-            if let problem {
-                Text(problem).appText(.supporting).foregroundStyle(StateTint.failure.style(or: .secondary))
+            .buttonStyle(.plain)
+            .background(RoundedRectangle(cornerRadius: Paper.Radius.card).fill(Paper.well))
+        } else {
+            Button { showFiles() } label: {
+                Label(WorkLook.filesChanged(detail.filesChanged), icon: "doc.on.doc")
             }
-        }
-        .disabled(loading)
-        .sheet(item: $diff) { diff in
-            AppViewDiffPage(diff: diff, openLink: { openURL($0) })
+            .buttonStyle(.bordered)
+            .help("The pull request's files changed")
         }
     }
 
-    private func showDiff() async {
-        loading = true
-        problem = nil
-        defer { loading = false }
-        let item = detail.item
-        do {
-            let got = try await model.forge(DaemonAPI.Method.forgeDiff, DaemonAPI.ForgeNodeRequest(node: item.node),
-                                            returning: DaemonAPI.ForgeDiff.self, on: host)
-            diff = got.appViewDiff(title: "\(WorkList.shortRef(item.node.ref)) \(item.title)", site: WorkList.forgeName(item.node.ref))
-        } catch {
-            problem = WorkList.failureWords(error)
-        }
+    private func showFiles() {
+        model.showWork(WorkPlace(kind: .pr, ref: detail.item.node.ref, files: true))
     }
 }
 

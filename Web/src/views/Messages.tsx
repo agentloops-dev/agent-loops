@@ -13,7 +13,7 @@ import { hostAnswers } from "../model/capabilities";
 import { channelName } from "../model/channelLinks";
 import { ago } from "../model/connectorSetup";
 import {
-  hasUnread, inThread, lastConsequence, leaveThread, markAllHelp, markAllRead, markedRead, markingAllRead, markProblems, mergeConversations,
+  hasUnread, hostConversationsOf, inThread, lastConsequence, leaveThread, markAllHelp, markAllRead, markedRead, markingAllRead, markProblems, mergeConversations,
   messagesStatusLine, unreadTotal, messagesProblems, messagesSources, nextConversation, nextHelp, nextRow, noConnector, noConnectorIn,
   noConversations, noMachine, noMessages, noUnread, outside, replyInThread, replyLabel, replyPlaceholder, replyText, send, senderName,
   sending, sentAs, setUp, sourceGlyph, unreadWords, type HostConversations, type MessagesRow,
@@ -56,20 +56,21 @@ async function markAll(store: Store) {
   asked.value++;
 }
 
-async function readLists(store: Store, hosts: { id: string; name: string }[], cursors?: Map<string, string>): Promise<HostConversations[]> {
-  return Promise.all(hosts.map(async (h): Promise<HostConversations> => {
-    try {
-      const cursor = cursors?.get(h.id);
-      const got = await store.link.call("messages/conversations",
-        { limit: 50, ...unreadOnly.value ? { unread: true } : {}, ...cursor ? { cursor } : {} }, h.id);
-      return { host: h.id, name: h.name, conversations: got.conversations, cursor: got.cursor, errors: got.errors ?? [] };
-    } catch (e) {
-      return { host: h.id, name: h.name, conversations: [], errors: [], problem: describe(e) };
-    }
-  }));
-}
+/** Where the next page of messages/conversationsAll starts (#5571); none at the end. */
+const nextCursor = signal<string | undefined>(undefined);
 
-const hostNames = (store: Store) => messagesHosts(store).map((h) => ({ id: h.id, name: h.name || h.id }));
+/** Every machine's conversations in one call to the control plane (#5571): the first page, or the one after `cursor`, added to `into`. */
+async function readLists(store: Store, cursor?: string, into: HostConversations[] = []): Promise<HostConversations[]> {
+  try {
+    const got = await store.link.call("messages/conversationsAll",
+      { limit: 50, ...unreadOnly.value ? { unread: true } : {}, ...cursor ? { cursor } : {} });
+    nextCursor.value = got.cursor;
+    return hostConversationsOf(got, into);
+  } catch (e) {
+    nextCursor.value = undefined;
+    return [...into, { host: "", name: "Control plane", conversations: [], errors: [], problem: describe(e) }];
+  }
+}
 
 /** Reads the lists when the machines or the Unread filter change, or on Refresh. */
 function useLists(store: Store) {
@@ -77,7 +78,7 @@ function useLists(store: Store) {
   useEffect(() => {
     let current = true;
     lists.value = null;
-    void readLists(store, hostNames(store)).then((l) => { if (current) lists.value = l; });
+    void readLists(store).then((l) => { if (current) lists.value = l; });
     return () => { current = false; };
   }, [hostKey, asked.value, unreadOnly.value]);
 }
@@ -97,16 +98,11 @@ function MessagesStatusLine({ store }: { store: Store }) {
     let current = true;
     const read = async () => {
       const ids = messagesHosts(store).map((h) => h.id);
-      const got = await Promise.all(ids.map(async (host): Promise<HostConversations | null> => {
-        try {
-          const list = await store.link.call("messages/conversations", { limit: 50, unread: true }, host);
-          return { host, name: host, conversations: list.conversations, errors: [] };
-        } catch { return null; }
-      }));
-      await Promise.all(ids.map((host) => store.loadEvents(host)));
+      // One call for every machine (#5571); a failed one leaves the count out.
+      const got = await store.link.call("messages/conversationsAll", { limit: 50, unread: true }).then((list) => hostConversationsOf(list), () => null);
+      await store.loadEventsAll(ids);
       if (!current) return;
-      const answered = got.filter((l): l is HostConversations => l !== null);
-      unread.value = answered.length ? unreadTotal(answered) ?? 0 : undefined;
+      unread.value = got?.length ? unreadTotal(got) ?? 0 : got ? 0 : undefined;
       now.value = Date.now();
     };
     void read();
@@ -129,12 +125,7 @@ export function MessagesList({ store }: { store: Store }) {
   const loadMore = async () => {
     if (!l || more.value) return;
     more.value = true;
-    const cursors = new Map(l.filter((h) => h.cursor).map((h) => [h.host, h.cursor!]));
-    const got = await readLists(store, hostNames(store).filter((h) => cursors.has(h.id)), cursors);
-    lists.value = l.map((h) => {
-      const next = got.find((g) => g.host === h.host);
-      return next ? { ...next, conversations: [...h.conversations, ...next.conversations] } : h;
-    });
+    lists.value = await readLists(store, nextCursor.value, l);
     more.value = false;
   };
 
@@ -169,7 +160,7 @@ export function MessagesList({ store }: { store: Store }) {
               {rows.map((r) => <ConversationRow key={r.key} row={r} />)}
             </ul>
           )}
-          {l.some((h) => h.cursor) && (
+          {nextCursor.value && (
             <button type="button" class="link" disabled={more.value} onClick={() => { void loadMore(); }}>{more.value ? "Loading…" : "More"}</button>
           )}
         </>}

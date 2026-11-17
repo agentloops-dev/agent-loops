@@ -26,6 +26,11 @@ func buildsRunAt(id int64, at time.Time, onDefault bool) citimings.Run {
 	return r
 }
 
+// buildsNow is the one time of the build tests and their plane (#5603, #5654): a tenth of
+// a second before midnight UTC, where a test and a plane that read the wall clock each
+// would see two days.
+var buildsNow = time.Date(2026, 11, 14, 23, 59, 59, 900_000_000, time.UTC)
+
 func buildsDay(runs ...citimings.Run) wire.BuildsSyncDay {
 	d := wire.BuildsSyncDay{Day: citimings.DayOf(runs[0].MadeAt())}
 	for _, r := range runs {
@@ -41,7 +46,7 @@ func buildsDay(runs ...citimings.Run) wire.BuildsSyncDay {
 func TestBuildsCopyAnswersOverEveryMachine(t *testing.T) {
 	t.Parallel()
 	mem := store.NewMemory()
-	p := startPlane(t, mem, controllink.NewPrivateKey())
+	p := startPlaneWith(t, mem, controllink.NewPrivateKey(), func(c *Config) { c.Now = func() time.Time { return buildsNow } })
 	owner := p.host("OWNERS-MAC")
 	_, admin := p.client("Owner's window")
 	bea := p.invite(admin, "Bea", wire.UserRoleMember)
@@ -58,7 +63,7 @@ func TestBuildsCopyAnswersOverEveryMachine(t *testing.T) {
 		_ = json.Unmarshal(b, &answer)
 		return answer
 	}
-	now := time.Now().UTC().Truncate(time.Second)
+	now := buildsNow
 	yesterday := now.Add(-24 * time.Hour)
 	one, two, pr := buildsRunAt(1, yesterday, true), buildsRunAt(2, now.Add(-time.Hour), true), buildsRunAt(3, now.Add(-30*time.Minute), false)
 	repo := "github:alexec/agents"
@@ -143,7 +148,7 @@ func TestBuildsSweepBoundsAStoppedMachine(t *testing.T) {
 	p := startPlane(t, mem, controllink.NewPrivateKey())
 	host := p.host("OWNERS-MAC").member.Host
 	ctx := context.Background()
-	now := time.Now().UTC().Truncate(time.Second)
+	now := buildsNow
 	old := buildsRunAt(1, now.AddDate(0, 0, -citimings.KeepDays-1), true)
 	pr20 := buildsRunAt(2, now.AddDate(0, 0, -20), false)
 	main20 := buildsRunAt(3, now.AddDate(0, 0, -20).Add(time.Minute), true)

@@ -35,6 +35,8 @@ func runTurn(t *testing.T, d *Daemon, c *conn, dir, path string) (wire.UUID, wir
 }
 
 func TestUndoPutsBackWhatATurnChanged(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -66,6 +68,8 @@ func TestUndoPutsBackWhatATurnChanged(t *testing.T) {
 }
 
 func TestUndoRemovesAFileTheTurnMade(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -82,6 +86,8 @@ func TestUndoRemovesAFileTheTurnMade(t *testing.T) {
 }
 
 func TestUndoAsksFirstWhenAFileChangedAgain(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -105,6 +111,8 @@ func TestUndoAsksFirstWhenAFileChangedAgain(t *testing.T) {
 }
 
 func TestATurnOutsideTheFolderCannotBeUndone(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -132,6 +140,8 @@ func TestATurnOutsideTheFolderCannotBeUndone(t *testing.T) {
 
 // A turn's summary keeps its card as an outcome, with the undo said on it.
 func TestATurnsSummaryKeepsItsCardAndItsUndo(t *testing.T) {
+	t.Parallel()
+
 	es := entriesOf(t,
 		`{"userMessage":{"_0":"Fix it"}}`,
 		`{"agentMessage":{"messageID":"m1","text":"Fixed."}}`,

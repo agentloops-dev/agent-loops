@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -235,7 +234,7 @@ func (d *Daemon) announce(c *Client, a wire.DeviceAnnouncement) (wire.AnnounceRe
 		return wire.AnnounceReply{}, err
 	}
 	if i < 0 {
-		safe.Go("reconsider", d.reconsider)
+		d.goJob("reconsider", d.reconsider)
 	}
 	return wire.AnnounceReply{Device: r.Device}, nil
 }
@@ -277,7 +276,7 @@ func (d *Daemon) afterDeviceForgottenLocked(id wire.UUID) {
 	for _, k := range gone {
 		k.conn.Close()
 	}
-	safe.Go("reconsider", d.reconsider)
+	d.goJob("reconsider", d.reconsider)
 }
 
 // serveDevices registers the methods; devices_darwin.go calls it.

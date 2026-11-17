@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -136,7 +135,7 @@ func (d *Daemon) runtimeAllowances() wire.RuntimeAllowances {
 	keys := map[string]bool{}
 	installed := map[string]bool{}
 	for i := range catalog {
-		if p, _, _ := locateFor(&catalog[i]); p != "" {
+		if p, _, _ := d.locate(&catalog[i]); p != "" {
 			keys[ownKey(catalog[i].ID)] = true
 			installed[catalog[i].ID] = true
 		}
@@ -230,7 +229,7 @@ func (d *Daemon) tellAllowances() {
 	wait := time.Until(d.allowTold.Add(time.Second))
 	d.allowPending = true
 	d.allowMu.Unlock()
-	safe.Go("allowances changed", func() {
+	d.goJob("allowances changed", func() {
 		if wait > 0 {
 			time.Sleep(wait)
 		}

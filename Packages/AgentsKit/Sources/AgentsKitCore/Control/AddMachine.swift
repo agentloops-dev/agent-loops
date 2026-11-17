@@ -73,7 +73,7 @@ public enum WhereAgentsRun {
     /// The slot's line: why it runs there, and what else is yours.
     public static func line(others: [String], providers: [String]) -> String {
         var parts = ["Agents run where this folder is."]
-        if !others.isEmpty { parts.append("Your other machines: \(others.joined(separator: ", ")).") }
+        if !others.isEmpty { parts.append("Your other machines: \(MachineNames.words(others)).") }
         if !providers.isEmpty { parts.append("Providers: \(providers.joined(separator: ", ")).") }
         return parts.joined(separator: " ")
     }

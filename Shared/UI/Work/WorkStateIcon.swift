@@ -231,3 +231,62 @@ struct WorkMoreChips: View {
         }
     }
 }
+
+/// An item's priority (#5690), from `ForgeItem.priority`: the label chip's look, with the state
+/// tint in its text and line, never in its fill (design/tokens.json): High the failure's red,
+/// Medium the warning's orange, Low the plain chip. None has no chip.
+struct WorkPriorityChip: View {
+    let words: String
+    /// The tooltip and spoken label; "Priority high" when nil. A session's says where its
+    /// priority comes from (#5849).
+    var said: String?
+    /// On a selected row in a key window the chip goes white, as the row's text does.
+    @Environment(\.backgroundProminence) private var prominence
+
+    init?(_ item: DaemonAPI.ForgeItem) { self.init(priority: item.priority) }
+
+    init?(priority: String?) {
+        guard let words = WorkPlan.priorityWords(priority) else { return nil }
+        self.words = words
+    }
+
+    /// A session's chip (#5849): high and low only; medium and none show nothing.
+    init?(_ agent: Agent) {
+        guard let words = SessionPriorityWords.chip(agent) else { return nil }
+        self.words = words
+        said = SessionPriorityWords.help(agent)
+    }
+
+    private var tint: StateTint {
+        switch words {
+        case "High": .failure
+        case "Medium": .warning
+        default: .none
+        }
+    }
+
+    private var line: Color {
+        switch tint {
+        case .failure: Paper.lineFailure
+        case .warning: Paper.lineWarning
+        default: Paper.rule
+        }
+    }
+
+    var body: some View {
+        let white = prominence == .increased
+        Text(words).fontWeight(.medium)
+            .appText(.fine)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .frame(minHeight: 18)
+            .foregroundStyle(white ? AnyShapeStyle(.white) : tint.style(or: .secondary))
+            .background(Capsule().fill(white ? .white.opacity(0.2) : Paper.well))
+            .overlay(Capsule().strokeBorder(white ? .white.opacity(0.6) : line))
+            .fixedSize()
+            // One element with one label: a label stacked on a Text's own crashes AppKit's accessibility.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(said ?? "Priority \(words)")
+            .help(said ?? "Priority \(words.lowercased())")
+    }
+}

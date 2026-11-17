@@ -30,7 +30,7 @@ const slowSend = 400;
 /** A word typed quickly is one question to the host, not six, as the Remote's. */
 const mentionPause = 150;
 
-export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName, onAttachments, disabled, send, recipient, starting = false, where, runtime, onTyping, children,
+export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName, onAttachments, disabled, send, recipient, starting = false, focusFirst = false, where, runtime, onTyping, children,
   stop, acting, queues = false, suggestion, commands = [], findFiles, sent = [] }: {
   store: Store;
   /** Where the draft is kept: a session, or a new-agent form. */
@@ -49,6 +49,9 @@ export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName
   recipient: string;
   /** A new session's bar: what is typed stays, held, until the agent exists (#87). */
   starting?: boolean;
+  /** A new session's form (#5845): the prompt takes the first focus, not the labels field or a pill above it, so a
+   * person can type at once. Not on a touch screen, where the focus would raise the keyboard over the form. */
+  focusFirst?: boolean;
   /** Where it works, and its labels: above the input, on the left. */
   where?: ComponentChildren;
   /** The runtime: above the input, on the right. */
@@ -145,6 +148,10 @@ export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName
     keep();
     store.offeredPrompt.value = null;
   }, [given, draftKey]);
+  // The first focus (#5845): `autofocus` for a dialog's showModal, which runs after this and would otherwise focus
+  // its first control; the focus here for a page, which has no showModal.
+  const takesFocus = focusFirst && !onTouchScreen();
+  useEffect(() => { if (takesFocus) field.current?.focus(); }, []);
   // Quote in Prompt (#1553): added after what is typed, the caret after it.
   const quoted = store.offeredQuote.value;
   useEffect(() => {
@@ -296,7 +303,7 @@ export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName
         )}
         <div class="prompt-field">
           {/* Never disabled: what is typed while the link is down is kept and sent once it's back (US7). */}
-          <textarea ref={field} aria-label="Prompt" enterkeyhint={onTouchScreen() ? "enter" : "send"} placeholder={offered ? `${offered.prompt}  (Tab)` : placeholder} rows={2} value={text.value}
+          <textarea ref={field} aria-label="Prompt" autoFocus={takesFocus} enterkeyhint={onTouchScreen() ? "enter" : "send"} placeholder={offered ? `${offered.prompt}  (Tab)` : placeholder} rows={2} value={text.value}
             readOnly={starting && sending.value}
             onInput={(e) => {
               text.value = (e.currentTarget as HTMLTextAreaElement).value;

@@ -4,6 +4,8 @@ import (
 	"context"
 	"regexp"
 	"strings"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/mcpevents"
 )
 
 // What the events read from GitHub, as CIWatcher's GitHub.swift has it (#383). RealGitHub
@@ -163,6 +165,15 @@ type ConflictPR struct {
 	Trusted   bool
 }
 
+// BlockedPR is an open pull request and why it cannot merge until its author acts (#5321).
+// Skip is a draft, or a PR that waits for a person's approval: never blocked.
+type BlockedPR struct {
+	PR       PR
+	Blocking mcpevents.Blocking
+	Skip     bool
+	Trusted  bool
+}
+
 // Issue is an issue as the issue events name it.
 type Issue struct {
 	Number    int
@@ -313,6 +324,8 @@ type GitHub interface {
 	ClosedPRs(ctx context.Context, repo, since string) (merged []MergedPR, closed []ClosedPR, truncated bool, err error)
 	// ConflictPRs are the open PRs and whether each conflicts with its base.
 	ConflictPRs(ctx context.Context, repo string) ([]ConflictPR, error)
+	// BlockedPRs are the open PRs and why each cannot merge until its author acts (#5321).
+	BlockedPRs(ctx context.Context, repo string) ([]BlockedPR, error)
 	// OpenPRs are the open PRs, drafts too, with their authors.
 	OpenPRs(ctx context.Context, repo string) ([]OpenPR, error)
 	// IssueActivity is what happened to the repo's issues at or after since, of one kind.
@@ -382,6 +395,8 @@ type GitHubError struct {
 	// Refused is GitHub's own no (403 that is not a rate limit, or 404): the token reaches
 	// GitHub but not this, such as a repository where the App is not installed.
 	Refused bool
+	// issueFields says GitHub refused the issue fields a query asked for (#5747).
+	issueFields bool
 }
 
 func (e *GitHubError) Error() string { return e.Message }

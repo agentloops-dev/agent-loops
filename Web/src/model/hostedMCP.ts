@@ -189,6 +189,16 @@ export function notRemovedOffline(name: string, machine: string): string {
 }
 
 /** Remove… was refused: `why` is a sentence (#2266). */
+/** Approve's refusal (#5717), as MCPCatalogWords.sentence on the window. */
+/** A folder connector's row when this machine took the person's approval from another of their machines (#5813), as the window's. */
+export function approvedFromLine(approvedFrom: string): string {
+  return `${approvedFrom}. The entry is the same as when you approved it there; a change to it waits for your OK.`;
+}
+
+export function notApproved(name: string, why: string): string {
+  return `${name} was not approved. ${why}`;
+}
+
 export function notRemoved(name: string, why: string): string {
   return `${name} was not removed. ${why}`;
 }

@@ -17,7 +17,9 @@ import { ReportsPane } from "./Reports";
 import { BackToList } from "./BackToList";
 import { Modal } from "./Modal";
 import { folderKey, folderPath } from "../model/groups";
-import { accountChoices, accountRows, accountState, agentsHolding, allowanceLine, allowancePace, allowancePaceLine, pastWeeksLine, defaultAccountName, isOrgRow, orgAllowanceLine, ownRow, ownSignInID, reachesFoot, reachesTheModelBy, machineSignInLine, offersMachineSignIn, removeMessage, rowTitle, runtimeTime, runtimesHint, runtimesReadAt, machinesSummary, machinesWords, setupRuntimes, signInOnTheMac, type MachinesPart, type SetupRuntime } from "../model/runtimes";
+import { filteredTo, firstOf, nameLimit } from "../model/machineNames";
+import { ShowAll } from "./ShowAll";
+import { accountChoices, accountRows, accountState, agentsHolding, allowanceLine, allowancePace, allowancePaceLine, pastWeeksLine, defaultAccountName, isOrgRow, orgAllowanceLine, ownRow, ownSignInID, reachesFoot, reachesTheModelBy, machineSignInLine, offersMachineSignIn, removeMessage, rowTitle, runtimeTime, runtimesHint, runtimesReadAt, machinesSummary, machinesWords, setupRuntimes, signInOnTheMac, unavailableReason, type MachinesPart, type SetupRuntime } from "../model/runtimes";
 import { LastUpdate } from "./LastUpdate";
 import { signInRuntime } from "./RuntimeSignInDialog";
 import { limitsHint } from "../model/onTheMac";
@@ -236,6 +238,14 @@ export function availabilityWords(availability: RuntimeAvailability): string {
   return `Install failed: ${availability.installFailed.reason}`;
 }
 
+/** The runtime's own row. A runtime that cannot start says why, also when an allowance row would say Available. */
+function runtimeRowLine(status: RuntimeStatus, allowance: { unusable?: string; state: AllowanceState } | undefined,
+  short: (line: string, state: AllowanceState, out: boolean) => string, isAllowanceOut: boolean): string {
+  if (allowance?.unusable) return `Not usable: ${allowance.unusable}`;
+  if (!("available" in status.availability)) return unavailableReason(status) ?? availabilityWords(status.availability);
+  return allowance ? short(allowanceLine(allowance.state), allowance.state, isAllowanceOut) : availabilityWords(status.availability);
+}
+
 const onlineHosts = (store: Store): ControlMachine[] => store.hosts.value.filter((h) => hostAnswers(h.state));
 
 const pageTitles: Record<ActivityPage, string> = { events: "Events", runtimes: "Runtimes", mcp: "Connectors", spending: "Cost", tokens: "Tokens", time: "Time", velocity: "Velocity" };
@@ -281,8 +291,7 @@ function SetupRuntimeRows({ store, runtime: { status, home: hostID, machines }, 
   return <Fragment>
     <li class={isAllowanceOut || isOut(status) ? "out" : ""}>
       <p class={status.setBy ? "set-by-org" : undefined}><span class="strong">{status.runtime.name}</span>{" "}
-        <span class="quiet small">{allowance?.unusable ? `Not usable: ${allowance.unusable}`
-          : allowance ? short(allowanceLine(allowance.state), allowance.state, isAllowanceOut) : availabilityWords(status.availability)}{status.outdated ? " · an update is out" : ""}</span></p>
+        <span class="quiet small">{runtimeRowLine(status, allowance, short, isAllowanceOut)}{status.outdated ? " · an update is out" : ""}</span></p>
       {allowance && !allowance.unusable && bar(allowance.state)}
       {/* A runtime the organisation does not allow here: shown, with why (#998). */}
       <OrgPolicyLine mark={status.setBy} />
@@ -327,7 +336,8 @@ function SetupRuntimeRows({ store, runtime: { status, home: hostID, machines }, 
         {/* With one machine alone, the row's own line says it already. */}
         {several && <span aria-label={`${status.runtime.name}: ${machinesWords(parts, hostName)}`}>{parts.map((part, i) => <Fragment key={part.words}>
           {i > 0 && " · "}{part.words}
-          {part.hosts.map((h, n) => <Fragment key={h}>{n === 0 ? " " : ", "}<a href={routeHash({ nav: "machines", section: `machine-${h}` })}>{hostName(h)}</a></Fragment>)}
+          {part.hosts.slice(0, nameLimit).map((h, n) => <Fragment key={h}>{n === 0 ? " " : ", "}<a href={routeHash({ nav: "machines", section: `machine-${h}` })}>{hostName(h)}</a></Fragment>)}
+          {part.hosts.length > nameLimit && <>{" and "}<a href={routeHash(filteredTo(part.hosts))}>{part.hosts.length - nameLimit} more</a></>}
         </Fragment>)}</span>}
         {detailed && <>{" "}<button class="link" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Hide Details" : "Details"}</button></>}
       </p>
@@ -335,14 +345,16 @@ function SetupRuntimeRows({ store, runtime: { status, home: hostID, machines }, 
   </Fragment>;
 }
 
-/** An Activity page in the chat's place. */
-export function ActivityPageView({ store, page }: { store: Store; page: ActivityPage }) {
+/** An Activity page in the chat's place. inReport: a part of a Reports page's Me lens (#5280), which is the report
+ * already, so Cost has no Cost | Reports switch there. */
+export function ActivityPageView({ store, page, inReport = false }: { store: Store; page: ActivityPage; inReport?: boolean }) {
   const hosts = onlineHosts(store);
   // Opened by its address, the page draws before any machine answers: load again as each one comes online (#3242).
   const online = hosts.map((h) => h.id).join(",");
   useEffect(() => {
+    // Every machine's events in one call (#5592).
+    if (page === "events") void store.loadEventsAll(hosts.map((h) => h.id), 100);
     for (const host of hosts) {
-      if (page === "events") void store.loadEvents(host.id, 100);
       if (page === "spending" || page === "tokens") void store.loadCost(host.id);
       if (page === "spending" || page === "tokens") void store.loadRuntimes(host.id);
       if (page === "runtimes") void store.loadRuntimes(host.id);
@@ -355,6 +367,9 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
   const pane = useSignal<"events" | "audit">("events");
   // Cost, or Reports: every person's machines, from the control plane (#1811).
   const costPane = useSignal<"cost" | "reports">("cost");
+  // Pass-through and MCP show three machines, then Show all (#5620).
+  const allPassThrough = useSignal(false);
+  const allMCP = useSignal(false);
   return (
     <section class={`chat activity-page ${page}-page`} aria-label={pageTitles[page]}>
       <header class="column-head page-head"><BackToList />
@@ -385,7 +400,9 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
                 // The oldest read on the page (#5145): an offline machine's runtimes stay, from before it went.
                 const readAt = runtimesReadAt(store.hosts.value.map((h) => store.runtimes.value[h.id] ?? []),
                   store.hosts.value.flatMap((h) => store.runtimeAllowances.value[h.id] ?? []));
-                return readAt !== undefined && <p><LastUpdate at={readAt} /></p>;
+                const refresh = () => { for (const host of hosts) void store.loadRuntimes(host.id); };
+                return <p class="page-fresh">{readAt !== undefined && <LastUpdate at={readAt} />}{" "}
+                  <button type="button" class="link" onClick={refresh}>Refresh</button></p>;
               })()}
               {(() => {
                 const all = setupRuntimes(store.hosts.value, store.macHostID.value, store.runtimes.value)
@@ -403,18 +420,26 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
                 </>;
               })()}
               {/* The person's own pass-through names, a name the policy refuses dimmed (#998), for each machine that has any. */}
-              {store.hosts.value.filter((h) => (store.passThrough.value[h.id] ?? []).length > 0).map((h) => (
-                <section key={h.id}>
-                  {several && <h2 class="section-head">{hostName(h.id)}</h2>}
-                  <PassThroughList names={store.passThrough.value[h.id] ?? []} />
-                </section>
-              ))}
+              {(() => {
+                const withNames = store.hosts.value.filter((h) => (store.passThrough.value[h.id] ?? []).length > 0);
+                return <>
+                  {firstOf(withNames, allPassThrough.value).map((h) => (
+                    <section key={h.id}>
+                      {several && <h2 class="section-head">{hostName(h.id)}</h2>}
+                      <PassThroughList names={store.passThrough.value[h.id] ?? []} />
+                    </section>
+                  ))}
+                  <ShowAll count={withNames.length} all={allPassThrough.value} toggle={() => { allPassThrough.value = !allPassThrough.value; }} />
+                </>;
+              })()}
             </section>
           )}
           {page === "mcp" && (
             <>
               <p class="hint">{personalIntro(store.hasMac.value)}</p>
-              {store.hosts.value.map((host) => (
+              {/* The machines with connectors of their own matter most, so they come first (#5620). */}
+              {firstOf([...store.hosts.value].sort((a, b) => Number(personalServers(store.mcpHealthOf(b.id)).length > 0)
+                - Number(personalServers(store.mcpHealthOf(a.id)).length > 0)), allMCP.value).map((host) => (
                 <section key={host.id}>
                   {several && <h2 class="section-head">{hostName(host.id)}</h2>}
                   {store.has(host.id, Capability.connections1)
@@ -424,13 +449,14 @@ export function ActivityPageView({ store, page }: { store: Store; page: Activity
                   <MCPServersList store={store} host={host.id} />
                 </section>
               ))}
+              <ShowAll count={store.hosts.value.length} all={allMCP.value} toggle={() => { allMCP.value = !allMCP.value; }} />
               {store.hosts.value.every((host) => personalServers(store.mcpHealthOf(host.id)).length === 0) && (
                 <p class="hint">{personalEmpty}</p>
               )}
             </>
           )}
           {page === "runtimes" && <p class="hint">{runtimesHint(store.hasMac.value)}</p>}
-          {page === "spending" && (
+          {page === "spending" && !inReport && (
             <div class="tabs events-panes" role="tablist" aria-label="Show">
               {(["cost", "reports"] as const).map((p) => (
                 <button key={p} role="tab" aria-selected={costPane.value === p} class={costPane.value === p ? "on" : ""}

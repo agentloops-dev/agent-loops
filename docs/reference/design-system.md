@@ -89,6 +89,12 @@ Mac window and the iPhone and iPad app hold the same value.
 | forge.fill.done | `--forge-fill-done` | `Paper.forgeFillDone` | `#8250df` | `#8957e5` | A merged or closed badge. |
 | forge.fill.closed | `--forge-fill-closed` | `Paper.forgeFillClosed` | `#cf222e` | `#da3633` | A closed pull request's badge. |
 | forge.fill.draft | `--forge-fill-draft` | `Paper.forgeFillDraft` | `#59636e` | `#6e7681` | A draft's or a not planned issue's badge. |
+| diff.added.wash | `--paper-diff-added-wash` | `Paper.diffAddedWash` | `#e6ffec` | `#1d2e1f` | Under an added line. |
+| diff.added.bar | `--paper-diff-added-bar` | `Paper.diffAddedBar` | `#4ac26b` | `#2ea043` | The bar at an added line's edge. |
+| diff.added.word | `--paper-diff-added-word` | `Paper.diffAddedWord` | `#abf2bc` | `#22502a` | Under the words that an added line changed. |
+| diff.removed.wash | `--paper-diff-removed-wash` | `Paper.diffRemovedWash` | `#ffebe9` | `#3b2220` | Under a removed line. |
+| diff.removed.bar | `--paper-diff-removed-bar` | `Paper.diffRemovedBar` | `#ff8182` | `#f85149` | The bar at a removed line's edge. |
+| diff.removed.word | `--paper-diff-removed-word` | `Paper.diffRemovedWord` | `#ffcecb` | `#73302c` | Under the words that a removed line changed. |
 | code.comment | `--code-comment` | `InkValues.comment` | `#64707a` | `#a3adb8` | A comment, in italic. |
 | code.keyword | `--code-keyword` | `InkValues.keyword` | `#2b4c8c` | `#8fb0e8` | A keyword, true, false, null. |
 | code.string | `--code-string` | `InkValues.string` | `#4e6420` | `#a9c27a` | A string. |
@@ -119,6 +125,22 @@ Mac window and the iPhone and iPad app hold the same value.
 | focus.width | `--focus-width` | `Paper.Focus.width` | `2px` | The ring's width. |
 | focus.gap | `--focus-gap` | `Paper.Focus.gap` | `2px` | The gap between the control and the ring. |
 <!-- /design.sh gen -->
+
+### Edges
+
+A card or banner that has a tint (the Ask card's yellow of needs you, a notice's tone) shows it
+as a 3px **edge** on its leading side (#5669). The edge is a band of the card's own rounded
+shape: it follows the corner radius and becomes thin to nothing round the corners, so it
+touches the border along all its length. Never draw it as a straight bar on a rounded card:
+a 3px bar cannot have the card's radius, so it stops before the corners.
+
+- **Web:** `box-shadow: inset 3px 0 0 var(--tint-…)` on the card, with its border radius.
+  Not `border-left`, which makes a diagonal join with the other borders at the corners.
+- **Swift:** `.paperEdge(color, cornerRadius:)` (`Shared/UI/Paper.swift`) after the card's
+  border.
+
+A picked row (`selection`) keeps its accent bar clipped to the row's shape (#5237): a row
+is not a card, and its radius is small.
 
 ## Depth and focus
 

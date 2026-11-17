@@ -301,7 +301,7 @@ func (d *Daemon) holdBurst(owner string, wait time.Duration, e wire.Event, deliv
 		return false
 	}
 	d.bursts[key] = &heldBurst{last: copyEvent(e), count: 1}
-	time.AfterFunc(wait, func() {
+	time.AfterFunc(wait, d.jobFunc("subscribe timer", func() {
 		d.debounceMu.Lock()
 		b := d.bursts[key]
 		delete(d.bursts, key)
@@ -309,7 +309,7 @@ func (d *Daemon) holdBurst(owner string, wait time.Duration, e wire.Event, deliv
 		if b != nil && d.ctx.Err() == nil {
 			deliver(b.last, b.count)
 		}
-	})
+	}))
 	return true
 }
 
@@ -326,12 +326,12 @@ func (d *Daemon) busSubscribeSoon() {
 	d.busSubMu.Lock()
 	defer d.busSubMu.Unlock()
 	if d.busSubTimer == nil {
-		d.busSubTimer = time.AfterFunc(busSubscribeAfter, func() {
+		d.busSubTimer = time.AfterFunc(busSubscribeAfter, d.jobFunc("subscribe timer", func() {
 			d.busSubMu.Lock()
 			d.busSubTimer = nil
 			d.busSubMu.Unlock()
 			d.sendBusSubscriptions(false)
-		})
+		}))
 	}
 }
 

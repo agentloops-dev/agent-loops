@@ -13,6 +13,8 @@ import (
 )
 
 func TestTheWindowSavesTheSettingsTheHostHadNoWriteFor(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 
@@ -61,6 +63,8 @@ func TestTheWindowSavesTheSettingsTheHostHadNoWriteFor(t *testing.T) {
 }
 
 func TestRetentionDescribesADeleteUntilItIsConfirmed(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	old := wire.DateOf(time.Now().Add(-100 * 24 * time.Hour))
@@ -92,6 +96,8 @@ func TestRetentionDescribesADeleteUntilItIsConfirmed(t *testing.T) {
 }
 
 func TestAlwaysApproveAnswersBeforeACard(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if err := d.writeSetting("client-permissions.json", wire.ClientPermissionSettings{Cursor: "alwaysApprove", Grok: "default", Opencode: "default"}); err != nil {
@@ -130,6 +136,8 @@ func TestAlwaysApproveAnswersBeforeACard(t *testing.T) {
 }
 
 func TestAPersonMovesAndDoesNotCancelTheAgentsOwnMove(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
@@ -161,18 +169,15 @@ func TestAPersonMovesAndDoesNotCancelTheAgentsOwnMove(t *testing.T) {
 func TestGitFillStaysOffTheWindowAndAnswersTheControlPlane(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
-	c.in <- `{"jsonrpc":"2.0","id":1,"method":"git/fill","params":{"protocol":"https","host":"github.com"}}`
-	if line := <-c.out; !strings.Contains(line, "-32601") {
-		t.Fatalf("a window could read the password: %s", line)
+	if e := c.callError(t, 1, "git/fill", map[string]any{"protocol": "https", "host": "github.com"}); e.Code != -32601 {
+		t.Fatalf("a window could read the password: %+v", e)
 	}
-	old := fillGitCredential
-	fillGitCredential = func(attributes string) (string, error) {
+	setFor(t, &fillGitCredential, func(attributes string) (string, error) {
 		if attributes != "protocol=https\nhost=github.com\n\n" {
 			t.Errorf("asked git for %q", attributes)
 		}
 		return "username=alex\npassword=s3cret\n", nil
-	}
-	t.Cleanup(func() { fillGitCredential = old })
+	})
 	cred := d.fillGit(mustJSON(wire.GitCredentialRequest{Protocol: "https", Host: "github.com"}))
 	if cred.Username != "alex" || cred.Password != "s3cret" {
 		t.Fatal("credential mismatch")
@@ -189,6 +194,8 @@ func TestGitFillStaysOffTheWindowAndAnswersTheControlPlane(t *testing.T) {
 // The app's own tools are allowed with no card, under Claude's name and Antigravity's
 // (agents_<tool>, #1361); a runtime's own tool with a look-alike name still asks.
 func TestAppToolTitlesAllowedWithNoCard(t *testing.T) {
+	t.Parallel()
+
 	for title, want := range map[string]bool{"mcp__agents__lease_resource": true, "agents_lease_resource": true,
 		"agents_show_file": true, "agents_browser_navigate": true, "agents_delete_everything": false,
 		"Run client_create_file?": false, "lease_resource": false} {

@@ -25,6 +25,17 @@ type Timing struct {
 	Long      time.Duration
 	PollEvery time.Duration
 	PollMost  time.Duration
+	// Sleep is how a start or stop waits between its lists; nil is time.Sleep. A test
+	// records the waits asked for, not the time between lists (#5654).
+	Sleep func(time.Duration)
+}
+
+func (t Timing) sleep(d time.Duration) {
+	if t.Sleep != nil {
+		t.Sleep(d)
+		return
+	}
+	time.Sleep(d)
 }
 
 // StandardTiming is under the control plane's own 30 seconds and 10 minutes, so its failure
@@ -379,7 +390,7 @@ func (p *Provider) act(start bool, id string) (Workspace, error) {
 		if left <= 0 {
 			break
 		}
-		time.Sleep(min(wait, left))
+		p.Timing.sleep(min(wait, left))
 		wait = min(wait*2, most)
 	}
 	if refused != nil {

@@ -53,6 +53,8 @@ func notes(d *Daemon, id wire.UUID) []string {
 }
 
 func TestAnAgentFoundWorkingIsPickedBackUpAndToldWhy(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	id := leftWorking(t, root, wire.AgentStateWaitingOnUser, "fake-session", nil)
@@ -83,6 +85,8 @@ func TestAnAgentFoundWorkingIsPickedBackUpAndToldWhy(t *testing.T) {
 // "default"); the daemon re-pushes the agent's saved mode ("plan") right after, and the
 // mode pill must show that, not the runtime's own default (#3082).
 func TestAReconnectKeepsTheSavedModeNotTheRuntimesOwn(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	dir := filepath.Join(t.TempDir(), "reconnecting")
@@ -105,6 +109,8 @@ func TestAReconnectKeepsTheSavedModeNotTheRuntimesOwn(t *testing.T) {
 }
 
 func TestAConversationTheRuntimeLostGoesOnInANewOne(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	id := leftWorking(t, root, wire.AgentStateRunning, "gone-session", nil)
@@ -121,6 +127,8 @@ func TestAConversationTheRuntimeLostGoesOnInANewOne(t *testing.T) {
 }
 
 func TestOneCutOffThreeTimesAndOneCopiedInAreLeft(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	three := int64(3)
 	looping := leftWorking(t, root, wire.AgentStateRunning, "fake-session", func(a *wire.Agent) { a.RestartPickUps = &three })
@@ -145,6 +153,8 @@ func TestOneCutOffThreeTimesAndOneCopiedInAreLeft(t *testing.T) {
 // A clean stop (an update) cuts a working agent off: the next start picks it up, as after a
 // crash, and the stop is not said to be somebody's (#1605).
 func TestAnAgentACleanStopCutOffIsPickedBackUp(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	first, c := start(t, root)
@@ -183,6 +193,8 @@ func TestAnAgentACleanStopCutOffIsPickedBackUp(t *testing.T) {
 // (#1822): the turn is still the daemon's going, alive.json lists it, and the next start
 // picks it back up.
 func TestAnAgentASignalCutOffIsPickedBackUp(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	root := t.TempDir()
 	ctx, signal := context.WithCancel(context.Background())
@@ -215,6 +227,8 @@ func TestAnAgentASignalCutOffIsPickedBackUp(t *testing.T) {
 // leaves them on alive.json for the next start, which picks them up with nothing said
 // again (#4917). New without PickUpAfterRestart is that start: the host died as it began.
 func TestAStartThatDiesBeforeThePickUpLeavesItToTheNext(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name string
 		left func(t *testing.T, root string) wire.UUID

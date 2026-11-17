@@ -132,7 +132,7 @@ func (d *Daemon) armRequestTimer() {
 	if next == nil || d.ctx.Err() != nil {
 		return
 	}
-	d.requests.timer = time.AfterFunc(max(0, time.Until(*next))+20*time.Millisecond, func() {
+	d.requests.timer = time.AfterFunc(max(0, time.Until(*next))+20*time.Millisecond, d.jobFunc("requestdefer timer", func() {
 		if d.ctx.Err() != nil {
 			return
 		}
@@ -141,7 +141,7 @@ func (d *Daemon) armRequestTimer() {
 			return r.Deferred.Until != nil && !r.Deferred.Until.Time().After(at)
 		}, nil, nil)
 		d.armRequestTimer()
-	})
+	}))
 }
 
 func (d *Daemon) stopRequestTimer() {

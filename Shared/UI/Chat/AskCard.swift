@@ -11,7 +11,7 @@ struct AskCard<Content: View, Decline: View, Buttons: View>: View {
     let title: String
     /// Who asks, by title and runtime (#121), or a quiet fact such as +12 −3.
     var asker: String?
-    /// At the head's end: a form card's Later on the Mac (#4234).
+    /// At the foot, with the other buttons: a form card's Later on the Mac (#4234, #5670).
     var accessory: AnyView?
     /// False for a form that draws its own answers under its fields (a paged form, a secret).
     var hasFoot = true
@@ -33,35 +33,40 @@ struct AskCard<Content: View, Decline: View, Buttons: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // The question has the card's whole width (#5670): the asker goes on a line of its
+            // own under it, and Later goes to the card's foot.
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(icon: icon)
                     .tinted(.attention)
                     .accessibilityHidden(true)
-                // An agent's question may be markdown (**bold**, `code`).
-                Text((try? AttributedString(markdown: title)) ?? AttributedString(title))
-                    .appText(.reading).fontWeight(.semibold)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if let asker {
-                    Text(asker)
-                        .appText(.fine)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    // An agent's question may be markdown (**bold**, `code`).
+                    Text((try? AttributedString(markdown: title)) ?? AttributedString(title))
+                        .appText(.reading).fontWeight(.semibold)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let asker {
+                        Text(asker)
+                            .appText(.fine)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-                if let accessory { accessory }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             content
-            if hasFoot { foot }
+            if hasFoot {
+                foot
+            } else if let accessory {
+                // A card that draws its own answers: Later on a row of its own at the bottom.
+                Divider().overlay(Paper.rule)
+                accessory
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Paper.raised, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Paper.rule))
-        .overlay(alignment: .leading) {
-            UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16)
-                .fill(StateTint.attention.color ?? Paper.rule)
-                .frame(width: 3)
-        }
+        .paperEdge(StateTint.attention.color ?? Paper.rule, cornerRadius: 16)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
@@ -75,12 +80,14 @@ struct AskCard<Content: View, Decline: View, Buttons: View>: View {
                 HStack(spacing: 4) { decline }
                     .appText(.fine)
                 Spacer(minLength: 8)
+                if let accessory { accessory }
                 buttons
             }
             VStack(alignment: .trailing, spacing: 8) {
                 HStack(spacing: 4) { decline }
                     .appText(.fine)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if let accessory { accessory }
                 HStack(spacing: 10) { buttons }
             }
         }
@@ -103,8 +110,12 @@ extension AskCard where Decline == EmptyView, Buttons == EmptyView {
     }
 }
 
-/// One of the Ask's ways to say no: a link on the foot's left ("No thanks", "No, because…").
+/// One of the Ask's ways not to answer yes: a link on the foot's left ("No thanks", "Dismiss").
 struct AskDecline: View {
+    /// Dismiss (#5295; was No, because…, #4039): the card goes with no answer (the wire's
+    /// cancel), and the person replies in the prompt. The same word on every client.
+    static let dismiss = "Dismiss"
+
     let title: String
     let action: () -> Void
 

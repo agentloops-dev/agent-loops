@@ -25,6 +25,8 @@ func walkReaches(t *testing.T, d *Daemon, from wire.LineageNode, want ...string)
 // #3581: checks.passed and checks.failed link the run builds its PR, so a walk from the PR
 // reaches its runs; a rerun is the same run.
 func TestLineageCIRunsBuildTheirPR(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	checks := func(name, url string, run int) wire.Event {
@@ -46,6 +48,8 @@ func TestLineageCIRunsBuildTheirPR(t *testing.T) {
 
 // #3581: a PR keeps its newest ciRunsPerPR runs; the older ones' links end.
 func TestLineageCIRunsPerPRAreBounded(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	for run := 1; run <= ciRunsPerPR+3; run++ {
@@ -71,6 +75,8 @@ func TestLineageCIRunsPerPRAreBounded(t *testing.T) {
 // run's end, so a walk from the release reaches the run that built it. A branch's run does
 // not.
 func TestLineageCIRunBuildsItsRelease(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	completed := func(branch string, run int) wire.Event {
@@ -93,6 +99,8 @@ func TestLineageCIRunBuildsItsRelease(t *testing.T) {
 }
 
 func TestRepoOfRunURL(t *testing.T) {
+	t.Parallel()
+
 	for raw, want := range map[string]string{
 		"https://github.com/alexec/Agents/actions/runs/12":            "github:alexec/agents",
 		"https://github.com/alexec/Agents/actions/runs/12/attempts/2": "github:alexec/agents",
@@ -113,6 +121,8 @@ func TestRepoOfRunURL(t *testing.T) {
 // #5241: a run's deploy notices make no deploy nodes of their own any more: the deploy.*
 // events do (lineagedeploy_test.go). run.completed on a version tag still builds the release.
 func TestLineageRunCompletedMakesNoDeployNodes(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	release := wire.LineageNode{Kind: "release", Ref: "github:release:alexec/agents#v0.17.0"}
@@ -126,6 +136,8 @@ func TestLineageRunCompletedMakesNoDeployNodes(t *testing.T) {
 // #4554: checks.* keep the PR's last head commit's first run and last pass on its cost node; a
 // new head commit starts again, and a late event of an older commit changes nothing.
 func TestLineageCIKeepsTimeToGreen(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	checks := func(name, sha string, run int, created, completed string) {

@@ -36,10 +36,6 @@
 .with-sidebar .activity-row .activity-icon { color: var(--accent); text-align: center; }
 .with-sidebar .activity-row .activity-icon.warns { color: var(--tint-failure); }
 .with-sidebar .activity-row .title { font-weight: 500; }
-/* The Summary row (#3721): the newest page's title under the name, and a dot while it is unread. */
-.with-sidebar .summary-row .line { grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.with-sidebar .summary-row.unread .title { font-weight: 700; }
-.with-sidebar .summary-row .dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
 
 /* A folder's row: the disclosure, the name, and a grey count of its own sessions (#587). */
 .with-sidebar .row.folder { grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; padding: 0 8px 0 0;
@@ -97,7 +93,7 @@
    title out (#936); cut to "p" it said nothing (#587). */
 .with-sidebar .sidebar .title.placed { display: flex; align-items: baseline; min-width: 0; }
 .with-sidebar .sidebar .title.placed .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.with-sidebar .sidebar .title.placed :is(.place, .started-by) { flex: none; white-space: pre; }
+.with-sidebar .sidebar .title.placed :is(.place, .started-by, .session-priority) { flex: none; white-space: pre; }
 .with-sidebar .sidebar .title.placed .place { max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
 /* A lead's epic progress (#3270), whole after its title, in the grey of the row's second line. */
 .with-sidebar .sidebar .title.placed .lead-progress { flex: none; white-space: pre; font-weight: 400; color: var(--paper-secondary); }
@@ -254,6 +250,15 @@
 :is(.with-sidebar, .sub-app) .settings-body :is(.machine-runtimes, .resources) li p { margin: 0; }
 :is(.with-sidebar, .sub-app) .settings-body .machine-runtimes li { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
 :is(.with-sidebar, .sub-app) .settings-body .machine-runtimes .row-actions { display: flex; gap: 8px; }
+/* A machine's Agent Loops section (#5273): the version, its changes newest first, the other machines. */
+:is(.with-sidebar, .sub-app) .settings-body :is(.agents-changes, .agents-others) { list-style: none; margin: 0; padding: 0; max-width: 640px; }
+:is(.with-sidebar, .sub-app) .settings-body .agents-others > li { padding: 6px 0; border-bottom: 1px solid var(--paper-rule); }
+:is(.with-sidebar, .sub-app) .settings-body .agents-others p { margin: 0; }
+:is(.with-sidebar, .sub-app) .settings-body .agents-others .link.warning { color: var(--tint-warning); }
+:is(.with-sidebar, .sub-app) .settings-body .agents-change { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-variant-numeric: tabular-nums; }
+:is(.with-sidebar, .sub-app) .settings-body .agents-change > a { flex: none; min-width: 3.5em; }
+:is(.with-sidebar, .sub-app) .settings-body .agents-change-title { flex: 1; min-width: 0; }
+:is(.with-sidebar, .sub-app) .settings-body .agents-version { margin: 0 0 2px; font-size: 1.25em; font-variant-numeric: tabular-nums; }
 
 /* A machine's worktrees (#3627): the page's rows, a section per folder, in its column. */
 :is(.with-sidebar, .sub-app) .settings-body .worktrees { max-width: 420px; }
@@ -277,17 +282,15 @@
 .context-menu button:hover:not(:disabled), .context-menu button:focus-visible { background: var(--paper-selection); outline: none; }
 .context-menu-heading { margin: 0; padding: 5px 10px 2px; font-weight: 600; color: var(--paper-secondary); }
 .context-menu button[role=menuitemcheckbox] { display: flex; max-width: 300px; }
-.context-menu button .tick { flex: none; display: inline-block; width: 1.2em; }
+:is(.context-menu, .session-menu .popover) button .tick { flex: none; display: inline-block; width: 1.2em; }
 .context-menu [role=menuitemcheckbox] + [role=menuitem] { margin-top: 4px; border-top: 1px solid var(--paper-rule); border-radius: 0; }
 
-/* A folder's pinned pages (#159), and New Session, the first row of its Sessions (#5267): a mark in
-   the accent and a title, as a session's row is tall. */
-.row.pin, .row.new-session { grid-template-columns: minmax(0, 1fr); padding: 0; }
-.row.pin .pick, .row.new-session .pick { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 8px; align-items: center;
+/* A folder's pinned pages (#159): a mark in the accent and a title, as a session's row is tall. */
+.row.pin { grid-template-columns: minmax(0, 1fr); padding: 0; }
+.row.pin .pick { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 8px; align-items: center;
   border: none; background: none; padding: 5px 8px; text-align: left; font: inherit; color: inherit; min-width: 0; }
-.row.pin .pin-mark, .row.new-session .pin-mark { color: var(--accent); text-align: center; }
-.with-sidebar details.sessions .row.new-session .pick { padding-left: calc(8px + 26px); }
-.row.pin .title, .row.new-session .title { font-weight: 400; }
+.row.pin .pin-mark { color: var(--accent); text-align: center; }
+.row.pin .title { font-weight: 400; }
 .row.pin.missing .title { opacity: 0.55; }
 /* A server view's count (#2033): grey, at the end, as a fold's. */
 .row.pin .count { font-size: 0.75rem; }

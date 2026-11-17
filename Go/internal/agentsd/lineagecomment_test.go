@@ -18,6 +18,8 @@ import (
 
 // #2352: the setting is the folder's .agents/folder.json; off is no key.
 func TestAFoldersPRCostCommentIsItsFile(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -135,9 +137,7 @@ func TestAMergeSaysNothingWhenOff(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	fake := &fakeCommenter{}
-	was := prCommenter
-	prCommenter = fake.comment
-	defer func() { prCommenter = was }()
+	setFor(t, &prCommenter, fake.comment)
 	dir := folder(t, c, 1)
 	d.repos = map[string]forgeRepo{dir: {"github", "alexec/agents"}}
 	d.lineageEvent(wire.Event{Name: "pr.merged", Details: map[string]string{"payload": `{"pr":{"url":"https://github.com/alexec/Agents/pull/3"}}`}})
@@ -149,6 +149,8 @@ func TestAMergeSaysNothingWhenOff(t *testing.T) {
 }
 
 func TestCostCommentWords(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct{ got, want string }{
 		{tokenWords(950), "950"}, {tokenWords(1_260_000), "1.3M"},
 		{durationWords(45), "45s"}, {durationWords(725), "12m"}, {durationWords(3900), "1h 5m"},

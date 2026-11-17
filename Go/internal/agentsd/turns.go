@@ -117,6 +117,16 @@ type live struct {
 type pendingPermission struct {
 	req    wire.PermissionRequest
 	answer chan string
+	// by is the session that answered it with answer_permission (#5440); nil for the
+	// person. taken is set by the first answer, so a second one never names itself.
+	by    *permissionAnswerer
+	taken bool
+}
+
+// permissionAnswerer is the session that answered a helper's card (#5440).
+type permissionAnswerer struct {
+	agent wire.UUID
+	title string
 }
 
 // noteShown is show_file's mark on the turn in flight (#1802).
@@ -215,10 +225,10 @@ func (d *Daemon) changeAgent(id wire.UUID, moveOn bool, edit func(a *wire.Agent)
 	// A folder quiet after working says folder.idle (#1368).
 	if before.State != a.State {
 		folder := folderPath(a)
-		safe.Go("folder idle", func() { d.watchForIdle(folder) })
+		d.goJob("folder idle", func() { d.watchForIdle(folder) })
 	}
 	// Every place a need begins or ends moves the record (DaemonCore.move's reconsider).
-	safe.Go("reconsider", d.reconsider)
+	d.goJob("reconsider", d.reconsider)
 	return a
 }
 
@@ -372,12 +382,14 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 		AdvertisedOptions: []wire.ConfigOption{}, AvailableCommands: []wire.SlashCommand{},
 		CreatedAt: t, LastActivityAt: t, MadeInRoot: &d.Store.RootID, StartRequestID: r.RequestID,
 		StartedByAgent: by.agent, SandboxOverride: r.Sandbox, Persona: r.Persona, AccountID: r.AccountID,
-		Auto: pick, ClientPermission: client,
+		Auto: pick, ClientPermission: client, PrioritySet: r.Priority,
 	}
 	a.Levels = d.matchLevels(&a)
 	if q := by.queued; q != nil {
-		// Out of the queue, the same agent: its id, its title and when it was asked for.
+		// Out of the queue, the same agent: its id, its title, when it was asked for and the
+		// priority set on it (#5847).
 		a.ID, a.CreatedAt, a.Title, a.Labels = q.ID, q.CreatedAt, q.Title, q.Labels
+		a.PrioritySet, a.Priority, a.PrioritySource = q.PrioritySet, q.Priority, q.PrioritySource
 	}
 	if title != "" && a.Title == nil {
 		a.Title = &title
@@ -398,6 +410,10 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 	d.tellChanged(a, nil)
 	d.noteLineage(nil, a)
 	d.folderChanged(folderPath(&a))
+	// Auto picked this machine (#5375): the line the control plane made is the chat's first.
+	if r.AutoChose != nil && strings.TrimSpace(*r.AutoChose) != "" {
+		d.record(a.ID, runtimeNote(strings.TrimSpace(*r.AutoChose)))
+	}
 	if r.StartedFrom != nil {
 		d.record(a.ID, runtimeNote(startedFromNote(r.StartedFrom)))
 	}
@@ -411,7 +427,7 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 		d.record(a.ID, runtimeNote(policyNote))
 	}
 	if r.Purpose == nil {
-		safe.Go("starting point", func() { d.takeStartingPoint(a.ID, path) })
+		d.goJob("starting point", func() { d.takeStartingPoint(a.ID, path) })
 	}
 	// Started from voice mode (#2375): its first reply is heard, as a voice prompt's is.
 	var preface *string
@@ -1496,7 +1512,8 @@ func (l *live) Permission(ctx context.Context, p sdk.RequestPermissionRequest) s
 	d.record(l.id, wire.TranscriptEntryKind{PermissionAsked: &wire.TranscriptEntryKindPermissionAsked{Value: req}})
 	d.setState(l.id, wire.AgentStateWaitingOnUser)
 	Broadcast(d, wire.NotifyAgentPermission, wire.PermissionNotification{AgentID: l.id, Request: &req, RequestID: req.ID})
-	d.raiseAgentEvent("agent.asked_permission", l.id, "is asking for permission.", nil)
+	d.raiseAgentEvent("agent.asked_permission", l.id, "is asking for permission.",
+		map[string]string{"request": string(req.ID), "tool": req.ToolCall.Title})
 	d.reconsider()
 	var option string
 	select {
@@ -1505,6 +1522,7 @@ func (l *live) Permission(ctx context.Context, p sdk.RequestPermissionRequest) s
 	}
 	l.mu.Lock()
 	delete(l.pending, req.ID)
+	by := pp.by
 	l.mu.Unlock()
 	if option != "" {
 		name := option
@@ -1513,8 +1531,15 @@ func (l *live) Permission(ctx context.Context, p sdk.RequestPermissionRequest) s
 				name = o.Name
 			}
 		}
-		d.record(l.id, wire.TranscriptEntryKind{PermissionAnswered: &wire.TranscriptEntryKindPermissionAnswered{OptionID: option, OptionName: &name}})
+		answered := &wire.TranscriptEntryKindPermissionAnswered{OptionID: option, OptionName: &name}
+		if by != nil {
+			answered.AnsweredBy, answered.AnsweredByTitle = &by.agent, &by.title
+		}
+		d.record(l.id, wire.TranscriptEntryKind{PermissionAnswered: answered})
 		l.noteDenied(req, option)
+		if by != nil {
+			d.noteLeadAnswered(l.id, req, option, *by)
+		}
 	}
 	Broadcast(d, wire.NotifyAgentPermission, wire.PermissionNotification{AgentID: l.id, RequestID: req.ID})
 	d.reconsider()
@@ -1583,7 +1608,7 @@ func (l *live) waitForToolCall(id string, most time.Duration) {
 	if id == "" {
 		return
 	}
-	timer := time.AfterFunc(most, func() { l.mu.Lock(); l.seen.Broadcast(); l.mu.Unlock() })
+	timer := time.AfterFunc(most, l.d.jobFunc("turns timer", func() { l.mu.Lock(); l.seen.Broadcast(); l.mu.Unlock() }))
 	defer timer.Stop()
 	deadline := time.Now().Add(most)
 	l.mu.Lock()
@@ -1599,19 +1624,31 @@ func (l *live) Served(kind, detail string) {
 }
 
 func (l *live) answer(permissionID wire.UUID, option string) bool {
+	return l.answerAs(permissionID, option, nil)
+}
+
+// answerAs answers a card, the person's (by nil) or the session's that started this one
+// (#5440): false when it is not waiting, the option is not one of its, or another answer
+// or a stop got there first.
+func (l *live) answerAs(permissionID wire.UUID, option string, by *permissionAnswerer) bool {
 	l.mu.Lock()
+	defer l.mu.Unlock()
 	pp := l.pending[permissionID]
-	l.mu.Unlock()
 	if pp == nil {
 		return false
 	}
 	for _, o := range pp.req.Options {
 		if o.OptionID == option {
+			if pp.taken {
+				return by == nil // the person's second tap is no error
+			}
 			select {
 			case pp.answer <- option:
+				pp.taken, pp.by = true, by
+				return true
 			default:
+				return by == nil
 			}
-			return true
 		}
 	}
 	return false
@@ -1667,7 +1704,7 @@ func (l *live) cancel() {
 		if err := s.Cancel(ctx); err != nil && stop != nil {
 			stop()
 		} else if stop != nil {
-			go l.cancelAgain(s, seq, stop)
+			l.d.goJob("cancelAgain", func() { l.cancelAgain(s, seq, stop) })
 		}
 	} else if stop != nil {
 		stop()
@@ -1935,7 +1972,7 @@ func (l *live) open(ctx context.Context, a *wire.Agent, quiet bool) bool {
 		}
 	}
 	if !d.goAfterTurn("session watch", watch) {
-		safe.Go("session watch", watch)
+		l.d.goJob("session watch", watch)
 	}
 	// The start options the window chose (model, mode) go first. What the runtime
 	// hands back replaces the handshake's own defaults above, so the mode pill shows

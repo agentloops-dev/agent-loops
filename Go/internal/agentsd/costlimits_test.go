@@ -11,6 +11,8 @@ import (
 // its limit waits, said once; raising the limit lets it go.
 
 func TestLimitsHoldTheWork(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

@@ -280,6 +280,30 @@ extension RemoteModel {
         }
     }
 
+    /// Continue in a new session (#5919): Auto, in the same worktree or folder, then this
+    /// chat is archived. Open the new session. A failed start leaves this chat as it is.
+    @discardableResult
+    func continueInNewSession(_ agentID: UUID) async -> Bool {
+        guard !isStale else {
+            problem = "Your Mac is not answering, so that could not be sent."
+            return false
+        }
+        do {
+            let id = try await sendOnce(DaemonAPI.Method.agentsContinueInNewSession,
+                                        DaemonAPI.ContinueInNewSessionRequest(agentID: agentID, requestID: UUID()))
+                .decode(UUID.self)
+            await loadWholeAgent(id)
+            selection = id
+            return true
+        } catch let error as JSONRPCError {
+            problem = error.message
+            return false
+        } catch {
+            problem = "That did not reach your Mac."
+            return false
+        }
+    }
+
     /// Carry on when the allowance is back, or no longer (#1859).
     func continueWhenBack(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsContinueWhenBack) }
 
@@ -535,6 +559,22 @@ extension RemoteModel {
         if sent { offer(undo) }
     }
 
+    /// Priority ▸ from the card's or the chat's ··· menu (#5849): a level set on the session, or
+    /// nil to follow its issue again. Its host's agent.updated then redraws the chip.
+    func setPriority(_ agentID: UUID, _ priority: SessionPriority?) async {
+        let host = work.agent(agentID)?.host ?? .mac
+        guard !isStale(on: host) else {
+            problem = notAnswering(host, "that could not be sent.")
+            return
+        }
+        do {
+            let request = DaemonAPI.SetPriorityRequest(agentID: agentID, priority: priority)
+            try await client(for: request).call(DaemonAPI.Method.agentsSetPriority, request)
+        } catch {
+            problem = away(error, "that could not be sent.") ?? "That did not reach your Mac."
+        }
+    }
+
     /// Whether this session's host can mute it: one from before #2003 cannot.
     func canMute(_ agent: Agent) -> Bool {
         agent.state != .archived && host(agent.host, has: Capability.mute1)
@@ -635,6 +675,28 @@ extension RemoteModel {
     ///
     /// It goes when the layout does. What replaces it is the real thing US1 needs: a
     /// notification that lands on the agent it names.
+    /// The walk's scratch machines (`-canned-machines`, #5622): two groups by label, one stopped, one offline.
+    private func cannedMachines() {
+        func row(_ id: String, _ name: String, _ state: String, _ labels: [String]) -> DaemonAPI.ControlMachine {
+            var machine = DaemonAPI.ControlMachine(id: MachineRef(rawValue: id), name: name, platform: "linux", version: "0.0.0",
+                                                   state: state, reach: "direct", machineID: nil)
+            machine.labels = labels
+            return machine
+        }
+        let home = MachineRef(rawValue: "walk-home")
+        controlHome = home
+        controlHosts = [
+            DaemonAPI.ControlMachine(id: home, name: "walk-mac", platform: "darwin", version: "0.0.0", state: "online",
+                                     reach: "direct", machineID: nil),
+            row("walk-gpu-1", "gpu-1", "online", ["pool=gpu"]),
+            row("walk-gpu-2", "gpu-2", "stopped", ["pool=gpu"]),
+            row("walk-build-1", "build-1", "online", ["pool=build"]),
+            row("walk-build-2", "build-2", "needsUpdate", ["pool=build"]),
+            row("walk-devbox", "devbox", "online", []),
+            row("walk-old", "old-laptop", "offline", []),
+        ]
+    }
+
     func openFromLaunchArguments() async {
         let arguments = ProcessInfo.processInfo.arguments
         func value(_ flag: String) -> String? {
@@ -643,6 +705,9 @@ extension RemoteModel {
             else { return nil }
             return arguments[arguments.index(after: index)]
         }
+        // `-canned-machines`: scratch machines with labels beside the canned daemon's Mac, for a walk of
+        // the one machine picker (#5622): the canned daemon is one host with no control plane.
+        if arguments.contains("-canned-machines") { cannedMachines() }
         if let name = value("-folder"),
            let summary = work.folders.first(where: { $0.name == name }) {
             // Its page is New session (#366).

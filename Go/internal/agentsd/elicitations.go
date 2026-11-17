@@ -46,6 +46,8 @@ type elicitationReply struct {
 	byMessage bool
 	// reason is why the person declined, in their words (#4039), or "".
 	reason string
+	// dismissed is a cancel the person sent from the card (#5295): Dismiss, no answer.
+	dismissed bool
 }
 
 func cancelled() elicitationReply {
@@ -117,10 +119,20 @@ func (l *live) showForm(req wire.ElicitationRequest) *pendingElicitation {
 	// The state moves before the form can be answered (#4568): an answer that came first
 	// would move it back to running, then this to waiting on a form already gone.
 	d.moveIf(l.id, wire.AgentStateRunning, wire.AgentStateWaitingOnUser)
+	// The form and its request come in one step (#5974): a client that sees the form can
+	// answer it at once, and that answer must find the request to end.
+	r := d.formRequest(req)
+	var opened *wire.Request
 	l.mu.Lock()
 	l.elicitations[req.ID] = pe
+	if r != nil {
+		c := d.keepFormRequest(r)
+		opened = &c
+	}
 	l.mu.Unlock()
-	d.openFormRequest(req)
+	if opened != nil {
+		d.requestOpened(*opened)
+	}
 	Broadcast(d, wire.NotifyAgentElicitation, wire.ElicitationNotification{AgentID: l.id, RequestID: req.ID, Request: &req})
 	d.raiseAgentEvent("agent.asked_form", l.id, "is asking for a form to be filled in.", nil)
 	d.reconsider()
@@ -396,13 +408,23 @@ func (d *Daemon) answerElicitation(r wire.AnswerElicitationRequest) error {
 	}
 	d.endRequest(r.RequestID, wire.RequestStateAnswered, formAnswerSummary(action, kept), "", d.takeAnsweredBy(r.RequestID))
 	d.record(l.id, wire.TranscriptEntryKind{ElicitationAnswered: &wire.TranscriptEntryKindElicitationAnswered{ID: r.RequestID,
-		Summary: outcomeSummary(action), Answers: kept}})
+		Summary: answeredSummary(action), Answers: kept}})
 	d.moveIf(l.id, wire.AgentStateWaitingOnUser, wire.AgentStateRunning)
 	d.formDown(l.id, r.RequestID)
+	dismissed := action == wire.AnswerElicitationRequestActionCancel
 	// A form whose call came back already (#1641): the answer starts the agent again.
 	if pe.left && pe.late != nil {
+		note := askQuestionNote(action, said, reason)
+		if dismissed {
+			note = dismissedWords
+		}
 		// Off the client's call: what the answer does can take a while (providers/create).
-		go pe.late(askQuestionNote(action, said, reason))
+		go pe.late(note)
+		return nil
+	}
+	// A dismissed form left open (#5295): the person's next message is the reply, so
+	// nothing starts the agent now.
+	if pe.left && dismissed {
 		return nil
 	}
 	if pe.left {
@@ -412,7 +434,7 @@ func (d *Daemon) answerElicitation(r wire.AnswerElicitationRequest) error {
 		return nil
 	}
 	// The runtime hears last, so what it says next follows the answer in the record.
-	pe.reply <- elicitationReply{action: action, content: content, reason: reason}
+	pe.reply <- elicitationReply{action: action, content: content, reason: reason, dismissed: dismissed}
 	return nil
 }
 

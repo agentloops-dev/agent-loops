@@ -12,6 +12,8 @@ import (
 )
 
 func TestCodespacesListUsesTheGitHubConnectionAndRepository(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/repos/alexec/agents/codespaces" || r.URL.Query().Get("per_page") != "100" {
 			t.Errorf("request %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
@@ -40,6 +42,8 @@ func TestCodespacesListUsesTheGitHubConnectionAndRepository(t *testing.T) {
 }
 
 func TestCodespacesCreateUsesTheRepositoryDefaultBranch(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("authorization header missing")
@@ -79,6 +83,8 @@ func TestCodespacesCreateUsesTheRepositoryDefaultBranch(t *testing.T) {
 }
 
 func TestCodespacesStartAndStopUseTheCodespaceID(t *testing.T) {
+	t.Parallel()
+
 	var methods []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		methods = append(methods, r.Method+" "+r.URL.Path)
@@ -99,6 +105,8 @@ func TestCodespacesStartAndStopUseTheCodespaceID(t *testing.T) {
 }
 
 func TestCodespacesRepositoryMustBeOwnerAndName(t *testing.T) {
+	t.Parallel()
+
 	for _, repository := range []string{"", "owner", "owner/name/extra", "/name", "owner/"} {
 		if _, err := repositoryPathFromOwnerName(repository); err == nil {
 			t.Errorf("accepted %q", repository)
@@ -107,6 +115,8 @@ func TestCodespacesRepositoryMustBeOwnerAndName(t *testing.T) {
 }
 
 func TestMergeCodespacesSSHConfigKeepsUserConfigAndReplacesOnlyItsBlock(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), ".ssh", "config")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
@@ -136,6 +146,8 @@ func TestMergeCodespacesSSHConfigKeepsUserConfigAndReplacesOnlyItsBlock(t *testi
 }
 
 func TestMergeCodespacesSSHConfigRejectsEmptyOutput(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "config")
 	if err := mergeCodespacesSSHConfig(path, nil); err == nil {
 		t.Fatal("accepted empty config")

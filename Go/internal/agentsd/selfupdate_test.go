@@ -262,12 +262,12 @@ func TestSelfUpdateRefusesABadChecksum(t *testing.T) {
 	var verified atomic.Bool
 	r.u.verify = func(string, string) error { verified.Store(true); return nil }
 	// The server's sum is for "zip"; the bytes are something else.
-	r.u.fetch = func(ctx context.Context, url string, w io.Writer, limit int64) error {
+	r.u.fetch = func(ctx context.Context, url, pin string, w io.Writer, limit int64) error {
 		if strings.HasSuffix(url, ".zip") {
 			_, err := w.Write([]byte("tampered"))
 			return err
 		}
-		return fetchTo(ctx, url, w, limit)
+		return fetchTo(ctx, url, pin, w, limit)
 	}
 	r.u.Named("0.12.0")
 	s := r.until(t, wire.SelfUpdateStateFailed)
@@ -337,6 +337,8 @@ func TestSelfUpdateNeverAsksForAnAdministrator(t *testing.T) {
 }
 
 func TestEnclosingApp(t *testing.T) {
+	t.Parallel()
+
 	if got := enclosingApp("/Users/a/Applications/Agent Loops.app/Contents/Helpers/agentsd"); got != "/Users/a/Applications/Agent Loops.app" {
 		t.Fatal(got)
 	}
@@ -351,6 +353,8 @@ func TestEnclosingApp(t *testing.T) {
 // Agents' and Agents Host's copies take Agent Loops' name once (#5297, #4225), and only
 // when nothing else has it.
 func TestTakeNewName(t *testing.T) {
+	t.Parallel()
+
 	for _, oldName := range oldAppNames {
 		t.Run(oldName, func(t *testing.T) {
 			dir := t.TempDir()

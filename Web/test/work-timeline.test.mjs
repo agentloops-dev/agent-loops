@@ -58,7 +58,6 @@ test("an epic with no children is not drawn, and a line is a segment", () => {
   assert.deepEqual(lines[0].dots.map((d) => d.number), ["#10"]);
   assert.deepEqual(lines[1].dots.map((d) => d.number), ["#11"]);
   assert.equal(t.figures(lines[1]), "#2 · 2 of 2");
-  assert.equal(t.epicOf(lines[1].id), "github:alexec/Agents#2");
 });
 
 test("no dot is before its fork", () => {
@@ -105,62 +104,85 @@ test("only the lines that overlap the window are drawn", () => {
   assert.deepEqual(lines.map((l) => l.number), ["#10", "#11"]);
 });
 
-test("each line takes the free lane nearest the releases line", () => {
+test("each block takes the first row free at its start, packed in time", () => {
   const timeline = { epics: [
     epic(12, [child(40, { started: -20, closed: -10 })], [[-20, -10]]),
     epic(13, [child(41, { started: -18, closed: -12 })], [[-18, -12]]),
-    epic(14, [child(42, { started: -16, closed: -14 })], [[-16, -14]]),
-    // Starts after #12's line and label have ended: lane 1 is free again.
+    epic(14, [child(42, { started: -11, closed: -9 })], [[-11, -9]]),
+    // Starts 5 h after #12 ends, more than the gap: row 0 is free again.
     epic(15, [child(43, { started: -5, closed: -1 })], [[-5, -1]]),
   ], releases: [] };
-  const lines = t.layout(t.timelineLines(timeline, now), axis, () => 60);
-  assert.deepEqual(lines.map((l) => l.lane), [1, -1, 2, 1]);
-  assert.deepEqual(t.lanes(lines), { above: 2, below: 1 });
-  // A long label keeps its lane busy after its line has joined.
-  assert.deepEqual(t.layout(t.timelineLines(timeline, now), axis, () => 400).map((l) => l.lane), [1, -1, 2, -2]);
-  assert.deepEqual(t.lanes([]), { above: 0, below: 0 });
+  const lines = t.layout(t.timelineLines(timeline, now));
+  assert.deepEqual(lines.map((l) => l.row), [0, 1, 2, 0]);
+  assert.equal(t.rowCount(lines), 3);
+  assert.equal(t.rowCount([]), 0);
+  // The gap is 2 % of the widest range: #14 starts 1 h after #12 ends, so it does not take row 0.
+  assert.equal(t.packGap, 7 * 86_400_000 / 50);
+  // A block that waits for the person holds its row while it is open.
+  const waits = t.layout(t.timelineLines({ epics: [
+    epic(16, [child(44, { started: -30, waits: true })], [[-30, null]]),
+    epic(17, [child(45, { started: -1, closed: -0.5 })], [[-1, -0.5]]),
+  ], releases: [] }, now));
+  assert.deepEqual(waits.map((l) => l.row), [0, 1]);
 });
 
-test("the riser is in pixels", () => {
-  assert.equal(t.riser(1), 16);
-  assert.equal(t.riser(-9), 48);
+test("the rows do not change between ranges for the same read", () => {
+  const timeline = { epics: [
+    epic(1, [child(10, { started: -150, closed: -100 })], [[-150, -100]]),
+    epic(2, [child(11, { started: -120, closed: -2 })], [[-120, -2]]),
+    epic(3, [child(12, { started: -90, closed: -60 })], [[-90, -60]]),
+    epic(4, [child(13, { started: -20 }), child(14, { forecast: 6 })], [[-20, null]], { forecast: fc(4, 6, 10) }),
+    epic(5, [child(15, { started: -5, closed: -1 })], [[-5, -1]]),
+  ], releases: [] };
+  const lines = t.timelineLines(timeline, now);
+  // Every range's window, and its scroll on each side, is inside the span the rows are packed over.
+  const span = t.packSpan(now);
+  for (const r of t.timelineRanges) {
+    const w = t.rangeWindow(r, now);
+    assert.ok(w.start - t.rangeSpan[r] >= span.start && w.end + t.rangeSpan[r] <= span.end, r);
+  }
+  const rows = () => Object.fromEntries(t.layout(t.overlapping(lines, t.packSpan(now))).map((l) => [l.number, l.row]));
+  assert.deepEqual(rows(), { "#1": 0, "#2": 1, "#3": 0, "#4": 0, "#5": 2 });
+  // The same in 1 Day, 2 Days and Week: the packing has no range and no pixels in it.
+  for (const _ of t.timelineRanges) assert.deepEqual(rows(), { "#1": 0, "#2": 1, "#3": 0, "#4": 0, "#5": 2 });
 });
 
-test("joins within six pixels are one ring with a count", () => {
-  const forecast = fc(4, 5, 6);
-  const lines = t.layout(t.timelineLines({ epics: [
-    epic(16, [child(50, { started: -2, forecast: 5 })], [[-2, null]], { forecast }),
-    epic(17, [child(51, { started: -3, forecast: 5 })], [[-3, null]], { forecast }),
-    epic(18, [child(52, { started: -9, closed: -1 })], [[-9, -1]]),
-  ], releases: [] }, now), axis, () => 10);
-  const joins = t.joins(lines, axis);
-  assert.equal(joins.length, 2);
-  assert.equal(joins[1].lines.length, 2);
-  assert.equal(joins[1].forecast, true);
-});
-
-test("a label runs the whole line, past Now and over its band", () => {
-  const [line] = t.timelineLines({ epics: [epic(19, [child(60, { started: -1, forecast: 5 })], [[-1, null]], { forecast: fc(3, 5, 8) })], releases: [] }, now);
-  const measure = (s) => s.length * 6;
-  // Now is 20 px on, and the band 80: the label runs on to the line's end (Alex, 2026-11-10).
-  const x = axis.x(line.start);
-  assert.equal(t.labelRoom(line, x, axis), axis.x(line.end) - x);
-  assert.equal(t.fitLabel(line, 10, measure), undefined);
-  assert.equal(t.labelText(t.fitLabel(line, 80, measure)), "#19 · 0 of 1");
-  assert.equal(t.labelText(t.fitLabel(line, Infinity, measure)), "Issue 19  #19 · 0 of 1");
-});
-
-test("a long title is cut with an ellipsis so the label fits its line", () => {
-  const [line] = t.timelineLines({ epics: [epic(19, [child(60, { started: -9, closed: -1 })], [[-9, -1]])], releases: [] }, now);
+test("a block's title is in it, or after it when it is too narrow, cut before the next block", () => {
   const measure = (s) => Array.from(s).length * 6;
-  // A closed line: the label stops at its end, not after it.
-  const x = axis.x(line.start);
-  assert.equal(t.labelRoom(line, x, axis), axis.x(line.end) - x);
-  // "Issue 19  #19 · 1 of 1" is 22 characters; 20 keep "Issue…" and the figures.
-  assert.deepEqual(t.fitLabel(line, 20 * 6, measure), { title: "Issue…", figures: "#19 · 1 of 1" });
-  // Room for one letter and "…": the name keeps one; less, and only the figures.
-  assert.equal(t.labelText(t.fitLabel(line, 16 * 6, measure)), "I…  #19 · 1 of 1");
-  assert.equal(t.labelText(t.fitLabel(line, 15 * 6, measure)), "#19 · 1 of 1");
+  const timeline = { epics: [
+    epic(19, [child(60, { started: -9, closed: -1 })], [[-9, -1]]),
+    epic(20, [child(61, { started: -24, closed: -23.5 })], [[-24, -23.5]]),
+    epic(21, [child(62, { started: -20, closed: -19 })], [[-20, -19]], { reason: "not_planned" }),
+  ], releases: [] };
+  const [wide, narrow, dropped] = t.timelineLines(timeline, now);
+  // 8 h is 160 px: "Issue 19" fits, 6 px in.
+  const inside = t.blockWords(wide, axis, measure);
+  assert.deepEqual([inside.inside, inside.insideX, inside.outside], ["Issue 19", axis.x(wide.start) + 6, undefined]);
+  // Half an hour is 10 px: the title goes after the block, cut before the next block in the row.
+  const after = t.blockWords(narrow, axis, measure);
+  assert.deepEqual([after.inside, after.outside, after.outsideX], [undefined, "Issue 20", axis.x(narrow.end) + 6]);
+  assert.equal(t.blockWords(narrow, axis, measure, { next: h(-21.6) }).outside, "Iss…");
+  assert.equal(t.blockWords(narrow, axis, measure, { next: h(-23.4) }).outside, undefined);
+  // Closed as not planned: "✕ closed as not planned" after the block.
+  assert.equal(t.blockWords(dropped, axis, measure).outside, "Issue 21  ✕ closed as not planned");
+  // A block that starts before the left edge keeps its title at the edge, after ←, cut to what is left of the block.
+  const edge = t.blockWords(wide, axis, measure, { left: axis.x(h(-4)) });
+  assert.deepEqual([edge.arrow, edge.insideX, edge.inside], [true, axis.x(h(-4)) + 6, "← Issue…"]);
+  // The wait pill goes first: the words after it.
+  assert.equal(t.blockWords(narrow, axis, measure, { trailing: 30 }).outsideX, axis.x(narrow.end) + 42);
+  assert.equal(t.cut("Issue 19", 0, measure), undefined);
+});
+
+test("white text has 4.5:1 on every feature's colour", () => {
+  const white = [255, 255, 255];
+  for (const hex of ["#007aff", "#ff9500", "#34c759", "#30b0c7", "#00c7be", "#32ade6", "#8e8e93"]) {
+    const dark = t.forWhiteText(t.rgbOf(hex));
+    assert.ok(t.contrast(dark, white) >= 4.5, hex);
+    assert.ok(dark.every((v, i) => v <= t.rgbOf(hex)[i]), hex);
+  }
+  // A colour that has it already stays as it is.
+  assert.deepEqual(t.forWhiteText([88, 86, 214]), [88, 86, 214]);
+  assert.equal(t.hexOf(t.rgbOf("#30b0c7")), "#30b0c7");
 });
 
 test("a feature keeps its colour, the window's", () => {
@@ -171,30 +193,24 @@ test("a feature keeps its colour, the window's", () => {
   assert.ok(t.colourIndex("autonomy", 12) >= 0 && t.colourIndex("autonomy", 12) < 11);
 });
 
-test("the hit is the nearest dot, then the line", () => {
-  const timeline = { epics: [epic(21, [child(80, { started: -10, closed: -6 })], [[-10, -2]])],
-    releases: [{ tag: "v1.2.0", at: wire(-12), repo: "alexec/Agents" }] };
-  const lines = t.layout(t.timelineLines(timeline, now), axis, () => 10);
-  const trunk = 200, lane = 30, y = trunk - lane;
-  const at = (x, yy) => t.hit({ x, y: yy }, lines, timeline.releases, axis, trunk, lane);
-  assert.equal(at(axis.x(h(-6)) + 3, y)?.dot?.number, "#80");
-  assert.equal(at(axis.x(h(-4)), y + 5)?.line?.number, "#21");
-  assert.equal(at(axis.x(h(-4)), y + 5)?.kind, "line");
-  assert.equal(at(axis.x(h(-12)), trunk)?.release?.tag, "v1.2.0");
-  assert.equal(at(axis.x(h(-4)), y - 20), undefined);
+test("the hit is the nearest dot, then the block", () => {
+  const timeline = { epics: [epic(21, [child(80, { started: -10, closed: -6 })], [[-10, -2]])], releases: [] };
+  const lines = t.layout(t.timelineLines(timeline, now));
+  const at = (x, yy) => t.hit({ x, y: yy }, lines, axis);
+  assert.equal(at(axis.x(h(-6)) + 3, t.dotY(0))?.dot?.number, "#80");
+  assert.equal(at(axis.x(h(-4)), t.rowTop(0) + 4)?.line?.number, "#21");
+  assert.equal(at(axis.x(h(-4)), t.rowTop(0) + 4)?.kind, "line");
+  assert.equal(at(axis.x(h(-4)), t.rowTop(1) + 4), undefined);
+  assert.equal(at(axis.x(h(0)), t.rowTop(0) + 4), undefined);
 });
 
-test("a dot is on the stretch of its line that is on its lane", () => {
-  // Children that closed as the line forked and as it joined: their dots are held off the curves.
+test("a dot is held inside its block", () => {
   const timeline = { epics: [epic(23, [child(92, { started: -10, closed: -10 }), child(93, { started: -9, closed: -2 })], [[-10, -2]])], releases: [] };
-  const [line] = t.layout(t.timelineLines(timeline, now), axis, () => 10);
-  const r = t.riser(line.lane);
+  const [line] = t.layout(t.timelineLines(timeline, now));
   const [first, last] = line.dots;
-  assert.equal(t.dotX(first, line, axis), axis.x(line.start) + r);
-  assert.equal(t.dotX(last, line, axis), axis.x(line.end) - r);
-  // The hit test finds a dot where it is drawn.
-  const trunk = 200, lane = 60;
-  assert.equal(t.hit({ x: axis.x(line.start) + r, y: trunk - line.lane * lane }, [line], [], axis, trunk, lane)?.dot?.number, "#92");
+  assert.equal(t.dotX(first, line, axis), axis.x(line.start) + 4);
+  assert.equal(t.dotX(last, line, axis), axis.x(line.end) - 4);
+  assert.equal(t.hit({ x: axis.x(line.start) + 4, y: t.dotY(line.row) }, [line], axis)?.dot?.number, "#92");
 });
 
 test("the hover card is a row of three lines: the title, the labels, the prediction", () => {
@@ -203,16 +219,14 @@ test("the hover card is a row of three lines: the title, the labels, the predict
   labelled.children[0].item.labels = [{ name: "bug" }];
   const timeline = { epics: [labelled], releases: [], backtest: { error: 2.16, width: 1.3, cuts: 69, holds: 55, epics: 21, at: wire(0) } };
   const lines = t.timelineLines(timeline, now);
-  const [row] = t.cardRows({ kind: "line", line: lines[0] }, lines, timeline, now);
+  const row = t.cardRow({ kind: "line", line: lines[0] }, timeline, now);
   assert.deepEqual([row.state, row.title], ["open", "Issue 24"]);
   assert.deepEqual(row.labels.map((l) => l.name), ["enhancement"]);
   assert.match(row.line, /^#24 · 1 of 2 · closes about .*–.*, 8 in 10$/);
   // How past forecasts did is the title line's help, not the card's.
   assert.doesNotMatch(row.line, /Past forecasts/);
-  const [dot] = t.cardRows({ kind: "dot", line: lines[0], dot: lines[0].dots[0] }, lines, timeline, now);
+  const dot = t.cardRow({ kind: "dot", line: lines[0], dot: lines[0].dots[0] }, timeline, now);
   assert.deepEqual([dot.state, dot.title, dot.labels.map((l) => l.name), dot.line], ["closed", "Issue 94", ["bug"], "#94 · closed 1 h ago"]);
-  const [release] = t.cardRows({ kind: "release", release: { tag: "v1.2.0", at: wire(-2), repo: "alexec/Agents" } }, lines, timeline, now);
-  assert.deepEqual([release.state, release.line], [undefined, "alexec/Agents · released 2 h ago"]);
   assert.equal(t.titleWords("Agents", t.epicCount(lines, t.rangeWindow("twoDays", now)), "twoDays"), "Agents · 1 epic in these 2 days");
   assert.equal(t.titleWords("", 6, "week"), "6 epics in these 7 days");
 });
@@ -263,6 +277,20 @@ test("an empty window says when the last epic joined, and the week is a click aw
   assert.match(t.lastJoinedWords(h(-96), now), /^The last one joined 4 ?d ago\.$/);
   assert.equal(t.showTheWeek, "Show the week");
   assert.equal(t.noProjectTitle, "No project to draw");
+});
+
+test("the window is loading, not empty, until every read ended (#5925)", () => {
+  const win = t.rangeWindow("twoDays", now);
+  const rows = (timeline) => t.epicRows(t.timelineLines(timeline, now), win, now).length;
+  // Two reads: the first machine answers with no epic, the second with one.
+  const first = { epics: [], releases: [] };
+  const both = t.mergeTimelines([first, { epics: [epic(42, [child(1, { started: -2 })], [[-2, null]])], releases: [] }]);
+  assert.equal(t.timelineShows(false, true, 0), "loading");
+  assert.equal(t.timelineShows(true, true, rows(first)), "loading");
+  assert.equal(t.timelineShows(true, true, rows(both)), "epics");
+  assert.equal(t.timelineShows(true, false, rows(both)), "epics");
+  // Only once every read ended does an empty window say so (S11).
+  assert.equal(t.timelineShows(true, false, rows(first)), "empty");
 });
 
 test("machines merge each epic and release once", () => {
@@ -323,8 +351,8 @@ test("a child that closed since the last read lands", () => {
   assert.deepEqual(t.landed(before, after), ["github:alexec/Agents#2"]);
 });
 
-test("Timeline is a row after Releases in Work", () => {
+test("Timeline is a row after Releases and Deploys in Work", () => {
   const ids = nav.navPages.work.map((p) => p.id);
-  assert.deepEqual(ids.slice(-2), ["release", "timeline"]);
+  assert.deepEqual(ids.slice(-3), ["release", "deploys", "timeline"]);
   assert.deepEqual(nav.navPages.work.at(-1).draw, { kind: "timeline" });
 });

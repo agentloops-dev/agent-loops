@@ -167,7 +167,65 @@ func TestACardsPartsSayWhichInTheAudit(t *testing.T) {
 	if len(entries) != 2 || !actions["Revealed card SHOP_CARD"] || !actions["Copied the CVC of card SHOP_CARD"] {
 		t.Fatalf("%v", actions)
 	}
-	if strings.Contains(raw, "4242") || strings.Contains(raw, "94110") {
-		t.Fatal("the audit holds the value")
+	if part, ok := auditHoldsACardPart(raw); ok {
+		t.Fatalf("the audit holds the card's %s: %s", part, raw)
+	}
+}
+
+// auditHoldsACardPart says which secret part of the test card the audit's JSON holds, if any.
+// It looks for whole values, not digits: the audit's random ids and times can hold "4242" or
+// "94110" by chance (#5865). A long part (the whole value, the number, the name) is found
+// anywhere. A short part (the CVC, the expiry, the ZIP, the last four) is found only as a JSON
+// string of its own, or as one inside a string (an escaped value).
+func auditHoldsACardPart(raw string) (string, bool) {
+	anywhere := []struct{ name, value string }{
+		{"whole value", `"number":"4242424242424242"`},
+		{"number", "4242424242424242"},
+		{"name", "Ada Example"},
+	}
+	for _, p := range anywhere {
+		if strings.Contains(raw, p.value) {
+			return p.name, true
+		}
+	}
+	whole := []struct{ name, value string }{
+		{"CVC", "123"},
+		{"expiry", "09/28"},
+		{"ZIP", "94110"},
+		{"last four", "4242"},
+	}
+	for _, p := range whole {
+		quoted, _ := json.Marshal(p.value)
+		escaped, _ := json.Marshal(string(quoted))
+		inner := string(escaped[1 : len(escaped)-1])
+		if strings.Contains(raw, string(quoted)) || strings.Contains(raw, inner) {
+			return p.name, true
+		}
+	}
+	return "", false
+}
+
+// The audit check finds each part of the card, also escaped in a string, and not random digits.
+func TestTheAuditCheckFindsACardsPartsAndNotRandomDigits(t *testing.T) {
+	t.Parallel()
+	for _, leak := range []string{
+		`{"detail":"4242424242424242"}`,
+		`{"detail":"card of Ada Example"}`,
+		`{"cvc":"123"}`,
+		`{"detail":"{\"zip\":\"94110\"}"}`,
+		`{"expiry":"09/28"}`,
+		`{"last4":"4242"}`,
+	} {
+		if _, ok := auditHoldsACardPart(leak); !ok {
+			t.Errorf("did not find the part in %s", leak)
+		}
+	}
+	for _, clean := range []string{
+		`{"id":"a4242b94110c","at":"2026-11-16T23:52:09.123-08:00","seq":4242}`,
+		`{"id":"ent-94110","request":"r1234242"}`,
+	} {
+		if part, ok := auditHoldsACardPart(clean); ok {
+			t.Errorf("found the %s in %s", part, clean)
+		}
 	}
 }

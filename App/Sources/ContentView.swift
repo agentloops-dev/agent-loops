@@ -75,6 +75,8 @@ struct ContentView: View {
                                 }
                             },
                             dismiss: { requests.commandMenu = nil })
+                // This Mac's files of variables, so the menu finds a repo's too (#5261).
+                .task { await model.userScope.readMenuFiles(model) }
         }
     }
 
@@ -117,7 +119,7 @@ struct ContentView: View {
     }
 
     /// What the right-hand column shows: a page about all the work, a workflow, a
-    /// pinned page, a chat, a new session, or — with nothing picked — what to do.
+    /// pinned page, a chat, a new session, or — with nothing picked — the Dashboard (#5696).
     @ViewBuilder
     private func detail(inPaneOf width: CGFloat) -> some View {
         if model.showsEvents {
@@ -129,6 +131,8 @@ struct ContentView: View {
         } else if let host = model.machinePage {
             // A page of its own per machine, so one machine's readings never show on another's.
             MachinePage(host: host).id(host).paperGround()
+        } else if model.showsMachines {
+            MachinesListPage().paperGround()
         } else if model.showsSpending {
             SpendingView().paperGround()
         } else if model.showsTokens {
@@ -137,6 +141,12 @@ struct ContentView: View {
             TimeView().paperGround()
         } else if model.showsVelocity {
             VelocityView().paperGround()
+        } else if model.showsAchievements {
+            AchievementsPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
+                           agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
+                           hints: "⌘N new session · ↑↓ move · ⌘K find",
+                           refresh: { await model.refreshMultiplier() })
+                .paperGround()
         } else if model.showsWork {
             // Build trends ↗ on the Pipeline line opens the web page (#5180).
             WorkView(model: model).webPlaceLinks().paperGround()
@@ -200,11 +210,9 @@ struct ContentView: View {
                                                  set: { model.selection = $0 }))
                 .paperGround()
         } else {
-            MultiplierPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
-                           agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
-                           hints: "⌘0 Multiplier · ⌘N new session · ↑↓ move · ⌘K find",
-                           refresh: { await model.refreshMultiplier() })
-                .paperGround()
+            // The home page (#5696): where the window opens and where it goes when the
+            // selection clears.
+            DashboardView().paperGround()
         }
     }
 
@@ -213,9 +221,9 @@ struct ContentView: View {
     /// about all the work, which are no folder's.
     private var folderForTerminal: DaemonAPI.FolderSummary? {
         guard terminal.isOpen, !model.showsEvents, !model.showsRuntimes, model.statusSecretsPage == nil,
-              model.machinePage == nil,
+              model.machinePage == nil, !model.showsMachines,
               !model.showsSpending, !model.showsTokens, !model.showsTime, !model.showsVelocity,
-              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsSummary, let folder = model.selectedFolderSummary, folder.exists else { return nil }
+              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsSummary, !model.showsAchievements, let folder = model.selectedFolderSummary, folder.exists else { return nil }
         return folder
     }
 
@@ -228,9 +236,9 @@ struct ContentView: View {
     /// that chain is open.
     private var showsChat: Bool {
         model.selection != nil && !model.showsEvents
-            && !model.showsRuntimes && model.statusSecretsPage == nil && model.machinePage == nil
+            && !model.showsRuntimes && model.statusSecretsPage == nil && model.machinePage == nil && !model.showsMachines
             && !model.showsSpending && !model.showsTime && !model.showsVelocity && !model.showsWork && !model.showsDocs && !model.showsMessages
-            && !model.showsSummary && model.openWorkflow == nil
+            && !model.showsSummary && !model.showsAchievements && model.openWorkflow == nil
             && model.folderPage == nil && model.openPin == nil
     }
 
@@ -238,6 +246,16 @@ struct ContentView: View {
     /// whichever of its pages is open (#97).
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
+        // Back and Forward along every page the window showed (#5784), where Finder,
+        // Safari and System Settings have them: Go ▸ Back (⌘[) and Forward (⌘]) too.
+        ToolbarItemGroup(placement: .navigation) {
+            Button { model.goBack() } label: { Image(toolbarIcon: "chevron.left") }
+                .disabled(!model.canGoBack)
+                .help("Back")
+            Button { model.goForward() } label: { Image(toolbarIcon: "chevron.right") }
+                .disabled(!model.canGoForward)
+                .help("Forward")
+        }
         // No New Session button (#375): the folder's New session row, ⌘N and the
         // folder menu start one.
         // Pin and Archive (#586), as the workflow page has them: the two things a session
@@ -341,6 +359,9 @@ struct ContentView: View {
                         VStack(spacing: 0) {
                             detail(inPaneOf: pane.size.width)
                                 .frame(maxHeight: .infinity)
+                                // Two fingers sideways go back and forward over a page; over a
+                                // chat they show its pane instead (#5784).
+                                .swipeBackForward(enabled: !showsChat, back: model.goBack, forward: model.goForward)
                                 // The window's toast, above the prompt bar (#4737).
                                 .modifier(WindowToasts())
                             if let folder = folderForTerminal {
@@ -354,12 +375,16 @@ struct ContentView: View {
                     .overlay { fileSearch }
                     .overlay { commandMenu }
                     .toolbar { detailToolbar }
+                    .pageBackForward(back: model.goBack, forward: model.goForward)
                     .navigationTitle(title)
                     .navigationSubtitle(subtitle)
                 }
             }
         }
         }
+        // No part of the window, the sidebar's foot or a page that does not scroll, can
+        // make the window taller than the person made it, or than the screen (#5739).
+        .windowFloor(height: 420)
         // A label's chip, in a row or the chat, filters the sidebar by it (#3898), and
         // shows the sidebar if it was hidden.
         .environment(\.labelFilter, LabelFilter(query: model.sidebarSearch) { query in
@@ -397,6 +422,8 @@ struct ContentView: View {
         // itself. Here rather than in the sidebar, because the sidebar may be shut,
         // and shut means gone: there would be nothing listening.
         .onChange(of: model.filesToShow) { showWhatWasAskedFor() }
+        // Each page the window comes to goes on its history (#5784).
+        .onChange(of: model.pagePlace, initial: true) { model.notePagePlace() }
         .onChange(of: model.selection) {
             // Open File… searches the session it was opened over.
             requests.showsFileSearch = false

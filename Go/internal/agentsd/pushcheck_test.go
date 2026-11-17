@@ -28,7 +28,9 @@ func pushNotices(d *Daemon) []postedNotice {
 // owner, not one per lane, with the permission to grant, and each session's brief says it.
 // When the install may write again, the notice goes and a new session's brief says nothing.
 func TestTheHostChecksTheAppCanPushBeforeASessionGetsItsToken(t *testing.T) {
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	t.Parallel()
+
+	personalHomeFor(t, t.TempDir())
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
@@ -81,8 +83,10 @@ func TestTheHostChecksTheAppCanPushBeforeASessionGetsItsToken(t *testing.T) {
 }
 
 func TestTheGrantSaysWhereForAnOrg(t *testing.T) {
+	t.Parallel()
+
 	got := appGrantWords("acme", "alexec", []string{"Contents"})
-	if got != "give agents-loops Contents: Read and write at github.com/organizations/acme/settings/installations, then accept the new permissions" {
+	if got != "give agent-loops-dev Contents: Read and write at github.com/organizations/acme/settings/installations, then accept the new permissions" {
 		t.Fatalf("%q", got)
 	}
 }

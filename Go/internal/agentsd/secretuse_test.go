@@ -42,13 +42,20 @@ func fillAsync(m *mcpClient, id int) chan browserReply {
 	return done
 }
 
+// heldOn is whether a call is held on the request.
+func heldOn(d *Daemon, id wire.UUID) bool {
+	d.secretUseMu.Lock()
+	defer d.secretUseMu.Unlock()
+	return d.secretUseHeld[id] != nil
+}
+
 func replyOf(t *testing.T, done chan browserReply) browserReply {
 	t.Helper()
 	select {
 	case r := <-done:
 		return r
-	case <-time.After(10 * time.Second):
-		t.Fatal("the call was never answered")
+	case <-time.After(waitLimit(t)):
+		waitFailed(t, "the call was never answered")
 	}
 	return browserReply{}
 }
@@ -89,7 +96,9 @@ func TestAFlaggedFillWaitsOnAPerson(t *testing.T) {
 	// A call made again joins the same request; deny fails it.
 	answered()
 	done = fillAsync(m, 4)
-	time.Sleep(50 * time.Millisecond)
+	// Answer only once the call is held on the request: a call that comes after the answer
+	// opens a request of its own (#5814).
+	waitFor(t, "the call held on the request", func() bool { return heldOn(d, r.ID) })
 	if again := openSecretUse(t, d); again.ID != r.ID {
 		t.Fatalf("asked twice: %s %s", again.ID, r.ID)
 	}
@@ -211,8 +220,10 @@ func TestAFlaggedCISecretWaitsOnAPerson(t *testing.T) {
 
 // #4015: only a person's own clients answer a secret's use and change its grants.
 func TestOnlyAPersonApprovesASecretsUse(t *testing.T) {
+	t.Parallel()
+
 	home := t.TempDir()
-	t.Setenv("AGENTS_PERSONAL_HOME", home)
+	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	if err := d.saveSecret("GITLAB_PASSWORD", "sealed-value", true); err != nil {
@@ -291,6 +302,8 @@ func TestASecretUseIsPostedWithItsAnswers(t *testing.T) {
 
 // A session's own secret has no Always Approve on its banner, as on its row.
 func TestASessionSecretsBannerHasNoAllowAlways(t *testing.T) {
+	t.Parallel()
+
 	yes := true
 	var ids []string
 	for _, a := range secretUseAnswers(wire.RequestSecretUse{Name: "X", Use: wire.SecretUseCi, Place: "o/r", SessionOnly: &yes}) {

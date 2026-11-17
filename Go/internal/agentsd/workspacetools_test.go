@@ -18,6 +18,8 @@ import (
 // one asks the person first, and nothing is made without their yes.
 
 func TestAnAgentsWorkspaceTools(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := "fix-login"
@@ -233,6 +235,8 @@ func TestAYesAfterTheHoldStillMakesTheMachine(t *testing.T) {
 
 // A make that failed says why in list_machines (#4706), not that it is no host.
 func TestAFailedMakeSaysWhyInListMachines(t *testing.T) {
+	t.Parallel()
+
 	listed := wire.AgentMachines{Providers: []wire.AgentMachinesProvider{{ID: "cs", Name: "GitHub Codespaces", CanMake: true,
 		Workspaces: []wire.AgentMachinesMachine{
 			{ID: "failed-machine-21", Name: "machine-21", State: "failed", Reason: new("GitHub said 403: Resource not accessible by integration.")},
@@ -254,8 +258,7 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 	_, left := formHolds(t)
 	left()
 	formHoldLimit = time.Second
-	patience := cardCheckPatience
-	t.Cleanup(func() { cardCheckPatience = patience })
+	setFor(t, &cardCheckPatience, cardCheckPatience)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := "fix-login"

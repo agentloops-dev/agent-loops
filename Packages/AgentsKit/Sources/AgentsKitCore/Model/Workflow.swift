@@ -168,7 +168,7 @@ public struct Workflow: Codable, Hashable, Sendable, Identifiable {
     }
 
     /// What Runs on means, on every client (#2064).
-    public static let runsOnSentence = "Every machine with this folder runs it, or each machine turned on here. The file stores each machine's id, so renaming one does not unpin it."
+    public static let runsOnSentence = "Every machine with this folder runs it, or each machine turned on here, or the machines with a label turned on here. The file stores each machine's id, so renaming one does not unpin it."
 
     /// A `runs-on:` list as the Runs on section shows it (#2064): the machines it names, any
     /// one of which runs it, and the labels every one of them also needs (a bot, an os, a
@@ -289,6 +289,9 @@ public struct WorkflowSummary: Codable, Hashable, Sendable, Identifiable {
     /// its place on the list. The digest is what Approve sends to take it back. Other
     /// hosts, and the file, know nothing of it.
     public var deniedHere: WorkflowApproval?
+    /// Where this machine's approval came from, when it is the person's own on another of
+    /// their machines (#5462), such as "Approved by you on Studio, 2026-11-14".
+    public var approvedFrom: String?
     /// When it last started an agent, and what set that run off (#98). Apart from
     /// `lastOutcome`, which a refusal overwrites: a workflow turned off for a week has
     /// a week of refusals on top of the last time it actually ran.
@@ -343,7 +346,8 @@ public struct WorkflowSummary: Codable, Hashable, Sendable, Identifiable {
                 nextFireAtByTrigger: [Date?] = [],
                 cooldownEndsAt: Date? = nil, holdsAFire: Bool = false, queued: Int = 0,
                 offReason: WorkflowOffReason? = nil, standingAgentID: UUID? = nil,
-                mcpTriggers: [MCPTriggerStatus]? = nil, hearsFor: String? = nil, hoursOpenAt: Date? = nil) {
+                mcpTriggers: [MCPTriggerStatus]? = nil, hearsFor: String? = nil, hoursOpenAt: Date? = nil, approvedFrom: String? = nil) {
+        self.approvedFrom = approvedFrom
         self.hoursOpenAt = hoursOpenAt
         self.mcpTriggers = mcpTriggers
         self.hearsFor = hearsFor
@@ -510,6 +514,7 @@ public struct WorkflowSummary: Codable, Hashable, Sendable, Identifiable {
         // A state or failure this version does not know costs the lines, not the list (#383).
         mcpTriggers = (try? c.decodeIfPresent([MCPTriggerStatus].self, forKey: .mcpTriggers)) ?? nil
         hearsFor = try c.decodeIfPresent(String.self, forKey: .hearsFor)
+        approvedFrom = try c.decodeIfPresent(String.self, forKey: .approvedFrom)
         readyMadeUpdatedAt = try c.decodeIfPresent(Date.self, forKey: .readyMadeUpdatedAt)
         newerReadyMade = try c.decodeIfPresent(String.self, forKey: .newerReadyMade)
     }

@@ -25,7 +25,7 @@ var (
 	repoProperty = property{Name: "repo", Kind: "string",
 		Description: "The GitHub repo, owner/name. Left out, the repo this folder pushes to.",
 		Pattern:     regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`), LooksLike: "owner/name"}
-	prProperty = property{Name: "pr", Kind: "integer", Description: "Only this pull request, by number."}
+	prProperty = property{Name: "pr", Kind: "integers", Description: "Only this pull request, or these, by number."}
 	// anyoneProperty opts into anyone's issue, comment or PR (#728); left out, only the repo's own people.
 	anyoneProperty = property{Name: "anyone", Kind: "boolean",
 		Description: "true: from anyone, bots, forks and people outside the repo too. Left out, only the repo's owner, members and collaborators, never a bot, and for a PR never one from a fork."}
@@ -35,6 +35,11 @@ var (
 	// anyProperty is every one in the repo (#3797): a wait that names none sets it.
 	anyProperty = property{Name: "any", Kind: "boolean",
 		Description: "true: every one in the repo. A wait (not a workflow trigger) that names none, by the other arguments that say which, is refused without it. It is about which ones; anyone is about who."}
+	// conclusionProperty is run.completed's runs that ended so (#5775): Fix main starts only for a red run.
+	conclusionProperty = property{Name: "conclusion", Kind: "ids",
+		Description: "Only runs with this conclusion, or one of these: success, failure, cancelled, timed_out, skipped, neutral, action_required, startup_failure or stale.",
+		Pattern:     regexp.MustCompile(`^(success|failure|cancelled|timed_out|skipped|neutral|action_required|startup_failure|stale)$`),
+		LooksLike:   "a run's conclusion, as failure"}
 	// fixesProperty is the PRs that close these issues (#3797): a lead knows a child's issue before its PR.
 	fixesProperty = property{Name: "fixes", Kind: "refs",
 		Description: `Only pull requests whose body closes one of these issues, as "#12" (this repo's) or "owner/repo#12".`,
@@ -91,7 +96,7 @@ var events = append([]event{
 			property{Name: "workflow", Kind: "string", Description: "Only runs of this workflow, by its file name, as release.yml.",
 				Pattern: regexp.MustCompile(`^[A-Za-z0-9_.-]+\.ya?ml$`), LooksLike: "release.yml"},
 			branchProperty("Only runs on this branch or tag, as main or v0.16.0."),
-			property{Name: "run", Kind: "integer", Description: "Only this run, by its id."}, anyoneProperty, anyProperty},
+			property{Name: "run", Kind: "integer", Description: "Only this run, by its id."}, conclusionProperty, anyoneProperty, anyProperty},
 		Payload: object(map[string]any{
 			"run": object(map[string]any{"id": integer, "attempt": integer, "name": str, "workflow": str, "event": str,
 				"branch": str, "headSha": str, "url": str, "conclusion": str, "actor": str}),
@@ -101,7 +106,7 @@ var events = append([]event{
 		})},
 	// A deploy held by a GitHub environment with required reviewers (#3587).
 	{Name: "deploy.waiting", Title: "Deploy waiting for approval",
-		Description: "A GitHub Actions run is waiting for a reviewer of an environment with required reviewers, as a release.yml job with environment: production: one event per run, attempt and set of environments, so the next environment it waits on is a new one. canApprove says whether the GitHub account this server is connected as is one of its reviewers; Agents lists it in Needs You for them, with Approve and Reject. Only runs from the repo itself, started by a person, never a bot, unless anyone is true.",
+		Description: "A deploy is waiting for an approval: a GitHub Actions run waiting for a reviewer of an environment with required reviewers, as a release.yml job with environment: production, one event per run, attempt and set of environments, so the next environment it waits on is a new one; or, on any GitHub plan, a GitHub Deployment of the task deploy:approval whose status is pending, as a starter's release.yml makes on a tag (#5564), one event per Deployment: approval then names the Deployment and the workflow that Approve dispatches, and run is the Deployment's (id 0, workflow the one dispatched, url the run that asked). canApprove says whether the GitHub account this server is connected as is one of its reviewers; Agents lists it in Needs You for them, with Approve and Reject. deploy, component, environment and tier are the wire's DeployEvent of the GitHub Deployment that waits (state waiting), as deploy.started says it, when GitHub has made it: the first of environments that has one. Only runs from the repo itself, started by a person, never a bot, unless anyone is true.",
 		Input: schema{repoProperty,
 			property{Name: "workflow", Kind: "string", Description: "Only runs of this workflow, by its file name, as release.yml.",
 				Pattern: regexp.MustCompile(`^[A-Za-z0-9_.-]+\.ya?ml$`), LooksLike: "release.yml"},
@@ -113,6 +118,10 @@ var events = append([]event{
 			"reviewers":    map[string]any{"type": "array", "items": str},
 			"canApprove":   map[string]any{"type": "boolean"},
 			"waitingSince": str,
+			"approval":     object(map[string]any{"deployment": integer, "workflow": str}),
+			// The wire's DeployEvent of the Deployment that waits (#5407).
+			"deploy":    map[string]any{"type": "object"},
+			"component": str, "environment": str, "tier": tierSchema,
 		})},
 	deployEvent("deploy.started", "Deploy started",
 		"A GitHub Deployment went running (queued or in_progress): a job with environment: began to deploy, whatever started its run. One event per Deployment, so a queued after in_progress is no new one."),
@@ -134,6 +143,10 @@ var events = append([]event{
 		Description: "An open pull request began to conflict with its base, so it cannot merge and its CI may not run until it is rebased. Once per conflict: it is raised again only after the PR merges cleanly and then conflicts anew." + ownPRs,
 		Input:       schema{repoProperty, branchProperty("Only the PR from this branch."), prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
 		Payload:     object(map[string]any{"pr": prSchema(nil), "conflictedAt": str})},
+	{Name: "pr.blocked", Title: "Pull request blocked",
+		Description: mcpevents.BlockedDescription("On GitHub: mergeable, mergeStateStatus (BEHIND only under a rule that wants the branch up to date), reviewDecision, the last auto-merge event, and the head's checks against the required checks of the base's rulesets and branch protection." + ownPRs),
+		Input:       schema{repoProperty, branchProperty("Only the PR from this branch."), prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
+		Payload:     mcpevents.BlockedPayload(prSchema(nil))},
 	{Name: "pr.commented", Title: "Pull request commented on",
 		Description: "A comment was left on a pull request's conversation (not a review comment on a line of its diff, which review.comment covers). Its body is the first 4000 characters. A comment whose body starts with <!-- agent --> is left out: an agent's, not a person's, since every PR and comment is posted as the same account. Only comments by the repo's owner, members and collaborators, never a bot, unless anyone is true.",
 		Input:       schema{repoProperty, prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
@@ -359,6 +372,20 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 			}
 			return out, err
 		})
+	case "pr.blocked":
+		was := polls.CursorIDs(p)
+		return s.pollDiff(ctx, e.Name, "blockedAt", a, p, func() ([]state, error) {
+			prs, err := s.GitHub.BlockedPRs(ctx, a.repo)
+			var out []state
+			for _, b := range prs {
+				if b.Skip || (yours != nil && !yours.owns(b.PR.Number)) || (yours == nil && !a.anyone && !b.Trusted) {
+					continue
+				}
+				bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", e.Name, a.repo, b.PR.Number), b.Blocking, was)
+				out = append(out, state{pr: b.PR, on: &bs.On, key: bs.Key, json: b.PR.json(), extra: bs.Data})
+			}
+			return out, err
+		})
 	case "pr.opened":
 		return s.pollDiff(ctx, e.Name, "openedAt", a, p, func() ([]state, error) {
 			prs, err := s.GitHub.OpenPRs(ctx, a.repo)
@@ -434,7 +461,7 @@ func (s *Events) pollDiff(_ context.Context, name, key string, a args, p pollPar
 		all, err := states()
 		var out []mcpevents.State
 		for _, st := range all {
-			if (a.pr != 0 && st.pr.Number != a.pr) || (a.branch != "" && st.pr.Branch != a.branch) || !a.closesOne(st.pr) {
+			if !a.wantsPR(st.pr.Number) || (a.branch != "" && st.pr.Branch != a.branch) || !a.closesOne(st.pr) {
 				continue
 			}
 			id := fmt.Sprintf("%s:%s:%d", name, a.repo, st.pr.Number)
@@ -500,7 +527,7 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 		}
 		var list []candidate
 		for _, it := range items {
-			if (a.pr != 0 && it.PR.Number != a.pr) || !a.closesOne(it.PR) || !a.byMe(it.PR, yours) {
+			if !a.wantsPR(it.PR.Number) || !a.closesOne(it.PR) || !a.byMe(it.PR, yours) {
 				continue
 			}
 			if !a.anyone && !it.Trusted {
@@ -527,7 +554,7 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 		var list []candidate
 		for _, c := range comments {
 			at := mcpevents.Normalized(c.At)
-			if at == "" || (a.pr != 0 && c.PR.Number != a.pr) || (a.branch != "" && c.PR.Branch != a.branch) ||
+			if at == "" || !a.wantsPR(c.PR.Number) || (a.branch != "" && c.PR.Branch != a.branch) ||
 				!(a.mine || a.anyone || c.Trusted) || !a.closesOne(c.PR) || !a.byMe(c.PR, yours) {
 				continue
 			}
@@ -538,7 +565,7 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 		return list, truncated, nil
 	}
 	if name == "pr.commented" {
-		comments, truncated, err := gh.PRComments(ctx, repo, since, a.pr)
+		comments, truncated, err := gh.PRComments(ctx, repo, since, a.onePR())
 		if err != nil {
 			return nil, false, err
 		}
@@ -552,7 +579,7 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 			list = append(list, candidate{EventID: fmt.Sprintf("pr.commented:%s:%d", repo, c.ID), Time: at,
 				Subject: prRef(repo, c.PR.Number), Key: fmt.Sprint(c.ID),
 				Data: func() (map[string]any, error) {
-					if c.Other || (a.pr != 0 && c.PR.Number != a.pr) || !(a.anyone || c.Trusted) || !a.closesOne(c.PR) || !a.byMe(c.PR, yours) {
+					if c.Other || !a.wantsPR(c.PR.Number) || !(a.anyone || c.Trusted) || !a.closesOne(c.PR) || !a.byMe(c.PR, yours) {
 						return nil, nil
 					}
 					return c.data(), nil
@@ -561,14 +588,14 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 		return list, truncated, nil
 	}
 	if name == "pr.reviewed" {
-		reviews, err := gh.PRReviews(ctx, repo, since, a.pr)
+		reviews, err := gh.PRReviews(ctx, repo, since, a.onePR())
 		if err != nil {
 			return nil, false, err
 		}
 		var list []candidate
 		for _, r := range reviews {
 			at := mcpevents.Normalized(r.At)
-			if at == "" || (a.pr != 0 && r.PR.Number != a.pr) || (a.branch != "" && r.PR.Branch != a.branch) ||
+			if at == "" || !a.wantsPR(r.PR.Number) || (a.branch != "" && r.PR.Branch != a.branch) ||
 				!(a.anyone || r.Trusted) || !a.closesOne(r.PR) || !a.byMe(r.PR, yours) {
 				continue
 			}
@@ -592,9 +619,13 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 			if at == "" || (!a.anyone && !w.Run.Trusted) {
 				continue
 			}
+			subject, key := runRef(repo, w.Run.Run.ID), strings.TrimPrefix(w.key(), fmt.Sprint(w.Run.Run.ID)+":")
+			if w.Approval != nil {
+				subject, key = deployRef(repo, w.Approval.Deployment.ID), "approval"
+			}
 			list = append(list, candidate{EventID: "deploy.waiting:" + repo + ":" + w.key(), Time: at,
-				Data:    func() (map[string]any, error) { return w.data(), nil },
-				Subject: runRef(repo, w.Run.Run.ID), Key: strings.TrimPrefix(w.key(), fmt.Sprint(w.Run.Run.ID)+":")})
+				Data:    func() (map[string]any, error) { return waitingData(ctx, gh, repo, w) },
+				Subject: subject, Key: key})
 		}
 		return list, false, nil
 	}
@@ -612,7 +643,7 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 			list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%d", repo, r.Run.ID, r.Run.Attempt), Time: at,
 				Subject: runRef(repo, r.Run.ID), Key: fmt.Sprint(r.Run.Attempt),
 				Data: func() (map[string]any, error) {
-					if !a.anyone && !r.Trusted {
+					if !a.anyone && !r.Trusted || len(a.conclusions) > 0 && !slices.Contains(a.conclusions, r.Conclusion) {
 						return nil, nil
 					}
 					deploys, err := gh.RunDeploys(ctx, repo, r)
@@ -636,7 +667,7 @@ func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Your
 	}
 	wanted := func(p PR, trusted bool) bool {
 		// mine: the owner's own PR, trusted or not, as checks.* and pr.conflicted (#3797).
-		return (a.pr == 0 || p.Number == a.pr) && (a.branch == "" || p.Branch == a.branch) && a.closesOne(p) &&
+		return a.wantsPR(p.Number) && (a.branch == "" || p.Branch == a.branch) && a.closesOne(p) &&
 			(a.mine && a.byMe(p, yours) || !a.mine && (a.anyone || trusted))
 	}
 	var list []candidate
@@ -676,11 +707,11 @@ func checkRunCandidates(ctx context.Context, gh GitHub, name string, a args, you
 ) ([]candidate, bool, error) {
 	repo := a.repo
 	branch := a.branch
-	if branch == "" && a.pr != 0 {
+	if branch == "" && a.onePR() != 0 {
 		var err error
 		var missing *GitHubError
 		// A PR GitHub does not know lists the whole repo, as before; its runs never match.
-		if branch, err = gh.PRBranch(ctx, repo, a.pr); err != nil && !(errors.As(err, &missing) && missing.Kind == NotFound) {
+		if branch, err = gh.PRBranch(ctx, repo, a.onePR()); err != nil && !(errors.As(err, &missing) && missing.Kind == NotFound) {
 			return nil, false, err
 		}
 	}
@@ -699,14 +730,14 @@ func checkRunCandidates(ctx context.Context, gh GitHub, name string, a args, you
 		list = append(list, candidate{EventID: fmt.Sprintf("%s:%s:%d:%d", name, repo, ref.ID, ref.Attempt), Time: at,
 			Envelope: func() (wire.Ref, string) { return subject, key },
 			Data: func() (map[string]any, error) {
-				if (a.pr != 0 && ref.PRNumber != 0 && ref.PRNumber != a.pr) || (yours != nil && ref.PRNumber != 0 && !yours.owns(ref.PRNumber)) {
+				if (ref.PRNumber != 0 && !a.wantsPR(ref.PRNumber)) || (yours != nil && ref.PRNumber != 0 && !yours.owns(ref.PRNumber)) {
 					return nil, nil
 				}
 				details, err := gh.RunDetails(ctx, repo, ref, jobs)
 				if err != nil || details == nil {
 					return nil, err
 				}
-				if a.pr != 0 && details.PR.Number != a.pr || !a.closesOne(details.PR) {
+				if !a.wantsPR(details.PR.Number) || !a.closesOne(details.PR) {
 					return nil, nil
 				}
 				// mine: the owner's own PR, trusted or not; else the trust filter (#728).

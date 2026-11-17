@@ -20,7 +20,7 @@ export function Ask({ glyph, title, asker, label, alert = false, inert = false, 
   inert?: boolean;
   /** A class of its own, for what only this ask draws. */
   extra?: string;
-  /** The ways to say no, as links on the foot's left: "No thanks · No, because…", Reject, Keep stopped. */
+  /** The ways to say no, as links on the foot's left: "No thanks · Dismiss", Reject, Keep stopped. */
   decline?: ComponentChildren;
   /** The second button and the primary one, in that order. */
   buttons?: ComponentChildren;
@@ -33,8 +33,11 @@ export function Ask({ glyph, title, asker, label, alert = false, inert = false, 
       {...(alert ? { role: "alert" } : {})}>
       <header class="ask-head">
         <Icon name={glyph} class="ask-glyph" />
-        <span class="ask-title strong">{title}</span>
-        {asker && <span class="ask-asker">{asker}</span>}
+        {/* The question has the card's whole width (#5670): the asker is a line of its own under it. */}
+        <span class="ask-words">
+          <span class="ask-title strong">{title}</span>
+          {asker && <span class="ask-asker">{asker}</span>}
+        </span>
       </header>
       {children}
       {(decline || buttons) && (

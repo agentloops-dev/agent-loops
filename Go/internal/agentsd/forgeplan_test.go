@@ -83,6 +83,8 @@ func planIssue(n int, state string, labels ...string) githubmcp.Item {
 // #3267: a child's step is one more than its blockers' in the plan; a blocker outside the plan
 // adds no step but is said when open; a loop shares the step after the rest.
 func TestPlanOfPutsChildrenInSteps(t *testing.T) {
+	t.Parallel()
+
 	node := func(n string) wire.LineageNode { return wire.LineageNode{Kind: "issue", Ref: "github:issue:a/b#" + n} }
 	child := func(n string, blockers ...planRef) planChild {
 		return planChild{item: wire.ForgeItem{Node: node(n)}, blockedBy: blockers}
@@ -114,6 +116,8 @@ func TestPlanOfPutsChildrenInSteps(t *testing.T) {
 
 // #3267: the level and the feature come from the labels; the parent and progress from the forge.
 func TestForgeItemsSayTheirHierarchy(t *testing.T) {
+	t.Parallel()
+
 	i := planIssue(3268, "open", "enhancement", "Story", "feature:work")
 	i.ParentRepo, i.ParentNumber, i.SubTotal, i.SubDone = "alexec/Agents", 3265, 0, 0
 	out := forgeItemOf(i, "")
@@ -140,6 +144,8 @@ func TestForgeItemsSayTheirHierarchy(t *testing.T) {
 // session labelled #<epic> and lead); the same plan again within forgeCacheFor asks GitHub
 // nothing, but its lead is read again.
 func TestForgePlanStepsAndLead(t *testing.T) {
+	t.Parallel()
+
 	d, c, gh, _ := forgeDaemon(t)
 	gh.plan = githubmcp.Plan{Epic: planIssue(3265, "open", "epic", "feature:work"), Children: []githubmcp.PlanChild{
 		{Item: planIssue(3268, "open", "story"), BlockedBy: []githubmcp.Ref{{Repo: "alexec/agents", Number: 3267, Open: true}}},
@@ -188,6 +194,8 @@ func TestForgePlanStepsAndLead(t *testing.T) {
 
 // #3267: GitLab's and Linear's plans are in the one model, each child with its parent.
 func TestForgePlanOnGitLabAndLinear(t *testing.T) {
+	t.Parallel()
+
 	_, c, _, _, _, _ := allForgesDaemon(t)
 	var plan wire.ForgePlan
 	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "gitlab:issue:group/app#5"}}), &plan)
@@ -207,6 +215,8 @@ func TestForgePlanOnGitLabAndLinear(t *testing.T) {
 // #3267: feature narrows a list to the label feature:<name>; forge/features counts the epics of
 // each feature, open and closed, by name.
 func TestForgeFeatureFilterAndFeatures(t *testing.T) {
+	t.Parallel()
+
 	_, c, gh, _ := forgeDaemon(t)
 	c.call(t, 1, "forge/issues", wire.ForgeListRequest{Feature: new("work")})
 	if searches, _ := gh.asked(); len(searches) != 1 || !strings.Contains(searches[0], `label:"feature:work"`) {

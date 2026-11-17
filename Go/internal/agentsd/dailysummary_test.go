@@ -18,6 +18,8 @@ import (
 // The daily summary (#3192): its session collects every folder's facts, and saves a page
 // of which the last 3 stay; no other session may.
 func TestDailySummaryCollectsAndKeepsThree(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -76,6 +78,8 @@ func TestDailySummaryCollectsAndKeepsThree(t *testing.T) {
 // Only the newest daily summary is in For Review (#3352): a new page takes its title, and
 // the older runs' pages that nobody opened are marked read; another session's file stays.
 func TestOnlyTheNewestSummaryIsForReview(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -106,6 +110,8 @@ func TestOnlyTheNewestSummaryIsForReview(t *testing.T) {
 // Only a session in the home folder is offered write_daily_summary, and the workflow is never
 // copied into a project.
 func TestDailySummaryIsTheHomeFolders(t *testing.T) {
+	t.Parallel()
+
 	has := func(summarizes bool) bool {
 		for _, raw := range offeredTools(false, false, false, summarizes) {
 			var tool struct{ Name string }
@@ -132,6 +138,8 @@ func TestDailySummaryIsTheHomeFolders(t *testing.T) {
 // The daily summary's control (#3351) is the home folder's Daily summary workflow: Summary turns
 // it on at the time asked, Off turns it off and keeps the time.
 func TestDailySummaryControlIsTheWorkflow(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -170,6 +178,8 @@ func TestDailySummaryControlIsTheWorkflow(t *testing.T) {
 }
 
 func TestSetScheduleLineRefusesTwo(t *testing.T) {
+	t.Parallel()
+
 	two := "---\non:\n  - schedule:\n      at: \":00\"\n  - schedule:\n      at: \":30\"\n---\nbody\n"
 	if _, err := setScheduleLine("at", ":30", two); err == nil {
 		t.Fatal("changed one of two schedules")
@@ -185,6 +195,8 @@ func TestSetScheduleLineRefusesTwo(t *testing.T) {
 // asks each of them; their lines say the machine, a pull request merged in a checkout on two
 // machines is one, and a machine that is off is named, not left out.
 func TestDailySummaryHasTheOtherMachines(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -241,6 +253,8 @@ func TestDailySummaryHasTheOtherMachines(t *testing.T) {
 // landed with the sessions that made them under them, a workflow's runs as one line, and at
 // most a few other sessions.
 func TestDailySummaryIsAboutThePerson(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	home := t.TempDir()
@@ -256,7 +270,6 @@ func TestDailySummaryIsAboutThePerson(t *testing.T) {
 	script := `#!/bin/sh
 case "$*" in
 "repo view"*) echo '{"nameWithOwner":"o/r","url":"https://github.com/o/r"}' ;;
-"search prs --label needs-approval"*) echo '[{"number":5,"title":"New button","url":"https://github.com/o/r/pull/5","createdAt":"` + stamp(-48*time.Hour) + `","repository":{"nameWithOwner":"o/r"}}]' ;;
 "search prs --review-requested"*) echo '[{"number":5,"title":"New button","url":"https://github.com/o/r/pull/5","createdAt":"` + stamp(-48*time.Hour) + `","repository":{"nameWithOwner":"o/r"}},
   {"number":6,"title":"Review me","url":"https://github.com/o/r/pull/6","createdAt":"` + stamp(-24*time.Hour) + `","repository":{"nameWithOwner":"o/r"}}]' ;;
 "search issues"*) echo '[{"number":7,"title":"Sign up","url":"https://github.com/o/r/issues/7","createdAt":"` + stamp(-72*time.Hour) + `","repository":{"nameWithOwner":"o/r"}}]' ;;
@@ -284,7 +297,7 @@ esac
 
 	f := d.machineSummaryFactsWith("", since, gh)
 	if len(f.Waiting) != 3 || !strings.HasPrefix(f.Waiting[0], assignedLine+`#7 "Sign up"`) ||
-		!strings.HasPrefix(f.Waiting[1], approvalLine+"#5") || !strings.HasPrefix(f.Waiting[2], reviewLine+"#6") {
+		!strings.HasPrefix(f.Waiting[1], reviewLine+"#5") || !strings.HasPrefix(f.Waiting[2], reviewLine+"#6") {
 		t.Fatalf("waits on you:\n%s", strings.Join(f.Waiting, "\n"))
 	}
 	landed := strings.Join(f.Landed, "\n")

@@ -471,6 +471,7 @@ func azureDevOpsItemOf(i azuredevopsmcp.Item, folder string) wire.ForgeItem {
 		UpdatedAt: forgeDate(i.UpdatedAt), CreatedAt: forgeDateOptional(i.CreatedAt), ClosedAt: forgeDateOptional(i.ClosedAt), Comments: int64(i.Comments), Draft: new(i.Draft), AutoMerge: new(i.AutoMerge),
 		Checks: optional(i.Checks), Review: optional(i.Review), Mergeable: optional(i.Mergeable)}
 	withPullRefs(&out, i.HeadRef, i.BaseRef, i.MergedBy, i.MergeCommit)
+	withPlanLabels(&out, forgeOwn{})
 	return out
 }
 

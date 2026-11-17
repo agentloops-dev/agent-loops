@@ -1,5 +1,5 @@
 // The ⌘K command menu (#4788, spec `specs/4777-fast/spec.md`, "⌘K"), as the window's (#4787): a field over the
-// page that finds any session, folder, issue or pull request, and any action, as it is typed, each with its
+// page that finds any session, folder, issue or pull request, secret, account or environment variable (#5261), and any action, as it is typed, each with its
 // shortcut. ↑ ↓ move, Return does it, Escape or a click outside closes it and changes nothing. ⌘K (Ctrl+K off a
 // Mac) opens it from anywhere, in a field too. `/` stays the top bar's search; `g` and a letter still go to a section.
 import { useEffect, useRef } from "preact/hooks";
@@ -19,12 +19,15 @@ import {
   appleKeys, commandFound, commandKey, commandKindWord, commandMenuWords, isCommandMenuKey, type CommandItem,
 } from "../model/commandMenu";
 import { orderedFolders } from "./Sidebar";
+import { backgroundStartTitle, openBackgroundStart } from "./BackgroundStart";
 import { firstBuild, newAppItem } from "../model/firstBuild";
 import { archiveAndLeave, runSessionAction } from "./SessionMenu";
 import { laterRequestOf } from "./ListKeys";
 import { laterTime, listKeyGlyph } from "../model/listKeys";
 import { laterWords } from "../model/later";
 import { Icon, type IconName } from "./Icon";
+import { setupItems, setupPlace } from "../model/commandSetup";
+import type { EnvFile, UserEnvironment } from "../protocol/generated";
 
 /** A key press as the page's own handlers take it, so an action does what its shortcut does. */
 function press(key: string, apple: boolean) {
@@ -46,11 +49,14 @@ type Run = () => void;
 
 /** Each kind's mark at the row's start, as the window's symbol. */
 const kindIcon: Record<CommandItem["kind"], IconName> = {
-  action: "square-terminal", session: "message-circle", folder: "folder", issue: "circle-dot", pr: "git-pull-request" };
+  action: "square-terminal", session: "message-circle", folder: "folder", issue: "circle-dot", pr: "git-pull-request",
+  // The pages' own marks, as the window's Status rows (#5261, design/icons.json).
+  secret: "key", account: "contact", variable: "square-terminal" };
 
 /** The menu's items and what each does: the open folder's sessions, the actions that can be done now, the other
- * folders' sessions, the folders, then the issues and PRs the Work lists have read; the window's order. */
-export function commandItems(store: Store, apple: boolean): { items: CommandItem[]; runs: Map<string, Run>; repos: string[] } {
+ * folders' sessions, the folders, the person's secrets, accounts and environment variables (#5261), then the issues and
+ * PRs the Work lists have read; the window's order. `setup` is what the menu read of those when it opened. */
+export function commandItems(store: Store, apple: boolean, setup: MenuSetup = noSetup): { items: CommandItem[]; runs: Map<string, Run>; repos: string[] } {
   const r = route.peek();
   const runs = new Map<string, Run>();
   const folders = orderedFolders(store.hosts.value, store.folders.value, store.macHostID.value);
@@ -77,6 +83,8 @@ export function commandItems(store: Store, apple: boolean): { items: CommandItem
     add(several ? `New Session in ${f.folder.name} · ${f.host.name}` : `New Session in ${f.folder.name}`,
       () => go({ host: f.host.id, folder: f.folder.folder.folder, compose: true }), undefined, ["start"]);
   }
+  // The window's ⇧⌘N (#5798); the browser keeps that key for its private window, so it has none here.
+  if (folders.length) add(backgroundStartTitle, openBackgroundStart, undefined, ["start", "window"]);
   const agent: Agent | undefined = r.host && r.session ? store.agent(r.host, r.session) : undefined;
   if (r.host && agent) {
     const host = r.host;
@@ -123,8 +131,10 @@ export function commandItems(store: Store, apple: boolean): { items: CommandItem
   });
   const issues = work("issue");
   const pulls = work("pr");
+  const status = store.userScopeStatus.value;
+  const setupFound = setupItems(status?.secrets ?? [], status?.accounts ?? [], setup.files, setup.yoursText);
   const items = [...sessions(folders.filter((f) => keyOf(f) === hereKey)), ...actions,
-    ...sessions(folders.filter((f) => keyOf(f) !== hereKey)), ...folderItems, ...issues, ...pulls];
+    ...sessions(folders.filter((f) => keyOf(f) !== hereKey)), ...folderItems, ...setupFound, ...issues, ...pulls];
   return { items, runs, repos };
 }
 
@@ -137,7 +147,30 @@ function choose(item: CommandItem, runs: Map<string, Run>) {
   if (kind === "issue" || kind === "pr") {
     fromList.value = undefined;
     go({ nav: "work", section: kind, item: item.id.slice(cut + 1) });
+    return;
   }
+  // A secret, an account or a variable opens on its page, selected (#5261).
+  const place = setupPlace(item);
+  if (place) go({ nav: "status", section: place.section, item: place.item });
+}
+
+/** What the menu read of the person's variables when it opened (#5261): this Mac's files (Yours and each repo's), and
+ * Yours from the settings for when no file was read. */
+interface MenuSetup { files: readonly EnvFile[]; yoursText?: string }
+const noSetup: MenuSetup = { files: [] };
+
+/** Reads the secrets and accounts, and this Mac's files of variables (else the first machine's that has them). */
+async function readSetup(store: Store): Promise<MenuSetup> {
+  void store.loadUserScopeStatus();
+  const hosts = store.hosts.value.map((h) => h.id);
+  const mac = store.macHostID.value;
+  const host = [...(mac ? [mac] : []), ...hosts].find((h) => store.has(h, Capability.env1) && store.hostIsOnline(h));
+  const [list, settings] = await Promise.all([
+    host ? store.link.call("env/list", {}, host).catch(() => null) : Promise.resolve(null),
+    store.link.call("user/settings", {}).catch(() => null),
+  ]);
+  const yours = settings?.environment as UserEnvironment | undefined;
+  return { files: list?.files ?? [], ...yours?.text !== undefined ? { yoursText: yours.text } : {} };
 }
 
 /** ⌘K, anywhere on the page: the menu, over it. */
@@ -152,21 +185,24 @@ export function CommandMenu({ store }: { store: Store }) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+  const setup = useSignal<MenuSetup>(noSetup);
   useEffect(() => {
     if (!open.value) return;
     // The Work lists' issues and PRs, read once; a list read already is not read again.
     for (const kind of ["issue", "pr"] as const) void loadList(store, workList(kind)).catch(() => undefined);
+    // The secrets, accounts and variables, read each time it opens: they change on other machines (#5261).
+    void readSetup(store).then((read) => { setup.value = read; }, () => undefined);
   }, [open.value]);
-  return open.value ? <CommandMenuSheet store={store} close={() => { open.value = false; }} /> : null;
+  return open.value ? <CommandMenuSheet store={store} setup={setup.value} close={() => { open.value = false; }} /> : null;
 }
 
-function CommandMenuSheet({ store, close }: { store: Store; close: () => void }) {
+function CommandMenuSheet({ store, setup, close }: { store: Store; setup: MenuSetup; close: () => void }) {
   const words = useSignal("");
   const at = useSignal(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const list = useRef<HTMLUListElement>(null);
   const apple = appleKeys();
-  const { items, runs, repos } = commandItems(store, apple);
+  const { items, runs, repos } = commandItems(store, apple, setup);
   const found = commandFound(items, words.value, repos);
   useEffect(() => {
     const d = dialog.current;

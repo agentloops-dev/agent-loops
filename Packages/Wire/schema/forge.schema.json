@@ -536,7 +536,7 @@
     },
     "ForgeFeatures": {
       "type": "object",
-      "description": "forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests labelled needs-approval (#4115), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.",
+      "description": "forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests with a review requested from the person (#4115, #5803), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.",
       "properties": {
         "features": {
           "type": "array",
@@ -608,7 +608,7 @@
     },
     "ForgeItem": {
       "type": "object",
-      "description": "An issue or a pull request (a GitLab merge request) as its forge says it (#3129): one model for GitHub, GitLab, Linear and Jira (#3260), so one page draws each. node is its lineage node (kind issue or pr, ref github:issue:alexec/agents#12). state is open, closed or merged; status is the tracker's own name for its step, where its workflow has steps (a Jira status, as In Progress; one in Jira's Done category is closed). folder is a folder on this machine on its repo, to act from. labels have their #rrggbb colour where the forge gives one (#2956). The pull request's own fields: draft; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. The hierarchy (#3267): parent is the issue it is a sub-issue (a Linear or GitLab child) of; level is epic, story, task or spike, from its labels; feature is the name of its feature:<name> label; progress is a parent's closed children of all of them, where the forge says it: in a GitHub list, and on an issue's own read. standing says it has the label standing: a standing epic, whose plan is a query (#3659). authorAvatar is the author's picture, a URL that only forge/image reads (#4363), where the forge gives one (ForgeCapabilities.avatars). stateReason is why a closed issue closed (#4365): completed, not_planned or duplicate, where the forge says it (ForgeCapabilities.stateReason); absent on an open issue and on a pull request. createdAt is when it opened and closedAt when it closed or merged (#4373), where the forge says them (ForgeCapabilities.createdAt and closedAt); closedAt is absent while it is open. A pull request's branches (#4409): headRef is the branch it merges from and baseRef the one it merges into, where the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it is open or closed unmerged.",
+      "description": "An issue or a pull request (a GitLab merge request) as its forge says it (#3129): one model for GitHub, GitLab, Linear and Jira (#3260), so one page draws each. node is its lineage node (kind issue or pr, ref github:issue:alexec/agents#12). state is open, closed or merged; status is the tracker's own name for its step, where its workflow has steps (a Jira status, as In Progress; one in Jira's Done category is closed). folder is a folder on this machine on its repo, to act from. labels have their #rrggbb colour where the forge gives one (#2956). The pull request's own fields: draft; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. The hierarchy (#3267): parent is the issue it is a sub-issue (a Linear or GitLab child) of; level is epic, story, task or spike, from its labels; feature is the name of its feature:<name> label; progress is a parent's closed children of all of them, where the forge says it: in a GitHub list, and on an issue's own read. standing says it has the label standing: a standing epic, whose plan is a query (#3659). authorAvatar is the author's picture, a URL that only forge/image reads (#4363), where the forge gives one (ForgeCapabilities.avatars). stateReason is why a closed issue closed (#4365): completed, not_planned or duplicate, where the forge says it (ForgeCapabilities.stateReason); absent on an open issue and on a pull request. createdAt is when it opened and closedAt when it closed or merged (#4373), where the forge says them (ForgeCapabilities.createdAt and closedAt); closedAt is absent while it is open. A pull request's branches (#4409): headRef is the branch it merges from and baseRef the one it merges into, where the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it is open or closed unmerged. priority is high, medium or low, absent for none (#5688, #5747): from the forge's own priority field where it has one, and then its labels are not read for it: Linear's (Urgent and High → high; Low → low), Jira's (Highest and High → high; Low and Lowest → low), GitHub's Priority issue field when the repo has it (Urgent and High → high), Bitbucket's (blocker and critical → high; major, the default, → none; minor and trivial → low) and Azure DevOps' Priority (1 → high; 2, the default, → none; 3 and 4 → low); elsewhere from the labels priority:high, priority:medium and priority:low (any case; the higher of two). milestoneDue is the due date of the item's milestone, where the forge says it; absent with no milestone or no due date. onHold says the item is on hold (#5747): Bitbucket's state on hold; elsewhere the label on hold (any case; on-hold too), and on Jira a status named On hold too; absent is false.",
       "properties": {
         "node": {
           "$ref": "lineage.schema.json#/definitions/LineageNode"
@@ -651,6 +651,16 @@
         },
         "milestone": {
           "type": "string"
+        },
+        "milestoneDue": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "onHold": {
+          "type": "boolean"
         },
         "createdAt": {
           "$ref": "core.schema.json#/definitions/WireDate"
@@ -720,10 +730,13 @@
     },
     "ForgeItemDetail": {
       "type": "object",
-      "description": "forge/issue and forge/pull (#3129): one item with its body (Markdown) and a page of its comments, the newest page first and at most 50, oldest first in the page; cursor is the page before it, absent at the first comment. A pull request's checks, review threads (line comments, in threads) and files changed come with it. head is a pull request's head commit, which forge/merge and forge/approve name (#3130); mergeMethods are the ways its repo allows, the repo's default first; start is the new-agent form for an issue. transitions are the moves an issue's workflow allows now (Jira, #3260), which forge/close takes in place of a close or a reopen. actions are what the item's page offers now, from its forge and its state (#4361): a merged pull request has no merge and no reopen, a closed item no close; absent from an earlier daemon, when the page shows what it did before. On an issue's read (#4373), where the forge says them (ForgeCapabilities): children are its sub-issues, linkedPulls the pull requests that close it, and events its timeline, oldest first (labelled, assigned, closed, referenced and the like); each is absent where the forge gives none. On a pull request's read (#4409), where the forge says them (ForgeCapabilities): additions, deletions and commits are its size; reviewers are the people asked to review it and the people who reviewed it, each once with their newest state; closes are the issues it closes when it merges.",
+      "description": "forge/issue and forge/pull (#3129): one item with its body (Markdown) and a page of its comments, the newest page first and at most 50, oldest first in the page; cursor is the page before it, absent at the first comment. A pull request's checks, review threads (line comments, in threads) and files changed come with it. head is a pull request's head commit, which forge/merge and forge/approve name (#3130); mergeMethods are the ways its repo allows, the repo's default first; start is the new-agent form for an issue. transitions are the moves an issue's workflow allows now (Jira, #3260), which forge/close takes in place of a close or a reopen. actions are what the item's page offers now, from its forge and its state (#4361): a merged pull request has no merge and no reopen, a closed item no close; absent from an earlier daemon, when the page shows what it did before. On an issue's read (#4373), where the forge says them (ForgeCapabilities): children are its sub-issues, linkedPulls the pull requests that close it, and events its timeline, oldest first (labelled, assigned, closed, referenced and the like); each is absent where the forge gives none. On a pull request's read (#4409), where the forge says them (ForgeCapabilities): additions, deletions and commits are its size; reviewers are the people asked to review it and the people who reviewed it, each once with their newest state; closes are the issues it closes when it merges. viewer is the login this machine reads and writes the forge as (#5804), the one forge/approve reviews as, so a client knows which reviewer and which author is the person; absent where the connection does not say it, and from an earlier daemon.",
       "properties": {
         "item": {
           "$ref": "#/definitions/ForgeItem"
+        },
+        "viewer": {
+          "type": "string"
         },
         "body": {
           "type": "string"
@@ -1111,6 +1124,79 @@
       ],
       "additionalProperties": false
     },
+    "ForgeNext": {
+      "type": "object",
+      "description": "forge/next (#5689): the work that is ready, in one order, at most 100 rows. The top row that is not on hold is the next one to pick up. readAt is when this answer was made; the forge reads in it may be up to the forge cache's minute older. errors says a forge that could not be read, as ForgeList's does; the rows of the others still come.",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ForgeNextRow"
+          }
+        },
+        "readAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ForgeListError"
+          }
+        }
+      },
+      "required": [
+        "rows",
+        "readAt"
+      ],
+      "additionalProperties": false
+    },
+    "ForgeNextRequest": {
+      "type": "object",
+      "description": "forge/next (#5689): the folder whose work is read. epic (an issue's lineage node) gives only that epic's children, or a standing epic's query (#3661). level epic gives the open epics instead of the issues, in the same order, to choose which epic gets a lead; it takes no epic.",
+      "properties": {
+        "folder": {
+          "type": "string"
+        },
+        "epic": {
+          "$ref": "lineage.schema.json#/definitions/LineageNode"
+        },
+        "level": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder"
+      ],
+      "additionalProperties": false
+    },
+    "ForgeNextRow": {
+      "type": "object",
+      "description": "A row of forge/next (#5689): an item that is ready (open, not an epic unless the level is epic, no open blocked by, and not taken: no session on this machine that is not archived is labelled with it, no open pull request fixes it, and it has no assignee), or one that is on hold and otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high, medium, none, low; then the milestone's due date, the earliest first, no due date last; then the oldest (createdAt, then the lowest number). reasons are short words for the keys that put it there, as priority high, milestone Work, due 20 Nov, and oldest (when its age put it above the next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.",
+      "properties": {
+        "item": {
+          "$ref": "#/definitions/ForgeItem"
+        },
+        "place": {
+          "type": "integer"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "onHold": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "item",
+        "place",
+        "reasons",
+        "onHold"
+      ],
+      "additionalProperties": false
+    },
     "ForgeNodeRequest": {
       "type": "object",
       "description": "forge/labels, forge/rerun and forge/diff (#3130): the issue or pull request.",
@@ -1126,7 +1212,7 @@
     },
     "ForgePlan": {
       "type": "object",
-      "description": "forge/plan (#3267): an epic and its plan. children are its sub-issues (at most 100), step by step, in the forge's order within a step. steps are the children of each step, the first first. lead is the session on this machine, not archived, that works on the epic in lineage (its label #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661): its children are then the open issues of its query, not its sub-issues, at most 100, in order (priority, then the oldest), all in one step 1; its item has no progress.",
+      "description": "forge/plan (#3267): an epic and its plan. children are its sub-issues (at most 100), step by step, in the forge's order within a step. steps are the children of each step, the first first. lead is the session on this machine, not archived, that works on the epic in lineage (its label #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661): its children are then the open issues of its query, not its sub-issues, at most 100, in the order of forge/next (#5689: not on hold first, then priority, the milestone's due date and the oldest), all in one step 1; its item has no progress.",
       "properties": {
         "item": {
           "$ref": "#/definitions/ForgeItem"
@@ -1587,7 +1673,7 @@
         },
         "label": {
           "type": "string",
-          "description": "alex-todo, needs-account or needs-approval."
+          "description": "alex-todo or needs-account on an issue; review-requested on a pull request with a review requested from the person (#5803), which is no label."
         },
         "checklist": {
           "type": "array",
@@ -1665,7 +1751,7 @@
     },
     "ReviewPull": {
       "type": "object",
-      "description": "An open pull request labelled needs-approval, a UI change waiting for the person (#2811), in the sidebar's For Review (#3330) until it is labelled approved or changes-wanted, is closed, or is dismissed.",
+      "description": "An open pull request with a review requested from the person (#5803), a UI change waiting for them (#2811), in the sidebar's For Review (#3330) until they review it, it is closed, or it is dismissed.",
       "properties": {
         "url": {
           "$ref": "core.schema.json#/definitions/URLString"

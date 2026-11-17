@@ -148,6 +148,60 @@ public extension DaemonAPI {
         }
     }
 
+    struct MessagesConversationsAllRequest: Codable, Sendable, Hashable {
+        public var unread: Bool?
+        public var limit: Int?
+        public var cursor: String?
+
+        public init(unread: Bool? = nil, limit: Int? = nil, cursor: String? = nil) {
+            self.unread = unread
+            self.limit = limit
+            self.cursor = cursor
+        }
+    }
+
+    struct MachineConversation: Codable, Sendable, Hashable {
+        public var machine: MachineRef
+        public var machineName: String
+        public var conversation: MessagesConversation
+
+        public init(machine: MachineRef, machineName: String, conversation: MessagesConversation) {
+            self.machine = machine
+            self.machineName = machineName
+            self.conversation = conversation
+        }
+    }
+
+    struct MachineMessagesError: Codable, Sendable, Hashable {
+        public var machine: MachineRef
+        public var machineName: String
+        public var error: MessagesError
+
+        public init(machine: MachineRef, machineName: String, error: MessagesError) {
+            self.machine = machine
+            self.machineName = machineName
+            self.error = error
+        }
+    }
+
+    /// messages/conversationsAll (#5571): a page of the caller's machines' conversations, the newest first.
+    struct MessagesConversationsAll: Codable, Sendable, Hashable {
+        public var conversations: [MachineConversation]
+        public var errors: [MachineMessagesError]
+        public var unreached: [UnreachedMachine]
+        public var notAsked: Int
+        public var cursor: String?
+
+        public init(conversations: [MachineConversation] = [], errors: [MachineMessagesError] = [],
+                    unreached: [UnreachedMachine] = [], notAsked: Int = 0, cursor: String? = nil) {
+            self.conversations = conversations
+            self.errors = errors
+            self.unreached = unreached
+            self.notAsked = notAsked
+            self.cursor = cursor
+        }
+    }
+
     struct MessagesReadRequest: Codable, Sendable, Hashable {
         public var server: String
         public var folder: String
@@ -262,6 +316,8 @@ public extension DaemonAPI.Method {
     /// `MessagesConversationsRequest` → `MessagesConversations`, `MessagesReadRequest` → `MessagesRead` (#4343),
     /// `MessagesReplyRequest` → `MessagesReplied` (#4345).
     static let messagesConversations = "messages/conversations"
+    /// `MessagesConversationsAllRequest` → `MessagesConversationsAll`: the control plane asks every machine once (#5571).
+    static let messagesConversationsAll = "messages/conversationsAll"
     static let messagesRead = "messages/read"
     static let messagesReply = "messages/reply"
     /// `MessagesMarkAllReadRequest` → `MessagesMarkedAllRead` (#5137).
@@ -289,6 +345,29 @@ public enum MessagesList {
             self.cursor = cursor
             self.errors = errors
             self.problem = problem
+        }
+    }
+
+    /// What a machine that did not answer messages/conversationsAll says (#5571).
+    public static let didNotAnswer = "It did not answer."
+
+    /// messages/conversationsAll's page (#5571) as one HostConversations for each machine it names, added to `into` (the
+    /// pages before), as the web page's `hostConversationsOf`. The page's cursor is the read's, not a machine's, so each
+    /// list's own is nil. `thisMac` is named "This Mac" and comes first, so its copy of a conversation is the one kept;
+    /// then the others by name.
+    public static func hostConversations(_ got: DaemonAPI.MessagesConversationsAll, into: [HostConversations] = [],
+                                         thisMac: MachineRef? = nil) -> [HostConversations] {
+        var by = Dictionary(into.map { ($0.host, $0) }, uniquingKeysWith: { a, _ in a })
+        func add(_ host: MachineRef, _ name: String, _ change: (inout HostConversations) -> Void) {
+            var list = by[host] ?? HostConversations(host: host, name: host == thisMac ? "This Mac" : name)
+            change(&list)
+            by[host] = list
+        }
+        for c in got.conversations { add(c.machine, c.machineName) { $0.conversations.append(c.conversation) } }
+        for e in got.errors { add(e.machine, e.machineName) { $0.errors.append(e.error) } }
+        for u in got.unreached { add(u.machine, u.machineName) { $0.problem = didNotAnswer } }
+        return by.values.sorted {
+            ($0.host == thisMac ? 0 : 1, $0.name, $0.host.rawValue) < ($1.host == thisMac ? 0 : 1, $1.name, $1.host.rawValue)
         }
     }
 

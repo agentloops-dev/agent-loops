@@ -64,6 +64,14 @@ func buildsDir(host string, r citimings.Repo) string {
 	return buildsPrefix + strings.ToLower(host) + "/" + r.Forge + "/" + r.Path + "/"
 }
 
+// now is Config.Now, or the wall clock.
+func (s *Service) now() time.Time {
+	if s.cfg.Now != nil {
+		return s.cfg.Now()
+	}
+	return time.Now()
+}
+
 // keepBuildsSync is builds/sync: each day sent in place of the machine's copy of it, or in
 // place of the whole copy with reset. Full says there is no copy to put them over.
 func (s *Service) keepBuildsSync(ctx context.Context, host string, sync wire.BuildsSync, now time.Time) (wire.BuildsSyncAnswer, error) {
@@ -300,7 +308,7 @@ func (m *Methods) buildsReadMethod(ctx context.Context, method string, params js
 
 // scopeBuilds is the copies of repo from the machines whose people the scope takes.
 func (s *Service) scopeBuilds(ctx context.Context, scope *wire.ReportScope, user string, repo citimings.Repo) (keptBuilds, error) {
-	_, keep, _, err := s.reportScope(ctx, scope, user, s.isAdmin(user))
+	_, keep, err := s.reportScope(ctx, scope, user, s.isAdmin(user))
 	if err != nil {
 		return keptBuilds{}, err
 	}

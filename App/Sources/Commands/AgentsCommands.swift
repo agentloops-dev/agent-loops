@@ -66,6 +66,9 @@ final class WindowRequests {
     /// The folder and host of the Bring back from ‹host›… sheet that is up (#1473), or nil.
     var bringBackFromHost: BringBackFromHostRequest?
 
+    /// The machine picker a menu item opened (#5621): Add Folder On…, Send to a Machine…, or nil.
+    var machinePicker: MachinePickerAsk?
+
     func focusPrompt() { wantsPromptFocus = true }
     func focusSessionSearch() { wantsSessionSearchFocus = true }
 }
@@ -126,6 +129,9 @@ struct AgentsCommands: Commands {
             Button("New Session in a Worktree") { newSession(inWorktree: true) }
                 .keyboardShortcut(MenuKeys.newWorktreeSession)
                 .disabled(keyFolder == nil || !model.draftWorktrees.canMakeNew)
+            Button(BackgroundStartScene.title) { openWindow(id: BackgroundStartScene.id) }
+                .keyboardShortcut(MenuKeys.newBackgroundSession)
+                .disabled(model.foldersInListOrder.isEmpty)
             Divider()
             Button("Add Folder…") { requests.folderSheet = .chooseFolder() }
                 .keyboardShortcut(MenuKeys.addFolder)
@@ -136,20 +142,7 @@ struct AgentsCommands: Commands {
                 .keyboardShortcut(MenuKeys.newApp)
                 .disabled(model.needsFirstRun || model.asksFirstBuild)
             // On a server (037).
-            if !model.hosts.servers.isEmpty {
-                Menu("Add Folder On") {
-                    ForEach(model.hosts.servers, id: \.self) { host in
-                        Button(model.hosts.label(host)) { requests.folderSheet = .chooseFolder(host) }
-                            .disabled(model.hostUnreachable(host))
-                    }
-                }
-                Menu("Clone Folder On") {
-                    ForEach(model.hosts.servers, id: \.self) { host in
-                        Button(model.hosts.label(host)) { requests.folderSheet = .clone(host) }
-                            .disabled(model.hostUnreachable(host))
-                    }
-                }
-            }
+            FolderOnMenus(model: model, requests: requests)
             // As the Machines header's `+` (#3973): the sheet, on the default provider (#4634).
             Button("New Machine…") { model.newMachine() }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
@@ -169,7 +162,7 @@ struct AgentsCommands: Commands {
         }
 
         // A Markdown page's text (#1419), as Safari and Preview have it. ⌘0 is Actual
-        // Size while a page is in front, and View ▸ Multiplier otherwise (#3986).
+        // Size while a page is in front, and View ▸ Achievements otherwise (#3986).
         CommandGroup(after: .toolbar) {
             Button("Actual Size") { pageZoom?.actualSize() }
                 .keyboardShortcut(pageZoom == nil ? nil : KeyboardShortcut("0"))
@@ -210,8 +203,14 @@ struct AgentsCommands: Commands {
                 .keyboardShortcut(MenuKeys.runtimes)
             // The person's own, in Settings ▸ You (#3998).
             Button("Connectors") { model.settingsPaneAsked = .connectors; openSettings() }
-            Button("Secrets") { model.settingsPaneAsked = .secrets; openSettings() }
+            // Status ▸ Secrets, a page of its own (#5257).
+            Button("Secrets") { model.showSecrets() }
                 .disabled(ControlConfig.endpoint == nil)
+            // Status ▸ Accounts, a page of its own (#5258).
+            Button("Accounts") { model.showAccounts() }
+                .disabled(ControlConfig.endpoint == nil)
+            // The page the window opens to (#5696).
+            Button("Dashboard") { model.showDashboard() }
             // A list each, as the sidebar's Work group (#4004).
             Menu("Work") {
                 ForEach(WorkList.Kind.allCases) { kind in
@@ -220,9 +219,9 @@ struct AgentsCommands: Commands {
             }
             Button("Docs") { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
             Button(MessagesList.title) { model.sidebarItem = .messages }
-            // The page the window opens to (#3986). ⌘1…n are the inspector panes, so ⌘0 is
-            // next to them; Actual Size keeps it while a Markdown page is in front.
-            Button("Multiplier") { model.showMultiplier() }
+            // ⌘1…n are the inspector panes, so ⌘0 is next to them (#3986); Actual Size keeps it
+            // while a Markdown page is in front.
+            Button("Achievements") { model.showAchievements() }
                 .keyboardShortcut(pageZoom == nil ? KeyboardShortcut("0") : nil)
             Button("Cost") { model.showsSpending = true }
                 .keyboardShortcut(MenuKeys.cost)
@@ -301,6 +300,12 @@ struct AgentsCommands: Commands {
             Button(MuteWords.label(muted: muted)) { act { await model.setMuted($0.id, !muted) } }
                 .help(MuteWords.help(muted: muted))
                 .disabled(agent.map { !model.canMute($0) } ?? true)
+            // High, Medium, Low or From issue (#5849), as the row's menu has it.
+            if let agent, agent.state != .archived {
+                SessionPriorityMenu(agent: agent) { priority in
+                    Task { await model.setPriority(agent.id, priority) }
+                }
+            }
             // The person's title (#751), edited in the key window's toolbar.
             Button("Rename…") { rename() }
             .disabled(agent == nil || agent?.state == .archived)
@@ -363,6 +368,14 @@ struct AgentsCommands: Commands {
             Button("Open File…") { requests.showsFileSearch = true }
                 .keyboardShortcut(MenuKeys.openFile)
                 .disabled(model.selectedAgent == nil)
+            Divider()
+            // Along every page the window showed (#5784), as the toolbar's ‹ ›.
+            Button("Back") { model.goBack() }
+                .keyboardShortcut(MenuKeys.back)
+                .disabled(!model.canGoBack)
+            Button("Forward") { model.goForward() }
+                .keyboardShortcut(MenuKeys.forward)
+                .disabled(!model.canGoForward)
             Divider()
             // ⌥⌘↓ and ⌥⌘↑ go through the list in front: a Work page's list while one opened
             // from it is shown (#3257), else the folder's sessions. One item per key, so the
@@ -444,7 +457,7 @@ struct AgentsCommands: Commands {
     }
 
     /// In the key window: a folder's own window opens its new session (#1513), as its
-    /// New Session row does; the main window composes in its selected folder.
+    /// New Session button does; the main window composes in its selected folder.
     private func newSession(inWorktree: Bool = false) {
         if let folderWindow {
             folderWindow.pick = .folder(folderWindow.key)
@@ -552,6 +565,8 @@ struct AgentsCommands: Commands {
         add("New Session", MenuKeys.newSession, when: folder != nil) { newSession() }
         add("New Session in a Worktree", MenuKeys.newWorktreeSession,
             when: folder != nil && model.draftWorktrees.canMakeNew) { newSession(inWorktree: true) }
+        add(BackgroundStartScene.title, MenuKeys.newBackgroundSession, keywords: ["start", "window"],
+            when: !model.foldersInListOrder.isEmpty) { openWindow(id: BackgroundStartScene.id) }
         for summary in foldersInListOrder where summary.key != folder?.key {
             add("New Session in \(summary.name)", keywords: ["start"]) {
                 model.showFolder(summary.key)
@@ -604,7 +619,7 @@ struct AgentsCommands: Commands {
         for kind in WorkList.Kind.allCases {
             add("Work: \(kind.title)") { model.sidebarItem = .work(kind) }
         }
-        add("Multiplier") { model.showMultiplier() }
+        add("Achievements") { model.showAchievements() }
         add("Cost", MenuKeys.cost) { model.showsSpending = true }
         add("Docs") { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
         add("Settings…", KeyboardShortcut(","), keywords: ["preferences"]) { openSettings() }

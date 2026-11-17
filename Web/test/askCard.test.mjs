@@ -4,9 +4,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { appCss } from "./appCss.mjs";
 
 const read = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
-const css = read("app.css");
+const css = appCss();
 
 test("every ask to the person is drawn as an Ask", () => {
   for (const file of ["views/Cards.tsx", "views/GuardedChange.tsx", "views/ArchiveCard.tsx", "views/DesktopControlPauseCard.tsx",
@@ -29,7 +30,9 @@ test("the sandbox, policy and view asks are under Waiting for you, not in the tr
 });
 
 test("an Ask's edge and the label are yellow, and never filled", () => {
-  assert.match(css, /\.card\.ask \{[^}]*border-left: 3px solid var\(--tint-attention\)/);
+  // The edge follows the corners (#5669): an inset shadow, not a border-left.
+  assert.match(css, /\.card\.ask \{[^}]*box-shadow: inset 3px 0 0 var\(--tint-attention\)/);
+  assert.doesNotMatch(css.match(/\.card\.ask \{[^}]*\}/)[0], /border-left/);
   assert.match(css, /\.waiting-label \{[^}]*color: var\(--tint-attention\)/);
   assert.doesNotMatch(css.match(/\.card\.ask \{[^}]*\}/)[0], /background/);
 });

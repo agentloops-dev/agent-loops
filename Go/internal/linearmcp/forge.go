@@ -28,6 +28,8 @@ type Item struct {
 	Identifier, Team string
 	// State is open or closed.
 	State, Title, URL, Author, Milestone, UpdatedAt string
+	// MilestoneDue is the milestone's target date, "" for none; Priority is high, medium or low, "" for none (#5688).
+	MilestoneDue, Priority string
 	// CreatedAt is when it was made; ClosedAt when it was completed or canceled, "" while open
 	// (#4373).
 	CreatedAt, ClosedAt string
@@ -99,7 +101,7 @@ type Child struct {
 // forgeComments is a page of an issue's comments.
 const forgeComments = 50
 
-const forgeFields = `identifier title url createdAt completedAt canceledAt updatedAt team { key } state { type name } projectMilestone { name }
+const forgeFields = `identifier title url createdAt completedAt canceledAt updatedAt team { key } state { type name } priority projectMilestone { name targetDate }
   labels { nodes { name color } } assignee { displayName } creator { displayName avatarUrl } botActor { name avatarUrl }
   commentCount: comments(first: 50) { nodes { id } } parent { identifier }`
 
@@ -141,8 +143,10 @@ type forgeNode struct {
 		Type string `json:"type"`
 		Name string `json:"name"`
 	} `json:"state"`
+	Priority         int `json:"priority"`
 	ProjectMilestone *struct {
-		Name string `json:"name"`
+		Name       string `json:"name"`
+		TargetDate string `json:"targetDate"`
 	} `json:"projectMilestone"`
 	Labels struct {
 		Nodes []struct {
@@ -180,8 +184,17 @@ func (n forgeNode) item() Item {
 		i.State, i.StateReason = "closed", stateReasonOf(n.State.Type, n.State.Name)
 		i.ClosedAt = cmp.Or(n.CompletedAt, n.CanceledAt)
 	}
+	// 1 is Urgent and 2 High, 3 Medium and 4 Low; 0 is none (#5688).
+	switch n.Priority {
+	case 1, 2:
+		i.Priority = "high"
+	case 3:
+		i.Priority = "medium"
+	case 4:
+		i.Priority = "low"
+	}
 	if n.ProjectMilestone != nil {
-		i.Milestone = n.ProjectMilestone.Name
+		i.Milestone, i.MilestoneDue = n.ProjectMilestone.Name, n.ProjectMilestone.TargetDate
 	}
 	for _, l := range n.Labels.Nodes {
 		i.Labels = append(i.Labels, l.Name)

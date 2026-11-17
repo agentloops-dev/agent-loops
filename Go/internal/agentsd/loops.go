@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 )
 
 // loopBook is the loops that run on a timer for as long as the host does: the merged pull
@@ -32,7 +31,7 @@ func (d *Daemon) goLoop(name string, loop func(ctx context.Context)) {
 	}
 	d.loopRunning.Add(1)
 	ctx := d.loopCtx
-	safe.Go(name, func() { defer d.loopRunning.Done(); loop(ctx) })
+	d.goJob(name, func() { defer d.loopRunning.Done(); loop(ctx) })
 }
 
 // stopLoops ends every loop goLoop started and waits for each to return.

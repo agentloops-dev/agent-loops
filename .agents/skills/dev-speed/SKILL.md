@@ -24,7 +24,7 @@ to `ci-speed`; do not change `ci.yml` here.
 - **Never touch the folder you start in.** It is the shared checkout of `main`. Make
   edits in a worktree of your own (step 4).
 - **Never weaken a check.** No skipping or deleting tests, no dropping a lint, a scheme
-  or `scripts/go-changed.sh` before a push, no `continue-on-error`. Making a check do
+  or `scripts/nx.sh affected` before a push, no `continue-on-error`. Making a check do
   the same work in less time (a cache, a filter by changed paths, running in parallel)
   is in scope.
 - **A rule Alex made is Alex's.** A rule in `AGENTS.md` or a persona that names Alex and
@@ -117,12 +117,12 @@ title and id), then read the session: `read_session` with its id, or the transcr
 
 Look first for these causes, in this order. Each names the place a fix goes.
 
-1. **Work that need not run.** A full `scripts/lint.sh`, `go-changed.sh` or
-   `swift test` run where the branch changed one file; the same check run before and
-   after the commit with nothing changed between; a whole package's tests where
-   `scripts/select-test-suites.sh` gives a filter; an `xcodebuild` for a scheme the
-   branch does not touch. The fix goes in the script (skip what the diff does not
-   touch) or in the skill or persona that runs it.
+1. **Work that need not run.** A full `scripts/lint.sh` or `swift test` run where the
+   branch changed one file; the same check run before and after the commit with nothing
+   changed between (an Nx task with no cache hit at the same inputs); a whole package's
+   tests, or an `xcodebuild` for a scheme the branch does not touch, run by hand rather
+   than by `scripts/nx.sh affected`. The fix goes in the task's inputs (its
+   `project.json`), in the script, or in the skill or persona that runs it.
 2. **Cold caches.** The p90 far above the median for a build or test (`xcodebuild`
    34 s median, 6 m p90) is usually a cold cache: a build not through
    `scripts/build-cache.sh`, a `-derivedDataPath` per worktree, a Go or npm cache
@@ -170,8 +170,8 @@ Before you file an issue, look for an open one on the same cause
 (`gh issue list --search "<script or tool> in:title,body" --state open`) and add a
 comment with the new numbers instead. A filed issue gets `task` (or `bug` for a
 script that is wrong), one `size:` label from the rubric in
-`.agents/personas/product-owner.md`, and the `feature:` label that fits
-(`feature:capacity` for leases and lanes, `feature:performance` for builds and tests).
+`.agents/personas/product-owner.md`, a priority (AGENTS.md, "Set a priority when you file", #5692) (most have
+none), and the `feature:` label that fits (`feature:capacity` for leases and lanes, `feature:performance` for builds and tests).
 Its body says the measured cost, the cause with one or two example commands, the fix
 and the expected saving.
 

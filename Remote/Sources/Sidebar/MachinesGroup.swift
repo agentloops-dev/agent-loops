@@ -1,46 +1,29 @@
 import AgentsKitCore
 import SwiftUI
 
-/// New Machine, the Machines group's last row (#4034), as the window's header `+` (#3973): a
-/// tap opens New Machine's sheet on the default provider (#4634); a long press offers New
-/// Machine on ▸ when there are two or more providers (#3979). A row rather than a `+` in
-/// the header, which iOS makes one button that folds the group. Adding a provider needs its
-/// token, so that stays on the Mac and the web page: with none, there is no row.
-struct NewMachineRow: View {
+/// New Machine's items in the sidebar's + (#5447; was the Machines group's last row, #4034): New
+/// Machine opens its sheet on the default provider (#4634), with the options used last; New
+/// Machine on ▸ picks another when there are two or more providers (#3979). Adding a provider
+/// needs its token, so that stays on the Mac and the web page: with none, there are no items.
+struct NewMachineItems: View {
     @Environment(RemoteModel.self) private var model
 
     var body: some View {
         let providers = model.machineProviders
-        Group {
-            if let chosen = providers.first(where: { $0.default == true }) ?? providers.first {
-                Button { model.newMachine() } label: {
-                    HStack(spacing: 8) {
-                        Image(icon: "plus")
-                            .sidebarMark(Paper.accent)
-                            .frame(width: 20)
-                            .accessibilityHidden(true)
-                        Text("New Machine")
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .appText(.supporting)
-                .accessibilityHint("Opens New Machine on \(chosen.name), with the options used last")
-                .contextMenu {
-                    Button("New Machine (\(chosen.name))…", icon: "plus") { model.newMachine() }
-                    if providers.count > 1 {
-                        Menu("New Machine on") {
-                            ForEach(providers) { provider in
-                                if provider.id == chosen.id {
-                                    Button(provider.name, icon: "checkmark") { model.newMachine(on: provider.id) }
-                                } else {
-                                    Button(provider.name) { model.newMachine(on: provider.id) }
-                                }
-                            }
+        if let chosen = providers.first(where: { $0.default == true }) ?? providers.first {
+            if providers.count > 1 {
+                Button("New Machine (\(chosen.name))…", icon: "plus") { model.newMachine() }
+                Menu("New Machine on") {
+                    ForEach(providers) { provider in
+                        if provider.id == chosen.id {
+                            Button(provider.name, icon: "checkmark") { model.newMachine(on: provider.id) }
+                        } else {
+                            Button(provider.name) { model.newMachine(on: provider.id) }
                         }
                     }
                 }
+            } else {
+                Button("New Machine…", icon: "plus") { model.newMachine() }
             }
         }
     }
@@ -60,6 +43,8 @@ struct RemoteMachineRow: View {
     @State private var removing = false
     /// Stop, asked first while agents work there, with who they are.
     @State private var stoppingNames: [String] = []
+    /// The machines pinned to the sidebar's group (#5286).
+    @AppStorage(MachinePins.key) private var machinePins = ""
 
     var body: some View {
         let name = model.machineName(host)
@@ -104,6 +89,13 @@ struct RemoteMachineRow: View {
         }
         .contextMenu {
             Button("Open", icon: "arrow.up.forward.app") { model.sidebarItem = .machine(host) }
+            // Pinned: after This Mac in the group, also past seven machines (#5286).
+            if host != .mac {
+                let pinned = MachinePins.pinned(machinePins).contains(host)
+                Button(MachinePins.menuTitle(pinned: pinned), icon: pinned ? "pin.slash" : "pin") {
+                    machinePins = MachinePins.toggled(host, in: machinePins)
+                }
+            }
             if actions.start {
                 Button("Start", icon: "play") { Task { await model.startHost(host) } }
             } else if actions.stop {

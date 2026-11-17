@@ -23,6 +23,7 @@ import { ProjectModal } from "./ProjectPicker";
 import { ProjectAgentConfigModal } from "./AgentConfigEditor";
 import { addFolderOn, hostLabel } from "./NewFolder";
 import { ask } from "./MessageKinds";
+import { MachinePicker } from "./MachinePicker";
 
 type Props = { store: Store; host: string; folder: string; summary: FolderSummary; down: boolean; close: () => void };
 
@@ -117,14 +118,9 @@ export function ProjectSettingsModal({ store, host, folder, summary, down, close
         </ul>
         {otherMachines.length > 0 && (
           <label class="sheet-note">{projectSettingsWords.addOnAnotherMachine}{" "}
-            <select aria-label={projectSettingsWords.addOnAnotherMachine} value=""
-              onChange={(e) => {
-                const machine = (e.currentTarget as HTMLSelectElement).value;
-                if (machine) { close(); addFolderOn(machine); }
-              }}>
-              <option value="">Choose a machine</option>
-              {otherMachines.map((h) => <option key={h.id} value={h.id}>{machineName(store, h.id)}</option>)}
-            </select>
+            <MachinePicker store={store} label={projectSettingsWords.addOnAnotherMachine} value={null}
+              skip={(h) => !otherMachines.some((o) => o.id === h.id)}
+              onPick={(machine) => { if (machine) { close(); addFolderOn(machine); } }} />
           </label>
         )}
         {summary.project === undefined && <p class="sheet-note">{projectSettingsWords.noControlPlane}</p>}

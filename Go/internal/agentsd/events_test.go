@@ -39,6 +39,8 @@ func names(d *Daemon) []string {
 }
 
 func TestEventsAreKeptAndReadBack(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, c := start(t, root)
 	dir := t.TempDir()
@@ -111,6 +113,8 @@ func TestEventsAreKeptAndReadBack(t *testing.T) {
 }
 
 func TestOldEventsGo(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.raise(wire.EventDraft{Name: "server.online", At: wire.DateOf(time.Now().Add(-8 * 24 * time.Hour)), Scope: macScope(), Sentence: "old"})
@@ -124,6 +128,8 @@ func TestOldEventsGo(t *testing.T) {
 }
 
 func TestRaisingByHandAndAServersChange(t *testing.T) {
+	t.Parallel()
+
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	draft := map[string]any{"name": "branch.moved", "at": now(), "scope": map[string]any{"mac": map[string]any{}},
@@ -153,6 +159,8 @@ func TestRaisingByHandAndAServersChange(t *testing.T) {
 }
 
 func TestAnAgentsLifeIsOnTheLog(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -188,6 +196,8 @@ func TestAnAgentsLifeIsOnTheLog(t *testing.T) {
 }
 
 func TestEndingsSayStoppedOrFailed(t *testing.T) {
+	t.Parallel()
+
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
@@ -205,6 +215,8 @@ func TestEndingsSayStoppedOrFailed(t *testing.T) {
 }
 
 func TestADiskCrossingIsSaidOnce(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	d, _ := start(t, root)
 	// As low as can be: every disk is under a line of everything it holds.

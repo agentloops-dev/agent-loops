@@ -21,13 +21,13 @@ import { doneWords, forgeName, openOnWords, shortRef } from "../model/work";
 import { estimateRangeWords } from "../model/estimate";
 import {
   addChildRequest, blockedByRequest, blockerChoices, childLevels, estimateWords, leadWords, lineWords, markWords, moreWords, namesIssue,
-  phoneWords, planBar, planCostWords, planMark, planPR, planSessions, priorityLabel, progressWords, queryRestWords, standingShown,
+  phoneWords, planBar, planCostWords, planMark, planPR, planSessions, progressWords, queryRestWords, standingShown,
   standingWords, startsFolded, stepTitle, stepWords, type PlanMark,
 } from "../model/epicPlan";
 import { isMenuKey, openContextMenu, type MenuItem } from "./ContextMenu";
 import { go, routeHash } from "../route";
 import { ForgeTitle } from "../render/ForgeTitle";
-import { ErrorStrip, LabelChip, PlaceholderRows, StateIcon } from "./WorkParts";
+import { ErrorStrip, LabelChip, PlaceholderRows, PriorityChip, StateIcon } from "./WorkParts";
 import { Icon, type IconName } from "./Icon";
 
 const holdsRuntime = (s: AgentState) => s === "starting" || s === "running" || s === "waitingOnUser";
@@ -183,7 +183,6 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
     const cost = planCostWords(rollup);
     const est = c.item.state === "open" ? estimates.find((e) => e.node.ref === c.item.node.ref) : undefined;
     const estWords = est ? estimateWords(est) : undefined;
-    const priority = pl.standing ? priorityLabel(c.item) : undefined;
     const ref = shortRef(c.item.node.ref);
     const levelLabel = c.item.level ? c.item.labels.find((x) => x.name.toLowerCase() === c.item.level) ?? { name: c.item.level } : undefined;
     const items = () => menu(c, pl);
@@ -213,7 +212,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
                 </span>
               </>}
               <span class="work-plan-end">
-                {priority && <LabelChip label={priority} />}
+                <PriorityChip priority={c.item.priority} />
                 {cost ? <span class="quiet work-plan-cost">{cost}</span>
                   : estWords && est && <span class="work-plan-cost work-plan-estimate" title={estimateRangeWords(est)}>{estWords}</span>}
               </span>

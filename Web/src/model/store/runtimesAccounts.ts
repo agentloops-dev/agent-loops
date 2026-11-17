@@ -1,7 +1,7 @@
 // Part of the Store (#5384): runtimesAccounts.
 import { folderPath as hostedFolderPath, healthTally, personalServers } from "../hostedMCP";
 import { batch } from "@preact/signals";
-import type { HelperLimits, DiskThresholds, NotCommittedResponse, AccountProfile, RuntimeAccount, RuntimeSignInStep, RuntimeStatus, UUID, AutoPreview, AutoPreviewRequest, AutoSettings, ClientPermissionMode, Levels, ModelLevel, PermissionLevel, DirectoryListing, MCPHealthSnapshot, MCPToolsAnswer, ConnectorToolLevel, WorkflowHours, ClientPermissionSettings, PRCostComment, Connection } from "../../protocol/generated";
+import type { HelperLimits, DiskThresholds, NotCommittedResponse, AccountProfile, RuntimeAccount, RuntimeSignInStep, RuntimeStatus, UUID, AutoMachinePick, AutoPreview, AutoPreviewRequest, AutoSettings, ClientPermissionMode, Levels, ModelLevel, PermissionLevel, DirectoryListing, MCPHealthSnapshot, MCPToolsAnswer, ConnectorToolLevel, WorkflowHours, ClientPermissionSettings, PRCostComment, Connection } from "../../protocol/generated";
 import { endedConnections, endedLine, hasEnded } from "../connectorSetup";
 import { describe } from "../errors";
 import { freeProjectName } from "../projectSettings";
@@ -55,24 +55,34 @@ export const runtimesAccountsMethods = {
   browse(this: Store, host: string, path: string): Promise<DirectoryListing> {
     return this.link.call("files/browse", { path }, host);
   },
-  /** What runs on a host, and what each runtime takes; asked once a connection. */
-  async loadRuntimes(this: Store, host: string): Promise<void> {
+  /**
+   * What runs on a host, and what each runtime takes (#5291). Every host gets the lists that
+   * pages across machines read (runtimes, allowances, policy, pass-through); only a host a
+   * page shows also gets its own settings (accounts, remembered modes, sandbox, profiles, the
+   * Mac's permissions) and the reads of its own pages (`loadHostExtras`). `detail` is false
+   * for a host no page shows: a refresh makes 4 calls there, not 9 and 4 more.
+   */
+  async loadRuntimes(this: Store, host: string, detail = true): Promise<void> {
     const macHost = this.macHostID.peek();
     // Auto's cells, for the pills' words on every runtime (#2658): the Mac's host keeps them.
     if (!this.autoMappings.peek()[macHost]) void this.loadAuto(macHost);
+    if (detail && !this.detailed.has(host)) {
+      this.detailed.add(host);
+      this.loadHostExtras(host);
+    }
     const [runtimes, accounts, modes, sandbox, allowances, profiles, policy, passThrough, permissions] = await Promise.all([
       this.link.call("runtimes/list", {}, host).catch(() => null),
-      this.link.call("runtimes/accounts", {}, host).catch(() => null),
-      this.link.call("modes/remembered", {}, host).catch(() => null),
+      detail ? this.link.call("runtimes/accounts", {}, host).catch(() => null) : null,
+      detail ? this.link.call("modes/remembered", {}, host).catch(() => null) : null,
       // A host on an older build is not asked by the page: every runtime then follows its own.
-      this.link.call("sandbox/state", {}, host).catch(() => null),
+      detail ? this.link.call("sandbox/state", {}, host).catch(() => null) : null,
       this.link.call("runtimes/allowances", null, host).catch(() => null),
       // A host on an older build has no added accounts (#840).
-      this.link.call("runtimes/accountProfiles", {}, host).catch(() => null),
+      detail ? this.link.call("runtimes/accountProfiles", {}, host).catch(() => null) : null,
       // A host on an older build follows no policy (#998).
       this.link.call("daemon/policyState", {}, host).catch(() => null),
       this.link.call("settings/passThrough", {}, host).catch(() => null),
-      this.clientPermissions.value[macHost] ? Promise.resolve(null)
+      !detail || this.clientPermissions.value[macHost] ? null
         : this.link.call("clientPermissions/state", {}, macHost).catch(() => null),
     ]);
     batch(() => {
@@ -132,6 +142,11 @@ export const runtimesAccountsMethods = {
       this.say(describe(error));
     }
   },
+  /** Which machine Auto would pick for a project and runtime, or why none fits (#5375); null from a control plane that does not know it. */
+  async previewAutoMachine(this: Store, project: string, runtimeID: string): Promise<AutoMachinePick | null> {
+    if (!this.planeHas("auto-machine/1")) return null;
+    return this.link.call("sessions/previewStart", { project, runtimeID }).catch(() => null);
+  },
   /** What Auto would pick now for a folder and values, or null. */
   async autoPreview(this: Store, host: string, request: AutoPreviewRequest): Promise<AutoPreview | null> {
     return this.link.call("auto/preview", request, host).catch(() => null);
@@ -190,8 +205,12 @@ export const runtimesAccountsMethods = {
   /** Each host's connections, and, on a host where one ended, the stored set-up of each project's Connectors folder there
    * (#3407): a slot stops working when its connection ends. A stored set-up is the host's last reading, so no provider is asked. */
   async refreshEndedConnections(this: Store, places: readonly { host: string; folder: string }[]): Promise<void> {
-    const hosts = [...new Set(places.map((p) => p.host))].filter((h) => this.hostIsOnline(h));
-    await Promise.all(hosts.map((h) => this.loadConnections(h)));
+    const hosts = new Set([...new Set(places.map((p) => p.host))].filter((h) => this.hostIsOnline(h) && this.has(h, Capability.connections1)));
+    // Every machine's connections in one call to the control plane (#5592); a machine that did not answer keeps what it had.
+    if (hosts.size > 0) {
+      const all = await this.link.call("connections/listAll", {}).catch(() => null);
+      for (const { machine, connections } of all?.lists ?? []) if (hosts.has(machine)) this.knowConnections(machine, connections.connections);
+    }
     const next: Record<string, Connection> = {};
     for (const { host, folder } of places) {
       if ((this.endedConnections.value[host] ?? []).length === 0 || !this.has(host, Capability.connectorsSetup1)) continue;
@@ -232,6 +251,36 @@ export const runtimesAccountsMethods = {
       .then(() => undefined, (error: unknown) => describe(error));
     if (why === undefined) await this.checkMCPHealth(host, folder);
     return why;
+  },
+  /**
+   * Approve a folder's connector that waits (#5717), on the folder's own host, as the window's
+   * Approve: the entry that host reads now, by its digest. Undefined when done, else the refusal's words.
+   */
+  async approveConnector(this: Store, host: string, name: string, folder: string): Promise<string | undefined> {
+    const destination = { kind: "folder", folder: hostedFolderPath(folder) } as never;
+    const why = await this.link.call("mcp/list", { destination }, host)
+      .then(async (list) => {
+        const row = list.servers.find((s) => s.name === name);
+        const approval = row?.approval;
+        if (approval === undefined || !("waiting" in approval)) return undefined;
+        await this.link.call("mcp/approve", { destination, name, digest: approval.waiting.digest }, host);
+        return undefined;
+      }, (error: unknown) => describe(error))
+      .catch((error: unknown) => describe(error));
+    if (why === undefined) await this.checkMCPHealth(host, folder);
+    return why;
+  },
+  /**
+   * The folder's connectors that this host approved from the person's approval on another of their
+   * machines (#5462, #5813): each one's name and its words ("Approved by you on Studio, 2026-11-14").
+   * Empty when the host does not answer: the row then says nothing more.
+   */
+  async connectorsApprovedFrom(this: Store, host: string, folder: string): Promise<Record<string, string>> {
+    const destination = { kind: "folder", folder: hostedFolderPath(folder) } as never;
+    const list = await this.link.call("mcp/list", { destination }, host).catch(() => null);
+    const out: Record<string, string> = {};
+    for (const s of list?.servers ?? []) if (s.approvedFrom) out[s.name] = s.approvedFrom;
+    return out;
   },
   /** A connector's tools with Allow, Ask or Off for each (#4099); its refusal's words when the host refuses. */
   async connectorTools(this: Store, host: string, name: string, folder?: string): Promise<MCPToolsAnswer | string> {

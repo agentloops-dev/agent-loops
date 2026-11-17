@@ -8,6 +8,8 @@ import (
 )
 
 func TestVersionLine(t *testing.T) {
+	t.Parallel()
+
 	for out, want := range map[string]string{
 		"2.1.318 (Claude Code)\n":                                                 "2.1.318",
 		"grok 1.0.67 (2fe064390d07) [stable]":                                     "1.0.67",
@@ -24,6 +26,8 @@ func TestVersionLine(t *testing.T) {
 }
 
 func TestToolsetVersion(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	for id, manifest := range map[string]string{
 		"codex":    `{"runtimeID":"codex","node":{"version":"v24.21.0"},"package":"@agentclientprotocol/codex-acp","packageVersion":"2.5.0"}`,
@@ -52,9 +56,7 @@ func TestToolsetVersion(t *testing.T) {
 // there changes.
 func TestCachedVersionAsksOncePerFile(t *testing.T) {
 	asked := 0
-	old := runtimeVersion
-	runtimeVersion = func(string) string { asked++; return "1.0." + string(rune('0'+asked)) }
-	t.Cleanup(func() { runtimeVersion = old })
+	setFor(t, &runtimeVersion, func(string) string { asked++; return "1.0." + string(rune('0'+asked)) })
 
 	path := filepath.Join(t.TempDir(), "grok")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {

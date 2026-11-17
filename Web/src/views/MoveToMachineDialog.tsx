@@ -9,6 +9,7 @@ import type { Store } from "../model/store";
 import { folderHelp, moveTargets, noTargets, whatGoes } from "../model/moveToMachine";
 import { canStop } from "../model/tree";
 import { go, route } from "../route";
+import { MachinePicker } from "./MachinePicker";
 import { Modal } from "./Modal";
 
 const moving = signal<{ host: string; agent: Agent } | null>(null);
@@ -52,10 +53,8 @@ function MoveToMachine({ store, host, agent, close }: { store: Store; host: stri
         {targets.length === 0 ? <p class="sheet-note">{noTargets}</p> : (
           <>
             <label>Machine
-              <select value={machine.value} disabled={busy.value}
-                onChange={(e) => (machine.value = (e.currentTarget as HTMLSelectElement).value)}>
-                {targets.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-              </select>
+              <MachinePicker store={store} label="Machine" value={machine.value || null} disabled={busy.value}
+                skip={(h) => !targets.some((t) => t.id === h.id)} onPick={(id) => (machine.value = id ?? "")} />
             </label>
             <label>Folder there
               <input type="text" value={folder.value} placeholder="The project’s folder there" disabled={busy.value}

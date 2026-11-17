@@ -63,6 +63,14 @@ struct MachineRowActionsTests {
         #expect(gone.deleteMessage == "Do deletes machine-2. Nothing was installed on it, so there is nothing to back up.")
     }
 
+    /// A machine a warm pool holds has no row (#5366): nobody owns it until a claim.
+    @Test func aPoolsMachineHasNoRow() {
+        let pooled = DaemonAPI.MachineInfo(id: "dev-large-f00196", name: "dev-large-f00196", state: "running")
+        let mine = DaemonAPI.MachineInfo(id: "ws-1", name: "machine-1", state: "starting", joining: true)
+        let rows = MachineMaking.rows([provider("do", [pooled, mine])], hostNames: [], pools: ["Dev large"])
+        #expect(rows.map(\.name) == ["machine-1"])
+    }
+
     /// Every machine the person has shows, also one Agents did not make (#4978): grey and *Not
     /// joined*, after the ones being made, and a click joins it; a failed make is no machine.
     @Test func aMachineAgentsDidNotMakeShowsNotJoined() throws {

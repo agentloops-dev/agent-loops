@@ -1417,5 +1417,176 @@
       { "reading": { "volume": "Macintosh HD", "mount": "/", "freeBytes": 9000000000, "totalBytes": 500000000000 },
         "level": "low", "threshold": 20000000000, "worktrees": [] }
     ]
+  },
+  "AgentsChange": {"number": 5250, "title": "toolsets: bump codex-acp", "sha": "8162a5a06", "date": 812345678.5},
+  "AgentsChanges": {"base": "0.18.0", "head": "0.18.1-dev.544+g8162a5a06", "ahead": 544, "behind": 0,
+    "changes": [{"number": 5250, "title": "toolsets: bump codex-acp", "sha": "8162a5a06", "date": 812345678.5}], "complete": false},
+  "AgentsChangesRequest": {"base": "0.18.0", "head": "0.18.1-dev.544+g8162a5a06", "limit": 6},
+  "MachineAgents": {"host": "host", "version": "0.18.1-dev.544+g8162a5a06", "since": 812345678.5, "previous": "0.18.0",
+    "changes": {"base": "0.18.0", "head": "0.18.1-dev.544+g8162a5a06", "ahead": 544, "behind": 0,
+      "changes": [{"number": 5250, "title": "toolsets: bump codex-acp", "sha": "8162a5a06"}], "complete": false},
+    "changesError": "changesError", "history": [{"version": "0.18.0", "since": 812345678.5}],
+    "others": [{"host": "other", "name": "linux-server", "version": "0.18.0", "since": 812345678.5, "ahead": 0, "behind": 544}]},
+  "AutoMachineRequest": {
+    "project": "p-1",
+    "runtimeID": "claude"
+  },
+  "AutoMachinePick": {
+    "machine": "mini",
+    "machineName": "Mac mini",
+    "tier": "ok",
+    "reason": "leastLoaded",
+    "loadPerCore": 0.4,
+    "commit": "abc1234",
+    "text": "Auto chose Mac mini: least busy, load 0.4 per core.",
+    "none": "offline",
+    "offline": ["devbox"],
+    "single": false
+  },
+  "WarmPool": {
+    "id": "id",
+    "name": "dev-large",
+    "scope": "user",
+    "provider": "do",
+    "size": "s-8vcpu-16gb",
+    "region": "fra1",
+    "runtimes": [
+      "claude"
+    ],
+    "projects": [
+      "/Users/me/Agents"
+    ],
+    "minReady": 2,
+    "maxSize": 4,
+    "target": 2,
+    "replaceAfter": 86400.5,
+    "hours": {
+      "days": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "from": "08:00",
+      "to": "19:00",
+      "timezone": "America/Los_Angeles"
+    },
+    "state": "off-hours",
+    "ready": 2,
+    "settingUp": 1,
+    "failedMakes": 1,
+    "stoppedBecause": "refused",
+    "machines": [
+      {
+        "name": "pool-a",
+        "state": "setting-up",
+        "madeAt": 812345678.5,
+        "detail": "installing Claude"
+      }
+    ],
+    "claims": {
+      "count": 41,
+      "empty": 3,
+      "medianSeconds": 22.5
+    }
+  },
+  "WarmPools": {
+    "pools": [
+      {
+        "id": "id",
+        "name": "dev-large",
+        "scope": "user",
+        "provider": "do",
+        "size": "s-8vcpu-16gb",
+        "region": "fra1",
+        "runtimes": [
+          "claude"
+        ],
+        "projects": [
+          "/Users/me/Agents"
+        ],
+        "minReady": 2,
+        "maxSize": 4,
+        "target": 2,
+        "replaceAfter": 86400.5,
+        "hours": {
+          "days": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "from": "08:00",
+          "to": "19:00",
+          "timezone": "America/Los_Angeles"
+        },
+        "state": "off-hours",
+        "ready": 2,
+        "settingUp": 1,
+        "failedMakes": 1,
+        "stoppedBecause": "refused",
+        "machines": [
+          {
+            "name": "pool-a",
+            "state": "setting-up",
+            "madeAt": 812345678.5,
+            "detail": "installing Claude"
+          }
+        ],
+        "claims": {
+          "count": 41,
+          "empty": 3,
+          "medianSeconds": 22.5
+        }
+      }
+    ]
+  },
+  "WarmPoolSet": {
+    "id": "id",
+    "name": "dev",
+    "scope": "user",
+    "provider": "do",
+    "size": "s",
+    "region": "fra1",
+    "runtimes": [
+      "claude"
+    ],
+    "projects": [
+      "/p"
+    ],
+    "minReady": 1,
+    "maxSize": 2,
+    "replaceAfter": 3600.5,
+    "hours": {
+      "days": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "from": "08:00",
+      "to": "19:00",
+      "timezone": "America/Los_Angeles"
+    }
+  },
+  "WarmPoolRequest": {
+    "id": "id"
+  },
+  "WarmPoolClaim": {
+    "provider": "do",
+    "size": "s",
+    "region": "fra1",
+    "stopWhenIdle": 120
+  },
+  "WarmPoolClaimed": {
+    "host": "box",
+    "workspace": "ws",
+    "name": "pool-a",
+    "pool": "dev",
+    "fromPool": true,
+    "note": "note"
   }
 }

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -77,7 +76,7 @@ func (d *Daemon) cachedTeamPeople(ctx context.Context) []map[string]any {
 		list := d.teamPeopleList
 		if nowFunc().Sub(d.teamPeopleAt) >= teamPeopleFresh && !d.teamPeopleAsking {
 			d.teamPeopleAsking = true
-			safe.Go("ask the control plane's people for views", func() {
+			d.goJob("ask the control plane's people for views", func() {
 				ctx, cancel := context.WithTimeout(d.ctx, teamPeopleWait)
 				defer cancel()
 				d.keepTeamPeople(ask, d.teamPeople(ctx, ask))

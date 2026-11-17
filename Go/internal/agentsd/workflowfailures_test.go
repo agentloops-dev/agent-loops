@@ -27,6 +27,8 @@ func failedWorkflows(d *Daemon, dir string) []wire.Approval {
 // got stuck is in the folder's approvals with Dismiss only; Dismiss takes it out, on the
 // workflow's record, until it fails again.
 func TestAFailedRunIsListedUntilDismissed(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

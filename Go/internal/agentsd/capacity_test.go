@@ -13,9 +13,8 @@ import (
 func fakeCapacity(t *testing.T) (set func(capacitySample)) {
 	var mu sync.Mutex
 	var now capacitySample
-	was := capacitySampler
-	capacitySampler = func(context.Context) capacitySample { mu.Lock(); defer mu.Unlock(); return now }
-	t.Cleanup(func() { capacitySampler = was })
+	was := setCapacitySampler(func(context.Context) capacitySample { mu.Lock(); defer mu.Unlock(); return now })
+	t.Cleanup(func() { setCapacitySampler(was) })
 	return func(s capacitySample) { mu.Lock(); now = s; mu.Unlock() }
 }
 
@@ -84,6 +83,8 @@ func TestCapacityRisesAtOnceAndFallsAfterTwoLooks(t *testing.T) {
 
 // Each signal on its own gives its level (#4578).
 func TestCapacityTargetTakesTheWorstSignal(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		s      capacitySample
 		level  wire.CapacityLevel
@@ -105,6 +106,8 @@ func TestCapacityTargetTakesTheWorstSignal(t *testing.T) {
 
 // Linux's PSI text gives the pressure (#4578).
 func TestPSIPressure(t *testing.T) {
+	t.Parallel()
+
 	for text, want := range map[string]wire.MemoryPressure{
 		"some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n":   wire.MemoryPressureNormal,
 		"some avg10=12.50 avg60=3.00 avg300=1.00 total=9\nfull avg10=2.00 avg60=0.00 avg300=0.00 total=1\n":  wire.MemoryPressureWarn,
@@ -121,6 +124,8 @@ func TestPSIPressure(t *testing.T) {
 
 // sampleCapacity reads this machine without failing; what it says depends on the machine.
 func TestSampleCapacityReadsThisMachine(t *testing.T) {
+	t.Parallel()
+
 	s := sampleCapacity(context.Background())
 	if s.load1 < 0 || s.load5 < 0 || s.swap < 0 || s.swap > 100 {
 		t.Fatalf("%+v", s)

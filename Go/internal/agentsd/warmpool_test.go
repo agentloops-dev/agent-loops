@@ -96,6 +96,8 @@ func TestWarmPoolCapOfZero(t *testing.T) {
 
 // backgroundHours is 1 to 24, 4 when missing, and a client that does not send it keeps it.
 func TestBackgroundHoursClamped(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		in   *int64
 		want int64
@@ -121,6 +123,8 @@ func TestBackgroundHoursClamped(t *testing.T) {
 // Background processes: under the runtime in a group of their own and not there as it
 // started, or orphans of such a group; never the runtime's own helpers in its group.
 func TestBackgroundProcessesOfARuntime(t *testing.T) {
+	t.Parallel()
+
 	table := map[int32]procInfo{
 		100: {parent: 1, name: "npm"},      // the runtime
 		101: {parent: 100, name: "node"},   // its own, in its group
@@ -149,6 +153,8 @@ func TestBackgroundProcessesOfARuntime(t *testing.T) {
 }
 
 func TestBackgroundNoteNamesTheProcesses(t *testing.T) {
+	t.Parallel()
+
 	got := backgroundNote(4, []acp.Command{{Line: "npm run dev"}, {Line: "gh run watch"}})
 	if want := "Released after 4 h idle; ended its background processes: `npm run dev`, `gh run watch`"; got != want {
 		t.Fatalf("%q", got)
@@ -161,6 +167,8 @@ func TestBackgroundNoteNamesTheProcesses(t *testing.T) {
 
 // A release ends the background processes it is given.
 func TestReleaseEndsBackgroundProcesses(t *testing.T) {
+	t.Parallel()
+
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -209,7 +217,7 @@ func startsIn(file string) int {
 // A warm runtime takes the next turn when nothing changed; a changed start starts a new one.
 func TestWarmRuntimeReusedOnlyWhenNothingChanged(t *testing.T) {
 	fakeRuntimes(t)
-	t.Setenv("AGENTS_PERSONAL_HOME", t.TempDir())
+	personalHomeFor(t, t.TempDir())
 	starts := filepath.Join(t.TempDir(), "starts")
 	t.Setenv("AGENTS_FAKE_STARTS", starts)
 	d, c := start(t, t.TempDir())
@@ -326,6 +334,8 @@ func TestWarmPoolReleaseAfterMinutes(t *testing.T) {
 // The minutes are 0 to 1440, 10 when missing, and a client that does not send them (no
 // client shows them) keeps them; 0 is kept as 0.
 func TestReleaseAfterMinutesClamped(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []struct {
 		in   *int64
 		want int64
@@ -355,9 +365,7 @@ func TestReleaseAfterMinutesClamped(t *testing.T) {
 // clock moved past the release.
 func waitIdle(t *testing.T, d *Daemon, id wire.UUID) {
 	t.Helper()
-	was := eventHoldLimit
-	eventHoldLimit = 200 * time.Millisecond
-	t.Cleanup(func() { eventHoldLimit = was })
+	setFor(t, &eventHoldLimit, 200*time.Millisecond)
 	m := appClient(t, d, id)
 	m.post("initialize", map[string]any{}, 1)
 	if text, _ := m.tool(2, "wait_for_event", map[string]any{"events": "branch.moved", "where": map[string]any{"branch": []string{"cd"}}, "until_minutes": 60}); !strings.HasPrefix(text, "Still waiting for ") {
