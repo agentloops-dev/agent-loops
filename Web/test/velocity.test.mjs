@@ -66,3 +66,23 @@ test("the words: PRs, the repository without its forge, and the reverts", () => 
   assert.equal(velocity.revertWords({ reverted: 4 }), "Including 4 reverts.");
   assert.equal(velocity.velocityHeadline, "PRs a day");
 });
+
+test("a failed velocity/history read marks the host failed, and the next read that answers clears it (#5972)", async () => {
+  const { Store } = await load("test/kept-entry.ts");
+  let answer = null;
+  const link = { onNotification: () => {}, onState: () => {},
+    call: async () => { if (!answer) throw new Error("no host"); return answer; } };
+  const store = new Store(link);
+  await store.loadVelocity("mac");
+  assert.equal(store.velocityFailed.value.mac, true);
+  assert.equal(store.velocity.value.mac, undefined);
+  answer = history();
+  await store.loadVelocity("mac");
+  assert.equal(store.velocityFailed.value.mac, false);
+  assert.ok(store.velocity.value.mac);
+  // A failed read after one that answered keeps the chart and marks it failed.
+  answer = null;
+  await store.loadVelocity("mac");
+  assert.equal(store.velocityFailed.value.mac, true);
+  assert.ok(store.velocity.value.mac);
+});

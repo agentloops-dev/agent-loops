@@ -759,7 +759,8 @@ function VelocityPage({ store }: { store: Store }) {
   }, [host]);
   if (!host) return <p class="quiet">No machine is connected.</p>;
   const history = store.velocity.value[host];
-  return <VelocityCharts history={history ? velocityHere(history) : undefined} />;
+  return <VelocityCharts history={history ? velocityHere(history) : undefined}
+    failed={store.velocityFailed.value[host] === true} retry={() => void store.loadVelocity(host)} />;
 }
 
 /** What the work used in tokens (#956): the charts in tokens, then each host's day against its token limits. */
