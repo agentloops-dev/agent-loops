@@ -74,6 +74,9 @@ type lineageResolveBook struct {
 	// priorityQueued is true while a refresh of every session's priority waits on the linker
 	// (refreshPrioritiesSoon), so a burst of reads costs one (#5847).
 	priorityQueued atomic.Bool
+	// priorityMu holds one refreshPriorities at a time: each reads a session, works out its
+	// priority and writes it, and two at once lose an update (#5980).
+	priorityMu sync.Mutex
 }
 
 // resolvedGraph is g with resolved filled in from the cache, at once. The nodes the cache

@@ -3,6 +3,8 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -162,7 +164,19 @@ func TestAPriorityChangedWhileWaitingMovesItAhead(t *testing.T) {
 func TestTheStartQueueStartsAHighHelperBeforeAnOlderOne(t *testing.T) {
 	t.Parallel()
 
-	d, folder := lineDaemon(t)
+	// The machine at capacity, by the walk's file (#4748), from the first look: a look while
+	// the machine is ok starts a queued helper (#4580), and the test reads the queue (#5980).
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, capacityOverrideFile), []byte("99\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := New(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Shutdown)
+	t.Cleanup(d.stopFolderWatches)
+	folder := t.TempDir()
 	high := wire.SessionPriorityHigh
 	older := savePrioritised(t, d, folder, wire.AgentStateQueued, 10, nil)
 	newer := savePrioritised(t, d, folder, wire.AgentStateQueued, 20, &high)

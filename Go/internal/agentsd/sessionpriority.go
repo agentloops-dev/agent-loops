@@ -141,8 +141,13 @@ func samePriority[T comparable](a, b *T) bool {
 
 // refreshPriorities works out again the priority of the sessions in only (every session when
 // nil), then of the sessions those whose priority changed started, priorityHops deep. Not under
-// any lock: it reads the folders' git remotes and saves records.
+// the store's or a lease's lock: it reads the folders' git remotes and saves records. It holds
+// priorityMu, so two runs never interleave.
 func (d *Daemon) refreshPriorities(only map[wire.UUID]bool) {
+	// One at a time: a run that read a session before a change must not write after the
+	// run that read it after (#5980).
+	d.priorityMu.Lock()
+	defer d.priorityMu.Unlock()
 	moved := false
 	// A lease's line and the start queue go by the priority (#5848): a change moves a waiter.
 	defer func() {
