@@ -550,6 +550,15 @@ func (p *Providers) AgentCall(host, agent, method string, params json.RawMessage
 	case MethodSummaryFacts:
 		return p.summaryFacts(host, rawOf(given), caller)
 	}
+	// An agent deletes only a failed make's row this way (#6078): delete_machine deletes a
+	// machine by its host, with its backup.
+	if method == MethodProvidersDeleteWorkspace {
+		id, _ := str(given["id"])
+		workspace, _ := str(given["workspace"])
+		if _, failed := p.failedOwner(id, workspace); !failed {
+			return nil, invalid("%s is not a make that failed.", workspace)
+		}
+	}
 	if named, ok := str(given["id"]); ok && (method == MethodProvidersCreate || method == MethodProvidersOptions) {
 		p.mu.Lock()
 		_, known := p.providers[named]
@@ -747,6 +756,9 @@ func (p *Providers) answer(method string, params json.RawMessage, caller Caller,
 		var request wire.ProviderWorkspaceRequest
 		if err := requireParams(params, &request, "ProviderWorkspaceRequest", "id", "workspace"); err != nil {
 			return nil, err
+		}
+		if _, failed := p.failedOwner(string(request.ID), request.Workspace); failed {
+			return map[string]any{}, p.deleteFailed(string(request.ID), request.Workspace, caller.Person, who)
 		}
 		return map[string]any{}, p.deleteWorkspace(string(request.ID), request.Workspace, who)
 	case MethodHostsDelete:

@@ -1581,3 +1581,85 @@ func TestARunningWorkspaceThatStartsItsOwnHostIsNotStartedOverSSH(t *testing.T) 
 		t.Fatalf("ssh %v", got)
 	}
 }
+
+// Delete on a failed make's row takes the row away, also after a restart, and asks the
+// provider for nothing: it never made the machine (#6078). Only its maker or an admin
+// may.
+func TestDeleteOnAFailedMakesRowForgetsIt(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	h.providers.hooks.IsAdmin = func(person string) bool { return person == "admin" }
+	h.providers.hooks.InGroup = func(string, string) bool { return true }
+	group := "crew"
+	if err := h.providers.SetGroup(id, &group); err != nil {
+		t.Fatal(err)
+	}
+	h.provider.mu.Lock()
+	h.provider.failCreate = "api.digitalocean.com answered 403"
+	h.provider.mu.Unlock()
+	h.caller.Person = "kim"
+	for range 2 {
+		if _, err := h.createNameless(); err == nil {
+			t.Fatal("the make did not fail")
+		}
+	}
+	failedNames := func(p *Providers) []string {
+		var names []string
+		for _, w := range p.Summaries()[0].Workspaces {
+			if w.State == "failed" {
+				names = append(names, w.Name)
+			}
+		}
+		return names
+	}
+	if got := failedNames(h.providers); !reflect.DeepEqual(got, []string{"machine-1", "machine-2"}) {
+		t.Fatalf("failed rows %v", got)
+	}
+	// Another member may not delete kim's row.
+	h.caller.Person = "lee"
+	_, err := h.call(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "failed-machine-1"})
+	if f := failureOf(err); f == nil || f.Code != CodeNotPermitted {
+		t.Fatalf("%v", err)
+	}
+	// Kim deletes one, an admin the other.
+	h.caller.Person = "kim"
+	h.must(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "failed-machine-1"})
+	if got := failedNames(h.providers); !reflect.DeepEqual(got, []string{"machine-2"}) {
+		t.Fatalf("failed rows %v", got)
+	}
+	h.caller.Person = "admin"
+	h.must(MethodProvidersDeleteWorkspace, map[string]string{"id": id, "workspace": "failed-machine-2"})
+	h.provider.mu.Lock()
+	deleted := append([]string{}, h.provider.deleted...)
+	h.provider.mu.Unlock()
+	if len(deleted) != 0 {
+		t.Errorf("the provider was asked to delete %v", deleted)
+	}
+	again := NewProviders(Config{Store: h.store, Records: h.records, Router: h.router, Methods: h.methods,
+		Timing: quickTiming(),
+		Hooks: Hooks{Connect: func(ProviderRecord, map[string]string) (Provider, error) { return h.provider, nil }}})
+	again.Start()
+	defer again.Stop()
+	if got := failedNames(again); len(got) != 0 {
+		t.Fatalf("after a restart, failed rows %v", got)
+	}
+}
+
+// An agent's delete reaches providers/deleteWorkspace only for a failed make's row (#6078):
+// a workspace the provider made is deleted by delete_machine on its host.
+func TestAnAgentDeletesOnlyAFailedMakesRow(t *testing.T) {
+	h := newHarness(t)
+	h.providers.hooks.OwnerOf = func(string) string { return "" }
+	id := h.add()
+	_, err := h.providers.AgentCall(devbox, "claude", MethodProvidersDeleteWorkspace,
+		rawOf(map[string]string{"id": id, "workspace": "ws-build-3"}), nil)
+	if err == nil || !strings.Contains(err.Error(), "not a make that failed") {
+		t.Fatalf("%v", err)
+	}
+	h.provider.mu.Lock()
+	deleted := len(h.provider.deleted)
+	h.provider.mu.Unlock()
+	if deleted != 0 {
+		t.Fatal("the provider was asked to delete")
+	}
+}
