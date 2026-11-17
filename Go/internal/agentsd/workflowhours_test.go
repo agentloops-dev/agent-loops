@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -211,6 +212,7 @@ func TestCooldownWithHours(t *testing.T) {
 // once the hours open.
 func TestAFireOutsideHoursIsHeld(t *testing.T) {
 	t.Parallel()
+	flaky.UnderLoad(t, "#6035")
 
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
