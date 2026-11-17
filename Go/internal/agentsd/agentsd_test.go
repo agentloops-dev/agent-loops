@@ -93,6 +93,7 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 	c := newConn()
 	go d.Accept(c)
 	t.Cleanup(func() { close(c.in) })
+	clientAdded(t, d, c)
 	t.Cleanup(d.stopFolderWatches)
 	// A stopped runtime's turn still records how it ended: wait for that before the
 	// root's TempDir goes, or the removal races a write into it.
@@ -102,6 +103,27 @@ func startWith(t testing.TB, ctx context.Context, root string) (*Daemon, *conn) 
 		}
 	})
 	return d, c
+}
+
+// clientAdded waits until the daemon has c as a client. Accept runs on its own goroutine,
+// so a test that goes on at once can find no window: a notification goes to nobody (#5878),
+// and show_file says no window is open (#5940).
+func clientAdded(t testing.TB, d *Daemon, c *conn) {
+	t.Helper()
+	for deadline := time.Now().Add(waitLimit(t)); ; time.Sleep(time.Millisecond) {
+		d.mu.Lock()
+		added := false
+		for _, each := range d.clients {
+			added = added || each.conn == c
+		}
+		d.mu.Unlock()
+		if added {
+			return
+		}
+		if time.Now().After(deadline) {
+			waitFailed(t, "the daemon never added the test's window client")
+		}
+	}
 }
 
 // anyLive is whether an agent's run loop is still running or in a turn.
