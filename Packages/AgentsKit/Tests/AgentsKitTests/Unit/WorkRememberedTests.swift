@@ -14,7 +14,11 @@ struct WorkRememberedTests {
     }
 
     @Test func theDefaultsAreNoWords() {
-        #expect(WorkRemembered.words(.init(), sort: .updated, kind: .issue) == "")
+        #expect(WorkRemembered.words(.init(), sort: .priority, kind: .issue) == "")
+        // Issues open by Priority (#6087); a person who chose Last updated keeps it.
+        #expect(WorkRemembered.list(nil, kind: .issue).sort == .priority)
+        #expect(WorkRemembered.words(.init(), sort: .updated, kind: .issue) == "sort=updated")
+        #expect(WorkRemembered.list("sort=updated", kind: .issue).sort == .updated)
         #expect(WorkRemembered.words(.init(), sort: .newest, kind: .release) == "")
         #expect(WorkRemembered.words(.init(text: "  "), sort: .updated, kind: .pr) == "")
         let none = WorkRemembered.list(nil, kind: .release)
