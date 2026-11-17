@@ -94,23 +94,10 @@ func (d *Daemon) bitbucketConnectedAPI() string {
 // bitbucketRepoAt is the Bitbucket Cloud repository a folder's remote names; read once, as
 // GitLab's.
 func (d *Daemon) bitbucketRepoAt(ctx context.Context, folder string) string {
-	key := "bitbucket " + folder
-	d.forgeMu.Lock()
-	at, ok := d.forgeRoots[key]
-	d.forgeMu.Unlock()
-	if ok {
-		return at[1]
-	}
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	repo, _ := bitbucketmcp.RepoAt(gitCtx, folder)
-	d.forgeMu.Lock()
-	defer d.forgeMu.Unlock()
-	if d.forgeRoots == nil || len(d.forgeRoots) >= forgeCached {
-		d.forgeRoots = map[string][2]string{}
-	}
-	d.forgeRoots[key] = [2]string{connections.BitbucketSite, repo}
-	return repo
+	return d.forgeRootAt(ctx, "bitbucket "+folder, folder, func(remotes []string) [2]string {
+		repo, _ := bitbucketmcp.RepoIn(remotes)
+		return [2]string{connections.BitbucketSite, repo}
+	})[1]
 }
 
 // bitbucketForge is Bitbucket Cloud on the forge interface (#4329, #4355): the host's Bitbucket
