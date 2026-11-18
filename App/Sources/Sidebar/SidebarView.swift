@@ -211,11 +211,16 @@ private struct ResizeHandle: View {
 
 /// The control that opens the column, and says why it cannot when the window is too
 /// narrow for the conversation and the sidebar both.
+///
+/// It reads the measured width itself and is given none (#5947). The width is measured
+/// while the window lays out. When the window's toolbar read it, each new width built the
+/// whole toolbar again in that layout pass, and each new toolbar asked AppKit for one more
+/// Update Constraints pass, until AppKit threw. Now a new width runs only this button's
+/// body, and the toolbar changes only when the button changes.
 struct SidebarToggle: View {
     @Environment(SidebarFrame.self) private var frame
-    let windowWidth: Double
 
-    private var fits: Bool { SidebarFrame.fits(inWindowOf: windowWidth) }
+    private var fits: Bool { SidebarFrame.fits(inWindowOf: frame.windowWidth) }
 
     var body: some View {
         Button {

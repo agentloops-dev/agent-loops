@@ -381,7 +381,7 @@ private struct FolderWindowToolbar: ToolbarContent {
             .disabled(!summary.exists)
             .help("The folder's own shell (⌃`)")
             if showsChat {
-                SidebarToggle(windowWidth: window.frame.windowWidth)
+                SidebarToggle()
             }
         }
     }

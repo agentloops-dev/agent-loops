@@ -393,8 +393,14 @@ struct LivePage: View {
 
 /// The page's zoom level, for the Mac's View menu (#1419): handed up by a page on
 /// screen in the key window, so the menu's items are there only while one is.
-struct PageZoomAction {
+///
+/// Equal when its zoom is equal (#5947). A focused value goes to the window's toolbar and
+/// menus. Without `Equatable`, each new body of the page could make a new value, and
+/// SwiftUI then updated the toolbar again, also during a layout pass.
+struct PageZoomAction: Equatable {
     let level: Binding<Double>
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.level.wrappedValue == rhs.level.wrappedValue }
 
     var zoom: Double { PageZoom.snapped(level.wrappedValue) }
     var canZoomIn: Bool { PageZoom.canZoomIn(zoom) }
