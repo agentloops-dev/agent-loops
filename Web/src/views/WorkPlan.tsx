@@ -27,7 +27,7 @@ import {
 import { isMenuKey, openContextMenu, type MenuItem } from "./ContextMenu";
 import { go, routeHash } from "../route";
 import { ForgeTitle } from "../render/ForgeTitle";
-import { ErrorStrip, LabelChip, PlaceholderRows, PriorityChip, StateIcon } from "./WorkParts";
+import { ErrorStrip, LabelChip, PlaceholderRows, PriorityChip, OnHoldChip, StateIcon } from "./WorkParts";
 import { Icon, type IconName } from "./Icon";
 
 const holdsRuntime = (s: AgentState) => s === "starting" || s === "running" || s === "waitingOnUser";
@@ -213,6 +213,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
               </>}
               <span class="work-plan-end">
                 <PriorityChip priority={c.item.priority} />
+                <OnHoldChip onHold={c.item.onHold} />
                 {cost ? <span class="quiet work-plan-cost">{cost}</span>
                   : estWords && est && <span class="work-plan-cost work-plan-estimate" title={estimateRangeWords(est)}>{estWords}</span>}
               </span>

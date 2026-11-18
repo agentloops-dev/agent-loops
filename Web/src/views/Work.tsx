@@ -40,7 +40,7 @@ import { keepWork, keptPicture, keptWorkRead } from "../model/localCopy";
 import { forgeMarkdown } from "../model/forgeMarkdown";
 import { ForgeTitle } from "../render/ForgeTitle";
 import {
-  Avatar, Avatars, EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon, picture, type MenuChoice, type ReadPicture,
+  Avatar, Avatars, EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, PlaceholderRows, PriorityChip, OnHoldChip, RefreshButton, StateIcon, picture, type MenuChoice, type ReadPicture,
 } from "./WorkParts";
 import { WorkChecksPage, WorkCommentBox, WorkFilesChanged, WorkLabelsPicker, WorkMergeBox, WorkStatusMenu } from "./WorkActions";
 import { WorkFilesPage } from "./WorkFilesPage";
@@ -48,6 +48,8 @@ import { branchWords, mergeBox, mergedStrip, offers, pullStateWords, reviewersWo
 import { WorkPlan } from "./WorkPlan";
 import { WorkDocs } from "./Docs";
 import { hasPlan, leadStart, leadWords, planSessions } from "../model/epicPlan";
+import { shownLabels, sideLabels } from "../model/forgeNextOrder";
+import { WorkPrioritySection } from "./WorkPrioritySection";
 import { epicLead, workingSession, workingWords } from "../model/workFeatures";
 import { go, replace, route, routeHash } from "../route";
 import { type TrailTarget, trailHelp, workTrail } from "../model/workTrail";
@@ -284,6 +286,8 @@ export function WorkRowView({ row, several, dim, pick, read, open, latest: isLat
   const checks = row.node.kind === "pr" ? checksGlyph(row.checks) : undefined;
   const review = row.node.kind === "pr" ? rowReviewWords(row.review) : undefined;
   const comments = row.comments ?? 0;
+  // The On hold chip says it: the on hold label is not drawn again (#6090).
+  const labels = shownLabels(row.labels, row.onHold);
   return (
     <li data-ref={row.node.ref} class={dim ? "stale" : undefined}>
       {/* A link (lists.md section 4): a click opens the page here, a middle-click or ⌘-click in a new tab. */}
@@ -295,10 +299,11 @@ export function WorkRowView({ row, several, dim, pick, read, open, latest: isLat
             <span class="work-title"><ForgeTitle text={row.title} /></span>
             {isLatest && <ReleaseChip />}
             <PriorityChip priority={row.priority} />
-            {row.labels.length > 0 && (
+            <OnHoldChip onHold={row.onHold} />
+            {labels.length > 0 && (
               <span class="work-chips">
-                {row.labels.map((l) => <LabelChip key={l.name} label={l} pick={pick} />)}
-                {row.labels.length > 3 && <span class="work-chips-more quiet small">+{row.labels.length - 3}</span>}
+                {labels.map((l) => <LabelChip key={l.name} label={l} pick={pick} />)}
+                {labels.length > 3 && <span class="work-chips-more quiet small">+{labels.length - 3}</span>}
               </span>
             )}
           </span>
@@ -523,7 +528,8 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
   const state = item?.state ?? row?.state ?? "";
   const draft = item?.draft ?? row?.draft;
   const status = item?.status ?? row?.status;
-  const labels: ForgeLabel[] = item?.labels ?? row?.labels ?? [];
+  // Priority and on hold have their own section (#6092, #6093): Labels leaves out their labels.
+  const labels: ForgeLabel[] = sideLabels(item?.labels ?? row?.labels ?? []);
   const assignees = item?.assignees ?? row?.assignees ?? [];
   const url = item?.url ?? row?.url ?? lineageUrl(node);
   const openOn = openOnWords(ref);
@@ -699,6 +705,10 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
           with Linked, Lineage and Docs at the end. */}
       {(item || loading) && (
         <aside class="work-side people" aria-label="Details">
+          {/* Priority and On hold first (#6092, #6093): an issue's, or any item that has one. */}
+          {detail.value && (kind === "issue" || item?.priority !== undefined || item?.onHold === true) && (
+            <WorkPrioritySection store={store} host={detail.value.host} detail={detail.value.got} writes={writes} wrote={reread} />
+          )}
           <SideSection title="Assignees">
             {loading && !row ? <span class="bar" /> : assignees.length === 0 ? <span class="quiet">No one</span>
               : assignees.map((a) => <span key={a} class="work-person">

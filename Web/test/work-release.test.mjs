@@ -38,7 +38,7 @@ test("releases sort by version, the highest first, and open on Newest with no La
   assert.deepEqual(w.sortRows(rows, "newest").map((x) => x.title), ["v0.42.0", "v0.10.0", "v0.9.0"]);
   assert.equal(w.defaultSort("release"), "newest");
   assert.deepEqual(w.workSorts("release"), ["newest", "cost"]);
-  assert.equal(w.defaultSort("issue"), "updated");
+  assert.equal(w.defaultSort("issue"), "priority");
   assert.equal(w.workQuery(w.anyFilter, "newest", "release"), "");
   assert.equal(w.workQuery(w.anyFilter, "newest", "issue"), "sort=newest");
   assert.equal(w.parseWorkQuery("", "release").sort, "newest");

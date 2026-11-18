@@ -191,6 +191,18 @@ test("the children in flight: Needs you first, then the most recently updated", 
     [node(2).ref, node(3).ref, node(1).ref]);
 });
 
+test("an opened feature shows its epics and loose issues in priority order, High at the top (#6093)", () => {
+  const pr = (n, priority, at, onHold) => ({ ...issue(n, { level: "epic", progress: [0, 2], at }), ...priority ? { priority } : {}, ...onHold ? { onHold } : {} });
+  const shown = f.openedFeature([pr(1, undefined, 90), pr(2, "low", 99), pr(3, "high", 10, true), pr(4, "medium", 1), pr(5, "high", 5), pr(6, "high", 7)]);
+  assert.deepEqual(shown.epics.map((i) => i.node.ref), [6, 5, 4, 1, 2, 3].map((n) => node(n).ref));
+});
+
+test("the children in flight go in priority order within their flight (#6093)", () => {
+  const line = (n, mark, at, priority) => ({ item: { ...issue(n, { at }), ...priority ? { priority } : {} }, mark, words: "", pr: undefined });
+  assert.deepEqual(f.flightOrder([line(1, "working", 9), line(2, "working", 1, "high"), line(3, "attention", 5), line(4, "attention", 1, "medium")])
+    .map((l) => l.item.node.ref), [4, 3, 2, 1].map((n) => node(n).ref));
+});
+
 test("an epic says where it is in its plan", () => {
   assert.equal(f.whereWords(plan([child(1, 1, { state: "closed" }), child(2, 2), child(3, 3)], [1, 2, 3])), "step 2 of 3");
   assert.equal(f.whereWords(plan([child(4, 1, { outside: [10] }), child(5, 2)], [1, 2])), "step 1 of 2 · waits for #10");

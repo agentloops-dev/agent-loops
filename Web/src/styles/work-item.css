@@ -60,6 +60,14 @@
 .work-side .work-side-section { margin: 0; padding: 6px 0; border-top: 1px solid var(--paper-rule); display: flex; gap: 12px; align-items: baseline; position: relative; }
 .work-side-section h3 { flex: none; display: flex; align-items: center; gap: 4px; width: 6.5em; margin: 0; font-size: 0.8em; font-weight: 600; color: color-mix(in srgb, currentColor 65%, transparent); }
 .work-side-section .value { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+/* The Priority section (#6092, #6093): the menu's button shows the chip, then the On hold toggle and its line. */
+.work-priority-section { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.work-priority-menu { display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 9em; min-height: 26px;
+  padding: 0 8px; border: 1px solid var(--paper-rule); border-radius: 6px; background: var(--paper-well); font: inherit; color: inherit; }
+.work-priority-menu .lucide { color: var(--paper-secondary); }
+.work-hold { display: flex; flex-direction: column; gap: 2px; }
+.work-hold label { display: inline-flex; align-items: center; gap: 6px; }
+.work-hold .small { padding-left: 20px; }
 /* The gear on Labels (note 12): faint until the pointer is on the section, so a keyboard and a screen reader find it. */
 .work-gear { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-left: auto; padding: 0; border: none; border-radius: var(--radius-control);
   background: none; color: inherit; cursor: pointer; opacity: 0.35; margin-block: -4px; }

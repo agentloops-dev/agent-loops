@@ -162,6 +162,50 @@ test("each block takes the first row free at its start, packed in time", () => {
   assert.deepEqual(waits.map((l) => l.row), [0, 1]);
 });
 
+test("each priority is a band of rows, High at the top, on hold last (#6093)", () => {
+  const with_ = (e, priority, onHold) => ({ ...e, item: { ...e.item, ...priority ? { priority } : {}, ...onHold ? { onHold } : {} } });
+  const timeline = { epics: [
+    with_(epic(30, [child(50, { started: -20, closed: -10 })], [[-20, -10]])),
+    // A High epic that starts later goes above a none one that starts first.
+    with_(epic(31, [child(51, { started: -5, closed: -1 })], [[-5, -1]]), "high"),
+    with_(epic(32, [child(52, { started: -18, closed: -12 })], [[-18, -12]]), "high"),
+    with_(epic(33, [child(53, { started: -15, closed: -2 })], [[-15, -2]]), "low"),
+    with_(epic(34, [child(54, { started: -15 }), child(55, { forecast: 6 })], [[-15, null]], { forecast: fc(4, 6, 10) }), "high", true),
+  ], releases: [] };
+  const lines = t.layout(t.timelineLines(timeline, now));
+  const rowOf = Object.fromEntries(lines.map((l) => [l.number, l.row]));
+  // High packs in its own rows (#32 then #31 in row 0), none next, then Low, then on hold.
+  assert.deepEqual(rowOf, { "#31": 0, "#32": 0, "#30": 1, "#33": 2, "#34": 3 });
+  assert.deepEqual(t.bands(lines).map((b) => [b.words, b.row, b.rows]), [["High", 0, 1], ["None", 1, 1], ["Low", 2, 1], ["On hold", 3, 1]]);
+  assert.equal(t.bandRuleY(1), t.rowTop(1) - t.rowGap / 2);
+  // An epic on hold is not forecast: its open line stops at Now.
+  const held = lines.find((l) => l.number === "#34");
+  assert.deepEqual([held.how.how, held.end, held.band], ["open", now, undefined]);
+  assert.deepEqual(lines.map((l) => t.chipWords(l)), lines.map((l) => ({ "#31": "High", "#32": "High", "#33": "Low", "#34": "On hold" })[l.number]));
+  // The list: High first, then on hold last.
+  const listed = t.epicRows(lines, { start: h(-48), end: h(48) }, now).map((r) => r.line.number);
+  assert.deepEqual(listed.slice(0, 2).sort(), ["#31", "#32"]);
+  assert.deepEqual(listed.slice(2), ["#30", "#33", "#34"]);
+});
+
+test("the priority chip goes after the title in the block, else after the block, else nowhere (#6093)", () => {
+  const measure = (s) => s.length * 6;
+  const high = (e) => ({ ...e, item: { ...e.item, priority: "high" } });
+  const [wide] = t.layout(t.timelineLines({ epics: [high(epic(35, [child(56, { started: -20, closed: -2 })], [[-20, -2]]))], releases: [] }, now));
+  const inside = t.blockWords(wide, axis, measure);
+  assert.deepEqual([inside.chip, inside.chipInside, inside.chipX], ["High", true, inside.insideX + measure(inside.inside) + t.chipGap]);
+  const [narrow] = t.layout(t.timelineLines({ epics: [high(epic(36, [child(57, { started: -2, closed: -1.5 })], [[-2, -1.5]]))], releases: [] }, now));
+  const after = t.blockWords(narrow, axis, measure);
+  assert.deepEqual([after.chip, after.chipInside, after.outside], ["High", undefined, "Issue 36"]);
+  assert.equal(after.chipX, after.outsideX + measure("Issue 36") + t.chipGap);
+  // No room before the next block: no chip.
+  const cut = t.blockWords(narrow, axis, measure, { next: narrow.end + 60_000 });
+  assert.equal(cut.chip, undefined);
+  // None has no chip.
+  const [plain] = t.layout(t.timelineLines({ epics: [epic(37, [child(58, { started: -20, closed: -2 })], [[-20, -2]])], releases: [] }, now));
+  assert.equal(t.blockWords(plain, axis, measure).chip, undefined);
+});
+
 test("the rows do not change between ranges for the same read", () => {
   const timeline = { epics: [
     epic(1, [child(10, { started: -150, closed: -100 })], [[-150, -100]]),

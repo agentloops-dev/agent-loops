@@ -125,6 +125,21 @@ test("sorts: last updated, newest by number, cost with no lineage last", () => {
   assert.deepEqual(order("cost"), [4, 9, 1]);
 });
 
+test("Priority, Issues' default: High, Medium, none, Low, then on hold; in a priority the last updated first (#6093)", () => {
+  const rows = w.mergeForge([{ host: "mac", items: [
+    item(1, { priority: "low" }), item(2, { priority: "high", onHold: true }), item(3), item(4, { priority: "medium" }),
+    item(5, { priority: "high", updatedAt: at("2026-10-29T10:00:00Z") }), item(6, { priority: "high", updatedAt: at("2026-10-31T10:00:00Z") }),
+  ] }], []);
+  assert.deepEqual(w.sortRows(rows, "priority").map((r) => w.refNumber(r.node.ref)), [6, 5, 4, 3, 1, 2]);
+  assert.equal(w.defaultSort("issue"), "priority");
+  assert.equal(w.defaultSort("pr"), "updated");
+  assert.deepEqual(w.workSorts("issue"), ["priority", "updated", "newest", "cost"]);
+  assert.deepEqual(w.workSorts("pr"), ["priority", "updated", "newest", "cost"]);
+  assert.deepEqual(w.workSorts("release"), ["newest", "cost"]);
+  assert.equal(w.workSortTitle.priority, "Priority");
+  assert.equal(rows.find((r) => w.refNumber(r.node.ref) === 2).onHold, true);
+});
+
 test("refs: repo, short name, and the forge to open on", () => {
   assert.equal(w.repoOf("github:alexec/Agents#12"), "github:alexec/Agents");
   assert.equal(w.repoOf("gitlab:group/repo!45"), "gitlab:group/repo");
@@ -386,13 +401,16 @@ test("a credential the forge refused offers Settings ▸ Connectors (#4395)", ()
 });
 
 test("the filters and the sort go in the address and back, only what is not the default (#4395)", () => {
-  assert.equal(w.workQuery(w.anyFilter, "updated"), "");
+  assert.equal(w.workQuery(w.anyFilter, "priority"), "");
+  // Issues open on Priority (#6093): Last updated is kept as a choice; a PR's default is still Last updated.
+  assert.equal(w.workQuery(w.anyFilter, "updated"), "sort=updated");
+  assert.equal(w.workQuery(w.anyFilter, "updated", "pr"), "");
   const f = { ...w.anyFilter, project: "agents", label: "bug", state: "closed", text: "a b" };
   const q = w.workQuery(f, "newest");
   assert.equal(q, "q=a+b&project=agents&state=closed&label=bug&sort=newest");
   assert.deepEqual(w.parseWorkQuery(q, "issue"), { filter: f, sort: "newest" });
   // A word the list does not know is left out: merged is a PR's state, a board is Issues' only.
-  assert.deepEqual(w.parseWorkQuery("state=merged&sort=up", "issue"), { filter: w.anyFilter, sort: "updated" });
+  assert.deepEqual(w.parseWorkQuery("state=merged&sort=up", "issue"), { filter: w.anyFilter, sort: "priority" });
   assert.deepEqual(w.parseWorkQuery("state=merged&board=x", "pr"), { filter: { ...w.anyFilter, state: "merged" }, sort: "updated" });
   assert.equal(w.parseWorkQuery("board=x", "issue").filter.board, "x");
 });
