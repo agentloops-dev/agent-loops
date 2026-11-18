@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func run(t *testing.T, dir string, args ...string) string {
@@ -243,5 +244,146 @@ func TestAWorktreeFindsTheDefaultBranch(t *testing.T) {
 	rep, err := Analyse(context.Background(), Options{Repo: wt})
 	if err != nil || rep.Main != run(t, s.repo, "rev-parse", "origin/main") || rep.Advice != Go {
 		t.Fatalf("%v %+v", err, rep)
+	}
+}
+
+// convRefs are the refs a run of the tool keeps: refs/conflict-risk/*.
+func convRefs(t *testing.T, repo string) []string {
+	t.Helper()
+	out := run(t, repo, "for-each-ref", "--format=%(refname)", "refs/conflict-risk/")
+	if out == "" {
+		return nil
+	}
+	return strings.Split(out, "\n")
+}
+
+// manyRequests makes n requests pr1…prn, each with a file of its own, pushed in one push.
+func (s *scratch) manyRequests(n int) {
+	for i := 1; i <= n; i++ {
+		name := "pr" + strconv.Itoa(i)
+		run(s.t, s.repo, "checkout", "-q", "-b", name, "main")
+		write(s.t, s.repo, name+".txt", lots(name))
+		run(s.t, s.repo, "add", ".")
+		run(s.t, s.repo, "commit", "-qm", name)
+	}
+	run(s.t, s.repo, "checkout", "-q", "main")
+	run(s.t, s.repo, "push", "-q", "origin", "--all")
+}
+
+// open is the requests from..to, as the forge lists them.
+func open(from, to int) []PR {
+	var prs []PR
+	for i := from; i <= to; i++ {
+		prs = append(prs, pr(i, false))
+	}
+	return prs
+}
+
+// P20261117-2: a run leaves no ref per request behind it, so the refs of closed requests
+// (and the objects they keep from git gc) do not grow with every request the tool ever saw.
+// The flat refs/conflict-risk/<n> that runs before the fix left go on the next run.
+func TestARunLeavesNoRefsOfClosedRequests(t *testing.T) {
+	s := newScratch(t)
+	s.branch("lane", "main", map[string]string{"a.txt": lots("lane")})
+	s.manyRequests(4)
+	run(t, s.repo, "update-ref", "refs/conflict-risk/99", "main") // an older run's
+	for i, prs := range [][]PR{open(1, 3), open(2, 4), open(4, 4)} {
+		rep := s.analyse(Options{Head: "lane", PRs: prs})
+		for _, e := range rep.PRs {
+			if e.State != Clean {
+				t.Errorf("run %d: #%d = %+v", i, e.Number, e)
+			}
+		}
+		if refs := convRefs(t, s.repo); len(refs) > len(prs) {
+			t.Errorf("run %d: %d requests open, %d refs kept: %v", i, len(prs), len(refs), refs)
+		}
+	}
+	if refs := convRefs(t, s.repo); len(refs) != 0 {
+		t.Errorf("refs left after the runs: %v", refs)
+	}
+}
+
+// Two lanes can call the tool at once in one repository: neither run deletes a head that the
+// other reads, so every entry of both is checked.
+func TestRunsAtOnceReadTheirOwnHeads(t *testing.T) {
+	s := newScratch(t)
+	s.branch("lane", "main", map[string]string{"a.txt": lots("lane")})
+	s.manyRequests(8)
+	errs := make(chan string, 64)
+	done := make(chan struct{})
+	for g := 0; g < 4; g++ {
+		go func(g int) {
+			defer func() { done <- struct{}{} }()
+			for i := 0; i < 5; i++ {
+				// Each run's list differs: one request closed, another opened.
+				prs := open(1+(g+i)%4, 5+(g+i)%4)
+				rep, err := Analyse(context.Background(), Options{Repo: s.repo, Head: "lane", PRs: prs})
+				if err != nil {
+					errs <- err.Error()
+					continue
+				}
+				for _, e := range rep.PRs {
+					if e.State != Clean {
+						errs <- "#" + strconv.Itoa(e.Number) + ": " + e.State + " " + e.Note
+					}
+				}
+			}
+		}(g)
+	}
+	for g := 0; g < 4; g++ {
+		<-done
+	}
+	close(errs)
+	for e := range errs {
+		t.Error(e)
+	}
+	if refs := convRefs(t, s.repo); len(refs) != 0 {
+		t.Errorf("refs left after the runs: %v", refs)
+	}
+}
+
+// The measurement of P20261117-2: 100 runs, the open list moving by one request each run (one
+// closes, one opens), and the count of refs/conflict-risk/* after each. With AGENTS_RUN_PERF=1
+// it is 100 runs and it logs the numbers; else 10, to keep the suite fast.
+func TestRefsStayBoundedOverManyRuns(t *testing.T) {
+	runs, width := 10, 10
+	if os.Getenv("AGENTS_RUN_PERF") == "1" {
+		runs = 100
+	}
+	s := newScratch(t)
+	s.branch("lane", "main", map[string]string{"a.txt": lots("lane")})
+	s.manyRequests(runs + width)
+	most := 0
+	start := time.Now()
+	for i := 1; i <= runs; i++ {
+		prs := open(i, i+width-1)
+		s.analyse(Options{Head: "lane", PRs: prs})
+		n := len(convRefs(t, s.repo))
+		if n > most {
+			most = n
+		}
+		if n > len(prs) {
+			t.Errorf("run %d: %d requests open, %d refs kept", i, len(prs), n)
+		}
+	}
+	t.Logf("MEASURE runs=%d open=%d refs_after=%d most=%d elapsed_ms=%d", runs, width,
+		len(convRefs(t, s.repo)), most, time.Since(start).Milliseconds())
+}
+
+// A run deletes the folder of a run older than staleRun (one that was killed), and keeps the
+// folder of a run that may still be going, and a ref that is not a run's.
+func TestARunDeletesOnlyLeftOverRuns(t *testing.T) {
+	s := newScratch(t)
+	s.branch("lane", "main", map[string]string{"a.txt": lots("lane")})
+	old := runRefs(time.Now().Add(-2*staleRun)) + "7"
+	live := runRefs(time.Now().Add(-time.Minute)) + "7"
+	other := "refs/conflict-risk/someone/7"
+	for _, r := range []string{old, live, other} {
+		run(t, s.repo, "update-ref", r, "main")
+	}
+	s.analyse(Options{Head: "lane"})
+	refs := strings.Join(convRefs(t, s.repo), " ")
+	if strings.Contains(refs, old) || !strings.Contains(refs, live) || !strings.Contains(refs, other) {
+		t.Errorf("refs after a run: %s", refs)
 	}
 }
