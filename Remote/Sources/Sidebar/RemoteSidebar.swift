@@ -192,8 +192,9 @@ struct RemoteSidebar: View {
                             .accessibilityHint(kind.sidebarHelp)
                             .activityIcon(kind.sidebarIcon).appText(.supporting).paperTag(SidebarItem.work(kind))
                     }
-                    // Work shown: its first list read ahead, so the page draws at once (#4930).
-                    .task(id: model.forgeMachines.map(\.id)) { await model.prefetchWork() }
+                    // Work shown: its first list read ahead, so the page draws at once (#4930), and again when a
+                    // machine joins or a folder is added (#6152).
+                    .task(id: model.workSource) { await model.prefetchWork() }
                 } header: {
                     Text("Work")
                 }
