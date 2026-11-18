@@ -75,6 +75,8 @@ Per PR:
 
 `state` is `clean`, `conflict` or `error`. Exit code 0 for any advice (advisory); non-zero only for an error. `--json` prints this; the default prints one line per PR and the overall advice.
 
+**The fetched heads (P20261117-2).** A run fetches the PR heads into a folder of its own, `refs/conflict-risk/<unix ns>-<pid>-<seq>/<n>`, and deletes that folder when it ends, so no ref (and no closed PR's objects, kept from `git gc`) stays after a run. Two runs at once in one repository never touch each other's folder. A run also deletes what earlier runs left: the flat `refs/conflict-risk/<n>` of before this, and a run's folder older than an hour (a killed run). A PR whose head is gone all the same is `error`, "not checked (its head is not in this repository …)", and the advice for it is `go`, as for a head that cannot be fetched.
+
 ## Child for the lead to file (one)
 
 **`scripts/conflict-risk.sh <branch|--worktree>` (task, size M, `feature:parallel-lanes`):** Python or shell, `git merge-tree` and `gh pr list --json number,headRefOid,baseRefName,files,statusCheckRollup,autoMergeRequest,labels`; fetches `refs/pull/*/head` for open PRs; takes a working tree by committing it to a temporary object (`git stash create`); applies the advice rules and report above; tests on a scratch repo with a conflicting pair, a stale PR and a regenerating file; mentions it in the lane and lead skills (run before the first push and before auto-merge; a lead runs it on a child's branch). Replaces the exact-check half of the idea; the later layers are not filed until a lane hits a conflict the report called "go".

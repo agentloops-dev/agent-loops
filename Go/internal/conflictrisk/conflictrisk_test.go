@@ -369,3 +369,21 @@ func TestRefsStayBoundedOverManyRuns(t *testing.T) {
 	t.Logf("MEASURE runs=%d open=%d refs_after=%d most=%d elapsed_ms=%d", runs, width,
 		len(convRefs(t, s.repo)), most, time.Since(start).Milliseconds())
 }
+
+// A run deletes the folder of a run older than staleRun (one that was killed), and keeps the
+// folder of a run that may still be going, and a ref that is not a run's.
+func TestARunDeletesOnlyLeftOverRuns(t *testing.T) {
+	s := newScratch(t)
+	s.branch("lane", "main", map[string]string{"a.txt": lots("lane")})
+	old := runRefs(time.Now().Add(-2*staleRun)) + "7"
+	live := runRefs(time.Now().Add(-time.Minute)) + "7"
+	other := "refs/conflict-risk/someone/7"
+	for _, r := range []string{old, live, other} {
+		run(t, s.repo, "update-ref", r, "main")
+	}
+	s.analyse(Options{Head: "lane"})
+	refs := strings.Join(convRefs(t, s.repo), " ")
+	if strings.Contains(refs, old) || !strings.Contains(refs, live) || !strings.Contains(refs, other) {
+		t.Errorf("refs after a run: %s", refs)
+	}
+}

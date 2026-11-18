@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
 // Version is the report's version.
@@ -115,8 +117,16 @@ type runner struct {
 }
 
 func (r runner) git(ctx context.Context, args ...string) ([]byte, int, error) {
+	return r.gitIn(ctx, "", args...)
+}
+
+// gitIn is git with stdin.
+func (r runner) gitIn(ctx context.Context, stdin string, args ...string) ([]byte, int, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = r.dir
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C"), r.env...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -175,10 +185,12 @@ func Analyse(ctx context.Context, o Options) (Report, error) {
 		}
 	}
 	sort.Slice(prs, func(i, j int) bool { return prs[i].Number < prs[j].Number })
-	fetchAll(ctx, r, remote, prs)
+	refs := runRefs(time.Now())
+	defer cleanRefs(ctx, r, refs, time.Now)
+	fetchAll(ctx, r, remote, refs, prs)
 
 	for _, p := range prs {
-		e := entry(ctx, r, p, main, head, laneBase, mainLane, ignore, o)
+		e := entry(ctx, r, p, refs, main, head, laneBase, mainLane, ignore, o)
 		if e.Head == head {
 			continue // the lane's own request
 		}
@@ -188,14 +200,86 @@ func Analyse(ctx context.Context, o Options) (Report, error) {
 	return rep, nil
 }
 
-func ref(n int) string { return "refs/conflict-risk/" + strconv.Itoa(n) }
+// refRoot holds the heads that runs fetch. Each run has a folder of its own under it,
+// refs/conflict-risk/<unix ns>-<pid>-<seq>/<n>, and deletes it when it ends (P20261117-2):
+// a ref kept for each request ever seen kept a closed request's objects from git gc, with no
+// bound. Two runs at once in one repository (two lanes) then never delete or overwrite a head
+// the other reads. A run also deletes what earlier runs left: the flat refs/conflict-risk/<n>
+// of before the fix, and the folder of a run older than staleRun (one that was killed). A
+// head that is gone all the same makes its entry "not checked", as an unfetchable one does.
+const refRoot = "refs/conflict-risk/"
+
+// staleRun is the age after which a run's folder is left over: far over a call's time limit
+// (the daemon's conflictRiskTimeout is 2 minutes).
+const staleRun = time.Hour
+
+var runSeq atomic.Uint64
+
+// runRefs is this run's folder, ending in "/".
+func runRefs(now time.Time) string {
+	return fmt.Sprintf("%s%d-%d-%d/", refRoot, now.UnixNano(), os.Getpid(), runSeq.Add(1))
+}
+
+func ref(refs string, n int) string { return refs + strconv.Itoa(n) }
+
+// leftOver says whether a ref under refRoot is an earlier run's to delete; rest is its name
+// after refRoot.
+func leftOver(rest string, now time.Time) bool {
+	run, _, nested := strings.Cut(rest, "/")
+	if !nested {
+		return true // refs/conflict-risk/<n>, from before runs had folders
+	}
+	ns, _, _ := strings.Cut(run, "-")
+	t, err := strconv.ParseInt(ns, 10, 64)
+	if err != nil {
+		return false // not a run's: leave it
+	}
+	return now.Sub(time.Unix(0, t)) > staleRun
+}
+
+// cleanRefs deletes this run's refs and the left-over ones in one git update-ref, also when
+// the call's context has ended. When that fails (another run deleted a left-over one first,
+// or held its lock), it deletes only this run's, which no other run touches.
+func cleanRefs(ctx context.Context, r runner, refs string, now func() time.Time) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	out, _, err := r.git(ctx, "for-each-ref", "--format=%(refname)", refRoot)
+	if err != nil {
+		return
+	}
+	var mine, old []string
+	t := now()
+	for _, name := range strings.Fields(string(out)) {
+		switch {
+		case strings.HasPrefix(name, refs):
+			mine = append(mine, name)
+		case leftOver(strings.TrimPrefix(name, refRoot), t):
+			old = append(old, name)
+		}
+	}
+	if deleteRefs(ctx, r, append(mine, old...)) != nil {
+		deleteRefs(ctx, r, mine)
+	}
+}
+
+func deleteRefs(ctx context.Context, r runner, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for _, n := range names {
+		b.WriteString("delete " + n + "\n")
+	}
+	_, _, err := r.gitIn(ctx, b.String(), "update-ref", "--stdin")
+	return err
+}
 
 // fetchAll gets every head in one fetch; when that fails (one is gone), one by one.
-func fetchAll(ctx context.Context, r runner, remote string, prs []PR) {
+func fetchAll(ctx context.Context, r runner, remote, refs string, prs []PR) {
 	var specs []string
 	for _, p := range prs {
 		if p.FetchRef != "" {
-			specs = append(specs, "+"+p.FetchRef+":"+ref(p.Number))
+			specs = append(specs, "+"+p.FetchRef+":"+ref(refs, p.Number))
 		}
 	}
 	if len(specs) == 0 {
@@ -210,14 +294,14 @@ func fetchAll(ctx context.Context, r runner, remote string, prs []PR) {
 	}
 }
 
-func entry(ctx context.Context, r runner, p PR, main, head, laneBase string, mainLane map[string]bool, ignore []string, o Options) Entry {
+func entry(ctx context.Context, r runner, p PR, refs, main, head, laneBase string, mainLane map[string]bool, ignore []string, o Options) Entry {
 	e := Entry{Number: p.Number, Base: p.Base, State: Errored, Files: []string{}, Ignored: []string{}, LandsSoon: p.LandsSoon, Advice: Go}
 	if e.Base == "" {
 		e.Base = "main"
 	}
 	rev := p.Head
 	if p.FetchRef != "" {
-		rev = ref(p.Number)
+		rev = ref(refs, p.Number)
 	}
 	if rev == "" {
 		e.Note = "its head is not known"
