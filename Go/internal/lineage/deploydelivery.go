@@ -53,58 +53,12 @@ func DeployFiguresOf(deploys []DeployFact, since, at wire.Date) DeployFigures {
 		}
 		return 0
 	})
-	in := func(t wire.Date) bool { return t >= since && t <= at }
-	var out DeployFigures
-	var went, lead, failures, recovery []sample
-	// nextGood is the first deploy that succeeded after t, at its end.
-	nextGood := func(t wire.Date) (wire.Date, bool) {
-		for _, d := range ds {
-			if d.State == wire.DeployStateSucceeded && d.At > t {
-				return d.At, true
-			}
-		}
-		return 0, false
-	}
+	acc := deployAccumulator{ds: ds, since: since, at: at}
 	for _, d := range ds {
-		if d.State == wire.DeployStateSucceeded || d.State == wire.DeployStateFailed {
-			if in(d.At) {
-				out.Ended++
-				failed := d.State == wire.DeployStateFailed
-				if failed {
-					out.Failed++
-				}
-				if d.Rollback && !failed {
-					out.Rollbacks++
-				}
-				v := 0.0
-				if failed || d.Rollback {
-					v = 1
-				}
-				failures = append(failures, sample{d.At, v})
-			}
-		}
-		if d.State == wire.DeployStateFailed {
-			if good, ok := nextGood(d.At); ok && in(good) {
-				recovery = append(recovery, sample{good, float64(good - d.At)})
-			}
-		}
-		for _, h := range d.Health {
-			if good, ok := nextGood(h); ok && in(good) {
-				recovery = append(recovery, sample{good, float64(good - h)})
-			}
-		}
-		if d.State != wire.DeployStateSucceeded || !in(d.At) {
-			continue
-		}
-		went = append(went, sample{d.At, 1})
-		for _, m := range d.Merges {
-			if m <= d.At {
-				lead = append(lead, sample{d.At, float64(d.At - m)})
-			}
-		}
+		acc.add(d)
 	}
-
-	out.DeploymentFrequency = figureOf(went, since, at, func(v []float64) float64 { return float64(len(v)) })
+	out := acc.out
+	out.DeploymentFrequency = figureOf(acc.went, since, at, func(v []float64) float64 { return float64(len(v)) })
 	if weeks := float64(len(out.DeploymentFrequency.Weeks)); weeks > 0 {
 		perWeek := float64(out.DeploymentFrequency.Count) / weeks
 		out.DeploymentFrequency.Value = &perWeek
@@ -114,17 +68,86 @@ func DeployFiguresOf(deploys []DeployFact, since, at wire.Date) DeployFigures {
 		v := float64(w.Count)
 		out.DeploymentFrequency.Weeks[i].Value = &v
 	}
-	out.LeadTime = figureOf(lead, since, at, median)
-	if v := valuesIn(lead, since, at+1); len(v) > 0 {
+	out.LeadTime = figureOf(acc.lead, since, at, median)
+	if v := valuesIn(acc.lead, since, at+1); len(v) > 0 {
 		p := percentile(v, 0.9)
 		out.LeadTime.P90 = &p
 	}
 	out.LeadTime.Band = band(out.LeadTime.Value, leadBand)
-	out.ChangeFailureRate = figureOf(failures, since, at, mean)
+	out.ChangeFailureRate = figureOf(acc.failures, since, at, mean)
 	out.ChangeFailureRate.Band = band(out.ChangeFailureRate.Value, failureBand)
-	out.RecoveryTime = figureOf(recovery, since, at, median)
+	out.RecoveryTime = figureOf(acc.recovery, since, at, median)
 	out.RecoveryTime.Band = band(out.RecoveryTime.Value, recoveryBand)
 	return out
+}
+
+// deployAccumulator collects the counts and samples of DeployFiguresOf, one deploy at a
+// time, over the deploys ds in time order.
+type deployAccumulator struct {
+	ds                             []DeployFact
+	since, at                      wire.Date
+	out                            DeployFigures
+	went, lead, failures, recovery []sample
+}
+
+func (a *deployAccumulator) in(t wire.Date) bool { return t >= a.since && t <= a.at }
+
+// nextGood is the first deploy that succeeded after t, at its end.
+func (a *deployAccumulator) nextGood(t wire.Date) (wire.Date, bool) {
+	for _, d := range a.ds {
+		if d.State == wire.DeployStateSucceeded && d.At > t {
+			return d.At, true
+		}
+	}
+	return 0, false
+}
+
+// add counts one deploy: its end and failure, the recovery after it, and, for a success in
+// the range, the deploy and the lead time of its merges.
+func (a *deployAccumulator) add(d DeployFact) {
+	if (d.State == wire.DeployStateSucceeded || d.State == wire.DeployStateFailed) && a.in(d.At) {
+		a.addEnded(d)
+	}
+	if d.State == wire.DeployStateFailed {
+		a.addRecovery(d.At)
+	}
+	for _, h := range d.Health {
+		a.addRecovery(h)
+	}
+	if d.State != wire.DeployStateSucceeded || !a.in(d.At) {
+		return
+	}
+	a.went = append(a.went, sample{d.At, 1})
+	for _, m := range d.Merges {
+		if m <= d.At {
+			a.lead = append(a.lead, sample{d.At, float64(d.At - m)})
+		}
+	}
+}
+
+// addEnded counts a deploy that ended in the range, and whether it failed or rolled back.
+func (a *deployAccumulator) addEnded(d DeployFact) {
+	a.out.Ended++
+	failed := d.State == wire.DeployStateFailed
+	if failed {
+		a.out.Failed++
+	}
+	if d.Rollback && !failed {
+		a.out.Rollbacks++
+	}
+	v := 0.0
+	if failed || d.Rollback {
+		v = 1
+	}
+	a.failures = append(a.failures, sample{d.At, v})
+}
+
+// addRecovery adds the time from a failure at t to the next good deploy, when that is in
+// the range.
+func (a *deployAccumulator) addRecovery(t wire.Date) {
+	if good, ok := a.nextGood(t); ok && a.in(good) {
+		a.recovery = append(a.recovery, sample{good, float64(good - t)})
+	}
 }
 
 // The answer of deploys/delivery and deploys/deliveryAll (#5496): the machine counts the

@@ -265,96 +265,125 @@ func Open(path string, now func() time.Time) *Files { return OpenWith(path, now,
 // OpenWith is Open, with topics for the agents nodes of lines in the old form.
 func OpenWith(path string, now func() time.Time, topics Topics) *Files {
 	f := &Files{path: path, now: now, agentsTopic: map[string]string{}}
-	converted := false
-	// A node named again only by a repo's move (#4957) does not write the file again.
-	full := func(n *wire.LineageNode) {
-		if _, ok := ParseNode(*n); ok {
-			if m := f.canonLocked(*n); m != *n {
-				converted = converted || f.unaliasedLocked(*n) != *n
-				*n = m
-			}
-			f.noteTopic(*n)
-			return
-		}
-		topic := ""
-		if r, ok := wire.RefFromLineage(n.Kind, n.Ref, wire.RefContext{}); ok && r.Provider == "agents" && topics != nil {
-			topic = topics(n.Kind, r.ID)
-		}
-		if m := f.canonLocked(Full(*n, topic)); m != *n {
-			*n, converted = m, true
-		}
-		f.noteTopic(*n)
-	}
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Printf("%s: %v; starting with no links", filepath.Base(path), err)
 	}
-	var links []wire.LineageLink
-	var states []change
-	active := map[key]int{}
+	ld := fileLoad{f: f, topics: topics, active: map[key]int{}}
 	raws := bytes.Split(data, []byte("\n"))
 	for len(raws) > 0 && len(raws[len(raws)-1]) == 0 {
 		raws = raws[:len(raws)-1]
 	}
-	unreadable := 0
 	for i, raw := range raws {
-		var l line
-		if len(raw) == 0 {
-			continue
-		}
-		bad := diskjson.Unmarshal(raw, &l) != nil
-		if !bad {
-			switch {
-			case l.Link != nil:
-				full(&l.Link.From)
-				full(&l.Link.To)
-			case l.End != nil:
-				full(&l.End.From)
-				full(&l.End.To)
-			case l.State != nil:
-				full(&l.State.Node)
-			}
-		}
-		switch {
-		case !bad && l.Link != nil && checkNode(l.Link.From) == nil && checkNode(l.Link.To) == nil:
-			// A rewritten file holds ended links whole.
-			k := keyOf(*l.Link)
-			if l.Link.EndedAt == nil {
-				if _, on := active[k]; on {
-					continue
-				}
-				active[k] = len(links)
-			}
-			links = append(links, *l.Link)
-		case !bad && l.End != nil && l.At != nil:
-			k := key{l.End.From, l.End.To, l.End.Rel}
-			if i, on := active[k]; on {
-				at := *l.At
-				links[i].EndedAt = &at
-				delete(active, k)
-			}
-		case !bad && l.State != nil && l.At != nil && checkNode(l.State.Node) == nil:
-			states = append(states, change{l.State.Node, wire.LineageSessionState{State: l.State.State, At: *l.At}})
-		default:
-			if i < len(raws)-1 {
-				unreadable++
-			}
+		if len(raw) > 0 {
+			ld.read(raw, i == len(raws)-1)
 		}
 	}
-	if unreadable > 0 {
+	if ld.unreadable > 0 {
 		aside := fmt.Sprintf("%s.unreadable-%d", path, now().Unix())
 		os.WriteFile(aside, data, 0o644)
 		store.TrimSetAsides(path)
-		log.Printf("%s: %d lines could not be read; the file is kept as %s", filepath.Base(path), unreadable, filepath.Base(aside))
+		log.Printf("%s: %d lines could not be read; the file is kept as %s", filepath.Base(path), ld.unreadable, filepath.Base(aside))
 	}
-	f.links, f.states = links, states
+	f.links, f.states = ld.links, ld.states
 	f.appended = len(raws)
-	if f.prune() || unreadable > 0 || converted {
+	if f.prune() || ld.unreadable > 0 || ld.converted {
 		f.rewrite()
 	} else {
 		f.index()
 	}
 	return f
+}
+
+// fileLoad is what OpenWith has read of a lineage file so far: the links (the open ones by
+// key in active), the session states, the unreadable lines, and whether a node was
+// converted to its full form.
+type fileLoad struct {
+	f          *Files
+	topics     Topics
+	converted  bool
+	links      []wire.LineageLink
+	states     []change
+	active     map[key]int
+	unreadable int
+}
+
+// read reads one line of the file. An unreadable line counts, except the last, which a
+// write cut short.
+func (ld *fileLoad) read(raw []byte, last bool) {
+	var l line
+	bad := diskjson.Unmarshal(raw, &l) != nil
+	if !bad {
+		ld.fullLine(&l)
+	}
+	if (bad || !ld.apply(l)) && !last {
+		ld.unreadable++
+	}
+}
+
+// fullLine puts the nodes of a line in their full form.
+func (ld *fileLoad) fullLine(l *line) {
+	switch {
+	case l.Link != nil:
+		ld.full(&l.Link.From)
+		ld.full(&l.Link.To)
+	case l.End != nil:
+		ld.full(&l.End.From)
+		ld.full(&l.End.To)
+	case l.State != nil:
+		ld.full(&l.State.Node)
+	}
+}
+
+// full puts a node in its full form. A node named again only by a repo's move (#4957) does
+// not write the file again.
+func (ld *fileLoad) full(n *wire.LineageNode) {
+	f := ld.f
+	if _, ok := ParseNode(*n); ok {
+		if m := f.canonLocked(*n); m != *n {
+			ld.converted = ld.converted || f.unaliasedLocked(*n) != *n
+			*n = m
+		}
+		f.noteTopic(*n)
+		return
+	}
+	topic := ""
+	if r, ok := wire.RefFromLineage(n.Kind, n.Ref, wire.RefContext{}); ok && r.Provider == "agents" && ld.topics != nil {
+		topic = ld.topics(n.Kind, r.ID)
+	}
+	if m := f.canonLocked(Full(*n, topic)); m != *n {
+		*n, ld.converted = m, true
+	}
+	f.noteTopic(*n)
+}
+
+// apply applies a read line: a link, the end of an open link, or a session's state. It
+// returns false for a line that is none of them.
+func (ld *fileLoad) apply(l line) bool {
+	switch {
+	case l.Link != nil && checkNode(l.Link.From) == nil && checkNode(l.Link.To) == nil:
+		// A rewritten file holds ended links whole.
+		k := keyOf(*l.Link)
+		if l.Link.EndedAt == nil {
+			if _, on := ld.active[k]; on {
+				return true
+			}
+			ld.active[k] = len(ld.links)
+		}
+		ld.links = append(ld.links, *l.Link)
+	case l.End != nil && l.At != nil:
+		k := key{l.End.From, l.End.To, l.End.Rel}
+		if i, on := ld.active[k]; on {
+			at := *l.At
+			ld.links[i].EndedAt = &at
+			delete(ld.active, k)
+		}
+	case l.State != nil && l.At != nil && checkNode(l.State.Node) == nil:
+		ld.states = append(ld.states, change{l.State.Node, wire.LineageSessionState{State: l.State.State, At: *l.At}})
+	default:
+		return false
+	}
+	return true
 }
 
 // index makes active, byNode and stateOf again from links and states.
@@ -785,42 +814,19 @@ func WalkOver(links []wire.LineageLink, linksOf func(wire.LineageNode) []int,
 		depth = DefaultDepth
 	}
 	depth = min(depth, MostDepth)
-	seen := map[wire.LineageNode]bool{n: true}
-	g := wire.LineageGraph{Nodes: []wire.LineageNode{n}, Links: []wire.LineageLink{}}
-	went := map[int]bool{}
-	limited := false
+	w := walk{links: links, seen: map[wire.LineageNode]bool{n: true}, went: map[int]bool{},
+		g: wire.LineageGraph{Nodes: []wire.LineageNode{n}, Links: []wire.LineageLink{}}}
 	edge := []wire.LineageNode{n}
 	for range depth {
 		var next []wire.LineageNode
 		for _, at := range edge {
 			for _, i := range linksOf(at) {
-				if went[i] {
-					continue
-				}
-				l := links[i]
-				other := l.To
-				if other == at {
-					other = l.From
-				}
-				if !seen[other] {
-					if len(g.Nodes) >= MostNodes {
-						limited = true
-						continue
-					}
-					seen[other] = true
-					g.Nodes = append(g.Nodes, other)
-					// A doc is a leaf (#3308): many sessions read the same one, and the walk
-					// does not go through it to their work.
-					if other.Kind != KindDoc {
-						next = append(next, other)
-					}
-				}
-				went[i] = true
-				g.Links = append(g.Links, l)
+				next = w.follow(at, i, next)
 			}
 		}
 		edge = next
 	}
+	g := w.g
 	sort.SliceStable(g.Links, func(i, j int) bool { return g.Links[i].At > g.Links[j].At })
 	for _, n := range g.Nodes {
 		if s, ok := stateNow(n); ok {
@@ -830,10 +836,49 @@ func WalkOver(links []wire.LineageLink, linksOf func(wire.LineageNode) []int,
 			g.States[n.Ref] = s
 		}
 	}
-	if limited {
-		g.Limited = &limited
+	if w.limited {
+		g.Limited = &w.limited
 	}
 	return g
+}
+
+// walk is a WalkOver under way: the graph so far, the nodes seen, the links gone along, and
+// whether MostNodes cut it short.
+type walk struct {
+	links   []wire.LineageLink
+	g       wire.LineageGraph
+	seen    map[wire.LineageNode]bool
+	went    map[int]bool
+	limited bool
+}
+
+// follow goes along link i from the node at, once, and returns next with the node at its
+// other end added when the walk goes on through it.
+func (w *walk) follow(at wire.LineageNode, i int, next []wire.LineageNode) []wire.LineageNode {
+	if w.went[i] {
+		return next
+	}
+	l := w.links[i]
+	other := l.To
+	if other == at {
+		other = l.From
+	}
+	if !w.seen[other] {
+		if len(w.g.Nodes) >= MostNodes {
+			w.limited = true
+			return next
+		}
+		w.seen[other] = true
+		w.g.Nodes = append(w.g.Nodes, other)
+		// A doc is a leaf (#3308): many sessions read the same one, and the walk
+		// does not go through it to their work.
+		if other.Kind != KindDoc {
+			next = append(next, other)
+		}
+	}
+	w.went[i] = true
+	w.g.Links = append(w.g.Links, l)
+	return next
 }
 
 func (f *Files) Close() error {

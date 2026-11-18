@@ -120,39 +120,37 @@ func IsReleaseRef(ref string) bool {
 func Rollup(nodes []wire.LineageCostNode, of wire.LineageNode) wire.LineageCostRollup {
 	r := wire.LineageCostRollup{Node: of, Own: blankCost(), Total: blankCost(), Waste: blankCost(), Unlinked: blankCost(),
 		Parts: []wire.LineageCostNode{}}
-	in := map[wire.LineageNode]bool{}
-	has := func(list []string, ref string) bool {
-		for _, s := range list {
-			if s == ref {
-				return true
-			}
+	in := rollupMembers(nodes, of)
+	for _, n := range nodes {
+		if in[n.Node] {
+			addToRollup(&r, n, of)
 		}
-		return false
 	}
+	sort.SliceStable(r.Parts, func(i, j int) bool { return r.Parts[i].LastAt > r.Parts[j].LastAt })
+	if len(r.Parts) > MostAnswer {
+		r.Parts = r.Parts[:MostAnswer]
+		t := true
+		r.Limited = &t
+	}
+	return r
+}
+
+// rollupMembers says which nodes a rollup of the node of counts: an issue and the PRs that
+// fix it, a release with its PRs and the issues they fix, every node of a repo, or the node
+// alone.
+func rollupMembers(nodes []wire.LineageCostNode, of wire.LineageNode) map[wire.LineageNode]bool {
+	in := map[wire.LineageNode]bool{}
 	switch of.Kind {
 	case KindIssue:
 		in[of] = true
 		for _, n := range nodes {
-			if n.Node.Kind == KindPR && has(n.Fixes, of.Ref) {
+			if n.Node.Kind == KindPR && slices.Contains(n.Fixes, of.Ref) {
 				in[n.Node] = true
 			}
 		}
 	case KindRelease:
 		in[of] = true
-		fixed := map[string]bool{}
-		for _, n := range nodes {
-			if n.Node.Kind == KindPR && has(n.PartOf, of.Ref) {
-				in[n.Node] = true
-				for _, f := range n.Fixes {
-					fixed[f] = true
-				}
-			}
-		}
-		for _, n := range nodes {
-			if n.Node.Kind == KindIssue && fixed[n.Node.Ref] {
-				in[n.Node] = true
-			}
-		}
+		addReleaseMembers(in, nodes, of.Ref)
 	case KindRepo:
 		for _, n := range nodes {
 			if n.Repo != nil && SameRepo(*n.Repo, of.Ref) {
@@ -162,43 +160,60 @@ func Rollup(nodes []wire.LineageCostNode, of wire.LineageNode) wire.LineageCostR
 	default:
 		in[of] = true
 	}
+	return in
+}
+
+// addReleaseMembers adds the PRs that are part of the release ref, and the issues they fix.
+func addReleaseMembers(in map[wire.LineageNode]bool, nodes []wire.LineageCostNode, ref string) {
+	fixed := map[string]bool{}
 	for _, n := range nodes {
-		if !in[n.Node] {
-			continue
-		}
-		if n.Node == of {
-			AddCost(&r.Own, n.Banked)
-		}
-		AddCost(&r.Total, n.Banked)
-		if Wasted(n) {
-			AddCost(&r.Waste, n.Banked)
-		}
-		if n.Node.Kind == KindSession {
-			AddCost(&r.Unlinked, n.Banked)
-		}
-		if n.Node.Kind == KindPR && n.Outcome != nil {
-			switch *n.Outcome {
-			case OutcomeMerged:
-				r.PrsMerged++
-			case OutcomeClosed:
-				r.PrsClosed++
-			case OutcomeReverted:
-				r.PrsMerged++
-				r.PrsReverted++
+		if n.Node.Kind == KindPR && slices.Contains(n.PartOf, ref) {
+			in[n.Node] = true
+			for _, f := range n.Fixes {
+				fixed[f] = true
 			}
 		}
-		if n.FailedChecks != nil {
-			r.FailedChecks += *n.FailedChecks
+	}
+	for _, n := range nodes {
+		if n.Node.Kind == KindIssue && fixed[n.Node.Ref] {
+			in[n.Node] = true
 		}
-		r.Parts = append(r.Parts, n)
 	}
-	sort.SliceStable(r.Parts, func(i, j int) bool { return r.Parts[i].LastAt > r.Parts[j].LastAt })
-	if len(r.Parts) > MostAnswer {
-		r.Parts = r.Parts[:MostAnswer]
-		t := true
-		r.Limited = &t
+}
+
+// addToRollup adds one member node's cost, outcome and failed checks to the rollup of the
+// node of.
+func addToRollup(r *wire.LineageCostRollup, n wire.LineageCostNode, of wire.LineageNode) {
+	if n.Node == of {
+		AddCost(&r.Own, n.Banked)
 	}
-	return r
+	AddCost(&r.Total, n.Banked)
+	if Wasted(n) {
+		AddCost(&r.Waste, n.Banked)
+	}
+	if n.Node.Kind == KindSession {
+		AddCost(&r.Unlinked, n.Banked)
+	}
+	if n.Node.Kind == KindPR && n.Outcome != nil {
+		countOutcome(r, *n.Outcome)
+	}
+	if n.FailedChecks != nil {
+		r.FailedChecks += *n.FailedChecks
+	}
+	r.Parts = append(r.Parts, n)
+}
+
+// countOutcome counts a PR's outcome in the rollup: a revert is a merge too.
+func countOutcome(r *wire.LineageCostRollup, outcome string) {
+	switch outcome {
+	case OutcomeMerged:
+		r.PrsMerged++
+	case OutcomeClosed:
+		r.PrsClosed++
+	case OutcomeReverted:
+		r.PrsMerged++
+		r.PrsReverted++
+	}
 }
 
 // The levels of an issue (#3265, #3562): a hierarchy level from its labels, else bug.
