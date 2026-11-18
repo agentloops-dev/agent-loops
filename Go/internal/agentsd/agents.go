@@ -386,8 +386,8 @@ func changeLabels(current []wire.SessionLabel, add, remove []string, folder []wi
 	return changeLabelsAs(wire.SessionLabelOwnerPerson, current, add, remove, folder)
 }
 
-// changeLabelsAs is SessionLabelPolicy.change by an actor: an agent cannot change a label
-// the person gave.
+// changeLabelsAs is SessionLabelPolicy.change by an actor: an agent cannot remove a label
+// the person gave, and its add of one is skipped.
 func changeLabelsAs(actor wire.SessionLabelOwner, current []wire.SessionLabel, add, remove []string, folder []wire.SessionLabel) ([]wire.SessionLabel, error) {
 	ownedByPerson := func(v string) error {
 		return Invalid("The label %s belongs to the person, so an agent cannot change it.", v)
@@ -430,9 +430,8 @@ func changeLabelsAs(actor wire.SessionLabelOwner, current []wire.SessionLabel, a
 		found := false
 		for i, l := range result {
 			if labelKey(l.Value) == labelKey(v) {
-				if actor == wire.SessionLabelOwnerAgent && l.Owner == wire.SessionLabelOwnerPerson {
-					return nil, ownedByPerson(l.Value)
-				}
+				// An agent's add of a label the person gave changes nothing: it is skipped, and
+				// the person stays its owner (#6177). Only a remove of it is refused.
 				if actor == wire.SessionLabelOwnerPerson {
 					result[i].Owner = wire.SessionLabelOwnerPerson
 				}
