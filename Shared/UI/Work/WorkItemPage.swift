@@ -998,11 +998,9 @@ struct WorkItemPage: View {
                                               returning: ((host: MachineRef, got: DaemonAPI.ForgeItemDetail)?, String?).self) { group in
             for machine in machines {
                 group.addTask {
-                    do {
-                        return (machine.id, .success(try await model.forgeItem(node, cursor: nil, on: machine.id)))
-                    } catch {
-                        return (machine.id, .failure(error))
-                    }
+                    // The result first, then the tuple from one place (#5946, `Result.catching`).
+                    let read = await Result.catching { try await model.forgeItem(node, cursor: nil, on: machine.id) }
+                    return (machine.id, read)
                 }
             }
             var last: String?

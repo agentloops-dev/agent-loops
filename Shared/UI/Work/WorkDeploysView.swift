@@ -34,13 +34,13 @@ final class WorkDeploysState {
         await withTaskGroup(of: (Int, [DaemonAPI.DeployTargetNow]?, String?).self) { group in
             for (i, machine) in machines.enumerated() {
                 group.addTask {
-                    do {
-                        let t = try await model.forge(DaemonAPI.Method.deploysTargets, DaemonAPI.DeployTargetsRequest(),
-                                                      returning: DaemonAPI.DeployTargets.self, on: machine.id)
-                        return (i, t.targets, nil)
-                    } catch {
-                        return (i, nil, machines.count > 1 ? "\(machine.name): \(error.localizedDescription)" : error.localizedDescription)
+                    // The result first, then the tuple from one place (#5946, `Result.catching`).
+                    let got = await Result.catching {
+                        try await model.forge(DaemonAPI.Method.deploysTargets, DaemonAPI.DeployTargetsRequest(),
+                                              returning: DaemonAPI.DeployTargets.self, on: machine.id)
                     }
+                    let problem = got.error.map { machines.count > 1 ? "\(machine.name): \($0.localizedDescription)" : $0.localizedDescription }
+                    return (i, try? got.get().targets, problem)
                 }
             }
             for await (i, t, problem) in group {

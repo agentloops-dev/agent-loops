@@ -260,11 +260,10 @@ final class WorkListState {
         await withTaskGroup(of: (MachineRef, DaemonAPI.ForgeList).self) { group in
             for machine in machines {
                 group.addTask {
-                    do {
-                        return (machine.id, try await model.forgeList(kind, request, on: machine.id))
-                    } catch {
-                        return (machine.id, .init(errors: [.init(forge: "", message: error.localizedDescription)]))
-                    }
+                    // The result first, then the tuple from one place (#5946, `Result.catching`).
+                    let read = await Result.catching { try await model.forgeList(kind, request, on: machine.id) }
+                    let list = (try? read.get()) ?? .init(errors: [.init(forge: "", message: read.error?.localizedDescription ?? "")])
+                    return (machine.id, list)
                 }
             }
             for await (host, list) in group {
