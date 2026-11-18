@@ -188,13 +188,11 @@ func (d *Daemon) prepareWorktreeFrom(folder, from string, choice wire.WorktreeCh
 		} else {
 			wanted = worktreeName(prompt, false, time.Now())
 		}
-		if _, err := git(from, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
+		head, err := git(from, "rev-parse", "--verify", "-q", "HEAD")
+		if err != nil {
 			return nil, "", worktreeFailed("There is no commit here yet to base a worktree on. Commit something first.")
 		}
-		base, _ := git(from, "rev-parse", "--abbrev-ref", "HEAD")
-		if base == "HEAD" {
-			base, _ = git(from, "rev-parse", "HEAD")
-		}
+		base := worktreeBase(from, head)
 		if err := ensureExcluded(repo.commonDir); err != nil {
 			return nil, "", err
 		}
@@ -221,7 +219,7 @@ func (d *Daemon) prepareWorktreeFrom(folder, from string, choice wire.WorktreeCh
 				return nil, "", worktreeFailed("Could not make a worktree: " + err.Error())
 			}
 			b := branch
-			wt := &wire.AgentWorktree{Name: name, Root: store.FolderURL(canonical(root)), Branch: &b, Folder: folderURL, Base: &base, MadeByApp: true}
+			wt := &wire.AgentWorktree{Name: name, Root: store.FolderURL(canonical(root)), Branch: &b, Folder: folderURL, Base: base, MadeByApp: true}
 			return wt, workingFolder(canonical(root), repo.prefix), nil
 		}
 		return nil, "", worktreeFailed("Could not find a free name for a worktree like " + wanted + ".")
@@ -327,6 +325,28 @@ func undoWorktree(choice wire.WorktreeChoice, wt *wire.AgentWorktree) {
 	if (choice.New != nil || choice.Named != nil) && wt.Branch != nil {
 		git(folder, "branch", "-D", *wt.Branch)
 	}
+}
+
+// worktreeBase is what a new worktree is made from: the branch from has checked out, or
+// head, its commit, when from is detached. A failed read gives nil, never "", so a note
+// says nothing of the base rather than "from ." (#6098); git is asked again once first,
+// as a read can fail on a busy machine.
+func worktreeBase(from, head string) *string {
+	for attempt := 0; attempt < 2; attempt++ {
+		branch, err := git(from, "rev-parse", "--abbrev-ref", "HEAD")
+		switch {
+		case err != nil || branch == "":
+			continue
+		case branch == "HEAD":
+			if head == "" {
+				return nil
+			}
+			return &head
+		default:
+			return &branch
+		}
+	}
+	return nil
 }
 
 func worktreeNote(wt wire.AgentWorktree) string {

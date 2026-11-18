@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -28,7 +27,6 @@ func run(t *testing.T, dir string, args ...string) {
 
 func TestAnAgentMovesIntoANewWorktreeWhenItsTurnEnds(t *testing.T) {
 	t.Parallel()
-	flaky.UnderLoad(t, "#6098")
 
 	fakeRuntimes(t)
 	d, _ := start(t, t.TempDir())
