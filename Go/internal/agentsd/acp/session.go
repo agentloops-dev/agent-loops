@@ -52,6 +52,19 @@ type Launch struct {
 	// Name is the runtime as the person knows it ("Claude"), for errors; "" is the
 	// command's own name.
 	Name string
+	// Attach, when set, reaches a runtime that is not a process of its own (a test's runtime
+	// in the test's process, #6143) in place of starting Command: the session talks ACP over
+	// what it gives, and has no pid.
+	Attach func(Launch) (Attached, error)
+}
+
+// Attached is a runtime that Launch.Attach reached: its stdin and stdout, and its end.
+type Attached struct {
+	Stdin  io.WriteCloser
+	Stdout io.Reader
+	// End stops the runtime; Done is closed once it has stopped.
+	End  func()
+	Done <-chan struct{}
 }
 
 // ErrNoAnswer is a runtime that did not answer initialize in handshakeWait (#1440).
@@ -62,7 +75,9 @@ var handshakeWait = 60 * time.Second
 
 // Session is one runtime process and its one ACP session.
 type Session struct {
+	// cmd is the runtime's process; nil for an attached one, which end stops.
 	cmd       *exec.Cmd
+	end       func()
 	conn      *sdk.ClientSideConnection
 	ID        sdk.SessionId
 	Init      sdk.InitializeResponse
@@ -91,32 +106,13 @@ func Handshake(ctx context.Context, l Launch, sink Sink) (*Session, error) {
 // handshake is one launch and initialize; silent is a runtime that did not answer in
 // handshakeWait and wrote nothing to stderr.
 func handshake(ctx context.Context, l Launch, sink Sink) (_ *Session, silent bool, _ error) {
-	argv := append([]string{l.Command}, l.Args...)
-	if l.Wrap != nil {
-		argv = l.Wrap(argv)
-	}
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Dir = l.Dir
-	cmd.Env = l.Env
-	// Its own process group, so npx's node child goes with it.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	stdin, err := cmd.StdinPipe()
+	s, stdin, stdout, err := launch(l)
 	if err != nil {
 		return nil, false, err
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, false, err
-	}
-	stderr := &tail{}
-	cmd.Stderr = stderr
-	if err := cmd.Start(); err != nil {
-		return nil, false, fmt.Errorf("start %s: %w", l.Command, err)
-	}
-	s := &Session{cmd: cmd, stderr: stderr, done: make(chan struct{})}
+	stderr := s.stderr
 	s.client = &client{sink: sink, dir: l.Dir, env: l.Env, runtime: l.Name, terminals: map[string]*terminal{}, updates: newUpdateGate()}
 	s.conn = sdk.NewClientSideConnection(s.client, &sessionPromptWriter{w: stdin, c: s.client}, &rawElicitations{r: bufio.NewReader(stdout), c: s.client})
-	safe.Go("runtime wait", func() { _ = cmd.Wait(); close(s.done) })
 
 	ictx, cancel := context.WithTimeout(ctx, handshakeWait)
 	defer cancel()
@@ -147,6 +143,44 @@ func handshake(ctx context.Context, l Launch, sink Sink) (_ *Session, silent boo
 		return nil, false, fmt.Errorf("initialize: %w%s", err, stderr.say())
 	}
 	return s, false, nil
+}
+
+// launch starts the runtime's process, or attaches to it, and is its stdin and stdout.
+func launch(l Launch) (*Session, io.Writer, io.Reader, error) {
+	if l.Attach != nil {
+		a, err := l.Attach(l)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("attach %s: %w", l.Command, err)
+		}
+		done := make(chan struct{})
+		safe.Go("runtime wait", func() { <-a.Done; close(done) })
+		return &Session{end: a.End, stderr: &tail{}, done: done}, a.Stdin, a.Stdout, nil
+	}
+	argv := append([]string{l.Command}, l.Args...)
+	if l.Wrap != nil {
+		argv = l.Wrap(argv)
+	}
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Dir = l.Dir
+	cmd.Env = l.Env
+	// Its own process group, so npx's node child goes with it.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	stderr := &tail{}
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		return nil, nil, nil, fmt.Errorf("start %s: %w", l.Command, err)
+	}
+	s := &Session{cmd: cmd, stderr: stderr, done: make(chan struct{})}
+	safe.Go("runtime wait", func() { _ = cmd.Wait(); close(s.done) })
+	return s, stdin, stdout, nil
 }
 
 // takes is the servers the runtime takes: one over http or sse only where it says so
@@ -320,17 +354,22 @@ func (s *Session) SetConfig(ctx context.Context, id, value string) error {
 	return err
 }
 
-// Stop ends the process group: TERM, then KILL.
+// Stop ends the process group: TERM, then KILL. An attached runtime is ended.
 func (s *Session) Stop() {
-	if s.cmd.Process == nil {
+	switch {
+	case s.cmd != nil && s.cmd.Process != nil:
+		pgid := s.cmd.Process.Pid
+		_ = syscall.Kill(-pgid, syscall.SIGTERM)
+		select {
+		case <-s.done:
+		case <-time.After(3 * time.Second):
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+	case s.end != nil:
+		s.end()
+		<-s.done
+	default:
 		return
-	}
-	pgid := s.cmd.Process.Pid
-	_ = syscall.Kill(-pgid, syscall.SIGTERM)
-	select {
-	case <-s.done:
-	case <-time.After(3 * time.Second):
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	}
 	s.client.closeTerminals()
 	// The SDK hands on what it read before the output ended after the process is gone:
@@ -342,13 +381,16 @@ func (s *Session) Stop() {
 
 func (s *Session) Done() <-chan struct{} { return s.done }
 
-// Pids is the runtime's process, then each terminal's it asked for that has not ended
+// Pids is the runtime's process (none for an attached one), then each terminal's it asked for that has not ended
 // (processes/list, #3453): the daemon starts both, so a terminal is not the runtime's child.
 func (s *Session) Pids() []int {
-	if s.cmd.Process == nil {
-		return nil
+	var pids []int
+	if s.cmd != nil {
+		if s.cmd.Process == nil {
+			return nil
+		}
+		pids = append(pids, s.cmd.Process.Pid)
 	}
-	pids := []int{s.cmd.Process.Pid}
 	s.client.mu.Lock()
 	defer s.client.mu.Unlock()
 	for _, t := range s.client.terminals {
@@ -363,9 +405,10 @@ func (s *Session) Pids() []int {
 	return pids
 }
 
-// Pid is the runtime's own process, the leader of its process group; 0 before it started.
+// Pid is the runtime's own process, the leader of its process group; 0 before it started,
+// and for an attached runtime.
 func (s *Session) Pid() int {
-	if s.cmd.Process == nil {
+	if s.cmd == nil || s.cmd.Process == nil {
 		return 0
 	}
 	return s.cmd.Process.Pid

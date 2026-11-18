@@ -84,7 +84,7 @@ func TestCommandNamesShortensAndCounts(t *testing.T) {
 // A session that waits for its background command, on a runtime that does not wake
 // itself, is started again when the warm pass sees the command end.
 func TestBackgroundEndedWakesTheWaitingSession(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	asNotWakingItself(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -121,7 +121,7 @@ func TestBackgroundEndedWakesTheWaitingSession(t *testing.T) {
 
 // Another session's background commands wake nobody else.
 func TestBackgroundEndedWakesOnlyItsOwnSession(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	asNotWakingItself(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -158,7 +158,7 @@ func TestBackgroundEndedWakesOnlyItsOwnSession(t *testing.T) {
 
 // A wait on it alone is refused for a runtime that wakes itself.
 func TestBackgroundWaitRefusedWhenTheRuntimeWakesItself(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := warmAgent(t, d, c, t.TempDir())
@@ -175,7 +175,7 @@ func TestBackgroundWaitRefusedWhenTheRuntimeWakesItself(t *testing.T) {
 // A wait on it alone is refused where nothing runs in the background. The hook is set
 // before start: the daemon's warm-pool pass reads it (#6009).
 func TestBackgroundWaitRefusedWhenNothingWouldEnd(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	asNotWakingItself(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -230,7 +230,7 @@ func writeHandover(t *testing.T, d *Daemon, h backgroundHandover) {
 func TestAdoptedBackgroundEndsAfterARestart(t *testing.T) {
 	t.Parallel()
 
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := warmAgent(t, d, c, t.TempDir())
@@ -277,7 +277,7 @@ func TestAdoptedBackgroundEndsAfterARestart(t *testing.T) {
 // A process that is not the one handed over (its pid used again, or ended in the gap) is
 // not adopted, and its end is raised at the first look.
 func TestAdoptionChecksTheStartTime(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	asNotWakingItself(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

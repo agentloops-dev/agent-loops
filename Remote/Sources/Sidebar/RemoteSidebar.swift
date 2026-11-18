@@ -307,40 +307,8 @@ struct RemoteSidebar: View {
                     .foregroundStyle(Paper.secondary)
             }
 
-            // A server gone quiet greys its folders; this says why, once, as the window's
-            // sidebar foot does (#534). Machines' rows say it while that group is open (#3764).
-            let offline = showsMachines && !model.machines.isEmpty ? [] : servers.filter { model.hostIsOffline($0) }
-            if !offline.isEmpty {
-                Section {
-                    // At most seven, as the Machines group (#5286), then how many more.
-                    ForEach(offline.prefix(MachinesGroup.limit), id: \.self) { host in
-                        // One on a stopped workspace says so, with Start, as its strip (#961).
-                        let row = model.controlHost(host)
-                        HStack(spacing: 8) {
-                            Label(OfflineWords.footLine(name: model.hostLabel(host), row: row),
-                                  icon: "bolt.horizontal.circle")
-                                .appText(.fine)
-                                .foregroundStyle(Paper.secondary)
-                                .accessibilityElement(children: .combine)
-                            Spacer(minLength: 0)
-                            if let row, let workspace = row.workspace,
-                               OfflineWords.offersStart(state: row.state, workspace: workspace) {
-                                Button("Start") { Task { await model.startHost(host) } }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                    .appText(.fine)
-                                    .disabled(model.hostsBeingStarted.contains(host))
-                                    .accessibilityLabel("Start \(model.hostLabel(host))")
-                            }
-                        }
-                    }
-                    if offline.count > MachinesGroup.limit {
-                        Label(MachinesGroup.moreOffline(offline.count - MachinesGroup.limit), icon: "bolt.horizontal.circle")
-                            .appText(.fine)
-                            .foregroundStyle(Paper.secondary)
-                    }
-                }
-            }
+            // A server gone quiet is not listed here (#6138), as the window's sidebar foot:
+            // its folders are greyed, and Machines, its page and a session's strip say why.
 
             // A file the Mac keeps that could not be read (#205, #223), as the window's
             // sidebar foot: why paired devices or folders may have gone from view.
