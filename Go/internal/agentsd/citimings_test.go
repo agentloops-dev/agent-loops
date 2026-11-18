@@ -373,13 +373,10 @@ func TestCITimingsSyncSendsWhatChanged(t *testing.T) {
 	}
 }
 
-// A fake Bitbucket with three completed pipelines: one on main run again by "Rerun failed
-// steps" (run 2), one for a pull request with its steps on two pages, and one on main older
-// than the store keeps.
-func TestCITimingsBitbucket(t *testing.T) {
-	t.Parallel()
-
-	now := time.Now().UTC().Truncate(time.Second)
+// fakeBitbucketCI is the fake Bitbucket of TestCITimingsBitbucket, with its pipelines at times
+// before now.
+func fakeBitbucketCI(t *testing.T, now time.Time) *httptest.Server {
+	t.Helper()
 	at := func(d time.Duration) string { return now.Add(d).UTC().Format(time.RFC3339) }
 	var srv *httptest.Server
 	repo := "/2.0/repositories/team/app"
@@ -431,6 +428,17 @@ func TestCITimingsBitbucket(t *testing.T) {
 	})
 	srv = httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A fake Bitbucket with three completed pipelines: one on main run again by "Rerun failed
+// steps" (run 2), one for a pull request with its steps on two pages, and one on main older
+// than the store keeps.
+func TestCITimingsBitbucket(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := fakeBitbucketCI(t, now)
 
 	d, err := New(context.Background(), t.TempDir())
 	if err != nil {

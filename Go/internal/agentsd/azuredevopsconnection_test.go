@@ -177,17 +177,7 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 		t.Fatalf("started: %+v", started)
 	}
 	close(polling)
-	var done wire.ConnectionSignIn
-	for range 50 {
-		raw := c.call(t, 4, "connections/sign-in/wait", map[string]any{"flowID": started.FlowID})
-		if strings.Contains(string(raw), "eyJ") || strings.Contains(string(raw), "rt-1") || strings.Contains(string(raw), "dc-secret") {
-			t.Fatalf("a secret went to the client: %s", raw)
-		}
-		json.Unmarshal(raw, &done)
-		if done.Status != wire.ConnectionSignInStatusWaiting {
-			break
-		}
-	}
+	done := waitEntraSignIn(t, c, started.FlowID)
 	if done.Status != wire.ConnectionSignInStatusConnected || done.Connection == nil || deref(done.Connection.Login) != "Agents Test" ||
 		done.Connection.ByToken != nil || done.Connection.ExpiresAt != nil {
 		t.Fatalf("done: %+v (%s)", done, deref(done.Message))
@@ -223,6 +213,24 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 	if len(list.Connections) != 1 || list.Connections[0].ByToken != nil || list.Connections[0].State != wire.ConnectionStateSignInAgain {
 		t.Fatalf("list: %+v", list.Connections)
 	}
+}
+
+// waitEntraSignIn waits on the Entra sign-in flowID until it is no longer waiting, at most 50
+// times, and checks that no secret goes to the client.
+func waitEntraSignIn(t *testing.T, c *conn, flowID wire.UUID) wire.ConnectionSignIn {
+	t.Helper()
+	var done wire.ConnectionSignIn
+	for range 50 {
+		raw := c.call(t, 4, "connections/sign-in/wait", map[string]any{"flowID": flowID})
+		if strings.Contains(string(raw), "eyJ") || strings.Contains(string(raw), "rt-1") || strings.Contains(string(raw), "dc-secret") {
+			t.Fatalf("a secret went to the client: %s", raw)
+		}
+		json.Unmarshal(raw, &done)
+		if done.Status != wire.ConnectionSignInStatusWaiting {
+			break
+		}
+	}
+	return done
 }
 
 // fakeSetupAzureDevOps answers an Azure DevOps set-up's reads (#3802); refuse makes the

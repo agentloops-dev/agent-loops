@@ -129,46 +129,10 @@ func (d *Daemon) saveAgentConfigEditorFile(r wire.AgentConfigEditorSaveRequest) 
 		return Invalid("Persona and workflow files must be directly in their section.")
 	}
 	if r.Kind == "workflows" {
-		id := strings.TrimSuffix(r.Path, ".md")
-		if remove {
-			return d.deleteWorkflow(wire.WorkflowRequest{Folder: store.FolderURL(base), WorkflowID: id})
-		}
-		if r.Folder == nil {
-			_, err = d.writeUserWorkflow(wire.WorkflowWriteRequest{WorkflowID: id, Content: r.Content})
-		} else {
-			_, err = d.writeWorkflow(base, id, r.Content)
-		}
-		return err
+		return d.saveAgentConfigEditorWorkflow(r, base, remove)
 	}
 	if remove {
-		if r.Kind == "skills" && filepath.Base(path) == "SKILL.md" && filepath.Dir(filepath.Dir(path)) == root {
-			name := filepath.Base(filepath.Dir(path))
-			dest := wire.SkillDestination{Kind: wire.SkillDestinationKindPersonal}
-			if r.Folder != nil {
-				dest = wire.SkillDestination{Kind: wire.SkillDestinationKindFolder, Folder: &base}
-			}
-			place, err := d.skillPlace(dest)
-			if err != nil {
-				return catalogRefusal(err)
-			}
-			lock, err := skillcatalog.LoadLock(place.LockKind, place.Lock)
-			if err != nil {
-				return catalogRefusal(err)
-			}
-			if _, _, managed := place.ManagedEntry(name, lock); managed {
-				_, err = d.skillInstaller().Remove(name, place, nowFunc())
-			} else {
-				_, err = skillcatalog.Trash(filepath.Dir(path), place.Trash, nowFunc())
-			}
-			if err != nil {
-				return fileError(CodeFileNotReadable, "The skill could not be removed.")
-			}
-			return nil
-		}
-		if err := os.Remove(path); err != nil {
-			return fileError(CodeFileNotReadable, "The file could not be deleted.")
-		}
-		return nil
+		return d.removeAgentConfigEditorFile(r, base, root, path)
 	}
 	if strings.TrimSpace(r.Content) == "" {
 		return Invalid("Enter the file content before saving.")
@@ -190,6 +154,60 @@ func (d *Daemon) saveAgentConfigEditorFile(r wire.AgentConfigEditorSaveRequest) 
 	}
 	if err := store.WriteAtomically(path, []byte(r.Content), 0o644); err != nil {
 		return fileError(CodeFileNotReadable, "The file could not be saved: "+err.Error())
+	}
+	return nil
+}
+
+// saveAgentConfigEditorWorkflow saves or deletes a workflow file of the editor, as a workflow.
+func (d *Daemon) saveAgentConfigEditorWorkflow(r wire.AgentConfigEditorSaveRequest, base string, remove bool) error {
+	id := strings.TrimSuffix(r.Path, ".md")
+	if remove {
+		return d.deleteWorkflow(wire.WorkflowRequest{Folder: store.FolderURL(base), WorkflowID: id})
+	}
+	var err error
+	if r.Folder == nil {
+		_, err = d.writeUserWorkflow(wire.WorkflowWriteRequest{WorkflowID: id, Content: r.Content})
+	} else {
+		_, err = d.writeWorkflow(base, id, r.Content)
+	}
+	return err
+}
+
+// removeAgentConfigEditorFile deletes a persona or skill file of the editor. A skill's
+// SKILL.md removes the whole skill.
+func (d *Daemon) removeAgentConfigEditorFile(r wire.AgentConfigEditorSaveRequest, base, root, path string) error {
+	if r.Kind == "skills" && filepath.Base(path) == "SKILL.md" && filepath.Dir(filepath.Dir(path)) == root {
+		return d.removeAgentConfigEditorSkill(r, base, path)
+	}
+	if err := os.Remove(path); err != nil {
+		return fileError(CodeFileNotReadable, "The file could not be deleted.")
+	}
+	return nil
+}
+
+// removeAgentConfigEditorSkill removes the skill whose SKILL.md is at path: through the
+// installer when the lock manages it, else to the trash.
+func (d *Daemon) removeAgentConfigEditorSkill(r wire.AgentConfigEditorSaveRequest, base, path string) error {
+	name := filepath.Base(filepath.Dir(path))
+	dest := wire.SkillDestination{Kind: wire.SkillDestinationKindPersonal}
+	if r.Folder != nil {
+		dest = wire.SkillDestination{Kind: wire.SkillDestinationKindFolder, Folder: &base}
+	}
+	place, err := d.skillPlace(dest)
+	if err != nil {
+		return catalogRefusal(err)
+	}
+	lock, err := skillcatalog.LoadLock(place.LockKind, place.Lock)
+	if err != nil {
+		return catalogRefusal(err)
+	}
+	if _, _, managed := place.ManagedEntry(name, lock); managed {
+		_, err = d.skillInstaller().Remove(name, place, nowFunc())
+	} else {
+		_, err = skillcatalog.Trash(filepath.Dir(path), place.Trash, nowFunc())
+	}
+	if err != nil {
+		return fileError(CodeFileNotReadable, "The skill could not be removed.")
 	}
 	return nil
 }

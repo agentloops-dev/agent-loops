@@ -444,19 +444,7 @@ func (d *Daemon) appToolsHandle(ctx context.Context, g *appGrant, method string,
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		tools := offeredTools(g.movesItself, d.isBot(), d.offersDriveScreen(), d.inPersonalHome(g.agent))
-		// The machine's browser, driven through Playwright's own tools (#3534).
-		if d.offersBrowser() {
-			list, _ := browserTools()
-			for _, t := range list {
-				// Nobody answers a hand-off on a bot's machine (#1761, FR-032).
-				if d.isBot() && strings.Contains(string(t), `"name":"`+handToPersonName+`"`) {
-					continue
-				}
-				tools = append(tools, t)
-			}
-		}
-		return map[string]any{"tools": tools}, nil
+		return d.appToolsList(g), nil
 	case "resources/list":
 		return map[string]any{"resources": []any{}}, nil
 	case "resources/read":
@@ -466,56 +454,79 @@ func (d *Daemon) appToolsHandle(ctx context.Context, g *appGrant, method string,
 		json.Unmarshal(params, &p)
 		return nil, Invalid("No resource at %s.", p.URI)
 	case "tools/call":
-		var p struct {
-			Name      string                     `json:"name"`
-			Arguments map[string]json.RawMessage `json:"arguments"`
-		}
-		json.Unmarshal(params, &p)
-		if name, ok := browserToolNamed(p.Name); ok && d.browserAvailable() {
-			return d.callBrowserTool(ctx, g.agent, name, p.Arguments), nil
-		}
-		// Matched by the end of the name: a runtime is free to put its own prefix on it.
-		var tool *appTool
-		calls := appToolCalls()
-		for i := range calls {
-			if strings.HasSuffix(p.Name, calls[i].name) && (tool == nil || len(calls[i].name) > len(tool.name)) {
-				tool = &calls[i]
-			}
-		}
-		if tool == nil {
-			name := p.Name
-			if name == "" {
-				name = "that"
-			}
-			return nil, Invalid("No tool called %s.", name)
-		}
-		if askTools[tool.name] && d.isBot() {
-			return toolReply(noOneAnswersWords, true), nil
-		}
-		began := time.Now()
-		note, err := tool.call(d, g.agent, p.Arguments)
-		d.keepAppToolCall(g.agent, tool.name, p.Arguments, note, err, began)
-		d.countAppTool(g.agent, tool.name)
-		if err != nil {
-			msg := err.Error()
-			if e, ok := err.(*Error); ok {
-				msg = e.Message
-			}
-			return toolReply(msg, true), nil
-		}
-		d.appMu.Lock()
-		image, hasImage := d.images[g.agent]
-		delete(d.images, g.agent)
-		d.appMu.Unlock()
-		if hasImage {
-			return map[string]any{"content": []any{
-				map[string]any{"type": "text", "text": note},
-				map[string]any{"type": "image", "data": image.Data, "mimeType": image.Mime},
-			}, "isError": false}, nil
-		}
-		return toolReply(note, false), nil
+		return d.appToolsCall(ctx, g, params)
 	}
 	return nil, &Error{Code: CodeMethodNotFound, Message: "method not found: " + method}
+}
+
+// appToolsList is the reply to tools/list: the app's tools offered to this agent, and the
+// machine's browser tools.
+func (d *Daemon) appToolsList(g *appGrant) map[string]any {
+	tools := offeredTools(g.movesItself, d.isBot(), d.offersDriveScreen(), d.inPersonalHome(g.agent))
+	// The machine's browser, driven through Playwright's own tools (#3534).
+	if d.offersBrowser() {
+		list, _ := browserTools()
+		for _, t := range list {
+			// Nobody answers a hand-off on a bot's machine (#1761, FR-032).
+			if d.isBot() && strings.Contains(string(t), `"name":"`+handToPersonName+`"`) {
+				continue
+			}
+			tools = append(tools, t)
+		}
+	}
+	return map[string]any{"tools": tools}
+}
+
+// appToolsCall is the reply to tools/call: it calls one tool for the agent.
+func (d *Daemon) appToolsCall(ctx context.Context, g *appGrant, params json.RawMessage) (any, *Error) {
+	var p struct {
+		Name      string                     `json:"name"`
+		Arguments map[string]json.RawMessage `json:"arguments"`
+	}
+	json.Unmarshal(params, &p)
+	if name, ok := browserToolNamed(p.Name); ok && d.browserAvailable() {
+		return d.callBrowserTool(ctx, g.agent, name, p.Arguments), nil
+	}
+	// Matched by the end of the name: a runtime is free to put its own prefix on it.
+	var tool *appTool
+	calls := appToolCalls()
+	for i := range calls {
+		if strings.HasSuffix(p.Name, calls[i].name) && (tool == nil || len(calls[i].name) > len(tool.name)) {
+			tool = &calls[i]
+		}
+	}
+	if tool == nil {
+		name := p.Name
+		if name == "" {
+			name = "that"
+		}
+		return nil, Invalid("No tool called %s.", name)
+	}
+	if askTools[tool.name] && d.isBot() {
+		return toolReply(noOneAnswersWords, true), nil
+	}
+	began := time.Now()
+	note, err := tool.call(d, g.agent, p.Arguments)
+	d.keepAppToolCall(g.agent, tool.name, p.Arguments, note, err, began)
+	d.countAppTool(g.agent, tool.name)
+	if err != nil {
+		msg := err.Error()
+		if e, ok := err.(*Error); ok {
+			msg = e.Message
+		}
+		return toolReply(msg, true), nil
+	}
+	d.appMu.Lock()
+	image, hasImage := d.images[g.agent]
+	delete(d.images, g.agent)
+	d.appMu.Unlock()
+	if hasImage {
+		return map[string]any{"content": []any{
+			map[string]any{"type": "text", "text": note},
+			map[string]any{"type": "image", "data": image.Data, "mimeType": image.Mime},
+		}, "isError": false}, nil
+	}
+	return toolReply(note, false), nil
 }
 
 func toolReply(text string, isError bool) map[string]any {

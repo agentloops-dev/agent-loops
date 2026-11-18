@@ -31,7 +31,7 @@ const (
 	issueLine    = "Issue closed at "
 	releaseLine  = "Release published at "
 	assignedLine = "Issue assigned to you: "
-	reviewLine = "Review asked of you: "
+	reviewLine   = "Review asked of you: "
 	// approvalLine is a line of a machine from before #5803, when a needs-approval label asked
 	// for the person's approval; a requested review asks for it now, as reviewLine.
 	approvalLine = "Approval asked of you: "
@@ -161,67 +161,105 @@ func (d *Daemon) forgeOutcomes(gh string, repos []summaryRepo, since time.Time, 
 	var epics, pulls, issues, releases []*forgeOutcome
 	for i := range repos {
 		r := &repos[i]
-		f := r.folders[0]
-		if found, err := mergedPullRequests(d.ctx, gh, f, day); err == nil {
-			for _, p := range found {
-				if !p.MergedAt.Before(since) {
-					pulls = append(pulls, &forgeOutcome{at: p.MergedAt, repo: r, label: fmt.Sprintf("P#%d", p.Number), branch: p.HeadRefName,
-						line: fmt.Sprintf("%s%s: #%d %q in %s. %s", pullLine, summaryClock(p.MergedAt), p.Number, p.Title, r.name, p.URL)})
-				}
-			}
-		}
-		var closed []struct {
-			Number      int       `json:"number"`
-			Title       string    `json:"title"`
-			URL         string    `json:"url"`
-			ClosedAt    time.Time `json:"closedAt"`
-			StateReason string    `json:"stateReason"`
-			Labels      []struct {
-				Name string `json:"name"`
-			} `json:"labels"`
-		}
-		if ghJSON(d.ctx, gh, f, &closed, "issue", "list", "--state", "closed", "--search", "closed:>="+day,
-			"--limit", "200", "--json", "number,title,url,closedAt,stateReason,labels") == nil {
-			for _, c := range closed {
-				// Not planned or a duplicate is no outcome.
-				if c.ClosedAt.Before(since) || c.StateReason != "" && c.StateReason != "COMPLETED" {
-					continue
-				}
-				start, list := issueLine, &issues
-				if slices.ContainsFunc(c.Labels, func(l struct {
-					Name string `json:"name"`
-				}) bool {
-					return l.Name == "epic"
-				}) {
-					start, list = epicLine, &epics
-				}
-				*list = append(*list, &forgeOutcome{at: c.ClosedAt, repo: r, label: fmt.Sprintf("#%d", c.Number),
-					line: fmt.Sprintf("%s%s: #%d %q in %s. %s", start, summaryClock(c.ClosedAt), c.Number, c.Title, r.name, c.URL)})
-			}
-		}
-		var published []struct {
-			TagName     string    `json:"tagName"`
-			Name        string    `json:"name"`
-			PublishedAt time.Time `json:"publishedAt"`
-		}
-		if ghJSON(d.ctx, gh, f, &published, "release", "list", "--exclude-drafts", "--limit", "20",
-			"--json", "tagName,name,publishedAt") == nil {
-			for _, p := range published {
-				if p.PublishedAt.Before(since) || r.url == "" {
-					continue
-				}
-				name := p.TagName
-				if p.Name != "" && p.Name != p.TagName {
-					name += fmt.Sprintf(" %q", p.Name)
-				}
-				releases = append(releases, &forgeOutcome{at: p.PublishedAt, repo: r,
-					line: fmt.Sprintf("%s%s: %s in %s. %s/releases/tag/%s", releaseLine, summaryClock(p.PublishedAt), name, r.name, r.url, url.PathEscape(p.TagName))})
-			}
+		pulls = append(pulls, d.mergedPullOutcomes(gh, r, day, since)...)
+		closedEpics, closedIssues := d.closedIssueOutcomes(gh, r, day, since)
+		epics = append(epics, closedEpics...)
+		issues = append(issues, closedIssues...)
+		releases = append(releases, d.releaseOutcomes(gh, r, since)...)
+	}
+	// A session goes under a pull request first, then an issue: one line each.
+	used = placeOutcomeSessions([][]*forgeOutcome{pulls, epics, issues}, sessions)
+	for _, list := range [][]*forgeOutcome{epics, pulls, issues, releases} {
+		sort.SliceStable(list, func(i, j int) bool { return list[i].at.Before(list[j].at) })
+		for _, o := range list {
+			lines = append(lines, o.line+subLines(o.sessions))
 		}
 	}
-	used = map[wire.UUID]bool{}
-	// A session goes under a pull request first, then an issue: one line each.
-	for _, list := range [][]*forgeOutcome{pulls, epics, issues} {
+	return lines, used
+}
+
+// mergedPullOutcomes is the pull requests merged in r since.
+func (d *Daemon) mergedPullOutcomes(gh string, r *summaryRepo, day string, since time.Time) []*forgeOutcome {
+	found, err := mergedPullRequests(d.ctx, gh, r.folders[0], day)
+	if err != nil {
+		return nil
+	}
+	var pulls []*forgeOutcome
+	for _, p := range found {
+		if !p.MergedAt.Before(since) {
+			pulls = append(pulls, &forgeOutcome{at: p.MergedAt, repo: r, label: fmt.Sprintf("P#%d", p.Number), branch: p.HeadRefName,
+				line: fmt.Sprintf("%s%s: #%d %q in %s. %s", pullLine, summaryClock(p.MergedAt), p.Number, p.Title, r.name, p.URL)})
+		}
+	}
+	return pulls
+}
+
+// closedIssueOutcomes is the epics and the other issues closed as done in r since.
+func (d *Daemon) closedIssueOutcomes(gh string, r *summaryRepo, day string, since time.Time) (epics, issues []*forgeOutcome) {
+	var closed []struct {
+		Number      int       `json:"number"`
+		Title       string    `json:"title"`
+		URL         string    `json:"url"`
+		ClosedAt    time.Time `json:"closedAt"`
+		StateReason string    `json:"stateReason"`
+		Labels      []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+	}
+	if ghJSON(d.ctx, gh, r.folders[0], &closed, "issue", "list", "--state", "closed", "--search", "closed:>="+day,
+		"--limit", "200", "--json", "number,title,url,closedAt,stateReason,labels") != nil {
+		return nil, nil
+	}
+	for _, c := range closed {
+		// Not planned or a duplicate is no outcome.
+		if c.ClosedAt.Before(since) || c.StateReason != "" && c.StateReason != "COMPLETED" {
+			continue
+		}
+		start, list := issueLine, &issues
+		if slices.ContainsFunc(c.Labels, func(l struct {
+			Name string `json:"name"`
+		}) bool {
+			return l.Name == "epic"
+		}) {
+			start, list = epicLine, &epics
+		}
+		*list = append(*list, &forgeOutcome{at: c.ClosedAt, repo: r, label: fmt.Sprintf("#%d", c.Number),
+			line: fmt.Sprintf("%s%s: #%d %q in %s. %s", start, summaryClock(c.ClosedAt), c.Number, c.Title, r.name, c.URL)})
+	}
+	return epics, issues
+}
+
+// releaseOutcomes is the releases published in r since.
+func (d *Daemon) releaseOutcomes(gh string, r *summaryRepo, since time.Time) []*forgeOutcome {
+	var published []struct {
+		TagName     string    `json:"tagName"`
+		Name        string    `json:"name"`
+		PublishedAt time.Time `json:"publishedAt"`
+	}
+	if ghJSON(d.ctx, gh, r.folders[0], &published, "release", "list", "--exclude-drafts", "--limit", "20",
+		"--json", "tagName,name,publishedAt") != nil {
+		return nil
+	}
+	var releases []*forgeOutcome
+	for _, p := range published {
+		if p.PublishedAt.Before(since) || r.url == "" {
+			continue
+		}
+		name := p.TagName
+		if p.Name != "" && p.Name != p.TagName {
+			name += fmt.Sprintf(" %q", p.Name)
+		}
+		releases = append(releases, &forgeOutcome{at: p.PublishedAt, repo: r,
+			line: fmt.Sprintf("%s%s: %s in %s. %s/releases/tag/%s", releaseLine, summaryClock(p.PublishedAt), name, r.name, r.url, url.PathEscape(p.TagName))})
+	}
+	return releases
+}
+
+// placeOutcomeSessions puts each session under the first outcome of lists that it made:
+// one in the outcome's folders, on its branch or with its label. It is the sessions put.
+func placeOutcomeSessions(lists [][]*forgeOutcome, sessions []*wire.Agent) map[wire.UUID]bool {
+	used := map[wire.UUID]bool{}
+	for _, list := range lists {
 		for _, o := range list {
 			for _, a := range sessions {
 				if used[a.ID] || !slices.Contains(o.repo.folders, filepath.Clean(folderPath(a))) {
@@ -235,13 +273,7 @@ func (d *Daemon) forgeOutcomes(gh string, repos []summaryRepo, since time.Time, 
 			}
 		}
 	}
-	for _, list := range [][]*forgeOutcome{epics, pulls, issues, releases} {
-		sort.SliceStable(list, func(i, j int) bool { return list[i].at.Before(list[j].at) })
-		for _, o := range list {
-			lines = append(lines, o.line+subLines(o.sessions))
-		}
-	}
-	return lines, used
+	return used
 }
 
 // subLines is lines under an item's line, indented under its "- ".

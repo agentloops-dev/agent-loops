@@ -168,39 +168,7 @@ func planOf(epic wire.ForgeItem, children []planChild, oneStep bool) wire.ForgeP
 			in[c.item.Node] = n
 		}
 	}
-	step := make([]int, len(children))
-	for left := len(children); left > 0; {
-		placed := 0
-		for n, c := range children {
-			if step[n] > 0 {
-				continue
-			}
-			s, ready := 1, true
-			for _, b := range c.blockedBy {
-				if m, ok := in[b.node]; ok && m != n {
-					if step[m] == 0 {
-						ready = false
-						break
-					}
-					s = max(s, step[m]+1)
-				}
-			}
-			if ready {
-				step[n] = s
-				placed++
-			}
-		}
-		left -= placed
-		if placed == 0 {
-			last := slices.Max(append(slices.Clone(step), 0))
-			for n := range step {
-				if step[n] == 0 {
-					step[n] = last + 1
-				}
-			}
-			break
-		}
-	}
+	step := planSteps(children, in)
 	out := wire.ForgePlan{Item: epic, Children: []wire.ForgePlanChild{}, Steps: []wire.ForgePlanStep{}}
 	for n, c := range children {
 		child := wire.ForgePlanChild{Item: c.item, BlockedBy: []wire.LineageNode{}, Step: int64(step[n])}
@@ -221,6 +189,51 @@ func planOf(epic wire.ForgeItem, children []planChild, oneStep bool) wire.ForgeP
 		s.Nodes = append(s.Nodes, c.Item.Node)
 	}
 	return out
+}
+
+// planSteps is each child's step in a plan: one more than the last step of the
+// children in the plan (in) that block it. Children in a loop, and those after
+// them, share the step after the rest.
+func planSteps(children []planChild, in map[wire.LineageNode]int) []int {
+	step := make([]int, len(children))
+	for left := len(children); left > 0; {
+		placed := 0
+		for n, c := range children {
+			if step[n] > 0 {
+				continue
+			}
+			if s, ready := planStepOf(n, c, in, step); ready {
+				step[n] = s
+				placed++
+			}
+		}
+		left -= placed
+		if placed == 0 {
+			last := slices.Max(append(slices.Clone(step), 0))
+			for n := range step {
+				if step[n] == 0 {
+					step[n] = last + 1
+				}
+			}
+			break
+		}
+	}
+	return step
+}
+
+// planStepOf is the step of child n, c, from the steps of its blockers in the
+// plan. ready is false while one of those blockers has no step yet.
+func planStepOf(n int, c planChild, in map[wire.LineageNode]int, step []int) (int, bool) {
+	s := 1
+	for _, b := range c.blockedBy {
+		if m, ok := in[b.node]; ok && m != n {
+			if step[m] == 0 {
+				return s, false
+			}
+			s = max(s, step[m]+1)
+		}
+	}
+	return s, true
 }
 
 // leadOf is the session on this machine that leads the epic: it works on it (from lineage, which
@@ -324,69 +337,22 @@ func (d *Daemon) forgeFeaturesRead(ctx context.Context, r wire.ForgeFeaturesRequ
 
 func (d *Daemon) forgeFeaturesReadOnce(ctx context.Context, r wire.ForgeFeaturesRequest) (wire.ForgeFeatures, featureItems, error) {
 	out := wire.ForgeFeatures{Features: []wire.ForgeFeature{}}
-	items := featureItems{epics: map[string][]wire.ForgeItem{}, loose: map[string][]wire.ForgeItem{}}
-	by := map[string]*wire.ForgeFeature{}
-	loose := map[string]int64{}
-	open := map[string]*featureWork{}
-	// Bitbucket's issues have no epics (#3880): its feature:<name> components are features with
-	// open issues only.
-	bitbucket := map[string]string{}
-	err := d.featurePages(ctx, r, &out, wire.ForgeListRequest{State: new("open")}, func(i wire.ForgeItem) {
-		if i.Feature == nil {
-			return
-		}
-		key := strings.ToLower(*i.Feature)
-		openWork(open, key).add(i)
-		if deref(i.Level) != "epic" {
-			loose[key]++
-			if i.Parent == nil {
-				items.loose[key] = append(items.loose[key], i)
-			}
-			if _, _, ok := bitbucketOfNode(i.Node); ok && bitbucket[key] == "" {
-				bitbucket[key] = *i.Feature
-			}
-		}
-	})
+	t := &featuresTally{
+		items:     featureItems{epics: map[string][]wire.ForgeItem{}, loose: map[string][]wire.ForgeItem{}},
+		by:        map[string]*wire.ForgeFeature{},
+		loose:     map[string]int64{},
+		open:      map[string]*featureWork{},
+		bitbucket: map[string]string{},
+	}
+	err := d.featurePages(ctx, r, &out, wire.ForgeListRequest{State: new("open")}, t.addOpen)
 	if err != nil {
 		return wire.ForgeFeatures{}, featureItems{}, err
 	}
-	err = d.featurePages(ctx, r, &out, wire.ForgeListRequest{State: new("all"), Label: new("epic")}, func(i wire.ForgeItem) {
-		if i.Feature == nil {
-			return
-		}
-		f := by[strings.ToLower(*i.Feature)]
-		if f == nil {
-			f = &wire.ForgeFeature{Name: *i.Feature, Issues: new(loose[strings.ToLower(*i.Feature)])}
-			by[strings.ToLower(*i.Feature)] = f
-		}
-		if f.Color == nil {
-			for _, l := range i.Labels {
-				if name, ok := featureName(l.Name); ok && strings.EqualFold(name, f.Name) {
-					f.Color = l.Color
-				}
-			}
-		}
-		f.Epics++
-		if i.State == "open" {
-			f.Open++
-			openWork(open, strings.ToLower(*i.Feature)).add(i)
-			items.epics[strings.ToLower(*i.Feature)] = append(items.epics[strings.ToLower(*i.Feature)], i)
-		}
-	})
+	err = d.featurePages(ctx, r, &out, wire.ForgeListRequest{State: new("all"), Label: new("epic")}, t.addEpic)
 	if err != nil {
 		return wire.ForgeFeatures{}, featureItems{}, err
 	}
-	for key, name := range bitbucket {
-		if by[key] == nil {
-			by[key] = &wire.ForgeFeature{Name: name, Issues: new(loose[key])}
-		}
-	}
-	for key, f := range by {
-		if w := open[key]; w != nil {
-			f.Refs, f.Waiting, f.UpdatedAt = w.refs, w.waiting, new(w.at)
-		}
-		out.Features = append(out.Features, *f)
-	}
+	out.Features = append(out.Features, t.features()...)
 	slices.SortFunc(out.Features, func(a, b wire.ForgeFeature) int {
 		return cmp.Or(cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.Name, b.Name))
 	})
@@ -402,7 +368,81 @@ func (d *Daemon) forgeFeaturesReadOnce(ctx context.Context, r wire.ForgeFeatures
 			}
 		}
 	}
-	return out, items, nil
+	return out, t.items, nil
+}
+
+// featuresTally is what forgeFeaturesReadOnce counts as it reads: the features
+// by name in lower case, each feature's count of loose open issues, its open work,
+// and the items work/features fills.
+type featuresTally struct {
+	items featureItems
+	by    map[string]*wire.ForgeFeature
+	loose map[string]int64
+	open  map[string]*featureWork
+	// Bitbucket's issues have no epics (#3880): its feature:<name> components are features with
+	// open issues only.
+	bitbucket map[string]string
+}
+
+// addOpen counts one open issue or epic of a feature.
+func (t *featuresTally) addOpen(i wire.ForgeItem) {
+	if i.Feature == nil {
+		return
+	}
+	key := strings.ToLower(*i.Feature)
+	openWork(t.open, key).add(i)
+	if deref(i.Level) != "epic" {
+		t.loose[key]++
+		if i.Parent == nil {
+			t.items.loose[key] = append(t.items.loose[key], i)
+		}
+		if _, _, ok := bitbucketOfNode(i.Node); ok && t.bitbucket[key] == "" {
+			t.bitbucket[key] = *i.Feature
+		}
+	}
+}
+
+// addEpic counts one epic, open or closed, under its feature.
+func (t *featuresTally) addEpic(i wire.ForgeItem) {
+	if i.Feature == nil {
+		return
+	}
+	f := t.by[strings.ToLower(*i.Feature)]
+	if f == nil {
+		f = &wire.ForgeFeature{Name: *i.Feature, Issues: new(t.loose[strings.ToLower(*i.Feature)])}
+		t.by[strings.ToLower(*i.Feature)] = f
+	}
+	if f.Color == nil {
+		for _, l := range i.Labels {
+			if name, ok := featureName(l.Name); ok && strings.EqualFold(name, f.Name) {
+				f.Color = l.Color
+			}
+		}
+	}
+	f.Epics++
+	if i.State == "open" {
+		f.Open++
+		openWork(t.open, strings.ToLower(*i.Feature)).add(i)
+		t.items.epics[strings.ToLower(*i.Feature)] = append(t.items.epics[strings.ToLower(*i.Feature)], i)
+	}
+}
+
+// features is each feature counted, with Bitbucket's features that have no
+// epic, and the open work of each. They are in no order.
+func (t *featuresTally) features() []wire.ForgeFeature {
+	for key, name := range t.bitbucket {
+		if t.by[key] == nil {
+			t.by[key] = &wire.ForgeFeature{Name: name, Issues: new(t.loose[key])}
+		}
+	}
+	var out []wire.ForgeFeature
+	for key, f := range t.by {
+		if w := t.open[key]; w != nil {
+			f.Refs, f.Waiting, f.UpdatedAt = w.refs, w.waiting, new(w.at)
+		}
+		out = append(out, *f)
+	}
+	return out
 }
 
 // featureWork is a feature's open issues and epics (#4115): each ref once, those labelled

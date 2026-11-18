@@ -69,20 +69,9 @@ func (d *Daemon) deploysDelivery(r wire.DeploysDeliveryRequest, now time.Time) w
 // a call, and pending says some are not known yet.
 func (d *Daemon) deliveryFacts(since wire.Date) ([]wire.DeployDeliveryFact, bool) {
 	// The health signals seen in each deploy, read before the deploys' lock.
-	health := map[string][]wire.Date{}
-	links, _ := d.lineage().All()
-	for _, l := range links {
-		if l.Rel == lineage.RelSeenIn && l.To.Kind == lineage.KindDeploy {
-			health[l.To.Ref] = append(health[l.To.Ref], l.At)
-		}
-	}
+	health := d.deployHealthSeen()
 
-	type ask struct {
-		ref, prev, base, head string
-		repo                  forgeRepo
-		at                    wire.Date
-	}
-	var asks []ask
+	var asks []deliveryBringsAsk
 	pending := false
 	facts := []wire.DeployDeliveryFact{}
 
@@ -102,49 +91,93 @@ func (d *Daemon) deliveryFacts(since wire.Date) ([]wire.DeployDeliveryFact, bool
 				fact.Rollback = new(true)
 			}
 			if fact.At >= since {
-				prev, before, ok := deployBeforeLocked(f, ref, rec)
-				base, head := deploySHA(before.Deploy), deploySHA(rec.Deploy)
-				e, cached := d.brings[ref]
-				switch {
-				case cached && e.prev == prev && e.ok:
-					for _, n := range e.prs {
-						if m, dated := e.merged[n]; dated {
-							fact.Merges = append(fact.Merges, wire.DateOf(m))
-						}
-					}
-				case ok && base != "" && head != "" && base != head && !(cached && e.prev == prev):
-					pending = true
-					if !d.bringsAsking[ref] {
-						asks = append(asks, ask{ref, prev, base, head, forgeRepo{r.Provider, r.Topic}, fact.At})
-					}
+				ask, waits := d.deliveryMergesLocked(f, ref, rec, r, &fact)
+				pending = pending || waits
+				if ask != nil {
+					asks = append(asks, *ask)
 				}
 			}
 		}
-		for _, env := range rec.Environments {
-			e, err := wire.ParseRef(env)
-			if err != nil || e.ID == "" {
-				continue
-			}
-			fact.Environments = append(fact.Environments, wire.DeployDeliveryEnvironment{Name: e.ID, Ref: env, Tier: environmentTier(rec, e.ID)})
-		}
+		fact.Environments = append(fact.Environments, deliveryEnvironments(rec)...)
 		facts = append(facts, fact)
 	}
 	// The newest deploys first, so a page's lead time fills from now back.
-	slices.SortFunc(asks, func(a, b ask) int { return cmp.Compare(b.at, a.at) })
+	slices.SortFunc(asks, func(a, b deliveryBringsAsk) int { return cmp.Compare(b.at, a.at) })
 	asks = asks[:min(len(asks), deliveryAsksAtOnce)]
-	if len(asks) > 0 {
-		if d.bringsAsking == nil {
-			d.bringsAsking = map[string]bool{}
-			d.bringsSlots = make(chan struct{}, bringsWorkers)
-		}
-		if d.bringsIdle == nil {
-			d.bringsIdle = make(chan struct{})
-		}
-		for _, a := range asks {
-			d.bringsAsking[a.ref] = true
-			d.goJob("deploy brings", func() { d.workOutBrings(a.ref, a.prev, a.repo, a.base, a.head) })
-		}
-	}
+	d.startDeliveryAsksLocked(asks)
 	d.deployBookMu.Unlock()
 	return facts, pending
+}
+
+// deliveryBringsAsk is a deploy whose brings are worked out in the background.
+type deliveryBringsAsk struct {
+	ref, prev, base, head string
+	repo                  forgeRepo
+	at                    wire.Date
+}
+
+// deployHealthSeen is the times of the health signals seen in each deploy, by its ref.
+func (d *Daemon) deployHealthSeen() map[string][]wire.Date {
+	health := map[string][]wire.Date{}
+	links, _ := d.lineage().All()
+	for _, l := range links {
+		if l.Rel == lineage.RelSeenIn && l.To.Kind == lineage.KindDeploy {
+			health[l.To.Ref] = append(health[l.To.Ref], l.At)
+		}
+	}
+	return health
+}
+
+// deliveryMergesLocked sets the merges a succeeded deploy brought on fact, from the
+// brings cache. When the cache lacks them, waits is true, and ask is what to work out,
+// or nil when that is asked already.
+func (d *Daemon) deliveryMergesLocked(f *deploysFile, ref string, rec deployRecord, r wire.Ref, fact *wire.DeployDeliveryFact) (ask *deliveryBringsAsk, waits bool) {
+	prev, before, ok := deployBeforeLocked(f, ref, rec)
+	base, head := deploySHA(before.Deploy), deploySHA(rec.Deploy)
+	e, cached := d.brings[ref]
+	switch {
+	case cached && e.prev == prev && e.ok:
+		for _, n := range e.prs {
+			if m, dated := e.merged[n]; dated {
+				fact.Merges = append(fact.Merges, wire.DateOf(m))
+			}
+		}
+	case ok && base != "" && head != "" && base != head && !(cached && e.prev == prev):
+		if !d.bringsAsking[ref] {
+			ask = &deliveryBringsAsk{ref, prev, base, head, forgeRepo{r.Provider, r.Topic}, fact.At}
+		}
+		return ask, true
+	}
+	return nil, false
+}
+
+// deliveryEnvironments is the environments a deploy went to.
+func deliveryEnvironments(rec deployRecord) []wire.DeployDeliveryEnvironment {
+	var envs []wire.DeployDeliveryEnvironment
+	for _, env := range rec.Environments {
+		e, err := wire.ParseRef(env)
+		if err != nil || e.ID == "" {
+			continue
+		}
+		envs = append(envs, wire.DeployDeliveryEnvironment{Name: e.ID, Ref: env, Tier: environmentTier(rec, e.ID)})
+	}
+	return envs
+}
+
+// startDeliveryAsksLocked starts the background work for each ask.
+func (d *Daemon) startDeliveryAsksLocked(asks []deliveryBringsAsk) {
+	if len(asks) == 0 {
+		return
+	}
+	if d.bringsAsking == nil {
+		d.bringsAsking = map[string]bool{}
+		d.bringsSlots = make(chan struct{}, bringsWorkers)
+	}
+	if d.bringsIdle == nil {
+		d.bringsIdle = make(chan struct{})
+	}
+	for _, a := range asks {
+		d.bringsAsking[a.ref] = true
+		d.goJob("deploy brings", func() { d.workOutBrings(a.ref, a.prev, a.repo, a.base, a.head) })
+	}
 }

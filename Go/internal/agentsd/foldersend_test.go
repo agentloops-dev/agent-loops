@@ -82,6 +82,83 @@ func (h *sendsHeard) next(t *testing.T, what string) wire.SendNotification {
 	return n
 }
 
+// sendPeer is the other machine of a send test: this host, which answers the
+// send's steps with its own methods. It keeps each step and who asked. While
+// offline, it refuses. It holds the receive until receiving closes.
+type sendPeer struct {
+	d          *Daemon
+	mu         sync.Mutex
+	steps, who []string
+	offline    bool
+	receiving  chan struct{}
+}
+
+// ask is the control plane's ask for the send's steps.
+func (p *sendPeer) ask(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	// Only the send's steps: the host's other calls to the control plane go nowhere.
+	call, ok := params.(wire.MachineWorkspaceCall)
+	if !ok || call.Method != sendFolderMethod {
+		return json.RawMessage(`{}`), nil
+	}
+	b, _ := json.Marshal(call.Params)
+	p.mu.Lock()
+	p.who = append(p.who, call.Agent)
+	if p.offline {
+		p.mu.Unlock()
+		return nil, &controllink.AskError{Code: wire.FailureHostOffline, Message: "pc is offline."}
+	}
+	p.mu.Unlock()
+	var s wire.MachineFolderSend
+	json.Unmarshal(b, &s)
+	out, err := p.step(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	r, _ := json.Marshal(out)
+	return r, nil
+}
+
+// addStep keeps the name of a step.
+func (p *sendPeer) addStep(step string) {
+	p.mu.Lock()
+	p.steps = append(p.steps, step)
+	p.mu.Unlock()
+}
+
+// step does one step of the send on this host.
+func (p *sendPeer) step(ctx context.Context, s wire.MachineFolderSend) (wire.MachineFolderSent, error) {
+	var out wire.MachineFolderSent
+	switch {
+	case s.State != nil:
+		p.addStep("state")
+		st, err := p.d.receiveState(*s.State)
+		if err != nil {
+			return out, err
+		}
+		out.State = &st
+	case s.Upload != nil:
+		p.addStep("upload")
+		if err := p.d.receiveUpload(*s.Upload); err != nil {
+			return out, err
+		}
+	case s.Receive != nil:
+		// Held until the test has seen the send under way, or the host stops: the
+		// control plane's ask ends with ctx, so Shutdown leaves no job running.
+		select {
+		case <-p.receiving:
+		case <-ctx.Done():
+			return out, ctx.Err()
+		}
+		p.addStep("receive")
+		f, err := p.d.receive(*s.Receive)
+		if err != nil {
+			return out, &controllink.AskError{Code: wire.FailureFolderInTheWay, Message: err.Error()}
+		}
+		out.Folder = &f
+	}
+	return out, nil
+}
+
 func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	t.Parallel()
 
@@ -100,77 +177,21 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	// The other machine is this one, at another path: the steps go to its own methods.
 	there := filepath.Join(canonical(t.TempDir()), "app")
 
-	var mu sync.Mutex
-	var steps, who []string
-	offline := false
-	receiving := make(chan struct{})
-	d.SetControlAsk(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		// Only the send's steps: the host's other calls to the control plane go nowhere.
-		call, ok := params.(wire.MachineWorkspaceCall)
-		if !ok || call.Method != sendFolderMethod {
-			return json.RawMessage(`{}`), nil
-		}
-		b, _ := json.Marshal(call.Params)
-		mu.Lock()
-		who = append(who, call.Agent)
-		if offline {
-			mu.Unlock()
-			return nil, &controllink.AskError{Code: wire.FailureHostOffline, Message: "pc is offline."}
-		}
-		mu.Unlock()
-		var s wire.MachineFolderSend
-		json.Unmarshal(b, &s)
-		var out wire.MachineFolderSent
-		switch {
-		case s.State != nil:
-			mu.Lock()
-			steps = append(steps, "state")
-			mu.Unlock()
-			st, err := d.receiveState(*s.State)
-			if err != nil {
-				return nil, err
-			}
-			out.State = &st
-		case s.Upload != nil:
-			mu.Lock()
-			steps = append(steps, "upload")
-			mu.Unlock()
-			if err := d.receiveUpload(*s.Upload); err != nil {
-				return nil, err
-			}
-		case s.Receive != nil:
-			// Held until the test has seen the send under way, or the host stops: the
-			// control plane's ask ends with ctx, so Shutdown leaves no job running.
-			select {
-			case <-receiving:
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-			mu.Lock()
-			steps = append(steps, "receive")
-			mu.Unlock()
-			f, err := d.receive(*s.Receive)
-			if err != nil {
-				return nil, &controllink.AskError{Code: wire.FailureFolderInTheWay, Message: err.Error()}
-			}
-			out.Folder = &f
-		}
-		r, _ := json.Marshal(out)
-		return r, nil
-	})
+	peer := &sendPeer{d: d, receiving: make(chan struct{})}
+	d.SetControlAsk(peer.ask)
 	send := map[string]any{"folder": store.PathURL(src), "machine": "pc-id", "machineName": "pc", "destination": there,
 		"branches": []string{"fix-login"}, "checkout": "fix-login", "includeChanges": true}
 
 	// Offline: refused at once, and nothing is under way.
-	mu.Lock()
-	offline = true
-	mu.Unlock()
+	peer.mu.Lock()
+	peer.offline = true
+	peer.mu.Unlock()
 	if e := c.callError(t, 1, "folders/send", send); e.Message != "Nothing was sent to pc: pc is offline." {
 		t.Fatal(e.Message)
 	}
-	mu.Lock()
-	offline = false
-	mu.Unlock()
+	peer.mu.Lock()
+	peer.offline = false
+	peer.mu.Unlock()
 
 	// It answers before the send is done.
 	heard := &sendsHeard{c: c}
@@ -200,7 +221,7 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	if e := c.callError(t, 4, "folders/send", send); e.Message != there+" on pc is already being sent." {
 		t.Fatal(e.Message)
 	}
-	close(receiving)
+	close(peer.receiving)
 	for !last.Finished {
 		n := heard.next(t, "finished send/changed")
 		last = &n
@@ -208,17 +229,17 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	if last.Problem != nil || last.Received == nil || last.Received.Folder.Folder != store.FolderURL(there) {
 		t.Fatalf("%+v", last)
 	}
-	mu.Lock()
-	if strings.Join(steps, ",") != "state,upload,upload,upload,receive" {
-		t.Fatalf("steps %v", steps)
+	peer.mu.Lock()
+	if strings.Join(peer.steps, ",") != "state,upload,upload,upload,receive" {
+		t.Fatalf("steps %v", peer.steps)
 	}
-	for _, w := range who {
+	for _, w := range peer.who {
 		if w != "You" {
 			t.Fatalf("asked as %q", w)
 		}
 	}
-	steps = nil
-	mu.Unlock()
+	peer.steps = nil
+	peer.mu.Unlock()
 	if got := sendGit(t, there, nil, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("there is at %s, not %s", got, head)
 	}
@@ -238,9 +259,9 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	if e := c.callError(t, 6, "folders/send", send); e.Message != "Nothing was sent to pc: "+there+" has changes of its own there." {
 		t.Fatal(e.Message)
 	}
-	mu.Lock()
-	if strings.Join(steps, ",") != "state" {
-		t.Fatalf("steps %v", steps)
+	peer.mu.Lock()
+	if strings.Join(peer.steps, ",") != "state" {
+		t.Fatalf("steps %v", peer.steps)
 	}
-	mu.Unlock()
+	peer.mu.Unlock()
 }

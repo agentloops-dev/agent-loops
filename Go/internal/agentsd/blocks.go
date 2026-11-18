@@ -103,36 +103,11 @@ func (d *Daemon) waitTarget(name string, caller *wire.Agent) (*wire.Agent, error
 		}
 	}
 	if target == nil {
-		var here, matches []wire.Agent
-		for _, a := range d.projectSessionsHere(folder) {
-			if a.State != wire.AgentStateArchived {
-				here = append(here, a)
-				if a.Title != nil && strings.EqualFold(strings.TrimSpace(*a.Title), name) {
-					matches = append(matches, a)
-				}
-			}
+		found, err := d.waitTargetByTitle(name, folder, caller)
+		if err != nil {
+			return nil, err
 		}
-		byAge := func(as []wire.Agent) []wire.Agent {
-			sort.SliceStable(as, func(i, j int) bool { return as[i].CreatedAt < as[j].CreatedAt })
-			return as
-		}
-		switch len(matches) {
-		case 1:
-			target = &matches[0]
-		case 0:
-			var known []wire.Agent
-			for _, a := range here {
-				if a.ID != caller.ID {
-					known = append(known, a)
-				}
-			}
-			if len(known) == 0 {
-				return nil, blockRefusal("no agent in " + scopeWords(folder) + " is called “" + name + "”. There are no other agents here.")
-			}
-			return nil, blockRefusal("no agent in " + scopeWords(folder) + " is called “" + name + "”. The agents here are: " + agentListing(byAge(known)) + ".")
-		default:
-			return nil, blockRefusal("“" + name + "” could be any of " + agentListing(byAge(matches)) + ". Use the id.")
-		}
+		target = found
 	}
 	if target.ID == caller.ID {
 		return nil, blockRefusal("you can't wait on yourself.")
@@ -145,6 +120,43 @@ func (d *Daemon) waitTarget(name string, caller *wire.Agent) (*wire.Agent, error
 		return nil, &endedAlready{id: target.ID, title: title, how: how}
 	}
 	return target, nil
+}
+
+// waitTargetByTitle is the one session of the folder or project on this machine, not
+// archived, whose title is name. It refuses when none or more than one has that title.
+func (d *Daemon) waitTargetByTitle(name string, folder string, caller *wire.Agent) (*wire.Agent, error) {
+	var here, matches []wire.Agent
+	for _, a := range d.projectSessionsHere(folder) {
+		if a.State != wire.AgentStateArchived {
+			here = append(here, a)
+			if a.Title != nil && strings.EqualFold(strings.TrimSpace(*a.Title), name) {
+				matches = append(matches, a)
+			}
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return &matches[0], nil
+	case 0:
+		var known []wire.Agent
+		for _, a := range here {
+			if a.ID != caller.ID {
+				known = append(known, a)
+			}
+		}
+		if len(known) == 0 {
+			return nil, blockRefusal("no agent in " + scopeWords(folder) + " is called “" + name + "”. There are no other agents here.")
+		}
+		return nil, blockRefusal("no agent in " + scopeWords(folder) + " is called “" + name + "”. The agents here are: " + agentListing(agentsByAge(known)) + ".")
+	default:
+		return nil, blockRefusal("“" + name + "” could be any of " + agentListing(agentsByAge(matches)) + ". Use the id.")
+	}
+}
+
+// agentsByAge sorts as by when each was made, the oldest first, and returns it.
+func agentsByAge(as []wire.Agent) []wire.Agent {
+	sort.SliceStable(as, func(i, j int) bool { return as[i].CreatedAt < as[j].CreatedAt })
+	return as
 }
 
 // namedHere says a session of caller's project on this machine, not archived, has name as
@@ -275,50 +287,12 @@ func (d *Daemon) waitOn(caller wire.UUID, names []string, wakeOn string, minutes
 	}
 	at := now()
 	block := wire.Block{Waits: []wire.Wait{}}
-	var ended []endedAlready
-	for _, n := range names {
-		if n = strings.TrimSpace(n); n == "" {
-			continue
-		}
-		t, err := d.waitTarget(n, me)
-		var gone *endedAlready
-		if errors.As(err, &gone) {
-			dup := false
-			for _, e := range ended {
-				dup = dup || e.id == gone.id
-			}
-			if !dup {
-				ended = append(ended, *gone)
-			}
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		dup := false
-		for _, w := range block.Waits {
-			dup = dup || w.AgentID == t.ID
-		}
-		if !dup {
-			name := "Untitled"
-			if t.Title != nil {
-				name = *t.Title
-			}
-			block.Waits = append(block.Waits, wire.Wait{AgentID: t.ID, NameAtReport: name})
-		}
+	ended, err := d.waitOnTargets(me, names, &block)
+	if err != nil {
+		return "", err
 	}
-	var ids []wire.UUID
-	for _, w := range block.Waits {
-		ids = append(ids, w.AgentID)
-	}
-	if path := d.circle(caller, ids); path != nil {
-		var ns []string
-		for _, id := range path {
-			if a := d.Store.Agent(id); a != nil {
-				ns = append(ns, quotedTitle(a.Title))
-			}
-		}
-		return "", blockRefusal("waiting on " + ns[0] + " would close a circle: " + strings.Join(ns, " waits on ") + " waits on you.")
+	if err := d.waitCircleRefusal(caller, block.Waits); err != nil {
+		return "", err
 	}
 	// A session that has already ended answers at once (#3799): with wake_on any, or with
 	// nothing left to wait on, the call comes back now, so no turn ends on a wait that
@@ -342,20 +316,7 @@ func (d *Daemon) waitOn(caller wire.UUID, names []string, wakeOn string, minutes
 	l.mu.Unlock()
 	d.change(caller, func(a *wire.Agent) { a.Report = &report })
 	d.reconsider()
-	var waiting []string
-	for _, w := range block.Waits {
-		waiting = append(waiting, "“"+d.waitName(w)+"”")
-	}
-	if len(waiting) == 0 {
-		d.raiseAgentEvent("agent.waiting", caller, "is waiting.", nil)
-	} else {
-		anyOf := ""
-		if block.WakeOn != nil && len(block.Waits) > 1 {
-			anyOf = "any of "
-		}
-		joined := strings.Join(waiting, ", ")
-		d.raiseAgentEvent("agent.waiting", caller, "is waiting for "+anyOf+joined+" to finish.", map[string]string{"waiting_on": joined})
-	}
+	d.raiseWaitingEvent(caller, &block)
 	d.armBlockTimer()
 	note := d.blockedNote(&block)
 	if len(ended) > 0 {
@@ -369,6 +330,81 @@ func (d *Daemon) waitOn(caller wire.UUID, names []string, wakeOn string, minutes
 		note = replacedWords(prevWait) + note
 	}
 	return note, nil
+}
+
+// waitOnTargets finds the session each name means and adds a wait on it to block, once
+// each. A session that has already ended is not waited on: it goes in ended, once each.
+func (d *Daemon) waitOnTargets(me *wire.Agent, names []string, block *wire.Block) ([]endedAlready, error) {
+	var ended []endedAlready
+	for _, n := range names {
+		if n = strings.TrimSpace(n); n == "" {
+			continue
+		}
+		t, err := d.waitTarget(n, me)
+		var gone *endedAlready
+		if errors.As(err, &gone) {
+			dup := false
+			for _, e := range ended {
+				dup = dup || e.id == gone.id
+			}
+			if !dup {
+				ended = append(ended, *gone)
+			}
+			continue
+		}
+		if err != nil {
+			return ended, err
+		}
+		dup := false
+		for _, w := range block.Waits {
+			dup = dup || w.AgentID == t.ID
+		}
+		if !dup {
+			name := "Untitled"
+			if t.Title != nil {
+				name = *t.Title
+			}
+			block.Waits = append(block.Waits, wire.Wait{AgentID: t.ID, NameAtReport: name})
+		}
+	}
+	return ended, nil
+}
+
+// waitCircleRefusal refuses the waits when one of them would close a circle of waits back
+// to caller; else it is nil.
+func (d *Daemon) waitCircleRefusal(caller wire.UUID, waits []wire.Wait) error {
+	var ids []wire.UUID
+	for _, w := range waits {
+		ids = append(ids, w.AgentID)
+	}
+	if path := d.circle(caller, ids); path != nil {
+		var ns []string
+		for _, id := range path {
+			if a := d.Store.Agent(id); a != nil {
+				ns = append(ns, quotedTitle(a.Title))
+			}
+		}
+		return blockRefusal("waiting on " + ns[0] + " would close a circle: " + strings.Join(ns, " waits on ") + " waits on you.")
+	}
+	return nil
+}
+
+// raiseWaitingEvent raises agent.waiting for caller, with the sessions block waits on.
+func (d *Daemon) raiseWaitingEvent(caller wire.UUID, block *wire.Block) {
+	var waiting []string
+	for _, w := range block.Waits {
+		waiting = append(waiting, "“"+d.waitName(w)+"”")
+	}
+	if len(waiting) == 0 {
+		d.raiseAgentEvent("agent.waiting", caller, "is waiting.", nil)
+		return
+	}
+	anyOf := ""
+	if block.WakeOn != nil && len(block.Waits) > 1 {
+		anyOf = "any of "
+	}
+	joined := strings.Join(waiting, ", ")
+	d.raiseAgentEvent("agent.waiting", caller, "is waiting for "+anyOf+joined+" to finish.", map[string]string{"waiting_on": joined})
 }
 
 // endedAtOnceWords is the answer to a wait whose named sessions have already ended (all
@@ -725,26 +761,7 @@ func (d *Daemon) resumeBlocks() {
 				a.Report = &r
 			})
 		}
-		for _, w := range a.Report.Block.Waits {
-			if w.Ending != nil {
-				continue
-			}
-			t := d.Store.Agent(w.AgentID)
-			if t == nil {
-				// One on another machine is asked once this host is on its control plane (#2927).
-				if d.thereNamed(a.ID, string(w.AgentID)) != nil {
-					continue
-				}
-				d.closeWaits(w.AgentID, wire.WaitEndingHow{Gone: &struct{}{}})
-				continue
-			}
-			if t.State == wire.AgentStateFinished && len(t.QueuedPrompts) > 0 {
-				continue
-			}
-			if how := waitEndingHow(t); how != nil {
-				d.closeWaits(t.ID, *how)
-			}
-		}
+		d.closeWaitsEndedWhileDown(a.ID, a.Report.Block.Waits)
 	}
 	for _, a := range d.Store.LiveAgents() {
 		if a.State == wire.AgentStateFinished && a.Report != nil && a.Report.Outcome == wire.WorkOutcomeWaiting &&
@@ -757,6 +774,31 @@ func (d *Daemon) resumeBlocks() {
 		d.resumeIfCleared(a.ID)
 	}
 	d.armBlockTimer()
+}
+
+// closeWaitsEndedWhileDown closes each open wait of agent id on a session that ended or
+// went while the host was down.
+func (d *Daemon) closeWaitsEndedWhileDown(id wire.UUID, waits []wire.Wait) {
+	for _, w := range waits {
+		if w.Ending != nil {
+			continue
+		}
+		t := d.Store.Agent(w.AgentID)
+		if t == nil {
+			// One on another machine is asked once this host is on its control plane (#2927).
+			if d.thereNamed(id, string(w.AgentID)) != nil {
+				continue
+			}
+			d.closeWaits(w.AgentID, wire.WaitEndingHow{Gone: &struct{}{}})
+			continue
+		}
+		if t.State == wire.AgentStateFinished && len(t.QueuedPrompts) > 0 {
+			continue
+		}
+		if how := waitEndingHow(t); how != nil {
+			d.closeWaits(t.ID, *how)
+		}
+	}
 }
 
 // keptBlock closes the waits of a block a turn has given back (#3173) on those that ended

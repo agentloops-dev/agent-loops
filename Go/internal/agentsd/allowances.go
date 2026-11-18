@@ -149,17 +149,44 @@ func (d *Daemon) runtimeAllowances() wire.RuntimeAllowances {
 	for k := range profiles {
 		keys[k] = true
 	}
-	order := map[string]int{}
-	for i, r := range catalog {
-		order[r.ID] = i
-	}
 	var list []string
 	for k := range keys {
 		list = append(list, k)
 	}
-	runtimeOf := func(k string) string { r, _, _ := strings.Cut(k, ":"); return r }
+	sortAllowanceKeys(list, added)
+	out := wire.RuntimeAllowances{Rows: []wire.RuntimeAllowancesRow{}, At: now(), Shared: []wire.AllowanceState{}}
+	for _, k := range list {
+		s, ok := states[k]
+		if !ok {
+			s = availableState(k)
+		}
+		row := wire.RuntimeAllowancesRow{CredentialKey: k, State: s}
+		if p, ok := profiles[k]; ok {
+			row.AccountID, row.AccountName = &p.ID, &p.Name
+		}
+		out.Rows = append(out.Rows, row)
+		if ok && isSharedKey(k) {
+			out.Shared = append(out.Shared, s)
+		}
+	}
+	d.allowMu.Unlock()
+	d.markAllowanceRowsUnusable(out.Rows, profiles, installed)
+	sort.Slice(out.Shared, func(i, j int) bool { return out.Shared[i].CredentialKey < out.Shared[j].CredentialKey })
+	return out
+}
+
+// allowanceKeyRuntime is the runtime part of a credential key.
+func allowanceKeyRuntime(k string) string { r, _, _ := strings.Cut(k, ":"); return r }
+
+// sortAllowanceKeys puts credential keys in the catalog's order of runtimes, each runtime's
+// own sign-in first, then its added accounts in the order they were added.
+func sortAllowanceKeys(list []string, added map[string]int) {
+	order := map[string]int{}
+	for i, r := range catalog {
+		order[r.ID] = i
+	}
 	sort.Slice(list, func(i, j int) bool {
-		ri, rj := runtimeOf(list[i]), runtimeOf(list[j])
+		ri, rj := allowanceKeyRuntime(list[i]), allowanceKeyRuntime(list[j])
 		oi, ok1 := order[ri]
 		oj, ok2 := order[rj]
 		if !ok1 {
@@ -184,39 +211,26 @@ func (d *Daemon) runtimeAllowances() wire.RuntimeAllowances {
 		}
 		return list[i] < list[j]
 	})
-	out := wire.RuntimeAllowances{Rows: []wire.RuntimeAllowancesRow{}, At: now(), Shared: []wire.AllowanceState{}}
-	for _, k := range list {
-		s, ok := states[k]
-		if !ok {
-			s = availableState(k)
-		}
-		row := wire.RuntimeAllowancesRow{CredentialKey: k, State: s}
-		if p, ok := profiles[k]; ok {
-			row.AccountID, row.AccountName = &p.ID, &p.Name
-		}
-		out.Rows = append(out.Rows, row)
-		if ok && isSharedKey(k) {
-			out.Shared = append(out.Shared, s)
-		}
-	}
-	d.allowMu.Unlock()
-	for i := range out.Rows {
-		rt := runtimeOf(out.Rows[i].CredentialKey)
-		if p, ok := profiles[out.Rows[i].CredentialKey]; ok {
-			out.Rows[i].Unusable = d.accountUnusable(p, installed)
+}
+
+// markAllowanceRowsUnusable says on each row why it cannot be used, if it cannot, and
+// gives an org account its tokens today.
+func (d *Daemon) markAllowanceRowsUnusable(rows []wire.RuntimeAllowancesRow, profiles map[string]wire.AccountProfile, installed map[string]bool) {
+	for i := range rows {
+		rt := allowanceKeyRuntime(rows[i].CredentialKey)
+		if p, ok := profiles[rows[i].CredentialKey]; ok {
+			rows[i].Unusable = d.accountUnusable(p, installed)
 			// An org account has no plan reading: its tokens today instead (#999, FR-025).
 			if route := accountRoute(&p); route != "" {
-				out.Rows[i].TokensToday = new(d.routeTokensToday(p.RuntimeID, route, time.Now()))
+				rows[i].TokensToday = new(d.routeTokensToday(p.RuntimeID, route, time.Now()))
 			}
 			continue
 		}
-		out.Rows[i].Unusable = d.unusable(rt, installed)
-		if rt == "claude" && out.Rows[i].CredentialKey == ownKey(rt) && out.Rows[i].Unusable == nil {
-			out.Rows[i].SetupNote = chromeHostNote()
+		rows[i].Unusable = d.unusable(rt, installed)
+		if rt == "claude" && rows[i].CredentialKey == ownKey(rt) && rows[i].Unusable == nil {
+			rows[i].SetupNote = chromeHostNote()
 		}
 	}
-	sort.Slice(out.Shared, func(i, j int) bool { return out.Shared[i].CredentialKey < out.Shared[j].CredentialKey })
-	return out
 }
 
 // tellAllowances is runtimes/allowancesChanged, at most once a second.

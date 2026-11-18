@@ -271,14 +271,7 @@ func formatNumber(f float64) string {
 // problem is Property.problem(with:): why this value will not do, or "".
 func problem(p wire.ElicitationSchemaProperty, raw wire.JSONValue) string {
 	v := value(raw)
-	missing := v == nil
-	if s, ok := v.(string); ok && s == "" {
-		missing = true
-	}
-	if a, ok := v.([]any); ok && len(a) == 0 {
-		missing = true
-	}
-	if missing {
+	if elicitationMissing(v) {
 		if p.IsRequired {
 			return propertyName(p) + " is needed"
 		}
@@ -287,71 +280,108 @@ func problem(p wire.ElicitationSchemaProperty, raw wire.JSONValue) string {
 	k := p.Kind
 	switch {
 	case k.String != nil:
-		s, ok := text(v)
-		if !ok {
-			return p.Name + " must be text"
-		}
-		n := int64(utf8.RuneCountInString(s))
-		if k.String.MinLength != nil && n < *k.String.MinLength {
-			return fmt.Sprintf("At least %d characters", *k.String.MinLength)
-		}
-		if k.String.MaxLength != nil && n > *k.String.MaxLength {
-			return fmt.Sprintf("At most %d characters", *k.String.MaxLength)
-		}
-		if k.String.Choices != nil && !hasChoice(k.String.Choices, s) {
-			return "Not one of the choices"
-		}
-		if k.String.Format != nil && !matches(*k.String.Format, s) {
-			return "Not a " + string(*k.String.Format)
-		}
+		return elicitationStringProblem(p.Name, k.String, v)
 	case k.Number != nil:
-		f, ok := double(v)
-		if !ok {
-			return p.Name + " must be a number"
-		}
-		if k.Number.Minimum != nil && f < *k.Number.Minimum {
-			return "At least " + formatNumber(*k.Number.Minimum)
-		}
-		if k.Number.Maximum != nil && f > *k.Number.Maximum {
-			return "At most " + formatNumber(*k.Number.Maximum)
-		}
+		return elicitationNumberProblem(p.Name, k.Number, v)
 	case k.Integer != nil:
-		i, ok := integer(v)
-		if !ok {
-			return p.Name + " must be a whole number"
-		}
-		if k.Integer.Minimum != nil && i < *k.Integer.Minimum {
-			return fmt.Sprintf("At least %d", *k.Integer.Minimum)
-		}
-		if k.Integer.Maximum != nil && i > *k.Integer.Maximum {
-			return fmt.Sprintf("At most %d", *k.Integer.Maximum)
-		}
+		return elicitationIntegerProblem(p.Name, k.Integer, v)
 	case k.Boolean != nil:
 		if _, ok := v.(bool); !ok {
 			return p.Name + " must be yes or no"
 		}
 	case k.MultiSelect != nil:
-		list, ok := v.([]any)
-		if !ok {
-			return p.Name + " must be a list"
+		return elicitationMultiSelectProblem(p.Name, k.MultiSelect, v)
+	}
+	return ""
+}
+
+// elicitationMissing is whether a value is not given: none, empty text or an empty list.
+func elicitationMissing(v any) bool {
+	if v == nil {
+		return true
+	}
+	if s, ok := v.(string); ok && s == "" {
+		return true
+	}
+	if a, ok := v.([]any); ok && len(a) == 0 {
+		return true
+	}
+	return false
+}
+
+// elicitationStringProblem is problem for a text property.
+func elicitationStringProblem(name string, k *wire.ElicitationSchemaPropertyKindString, v any) string {
+	s, ok := text(v)
+	if !ok {
+		return name + " must be text"
+	}
+	n := int64(utf8.RuneCountInString(s))
+	if k.MinLength != nil && n < *k.MinLength {
+		return fmt.Sprintf("At least %d characters", *k.MinLength)
+	}
+	if k.MaxLength != nil && n > *k.MaxLength {
+		return fmt.Sprintf("At most %d characters", *k.MaxLength)
+	}
+	if k.Choices != nil && !hasChoice(k.Choices, s) {
+		return "Not one of the choices"
+	}
+	if k.Format != nil && !matches(*k.Format, s) {
+		return "Not a " + string(*k.Format)
+	}
+	return ""
+}
+
+// elicitationNumberProblem is problem for a number property.
+func elicitationNumberProblem(name string, k *wire.ElicitationSchemaPropertyKindNumber, v any) string {
+	f, ok := double(v)
+	if !ok {
+		return name + " must be a number"
+	}
+	if k.Minimum != nil && f < *k.Minimum {
+		return "At least " + formatNumber(*k.Minimum)
+	}
+	if k.Maximum != nil && f > *k.Maximum {
+		return "At most " + formatNumber(*k.Maximum)
+	}
+	return ""
+}
+
+// elicitationIntegerProblem is problem for a whole number property.
+func elicitationIntegerProblem(name string, k *wire.ElicitationSchemaPropertyKindInteger, v any) string {
+	i, ok := integer(v)
+	if !ok {
+		return name + " must be a whole number"
+	}
+	if k.Minimum != nil && i < *k.Minimum {
+		return fmt.Sprintf("At least %d", *k.Minimum)
+	}
+	if k.Maximum != nil && i > *k.Maximum {
+		return fmt.Sprintf("At most %d", *k.Maximum)
+	}
+	return ""
+}
+
+// elicitationMultiSelectProblem is problem for a property with many choices.
+func elicitationMultiSelectProblem(name string, m *wire.ElicitationSchemaPropertyKindMultiSelect, v any) string {
+	list, ok := v.([]any)
+	if !ok {
+		return name + " must be a list"
+	}
+	var chosen []string
+	for _, e := range list {
+		if s, ok := text(e); ok {
+			chosen = append(chosen, s)
 		}
-		var chosen []string
-		for _, e := range list {
-			if s, ok := text(e); ok {
-				chosen = append(chosen, s)
-			}
-		}
-		m := k.MultiSelect
-		if m.MinItems != nil && int64(len(chosen)) < *m.MinItems {
-			return fmt.Sprintf("Choose at least %d", *m.MinItems)
-		}
-		if m.MaxItems != nil && int64(len(chosen)) > *m.MaxItems {
-			return fmt.Sprintf("Choose at most %d", *m.MaxItems)
-		}
-		for _, c := range chosen {
-			if !hasChoice(m.Items, c) {
-				return "Not one of the choices"
-			}
+	}
+	if m.MinItems != nil && int64(len(chosen)) < *m.MinItems {
+		return fmt.Sprintf("Choose at least %d", *m.MinItems)
+	}
+	if m.MaxItems != nil && int64(len(chosen)) > *m.MaxItems {
+		return fmt.Sprintf("Choose at most %d", *m.MaxItems)
+	}
+	for _, c := range chosen {
+		if !hasChoice(m.Items, c) {
+			return "Not one of the choices"
 		}
 	}
 	return ""
@@ -431,21 +461,7 @@ func words(p wire.ElicitationSchemaProperty, raw wire.JSONValue) []string {
 		}
 		return []string{s}
 	case k.MultiSelect != nil:
-		var out []string
-		for _, e := range array(v) {
-			s, ok := text(e)
-			if !ok {
-				continue
-			}
-			word := s
-			for _, c := range k.MultiSelect.Items {
-				if c.Value == s {
-					word = c.Title
-				}
-			}
-			out = append(out, word)
-		}
-		return out
+		return elicitationMultiSelectWords(k.MultiSelect.Items, v)
 	case k.Boolean != nil:
 		if b, ok := v.(bool); ok {
 			if b {
@@ -466,6 +482,25 @@ func words(p wire.ElicitationSchemaProperty, raw wire.JSONValue) []string {
 		}
 		return nil
 	}
+}
+
+// elicitationMultiSelectWords is each chosen value as the card drew it: its choice's title.
+func elicitationMultiSelectWords(items []wire.ElicitationSchemaPropertyChoice, v any) []string {
+	var out []string
+	for _, e := range array(v) {
+		s, ok := text(e)
+		if !ok {
+			continue
+		}
+		word := s
+		for _, c := range items {
+			if c.Value == s {
+				word = c.Title
+			}
+		}
+		out = append(out, word)
+	}
+	return out
 }
 
 // answers is ElicitationSchema.answers: what was asked and said, one line a page.
