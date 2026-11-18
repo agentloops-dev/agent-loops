@@ -37,6 +37,9 @@ type RealGitHub struct {
 	Repo        func(ctx context.Context) (string, error)
 	IssueReader IssueReader
 
+	// limits holds each token's resources shut until their rate limit resets (#6163).
+	limits rateGates
+
 	// noIssueFields says this GitHub has no issue fields, so queries leave them out (#5747).
 	noIssueFields atomic.Bool
 
@@ -103,7 +106,7 @@ func NewRealGitHub(api string, token func() string, repo func(ctx context.Contex
 // MARK: HTTP
 
 func (g *RealGitHub) do(ctx context.Context, method, path string, body []byte, cache bool) ([]byte, error) {
-	req, err := g.request(ctx, method, path, body)
+	req, key, err := g.request(ctx, method, path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -130,19 +133,36 @@ func (g *RealGitHub) do(ctx context.Context, method, path string, body []byte, c
 		return []byte(cached.body), nil
 	}
 	if res.StatusCode >= 200 && res.StatusCode < 300 {
+		if limited := g.limits.answered(key, path, res.Header, data, time.Now()); limited != nil {
+			return nil, limited
+		}
 		if etag := res.Header.Get("ETag"); cache && etag != "" {
 			g.remember(path, etag, string(data))
 		}
 		return data, nil
 	}
-	return nil, failure(res, data)
+	return nil, g.refused(key, res, data)
 }
 
-// request is a request to GitHub's API as the person.
-func (g *RealGitHub) request(ctx context.Context, method, path string, body []byte) (*http.Request, error) {
+// refused is failure's error for res, and shuts key's resource when it is a rate limit.
+func (g *RealGitHub) refused(key string, res *http.Response, body []byte) *GitHubError {
+	err := failure(res, body)
+	if err.Kind == RateLimited {
+		g.limits.close(key, err.RetryAfterMs, time.Now())
+	}
+	return err
+}
+
+// request is a request to GitHub's API as the person, and the key of the rate limit it
+// counts against. While that limit is used up, it is a rate limit error, and nothing is sent.
+func (g *RealGitHub) request(ctx context.Context, method, path string, body []byte) (*http.Request, string, error) {
 	token := g.Token()
 	if token == "" {
-		return nil, &GitHubError{Kind: NotSignedIn, Message: NotConnected}
+		return nil, "", &GitHubError{Kind: NotSignedIn, Message: NotConnected}
+	}
+	key := gateKey(token, path)
+	if limited := g.limits.closed(key, time.Now()); limited != nil {
+		return nil, key, limited
 	}
 	var reader io.Reader
 	if body != nil {
@@ -150,19 +170,19 @@ func (g *RealGitHub) request(ctx context.Context, method, path string, body []by
 	}
 	req, err := http.NewRequestWithContext(ctx, method, g.API+path, reader)
 	if err != nil {
-		return nil, &GitHubError{Kind: Failed, Message: "GitHub: " + err.Error()}
+		return nil, key, &GitHubError{Kind: Failed, Message: "GitHub: " + err.Error()}
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "agents-github-mcp")
-	return req, nil
+	return req, key, nil
 }
 
 // tailOf is the last n bytes of path's body, from its first whole line (#1655). The body is
 // streamed through, so a job's log of many MB is never held whole.
 func (g *RealGitHub) tailOf(ctx context.Context, path string, n int) ([]byte, error) {
-	req, err := g.request(ctx, http.MethodGet, path, nil)
+	req, key, err := g.request(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +193,7 @@ func (g *RealGitHub) tailOf(ctx context.Context, path string, n int) ([]byte, er
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
-		return nil, failure(res, data)
+		return nil, g.refused(key, res, data)
 	}
 	data, err := lastBytes(res.Body, n)
 	if err != nil {
