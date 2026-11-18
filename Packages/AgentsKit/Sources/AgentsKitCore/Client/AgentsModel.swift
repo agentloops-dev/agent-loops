@@ -28,6 +28,11 @@ public final class AgentsModel {
     /// offers a runtime reads, rather than `agents`, so it draws again only when this
     /// moves (#2732). A machine with no agent held is absent.
     public private(set) var lastRuntimes: [MachineRef: String] = [:]
+    /// How many sessions work and wait on each machine (P20261117-1), kept as agents are
+    /// filed and set only when a count moves: what the sidebar's Machines group and its rows
+    /// read, through `sessionCounts(on:)`, rather than `agents` (#165). One entry per machine
+    /// with a session working or waiting; a machine with none is absent.
+    public private(set) var sessionsByMachine: [MachineRef: MachineSessionCounts] = [:]
     /// Moves each time an agent held here becomes archived: what lets the window let go
     /// of that agent's draft without looking at everything (#176).
     public private(set) var archivals = 0
@@ -2491,6 +2496,7 @@ public final class AgentsModel {
             shelf(folder).insert(agent, in: group)
         }
         filedAs[agent.id] = (folder, agent.host, group)
+        countSession(from: was.map { ($0.host, $0.group) }, to: (agent.host, group))
         cells[agent.id]?.agent = agent
         if titles[agent.id] != agent.title {
             titles[agent.id] = agent.title
@@ -2522,9 +2528,31 @@ public final class AgentsModel {
     /// How many of a machine's sessions work and wait (P20261117-1): what the sidebar's Machines
     /// group, its rows and the Machines page's Working column read, never `agents`.
     public func sessionCounts(on host: MachineRef) -> MachineSessionCounts {
-        var counts = MachineSessionCounts()
-        for agent in agents where agent.host == host { counts.add(group(of: agent)) }
-        return counts
+        sessionsByMachine[host] ?? MachineSessionCounts()
+    }
+
+    /// An agent out of one machine's count and into another's, as it is filed. Nothing is
+    /// set when it stays in the same count, so its readers draw only when one moves.
+    private func countSession(from was: (host: MachineRef, group: AgentGroup)?,
+                              to now: (host: MachineRef, group: AgentGroup)?) {
+        if let was, let now, was.host == now.host,
+           MachineSessions.Group(was.group) == MachineSessions.Group(now.group) { return }
+        if let was { countSession(was.host, was.group, by: -1) }
+        if let now { countSession(now.host, now.group, by: 1) }
+    }
+
+    private func countSession(_ host: MachineRef, _ group: AgentGroup, by: Int) {
+        var counts = sessionsByMachine[host] ?? MachineSessionCounts()
+        guard counts.add(group, by: by) else { return }
+        sessionsByMachine[host] = counts.busy ? counts : nil
+    }
+
+    /// Every machine's counts again, from the whole list: a refile's one pass.
+    private func countSessions() {
+        var counts: [MachineRef: MachineSessionCounts] = [:]
+        for (_, filed) in filedAs { counts[filed.host, default: MachineSessionCounts()].add(filed.group) }
+        let busy = counts.filter { $0.value.busy }
+        if busy != sessionsByMachine { sessionsByMachine = busy }
     }
 
     /// Every machine's last runtime again, in one pass of the list.
@@ -2589,6 +2617,7 @@ public final class AgentsModel {
             if started[starter]?.isEmpty == true { started[starter] = nil }
         }
         if let was = filedAs.removeValue(forKey: old.id) {
+            countSession(from: (was.host, was.group), to: nil)
             shelves[ShelfKey(folder: was.folder, host: was.host)]?.remove(old, from: was.group)
             folderShelves[was.folder]?.remove(old, from: was.group)
         }
@@ -2637,6 +2666,7 @@ public final class AgentsModel {
             byKey[ShelfKey(folder: folder, host: agent.host), default: [:]][group, default: []].append(agent)
             byFolder[folder, default: [:]][group, default: []].append(agent)
         }
+        countSessions()
         for (key, groups) in byKey { byKey[key] = groups.sortedInGroupOrder() }
         for (folder, groups) in byFolder { byFolder[folder] = groups.sortedInGroupOrder() }
         for (key, shelf) in shelves where byKey[key] == nil { shelf.replaceAll([:]) }
