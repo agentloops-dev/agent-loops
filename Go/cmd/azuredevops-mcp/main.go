@@ -25,6 +25,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
 )
@@ -43,6 +44,10 @@ func main() {
 
 	root, token := azuredevopsmcp.Connected(*base)
 	ado := azuredevopsmcp.NewRealAzureDevOps(root, token, azuredevopsmcp.GitRepo(root))
+	// Each call to the forge is counted, and the log gets a line every 10 minutes (#6164).
+	meter := apicalls.New("azuredevops", func(line string) { fmt.Fprintln(os.Stderr, line) })
+	meter.Client(ado.Client)
+	go meter.Run(ctx)
 	front := &azuredevopsmcp.Front{
 		Events:   &azuredevopsmcp.Events{AzureDevOps: ado},
 		Upstream: azuredevopsmcp.NewServer(buildinfo.Version, ado, os.Getenv(azuredevopsmcp.HostedEnv) == "1"), Version: buildinfo.Version, Logger: logger,

@@ -9,6 +9,8 @@ import (
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 )
 
 // The front: MCP's stdio transport, one JSON-RPC message a line. It answers events/list and
@@ -52,6 +54,7 @@ func (f *Front) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	f.Upstream.AddReceivingMiddleware(namesTheTool)
 	toUpstream, upstreamIn := io.Pipe()
 	upstreamOut, fromUpstream := io.Pipe()
 	upstreamDone := make(chan error, 1)
@@ -162,7 +165,7 @@ func (f *Front) answer(ctx context.Context, m message) []byte {
 	reply := map[string]any{"jsonrpc": "2.0", "id": m.ID}
 	if m.Method == "events/list" {
 		reply["result"] = f.List()
-	} else if result, err := f.Events.Poll(ctx, m.Params); err != nil {
+	} else if result, err := f.Events.Poll(pollCaller(ctx, m.Params), m.Params); err != nil {
 		reply["error"] = err
 	} else {
 		reply["result"] = result
@@ -173,6 +176,25 @@ func (f *Front) answer(ctx context.Context, m message) []byte {
 			"error": Error{Code: -32603, Message: err.Error()}})
 	}
 	return line
+}
+
+// pollCaller is ctx with the poll's event named as the caller of the forge's API (#6164).
+func pollCaller(ctx context.Context, params json.RawMessage) context.Context {
+	var p struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(params, &p)
+	return apicalls.WithCaller(ctx, "event "+p.Name)
+}
+
+// namesTheTool names a tool call's tool as the caller of the forge's API (#6164).
+func namesTheTool(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if p, ok := req.GetParams().(*mcp.CallToolParamsRaw); ok && method == "tools/call" {
+			ctx = apicalls.WithCaller(ctx, "tool "+p.Name)
+		}
+		return next(ctx, method, req)
+	}
 }
 
 // initialized is the answer of the server behind it to initialize with the events added: the

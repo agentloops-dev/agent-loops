@@ -27,6 +27,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
@@ -61,6 +62,10 @@ func main() {
 		return ""
 	}
 	fj := forgejomcp.NewRealForgejo(root, token, forgejomcp.GitRepo(root))
+	// Each call to the forge is counted, and the log gets a line every 10 minutes (#6164).
+	meter := apicalls.New("forgejo", func(line string) { fmt.Fprintln(os.Stderr, line) })
+	meter.Client(fj.Client)
+	go meter.Run(ctx)
 	front := &forgejomcp.Front{
 		Events:   &forgejomcp.Events{Forgejo: fj},
 		Upstream: forgejomcp.NewServer(buildinfo.Version, fj, os.Getenv(forgejomcp.HostedEnv) == "1"), Version: buildinfo.Version, Logger: logger,

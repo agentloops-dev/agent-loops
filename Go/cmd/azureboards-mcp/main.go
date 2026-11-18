@@ -25,6 +25,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 	"github.com/agentloops-dev/agent-loops/Go/internal/azureboardsmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
@@ -45,6 +46,10 @@ func main() {
 
 	root, token := azuredevopsmcp.Connected(*base)
 	boards := azureboardsmcp.NewRealBoards(root, token, azureboardsmcp.ProjectOf(root, *project))
+	// Each call to the forge is counted, and the log gets a line every 10 minutes (#6164).
+	meter := apicalls.New("azureboards", func(line string) { fmt.Fprintln(os.Stderr, line) })
+	meter.Client(boards.Client)
+	go meter.Run(ctx)
 	front := &azureboardsmcp.Front{
 		Events:   &azureboardsmcp.Events{Boards: boards, SignedIn: func() bool { return token() != "" }},
 		Upstream: azureboardsmcp.NewServer(buildinfo.Version, boards), Version: buildinfo.Version, Logger: logger,

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/github/github-mcp-server/v2/pkg/github"
 	"github.com/github/github-mcp-server/v2/pkg/http/transport"
@@ -50,6 +51,8 @@ type UpstreamConfig struct {
 	// Bot is the person's bot when Token sends its token (#3858): each write then names the
 	// person (SignTransport). nil when the toolsets post as the person only.
 	Bot func() (connections.Bot, bool)
+	// Meter, when set, counts each call to GitHub (#6164).
+	Meter *apicalls.Meter
 }
 
 // NewUpstream is the official server with cfg's toolsets and without HiddenTools.
@@ -83,11 +86,15 @@ func newUpstream(ctx context.Context, cfg UpstreamConfig, issueReader *IssueRead
 	// The token goes to GitHub's own hosts only, never to a redirect off them.
 	allowed := []string{restURL.Host, uploadURL.Host, graphQLURL.Host, rawURL.Host}
 	agent := "agents-github-mcp/" + cfg.Version
+	base := http.DefaultTransport
+	if cfg.Meter != nil {
+		base = cfg.Meter.Transport(base)
+	}
 	auth := func(next http.RoundTripper) http.RoundTripper {
 		return &transport.BearerAuthTransport{Transport: next, TokenProvider: cfg.Token, AllowedHosts: allowed}
 	}
 	var restTransport http.RoundTripper = &transport.UserAgentTransport{
-		Transport: &transport.ETagTransport{Transport: http.DefaultTransport}, Agent: agent}
+		Transport: &transport.ETagTransport{Transport: base}, Agent: agent}
 	if cfg.Bot != nil {
 		restTransport = &SignTransport{Next: restTransport, Bot: cfg.Bot}
 	}
@@ -98,9 +105,9 @@ func newUpstream(ctx context.Context, cfg UpstreamConfig, issueReader *IssueRead
 		return nil, fmt.Errorf("REST client: %w", err)
 	}
 	gql := githubv4.NewEnterpriseClient(graphQLURL.String(), &http.Client{Transport: auth(&transport.GraphQLFeaturesTransport{
-		Transport: &transport.UserAgentTransport{Transport: http.DefaultTransport, Agent: agent}})})
+		Transport: &transport.UserAgentTransport{Transport: base, Agent: agent}})})
 	rawREST, err := gogithub.NewClient(
-		gogithub.WithHTTPClient(&http.Client{Transport: auth(&transport.UserAgentTransport{Transport: http.DefaultTransport, Agent: agent})}),
+		gogithub.WithHTTPClient(&http.Client{Transport: auth(&transport.UserAgentTransport{Transport: base, Agent: agent})}),
 		gogithub.WithEnterpriseURLs(restURL.String(), uploadURL.String()))
 	if err != nil {
 		return nil, fmt.Errorf("raw REST client: %w", err)
