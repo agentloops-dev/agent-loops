@@ -32,11 +32,11 @@ MARK = " (tier moves)"
 ROLE_TIERS = {
     "Engineer (agent work)": ("Core", "Mac only", "Web only", "Remote only"),
     "Engineer (set-up)": ("Mac + web", "Mac only", "Web only"),
-    "Lead": ("Web + Mac link",),  # and Core for Work ▸ Features and Velocity (LEAD_CORE)
+    "Lead": ("Web + Mac link",),  # and Core for Work ▸ Features, Velocity and Timeline (LEAD_CORE)
     "Admin": ("Web + Mac link", "Web only"),
     "Report reader": ("Web + Mac link",),
 }
-LEAD_CORE = ("Features", "Velocity")
+LEAD_CORE = ("Features", "Velocity", "Timeline")
 # What each tier draws: (Mac, Remote, Web), a link on the Mac for Web + Mac link.
 DRAWS = {
     "Core": ("native", "native", "native"),

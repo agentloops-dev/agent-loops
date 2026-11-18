@@ -17,9 +17,12 @@ protocol WorkModel: AnyObject, Sendable {
     /// The machines that narrow their forges to a board (#3282), the home one first. None on the
     /// Remote: boards are the Mac's and the web page's (tier Mac + web).
     var boardMachines: [(id: MachineRef, name: String)] { get }
-    /// The machines that draw Work ▸ Timeline (`work/timeline`, #4173), the home one first. None on
-    /// the Remote: the Timeline is the Mac's (remote: by design).
+    /// The machines that draw Work ▸ Timeline (`work/timeline`, #4173), the home one first. Core
+    /// since #6044: the Remote has them too.
     var timelineMachines: [(id: MachineRef, name: String)] { get }
+    /// The projects Work ▸ Timeline can draw: `workProjects` on the Mac; on the Remote, whose lists
+    /// have no Project filter, New Session's projects (#6044).
+    var timelineProjects: [WorkList.Project] { get }
     /// The machines that say their deploys' targets (`deploys/targets`, #5270), the home one first.
     /// None on the Remote: Work ▸ Deploys is Mac + web.
     var deploysMachines: [(id: MachineRef, name: String)] { get }
@@ -80,6 +83,7 @@ protocol WorkModel: AnyObject, Sendable {
 
 extension WorkModel {
     var workProjects: [WorkList.Project] { [] }
+    var timelineProjects: [WorkList.Project] { workProjects }
     func askWorkConnectors() -> Bool { false }
     var workCopy: LocalCopy? { nil }
     func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,

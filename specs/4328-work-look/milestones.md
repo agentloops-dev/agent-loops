@@ -12,7 +12,7 @@ This spike makes no product code. It puts the shared parts on three Work pages, 
 
 Today: `Shared/UI/Work/WorkView.swift` (Milestones and Releases are `WorkListPane` rows from lineage alone, with `WorkList.lineageOnlyNote` under them), `WorkItemPage.swift` (a milestone's or a release's page is the generic node page: its links by relation), `WorkTimelineView.swift` (macOS only), `Web/src/views/Work.tsx` and `WorkTimeline.tsx`.
 
-**Tiers.** Milestones and Releases are Core: all three clients. Timeline is Mac + web: the Remote has no Timeline row (Alex, 2026-11-08, #4170). The parity row *Work ▸ Timeline* says so already.
+**Tiers.** Milestones and Releases are Core: all three clients. Timeline is Core since #6044 (Alex, 2026-11-17: "Timeline is Work, and then goes on the Remotes"; it was Mac + web, 2026-11-08, #4170): the Remote has a Timeline row after Releases, and an iPhone in portrait draws the list of epics (note 36).
 
 ## The boards
 
@@ -117,7 +117,7 @@ The same `Shared/UI` views as the Mac.
 41. **A milestone on the iPhone:** the pill and *Due Fri 14 Nov · 72%*, the bar, *18 open · 46 closed*, the panel as a group of rows, the **18 Open | 46 Closed** segmented control, the epics, then the items as phone rows.
 42. **Releases on the iPhone:** the phone row: the glyph, the name and its chip, the pipeline tick at the trailing edge, and *2 h · 23 PRs · $18.40*.
 43. **A release on the iPhone:** the name and chip, the group of rows, the notes, then **Pull requests · 23 ›**.
-44. **The iPad** uses the wide page with the side panel, as issue.md. The sidebar's Work group has no Timeline row (Alex).
+44. **The iPad** uses the wide page with the side panel, as issue.md. The sidebar's Work group has a Timeline row after Releases, with the plot (#6044).
 
 ## The web page (notes 50 to 52)
 
@@ -189,6 +189,6 @@ Tasks, not stories (stories 1 to 3 show what they can without them):
 ## Clients
 
 - **Mac:** `Shared/UI/Work/WorkView.swift`, `WorkItemPage.swift`, `WorkTimelineView.swift`; the toolbar in `App/`.
-- **Remote:** the same `Shared/UI` views; no Timeline (Alex, #4170).
+- **Remote:** the same `Shared/UI` views; the Timeline too since #6044 (the list of epics on an iPhone in portrait).
 - **Web:** `Web/src/views/Work.tsx`, `WorkTimeline.tsx`.
 - The parity rows *Work* and *Work ▸ Timeline* in `specs/071-web-remote/walks/parity/worktrees-and-files.md` change with the stories, not with this spike.

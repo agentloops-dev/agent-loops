@@ -344,9 +344,9 @@ final class WorkListState {
 final class WorkLists {
     /// Work ▸ Features (#3269): the features read, and the ones opened.
     let features = WorkFeaturesState()
-    #if os(macOS)
-    /// Work ▸ Timeline (#4173): the Mac's alone for now (remote: by design).
+    /// Work ▸ Timeline (#4173): Core since #6044.
     let timeline = WorkTimelineState()
+    #if os(macOS)
     /// Work ▸ Deploys (#5270): Mac + web, so not on the Remote.
     let deploys = WorkDeploysState()
     #endif

@@ -185,9 +185,10 @@ struct RemoteSidebar: View {
                 // Work, Status, Machines, then Reports, as the window has them (#5454). New Session
                 // is in the + (#5447), and a folder's long press.
                 // Work (#3119, #3256): a row per list, as the window has them (#4004), above
-                // Status, Features too (#3269). No Timeline: it is the Mac's.
+                // Status, Features too (#3269), and Timeline after Releases, as the window has it (#6044).
+                // No Deploys: it is Mac + web.
                 Section(isExpanded: $showsWork) {
-                    ForEach(WorkList.Kind.allCases.filter { $0 != .timeline && $0 != .deploy }) { kind in
+                    ForEach(WorkList.Kind.allCases.filter { $0 != .deploy }) { kind in
                         HStack { Text(kind.title); Spacer() }
                             .accessibilityHint(kind.sidebarHelp)
                             .activityIcon(kind.sidebarIcon).appText(.supporting).paperTag(SidebarItem.work(kind))
