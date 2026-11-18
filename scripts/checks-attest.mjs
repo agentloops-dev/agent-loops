@@ -25,6 +25,10 @@
 //   result that Nx took from its cache is never attested. A task that fails is written to this
 //   worktree's ledger (`git rev-parse --git-path agents-attest/failed`), and a later pass at the
 //   same hash is not attested: only a change to its inputs (a new hash) clears it.
+// - A failure in any Nx run since the branch began counts too (#6173): `nx affected`, `nx run`
+//   or an attest run, from Nx's task_history, which every worktree shares (a failure at the same
+//   hash in another worktree is the same inputs failing). When that history cannot be read, the
+//   earlier failures cannot be seen, so nothing is attested and the run fails.
 // - A task whose tool on this machine is not the version its pin file names (.xcode-version,
 //   Web/.node-version, Go/go.mod) is not run and not attested: its hash reads the pin file, so
 //   a pass with another tool would cover a run that CI would make with the pinned one.
@@ -124,10 +128,13 @@ export function changedInputs(task, changedFiles) {
 /**
  * The verdict for each planned task, from the run's results and the lane's ledger.
  * results: Map id -> {status, code} (the first row Nx wrote for its hash in this run).
- * ledger: Set of "id hash" for each task that failed in this lane.
+ * ledger: Set of "id hash" for each task that failed in this lane: the attest runs' own ledger
+ * and the failures in Nx's task history since the branch began, from any Nx run (#6173).
+ * unreadable: null, or why Nx's task history could not be read: then the earlier failures are
+ * not known, and no task is attested (#6173).
  * Returns {verdicts: [{task, attested, result, reason}], failed: ["id hash", …]}.
  */
-export function decide(planned, results, ledger) {
+export function decide(planned, results, ledger, unreadable = null) {
   const verdicts = [];
   const failed = [];
   for (const task of planned) {
@@ -146,6 +153,8 @@ export function decide(planned, results, ledger) {
       verdicts.push({ task, attested: false, result: "FAILED", reason: `failed (exit ${r.code})` });
     } else if (ledger.has(key)) {
       verdicts.push({ task, attested: false, result: "PASSED", reason: "failed earlier in this lane at the same inputs; a pass after a fail is not attested (principle 9)" });
+    } else if (unreadable) {
+      verdicts.push({ task, attested: false, result: "PASSED", reason: "passed, but Nx's task history could not be read, so earlier failures at the same inputs cannot be seen (#6173)" });
     } else {
       verdicts.push({ task, attested: true, result: "PASSED", reason: "passed on its first run" });
     }
@@ -259,33 +268,97 @@ function skipFor(task, tools) {
   return null;
 }
 
-async function nxResults(planned, since) {
-  const { DatabaseSync } = await import("node:sqlite");
-  const nxDist = join(root, "node_modules", "nx", "dist", "src");
+/** The folder of Nx's shared databases (~/.nx/<id>/databases), as Nx itself resolves it. */
+async function nxDataDirectory() {
+  if (process.env.NX_WORKSPACE_DATA_DIRECTORY) return process.env.NX_WORKSPACE_DATA_DIRECTORY;
   const { createRequire } = await import("node:module");
   const require = createRequire(import.meta.url);
-  const dir = process.env.NX_WORKSPACE_DATA_DIRECTORY || require(join(nxDist, "utils", "cache-directory")).sharedDataDirectory(root, "workspace-data");
-  const dbs = [];
-  for (const e of readdirSync(dir, { withFileTypes: true, recursive: true })) {
-    if (e.isFile() && e.name.endsWith(".db")) dbs.push(join(e.parentPath, e.name));
-  }
+  return require(join(root, "node_modules", "nx", "dist", "src", "utils", "cache-directory")).sharedDataDirectory(root, "workspace-data");
+}
+
+/**
+ * What Nx's task history says about the planned tasks (#6173). Every Nx run on this machine
+ * (`nx affected`, `nx run`, an attest run) writes a row for each task to `task_history`, keyed by
+ * the task's hash, in a database that every worktree shares; a row does not say which worktree
+ * ran it, so a failure at the same hash in another worktree counts too (the same inputs failed).
+ *   results: Map id -> {status, code}, the first row at the task's hash from runStart (this run).
+ *   earlier: Set of "id hash" for each row at the task's hash with a non-zero code from
+ *            branchStart to runStart: a failure earlier in the lane.
+ *   unreadable: null, or why the history could not be read. Then earlier is not known, and no
+ *            task may be attested as "passed on its first run".
+ * A .db file with no task_history (an empty `*.db` from a glob that did not match) is named and
+ * not read; when no file has it, the history is unreadable.
+ */
+export async function taskHistory(dir, planned, { branchStart, runStart }) {
   const results = new Map();
+  const earlier = new Set();
+  let dbs = [];
+  try {
+    for (const e of readdirSync(dir, { withFileTypes: true, recursive: true })) {
+      if (e.isFile() && e.name.endsWith(".db")) dbs.push(join(e.parentPath, e.name));
+    }
+  } catch (error) {
+    return { results, earlier, unreadable: `${dir}: ${error.message}` };
+  }
+  dbs = dbs.sort();
+  const { DatabaseSync } = await import("node:sqlite");
+  const problems = [];
+  let read = 0;
   for (const file of dbs) {
-    const db = new DatabaseSync(file, { readOnly: true });
+    let db;
     try {
-      const q = db.prepare("SELECT status, code FROM task_history WHERE hash = ? AND start >= ? ORDER BY start LIMIT 1");
-      for (const t of planned) {
-        if (results.has(t.id)) continue;
-        const row = q.get(t.hash, since);
-        if (row) results.set(t.id, { status: row.status, code: row.code });
+      db = new DatabaseSync(file, { readOnly: true });
+      const table = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_history'").get();
+      if (!table) {
+        console.error(`attest: ${file} has no task_history table; not Nx's history, not read`);
+        continue;
       }
+      const first = db.prepare("SELECT status, code FROM task_history WHERE hash = ? AND start >= ? ORDER BY start LIMIT 1");
+      const failed = db.prepare("SELECT 1 FROM task_history WHERE hash = ? AND start >= ? AND start < ? AND code != 0 LIMIT 1");
+      for (const t of planned) {
+        if (!results.has(t.id)) {
+          const row = first.get(t.hash, runStart);
+          if (row) results.set(t.id, { status: row.status, code: row.code });
+        }
+        if (failed.get(t.hash, branchStart, runStart)) earlier.add(`${t.id} ${t.hash}`);
+      }
+      read++;
     } catch (error) {
-      console.error(`attest: ${file}: ${error.message}`);
+      problems.push(`${file}: ${error.message}`);
     } finally {
-      db.close();
+      db?.close();
     }
   }
-  return results;
+  if (problems.length) return { results, earlier, unreadable: problems.join("; ") };
+  if (read === 0) return { results, earlier, unreadable: `no database in ${dir} has a task_history table` };
+  return { results, earlier, unreadable: null };
+}
+
+/**
+ * When this branch began, in ms: the earliest of the branch's creation in its reflog, the
+ * merge base's commit time and the first commit on the branch. The earliest, so that a failure
+ * in the lane before its first commit, or before a merge of main moved the merge base, counts.
+ */
+export function branchStartOf(times) {
+  const known = times.filter((t) => Number.isFinite(t) && t > 0);
+  return known.length ? Math.min(...known) : 0;
+}
+
+function branchTimes(base) {
+  const sec = (cmd, args) => {
+    const r = spawnSync(cmd, args, { cwd: root, encoding: "utf8" });
+    if (r.status !== 0) return [];
+    return r.stdout.split("\n").map((s) => Number(s.trim()) * 1000).filter((n) => n > 0);
+  };
+  const branch = sh("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
+  // The reflog's own times (%gd with --date=unix is "<ref>@{<seconds>}"), not the commits'.
+  const reflog = spawnSync("git", ["log", "-g", "--date=unix", "--format=%gd", `refs/heads/${branch}`, "--"], { cwd: root, encoding: "utf8" });
+  const created = reflog.status === 0 ? [...reflog.stdout.matchAll(/@\{(\d+)\}/g)].map((m) => Number(m[1]) * 1000) : [];
+  return [
+    ...created,
+    ...sec("git", ["show", "-s", "--format=%ct", base]),
+    ...sec("git", ["log", "--format=%at", `${base}..HEAD`]),
+  ];
 }
 
 function ledgerPath() {
@@ -357,14 +430,21 @@ async function runStep({ base, planOnly, env, headSha }) {
       "--skip-nx-cache", "--nxBail=false", "--parallel=1", "--output-style=stream",
     ], { cwd: root, stdio: "inherit", env });
   }
-  const results = await nxResults(planned.filter((t) => !t.skip), since);
+  const branchStart = branchStartOf(branchTimes(base));
+  const { results, earlier, unreadable } = await taskHistory(await nxDataDirectory(), planned.filter((t) => !t.skip), { branchStart, runStart: since });
+  if (unreadable) {
+    console.error(`attest: cannot read Nx's task history (${unreadable}), so this run cannot see the failures earlier in this lane; no task is attested as passed on its first run`);
+  }
+  for (const key of earlier) console.log(`attest: ${key} failed in an Nx run since this branch began`);
   const changedTree = sh("git", ["status", "--porcelain", "--untracked-files=normal"]);
   const path = ledgerPath();
   const ledger = readLedger(path);
-  let { verdicts, failed } = decide(planned, results, ledger);
-  if (failed.length) {
+  let { verdicts, failed } = decide(planned, results, new Set([...ledger, ...earlier]), unreadable);
+  // The ledger keeps the history's failures too: Nx may prune its rows, the ledger is not pruned.
+  const kept = new Set([...ledger, ...earlier, ...failed]);
+  if (kept.size > ledger.size) {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, [...new Set([...ledger, ...failed])].sort().join("\n") + "\n");
+    writeFileSync(path, [...kept].sort().join("\n") + "\n");
   }
   if (changedTree) {
     console.error(`attest: the run changed the tree, so its hashes are not the head commit's; nothing is attested:\n${changedTree}`);
@@ -396,7 +476,7 @@ async function runStep({ base, planOnly, env, headSha }) {
   keep(headSha, keptRun(headSha, base, repo, body));
   // The kept run still has a statement for each task that passed; but a run with a planned task
   // that failed or did not start is not a pass (#6154).
-  let code = 0;
+  let code = unreadable ? 1 : 0;
   const unrun = notStarted(verdicts);
   if (unrun.length) {
     console.error(`attest: ${unrun.length} planned task${unrun.length === 1 ? "" : "s"} did not run here: ${unrun.join(", ")}`);
@@ -612,9 +692,72 @@ function selftest() {
   assert(staleStatements(body, [{ id: "go:test", hash: "111" }]).length === 0, "a kept run at the same hash is stale");
   assert(staleStatements(body, [{ id: "go:test", hash: "333" }]).length === 1, "a kept run at another hash is posted");
   assert(staleStatements(body, []).length === 1, "a kept run for a task no longer affected is posted");
+
+  // #6173: the history can't be read, so nothing is "passed on its first run".
+  const blind = decide([task], new Map([["go:test", { status: "success", code: 0 }]]), new Set(), "no database has a task_history table");
+  assert(blind.verdicts[0].attested === false && blind.verdicts[0].result === "PASSED", "a pass is attested with no task history");
+  assert(blind.verdicts[0].reason !== "passed on its first run", "a pass with no task history says it passed on its first run");
+  assert(branchStartOf([3000, Number.NaN, 1000, 0, 2000]) === 1000, "the branch start is not the earliest time");
+  assert(branchStartOf([]) === 0, "with no times, the branch start is not the start of all history");
+}
+
+/** #6173 with Nx's own database shape: an earlier failure from any Nx run, and no history. */
+async function selftestHistory() {
+  const assert = (ok, what) => {
+    if (!ok) {
+      console.error(`checks-attest selftest: ${what}`);
+      process.exit(1);
+    }
+  };
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { DatabaseSync } = await import("node:sqlite");
+  const dir = mkdtempSync(join(tmpdir(), "checks-attest-6173-"));
+  try {
+    const task = { id: "agentskit:test-unit", hash: "777" };
+    const other = { id: "go:test", hash: "888" };
+    const branchStart = 1000;
+    const runStart = 5000;
+    // The stray empty file of the issue: no task_history, named and not read.
+    writeFileSync(join(dir, "*.db"), "");
+    // Nothing to read yet but the stray file: the history is unreadable.
+    const none = await taskHistory(dir, [task], { branchStart, runStart });
+    assert(none.unreadable !== null, "a folder whose only .db has no task_history is read as history");
+    const missing = await taskHistory(join(dir, "nope"), [task], { branchStart, runStart });
+    assert(missing.unreadable !== null, "a missing folder is read as history");
+
+    const db = new DatabaseSync(join(dir, "MACHINE-v6.db"));
+    db.exec("CREATE TABLE task_history (id INTEGER PRIMARY KEY, hash TEXT, status TEXT, code INTEGER, start INTEGER, end INTEGER)");
+    const row = db.prepare("INSERT INTO task_history (hash, status, code, start, end) VALUES (?, ?, ?, ?, ?)");
+    row.run("777", "failure", 1, 2000, 2100); // `nx affected` failed it, in this lane
+    row.run("777", "success", 0, 6000, 6100); // the attest run passed it
+    row.run("888", "failure", 1, 500, 600); // before the branch began
+    row.run("888", "success", 0, 6200, 6300);
+    db.close();
+
+    const h = await taskHistory(dir, [task, other], { branchStart, runStart });
+    assert(h.unreadable === null, `the history is unreadable: ${h.unreadable}`);
+    assert(h.results.get(task.id)?.code === 0 && h.results.get(other.id)?.code === 0, "the run's results are not its first rows");
+    assert([...h.earlier].join() === "agentskit:test-unit 777", `the earlier failures: ${[...h.earlier]}`);
+    const v = decide([{ ...task, skip: null }, { ...other, skip: null }], h.results, h.earlier, h.unreadable).verdicts;
+    assert(v[0].attested === false, "a task that failed in nx affected earlier in the lane is attested (#6173)");
+    assert(v[1].attested === true, "a task whose only failure is before the branch began is not attested");
+
+    // A .db that Nx's history is in but can't be read (not SQLite): unreadable, nothing attested.
+    writeFileSync(join(dir, "broken.db"), "not a database");
+    const bad = await taskHistory(dir, [task, other], { branchStart, runStart });
+    assert(bad.unreadable !== null, "a .db that cannot be read is not reported");
+    const bv = decide([{ ...other, skip: null }], bad.results, bad.earlier, bad.unreadable).verdicts;
+    assert(bv[0].attested === false, "a task is attested when a history file could not be read");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
   console.log("checks-attest selftest: ok");
 }
 
 const argv = process.argv.slice(2);
-if (argv[0] === "--selftest") selftest();
+if (argv[0] === "--selftest") {
+  selftest();
+  await selftestHistory();
+}
 else process.exit(await main(argv));
