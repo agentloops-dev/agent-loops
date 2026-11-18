@@ -20,6 +20,8 @@
 # push and post just after it, so the check run is there when CI's `changes` job reads it, about
 # a minute after the push; CI skips the tasks it covers (#5585). The rules and the statement's
 # shape are in scripts/checks-attest.mjs. Lease "build" for the run (not for post or --plan).
+# The run exits 1, and names them, when a planned task failed or did not start here (#6154); it
+# still keeps the statements of the tasks that passed. A task skipped by its pin is not one.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
