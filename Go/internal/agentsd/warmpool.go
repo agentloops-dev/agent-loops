@@ -18,7 +18,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -522,7 +521,7 @@ func (d *Daemon) releaseWarm(l *live, why string, background []acp.Command, inTu
 	log.Printf("warm pool: released %s (%s)", l.id, why)
 	s.Stop()
 	for _, c := range background {
-		endProcess(c.Pid)
+		d.endProcess(c.Pid)
 	}
 	// As the session's watch does for one of its own: it sees the session is not ours.
 	d.dropStandIn(l.id)
@@ -534,13 +533,21 @@ func (d *Daemon) releaseWarm(l *live, why string, background []acp.Command, inTu
 	return true
 }
 
-// endProcess ends a background process: TERM, then KILL if it is still there.
-func endProcess(pid int) {
+// endProcess ends a background process: TERM, then KILL if it is still there 3 s on. The
+// wait is a job of the daemon's, so Shutdown waits for it (#6130), and it ends as soon as
+// the process is gone, so a KILL never goes to a pid used again.
+func (d *Daemon) endProcess(pid int) {
 	if pid <= 1 || syscall.Kill(pid, syscall.SIGTERM) != nil {
 		return
 	}
-	safe.Go("end background process", func() {
-		time.Sleep(3 * time.Second)
+	d.goJobOrNow("end background process", func() {
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if syscall.Kill(pid, 0) != nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 	})
 }
