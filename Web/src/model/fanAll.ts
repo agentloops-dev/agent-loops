@@ -19,7 +19,7 @@ export const mostFanMachines = 50;
 export const fanPatience = 5_000;
 
 /** A machine this page may ask. */
-export interface FanHost { id: string; name: string; online: boolean }
+export interface FanHost { id: string; name: string }
 
 /** What the answers are made with: the page's machines that have a capability, and a call to one of them. */
 export interface FanHere {
@@ -49,9 +49,11 @@ function fanHosts(here: FanHere, capability: string): { hosts: FanHost[]; notAsk
 
 const machine = (h: FanHost): ProjectMachine => ({ machine: h.id as MachineRef, machineName: h.name });
 
-/** Each host's answer at once, in the order of hosts, and those that did not answer. An offline one is not asked. */
+/** Each host's answer at once, in the order of hosts, and those that did not answer. Every host is asked, whatever state
+ * the page last heard for it, as the control plane asks them: one that is not there fails at once, and one that just
+ * joined the lock may not have said so to the page yet. */
 async function askEach<T>(here: FanHere, hosts: FanHost[], method: string, params: (h: FanHost) => unknown) {
-  const got = await Promise.all(hosts.map((h) => h.online ? askOne<T>(here, h.id, method, params(h)) : Promise.resolve(null)));
+  const got = await Promise.all(hosts.map((h) => askOne<T>(here, h.id, method, params(h))));
   return {
     items: hosts.flatMap((h, i) => got[i] === null ? [] : [{ host: h, item: got[i] as T }]),
     unreached: hosts.filter((_, i) => got[i] === null).map(machine),
@@ -76,7 +78,7 @@ function decodeCursor(cursor: string | undefined): Record<string, FanPlace> {
 async function fanOut<T>(hosts: FanHost[], cursor: string | undefined, limit: number,
   ask: (host: FanHost, page: string | undefined) => Promise<{ items: T[]; next?: string } | null>, newer: (a: T, b: T) => boolean) {
   const places = decodeCursor(cursor);
-  const pages = await Promise.all(hosts.map((h) => places[h.id]?.d || !h.online ? Promise.resolve(null) : ask(h, places[h.id]?.p)));
+  const pages = await Promise.all(hosts.map((h) => places[h.id]?.d ? Promise.resolve(null) : ask(h, places[h.id]?.p)));
   const items: { host: FanHost; item: T }[] = [];
   const unreached: ProjectMachine[] = [];
   const next = hosts.map((h, i) => Math.min(places[h.id]?.n ?? 0, pages[i]?.items.length ?? 0));

@@ -6,10 +6,10 @@ import { load } from "./load.mjs";
 
 const { answerHere } = await load("src/model/fanAll.ts");
 
-/** A page with machines a (online), b (online), c (offline); `answers` is each machine's answer by method. */
+/** A page with machines a, b and c (which answers nothing); `answers` is each machine's answer by method. */
 function here(answers, capabilities = { a: ["forge/1", "docs/1", "messages/1", "events/1"], b: ["forge/1", "docs/1", "messages/1"], c: ["forge/1"] }) {
   const asked = [];
-  const hosts = [{ id: "a", name: "A", online: true }, { id: "b", name: "B", online: true }, { id: "c", name: "C", online: false }];
+  const hosts = [{ id: "a", name: "A" }, { id: "b", name: "B" }, { id: "c", name: "C" }];
   return {
     asked,
     hosts: (capability) => hosts.filter((h) => (capabilities[h.id] ?? []).includes(capability)),
@@ -23,15 +23,16 @@ function here(answers, capabilities = { a: ["forge/1", "docs/1", "messages/1", "
   };
 }
 
-test("forge/listAll asks each machine's forge/pulls over its own link; an offline or failing one is unreached", async () => {
+test("forge/listAll asks each machine's forge/pulls over its own link, whatever its state; a failing one is unreached", async () => {
   const h = here({ a: { "forge/pulls": { items: [{ n: 1 }] } }, b: { "forge/pulls": new Error("not in the lock") } });
   const got = await answerHere("forge/listAll", { kind: "pulls", state: "open", limit: 500 }, h);
   assert.deepEqual(got.lists, [{ machine: "a", machineName: "A", list: { items: [{ n: 1 }] } }]);
   assert.deepEqual(got.unreached, [{ machine: "b", machineName: "B" }, { machine: "c", machineName: "C" }]);
   assert.equal(got.notAsked, 0);
-  // The limit is bounded as the control plane bounds it, and the offline machine is not asked.
+  // The limit is bounded as the control plane bounds it, and every machine is asked.
   assert.deepEqual(h.asked.map((a) => [a.host, a.method, a.params]), [
-    ["a", "forge/pulls", { state: "open", limit: 100 }], ["b", "forge/pulls", { state: "open", limit: 100 }]]);
+    ["a", "forge/pulls", { state: "open", limit: 100 }], ["b", "forge/pulls", { state: "open", limit: 100 }],
+    ["c", "forge/pulls", { state: "open", limit: 100 }]]);
 });
 
 test("forge/listAll with pages asks only the machines named, each from its cursor", async () => {

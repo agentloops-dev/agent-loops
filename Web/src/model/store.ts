@@ -83,7 +83,7 @@ export class Store extends Work {
       if (!(await this.machineLock.signer())) return undefined;
       return answerHere(method, params, {
         hosts: (capability) => this.hosts.value.filter((h) => this.has(h.id, capability))
-          .map((h) => ({ id: h.id, name: h.name, online: this.hostIsOnline(h.id) })),
+          .map((h) => ({ id: h.id, name: h.name })),
         ask: (m, p, host) => link.call(m as never, p as never, host),
       });
     });

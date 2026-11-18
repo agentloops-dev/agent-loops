@@ -23,15 +23,13 @@ public enum FanAllHere {
     public struct Host: Sendable, Equatable {
         public var id: String
         public var name: String
-        public var online: Bool
-        public init(id: String, name: String, online: Bool) {
+        public init(id: String, name: String) {
             self.id = id
             self.name = name
-            self.online = online
         }
 
         public init(_ machine: DaemonAPI.ControlMachine) {
-            self.init(id: machine.id.rawValue, name: machine.name, online: machine.answers)
+            self.init(id: machine.id.rawValue, name: machine.name)
         }
     }
 
@@ -166,10 +164,11 @@ public enum FanAllHere {
         (Array(hosts.prefix(mostMachines)), max(0, hosts.count - mostMachines))
     }
 
-    /// One machine's answer within `patience`; nil when it did not answer in time.
+    /// One machine's answer within `patience`; nil when it did not answer in time. Every machine is asked, whatever
+    /// state this device last heard for it, as the control plane asks them: one that is not there fails at once, and
+    /// one that just joined the lock may not have said so to this device yet.
     static func askOne(_ host: Host, _ method: String, _ params: JSONValue, ask: @escaping Ask) async -> JSONValue? {
-        guard host.online else { return nil }
-        return await withTaskGroup(of: JSONValue?.self) { group in
+        await withTaskGroup(of: JSONValue?.self) { group in
             group.addTask { await ask(method, params, host.id) }
             group.addTask {
                 try? await Task.sleep(for: patience)

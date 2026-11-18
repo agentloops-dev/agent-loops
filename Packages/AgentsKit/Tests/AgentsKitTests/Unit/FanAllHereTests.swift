@@ -7,9 +7,9 @@ import Testing
 @Suite("Calls for every machine, answered here")
 struct FanAllHereTests {
     static let hosts = [
-        FanAllHere.Host(id: "a", name: "A", online: true),
-        FanAllHere.Host(id: "b", name: "B", online: true),
-        FanAllHere.Host(id: "c", name: "C", online: false),
+        FanAllHere.Host(id: "a", name: "A"),
+        FanAllHere.Host(id: "b", name: "B"),
+        FanAllHere.Host(id: "c", name: "C"),
     ]
 
     /// What each machine was asked, in order of answer.
@@ -28,7 +28,7 @@ struct FanAllHereTests {
         })?.decode(R.self)
     }
 
-    @Test("forge/listAll asks each machine's forge/pulls itself; one that fails or is offline is unreached, and not asked offline")
+    @Test("forge/listAll asks each machine's forge/pulls itself, whatever its state; one that fails is unreached")
     func forgeList() async throws {
         let asked = Asked()
         let list = try JSONValue.encoding(DaemonAPI.ForgeList(cursor: "next"))
@@ -38,7 +38,7 @@ struct FanAllHereTests {
         #expect(got.lists.map(\.machine.rawValue) == ["a"])
         #expect(got.lists.first?.list.cursor == "next")
         #expect(got.unreached.map(\.machine.rawValue) == ["b", "c"])
-        #expect(asked.all.map(\.host).sorted() == ["a", "b"])
+        #expect(asked.all.map(\.host).sorted() == ["a", "b", "c"])
         #expect(asked.all.allSatisfy { $0.method == "forge/pulls" && $0.params["limit"]?.intValue == 100 })
     }
 
