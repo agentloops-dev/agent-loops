@@ -28,38 +28,15 @@ func TestLineageSyncKeepsAMergedCopy(t *testing.T) {
 	pr := wire.LineageNode{Kind: "pr", Ref: "github:o/r!2"}
 	send := func(sync wire.LineageSync) (wire.LineageSyncAnswer, error) {
 		t.Helper()
-		params, _ := json.Marshal(sync)
-		raw, err := p.s.methods.HostSaid(host, "lineage/sync", params)
-		var answer wire.LineageSyncAnswer
-		if err == nil {
-			b, _ := json.Marshal(raw)
-			_ = json.Unmarshal(b, &answer)
-		}
-		return answer, err
+		return sendLineageSync(t, p, host, sync)
 	}
 	links := func() []wire.LineageLink {
 		t.Helper()
-		object, err := mem.Get(ctx, lineageLinksKey(host))
-		if err != nil || object == nil {
-			t.Fatalf("no links: %v", err)
-		}
-		var kept storedLinks
-		if err := json.Unmarshal(object.Data, &kept); err != nil {
-			t.Fatal(err)
-		}
-		return kept.Links
+		return keptLineageLinks(ctx, t, mem, host)
 	}
 	states := func() []wire.LineageStateChange {
 		t.Helper()
-		object, err := mem.Get(ctx, lineageStatesKey(host))
-		if err != nil || object == nil {
-			t.Fatalf("no states: %v", err)
-		}
-		var kept storedStates
-		if err := json.Unmarshal(object.Data, &kept); err != nil {
-			t.Fatal(err)
-		}
-		return kept.States
+		return keptLineageStates(ctx, t, mem, host)
 	}
 	at := wire.DateOf(now.Add(-time.Hour))
 	works := wire.LineageLink{From: session, To: issue, Rel: "works-on", Source: "start", At: at}
@@ -151,6 +128,48 @@ func TestLineageSyncKeepsAMergedCopy(t *testing.T) {
 	if n, _ := sweepLineageGraph(ctx, mem, p.s.records, later, 10); n != 0 {
 		t.Fatalf("swept again: %d", n)
 	}
+}
+
+// sendLineageSync sends a lineage/sync from the machine and returns the control plane's
+// answer.
+func sendLineageSync(t *testing.T, p *plane, host string, sync wire.LineageSync) (wire.LineageSyncAnswer, error) {
+	t.Helper()
+	params, _ := json.Marshal(sync)
+	raw, err := p.s.methods.HostSaid(host, "lineage/sync", params)
+	var answer wire.LineageSyncAnswer
+	if err == nil {
+		b, _ := json.Marshal(raw)
+		_ = json.Unmarshal(b, &answer)
+	}
+	return answer, err
+}
+
+// keptLineageLinks reads the links the store keeps for the machine.
+func keptLineageLinks(ctx context.Context, t *testing.T, mem store.Store, host string) []wire.LineageLink {
+	t.Helper()
+	object, err := mem.Get(ctx, lineageLinksKey(host))
+	if err != nil || object == nil {
+		t.Fatalf("no links: %v", err)
+	}
+	var kept storedLinks
+	if err := json.Unmarshal(object.Data, &kept); err != nil {
+		t.Fatal(err)
+	}
+	return kept.Links
+}
+
+// keptLineageStates reads the changes of state the store keeps for the machine.
+func keptLineageStates(ctx context.Context, t *testing.T, mem store.Store, host string) []wire.LineageStateChange {
+	t.Helper()
+	object, err := mem.Get(ctx, lineageStatesKey(host))
+	if err != nil || object == nil {
+		t.Fatalf("no states: %v", err)
+	}
+	var kept storedStates
+	if err := json.Unmarshal(object.Data, &kept); err != nil {
+		t.Fatal(err)
+	}
+	return kept.States
 }
 
 // #4275: the states are bounded by count, the oldest that are not a session's latest first.

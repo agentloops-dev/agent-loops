@@ -248,31 +248,40 @@ func planPool(p *storedPool, machines []poolMachine, now time.Time, version, pin
 		plan.deletes = append(plan.deletes, freshReady[:surplus]...)
 	}
 	// A pool whose max was lowered holds no more than it.
+	plan.deletes = cutToMax(plan, held, p.MaxSize, staleReady, freshReady)
+	return plan
+}
+
+// cutToMax is the plan's deletes, and more of the ready machines (the old first, then the
+// new, each oldest first) until the pool holds no more than max.
+func cutToMax(plan poolPlan, held, most int, staleReady, freshReady []int) []int {
+	deletes := plan.deletes
 	gone := map[int]bool{}
-	for _, i := range plan.deletes {
+	for _, i := range deletes {
 		gone[i] = true
 	}
-	for over := held - len(gone) + plan.makes - p.MaxSize; over > 0; {
-		cut := -1
-		for _, list := range [][]int{staleReady, freshReady} {
-			for _, i := range list {
-				if !gone[i] {
-					cut = i
-					break
-				}
-			}
-			if cut >= 0 {
-				break
-			}
-		}
+	for over := held - len(gone) + plan.makes - most; over > 0; {
+		cut := firstNotGone(gone, staleReady, freshReady)
 		if cut < 0 {
 			break
 		}
 		gone[cut] = true
-		plan.deletes = append(plan.deletes, cut)
+		deletes = append(deletes, cut)
 		over--
 	}
-	return plan
+	return deletes
+}
+
+// firstNotGone is the first index in the lists, in order, not in gone, or -1.
+func firstNotGone(gone map[int]bool, lists ...[]int) int {
+	for _, list := range lists {
+		for _, i := range list {
+			if !gone[i] {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // warmPools is the pools' reconcile loop and store.
@@ -753,6 +762,60 @@ func (w *warmPools) oldestReady(ctx context.Context, id string) (*storedPool, *s
 	return p, best
 }
 
+// claimFrom gives the person the oldest ready machine of one pool that answers, or says
+// it had none. Each pass takes or deletes one machine, so the pool's size bounds the passes.
+func (w *warmPools) claimFrom(ctx context.Context, person string, c claim, match storedPool, started time.Time) (claimed, bool, error) {
+	for pass := 0; pass <= len(match.Machines); pass++ {
+		p, m := w.oldestReady(ctx, match.ID)
+		if m == nil {
+			break
+		}
+		alive := w.backend.Ping(p.Provider, m.Workspace)
+		took, err := w.takeMachine(ctx, p.ID, m.Workspace)
+		if err != nil {
+			if isConflict(err) {
+				continue
+			}
+			return claimed{}, false, fail(storeUnavailable, "The warm pool could not be kept: %v", err)
+		}
+		if !took {
+			continue
+		}
+		host, ok := w.bindTaken(person, c, p, m, alive)
+		if !ok {
+			continue
+		}
+		// The machine is the person's and never goes back. The pool makes another.
+		w.recordClaim(ctx, p.ID, storedPoolClaim{At: started, Host: host})
+		if err := w.reconcile(ctx, p.ID); err != nil {
+			w.s.log(fmt.Sprintf("warm pool %s: %v", p.Name, err))
+		}
+		return claimed{Host: host, Workspace: m.Workspace, Name: m.Name, Pool: p.Name, FromPool: true}, true, nil
+	}
+	return claimed{}, false, nil
+}
+
+// bindTaken binds a machine taken from its pool to the person, and says its host. A
+// machine that did not answer, or that could not be bound, is deleted instead.
+func (w *warmPools) bindTaken(person string, c claim, p *storedPool, m *storedPoolMachine, alive bool) (string, bool) {
+	if !alive {
+		w.s.log(fmt.Sprintf("warm pool %s: %s did not answer a claim and is deleted", p.Name, m.Name))
+		if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
+			w.s.log(fmt.Sprintf("warm pool %s: delete %s: %v", p.Name, m.Name, err))
+		}
+		return "", false
+	}
+	host, err := w.backend.Bind(person, p.Provider, m.Workspace, c.StopWhenIdle)
+	if err != nil {
+		w.s.log(fmt.Sprintf("warm pool %s: %s could not be given: %v", p.Name, m.Name, err))
+		if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
+			w.s.log(fmt.Sprintf("warm pool %s: delete %s: %v", p.Name, m.Name, err))
+		}
+		return "", false
+	}
+	return host, true
+}
+
 // claim gives the person a machine (#5365, "A claim" of the spec): the oldest ready machine of
 // a matching pool that answers, taken in one write, bound to the person, with the pool making
 // its replacement. A machine that does not answer is deleted and the next is tried. With no
@@ -778,44 +841,9 @@ func (w *warmPools) claim(ctx context.Context, person string, c claim) (claimed,
 	}
 	matches := matchPools(pools, c, ready)
 	for _, match := range matches {
-		// Each pass takes or deletes one machine, so the pool's size bounds the passes.
-		for pass := 0; pass <= len(match.Machines); pass++ {
-			p, m := w.oldestReady(ctx, match.ID)
-			if m == nil {
-				break
-			}
-			alive := w.backend.Ping(p.Provider, m.Workspace)
-			took, err := w.takeMachine(ctx, p.ID, m.Workspace)
-			if err != nil {
-				if isConflict(err) {
-					continue
-				}
-				return claimed{}, fail(storeUnavailable, "The warm pool could not be kept: %v", err)
-			}
-			if !took {
-				continue
-			}
-			if !alive {
-				w.s.log(fmt.Sprintf("warm pool %s: %s did not answer a claim and is deleted", p.Name, m.Name))
-				if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
-					w.s.log(fmt.Sprintf("warm pool %s: delete %s: %v", p.Name, m.Name, err))
-				}
-				continue
-			}
-			host, err := w.backend.Bind(person, p.Provider, m.Workspace, c.StopWhenIdle)
-			if err != nil {
-				w.s.log(fmt.Sprintf("warm pool %s: %s could not be given: %v", p.Name, m.Name, err))
-				if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
-					w.s.log(fmt.Sprintf("warm pool %s: delete %s: %v", p.Name, m.Name, err))
-				}
-				continue
-			}
-			// The machine is the person's and never goes back. The pool makes another.
-			w.recordClaim(ctx, p.ID, storedPoolClaim{At: started, Host: host})
-			if err := w.reconcile(ctx, p.ID); err != nil {
-				w.s.log(fmt.Sprintf("warm pool %s: %v", p.Name, err))
-			}
-			return claimed{Host: host, Workspace: m.Workspace, Name: m.Name, Pool: p.Name, FromPool: true}, nil
+		got, ok, err := w.claimFrom(ctx, person, c, match, started)
+		if err != nil || ok {
+			return got, err
 		}
 	}
 	// A pool that matched but had nothing ready counts the claim as one that found it empty.

@@ -148,24 +148,7 @@ func autoPick(machines []autoMachine, lastUsed, runtime string, now time.Time) w
 	if len(cands) == 0 {
 		return none(wire.AutoMachineNoneNoRuntime, "No machine with this project has "+runtime+" installed and signed in.", nil)
 	}
-	best := slices.MinFunc(cands, func(a, b autoMachine) int {
-		if c := cmp.Compare(tierOrder[a.tier(now)], tierOrder[b.tier(now)]); c != 0 {
-			return c
-		}
-		if c := cmp.Compare(b2i(a.ID != lastUsed), b2i(b.ID != lastUsed)); c != 0 {
-			return c
-		}
-		// A machine with no trusted figure is last among those in its tier.
-		if c := cmp.Compare(b2i(!a.known(now) || a.Load5 == nil), b2i(!b.known(now) || b.Load5 == nil)); c != 0 {
-			return c
-		}
-		if a.known(now) && b.known(now) && a.Load5 != nil && b.Load5 != nil {
-			if c := cmp.Compare(*a.Load5, *b.Load5); c != 0 {
-				return c
-			}
-		}
-		return cmp.Compare(a.Name, b.Name)
-	})
+	best := slices.MinFunc(cands, func(a, b autoMachine) int { return compareAutoMachines(a, b, lastUsed, now) })
 	tier := best.tier(now)
 	out := wire.AutoMachinePick{Machine: new(wire.MachineRef), MachineName: &best.Name, Tier: &tier, Single: &single}
 	*out.Machine = wire.MachineRef(best.ID)
@@ -179,32 +162,56 @@ func autoPick(machines []autoMachine, lastUsed, runtime string, now time.Time) w
 		reason = wire.AutoMachineReasonLastUsed
 	}
 	out.Reason = &reason
-	var text string
-	switch {
-	case tier == wire.CapacityLevelOk && reason == wire.AutoMachineReasonLastUsed:
-		text = "you last started here."
-	case tier == wire.CapacityLevelOk && load != "":
-		text = "least busy, " + load + "."
-	case tier == wire.CapacityLevelOk:
-		text = "least busy."
-	default:
-		how := "near capacity"
-		if tier == wire.CapacityLevelFull {
-			how = "at capacity"
-		}
-		lead := "the least busy"
-		if reason == wire.AutoMachineReasonLastUsed {
-			lead = "you last started here"
-		}
-		text = lead + ", though " + how
-		if load != "" {
-			text += " (" + load + ")"
-		}
-		text += "."
-	}
-	text = "Auto chose " + best.Name + ": " + text
+	text := "Auto chose " + best.Name + ": " + autoPickWhy(tier, reason, load)
 	out.Text = &text
 	return out
+}
+
+// compareAutoMachines orders two machines for Auto, the better first: the lower capacity
+// tier, then the machine last used, then one with a trusted load, the lower load, the name.
+func compareAutoMachines(a, b autoMachine, lastUsed string, now time.Time) int {
+	if c := cmp.Compare(tierOrder[a.tier(now)], tierOrder[b.tier(now)]); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(b2i(a.ID != lastUsed), b2i(b.ID != lastUsed)); c != 0 {
+		return c
+	}
+	// A machine with no trusted figure is last among those in its tier.
+	if c := cmp.Compare(b2i(!a.known(now) || a.Load5 == nil), b2i(!b.known(now) || b.Load5 == nil)); c != 0 {
+		return c
+	}
+	if a.known(now) && b.known(now) && a.Load5 != nil && b.Load5 != nil {
+		if c := cmp.Compare(*a.Load5, *b.Load5); c != 0 {
+			return c
+		}
+	}
+	return cmp.Compare(a.Name, b.Name)
+}
+
+// autoPickWhy is the words after "Auto chose <name>: ", from the pick's tier, its reason and
+// its load ("" when not known).
+func autoPickWhy(tier wire.CapacityLevel, reason wire.AutoMachineReason, load string) string {
+	switch {
+	case tier == wire.CapacityLevelOk && reason == wire.AutoMachineReasonLastUsed:
+		return "you last started here."
+	case tier == wire.CapacityLevelOk && load != "":
+		return "least busy, " + load + "."
+	case tier == wire.CapacityLevelOk:
+		return "least busy."
+	}
+	how := "near capacity"
+	if tier == wire.CapacityLevelFull {
+		how = "at capacity"
+	}
+	lead := "the least busy"
+	if reason == wire.AutoMachineReasonLastUsed {
+		lead = "you last started here"
+	}
+	text := lead + ", though " + how
+	if load != "" {
+		text += " (" + load + ")"
+	}
+	return text + "."
 }
 
 func b2i(b bool) int {

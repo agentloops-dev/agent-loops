@@ -95,36 +95,50 @@ func TestNoRequestReachesAnotherUsersMachineAtSpecScale(t *testing.T) {
 					call(t, who.window, host, "daemon/ping", nil)
 					continue
 				}
-				for _, method := range []string{"daemon/ping", "agents/list", "worktrees/all"} {
-					if e := callError(t, who.window, host, method, nil); !strings.Contains(e, "-32091") {
-						t.Fatalf("%s reached %s's machine with %s: %s", who.id, other.id, method, e)
-					}
-				}
-				for method := range hostNamingMethods {
-					for _, field := range []string{"host", "from"} {
-						params := hostNamingParams(who.machines[0].member.Host)
-						params[field] = host
-						if e := callError(t, who.window, "", method, params); !strings.Contains(e, "-32091") {
-							t.Fatalf("%s: %s with %s's machine as %s: %s", who.id, method, other.id, field, e)
-						}
-					}
-				}
+				assertCannotReachAnothersMachine(t, who, other, host)
 			}
 		}
 	}
 	// Each machine opened channels for its own user's clients only.
 	for _, who := range everyone[1:] {
-		who.mu.Lock()
-		for _, user := range who.actors {
-			if user != who.id {
-				t.Fatalf("%s's machine opened a channel for %s", who.id, user)
-			}
-		}
-		who.mu.Unlock()
+		assertChannelsForOwnUserOnly(t, who)
 	}
 	for _, who := range everyone {
 		if len(who.machines) != 3 || p.s.Records().Host(who.machines[0].member.Host) == nil {
 			t.Fatalf("a machine of %s's went", who.id)
 		}
 	}
+}
+
+// assertCannotReachAnothersMachine checks no call passed to another's machine, and no
+// control-plane method that names it as host or from, reaches it: each is not found.
+func assertCannotReachAnothersMachine(t *testing.T, who, other *person, host string) {
+	t.Helper()
+	for _, method := range []string{"daemon/ping", "agents/list", "worktrees/all"} {
+		if e := callError(t, who.window, host, method, nil); !strings.Contains(e, "-32091") {
+			t.Fatalf("%s reached %s's machine with %s: %s", who.id, other.id, method, e)
+		}
+	}
+	for method := range hostNamingMethods {
+		for _, field := range []string{"host", "from"} {
+			params := hostNamingParams(who.machines[0].member.Host)
+			params[field] = host
+			if e := callError(t, who.window, "", method, params); !strings.Contains(e, "-32091") {
+				t.Fatalf("%s: %s with %s's machine as %s: %s", who.id, method, other.id, field, e)
+			}
+		}
+	}
+}
+
+// assertChannelsForOwnUserOnly checks the person's machines opened channels for their own
+// clients only.
+func assertChannelsForOwnUserOnly(t *testing.T, who *person) {
+	t.Helper()
+	who.mu.Lock()
+	for _, user := range who.actors {
+		if user != who.id {
+			t.Fatalf("%s's machine opened a channel for %s", who.id, user)
+		}
+	}
+	who.mu.Unlock()
 }

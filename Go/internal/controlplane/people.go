@@ -173,120 +173,149 @@ func (m *Methods) peopleMethod(ctx context.Context, method string, params json.R
 		if !admin {
 			return nil, fail(notPermitted, "Only an admin can invite a person.")
 		}
-		request, err := require[wire.PersonInvite](params, "PersonInvite")
-		if err != nil {
-			return nil, err
-		}
-		name := strings.TrimSpace(request.Name)
-		if name == "" || len([]rune(name)) > 80 {
-			return nil, fail(invalidParams, "Give the person a name of 1 to 80 characters.")
-		}
-		if request.Role != wire.UserRoleAdmin && request.Role != wire.UserRoleMember {
-			return nil, fail(invalidParams, "A role is admin or member.")
-		}
-		shown, err := m.s.codes.Invite(ctx, invite{Name: name, Role: string(request.Role), By: user}, inviteLifetime)
-		if err != nil {
-			return nil, err
-		}
-		return wire.PersonInvited{Text: shown.Text, Expires: shown.Expires, Name: name, Role: request.Role}, nil
+		return m.invitePerson(ctx, params, user)
 	case "people/setRole":
 		if !admin {
 			return nil, fail(notPermitted, "Only an admin can change a role.")
 		}
-		request, err := require[wire.PersonRoleRequest](params, "PersonRoleRequest")
-		if err != nil {
-			return nil, err
-		}
-		if request.Role != wire.UserRoleAdmin && request.Role != wire.UserRoleMember {
-			return nil, fail(invalidParams, "A role is admin or member.")
-		}
-		err = m.records.ChangePeople(ctx, func(all map[string]records.Person) ([]records.Person, error) {
-			p, ok := all[request.User]
-			if !ok || p.IsRemoved() {
-				return nil, fail(invalidParams, "There is no such person.")
-			}
-			if p.RoleOrAdmin() == string(request.Role) {
-				return nil, nil
-			}
-			// A role a SCIM group gives is the provider's to change (FR-020).
-			if len(p.RoleFrom) > 0 {
-				return nil, fail(managedByProvider, "%s's role is set by their organisation's groups. Change it there.", p.Name)
-			}
-			if request.Role == wire.UserRoleMember && admins(all) <= 1 {
-				return nil, fail(notPermitted, "%s is the only admin. Make another person an admin first.", p.Name)
-			}
-			p.Role = string(request.Role)
-			return []records.Person{p}, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		m.s.peopleChanged(request.User, false)
-		return map[string]any{}, nil
+		return m.setPersonRole(ctx, params)
 	case "people/forViews":
 		return m.peopleForViews(user), nil
 	case "people/setForgeLogins":
-		request, err := require[wire.ForgeLogins](params, "ForgeLogins")
-		if err != nil {
-			return nil, err
-		}
-		err = m.records.ChangePeople(ctx, func(all map[string]records.Person) ([]records.Person, error) {
-			p, ok := all[user]
-			if !ok || p.IsRemoved() {
-				// The local owner's own record may not exist yet (#994's migration).
-				p = records.Person{ID: user, Kind: records.KindPerson, Role: records.RoleAdmin}
-			}
-			if request.Github != nil {
-				p.GitHubLogin = *request.Github
-			}
-			if request.Gitlab != nil {
-				p.GitLabLogin = *request.Gitlab
-			}
-			if request.Linear != nil {
-				p.LinearLogin = *request.Linear
-			}
-			if request.Jira != nil {
-				p.JiraLogin = *request.Jira
-			}
-			if request.Forgejo != nil {
-				p.ForgejoLogin = *request.Forgejo
-			}
-			if request.Bitbucket != nil {
-				p.BitbucketLogin = *request.Bitbucket
-			}
-			if request.AzureDevOps != nil {
-				p.AzureDevOpsLogin = *request.AzureDevOps
-			}
-			return []records.Person{p}, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		m.s.peopleChanged(user, false)
-		return map[string]any{}, nil
+		return m.saveForgeLogins(ctx, params, user)
 	case "people/remove", "people/removePreview":
 		if !admin {
 			return nil, fail(notPermitted, "Only an admin can remove a person.")
 		}
-		request, err := require[wire.PersonRequest](params, "PersonRequest")
-		if err != nil {
-			return nil, err
-		}
-		if request.User == user {
-			return nil, fail(notPermitted, "You can't remove yourself. Another admin can.")
-		}
-		if request.User == m.s.localOwner() {
-			return nil, fail(notPermitted, "The local owner holds the control plane's key, and stays.")
-		}
-		if method == "people/removePreview" {
-			if p := m.records.Person(request.User); p == nil || p.IsRemoved() {
-				return nil, fail(invalidParams, "There is no such person.")
-			}
-			return m.removePreview(request.User, from), nil
-		}
-		return map[string]any{}, m.removePerson(ctx, request.User, from)
+		return m.removeOrPreview(ctx, method, params, from, user)
 	}
 	return nil, notFound(method)
+}
+
+// invitePerson is people/invite, for an admin: an invite code for a new person with a name
+// and a role.
+func (m *Methods) invitePerson(ctx context.Context, params json.RawMessage, user string) (any, error) {
+	request, err := require[wire.PersonInvite](params, "PersonInvite")
+	if err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(request.Name)
+	if name == "" || len([]rune(name)) > 80 {
+		return nil, fail(invalidParams, "Give the person a name of 1 to 80 characters.")
+	}
+	if request.Role != wire.UserRoleAdmin && request.Role != wire.UserRoleMember {
+		return nil, fail(invalidParams, "A role is admin or member.")
+	}
+	shown, err := m.s.codes.Invite(ctx, invite{Name: name, Role: string(request.Role), By: user}, inviteLifetime)
+	if err != nil {
+		return nil, err
+	}
+	return wire.PersonInvited{Text: shown.Text, Expires: shown.Expires, Name: name, Role: request.Role}, nil
+}
+
+// setPersonRole is people/setRole, for an admin: it makes a person an admin or a member.
+func (m *Methods) setPersonRole(ctx context.Context, params json.RawMessage) (any, error) {
+	request, err := require[wire.PersonRoleRequest](params, "PersonRoleRequest")
+	if err != nil {
+		return nil, err
+	}
+	if request.Role != wire.UserRoleAdmin && request.Role != wire.UserRoleMember {
+		return nil, fail(invalidParams, "A role is admin or member.")
+	}
+	err = m.records.ChangePeople(ctx, func(all map[string]records.Person) ([]records.Person, error) {
+		p, ok := all[request.User]
+		if !ok || p.IsRemoved() {
+			return nil, fail(invalidParams, "There is no such person.")
+		}
+		if p.RoleOrAdmin() == string(request.Role) {
+			return nil, nil
+		}
+		// A role a SCIM group gives is the provider's to change (FR-020).
+		if len(p.RoleFrom) > 0 {
+			return nil, fail(managedByProvider, "%s's role is set by their organisation's groups. Change it there.", p.Name)
+		}
+		if request.Role == wire.UserRoleMember && admins(all) <= 1 {
+			return nil, fail(notPermitted, "%s is the only admin. Make another person an admin first.", p.Name)
+		}
+		p.Role = string(request.Role)
+		return []records.Person{p}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	m.s.peopleChanged(request.User, false)
+	return map[string]any{}, nil
+}
+
+// saveForgeLogins is people/setForgeLogins: the caller's own logins on the forges.
+func (m *Methods) saveForgeLogins(ctx context.Context, params json.RawMessage, user string) (any, error) {
+	request, err := require[wire.ForgeLogins](params, "ForgeLogins")
+	if err != nil {
+		return nil, err
+	}
+	err = m.records.ChangePeople(ctx, func(all map[string]records.Person) ([]records.Person, error) {
+		p, ok := all[user]
+		if !ok || p.IsRemoved() {
+			// The local owner's own record may not exist yet (#994's migration).
+			p = records.Person{ID: user, Kind: records.KindPerson, Role: records.RoleAdmin}
+		}
+		applyForgeLogins(&p, request)
+		return []records.Person{p}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	m.s.peopleChanged(user, false)
+	return map[string]any{}, nil
+}
+
+// applyForgeLogins sets each forge login the request says on the person, and keeps the
+// others.
+func applyForgeLogins(p *records.Person, request wire.ForgeLogins) {
+	if request.Github != nil {
+		p.GitHubLogin = *request.Github
+	}
+	if request.Gitlab != nil {
+		p.GitLabLogin = *request.Gitlab
+	}
+	if request.Linear != nil {
+		p.LinearLogin = *request.Linear
+	}
+	if request.Jira != nil {
+		p.JiraLogin = *request.Jira
+	}
+	if request.Forgejo != nil {
+		p.ForgejoLogin = *request.Forgejo
+	}
+	if request.Bitbucket != nil {
+		p.BitbucketLogin = *request.Bitbucket
+	}
+	if request.AzureDevOps != nil {
+		p.AzureDevOpsLogin = *request.AzureDevOps
+	}
+}
+
+// removeOrPreview is people/remove and people/removePreview, for an admin: it removes a
+// person, or says what removing them would take. Nobody removes themselves or the local
+// owner.
+func (m *Methods) removeOrPreview(ctx context.Context, method string, params json.RawMessage, from Caller, user string) (any, error) {
+	request, err := require[wire.PersonRequest](params, "PersonRequest")
+	if err != nil {
+		return nil, err
+	}
+	if request.User == user {
+		return nil, fail(notPermitted, "You can't remove yourself. Another admin can.")
+	}
+	if request.User == m.s.localOwner() {
+		return nil, fail(notPermitted, "The local owner holds the control plane's key, and stays.")
+	}
+	if method == "people/removePreview" {
+		if p := m.records.Person(request.User); p == nil || p.IsRemoved() {
+			return nil, fail(invalidParams, "There is no such person.")
+		}
+		return m.removePreview(request.User, from), nil
+	}
+	return map[string]any{}, m.removePerson(ctx, request.User, from)
 }
 
 func admins(all map[string]records.Person) int {
@@ -302,18 +331,8 @@ func admins(all map[string]records.Person) int {
 // peopleList is every user for an admin, and only themselves for a member. Machines say
 // their name and state, and nothing inside them (FR-019).
 func (m *Methods) peopleList(user string, admin bool) wire.PeopleList {
-	clients := map[string][]wire.PersonClient{}
-	for _, c := range m.records.Clients() {
-		person := m.s.PersonOf(c.ID)
-		clients[person] = append(clients[person], wire.PersonClient{ID: wire.UUID(c.ID), Name: c.Name, Kind: wire.ClientKind(c.Kind)})
-	}
-	machines := map[string][]wire.PersonMachine{}
-	for _, h := range m.records.Hosts() {
-		owner := m.s.ownerOf(h.ID)
-		state, _ := m.router.Described(h.ID)["state"].(string)
-		machines[owner] = append(machines[owner], wire.PersonMachine{ID: wire.MachineRef(h.ID), Name: h.Name, State: state,
-			Platform: optional(h.Platform)})
-	}
+	clients := m.clientsByPerson()
+	machines := m.machinesByPerson()
 	people := m.records.People()
 	if len(people) == 0 {
 		// Before the migration has written the local owner.
@@ -324,59 +343,94 @@ func (m *Methods) peopleList(user string, admin bool) wire.PeopleList {
 		if !admin && p.ID != user {
 			continue
 		}
-		row := wire.PersonRow{ID: p.ID, Name: p.Name, Kind: kindOf(p), Role: wire.UserRole(p.RoleOrAdmin()),
-			SignIns: []wire.SignIn{}, Clients: clients[p.ID], Machines: machines[p.ID]}
-		// A bot's group, caps and spend today (#1761).
-		if p.IsBot() {
-			row.Role = wire.UserRoleMember
-			row.Group = optional(p.Group)
-			row.Caps = capsOnWire(p.Caps)
-			row.SpentTodayUSD = new(m.s.spentToday(context.Background(), p.ID, time.Now()))
+		out.People = append(out.People, m.personRow(p, user, clients[p.ID], machines[p.ID]))
+	}
+	return out
+}
+
+// clientsByPerson is every paired client, by the person it is for.
+func (m *Methods) clientsByPerson() map[string][]wire.PersonClient {
+	clients := map[string][]wire.PersonClient{}
+	for _, c := range m.records.Clients() {
+		person := m.s.PersonOf(c.ID)
+		clients[person] = append(clients[person], wire.PersonClient{ID: wire.UUID(c.ID), Name: c.Name, Kind: wire.ClientKind(c.Kind)})
+	}
+	return clients
+}
+
+// machinesByPerson is every machine, by its owner, with its name and state only.
+func (m *Methods) machinesByPerson() map[string][]wire.PersonMachine {
+	machines := map[string][]wire.PersonMachine{}
+	for _, h := range m.records.Hosts() {
+		owner := m.s.ownerOf(h.ID)
+		state, _ := m.router.Described(h.ID)["state"].(string)
+		machines[owner] = append(machines[owner], wire.PersonMachine{ID: wire.MachineRef(h.ID), Name: h.Name, State: state,
+			Platform: optional(h.Platform)})
+	}
+	return machines
+}
+
+// personRow is one person's row in peopleList, as user sees it, with their clients and
+// machines.
+func (m *Methods) personRow(p records.Person, user string, clients []wire.PersonClient, machines []wire.PersonMachine) wire.PersonRow {
+	row := wire.PersonRow{ID: p.ID, Name: p.Name, Kind: kindOf(p), Role: wire.UserRole(p.RoleOrAdmin()),
+		SignIns: []wire.SignIn{}, Clients: clients, Machines: machines}
+	// A bot's group, caps and spend today (#1761).
+	if p.IsBot() {
+		row.Role = wire.UserRoleMember
+		row.Group = optional(p.Group)
+		row.Caps = capsOnWire(p.Caps)
+		row.SpentTodayUSD = new(m.s.spentToday(context.Background(), p.ID, time.Now()))
+	}
+	if row.Clients == nil {
+		row.Clients = []wire.PersonClient{}
+	}
+	if row.Machines == nil {
+		row.Machines = []wire.PersonMachine{}
+	}
+	// What their org provider says of them (#1002, FR-028).
+	if p.SCIM != nil && !p.SCIM.Deleted {
+		row.Scim = &wire.PersonSCIM{Provider: p.SCIM.Provider, ExternalId: optional(p.SCIM.ExternalID), UserName: p.SCIM.UserName,
+			Name: p.SCIM.Name, DisplayName: optional(p.SCIM.DisplayName), Emails: p.SCIM.Emails, Active: p.SCIM.Active}
+	}
+	if p.Provisioned {
+		row.Provisioned = new(true)
+	}
+	if p.Suspended != nil {
+		row.Suspended = &wire.PersonSuspended{By: p.Suspended.By, Provider: p.Suspended.Provider, At: wire.DateOf(p.Suspended.At.Time),
+			Why: optional(p.Suspended.Why)}
+	}
+	if len(p.RoleFrom) > 0 {
+		row.RoleFrom = p.RoleFrom
+	}
+	row.SignIns = append(row.SignIns, signInsOnWire(p.SignIns)...)
+	yes := true
+	if p.ID == m.s.localOwner() {
+		row.LocalOwner = &yes
+		if row.Name == "" || (m.records.Settings() != nil && row.Name == m.records.Settings().Name) {
+			row.Name = localOwnerName
 		}
-		if row.Clients == nil {
-			row.Clients = []wire.PersonClient{}
+	}
+	if p.ID == user {
+		row.You = &yes
+	}
+	return row
+}
+
+// signInsOnWire is a person's sign-ins as peopleList shows them.
+func signInsOnWire(signIns []records.SignIn) []wire.SignIn {
+	out := []wire.SignIn{}
+	for _, sign := range signIns {
+		in := wire.SignIn{Provider: sign.Provider, Email: optional(sign.Email), Login: optional(sign.Login)}
+		if sign.Added != nil {
+			in.Added = new(dateOf(sign.Added.Time))
 		}
-		if row.Machines == nil {
-			row.Machines = []wire.PersonMachine{}
+		// An outside account, so its person can take it off (#995); never a code's, which
+		// is part of the code's secret.
+		if outsideProvider(sign.Provider) {
+			in.Account = optional(sign.Account)
 		}
-		// What their org provider says of them (#1002, FR-028).
-		if p.SCIM != nil && !p.SCIM.Deleted {
-			row.Scim = &wire.PersonSCIM{Provider: p.SCIM.Provider, ExternalId: optional(p.SCIM.ExternalID), UserName: p.SCIM.UserName,
-				Name: p.SCIM.Name, DisplayName: optional(p.SCIM.DisplayName), Emails: p.SCIM.Emails, Active: p.SCIM.Active}
-		}
-		if p.Provisioned {
-			row.Provisioned = new(true)
-		}
-		if p.Suspended != nil {
-			row.Suspended = &wire.PersonSuspended{By: p.Suspended.By, Provider: p.Suspended.Provider, At: wire.DateOf(p.Suspended.At.Time),
-				Why: optional(p.Suspended.Why)}
-		}
-		if len(p.RoleFrom) > 0 {
-			row.RoleFrom = p.RoleFrom
-		}
-		for _, sign := range p.SignIns {
-			in := wire.SignIn{Provider: sign.Provider, Email: optional(sign.Email), Login: optional(sign.Login)}
-			if sign.Added != nil {
-				in.Added = new(dateOf(sign.Added.Time))
-			}
-			// An outside account, so its person can take it off (#995); never a code's, which
-			// is part of the code's secret.
-			if outsideProvider(sign.Provider) {
-				in.Account = optional(sign.Account)
-			}
-			row.SignIns = append(row.SignIns, in)
-		}
-		yes := true
-		if p.ID == m.s.localOwner() {
-			row.LocalOwner = &yes
-			if row.Name == "" || (m.records.Settings() != nil && row.Name == m.records.Settings().Name) {
-				row.Name = localOwnerName
-			}
-		}
-		if p.ID == user {
-			row.You = &yes
-		}
-		out.People = append(out.People, row)
+		out = append(out, in)
 	}
 	return out
 }

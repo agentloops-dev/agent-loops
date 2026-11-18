@@ -95,143 +95,52 @@ func refuseHandover(words string) error { return fail(invalidRequest, "%s", word
 
 const invalidRequest = -32600
 
+// handoverParams is a handover call's params, by name.
+type handoverParams map[string]json.RawMessage
+
+// text is the string param k, or "".
+func (p handoverParams) text(k string) string {
+	var v string
+	json.Unmarshal(p[k], &v)
+	return v
+}
+
+// flag is the bool param k, or false.
+func (p handoverParams) flag(k string) bool {
+	var v bool
+	json.Unmarshal(p[k], &v)
+	return v
+}
+
 func (s *Service) handoverAnswer(method string, params json.RawMessage) (any, error) {
 	ctx := context.Background()
-	st := s.cfg.Store
 	phase := s.phase.now()
-	var p map[string]json.RawMessage
+	var p handoverParams
 	json.Unmarshal(params, &p)
-	text := func(k string) string {
-		var v string
-		json.Unmarshal(p[k], &v)
-		return v
-	}
-	flag := func(k string) bool {
-		var v bool
-		json.Unmarshal(p[k], &v)
-		return v
-	}
 	switch method {
 	case "handover/status":
 		return s.handoverStatus(), nil
 	case "store/list":
-		if phase == phaseServing {
-			return nil, refuseHandover("Freeze this copy before reading its store.")
-		}
-		prefix := text("prefix")
-		if prefix == "" {
-			prefix = "v1/"
-		}
-		keys, err := st.List(ctx, prefix)
-		if err != nil {
-			return nil, err
-		}
-		out := []map[string]string{}
-		for _, k := range keys {
-			out = append(out, map[string]string{"key": k.Key, "etag": k.ETag})
-		}
-		return out, nil
+		return s.handoverStoreList(ctx, phase, p)
 	case "store/get":
-		if phase == phaseServing {
-			return nil, refuseHandover("Freeze this copy before reading its store.")
-		}
-		key := text("key")
-		if key == "" {
-			return nil, refuseHandover("Say which key.")
-		}
-		object, err := st.Get(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		if object == nil {
-			return nil, nil
-		}
-		return map[string]string{"data": base64.StdEncoding.EncodeToString(object.Data), "etag": object.ETag}, nil
+		return s.handoverStoreGet(ctx, phase, p)
 	case "store/put":
 		// Create only, and only into a copy that is receiving.
 		if phase != phaseReceiving {
 			return nil, refuseHandover("Only a receiving copy takes records.")
 		}
-		key := text("key")
-		data, err := base64.StdEncoding.DecodeString(text("data"))
+		key := p.text("key")
+		data, err := base64.StdEncoding.DecodeString(p.text("data"))
 		if !strings.HasPrefix(key, "v1/") || err != nil || p["data"] == nil {
 			return nil, refuseHandover("Say the key and the data.")
 		}
-		return st.Put(ctx, key, data, store.Absent)
+		return s.cfg.Store.Put(ctx, key, data, store.Absent)
 	case "handover/mark":
-		// A bucket move has no copy to check, only that both read one store.
-		if phase == phaseReceiving {
-			return nil, refuseHandover("A receiving copy has no store to share.")
-		}
-		nonce := text("nonce")
-		if nonce == "" || strings.IndexFunc(nonce, func(r rune) bool {
-			return !(r == '-' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z')
-		}) >= 0 {
-			return nil, refuseHandover("Say the mark.")
-		}
-		key := "handover/mark-" + nonce
-		if flag("leave") {
-			if _, err := st.Put(ctx, key, []byte(nonce), store.Absent); err != nil {
-				return nil, err
-			}
-			return map[string]bool{"found": true}, nil
-		}
-		object, err := st.Get(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		if object != nil {
-			st.Delete(ctx, key)
-		}
-		return map[string]bool{"found": object != nil}, nil
+		return s.handoverMark(ctx, phase, p)
 	case "handover/announce":
-		// The new place goes after the ones members have now (R16 step 2).
-		if phase != phaseServing {
-			return nil, refuseHandover("Announce from a copy that is serving.")
-		}
-		var endpoint records.Endpoint
-		if json.Unmarshal(p["endpoint"], &endpoint) != nil || !acceptableEndpoint(endpoint) {
-			return nil, refuseHandover("Say the new place: https, with a pin or none.")
-		}
-		// A host on a build from before lists would be left behind for good: named, and
-		// refused unless the driver insists (R16, T129).
-		if !flag("force") {
-			var behind []string
-			for _, h := range s.records.Hosts() {
-				if h.KnownEpoch == nil {
-					behind = append(behind, h.Name+" ("+h.Version+")")
-				}
-			}
-			if len(behind) > 0 {
-				return nil, refuseHandover("Not moving: " + strings.Join(behind, ", ") +
-					" can't follow a move. Update it first, or remove it and add it again afterwards.")
-			}
-		}
-		current := []records.Endpoint{s.ownEndpoint()}
-		if settings := s.records.Settings(); settings != nil && len(settings.Endpoints) > 0 {
-			current = settings.Endpoints
-		}
-		var list []records.Endpoint
-		for _, e := range current {
-			if e.URL != endpoint.URL {
-				list = append(list, e)
-			}
-		}
-		if err := s.changeEndpoints(append(list, endpoint)); err != nil {
-			return nil, err
-		}
-		return s.handoverStatus(), nil
+		return s.handoverAnnounce(phase, p)
 	case "handover/withdraw":
-		// Back to answering only here, as if nothing had been announced.
-		if phase != phaseServing && phase != phaseFrozen {
-			return nil, refuseHandover("Nothing to withdraw here.")
-		}
-		if err := s.changeEndpoints([]records.Endpoint{s.ownEndpoint()}); err != nil {
-			return nil, err
-		}
-		s.methods.setFrozen(false)
-		s.phase.set(phaseServing)
-		return s.handoverStatus(), nil
+		return s.handoverWithdraw(phase)
 	case "handover/freeze":
 		if phase != phaseServing {
 			return nil, refuseHandover("Only a serving copy freezes.")
@@ -258,61 +167,202 @@ func (s *Service) handoverAnswer(method string, params json.RawMessage) (any, er
 		s.log("forwarding stopped")
 		return s.handoverStatus(), nil
 	case "handover/forward":
-		// Handed over (R16 step 5): only the new list, given to whoever still comes.
-		if phase != phaseFrozen {
-			return nil, refuseHandover("Freeze and copy before forwarding.")
-		}
-		var list []records.Endpoint
-		if json.Unmarshal(p["endpoints"], &list) != nil || len(list) == 0 {
-			return nil, refuseHandover("Say where members go now.")
-		}
-		for _, e := range list {
-			if !acceptableEndpoint(e) {
-				return nil, refuseHandover("Say where members go now.")
-			}
-		}
-		longest := time.Now().Add(longestForwarding)
-		until := longest
-		var asked wire.Date
-		if p["until"] != nil && json.Unmarshal(p["until"], &asked) == nil && asked.Time().Before(longest) {
-			until = asked.Time()
-		}
-		if err := s.changeEndpoints(list); err != nil {
-			return nil, err
-		}
-		s.phase.setUntil(until)
-		s.phase.set(phaseForwarding)
-		if err := s.markForwarding(until); err != nil {
-			return nil, err
-		}
-		var urls []string
-		for _, e := range list {
-			urls = append(urls, e.URL)
-		}
-		s.log(fmt.Sprintf("forwarding until %s: members are told %s", until.UTC().Format(time.RFC3339), strings.Join(urls, ", ")))
-		return s.handoverStatus(), nil
+		return s.handoverForward(phase, p)
 	case "handover/take":
-		// The receiving copy takes over what was copied into it (R16 step 5).
-		if phase != phaseReceiving {
-			return nil, refuseHandover("Only a receiving copy takes over.")
-		}
-		if object, err := st.Get(ctx, records.SettingsKey); err != nil || object == nil {
-			return nil, refuseHandover("Nothing has been copied here yet.")
-		}
-		if err := s.takeUp(ctx); err != nil {
-			return nil, err
-		}
-		if err := s.setEndpoints([]records.Endpoint{s.ownEndpoint()}); err != nil {
-			return nil, err
-		}
-		s.phase.set(phaseServing)
-		if s.mesh != nil {
-			s.startMesh()
-		}
-		s.log("took over the control plane at " + s.cfg.URL)
-		return s.handoverStatus(), nil
+		return s.handoverTake(ctx, phase)
 	}
 	return nil, fail(methodNotFound, "%s is not part of a handover.", method)
+}
+
+// handoverStoreList is store/list: the keys and etags of a frozen copy's store under a
+// prefix, v1/ when none is said.
+func (s *Service) handoverStoreList(ctx context.Context, phase string, p handoverParams) (any, error) {
+	if phase == phaseServing {
+		return nil, refuseHandover("Freeze this copy before reading its store.")
+	}
+	prefix := p.text("prefix")
+	if prefix == "" {
+		prefix = "v1/"
+	}
+	keys, err := s.cfg.Store.List(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	out := []map[string]string{}
+	for _, k := range keys {
+		out = append(out, map[string]string{"key": k.Key, "etag": k.ETag})
+	}
+	return out, nil
+}
+
+// handoverStoreGet is store/get: one record of a frozen copy's store, in base64 with its
+// etag, or null when there is none.
+func (s *Service) handoverStoreGet(ctx context.Context, phase string, p handoverParams) (any, error) {
+	if phase == phaseServing {
+		return nil, refuseHandover("Freeze this copy before reading its store.")
+	}
+	key := p.text("key")
+	if key == "" {
+		return nil, refuseHandover("Say which key.")
+	}
+	object, err := s.cfg.Store.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if object == nil {
+		return nil, nil
+	}
+	return map[string]string{"data": base64.StdEncoding.EncodeToString(object.Data), "etag": object.ETag}, nil
+}
+
+// handoverMark is handover/mark: it leaves a mark in the store, or finds and removes one.
+// A bucket move has no copy to check, only that both read one store.
+func (s *Service) handoverMark(ctx context.Context, phase string, p handoverParams) (any, error) {
+	if phase == phaseReceiving {
+		return nil, refuseHandover("A receiving copy has no store to share.")
+	}
+	nonce := p.text("nonce")
+	if nonce == "" || strings.IndexFunc(nonce, func(r rune) bool {
+		return !(r == '-' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z')
+	}) >= 0 {
+		return nil, refuseHandover("Say the mark.")
+	}
+	st := s.cfg.Store
+	key := "handover/mark-" + nonce
+	if p.flag("leave") {
+		if _, err := st.Put(ctx, key, []byte(nonce), store.Absent); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"found": true}, nil
+	}
+	object, err := st.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if object != nil {
+		st.Delete(ctx, key)
+	}
+	return map[string]bool{"found": object != nil}, nil
+}
+
+// handoverAnnounce is handover/announce: the new place goes after the ones members have
+// now (R16 step 2).
+func (s *Service) handoverAnnounce(phase string, p handoverParams) (any, error) {
+	if phase != phaseServing {
+		return nil, refuseHandover("Announce from a copy that is serving.")
+	}
+	var endpoint records.Endpoint
+	if json.Unmarshal(p["endpoint"], &endpoint) != nil || !acceptableEndpoint(endpoint) {
+		return nil, refuseHandover("Say the new place: https, with a pin or none.")
+	}
+	// A host on a build from before lists would be left behind for good: named, and
+	// refused unless the driver insists (R16, T129).
+	if !p.flag("force") {
+		if behind := s.hostsLeftBehind(); len(behind) > 0 {
+			return nil, refuseHandover("Not moving: " + strings.Join(behind, ", ") +
+				" can't follow a move. Update it first, or remove it and add it again afterwards.")
+		}
+	}
+	current := []records.Endpoint{s.ownEndpoint()}
+	if settings := s.records.Settings(); settings != nil && len(settings.Endpoints) > 0 {
+		current = settings.Endpoints
+	}
+	var list []records.Endpoint
+	for _, e := range current {
+		if e.URL != endpoint.URL {
+			list = append(list, e)
+		}
+	}
+	if err := s.changeEndpoints(append(list, endpoint)); err != nil {
+		return nil, err
+	}
+	return s.handoverStatus(), nil
+}
+
+// hostsLeftBehind names each host, with its version, on a build from before lists: it
+// can't follow a move.
+func (s *Service) hostsLeftBehind() []string {
+	var behind []string
+	for _, h := range s.records.Hosts() {
+		if h.KnownEpoch == nil {
+			behind = append(behind, h.Name+" ("+h.Version+")")
+		}
+	}
+	return behind
+}
+
+// handoverWithdraw is handover/withdraw: back to answering only here, as if nothing had
+// been announced.
+func (s *Service) handoverWithdraw(phase string) (any, error) {
+	if phase != phaseServing && phase != phaseFrozen {
+		return nil, refuseHandover("Nothing to withdraw here.")
+	}
+	if err := s.changeEndpoints([]records.Endpoint{s.ownEndpoint()}); err != nil {
+		return nil, err
+	}
+	s.methods.setFrozen(false)
+	s.phase.set(phaseServing)
+	return s.handoverStatus(), nil
+}
+
+// handoverForward is handover/forward. Handed over (R16 step 5): only the new list, given
+// to whoever still comes, until the time asked or for the longest forwarding.
+func (s *Service) handoverForward(phase string, p handoverParams) (any, error) {
+	if phase != phaseFrozen {
+		return nil, refuseHandover("Freeze and copy before forwarding.")
+	}
+	var list []records.Endpoint
+	if json.Unmarshal(p["endpoints"], &list) != nil || len(list) == 0 {
+		return nil, refuseHandover("Say where members go now.")
+	}
+	for _, e := range list {
+		if !acceptableEndpoint(e) {
+			return nil, refuseHandover("Say where members go now.")
+		}
+	}
+	longest := time.Now().Add(longestForwarding)
+	until := longest
+	var asked wire.Date
+	if p["until"] != nil && json.Unmarshal(p["until"], &asked) == nil && asked.Time().Before(longest) {
+		until = asked.Time()
+	}
+	if err := s.changeEndpoints(list); err != nil {
+		return nil, err
+	}
+	s.phase.setUntil(until)
+	s.phase.set(phaseForwarding)
+	if err := s.markForwarding(until); err != nil {
+		return nil, err
+	}
+	var urls []string
+	for _, e := range list {
+		urls = append(urls, e.URL)
+	}
+	s.log(fmt.Sprintf("forwarding until %s: members are told %s", until.UTC().Format(time.RFC3339), strings.Join(urls, ", ")))
+	return s.handoverStatus(), nil
+}
+
+// handoverTake is handover/take: the receiving copy takes over what was copied into it
+// (R16 step 5).
+func (s *Service) handoverTake(ctx context.Context, phase string) (any, error) {
+	if phase != phaseReceiving {
+		return nil, refuseHandover("Only a receiving copy takes over.")
+	}
+	if object, err := s.cfg.Store.Get(ctx, records.SettingsKey); err != nil || object == nil {
+		return nil, refuseHandover("Nothing has been copied here yet.")
+	}
+	if err := s.takeUp(ctx); err != nil {
+		return nil, err
+	}
+	if err := s.setEndpoints([]records.Endpoint{s.ownEndpoint()}); err != nil {
+		return nil, err
+	}
+	s.phase.set(phaseServing)
+	if s.mesh != nil {
+		s.startMesh()
+	}
+	s.log("took over the control plane at " + s.cfg.URL)
+	return s.handoverStatus(), nil
 }
 
 func (s *Service) ownEndpoint() records.Endpoint {

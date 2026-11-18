@@ -163,18 +163,45 @@ func (s *Service) reportFrom(ctx context.Context, prefix, first string, keep fun
 	if err != nil {
 		return nil, fail(storeUnavailable, "The reports could not be read: %v", err)
 	}
+	// The keys of the range and the people kept, then their objects, read once each.
+	read, meta := s.reportKeys(keys, prefix, first, keep)
+	objects, err := s.storeReads.read(ctx, s.cfg.Store, prefix, keys, read)
+	if err != nil {
+		return nil, fail(storeUnavailable, "The reports could not be read: %v", err)
+	}
+	projectOf := s.reportProjects(ctx)
+	out := []wire.ReportRow{}
+	for i, data := range objects {
+		if data == nil {
+			continue
+		}
+		var stored storedUsage
+		if json.Unmarshal(data, &stored) != nil {
+			continue
+		}
+		out = s.appendReportRows(out, stored, meta[i], projectOf[strings.ToLower(meta[i].host.ID)])
+	}
+	sortReportRows(out)
+	return out, nil
+}
+
+// reportWanted is what a report object's key says: its period, its machine and the
+// machine's person.
+type reportWanted struct {
+	at     string
+	person string
+	host   records.MachineRecord
+}
+
+// reportKeys is the keys under prefix from the period first on whose people keep says, and
+// what each says.
+func (s *Service) reportKeys(keys []store.Key, prefix, first string, keep func(person string) bool) ([]store.Key, []reportWanted) {
 	hosts := map[string]records.MachineRecord{}
 	for _, h := range s.records.Hosts() {
 		hosts[strings.ToLower(h.ID)] = h
 	}
-	// The keys of the range and the people kept, then their objects, read once each.
-	type wanted struct {
-		at     string
-		person string
-		host   records.MachineRecord
-	}
 	var read []store.Key
-	var meta []wanted
+	var meta []reportWanted
 	for _, k := range keys {
 		at, file, _ := strings.Cut(strings.TrimPrefix(k.Key, prefix), "/")
 		if at < first {
@@ -194,44 +221,41 @@ func (s *Service) reportFrom(ctx context.Context, prefix, first string, keep fun
 			continue
 		}
 		read = append(read, k)
-		meta = append(meta, wanted{at: at, person: person, host: host})
+		meta = append(meta, reportWanted{at: at, person: person, host: host})
 	}
-	objects, err := s.storeReads.read(ctx, s.cfg.Store, prefix, keys, read)
-	if err != nil {
-		return nil, fail(storeUnavailable, "The reports could not be read: %v", err)
+	return read, meta
+}
+
+// appendReportRows adds to out a report row for each row of one stored object, with what its
+// key says; projects is its machine's folders' projects.
+func (s *Service) appendReportRows(out []wire.ReportRow, stored storedUsage, w reportWanted, projects map[string]*records.Project) []wire.ReportRow {
+	at, person, host := w.at, w.person, w.host
+	// As the audit names them (actorFor).
+	name := s.personName(person)
+	if person != "" && person == s.localOwner() {
+		name = audit.LocalOwnerName
 	}
-	projectOf := s.reportProjects(ctx)
-	out := []wire.ReportRow{}
-	for i, data := range objects {
-		at, person, host := meta[i].at, meta[i].person, meta[i].host
-		if data == nil {
-			continue
+	for _, row := range stored.Rows {
+		cost := row.Cost
+		if cost == nil {
+			cost = map[string]float64{}
 		}
-		var stored storedUsage
-		if json.Unmarshal(data, &stored) != nil {
-			continue
-		}
-		// As the audit names them (actorFor).
-		name := s.personName(person)
-		if person != "" && person == s.localOwner() {
-			name = audit.LocalOwnerName
-		}
-		for _, row := range stored.Rows {
-			cost := row.Cost
-			if cost == nil {
-				cost = map[string]float64{}
-			}
-			out = append(out, wire.ReportRow{At: at, Person: person, PersonName: name, Host: wire.MachineRef(host.ID),
-				HostName: host.Name, Folder: row.Folder, Runtime: row.Runtime, Cost: cost,
-				InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, ThoughtTokens: row.ThoughtTokens,
-				CachedReadTokens: row.CachedReadTokens, CachedWriteTokens: row.CachedWriteTokens, Turns: row.Turns,
-				UnpricedTurns: row.UnpricedTurns, WorkingSeconds: row.WorkingSeconds, WaitingSeconds: row.WaitingSeconds,
-				Workflow: row.Workflow, Counts: row.Counts})
-			if p := projectOf[strings.ToLower(host.ID)][row.Folder]; p != nil {
-				out[len(out)-1].Project, out[len(out)-1].ProjectName = &p.ID, &p.Name
-			}
+		out = append(out, wire.ReportRow{At: at, Person: person, PersonName: name, Host: wire.MachineRef(host.ID),
+			HostName: host.Name, Folder: row.Folder, Runtime: row.Runtime, Cost: cost,
+			InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, ThoughtTokens: row.ThoughtTokens,
+			CachedReadTokens: row.CachedReadTokens, CachedWriteTokens: row.CachedWriteTokens, Turns: row.Turns,
+			UnpricedTurns: row.UnpricedTurns, WorkingSeconds: row.WorkingSeconds, WaitingSeconds: row.WaitingSeconds,
+			Workflow: row.Workflow, Counts: row.Counts})
+		if p := projects[row.Folder]; p != nil {
+			out[len(out)-1].Project, out[len(out)-1].ProjectName = &p.ID, &p.Name
 		}
 	}
+	return out
+}
+
+// sortReportRows puts the rows in order: by period, machine, folder and runtime, keeping the
+// order of rows equal in all of them.
+func sortReportRows(out []wire.ReportRow) {
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
 		if a.At != b.At {
@@ -245,7 +269,6 @@ func (s *Service) reportFrom(ctx context.Context, prefix, first string, keep fun
 		}
 		return a.Runtime < b.Runtime
 	})
-	return out, nil
 }
 
 // reportProjects is each machine's folders' projects, by machine and folder name, as the

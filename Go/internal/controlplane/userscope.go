@@ -61,82 +61,17 @@ func (m *Methods) userMethod(ctx context.Context, method string, params json.Raw
 	case "user/setAgentConfigFile":
 		return nil, agentConfigFileRefused()
 	case "user/secretNames":
-		var machines []string
-		for _, r := range m.s.userRecipients(user) {
-			if machineOfRecipient(r.ID) != "" {
-				machines = append(machines, r.ID)
-			}
-		}
-		rows, err := book.Names(ctx, user, machines)
-		if err != nil {
-			return nil, err
-		}
-		m.s.addSecretInfo(user, rows)
-		return wire.UserSecretNames{Secrets: rows}, nil
+		return m.userSecretNames(ctx, user)
 	case "user/sealedSecret":
 		return m.sealedSecret(ctx, method, params, from)
 	case "user/secretRecipients":
 		return wire.SealRecipients{Recipients: m.s.userRecipients(user), User: &user}, nil
 	case "user/setSettings":
-		request, err := require[wire.UserSettingsPart](params, "UserSettingsPart")
-		if err != nil {
-			return nil, err
-		}
-		var fields map[string]json.RawMessage
-		json.Unmarshal(params, &fields)
-		var envBefore json.RawMessage
-		if request.Part == wire.UserSettingsPartNameEnvironment {
-			if had, err := book.Settings(ctx, user); err == nil {
-				envBefore = had.Environment
-			}
-		}
-		changed, err := book.SetPart(ctx, user, request.Part, fields["value"])
-		if err != nil {
-			return nil, userFailure(err)
-		}
-		if changed && request.Part == wire.UserSettingsPartNameEnvironment {
-			// The audit keeps each variable changed (#5259), by name, never its value.
-			actor := m.s.actorFor(from.Client)
-			for _, name := range usersettings.EnvironmentChanges(envBefore, fields["value"]) {
-				m.s.auditTo(actor, "user/setSettings", "Changed an environment variable", name)
-			}
-		}
-		if changed {
-			m.s.userChanged(user, []wire.UserSettingsPartName{request.Part}, false, from.Client)
-		}
-		return wire.Empty{}, nil
+		return m.setUserSettingsPart(ctx, params, from, user)
 	case "user/setSecret":
-		request, err := require[wire.UserSecretSet](params, "UserSecretSet")
-		if err != nil {
-			return nil, err
-		}
-		var savedBy *wire.SecretSavedBy
-		if request.Offer != nil {
-			by, err := book.TakeOffer(ctx, user, string(*request.Offer), string(request.Name))
-			if err != nil {
-				return nil, offerFailure(err)
-			}
-			savedBy = &by
-		}
-		if err := book.SetSecretFrom(ctx, user, request, recipientIDs(m.s.userRecipients(user)), savedBy); err != nil {
-			return nil, userFailure(err)
-		}
-		m.s.log("secret " + string(request.Name) + " set for " + user)
-		if request.Offer != nil {
-			m.s.offerGone(ctx, user, string(*request.Offer), from.Client, "Took an agent's secret")
-		}
-		m.s.userChanged(user, nil, true, from.Client)
-		return wire.Empty{}, nil
+		return m.setUserSecret(ctx, params, from, user)
 	case "user/secretOffers":
-		client := m.records.Client(strings.ToUpper(from.Client))
-		if client == nil || user == "" || m.s.PersonOf(client.ID) != user || m.s.isBot(user) {
-			return wire.SecretOffers{Offers: []wire.SecretOffer{}}, nil
-		}
-		rows, err := book.Offers(ctx, user, controllink.ClientRecipient(client.ID))
-		if err != nil {
-			return nil, userFailure(err)
-		}
-		return wire.SecretOffers{Offers: rows, User: &user}, nil
+		return m.userSecretOffers(ctx, from, user)
 	case "user/dropSecretOffer":
 		request, err := require[wire.SecretOfferRequest](params, "SecretOfferRequest")
 		if err != nil {
@@ -148,21 +83,123 @@ func (m *Methods) userMethod(ctx context.Context, method string, params json.Raw
 		m.s.userChanged(user, nil, true, from.Client)
 		return wire.Empty{}, nil
 	case "user/removeSecret":
-		request, err := require[wire.UserSecretRequest](params, "UserSecretRequest")
-		if err != nil {
-			return nil, err
-		}
-		had, err := book.RemoveSecret(ctx, user, string(request.Name))
-		if err != nil {
-			return nil, userFailure(err)
-		}
-		if had {
-			m.s.log("secret " + string(request.Name) + " removed for " + user)
-			m.s.userChanged(user, nil, true, from.Client)
-		}
-		return wire.Empty{}, nil
+		return m.removeUserSecret(ctx, params, from, user)
 	}
 	return nil, fail(methodNotFound, "No method %s.", method)
+}
+
+// userSecretNames is user/secretNames: the names of the person's secrets, with what each
+// of their machines holds.
+func (m *Methods) userSecretNames(ctx context.Context, user string) (any, error) {
+	var machines []string
+	for _, r := range m.s.userRecipients(user) {
+		if machineOfRecipient(r.ID) != "" {
+			machines = append(machines, r.ID)
+		}
+	}
+	rows, err := m.s.users.Names(ctx, user, machines)
+	if err != nil {
+		return nil, err
+	}
+	m.s.addSecretInfo(user, rows)
+	return wire.UserSecretNames{Secrets: rows}, nil
+}
+
+// setUserSettingsPart is user/setSettings: one part of the person's settings. A change to
+// the environment is audited, a variable at a time.
+func (m *Methods) setUserSettingsPart(ctx context.Context, params json.RawMessage, from Caller, user string) (any, error) {
+	book := m.s.users
+	request, err := require[wire.UserSettingsPart](params, "UserSettingsPart")
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	json.Unmarshal(params, &fields)
+	var envBefore json.RawMessage
+	if request.Part == wire.UserSettingsPartNameEnvironment {
+		if had, err := book.Settings(ctx, user); err == nil {
+			envBefore = had.Environment
+		}
+	}
+	changed, err := book.SetPart(ctx, user, request.Part, fields["value"])
+	if err != nil {
+		return nil, userFailure(err)
+	}
+	if changed && request.Part == wire.UserSettingsPartNameEnvironment {
+		m.auditEnvironmentChanges(from, envBefore, fields["value"])
+	}
+	if changed {
+		m.s.userChanged(user, []wire.UserSettingsPartName{request.Part}, false, from.Client)
+	}
+	return wire.Empty{}, nil
+}
+
+// auditEnvironmentChanges writes an audit entry for each environment variable changed
+// (#5259), by name, never its value.
+func (m *Methods) auditEnvironmentChanges(from Caller, before, after json.RawMessage) {
+	actor := m.s.actorFor(from.Client)
+	for _, name := range usersettings.EnvironmentChanges(before, after) {
+		m.s.auditTo(actor, "user/setSettings", "Changed an environment variable", name)
+	}
+}
+
+// setUserSecret is user/setSecret: a secret the person's client sealed, or an agent's
+// offer that the client takes.
+func (m *Methods) setUserSecret(ctx context.Context, params json.RawMessage, from Caller, user string) (any, error) {
+	book := m.s.users
+	request, err := require[wire.UserSecretSet](params, "UserSecretSet")
+	if err != nil {
+		return nil, err
+	}
+	var savedBy *wire.SecretSavedBy
+	if request.Offer != nil {
+		by, err := book.TakeOffer(ctx, user, string(*request.Offer), string(request.Name))
+		if err != nil {
+			return nil, offerFailure(err)
+		}
+		savedBy = &by
+	}
+	if err := book.SetSecretFrom(ctx, user, request, recipientIDs(m.s.userRecipients(user)), savedBy); err != nil {
+		return nil, userFailure(err)
+	}
+	m.s.log("secret " + string(request.Name) + " set for " + user)
+	if request.Offer != nil {
+		m.s.offerGone(ctx, user, string(*request.Offer), from.Client, "Took an agent's secret")
+	}
+	m.s.userChanged(user, nil, true, from.Client)
+	return wire.Empty{}, nil
+}
+
+// userSecretOffers is user/secretOffers: the agents' secrets waiting for the calling
+// client, none for a client that is not the person's own or for a bot.
+func (m *Methods) userSecretOffers(ctx context.Context, from Caller, user string) (any, error) {
+	client := m.records.Client(strings.ToUpper(from.Client))
+	if client == nil || user == "" || m.s.PersonOf(client.ID) != user || m.s.isBot(user) {
+		return wire.SecretOffers{Offers: []wire.SecretOffer{}}, nil
+	}
+	rows, err := m.s.users.Offers(ctx, user, controllink.ClientRecipient(client.ID))
+	if err != nil {
+		return nil, userFailure(err)
+	}
+	return wire.SecretOffers{Offers: rows, User: &user}, nil
+}
+
+// removeUserSecret is user/removeSecret: it removes one of the person's secrets, and tells
+// their machines when it was there.
+func (m *Methods) removeUserSecret(ctx context.Context, params json.RawMessage, from Caller, user string) (any, error) {
+	request, err := require[wire.UserSecretRequest](params, "UserSecretRequest")
+	if err != nil {
+		return nil, err
+	}
+	had, err := m.s.users.RemoveSecret(ctx, user, string(request.Name))
+	if err != nil {
+		return nil, userFailure(err)
+	}
+	if had {
+		m.s.log("secret " + string(request.Name) + " removed for " + user)
+		m.s.userChanged(user, nil, true, from.Client)
+	}
+	return wire.Empty{}, nil
 }
 
 // offerFailure is TakeOffer's error as words for the client.

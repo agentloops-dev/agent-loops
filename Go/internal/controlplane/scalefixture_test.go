@@ -73,47 +73,12 @@ func TestMachinesListFiltersSortsPagesAndCounts(t *testing.T) {
 	}
 
 	// Every machine once, by name, through the cursors.
-	seen, cursor := map[string]bool{}, ""
-	for pages := 0; ; pages++ {
-		q := map[string]any{"limit": 200}
-		if cursor != "" {
-			q["cursor"] = cursor
-		}
-		page := list(q)
-		for _, m := range page.Machines {
-			if seen[string(m.ID)] {
-				t.Fatalf("%s on two pages", m.ID)
-			}
-			seen[string(m.ID)] = true
-		}
-		if page.Next == nil {
-			if pages != 4 {
-				t.Fatalf("%d pages, want 5", pages+1)
-			}
-			break
-		}
-		cursor = *page.Next
-	}
-	if len(seen) != 1000 {
+	if seen := machinesThroughThePages(t, list); len(seen) != 1000 {
 		t.Fatalf("%d machines through the pages", len(seen))
 	}
 
 	// A filter, a query, and the counts leave out only their own filter.
-	page := list(map[string]any{"os": "linux", "version": "0.10.0", "limit": 1000})
-	for _, m := range page.Machines {
-		if m.Version != "0.10.0" || len(m.Platform) < 5 || m.Platform[:5] != "linux" {
-			t.Fatalf("%+v passed os=linux version=0.10.0", m)
-		}
-	}
-	if int64(len(page.Machines)) != page.Total || page.Total == 0 || page.Total >= 1000 {
-		t.Fatalf("total %d, rows %d", page.Total, len(page.Machines))
-	}
-	if page.Counts.Os["linux"] != page.Total || page.Counts.Os["darwin"] == 0 {
-		t.Fatalf("os counts %v: linux is the filter's own, so darwin counts what picking it would show", page.Counts.Os)
-	}
-	if page.Counts.Version["0.10.0"] == 0 || page.Counts.Version["0.9.0"] == 0 {
-		t.Fatalf("counts %+v", page.Counts)
-	}
+	assertLinuxAtTenFilter(t, list(map[string]any{"os": "linux", "version": "0.10.0", "limit": 1000}))
 	one := list(map[string]any{"query": "FAKE MACHINE 0042"})
 	if one.Total != 1 || one.Machines[0].ID != "fake-0042" {
 		t.Fatalf("query: %+v", one.Total)
@@ -137,6 +102,54 @@ func TestMachinesListFiltersSortsPagesAndCounts(t *testing.T) {
 	}
 	if _, err := window.Call(context.Background(), "", "machines/list", map[string]any{"cursor": "!!"}); err == nil {
 		t.Fatal("a cursor that is not one was taken")
+	}
+}
+
+// machinesThroughThePages lists every machine, 200 a page, through the cursors; it checks no
+// machine is on two pages and there are 5 pages, and returns the machines it saw.
+func machinesThroughThePages(t *testing.T, list func(map[string]any) wire.MachineList) map[string]bool {
+	t.Helper()
+	seen, cursor := map[string]bool{}, ""
+	for pages := 0; ; pages++ {
+		q := map[string]any{"limit": 200}
+		if cursor != "" {
+			q["cursor"] = cursor
+		}
+		page := list(q)
+		for _, m := range page.Machines {
+			if seen[string(m.ID)] {
+				t.Fatalf("%s on two pages", m.ID)
+			}
+			seen[string(m.ID)] = true
+		}
+		if page.Next == nil {
+			if pages != 4 {
+				t.Fatalf("%d pages, want 5", pages+1)
+			}
+			break
+		}
+		cursor = *page.Next
+	}
+	return seen
+}
+
+// assertLinuxAtTenFilter checks a page filtered by os=linux and version=0.10.0 has only those
+// machines, all of them, and counts that leave out only their own filter.
+func assertLinuxAtTenFilter(t *testing.T, page wire.MachineList) {
+	t.Helper()
+	for _, m := range page.Machines {
+		if m.Version != "0.10.0" || len(m.Platform) < 5 || m.Platform[:5] != "linux" {
+			t.Fatalf("%+v passed os=linux version=0.10.0", m)
+		}
+	}
+	if int64(len(page.Machines)) != page.Total || page.Total == 0 || page.Total >= 1000 {
+		t.Fatalf("total %d, rows %d", page.Total, len(page.Machines))
+	}
+	if page.Counts.Os["linux"] != page.Total || page.Counts.Os["darwin"] == 0 {
+		t.Fatalf("os counts %v: linux is the filter's own, so darwin counts what picking it would show", page.Counts.Os)
+	}
+	if page.Counts.Version["0.10.0"] == 0 || page.Counts.Version["0.9.0"] == 0 {
+		t.Fatalf("counts %+v", page.Counts)
 	}
 }
 
