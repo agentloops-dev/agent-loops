@@ -571,16 +571,11 @@ func issueCandidates(ctx context.Context, gh GitHub, name string, kind IssueKind
 	}
 	var list []candidate
 	for _, it := range items {
-		if !a.wantsIssueActivity(it) {
-			continue
+		if at := mcpevents.Normalized(it.At); at != "" && a.wantsIssueActivity(it) {
+			list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at, Key: it.ID,
+				Subject: issueRef(repo, it.Issue.Number),
+				Data:    func() (map[string]any, error) { return it.data(), nil }})
 		}
-		at := mcpevents.Normalized(it.At)
-		if at == "" {
-			continue
-		}
-		list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at,
-			Data:    func() (map[string]any, error) { return it.data(), nil },
-			Subject: issueRef(repo, it.Issue.Number), Key: it.ID})
 	}
 	return list, truncated, nil
 }
