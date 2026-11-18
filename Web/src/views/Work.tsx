@@ -48,7 +48,9 @@ import { branchWords, mergeBox, mergedStrip, offers, pullStateWords, reviewersWo
 import { WorkPlan } from "./WorkPlan";
 import { WorkDocs } from "./Docs";
 import { hasPlan, leadStart, leadWords, planSessions } from "../model/epicPlan";
-import { shownLabels, sideLabels } from "../model/forgeNextOrder";
+import {
+  couldNotSetPriority, holdToggleWords, priorityChoiceWords, priorityChoices, priorityTitle, shownLabels, sideLabels,
+} from "../model/forgeNextOrder";
 import { WorkPrioritySection } from "./WorkPrioritySection";
 import { epicLead, workingSession, workingWords } from "../model/workFeatures";
 import { go, replace, route, routeHash } from "../route";
@@ -56,8 +58,9 @@ import { type TrailTarget, trailHelp, workTrail } from "../model/workTrail";
 import { revealFeature } from "./WorkFeatures";
 import {
   allRows, askKey, boardHosts, boards, forgeHosts, fromList, hasMore, listProjects, loadBoards, loadList, loadMore, nextAfter, pageNeighbours,
-  placeKey, shownRows, workList,
+  placeKey, rowSets, setRowPlan, shownRows, workList,
 } from "../model/workLists";
+import { holdForMenu, isMenuKey, openContextMenu, type MenuItem } from "./ContextMenu";
 import { Glyph, Icon } from "./Icon";
 
 /** The person's projects (#3283), New Session's, for the Project filter and an item's page: each folder by the
@@ -166,6 +169,21 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
   const stateChoices: MenuChoice[] = states.map((s) => ({ value: s, words: s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1) }));
   const sortChoices: MenuChoice[] = workSorts(kind).map((s) => ({ value: s, words: workSortTitle[s] }));
   const refresh = () => { l.asked.value++; if (kind === "issue") void loadBoards(store, true); };
+  // A row's right-click menu (epic #6086): its Priority and On hold, where its forge sets them. A write that fails puts the old
+  // value back, and this says why above the rows until it is dismissed.
+  const planProblem = useSignal<string | null>(null);
+  const planMenu = (r: WorkRow): MenuItem[] => {
+    const sets = rowSets(store, l, r);
+    const write = (to: Parameters<typeof setRowPlan>[3]) => {
+      planProblem.value = null;
+      void setRowPlan(store, l, r, to, (why) => { planProblem.value = why; });
+    };
+    return [
+      ...sets.priority ? [{ label: priorityTitle, heading: true, run: () => {} },
+        ...priorityChoices.map((p): MenuItem => ({ label: priorityChoiceWords(p), checked: p === r.priority, run: () => write({ priority: p }) }))] : [],
+      ...sets.hold ? [{ label: holdToggleWords, checked: r.onHold === true, run: () => write({ onHold: r.onHold !== true }) }] : [],
+    ];
+  };
   const firstRead = lists.value === null || (l.loading.value && rows.length === 0);
   const problems = [...problem.value ? [problem.value] : [], ...errors];
   const stale = new Set((lists.value ?? []).flatMap((h) => h.stale ?? []));
@@ -231,6 +249,12 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
           <>
             <FromDeviceStrip at={l.fromDevice.value ? l.readAt.value : undefined} />
             <ErrorStrip lines={problems} retry={refresh} at={stale.size > 0 ? l.readAt.value : undefined} />
+            {planProblem.value && (
+              <p class="work-plan-problem hint failure small" role="alert">
+                <span>{couldNotSetPriority}: {planProblem.value}</span>
+                <button type="button" aria-label="Dismiss" onClick={() => { planProblem.value = null; }}><Icon name="x" /></button>
+              </p>
+            )}
             {rows.length === 0
               ? <EmptyState kind={kind} title={empty.title}
                   line={narrowed ? setFilters(filter_, offeredProjects.find((p) => p.id === filter_.project)?.name, filter_.board ? boardName(boards.value, filter_.board) : undefined) : empty.line}
@@ -240,6 +264,7 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
                   {rows.map((r) => <WorkRowView key={r.node.ref} row={r} several={offered.repos.length > 1} dim={stale.has(r.node.ref)} pick={pick}
                     latest={newest?.has(r.node.ref) === true} read={pictureReader(store, r.host)}
                     session={kind === "release" ? undefined : workingSession(r.node, agents)} openSession={openSession}
+                    menu={kind === "issue" ? () => planMenu(r) : undefined}
                     open={() => { l.opened.value = r.node.ref; fromList.value = placeKey(kind, r.node.ref); go({ nav: "work", section: kind, item: r.node.ref }); }} />)}
                 </ul>
               )}
@@ -277,10 +302,12 @@ export function StatePill({ state, draft, status }: { state: string; draft?: boo
 /** A row (#4392, parts.md section 2), a link to its page (#4395): the state icon, the title and at most three chips, the comment count and the
  * assignees; under it the number, the age, the author and what lineage knows. On a phone the CSS folds it: the
  * title on two lines, every chip under it, the short line and no avatars. */
-export function WorkRowView({ row, several, dim, pick, read, open, latest: isLatest = false, session, openSession }: {
+export function WorkRowView({ row, several, dim, pick, read, open, latest: isLatest = false, session, openSession, menu }: {
   row: WorkRow; several: boolean; dim: boolean; pick: (label: string) => void; read: ReadPicture | undefined; open: () => void; latest?: boolean;
   /** The session that works on the item now (#5453): its dot and words at the row's end open its chat. */
   session?: Agent | undefined; openSession?: ((agent: Agent) => void) | undefined;
+  /** The row's right-click menu (epic #6086): a right click, the menu key or a finger held on it; none leaves the browser's. */
+  menu?: (() => MenuItem[]) | undefined;
 }) {
   const line = rowLine(row, Date.now());
   const checks = row.node.kind === "pr" ? checksGlyph(row.checks) : undefined;
@@ -292,7 +319,12 @@ export function WorkRowView({ row, several, dim, pick, read, open, latest: isLat
     <li data-ref={row.node.ref} class={dim ? "stale" : undefined}>
       {/* A link (lists.md section 4): a click opens the page here, a middle-click or ⌘-click in a new tab. */}
       <a class="work-row work-item-row" href={routeHash({ nav: "work", section: row.node.kind, item: row.node.ref })}
-        onClick={(e) => { if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); open(); }}>
+        onClick={(e) => { if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); open(); }}
+        {...menu ? {
+          onContextMenu: (e: MouseEvent) => openContextMenu(e, menu()),
+          onKeyDown: (e: KeyboardEvent) => { if (isMenuKey(e)) openContextMenu(e, menu()); },
+          ...holdForMenu(menu),
+        } : {}}>
         <span class="work-row-icon">{row.node.kind === "release" ? <ReleaseGlyph /> : <StateIcon kind={row.node.kind} state={row.state} draft={row.draft} stateReason={row.stateReason} />}</span>
         <span class="work-row-main">
           <span class="work-row-head">
