@@ -203,14 +203,18 @@ extension AppModel {
     }
 
     /// One call to the control plane that asks every machine of the person's (#5592): Work's lists and boards, the
-    /// Messages row's events, the ended connections. Nil with no control plane, or one from before these methods, where
-    /// the window asks each machine itself.
+    /// Messages row's events, the ended connections. Nil, so the window asks each machine itself: with no control
+    /// plane, with one machine or none (#6141), or when the plane's call fails for any reason (#6141): its uplink is
+    /// down, it did not answer, or it is from before these methods. Each machine then says its own error, and a
+    /// failed plane never leaves Work on this device's old copy.
     func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
                                              returning: R.Type) async throws -> R? {
-        guard let controlRequests else { return nil }
+        guard let controlRequests, WorkList.asksControlPlane(machines: controlPlaneHosts?.count ?? 0) else { return nil }
         do {
             return try await controlRequests.call(method, params, returning: R.self)
-        } catch let error as JSONRPCError where error.isMethodNotFound {
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
             return nil
         }
     }
