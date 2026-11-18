@@ -839,9 +839,50 @@ func resolve(path string) (string, error) {
 	}
 }
 
+// readable is inside, and also lets a read into ~/.agents/memory/, the facts about the
+// person and this machine that the brief tells every agent to read (#6034, Alex 2026-11-17).
+// Only reads: a write or a terminal stays in the agent's folder. The links are followed
+// first, so a link in that folder to a path outside it is refused.
+func (c *client) readable(path string) (string, error) {
+	resolved, err := c.inside(path)
+	if err == nil {
+		return resolved, nil
+	}
+	if r, ok := within(memoryDir(), path); ok {
+		return r, nil
+	}
+	return "", err
+}
+
+// memoryDir is ~/.agents/memory with its links followed, or "" when there is no home.
+func memoryDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Join(home, ".agents", "memory"))
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+// within is path with its links followed, and whether that is dir or in it.
+func within(dir, path string) (string, bool) {
+	if dir == "" || !filepath.IsAbs(path) {
+		return "", false
+	}
+	resolved, err := resolve(path)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(dir, resolved)
+	return resolved, err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
+}
+
 func (c *client) ReadTextFile(ctx context.Context, p sdk.ReadTextFileRequest) (_ sdk.ReadTextFileResponse, err error) {
 	defer safe.Err("acp ReadTextFile", &err)
-	path, err := c.inside(p.Path)
+	path, err := c.readable(p.Path)
 	if err != nil {
 		return sdk.ReadTextFileResponse{}, err
 	}

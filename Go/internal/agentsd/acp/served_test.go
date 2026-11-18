@@ -230,3 +230,49 @@ func TestAGrokTerminalRunsItsSingleShellCommandField(t *testing.T) {
 		t.Fatalf("terminal output = %+v", out)
 	}
 }
+
+// ~/.agents/memory is read through the file tool, as the brief asks (#6034); nothing else
+// outside the folder is, a link out of the memory folder is not followed, and nothing in it
+// is written.
+func TestTheMemoryFolderIsReadOnly(t *testing.T) {
+	dir, outside := folders(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	memory := filepath.Join(home, ".agents", "memory")
+	if err := os.MkdirAll(memory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(memory, "MEMORY.md"), []byte("facts"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".agents", "token"), []byte("t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(memory, "out")); err != nil {
+		t.Fatal(err)
+	}
+	sink := &asker{option: "allow_once"}
+	c := &client{sink: sink, dir: dir, terminals: map[string]*terminal{}}
+	ctx := context.Background()
+	r, err := c.ReadTextFile(ctx, sdk.ReadTextFileRequest{Path: filepath.Join(memory, "MEMORY.md")})
+	if err != nil || r.Content != "facts" {
+		t.Fatalf("the memory index was not read: %q, %v", r.Content, err)
+	}
+	for _, p := range []string{filepath.Join(home, ".agents", "token"), filepath.Join(memory, "out", "secret"), filepath.Join(memory, "..", "token")} {
+		if _, err := c.ReadTextFile(ctx, sdk.ReadTextFileRequest{Path: p}); err == nil {
+			t.Fatalf("a read of %s was let through", p)
+		}
+	}
+	if _, err := c.WriteTextFile(ctx, sdk.WriteTextFileRequest{Path: filepath.Join(memory, "new.md"), Content: "x"}); err == nil {
+		t.Fatal("a write into the memory folder was let through")
+	}
+	if _, err := os.Stat(filepath.Join(memory, "new.md")); err == nil {
+		t.Fatal("the write landed in the memory folder")
+	}
+	if _, err := c.CreateTerminal(ctx, sdk.CreateTerminalRequest{Command: "true", Cwd: &memory}); err == nil {
+		t.Fatal("a terminal in the memory folder was let through")
+	}
+	if len(sink.asked) != 0 {
+		t.Fatalf("a refused write was asked about: %d", len(sink.asked))
+	}
+}
