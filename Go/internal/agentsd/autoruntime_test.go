@@ -121,7 +121,10 @@ func TestAutoPicksTheRuntime(t *testing.T) {
 	if a.Levels == nil || a.Levels.Model == nil || *a.Levels.Model != wire.ModelLevelBalanced || *a.Levels.Permission != wire.PermissionLevelAsk {
 		t.Fatalf("%+v", a.Levels)
 	}
-	// Claude out: the next in the order.
+	// Claude out: the next in the order. Its first turn ends first: a turn that works makes
+	// its credential available again (allowanceWorked), so one that ended after out would
+	// put Claude back (#6239).
+	waitFor(t, "the first turn's end", func() bool { return d.Store.Agent(a.ID).State == wire.AgentStateFinished })
 	out(d, "claude", false)
 	if a := startAuto(2, map[string]any{"permission": "plan"}); a.RuntimeID != "codex" || stringValue(a.StartOptions.Values["collaboration_mode"]) != "plan" ||
 		len(a.Auto.Skipped) != 1 || a.Auto.Skipped[0].Reason != "out" {
