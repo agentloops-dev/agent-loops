@@ -239,13 +239,13 @@ func TestTheMemoryFolderIsReadOnly(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	memory := filepath.Join(home, ".agents", "memory")
-	if err := os.MkdirAll(memory, 0o755); err != nil {
+	if err := os.MkdirAll(memory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(memory, "MEMORY.md"), []byte("facts"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(memory, "MEMORY.md"), []byte("facts"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(home, ".agents", "token"), []byte("t"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".agents", "token"), []byte("t"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(outside, filepath.Join(memory, "out")); err != nil {
