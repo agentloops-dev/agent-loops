@@ -269,3 +269,25 @@ func TestARepositoryGitCannotReadIsNotCalledNone(t *testing.T) {
 		t.Fatal(words)
 	}
 }
+
+// A new worktree's base is the branch, or the commit when detached, and nil when git
+// cannot read it: never "", which made the note say "from ." (#6098).
+func TestANewWorktreesBaseIsNeverEmpty(t *testing.T) {
+	t.Parallel()
+
+	dir := repo(t)
+	head, err := git(dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := worktreeBase(dir, head); got == nil || *got != "main" {
+		t.Fatalf("on main: %v", got)
+	}
+	run(t, dir, "git", "checkout", "-q", "--detach")
+	if got := worktreeBase(dir, head); got == nil || *got != head {
+		t.Fatalf("detached: %v", got)
+	}
+	if got := worktreeBase(filepath.Join(dir, "gone"), head); got != nil {
+		t.Fatalf("git failed: %q", *got)
+	}
+}
