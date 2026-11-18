@@ -31,6 +31,9 @@ final class WorkListState {
     var source = ""
     /// The selected row on the Mac (lists.md section 2): ↑ and ↓ move it, Return opens it.
     var selected: String?
+    /// Why the last Priority or On hold write from a row's menu failed (epic #6086), in the machine's
+    /// words; the row has its old value back, and the list says this until it is dismissed.
+    var writeProblem: String?
     /// The rows on screen came from this device's copy (#4930): the machines are asked again,
     /// and the list says so until they answer, with when the copy was read (#5142).
     var fromDeviceRead: Date?
@@ -232,7 +235,8 @@ final class WorkListState {
         if failed, let read = fromDeviceRead, let kept = lists, kept.contains(where: { !$0.list.items.isEmpty }) {
             let said = got.flatMap { $0.list.errors ?? [] }
             lists = kept.enumerated().map { i, entry in
-                (entry.host, DaemonAPI.ForgeList(items: entry.list.items, errors: i == 0 ? said : nil, total: entry.list.total))
+                (entry.host, DaemonAPI.ForgeList(items: entry.list.items, errors: i == 0 ? said : nil, forges: entry.list.forges,
+                                                  total: entry.list.total))
             }
             answered(wanted)
             keptRead = read
@@ -290,6 +294,60 @@ final class WorkListState {
         return got
     }
 
+    /// What a row's right-click menu offers (epic #6086): its priority and on hold where its forge sets
+    /// them and its machine writes; nothing on rows from this device's copy, until the machines answer.
+    func setsPriority(_ row: WorkList.Row, model: any WorkModel) -> (priority: Bool, hold: Bool) {
+        guard kind == .issue, !fromDevice, let host = row.host else { return (false, false) }
+        let forges = lists?.first { $0.host == host }?.list.forges
+        return WorkList.rowSetsPriority(row, forges: forges, writes: model.forgeWrites(on: host))
+    }
+
+    /// A row's priority from its menu (`forge/priority`): the row shows it at once, and has its old
+    /// one back when the write fails.
+    func set(priority: String?, on row: WorkList.Row, model: any WorkModel) {
+        guard let host = row.host, priority != row.priority?.lowercased() else { return }
+        let old = row.priority
+        change(row) { $0.priority = priority }
+        write(DaemonAPI.Method.forgePriority, DaemonAPI.ForgePriorityRequest(node: row.node, priority: priority),
+              on: host, model: model) { $0.change(row) { $0.priority = old } }
+    }
+
+    /// A row's On hold from its menu (`forge/hold`), as `set(priority:)` does.
+    func set(hold on: Bool, on row: WorkList.Row, model: any WorkModel) {
+        guard let host = row.host, on != row.onHold else { return }
+        let old = row.onHold
+        change(row) { $0.onHold = on }
+        write(DaemonAPI.Method.forgeHold, DaemonAPI.ForgeHoldRequest(node: row.node, on: on),
+              on: host, model: model) { $0.change(row) { $0.onHold = old } }
+    }
+
+    private func write(_ method: String, _ params: some Encodable & Sendable, on host: MachineRef,
+                       model: any WorkModel, undo: @escaping @MainActor (WorkListState) -> Void) {
+        writeProblem = nil
+        Task { [weak self] in
+            do {
+                _ = try await model.forge(method, params, returning: DaemonAPI.ForgeDone.self, on: host)
+                // The forge's own read next (its labels too), with the rows on screen until it answers.
+                self?.asked += 1
+            } catch {
+                guard let self else { return }
+                undo(self)
+                writeProblem = WorkList.failureWords(error)
+            }
+        }
+    }
+
+    /// Changes the row's item in the list it came from: the same ref on the same machine.
+    private func change(_ row: WorkList.Row, _ edit: (inout DaemonAPI.ForgeItem) -> Void) {
+        guard var all = lists else { return }
+        for i in all.indices where all[i].host == row.host {
+            for j in all[i].list.items.indices where all[i].list.items[j].node.ref == row.node.ref {
+                edit(&all[i].list.items[j])
+            }
+        }
+        lists = all
+    }
+
     /// The machines answered for what is asked: the rows are theirs now.
     private func answered(_ wanted: String) {
         shownFor = wanted
@@ -325,7 +383,9 @@ final class WorkListState {
                     let page = try await model.forgeList(kind, .init(state: filter.state.forge, cursor: cursor, limit: 100,
                                                                      board: board.isEmpty ? nil : board),
                                                          on: entry.host)
-                    next.append((entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors)))
+                    next.append((entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors,
+                                                   forges: WorkList.joinForges(entry.list.forges, page.forges),
+                                                   total: entry.list.total)))
                 }
                 lists = next
             } else if let cursor = lineageCursor {

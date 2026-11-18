@@ -162,6 +162,13 @@ private struct WorkListPane: View {
             }
         }
         .workTask(id: list.ask) { await list.load(model: model) }
+        // A row menu's write that failed (epic #6086): the row has its old value back, and this says why.
+        .alert(WorkLook.couldNotSetPriority, isPresented: Binding(get: { list.writeProblem != nil },
+                                                                 set: { if !$0 { list.writeProblem = nil } })) {
+            Button("OK") { list.writeProblem = nil }
+        } message: {
+            Text(list.writeProblem ?? "")
+        }
         .onChange(of: model.workProjects, initial: true) { _, projects in list.projects = projects }
     }
 
@@ -317,6 +324,16 @@ private struct WorkListPane: View {
                               action: filtered ? (WorkLook.clearFilters, { list.filter = WorkLook.cleared(list.filter) }) : nil)
     }
 
+    /// A row's Priority and On hold (epic #6086), where its forge sets them; nothing for a row with neither.
+    @ViewBuilder
+    private func priorityMenu(_ ref: String) -> some View {
+        if let row = list.all.first(where: { $0.id == ref }) {
+            WorkRowPriorityMenu(row: row, sets: list.setsPriority(row, model: model),
+                                setPriority: { list.set(priority: $0, on: row, model: model) },
+                                setHold: { list.set(hold: $0, on: row, model: model) })
+        }
+    }
+
     private func open(_ ref: String) {
         list.opened = ref
         list.selected = ref
@@ -343,6 +360,9 @@ private struct WorkListPane: View {
                                     openSession: { model.openWorkSession($0) })
                     }
                     .buttonStyle(WorkRowButtonStyle())
+                    #if os(iOS)
+                    .contextMenu { priorityMenu(row.id) }
+                    #endif
                     .environment(\.workPictures, row.host.map { WorkPictures(model: model, host: $0) })
                     // A forge that failed leaves its rows, dimmed, under the strip (lists.md section 5).
                     .opacity(lines.isEmpty ? 1 : 0.6)
@@ -375,7 +395,9 @@ private struct WorkListPane: View {
         #if os(macOS)
         List(selection: $list.selected) { rows() }
             .focused($focused)
-            .contextMenu(forSelectionType: String.self) { _ in } primaryAction: { refs in
+            .contextMenu(forSelectionType: String.self) { refs in
+                if refs.count == 1, let ref = refs.first { priorityMenu(ref) }
+            } primaryAction: { refs in
                 if let ref = refs.first { open(ref) }
             }
         #else

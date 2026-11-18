@@ -28,3 +28,24 @@ test("the Priority section: its labels, its choices and where it writes (#6092)"
   assert.deepEqual(o.setsPriority(["priority"], true), { priority: true, hold: false });
   assert.deepEqual(o.setsPriority(undefined, true), { priority: false, hold: false });
 });
+
+test("a row's menu offers Priority and On hold where its forge sets them, on an issue, when its machine writes (epic #6086)", () => {
+  const github = { forge: "github", priority: true, hold: true };
+  const jira = { forge: "jira", priority: true };
+  const issue = { node: { kind: "issue", ref: "github:alexec/Agents#1" } };
+  assert.deepEqual(o.rowSetsPriority(issue, [jira, github], true), { priority: true, hold: true });
+  assert.deepEqual(o.rowSetsPriority(issue, [github], false), { priority: false, hold: false });
+  assert.deepEqual(o.rowSetsPriority(issue, [jira], true), { priority: false, hold: false });
+  assert.deepEqual(o.rowSetsPriority(issue, undefined, true), { priority: false, hold: false });
+  assert.deepEqual(o.rowSetsPriority({ node: { kind: "pr", ref: "github:alexec/Agents#2" } }, [github], true), { priority: false, hold: false });
+  assert.deepEqual(o.rowSetsPriority({ node: { kind: "issue", ref: "jira:PROJ-7" } }, [github, jira], true), { priority: true, hold: false });
+});
+
+test("a list's next page keeps each forge's capabilities, and adds one the first page did not name (epic #6086)", () => {
+  const github = { forge: "github", priority: true };
+  const gitlab = { forge: "gitlab", hold: true };
+  assert.equal(o.joinForges(undefined, undefined), undefined);
+  assert.deepEqual(o.joinForges([github], undefined), [github]);
+  assert.deepEqual(o.joinForges(undefined, [gitlab]), [gitlab]);
+  assert.deepEqual(o.joinForges([github], [{ forge: "github" }, gitlab]), [github, gitlab]);
+});

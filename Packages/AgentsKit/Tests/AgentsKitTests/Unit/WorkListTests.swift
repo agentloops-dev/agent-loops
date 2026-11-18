@@ -375,6 +375,31 @@ struct WorkPageTests {
         #expect(WorkList.setsPriority(DaemonAPI.ForgeItemDetail(item: item), writes: true) == (false, false))
     }
 
+    /// Epic #6086: a row's right-click menu offers Priority and On hold on an issue whose forge sets
+    /// them (its capabilities), and its machine writes; never on a pull request or another forge's row.
+    @Test func aRowsPriorityMenuFollowsItsForge() {
+        let github = DaemonAPI.ForgeCapabilities(forge: "github", issues: true, priority: true, hold: true)
+        let jira = DaemonAPI.ForgeCapabilities(forge: "jira", issues: true, priority: true)
+        let issue = WorkList.Row(item(1), on: .mac)
+        #expect(WorkList.rowSetsPriority(issue, forges: [jira, github], writes: true) == (true, true))
+        #expect(WorkList.rowSetsPriority(issue, forges: [github], writes: false) == (false, false))
+        #expect(WorkList.rowSetsPriority(issue, forges: [jira], writes: true) == (false, false))
+        #expect(WorkList.rowSetsPriority(issue, forges: nil, writes: true) == (false, false))
+        #expect(WorkList.rowSetsPriority(WorkList.Row(item(2, kind: "pr"), on: .mac), forges: [github], writes: true) == (false, false))
+        let ticket = WorkList.Row(.init(node: Node(kind: "issue", ref: "jira:PROJ-7"), title: "T", state: "open", updatedAt: day), on: .mac)
+        #expect(WorkList.rowSetsPriority(ticket, forges: [github, jira], writes: true) == (true, false))
+    }
+
+    /// Epic #6086: a list's next page keeps each forge's capabilities, and adds a forge the first page did not name.
+    @Test func aNextPageKeepsTheForgesCapabilities() {
+        let github = DaemonAPI.ForgeCapabilities(forge: "github", priority: true)
+        let gitlab = DaemonAPI.ForgeCapabilities(forge: "gitlab", hold: true)
+        #expect(WorkList.joinForges(nil, nil) == nil)
+        #expect(WorkList.joinForges([github], nil) == [github])
+        #expect(WorkList.joinForges(nil, [gitlab]) == [gitlab])
+        #expect(WorkList.joinForges([github], [DaemonAPI.ForgeCapabilities(forge: "github"), gitlab]) == [github, gitlab])
+    }
+
     /// #3130: a pull request's diff from the forge is the diff a view gives the app's diff page.
     @Test func aForgeDiffIsTheViewsDiff() throws {
         let diff = DaemonAPI.ForgeDiff(url: "https://github.com/o/r/pull/1/files", files: [

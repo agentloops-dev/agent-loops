@@ -48,6 +48,31 @@ export function setsPriority(actions: readonly string[] | undefined, writes: boo
   return { priority: writes && (actions ?? []).includes("priority"), hold: writes && (actions ?? []).includes("hold") };
 }
 
+/** What a forge says it sets, from a list's ForgeCapabilities (#6091). */
+export interface PriorityCaps { forge: string; priority?: boolean | undefined; hold?: boolean | undefined }
+
+/** What a Work ▸ Issues row's right-click menu offers (epic #6086), as WorkList.rowSetsPriority on the window: an issue's
+ * priority and on hold where the forge its ref names sets them (its list's capabilities, the same rule as the item page's
+ * actions), and its machine writes. */
+export function rowSetsPriority(row: { node: { kind: string; ref: string } }, forges: readonly PriorityCaps[] | undefined,
+  writes: boolean): { priority: boolean; hold: boolean } {
+  const forge = row.node.ref.slice(0, Math.max(0, row.node.ref.indexOf(":")));
+  const caps = writes && row.node.kind === "issue" ? forges?.find((f) => f.forge === forge) : undefined;
+  return { priority: caps?.priority === true, hold: caps?.hold === true };
+}
+
+/** Each forge's capabilities of a list and its next page, once each (the earlier page's first): a page can name a forge the
+ * first did not; undefined when neither says any (an earlier daemon). */
+export function joinForges<T extends PriorityCaps>(had: readonly T[] | undefined, page: readonly T[] | undefined): T[] | undefined {
+  if (!had && !page) return undefined;
+  const out = [...had ?? []];
+  for (const caps of page ?? []) if (!out.some((f) => f.forge === caps.forge)) out.push(caps);
+  return out;
+}
+
+/** The title of the alert when a row menu's Priority or On hold write failed (epic #6086). */
+export const couldNotSetPriority = "Could not change the priority";
+
 /** The Priority section's words. */
 export const priorityTitle = "Priority";
 export const priorityHelp = "Set the priority";

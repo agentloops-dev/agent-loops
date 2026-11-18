@@ -138,3 +138,34 @@ struct WorkPrioritySection: View {
         }
     }
 }
+
+/// A Work ▸ Issues row's right-click menu (a long press on iPhone and iPad; epic #6086): a Priority
+/// submenu (High, Medium, None, Low, a check on the row's own) and an On hold toggle, each where the
+/// row's forge sets it and its machine writes. A choice writes at once, as the side panel's do (#6092).
+struct WorkRowPriorityMenu: View {
+    let row: WorkList.Row
+    let sets: (priority: Bool, hold: Bool)
+    let setPriority: (String?) -> Void
+    let setHold: (Bool) -> Void
+
+    var body: some View {
+        if sets.priority {
+            Menu("Priority") {
+                ForEach(WorkList.priorityChoices, id: \.self) { choice in
+                    Button {
+                        setPriority(choice)
+                    } label: {
+                        if choice == row.priority?.lowercased() {
+                            Label(WorkPrioritySection.words(choice), icon: "checkmark")
+                        } else {
+                            Text(WorkPrioritySection.words(choice))
+                        }
+                    }
+                }
+            }
+        }
+        if sets.hold {
+            Toggle("On hold", isOn: Binding(get: { row.onHold }, set: setHold))
+        }
+    }
+}

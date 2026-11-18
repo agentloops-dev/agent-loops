@@ -356,7 +356,7 @@ public enum WorkList {
                 return entry
             }
             return (entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors,
-                                      total: entry.list.total))
+                                      forges: joinForges(entry.list.forges, page.forges), total: entry.list.total))
         }
         return (next, failed.isEmpty ? nil : failed.joined(separator: "; "))
     }
@@ -554,6 +554,28 @@ public enum WorkList {
     public static func setsPriority(_ detail: DaemonAPI.ForgeItemDetail, writes: Bool) -> (priority: Bool, hold: Bool) {
         let actions = detail.actions ?? []
         return (writes && actions.contains("priority"), writes && actions.contains("hold"))
+    }
+
+    /// Each forge's capabilities of a list and its next page, once each (the earlier page's first):
+    /// a page can name a forge the first did not; nil when neither says any (an earlier daemon).
+    public static func joinForges(_ had: [DaemonAPI.ForgeCapabilities]?,
+                                  _ page: [DaemonAPI.ForgeCapabilities]?) -> [DaemonAPI.ForgeCapabilities]? {
+        guard had != nil || page != nil else { return nil }
+        var out = had ?? []
+        for caps in page ?? [] where !out.contains(where: { $0.forge == caps.forge }) { out.append(caps) }
+        return out
+    }
+
+    /// What a row's right-click menu offers on Work ▸ Issues (epic #6086): an issue's priority and
+    /// on hold where its forge sets them (`ForgeCapabilities.priority` and `hold` of the forge the
+    /// row's ref names, the same rule as the item page's `actions`, #6091), and its machine writes.
+    public static func rowSetsPriority(_ row: Row, forges: [DaemonAPI.ForgeCapabilities]?,
+                                       writes: Bool) -> (priority: Bool, hold: Bool) {
+        let forge = WireRef.legacy(row.node.ref).split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
+        guard writes, row.node.kind == "issue", let caps = forges?.first(where: { $0.forge == forge }) else {
+            return (false, false)
+        }
+        return (caps.priority == true, caps.hold == true)
     }
 
     /// Why a write failed, in the machine's own words: a JSON-RPC error's message, not Foundation's

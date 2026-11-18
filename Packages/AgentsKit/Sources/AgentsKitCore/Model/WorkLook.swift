@@ -436,6 +436,8 @@ public enum WorkLook {
 
     /// A page after the first that did not load: one line at the end, and Try again.
     public static let couldNotLoadMore = "Could not load more."
+    /// The title of the alert when a row menu's Priority or On hold write failed (epic #6086).
+    public static let couldNotSetPriority = "Could not change the priority"
 
     /// The middle of a list that read nothing: "Could not read issues", then what the forge said.
     public static func couldNotRead(_ kind: WorkList.Kind) -> String { "Could not read \(kind.title.lowercased())" }
