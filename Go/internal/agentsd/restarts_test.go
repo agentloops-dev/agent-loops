@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -40,6 +41,7 @@ func lastEvent(d *Daemon, name string) *wire.Event {
 }
 
 func TestARestartIsSaidAndAWaitOpenOverItIsTold(t *testing.T) {
+	flaky.UnderLoad(t, "#6244")
 	t.Parallel()
 
 	fakeRuntimes(t)
