@@ -132,20 +132,7 @@ func (g *RealGitHub) WaitingDeploys(ctx context.Context, repo, workflow, branch 
 		}
 		w := WaitingDeploy{Run: r.completed(repo), CanApprove: true}
 		for _, p := range pending {
-			if len(p.Reviewers) == 0 {
-				continue
-			}
-			w.Environments = append(w.Environments, Environment{ID: p.Environment.ID, Name: p.Environment.Name, URL: p.Environment.HTMLURL})
-			w.CanApprove = w.CanApprove && p.CanApprove
-			for _, rv := range p.Reviewers {
-				who := rv.Reviewer.Login
-				if rv.Type == "Team" {
-					who = strings.SplitN(repo, "/", 2)[0] + "/" + rv.Reviewer.Slug
-				}
-				if who != "" && !contains(w.Reviewers, who) {
-					w.Reviewers = append(w.Reviewers, who)
-				}
-			}
+			w.addPending(repo, p)
 		}
 		if len(w.Environments) > 0 {
 			out = append(out, w)
@@ -221,4 +208,23 @@ func (g *RealGitHub) Compare(ctx context.Context, repo, base, head string) ([]Co
 		out[i] = Commit{SHA: x.SHA, Message: x.Commit.Message}
 	}
 	return out, nil
+}
+
+// addPending adds a pending deployment's environment and reviewers to w; one with no reviewers
+// waits on no person, and is left out.
+func (w *WaitingDeploy) addPending(repo string, p pendingJSON) {
+	if len(p.Reviewers) == 0 {
+		return
+	}
+	w.Environments = append(w.Environments, Environment{ID: p.Environment.ID, Name: p.Environment.Name, URL: p.Environment.HTMLURL})
+	w.CanApprove = w.CanApprove && p.CanApprove
+	for _, rv := range p.Reviewers {
+		who := rv.Reviewer.Login
+		if rv.Type == "Team" {
+			who = strings.SplitN(repo, "/", 2)[0] + "/" + rv.Reviewer.Slug
+		}
+		if who != "" && !contains(w.Reviewers, who) {
+			w.Reviewers = append(w.Reviewers, who)
+		}
+	}
 }

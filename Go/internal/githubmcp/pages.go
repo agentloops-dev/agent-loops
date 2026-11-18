@@ -603,23 +603,10 @@ func (g *RealGitHub) PRPage(ctx context.Context, repo string, number int) (map[s
 					Nodes []gqlComment `json:"nodes"`
 				} `json:"comments"`
 				Reviews struct {
-					Nodes []struct {
-						gqlComment
-						State       string `json:"state"`
-						SubmittedAt string `json:"submittedAt"`
-					} `json:"nodes"`
+					Nodes []gqlPageReview `json:"nodes"`
 				} `json:"reviews"`
 				Threads struct {
-					Nodes []struct {
-						IsResolved   bool   `json:"isResolved"`
-						IsOutdated   bool   `json:"isOutdated"`
-						Path         string `json:"path"`
-						Line         *int   `json:"line"`
-						OriginalLine *int   `json:"originalLine"`
-						Comments     struct {
-							Nodes []gqlComment `json:"nodes"`
-						} `json:"comments"`
-					} `json:"nodes"`
+					Nodes []gqlPageThread `json:"nodes"`
 				} `json:"reviewThreads"`
 				Commits gqlRollup `json:"commits"`
 			} `json:"pullRequest"`
@@ -643,67 +630,9 @@ func (g *RealGitHub) PRPage(ctx context.Context, repo string, number int) (map[s
 		files[i] = map[string]any{"path": f.Path, "additions": f.Additions, "deletions": f.Deletions,
 			"change": strings.ToLower(f.ChangeType)}
 	}
-	// The conversation: comments and reviews with words or a verdict, oldest first.
-	type note struct {
-		at   string
-		json map[string]any
-	}
-	var notes []note
-	// CodeRabbit's summary is its own block, not a comment among the others; its review state
-	// is its last review's.
-	var rabbit map[string]any
-	for _, c := range p.Comments.Nodes {
-		if c.Author.isCodeRabbit() && strings.HasPrefix(strings.TrimSpace(c.Body), codeRabbitSummary) {
-			if rabbit == nil {
-				rabbit = map[string]any{}
-			}
-			rabbit["summary"], rabbit["summaryUrl"] = c.Body, c.URL
-			continue
-		}
-		notes = append(notes, note{c.CreatedAt, c.json(c.CreatedAt)})
-	}
-	for _, r := range p.Reviews.Nodes {
-		if r.Author.isCodeRabbit() && isWholeReview(r.Body, r.State) {
-			if rabbit == nil {
-				rabbit = map[string]any{}
-			}
-			rabbit["review"], rabbit["reviewUrl"], rabbit["reviewedAt"] = strings.ToLower(r.State), r.URL, r.SubmittedAt
-		}
-	}
-	if s := codeRabbitState(items); s != "" {
-		if rabbit == nil {
-			rabbit = map[string]any{}
-		}
-		rabbit["status"] = s
-	}
-	for _, r := range p.Reviews.Nodes {
-		review := strings.ToLower(r.State)
-		if strings.TrimSpace(r.Body) == "" && review != "approved" && review != "changes_requested" {
-			continue // a review that is only its line comments: they are in threads
-		}
-		j := r.json(r.SubmittedAt)
-		j["review"] = review
-		notes = append(notes, note{r.SubmittedAt, j})
-	}
-	sort.SliceStable(notes, func(i, j int) bool { return mcpevents.Before(notes[i].at, notes[j].at) })
-	conversation := make([]any, len(notes))
-	for i, n := range notes {
-		conversation[i] = n.json
-	}
-	threads := []any{}
-	for _, t := range p.Threads.Nodes {
-		comments := make([]any, len(t.Comments.Nodes))
-		for i, c := range t.Comments.Nodes {
-			comments[i] = c.json(c.CreatedAt)
-		}
-		j := map[string]any{"path": t.Path, "resolved": t.IsResolved, "outdated": t.IsOutdated, "comments": comments}
-		if t.Line != nil {
-			j["line"] = *t.Line
-		} else if t.OriginalLine != nil {
-			j["line"] = *t.OriginalLine
-		}
-		threads = append(threads, j)
-	}
+	conversation := conversationOf(p.Comments.Nodes, p.Reviews.Nodes)
+	rabbit := codeRabbitOf(p.Comments.Nodes, p.Reviews.Nodes, items)
+	threads := threadsOf(p.Threads.Nodes)
 	state := strings.ToLower(p.State)
 	if state != "merged" && state != "closed" {
 		state = "open"
@@ -729,6 +658,103 @@ func (g *RealGitHub) PRPage(ctx context.Context, repo string, number int) (map[s
 		page["codeRabbit"] = rabbit
 	}
 	return page, nil
+}
+
+// gqlPageReview is a review on a pull request's page.
+type gqlPageReview struct {
+	gqlComment
+	State       string `json:"state"`
+	SubmittedAt string `json:"submittedAt"`
+}
+
+// gqlPageThread is a review thread on a pull request's page.
+type gqlPageThread struct {
+	IsResolved   bool   `json:"isResolved"`
+	IsOutdated   bool   `json:"isOutdated"`
+	Path         string `json:"path"`
+	Line         *int   `json:"line"`
+	OriginalLine *int   `json:"originalLine"`
+	Comments     struct {
+		Nodes []gqlComment `json:"nodes"`
+	} `json:"comments"`
+}
+
+// isCodeRabbitSummary says whether a comment is CodeRabbit's summary, which the page shows as
+// its own block, not as a comment among the others.
+func isCodeRabbitSummary(c gqlComment) bool {
+	return c.Author.isCodeRabbit() && strings.HasPrefix(strings.TrimSpace(c.Body), codeRabbitSummary)
+}
+
+// conversationOf is the page's conversation: comments and reviews with words or a verdict,
+// oldest first.
+func conversationOf(comments []gqlComment, reviews []gqlPageReview) []any {
+	type note struct {
+		at   string
+		json map[string]any
+	}
+	var notes []note
+	for _, c := range comments {
+		if !isCodeRabbitSummary(c) {
+			notes = append(notes, note{c.CreatedAt, c.json(c.CreatedAt)})
+		}
+	}
+	for _, r := range reviews {
+		review := strings.ToLower(r.State)
+		if strings.TrimSpace(r.Body) == "" && review != "approved" && review != "changes_requested" {
+			continue // a review that is only its line comments: they are in threads
+		}
+		j := r.json(r.SubmittedAt)
+		j["review"] = review
+		notes = append(notes, note{r.SubmittedAt, j})
+	}
+	sort.SliceStable(notes, func(i, j int) bool { return mcpevents.Before(notes[i].at, notes[j].at) })
+	conversation := make([]any, len(notes))
+	for i, n := range notes {
+		conversation[i] = n.json
+	}
+	return conversation
+}
+
+// codeRabbitOf is the page's CodeRabbit block, or nil: its summary, its review state (its
+// last whole review's) and its status.
+func codeRabbitOf(comments []gqlComment, reviews []gqlPageReview, items []checkItem) map[string]any {
+	rabbit := map[string]any{}
+	for _, c := range comments {
+		if isCodeRabbitSummary(c) {
+			rabbit["summary"], rabbit["summaryUrl"] = c.Body, c.URL
+		}
+	}
+	for _, r := range reviews {
+		if r.Author.isCodeRabbit() && isWholeReview(r.Body, r.State) {
+			rabbit["review"], rabbit["reviewUrl"], rabbit["reviewedAt"] = strings.ToLower(r.State), r.URL, r.SubmittedAt
+		}
+	}
+	if s := codeRabbitState(items); s != "" {
+		rabbit["status"] = s
+	}
+	if len(rabbit) == 0 {
+		return nil
+	}
+	return rabbit
+}
+
+// threadsOf is the page's review threads, never nil.
+func threadsOf(nodes []gqlPageThread) []any {
+	threads := []any{}
+	for _, t := range nodes {
+		comments := make([]any, len(t.Comments.Nodes))
+		for i, c := range t.Comments.Nodes {
+			comments[i] = c.json(c.CreatedAt)
+		}
+		j := map[string]any{"path": t.Path, "resolved": t.IsResolved, "outdated": t.IsOutdated, "comments": comments}
+		if t.Line != nil {
+			j["line"] = *t.Line
+		} else if t.OriginalLine != nil {
+			j["line"] = *t.OriginalLine
+		}
+		threads = append(threads, j)
+	}
+	return threads
 }
 
 // MARK: Logs and reruns

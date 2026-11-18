@@ -146,10 +146,23 @@ func TestTheListsAskForNewestCreatedFirst(t *testing.T) {
 	callTool(t, c, "show_pull_requests", map[string]any{})
 	callTool(t, c, "show_issues", map[string]any{"repo": "o/r"})
 
+	board, issues := api.listQueries()
+	if !strings.Contains(board, "orderBy: {field: CREATED_AT, direction: DESC}") || strings.Contains(board, "UPDATED_AT") {
+		t.Errorf("board query: %s", board)
+	}
+	if !strings.Contains(issues, "sort=created") || !strings.Contains(issues, "direction=desc") || strings.Contains(issues, "sort=updated") {
+		t.Errorf("issues query: %s", issues)
+	}
+
+	checkListToolsSayNewestFirst(t, c)
+	checkListPagesSayNewestFirst(t, c)
+}
+
+// listQueries is the last board query and the last issues query the API was asked.
+func (api *viewsAPI) listQueries() (board, issues string) {
 	api.mu.Lock()
 	queries := append([]string(nil), api.queries...)
 	api.mu.Unlock()
-	board, issues := "", ""
 	for _, q := range queries {
 		if strings.Contains(q, `"query":"query`) && strings.Contains(q, "pullRequests(states: OPEN") {
 			board = q
@@ -158,13 +171,13 @@ func TestTheListsAskForNewestCreatedFirst(t *testing.T) {
 			issues = q
 		}
 	}
-	if !strings.Contains(board, "orderBy: {field: CREATED_AT, direction: DESC}") || strings.Contains(board, "UPDATED_AT") {
-		t.Errorf("board query: %s", board)
-	}
-	if !strings.Contains(issues, "sort=created") || !strings.Contains(issues, "direction=desc") || strings.Contains(issues, "sort=updated") {
-		t.Errorf("issues query: %s", issues)
-	}
+	return board, issues
+}
 
+// checkListToolsSayNewestFirst checks that show_pull_requests' and show_issues' descriptions
+// say the order.
+func checkListToolsSayNewestFirst(t *testing.T, c *mcp.ClientSession) {
+	t.Helper()
 	tools, err := c.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +196,12 @@ func TestTheListsAskForNewestCreatedFirst(t *testing.T) {
 			t.Errorf("missing tool %s", name)
 		}
 	}
+}
+
+// checkListPagesSayNewestFirst checks that the Pull requests and Issues pages' descriptions
+// say the order.
+func checkListPagesSayNewestFirst(t *testing.T, c *mcp.ClientSession) {
+	t.Helper()
 	resources, err := c.ListResources(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -280,22 +299,7 @@ func TestEachViewHasAToolThatFeedsItAndAPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	visibility := map[string][]any{}
-	feeds := map[string]string{}
-	detailsReadOnly := false
-	for _, tool := range tools.Tools {
-		ui, _ := tool.Meta["ui"].(map[string]any)
-		visibility[tool.Name], _ = ui["visibility"].([]any)
-		if uri, _ := ui["resourceUri"].(string); uri != "" {
-			feeds[tool.Name] = uri
-			if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
-				t.Errorf("%s feeds a view but is not read-only, so it can't feed a pin", tool.Name)
-			}
-		}
-		if tool.Name == "show_issue_details" {
-			detailsReadOnly = tool.Annotations != nil && tool.Annotations.ReadOnlyHint
-		}
-	}
+	visibility, feeds, detailsReadOnly := viewToolsMeta(t, tools.Tools)
 	want := map[string]string{"show_pull_requests": pullsURI, "show_issues": issuesURI, "show_pull_request": prURI}
 	for name, uri := range want {
 		if feeds[name] != uri {
@@ -316,32 +320,66 @@ func TestEachViewHasAToolThatFeedsItAndAPage(t *testing.T) {
 		if err != nil || len(r.Contents) != 1 {
 			t.Fatalf("%s: %v", uri, err)
 		}
-		html := r.Contents[0].Text
-		if r.Contents[0].MIMEType != viewMime || !strings.HasPrefix(html, "<!doctype html>") ||
-			strings.Contains(html, "/*common.css*/") || strings.Contains(html, "/*bridge.js*/") || strings.Contains(html, "/*lineage.js*/") || !strings.Contains(html, "const bridge") {
-			t.Errorf("%s is not a whole page", uri)
-		}
-		// One label pill for every page (#2956).
-		if strings.Contains(html, "/*labels.js*/") || strings.Count(html, "const labelPill") != 1 {
-			t.Errorf("%s does not have the shared label pill once", uri)
-		}
-		if uri != issuesURI && !strings.Contains(html, "prLabels(ui, pr") {
-			t.Errorf("%s does not show a pull request's labels", uri)
-		}
-		if uri != issuesURI && !strings.Contains(html, "const prPage") {
-			t.Errorf("%s has no pull request page in it", uri)
-		}
-		if uri == issuesURI {
-			for _, want := range []string{"show_issue_details", "closed_by_pull_requests", "aria-expanded", "issue-row",
-				"Add a label filter", "label-tags", "removeLabel", "Search issues", "labelColors", "query", "No open issues match"} {
-				if !strings.Contains(html, want) {
-					t.Errorf("issues page is missing %q", want)
-				}
-			}
-			if strings.Contains(html, "Show details") || strings.Contains(html, "Hide details") {
-				t.Error("issues page still has a details button")
+		checkViewPage(t, uri, r.Contents[0].MIMEType, r.Contents[0].Text)
+	}
+}
+
+// viewToolsMeta is each tool's visibility, the view each tool feeds, and whether
+// show_issue_details is read-only. A tool that feeds a view must be read-only.
+func viewToolsMeta(t *testing.T, tools []*mcp.Tool) (visibility map[string][]any, feeds map[string]string, detailsReadOnly bool) {
+	t.Helper()
+	visibility, feeds = map[string][]any{}, map[string]string{}
+	for _, tool := range tools {
+		ui, _ := tool.Meta["ui"].(map[string]any)
+		visibility[tool.Name], _ = ui["visibility"].([]any)
+		if uri, _ := ui["resourceUri"].(string); uri != "" {
+			feeds[tool.Name] = uri
+			if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+				t.Errorf("%s feeds a view but is not read-only, so it can't feed a pin", tool.Name)
 			}
 		}
+		if tool.Name == "show_issue_details" {
+			detailsReadOnly = tool.Annotations != nil && tool.Annotations.ReadOnlyHint
+		}
+	}
+	return visibility, feeds, detailsReadOnly
+}
+
+// checkViewPage checks that a view's page is whole, with the shared label pill once, and the
+// parts its view needs.
+func checkViewPage(t *testing.T, uri, mime, html string) {
+	t.Helper()
+	if mime != viewMime || !strings.HasPrefix(html, "<!doctype html>") ||
+		strings.Contains(html, "/*common.css*/") || strings.Contains(html, "/*bridge.js*/") || strings.Contains(html, "/*lineage.js*/") || !strings.Contains(html, "const bridge") {
+		t.Errorf("%s is not a whole page", uri)
+	}
+	// One label pill for every page (#2956).
+	if strings.Contains(html, "/*labels.js*/") || strings.Count(html, "const labelPill") != 1 {
+		t.Errorf("%s does not have the shared label pill once", uri)
+	}
+	if uri != issuesURI && !strings.Contains(html, "prLabels(ui, pr") {
+		t.Errorf("%s does not show a pull request's labels", uri)
+	}
+	if uri != issuesURI && !strings.Contains(html, "const prPage") {
+		t.Errorf("%s has no pull request page in it", uri)
+	}
+	if uri == issuesURI {
+		checkIssuesPage(t, html)
+	}
+}
+
+// checkIssuesPage checks that the Issues page expands a row to its details, filters by label
+// and query, and has no details button.
+func checkIssuesPage(t *testing.T, html string) {
+	t.Helper()
+	for _, want := range []string{"show_issue_details", "closed_by_pull_requests", "aria-expanded", "issue-row",
+		"Add a label filter", "label-tags", "removeLabel", "Search issues", "labelColors", "query", "No open issues match"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("issues page is missing %q", want)
+		}
+	}
+	if strings.Contains(html, "Show details") || strings.Contains(html, "Hide details") {
+		t.Error("issues page still has a details button")
 	}
 }
 

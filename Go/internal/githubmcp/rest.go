@@ -964,57 +964,85 @@ type issueEvent struct {
 func (g *RealGitHub) IssueActivity(ctx context.Context, repo string, kind IssueKind, since string) ([]IssueActivity, bool, error) {
 	switch kind {
 	case IssueOpened:
-		items, truncated, err := newest(ctx, g, fmt.Sprintf("repos/%s/issues?state=all&sort=created&direction=desc", repo), since,
-			func(i issueJSON) string { return i.CreatedAt })
-		if err != nil {
-			return nil, false, err
-		}
-		var out []IssueActivity
-		for _, i := range items {
-			if !i.isPR() {
-				out = append(out, IssueActivity{ID: strconv.Itoa(i.Number), At: i.CreatedAt, Issue: i.issue(), Kind: IssueOpened,
-					Trusted: i.trusted()})
-			}
-		}
-		return out, truncated, nil
+		return g.openedIssues(ctx, repo, since)
 	case IssueCommented:
-		type comment struct {
-			ID          int    `json:"id"`
-			HTMLURL     string `json:"html_url"`
-			IssueURL    string `json:"issue_url"`
-			Body        string `json:"body"`
-			User        user   `json:"user"`
-			Association string `json:"author_association"`
-			CreatedAt   string `json:"created_at"`
+		return g.issueComments(ctx, repo, since)
+	}
+	return g.issueEvents(ctx, repo, kind, since)
+}
+
+// openedIssues is issue.opened's activity: the issues (not pull requests) opened since.
+func (g *RealGitHub) openedIssues(ctx context.Context, repo, since string) ([]IssueActivity, bool, error) {
+	items, truncated, err := newest(ctx, g, fmt.Sprintf("repos/%s/issues?state=all&sort=created&direction=desc", repo), since,
+		func(i issueJSON) string { return i.CreatedAt })
+	if err != nil {
+		return nil, false, err
+	}
+	var out []IssueActivity
+	for _, i := range items {
+		if !i.isPR() {
+			out = append(out, IssueActivity{ID: strconv.Itoa(i.Number), At: i.CreatedAt, Issue: i.issue(), Kind: IssueOpened,
+				Trusted: i.trusted()})
 		}
-		// since lists comments updated since; an edited old one is dropped by its created_at.
-		path := fmt.Sprintf("repos/%s/issues/comments?sort=created&direction=desc&since=%s", repo, url.QueryEscape(since))
-		items, truncated, err := newest(ctx, g, path, since, func(c comment) string { return c.CreatedAt })
+	}
+	return out, truncated, nil
+}
+
+// issueCommentJSON is an issue comment as GitHub's REST API gives it.
+type issueCommentJSON struct {
+	ID          int    `json:"id"`
+	HTMLURL     string `json:"html_url"`
+	IssueURL    string `json:"issue_url"`
+	Body        string `json:"body"`
+	User        user   `json:"user"`
+	Association string `json:"author_association"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// issueComments is issue.commented's activity: the comments made since on issues, not pull
+// requests.
+func (g *RealGitHub) issueComments(ctx context.Context, repo, since string) ([]IssueActivity, bool, error) {
+	// since lists comments updated since; an edited old one is dropped by its created_at.
+	path := fmt.Sprintf("repos/%s/issues/comments?sort=created&direction=desc&since=%s", repo, url.QueryEscape(since))
+	items, truncated, err := newest(ctx, g, path, since, func(c issueCommentJSON) string { return c.CreatedAt })
+	if err != nil {
+		return nil, false, err
+	}
+	var out []IssueActivity
+	issues := map[string]issueJSON{}
+	for _, c := range items {
+		i, err := g.commentIssue(ctx, c, issues)
 		if err != nil {
 			return nil, false, err
 		}
-		var out []IssueActivity
-		issues := map[string]issueJSON{}
-		for _, c := range items {
-			// A comment doesn't say whether its issue is a pull request; the issue does (and is cached).
-			path := strings.TrimPrefix(c.IssueURL, g.API)
-			path = strings.TrimPrefix(path, "https://api.github.com/")
-			i, ok := issues[path]
-			if !ok {
-				if err := g.get(ctx, path, false, &i); err != nil {
-					return nil, false, err
-				}
-				issues[path] = i
-			}
-			if i.isPR() {
-				continue
-			}
-			out = append(out, IssueActivity{ID: strconv.Itoa(c.ID), At: c.CreatedAt, Issue: i.issue(), Kind: IssueCommented,
-				CommentAuthor: c.User.Login, CommentURL: c.HTMLURL, CommentBody: clip(c.Body),
-				Trusted: isTrusted(c.Association, c.User.Login, c.User.Type)})
+		if i.isPR() {
+			continue
 		}
-		return out, truncated, nil
+		out = append(out, IssueActivity{ID: strconv.Itoa(c.ID), At: c.CreatedAt, Issue: i.issue(), Kind: IssueCommented,
+			CommentAuthor: c.User.Login, CommentURL: c.HTMLURL, CommentBody: clip(c.Body),
+			Trusted: isTrusted(c.Association, c.User.Login, c.User.Type)})
 	}
+	return out, truncated, nil
+}
+
+// commentIssue is the issue a comment is on. A comment doesn't say whether its issue is a
+// pull request; the issue does (and is cached in issues).
+func (g *RealGitHub) commentIssue(ctx context.Context, c issueCommentJSON, issues map[string]issueJSON) (issueJSON, error) {
+	path := strings.TrimPrefix(c.IssueURL, g.API)
+	path = strings.TrimPrefix(path, "https://api.github.com/")
+	if i, ok := issues[path]; ok {
+		return i, nil
+	}
+	var i issueJSON
+	if err := g.get(ctx, path, false, &i); err != nil {
+		return i, err
+	}
+	issues[path] = i
+	return i, nil
+}
+
+// issueEvents is issue.labelled's and issue.closed's activity: the issues' events of that kind.
+func (g *RealGitHub) issueEvents(ctx context.Context, repo string, kind IssueKind, since string) ([]IssueActivity, bool, error) {
 	items, truncated, err := newest(ctx, g, fmt.Sprintf("repos/%s/issues/events", repo), since,
 		func(e issueEvent) string { return e.CreatedAt })
 	if err != nil {
@@ -1029,20 +1057,25 @@ func (g *RealGitHub) IssueActivity(ctx context.Context, repo string, kind IssueK
 		if e.Event != wanted || e.Issue == nil || e.Issue.isPR() {
 			continue
 		}
-		a := IssueActivity{ID: strconv.Itoa(e.ID), At: e.CreatedAt, Issue: e.Issue.issue(), Kind: kind, By: e.Actor.Login,
-			Trusted: isTrustedActor(e.Actor.Login, e.Actor.Type, kind == IssueClosed, e.Issue.User.Login, e.Issue.trusted())}
-		if kind == IssueLabelled {
-			a.Label = e.Label.Name
-		} else {
-			reason := e.StateReason
-			if reason == "" {
-				reason = e.Issue.StateReason
-			}
-			a.Reason = reasonOf(reason)
-		}
-		out = append(out, a)
+		out = append(out, issueEventActivity(e, kind))
 	}
 	return out, truncated, nil
+}
+
+// issueEventActivity is an issue's labelled or closed event as its activity.
+func issueEventActivity(e issueEvent, kind IssueKind) IssueActivity {
+	a := IssueActivity{ID: strconv.Itoa(e.ID), At: e.CreatedAt, Issue: e.Issue.issue(), Kind: kind, By: e.Actor.Login,
+		Trusted: isTrustedActor(e.Actor.Login, e.Actor.Type, kind == IssueClosed, e.Issue.User.Login, e.Issue.trusted())}
+	if kind == IssueLabelled {
+		a.Label = e.Label.Name
+		return a
+	}
+	reason := e.StateReason
+	if reason == "" {
+		reason = e.Issue.StateReason
+	}
+	a.Reason = reasonOf(reason)
+	return a
 }
 
 func (g *RealGitHub) PRLabelActivity(ctx context.Context, repo string, kind PRLabelKind, since string) ([]PRLabelActivity, bool, error) {

@@ -317,107 +317,159 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 		return nil, bad
 	}
 	if a.repo == "" {
-		repo, err := s.GitHub.DefaultRepo(ctx)
-		if err != nil {
-			var gh *GitHubError
-			if errors.As(err, &gh) && gh.Kind == NotFound {
-				return nil, invalidParams("%s", gh.Message)
-			}
-			return nil, eventsError(err)
+		repo, bad := s.defaultRepo(ctx)
+		if bad != nil {
+			return nil, bad
 		}
 		a.repo = repo
 	}
-	// mine: the connection's owner's own open PRs, asked once a poll (#2034).
-	var yours *Yours
-	if a.mine || e.Name == "review.requested" || e.Name == "issue.assigned" {
-		y, err := s.GitHub.Yours(ctx, a.repo)
-		if err != nil {
-			return nil, eventsError(err)
-		}
-		yours = &y
+	yours, bad := s.yoursFor(ctx, e.Name, a)
+	if bad != nil {
+		return nil, bad
 	}
-	switch e.Name {
-	case "review.requested":
-		return s.pollDiff(ctx, e.Name, "requestedAt", a, p, func() ([]state, error) {
-			var out []state
-			for _, r := range yours.Reviews {
-				j := r.PR.json()
-				j["author"] = r.Author
-				out = append(out, state{pr: r.PR, on: new(true), json: j})
-			}
-			return out, nil
-		})
-	case "issue.assigned":
-		return s.pollDiff(ctx, e.Name, "assignedAt", a, p, func() ([]state, error) {
-			var out []state
-			for _, i := range yours.Assigned {
-				if a.wantsIssue(i.Number) {
-					out = append(out, state{pr: PR{Number: i.Number, Title: i.Title, URL: i.URL}, on: new(true), json: i.json()})
-				}
-			}
-			return out, nil
-		})
-	case "pr.conflicted":
-		return s.pollDiff(ctx, e.Name, "conflictedAt", a, p, func() ([]state, error) {
-			prs, err := s.GitHub.ConflictPRs(ctx, a.repo)
-			var out []state
-			for _, c := range prs {
-				if yours != nil {
-					if yours.owns(c.PR.Number) {
-						out = append(out, state{pr: c.PR, on: c.Conflicts, json: c.PR.json()})
-					}
-				} else if a.anyone || c.Trusted {
-					out = append(out, state{pr: c.PR, on: c.Conflicts, json: c.PR.json()})
-				}
-			}
-			return out, err
-		})
-	case "pr.blocked":
-		was := polls.CursorIDs(p)
-		return s.pollDiff(ctx, e.Name, "blockedAt", a, p, func() ([]state, error) {
-			prs, err := s.GitHub.BlockedPRs(ctx, a.repo)
-			var out []state
-			for _, b := range prs {
-				if b.Skip || (yours != nil && !yours.owns(b.PR.Number)) || (yours == nil && !a.anyone && !b.Trusted) {
-					continue
-				}
-				bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", e.Name, a.repo, b.PR.Number), b.Blocking, was)
-				out = append(out, state{pr: b.PR, on: &bs.On, key: bs.Key, json: b.PR.json(), extra: bs.Data})
-			}
-			return out, err
-		})
-	case "pr.opened":
-		return s.pollDiff(ctx, e.Name, "openedAt", a, p, func() ([]state, error) {
-			prs, err := s.GitHub.OpenPRs(ctx, a.repo)
-			var out []state
-			for _, o := range prs {
-				if !a.anyone && !o.Trusted {
-					continue
-				}
-				ready := !o.Draft
-				j := o.PR.json()
-				j["author"] = o.Author
-				out = append(out, state{pr: o.PR, on: &ready, json: j})
-			}
-			return out, err
-		})
-	case "review.posted":
-		return s.pollDiff(ctx, e.Name, "reviewedAt", a, p, func() ([]state, error) {
-			prs, err := s.GitHub.CodeRabbitPRs(ctx, a.repo)
-			var out []state
-			for _, r := range prs {
-				if a.byMe(r.PR, yours) && (a.mine || a.anyone || r.Trusted) {
-					reviewed := r.Reviewed
-					out = append(out, state{pr: r.PR, on: &reviewed, key: r.round(),
-						json: r.PR.json(), extra: map[string]any{"headSha": r.HeadSHA, "state": r.Review, "url": r.URL}})
-				}
-			}
-			return out, err
-		})
+	if key, ok := stateKeys[e.Name]; ok {
+		return s.pollDiff(ctx, e.Name, key, a, p, s.states(ctx, e.Name, a, p, yours))
 	}
 	return s.poll(e, p, func(since string) ([]candidate, bool, error) {
 		return candidates(ctx, s.GitHub, e.Name, a, yours, since)
 	})
+}
+
+// defaultRepo is the repo a poll with none names: the connection's default.
+func (s *Events) defaultRepo(ctx context.Context) (string, *rpcError) {
+	repo, err := s.GitHub.DefaultRepo(ctx)
+	if err == nil {
+		return repo, nil
+	}
+	var gh *GitHubError
+	if errors.As(err, &gh) && gh.Kind == NotFound {
+		return "", invalidParams("%s", gh.Message)
+	}
+	return "", eventsError(err)
+}
+
+// yoursFor is mine's set: the connection's owner's own open PRs, asked once a poll (#2034),
+// or nil when the event does not need them.
+func (s *Events) yoursFor(ctx context.Context, name string, a args) (*Yours, *rpcError) {
+	if !a.mine && name != "review.requested" && name != "issue.assigned" {
+		return nil, nil
+	}
+	y, err := s.GitHub.Yours(ctx, a.repo)
+	if err != nil {
+		return nil, eventsError(err)
+	}
+	return &y, nil
+}
+
+// stateKeys are the events polled as a state that turns on and off, with the key of the
+// time each one turned on.
+var stateKeys = map[string]string{
+	"review.requested": "requestedAt",
+	"issue.assigned":   "assignedAt",
+	"pr.conflicted":    "conflictedAt",
+	"pr.blocked":       "blockedAt",
+	"pr.opened":        "openedAt",
+	"review.posted":    "reviewedAt",
+}
+
+// states finds the states of a state event (one in stateKeys).
+func (s *Events) states(ctx context.Context, name string, a args, p pollParams, yours *Yours) func() ([]state, error) {
+	switch name {
+	case "review.requested":
+		return func() ([]state, error) { return reviewRequestedStates(yours), nil }
+	case "issue.assigned":
+		return func() ([]state, error) { return assignedStates(a, yours), nil }
+	case "pr.conflicted":
+		return func() ([]state, error) { return s.conflictedStates(ctx, a, yours) }
+	case "pr.blocked":
+		was := polls.CursorIDs(p)
+		return func() ([]state, error) { return s.blockedStates(ctx, name, a, yours, was) }
+	case "pr.opened":
+		return func() ([]state, error) { return s.openedStates(ctx, a) }
+	}
+	return func() ([]state, error) { return s.reviewPostedStates(ctx, a, yours) }
+}
+
+// reviewRequestedStates is review.requested's states: the PRs that ask the owner's review.
+func reviewRequestedStates(yours *Yours) []state {
+	var out []state
+	for _, r := range yours.Reviews {
+		j := r.PR.json()
+		j["author"] = r.Author
+		out = append(out, state{pr: r.PR, on: new(true), json: j})
+	}
+	return out
+}
+
+// assignedStates is issue.assigned's states: the issues assigned to the owner.
+func assignedStates(a args, yours *Yours) []state {
+	var out []state
+	for _, i := range yours.Assigned {
+		if a.wantsIssue(i.Number) {
+			out = append(out, state{pr: PR{Number: i.Number, Title: i.Title, URL: i.URL}, on: new(true), json: i.json()})
+		}
+	}
+	return out
+}
+
+// conflictedStates is pr.conflicted's states.
+func (s *Events) conflictedStates(ctx context.Context, a args, yours *Yours) ([]state, error) {
+	prs, err := s.GitHub.ConflictPRs(ctx, a.repo)
+	var out []state
+	for _, c := range prs {
+		if yours != nil {
+			if yours.owns(c.PR.Number) {
+				out = append(out, state{pr: c.PR, on: c.Conflicts, json: c.PR.json()})
+			}
+		} else if a.anyone || c.Trusted {
+			out = append(out, state{pr: c.PR, on: c.Conflicts, json: c.PR.json()})
+		}
+	}
+	return out, err
+}
+
+// blockedStates is pr.blocked's states; was is the ids the cursor had.
+func (s *Events) blockedStates(ctx context.Context, name string, a args, yours *Yours, was []string) ([]state, error) {
+	prs, err := s.GitHub.BlockedPRs(ctx, a.repo)
+	var out []state
+	for _, b := range prs {
+		if b.Skip || (yours != nil && !yours.owns(b.PR.Number)) || (yours == nil && !a.anyone && !b.Trusted) {
+			continue
+		}
+		bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", name, a.repo, b.PR.Number), b.Blocking, was)
+		out = append(out, state{pr: b.PR, on: &bs.On, key: bs.Key, json: b.PR.json(), extra: bs.Data})
+	}
+	return out, err
+}
+
+// openedStates is pr.opened's states: on for an open PR that is ready.
+func (s *Events) openedStates(ctx context.Context, a args) ([]state, error) {
+	prs, err := s.GitHub.OpenPRs(ctx, a.repo)
+	var out []state
+	for _, o := range prs {
+		if !a.anyone && !o.Trusted {
+			continue
+		}
+		ready := !o.Draft
+		j := o.PR.json()
+		j["author"] = o.Author
+		out = append(out, state{pr: o.PR, on: &ready, json: j})
+	}
+	return out, err
+}
+
+// reviewPostedStates is review.posted's states: CodeRabbit's reviews.
+func (s *Events) reviewPostedStates(ctx context.Context, a args, yours *Yours) ([]state, error) {
+	prs, err := s.GitHub.CodeRabbitPRs(ctx, a.repo)
+	var out []state
+	for _, r := range prs {
+		if a.byMe(r.PR, yours) && (a.mine || a.anyone || r.Trusted) {
+			reviewed := r.Reviewed
+			out = append(out, state{pr: r.PR, on: &reviewed, key: r.round(),
+				json: r.PR.json(), extra: map[string]any{"headSha": r.HeadSHA, "state": r.Review, "url": r.URL}})
+		}
+	}
+	return out, err
 }
 
 // poll is events/poll over a cursor (mcpevents.Poller.Poll), truncated too when its cursor is
@@ -484,183 +536,229 @@ func (s *Events) pollDiff(_ context.Context, name, key string, a args, p pollPar
 
 // candidates finds what an event may raise at or after since.
 func candidates(ctx context.Context, gh GitHub, name string, a args, yours *Yours, since string) ([]candidate, bool, error) {
-	repo := a.repo
 	if kind, ok := strings.CutPrefix(name, "issue."); ok {
-		items, truncated, err := gh.IssueActivity(ctx, repo, IssueKind(kind), since)
-		if err != nil {
-			return nil, false, err
-		}
-		var list []candidate
-		for _, it := range items {
-			if !a.wantsIssue(it.Issue.Number) {
-				continue
-			}
-			if !a.anyone && !it.Trusted {
-				continue
-			}
-			if a.label != "" {
-				if it.Kind == IssueLabelled && it.Label != a.label {
-					continue
-				}
-				if it.Kind != IssueLabelled && !contains(it.Issue.Labels, a.label) {
-					continue
-				}
-			}
-			at := mcpevents.Normalized(it.At)
-			if at == "" {
-				continue
-			}
-			list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at,
-				Data:    func() (map[string]any, error) { return it.data(), nil },
-				Subject: issueRef(repo, it.Issue.Number), Key: it.ID})
-		}
-		return list, truncated, nil
+		return issueCandidates(ctx, gh, name, IssueKind(kind), a, since)
 	}
-	if name == "pr.labelled" || name == "pr.unlabelled" {
-		kind := PRLabelled
-		if name == "pr.unlabelled" {
-			kind = PRUnlabelled
-		}
-		items, truncated, err := gh.PRLabelActivity(ctx, repo, kind, since)
-		if err != nil {
-			return nil, false, err
-		}
-		var list []candidate
-		for _, it := range items {
-			if !a.wantsPR(it.PR.Number) || !a.closesOne(it.PR) || !a.byMe(it.PR, yours) {
-				continue
-			}
-			if !a.anyone && !it.Trusted {
-				continue
-			}
-			if a.label != "" && it.Label != a.label {
-				continue
-			}
-			at := mcpevents.Normalized(it.At)
-			if at == "" {
-				continue
-			}
-			list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at,
-				Data:    func() (map[string]any, error) { return it.data(), nil },
-				Subject: prRef(repo, it.PR.Number), Key: it.ID})
-		}
-		return list, truncated, nil
-	}
-	if name == "review.comment" {
-		comments, truncated, err := gh.CodeRabbitComments(ctx, repo, since)
-		if err != nil {
-			return nil, false, err
-		}
-		var list []candidate
-		for _, c := range comments {
-			at := mcpevents.Normalized(c.At)
-			if at == "" || !a.wantsPR(c.PR.Number) || (a.branch != "" && c.PR.Branch != a.branch) ||
-				!(a.mine || a.anyone || c.Trusted) || !a.closesOne(c.PR) || !a.byMe(c.PR, yours) {
-				continue
-			}
-			list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d", repo, c.ID), Time: at,
-				Data:    func() (map[string]any, error) { return c.data(), nil },
-				Subject: prRef(repo, c.PR.Number), Key: fmt.Sprint(c.ID)})
-		}
-		return list, truncated, nil
-	}
-	if name == "pr.commented" {
-		comments, truncated, err := gh.PRComments(ctx, repo, since, a.onePR())
-		if err != nil {
-			return nil, false, err
-		}
-		// Every comment is a candidate, so the cursor moves past the ones left out (P20261031-1).
-		var list []candidate
-		for _, c := range comments {
-			at := mcpevents.Normalized(c.At)
-			if at == "" {
-				continue
-			}
-			list = append(list, candidate{EventID: fmt.Sprintf("pr.commented:%s:%d", repo, c.ID), Time: at,
-				Subject: prRef(repo, c.PR.Number), Key: fmt.Sprint(c.ID),
-				Data: func() (map[string]any, error) {
-					if c.Other || !a.wantsPR(c.PR.Number) || !(a.anyone || c.Trusted) || !a.closesOne(c.PR) || !a.byMe(c.PR, yours) {
-						return nil, nil
-					}
-					return c.data(), nil
-				}})
-		}
-		return list, truncated, nil
-	}
-	if name == "pr.reviewed" {
-		reviews, err := gh.PRReviews(ctx, repo, since, a.onePR())
-		if err != nil {
-			return nil, false, err
-		}
-		var list []candidate
-		for _, r := range reviews {
-			at := mcpevents.Normalized(r.At)
-			if at == "" || !a.wantsPR(r.PR.Number) || (a.branch != "" && r.PR.Branch != a.branch) ||
-				!(a.anyone || r.Trusted) || !a.closesOne(r.PR) || !a.byMe(r.PR, yours) {
-				continue
-			}
-			list = append(list, candidate{EventID: fmt.Sprintf("pr.reviewed:%s:%d", repo, r.ID), Time: at,
-				Data:    func() (map[string]any, error) { return r.data(), nil },
-				Subject: prRef(repo, r.PR.Number), Key: fmt.Sprint(r.ID)})
-		}
-		return list, false, nil
-	}
-	if name == "deploy.started" || name == "deploy.succeeded" || name == "deploy.failed" {
+	switch name {
+	case "pr.labelled", "pr.unlabelled":
+		return prLabelCandidates(ctx, gh, name, a, yours, since)
+	case "review.comment":
+		return reviewCommentCandidates(ctx, gh, a, yours, since)
+	case "pr.commented":
+		return prCommentCandidates(ctx, gh, a, yours, since)
+	case "pr.reviewed":
+		return prReviewCandidates(ctx, gh, a, yours, since)
+	case "deploy.started", "deploy.succeeded", "deploy.failed":
 		return deployCandidates(ctx, gh, name, a, since)
-	}
-	if name == "deploy.waiting" {
-		waiting, err := gh.WaitingDeploys(ctx, repo, a.workflow, a.branch)
-		if err != nil {
-			return nil, false, err
-		}
-		var list []candidate
-		for _, w := range waiting {
-			at := mcpevents.Normalized(w.Run.Run.UpdatedAt)
-			if at == "" || (!a.anyone && !w.Run.Trusted) {
-				continue
-			}
-			subject, key := runRef(repo, w.Run.Run.ID), strings.TrimPrefix(w.key(), fmt.Sprint(w.Run.Run.ID)+":")
-			if w.Approval != nil {
-				subject, key = deployRef(repo, w.Approval.Deployment.ID), "approval"
-			}
-			list = append(list, candidate{EventID: "deploy.waiting:" + repo + ":" + w.key(), Time: at,
-				Data:    func() (map[string]any, error) { return waitingData(ctx, gh, repo, w) },
-				Subject: subject, Key: key})
-		}
-		return list, false, nil
-	}
-	if name == "run.completed" {
-		runs, truncated, err := gh.CompletedRuns(ctx, repo, a.workflow, a.branch, a.run, since)
-		if err != nil {
-			return nil, false, err
-		}
-		var list []candidate
-		for _, r := range runs {
-			at := mcpevents.Normalized(r.Run.UpdatedAt)
-			if at == "" {
-				continue
-			}
-			list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%d", repo, r.Run.ID, r.Run.Attempt), Time: at,
-				Subject: runRef(repo, r.Run.ID), Key: fmt.Sprint(r.Run.Attempt),
-				Data: func() (map[string]any, error) {
-					if !a.anyone && !r.Trusted || len(a.conclusions) > 0 && !slices.Contains(a.conclusions, r.Conclusion) {
-						return nil, nil
-					}
-					deploys, err := gh.RunDeploys(ctx, repo, r)
-					if err != nil {
-						return nil, err
-					}
-					return r.data(deploys), nil
-				}})
-		}
-		return list, truncated, nil
-	}
-	if name == "checks.failed" {
+	case "deploy.waiting":
+		return waitingDeployCandidates(ctx, gh, a)
+	case "run.completed":
+		return completedRunCandidates(ctx, gh, a, since)
+	case "checks.failed":
 		return checkRunCandidates(ctx, gh, name, a, yours, since, gh.FailedRuns, true, RunData.json)
-	}
-	if name == "checks.passed" {
+	case "checks.passed":
 		return checkRunCandidates(ctx, gh, name, a, yours, since, gh.PassedRuns, false, RunData.passedJSON)
 	}
+	return closedPRCandidates(ctx, gh, name, a, yours, since)
+}
+
+// issueCandidates is issue.*'s candidates: the issues' activity of that kind.
+func issueCandidates(ctx context.Context, gh GitHub, name string, kind IssueKind, a args, since string) ([]candidate, bool, error) {
+	repo := a.repo
+	items, truncated, err := gh.IssueActivity(ctx, repo, kind, since)
+	if err != nil {
+		return nil, false, err
+	}
+	var list []candidate
+	for _, it := range items {
+		if !a.wantsIssueActivity(it) {
+			continue
+		}
+		at := mcpevents.Normalized(it.At)
+		if at == "" {
+			continue
+		}
+		list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at,
+			Data:    func() (map[string]any, error) { return it.data(), nil },
+			Subject: issueRef(repo, it.Issue.Number), Key: it.ID})
+	}
+	return list, truncated, nil
+}
+
+// wantsIssueActivity says whether an issue's activity passes the issue, trust and label filters.
+func (a args) wantsIssueActivity(it IssueActivity) bool {
+	if !a.wantsIssue(it.Issue.Number) {
+		return false
+	}
+	if !a.anyone && !it.Trusted {
+		return false
+	}
+	if a.label == "" {
+		return true
+	}
+	if it.Kind == IssueLabelled {
+		return it.Label == a.label
+	}
+	return contains(it.Issue.Labels, a.label)
+}
+
+// prLabelCandidates is pr.labelled's and pr.unlabelled's candidates.
+func prLabelCandidates(ctx context.Context, gh GitHub, name string, a args, yours *Yours, since string) ([]candidate, bool, error) {
+	repo := a.repo
+	kind := PRLabelled
+	if name == "pr.unlabelled" {
+		kind = PRUnlabelled
+	}
+	items, truncated, err := gh.PRLabelActivity(ctx, repo, kind, since)
+	if err != nil {
+		return nil, false, err
+	}
+	var list []candidate
+	for _, it := range items {
+		if !a.wantsPR(it.PR.Number) || !a.closesOne(it.PR) || !a.byMe(it.PR, yours) {
+			continue
+		}
+		if !a.anyone && !it.Trusted {
+			continue
+		}
+		if a.label != "" && it.Label != a.label {
+			continue
+		}
+		at := mcpevents.Normalized(it.At)
+		if at == "" {
+			continue
+		}
+		list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at,
+			Data:    func() (map[string]any, error) { return it.data(), nil },
+			Subject: prRef(repo, it.PR.Number), Key: it.ID})
+	}
+	return list, truncated, nil
+}
+
+// reviewCommentCandidates is review.comment's candidates: CodeRabbit's comments.
+func reviewCommentCandidates(ctx context.Context, gh GitHub, a args, yours *Yours, since string) ([]candidate, bool, error) {
+	repo := a.repo
+	comments, truncated, err := gh.CodeRabbitComments(ctx, repo, since)
+	if err != nil {
+		return nil, false, err
+	}
+	var list []candidate
+	for _, c := range comments {
+		at := mcpevents.Normalized(c.At)
+		if at == "" || !a.wantsPR(c.PR.Number) || (a.branch != "" && c.PR.Branch != a.branch) ||
+			!(a.mine || a.anyone || c.Trusted) || !a.closesOne(c.PR) || !a.byMe(c.PR, yours) {
+			continue
+		}
+		list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d", repo, c.ID), Time: at,
+			Data:    func() (map[string]any, error) { return c.data(), nil },
+			Subject: prRef(repo, c.PR.Number), Key: fmt.Sprint(c.ID)})
+	}
+	return list, truncated, nil
+}
+
+// prCommentCandidates is pr.commented's candidates. Every comment is a candidate, so the
+// cursor moves past the ones left out (P20261031-1).
+func prCommentCandidates(ctx context.Context, gh GitHub, a args, yours *Yours, since string) ([]candidate, bool, error) {
+	repo := a.repo
+	comments, truncated, err := gh.PRComments(ctx, repo, since, a.onePR())
+	if err != nil {
+		return nil, false, err
+	}
+	var list []candidate
+	for _, c := range comments {
+		at := mcpevents.Normalized(c.At)
+		if at == "" {
+			continue
+		}
+		list = append(list, candidate{EventID: fmt.Sprintf("pr.commented:%s:%d", repo, c.ID), Time: at,
+			Subject: prRef(repo, c.PR.Number), Key: fmt.Sprint(c.ID),
+			Data: func() (map[string]any, error) {
+				if c.Other || !a.wantsPR(c.PR.Number) || !(a.anyone || c.Trusted) || !a.closesOne(c.PR) || !a.byMe(c.PR, yours) {
+					return nil, nil
+				}
+				return c.data(), nil
+			}})
+	}
+	return list, truncated, nil
+}
+
+// prReviewCandidates is pr.reviewed's candidates.
+func prReviewCandidates(ctx context.Context, gh GitHub, a args, yours *Yours, since string) ([]candidate, bool, error) {
+	repo := a.repo
+	reviews, err := gh.PRReviews(ctx, repo, since, a.onePR())
+	if err != nil {
+		return nil, false, err
+	}
+	var list []candidate
+	for _, r := range reviews {
+		at := mcpevents.Normalized(r.At)
+		if at == "" || !a.wantsPR(r.PR.Number) || (a.branch != "" && r.PR.Branch != a.branch) ||
+			!(a.anyone || r.Trusted) || !a.closesOne(r.PR) || !a.byMe(r.PR, yours) {
+			continue
+		}
+		list = append(list, candidate{EventID: fmt.Sprintf("pr.reviewed:%s:%d", repo, r.ID), Time: at,
+			Data:    func() (map[string]any, error) { return r.data(), nil },
+			Subject: prRef(repo, r.PR.Number), Key: fmt.Sprint(r.ID)})
+	}
+	return list, false, nil
+}
+
+// waitingDeployCandidates is deploy.waiting's candidates: the runs that wait now.
+func waitingDeployCandidates(ctx context.Context, gh GitHub, a args) ([]candidate, bool, error) {
+	repo := a.repo
+	waiting, err := gh.WaitingDeploys(ctx, repo, a.workflow, a.branch)
+	if err != nil {
+		return nil, false, err
+	}
+	var list []candidate
+	for _, w := range waiting {
+		at := mcpevents.Normalized(w.Run.Run.UpdatedAt)
+		if at == "" || (!a.anyone && !w.Run.Trusted) {
+			continue
+		}
+		subject, key := runRef(repo, w.Run.Run.ID), strings.TrimPrefix(w.key(), fmt.Sprint(w.Run.Run.ID)+":")
+		if w.Approval != nil {
+			subject, key = deployRef(repo, w.Approval.Deployment.ID), "approval"
+		}
+		list = append(list, candidate{EventID: "deploy.waiting:" + repo + ":" + w.key(), Time: at,
+			Data:    func() (map[string]any, error) { return waitingData(ctx, gh, repo, w) },
+			Subject: subject, Key: key})
+	}
+	return list, false, nil
+}
+
+// completedRunCandidates is run.completed's candidates.
+func completedRunCandidates(ctx context.Context, gh GitHub, a args, since string) ([]candidate, bool, error) {
+	repo := a.repo
+	runs, truncated, err := gh.CompletedRuns(ctx, repo, a.workflow, a.branch, a.run, since)
+	if err != nil {
+		return nil, false, err
+	}
+	var list []candidate
+	for _, r := range runs {
+		at := mcpevents.Normalized(r.Run.UpdatedAt)
+		if at == "" {
+			continue
+		}
+		list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%d", repo, r.Run.ID, r.Run.Attempt), Time: at,
+			Subject: runRef(repo, r.Run.ID), Key: fmt.Sprint(r.Run.Attempt),
+			Data: func() (map[string]any, error) {
+				if !a.anyone && !r.Trusted || len(a.conclusions) > 0 && !slices.Contains(a.conclusions, r.Conclusion) {
+					return nil, nil
+				}
+				deploys, err := gh.RunDeploys(ctx, repo, r)
+				if err != nil {
+					return nil, err
+				}
+				return r.data(deploys), nil
+			}})
+	}
+	return list, truncated, nil
+}
+
+// closedPRCandidates is pr.merged's and pr.closed's candidates.
+func closedPRCandidates(ctx context.Context, gh GitHub, name string, a args, yours *Yours, since string) ([]candidate, bool, error) {
+	repo := a.repo
 	merged, closed, truncated, err := gh.ClosedPRs(ctx, repo, since)
 	if err != nil {
 		return nil, false, err
@@ -706,14 +804,9 @@ func checkRunCandidates(ctx context.Context, gh GitHub, name string, a args, you
 	toJSON func(RunData) map[string]any,
 ) ([]candidate, bool, error) {
 	repo := a.repo
-	branch := a.branch
-	if branch == "" && a.onePR() != 0 {
-		var err error
-		var missing *GitHubError
-		// A PR GitHub does not know lists the whole repo, as before; its runs never match.
-		if branch, err = gh.PRBranch(ctx, repo, a.onePR()); err != nil && !(errors.As(err, &missing) && missing.Kind == NotFound) {
-			return nil, false, err
-		}
+	branch, err := checkRunsBranch(ctx, gh, a)
+	if err != nil {
+		return nil, false, err
 	}
 	runs, truncated, err := listRuns(ctx, repo, branch, since)
 	if err != nil {
@@ -730,18 +823,14 @@ func checkRunCandidates(ctx context.Context, gh GitHub, name string, a args, you
 		list = append(list, candidate{EventID: fmt.Sprintf("%s:%s:%d:%d", name, repo, ref.ID, ref.Attempt), Time: at,
 			Envelope: func() (wire.Ref, string) { return subject, key },
 			Data: func() (map[string]any, error) {
-				if (ref.PRNumber != 0 && !a.wantsPR(ref.PRNumber)) || (yours != nil && ref.PRNumber != 0 && !yours.owns(ref.PRNumber)) {
+				if !a.wantsRunRef(ref, yours) {
 					return nil, nil
 				}
 				details, err := gh.RunDetails(ctx, repo, ref, jobs)
 				if err != nil || details == nil {
 					return nil, err
 				}
-				if !a.wantsPR(details.PR.Number) || !a.closesOne(details.PR) {
-					return nil, nil
-				}
-				// mine: the owner's own PR, trusted or not; else the trust filter (#728).
-				if yours != nil && !yours.ownsPR(details.PR) || yours == nil && !a.anyone && !details.Trusted {
+				if !a.wantsRunDetails(*details, yours) {
 					return nil, nil
 				}
 				if details.PR.Number != 0 && details.HeadSHA != "" {
@@ -751,6 +840,41 @@ func checkRunCandidates(ctx context.Context, gh GitHub, name string, a args, you
 			}})
 	}
 	return list, truncated, nil
+}
+
+// checkRunsBranch is the branch whose runs checks.* lists: the args' branch, else the one PR's
+// branch. A PR GitHub does not know lists the whole repo, as before; its runs never match.
+func checkRunsBranch(ctx context.Context, gh GitHub, a args) (string, error) {
+	if a.branch != "" || a.onePR() == 0 {
+		return a.branch, nil
+	}
+	branch, err := gh.PRBranch(ctx, a.repo, a.onePR())
+	var missing *GitHubError
+	if err != nil && !(errors.As(err, &missing) && missing.Kind == NotFound) {
+		return "", err
+	}
+	return branch, nil
+}
+
+// wantsRunRef says whether a run may be wanted before its details are fetched: one that names
+// another PR is not.
+func (a args) wantsRunRef(ref RunRef, yours *Yours) bool {
+	if ref.PRNumber == 0 {
+		return true
+	}
+	return a.wantsPR(ref.PRNumber) && (yours == nil || yours.owns(ref.PRNumber))
+}
+
+// wantsRunDetails says whether a run's details pass the PR filters. mine: the owner's own PR,
+// trusted or not; else the trust filter (#728).
+func (a args) wantsRunDetails(details RunData, yours *Yours) bool {
+	if !a.wantsPR(details.PR.Number) || !a.closesOne(details.PR) {
+		return false
+	}
+	if yours != nil {
+		return yours.ownsPR(details.PR)
+	}
+	return a.anyone || details.Trusted
 }
 
 // The refs of what GitHub's events happen to (#4728, spec 4724-event-bus, "A ref").
