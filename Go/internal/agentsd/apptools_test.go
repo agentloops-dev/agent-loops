@@ -156,6 +156,47 @@ func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
 	}
 }
 
+// An agent's add of a label the person already gave is skipped, with no error: the other
+// labels in the same call are added, and the person stays the owner (#6177).
+func TestAnAgentsAddOfAPersonsLabelIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) {
+		a.Labels = []wire.SessionLabel{
+			{Value: "#5", Owner: wire.SessionLabelOwnerPerson, AddedAt: now()},
+			{Value: "lead", Owner: wire.SessionLabelOwnerPerson, AddedAt: now()},
+		}
+	})
+	m := appClient(t, d, a.ID)
+	if code, _ := m.post("initialize", map[string]any{"protocolVersion": "2025-03-26"}, 1); code != 200 {
+		t.Fatal(code)
+	}
+	_, r := m.post("tools/call", map[string]any{"name": "mcp__agents__set_session_labels",
+		"arguments": map[string]any{"add": []string{"#5", "lead", "P#9"}}}, 2)
+	var res struct {
+		Content []struct{ Text string } `json:"content"`
+		IsError bool                    `json:"isError"`
+	}
+	if err := json.Unmarshal(r["result"], &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError || len(res.Content) != 1 || res.Content[0].Text != "This session's labels: #5, lead, P#9." {
+		t.Fatalf("%s", r["result"])
+	}
+	got := d.Store.Agent(a.ID).Labels
+	want := []wire.SessionLabelOwner{wire.SessionLabelOwnerPerson, wire.SessionLabelOwnerPerson, wire.SessionLabelOwnerAgent}
+	if len(got) != 3 || got[2].Value != "P#9" {
+		t.Fatalf("%+v", got)
+	}
+	for i, l := range got {
+		if l.Owner != want[i] {
+			t.Fatalf("%d: %+v", i, got)
+		}
+	}
+}
+
 // offeredTools leaves drive_screen out unless desktop control is both available on this host
 // and turned on (#3004, FR-004): an agent never sees a tool it cannot use.
 func TestDriveScreenIsOfferedOnlyWhileDesktopControlIsOn(t *testing.T) {
