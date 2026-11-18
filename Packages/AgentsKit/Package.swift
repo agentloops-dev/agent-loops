@@ -74,6 +74,7 @@ let package = Package(
         //   MarkdownBlockTests, MarkdownStreamTests  specs/
         //   OneGroupingTests       App/Sources, Remote/Sources
         //   PassageTests           README.md
+        //   ToolbarLayoutLoopTests App/Sources, Shared/UI
         //   ToolsetTests           App/Resources/toolsets
         //   WebDistManifestTests   Web/ (its build's inputs and Web/dist)
         //   WireSchemaTests        Packages/Wire (schema, daemon, docs)

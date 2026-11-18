@@ -11,6 +11,7 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Brief, not AGENTS.md, for app tools](brief-not-agents-md-for-app-tools.md) — AGENTS.md/skills are this repo only; a new app tool gets a gated brief line
 - [Channels are MCP servers](channels-are-mcp-servers.md) — Alex 2026-10-16: no built-in Slack/Discord adapters; #1223 removed Slack + Need…
 - [Animated top inset loops AppKit layout](animated-top-inset-loops-appkit-layout.md) — #5189: no animated height in the Mac chat's top inset; repro at 1058x662, presses 0.3–0.6 s apart while working
+- [Toolbar reading layout loops AppKit](toolbar-reading-layout-loops-appkit.md) — #5947: no measured width in a toolbar, focused values class or Equatable; read the crash note's exception backtrace
 - [chat-transcript-scroll-geometry-lies](chat-transcript-scroll-geometry-lies.md) — ChatTranscript's LazyVStack re-measures every frame, so geometry can't tell a reader's scroll from the stack; 
 - [Check every check before arming](check-go-darwin-before-arming.md) — auto-merge ignores non-required checks; #3503 broke main (#3517); go-darwin is in the required `test` since #5645
 - [Go tests on the Mac host](go-tests-on-the-mac-host.md) — #4709: go.sh clean env, go/tmp TMPDIR, go.mod toolchain, tests skip F_FULLFSYNC

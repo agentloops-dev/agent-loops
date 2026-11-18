@@ -303,7 +303,7 @@ struct ContentView: View {
         }
         if showsChat {
             ToolbarItem {
-                SidebarToggle(windowWidth: frame.windowWidth)
+                SidebarToggle()
             }
         }
     }
