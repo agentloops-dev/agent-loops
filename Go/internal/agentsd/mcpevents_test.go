@@ -1144,3 +1144,85 @@ func TestAPollAsksOnceASender(t *testing.T) {
 		t.Fatalf("asked %v", asked)
 	}
 }
+
+// #6032: one where for the app's events and a server's: each event takes the keys it
+// offers and the others leave them out, as a lane waits for the build lease and its PR at
+// once. Only a key that no event in the list takes is refused.
+func TestOneWhereForTheAppsEventsAndAServersEvents(t *testing.T) {
+	setFor(t, &eventHoldLimit, 300*time.Millisecond)
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	ci := newEventsServer(t)
+	ci.more = []any{map[string]any{"name": "run.completed", "delivery": []string{"poll"},
+		"inputSchema": map[string]any{"type": "object", "additionalProperties": false,
+			"properties": map[string]any{"branch": map[string]any{"type": "string"}, "workflow": map[string]any{"type": "string"}}}}}
+	a := seeded(t, d, t.TempDir(), nil)
+	m := appClient(t, d, a.ID)
+	m.post("initialize", map[string]any{}, 1)
+	serverHome(t, d, ci.URL)
+	quickPolls(d)
+	d.StartMCPEvents()
+	filtersOf := func(name string) map[string]string {
+		t.Helper()
+		w := d.Store.Agent(a.ID).EventWait
+		if w == nil {
+			t.Fatal("not waiting")
+		}
+		for _, p := range w.Patterns {
+			if p.Name == name {
+				return p.Filters
+			}
+		}
+		t.Fatalf("no %s in %+v", name, w.Patterns)
+		return nil
+	}
+
+	// lease.granted with pr.merged, filtered by pr: pr goes to pr.merged, resource to
+	// lease.granted.
+	text, isErr := m.tool(10, "wait_for_event", map[string]any{"events": []string{"lease.granted", "pr.merged"},
+		"where": map[string]any{"pr": 5317, "resource": "build"}, "until_minutes": 5})
+	if isErr || !strings.HasPrefix(text, "Subscribed to pr.merged on ci (pr 5317)") {
+		t.Fatal(text)
+	}
+	if f := filtersOf("lease.granted"); len(f) != 1 || f["resource"] != "build" {
+		t.Fatal(f)
+	}
+
+	// run.completed with lease.granted, filtered by branch and workflow: lease.granted
+	// leaves both to run.completed.
+	text, isErr = m.tool(11, "wait_for_event", map[string]any{"events": []string{"run.completed", "lease.granted"},
+		"where": map[string]any{"branch": "agents/x", "workflow": "CI"}, "until_minutes": 5})
+	if isErr || !strings.HasPrefix(text, "Subscribed to run.completed on ci") || !strings.Contains(text, "agents/x") {
+		t.Fatal(text)
+	}
+	if f := filtersOf("lease.granted"); len(f) != 0 {
+		t.Fatal(f)
+	}
+
+	// Two of the app's events: branch.moved takes branch, lease.granted resource.
+	text, isErr = m.tool(12, "wait_for_event", map[string]any{"events": []string{"lease.granted", "branch.moved"},
+		"where": map[string]any{"branch": "agents/x", "resource": "build"}, "until_minutes": 5})
+	if isErr {
+		t.Fatal(text)
+	}
+	if f := filtersOf("lease.granted"); len(f) != 1 || f["resource"] != "build" {
+		t.Fatal(f)
+	}
+	if f := filtersOf("branch.moved"); len(f) != 1 || f["branch"] != "agents/x" {
+		t.Fatal(f)
+	}
+
+	// A key that no event in the list takes is still refused, with what each takes.
+	for i, events := range [][]string{{"lease.granted", "pr.merged"}, {"lease.granted", "branch.moved"}} {
+		text, isErr = m.tool(20+i, "wait_for_event", map[string]any{"events": events,
+			"where": map[string]any{"resource": "build", "nope": 1}, "until_minutes": 5})
+		if !isErr || !strings.Contains(text, `"nope" is not one of its arguments`) {
+			t.Fatal(events, text)
+		}
+	}
+	// One event alone still refuses a key it does not take.
+	if text, isErr = m.tool(30, "wait_for_event", map[string]any{"events": "lease.granted",
+		"where": map[string]any{"pr": 5317}, "until_minutes": 5}); !isErr || !strings.Contains(text, `"pr" is not one of its arguments`) {
+		t.Fatal(text)
+	}
+}

@@ -302,8 +302,9 @@ type mcpWaitCheck struct {
 
 // checkMCPWait checks a wait's servers' events as a trigger's are checked. Refused, with
 // the sentence, when no server offers a name or its arguments fit none; a server that
-// could not be asked is a warning.
-func (d *Daemon) checkMCPWait(names []string, filters map[string][]string, folder string) (mcpWaitCheck, error) {
+// could not be asked is a warning. appTaken is the where keys that the wait's app events
+// take (#6032): a server's event leaves them out when it does not take them.
+func (d *Daemon) checkMCPWait(names []string, filters map[string][]string, folder string, appTaken map[string]bool) (mcpWaitCheck, error) {
 	var check mcpWaitCheck
 	if len(names) == 0 {
 		return check, nil
@@ -346,8 +347,12 @@ func (d *Daemon) checkMCPWait(names []string, filters map[string][]string, folde
 	}
 	// One where for several events (#3797): each event takes only the keys it offers, so a
 	// lead names its children's issues for issue.closed and their fixes for pr.merged in one
-	// wait. A key none of them offers still goes to each, which says what it takes.
+	// wait. A key none of them offers still goes to each, which says what it takes. The keys
+	// the wait's app events take count too (#6032), as lease.granted's resource with pr.merged.
 	takenBySome := map[string]bool{}
+	for k := range appTaken {
+		takenBySome[k] = true
+	}
 	for _, name := range names {
 		probe := mcpTrigger{event: name, servers: servedBy}
 		for _, server := range servers {
@@ -373,7 +378,7 @@ func (d *Daemon) checkMCPWait(names []string, filters map[string][]string, folde
 					continue
 				}
 				own := given
-				if len(names) > 1 {
+				if len(names) > 1 || len(appTaken) > 0 {
 					own = map[string][]string{}
 					offers := propertiesOf(def.InputSchema)
 					for k, v := range given {
