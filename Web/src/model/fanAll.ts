@@ -73,7 +73,7 @@ function decodeCursor(cursor: string | undefined): Record<string, FanPlace> {
 }
 
 /** The control plane's fanOut: each host's page from its place, merged newest first, `limit` of them, and the cursor. */
-async function fanOut<T>(here: FanHere, hosts: FanHost[], cursor: string | undefined, limit: number,
+async function fanOut<T>(hosts: FanHost[], cursor: string | undefined, limit: number,
   ask: (host: FanHost, page: string | undefined) => Promise<{ items: T[]; next?: string } | null>, newer: (a: T, b: T) => boolean) {
   const places = decodeCursor(cursor);
   const pages = await Promise.all(hosts.map((h) => places[h.id]?.d || !h.online ? Promise.resolve(null) : ask(h, places[h.id]?.p)));
@@ -98,7 +98,7 @@ async function fanOut<T>(here: FanHere, hosts: FanHost[], cursor: string | undef
     if (place.d) { places[h.id] = { d: true }; return; }
     const page = pages[i];
     if (!page) place = { d: true };
-    else if (next[i]! < page.items.length) place = { ...place, n: next[i] };
+    else if (next[i]! < page.items.length) place = { ...place, n: next[i]! };
     else if (page.next) place = { p: page.next };
     else place = { d: true };
     places[h.id] = place;
@@ -163,7 +163,7 @@ export async function answerHere(method: string, params: unknown, here: FanHere)
       const limit = limitOf(request.limit, 200, 500);
       const { hosts, notAsked } = fanHosts(here, Capability.docs1);
       const sources = new Map<string, DocsList["sources"]>();
-      const got = await fanOut<Doc>(here, hosts, request.cursor, limit, async (h, page) => {
+      const got = await fanOut<Doc>(hosts, request.cursor, limit, async (h, page) => {
         // Each machine is asked for as many as the page has, as the newest may all be its.
         const list = await askOne<DocsList>(here, h.id, "docs/list", { limit, ...request.source !== undefined && { source: request.source }, ...page && { cursor: page } });
         if (!list) return null;
@@ -181,7 +181,7 @@ export async function answerHere(method: string, params: unknown, here: FanHere)
       const limit = limitOf(request.limit, 20, 100);
       const { hosts, notAsked } = fanHosts(here, Capability.messages1);
       const errors = new Map<string, MessagesConversations["errors"]>();
-      const got = await fanOut<MessagesConversation>(here, hosts, request.cursor, limit, async (h, page) => {
+      const got = await fanOut<MessagesConversation>(hosts, request.cursor, limit, async (h, page) => {
         const list = await askOne<MessagesConversations>(here, h.id, "messages/conversations",
           { limit, ...request.unread !== undefined && { unread: request.unread }, ...page && { cursor: page } });
         if (!list) return null;

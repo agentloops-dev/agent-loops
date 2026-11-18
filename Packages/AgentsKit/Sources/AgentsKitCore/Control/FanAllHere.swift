@@ -45,7 +45,7 @@ public enum FanAllHere {
 
     /// The answer to one of `methods`, made here, as JSON; nil for another method. `hosts` is this device's
     /// machines that have a capability.
-    public static func answer(_ method: String, _ params: JSONValue, hosts: ([String]) -> [Host],
+    public static func answer(_ method: String, _ params: JSONValue, hosts: @Sendable ([String]) -> [Host],
                               ask: @escaping Ask) async throws -> JSONValue? {
         let p = params.objectValue ?? [:]
         func each(_ capability: String, _ method: String, _ key: String,
