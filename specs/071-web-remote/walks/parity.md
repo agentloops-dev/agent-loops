@@ -38,6 +38,7 @@ Alex chose tiers on 2026-10-27 (#2796). Each row has a **Tier** cell after its F
 - day-to-day coding from the Remote (Alex, 2026-11-07, #4030): the person's Secrets and For One Session, Accounts, the Machines group (its rows, New, Start, Stop, Delete, what a machine needs, and a machine's page), a machine's runtimes' **Sign In…** and **Update**, **Add Folder…** and **Clone Git URL…**, and **Move to Machine…**.
 - Work ▸ Features: its groups, its features and their epics and issues, with no Board menu (Alex, 2026-11-09).
 - the Velocity page, the PRs that landed over time, under Reports after Achievements on the Remote (named Multiplier until #5736) (Alex, 2026-11-11, #4758).
+- Work ▸ Timeline, after Releases in the Work group; on a phone in portrait it is the list of epics (Alex, 2026-11-17, #6044: "Timeline is Work, and then goes on the Remotes").
 
 **Mac + web** is: the Console's pages that the Mac draws in Settings (People and Groups, Audit and Policy); every control plane management page (Sign-ins, People, Groups, Bots and their caps, Channels, Sign-in Providers, Policy and its kill switch, Secrets, Backups, Git access, Add a Browser); Add a Machine, machine providers, Start a Machine from a Repository and Versions; Connectors and connector set-up (Connect your tools, GitLab, Email); the first build's question page and plan page (#5048) and New App… (#5132); Agent Configuration (Skills, Personas and Workflows editors) and Auto's settings (#2923, #2924); the workflow page's Configuration pane, Edit File… and Delete…; folder management (a folder's Project, Archive, Archived folders, Export/Import and the Drop Box); the usage pages (Cost, Tokens, Time, Milestones and their charts; Velocity is Core, #4758); and Folder Settings (Alex, 2026-10-29, #2798). Add Folder, Clone Git URL, the person's Secrets and Accounts, the Machines group and Move to Machine moved to Core (Alex, 2026-11-07, #4030).
 
@@ -64,7 +65,7 @@ The surfaces: **Desk** is the Mac window (and the Windows and Linux shells, #445
 |---|---|---|---|---|---|
 | Engineer, agent work | Engineer (agent work) | yes | yes | yes | Core |
 | Engineer, set-up (folders, connectors, Agent Configuration, Folder Settings, own usage, Docs, Messages) | Engineer (set-up) | yes | yes | no | Mac + web |
-| Lead | Lead | yes | a link to the web page; Work ▸ Features and Velocity stay native | no (Features and Velocity stay) | Web + Mac link (Features, Velocity: Core) |
+| Lead | Lead | yes | a link to the web page; Work ▸ Features, Velocity and Timeline stay native | no (Features, Velocity and Timeline stay) | Web + Mac link (Features, Velocity, Timeline: Core) |
 | Admin | Admin | yes | no; a link only where an engineer looks for it (Edit in Console) | no | Web only, or Web + Mac link |
 | Report reader | Report reader | yes | a link to the web page (Reports, #4938) | no | Web + Mac link |
 

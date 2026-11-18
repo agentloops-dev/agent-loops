@@ -15,6 +15,9 @@ extension RemoteModel {
     /// Work's part of this device's copy (#4930).
     var workCopy: LocalCopy? { localCopy?.copy }
 
+    /// Every machine's live folders this phone knows (#6152): Work's lists read again when one is added or goes.
+    var workFolders: [FolderKey] { folders.map(\.key) }
+
     var forgeMachines: [(id: MachineRef, name: String)] {
         workMachines { $0.has(Capability.forge1) && $0.state != "offline" }
     }
@@ -26,6 +29,29 @@ extension RemoteModel {
     /// The machines that give Work ▸ Features in one read (#4586).
     var featuresMachines: [(id: MachineRef, name: String)] {
         workMachines { $0.has(Capability.forge1) && $0.has(Capability.workFeatures1) && $0.state != "offline" }
+    }
+
+    /// The machines that draw Work ▸ Timeline (#4173; on the Remote since #6044), the home host first.
+    var timelineMachines: [(id: MachineRef, name: String)] {
+        workMachines { $0.has(Capability.forge1) && $0.has(Capability.workTimeline1) && $0.state != "offline" }
+    }
+
+    /// The Timeline's projects (#6044): New Session's, each folder by the machine it is on, as the
+    /// machines above name them. Work's lists have no Project filter here (Mac + web).
+    var timelineProjects: [WorkList.Project] {
+        newSessionProjects.map { choice in
+            WorkList.Project(id: choice.id, name: choice.name, folders: Set(choice.folders.map {
+                WorkList.folderKey(host: $0.host, path: $0.folder.path(percentEncoded: false))
+            }))
+        }
+    }
+
+    /// Every machine's sessions on these nodes, from the control plane's merged copy (#4276): Work ▸
+    /// Timeline's starts; nil with no control plane, or one that does not say.
+    func lineageSessionsOn(_ nodes: [DaemonAPI.LineageNode]) async -> DaemonAPI.LineageSessionsOn? {
+        guard let controlPlane, !nodes.isEmpty else { return nil }
+        return try? await controlPlane.call(DaemonAPI.Method.lineageSessionsOn, DaemonAPI.LineageSessionsOnRequest(nodes: nodes),
+                                            returning: DaemonAPI.LineageSessionsOn.self)
     }
 
     /// None: boards are the Mac's and the web page's (#3282, tier Mac + web).

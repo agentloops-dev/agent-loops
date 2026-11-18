@@ -60,10 +60,6 @@ public enum MachinesGroup {
 
     /// The row's words: "All Machines (124)".
     public static func allTitle(_ total: Int) -> String { "All Machines (\(total))" }
-    /// The sidebar foot's line past seven offline machines, while the group is folded.
-    public static func moreOffline(_ count: Int) -> String {
-        count == 1 ? "1 more machine is offline" : "\(count) more machines are offline"
-    }
     /// The words of the row that folds the group again, while it draws every machine.
     public static let fewerTitle = "Fewer Machines"
 }

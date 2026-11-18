@@ -60,6 +60,9 @@ extension AppModel {
             .sorted { ($0.id == mine ? 0 : 1, $0.name) < ($1.id == mine ? 0 : 1, $1.name) }
     }
 
+    /// Every machine's live folders (#6152): Work's lists read again when one is added or goes.
+    var workFolders: [FolderKey] { liveFolders.map(\.key) }
+
     /// Work's projects (#3283): New Session's, each folder named by the machine Work's lists
     /// read it on, this Mac by its control plane id.
     var workProjects: [WorkList.Project] {
@@ -171,6 +174,8 @@ extension AppModel {
     /// sidebar row.
     func messagesAll(_ request: DaemonAPI.MessagesConversationsAllRequest) async throws -> DaemonAPI.MessagesConversationsAll {
         guard let controlRequests else { throw ControlPlaneMissing() }
+        let method = DaemonAPI.Method.messagesConversationsAll
+        if let here = try await answerAllHere(method, request, returning: DaemonAPI.MessagesConversationsAll.self) { return here }
         return try await controlRequests.call(DaemonAPI.Method.messagesConversationsAll, request,
                                               returning: DaemonAPI.MessagesConversationsAll.self)
     }
@@ -178,14 +183,14 @@ extension AppModel {
     /// A page of a machine's issues or pull requests (#3129), as Work lists them.
     func forgeList(_ kind: WorkList.Kind, _ request: DaemonAPI.ForgeListRequest,
                    on host: MachineRef) async throws -> DaemonAPI.ForgeList {
-        try await client(for: host).call(kind == .pr ? DaemonAPI.Method.forgePulls : DaemonAPI.Method.forgeIssues,
+        try await forgeClient(host).call(kind == .pr ? DaemonAPI.Method.forgePulls : DaemonAPI.Method.forgeIssues,
                                          request, returning: DaemonAPI.ForgeList.self)
     }
 
     /// One issue or pull request with its body and a page of its comments (#3129), for its Work page.
     func forgeItem(_ node: DaemonAPI.LineageNode, cursor: String?,
                    on host: MachineRef) async throws -> DaemonAPI.ForgeItemDetail {
-        try await client(for: host).call(node.kind == "pr" ? DaemonAPI.Method.forgePull : DaemonAPI.Method.forgeIssue,
+        try await forgeClient(host).call(node.kind == "pr" ? DaemonAPI.Method.forgePull : DaemonAPI.Method.forgeIssue,
                                          DaemonAPI.ForgeItemRequest(node: node, cursor: cursor),
                                          returning: DaemonAPI.ForgeItemDetail.self)
     }
@@ -199,20 +204,55 @@ extension AppModel {
     /// One of the Work pages' writes or reads (#3130), on the machine that read the item.
     func forge<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable, returning: R.Type,
                              on host: MachineRef) async throws -> R {
-        try await client(for: host).call(method, params, returning: R.self)
+        try await forgeClient(host).call(method, params, returning: R.self)
+    }
+
+    /// A machine's client for Work's forge calls (#6152), its link opened again first when it is closed. Work's first
+    /// read goes out as a machine joins, when the window's link to it can still be closed a moment, and a closed link
+    /// fails a call at once: that read then stood until Refresh.
+    private func forgeClient(_ host: MachineRef) async -> DaemonClient {
+        let link = client(for: host)
+        if await !link.isConnected { try? await link.connect(startIfNeeded: false, timeout: .seconds(4)) }
+        return link
     }
 
     /// One call to the control plane that asks every machine of the person's (#5592): Work's lists and boards, the
-    /// Messages row's events, the ended connections. Nil with no control plane, or one from before these methods, where
-    /// the window asks each machine itself.
+    /// Messages row's events, the ended connections. Nil, so the window asks each machine itself: with no control
+    /// plane, with one machine or none (#6141), or when the plane's call fails for any reason (#6141): its uplink is
+    /// down, it did not answer, or it is from before these methods. Each machine then says its own error, and a
+    /// failed plane never leaves Work on this device's old copy. In this Mac's lock the window makes the answer itself
+    /// (`answerAllHere`, #5996).
     func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
                                              returning: R.Type) async throws -> R? {
-        guard let controlRequests else { return nil }
+        guard let controlRequests, WorkList.asksControlPlane(machines: controlPlaneHosts?.count ?? 0) else { return nil }
+        if let here = try await answerAllHere(method, params, returning: R.self) { return here }
         do {
             return try await controlRequests.call(method, params, returning: R.self)
-        } catch let error as JSONRPCError where error.isMethodNotFound {
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
             return nil
         }
+    }
+
+    /// One of the control plane's calls for every machine, answered by the window itself while this Mac is in its lock
+    /// (#5996), else nil. A machine in a lock refuses the control plane's own unsigned asks, so the window asks each
+    /// machine over its checked channel (`LockedLink`), as `FanAllHere` says.
+    func answerAllHere<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
+                                                returning: R.Type) async throws -> R? {
+        guard FanAllHere.methods.contains(method), await lock.channelSigner() != nil else { return nil }
+        let machines = controlPlaneHosts ?? []
+        let clients = Dictionary(machines.map { ($0.id.rawValue, client(for: $0.id)) }, uniquingKeysWith: { a, _ in a })
+        let answer = try await FanAllHere.answer(method, JSONValue.encoding(params), hosts: { capabilities in
+            machines.filter { m in capabilities.allSatisfy(m.has) }.map(FanAllHere.Host.init)
+        }, ask: { method, params, host in
+            guard let client = clients[host] else { return nil }
+            // The window's link to a machine can be down a moment (just after the machine joined the lock): it is
+            // opened again here, within FanAllHere's patience, rather than counting the machine as not answering.
+            if await !client.isConnected { try? await client.connect(startIfNeeded: false, timeout: .seconds(4)) }
+            return try? await client.call(method, params, returning: JSONValue.self)
+        })
+        return try answer?.decode(R.self)
     }
 
     /// A session's title for Work's links (#3256).

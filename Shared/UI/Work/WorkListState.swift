@@ -26,6 +26,9 @@ final class WorkListState {
     var asked = 0
     /// The row whose page was opened last, which the list scrolls to when it is shown again.
     var opened: String?
+    /// What the rows are read from (#6152): the machines and their folders, as `WorkModel.workSource` says. A read
+    /// made before a machine joined or a folder was added is made again when it changes.
+    var source = ""
     /// The selected row on the Mac (lists.md section 2): ↑ and ↓ move it, Return opens it.
     var selected: String?
     /// The rows on screen came from this device's copy (#4930): the machines are asked again,
@@ -62,9 +65,13 @@ final class WorkListState {
         var sort: DaemonAPI.ReportNodesSort
         var asked: Int
         var board: String
+        var source: String
     }
 
-    var ask: Ask { Ask(state: filter.state.forge, sort: nodesSort, asked: asked, board: filter.board) }
+    var ask: Ask { Ask(state: filter.state.forge, sort: nodesSort, asked: asked, board: filter.board, source: source) }
+
+    /// A read for what is asked now is on its way: another would read the same again.
+    var readingAsk: Bool { reading && read == ask }
 
     /// What a list's first page is kept under in this device's copy (#4930): the kind, state, sort and board.
     var copyAsk: String { [kind.rawValue, filter.state.forge, nodesSort.rawValue, filter.board].joined(separator: "|") }
@@ -337,17 +344,22 @@ final class WorkListState {
 final class WorkLists {
     /// Work ▸ Features (#3269): the features read, and the ones opened.
     let features = WorkFeaturesState()
-    #if os(macOS)
-    /// Work ▸ Timeline (#4173): the Mac's alone for now (remote: by design).
+    /// Work ▸ Timeline (#4173): Core since #6044.
     let timeline = WorkTimelineState()
+    #if os(macOS)
     /// Work ▸ Deploys (#5270): Mac + web, so not on the Remote.
     let deploys = WorkDeploysState()
     #endif
     private var byKind: [WorkList.Kind: WorkListState] = [:]
+    /// What every list is read from (#6152), given to each: a change reads an open list again.
+    var source = "" {
+        didSet { if source != oldValue { for state in byKind.values { state.source = source } } }
+    }
 
     subscript(kind: WorkList.Kind) -> WorkListState {
         if let state = byKind[kind] { return state }
         let state = WorkListState(kind: kind)
+        state.source = source
         byKind[kind] = state
         return state
     }

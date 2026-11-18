@@ -784,6 +784,54 @@ public enum WorkTimeline {
         }
     }
 
+    /// A row of the list of epics (note 36 of `specs/4328-work-look/milestones.md`): the Timeline on a phone in
+    /// portrait (#6044), as on the web page under 700 px. `line2`: "closes about 5:00 PM · 3:00 PM–9:00 PM".
+    public struct EpicRow: Sendable, Hashable, Identifiable {
+        public var line: Line
+        public var line2: String
+        public var id: String { line.id }
+    }
+
+    /// The list of epics in the window, as the web page's `epicRows`: in priority order (High first, on hold
+    /// last), then in the order they close: the forecast first (the soonest first), then those that wait for
+    /// the person, then those still open, then those that joined (the latest first).
+    public static func epicRows(_ lines: [Line], window: DateInterval, now: Date, calendar: Calendar = .current) -> [EpicRow] {
+        func rank(_ line: Line) -> Int {
+            switch line.how {
+            case .forecast: 0
+            case .waits: 1
+            case .open: 2
+            case .joined, .dropped: 3
+            }
+        }
+        func line2(_ line: Line) -> String {
+            switch line.how {
+            case .forecast:
+                let about = "closes about \(time(line.end, now: now, calendar: calendar))"
+                guard let band = line.band else { return about }
+                return "\(about) · \(time(band.start, now: now, calendar: calendar))–\(time(band.end, now: now, calendar: calendar))"
+            case .waits(let n): return waitWords(n)
+            case .open: return "open"
+            case .joined: return "joined \(time(line.end, now: now, calendar: calendar))"
+            case .dropped: return "closed as not planned"
+            }
+        }
+        return overlapping(lines, window).sorted { a, b in
+            if a.priorityBand != b.priorityBand { return a.priorityBand < b.priorityBand }
+            if rank(a) != rank(b) { return rank(a) < rank(b) }
+            if a.end != b.end { return rank(a) == 3 ? a.end > b.end : a.end < b.end }
+            return a.title < b.title
+        }
+        .map { line in
+            EpicRow(line: line, line2: line.stopped(now: now) ? "\(line2(line)) · \(stoppedWords(line, now: now))" : line2(line))
+        }
+    }
+
+    /// "Now · 2:40 PM": the list of epics' first line.
+    public static func nowWords(_ now: Date, calendar: Calendar = .current) -> String {
+        "Now · \(time(now, now: now, calendar: calendar))"
+    }
+
     /// Several machines' timelines of one project as one: each epic and release once.
     public static func merge(_ timelines: [DaemonAPI.WorkTimeline]) -> DaemonAPI.WorkTimeline {
         var out = DaemonAPI.WorkTimeline()

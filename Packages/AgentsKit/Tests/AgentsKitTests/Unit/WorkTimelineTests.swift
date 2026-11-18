@@ -427,6 +427,38 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.epicCount(lines, in: WorkTimeline.Range.twoDays.window(now: Self.now)) == 1)
     }
 
+    /// #6044: the phone in portrait draws the list of epics, in the order the web page's `epicRows` gives.
+    @Test func theListOfEpicsIsInTheOrderTheyClose() throws {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            Self.epic(50, [Self.child(51, started: -10, closed: -6)], segments: [(-10, -6)]),
+            Self.epic(52, [Self.child(53, started: -3, closed: -2)], segments: [(-3, -2)]),
+            Self.epic(54, [Self.child(55, started: -4)], segments: [(-4, nil)]),
+            Self.epic(56, [Self.child(57, started: -1, forecast: 6)], segments: [(-1, nil)],
+                      forecast: .init(low: Self.h(5), mid: Self.h(6), high: Self.h(9))),
+            Self.epic(58, [Self.child(59, started: -1, forecast: 2)], segments: [(-1, nil)],
+                      forecast: .init(low: Self.h(2), mid: Self.h(2), high: Self.h(2))),
+            Self.epic(60, [Self.child(61, started: -2), Self.child(62, waits: true)], segments: [(-2, nil)],
+                      forecast: .init(low: Self.h(1), mid: Self.h(1), high: Self.h(1), waits: true)),
+            Self.with(Self.epic(63, [Self.child(64, started: -5, closed: -4)], segments: [(-5, -4)]), priority: "high"),
+        ])
+        let rows = WorkTimeline.epicRows(WorkTimeline.lines(timeline, now: Self.now), window: Self.axis.interval, now: Self.now,
+                                         calendar: utc)
+        // High first; then the forecasts, the soonest first; the wait; the open one; the joined, the latest first.
+        #expect(rows.map(\.line.number) == ["#63", "#58", "#56", "#60", "#54", "#52", "#50"])
+        try #require(rows.count == 7)
+        let six = Self.h(6).formatted(Date.FormatStyle(timeZone: utc.timeZone).hour().minute())
+        let nine = Self.h(9).formatted(Date.FormatStyle(timeZone: utc.timeZone).hour().minute())
+        let five = Self.h(5).formatted(Date.FormatStyle(timeZone: utc.timeZone).hour().minute())
+        // Now is 8:00 UTC, so 5:00 PM is the same day: the time alone. No session is in a turn: each open one stopped.
+        #expect(rows[2].line2 == "closes about \(six) · \(five)–\(nine) · stopped 1 h ago")
+        #expect(rows[3].line2 == "1 waits for you · stopped 2 h ago")
+        #expect(rows[4].line2 == "open · stopped 4 h ago")
+        #expect(rows[5].line2.hasPrefix("joined "))
+        #expect(WorkTimeline.nowWords(Self.now, calendar: utc).hasPrefix("Now · "))
+    }
+
     /// #5925: two reads, the first with no epic and the second with one; S11 never shows between them.
     @Test func theWindowIsLoadingNotEmptyUntilEveryReadEnded() {
         let window = WorkTimeline.Range.twoDays.window(now: Self.now)

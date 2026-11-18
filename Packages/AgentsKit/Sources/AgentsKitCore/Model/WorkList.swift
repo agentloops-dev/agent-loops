@@ -10,7 +10,7 @@ public enum WorkList {
         /// Features (#3269) are the `feature:` labels on the epics, not a lineage kind: an epic opens as an issue.
         /// Deploys (#5270) is every component in every environment (`WorkDeploys`), Mac + web; its
         /// raw value is lineage's deploy kind, but a deploy node opens no Work page.
-        /// Timeline (#4173) is the epics on a time axis, the Mac's alone for now (`WorkTimeline`).
+        /// Timeline (#4173) is the epics on a time axis (`WorkTimeline`), Core since #6044.
         case issue, pr, feature, release, deploy, timeline
 
         public var id: Self { self }
@@ -326,6 +326,11 @@ public enum WorkList {
 
     /// What a machine the control plane could not reach for a list says (#5592), as the web page's `notAnswered`.
     public static let didNotAnswer = "It did not answer."
+
+    /// Whether the window asks the control plane for every machine at once (#5592), or each machine itself (#6141).
+    /// With one machine, or none, the plane only adds two hops (window to plane, plane back to the machine) and a
+    /// way to fail: the machine is asked directly.
+    public static func asksControlPlane(machines: Int) -> Bool { machines > 1 }
 
     /// forge/listAll's answer (#5592) as each of `hosts`' list, in their order, as the web page's `hostListsOf`. A
     /// machine the control plane could not reach has an error for all its forges (forge ""); one it names that is not of

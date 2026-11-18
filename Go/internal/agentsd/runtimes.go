@@ -405,7 +405,7 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		env = withAccount(env, account)
 	}
 	env = append(env, d.startOpts().runtimeEnv...)
-	l := withToolPolicy(acp.Launch{Command: path, Args: args, Env: env, Dir: dir, Name: r.Name}, r.ID)
+	l := withToolPolicy(acp.Launch{Command: path, Args: args, Env: env, Dir: dir, Name: r.Name, Attach: d.startOpts().attach}, r.ID)
 	for _, f := range toolPolicyFiles[r.ID] {
 		file := filepath.Join(root, "runtimes", f.name)
 		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
