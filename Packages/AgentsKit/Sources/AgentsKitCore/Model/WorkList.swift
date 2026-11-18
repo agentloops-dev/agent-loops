@@ -327,6 +327,11 @@ public enum WorkList {
     /// What a machine the control plane could not reach for a list says (#5592), as the web page's `notAnswered`.
     public static let didNotAnswer = "It did not answer."
 
+    /// Whether the window asks the control plane for every machine at once (#5592), or each machine itself (#6141).
+    /// With one machine, or none, the plane only adds two hops (window to plane, plane back to the machine) and a
+    /// way to fail: the machine is asked directly.
+    public static func asksControlPlane(machines: Int) -> Bool { machines > 1 }
+
     /// forge/listAll's answer (#5592) as each of `hosts`' list, in their order, as the web page's `hostListsOf`. A
     /// machine the control plane could not reach has an error for all its forges (forge ""); one it names that is not of
     /// `hosts` is left out, as it was not asked before.
