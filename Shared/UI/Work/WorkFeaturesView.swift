@@ -312,13 +312,13 @@ final class WorkFeaturesState {
         await withTaskGroup(of: (MachineRef, Result<DaemonAPI.ForgeList, Error>).self) { group in
             for machine in machines {
                 group.addTask {
-                    do {
-                        return (machine.id, .success(try await model.forgeList(.issue, .init(state: "open", limit: 100, feature: name,
-                                                                                             board: board.isEmpty ? nil : board),
-                                                                               on: machine.id)))
-                    } catch {
-                        return (machine.id, .failure(error))
+                    // The result first, then the tuple from one place (#5946, `Result.catching`).
+                    let read = await Result.catching {
+                        try await model.forgeList(.issue, .init(state: "open", limit: 100, feature: name,
+                                                                board: board.isEmpty ? nil : board),
+                                                  on: machine.id)
                     }
+                    return (machine.id, read)
                 }
             }
             // Each machine's issues draw as it answers (#5449); an error shows once every machine answered, and only

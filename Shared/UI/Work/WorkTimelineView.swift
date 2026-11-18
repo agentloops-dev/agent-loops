@@ -156,22 +156,22 @@ final class WorkTimelineState {
         await withTaskGroup(of: (DaemonAPI.WorkTimeline?, [String]?, String?).self) { group in
             for machine in machines {
                 group.addTask {
-                    do {
-                        let t = try await model.forge(DaemonAPI.Method.workTimeline,
-                                                      DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start,
-                                                                                    to: span.end),
-                                                      returning: DaemonAPI.WorkTimeline.self, on: machine.id)
-                        // A board narrows to its epics: the forge says which they are.
-                        var refs: [String]?
-                        if !board.isEmpty {
-                            let list = try? await model.forgeList(.issue, .init(state: "all", label: "epic", limit: 100, board: board),
-                                                                  on: machine.id)
-                            refs = list?.items.map(\.node.ref) ?? []
-                        }
-                        return (t, refs, nil)
-                    } catch {
-                        return (nil, nil, machines.count > 1 ? "\(machine.name): \(error.localizedDescription)" : error.localizedDescription)
+                    // The result first, then the tuple from one place (#5946, `Result.catching`).
+                    let read = await Result.catching {
+                        try await model.forge(DaemonAPI.Method.workTimeline,
+                                              DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start, to: span.end),
+                                              returning: DaemonAPI.WorkTimeline.self, on: machine.id)
                     }
+                    let t = try? read.get()
+                    // A board narrows to its epics: the forge says which they are.
+                    var refs: [String]?
+                    if t != nil, !board.isEmpty {
+                        let list = try? await model.forgeList(.issue, .init(state: "all", label: "epic", limit: 100, board: board),
+                                                              on: machine.id)
+                        refs = list?.items.map(\.node.ref) ?? []
+                    }
+                    let problem = read.error.map { machines.count > 1 ? "\(machine.name): \($0.localizedDescription)" : $0.localizedDescription }
+                    return (t, refs, problem)
                 }
             }
             // The first machine to answer draws the plot (#5449), and each one after adds its epics: a slow or offline

@@ -52,14 +52,12 @@ final class MessagesListState {
         await withTaskGroup(of: (String, DaemonAPI.MessagesMarkedAllRead?, String?).self) { group in
             for machine in machines {
                 group.addTask {
-                    do {
-                        return (machine.name, try await model.messages(DaemonAPI.Method.messagesMarkAllRead,
-                                                                       DaemonAPI.MessagesMarkAllReadRequest(),
-                                                                       returning: DaemonAPI.MessagesMarkedAllRead.self,
-                                                                       on: machine.id), nil)
-                    } catch {
-                        return (machine.name, nil, error.localizedDescription)
+                    // The result first, then the tuple from one place (#5946, `Result.catching`).
+                    let got = await Result.catching {
+                        try await model.messages(DaemonAPI.Method.messagesMarkAllRead, DaemonAPI.MessagesMarkAllReadRequest(),
+                                                 returning: DaemonAPI.MessagesMarkedAllRead.self, on: machine.id)
                     }
+                    return (machine.name, try? got.get(), got.error?.localizedDescription)
                 }
             }
             for await (name, got, problem) in group { answers.append((name: name, marked: got, problem: problem)) }
@@ -89,11 +87,15 @@ final class MessagesListState {
                              into: [MessagesList.HostConversations] = [])
         async -> (lists: [MessagesList.HostConversations], cursor: String?) {
         guard !model.messagesMachines.isEmpty else { return (into, nil) }
-        do {
-            let got = try await model.messagesAll(DaemonAPI.MessagesConversationsAllRequest(unread: unread ? true : nil,
-                                                                                         limit: 50, cursor: cursor))
+        // The result first, then the tuple (#5946, `Result.catching`).
+        let read = await Result.catching {
+            try await model.messagesAll(DaemonAPI.MessagesConversationsAllRequest(unread: unread ? true : nil,
+                                                                              limit: 50, cursor: cursor))
+        }
+        switch read {
+        case let .success(got):
             return (MessagesList.hostConversations(got, into: into, thisMac: model.thisMacHostID), got.cursor)
-        } catch {
+        case let .failure(error):
             return (into + [.init(host: MachineRef(rawValue: ""), name: "Control plane", problem: error.localizedDescription)],
                     nil)
         }
