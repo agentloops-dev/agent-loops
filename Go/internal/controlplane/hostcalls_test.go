@@ -45,7 +45,7 @@ func hostLink(t *testing.T, r *Router) (*websocket.Conn, chan string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { ws.CloseNow() })
+	t.Cleanup(func() { _ = ws.CloseNow() })
 	lines := make(chan string, 1024)
 	go func() {
 		for {
