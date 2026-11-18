@@ -120,6 +120,14 @@ How step 4 is built (#3492):
   clone ask for them in its own name, and none starts an agent, runs a command or reads a
   file. A provider draft's agent on a Mac control plane (`drafts.go`) is a start, and is
   refused once the person has a lock; it waits on #3542.
+- Decided (#5996): the control plane's calls for every machine (`forge/listAll`,
+  `forge/boardsAll`, `events/listAll`, `connections/listAll`, `docs/listAll`,
+  `messages/conversationsAll`, `lineage/forecastAll`, `reports/featuresAll`; #5571, #5592)
+  stay out of what it may ask unsigned, because they read a machine's forge, events and
+  messages, which the control plane must not read with no device asking. A client in its
+  lock makes the same answer itself (`FanAllHere`, `Web/src/model/fanAll.ts`): it asks each
+  machine over its own checked channel, with the control plane's bounds and order. A client
+  with no lock still makes the one call.
 - Decided: the machine MACs what it says unasked (`agent/changed`, `agent/entry`, a question
   card) as it MACs its answers, on the same count (#3541). A fan-out frame (#167) carries a
   lock member for each channel that has one, `{"f":[1,2],"l":[null,{"n":…,"mac":…}],"m":…}`,

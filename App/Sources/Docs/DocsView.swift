@@ -38,9 +38,11 @@ final class DocsListState {
             do {
                 var cursor: String?
                 for _ in 0..<Self.mostPages {
-                    let got = try await control.call(DaemonAPI.Method.docsListAll,
-                                                     DaemonAPI.DocsListAllRequest(limit: 500, cursor: cursor),
-                                                     returning: DaemonAPI.DocsListAll.self)
+                    let request = DaemonAPI.DocsListAllRequest(limit: 500, cursor: cursor)
+                    // In this Mac's lock, the window asks each machine itself (#5996).
+                    let got = try await model.answerAllHere(DaemonAPI.Method.docsListAll, request,
+                                                            returning: DaemonAPI.DocsListAll.self)
+                        ?? control.call(DaemonAPI.Method.docsListAll, request, returning: DaemonAPI.DocsListAll.self)
                     read = DocsList.hostDocs(got, into: read, thisMac: model.thisMacHostID)
                     for d in got.docs where listedOn[d.doc.ref] == nil { listedOn[d.doc.ref] = d.machine }
                     cursor = got.cursor

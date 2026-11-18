@@ -15,6 +15,19 @@ import { Failure, type LockHelloReply } from "../protocol/generated";
  * The page's lock key and its checked lock (#3492), or null when it has none, or is not in
  * its lock yet: then the page talks to machines as it did before the lock.
  */
+/**
+ * One of the control plane's calls for every machine (`fanAllMethods`), answered on this page, or undefined to send it
+ * to the control plane (#5996). A machine in a lock refuses the control plane's own unsigned asks, so while the page is
+ * in its lock it asks each machine itself, over its checked channel.
+ */
+export type AnswerHere = (method: string, params: unknown) => Promise<unknown>;
+
+/** The control plane's calls that ask every machine of the person's (#5571, #5592). */
+export const fanAllMethods: ReadonlySet<string> = new Set([
+  "forge/listAll", "forge/boardsAll", "lineage/forecastAll", "reports/featuresAll", "events/listAll", "connections/listAll",
+  "docs/listAll", "messages/conversationsAll",
+]);
+
 export type LockSource = () => Promise<{ signer: LockSigner; state: LockState } | null>;
 
 /** A machine's checked channel (#3492, D6), opened at the first call to it on each connection. */
@@ -241,6 +254,7 @@ export class Link {
   private dials = 0;
   private stateListeners = new Set<(state: LinkState) => void>();
   private lockSource: LockSource | null = null;
+  private here: AnswerHere | null = null;
   private routeLocks = new Map<string, RouteLock>();
   private noticeListeners = new Set<(method: string, params: unknown, host: string | null) => void>();
   state: LinkState = { kind: "connecting" };
@@ -280,6 +294,11 @@ export class Link {
   setLock(source: LockSource): void {
     this.lockSource = source;
     this.routeLocks.clear();
+  }
+
+  /** Answers the control plane's calls for every machine on this page while it is in its lock (#5996): see AnswerHere. */
+  setAnswerHere(here: AnswerHere): void {
+    this.here = here;
   }
 
   onState(listener: (state: LinkState) => void): () => void {
@@ -327,6 +346,10 @@ export class Link {
 
   /** Sends `method` to `host`, or to the control plane for its own methods. */
   call<M extends Method>(method: M, params: Params<M>, host?: string): Promise<Result<M>> {
+    const here = this.here;
+    if (here && host === undefined && fanAllMethods.has(method)) {
+      return here(method, params).then((answer) => answer === undefined ? this.request(method, params, host).done : answer as Result<M>);
+    }
     return this.request(method, params, host).done;
   }
 

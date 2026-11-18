@@ -171,6 +171,8 @@ extension AppModel {
     /// sidebar row.
     func messagesAll(_ request: DaemonAPI.MessagesConversationsAllRequest) async throws -> DaemonAPI.MessagesConversationsAll {
         guard let controlRequests else { throw ControlPlaneMissing() }
+        let method = DaemonAPI.Method.messagesConversationsAll
+        if let here = try await answerAllHere(method, request, returning: DaemonAPI.MessagesConversationsAll.self) { return here }
         return try await controlRequests.call(DaemonAPI.Method.messagesConversationsAll, request,
                                               returning: DaemonAPI.MessagesConversationsAll.self)
     }
@@ -208,11 +210,28 @@ extension AppModel {
     func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
                                              returning: R.Type) async throws -> R? {
         guard let controlRequests else { return nil }
+        if let here = try await answerAllHere(method, params, returning: R.self) { return here }
         do {
             return try await controlRequests.call(method, params, returning: R.self)
         } catch let error as JSONRPCError where error.isMethodNotFound {
             return nil
         }
+    }
+
+    /// One of the control plane's calls for every machine, answered by the window itself while this Mac is in its lock
+    /// (#5996), else nil. A machine in a lock refuses the control plane's own unsigned asks, so the window asks each
+    /// machine over its checked channel (`LockedLink`), as `FanAllHere` says.
+    func answerAllHere<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
+                                                returning: R.Type) async throws -> R? {
+        guard FanAllHere.methods.contains(method), await lock.channelSigner() != nil else { return nil }
+        let machines = controlPlaneHosts ?? []
+        let clients = Dictionary(machines.map { ($0.id.rawValue, client(for: $0.id)) }, uniquingKeysWith: { a, _ in a })
+        let answer = try await FanAllHere.answer(method, JSONValue.encoding(params), hosts: { capabilities in
+            machines.filter { m in capabilities.allSatisfy(m.has) }.map(FanAllHere.Host.init)
+        }, ask: { method, params, host in
+            try? await clients[host]?.call(method, params, returning: JSONValue.self)
+        })
+        return try answer?.decode(R.self)
     }
 
     /// A session's title for Work's links (#3256).
