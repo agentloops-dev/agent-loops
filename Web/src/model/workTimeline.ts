@@ -3,9 +3,11 @@
 // first child was created to when its last child closes, and solid inside it only from when its first
 // child started to when the work stopped (#6043). The range, the blocks, their rows, the marks and the words; the
 // view draws them in SVG. Times are milliseconds since 1970.
-import type { Agent, ForgeLabel, LineageNode, LineageSessionOn, WireDate, WorkTimeline, WorkTimelineBacktest } from "../protocol/generated";
+import type { Agent, ForgeItem, ForgeLabel, LineageNode, LineageSessionOn, WireDate, WorkTimeline, WorkTimelineBacktest } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 import { shortAge, shortRef } from "./work";
+import { nextRank, onHoldWords } from "./forgeNextOrder";
+import { priorityWords } from "./epicPlan";
 import { sessionIdOf } from "../protocol/ref";
 
 const ms = (d: number | undefined) => d === undefined ? undefined : fromWireDate(d as never).getTime();
@@ -98,9 +100,22 @@ export interface TimelineLine {
   /** The epic and its open children that a session is in a turn on now (#4265): the line pulses and a
    * ring turns at Now while it is above 0. */
   working: number;
+  /** The epic's priority (ForgeItem.priority; absent for none) and whether it is on hold (#6089, #6093): they give
+   * its band. */
+  priority?: ForgeItem["priority"] | undefined;
+  onHold: boolean;
   /** The row, 0 at the top (#5506). */
   row: number;
 }
+
+/** A priority's band (#6089), the top first: High 0, Medium 1, none 2, Low 3, on hold 4. */
+export const priorityBand = (l: Pick<TimelineLine, "priority" | "onHold">) => l.onHold ? 4 : nextRank({ priority: l.priority });
+
+/** A block's chip, after its title (#6089): High, Medium, Low or On hold; undefined for none. */
+export const chipWords = (l: Pick<TimelineLine, "priority" | "onHold">) => l.onHold ? onHoldWords : priorityWords(l.priority);
+
+/** A band's name at the plot's leading edge (#6089). */
+export const bandWords = (band: number) => ["High", "Medium", "None", "Low", onHoldWords][band] ?? "None";
 
 /** The figures of a hover card: `#n · 6 of 8`. A block shows its title only (Alex, 2026-11-14). */
 export const figures = (l: TimelineLine) => `${l.number} · ${l.done} of ${l.total}`;
@@ -117,6 +132,9 @@ export function timelineLines(timeline: WorkTimeline, now: number, forecast = tr
   working: ReadonlySet<string> = new Set()): TimelineLine[] {
   return timeline.epics.flatMap((epic) => {
     if (epic.children.length === 0) return [];
+    // An epic on hold is not forecast (#6089): its open line stops at Now.
+    const onHold = epic.item.onHold === true;
+    const forecastOn = forecast && !onHold;
     const total = epic.children.length;
     const done = epic.children.filter((c) => c.closedAt !== undefined).length;
     const last = epic.segments.length - 1;
@@ -133,7 +151,7 @@ export function timelineLines(timeline: WorkTimeline, now: number, forecast = tr
         return open;
       });
       const forecastStarts = mine.flatMap((c) => c.forecastAt === undefined ? [] : [ms(c.forecastAt)!]);
-      const start = ms(segment.startedAt) ?? (forecast && forecastStarts.length > 0 ? Math.min(...forecastStarts) : undefined);
+      const start = ms(segment.startedAt) ?? (forecastOn && forecastStarts.length > 0 ? Math.min(...forecastStarts) : undefined);
       if (start === undefined) return [];
       let how: TimelineEnd = { how: "joined" };
       let end = ms(segment.closedAt) ?? now;
@@ -143,8 +161,8 @@ export function timelineLines(timeline: WorkTimeline, now: number, forecast = tr
       if (open) {
         if (waiting > 0) {
           how = { how: "waits", count: waiting };
-          if (forecast && f) end = Math.max(ms(f.mid)!, now);
-        } else if (forecast && f) {
+          if (forecastOn && f) end = Math.max(ms(f.mid)!, now);
+        } else if (forecastOn && f) {
           how = { how: "forecast" };
           end = Math.max(ms(f.mid)!, now);
           const low = ms(f.low)!, high = ms(f.high)!;
@@ -170,7 +188,7 @@ export function timelineLines(timeline: WorkTimeline, now: number, forecast = tr
           return [{ ...base, at: Math.min(Math.max(closed, start), end), closed: true, notPlanned: child.stateReason === "not_planned" }];
         }
         const at = ms(child.forecastAt);
-        if (!forecast || child.waitsForPerson === true || at === undefined) return [];
+        if (!forecastOn || child.waitsForPerson === true || at === undefined) return [];
         return [{ ...base, at: Math.min(Math.max(at, Math.max(start, now)), end), closed: false, notPlanned: false }];
       });
       const worked = open
@@ -188,7 +206,7 @@ export function timelineLines(timeline: WorkTimeline, now: number, forecast = tr
       return [{
         id: `${epic.item.node.ref}/${i}`, epic: epic.item.node.ref, segment: i, title: epic.item.title,
         number: shortRef(epic.item.node.ref), feature: epic.item.feature, done, total, start, end, createdAt, stoppedAt, how, band,
-        dots: dots.sort((a, b) => a.at - b.at), working: worked, row: 0,
+        dots: dots.sort((a, b) => a.at - b.at), working: worked, priority: epic.item.priority, onHold, row: 0,
       }];
     });
   });
@@ -219,18 +237,43 @@ export function packSpan(anchor: number): Interval {
 
 const byStart = (a: TimelineLine, b: TimelineLine) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-/** Put each block in the first row that is free at its start (its created time, #6043), sorted by it, then by id (#5506). It packs in time,
- * not in pixels: a row is busy until the block's reach and `gap` after it, so the rows do not change with the range. A
- * block that waits for the person has no end: it holds its row while it is open. A label outside a block takes no room. */
+/** Each priority is a band of rows, High at the top, then Medium, none, Low and on hold last (#6089, #6093). In a band,
+ * each block goes in the first row that is free at its start (its created time, #6043), sorted by it, then by id (#5506),
+ * so a block never moves into a higher band's row. It packs in time, not in pixels: a row is busy until the block's
+ * reach and `gap` after it, so the rows do not change with the range. A block that waits for the person has no end: it
+ * holds its row while it is open. A label outside a block takes no room. A band with no block takes no row. */
 export function layout(lines: readonly TimelineLine[], gap = packGap): TimelineLine[] {
-  const busy: number[] = [];
-  return [...lines].sort(byStart).map((line) => {
-    let row = 0;
-    while ((busy[row] ?? -Infinity) > line.createdAt) row++;
-    busy[row] = line.how.how === "waits" ? Infinity : reach(line) + gap;
-    return { ...line, row };
-  });
+  const out: TimelineLine[] = [];
+  let first = 0;
+  for (let band = 0; band <= 4; band++) {
+    const busy: number[] = [];
+    for (const line of lines.filter((l) => priorityBand(l) === band).sort(byStart)) {
+      let row = 0;
+      while ((busy[row] ?? -Infinity) > line.createdAt) row++;
+      busy[row] = line.how.how === "waits" ? Infinity : reach(line) + gap;
+      out.push({ ...line, row: first + row });
+    }
+    first += busy.length;
+  }
+  return out;
 }
+
+/** A band in use (#6089): its name, its first row and how many rows it has. */
+export interface TimelineBand { band: number; words: string; row: number; rows: number }
+
+/** The bands in use, the top first. */
+export function bands(lines: readonly TimelineLine[]): TimelineBand[] {
+  const by = new Map<number, number[]>();
+  for (const l of lines) by.set(priorityBand(l), [...by.get(priorityBand(l)) ?? [], l.row]);
+  return [...by].map(([band, rows]) => ({ band, words: bandWords(band), row: Math.min(...rows), rows: Math.max(...rows) - Math.min(...rows) + 1 }))
+    .sort((a, b) => a.row - b.row);
+}
+
+/** The band names' gutter at the plot's leading edge (#6089), in pixels. */
+export const bandGutter = 64;
+
+/** Where the rule above a band's first row goes: in the gap between the rows. */
+export const bandRuleY = (row: number) => rowTop(row) - rowGap / 2;
 
 /** The rows in use. */
 export const rowCount = (lines: readonly TimelineLine[]) => Math.max(0, ...lines.map((l) => l.row + 1));
@@ -288,7 +331,18 @@ export const droppedWords = "✕ closed as not planned";
  * block starts before it). `outside`: what goes after the block, from `outsideX`: the title when the block is too
  * narrow for it, and "✕ closed as not planned"; cut with "…" before the next block in the row. `trailing` is the
  * width of what is drawn after the block first (the wait pill). */
-export interface BlockWords { inside: string | undefined; insideX: number; arrow: boolean; outside: string | undefined; outsideX: number }
+export interface BlockWords {
+  inside: string | undefined; insideX: number; arrow: boolean; outside: string | undefined; outsideX: number;
+  /** The priority chip (#6089): after the title in the block when both fit, else after the words outside it, where
+   * there is room before the next block; undefined when there is none. */
+  chip?: string | undefined; chipX?: number | undefined; chipInside?: boolean | undefined;
+}
+
+/** A chip's padding on each side of its words, and the gap before it (#6089). */
+export const chipPadding = 5;
+export const chipGap = 6;
+/** A chip's width, in pixels. */
+export const chipWidth = (words: string, measure: (s: string) => number) => measure(words) + 2 * chipPadding;
 
 export function blockWords(line: TimelineLine, axis: Axis, measure: (s: string) => number,
                            { next, left = -Infinity, trailing = 0 }: { next?: number | undefined; left?: number; trailing?: number } = {}): BlockWords {
@@ -300,7 +354,21 @@ export function blockWords(line: TimelineLine, axis: Axis, measure: (s: string) 
   const outsideX = axis.x(reach(line)) + 6 + (trailing > 0 ? trailing + 6 : 0);
   const words = [fits ? "" : line.title, line.how.how === "dropped" ? droppedWords : ""].filter((w) => w).join("  ");
   const room = (next === undefined ? Infinity : axis.x(next) - 6) - outsideX;
-  return { inside, insideX, arrow, outside: words ? cut(words, room, measure) : undefined, outsideX };
+  const out: BlockWords = { inside, insideX, arrow, outside: words ? cut(words, room, measure) : undefined, outsideX };
+  const chip = chipWords(line);
+  if (!chip) return out;
+  const width = chipWidth(chip, measure);
+  // In the block, after the whole title.
+  if (inside && !inside.endsWith("…")) {
+    const x = insideX + measure(inside) + chipGap;
+    if (x + width <= ex - titleInset) return { ...out, chip, chipX: x, chipInside: true };
+  }
+  // After the block's words, with the words cut to leave it room.
+  const wordsRoom = room - width - (words ? chipGap : 0);
+  if (wordsRoom < 0) return out;
+  if (!words) return { ...out, chip, chipX: outsideX };
+  const shown = cut(words, wordsRoom, measure);
+  return shown === undefined ? out : { ...out, outside: shown, chip, chipX: outsideX + measure(shown) + chipGap };
 }
 
 // Colours
@@ -407,7 +475,11 @@ export function lineWords(line: TimelineLine, backtest: WorkTimelineBacktest | u
 
 /** A row of the hover card, on three lines (Alex, 2026-11-10): the state glyph and the title; the label
  * chips, where the wire has them; then the prediction, in the window's words. No cost (Alex, 2026-11-14). */
-export interface CardRow { state: "open" | "closed"; title: string; labels: ForgeLabel[]; line: string }
+export interface CardRow {
+  state: "open" | "closed"; title: string; labels: ForgeLabel[]; line: string;
+  /** The item's priority chip and On hold chip (#6089, #6090), before its labels. */
+  priority?: ForgeItem["priority"] | undefined; onHold?: boolean | undefined;
+}
 
 /** "stopped 3 h ago": an open block whose work stopped before Now (#6043). */
 export const stoppedWords = (l: TimelineLine, now: number) => `stopped ${agoWords(l.stoppedAt, now)}`;
@@ -446,12 +518,13 @@ export function cardRow(h: TimelineHit, timeline: WorkTimeline, now: number): Ca
   const lineRow = (l: TimelineLine): CardRow => {
     const epic = timeline.epics.find((e) => e.item.node.ref === l.epic);
     return { state: (epic?.item.state ?? (isOpen(l) ? "open" : "closed")) === "open" ? "open" : "closed", title: l.title,
-      labels: epic?.item.labels ?? [], line: lineLine(l, now) };
+      labels: epic?.item.labels ?? [], line: lineLine(l, now), priority: epic?.item.priority, onHold: epic?.item.onHold };
   };
   switch (h.kind) {
     case "dot": {
       const child = timeline.epics.flatMap((e) => e.children).find((c) => c.item.node.ref === h.dot.ref);
-      return { state: h.dot.closed ? "closed" : "open", title: h.dot.title, labels: child?.item.labels ?? [], line: dotLine(h.dot, now) };
+      return { state: h.dot.closed ? "closed" : "open", title: h.dot.title, labels: child?.item.labels ?? [], line: dotLine(h.dot, now),
+        priority: child?.item.priority, onHold: child?.item.onHold };
     }
     case "line": return lineRow(h.line);
   }
@@ -559,7 +632,8 @@ export function landed(before: WorkTimeline, after: WorkTimeline): string[] {
 /** A row of the list of epics (note 36): the Timeline under 700 px, and what a screen reader reads over it. */
 export interface EpicRow { line: TimelineLine; line2: string }
 
-/** The list of epics in the window (note 36), in the order they close: the forecast first (the soonest first), then
+/** The list of epics in the window (note 36), in priority order (#6089, #6093: High first, on hold last), then in the
+ * order they close: the forecast first (the soonest first), then
  * those that wait for the person, then those still open, then those that joined (the latest first). Line 2: "closes
  * about 5:00 PM · 3:00 PM–9:00 PM", "3 wait for you", "joined 9:40 AM". */
 export function epicRows(lines: readonly TimelineLine[], window: Interval, now: number): EpicRow[] {
@@ -575,7 +649,7 @@ export function epicRows(lines: readonly TimelineLine[], window: Interval, now: 
     }
   };
   return overlapping(lines, window)
-    .sort((a, b) => rank(a) - rank(b) || (rank(a) === 3 ? b.end - a.end : a.end - b.end) || a.title.localeCompare(b.title))
+    .sort((a, b) => priorityBand(a) - priorityBand(b) || rank(a) - rank(b) || (rank(a) === 3 ? b.end - a.end : a.end - b.end) || a.title.localeCompare(b.title))
     .map((line) => ({ line, line2: hasStopped(line, now) ? `${line2(line)} · ${stoppedWords(line, now)}` : line2(line) }));
 }
 

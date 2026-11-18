@@ -14,7 +14,7 @@ import type { Agent, ForgeFeature, ForgeFeatures, ForgeItem, ForgeListError, For
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
 import { boardChoices, boardName, errorWords, labelColor, noForgeHere, shortRef, shownErrors, withBoard } from "../model/work";
-import { ErrorStrip, FromDeviceStrip, LabelChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon } from "./WorkParts";
+import { ErrorStrip, FromDeviceStrip, LabelChip, PlaceholderRows, PriorityChip, OnHoldChip, RefreshButton, StateIcon } from "./WorkParts";
 import { boardHosts, boards, forgeHosts, listHosts, loadBoards } from "../model/workLists";
 import { Choice } from "./Work";
 import { choiceFrom, choiceWords, rememberEach, remembered } from "../model/workRemembered";
@@ -412,6 +412,7 @@ function EpicLine({ epic, plan, flight, delivery, agents }: {
           {where && <span class="where quiet"> {where}</span>}
         </span>
         <PriorityChip priority={epic.priority} />
+        <OnHoldChip onHold={epic.onHold} />
         <span class="work-feature-epic-end small">
           <DeliveryBar delivery={delivery} />
           <span class="figures quiet" title="Sub-issues closed, of all">{`${delivery.done} of ${delivery.total}`}</span>
@@ -463,6 +464,7 @@ function FlightLine({ flight, phone }: { flight: InFlight; phone: boolean }) {
         <span class="name"><span class="ref quiet">{shortRef(item.node.ref)}</span> <ForgeTitle text={item.title} /></span>
         <span class="words"><span class="sep" aria-hidden="true">· </span>{words}</span>
         <PriorityChip priority={item.priority} />
+        <OnHoldChip onHold={item.onHold} />
         {pr && <span class="pr small"><StateIcon kind="pr" state="open" size={12} />{pr}</span>}
       </a>
     </li>

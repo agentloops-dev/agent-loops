@@ -6,6 +6,7 @@ import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { ForgeItem, ForgeLabel } from "../protocol/generated";
 import { priorityWords } from "../model/epicPlan";
+import { onHoldHelp, onHoldWords } from "../model/forgeNextOrder";
 import { LastUpdate } from "./LastUpdate";
 import { MessageBanner } from "./MessageKinds";
 import { avatarHue, chipColours, labelScope, stateGlyph, stateGlyphWords, type StateGlyph } from "../model/work";
@@ -66,6 +67,15 @@ export function PriorityChip({ priority }: { priority: ForgeItem["priority"] }) 
   if (!words) return null;
   return <span class={`work-label work-priority is-${words.toLowerCase()}`} title={`Priority ${words.toLowerCase()}`}
     aria-label={`Priority ${words.toLowerCase()}`}>{words}</span>;
+}
+
+/** The On hold chip (#6090, #6093), as WorkOnHoldChip on the window: the label chip's look with no state tint (on hold
+ * is not a failure), a pause glyph before the words. Not on hold has no chip. It goes after the priority chip and
+ * before the label chips, whose on hold label a row then leaves out (`shownLabels`). */
+export function OnHoldChip({ onHold }: { onHold: boolean | undefined }) {
+  if (!onHold) return null;
+  return <span class="work-label work-on-hold" title={onHoldHelp} aria-label={onHoldWords}>
+    <Icon name="circle-pause" />{onHoldWords}</span>;
 }
 
 /** Reads a forge's picture by its URL (forge/image on the machine that read the item, #4363), as a URL the page can draw. */

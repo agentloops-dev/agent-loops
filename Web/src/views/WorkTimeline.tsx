@@ -13,16 +13,17 @@ import { describe } from "../model/errors";
 import { boardChoices, boardName, withBoard, type WorkProject } from "../model/work";
 import { boards, forgeHosts, loadBoards } from "../model/workLists";
 import {
-  Axis, blockHeight, blockWords, cardRow, colourIndex, dotX, dotY, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
+  Axis, bandGutter, bandRuleY, bands as bandsOf, blockHeight, blockWords, cardRow, chipWidth, chipWords, priorityBand, colourIndex, dotX, dotY, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
   lastJoinedWords, landed as landedRefs, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping,
   packSpan, rangeSpan, rangeTitle, rangeWindow, reach, rgbOf, rowCount, rowGap, rowTop, sessionNodes, showTheWeek, startedBySessions,
-  timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineHit, type TimelineLine, type TimelineRange,
+  timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineHit, type TimelineBand, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
 import { go } from "../route";
 import { keepWork, keptWorkRead } from "../model/localCopy";
 import { Choice, workProjects } from "./Work";
 import { choiceFrom, choiceWords, rememberEach, remembered } from "../model/workRemembered";
-import { EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, PlaceholderRows, RefreshButton, StateIcon } from "./WorkParts";
+import { EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, OnHoldChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon } from "./WorkParts";
+import { shownLabels } from "../model/forgeNextOrder";
 
 // The range, the project and the board are what the Timeline had when it was last left (#5451).
 const kept = remembered("timeline");
@@ -298,7 +299,8 @@ function Plot({ timeline: t, drawn, reading, dim, working }: {
   // A card is for what was under the pointer: a new range or window draws other things.
   useEffect(() => setHover(null), [range.value, anchor.value, nowAsked.value]);
 
-  const visible = Math.max(size.width, 1);
+  // The band names' gutter at the leading edge takes its width from the plot (#6089, #6093).
+  const visible = Math.max(size.width - bandGutter, 1);
   const span = content();
   const axis = new Axis(span, visible * (span.end - span.start) / rangeSpan[range.value]);
   // Packed over the widest range's span, so a block keeps its row when the range changes or the plot scrolls (#5506).
@@ -361,16 +363,23 @@ function Plot({ timeline: t, drawn, reading, dim, working }: {
   const hitAt = (p: { x: number; y: number }) => hit(p, lines, axis);
   const open = (h: TimelineHit) => go({ nav: "work", section: "issue", item: h.kind === "dot" ? h.dot.ref : h.line.epic });
 
-  const d = new Drawing(lines, axis, now, height, offset, visible);
   const win = rangeWindow(range.value, anchor.value);
   const rows = epicRows(timelineLines(t, now), win, now);
   const shows = timelineShows(drawn, reading, rows.length);
   const loading = shows === "loading";
+  const d = new Drawing(lines, axis, now, height, offset, visible, loading ? [] : bandsOf(lines));
   const last = shows === "empty" ? lastJoined(t, win.start) : undefined;
   return (
     <div class={`timeline${dim ? " dim" : ""}`}>
       <div class="timeline-scroll" ref={scroller} onScroll={onScroll}>
-        <div class="timeline-content" style={{ width: `${axis.width}px` }}>
+        <div class="timeline-content" style={{ width: `${axis.width + bandGutter}px` }}>
+          {/* Each band's name on its first row (#6089, #6093): it stays at the leading edge while the plot scrolls in
+              time, and moves with the rows. */}
+          <div class="timeline-gutter" style={{ width: `${bandGutter}px` }} aria-hidden="true">
+            <div class="timeline-gutter-corner" style={{ height: `${axisHeight}px` }} />
+            <svg width={bandGutter} height={height}>{d.gutter()}</svg>
+          </div>
+          <div class="timeline-plot-column">
           <svg class="timeline-axis" width={axis.width} height={axisHeight} aria-hidden="true">{d.axisMarks()}</svg>
           <svg class={`timeline-plot${hover ? " pointing" : ""}`} width={axis.width} height={height} aria-hidden="true"
             onMouseMove={(e) => { const p = point(e); const h = hitAt(p); setHover(h ? { hit: h, ...p } : null); }}
@@ -381,6 +390,7 @@ function Plot({ timeline: t, drawn, reading, dim, working }: {
           </svg>
           {hover && <Card hover={hover} timeline={t} now={now} right={offset + visible} />}
           <svg class="timeline-foot" width={axis.width} height={footHeight} aria-hidden="true">{d.nowPill()}</svg>
+          </div>
         </div>
       </div>
       {/* S11: no epic in the window, and the way to a wider one. */}
@@ -400,11 +410,15 @@ function Plot({ timeline: t, drawn, reading, dim, working }: {
             {rows.map(({ line, line2 }) => (
               <li key={line.id}>
                 <button type="button" class="timeline-list-row" style={{ "--c": d.colour(line) }}
-                  aria-label={`${line.title}, ${line.done} of ${line.total} done, ${line2}`}
+                  aria-label={`${line.title}${spokenChip(line)}, ${line.done} of ${line.total} done, ${line2}`}
                   onClick={() => go({ nav: "work", section: "issue", item: line.epic })}>
                   <span class="edge" aria-hidden="true" />
                   <span class="work-row-main">
-                    <span class="title strong">{line.title}</span>
+                    <span class="timeline-list-head">
+                      <span class="title strong">{line.title}</span>
+                      <PriorityChip priority={line.priority} />
+                      <OnHoldChip onHold={line.onHold} />
+                    </span>
                     <span class={`quiet small${line.how.how === "waits" ? " waits" : ""}`}>{line2}</span>
                   </span>
                   <span class="timeline-list-progress small quiet" aria-hidden="true">
@@ -425,6 +439,7 @@ function Plot({ timeline: t, drawn, reading, dim, working }: {
  * lines (Alex, 2026-11-10): the title; the label chips, where the wire has them; the prediction. */
 function Card({ hover, timeline: t, now, right }: { hover: Hover; timeline: Timeline; now: number; right: number }) {
   const row = cardRow(hover.hit, t, now);
+  const labels = shownLabels(row.labels, row.onHold);
   return (
     <div class="timeline-card" style={hover.x + 14 + 370 > right
       ? { left: `${hover.x - 14}px`, transform: "translateX(-100%)", top: `${hover.y + axisHeight + 14}px` }
@@ -433,10 +448,13 @@ function Card({ hover, timeline: t, now, right }: { hover: Hover; timeline: Time
         <div class="timeline-card-title">
           <StateIcon kind="issue" state={row.state} size={14} /><span class="strong">{row.title}</span>
         </div>
-        {row.labels.length > 0 && (
+        {(labels.length > 0 || row.priority || row.onHold) && (
           <div class="work-chips">
-            {row.labels.slice(0, 3).map((l) => <LabelChip key={l.name} label={l} />)}
-            {row.labels.length > 3 && <span class="work-chips-more quiet small">+{row.labels.length - 3}</span>}
+            {/* The priority chip and the On hold chip first (#6089, #6090), and the on hold label not again. */}
+            <PriorityChip priority={row.priority} />
+            <OnHoldChip onHold={row.onHold} />
+            {labels.slice(0, 3).map((l) => <LabelChip key={l.name} label={l} />)}
+            {labels.length > 3 && <span class="work-chips-more quiet small">+{labels.length - 3}</span>}
           </div>
         )}
         <div class="quiet small timeline-card-line">{row.line}</div>
@@ -445,13 +463,22 @@ function Card({ hover, timeline: t, now, right }: { hover: Hover; timeline: Time
   );
 }
 
+/** A band's class for its tint (#6089): High the failure's red, Medium the warning's orange, the rest plain. */
+const bandClass = (band: number) => ["high", "medium", "none", "low", "on-hold"][band] ?? "none";
+
+/** What a screen reader says after an epic's title (#6089): ", priority high", ", on hold" or nothing. */
+function spokenChip(l: TimelineLine): string {
+  const chip = chipWords(l);
+  return chip ? l.onHold ? `, ${chip.toLowerCase()}` : `, priority ${chip.toLowerCase()}` : "";
+}
+
 /** What one frame of the plot draws: the window, and a screen on each side of it. */
 class Drawing {
   readonly nowX: number;
   readonly shown: TimelineLine[];
 
   constructor(readonly lines: TimelineLine[], readonly axis: Axis, readonly now: number, readonly height: number,
-              readonly offset: number, readonly visible: number) {
+              readonly offset: number, readonly visible: number, readonly bands: readonly TimelineBand[] = []) {
     this.nowX = axis.x(now);
     this.shown = lines.filter((l) => axis.x(l.createdAt) <= this.seenTo && axis.x(reach(l)) >= this.seenFrom);
   }
@@ -460,8 +487,9 @@ class Drawing {
   get seenTo() { return this.offset + 2 * this.visible; }
   seen(x: number) { return x >= this.seenFrom && x <= this.seenTo; }
 
-  /** A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not planned. */
-  colour(l: TimelineLine) { return fills[l.how.how === "dropped" ? fills.length - 1 : colourIndex(l.feature, fills.length)]!; }
+  /** A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not planned or on hold
+   * (#6089). */
+  colour(l: TimelineLine) { return fills[l.how.how === "dropped" || l.onHold ? fills.length - 1 : colourIndex(l.feature, fills.length)]!; }
 
   /** A child of the block is worked on now, and the block is open at Now. */
   isWorking(l: TimelineLine) { return l.working > 0 && l.start <= this.now && l.end >= this.now; }
@@ -477,6 +505,10 @@ class Drawing {
         <clipPath id="timeline-ahead"><rect x={nowX} y={0} width={Math.max(axis.width - nowX + 100, 0)} height={height} /></clipPath>
       </defs>,
       <rect key="plot" class="timeline-ground" x={0} y={0} width={axis.width} height={height} />,
+      // A rule above each priority band but the first (#6089, #6093).
+      ...this.bands.filter((b) => b.row > 0).map((b) => (
+        <line key={`band ${b.band}`} class="timeline-band-rule" x1={0} y1={bandRuleY(b.row)} x2={axis.width} y2={bandRuleY(b.row)} />
+      )),
     ];
     shown.forEach((l, i) => {
       const c = this.colour(l), top = rowTop(l.row), mid = top + blockHeight / 2;
@@ -529,6 +561,7 @@ class Drawing {
             </>
           )}
           {words.outside && <text class="outside" x={words.outsideX} y={mid} dy="0.35em">{words.outside}</text>}
+          {words.chip && words.chipX !== undefined && this.chip(words.chip, l, words.chipX, words.chipInside ? titleY(l.row) : mid)}
           {/* Where the forecast stops for the person: 👤 and the number. */}
           {l.how.how === "waits" && this.pill(`👤 ${l.how.count}`, axis.x(reach(l)) + 6 + pill / 2, mid, "timeline-pill waits")}
           {this.isWorking(l) && (
@@ -548,6 +581,28 @@ class Drawing {
     // Now: a grey line.
     out.push(<line key="now" class="timeline-now" x1={nowX} y1={0} x2={nowX} y2={height} />);
     return out;
+  }
+
+  /** Each band's name, on its first row, in the gutter, with a rule above every band but the first (#6089, #6093). */
+  gutter() {
+    return this.bands.map((b) => (
+      <g key={b.band} class={`timeline-band-name is-${bandClass(b.band)}`}>
+        {b.row > 0 && <line x1={0} y1={bandRuleY(b.row)} x2={bandGutter} y2={bandRuleY(b.row)} />}
+        <text x={12} y={rowTop(b.row) + blockHeight / 2} dy="0.35em">{b.words}</text>
+      </g>
+    ));
+  }
+
+  /** The priority chip after a block's title (#6089, #6093): the priority chip's look, on the plot's own ground so it
+   * reads on any block; on hold has a dashed edge. */
+  chip(words: string, l: TimelineLine, x: number, y: number) {
+    const w = chipWidth(words, measure);
+    return (
+      <g class={`timeline-chip is-${bandClass(priorityBand(l))}`}>
+        <rect x={x} y={y - 8} width={w} height={16} rx={8} />
+        <text x={x + w / 2} y={y} dy="0.35em" text-anchor="middle">{words}</text>
+      </g>
+    );
   }
 
   /** S10: grey blocks that shimmer, in rows, on the window. */

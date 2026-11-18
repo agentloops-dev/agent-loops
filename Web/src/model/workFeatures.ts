@@ -3,6 +3,7 @@
 // lead, and its loose issues (the open issues with the label and no parent epic).
 import type { Agent, AgentState, ForgeFeature, ForgeItem, ForgePlan, LineageNode } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
+import { nextRank } from "./forgeNextOrder";
 import { shortAge, shortRef } from "./work";
 
 /** A feature's name as a title: work is Work. */
@@ -108,11 +109,12 @@ export function mergeFeatures(lists: readonly (readonly ForgeFeature[])[]): Forg
 export const isEpic = (item: ForgeItem) => item.level === "epic" || (item.progress?.total ?? 0) > 0;
 
 /** The open issues with a feature's label, read from forge/issues, as the feature shows them: the
- * epics, and the issues with no parent that are not epics. A child of an epic is in its plan. */
+ * epics, and the issues with no parent that are not epics. A child of an epic is in its plan. Each in the order of
+ * forge/next (#6088, #6093): not on hold first, then High, Medium, none, Low; then the last updated first. */
 export function openedFeature(items: readonly ForgeItem[]): { epics: ForgeItem[]; loose: ForgeItem[] } {
   const seen = new Set<string>();
   const mine = items.filter((i) => i.node.kind === "issue" && i.state === "open" && !seen.has(i.node.ref) && seen.add(i.node.ref))
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+    .sort((a, b) => nextRank(a) - nextRank(b) || b.updatedAt - a.updatedAt);
   return { epics: mine.filter(isEpic), loose: mine.filter((i) => !isEpic(i) && i.parent === undefined) };
 }
 
@@ -220,9 +222,11 @@ export function inFlight(item: ForgeItem, agents: readonly Agent[], approvals: R
   return { item, mark: "working", words: lane.title ? `Working · “${lane.title}”` : "Working", pr };
 }
 
-/** The children in flight, in note 8's order: Needs you first, then Working, each the most recently updated first. */
+/** The children in flight, in note 8's order: Needs you first, then Working; within each, the order of forge/next
+ * (#6088, #6093), then the most recently updated first. */
 export function flightOrder(list: readonly InFlight[]): InFlight[] {
-  return [...list].sort((a, b) => a.mark !== b.mark ? (a.mark === "attention" ? -1 : 1) : b.item.updatedAt - a.item.updatedAt);
+  return [...list].sort((a, b) => a.mark !== b.mark ? (a.mark === "attention" ? -1 : 1)
+    : nextRank(a.item) - nextRank(b.item) || b.item.updatedAt - a.item.updatedAt);
 }
 
 /** The lines in flight a wide page shows under an epic, and a phone's (notes 8 and 14). */
