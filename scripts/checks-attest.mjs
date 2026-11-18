@@ -65,17 +65,31 @@ export function mergeTasks(...lists) {
 
 /**
  * The Nx runs for the planned tasks that are not skipped: the checks' targets over their
- * projects, then the app builds (their dependencies run as Nx's dependsOn says).
+ * projects, then the app builds; their dependencies (wire:gen, …) run as Nx's dependsOn says.
+ * A check's part under a noop (agentskit:test-unit under agentskit:test, which attestable drops)
+ * is named by its own target, or no run starts it (#6154). One run for the checks, so a shared
+ * dependency runs once in it. A planned task that still does not run fails the run (notStarted).
  */
 export function nxRuns(planned) {
   const left = planned.filter((t) => !t.skip);
   const isApp = (t) => t.target === "build" && APP_PROJECTS.includes(t.project);
-  const checks = [...new Set(left.filter((t) => TARGETS.includes(t.target)).map((t) => t.project))].sort();
+  const isCheck = (t) => TARGETS.some((x) => t.target === x || t.target.startsWith(`${x}-`));
+  const checks = [...new Set(left.filter(isCheck).map((t) => t.project))].sort();
+  const parts = [...new Set(left.filter((t) => isCheck(t) && !TARGETS.includes(t.target)).map((t) => t.target))].sort();
   const apps = [...new Set(left.filter(isApp).map((t) => t.project))].sort();
   const runs = [];
-  if (checks.length) runs.push({ targets: TARGETS, projects: checks });
+  if (checks.length) runs.push({ targets: [...TARGETS, ...parts], projects: checks });
   if (apps.length) runs.push({ targets: ["build"], projects: apps });
   return runs;
+}
+
+/**
+ * The planned tasks that did not run here, by their verdicts: no result, or a result from a cache.
+ * A task skipped by its pin (another Xcode, Node or Go) is not one: the plan says "skip", and CI
+ * runs it. Any other makes the run fail, by name (#6154).
+ */
+export function notStarted(verdicts) {
+  return verdicts.filter((v) => v.result === "NOT_RUN" && !v.task.skip).map((v) => v.task.id);
 }
 
 /** The pin files a task's hash reads, from its file inputs. */
@@ -380,7 +394,20 @@ async function runStep({ base, planOnly, env, headSha }) {
   const body = checkRun(verdicts, statements, ctx);
   for (const v of verdicts) console.log(`${v.attested ? "attested    " : "not attested"} ${v.task.id}: ${v.reason}`);
   keep(headSha, keptRun(headSha, base, repo, body));
-  return { code: 0, body };
+  // The kept run still has a statement for each task that passed; but a run with a planned task
+  // that failed or did not start is not a pass (#6154).
+  let code = 0;
+  const unrun = notStarted(verdicts);
+  if (unrun.length) {
+    console.error(`attest: ${unrun.length} planned task${unrun.length === 1 ? "" : "s"} did not run here: ${unrun.join(", ")}`);
+    code = 1;
+  }
+  const failedIds = verdicts.filter((v) => v.result === "FAILED").map((v) => v.task.id);
+  if (failedIds.length) {
+    console.error(`attest: ${failedIds.length} task${failedIds.length === 1 ? "" : "s"} failed: ${failedIds.join(", ")}`);
+    code = 1;
+  }
+  return { code, body };
 }
 
 function keep(headSha, kept) {
@@ -489,12 +516,14 @@ async function main(argv) {
   }
   base ??= sh("git", ["merge-base", "origin/main", "HEAD"]);
   const { code, body } = await runStep({ base, planOnly, env, headSha });
-  if (code !== 0 || !body) return code;
+  if (!body) return code;
   if (!post) {
     if (step !== "run") console.log(JSON.stringify(body, null, 1));
-    return 0;
+    return code;
   }
-  return postStep({ env, headSha, pr });
+  // Post what passed also when a task failed or did not run; the exit still says so (#6154).
+  const posted = postStep({ env, headSha, pr });
+  return code || posted;
 }
 
 // ---- Selftest (scripts/lint.sh runs it) ----
@@ -543,6 +572,22 @@ function selftest() {
   assert(merged.map((x) => x.id).join() === "go:test,mac:build,web:build,wire:gen", `the merged tasks: ${merged.map((x) => x.id)}`);
   const plan = nxRuns([...merged, t("remote:build"), t("go:build"), t("codetext:test", { skip: "Xcode differs" })]);
   assert(JSON.stringify(plan) === JSON.stringify([{ targets: TARGETS, projects: ["go"] }, { targets: ["build"], projects: ["mac", "remote"] }]), `the Nx runs: ${JSON.stringify(plan)}`);
+  // #6154: the tasks under a noop (agentskit:test, dropped by attestable) run by their own targets.
+  const kit = attestable([
+    { ...t("agentskit:test"), executor: "nx:noop" }, t("agentskit:test-unit"), t("agentskit:test-control"),
+    t("agentskit:test-integration"), t("swift-lint:lint"), t("agentskit-repo:test"),
+  ]);
+  const kitRuns = nxRuns(kit);
+  assert(JSON.stringify(kitRuns) === JSON.stringify([
+    { targets: [...TARGETS, "test-control", "test-integration", "test-unit"], projects: ["agentskit", "agentskit-repo", "swift-lint"] },
+  ]), `the agentskit tasks get no run: ${JSON.stringify(kitRuns)}`);
+  for (const task of kit) {
+    assert(kitRuns.some((r) => r.targets.includes(task.target) && r.projects.includes(task.project)), `${task.id} is planned but not run`);
+  }
+  const unrun = decide(kit, new Map([["swift-lint:lint", { status: "success", code: 0 }], ["agentskit:test-unit", { status: "local-cache", code: 0 }]]), new Set());
+  assert(notStarted(unrun.verdicts).join() === "agentskit:test-unit,agentskit:test-control,agentskit:test-integration,agentskit-repo:test",
+    `the tasks that did not start: ${notStarted(unrun.verdicts)}`);
+  assert(notStarted(decide([{ ...task, skip: "Xcode differs" }], new Map(), new Set()).verdicts).length === 0, "a task skipped by its pin fails the run");
   assert(nxRuns([t("mac:build", { skip: "Xcode differs" })]).length === 0, "a skipped app build runs");
   assert(JSON.stringify(nxRuns([t("remote:build")])) === JSON.stringify([{ targets: ["build"], projects: ["remote"] }]), "an app build alone");
 
