@@ -26,6 +26,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
@@ -63,6 +64,10 @@ func main() {
 	token := func() string { t, _ := pair(); return t }
 	email := func() string { _, e := pair(); return e }
 	bb := bitbucketmcp.NewRealBitbucket(root, token, email, bitbucketmcp.GitRepo())
+	// Each call to the forge is counted, and the log gets a line every 10 minutes (#6164).
+	meter := apicalls.New("bitbucket", func(line string) { fmt.Fprintln(os.Stderr, line) })
+	meter.Client(bb.Client)
+	go meter.Run(ctx)
 	front := &bitbucketmcp.Front{
 		Events:   &bitbucketmcp.Events{Bitbucket: bb},
 		Upstream: bitbucketmcp.NewServer(buildinfo.Version, bb, os.Getenv(bitbucketmcp.HostedEnv) == "1"), Version: buildinfo.Version, Logger: logger,

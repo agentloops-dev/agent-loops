@@ -28,6 +28,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
@@ -62,6 +63,10 @@ func main() {
 		return ""
 	}
 	gl := gitlabmcp.NewRealGitLab(root, token, gitlabmcp.GitProject(root))
+	// Each call to the forge is counted, and the log gets a line every 10 minutes (#6164).
+	meter := apicalls.New("gitlab", func(line string) { fmt.Fprintln(os.Stderr, line) })
+	meter.Client(gl.Client)
+	go meter.Run(ctx)
 	front := &gitlabmcp.Front{
 		Events:   &gitlabmcp.Events{GitLab: gl},
 		Upstream: gitlabmcp.NewServer(buildinfo.Version, gl, os.Getenv(gitlabmcp.HostedEnv) == "1"), Version: buildinfo.Version, Logger: logger,

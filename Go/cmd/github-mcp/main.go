@@ -27,6 +27,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 )
@@ -45,6 +46,9 @@ func main() {
 	defer stop()
 
 	token := githubmcp.Token()
+	// Each call to GitHub is counted, and the log gets a line every 10 minutes (#6164).
+	meter := apicalls.New("github", func(line string) { fmt.Fprintln(os.Stderr, line) })
+	go meter.Run(ctx)
 	var sets []string
 	for _, s := range strings.Split(*toolsets, ",") {
 		if s = strings.TrimSpace(s); s != "" {
@@ -56,13 +60,14 @@ func main() {
 	identity := githubmcp.NewIdentity(token, githubmcp.GitRepo())
 	upstream, issueReader, err := githubmcp.NewUpstreamWithIssueReader(ctx, githubmcp.UpstreamConfig{
 		Version: buildinfo.Version, Token: identity.Token, Toolsets: sets, ReadOnly: *readOnly, Logger: logger,
-		Bot: identity.Bot,
+		Bot: identity.Bot, Meter: meter,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "github-mcp:", err)
 		os.Exit(1)
 	}
 	gh := githubmcp.NewRealGitHub(os.Getenv("GITHUB_MCP_API_URL"), token, githubmcp.GitRepo(), issueReader)
+	meter.Client(gh.Client)
 	githubmcp.AddViews(upstream, gh, os.Getenv(githubmcp.HostedEnv) == "1")
 	front := &githubmcp.Front{
 		Events:   &githubmcp.Events{GitHub: gh},

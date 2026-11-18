@@ -27,6 +27,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/agentloops-dev/agent-loops/Go/internal/jiramcp"
@@ -52,6 +53,10 @@ func main() {
 		return jiramcp.ConnectionAuth(c)
 	}
 	jira := jiramcp.NewRealJira(auth)
+	// Each call to the forge is counted, and the log gets a line every 10 minutes (#6164).
+	meter := apicalls.New("jira", func(line string) { fmt.Fprintln(os.Stderr, line) })
+	meter.Client(jira.Client)
+	go meter.Run(ctx)
 	upstream := jiramcp.NewServer(buildinfo.Version)
 	jiramcp.AddViews(upstream, jira)
 	front := &jiramcp.Front{

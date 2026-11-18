@@ -660,6 +660,25 @@ it, so two machines can make two ids for one change.
 | `whatsapp` | message and answer events | `whatsapp:message:<phone number id>#<wamid>` | none |
 | `email` | `email.received` | `email:message:<mailbox>#<Message-ID>` | none |
 
+### Calls to the forge and its rate limit
+
+Each forge server (`github`, `gitlab`, `bitbucket`, `forgejo`, `azuredevops`, `azureboards`,
+`jira`, `linear`) counts its calls to the forge's API by caller (#6164): `event <name>` for an
+event's poll, `tool <name>` for a tool call, and `other` for the rest. Every 10 minutes with
+calls, the server writes one line to its log in `mcp-logs/`, as:
+
+```text
+api calls: github, 312 in 10m0s: event pr.blocked graphql 20; event pr.merged core 20 (18 unchanged); tool show_pull_request core 3; budget: core 4210 of 5000 left, full again in 41m; graphql 900 of 5000 left, full again in 12m
+```
+
+`unchanged` are the calls answered 304, which GitHub does not count against a budget;
+`refused` are the calls answered 403 or 429. The budget is what the forge last said in its
+headers (GitHub's and Azure DevOps' `X-RateLimit-*`, GitLab's and Forgejo's `RateLimit-*`,
+Linear's `X-RateLimit-Requests-*`); a forge that sends none has no budget part. The budget is
+the account's, so it falls for every machine and tool that uses the same account, not only
+this server's calls. When a budget goes under a fifth, the log says so once:
+`api calls: github graphql budget low: 900 of 5000 left, full again in 12m`.
+
 ## The Events page
 
 On the Mac, **Events** is a row at the foot of the sidebar, above **Resources** and
