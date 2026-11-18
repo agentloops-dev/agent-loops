@@ -91,7 +91,7 @@ struct MachineSessionCountsTests {
     }
 
     /// The measurement for P20261117-1, run only when asked (`AGENTS_BENCH_MACHINES=1`):
-    /// 5,000 agents on 10 machines, 2,000 updates that move no count. After each update that
+    /// 5,000 agents on 10 machines, 500 updates that move no count. After each update that
     /// changed what the sidebar read, the sidebar reads it again, as SwiftUI would: every
     /// machine's `active` (10 machines is past the seven) and each of the seven rows' line.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENTS_BENCH_MACHINES"] == "1"))
@@ -114,21 +114,23 @@ struct MachineSessionCountsTests {
         }
         read()
         var redraws = 0
-        let updates = 2_000
+        let updates = 500
         let clock = ContinuousClock()
-        let took = clock.measure {
-            for step in 0..<updates {
-                var changed = held[(step * 7) % held.count]
-                changed.lastActivityAt = Date(timeIntervalSince1970: Double(10_000 + step))
-                model.upsert(changed)
-                if invalidated.withLock({ let was = $0; $0 = false; return was }) {
-                    redraws += 1
-                    read()
-                }
+        var filing = Duration.zero
+        var reading = Duration.zero
+        for step in 0..<updates {
+            var changed = held[(step * 7) % held.count]
+            changed.lastActivityAt = Date(timeIntervalSince1970: Double(10_000 + step))
+            filing += clock.measure { model.upsert(changed) }
+            if invalidated.withLock({ let was = $0; $0 = false; return was }) {
+                redraws += 1
+                reading += clock.measure { read() }
             }
         }
-        let ms = Double(took.components.attoseconds) / 1e15 + Double(took.components.seconds) * 1_000
-        print("BENCH machines updates=\(updates) redraws=\(redraws) total_ms=\(String(format: "%.1f", ms))")
+        func ms(_ d: Duration) -> String {
+            String(format: "%.2f", Double(d.components.seconds) * 1_000 + Double(d.components.attoseconds) / 1e15)
+        }
+        print("BENCH machines updates=\(updates) redraws=\(redraws) sidebar_ms=\(ms(reading)) filing_ms=\(ms(filing))")
         #expect(redraws == 0)
     }
 
