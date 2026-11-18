@@ -114,7 +114,7 @@ Unchanged, except that a `diff` in the tool call is now shown in the question.
 → { "content": "..." }
 ```
 
-Served when the path is inside the agent's folders. Recorded in the transcript. Not asked about: a
+Served when the path is inside the agent's folders, or in `~/.agents/memory/` (read only, #6034). Recorded in the transcript. Not asked about: a
 read is not a change, and Grok issues several per edit. `line` and `limit` are honoured.
 
 ### `fs/write_text_file`
