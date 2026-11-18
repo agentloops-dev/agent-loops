@@ -74,10 +74,14 @@ struct FolderListView: View {
     /// The Machines group's rows (#5286): at most seven, This Mac, pinned and busy first.
     private var machineRows: MachinesGroup.Rows {
         let pins = Set(MachinePins.pinned(machinePins))
+        let machines = machines
+        let making = model.machinesBeingMade + model.machinesMaking.count
+        // Seven or fewer are drawn as they are: nothing asks about their sessions (P20261117-1).
+        let ranks = MachinesGroup.ranks(machines.count, making: making)
         let listed = machines.map { host in
-            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: ranks && model.machineIsActive(host))
         }
-        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count)
+        return MachinesGroup.rows(listed, making: making)
     }
 
     /// No runtime can be started on: Runtimes' icon says so in red (#587); one nearly used

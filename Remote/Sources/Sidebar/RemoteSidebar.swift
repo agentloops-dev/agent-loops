@@ -66,10 +66,14 @@ struct RemoteSidebar: View {
     /// The Machines group's rows (#5286): at most seven, This Mac, pinned and busy first.
     private var machineRows: MachinesGroup.Rows {
         let pins = Set(MachinePins.pinned(machinePins))
-        let listed = model.machines.map { host in
-            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
+        let machines = model.machines
+        let making = model.machinesBeingMade + model.machinesMaking.count
+        // Seven or fewer are drawn as they are: nothing asks about their sessions (P20261117-1).
+        let ranks = MachinesGroup.ranks(machines.count, making: making, all: showsAllMachines)
+        let listed = machines.map { host in
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: ranks && model.machineIsActive(host))
         }
-        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count, all: showsAllMachines)
+        return MachinesGroup.rows(listed, making: making, all: showsAllMachines)
     }
 
     private var servers: [MachineRef] {

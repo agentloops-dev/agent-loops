@@ -2519,6 +2519,14 @@ public final class AgentsModel {
         if lastRuntimes[host] != runtimeID { lastRuntimes[host] = runtimeID }
     }
 
+    /// How many of a machine's sessions work and wait (P20261117-1): what the sidebar's Machines
+    /// group, its rows and the Machines page's Working column read, never `agents`.
+    public func sessionCounts(on host: MachineRef) -> MachineSessionCounts {
+        var counts = MachineSessionCounts()
+        for agent in agents where agent.host == host { counts.add(group(of: agent)) }
+        return counts
+    }
+
     /// Every machine's last runtime again, in one pass of the list.
     private func noteLastRuntimes() {
         var latest: [MachineRef: String] = [:]
