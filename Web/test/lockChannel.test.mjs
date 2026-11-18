@@ -178,3 +178,54 @@ test("a page that is not in its lock calls machines as before", async (t) => {
   s.line(JSON.stringify({ h: "k3v9", m: { jsonrpc: "2.0", id: sent.m.id, result: [] } }));
   assert.deepEqual(await listed, []);
 });
+
+/** The channel from the hello at s.raw[index], answered as the machine. */
+async function answerHello(lock, s, index) {
+  const hello = JSON.parse(s.raw[index]);
+  assert.equal(hello.m.method, "lock/hello");
+  const { reply, channel } = await lock.answer(hello.m.params);
+  s.line(JSON.stringify({ h: "k3v9", m: { jsonrpc: "2.0", id: hello.m.id, result: reply } }));
+  return channel;
+}
+
+const forgot = (id) => JSON.stringify({ h: "k3v9", m: { jsonrpc: "2.0", id, error: { code: -32104, message: "This machine takes requests only from your devices: no channel was opened with lock/hello." } } });
+
+test("a machine that forgot the channel gets a new one, and the call goes again on it, not to the caller (#6227)", async (t) => {
+  const lock = await lockWithMachine();
+  const { l, s } = await openLink(t, lock.source);
+  const listed = l.call("folders/list", {}, "k3v9");
+  await eventually(() => s.raw.length === 1);
+  const old = await answerHello(lock, s, 0);
+  await eventually(() => s.raw.length === 2);
+  const first = JSON.parse(await old.open(messageOf(s.raw[1])));
+  // The machine's uplink went and came back: it refuses the call, with no MAC.
+  s.line(forgot(first.id));
+  // A new hello, then the same call again, sealed on the new channel.
+  await eventually(() => s.raw.length === 3);
+  const channel = await answerHello(lock, s, 2);
+  await eventually(() => s.raw.length === 4);
+  const sent = messageOf(s.raw[3]);
+  assert.ok(w.sealed(sent), sent);
+  const again = JSON.parse(await channel.open(sent));
+  assert.equal(again.id, first.id);
+  assert.equal(again.method, "folders/list");
+  s.line(`{"h":"k3v9","m":${await channel.seal(`{"jsonrpc":"2.0","id":${again.id},"result":[]}`)}}`);
+  assert.deepEqual(await listed, []);
+});
+
+test("a call goes again once: a second refusal is the caller's (#6227)", async (t) => {
+  const lock = await lockWithMachine();
+  const { l, s } = await openLink(t, lock.source);
+  const listed = l.call("folders/list", {}, "k3v9");
+  await eventually(() => s.raw.length === 1);
+  const old = await answerHello(lock, s, 0);
+  await eventually(() => s.raw.length === 2);
+  const first = JSON.parse(await old.open(messageOf(s.raw[1])));
+  s.line(forgot(first.id));
+  await eventually(() => s.raw.length === 3);
+  const channel = await answerHello(lock, s, 2);
+  await eventually(() => s.raw.length === 4);
+  const again = JSON.parse(await channel.open(messageOf(s.raw[3])));
+  s.line(forgot(again.id));
+  await assert.rejects(listed, (error) => error instanceof w.CallFailed && error.code === -32104);
+});

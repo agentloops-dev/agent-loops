@@ -8,7 +8,7 @@ export type LogEvent =
   | "link.suspended" | "pair.ask" | "pair.org" | "pair.orgFailed" | "pair.suspended" | "signIn.orgStart" | "signIn.providersFailed"
   // The machine lock (#3492): no checked channel to a machine, and calls to it go as before;
   // a notification from a machine with a channel that does not check (#3541).
-  | "lock.noChannel" | "lock.noticeRefused";
+  | "lock.noChannel" | "lock.noticeRefused" | "lock.again";
 
 /** `code` is a refusal reason, a JSON-RPC error number, or a close code. */
 export function log(event: LogEvent, code?: string | number): void {

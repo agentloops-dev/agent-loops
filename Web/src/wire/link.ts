@@ -181,7 +181,17 @@ export const suspendedReason = "suspended";
 const refusalWait = 5000;
 
 /** A call waiting for its reply, and the route it went on: a host, or null for the control plane. */
-type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; route: string | null };
+type Pending = {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  route: string | null;
+  /** A call to a machine of the lock, as written, so a refusal at a channel it forgot can send it again (#6227). */
+  resend?: { method: string; text: string; paramsText: string | undefined };
+  /** The channel it went on. */
+  lock?: RouteLock;
+  /** It went again once: a second refusal is the caller's. */
+  retried?: boolean;
+};
 
 /** Lines from a socket, as the exchange reads them. */
 export class Lines implements LineSocket {
@@ -368,12 +378,14 @@ export class Link {
         log("call.timedOut");
         reject(new CallTimedOut());
       }, timeout);
+      const locked = route !== null && method !== "lock/hello" && this.lockSource !== null;
       this.pending.set(id, {
         resolve: (value) => { clearTimeout(timer); resolve(value as Result<M>); },
         reject: (error) => { clearTimeout(timer); reject(error); },
         route,
+        ...(locked ? { resend: { method, text, paramsText } } : {}),
       });
-      if (route !== null && method !== "lock/hello" && this.lockSource) this.sendLocked(route, method, text, paramsText, id);
+      if (route !== null && locked) this.sendLocked(route, method, text, paramsText, id);
       else this.socket?.send(line);
     });
     return { id, done };
@@ -413,6 +425,8 @@ export class Link {
   /** A call to a machine: with the channel's MAC, or, with no channel, signed when it may be kept. */
   private sendLocked(route: string, method: string, text: string, paramsText: string | undefined, id: number): void {
     const lock = this.routeLock(route);
+    const pending = this.pending.get(id);
+    if (pending) pending.lock = lock;
     const socket = this.socket;
     lock.sends = lock.sends.then(async () => {
       const channel = await lock.ready;
@@ -569,16 +583,36 @@ export class Link {
         if (!lock.channel) throw new Error("no channel");
         return this.take({ h: frame.h, m: JSON.parse(await lock.channel.open(text)) });
       } catch {
-        return this.take({ h: frame.h, m: { id: message.id, error: { code: Failure.notInLock, message: "The machine's answer does not check, so it was not taken." } } });
+        return this.take({ h: frame.h, m: { id: message.id, error: { code: Failure.notInLock, message: "The machine's answer does not check, so it was not taken." } } }, true);
       }
     }
     if (message.result !== undefined) {
-      return this.take({ h: frame.h, m: { id: message.id, error: { code: Failure.notInLock, message: "The machine's answer was not signed, so it was not taken." } } });
+      return this.take({ h: frame.h, m: { id: message.id, error: { code: Failure.notInLock, message: "The machine's answer was not signed, so it was not taken." } } }, true);
     }
     // The control plane's own refusal (offline, not routed) has no MAC, and is taken. The
-    // machine's refusal of a request it had no channel for opens one again at the next call.
-    if (message.error?.code === Failure.notInLock && frame.h && this.routeLocks.get(frame.h) === lock) this.routeLocks.delete(frame.h);
+    // machine's refusal of a request it had no channel for (it forgot it when its uplink went,
+    // #4988) opens one again at the next call, and take sends the request again on it (#6227).
+    // A refusal of a request on an older channel leaves the newer one as it is.
+    if (message.error?.code === Failure.notInLock && frame.h) {
+      const sentOn = typeof message.id === "number" ? this.pending.get(message.id)?.lock : undefined;
+      if (this.routeLocks.get(frame.h) === (sentOn ?? lock)) this.routeLocks.delete(frame.h);
+    }
     this.take(frame);
+  }
+
+  /**
+   * A call the machine refused as not in its lock goes again, once, on a new channel: the
+   * machine forgot the old one when its uplink went and came back (#6227), or took its lock
+   * since (#3642). The caller sees only a second refusal. It goes as every call does, with the
+   * channel's MAC, so none goes unsealed.
+   */
+  private again(id: number, pending: Pending): boolean {
+    if (!pending.resend || pending.retried || pending.route === null || !this.lockSource) return false;
+    pending.retried = true;
+    this.pending.set(id, pending);
+    log("lock.again", pending.route);
+    this.sendLocked(pending.route, pending.resend.method, pending.resend.text, pending.resend.paramsText, id);
+    return true;
   }
 
   /**
@@ -598,7 +632,8 @@ export class Link {
     }
   }
 
-  private take(frame: Frame): void {
+  /** A frame for a call or the page; `ours` when it is the page's own refusal of an answer that does not check. */
+  private take(frame: Frame, ours = false): void {
     const message = frame.m;
     if (!message) return;
     if (message.id === null && message.error) {
@@ -619,6 +654,7 @@ export class Link {
       if (!pending) return;
       this.pending.delete(message.id);
       if (message.error) {
+        if (message.error.code === Failure.notInLock && !ours && this.again(message.id, pending)) return;
         log("call.failed", message.error.code);
         pending.reject(new CallFailed(message.error.code, message.error.message, message.error.data, pending.route));
       } else {
