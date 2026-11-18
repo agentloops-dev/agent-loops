@@ -37,12 +37,19 @@ public enum MachinesGroup {
         public var bounded: Bool { machines.count + making < total }
     }
 
+    /// Whether `rows` ranks the machines, so it reads each one's `active`: only past the limit.
+    /// With seven or fewer, every machine is drawn in the client's order, and a client asks
+    /// nothing about their sessions (P20261117-1).
+    public static func ranks(_ machines: Int, making: Int, all: Bool = false) -> Bool {
+        !all && machines + making > limit
+    }
+
     /// The rows of the group. `machines` is in the order the client lists them (This Mac, then
     /// by name); `making` is how many machines New Machine is making or that never joined.
     /// `all` draws every one (the Remote, until its Machines page: #5568).
     public static func rows(_ machines: [Machine], making: Int, all: Bool = false) -> Rows {
         let total = machines.count + making
-        guard !all, total > limit else {
+        guard ranks(machines.count, making: making, all: all) else {
             return Rows(machines: machines.map(\.host), making: making, total: total)
         }
         let rank = { (m: Machine) -> Int in
