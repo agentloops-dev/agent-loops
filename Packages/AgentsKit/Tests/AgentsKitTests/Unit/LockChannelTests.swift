@@ -70,6 +70,7 @@ struct LockChannelTests {
         }
 
         func write(line: String) throws { lock.withLock { written.append(line) } }
+        var count: Int { lock.withLock { written.count } }
         func lines() -> AsyncThrowingStream<String, any Error> { stream }
         func close() { say.finish() }
 
@@ -181,7 +182,7 @@ struct LockChannelTests {
     }
 
     /// A transport opened before the machine held its lock (#3642): the machine refuses its next
-    /// request, and the transport opens a channel then, so the request after it is sealed.
+    /// request, the transport opens a channel then, and the request goes again on it (#6227).
     @Test func aMachineThatTookItsLockAfterTheTransportOpenedGetsAChannelAtItsFirstRefusal() async throws {
         let (signer, machineKey) = try Self.lockWithMachine()
         let machine = Machine()
@@ -198,40 +199,15 @@ struct LockChannelTests {
         try transport.write(line: try JSONRPCCodec.encode(.request(id: .number(1), method: "folders/list", params: .object([:]))))
         #expect(!LockChannel.sealed(await machine.line(1)))
         // The machine took its lock: it refuses the request, and a hello goes again.
-        machine.say.yield(try JSONRPCCodec.encode(.failure(id: .number(1), error: JSONRPCError(code: DaemonAPI.Failure.notInLock,
-                                                                                                 message: "not signed"))))
-        guard case .failure(_, let refused) = try JSONRPCCodec.decode(line: try #require(try await heard.next())) else {
-            Issue.record("the refusal was not passed on")
-            return
-        }
-        #expect(refused.code == DaemonAPI.Failure.notInLock)
-        guard case .request(let helloID, "lock/hello", let params?)? = try? JSONRPCCodec.decode(line: await machine.line(2)) else {
-            Issue.record("no hello again")
-            return
-        }
-        #expect(helloID != firstHello)
-        let (reply, channel) = try Self.answer(try params.decode(DaemonAPI.LockHello.self), as: machineKey)
-        machine.say.yield(try JSONRPCCodec.encode(.success(id: helloID, result: try JSONValue.encoding(reply))))
-
-        // Wait until the channel is made from the answer, then the next request is sealed.
-        var sent = ""
-        for id in 2..<200 {
-            try transport.write(line: try JSONRPCCodec.encode(.request(id: .number(id), method: "folders/list", params: .object([:]))))
-            sent = await machine.line(id + 1)
-            if LockChannel.sealed(sent) { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(LockChannel.sealed(sent))
-        guard case .request(_, "folders/list", _)? = try? JSONRPCCodec.decode(line: try channel.open(sent)) else {
-            Issue.record("not the request: \(sent)")
-            return
-        }
+        machine.say.yield(Self.notInLock(1, "not signed"))
+        _ = try await Self.answerAndExpectTheRequestAgain(machine, hello: 2, not: firstHello, as: machineKey, heard: &heard)
         transport.close()
     }
 
     /// The machine's uplink went and came back (#4988): it forgot the channel, but this transport
-    /// stayed open. At its refusal of a sealed request, a hello goes again, and the request after
-    /// it is sealed on the new channel.
+    /// stayed open. At its refusal of a sealed request, a hello goes again, and the request goes
+    /// again on the new channel, so the caller gets its answer, not the refusal (#6227). A request
+    /// written while the hello is on its way waits for the new channel: none goes unsealed.
     @Test func aMachineThatForgotTheChannelGetsANewOneAtItsRefusal() async throws {
         let (signer, machineKey) = try Self.lockWithMachine()
         let machine = Machine()
@@ -249,36 +225,68 @@ struct LockChannelTests {
         try transport.write(line: try JSONRPCCodec.encode(.request(id: .number(1), method: "folders/list", params: .object([:]))))
         _ = try oldChannel.open(await machine.line(1))
         // The machine has no channel for this connection any more: it refuses, with no MAC.
-        machine.say.yield(try JSONRPCCodec.encode(.failure(id: .number(1), error: JSONRPCError(code: DaemonAPI.Failure.notInLock,
-                                                                                                 message: "no channel was opened with lock/hello"))))
-        guard case .failure(_, let refused) = try JSONRPCCodec.decode(line: try #require(try await heard.next())) else {
-            Issue.record("the refusal was not passed on")
-            return
-        }
-        #expect(refused.code == DaemonAPI.Failure.notInLock)
+        machine.say.yield(Self.notInLock(1, "no channel was opened with lock/hello"))
         guard case .request(let helloID, "lock/hello", let params?)? = try? JSONRPCCodec.decode(line: await machine.line(2)) else {
             Issue.record("no hello again")
             return
         }
         #expect(helloID != firstHello)
+        // Written while the hello is on its way: it waits.
+        try transport.write(line: try JSONRPCCodec.encode(.request(id: .number(2), method: "agents/list", params: .object([:]))))
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(machine.count == 3)
         let (reply, channel) = try Self.answer(try params.decode(DaemonAPI.LockHello.self), as: machineKey)
         machine.say.yield(try JSONRPCCodec.encode(.success(id: helloID, result: try JSONValue.encoding(reply))))
 
-        // Wait until the new channel is made from the answer, then the next request is sealed on it.
-        var opened: String?
-        for id in 2..<200 {
-            try transport.write(line: try JSONRPCCodec.encode(.request(id: .number(id), method: "folders/list", params: .object([:]))))
-            let sent = await machine.line(id + 1)
-            if LockChannel.sealed(sent) {
-                opened = try? channel.open(sent)
-                break
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        guard case .request(_, "folders/list", _)? = try? JSONRPCCodec.decode(line: try #require(opened)) else {
-            Issue.record("not sealed on the new channel")
+        let again = await machine.line(3)
+        guard case .request(.number(1), "folders/list", _)? = try? JSONRPCCodec.decode(line: try channel.open(again)) else {
+            Issue.record("not the request again on the new channel: \(again)")
             return
         }
+        let later = await machine.line(4)
+        guard case .request(.number(2), "agents/list", _)? = try? JSONRPCCodec.decode(line: try channel.open(later)) else {
+            Issue.record("the waiting request did not go on the new channel: \(later)")
+            return
+        }
+        machine.say.yield(channel.seal(#"{"id":1,"jsonrpc":"2.0","result":[]}"#))
+        #expect(try await heard.next() == #"{"id":1,"jsonrpc":"2.0","result":[]}"#)
+        machine.say.yield(channel.seal(#"{"id":2,"jsonrpc":"2.0","result":[]}"#))
+        #expect(try await heard.next() == #"{"id":2,"jsonrpc":"2.0","result":[]}"#)
+        transport.close()
+    }
+
+    /// A request goes again once (#6227): when the machine refuses it on the new channel too,
+    /// the caller gets that refusal.
+    @Test func aSecondRefusalOnTheNewChannelGoesToTheCaller() async throws {
+        let (signer, machineKey) = try Self.lockWithMachine()
+        let machine = Machine()
+        let link = LockedLink(Fixed(machine: machine), host: MachineRef(rawValue: "m-1")) { signer }
+        let opening = Task { try await link.transport() }
+        guard case .request(let firstHello, _, let firstParams?)? = try? JSONRPCCodec.decode(line: await machine.line(0)) else {
+            Issue.record("no hello")
+            return
+        }
+        let (firstReply, _) = try Self.answer(try firstParams.decode(DaemonAPI.LockHello.self), as: machineKey)
+        machine.say.yield(try JSONRPCCodec.encode(.success(id: firstHello, result: try JSONValue.encoding(firstReply))))
+        let transport = try await opening.value
+        var heard = transport.lines().makeAsyncIterator()
+
+        try transport.write(line: try JSONRPCCodec.encode(.request(id: .number(1), method: "folders/list", params: .object([:]))))
+        _ = await machine.line(1)
+        machine.say.yield(Self.notInLock(1, "no channel was opened with lock/hello"))
+        guard case .request(let helloID, "lock/hello", let params?)? = try? JSONRPCCodec.decode(line: await machine.line(2)) else {
+            Issue.record("no hello again")
+            return
+        }
+        let (reply, channel) = try Self.answer(try params.decode(DaemonAPI.LockHello.self), as: machineKey)
+        machine.say.yield(try JSONRPCCodec.encode(.success(id: helloID, result: try JSONValue.encoding(reply))))
+        _ = try channel.open(await machine.line(3))
+        machine.say.yield(Self.notInLock(1, "no channel was opened with lock/hello"))
+        guard case .failure(.number(1), let refused) = try JSONRPCCodec.decode(line: try #require(try await heard.next())) else {
+            Issue.record("the second refusal was not passed on")
+            return
+        }
+        #expect(refused.code == DaemonAPI.Failure.notInLock)
         transport.close()
     }
 
@@ -293,11 +301,19 @@ struct LockChannelTests {
         var heard = transport.lines().makeAsyncIterator()
         machine.say.yield(#"{"id":1,"jsonrpc":"2.0","result":{}}"#)
         #expect(try await heard.next() == #"{"id":1,"jsonrpc":"2.0","result":{}}"#)
+        // Refused as not in the lock, with no lock to open a channel with: the caller gets it.
+        try transport.write(line: try JSONRPCCodec.encode(.request(id: .number(2), method: "folders/list", params: .object([:]))))
+        _ = await machine.line(1)
+        machine.say.yield(Self.notInLock(2, "not signed"))
+        guard case .failure(.number(2), _) = try JSONRPCCodec.decode(line: try #require(try await heard.next())) else {
+            Issue.record("the refusal was not passed on")
+            return
+        }
         transport.close()
     }
 
     /// A transport opened before this device made the lock (#4134): no hello then, and at the
-    /// machine's first refusal, a hello with the lock as it is now, so a later request is sealed.
+    /// machine's first refusal, a hello with the lock as it is now, and the request again on it.
     @Test func aTransportOpenedBeforeTheLockExistedGetsAChannelAtItsFirstRefusal() async throws {
         let (made, machineKey) = try Self.lockWithMachine()
         let machine = Machine()
@@ -310,33 +326,38 @@ struct LockChannelTests {
         #expect(!LockChannel.sealed(await machine.line(0)))
         // The lock is made; the machine refuses the request, and a hello goes.
         signer.value = made
-        machine.say.yield(try JSONRPCCodec.encode(.failure(id: .number(1), error: JSONRPCError(code: DaemonAPI.Failure.notInLock,
-                                                                                                 message: "not signed"))))
-        guard case .failure(_, let refused) = try JSONRPCCodec.decode(line: try #require(try await heard.next())) else {
-            Issue.record("the refusal was not passed on")
-            return
-        }
-        #expect(refused.code == DaemonAPI.Failure.notInLock)
-        guard case .request(let helloID, "lock/hello", let params?)? = try? JSONRPCCodec.decode(line: await machine.line(1)) else {
-            Issue.record("no hello")
-            return
-        }
-        let (reply, channel) = try Self.answer(try params.decode(DaemonAPI.LockHello.self), as: machineKey)
-        machine.say.yield(try JSONRPCCodec.encode(.success(id: helloID, result: try JSONValue.encoding(reply))))
-
-        var sent = ""
-        for id in 2..<200 {
-            try transport.write(line: try JSONRPCCodec.encode(.request(id: .number(id), method: "folders/list", params: .object([:]))))
-            sent = await machine.line(id)
-            if LockChannel.sealed(sent) { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(LockChannel.sealed(sent))
-        guard case .request(_, "folders/list", _)? = try? JSONRPCCodec.decode(line: try channel.open(sent)) else {
-            Issue.record("not the request: \(sent)")
-            return
-        }
+        machine.say.yield(Self.notInLock(1, "not signed"))
+        _ = try await Self.answerAndExpectTheRequestAgain(machine, hello: 1, not: nil, as: machineKey, heard: &heard)
         transport.close()
+    }
+
+    struct Missing: Error {}
+
+    static func notInLock(_ id: Int, _ words: String) -> String {
+        (try? JSONRPCCodec.encode(.failure(id: .number(id), error: JSONRPCError(code: DaemonAPI.Failure.notInLock, message: words)))) ?? ""
+    }
+
+    /// The hello at `index`, answered: the request 1 that the machine refused just before goes
+    /// again, sealed on the new channel (#6227), and the caller gets the machine's answer to it,
+    /// not the refusal.
+    static func answerAndExpectTheRequestAgain(_ machine: Machine, hello index: Int, not old: JSONRPCID?, as key: P256.Signing.PrivateKey,
+                                               heard: inout AsyncThrowingStream<String, any Error>.Iterator) async throws -> LockChannel.Channel {
+        guard case .request(let helloID, "lock/hello", let params?)? = try? JSONRPCCodec.decode(line: await machine.line(index)) else {
+            Issue.record("no hello again")
+            throw Missing()
+        }
+        if let old { #expect(helloID != old) }
+        let (reply, channel) = try answer(try params.decode(DaemonAPI.LockHello.self), as: key)
+        machine.say.yield(try JSONRPCCodec.encode(.success(id: helloID, result: try JSONValue.encoding(reply))))
+        let again = await machine.line(index + 1)
+        #expect(LockChannel.sealed(again))
+        guard case .request(.number(1), "folders/list", _)? = try? JSONRPCCodec.decode(line: try channel.open(again)) else {
+            Issue.record("not the request again: \(again)")
+            throw Missing()
+        }
+        machine.say.yield(channel.seal(#"{"id":1,"jsonrpc":"2.0","result":[]}"#))
+        #expect(try await heard.next() == #"{"id":1,"jsonrpc":"2.0","result":[]}"#)
+        return channel
     }
 
     /// The signer the link reads, set by the test once the lock is made.
