@@ -55,15 +55,7 @@ func TestTheListsAskForNewestCreatedFirst(t *testing.T) {
 	callTool(t, c, "show_merge_requests", map[string]any{})
 	callTool(t, c, "show_issues", map[string]any{})
 
-	mergeRequests, issues := "", ""
-	for _, request := range f.asked() {
-		if strings.Contains(request, "/merge_requests?") {
-			mergeRequests = request
-		}
-		if strings.Contains(request, "/issues?") {
-			issues = request
-		}
-	}
+	mergeRequests, issues := lastListRequests(f.asked())
 	for label, request := range map[string]string{"merge requests": mergeRequests, "issues": issues} {
 		if !strings.Contains(request, "order_by=created_at") || !strings.Contains(request, "sort=desc") || strings.Contains(request, "order_by=updated_at") {
 			t.Errorf("%s request: %s", label, request)
@@ -74,14 +66,15 @@ func TestTheListsAskForNewestCreatedFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	toolDescriptions := map[string][]string{}
+	for _, tool := range tools.Tools {
+		toolDescriptions[tool.Name] = append(toolDescriptions[tool.Name], tool.Description)
+	}
 	for _, name := range []string{"show_merge_requests", "show_issues"} {
-		found := false
-		for _, tool := range tools.Tools {
-			if tool.Name == name {
-				found = true
-				if !strings.Contains(tool.Description, "newest created first") {
-					t.Errorf("%s description: %s", name, tool.Description)
-				}
+		descriptions, found := toolDescriptions[name]
+		for _, d := range descriptions {
+			if !strings.Contains(d, "newest created first") {
+				t.Errorf("%s description: %s", name, d)
 			}
 		}
 		if !found {
@@ -92,20 +85,34 @@ func TestTheListsAskForNewestCreatedFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	resourceDescriptions := map[string][]string{}
+	for _, resource := range resources.Resources {
+		resourceDescriptions[resource.Title] = append(resourceDescriptions[resource.Title], resource.Description)
+	}
 	for _, title := range []string{"Merge requests", "Issues"} {
-		found := false
-		for _, resource := range resources.Resources {
-			if resource.Title == title {
-				found = true
-				if !strings.Contains(resource.Description, "newest created first") {
-					t.Errorf("%s resource description: %s", title, resource.Description)
-				}
+		descriptions, found := resourceDescriptions[title]
+		for _, d := range descriptions {
+			if !strings.Contains(d, "newest created first") {
+				t.Errorf("%s resource description: %s", title, d)
 			}
 		}
 		if !found {
 			t.Errorf("missing resource %s", title)
 		}
 	}
+}
+
+// lastListRequests is the last request for a list of merge requests and of issues.
+func lastListRequests(asked []string) (mergeRequests, issues string) {
+	for _, request := range asked {
+		if strings.Contains(request, "/merge_requests?") {
+			mergeRequests = request
+		}
+		if strings.Contains(request, "/issues?") {
+			issues = request
+		}
+	}
+	return mergeRequests, issues
 }
 
 func viewsFake(t *testing.T) *fakeGitLab {
@@ -147,18 +154,7 @@ func TestEachViewHasAToolThatFeedsItAndAPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	visibility := map[string][]any{}
-	feeds := map[string]string{}
-	for _, tool := range tools.Tools {
-		ui, _ := tool.Meta["ui"].(map[string]any)
-		visibility[tool.Name], _ = ui["visibility"].([]any)
-		if uri, _ := ui["resourceUri"].(string); uri != "" {
-			feeds[tool.Name] = uri
-			if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
-				t.Errorf("%s feeds a view but is not read-only, so it can't feed a pin", tool.Name)
-			}
-		}
-	}
+	visibility, feeds := viewsOfTools(t, tools.Tools)
 	for name, uri := range map[string]string{"show_merge_requests": mrsURI, "show_issues": issuesURI, "show_merge_request": mrURI} {
 		if feeds[name] != uri {
 			t.Errorf("%s feeds %q, not %s", name, feeds[name], uri)
@@ -175,34 +171,57 @@ func TestEachViewHasAToolThatFeedsItAndAPage(t *testing.T) {
 		if err != nil || len(r.Contents) != 1 {
 			t.Fatalf("%s: %v", uri, err)
 		}
-		html := r.Contents[0].Text
-		if r.Contents[0].MIMEType != viewMime || !strings.HasPrefix(html, "<!doctype html>") ||
-			strings.Contains(html, "/*common.css*/") || strings.Contains(html, "/*bridge.js*/") || strings.Contains(html, "/*lineage.js*/") || !strings.Contains(html, "const bridge") {
-			t.Errorf("%s is not a whole page", uri)
-		}
-		if uri != issuesURI && !strings.Contains(html, "const mrPage") {
-			t.Errorf("%s has no merge request page in it", uri)
-		}
-		if uri == issuesURI {
-			for _, want := range []string{"Add a label filter", "label-tags", "removeLabel", "Promise.all"} {
-				if !strings.Contains(html, want) {
-					t.Errorf("issues page is missing %q", want)
-				}
+		checkViewPage(t, uri, r.Contents[0].MIMEType, r.Contents[0].Text, visibility)
+	}
+}
+
+// viewsOfTools is each tool's visibility and the view each tool feeds; a tool that feeds a
+// view must be read-only.
+func viewsOfTools(t *testing.T, tools []*mcp.Tool) (visibility map[string][]any, feeds map[string]string) {
+	t.Helper()
+	visibility, feeds = map[string][]any{}, map[string]string{}
+	for _, tool := range tools {
+		ui, _ := tool.Meta["ui"].(map[string]any)
+		visibility[tool.Name], _ = ui["visibility"].([]any)
+		if uri, _ := ui["resourceUri"].(string); uri != "" {
+			feeds[tool.Name] = uri
+			if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+				t.Errorf("%s feeds a view but is not read-only, so it can't feed a pin", tool.Name)
 			}
 		}
-		// Every tool a page calls is one this server has.
-		for _, called := range []string{"show_merge_requests", "show_merge_request", "show_merge_request_diff", "failed_log",
-			"retry_pipeline", "comment_on_merge_request", "approve_merge_request", "merge_merge_request", "show_issues", "show_issue_details"} {
-			if strings.Contains(html, `"`+called+`"`) && visibility[called] == nil {
-				t.Errorf("%s calls %s, which is not a tool", uri, called)
+	}
+	return visibility, feeds
+}
+
+// checkViewPage checks that the view at uri is a whole page that calls only this server's tools.
+func checkViewPage(t *testing.T, uri, mime, html string, visibility map[string][]any) {
+	t.Helper()
+	if mime != viewMime || !strings.HasPrefix(html, "<!doctype html>") ||
+		strings.Contains(html, "/*common.css*/") || strings.Contains(html, "/*bridge.js*/") || strings.Contains(html, "/*lineage.js*/") || !strings.Contains(html, "const bridge") {
+		t.Errorf("%s is not a whole page", uri)
+	}
+	if uri != issuesURI && !strings.Contains(html, "const mrPage") {
+		t.Errorf("%s has no merge request page in it", uri)
+	}
+	if uri == issuesURI {
+		for _, want := range []string{"Add a label filter", "label-tags", "removeLabel", "Promise.all"} {
+			if !strings.Contains(html, want) {
+				t.Errorf("issues page is missing %q", want)
 			}
 		}
-		if strings.Contains(html, "GitHub") || strings.Contains(html, "gh pr") || strings.Contains(html, "CodeRabbit") {
-			t.Errorf("%s still speaks of GitHub", uri)
+	}
+	// Every tool a page calls is one this server has.
+	for _, called := range []string{"show_merge_requests", "show_merge_request", "show_merge_request_diff", "failed_log",
+		"retry_pipeline", "comment_on_merge_request", "approve_merge_request", "merge_merge_request", "show_issues", "show_issue_details"} {
+		if strings.Contains(html, `"`+called+`"`) && visibility[called] == nil {
+			t.Errorf("%s calls %s, which is not a tool", uri, called)
 		}
-		if uri == issuesURI && (!strings.Contains(html, "aria-expanded") || strings.Contains(html, "Show details")) {
-			t.Error("issues page does not expand issue rows without a details button")
-		}
+	}
+	if strings.Contains(html, "GitHub") || strings.Contains(html, "gh pr") || strings.Contains(html, "CodeRabbit") {
+		t.Errorf("%s still speaks of GitHub", uri)
+	}
+	if uri == issuesURI && (!strings.Contains(html, "aria-expanded") || strings.Contains(html, "Show details")) {
+		t.Error("issues page does not expand issue rows without a details button")
 	}
 }
 

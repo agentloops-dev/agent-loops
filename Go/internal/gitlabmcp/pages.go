@@ -79,12 +79,7 @@ func (g *RealGitLab) Board(ctx context.Context, project string, meta mcp.Meta) (
 	if err := g.get(ctx, fmt.Sprintf("projects/%s/pipelines?order_by=id&sort=desc&per_page=100", pid(project)), false, &pipelines); err != nil {
 		return nil, err
 	}
-	bySHA := map[string]pipelineJSON{}
-	for _, p := range pipelines {
-		if _, ok := bySHA[p.SHA]; !ok {
-			bySHA[p.SHA] = p
-		}
-	}
+	bySHA := newestPipelineBySHA(pipelines)
 	viewer, err := g.viewer(ctx)
 	if err != nil {
 		return nil, err
@@ -99,24 +94,7 @@ func (g *RealGitLab) Board(ctx context.Context, project string, meta mcp.Meta) (
 	out := make([]any, len(mrs))
 	needsYou := 0
 	for i, m := range mrs {
-		j := m.mr().json()
-		j["base"], j["author"], j["updatedAt"], j["draft"], j["autoMerge"], j["checks"] =
-			m.TargetBranch, m.Author.Username, m.UpdatedAt, m.draft(), m.autoMerge(), "none"
-		if p, ok := bySHA[m.SHA]; ok {
-			j["checks"], j["pipelineId"] = pipelineState(p.Status), p.ID
-			if p.Status == "failed" {
-				j["failedPipelineId"] = p.ID
-			}
-		}
-		if c := m.conflicts(); c != nil {
-			j["conflicts"] = *c
-		}
-		if r := m.review(); r != "" {
-			j["review"] = r
-		}
-		if isBot(m.Author.Username, m.Author.Bot) {
-			j["authorBot"] = true
-		}
+		j := boardRow(m, bySHA)
 		section := mrSection(m, j["checks"].(string), viewer, team[m.Author.ID], people)
 		j["section"] = section
 		if tp, on := people[strings.ToLower(m.Author.Username)]; on {
@@ -137,6 +115,41 @@ func (g *RealGitLab) Board(ctx context.Context, project string, meta mcp.Meta) (
 	}
 	// count and attention, the Needs you count, are the sidebar row's (#2033).
 	return map[string]any{"project": project, "viewer": viewer, "mergeRequests": out, "count": len(out), "attention": needsYou}, nil
+}
+
+// newestPipelineBySHA is each commit's newest pipeline, from pipelines newest first.
+func newestPipelineBySHA(pipelines []pipelineJSON) map[string]pipelineJSON {
+	bySHA := map[string]pipelineJSON{}
+	for _, p := range pipelines {
+		if _, ok := bySHA[p.SHA]; !ok {
+			bySHA[p.SHA] = p
+		}
+	}
+	return bySHA
+}
+
+// boardRow is a merge request's row on the board, before its section: its head commit's
+// pipeline (from bySHA), conflicts, review and whether a bot wrote it.
+func boardRow(m mergeRequest, bySHA map[string]pipelineJSON) map[string]any {
+	j := m.mr().json()
+	j["base"], j["author"], j["updatedAt"], j["draft"], j["autoMerge"], j["checks"] =
+		m.TargetBranch, m.Author.Username, m.UpdatedAt, m.draft(), m.autoMerge(), "none"
+	if p, ok := bySHA[m.SHA]; ok {
+		j["checks"], j["pipelineId"] = pipelineState(p.Status), p.ID
+		if p.Status == "failed" {
+			j["failedPipelineId"] = p.ID
+		}
+	}
+	if c := m.conflicts(); c != nil {
+		j["conflicts"] = *c
+	}
+	if r := m.review(); r != "" {
+		j["review"] = r
+	}
+	if isBot(m.Author.Username, m.Author.Bot) {
+		j["authorBot"] = true
+	}
+	return j
 }
 
 // MARK: Issues
@@ -235,65 +248,22 @@ func (g *RealGitLab) MRPage(ctx context.Context, project string, number int) (ma
 	if err != nil {
 		return nil, err
 	}
-	additions, deletions := 0, 0
-	files := make([]any, len(diff))
-	for i, f := range diff {
-		additions, deletions = additions+f.additions, deletions+f.deletions
-		files[i] = map[string]any{"path": f.NewPath, "additions": f.additions, "deletions": f.deletions, "change": f.change()}
-	}
+	files, additions, deletions := diffFiles(diff)
 	var discussions []discussionJSON
 	if err := g.get(ctx, fmt.Sprintf("projects/%s/merge_requests/%d/discussions?per_page=100", pid(project), number), false, &discussions); err != nil {
 		return nil, err
 	}
-	conversation, threads := []any{}, []any{}
-	for _, d := range discussions {
-		if len(d.Notes) == 0 || d.Notes[0].System {
-			continue
-		}
-		first := d.Notes[0]
-		comments := make([]any, 0, len(d.Notes))
-		for _, n := range d.Notes {
-			if !n.System {
-				comments = append(comments, n.json(m.WebURL))
-			}
-		}
-		if first.Type != "DiffNote" {
-			conversation = append(conversation, comments...)
-			continue
-		}
-		j := map[string]any{"path": "", "resolved": first.Resolved, "outdated": false, "comments": comments}
-		if p := first.Position; p != nil {
-			j["path"], j["line"] = p.NewPath, p.NewLine
-			if p.NewLine == 0 {
-				j["path"], j["line"] = p.OldPath, p.OldLine
-			}
-		}
-		threads = append(threads, j)
-	}
-	sort.SliceStable(conversation, func(i, j int) bool {
-		return mcpevents.Before(conversation[i].(map[string]any)["at"].(string), conversation[j].(map[string]any)["at"].(string))
-	})
+	conversation, threads := conversationAndThreads(discussions, m.WebURL)
 	runs := []any{}
 	checks, pipelineID := "none", 0
 	if p := m.HeadPipeline; p != nil {
 		checks, pipelineID = pipelineState(p.Status), p.ID
-		var jobs []jobJSON
-		if err := g.get(ctx, fmt.Sprintf("projects/%s/pipelines/%d/jobs?per_page=100", pid(project), p.ID), false, &jobs); err != nil {
+		if runs, err = g.pipelineRuns(ctx, project, p.ID); err != nil {
 			return nil, err
-		}
-		for _, job := range jobs {
-			state := pipelineState(job.Status)
-			if job.Status == "failed" && job.AllowFailure {
-				state = "skipped"
-			}
-			runs = append(runs, map[string]any{"name": job.Stage + ": " + job.Name, "job": job.Name, "state": state, "url": job.WebURL,
-				"pipelineId": p.ID})
 		}
 	}
 	state := m.State
-	switch state {
-	case "merged", "closed":
-	default:
+	if state != "merged" && state != "closed" {
 		state = "open"
 	}
 	page := map[string]any{
@@ -591,4 +561,72 @@ func (g *RealGitLab) Approve(ctx context.Context, project string, number int, sh
 		return nil, err
 	}
 	return map[string]any{"approved": true, "number": number}, nil
+}
+
+// diffFiles is each file a diff changes, and the lines it adds and deletes in all.
+func diffFiles(diff []parsedFile) (files []any, additions, deletions int) {
+	files = make([]any, len(diff))
+	for i, f := range diff {
+		additions, deletions = additions+f.additions, deletions+f.deletions
+		files[i] = map[string]any{"path": f.NewPath, "additions": f.additions, "deletions": f.deletions, "change": f.change()}
+	}
+	return files, additions, deletions
+}
+
+// conversationAndThreads splits a merge request's discussions into its conversation, oldest
+// first, and its threads on lines. GitLab's own notes are left out.
+func conversationAndThreads(discussions []discussionJSON, webURL string) (conversation, threads []any) {
+	conversation, threads = []any{}, []any{}
+	for _, d := range discussions {
+		if len(d.Notes) == 0 || d.Notes[0].System {
+			continue
+		}
+		first := d.Notes[0]
+		comments := make([]any, 0, len(d.Notes))
+		for _, n := range d.Notes {
+			if !n.System {
+				comments = append(comments, n.json(webURL))
+			}
+		}
+		if first.Type != "DiffNote" {
+			conversation = append(conversation, comments...)
+			continue
+		}
+		threads = append(threads, lineThread(first, comments))
+	}
+	sort.SliceStable(conversation, func(i, j int) bool {
+		return mcpevents.Before(conversation[i].(map[string]any)["at"].(string), conversation[j].(map[string]any)["at"].(string))
+	})
+	return conversation, threads
+}
+
+// lineThread is a thread on a line, from its first note: the new line, or the old one when
+// the line was deleted.
+func lineThread(first noteJSON, comments []any) map[string]any {
+	j := map[string]any{"path": "", "resolved": first.Resolved, "outdated": false, "comments": comments}
+	if p := first.Position; p != nil {
+		j["path"], j["line"] = p.NewPath, p.NewLine
+		if p.NewLine == 0 {
+			j["path"], j["line"] = p.OldPath, p.OldLine
+		}
+	}
+	return j
+}
+
+// pipelineRuns is a pipeline's jobs as the page's check runs; a failed job that may fail is skipped.
+func (g *RealGitLab) pipelineRuns(ctx context.Context, project string, id int) ([]any, error) {
+	var jobs []jobJSON
+	if err := g.get(ctx, fmt.Sprintf("projects/%s/pipelines/%d/jobs?per_page=100", pid(project), id), false, &jobs); err != nil {
+		return nil, err
+	}
+	runs := []any{}
+	for _, job := range jobs {
+		state := pipelineState(job.Status)
+		if job.Status == "failed" && job.AllowFailure {
+			state = "skipped"
+		}
+		runs = append(runs, map[string]any{"name": job.Stage + ": " + job.Name, "job": job.Name, "state": state, "url": job.WebURL,
+			"pipelineId": id})
+	}
+	return runs, nil
 }

@@ -356,43 +356,12 @@ func (g *RealGitLab) Search(ctx context.Context, projects []string, f SearchFilt
 	}
 	// Each project gives enough that, with what was seen left out, first are new.
 	ask := min(perPage, first+len(c.Seen))
-	var all []Item
-	more := false
 	// The first page counts each project's list in each state; later pages leave the count out.
-	total := 0
-	if after != "" {
-		total = -1
+	all, more, total, err := g.searchLists(ctx, projects, f, c, ask, after == "")
+	if err != nil {
+		return SearchPage{}, err
 	}
-	for _, project := range projects {
-		for _, state := range listStates(f) {
-			var list []forgeJSON
-			path := listPath(project, f, state, c.Before, ask)
-			if total < 0 {
-				err = g.get(ctx, path, false, &list)
-			} else {
-				var n int
-				if n, err = g.getCounted(ctx, path, &list); n < 0 {
-					total = -1
-				} else {
-					total += n
-				}
-			}
-			if err != nil {
-				return SearchPage{}, err
-			}
-			more = more || len(list) >= ask
-			for _, j := range list {
-				if i := j.item(project, f.MRs); !slices.Contains(c.Seen, i.key()) {
-					all = append(all, i)
-				}
-			}
-		}
-	}
-	slices.SortStableFunc(all, func(a, b Item) int {
-		ta, _ := mcpevents.ParseTime(a.UpdatedAt)
-		tb, _ := mcpevents.ParseTime(b.UpdatedAt)
-		return cmp.Or(tb.Compare(ta), cmp.Compare(a.key(), b.key()))
-	})
+	sortNewestFirst(all)
 	if len(all) > first {
 		all, more = all[:first], true
 	}
@@ -409,17 +378,65 @@ func (g *RealGitLab) Search(ctx context.Context, projects []string, f SearchFilt
 	return page, nil
 }
 
+// searchLists is the items of each project's list in each state that the cursor has not
+// seen, whether any list had more, and, with counted (the first page), the lists' total; a
+// total of -1 is not known.
+func (g *RealGitLab) searchLists(ctx context.Context, projects []string, f SearchFilter, c listCursor, ask int, counted bool) (all []Item, more bool, total int, err error) {
+	total = -1
+	if counted {
+		total = 0
+	}
+	for _, project := range projects {
+		for _, state := range listStates(f) {
+			var list []forgeJSON
+			path := listPath(project, f, state, c.Before, ask)
+			if total < 0 {
+				err = g.get(ctx, path, false, &list)
+			} else {
+				var n int
+				if n, err = g.getCounted(ctx, path, &list); n < 0 {
+					total = -1
+				} else {
+					total += n
+				}
+			}
+			if err != nil {
+				return nil, false, 0, err
+			}
+			more = more || len(list) >= ask
+			all = append(all, unseen(list, project, f.MRs, c.Seen)...)
+		}
+	}
+	return all, more, total, nil
+}
+
+// unseen is the items of list that are not in seen.
+func unseen(list []forgeJSON, project string, mrs bool, seen []string) []Item {
+	var out []Item
+	for _, j := range list {
+		if i := j.item(project, mrs); !slices.Contains(seen, i.key()) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// sortNewestFirst sorts items by their update time, newest first, then by key.
+func sortNewestFirst(all []Item) {
+	slices.SortStableFunc(all, func(a, b Item) int {
+		ta, _ := mcpevents.ParseTime(a.UpdatedAt)
+		tb, _ := mcpevents.ParseTime(b.UpdatedAt)
+		return cmp.Or(tb.Compare(ta), cmp.Compare(a.key(), b.key()))
+	})
+}
+
 // ItemPage is an issue or a merge request of project, with its description, the page of its
 // comments before the cursor before (the newest page for ""), and a merge request's pipeline
 // jobs, review threads and files changed.
 func (g *RealGitLab) ItemPage(ctx context.Context, project string, number int, mr bool, before string) (ItemDetail, error) {
-	page := 1
-	if before != "" {
-		n, err := strconv.Atoi(before)
-		if err != nil || n < 1 {
-			return ItemDetail{}, &GitLabError{Kind: Failed, Message: "GitLab: the cursor is not one an item gave"}
-		}
-		page = n
+	page, err := commentsPage(before)
+	if err != nil {
+		return ItemDetail{}, err
 	}
 	kind := map[bool]string{false: "issues", true: "merge_requests"}[mr]
 	var j forgeJSON
@@ -428,18 +445,7 @@ func (g *RealGitLab) ItemPage(ctx context.Context, project string, number int, m
 	}
 	d := ItemDetail{Item: j.item(project, mr), Body: j.Description, Thread: []Comment{}}
 	if !mr {
-		// The hierarchy is a nicety: a page still reads on a GitLab without work items.
-		d.Children, d.ClosedBy = []Linked{}, []Linked{}
-		if h, err := g.hierarchy(ctx, project, number); err == nil {
-			h.into(&d.Item)
-			for _, c := range h.children {
-				d.Children = append(d.Children, Linked{Project: c.Project, Number: c.Number, State: c.State, Title: c.Title, URL: c.URL})
-			}
-		}
-		// The merge requests that close it (#4626): the one read more of an issue's page, a nicety too.
-		if closedBy, err := g.closedBy(ctx, project, number); err == nil {
-			d.ClosedBy = closedBy
-		}
+		g.issueLinks(ctx, project, number, &d)
 	}
 	var notes []noteJSON
 	path := fmt.Sprintf("projects/%s/%s/%d/notes?sort=desc&order_by=created_at&per_page=%d&page=%d", pid(project), kind, number, forgeComments, page)
@@ -449,22 +455,83 @@ func (g *RealGitLab) ItemPage(ctx context.Context, project string, number int, m
 	if len(notes) == forgeComments {
 		d.Before = strconv.Itoa(page + 1)
 	}
-	for _, n := range slices.Backward(notes) {
-		// GitLab's own notes (a label, a close) and a line's comments are not the conversation.
-		if n.System || n.Type == "DiffNote" {
-			continue
-		}
-		d.Thread = append(d.Thread, Comment{Author: n.Author.Username, Avatar: n.Author.avatar(j.WebURL), Body: n.Body, At: n.CreatedAt,
-			URL: fmt.Sprintf("%s#note_%d", j.WebURL, n.ID), Bot: isBot(n.Author.Username, n.Author.Bot)})
-	}
+	d.Thread = append(d.Thread, conversation(notes, j.WebURL)...)
 	if !mr {
 		return d, nil
 	}
+	if err := g.mergeRequestParts(ctx, project, number, j, &d); err != nil {
+		return ItemDetail{}, err
+	}
+	return d, nil
+}
+
+// commentsPage is the page of comments the cursor before names: 1, the newest, for "".
+func commentsPage(before string) (int, error) {
+	if before == "" {
+		return 1, nil
+	}
+	n, err := strconv.Atoi(before)
+	if err != nil || n < 1 {
+		return 0, &GitLabError{Kind: Failed, Message: "GitLab: the cursor is not one an item gave"}
+	}
+	return n, nil
+}
+
+// issueLinks puts an issue's children, parent and the merge requests that close it on d.
+func (g *RealGitLab) issueLinks(ctx context.Context, project string, number int, d *ItemDetail) {
+	// The hierarchy is a nicety: a page still reads on a GitLab without work items.
+	d.Children, d.ClosedBy = []Linked{}, []Linked{}
+	if h, err := g.hierarchy(ctx, project, number); err == nil {
+		h.into(&d.Item)
+		for _, c := range h.children {
+			d.Children = append(d.Children, Linked{Project: c.Project, Number: c.Number, State: c.State, Title: c.Title, URL: c.URL})
+		}
+	}
+	// The merge requests that close it (#4626): the one read more of an issue's page, a nicety too.
+	if closedBy, err := g.closedBy(ctx, project, number); err == nil {
+		d.ClosedBy = closedBy
+	}
+}
+
+// conversation is notes (newest first) as comments, oldest first. GitLab's own notes (a
+// label, a close) and a line's comments are not the conversation.
+func conversation(notes []noteJSON, webURL string) []Comment {
+	var out []Comment
+	for _, n := range slices.Backward(notes) {
+		if n.System || n.Type == "DiffNote" {
+			continue
+		}
+		out = append(out, Comment{Author: n.Author.Username, Avatar: n.Author.avatar(webURL), Body: n.Body, At: n.CreatedAt,
+			URL: fmt.Sprintf("%s#note_%d", webURL, n.ID), Bot: isBot(n.Author.Username, n.Author.Bot)})
+	}
+	return out
+}
+
+// jobChecks is a pipeline's jobs as checks; a failed job that may fail is skipped.
+func jobChecks(jobs []jobJSON) []Check {
+	out := []Check{}
+	for _, job := range jobs {
+		state := pipelineState(job.Status)
+		if job.Status == "failed" && job.AllowFailure {
+			state = "skipped"
+		}
+		check := Check{Name: job.Stage + ": " + job.Name, State: state, URL: job.WebURL, StartedAt: job.StartedAt}
+		if state != "running" && job.StartedAt != "" {
+			check.FinishedAt = job.FinishedAt
+		}
+		out = append(out, check)
+	}
+	return out
+}
+
+// mergeRequestParts puts what only a merge request's page has on d: its files changed, head,
+// review threads, pipeline jobs, size, reviewers and the issues it closes.
+func (g *RealGitLab) mergeRequestParts(ctx context.Context, project string, number int, j forgeJSON, d *ItemDetail) error {
 	d.FilesChanged, _ = strconv.Atoi(strings.TrimSuffix(j.ChangesCount, "+"))
 	d.Head = j.SHA
 	discussions, err := g.discussions(ctx, project, number)
 	if err != nil {
-		return ItemDetail{}, err
+		return err
 	}
 	for _, t := range discussions {
 		if len(t.Notes) > 0 && t.Notes[0].Type == "DiffNote" {
@@ -476,26 +543,16 @@ func (g *RealGitLab) ItemPage(ctx context.Context, project string, number int, m
 		d.Pipeline = p.ID
 		var jobs []jobJSON
 		if err := g.get(ctx, fmt.Sprintf("projects/%s/pipelines/%d/jobs?per_page=100", pid(project), p.ID), false, &jobs); err != nil {
-			return ItemDetail{}, err
+			return err
 		}
-		for _, job := range jobs {
-			state := pipelineState(job.Status)
-			if job.Status == "failed" && job.AllowFailure {
-				state = "skipped"
-			}
-			check := Check{Name: job.Stage + ": " + job.Name, State: state, URL: job.WebURL, StartedAt: job.StartedAt}
-			if state != "running" && job.StartedAt != "" {
-				check.FinishedAt = job.FinishedAt
-			}
-			d.CheckRuns = append(d.CheckRuns, check)
-		}
+		d.CheckRuns = jobChecks(jobs)
 	}
 	// The size, reviewers and closing issues are the one read more of a merge request's page, and a
 	// nicety: a page still reads when GitLab does not give them.
 	if r, err := g.mergeRequestRead(ctx, project, number, j.Description); err == nil {
 		d.Size, d.Reviewers, d.Closes = r.size, r.reviewers, r.closes
 	}
-	return d, nil
+	return nil
 }
 
 // mrReadQuery is a merge request's size and reviewers, and the titles of the issues of its
@@ -527,16 +584,24 @@ type mrRead struct {
 	closes    []Linked
 }
 
+// gqlReviewer is a merge request's reviewer and their review.
+type gqlReviewer struct {
+	gqlPerson
+	Interaction *struct {
+		ReviewState string `json:"reviewState"`
+	} `json:"mergeRequestInteraction"`
+}
+
+// gqlIssue is an issue that a merge request's description closes.
+type gqlIssue struct {
+	IID    string `json:"iid"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	WebURL string `json:"webUrl"`
+}
+
 func (g *RealGitLab) mergeRequestRead(ctx context.Context, project string, number int, description string) (mrRead, error) {
-	// The issues of this project the description closes, in its order; another project's would
-	// need a read each.
-	var iids []string
-	for _, ref := range closingRefs(description) {
-		path, n, _ := strings.Cut(ref, "#")
-		if path == "" || strings.EqualFold(path, project) {
-			iids = append(iids, n)
-		}
-	}
+	iids := closingIIDs(project, description)
 	var data struct {
 		Project *struct {
 			MergeRequest *struct {
@@ -546,24 +611,14 @@ func (g *RealGitLab) mergeRequestRead(ctx context.Context, project string, numbe
 				} `json:"diffStatsSummary"`
 				CommitCount *int `json:"commitCount"`
 				Reviewers   struct {
-					Nodes []struct {
-						gqlPerson
-						Interaction *struct {
-							ReviewState string `json:"reviewState"`
-						} `json:"mergeRequestInteraction"`
-					} `json:"nodes"`
+					Nodes []gqlReviewer `json:"nodes"`
 				} `json:"reviewers"`
 				ApprovedBy struct {
 					Nodes []gqlPerson `json:"nodes"`
 				} `json:"approvedBy"`
 			} `json:"mergeRequest"`
 			Issues struct {
-				Nodes []struct {
-					IID    string `json:"iid"`
-					Title  string `json:"title"`
-					State  string `json:"state"`
-					WebURL string `json:"webUrl"`
-				} `json:"nodes"`
+				Nodes []gqlIssue `json:"nodes"`
 			} `json:"issues"`
 		} `json:"project"`
 	}
@@ -579,34 +634,58 @@ func (g *RealGitLab) mergeRequestRead(ctx context.Context, project string, numbe
 	if m.DiffStatsSummary != nil && m.CommitCount != nil {
 		out.size = &Size{Additions: m.DiffStatsSummary.Additions, Deletions: m.DiffStatsSummary.Deletions, Commits: *m.CommitCount}
 	}
-	// Each reviewer once, by their review; an approval makes a pending reviewer approved, and one
-	// who approved and is no reviewer is a reviewer too.
-	out.reviewers = []Reviewer{}
+	out.reviewers = reviewersOf(m.Reviewers.Nodes, m.ApprovedBy.Nodes)
+	out.closes = closedIssues(project, iids, data.Project.Issues.Nodes)
+	return out, nil
+}
+
+// closingIIDs is the issues of project that description closes, in its order; another
+// project's would need a read each.
+func closingIIDs(project, description string) []string {
+	var iids []string
+	for _, ref := range closingRefs(description) {
+		path, n, _ := strings.Cut(ref, "#")
+		if path == "" || strings.EqualFold(path, project) {
+			iids = append(iids, n)
+		}
+	}
+	return iids
+}
+
+// reviewersOf is each reviewer once, by their review; an approval makes a pending reviewer
+// approved, and one who approved and is no reviewer is a reviewer too.
+func reviewersOf(reviewers []gqlReviewer, approvedBy []gqlPerson) []Reviewer {
+	out := []Reviewer{}
 	seen := map[string]int{}
-	for _, r := range m.Reviewers.Nodes {
+	for _, r := range reviewers {
 		if _, ok := seen[r.Username]; r.Username == "" || ok {
 			continue
 		}
-		seen[r.Username] = len(out.reviewers)
+		seen[r.Username] = len(out)
 		state := "pending"
 		if r.Interaction != nil && reviewStates[r.Interaction.ReviewState] != "" {
 			state = reviewStates[r.Interaction.ReviewState]
 		}
-		out.reviewers = append(out.reviewers, Reviewer{Login: r.Username, Avatar: r.avatar(), State: state})
+		out = append(out, Reviewer{Login: r.Username, Avatar: r.avatar(), State: state})
 	}
-	for _, a := range m.ApprovedBy.Nodes {
+	for _, a := range approvedBy {
 		if i, ok := seen[a.Username]; ok {
-			if out.reviewers[i].State == "pending" {
-				out.reviewers[i].State = "approved"
+			if out[i].State == "pending" {
+				out[i].State = "approved"
 			}
 		} else if a.Username != "" {
-			seen[a.Username] = len(out.reviewers)
-			out.reviewers = append(out.reviewers, Reviewer{Login: a.Username, Avatar: a.avatar(), State: "approved"})
+			seen[a.Username] = len(out)
+			out = append(out, Reviewer{Login: a.Username, Avatar: a.avatar(), State: "approved"})
 		}
 	}
-	out.closes = []Linked{}
+	return out
+}
+
+// closedIssues is the issues read, as links, in the order of iids, each once.
+func closedIssues(project string, iids []string, issues []gqlIssue) []Linked {
+	out := []Linked{}
 	byIID := map[string]Linked{}
-	for _, i := range data.Project.Issues.Nodes {
+	for _, i := range issues {
 		n, err := strconv.Atoi(i.IID)
 		if err != nil || n < 1 {
 			continue
@@ -619,11 +698,11 @@ func (g *RealGitLab) mergeRequestRead(ctx context.Context, project string, numbe
 	}
 	for _, iid := range iids {
 		if l, ok := byIID[iid]; ok {
-			out.closes = append(out.closes, l)
+			out = append(out, l)
 			delete(byIID, iid)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // IsNotFound says whether err is GitLab's 404.
