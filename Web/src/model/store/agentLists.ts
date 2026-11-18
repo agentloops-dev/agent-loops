@@ -4,6 +4,7 @@ import type { Agent } from "../../protocol/generated";
 import { folderKey, folderPath as agentFolderPath, folderView, type FolderView } from "../groups";
 import type { Work } from "./work";
 import { sameAgents } from "./shared";
+import { isBusy, machineSessionCounts } from "../machineSessions";
 
 export const agentListsMethods = {
   /**
@@ -16,6 +17,7 @@ export const agentListsMethods = {
     const list = heard.map((a) => this.pending.overlay(host, a));
     batch(() => {
       this.agents.value = { ...this.agents.value, [host]: list };
+      this.setSessionCounts(host, list);
       if (touched) {
         for (const folder of new Set(touched)) {
           const slice = this.slices.get(prefix + folder);
@@ -35,6 +37,15 @@ export const agentListsMethods = {
         if (!sameAgents(slice.peek(), next)) slice.value = next;
       }
     });
+  },
+  /** One machine's counts in `sessionsByMachine` (#6158): counted from its own list only, and set only when one moves. */
+  setSessionCounts(this: Work, host: string, list: readonly Agent[]): void {
+    const held = this.sessionsByMachine.peek();
+    const was = held[host];
+    const now = machineSessionCounts(list);
+    if (isBusy(now) ? was?.working === now.working && was.waiting === now.waiting : !was) return;
+    this.sessionsByMachine.value = isBusy(now) ? { ...held, [host]: now }
+      : Object.fromEntries(Object.entries(held).filter(([id]) => id !== host));
   },
   slice(this: Work, host: string, folder: string): Signal<Agent[]> {
     const name = `${host}|${folder}`;
