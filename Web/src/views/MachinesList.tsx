@@ -8,7 +8,6 @@ import { Capability } from "../protocol/capabilities.generated";
 import type { ControlMachine, MachineCounts, MachineList } from "../protocol/generated";
 import { stateWords, versionWords } from "../model/capabilities";
 import { machineRows } from "../model/store/shared";
-import { machineSessions } from "../model/machineSessions";
 import { bulkActions, bulkDeleteQuestion, bulkLabel, chipWords, chips, countsOf, emptyWords, filterTitle, localList, narrowed, noChoice,
   pageQuery, selectedWords, showMoreWords, sortTitle, sorts, toggled, type MachineChoice, type MachineSort } from "../model/machineList";
 import { describe } from "../model/errors";
@@ -181,7 +180,7 @@ export function MachinesList({ store }: { store: Store }) {
             {rows.length === 0 && <tr class="empty"><td colSpan={5}>{readAt === null ? "Loading…" : emptyWords(narrowed(choice))}</td></tr>}
             {rows.map((h) => {
               const name = h.id === macID ? "This Mac" : h.name;
-              const working = machineSessions(store.agents.value[h.id] ?? []).running;
+              const working = store.sessionsByMachine.value[h.id]?.working ?? 0;
               return (
                 <tr key={h.id} class="opens" aria-selected={picked.has(h.id)}
                   onClick={(e) => { if (!(e.target as HTMLElement).closest("button, a, input, select")) go({ nav: "machines", section: `machine-${h.id}` }); }}>

@@ -33,10 +33,10 @@ import { WorkDeploysPage } from "./WorkDeploysPage";
 import { DocPage, DocsList } from "./Docs";
 import { ConversationPage, MessagesList } from "./Messages";
 import { MachinePage } from "./MachinePage";
-import { machineSessions, runningLineOf } from "../model/machineSessions";
+import { isBusy, runningLineOf } from "../model/machineSessions";
 import { machineNeed, machineNeedLine } from "./OfflineStrip";
 import { MachinesList } from "./MachinesList";
-import { type GroupRows, machinesGroupRows, machinesGroupWords, sidebarPins } from "../model/machinesGroup";
+import { type GroupRows, machinesGroupLimit, machinesGroupRows, machinesGroupWords, sidebarPins } from "../model/machinesGroup";
 import { MachineRow, MakingRow } from "./MachineRow";
 import { deleteMakingQuestion, joinTrustQuestion, type MachineMaking, makingRows, newMachineItems } from "../model/machineRow";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
@@ -181,7 +181,7 @@ function MachineNeedLine({ store, host }: { store: Store; host: string }) {
   if (!row) return null;
   // Nothing wrong: how many sessions run on it, or Idle (#5490), from the count the machine's page reads.
   const words = need ? machineNeedLine(need, row)
-    : store.hostIsOnline(host) ? runningLineOf(machineSessions(store.agents.value[host] ?? [])) : null;
+    : store.hostIsOnline(host) ? runningLineOf({ running: store.sessionsByMachine.value[host]?.working ?? 0 }) : null;
   if (!words) return null;
   return (
     <p class="machine-need quiet small" role="status">{words}</p>
@@ -218,9 +218,10 @@ function EventsWaitingLine({ store }: { store: Store }) {
 function machinesGroup(store: Store, pages: readonly NavPage[], making: number): { pages: NavPage[]; rows: GroupRows } {
   const pins = sidebarPins.value;
   const macID = store.macHostID.value;
-  const listed = pages.flatMap((p) => p.draw.kind === "machine" ? [p.draw.host] : []).map((id) => ({
-    id, pinned: pins.includes(id), active: machineIsActive(store, id),
-  }));
+  const ids = pages.flatMap((p) => p.draw.kind === "machine" ? [p.draw.host] : []);
+  // With seven or fewer every machine is drawn in its order, so `active` changes nothing and is not worked out (#6158).
+  const ranks = ids.length + making > machinesGroupLimit;
+  const listed = ids.map((id) => ({ id, pinned: pins.includes(id), active: ranks && machineIsActive(store, id) }));
   const rows = machinesGroupRows(listed, making, macID);
   const byID = new Map(pages.map((p) => [p.draw.kind === "machine" ? p.draw.host : p.id, p]));
   return { pages: rows.machines.flatMap((id) => byID.get(id) ?? []), rows };
@@ -241,8 +242,7 @@ function machineIsActive(store: Store, host: string): boolean {
   if (store.hostsBeingStarted.value.includes(host)) return true;
   if (machineNeed(row, store.hostIsOnline(host), store.runtimes.value[host] ?? [], store.disk.value[host]?.alarms ?? [],
     store.capacity.value[host]?.level)) return true;
-  const sessions = machineSessions(store.agents.value[host] ?? []);
-  return sessions.groups.working.length + sessions.groups.waiting.length > 0;
+  return isBusy(store.sessionsByMachine.value[host]);
 }
 
 /** A section's list of pages on the left, the page open on the right. */
