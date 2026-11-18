@@ -68,33 +68,53 @@ func originOf(text string) (string, bool) {
 	rest := strings.TrimSuffix(value[len(scheme):], "/")
 	host := rest
 	if colon := strings.LastIndexByte(rest, ':'); colon >= 0 {
-		port := rest[colon+1:]
-		for _, c := range port {
-			if c < '0' || c > '9' {
-				return "", false
-			}
-		}
-		number, err := strconv.Atoi(port)
-		if err != nil || number < 1 || number > 65535 {
+		if !portOK(rest[colon+1:]) {
 			return "", false
 		}
 		host = rest[:colon]
 	}
-	host = strings.TrimPrefix(host, "*.")
-	if host == "" || utf8.RuneCountInString(host) > 253 {
+	if !hostOK(strings.TrimPrefix(host, "*.")) {
 		return "", false
 	}
-	for _, label := range strings.Split(host, ".") {
-		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
-			return "", false
-		}
-		for _, c := range label {
-			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
-				return "", false
-			}
+	return scheme + rest, true
+}
+
+// portOK: port is all digits and from 1 to 65535.
+func portOK(port string) bool {
+	for _, c := range port {
+		if c < '0' || c > '9' {
+			return false
 		}
 	}
-	return scheme + rest, true
+	number, err := strconv.Atoi(port)
+	return err == nil && number >= 1 && number <= 65535
+}
+
+// hostOK: host is a DNS name of at most 253 characters, each label from 1 to 63 letters,
+// digits and hyphens, with no hyphen at either end.
+func hostOK(host string) bool {
+	if host == "" || utf8.RuneCountInString(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if !labelOK(label) {
+			return false
+		}
+	}
+	return true
+}
+
+// labelOK: label is one part of a DNS name, as hostOK says.
+func labelOK(label string) bool {
+	if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+		return false
+	}
+	for _, c := range label {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // header is AppViewPolicy.header: the Content-Security-Policy value.

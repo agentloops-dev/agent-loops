@@ -1,10 +1,17 @@
-# scripts/lint.sh runs golangci-lint for bugs and security only (#1224).
-# unused and ineffassign fail that run (#2162). The other linters only report.
+# scripts/lint.sh runs golangci-lint for bugs and security (#1224), and gocognit for
+# readability (#6182): a function too hard to read is too hard to review. A finding not in
+# Go/.golangci-baseline.txt fails the run (#5645).
 version: "2"
 linters:
   default: none
-  enable: [govet, staticcheck, errcheck, ineffassign, unused, gosec, forbidigo]
+  enable: [govet, staticcheck, errcheck, ineffassign, unused, gosec, forbidigo, gocognit]
   settings:
+    # gocognit: a function's cognitive complexity (how hard it is to read, not its big-O)
+    # is at most 30, gocognit's default (#6182). Split a function that is over it into
+    # smaller ones whose names say what they do. The findings main had when it came are in
+    # the baseline, and the tasks under #6182 take them out, one Go package each.
+    gocognit:
+      min-complexity: 30
     # No agentsd test waits for a fixed time (#6128, epic #6126): a fixed wait ends before a
     # loaded -race runner answers (spike #5600, cause B). Wait on a channel or an event, or
     # for afterLimit(t), the limit from t.Deadline() (#5632). A short poll step inside such a

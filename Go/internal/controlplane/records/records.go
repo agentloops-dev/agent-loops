@@ -116,36 +116,8 @@ func (r *Records) load(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 
-	clients := map[string]held[ClientRecord]{}
-	for _, entry := range listed {
-		var record ClientRecord
-		etag, ok := r.readChanged(ctx, entry, heldClients[entry.Key].etag, &record)
-		if !ok {
-			if h, there := heldClients[entry.Key]; there {
-				clients[h.record.ID] = h
-			}
-			continue
-		}
-		if etag == "" {
-			continue
-		}
-		clients[record.ID] = held[ClientRecord]{record, etag}
-	}
-	hosts := map[string]held[MachineRecord]{}
-	for _, entry := range listedHosts {
-		var record MachineRecord
-		etag, ok := r.readChanged(ctx, entry, heldHosts[entry.Key].etag, &record)
-		if !ok {
-			if h, there := heldHosts[entry.Key]; there {
-				hosts[h.record.ID] = h
-			}
-			continue
-		}
-		if etag == "" {
-			continue
-		}
-		hosts[record.ID] = held[MachineRecord]{record, etag}
-	}
+	clients := readHeld(ctx, r, listed, heldClients, func(c ClientRecord) string { return c.ID })
+	hosts := readHeld(ctx, r, listedHosts, heldHosts, func(m MachineRecord) string { return m.ID })
 
 	present := map[string]bool{}
 	for _, e := range append(listed, listedHosts...) {
@@ -188,6 +160,30 @@ func (r *Records) load(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// readHeld is each listed record by its id: read again only when its tag changed since
+// before, the one held before when it could not be read, and none when it reads as no record.
+func readHeld[T any, P interface {
+	*T
+	UnmarshalJSON([]byte) error
+}](ctx context.Context, r *Records, listed []store.Key, before map[string]held[T], id func(T) string) map[string]held[T] {
+	out := map[string]held[T]{}
+	for _, entry := range listed {
+		var record T
+		etag, ok := r.readChanged(ctx, entry, before[entry.Key].etag, P(&record))
+		if !ok {
+			if h, there := before[entry.Key]; there {
+				out[id(h.record)] = h
+			}
+			continue
+		}
+		if etag == "" {
+			continue
+		}
+		out[id(record)] = held[T]{record, etag}
+	}
+	return out
 }
 
 // readChanged reads a listed record into into, unless what is held has its tag. It
