@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -489,14 +490,16 @@ func (r *Router) attachHost(host string, conn Uplink, local bool) {
 		go k.Attached(host)
 	}
 	r.mu.Unlock()
+	calls := r.startHostCalls(host, gen)
 	go func() {
 		for {
 			line, err := conn.Read(context.Background())
 			if err != nil {
 				break
 			}
-			r.hostLine(line, host)
+			r.hostLine(line, host, gen, calls)
 		}
+		calls.stop()
 		r.mu.Lock()
 		current := r.hosts[host] != nil && r.hosts[host].gen == gen
 		if !local {
@@ -952,7 +955,9 @@ func readTails(raw json.RawMessage, channels int) ([]string, bool) {
 	return tails, true
 }
 
-func (r *Router) hostLine(line, host string) {
+// hostLine is one line from host's link gen. It never waits on a handler: calls go to
+// the link's lanes (#6223), so the loop that reads it, and answers its pings, goes on.
+func (r *Router) hostLine(line, host string, gen int64, calls *hostCalls) {
 	f, ok := readHostFrame(line)
 	// Only the control plane opens channels. A host that tries is ignored.
 	if !ok || f.open {
@@ -963,12 +968,7 @@ func (r *Router) hostLine(line, host string) {
 		return
 	}
 	if f.channel == 0 && !f.close {
-		// A git command waits on a person's answer (#1122): the host's other lines go on.
-		if strings.Contains(f.msg, `"git/credential"`) {
-			go r.channelZero(f.msg, host)
-		} else {
-			r.channelZero(f.msg, host)
-		}
+		r.channelZero(f.msg, host, gen, calls)
 		return
 	}
 	r.mu.Lock()
@@ -1096,7 +1096,7 @@ func withLock(msg, tail string) string {
 	return msg[:len(msg)-1] + `,"lock":` + tail + `}`
 }
 
-func (r *Router) channelZero(msg, host string) {
+func (r *Router) channelZero(msg, host string, gen int64, calls *hostCalls) {
 	m, ok := decode(msg)
 	if !ok {
 		return
@@ -1118,18 +1118,20 @@ func (r *Router) channelZero(msg, host string) {
 	if !m.isRequest() {
 		return
 	}
-	result, err := r.handler.HostSaid(host, m.Method, m.Params)
-	line := ""
-	if err != nil {
-		line = replyError(m.ID, err)
-	} else {
-		line = reply(m.ID, result)
+	call := hostCall{id: m.ID, method: m.Method, params: m.Params}
+	if m.Method == "git/credential" {
+		// A git command waits on a person's answer (#1122): it holds no lane.
+		go r.answerHost(host, gen, call)
+		return
 	}
-	r.mu.Lock()
-	if h := r.hosts[host]; h != nil {
-		h.conn.Send(channelFrame(0, line))
+	if !calls.take(call) {
+		r.log(fmt.Sprintf("host %s: %s refused; its calls are %d behind", host, m.Method, hostCallQueue))
+		r.mu.Lock()
+		if h := r.hosts[host]; h != nil && h.gen == gen {
+			h.conn.Send(channelFrame(0, replyError(m.ID, hostBusy)))
+		}
+		r.mu.Unlock()
 	}
-	r.mu.Unlock()
 }
 
 // Tell sends a notification on a host's channel 0, when its uplink ends here.
