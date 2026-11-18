@@ -250,29 +250,6 @@ type procInfo struct {
 	name   string
 }
 
-// processTable is every process's parent and name. A look costs a few milliseconds, so it
-// is made once a pass, and only when the pool has a runtime to look at.
-func processTable(ctx context.Context) map[int32]procInfo {
-	out := map[int32]procInfo{}
-	pids, err := process.PidsWithContext(ctx)
-	if err != nil {
-		return out
-	}
-	for _, pid := range pids {
-		p, err := process.NewProcessWithContext(ctx, pid)
-		if err != nil {
-			continue
-		}
-		parent, err := p.PpidWithContext(ctx)
-		if err != nil {
-			continue
-		}
-		name, _ := p.NameWithContext(ctx)
-		out[pid] = procInfo{parent: parent, name: name}
-	}
-	return out
-}
-
 // descendantsIn is every process under root, not root itself.
 func descendantsIn(table map[int32]procInfo, root int32) map[int32]bool {
 	children := map[int32][]int32{}
