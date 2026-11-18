@@ -152,10 +152,18 @@ async function readLineage(store: Store, kind: WorkKind, sort: ReportNodesSort, 
   return { nodes, cursor: next };
 }
 
-/** What the list is read for: its state, board, sort, machines and Refresh. */
+/** What the list is read for: its state, board, sort, machines, their folders and Refresh. */
 export function askKey(store: Store, l: WorkListState): string {
   const { state, board } = l.filter.value;
-  return [forgeState(state), board, nodesSort(l), listHosts(store, board).map((h) => h.id).join(","), l.asked.value].join("|");
+  const hosts = listHosts(store, board).map((h) => h.id);
+  return [forgeState(state), board, nodesSort(l), hosts.join(","), forgeFolders(store, hosts), l.asked.value].join("|");
+}
+
+/** The machines' live folders, as the page knows them (#6152): a list read before a folder was added is read again when
+ * one is added or goes, as Refresh does. */
+export function forgeFolders(store: Store, hosts: readonly string[]): string {
+  return hosts.flatMap((host) => (store.folders.value[host] ?? []).filter((f) => f.folder.archivedAt === undefined)
+    .map((f) => `${host} ${f.folder.folder}`)).sort().join(",");
 }
 
 /** A read with errors keeps, dimmed under the error (#4392), the items of the last read from each forge it could not reach

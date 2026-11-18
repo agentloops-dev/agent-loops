@@ -438,6 +438,25 @@ test("a next page a forge could not read keeps the rows and the cursor, and says
   assert.equal(l.lists.value[0].cursor, undefined);
 });
 
+test("a list is read again when a machine's folder is added or goes, not for another machine's or an archived one (#6152)", async () => {
+  const lists = await load("src/model/workLists.ts");
+  const l = lists.workList("issue");
+  const folder = (path, archivedAt) => ({ folder: { folder: path, ...archivedAt ? { archivedAt } : {} } });
+  const store = {
+    hosts: { value: [{ id: "mac", state: "online" }, { id: "box", state: "offline" }] },
+    has: () => true,
+    folders: { value: {} },
+  };
+  const before = lists.askKey(store, l);
+  store.folders = { value: { mac: [folder("file:///work/shop")] } };
+  const added = lists.askKey(store, l);
+  assert.notEqual(added, before, "the first read, made before the folder was there, is made again");
+  store.folders = { value: { mac: [folder("file:///work/shop"), folder("file:///work/old", 1)], box: [folder("file:///srv/shop")] } };
+  assert.equal(lists.askKey(store, l), added, "an archived folder, or one on a machine not asked, reads nothing again");
+  store.folders = { value: {} };
+  assert.equal(lists.askKey(store, l), before);
+});
+
 // The issue page's words (#4402), as WorkItemPage's on the window (#4400).
 test("the state line says who opened it, when it was updated and how many comments, wide and narrow", () => {
   const now = new Date("2026-11-10T12:00:00Z");

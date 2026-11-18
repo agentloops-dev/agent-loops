@@ -60,6 +60,9 @@ extension AppModel {
             .sorted { ($0.id == mine ? 0 : 1, $0.name) < ($1.id == mine ? 0 : 1, $1.name) }
     }
 
+    /// Every machine's live folders (#6152): Work's lists read again when one is added or goes.
+    var workFolders: [FolderKey] { liveFolders.map(\.key) }
+
     /// Work's projects (#3283): New Session's, each folder named by the machine Work's lists
     /// read it on, this Mac by its control plane id.
     var workProjects: [WorkList.Project] {
@@ -180,14 +183,14 @@ extension AppModel {
     /// A page of a machine's issues or pull requests (#3129), as Work lists them.
     func forgeList(_ kind: WorkList.Kind, _ request: DaemonAPI.ForgeListRequest,
                    on host: MachineRef) async throws -> DaemonAPI.ForgeList {
-        try await client(for: host).call(kind == .pr ? DaemonAPI.Method.forgePulls : DaemonAPI.Method.forgeIssues,
+        try await forgeClient(host).call(kind == .pr ? DaemonAPI.Method.forgePulls : DaemonAPI.Method.forgeIssues,
                                          request, returning: DaemonAPI.ForgeList.self)
     }
 
     /// One issue or pull request with its body and a page of its comments (#3129), for its Work page.
     func forgeItem(_ node: DaemonAPI.LineageNode, cursor: String?,
                    on host: MachineRef) async throws -> DaemonAPI.ForgeItemDetail {
-        try await client(for: host).call(node.kind == "pr" ? DaemonAPI.Method.forgePull : DaemonAPI.Method.forgeIssue,
+        try await forgeClient(host).call(node.kind == "pr" ? DaemonAPI.Method.forgePull : DaemonAPI.Method.forgeIssue,
                                          DaemonAPI.ForgeItemRequest(node: node, cursor: cursor),
                                          returning: DaemonAPI.ForgeItemDetail.self)
     }
@@ -201,7 +204,16 @@ extension AppModel {
     /// One of the Work pages' writes or reads (#3130), on the machine that read the item.
     func forge<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable, returning: R.Type,
                              on host: MachineRef) async throws -> R {
-        try await client(for: host).call(method, params, returning: R.self)
+        try await forgeClient(host).call(method, params, returning: R.self)
+    }
+
+    /// A machine's client for Work's forge calls (#6152), its link opened again first when it is closed. Work's first
+    /// read goes out as a machine joins, when the window's link to it can still be closed a moment, and a closed link
+    /// fails a call at once: that read then stood until Refresh.
+    private func forgeClient(_ host: MachineRef) async -> DaemonClient {
+        let link = client(for: host)
+        if await !link.isConnected { try? await link.connect(startIfNeeded: false, timeout: .seconds(4)) }
+        return link
     }
 
     /// One call to the control plane that asks every machine of the person's (#5592): Work's lists and boards, the

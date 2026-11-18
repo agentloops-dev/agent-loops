@@ -15,6 +15,9 @@ extension RemoteModel {
     /// Work's part of this device's copy (#4930).
     var workCopy: LocalCopy? { localCopy?.copy }
 
+    /// Every machine's live folders this phone knows (#6152): Work's lists read again when one is added or goes.
+    var workFolders: [FolderKey] { folders.map(\.key) }
+
     var forgeMachines: [(id: MachineRef, name: String)] {
         workMachines { $0.has(Capability.forge1) && $0.state != "offline" }
     }
