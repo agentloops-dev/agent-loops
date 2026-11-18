@@ -269,8 +269,10 @@ run_zsh() {
 # Every finding, then only those not in Go/.golangci-baseline.txt: a finding's key is its line
 # with the line and column taken out, and each key in the baseline covers one finding.
 # golangci-lint exits 1 for findings and something else when it could not finish.
+# --allow-serial-runners: a run waits for the lock that every worktree's run shares (in the temp
+# folder), not fail with "parallel golangci-lint is running" when another lane lints (#6039).
 run_go() {
-	local args=(run --max-issues-per-linter 0 --max-same-issues 0 --show-stats=false
+	local args=(run --allow-serial-runners --max-issues-per-linter 0 --max-same-issues 0 --show-stats=false
 		--output.text.print-issued-lines=false ./...) all status
 	[ "$fix" = 1 ] && args=("${args[@]}" --fix)
 	all=$(mktemp)
