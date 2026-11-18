@@ -313,14 +313,7 @@ func (d *Daemon) startSession(caller wire.UUID, args map[string]json.RawMessage)
 	if prompt == "" {
 		return "", Invalid("Nothing was started: say what the agent is to do.")
 	}
-	runtimeID := strings.TrimSpace(argString(args, "runtime"))
-	if runtimeID == "" {
-		runtimeID = me.RuntimeID
-		// A helper of an Auto agent is on Auto too, and Auto picks again (FR-012).
-		if me.Auto != nil {
-			runtimeID = autoRuntimeID
-		}
-	}
+	runtimeID := helperRuntimeID(me, args)
 	model := strings.TrimSpace(argString(args, "model"))
 	labels, err := stringList(args, "labels")
 	if err != nil {
@@ -338,16 +331,8 @@ func (d *Daemon) startSession(caller wire.UUID, args map[string]json.RawMessage)
 		}
 		return d.startAutoHelper(me, args, prompt, model, labels, priority)
 	}
-	if wanted := strings.TrimSpace(argString(args, "permission_mode")); wanted != "" {
-		own := inheritedMode(me, me.RuntimeID)
-		if own == nil || !noLooser(wanted, *own) {
-			ownWords := "your runtime's own mode"
-			if own != nil {
-				ownWords = *own
-			}
-			return "", Invalid("Nothing was started: %s would let it do more without asking than you may (%s). Name no mode and it takes yours.", wanted, ownWords)
-		}
-		mode = &wanted
+	if mode, err = helperPermissionMode(me, args, mode); err != nil {
+		return "", err
 	}
 	rt := runtimeByID(runtimeID)
 	if rt == nil {
@@ -395,6 +380,42 @@ func (d *Daemon) startSession(caller wire.UUID, args map[string]json.RawMessage)
 		code, msg := errMessage(err)
 		return "", &Error{Code: code, Message: "Nothing was started: " + msg}
 	}
+	return d.helperStartedNote(folder, id), nil
+}
+
+// helperRuntimeID is the runtime a helper starts on: the one named, else the caller's.
+func helperRuntimeID(me *wire.Agent, args map[string]json.RawMessage) string {
+	runtimeID := strings.TrimSpace(argString(args, "runtime"))
+	if runtimeID == "" {
+		runtimeID = me.RuntimeID
+		// A helper of an Auto agent is on Auto too, and Auto picks again (FR-012).
+		if me.Auto != nil {
+			runtimeID = autoRuntimeID
+		}
+	}
+	return runtimeID
+}
+
+// helperPermissionMode is the mode a helper starts in: the one named, when it lets the
+// helper do no more without asking than the caller may, else mode.
+func helperPermissionMode(me *wire.Agent, args map[string]json.RawMessage, mode *string) (*string, error) {
+	wanted := strings.TrimSpace(argString(args, "permission_mode"))
+	if wanted == "" {
+		return mode, nil
+	}
+	own := inheritedMode(me, me.RuntimeID)
+	if own == nil || !noLooser(wanted, *own) {
+		ownWords := "your runtime's own mode"
+		if own != nil {
+			ownWords = *own
+		}
+		return nil, Invalid("Nothing was started: %s would let it do more without asking than you may (%s). Name no mode and it takes yours.", wanted, ownWords)
+	}
+	return &wanted, nil
+}
+
+// helperStartedNote tells the caller which helper started, its places and its worktree.
+func (d *Daemon) helperStartedNote(folder string, id wire.UUID) string {
 	a := d.Store.Agent(id)
 	note := fmt.Sprintf("Started %s (id %s). %s now has %s.", quotedTitle(a.Title), id, scopeTitle(folder), d.helperPlaces(folder))
 	if w := a.Worktree; w != nil {
@@ -405,7 +426,7 @@ func (d *Daemon) startSession(caller wire.UUID, args map[string]json.RawMessage)
 			note += "."
 		}
 	}
-	return note, nil
+	return note
 }
 
 func helperRequest(runtimeID, folder, prompt, model string, mode *string, worktree *wire.WorktreeChoice, labels []string) wire.StartRequest {

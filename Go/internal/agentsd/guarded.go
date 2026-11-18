@@ -160,43 +160,7 @@ func (d *Daemon) checkGuarded(folder, path string, ended *wire.UUID) {
 		}
 	case s.Pending != nil && same(s.Pending.Digest, digest):
 	default:
-		var working []wire.Agent
-		for _, a := range d.agentsOf(folder) {
-			if a.State == wire.AgentStateRunning || a.State == wire.AgentStateWaitingOnUser || (ended != nil && a.ID == *ended) {
-				working = append(working, a)
-			}
-		}
-		switch {
-		case len(working) > 0:
-			if s.Pending == nil {
-				s.Pending = &guardedPending{Since: now(), ChangedByIDs: []wire.UUID{}, ChangedBy: []string{}}
-			}
-			for _, a := range working {
-				known := false
-				for _, id := range s.Pending.ChangedByIDs {
-					known = known || id == a.ID
-				}
-				if !known {
-					s.Pending.ChangedByIDs = append(s.Pending.ChangedByIDs, a.ID)
-					title := "An agent"
-					if a.Title != nil {
-						title = *a.Title
-					}
-					s.Pending.ChangedBy = append(s.Pending.ChangedBy, title)
-				}
-			}
-			s.Pending.Digest = digest
-		case !inRepository(folder):
-			s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil // the person's own edit
-		default:
-			// With nothing running: a pull's, when it is what HEAD has.
-			head, err := gitRaw(folder, nil, "show", "HEAD:./"+path)
-			if err == nil && bytes.Equal(head, data) {
-				s.Pending = &guardedPending{Digest: digest, Since: now(), ByGit: true, ChangedByIDs: []wire.UUID{}, ChangedBy: []string{}}
-			} else {
-				s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil
-			}
-		}
+		d.guardedChangedLocked(folder, path, s, digest, data, ended)
 		moved = true
 	}
 	if moved {
@@ -206,6 +170,60 @@ func (d *Daemon) checkGuarded(folder, path string, ended *wire.UUID) {
 	if moved && known {
 		d.guardedFilesMoved(folder)
 	}
+}
+
+// guardedChangedLocked records a change to a file that is not the approved copy and not
+// the change that waits: it waits when an agent works in the folder or when a pull made
+// it, else it is the person's own edit and is approved. Call it with guardedMu held.
+func (d *Daemon) guardedChangedLocked(folder, path string, s *guardedState, digest *string, data []byte, ended *wire.UUID) {
+	working := d.guardedWorkingAgents(folder, ended)
+	switch {
+	case len(working) > 0:
+		if s.Pending == nil {
+			s.Pending = &guardedPending{Since: now(), ChangedByIDs: []wire.UUID{}, ChangedBy: []string{}}
+		}
+		for _, a := range working {
+			addGuardedChanger(s.Pending, a)
+		}
+		s.Pending.Digest = digest
+	case !inRepository(folder):
+		s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil // the person's own edit
+	default:
+		// With nothing running: a pull's, when it is what HEAD has.
+		head, err := gitRaw(folder, nil, "show", "HEAD:./"+path)
+		if err == nil && bytes.Equal(head, data) {
+			s.Pending = &guardedPending{Digest: digest, Since: now(), ByGit: true, ChangedByIDs: []wire.UUID{}, ChangedBy: []string{}}
+		} else {
+			s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil
+		}
+	}
+}
+
+// guardedWorkingAgents gives the folder's agents that run or wait on the person, and the
+// agent whose turn just ended.
+func (d *Daemon) guardedWorkingAgents(folder string, ended *wire.UUID) []wire.Agent {
+	var working []wire.Agent
+	for _, a := range d.agentsOf(folder) {
+		if a.State == wire.AgentStateRunning || a.State == wire.AgentStateWaitingOnUser || (ended != nil && a.ID == *ended) {
+			working = append(working, a)
+		}
+	}
+	return working
+}
+
+// addGuardedChanger adds an agent to the agents that made a waiting change, once.
+func addGuardedChanger(p *guardedPending, a wire.Agent) {
+	for _, id := range p.ChangedByIDs {
+		if id == a.ID {
+			return
+		}
+	}
+	p.ChangedByIDs = append(p.ChangedByIDs, a.ID)
+	title := "An agent"
+	if a.Title != nil {
+		title = *a.Title
+	}
+	p.ChangedBy = append(p.ChangedBy, title)
 }
 
 func (d *Daemon) guardedFilesMoved(folder string) {
@@ -532,25 +550,7 @@ func (d *Daemon) answerApproval(ctx context.Context, r wire.ApprovalAnswer) (wir
 		return d.answerDeploy(ctx, folder, r.Key, r.Digest, r.Action == wire.ApprovalActionApprove)
 	case wire.ApprovalKindFile:
 		if r.Action == wire.ApprovalActionRequestChanges {
-			if r.Note == nil || strings.TrimSpace(*r.Note) == "" {
-				return wire.FolderSummary{}, Invalid("Say what to change.")
-			}
-			var asked *wire.UUID
-			for _, ch := range d.guardedChanges(folder) {
-				if ch.Path == r.Key {
-					asked = ch.AskedIn
-				}
-			}
-			if asked == nil {
-				return wire.FolderSummary{}, Invalid("No agent made this change, so there is nobody to ask. Approve or deny it.")
-			}
-			text := "Before approving your change to " + r.Key + ", I'd like changes:\n\n" + strings.TrimSpace(*r.Note) +
-				"\n\nIt stays waiting for approval; your next version of it asks again."
-			if err := d.prompt(wire.PromptRequest{AgentID: *asked, Text: text, From: wire.PromptOriginPerson}); err != nil {
-				return wire.FolderSummary{}, err
-			}
-			s, _ := d.summaryFor(folder)
-			return s, nil
+			return d.askForFileChanges(folder, r)
 		}
 		return d.keepOrUndo(wire.GuardedChangeRequest{Folder: r.Folder, Path: r.Key, Digest: r.Digest}, r.Action == wire.ApprovalActionApprove)
 	case wire.ApprovalKindWorkflow:
@@ -567,17 +567,46 @@ func (d *Daemon) answerApproval(ctx context.Context, r wire.ApprovalAnswer) (wir
 		}
 		return d.answerConnector(folder, r.Key, r.Digest, r.Action == wire.ApprovalActionApprove)
 	case wire.ApprovalKindArchive:
-		id := wire.UUID(strings.ToUpper(r.Key))
-		a := d.Store.Agent(id)
-		if a == nil || a.ArchiveRequest == nil {
-			return wire.FolderSummary{}, Invalid("That session is not asking to be archived any more.")
-		}
-		if r.Action == wire.ApprovalActionApprove {
-			d.archive(id)
-		} else {
-			d.change(id, func(a *wire.Agent) { a.ArchiveRequest = nil })
-		}
-		return d.sendFolder(folder)
+		return d.answerArchiveApproval(folder, r)
 	}
 	return wire.FolderSummary{}, Invalid("There is no such approval here.")
+}
+
+// askForFileChanges sends the person's note to the agent that made a file's change, and
+// leaves the change waiting.
+func (d *Daemon) askForFileChanges(folder string, r wire.ApprovalAnswer) (wire.FolderSummary, error) {
+	if r.Note == nil || strings.TrimSpace(*r.Note) == "" {
+		return wire.FolderSummary{}, Invalid("Say what to change.")
+	}
+	var asked *wire.UUID
+	for _, ch := range d.guardedChanges(folder) {
+		if ch.Path == r.Key {
+			asked = ch.AskedIn
+		}
+	}
+	if asked == nil {
+		return wire.FolderSummary{}, Invalid("No agent made this change, so there is nobody to ask. Approve or deny it.")
+	}
+	text := "Before approving your change to " + r.Key + ", I'd like changes:\n\n" + strings.TrimSpace(*r.Note) +
+		"\n\nIt stays waiting for approval; your next version of it asks again."
+	if err := d.prompt(wire.PromptRequest{AgentID: *asked, Text: text, From: wire.PromptOriginPerson}); err != nil {
+		return wire.FolderSummary{}, err
+	}
+	s, _ := d.summaryFor(folder)
+	return s, nil
+}
+
+// answerArchiveApproval archives a session that asks for it, or clears its request.
+func (d *Daemon) answerArchiveApproval(folder string, r wire.ApprovalAnswer) (wire.FolderSummary, error) {
+	id := wire.UUID(strings.ToUpper(r.Key))
+	a := d.Store.Agent(id)
+	if a == nil || a.ArchiveRequest == nil {
+		return wire.FolderSummary{}, Invalid("That session is not asking to be archived any more.")
+	}
+	if r.Action == wire.ApprovalActionApprove {
+		d.archive(id)
+	} else {
+		d.change(id, func(a *wire.Agent) { a.ArchiveRequest = nil })
+	}
+	return d.sendFolder(folder)
 }

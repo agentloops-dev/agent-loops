@@ -262,45 +262,9 @@ func (d *Daemon) toldOrgRoutes(params json.RawMessage) {
 	next := map[string]heldRoute{}
 	waiting := map[string]wire.DeliveredRoute{}
 	for _, r := range delivery.Routes {
-		if err := routeWellFormed(r); err != nil {
-			log.Printf("machine/orgRoutes: %v", err)
-			continue
-		}
-		old, had := held[r.ID]
-		// An older seal than this machine holds is one a control plane sent back: refused.
-		if had && r.SealVersion < old.route.SealVersion {
-			log.Printf("machine/orgRoutes: %s seal %d is older than the %d held here; refused", r.ID, r.SealVersion, old.route.SealVersion)
-			next[r.ID] = old
-			continue
-		}
-		// No copy for this machine yet: the one held, sealed by an admin before, goes on.
-		if r.Waiting != nil && *r.Waiting {
-			waiting[r.ID] = r
-			if had {
-				next[r.ID] = old
-			}
-			continue
-		}
-		if err := opens(id, r); err != nil {
-			log.Printf("machine/orgRoutes: %s version %d does not open here (%v); asked for again", r.ID, r.Version, err)
+		if d.settleDeliveredRouteLocked(id, held, r, delivery.At, next, waiting) {
 			again = true
-			if old, ok := held[r.ID]; ok {
-				next[r.ID] = old
-			}
-			continue
 		}
-		if old, ok := held[r.ID]; ok && sameJSON(old.route, r) {
-			next[r.ID] = old
-			continue
-		}
-		if err := d.keepOrgRoute(r); err != nil {
-			log.Printf("machine/orgRoutes: keep %s: %v", r.ID, err)
-			if old, ok := held[r.ID]; ok {
-				next[r.ID] = old
-			}
-			continue
-		}
-		next[r.ID] = heldRoute{route: r, at: delivery.At}
 	}
 	var gone []heldRoute
 	for routeID, h := range held {
@@ -330,6 +294,52 @@ func (d *Daemon) toldOrgRoutes(params json.RawMessage) {
 	}
 	d.tellAccountProfiles()
 	d.tellAllowances()
+}
+
+// settleDeliveredRouteLocked puts in next what this machine holds for one route of a
+// delivery, and in waiting a route with no copy for this machine yet. It is true when the
+// route does not open here, so the delivery must be asked for again. d.orgRouteMu is held.
+func (d *Daemon) settleDeliveredRouteLocked(id *machineIdentity, held map[string]heldRoute, r wire.DeliveredRoute,
+	at wire.Date, next map[string]heldRoute, waiting map[string]wire.DeliveredRoute) bool {
+	if err := routeWellFormed(r); err != nil {
+		log.Printf("machine/orgRoutes: %v", err)
+		return false
+	}
+	old, had := held[r.ID]
+	// An older seal than this machine holds is one a control plane sent back: refused.
+	if had && r.SealVersion < old.route.SealVersion {
+		log.Printf("machine/orgRoutes: %s seal %d is older than the %d held here; refused", r.ID, r.SealVersion, old.route.SealVersion)
+		next[r.ID] = old
+		return false
+	}
+	// No copy for this machine yet: the one held, sealed by an admin before, goes on.
+	if r.Waiting != nil && *r.Waiting {
+		waiting[r.ID] = r
+		if had {
+			next[r.ID] = old
+		}
+		return false
+	}
+	if err := opens(id, r); err != nil {
+		log.Printf("machine/orgRoutes: %s version %d does not open here (%v); asked for again", r.ID, r.Version, err)
+		if had {
+			next[r.ID] = old
+		}
+		return true
+	}
+	if had && sameJSON(old.route, r) {
+		next[r.ID] = old
+		return false
+	}
+	if err := d.keepOrgRoute(r); err != nil {
+		log.Printf("machine/orgRoutes: keep %s: %v", r.ID, err)
+		if had {
+			next[r.ID] = old
+		}
+		return false
+	}
+	next[r.ID] = heldRoute{route: r, at: at}
+	return false
 }
 
 // keepOrgRoute writes a route as it came, still sealed, readable by this user only.

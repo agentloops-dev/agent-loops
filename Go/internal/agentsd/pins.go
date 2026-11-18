@@ -168,45 +168,8 @@ func readPinsFile(data []byte) (pinsFile, error) {
 	}
 	var f pinsFile
 	var entries []pinEntry
-	for _, r := range raw.Pins {
-		var e struct {
-			Path     *string       `json:"path"`
-			View     *wire.ViewPin `json:"view"`
-			Title    *string       `json:"title"`
-			PinnedBy *pinner       `json:"pinned_by"`
-		}
-		if json.Unmarshal(r, &e) != nil || (e.Path == nil) == (e.View == nil) || e.PinnedBy == nil {
-			f.unread = append(f.unread, r)
-			continue
-		}
-		entry := pinEntry{title: e.Title, pinnedBy: *e.PinnedBy, view: e.View}
-		if e.View != nil {
-			entry.path = e.View.URI
-		} else {
-			entry.path = *e.Path
-		}
-		entries = append(entries, entry)
-	}
-	seen := map[string]bool{}
-	room := pinsPerFolder - len(f.unread)
-	for _, e := range entries {
-		if e.view != nil {
-			if viewProblem(*e.view) != "" {
-				continue
-			}
-		} else {
-			p, ok := normalizePin(e.path)
-			if _, kind := pinKind(p); !ok || !kind {
-				continue
-			}
-			e.path = p
-		}
-		if seen[e.path] || len(f.pins) >= room {
-			continue
-		}
-		seen[e.path] = true
-		f.pins = append(f.pins, e)
-	}
+	entries, f.unread = parsePinEntries(raw.Pins)
+	f.pins = goodPinEntries(entries, pinsPerFolder-len(f.unread))
 	sessions := map[wire.UUID]bool{}
 	for _, s := range raw.Sessions {
 		if !sessions[s.Session] && len(f.sessions) < pinsPerFolder {
@@ -227,6 +190,58 @@ func readPinsFile(data []byte) (pinsFile, error) {
 		}
 	}
 	return f, nil
+}
+
+// parsePinEntries reads the file's pins: the entries this build can read, and the raw
+// ones it cannot.
+func parsePinEntries(raw []json.RawMessage) ([]pinEntry, []json.RawMessage) {
+	var entries []pinEntry
+	var unread []json.RawMessage
+	for _, r := range raw {
+		var e struct {
+			Path     *string       `json:"path"`
+			View     *wire.ViewPin `json:"view"`
+			Title    *string       `json:"title"`
+			PinnedBy *pinner       `json:"pinned_by"`
+		}
+		if json.Unmarshal(r, &e) != nil || (e.Path == nil) == (e.View == nil) || e.PinnedBy == nil {
+			unread = append(unread, r)
+			continue
+		}
+		entry := pinEntry{title: e.Title, pinnedBy: *e.PinnedBy, view: e.View}
+		if e.View != nil {
+			entry.path = e.View.URI
+		} else {
+			entry.path = *e.Path
+		}
+		entries = append(entries, entry)
+	}
+	return entries, unread
+}
+
+// goodPinEntries is the entries with a good view or page path, each once, at most room.
+func goodPinEntries(entries []pinEntry, room int) []pinEntry {
+	var pins []pinEntry
+	seen := map[string]bool{}
+	for _, e := range entries {
+		if e.view != nil {
+			if viewProblem(*e.view) != "" {
+				continue
+			}
+		} else {
+			p, ok := normalizePin(e.path)
+			if _, kind := pinKind(p); !ok || !kind {
+				continue
+			}
+			e.path = p
+		}
+		if seen[e.path] || len(pins) >= room {
+			continue
+		}
+		seen[e.path] = true
+		pins = append(pins, e)
+	}
+	return pins
 }
 
 // tree is the file as PinsFile.encode writes it.
@@ -461,210 +476,249 @@ func arrange[T any](items []T, key func(T) string, order []string) []T {
 }
 
 func (d *Daemon) registerPins() {
-	On(d, wire.CallPinsList, func(ctx context.Context, c *Client, _ wire.Empty) ([]wire.FolderPins, error) {
-		ps := d.folders(false)
-		sort.SliceStable(ps, func(i, j int) bool { return ps[i].LastActivityAt > ps[j].LastActivityAt })
-		out := []wire.FolderPins{}
-		for _, s := range ps {
-			pp := d.folderPins(store.FolderPath(s.Folder.Folder))
-			if len(pp.Pins) > 0 || len(pp.Sessions) > 0 || len(pp.Workflows) > 0 || len(pp.Views) > 0 ||
-				len(pp.Reviews) > 0 || len(pp.Suggestions) > 0 {
-				out = append(out, pp)
-			}
+	On(d, wire.CallPinsList, d.pinsCallList)
+	On(d, wire.CallPinsRead, d.pinsCallRead)
+	On(d, wire.CallPinsWrite, d.pinsCallWrite)
+	On(d, wire.CallPinsPin, d.pinsCallPin)
+	On(d, wire.CallPinsUnpin, d.pinsCallUnpin)
+	On(d, wire.CallPinsHideView, d.pinsCallHideView)
+	On(d, wire.CallPinsArrange, d.pinsCallArrange)
+	On(d, wire.CallPinsPinSession, d.pinsCallPinSession)
+	On(d, wire.CallPinsUnpinSession, d.pinsCallUnpinSession)
+	On(d, wire.CallPinsArrangeSessions, d.pinsCallArrangeSessions)
+	On(d, wire.CallPinsPinWorkflow, d.pinsCallPinWorkflow)
+	On(d, wire.CallPinsUnpinWorkflow, d.pinsCallUnpinWorkflow)
+	On(d, wire.CallPinsArrangeWorkflows, d.pinsCallArrangeWorkflows)
+}
+
+// pinsCallList answers wire.CallPinsList.
+func (d *Daemon) pinsCallList(_ context.Context, _ *Client, _ wire.Empty) ([]wire.FolderPins, error) {
+	ps := d.folders(false)
+	sort.SliceStable(ps, func(i, j int) bool { return ps[i].LastActivityAt > ps[j].LastActivityAt })
+	out := []wire.FolderPins{}
+	for _, s := range ps {
+		pp := d.folderPins(store.FolderPath(s.Folder.Folder))
+		if len(pp.Pins) > 0 || len(pp.Sessions) > 0 || len(pp.Workflows) > 0 || len(pp.Views) > 0 ||
+			len(pp.Reviews) > 0 || len(pp.Suggestions) > 0 {
+			out = append(out, pp)
 		}
-		return out, nil
-	})
-	On(d, wire.CallPinsRead, func(ctx context.Context, c *Client, r wire.PinReadRequest) (wire.FileReading, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.FileReading{}, err
-		}
-		path, err := pageURL(r.Path, folder)
-		if err != nil {
-			return wire.FileReading{}, err
-		}
-		return reading(path, r.KnownStamp)
-	})
-	On(d, wire.CallPinsWrite, func(ctx context.Context, c *Client, r wire.PinWriteRequest) (wire.Empty, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.Empty{}, err
-		}
-		path, err := pageURL(r.Path, folder)
-		if err != nil {
-			return wire.Empty{}, err
-		}
-		if kind, ok := pinKind(path); !ok || kind != wire.PinKindMarkdown {
-			return wire.Empty{}, Invalid("Only a Markdown page can be typed on.")
-		}
-		if old, err := os.ReadFile(path); err == nil && string(old) == r.Text {
-			return wire.Empty{}, nil
-		}
-		if err := store.WriteAtomically(path, []byte(r.Text), 0o644); err != nil {
-			return wire.Empty{}, &Error{Code: CodeInternal, Message: "Could not save " + filepath.Base(path) + ": " + err.Error()}
-		}
+	}
+	return out, nil
+}
+
+// pinsCallRead answers wire.CallPinsRead.
+func (d *Daemon) pinsCallRead(_ context.Context, _ *Client, r wire.PinReadRequest) (wire.FileReading, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.FileReading{}, err
+	}
+	path, err := pageURL(r.Path, folder)
+	if err != nil {
+		return wire.FileReading{}, err
+	}
+	return reading(path, r.KnownStamp)
+}
+
+// pinsCallWrite answers wire.CallPinsWrite.
+func (d *Daemon) pinsCallWrite(_ context.Context, _ *Client, r wire.PinWriteRequest) (wire.Empty, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	path, err := pageURL(r.Path, folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	if kind, ok := pinKind(path); !ok || kind != wire.PinKindMarkdown {
+		return wire.Empty{}, Invalid("Only a Markdown page can be typed on.")
+	}
+	if old, err := os.ReadFile(path); err == nil && string(old) == r.Text {
 		return wire.Empty{}, nil
-	})
-	On(d, wire.CallPinsPin, func(ctx context.Context, c *Client, r wire.PinRequest) ([]wire.PinView, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return nil, err
+	}
+	if err := store.WriteAtomically(path, []byte(r.Text), 0o644); err != nil {
+		return wire.Empty{}, &Error{Code: CodeInternal, Message: "Could not save " + filepath.Base(path) + ": " + err.Error()}
+	}
+	return wire.Empty{}, nil
+}
+
+// pinsCallPin answers wire.CallPinsPin.
+func (d *Daemon) pinsCallPin(_ context.Context, _ *Client, r wire.PinRequest) ([]wire.PinView, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return nil, err
+	}
+	const lead = "Nothing was pinned: "
+	entry := pinEntry{title: r.Title, pinnedBy: thePerson()}
+	if r.View != nil {
+		if why := d.viewPinRefusal(*r.View, folder); why != "" {
+			return nil, pinRefused(lead + why)
 		}
-		const lead = "Nothing was pinned: "
-		entry := pinEntry{title: r.Title, pinnedBy: thePerson()}
-		if r.View != nil {
-			if why := d.viewPinRefusal(*r.View, folder); why != "" {
-				return nil, pinRefused(lead + why)
-			}
-			entry.path, entry.view = r.View.URI, r.View
-			if entry.title == nil && !d.pinned(folder, r.View.URI) {
-				entry.title = d.viewPinTitle(*r.View, folder)
-			}
-			if err := d.pin(entry, folder, lead); err != nil {
-				return nil, err
-			}
-			return d.pinViews(folder, d.readPins(folder)), nil
+		entry.path, entry.view = r.View.URI, r.View
+		if entry.title == nil && !d.pinned(folder, r.View.URI) {
+			entry.title = d.viewPinTitle(*r.View, folder)
 		}
-		path, ok := personPinPath(r.Path, folder)
-		if !ok {
-			return nil, pinRefused(lead + r.Path + " is not in this folder.")
-		}
-		if fi, err := os.Stat(filepath.Join(folder, path)); err != nil || !fi.Mode().IsRegular() {
-			return nil, pinRefused(lead + "there is no file at " + path + " in the folder.")
-		}
-		entry.path = path
 		if err := d.pin(entry, folder, lead); err != nil {
 			return nil, err
 		}
 		return d.pinViews(folder, d.readPins(folder)), nil
-	})
-	On(d, wire.CallPinsUnpin, func(ctx context.Context, c *Client, r wire.PinPathRequest) (wire.Empty, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.Empty{}, err
+	}
+	path, ok := personPinPath(r.Path, folder)
+	if !ok {
+		return nil, pinRefused(lead + r.Path + " is not in this folder.")
+	}
+	if fi, err := os.Stat(filepath.Join(folder, path)); err != nil || !fi.Mode().IsRegular() {
+		return nil, pinRefused(lead + "there is no file at " + path + " in the folder.")
+	}
+	entry.path = path
+	if err := d.pin(entry, folder, lead); err != nil {
+		return nil, err
+	}
+	return d.pinViews(folder, d.readPins(folder)), nil
+}
+
+// pinsCallUnpin answers wire.CallPinsUnpin.
+func (d *Daemon) pinsCallUnpin(_ context.Context, _ *Client, r wire.PinPathRequest) (wire.Empty, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	key := r.Path
+	if !strings.HasPrefix(key, "ui://") {
+		if p, ok := personPinPath(r.Path, folder); ok {
+			key = p
 		}
-		key := r.Path
-		if !strings.HasPrefix(key, "ui://") {
-			if p, ok := personPinPath(r.Path, folder); ok {
-				key = p
-			}
+	}
+	f := d.readPins(folder)
+	for i, e := range f.pins {
+		if e.path == key {
+			f.pins = append(f.pins[:i], f.pins[i+1:]...)
+			return wire.Empty{}, d.writePins(f, folder)
 		}
-		f := d.readPins(folder)
-		for i, e := range f.pins {
-			if e.path == key {
-				f.pins = append(f.pins[:i], f.pins[i+1:]...)
-				return wire.Empty{}, d.writePins(f, folder)
-			}
+	}
+	return wire.Empty{}, pinRefused("Nothing was unpinned: " + r.Path + " is not pinned in this folder.")
+}
+
+// pinsCallHideView answers wire.CallPinsHideView.
+func (d *Daemon) pinsCallHideView(_ context.Context, _ *Client, r wire.PinHideViewRequest) (wire.Empty, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	if !strings.HasPrefix(r.URI, "ui://") {
+		return wire.Empty{}, Invalid("A view's address starts ui://.")
+	}
+	f := d.readPins(folder)
+	at := slices.Index(f.hiddenViews, r.URI)
+	switch {
+	case r.Hidden && at < 0:
+		if len(f.hiddenViews) >= hiddenViewsPerFolder {
+			return wire.Empty{}, pinRefused("Nothing was hidden: this folder already hides 50 views, the most it can.")
 		}
-		return wire.Empty{}, pinRefused("Nothing was unpinned: " + r.Path + " is not pinned in this folder.")
-	})
-	On(d, wire.CallPinsHideView, func(ctx context.Context, c *Client, r wire.PinHideViewRequest) (wire.Empty, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.Empty{}, err
-		}
-		if !strings.HasPrefix(r.URI, "ui://") {
-			return wire.Empty{}, Invalid("A view's address starts ui://.")
-		}
-		f := d.readPins(folder)
-		at := slices.Index(f.hiddenViews, r.URI)
-		switch {
-		case r.Hidden && at < 0:
-			if len(f.hiddenViews) >= hiddenViewsPerFolder {
-				return wire.Empty{}, pinRefused("Nothing was hidden: this folder already hides 50 views, the most it can.")
-			}
-			f.hiddenViews = append(f.hiddenViews, r.URI)
-		case !r.Hidden && at >= 0:
-			f.hiddenViews = slices.Delete(f.hiddenViews, at, at+1)
-		default:
+		f.hiddenViews = append(f.hiddenViews, r.URI)
+	case !r.Hidden && at >= 0:
+		f.hiddenViews = slices.Delete(f.hiddenViews, at, at+1)
+	default:
+		return wire.Empty{}, nil
+	}
+	return wire.Empty{}, d.writePins(f, folder)
+}
+
+// pinsCallArrange answers wire.CallPinsArrange.
+func (d *Daemon) pinsCallArrange(_ context.Context, _ *Client, r wire.PinArrangeRequest) (wire.Empty, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	f := d.readPins(folder)
+	f.pins = arrange(f.pins, func(e pinEntry) string { return e.path }, r.Paths)
+	return wire.Empty{}, d.writePins(f, folder)
+}
+
+// pinsCallPinSession answers wire.CallPinsPinSession.
+func (d *Daemon) pinsCallPinSession(_ context.Context, _ *Client, r wire.PinSessionRequest) (wire.Empty, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	const lead = "Nothing was pinned: "
+	a := d.Store.Agent(r.AgentID)
+	if a == nil || folderPath(a) != folder {
+		return wire.Empty{}, pinRefused(lead + "that session is not in this folder.")
+	}
+	if a.State == wire.AgentStateArchived {
+		return wire.Empty{}, pinRefused(lead + "an archived session can't be pinned.")
+	}
+	f := d.readPins(folder)
+	for _, s := range f.sessions {
+		if s.Session == a.ID {
 			return wire.Empty{}, nil
 		}
-		return wire.Empty{}, d.writePins(f, folder)
-	})
-	On(d, wire.CallPinsArrange, func(ctx context.Context, c *Client, r wire.PinArrangeRequest) (wire.Empty, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.Empty{}, err
+	}
+	if len(f.sessions) >= pinsPerFolder {
+		return wire.Empty{}, pinRefused(lead + "this folder already has 10 pinned sessions, the most it can have. Unpin one first.")
+	}
+	f.sessions = append(f.sessions, sessionPin{Session: a.ID, PinnedBy: thePerson()})
+	return wire.Empty{}, d.writePins(f, folder)
+}
+
+// pinsCallUnpinSession answers wire.CallPinsUnpinSession.
+func (d *Daemon) pinsCallUnpinSession(_ context.Context, _ *Client, r wire.PinSessionRequest) (wire.Empty, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	return wire.Empty{}, d.unpinSession(folder, r.AgentID)
+}
+
+// pinsCallArrangeSessions answers wire.CallPinsArrangeSessions.
+func (d *Daemon) pinsCallArrangeSessions(_ context.Context, _ *Client, r wire.PinArrangeSessionsRequest) (wire.Empty, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	order := make([]string, len(r.AgentIDs))
+	for i, id := range r.AgentIDs {
+		order[i] = strings.ToUpper(string(id))
+	}
+	f := d.readPins(folder)
+	f.sessions = arrange(f.sessions, func(s sessionPin) string { return strings.ToUpper(string(s.Session)) }, order)
+	return wire.Empty{}, d.writePins(f, folder)
+}
+
+// pinsCallPinWorkflow answers wire.CallPinsPinWorkflow.
+func (d *Daemon) pinsCallPinWorkflow(_ context.Context, _ *Client, r wire.WorkflowRequest) (wire.Empty, error) {
+	if _, err := d.knownPinFolder(r.Folder); err != nil {
+		return wire.Empty{}, err
+	}
+	// This host keeps no workflows yet.
+	return wire.Empty{}, pinRefused("Nothing was pinned: there is no workflow called " + r.WorkflowID + " in this folder.")
+}
+
+// pinsCallUnpinWorkflow answers wire.CallPinsUnpinWorkflow.
+func (d *Daemon) pinsCallUnpinWorkflow(_ context.Context, _ *Client, r wire.WorkflowRequest) (wire.Empty, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	f := d.readPins(folder)
+	for i, w := range f.workflows {
+		if w.Workflow == r.WorkflowID {
+			f.workflows = append(f.workflows[:i], f.workflows[i+1:]...)
+			return wire.Empty{}, d.writePins(f, folder)
 		}
-		f := d.readPins(folder)
-		f.pins = arrange(f.pins, func(e pinEntry) string { return e.path }, r.Paths)
-		return wire.Empty{}, d.writePins(f, folder)
-	})
-	On(d, wire.CallPinsPinSession, func(ctx context.Context, c *Client, r wire.PinSessionRequest) (wire.Empty, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.Empty{}, err
-		}
-		const lead = "Nothing was pinned: "
-		a := d.Store.Agent(r.AgentID)
-		if a == nil || folderPath(a) != folder {
-			return wire.Empty{}, pinRefused(lead + "that session is not in this folder.")
-		}
-		if a.State == wire.AgentStateArchived {
-			return wire.Empty{}, pinRefused(lead + "an archived session can't be pinned.")
-		}
-		f := d.readPins(folder)
-		for _, s := range f.sessions {
-			if s.Session == a.ID {
-				return wire.Empty{}, nil
-			}
-		}
-		if len(f.sessions) >= pinsPerFolder {
-			return wire.Empty{}, pinRefused(lead + "this folder already has 10 pinned sessions, the most it can have. Unpin one first.")
-		}
-		f.sessions = append(f.sessions, sessionPin{Session: a.ID, PinnedBy: thePerson()})
-		return wire.Empty{}, d.writePins(f, folder)
-	})
-	On(d, wire.CallPinsUnpinSession, func(ctx context.Context, c *Client, r wire.PinSessionRequest) (wire.Empty, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.Empty{}, err
-		}
-		return wire.Empty{}, d.unpinSession(folder, r.AgentID)
-	})
-	On(d, wire.CallPinsArrangeSessions, func(ctx context.Context, c *Client, r wire.PinArrangeSessionsRequest) (wire.Empty, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.Empty{}, err
-		}
-		order := make([]string, len(r.AgentIDs))
-		for i, id := range r.AgentIDs {
-			order[i] = strings.ToUpper(string(id))
-		}
-		f := d.readPins(folder)
-		f.sessions = arrange(f.sessions, func(s sessionPin) string { return strings.ToUpper(string(s.Session)) }, order)
-		return wire.Empty{}, d.writePins(f, folder)
-	})
-	On(d, wire.CallPinsPinWorkflow, func(ctx context.Context, c *Client, r wire.WorkflowRequest) (wire.Empty, error) {
-		if _, err := d.knownPinFolder(r.Folder); err != nil {
-			return wire.Empty{}, err
-		}
-		// This host keeps no workflows yet.
-		return wire.Empty{}, pinRefused("Nothing was pinned: there is no workflow called " + r.WorkflowID + " in this folder.")
-	})
-	On(d, wire.CallPinsUnpinWorkflow, func(ctx context.Context, c *Client, r wire.WorkflowRequest) (wire.Empty, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.Empty{}, err
-		}
-		f := d.readPins(folder)
-		for i, w := range f.workflows {
-			if w.Workflow == r.WorkflowID {
-				f.workflows = append(f.workflows[:i], f.workflows[i+1:]...)
-				return wire.Empty{}, d.writePins(f, folder)
-			}
-		}
-		return wire.Empty{}, nil
-	})
-	On(d, wire.CallPinsArrangeWorkflows, func(ctx context.Context, c *Client, r wire.PinArrangeWorkflowsRequest) (wire.Empty, error) {
-		folder, err := d.knownPinFolder(r.Folder)
-		if err != nil {
-			return wire.Empty{}, err
-		}
-		f := d.readPins(folder)
-		f.workflows = arrange(f.workflows, func(w workflowPin) string { return w.Workflow }, r.WorkflowIDs)
-		return wire.Empty{}, d.writePins(f, folder)
-	})
+	}
+	return wire.Empty{}, nil
+}
+
+// pinsCallArrangeWorkflows answers wire.CallPinsArrangeWorkflows.
+func (d *Daemon) pinsCallArrangeWorkflows(_ context.Context, _ *Client, r wire.PinArrangeWorkflowsRequest) (wire.Empty, error) {
+	folder, err := d.knownPinFolder(r.Folder)
+	if err != nil {
+		return wire.Empty{}, err
+	}
+	f := d.readPins(folder)
+	f.workflows = arrange(f.workflows, func(w workflowPin) string { return w.Workflow }, r.WorkflowIDs)
+	return wire.Empty{}, d.writePins(f, folder)
 }
 
 // pin is DaemonCore.pin: retitled where it is, or added under the limit.

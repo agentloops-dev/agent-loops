@@ -100,16 +100,6 @@ func (d *Daemon) withOrgAccount(env []string, runtimeID string, account *wire.Ac
 	// For a runtime told to skip its own auth, the stand-in is in the path (Claude sends a
 	// fixed word in its header then).
 	pathBase := base + "/~" + token
-	st := wire.OrgRouteSettings{}
-	if r.Settings != nil {
-		st = *r.Settings
-	}
-	str := func(p *string) string {
-		if p == nil {
-			return ""
-		}
-		return *p
-	}
 	env = withoutRuntimeVariables(env)
 	set := func(kv ...string) { env = append(env, kv...) }
 	switch runtimeID {
@@ -119,25 +109,7 @@ func (d *Daemon) withOrgAccount(env []string, runtimeID string, account *wire.Ac
 			return nil, err
 		}
 		set("CLAUDE_CONFIG_DIR="+folder, "NODE_EXTRA_CA_CERTS="+rl.caFile)
-		switch r.Kind {
-		case wire.OrgRouteKindBedrock:
-			set("CLAUDE_CODE_USE_BEDROCK=1", "ANTHROPIC_BEDROCK_BASE_URL="+pathBase, "CLAUDE_CODE_SKIP_BEDROCK_AUTH=1")
-			if region := str(st.Region); region != "" {
-				set("AWS_REGION=" + region)
-			}
-		case wire.OrgRouteKindVertex:
-			set("CLAUDE_CODE_USE_VERTEX=1", "ANTHROPIC_VERTEX_BASE_URL="+pathBase, "CLAUDE_CODE_SKIP_VERTEX_AUTH=1")
-			if p := str(st.Project); p != "" {
-				set("ANTHROPIC_VERTEX_PROJECT_ID=" + p)
-			}
-			if l := str(st.Location); l != "" {
-				set("CLOUD_ML_REGION=" + l)
-			}
-		case wire.OrgRouteKindAzure:
-			set("CLAUDE_CODE_USE_FOUNDRY=1", "ANTHROPIC_FOUNDRY_BASE_URL="+pathBase, "CLAUDE_CODE_SKIP_FOUNDRY_AUTH=1")
-		default:
-			set("ANTHROPIC_BASE_URL="+base, "ANTHROPIC_AUTH_TOKEN="+token)
-		}
+		set(orgClaudeRouteVariables(r, base, pathBase, token)...)
 	case "codex":
 		folder, err := d.orgAccountFolder(runtimeID, r.ID)
 		if err != nil {
@@ -170,6 +142,37 @@ func (d *Daemon) withOrgAccount(env []string, runtimeID string, account *wire.Ac
 		return nil, Invalid("%s cannot reach the model through an organisation's route.", runtimeName(runtimeID))
 	}
 	return env, nil
+}
+
+// orgClaudeRouteVariables are Claude's variables for the route's kind: the cloud that it
+// reaches through the relay, or the relay as Anthropic's address.
+func orgClaudeRouteVariables(r wire.DeliveredRoute, base, pathBase, token string) []string {
+	st := wire.OrgRouteSettings{}
+	if r.Settings != nil {
+		st = *r.Settings
+	}
+	var vars []string
+	set := func(kv ...string) { vars = append(vars, kv...) }
+	switch r.Kind {
+	case wire.OrgRouteKindBedrock:
+		set("CLAUDE_CODE_USE_BEDROCK=1", "ANTHROPIC_BEDROCK_BASE_URL="+pathBase, "CLAUDE_CODE_SKIP_BEDROCK_AUTH=1")
+		if region := deref(st.Region); region != "" {
+			set("AWS_REGION=" + region)
+		}
+	case wire.OrgRouteKindVertex:
+		set("CLAUDE_CODE_USE_VERTEX=1", "ANTHROPIC_VERTEX_BASE_URL="+pathBase, "CLAUDE_CODE_SKIP_VERTEX_AUTH=1")
+		if p := deref(st.Project); p != "" {
+			set("ANTHROPIC_VERTEX_PROJECT_ID=" + p)
+		}
+		if l := deref(st.Location); l != "" {
+			set("CLOUD_ML_REGION=" + l)
+		}
+	case wire.OrgRouteKindAzure:
+		set("CLAUDE_CODE_USE_FOUNDRY=1", "ANTHROPIC_FOUNDRY_BASE_URL="+pathBase, "CLAUDE_CODE_SKIP_FOUNDRY_AUTH=1")
+	default:
+		set("ANTHROPIC_BASE_URL="+base, "ANTHROPIC_AUTH_TOKEN="+token)
+	}
+	return vars
 }
 
 // signInRefusedHere says the policy refuses the runtime's own sign-in, so nothing of the

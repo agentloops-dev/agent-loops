@@ -336,17 +336,8 @@ func (d *Daemon) relayServe(r *modelRelay, w http.ResponseWriter, req *http.Requ
 		return
 	}
 	key := accountKey(s.runtime, &s.account)
-	if req.ContentLength > relayMostBody {
-		relayError(w, http.StatusRequestEntityTooLarge, "request_too_large", "The request is over 32 MiB.")
-		return
-	}
-	body, err := io.ReadAll(io.LimitReader(req.Body, relayMostBody+1))
-	if err != nil {
-		relayError(w, http.StatusBadRequest, "invalid_request_error", "The request could not be read.")
-		return
-	}
-	if len(body) > relayMostBody {
-		relayError(w, http.StatusRequestEntityTooLarge, "request_too_large", "The request is over 32 MiB.")
+	body, ok := relayReadBody(w, req)
+	if !ok {
 		return
 	}
 	if err := d.relayModelRefusal(p, s.runtime, a, rest, body); err != nil {
@@ -365,13 +356,7 @@ func (d *Daemon) relayServe(r *modelRelay, w http.ResponseWriter, req *http.Requ
 		relayError(w, http.StatusBadGateway, "api_error", err.Error())
 		return
 	}
-	for name, values := range req.Header {
-		if isHeaderIn(name, authHeaders) || isHeaderIn(name, hopHeaders) || strings.EqualFold(name, "Accept-Encoding") ||
-			strings.EqualFold(name, "Content-Length") || strings.EqualFold(name, "Host") {
-			continue
-		}
-		out.Header[name] = values
-	}
+	relayCopyRequestHeaders(out, req)
 	out.ContentLength = int64(len(body))
 	if err := d.addCredential(req.Context(), out, route, body); err != nil {
 		var expired tokenFailure
@@ -403,10 +388,52 @@ func (d *Daemon) relayServe(r *modelRelay, w http.ResponseWriter, req *http.Requ
 	}
 	w.WriteHeader(resp.StatusCode)
 	m := newUsageMeter(resp.Header.Get("Content-Type"))
+	relayStreamBody(w, resp.Body, m)
+	if resp.StatusCode < 300 {
+		if t := m.done(); t != nil {
+			d.relayCounted(r, s, *t)
+		}
+	}
+}
+
+// relayReadBody reads the request's body, up to relayMostBody. When the body is too large
+// or cannot be read, it writes the error and returns false.
+func relayReadBody(w http.ResponseWriter, req *http.Request) ([]byte, bool) {
+	if req.ContentLength > relayMostBody {
+		relayError(w, http.StatusRequestEntityTooLarge, "request_too_large", "The request is over 32 MiB.")
+		return nil, false
+	}
+	body, err := io.ReadAll(io.LimitReader(req.Body, relayMostBody+1))
+	if err != nil {
+		relayError(w, http.StatusBadRequest, "invalid_request_error", "The request could not be read.")
+		return nil, false
+	}
+	if len(body) > relayMostBody {
+		relayError(w, http.StatusRequestEntityTooLarge, "request_too_large", "The request is over 32 MiB.")
+		return nil, false
+	}
+	return body, true
+}
+
+// relayCopyRequestHeaders copies the runtime's headers to the upstream request, except
+// the credentials, the hop headers and the ones the relay sets itself.
+func relayCopyRequestHeaders(out, req *http.Request) {
+	for name, values := range req.Header {
+		if isHeaderIn(name, authHeaders) || isHeaderIn(name, hopHeaders) || strings.EqualFold(name, "Accept-Encoding") ||
+			strings.EqualFold(name, "Content-Length") || strings.EqualFold(name, "Host") {
+			continue
+		}
+		out.Header[name] = values
+	}
+}
+
+// relayStreamBody copies the upstream body to the runtime as it comes, and gives each
+// part to the usage meter. It stops at the body's end or when the runtime is gone.
+func relayStreamBody(w http.ResponseWriter, body io.Reader, m *usageMeter) {
 	flush := http.NewResponseController(w)
 	buf := make([]byte, 32<<10)
 	for {
-		n, err := resp.Body.Read(buf)
+		n, err := body.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
 				break
@@ -416,11 +443,6 @@ func (d *Daemon) relayServe(r *modelRelay, w http.ResponseWriter, req *http.Requ
 		}
 		if err != nil {
 			break
-		}
-	}
-	if resp.StatusCode < 300 {
-		if t := m.done(); t != nil {
-			d.relayCounted(r, s, *t)
 		}
 	}
 }
@@ -632,52 +654,20 @@ func upstreamURL(r wire.DeliveredRoute, path string, query url.Values) (*url.URL
 	if r.Settings != nil {
 		st = *r.Settings
 	}
-	str := func(p *string) string {
-		if p == nil {
-			return ""
-		}
-		return *p
-	}
-	base := str(st.Address)
+	base := deref(st.Address)
 	switch r.Kind {
 	case wire.OrgRouteKindKey:
 		if base == "" && r.Vendor != nil {
 			base = vendorAddress[*r.Vendor]
 		}
 	case wire.OrgRouteKindBedrock:
-		if base == "" && str(st.Region) != "" {
-			host := "bedrock-runtime"
-			if strings.HasPrefix(path, "/inference-profiles") || strings.HasPrefix(path, "/foundation-models") {
-				host = "bedrock"
-			}
-			base = "https://" + host + "." + str(st.Region) + ".amazonaws.com"
+		if base == "" {
+			base = upstreamBedrockBase(st, path)
 		}
 	case wire.OrgRouteKindVertex:
-		location := str(st.Location)
-		if strings.HasPrefix(path, "/projects/") {
-			path = "/v1" + path
-		}
-		if vertexPublishers.MatchString(path) && str(st.Project) != "" && location != "" {
-			version, after, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
-			path = "/" + version + "/projects/" + str(st.Project) + "/locations/" + location + "/" + after
-		}
-		if base == "" && location != "" {
-			base = "https://" + location + "-aiplatform.googleapis.com"
-			if location == "global" {
-				base = "https://aiplatform.googleapis.com"
-			}
-		}
+		base, path = upstreamVertex(st, base, path)
 	case wire.OrgRouteKindAzure:
-		if base == "" && str(st.Resource) != "" {
-			base = "https://" + str(st.Resource) + ".openai.azure.com/openai"
-			if r.Vendor != nil && *r.Vendor == wire.OrgRouteVendorAnthropic {
-				base = "https://" + str(st.Resource) + ".services.ai.azure.com/anthropic"
-			}
-		}
-		if v := str(st.ApiVersion); v != "" && query.Get("api-version") == "" {
-			query = cloneQuery(query)
-			query.Set("api-version", v)
-		}
+		base, query = upstreamAzure(r, st, base, query)
 	}
 	if base == "" {
 		return nil, errors.New("The organisation's route says no address for this request.")
@@ -690,6 +680,54 @@ func upstreamURL(r wire.DeliveredRoute, path string, query url.Values) (*url.URL
 	q.Del("key")
 	u.RawQuery = q.Encode()
 	return u, nil
+}
+
+// upstreamBedrockBase is Bedrock's address for the route's region, or "" with no region.
+func upstreamBedrockBase(st wire.OrgRouteSettings, path string) string {
+	if deref(st.Region) == "" {
+		return ""
+	}
+	host := "bedrock-runtime"
+	if strings.HasPrefix(path, "/inference-profiles") || strings.HasPrefix(path, "/foundation-models") {
+		host = "bedrock"
+	}
+	return "https://" + host + "." + deref(st.Region) + ".amazonaws.com"
+}
+
+// upstreamVertex puts the route's project and location in a Vertex path, and gives
+// Vertex's address for the location when the route has no address.
+func upstreamVertex(st wire.OrgRouteSettings, base, path string) (string, string) {
+	location := deref(st.Location)
+	if strings.HasPrefix(path, "/projects/") {
+		path = "/v1" + path
+	}
+	if vertexPublishers.MatchString(path) && deref(st.Project) != "" && location != "" {
+		version, after, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+		path = "/" + version + "/projects/" + deref(st.Project) + "/locations/" + location + "/" + after
+	}
+	if base == "" && location != "" {
+		base = "https://" + location + "-aiplatform.googleapis.com"
+		if location == "global" {
+			base = "https://aiplatform.googleapis.com"
+		}
+	}
+	return base, path
+}
+
+// upstreamAzure gives Azure's address for the route's resource when the route has no
+// address, and adds the route's API version to the query when the query has none.
+func upstreamAzure(r wire.DeliveredRoute, st wire.OrgRouteSettings, base string, query url.Values) (string, url.Values) {
+	if base == "" && deref(st.Resource) != "" {
+		base = "https://" + deref(st.Resource) + ".openai.azure.com/openai"
+		if r.Vendor != nil && *r.Vendor == wire.OrgRouteVendorAnthropic {
+			base = "https://" + deref(st.Resource) + ".services.ai.azure.com/anthropic"
+		}
+	}
+	if v := deref(st.ApiVersion); v != "" && query.Get("api-version") == "" {
+		query = cloneQuery(query)
+		query.Set("api-version", v)
+	}
+	return base, query
 }
 
 func cloneQuery(q url.Values) url.Values {
@@ -778,97 +816,124 @@ func (t tokenFailure) Error() string { return t.words }
 // addCredential puts in the route's credential for its kind (research R3), opened for this
 // request only. A cloud credential is made into a token here first (orgtokens.go).
 func (d *Daemon) addCredential(ctx context.Context, req *http.Request, r wire.DeliveredRoute, body []byte) error {
-	secret := func(field string) string {
-		v, ok := d.orgSecret(r, field)
-		if !ok {
-			return ""
-		}
-		s := string(v)
-		clear(v)
-		return s
-	}
 	vendor := wire.OrgRouteVendor("")
 	if r.Vendor != nil {
 		vendor = *r.Vendor
 	}
-	missing := errors.New("The organisation's route has no key on this machine yet.")
-	// token is the route's token for its cloud credential, made here.
-	token := func() (string, error) {
-		values := d.routeValues(r)
-		value, err := d.routeToken(ctx, r, values)
-		clear(values)
-		if err != nil {
-			return "", tokenFailure{fmt.Sprintf(orgExpiredWords, kindName(r.Kind)) + " (" + err.Error() + ")"}
-		}
-		return value, nil
-	}
 	switch r.Kind {
 	case wire.OrgRouteKindKey:
-		key := secret("apiKey")
+		key := d.routeSecretText(r, "apiKey")
 		if key == "" {
-			return missing
+			return routeKeyMissing()
 		}
 		setVendorKey(req, vendor, key)
 	case wire.OrgRouteKindBaseURL:
-		key := secret("apiKey")
-		if key == "" {
-			return nil
-		}
-		if r.Settings != nil && r.Settings.Header != nil {
-			if strings.EqualFold(*r.Settings.Header, "Authorization") {
-				req.Header.Set("Authorization", "Bearer "+key)
-			} else {
-				req.Header.Set(*r.Settings.Header, key)
-			}
-			return nil
-		}
-		setVendorKey(req, vendor, key)
+		d.addBaseURLCredential(req, r, vendor)
 	case wire.OrgRouteKindBedrock:
-		if key := secret("apiKey"); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-			return nil
-		}
-		var session struct {
-			AccessKeyID     string `json:"accessKeyId"`
-			SecretAccessKey string `json:"secretAccessKey"`
-			SessionToken    string `json:"sessionToken"`
-		}
-		value, err := token()
-		if err != nil {
-			return err
-		}
-		if json.Unmarshal([]byte(value), &session) != nil || session.AccessKeyID == "" {
-			return missing
-		}
-		region := ""
-		if r.Settings != nil && r.Settings.Region != nil {
-			region = *r.Settings.Region
-		}
-		signAWS(req, body, session.AccessKeyID, session.SecretAccessKey, session.SessionToken, region, "bedrock", relayNow())
+		return d.addBedrockCredential(ctx, req, r, body)
 	case wire.OrgRouteKindVertex:
-		value, err := token()
+		value, err := d.routeCredentialToken(ctx, r)
 		if err != nil {
 			return err
 		}
 		req.Header.Set("Authorization", "Bearer "+value)
 	case wire.OrgRouteKindAzure:
-		if _, ok := r.Sealed["entraClientSecret"]; ok {
-			value, err := token()
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Authorization", "Bearer "+value)
-			return nil
-		}
-		key := secret("apiKey")
-		if key == "" {
-			return missing
-		}
-		if vendor == wire.OrgRouteVendorAnthropic {
-			req.Header.Set("X-Api-Key", key)
+		return d.addAzureCredential(ctx, req, r, vendor)
+	}
+	return nil
+}
+
+// routeKeyMissing is the error for a route with no key on this machine.
+func routeKeyMissing() error {
+	return errors.New("The organisation's route has no key on this machine yet.")
+}
+
+// routeSecretText is the route's sealed field opened as text, or "" when it has none.
+// It clears the opened bytes.
+func (d *Daemon) routeSecretText(r wire.DeliveredRoute, field string) string {
+	v, ok := d.orgSecret(r, field)
+	if !ok {
+		return ""
+	}
+	s := string(v)
+	clear(v)
+	return s
+}
+
+// routeCredentialToken is the route's token for its cloud credential, made here.
+func (d *Daemon) routeCredentialToken(ctx context.Context, r wire.DeliveredRoute) (string, error) {
+	values := d.routeValues(r)
+	value, err := d.routeToken(ctx, r, values)
+	clear(values)
+	if err != nil {
+		return "", tokenFailure{fmt.Sprintf(orgExpiredWords, kindName(r.Kind)) + " (" + err.Error() + ")"}
+	}
+	return value, nil
+}
+
+// addBaseURLCredential puts in a base-URL route's key, when it has one: in the route's
+// header, or in the vendor's header.
+func (d *Daemon) addBaseURLCredential(req *http.Request, r wire.DeliveredRoute, vendor wire.OrgRouteVendor) {
+	key := d.routeSecretText(r, "apiKey")
+	if key == "" {
+		return
+	}
+	if r.Settings != nil && r.Settings.Header != nil {
+		if strings.EqualFold(*r.Settings.Header, "Authorization") {
+			req.Header.Set("Authorization", "Bearer "+key)
 		} else {
-			req.Header.Set("Api-Key", key)
+			req.Header.Set(*r.Settings.Header, key)
 		}
+		return
+	}
+	setVendorKey(req, vendor, key)
+}
+
+// addBedrockCredential puts in a Bedrock route's API key, or signs the request with the
+// AWS session that its cloud credential makes.
+func (d *Daemon) addBedrockCredential(ctx context.Context, req *http.Request, r wire.DeliveredRoute, body []byte) error {
+	if key := d.routeSecretText(r, "apiKey"); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+		return nil
+	}
+	var session struct {
+		AccessKeyID     string `json:"accessKeyId"`
+		SecretAccessKey string `json:"secretAccessKey"`
+		SessionToken    string `json:"sessionToken"`
+	}
+	value, err := d.routeCredentialToken(ctx, r)
+	if err != nil {
+		return err
+	}
+	if json.Unmarshal([]byte(value), &session) != nil || session.AccessKeyID == "" {
+		return routeKeyMissing()
+	}
+	region := ""
+	if r.Settings != nil && r.Settings.Region != nil {
+		region = *r.Settings.Region
+	}
+	signAWS(req, body, session.AccessKeyID, session.SecretAccessKey, session.SessionToken, region, "bedrock", relayNow())
+	return nil
+}
+
+// addAzureCredential puts in an Azure route's Entra token, or its API key.
+func (d *Daemon) addAzureCredential(ctx context.Context, req *http.Request, r wire.DeliveredRoute, vendor wire.OrgRouteVendor) error {
+	if _, ok := r.Sealed["entraClientSecret"]; ok {
+		value, err := d.routeCredentialToken(ctx, r)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+value)
+		return nil
+	}
+	key := d.routeSecretText(r, "apiKey")
+	if key == "" {
+		return routeKeyMissing()
+	}
+	if vendor == wire.OrgRouteVendorAnthropic {
+		req.Header.Set("X-Api-Key", key)
+	} else {
+		req.Header.Set("Api-Key", key)
 	}
 	return nil
 }

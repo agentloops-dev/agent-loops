@@ -83,42 +83,56 @@ func (d *Daemon) sessionsOnIssue(n int) wire.LineageSessions {
 	graph := d.lineage()
 	for _, root := range d.issueNodes(n) {
 		issues := []wire.LineageNode{root}
-		var children []wire.LineageNode
-		for _, l := range graph.Links(root).Links {
-			if l.To == root && l.Rel == lineage.RelPartOf && l.From.Kind == lineage.KindIssue && !slices.Contains(children, l.From) {
-				if len(children) >= mostSubIssues {
-					limited = true
-					break
-				}
-				children = append(children, l.From)
-			}
+		children, more := subIssueNodes(graph, root)
+		if more {
+			limited = true
 		}
 		issues = append(issues, inEpicOrder(children, d.subIssueOrder(root))...)
 		for _, issue := range issues {
 			out.Issues = append(out.Issues, d.sessionIssue(issue))
-			var prs []wire.LineageNode
-			for _, l := range graph.Links(issue).Links {
-				switch {
-				case l.To != issue:
-				case l.From.Kind == lineage.KindSession && worksOnIt(l.Rel):
-					add(l.From, issue)
-				case l.From.Kind == lineage.KindPR && (l.Rel == lineage.RelFixes || l.Rel == lineage.RelCloses):
-					prs = append(prs, l.From)
-				}
-			}
-			for _, pr := range prs {
-				for _, l := range graph.Links(pr).Links {
-					if l.To == pr && l.From.Kind == lineage.KindSession && worksOnIt(l.Rel) {
-						add(l.From, issue)
-					}
-				}
-			}
+			sessionsWorkingOnIssue(graph, issue, add)
 		}
 	}
 	if limited {
 		out.Limited = &limited
 	}
 	return out
+}
+
+// subIssueNodes gives the sub-issues of root, at most mostSubIssues of them, and says when
+// it left some out.
+func subIssueNodes(graph lineage.Store, root wire.LineageNode) (children []wire.LineageNode, limited bool) {
+	for _, l := range graph.Links(root).Links {
+		if l.To == root && l.Rel == lineage.RelPartOf && l.From.Kind == lineage.KindIssue && !slices.Contains(children, l.From) {
+			if len(children) >= mostSubIssues {
+				return children, true
+			}
+			children = append(children, l.From)
+		}
+	}
+	return children, false
+}
+
+// sessionsWorkingOnIssue calls add for each session that works on issue, or on a PR that
+// fixes or closes it.
+func sessionsWorkingOnIssue(graph lineage.Store, issue wire.LineageNode, add func(session, on wire.LineageNode)) {
+	var prs []wire.LineageNode
+	for _, l := range graph.Links(issue).Links {
+		switch {
+		case l.To != issue:
+		case l.From.Kind == lineage.KindSession && worksOnIt(l.Rel):
+			add(l.From, issue)
+		case l.From.Kind == lineage.KindPR && (l.Rel == lineage.RelFixes || l.Rel == lineage.RelCloses):
+			prs = append(prs, l.From)
+		}
+	}
+	for _, pr := range prs {
+		for _, l := range graph.Links(pr).Links {
+			if l.To == pr && l.From.Kind == lineage.KindSession && worksOnIt(l.Rel) {
+				add(l.From, issue)
+			}
+		}
+	}
 }
 
 // inEpicOrder is children in the forge's order of the epic's sub-issues, then those it did not

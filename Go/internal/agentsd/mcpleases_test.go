@@ -29,13 +29,7 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
-	folder := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(folder, ".agents"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(folder, folderConfig), []byte(`{"project":"proj-4731"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	folder := makeLeaseTestFolder(t)
 	a := seeded(t, d, folder, nil)
 	m := appClient(t, d, a.ID)
 	m.post("initialize", map[string]any{}, 1)
@@ -55,15 +49,7 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 		asked = append(asked, p.Polls...)
 		released = append(released, p.Release...)
 		mu.Unlock()
-		out := wire.BusLeased{Leases: []wire.BusProducerLease{}}
-		for _, poll := range p.Polls {
-			holder := "LINUX-B"
-			if mine.Load() {
-				holder = "MAC-A"
-			}
-			out.Leases = append(out.Leases, wire.BusProducerLease{Poll: poll, Holder: holder, Mine: mine.Load(), Until: "2026-11-11T17:07:11Z"})
-		}
-		return json.Marshal(out)
+		return json.Marshal(answerLeasesForTest(p.Polls, mine.Load()))
 	}))
 	d.StartMCPEvents()
 
@@ -106,26 +92,8 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 	raw, _ := json.Marshal(wire.BusDelivery{Event: bus, Subscriptions: []string{}})
 	d.Told(wire.NotifyBusDeliver.Name, raw)
 	d.Told(wire.NotifyBusDeliver.Name, raw)
-	select {
-	case text := <-answered:
-		if !strings.Contains(text, "pr.merged happened at ") {
-			t.Fatal(text)
-		}
-	case <-afterLimit(t):
-		waitFailed(t, "the wait was never answered")
-	}
-	n := 0
-	for _, e := range d.eventsPage(wire.EventsListRequest{Limit: 200}).Events {
-		if e.ID != nil && *e.ID == bus.ID {
-			n++
-			if e.Details["subscription"] != sub.key || e.Details["server"] != "ci" || e.Details["bus_producer"] != bus.Producer {
-				t.Fatalf("%+v", e.Details)
-			}
-		}
-	}
-	if n != 1 {
-		t.Fatalf("the delivered event is in the log %d times", n)
-	}
+	awaitLeaseTestAnswer(t, answered, "the wait was never answered")
+	checkBusEventLoggedOnce(t, d, bus, sub)
 
 	// A second wait stands by too, with no cursor: one from before goes at once.
 	answered2 := make(chan string, 1)
@@ -164,14 +132,7 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 	ci.mu.Lock()
 	ci.queued = []map[string]any{{"eventId": "w9", "name": "pr.merged", "data": map[string]any{}}}
 	ci.mu.Unlock()
-	select {
-	case text := <-answered2:
-		if !strings.Contains(text, "pr.merged happened at ") {
-			t.Fatal(text)
-		}
-	case <-afterLimit(t):
-		waitFailed(t, "the second wait was never answered")
-	}
+	awaitLeaseTestAnswer(t, answered2, "the second wait was never answered")
 
 	// The subscription ends with its waits, or the host stops: either lets the lease go.
 	d.stopMCPEvents()
@@ -180,6 +141,65 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 		defer mu.Unlock()
 		return contains(released, poll) && contains(asked, poll)
 	})
+}
+
+// makeLeaseTestFolder makes a folder with a project, for the lease test.
+func makeLeaseTestFolder(t *testing.T) string {
+	t.Helper()
+	folder := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(folder, ".agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, folderConfig), []byte(`{"project":"proj-4731"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return folder
+}
+
+// answerLeasesForTest is the control plane's answer to a lease request for polls: this
+// machine holds each when mine is true, else another machine holds it.
+func answerLeasesForTest(polls []string, mine bool) wire.BusLeased {
+	out := wire.BusLeased{Leases: []wire.BusProducerLease{}}
+	for _, poll := range polls {
+		holder := "LINUX-B"
+		if mine {
+			holder = "MAC-A"
+		}
+		out.Leases = append(out.Leases, wire.BusProducerLease{Poll: poll, Holder: holder, Mine: mine, Until: "2026-11-11T17:07:11Z"})
+	}
+	return out
+}
+
+// awaitLeaseTestAnswer waits for a wait's answer, and fails when it does not say pr.merged
+// happened, or does not come in time.
+func awaitLeaseTestAnswer(t *testing.T, answered <-chan string, never string) {
+	t.Helper()
+	select {
+	case text := <-answered:
+		if !strings.Contains(text, "pr.merged happened at ") {
+			t.Fatal(text)
+		}
+	case <-afterLimit(t):
+		waitFailed(t, "%s", never)
+	}
+}
+
+// checkBusEventLoggedOnce fails when the bus event is not in the log once, with the
+// subscription, the server and the producer.
+func checkBusEventLoggedOnce(t *testing.T, d *Daemon, bus wire.BusEvent, sub *mcpSubscription) {
+	t.Helper()
+	n := 0
+	for _, e := range d.eventsPage(wire.EventsListRequest{Limit: 200}).Events {
+		if e.ID != nil && *e.ID == bus.ID {
+			n++
+			if e.Details["subscription"] != sub.key || e.Details["server"] != "ci" || e.Details["bus_producer"] != bus.Producer {
+				t.Fatalf("%+v", e.Details)
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("the delivered event is in the log %d times", n)
+	}
 }
 
 // #4731: a subscription a workflow holds needs the event's data, so it polls whoever holds

@@ -381,34 +381,45 @@ func (d *Daemon) addMCPWaits(wanted map[string]*mcpSubscription, servers func(fo
 				if !ok || f.problem != "" {
 					continue
 				}
-				listing := d.mcpEventListing(f.server)
-				for _, def := range listing.events {
-					if !t.covers(def.Name) || !isServerEventName(def.Name) || !def.offersPoll() {
-						continue
-					}
-					nt := t.narrowed(def.Name)
-					if len(def.InputSchema) > 0 && jsonSchemaProblem(mustRaw(nt.arguments), def.InputSchema, name) != "" {
-						continue
-					}
-					key := nt.subscriptionKey(name)
-					id := mcpRecordKey(sw.folder, key)
-					if s := wanted[id]; s != nil {
-						if !containsUUID(s.waits, sw.agent) {
-							s.waits = append(s.waits, sw.agent)
-							sort.Slice(s.waits, func(i, j int) bool { return s.waits[i] < s.waits[j] })
-						}
-						if !containsUUID(s.waitIDs, sw.wait) {
-							s.waitIDs = append(s.waitIDs, sw.wait)
-							sort.Slice(s.waitIDs, func(i, j int) bool { return s.waitIDs[i] < s.waitIDs[j] })
-						}
-						continue
-					}
-					wanted[id] = &mcpSubscription{id: id, key: key, folder: sw.folder, server: name, event: def.Name,
-						arguments: nt.arguments, waits: []wire.UUID{sw.agent}, waitIDs: []wire.UUID{sw.wait}, pool: f.server.pool(), source: f.server,
-						fingerprint: def.wireText() + "\n" + f.server.entry}
-				}
+				d.addMCPWaitSubscriptions(wanted, sw, t, name, f.server)
 			}
 		}
+	}
+}
+
+// addMCPWaitSubscriptions adds to wanted a subscription for each event of the server name
+// that the wait sw's trigger t covers and that it can poll.
+func (d *Daemon) addMCPWaitSubscriptions(wanted map[string]*mcpSubscription, sw serverWait, t mcpTrigger, name string, src eventServer) {
+	listing := d.mcpEventListing(src)
+	for _, def := range listing.events {
+		if !t.covers(def.Name) || !isServerEventName(def.Name) || !def.offersPoll() {
+			continue
+		}
+		nt := t.narrowed(def.Name)
+		if len(def.InputSchema) > 0 && jsonSchemaProblem(mustRaw(nt.arguments), def.InputSchema, name) != "" {
+			continue
+		}
+		key := nt.subscriptionKey(name)
+		id := mcpRecordKey(sw.folder, key)
+		if s := wanted[id]; s != nil {
+			addWaitToMCPSubscription(s, sw)
+			continue
+		}
+		wanted[id] = &mcpSubscription{id: id, key: key, folder: sw.folder, server: name, event: def.Name,
+			arguments: nt.arguments, waits: []wire.UUID{sw.agent}, waitIDs: []wire.UUID{sw.wait}, pool: src.pool(), source: src,
+			fingerprint: def.wireText() + "\n" + src.entry}
+	}
+}
+
+// addWaitToMCPSubscription adds the wait sw and its agent to s, once each, and keeps them sorted.
+func addWaitToMCPSubscription(s *mcpSubscription, sw serverWait) {
+	if !containsUUID(s.waits, sw.agent) {
+		s.waits = append(s.waits, sw.agent)
+		sort.Slice(s.waits, func(i, j int) bool { return s.waits[i] < s.waits[j] })
+	}
+	if !containsUUID(s.waitIDs, sw.wait) {
+		s.waitIDs = append(s.waitIDs, sw.wait)
+		sort.Slice(s.waitIDs, func(i, j int) bool { return s.waitIDs[i] < s.waitIDs[j] })
 	}
 }
 
@@ -543,27 +554,7 @@ func (d *Daemon) mcpEventListing(s eventServer) mcpListing {
 			listing.events, listing.offers = kept.events, kept.offers
 		}
 	} else if offers {
-		names := func(l []mcpEventDef) string {
-			var n []string
-			for _, e := range l {
-				n = append(n, e.Name)
-			}
-			return strings.Join(n, ",")
-		}
-		if kept == nil || names(kept.events) != names(events) {
-			log.Printf("mcp events: %s connected (events: %d)", s.name, len(events))
-		}
-		d.mcpEvMu.Lock()
-		logged := d.mcpBadNames[pool]
-		d.mcpBadNames[pool] = true
-		d.mcpEvMu.Unlock()
-		if !logged {
-			for _, e := range events {
-				if !isServerEventName(e.Name) {
-					log.Printf("mcp events: %s names an event %s, which only the app can raise or which is not noun.verbed: refused (badEventName)", s.name, e.Name)
-				}
-			}
-		}
+		d.logMCPListing(s, pool, kept, events)
 	}
 	d.mcpEvMu.Lock()
 	if d.mcpEvStarted {
@@ -571,6 +562,33 @@ func (d *Daemon) mcpEventListing(s eventServer) mcpListing {
 	}
 	d.mcpEvMu.Unlock()
 	return listing
+}
+
+// logMCPListing logs that the server s connected when its events are not those it listed
+// before, and, once for its pool, each event name that it may not raise.
+func (d *Daemon) logMCPListing(s eventServer, pool string, kept *mcpListing, events []mcpEventDef) {
+	names := func(l []mcpEventDef) string {
+		var n []string
+		for _, e := range l {
+			n = append(n, e.Name)
+		}
+		return strings.Join(n, ",")
+	}
+	if kept == nil || names(kept.events) != names(events) {
+		log.Printf("mcp events: %s connected (events: %d)", s.name, len(events))
+	}
+	d.mcpEvMu.Lock()
+	logged := d.mcpBadNames[pool]
+	d.mcpBadNames[pool] = true
+	d.mcpEvMu.Unlock()
+	if logged {
+		return
+	}
+	for _, e := range events {
+		if !isServerEventName(e.Name) {
+			log.Printf("mcp events: %s names an event %s, which only the app can raise or which is not noun.verbed: refused (badEventName)", s.name, e.Name)
+		}
+	}
 }
 
 func mcpFixed(event string, server *string, state wire.MCPTriggerStatusState, code wire.MCPTriggerFailureCode, message string, at wire.Date) mcpLine {
@@ -613,162 +631,237 @@ func (d *Daemon) reconcileMCPEvents(ctx context.Context) {
 		}
 		names := d.mcpServerNames(w.folder)
 		if resolved[w.folder] == nil {
-			m := map[string]found{}
-			for _, n := range names {
-				s, problem := d.eventServerNamed(n, w.folder, secrets)
-				m[n] = found{s, problem}
-			}
-			resolved[w.folder] = m
+			resolved[w.folder] = d.mcpFoundServers(w.folder, names, secrets)
 		}
 		var workflowLines []mcpLine
 		for _, t := range w.triggers {
-			var tl []mcpLine
-			var unreachable, waiting []string
-			named := t.servers != nil
-			candidates := t.servers
-			if !named {
-				candidates = names
-			}
-			candidates = append([]string(nil), candidates...)
-			sort.Strings(candidates)
-			for _, name := range candidates {
-				server := name
-				fixed := func(code wire.MCPTriggerFailureCode, message string, state wire.MCPTriggerStatusState) {
-					if named {
-						tl = append(tl, mcpFixed(t.event, &server, state, code, message, at))
-					}
-				}
-				f, ok := resolved[w.folder][name]
-				if !ok {
-					fixed(wire.MCPTriggerFailureCodeServerNotFound, name+" is not set up here.", wire.MCPTriggerStatusStateStopped)
-					if named {
-						tl[len(tl)-1].notHere = true
-					}
-					continue
-				}
-				switch f.problem {
-				case "":
-				case "waiting":
-					waiting = append(waiting, name)
-					fixed(wire.MCPTriggerFailureCodeWaitingForApproval, name+" is waiting for approval in this folder's Connectors.", wire.MCPTriggerStatusStateStopped)
-					continue
-				case "missingSecret":
-					fixed(wire.MCPTriggerFailureCodeSecretMissing, name+" needs a secret that isn't set here.", wire.MCPTriggerStatusStateStopped)
-					continue
-				case "oldTransport":
-					fixed(wire.MCPTriggerFailureCodeServerError, name+" uses the old sse transport, which can't offer events.", wire.MCPTriggerStatusStateStopped)
-					continue
-				default:
-					fixed(wire.MCPTriggerFailureCodeServerNotFound, name+" is not set up here.", wire.MCPTriggerStatusStateStopped)
-					continue
-				}
-				listing := d.mcpEventListing(f.server)
-				if !listing.offers {
-					if listing.failure != nil {
-						unreachable = append(unreachable, name)
-						fixed(wire.MCPTriggerFailureCodeUnreachable, mcpEventsWords(listing.failure, name), wire.MCPTriggerStatusStateRetrying)
-					} else {
-						fixed(wire.MCPTriggerFailureCodeNoEvents, name+" doesn't offer events.", wire.MCPTriggerStatusStateStopped)
-					}
-					continue
-				}
-				var def *mcpEventDef
-				var others []string
-				for i, e := range listing.events {
-					if e.Name == t.event {
-						def = &listing.events[i]
-					}
-					if isServerEventName(e.Name) {
-						others = append(others, e.Name)
-					}
-				}
-				if def == nil {
-					sort.Strings(others)
-					message := name + " doesn't offer " + t.event + "."
-					if len(others) > 0 {
-						message = name + " doesn't offer " + t.event + "; it offers " + strings.Join(others, ", ") + "."
-					}
-					fixed(wire.MCPTriggerFailureCodeEventNotOffered, message, wire.MCPTriggerStatusStateStopped)
-					continue
-				}
-				// From here a server that offers the name has a line, named or not.
-				if !def.offersPoll() {
-					tl = append(tl, mcpFixed(t.event, &server, wire.MCPTriggerStatusStateStopped, wire.MCPTriggerFailureCodeNoPollMode,
-						name+" offers "+t.event+" only by push or webhook, which this version doesn't take.", at))
-					continue
-				}
-				if len(def.InputSchema) > 0 {
-					if problem := jsonSchemaProblem(mustRaw(t.arguments), def.InputSchema, name+"'s "+t.event); problem != "" {
-						tl = append(tl, mcpFixed(t.event, &server, wire.MCPTriggerStatusStateStopped, wire.MCPTriggerFailureCodeBadArguments, problem, at))
-						continue
-					}
-				}
-				key := t.subscriptionKey(name)
-				id := mcpRecordKey(w.folder, key)
-				if s := wanted[id]; s != nil {
-					if !contains(s.workflows, w.id) {
-						s.workflows = append(s.workflows, w.id)
-						sort.Strings(s.workflows)
-					}
-				} else {
-					wanted[id] = &mcpSubscription{id: id, key: key, folder: w.folder, server: name, event: t.event,
-						arguments: t.arguments, workflows: []string{w.id}, pool: f.server.pool(), source: f.server}
-				}
-				wanted[id].fingerprint = def.wireText() + "\n" + f.server.entry
-				tl = append(tl, mcpLine{event: t.event, server: &server, subscription: id})
-			}
-			if len(tl) == 0 && len(waiting) > 0 {
-				// It may well be offered by a server nobody has approved yet: say that,
-				// not that no server offers it.
-				verb := "is"
-				if len(waiting) > 1 {
-					verb = "are"
-				}
-				tl = append(tl, mcpFixed(t.event, nil, wire.MCPTriggerStatusStateStopped, wire.MCPTriggerFailureCodeWaitingForApproval,
-					strings.Join(waiting, ", ")+" "+verb+" waiting for approval in this folder's Connectors, so "+t.event+" is not asked for yet.", at))
-			}
-			if len(tl) == 0 {
-				guess := ""
-				if g := closestEvent(t.event); g != "" {
-					guess = " Did you mean " + g + "?"
-				}
-				why := ""
-				state := wire.MCPTriggerStatusStateStopped
-				if len(unreachable) > 0 {
-					why = " " + strings.Join(unreachable, ", ") + " could not be asked."
-					state = wire.MCPTriggerStatusStatePending
-				}
-				tl = append(tl, mcpFixed(t.event, nil, state, wire.MCPTriggerFailureCodeServerNotFound,
-					"No server here offers "+t.event+"."+why+guess, at))
-				tl[len(tl)-1].notHere = guess == "" && len(unreachable) == 0
-			}
-			workflowLines = append(workflowLines, tl...)
+			workflowLines = append(workflowLines, d.mcpTriggerLines(w, t, names, resolved[w.folder], wanted, at)...)
 		}
 		lines[workflowKey(w.folder, w.id)] = heardLines(workflowLines)
 	}
-	d.addMCPWaits(wanted, func(folder string) map[string]found {
+	serversOf := func(folder string) map[string]found {
 		if resolved[folder] == nil {
-			m := map[string]found{}
-			for _, n := range d.mcpServerNames(folder) {
-				s, problem := d.eventServerNamed(n, folder, secrets)
-				m[n] = found{s, problem}
-			}
-			resolved[folder] = m
+			resolved[folder] = d.mcpFoundServers(folder, d.mcpServerNames(folder), secrets)
 		}
 		return resolved[folder]
-	})
-	d.addMergeArchives(wanted, func(folder string) map[string]found {
-		if resolved[folder] == nil {
-			m := map[string]found{}
-			for _, n := range d.mcpServerNames(folder) {
-				s, problem := d.eventServerNamed(n, folder, secrets)
-				m[n] = found{s, problem}
-			}
-			resolved[folder] = m
+	}
+	d.addMCPWaits(wanted, serversOf)
+	d.addMergeArchives(wanted, serversOf)
+	addWorkflowDigestsToMCPFingerprints(hearing, wanted)
+	if ctx.Err() != nil {
+		return
+	}
+	d.mcpEvMu.Lock()
+	if !d.mcpEvStarted {
+		d.mcpEvMu.Unlock()
+		return
+	}
+	d.applyMCPSubscriptionsLocked(ctx, wanted)
+	d.keepMCPLinesSinceLocked(lines)
+	changed := d.changedMCPLineKeysLocked(lines)
+	d.mcpLines = lines
+	pools := map[string]bool{}
+	for _, s := range d.mcpSubs {
+		pools[s.pool] = true
+	}
+	conns := d.mcpConns
+	d.pruneMCPRecordsLocked(at)
+	d.mcpEvMu.Unlock()
+	conns.keepOnly(pools)
+	for _, wk := range changed {
+		d.tellWorkflowKey(wk)
+	}
+}
+
+// mcpFoundServers resolves each of names as a session in folder is given it.
+func (d *Daemon) mcpFoundServers(folder string, names []string, secrets map[string]string) map[string]found {
+	m := map[string]found{}
+	for _, n := range names {
+		s, problem := d.eventServerNamed(n, folder, secrets)
+		m[n] = found{s, problem}
+	}
+	return m
+}
+
+// mcpServerVerdict is what one server gives one workflow trigger: its line, if any, and
+// whether the server waits for approval or could not be asked.
+type mcpServerVerdict struct {
+	line *mcpLine
+	// namedOnly is a line that shows only when the trigger names its servers.
+	namedOnly   bool
+	waiting     bool
+	unreachable bool
+}
+
+// mcpTriggerLines gives the lines of the workflow w's trigger t, and adds to wanted the
+// subscriptions it makes. here is the folder's servers as resolved, and names their names.
+func (d *Daemon) mcpTriggerLines(w hearingWorkflow, t mcpTrigger, names []string, here map[string]found,
+	wanted map[string]*mcpSubscription, at wire.Date) []mcpLine {
+	var tl []mcpLine
+	var unreachable, waiting []string
+	named := t.servers != nil
+	candidates := t.servers
+	if !named {
+		candidates = names
+	}
+	candidates = append([]string(nil), candidates...)
+	sort.Strings(candidates)
+	for _, name := range candidates {
+		v := d.mcpTriggerServerVerdict(w, t, name, here, wanted, at)
+		if v.waiting {
+			waiting = append(waiting, name)
 		}
-		return resolved[folder]
-	})
-	// A workflow's file is part of what a stopped subscription waits on.
+		if v.unreachable {
+			unreachable = append(unreachable, name)
+		}
+		if v.line != nil && (named || !v.namedOnly) {
+			tl = append(tl, *v.line)
+		}
+	}
+	if len(tl) == 0 {
+		tl = append(tl, mcpNoServerLine(t, waiting, unreachable, at))
+	}
+	return tl
+}
+
+// mcpTriggerServerVerdict says what the server name gives the workflow w's trigger t. When
+// the server offers the event and can poll it, it adds the subscription to wanted.
+func (d *Daemon) mcpTriggerServerVerdict(w hearingWorkflow, t mcpTrigger, name string, here map[string]found,
+	wanted map[string]*mcpSubscription, at wire.Date) mcpServerVerdict {
+	server := name
+	fixed := func(code wire.MCPTriggerFailureCode, message string, state wire.MCPTriggerStatusState) mcpServerVerdict {
+		l := mcpFixed(t.event, &server, state, code, message, at)
+		return mcpServerVerdict{line: &l, namedOnly: true}
+	}
+	f, ok := here[name]
+	if !ok {
+		v := fixed(wire.MCPTriggerFailureCodeServerNotFound, name+" is not set up here.", wire.MCPTriggerStatusStateStopped)
+		v.line.notHere = true
+		return v
+	}
+	if code, message, bad := mcpFoundProblem(name, f.problem); bad {
+		v := fixed(code, message, wire.MCPTriggerStatusStateStopped)
+		v.waiting = f.problem == "waiting"
+		return v
+	}
+	listing := d.mcpEventListing(f.server)
+	if !listing.offers {
+		if listing.failure != nil {
+			v := fixed(wire.MCPTriggerFailureCodeUnreachable, mcpEventsWords(listing.failure, name), wire.MCPTriggerStatusStateRetrying)
+			v.unreachable = true
+			return v
+		}
+		return fixed(wire.MCPTriggerFailureCodeNoEvents, name+" doesn't offer events.", wire.MCPTriggerStatusStateStopped)
+	}
+	def, others := findMCPEventDef(listing.events, t.event)
+	if def == nil {
+		sort.Strings(others)
+		message := name + " doesn't offer " + t.event + "."
+		if len(others) > 0 {
+			message = name + " doesn't offer " + t.event + "; it offers " + strings.Join(others, ", ") + "."
+		}
+		return fixed(wire.MCPTriggerFailureCodeEventNotOffered, message, wire.MCPTriggerStatusStateStopped)
+	}
+	// From here a server that offers the name has a line, named or not.
+	if !def.offersPoll() {
+		l := mcpFixed(t.event, &server, wire.MCPTriggerStatusStateStopped, wire.MCPTriggerFailureCodeNoPollMode,
+			name+" offers "+t.event+" only by push or webhook, which this version doesn't take.", at)
+		return mcpServerVerdict{line: &l}
+	}
+	if len(def.InputSchema) > 0 {
+		if problem := jsonSchemaProblem(mustRaw(t.arguments), def.InputSchema, name+"'s "+t.event); problem != "" {
+			l := mcpFixed(t.event, &server, wire.MCPTriggerStatusStateStopped, wire.MCPTriggerFailureCodeBadArguments, problem, at)
+			return mcpServerVerdict{line: &l}
+		}
+	}
+	id := addMCPWorkflowSubscription(wanted, w, t, name, f.server, def)
+	return mcpServerVerdict{line: &mcpLine{event: t.event, server: &server, subscription: id}}
+}
+
+// mcpFoundProblem gives the failure code and the words for a resolved server's problem, and
+// false when it has none.
+func mcpFoundProblem(name, problem string) (wire.MCPTriggerFailureCode, string, bool) {
+	switch problem {
+	case "":
+		return "", "", false
+	case "waiting":
+		return wire.MCPTriggerFailureCodeWaitingForApproval, name + " is waiting for approval in this folder's Connectors.", true
+	case "missingSecret":
+		return wire.MCPTriggerFailureCodeSecretMissing, name + " needs a secret that isn't set here.", true
+	case "oldTransport":
+		return wire.MCPTriggerFailureCodeServerError, name + " uses the old sse transport, which can't offer events.", true
+	default:
+		return wire.MCPTriggerFailureCodeServerNotFound, name + " is not set up here.", true
+	}
+}
+
+// findMCPEventDef gives the event in events named event, or nil, and the names of the
+// events in it that a server may raise.
+func findMCPEventDef(events []mcpEventDef, event string) (*mcpEventDef, []string) {
+	var def *mcpEventDef
+	var others []string
+	for i, e := range events {
+		if e.Name == event {
+			def = &events[i]
+		}
+		if isServerEventName(e.Name) {
+			others = append(others, e.Name)
+		}
+	}
+	return def, others
+}
+
+// addMCPWorkflowSubscription adds the workflow w to the subscription of trigger t on the
+// server name, or adds a new one to wanted, and gives its id.
+func addMCPWorkflowSubscription(wanted map[string]*mcpSubscription, w hearingWorkflow, t mcpTrigger, name string,
+	src eventServer, def *mcpEventDef) string {
+	key := t.subscriptionKey(name)
+	id := mcpRecordKey(w.folder, key)
+	if s := wanted[id]; s != nil {
+		if !contains(s.workflows, w.id) {
+			s.workflows = append(s.workflows, w.id)
+			sort.Strings(s.workflows)
+		}
+	} else {
+		wanted[id] = &mcpSubscription{id: id, key: key, folder: w.folder, server: name, event: t.event,
+			arguments: t.arguments, workflows: []string{w.id}, pool: src.pool(), source: src}
+	}
+	wanted[id].fingerprint = def.wireText() + "\n" + src.entry
+	return id
+}
+
+// mcpNoServerLine is a trigger's one line when no server gives it one: the servers that
+// wait for approval, else that no server here offers its event.
+func mcpNoServerLine(t mcpTrigger, waiting, unreachable []string, at wire.Date) mcpLine {
+	if len(waiting) > 0 {
+		// It may well be offered by a server nobody has approved yet: say that,
+		// not that no server offers it.
+		verb := "is"
+		if len(waiting) > 1 {
+			verb = "are"
+		}
+		return mcpFixed(t.event, nil, wire.MCPTriggerStatusStateStopped, wire.MCPTriggerFailureCodeWaitingForApproval,
+			strings.Join(waiting, ", ")+" "+verb+" waiting for approval in this folder's Connectors, so "+t.event+" is not asked for yet.", at)
+	}
+	guess := ""
+	if g := closestEvent(t.event); g != "" {
+		guess = " Did you mean " + g + "?"
+	}
+	why := ""
+	state := wire.MCPTriggerStatusStateStopped
+	if len(unreachable) > 0 {
+		why = " " + strings.Join(unreachable, ", ") + " could not be asked."
+		state = wire.MCPTriggerStatusStatePending
+	}
+	l := mcpFixed(t.event, nil, state, wire.MCPTriggerFailureCodeServerNotFound,
+		"No server here offers "+t.event+"."+why+guess, at)
+	l.notHere = guess == "" && len(unreachable) == 0
+	return l
+}
+
+// addWorkflowDigestsToMCPFingerprints adds the digests of each subscription's workflows to
+// its fingerprint: a workflow's file is part of what a stopped subscription waits on.
+func addWorkflowDigestsToMCPFingerprints(hearing []hearingWorkflow, wanted map[string]*mcpSubscription) {
 	digests := map[string]string{}
 	for _, w := range hearing {
 		digests[workflowKey(w.folder, w.id)] = w.digest
@@ -784,17 +877,11 @@ func (d *Daemon) reconcileMCPEvents(ctx context.Context) {
 		}
 		s.fingerprint += "\n" + strings.Join(each, ",")
 	}
-	if ctx.Err() != nil {
-		return
-	}
-	d.mcpEvMu.Lock()
-	if !d.mcpEvStarted {
-		d.mcpEvMu.Unlock()
-		return
-	}
-	d.applyMCPSubscriptionsLocked(ctx, wanted)
-	// Lines keep the time a fixed failure was first seen, so "since" does not move with
-	// each look.
+}
+
+// keepMCPLinesSinceLocked keeps in lines the time a fixed failure was first seen, so "since"
+// does not move with each look. The caller holds mcpEvMu.
+func (d *Daemon) keepMCPLinesSinceLocked(lines map[string][]mcpLine) {
 	for wk, fresh := range lines {
 		old := d.mcpLines[wk]
 		for i, l := range fresh {
@@ -813,6 +900,11 @@ func (d *Daemon) reconcileMCPEvents(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// changedMCPLineKeysLocked gives the workflow keys whose lines differ between d.mcpLines and
+// lines. The caller holds mcpEvMu.
+func (d *Daemon) changedMCPLineKeysLocked(lines map[string][]mcpLine) []string {
 	var changed []string
 	for wk := range lines {
 		if !sameLines(d.mcpLines[wk], lines[wk]) {
@@ -824,13 +916,13 @@ func (d *Daemon) reconcileMCPEvents(ctx context.Context) {
 			changed = append(changed, wk)
 		}
 	}
-	d.mcpLines = lines
-	pools := map[string]bool{}
-	for _, s := range d.mcpSubs {
-		pools[s.pool] = true
-	}
-	conns := d.mcpConns
-	// Records no workflow has named for a day go (a changed filter, a deleted workflow).
+	return changed
+}
+
+// pruneMCPRecordsLocked forgets a miss older than mcpMissedFor, and drops the records that
+// no workflow has named for mcpUnnamedFor (a changed filter, a deleted workflow). The caller
+// holds mcpEvMu.
+func (d *Daemon) pruneMCPRecordsLocked(at wire.Date) {
 	recs := d.mcpRecordsLocked()
 	dropped := false
 	t := at.Time()
@@ -848,11 +940,6 @@ func (d *Daemon) reconcileMCPEvents(ctx context.Context) {
 	}
 	if dropped {
 		d.saveMCPRecordsLocked()
-	}
-	d.mcpEvMu.Unlock()
-	conns.keepOnly(pools)
-	for _, wk := range changed {
-		d.tellWorkflowKey(wk)
 	}
 }
 
@@ -970,104 +1057,134 @@ func (d *Daemon) runMCPSubscription(ctx context.Context, id string) {
 		if s == nil {
 			return
 		}
-		wait := mcpPollDefault
 		if !d.mcpMayPoll(ctx, s) {
-			// Another machine polls it; the bus brings what it finds (#4731). Its cursor goes,
-			// so a poll here, when the lease comes back, starts from now: no backfill (#4726).
-			d.mcpEvMu.Lock()
-			if r := d.mcpRecordsLocked().Subscriptions[id]; r != nil && r.Cursor != nil {
-				r.Cursor, r.PreviousCursor = nil, nil
-				d.mcpUnsaved = true
-			}
-			d.mcpEvMu.Unlock()
-			d.setMCPLive(id, mcpLive{state: wire.MCPTriggerStatusStateActive})
-			if !d.mcpSleep(ctx, mcpStandbyPace) {
+			if !d.mcpStandBy(ctx, id) {
 				return
 			}
 			continue
 		}
-		var failed *mcpEventsError
-		for pages := 0; pages < mcpPageLimit; pages++ {
-			d.mcpEvMu.Lock()
-			var cursor *string
-			if r := d.mcpRecordsLocked().Subscriptions[id]; r != nil {
-				cursor = r.Cursor
-			}
-			d.mcpEvMu.Unlock()
-			result, err := d.mcpPoll(s, cursor)
-			if ctx.Err() != nil || d.mcpSubscription(id) == nil {
-				return
-			}
-			if err != nil {
-				failed = err
-				break
-			}
-			d.deliverMCPEvents(result, s, cursor)
-			wait = mcpPace(result.NextPollMs)
-			if !result.HasMore {
-				break
-			}
+		wait, failed, gone := d.pollMCPPages(ctx, id, s)
+		if gone {
+			return
 		}
 		if failed == nil {
 			failures = 0
 			d.setMCPLive(id, mcpLive{state: wire.MCPTriggerStatusStateActive})
 		} else {
-			switch failed.kind {
-			case "transport", "timedOut", "needsSignIn":
-				failures++
-				wait = mcpBackoff(failures)
-				if failed.message != mcpTooMany {
-					d.mcpConns.drop(s.pool)
-				}
-				d.retryMCP(id, s, failed, wait)
-			case "exhausted":
-				failures++
-				wait = max(mcpBackoff(failures), time.Duration(failed.retryAfterMs)*time.Millisecond)
-				d.retryMCP(id, s, failed, wait)
-			case "internal":
-				// The server's own call failed (a DNS lookup, GitHub down for a moment): the
-				// next poll may work, so it is tried again, never stopped for good (#4419).
-				failures++
-				wait = mcpBackoff(failures)
-				d.retryMCP(id, s, failed, wait)
-			case "unsupported":
-				if failed.reason == "schema_changed" {
-					// The arguments are checked again against the new list.
-					d.markMCPListingStale(s.pool)
-					wait = mcpPollFloor
-					d.kickMCPEvents()
-					break
-				}
-				d.stopMCP(id, s, wire.MCPTriggerFailureCodeServerError, s.server+" answered with an error"+mcpTheirWords(failed.message))
-				return
-			case "notFound":
-				d.markMCPListingStale(s.pool)
-				d.stopMCP(id, s, wire.MCPTriggerFailureCodeEventNotOffered, s.server+" no longer offers "+s.event+".")
-				d.kickMCPEvents()
-				return
-			case "forbidden":
-				d.stopMCP(id, s, wire.MCPTriggerFailureCodeRefused, s.server+" refused "+s.event+mcpTheirWords(failed.message))
-				return
-			case "invalidParams":
-				d.stopMCP(id, s, wire.MCPTriggerFailureCodeBadArguments, s.server+" refused the settings under "+s.event+mcpTheirWords(failed.message))
-				return
-			default:
-				d.stopMCP(id, s, wire.MCPTriggerFailureCodeServerError, s.server+" answered with an error"+mcpTheirWords(failed.message))
+			var stop bool
+			wait, failures, stop = d.mcpPollFailed(id, s, failed, failures, wait)
+			if stop {
 				return
 			}
 		}
-		d.mcpEvMu.Lock()
-		if r := d.mcpRecordsLocked().Subscriptions[id]; r != nil {
-			nextAt := wire.DateOf(time.Now().Add(wait))
-			r.NextPollAt = &nextAt
-			d.mcpUnsaved = true
-			d.saveMCPRecordsIfDueLocked()
-		}
-		d.mcpEvMu.Unlock()
+		d.setMCPNextPoll(id, wait)
 		if !d.mcpWaitHolding(ctx, id, wait) {
 			return
 		}
 	}
+}
+
+// mcpStandBy is one turn of a subscription that another machine polls: the bus brings what
+// it finds (#4731). Its cursor goes, so a poll here, when the lease comes back, starts from
+// now: no backfill (#4726). False when ctx ended in the sleep.
+func (d *Daemon) mcpStandBy(ctx context.Context, id string) bool {
+	d.mcpEvMu.Lock()
+	if r := d.mcpRecordsLocked().Subscriptions[id]; r != nil && r.Cursor != nil {
+		r.Cursor, r.PreviousCursor = nil, nil
+		d.mcpUnsaved = true
+	}
+	d.mcpEvMu.Unlock()
+	d.setMCPLive(id, mcpLive{state: wire.MCPTriggerStatusStateActive})
+	return d.mcpSleep(ctx, mcpStandbyPace)
+}
+
+// pollMCPPages polls the subscription s, at most mcpPageLimit pages, and delivers what it
+// finds. It gives the wait before the next poll and the failure, if any. gone is true when
+// ctx ended or the subscription went.
+func (d *Daemon) pollMCPPages(ctx context.Context, id string, s *mcpSubscription) (wait time.Duration, failed *mcpEventsError, gone bool) {
+	wait = mcpPollDefault
+	for pages := 0; pages < mcpPageLimit; pages++ {
+		d.mcpEvMu.Lock()
+		var cursor *string
+		if r := d.mcpRecordsLocked().Subscriptions[id]; r != nil {
+			cursor = r.Cursor
+		}
+		d.mcpEvMu.Unlock()
+		result, err := d.mcpPoll(s, cursor)
+		if ctx.Err() != nil || d.mcpSubscription(id) == nil {
+			return wait, nil, true
+		}
+		if err != nil {
+			return wait, err, false
+		}
+		d.deliverMCPEvents(result, s, cursor)
+		wait = mcpPace(result.NextPollMs)
+		if !result.HasMore {
+			break
+		}
+	}
+	return wait, nil, false
+}
+
+// mcpPollFailed acts on a failed poll of the subscription s: it retries it later, or stops
+// it. It gives the wait before the next poll and the count of failures in a row. stop is
+// true when the subscription stopped.
+func (d *Daemon) mcpPollFailed(id string, s *mcpSubscription, failed *mcpEventsError, failures int, wait time.Duration) (time.Duration, int, bool) {
+	switch failed.kind {
+	case "transport", "timedOut", "needsSignIn":
+		failures++
+		wait = mcpBackoff(failures)
+		if failed.message != mcpTooMany {
+			d.mcpConns.drop(s.pool)
+		}
+		d.retryMCP(id, s, failed, wait)
+	case "exhausted":
+		failures++
+		wait = max(mcpBackoff(failures), time.Duration(failed.retryAfterMs)*time.Millisecond)
+		d.retryMCP(id, s, failed, wait)
+	case "internal":
+		// The server's own call failed (a DNS lookup, GitHub down for a moment): the
+		// next poll may work, so it is tried again, never stopped for good (#4419).
+		failures++
+		wait = mcpBackoff(failures)
+		d.retryMCP(id, s, failed, wait)
+	case "unsupported":
+		if failed.reason == "schema_changed" {
+			// The arguments are checked again against the new list.
+			d.markMCPListingStale(s.pool)
+			d.kickMCPEvents()
+			return mcpPollFloor, failures, false
+		}
+		d.stopMCP(id, s, wire.MCPTriggerFailureCodeServerError, s.server+" answered with an error"+mcpTheirWords(failed.message))
+		return wait, failures, true
+	case "notFound":
+		d.markMCPListingStale(s.pool)
+		d.stopMCP(id, s, wire.MCPTriggerFailureCodeEventNotOffered, s.server+" no longer offers "+s.event+".")
+		d.kickMCPEvents()
+		return wait, failures, true
+	case "forbidden":
+		d.stopMCP(id, s, wire.MCPTriggerFailureCodeRefused, s.server+" refused "+s.event+mcpTheirWords(failed.message))
+		return wait, failures, true
+	case "invalidParams":
+		d.stopMCP(id, s, wire.MCPTriggerFailureCodeBadArguments, s.server+" refused the settings under "+s.event+mcpTheirWords(failed.message))
+		return wait, failures, true
+	default:
+		d.stopMCP(id, s, wire.MCPTriggerFailureCodeServerError, s.server+" answered with an error"+mcpTheirWords(failed.message))
+		return wait, failures, true
+	}
+	return wait, failures, false
+}
+
+// setMCPNextPoll keeps in the subscription's record when it polls next, wait from now.
+func (d *Daemon) setMCPNextPoll(id string, wait time.Duration) {
+	d.mcpEvMu.Lock()
+	if r := d.mcpRecordsLocked().Subscriptions[id]; r != nil {
+		nextAt := wire.DateOf(time.Now().Add(wait))
+		r.NextPollAt = &nextAt
+		d.mcpUnsaved = true
+		d.saveMCPRecordsIfDueLocked()
+	}
+	d.mcpEvMu.Unlock()
 }
 
 func (d *Daemon) markMCPListingStale(pool string) {

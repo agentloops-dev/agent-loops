@@ -91,56 +91,69 @@ func (d *Daemon) carryPage(ctx context.Context, page *websocket.Conn, private []
 	d.goJob("page up", func() {
 		defer func() { done <- struct{}{} }()
 		defer local.Close()
-		for {
-			kind, b, err := page.Read(ctx)
-			if err != nil || kind != websocket.MessageText {
-				return
-			}
-			if proved.Load() {
-				if m, ok := forHost(b, host); ok && !local.goesUp(m) {
-					if local.take(m, d.Accept) {
-						continue
-					}
-					return
-				}
-			}
-			if up.Write(ctx, string(b)) != nil {
-				return
-			}
-		}
+		d.carryPageUp(ctx, page, up, host, local, &proved)
 	})
 	// The control plane's lines to the page; the one that says it is answered here is not.
 	d.goJob("page down", func() {
 		defer func() { done <- struct{}{} }()
-		// Where the exchange is: the page's ok not yet seen, the line after it next, or past.
-		const beforeOK, afterOK, past = 0, 1, 2
-		at := beforeOK
-		for {
-			line, err := up.Read(ctx)
-			if err != nil {
-				return
-			}
-			switch at {
-			case beforeOK:
-				if m, ok := controllink.ParseMessage(line); ok && m.OK != nil {
-					at = afterOK
-				}
-			case afterOK:
-				at = past
-				if c, ok := controllink.ParseCarried(line); ok {
-					local.carried(c)
-					proved.Store(true)
-					continue
-				}
-			}
-			if toPage(line) != nil {
-				return
-			}
-		}
+		carryPageDown(ctx, up, local, &proved, toPage)
 	})
 	select {
 	case <-done:
 	case <-ctx.Done():
+	}
+}
+
+// carryPageUp reads the page's lines until the page goes. Once proved, a line for this
+// host goes to its channel; every other line goes to the control plane.
+func (d *Daemon) carryPageUp(ctx context.Context, page *websocket.Conn, up *controllink.Lines, host string, local *pageChannel, proved *atomic.Bool) {
+	for {
+		kind, b, err := page.Read(ctx)
+		if err != nil || kind != websocket.MessageText {
+			return
+		}
+		if proved.Load() {
+			if m, ok := forHost(b, host); ok && !local.goesUp(m) {
+				if local.take(m, d.Accept) {
+					continue
+				}
+				return
+			}
+		}
+		if up.Write(ctx, string(b)) != nil {
+			return
+		}
+	}
+}
+
+// carryPageDown writes the control plane's lines to the page until either end goes. The
+// line right after the page's ok that says its calls are answered here is kept back, and
+// it sets proved.
+func carryPageDown(ctx context.Context, up *controllink.Lines, local *pageChannel, proved *atomic.Bool, toPage func(string) error) {
+	// Where the exchange is: the page's ok not yet seen, the line after it next, or past.
+	const beforeOK, afterOK, past = 0, 1, 2
+	at := beforeOK
+	for {
+		line, err := up.Read(ctx)
+		if err != nil {
+			return
+		}
+		switch at {
+		case beforeOK:
+			if m, ok := controllink.ParseMessage(line); ok && m.OK != nil {
+				at = afterOK
+			}
+		case afterOK:
+			at = past
+			if c, ok := controllink.ParseCarried(line); ok {
+				local.carried(c)
+				proved.Store(true)
+				continue
+			}
+		}
+		if toPage(line) != nil {
+			return
+		}
 	}
 }
 

@@ -29,15 +29,8 @@ func fakeMessagingMCP(t *testing.T, source string, conversations []wire.Messagin
 			ID     *int   `json:"id"`
 			Method string `json:"method"`
 			Params struct {
-				Name      string `json:"name"`
-				Arguments struct {
-					Cursor       string `json:"cursor"`
-					Limit        int    `json:"limit"`
-					Conversation string `json:"conversation"`
-					Thread       string `json:"thread"`
-					Text         string `json:"text"`
-					All          bool   `json:"all"`
-				} `json:"arguments"`
+				Name      string            `json:"name"`
+				Arguments fakeMessagingArgs `json:"arguments"`
 			} `json:"params"`
 		}
 		json.NewDecoder(r.Body).Decode(&m)
@@ -46,60 +39,12 @@ func fakeMessagingMCP(t *testing.T, source string, conversations []wire.Messagin
 			return
 		}
 		var result any = map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{"tools": map[string]any{}}}
-		meta := map[string]any{"agents/messaging": 1}
 		switch m.Method {
 		case "tools/list":
-			tools := []any{
-				map[string]any{"name": "list_conversations", "inputSchema": map[string]any{"type": "object"}, "_meta": meta},
-				map[string]any{"name": "read_messages", "inputSchema": map[string]any{"type": "object", "required": []string{"conversation"}}, "_meta": meta},
-			}
-			if source == "slack" {
-				tools = append(tools, map[string]any{"name": "reply", "inputSchema": map[string]any{"type": "object"}, "_meta": meta})
-			}
-			if source == "email" {
-				tools = append(tools, map[string]any{"name": "mark_conversation_read", "inputSchema": map[string]any{"type": "object"}, "_meta": meta})
-			}
-			result = map[string]any{"tools": tools}
+			result = map[string]any{"tools": fakeMessagingTools(source)}
 		case "tools/call":
-			a := m.Params.Arguments
-			switch m.Params.Name {
-			case "list_conversations":
-				from, _ := strconv.Atoi(a.Cursor)
-				to := min(len(conversations), from+a.Limit)
-				page := wire.MessagingConversations{Conversations: conversations[from:to]}
-				if source == "slack" {
-					as := "the Slack bot @agents"
-					page.ReplyAs = &as
-				}
-				if to < len(conversations) {
-					next := strconv.Itoa(to)
-					page.Cursor = &next
-				}
-				result = map[string]any{"content": []any{}, "structuredContent": page}
-			case "read_messages":
-				sender := wire.ChannelSender{Channel: source, Identity: "U1"}
-				older := "older"
-				result = map[string]any{"content": []any{}, "structuredContent": wire.MessagingMessages{Conversation: a.Conversation, Untrusted: true, Cursor: &older,
-					Messages: []wire.MessagingMessage{
-						{ID: "m2", Conversation: a.Conversation, Sender: sender, Time: "2026-11-09T10:01:00Z", Text: "second"},
-						{ID: "m1", Conversation: a.Conversation, Sender: sender, Time: "2026-11-09T10:00:00Z", Text: "first"},
-					}}}
-			case "reply":
-				sent := wire.MessagingMessage{ID: "m3", Conversation: a.Conversation, Sender: wire.ChannelSender{Channel: source, Identity: "UBOT"},
-					Time: "2026-11-09T10:02:00Z", Text: a.Text}
-				if a.Thread != "" {
-					sent.Thread = &a.Thread
-				}
-				result = map[string]any{"content": []any{}, "structuredContent": sent}
-			case "mark_conversation_read":
-				said := a.Conversation
-				if a.All {
-					said = "all"
-				}
-				for _, m := range marks {
-					m.add(said)
-				}
-				result = map[string]any{"content": []any{}, "structuredContent": wire.MessagingMarkedRead{Marked: 3}}
+			if r, ok := fakeMessagingCall(source, m.Params.Name, m.Params.Arguments, conversations, marks); ok {
+				result = r
 			}
 		}
 		b, _ := json.Marshal(result)
@@ -108,6 +53,77 @@ func fakeMessagingMCP(t *testing.T, source string, conversations []wire.Messagin
 	}))
 	t.Cleanup(s.Close)
 	return s
+}
+
+// fakeMessagingArgs is the arguments of a call to a fake messaging server's tool.
+type fakeMessagingArgs struct {
+	Cursor       string `json:"cursor"`
+	Limit        int    `json:"limit"`
+	Conversation string `json:"conversation"`
+	Thread       string `json:"thread"`
+	Text         string `json:"text"`
+	All          bool   `json:"all"`
+}
+
+// fakeMessagingTools is the tools a fake messaging server of this source lists.
+func fakeMessagingTools(source string) []any {
+	meta := map[string]any{"agents/messaging": 1}
+	tools := []any{
+		map[string]any{"name": "list_conversations", "inputSchema": map[string]any{"type": "object"}, "_meta": meta},
+		map[string]any{"name": "read_messages", "inputSchema": map[string]any{"type": "object", "required": []string{"conversation"}}, "_meta": meta},
+	}
+	if source == "slack" {
+		tools = append(tools, map[string]any{"name": "reply", "inputSchema": map[string]any{"type": "object"}, "_meta": meta})
+	}
+	if source == "email" {
+		tools = append(tools, map[string]any{"name": "mark_conversation_read", "inputSchema": map[string]any{"type": "object"}, "_meta": meta})
+	}
+	return tools
+}
+
+// fakeMessagingCall is a fake messaging server's result for a call to its tool name. False
+// for a tool it does not have.
+func fakeMessagingCall(source, name string, a fakeMessagingArgs, conversations []wire.MessagingConversation, marks []*fakeMarks) (any, bool) {
+	switch name {
+	case "list_conversations":
+		from, _ := strconv.Atoi(a.Cursor)
+		to := min(len(conversations), from+a.Limit)
+		page := wire.MessagingConversations{Conversations: conversations[from:to]}
+		if source == "slack" {
+			as := "the Slack bot @agents"
+			page.ReplyAs = &as
+		}
+		if to < len(conversations) {
+			next := strconv.Itoa(to)
+			page.Cursor = &next
+		}
+		return map[string]any{"content": []any{}, "structuredContent": page}, true
+	case "read_messages":
+		sender := wire.ChannelSender{Channel: source, Identity: "U1"}
+		older := "older"
+		return map[string]any{"content": []any{}, "structuredContent": wire.MessagingMessages{Conversation: a.Conversation, Untrusted: true, Cursor: &older,
+			Messages: []wire.MessagingMessage{
+				{ID: "m2", Conversation: a.Conversation, Sender: sender, Time: "2026-11-09T10:01:00Z", Text: "second"},
+				{ID: "m1", Conversation: a.Conversation, Sender: sender, Time: "2026-11-09T10:00:00Z", Text: "first"},
+			}}}, true
+	case "reply":
+		sent := wire.MessagingMessage{ID: "m3", Conversation: a.Conversation, Sender: wire.ChannelSender{Channel: source, Identity: "UBOT"},
+			Time: "2026-11-09T10:02:00Z", Text: a.Text}
+		if a.Thread != "" {
+			sent.Thread = &a.Thread
+		}
+		return map[string]any{"content": []any{}, "structuredContent": sent}, true
+	case "mark_conversation_read":
+		said := a.Conversation
+		if a.All {
+			said = "all"
+		}
+		for _, m := range marks {
+			m.add(said)
+		}
+		return map[string]any{"content": []any{}, "structuredContent": wire.MessagingMarkedRead{Marked: 3}}, true
+	}
+	return nil, false
 }
 
 // fakeMarks is what a fake's mark_conversation_read was asked to mark: a conversation, or all.
@@ -130,6 +146,41 @@ func (m *fakeMarks) String() string {
 
 func conversationAt(source, id, at string) wire.MessagingConversation {
 	return wire.MessagingConversation{Source: source, ID: id, Title: id, Kind: wire.MessagingConversationKindChannel, LastActivity: &at}
+}
+
+// pageMergedConversations pages messages/conversations two at a time from call 2, checks
+// each page, and gives the conversations' IDs in order.
+func pageMergedConversations(t *testing.T, c *conn, folder string) []string {
+	t.Helper()
+	var ids []string
+	var cursor *string
+	for id := 2; ; id++ {
+		params := map[string]any{"limit": 2}
+		if cursor != nil {
+			params["cursor"] = *cursor
+		}
+		var page wire.MessagesConversations
+		if err := json.Unmarshal(c.call(t, id, "messages/conversations", params), &page); err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Errors) != 1 || page.Errors[0].Server != "gmail" || page.Errors[0].Folder != folder || page.Errors[0].Message == "" {
+			t.Fatalf("page %d's errors: %+v", id, page.Errors)
+		}
+		for _, m := range page.Conversations {
+			if m.Folder != folder || m.Server != m.Conversation.Source {
+				t.Fatalf("conversation: %+v", m)
+			}
+			// Only the connector with a reply tool says who a reply goes as (#4345).
+			if (m.Server == "slack") != (m.ReplyAs != nil) || m.ReplyAs != nil && *m.ReplyAs != "the Slack bot @agents" {
+				t.Fatalf("replyAs: %+v", m)
+			}
+			ids = append(ids, m.Conversation.ID)
+		}
+		if cursor = page.Cursor; cursor == nil || id > 10 {
+			break
+		}
+	}
+	return ids
 }
 
 // messages/conversations (#4343) merges the conversations of every Messaging connector that
@@ -167,34 +218,7 @@ func TestMessagesMergeEveryContractConnector(t *testing.T) {
 		"gmail": {"type": "http", "url": "http://127.0.0.1:1/mcp"},
 		"kb": {"type": "http", "url": "https://kb.example.com/mcp"}}}`), 0o644)
 
-	var ids []string
-	var cursor *string
-	for id := 2; ; id++ {
-		params := map[string]any{"limit": 2}
-		if cursor != nil {
-			params["cursor"] = *cursor
-		}
-		var page wire.MessagesConversations
-		if err := json.Unmarshal(c.call(t, id, "messages/conversations", params), &page); err != nil {
-			t.Fatal(err)
-		}
-		if len(page.Errors) != 1 || page.Errors[0].Server != "gmail" || page.Errors[0].Folder != folder || page.Errors[0].Message == "" {
-			t.Fatalf("page %d's errors: %+v", id, page.Errors)
-		}
-		for _, m := range page.Conversations {
-			if m.Folder != folder || m.Server != m.Conversation.Source {
-				t.Fatalf("conversation: %+v", m)
-			}
-			// Only the connector with a reply tool says who a reply goes as (#4345).
-			if (m.Server == "slack") != (m.ReplyAs != nil) || m.ReplyAs != nil && *m.ReplyAs != "the Slack bot @agents" {
-				t.Fatalf("replyAs: %+v", m)
-			}
-			ids = append(ids, m.Conversation.ID)
-		}
-		if cursor = page.Cursor; cursor == nil || id > 10 {
-			break
-		}
-	}
+	ids := pageMergedConversations(t, c, folder)
 	if fmt.Sprint(ids) != "[T6 C5 T4 C3 C2 T1]" {
 		t.Fatalf("merged: %v", ids)
 	}
