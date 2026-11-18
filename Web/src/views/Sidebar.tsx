@@ -24,7 +24,6 @@ import { byStart, folderKey, folderPath as agentFolderPath, showsUnread } from "
 import { folds } from "../model/folds";
 import { smartGroupsOn } from "../model/smartGroups";
 import { macHostNoticeDetail, macHostNoticeTitle } from "../model/macHostNotice";
-import { hostAnswers } from "../model/capabilities";
 import { Capability } from "../protocol/capabilities.generated";
 import { parseQuery, queryMatches, type LabelQuery } from "../model/labels";
 import { searchPrompt, sidebarSearch } from "../model/sessionSearch";
@@ -53,7 +52,6 @@ import { prefetchOnHover } from "./hoverPrefetch";
 import { canMoveOn, openInNewTab, priorityItems, RenameInput, runSessionAction, sessionActions, startedBy } from "./SessionMenu";
 import { markAgentOf, treeRows, type TreeRow } from "../model/tree";
 import { WorkflowRow } from "./WorkflowRow";
-import { footLine, offersStart } from "./OfflineStrip";
 import { PinnedPageRows, ServerViewRows, showHiddenViewsItem } from "./Pins";
 import { RequestRow } from "./RequestRow";
 import { ApprovalRow, FailedWorkflowRow } from "./Approval";
@@ -229,7 +227,6 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
     return () => window.clearInterval(every);
   }, [connectorPlacesKey]);
   const showsArchived = folds.showsArchivedFolders.value;
-  const offline = store.hosts.value.filter((h) => !hostAnswers(h.state));
   const macHost = store.hosts.value.find((h) => h.id === store.macHostID.value);
   const macNotice = store.macHostNotice.value;
   const query = searched.value;
@@ -310,16 +307,8 @@ export function Sidebar({ session, store, linkDown }: { session: Session; store:
             <p class="quiet small">{macHostNoticeDetail(macNotice)}</p>
           </div>
         ))}
-        {offline.filter((host) => !store.isMac(host.id)).map((host) => (
-          <p class="foot-line" role="status" key={host.id}>
-            <Icon name="plug" /> {footLine(host)}
-            {/* One on a stopped workspace offers Start, as its strip (#961). */}
-            {host.workspace && offersStart(host.state, host.workspace) ? (
-              <button type="button" class="foot-start" disabled={store.hostsBeingStarted.value.includes(host.id)}
-                aria-label={`Start ${host.name}`} onClick={() => void store.startHost(host.id)}>Start</button>
-            ) : null}
-          </p>
-        ))}
+        {/* A machine gone quiet is not listed here (#6138): its folders are greyed, and Machines,
+            its page and a session's strip say why. */}
         {/* A file a host keeps that could not be read (#205, #223): why paired devices or folders
             may have gone from view, and that what they held is kept. A server's are named. */}
         {store.hosts.value.flatMap((host) => (store.storeNotes.value[host.id] ?? []).map((note) => (

@@ -1,6 +1,9 @@
-#if os(macOS)
 import AgentsKitCore
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Observation
 import SwiftUI
 
@@ -83,7 +86,7 @@ final class WorkTimelineState {
     /// The projects the Timeline can draw: those with a folder on a machine that draws it.
     func projects(model: any WorkModel) -> [WorkList.Project] {
         let machines = Set(model.timelineMachines.map(\.id.rawValue))
-        return model.workProjects.filter { project in
+        return model.timelineProjects.filter { project in
             project.folders.contains { machines.contains(String($0.prefix { $0 != "|" })) }
         }
     }
@@ -205,11 +208,21 @@ final class WorkTimelineState {
 /// from when its first child was created to when its last one closes, solid only from when its first
 /// child started to when the work stopped (#6043), a dashed edge after Now (the forecast), then a thin bar to where it closes 8 times in 10 (#5506, Alex, 2026-11-14). A SwiftUI
 /// `Canvas` (spike #4171): the rows and the marks come from `WorkTimeline` in AgentsKitCore.
+/// Core since #6044: on the Remote the bar's controls are the navigation bar's, a tap shows the card
+/// that a pointer's hover shows on the Mac, and a phone in portrait draws the list of epics.
 struct WorkTimelinePane: View {
     let model: any WorkModel
     @Bindable var state: WorkTimelineState
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var widthClass
+    @Environment(\.verticalSizeClass) private var heightClass
+    /// A phone in portrait: the list of epics, as the web page under 700 px (note 36, #6044).
+    private var listed: Bool { widthClass == .compact && heightClass == .regular }
+    #else
+    private let listed = false
+    #endif
 
     @State private var position = ScrollPosition(edge: .leading)
     @State private var offset: Double = 0
@@ -229,14 +242,27 @@ struct WorkTimelinePane: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            #if os(macOS)
             bar.padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
+            #else
+            // The Remote's bar is the navigation bar's; the title line stays above the plot.
+            if let title {
+                Text(title).appText(.fine).foregroundStyle(.secondary).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.vertical, 6)
+            }
+            #endif
             content
         }
         .toolbar {
+            #if os(macOS)
             ToolbarItem(placement: .primaryAction) {
                 WorkRefreshButton(running: state.reading) { state.asked += 1 }
             }
+            #else
+            ToolbarItemGroup(placement: .topBarTrailing) { navigationMenus }
+            #endif
         }
         .workTask(id: state.ask) { await state.load(model: model) }
         // A machine sent new lineage to the control plane (#4276): the sessions again, no polling.
@@ -295,6 +321,38 @@ struct WorkTimelinePane: View {
         }
     }
 
+    #if os(iOS)
+    /// The Remote's bar (#6044): the range, Project and Board as the navigation bar's menus, and Now.
+    /// Refresh is pull to refresh. Board shows only where the machines read boards (Mac + web, #3282).
+    @ViewBuilder
+    private var navigationMenus: some View {
+        Menu {
+            Picker("Range", selection: $state.range) {
+                ForEach(WorkTimeline.Range.allCases) { Text($0.title).tag($0) }
+            }
+            if projects.count > 1 {
+                Picker("Project", selection: $state.project) {
+                    ForEach(projects) { Text($0.name).tag($0.id) }
+                }
+                .pickerStyle(.menu)
+            }
+            if !state.boards.isEmpty || !state.board.isEmpty {
+                Picker("Board", selection: $state.board) {
+                    Text("All boards").tag("")
+                    ForEach(boardOptions, id: \.self) { Text(WorkList.boardName($0, in: state.boards)).tag($0) }
+                }
+                .pickerStyle(.menu)
+            }
+        } label: {
+            Text(state.range.title)
+        }
+        .accessibilityLabel("Range, \(state.range.title)")
+        .onChange(of: state.range) { goToNow() }
+        Button("Now") { goToNow() }
+            .accessibilityHint("Back to now")
+    }
+    #endif
+
     /// The boards read, and the one picked when the machines no longer list it.
     private var boardOptions: [String] {
         let urls = state.boards.map(\.url)
@@ -343,7 +401,11 @@ struct WorkTimelinePane: View {
                 let drawn = state.timeline != nil
                 let busy = !drawn || state.reading
                 TimelineView(.animation(minimumInterval: busy && !reduceMotion ? 1.0 / 20 : 60)) { context in
-                    plot(timeline, now: context.date, drawn: drawn, reading: state.reading)
+                    if listed {
+                        epicList(timeline, now: context.date, drawn: drawn)
+                    } else {
+                        plot(timeline, now: context.date, drawn: drawn, reading: state.reading)
+                    }
                 }
                 .opacity(state.stale ? 0.5 : 1)
             }
@@ -386,6 +448,9 @@ struct WorkTimelinePane: View {
                         canvas(drawing, timeline: timeline)
                             .frame(width: axis.width, height: height)
                     }
+                    #if os(iOS)
+                    .refreshable { state.asked += 1 }
+                    #endif
                     .onScrollGeometryChange(for: Double.self) { Double($0.contentOffset.y + $0.contentInsets.top) } action: { _, y in
                         top = y
                     }
@@ -423,6 +488,74 @@ struct WorkTimelinePane: View {
             }
             }
         }
+    }
+
+    // MARK: The list of epics
+
+    /// A phone in portrait (#6044): the epics in the window, in the order they close, under *Now · 2:40 PM*, as
+    /// the web page draws them under 700 px (note 36). A tap opens the epic.
+    private func epicList(_ timeline: DaemonAPI.WorkTimeline, now: Date, drawn: Bool) -> some View {
+        let working = WorkTimeline.workingNow(timeline, sessions: state.sessions, agents: model.workAgents)
+        let lines = WorkTimeline.lines(timeline, now: now, working: working)
+        let window = state.range.window(now: state.anchor)
+        let rows = WorkTimeline.epicRows(lines, window: window, now: now)
+        let shows = WorkTimeline.shows(drawn: drawn, reading: state.reading, epics: rows.count)
+        let night = scheme == .dark
+        return List {
+            Text(WorkTimeline.nowWords(now)).appText(.fine).fontWeight(.semibold).foregroundStyle(.secondary)
+                .listRowSeparator(.hidden)
+            switch shows {
+            case .loading:
+                WorkPlaceholderRows()
+            case .empty:
+                emptyCard(timeline, now: now)
+                    .frame(maxWidth: .infinity)
+                    .listRowSeparator(.hidden)
+            case .epics:
+                ForEach(rows) { row in
+                    Button { open(.line(row.line)) } label: {
+                        epicRow(row, colour: Drawing.colour(row.line, night: night), working: row.line.working > 0)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(WorkTimeline.spoken([row.line], now: now).first?.words ?? row.line.title)
+                    .accessibilityHint("Opens the epic")
+                }
+            }
+        }
+        .listStyle(.plain)
+        #if os(iOS)
+        .refreshable { state.asked += 1 }
+        #endif
+    }
+
+    /// A row of the list: the epic's colour at the leading edge, its title and chips, line 2, and *11 of 16*
+    /// with a bar. ◐ beside the title while a session is in a turn on it (#4265), still with Reduce Motion.
+    private func epicRow(_ row: WorkTimeline.EpicRow, colour: Color, working: Bool) -> some View {
+        let line = row.line
+        let waits = if case .waits = line.how { true } else { false }
+        return HStack(alignment: .center, spacing: 10) {
+            RoundedRectangle(cornerRadius: 2).fill(colour).frame(width: 4).frame(maxHeight: .infinity)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(line.title).appText(.supporting).fontWeight(.semibold).lineLimit(2)
+                    WorkPriorityChip(priority: line.onHold ? nil : line.priority)
+                    WorkOnHoldChip(onHold: line.onHold)
+                    if working { WorkTimelineHalfRing(colour: colour, moving: !reduceMotion) }
+                }
+                Text(row.line2).appText(.fine)
+                    .foregroundStyle(waits ? StateTint.attention.style(or: .secondary) : AnyShapeStyle(.secondary))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                ProgressView(value: Double(line.done), total: Double(max(line.total, 1)))
+                    .tint(colour).frame(width: 56)
+                Text("\(line.done) of \(line.total)").appText(.fine).foregroundStyle(.secondary).monospacedDigit()
+            }
+            .accessibilityHidden(true)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     /// Each band's name, on its first row, with a rule above every band but the first (#6089). It
@@ -501,10 +634,11 @@ struct WorkTimelinePane: View {
             .overlay(alignment: .topLeading) {
                 if let hover {
                     card(hover.hit, drawing: drawing)
-                        .offset(x: hover.at.x + 14, y: hover.at.y + 14)
+                        .offset(x: cardX(hover.at.x, drawing: drawing), y: hover.at.y + 14)
                         .allowsHitTesting(false)
                 }
             }
+            #if os(macOS)
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let p):
@@ -513,9 +647,16 @@ struct WorkTimelinePane: View {
                     hover = nil
                 }
             }
+            #endif
             .onTapGesture { p in
-                guard let hit = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis) else { return }
-                open(hit)
+                let hit = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis)
+                #if os(macOS)
+                if let hit { open(hit) }
+                #else
+                // The Remote (#6044): a tap shows the card a pointer's hover shows; a second tap on it opens it.
+                guard let hit else { hover = nil; return }
+                if hover?.hit == hit { hover = nil; open(hit) } else { hover = Hover(hit: hit, at: p) }
+                #endif
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Timeline")
@@ -555,6 +696,17 @@ struct WorkTimelinePane: View {
             }
             .allowsHitTesting(false)
         }
+    }
+
+    /// The card's leading edge: after the pointer; on the Remote, before the tap when it would pass the
+    /// screen's trailing edge (#6044).
+    private func cardX(_ x: Double, drawing: Drawing) -> Double {
+        #if os(iOS)
+        let width = min(360, drawing.visible - 24)
+        return min(x + 14, max(drawing.offset + drawing.visible - width - 8, x - width - 14))
+        #else
+        x + 14
+        #endif
     }
 
     private func open(_ hit: WorkTimeline.Hit) {
@@ -628,8 +780,16 @@ struct WorkTimelinePane: View {
         state.timeline?.epics.lazy.flatMap(\.children).first { $0.item.node.ref == ref }
     }
 
+    #if canImport(AppKit)
     /// The words' step, as the canvas resolves it: bold, so a block's semibold title is never wider.
     nonisolated static var labelFont: NSFont { NSFontManager.shared.convert(TextStep.fine.nsFont, toHaveTrait: .boldFontMask) }
+    #else
+    /// The words' step, as the canvas resolves it: bold, so a block's semibold title is never wider.
+    nonisolated static var labelFont: UIFont {
+        let font = TextStep.fine.uiFont
+        return font.fontDescriptor.withSymbolicTraits(.traitBold).map { UIFont(descriptor: $0, size: font.pointSize) } ?? font
+    }
+    #endif
 
     /// A title's width, as the canvas draws it.
     nonisolated static func measure(_ text: String) -> Double {
@@ -671,11 +831,18 @@ private struct Drawing {
     /// Each colour, as the light appearance draws it, darkened until white text on it has 4.5:1 (#5506).
     static let fills: [Color] = palette.map { colour in
         var rgb: [Double] = [0, 0, 0]
+        #if canImport(AppKit)
         NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
             if let c = NSColor(colour).usingColorSpace(.sRGB) {
                 rgb = [Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent)]
             }
         }
+        #else
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        if UIColor(colour).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light)).getRed(&r, green: &g, blue: &b, alpha: &a) {
+            rgb = [Double(r), Double(g), Double(b)].map { min(max($0, 0), 1) }
+        }
+        #endif
         let dark = WorkTimeline.forWhiteText(rgb)
         return Color(red: dark[0], green: dark[1], blue: dark[2])
     }
@@ -691,8 +858,15 @@ private struct Drawing {
 
     /// A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not
     /// planned or on hold (#6089).
-    func colour(_ line: WorkTimeline.Line) -> Color {
-        Self.fills[line.how == .dropped || line.onHold ? Self.fills.count - 1 : WorkTimeline.colour(line.feature, of: Self.fills.count)]
+    func colour(_ line: WorkTimeline.Line) -> Color { Self.colour(line) }
+
+    static func colour(_ line: WorkTimeline.Line) -> Color {
+        fills[line.how == .dropped || line.onHold ? fills.count - 1 : WorkTimeline.colour(line.feature, of: fills.count)]
+    }
+
+    /// The list of epics' edge (#6044): the block's fill, lighter at night as the words after Now are.
+    static func colour(_ line: WorkTimeline.Line, night: Bool) -> Color {
+        night ? colour(line).mix(with: .white, by: 0.45) : colour(line)
     }
 
     /// The words and marks after Now, on the lighter tint: the colour itself by day, lighter at night
@@ -943,4 +1117,34 @@ private struct Drawing {
         }
     }
 }
-#endif
+
+/// ◐ beside a working epic's title in the list of epics (#4265, #6044): it turns on the plot's clock;
+/// still with Reduce Motion.
+private struct WorkTimelineHalfRing: View {
+    let colour: Color
+    let moving: Bool
+
+    var body: some View {
+        if moving {
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                ring(turn: SpinnerClock.fraction(at: context.date, period: Drawing.pulsePeriod))
+            }
+        } else {
+            ring(turn: 0)
+        }
+    }
+
+    private func ring(turn: Double) -> some View {
+        Canvas { gc, size in
+            let rect = CGRect(origin: .zero, size: size).insetBy(dx: 1, dy: 1)
+            var half = Path()
+            let from = 90 + 360 * turn
+            half.addArc(center: CGPoint(x: rect.midX, y: rect.midY), radius: rect.width / 2, startAngle: .degrees(from),
+                        endAngle: .degrees(from + 180), clockwise: false)
+            gc.fill(half, with: .color(colour))
+            gc.stroke(Path(ellipseIn: rect), with: .color(colour), lineWidth: 1.5)
+        }
+        .frame(width: 11, height: 11)
+        .accessibilityHidden(true)
+    }
+}

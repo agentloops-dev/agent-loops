@@ -50,7 +50,6 @@ var goroutinesNotCounted = map[string]int{
 	"mcpclient.go startStdioMCP":                   1, // the server's output
 	"mcpsignin.go listenForCallback":               1, // ends when the sign-in closes its server
 	"mcpsignin.go probeSignIn":                     1, // one DELETE, in mcpSignInHTTP's timeout
-	"warmpool.go endProcess":                       1, // a KILL 3 s after the TERM
 	// Not a job: it can call d.Quit (u.restart on Linux), and Shutdown would wait for itself.
 	"selfupdate.go (*selfUpdater).Named": 1,
 	// Ends when the codespace's lease does (#4637); awake has no Daemon to count it with.

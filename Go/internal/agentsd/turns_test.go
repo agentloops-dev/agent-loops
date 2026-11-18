@@ -21,6 +21,7 @@ import (
 	sdk "github.com/coder/acp-go-sdk"
 	"go.uber.org/goleak"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
@@ -29,14 +30,15 @@ import (
 
 // The test binary is also a fake ACP runtime: with AGENTS_FAKE_ACP=1 it serves one on its
 // stdin and stdout. A prompt with "ask" in it asks for permission before it answers; one
-// with "wait for me" waits to be cancelled, and one with "keep going" waits for a SIGTERM.
+// with "wait for me" waits to be cancelled, and one with "keep going" waits for a SIGTERM
+// (or, in the test's process, its end: fakeRuntimes).
 func TestMain(m *testing.M) {
 	if os.Getenv("AGENTS_FAKE_MCP") == "1" {
 		fakeMCPServer()
 		return
 	}
 	if os.Getenv("AGENTS_FAKE_ACP") == "1" {
-		f := &fakeRuntime{ready: make(chan struct{})}
+		f := &fakeRuntime{ready: make(chan struct{}), env: os.Environ()}
 		f.conn = sdk.NewAgentSideConnection(f, os.Stdout, os.Stdin)
 		close(f.ready)
 		<-f.conn.Done()
@@ -200,6 +202,20 @@ type fakeRuntime struct {
 	rateLimited bool
 	// systemPrompt is the runtime's system-prompt field from session/new or resume.
 	systemPrompt string
+	// env is the environment the runtime was launched with: the process's own for a fake
+	// that is a process, the launch's for one in the test's process (#6143).
+	env []string
+}
+
+// getenv is a variable of the fake's environment, "" when it has none.
+func (f *fakeRuntime) getenv(key string) string {
+	v := ""
+	for _, kv := range f.env {
+		if k, val, ok := strings.Cut(kv, "="); ok && k == key {
+			v = val
+		}
+	}
+	return v
 }
 
 // systemPromptOf is the brief a runtime was given in _meta, as Claude or Grok take it.
@@ -223,9 +239,9 @@ func systemPromptOf(meta any) string {
 
 // instructionsOf is the files named in OPENCODE_CONFIG_CONTENT's instructions, read as
 // OpenCode reads them on each prompt (#2612).
-func instructionsOf() string {
+func (f *fakeRuntime) instructionsOf() string {
 	var config struct{ Instructions []string }
-	json.Unmarshal([]byte(os.Getenv("OPENCODE_CONFIG_CONTENT")), &config)
+	json.Unmarshal([]byte(f.getenv("OPENCODE_CONFIG_CONTENT")), &config)
 	var out []string
 	for _, file := range config.Instructions {
 		b, _ := os.ReadFile(file)
@@ -236,21 +252,21 @@ func instructionsOf() string {
 
 func (f *fakeRuntime) Initialize(context.Context, sdk.InitializeRequest) (sdk.InitializeResponse, error) {
 	// AGENTS_FAKE_STARTS names a file the fake adds a line to each time it starts.
-	if file := os.Getenv("AGENTS_FAKE_STARTS"); file != "" {
-		if f, err := os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
-			f.WriteString("started\n")
-			f.Close()
+	if file := f.getenv("AGENTS_FAKE_STARTS"); file != "" {
+		if out, err := os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			_, _ = out.WriteString("started\n")
+			out.Close()
 		}
 	}
 	// AGENTS_FAKE_NO_DELETE: an adapter that cannot delete a session.
 	var del *sdk.SessionDeleteCapabilities
-	if os.Getenv("AGENTS_FAKE_NO_DELETE") == "" {
+	if f.getenv("AGENTS_FAKE_NO_DELETE") == "" {
 		del = &sdk.SessionDeleteCapabilities{}
 	}
 	// AGENTS_FAKE_CONTINUE: "load", an adapter that continues a conversation only with
 	// session/load; "none", one that can neither load nor resume (#4513).
 	load, resume := true, &sdk.SessionResumeCapabilities{}
-	switch os.Getenv("AGENTS_FAKE_CONTINUE") {
+	switch f.getenv("AGENTS_FAKE_CONTINUE") {
 	case "load":
 		resume = nil
 	case "none":
@@ -286,10 +302,10 @@ func (f *fakeRuntime) LoadSession(ctx context.Context, r sdk.LoadSessionRequest)
 
 func (f *fakeRuntime) UnstableDeleteSession(_ context.Context, r sdk.UnstableDeleteSessionRequest) (sdk.UnstableDeleteSessionResponse, error) {
 	// AGENTS_FAKE_DELETED names a file the fake adds each deleted session's ID to, a line each.
-	if file := os.Getenv("AGENTS_FAKE_DELETED"); file != "" {
-		if f, err := os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
-			f.WriteString(string(r.SessionId) + "\n")
-			f.Close()
+	if file := f.getenv("AGENTS_FAKE_DELETED"); file != "" {
+		if out, err := os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			_, _ = out.WriteString(string(r.SessionId) + "\n")
+			out.Close()
 		}
 	}
 	return sdk.UnstableDeleteSessionResponse{}, nil
@@ -308,7 +324,7 @@ func (f *fakeRuntime) ResumeSession(_ context.Context, r sdk.ResumeSessionReques
 	}
 	b, _ := json.Marshal(r.Meta)
 	f.sandboxOff = strings.Contains(string(b), `"sandbox":{"enabled":false}`)
-	f.systemPrompt = systemPromptOf(r.Meta) + instructionsOf()
+	f.systemPrompt = systemPromptOf(r.Meta) + f.instructionsOf()
 	var out sdk.ResumeSessionResponse
 	if filepath.Base(r.Cwd) == "reconnecting" {
 		json.Unmarshal([]byte(`{"configOptions":[{"type":"select","id":"mode","name":"Mode","currentValue":"default",
@@ -326,7 +342,7 @@ func (f *fakeRuntime) NewSession(_ context.Context, r sdk.NewSessionRequest) (sd
 	}
 	b, _ := json.Marshal(r.Meta)
 	f.sandboxOff = strings.Contains(string(b), `"sandbox":{"enabled":false}`)
-	f.systemPrompt = systemPromptOf(r.Meta) + instructionsOf()
+	f.systemPrompt = systemPromptOf(r.Meta) + f.instructionsOf()
 	if filepath.Base(r.Cwd) != "offers" {
 		return sdk.NewSessionResponse{SessionId: "fake-session"}, nil
 	}
@@ -381,7 +397,7 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	// holds (the relay's address, a stand-in and the relay's CA), then prints that
 	// environment, as an agent that runs env would.
 	if strings.Contains(text, "call the model") {
-		say("The model said " + callTheModel() + ".\nMy environment:\n" + strings.Join(os.Environ(), "\n"))
+		say("The model said " + callTheModel(f.getenv) + ".\nMy environment:\n" + strings.Join(f.env, "\n"))
 		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 	}
 	// A token split over two chunks, and a last word held back to the turn's end (#1001).
@@ -391,9 +407,11 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 		say(token[10:] + " so keep it. Done")
 		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 	}
-	// Deaf to session/cancel, as Claude was waiting on CI (#1611): only a SIGTERM ends it.
+	// Deaf to session/cancel, as Claude was waiting on CI (#1611): only a SIGTERM ends it,
+	// or, in the test's process, the end of its connection.
 	if strings.Contains(text, "keep going") {
-		select {}
+		<-f.conn.Done()
+		return sdk.PromptResponse{StopReason: sdk.StopReasonCancelled}, nil
 	}
 	if strings.Contains(text, "wait for me") {
 		<-ctx.Done()
@@ -460,11 +478,19 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 			bg := context.Background()
 			time.Sleep(200 * time.Millisecond)
 			f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateAgentMessageText("The build finished. ")})
+			// The poll of a file the test makes, not a wait for a time: it ends with the
+			// connection too, so no goroutine outlives the run in the test's process.
+			tick := time.NewTicker(20 * time.Millisecond)
+			defer tick.Stop()
 			for {
 				if _, err := os.Stat(path); err == nil {
 					break
 				}
-				time.Sleep(20 * time.Millisecond)
+				select {
+				case <-f.conn.Done():
+					return
+				case <-tick.C:
+				}
 			}
 			f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateAgentMessageText("All done.")})
 			if !quietly {
@@ -567,16 +593,48 @@ func (f *fakeRuntime) form(ctx context.Context, session sdk.SessionId, withdraw 
 	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 }
 
-// fakeRuntimes has the daemons t starts run this test binary as every runtime, a fake ACP
-// one by AGENTS_FAKE_ACP=1 in the runtime's own environment. The process's stays as it was,
-// so the test can run in parallel (#5926).
+// fakeRuntimes makes every runtime a daemon of this test starts the fake: in the test's own
+// process, over a pipe (#6143), not a new copy of the test binary, which waits about a second
+// to start. A test of the runtime's process (its pid, its group, a signal, what it leaves
+// running) takes fakeRuntimeProcesses.
 func fakeRuntimes(t testing.TB) {
+	t.Helper()
+	fakeRuntimeProcesses(t)
+	testHooksOf(t).change(func(h *testHooks) { h.opts.attach = attachFakeRuntime })
+}
+
+// fakeRuntimeProcesses is fakeRuntimes with each runtime a process: the test binary, made
+// one by AGENTS_FAKE_ACP=1 in the runtime's own environment. The process's stays as it was,
+// so other tests running in parallel are not changed (#5926).
+func fakeRuntimeProcesses(t testing.TB) {
 	t.Helper()
 	self, _ := os.Executable()
 	testHooksOf(t).change(func(h *testHooks) {
 		h.opts.locate = func(*runtimeDef) (string, []string, []string) { return self, nil, nil }
 		h.opts.runtimeEnv = []string{"AGENTS_FAKE_ACP=1"}
+		h.opts.attach = nil
 	})
+}
+
+// attachFakeRuntime is a fake runtime in the test's process, with the launch's environment.
+// Its end closes both pipes, as a process's exit does.
+func attachFakeRuntime(l acp.Launch) (acp.Attached, error) {
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	f := &fakeRuntime{ready: make(chan struct{}), env: l.Env}
+	f.conn = sdk.NewAgentSideConnection(f, outW, inR)
+	close(f.ready)
+	done := make(chan struct{})
+	end := func() {
+		_ = inW.Close()
+		_ = outW.Close()
+	}
+	go func() {
+		<-f.conn.Done()
+		end()
+		close(done)
+	}()
+	return acp.Attached{Stdin: inW, Stdout: outR, End: end, Done: done}, nil
 }
 
 // notes collects the notifications a client hears.
@@ -1005,17 +1063,17 @@ func TestAToolCallLeavesBigImagesOutOfTheTranscript(t *testing.T) {
 
 // callTheModel is the fake runtime's model request: to ANTHROPIC_BASE_URL with
 // ANTHROPIC_AUTH_TOKEN, trusting NODE_EXTRA_CA_CERTS, as Claude Code does.
-func callTheModel() string {
+func callTheModel(getenv func(string) string) string {
 	pool := x509.NewCertPool()
-	if ca, err := os.ReadFile(os.Getenv("NODE_EXTRA_CA_CERTS")); err == nil {
+	if ca, err := os.ReadFile(getenv("NODE_EXTRA_CA_CERTS")); err == nil {
 		pool.AppendCertsFromPEM(ca)
 	}
 	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}, Timeout: 10 * time.Second}
-	req, err := http.NewRequest("POST", os.Getenv("ANTHROPIC_BASE_URL")+"/v1/messages", strings.NewReader(`{"model":"claude","messages":[]}`))
+	req, err := http.NewRequest("POST", getenv("ANTHROPIC_BASE_URL")+"/v1/messages", strings.NewReader(`{"model":"claude","messages":[]}`))
 	if err != nil {
 		return err.Error()
 	}
-	req.Header.Set("Authorization", "Bearer "+os.Getenv("ANTHROPIC_AUTH_TOKEN"))
+	req.Header.Set("Authorization", "Bearer "+getenv("ANTHROPIC_AUTH_TOKEN"))
 	resp, err := client.Do(req)
 	if err != nil {
 		return err.Error()

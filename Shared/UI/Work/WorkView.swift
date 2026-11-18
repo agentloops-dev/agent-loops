@@ -28,9 +28,7 @@ struct WorkView: View {
                 WorkDeploysPane(model: model, state: model.workLists.deploys)
                 #endif
             } else if place.kind == .timeline {
-                #if os(macOS)
                 WorkTimelinePane(model: model, state: model.workLists.timeline)
-                #endif
             } else {
                 WorkListPane(model: model, kind: place.kind, list: model.workLists[place.kind]).id(place.kind)
             }

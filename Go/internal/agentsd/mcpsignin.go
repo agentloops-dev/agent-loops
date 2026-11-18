@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -319,6 +320,7 @@ func (d *Daemon) mcpSignIn(ctx context.Context, r wire.MCPSignInRequest) wire.MC
 	time.AfterFunc(mcpSignInLifetime, d.jobFunc("mcpsignin timer", redirect.stop))
 	d.goJob("mcp sign-in", func() {
 		flow.complete(d.finishSignIn(flow, redirect, plan, registered, verifier, personsOwn))
+		redirect.linger()
 	})
 	log.Printf("mcp sign-in: %s waiting for the browser", name)
 	return wire.MCPSignInAnswer{FlowID: &flow.id, AuthorizationURL: &address}
@@ -516,6 +518,8 @@ type loopback struct {
 	page     chan [2]string
 	stopped  chan struct{}
 	stopOnce sync.Once
+	// sent is closed once the callback's request has its answer, sent to the browser.
+	sent chan struct{}
 }
 
 func listenForCallback(state string) (*loopback, error) {
@@ -524,7 +528,7 @@ func listenForCallback(state string) (*loopback, error) {
 		return nil, err
 	}
 	lb := &loopback{state: state, listener: l, arrived: make(chan map[string]string, 1), page: make(chan [2]string, 1),
-		stopped: make(chan struct{})}
+		stopped: make(chan struct{}), sent: make(chan struct{})}
 	lb.server = &http.Server{Handler: http.HandlerFunc(lb.serve), ReadHeaderTimeout: 10 * time.Second}
 	safe.Go("mcp sign-in redirect", func() { lb.server.Serve(l) })
 	return lb, nil
@@ -562,13 +566,20 @@ func (lb *loopback) serve(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("This sign-in is already done."))
 		return
 	}
+	defer close(lb.sent)
 	select {
 	case p := <-lb.page:
 		h.Set("Content-Type", "text/html; charset=utf-8")
 		// On Paper, as the hosted sign-in pages are (#4617).
-		w.Write([]byte(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+		page := []byte(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
 			`<title>` + html.EscapeString(p[0]) + `</title><style>` + paperpage.Style + `</style>` +
-			`<body><h1>` + html.EscapeString(p[0]) + `</h1><p>` + html.EscapeString(p[1]) + `</p></body>`))
+			`<body><h1>` + html.EscapeString(p[0]) + `</h1><p>` + html.EscapeString(p[1]) + `</p></body>`)
+		// Whole on the wire before linger closes the server: a length, not chunks.
+		h.Set("Content-Length", strconv.Itoa(len(page)))
+		w.Write(page)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
 	case <-time.After(time.Minute):
 	}
 }
@@ -583,13 +594,26 @@ func (lb *loopback) callback() (map[string]string, bool) {
 	}
 }
 
-// finish shows the browser a page, and stops listening once it is sent.
+// finish shows the browser a page; linger stops listening once it is sent.
 func (lb *loopback) finish(title, body string) {
 	select {
 	case lb.page <- [2]string{title, body}:
 	default:
 	}
-	time.AfterFunc(2*time.Second, lb.stop)
+}
+
+// linger stops listening once the browser has its page, at most 2 s on. It runs in the
+// sign-in's own job, so Shutdown waits for the server and its connections to close: a timer
+// of its own left them open after the daemon was gone (#6130).
+func (lb *loopback) linger() {
+	t := time.NewTimer(2 * time.Second)
+	defer t.Stop()
+	select {
+	case <-lb.sent:
+	case <-lb.stopped:
+	case <-t.C:
+	}
+	lb.stop()
 }
 
 func (lb *loopback) stop() {

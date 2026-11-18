@@ -2,7 +2,7 @@
 // (#1804), and every section but the Overview and Agents drawn as the Console was: its list of pages
 // on the left, the page open on the right. Below 760 the bar is one menu with the open section's
 // name. g then a letter goes to a section, when the focus is not in a field; ⌘K opens the command menu (#4788).
-import { forgeHosts, loadList, workList } from "../model/workLists";
+import { askKey, forgeFolders, forgeHosts, loadList, workList } from "../model/workLists";
 import type { WorkKind } from "../model/work";
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
@@ -261,14 +261,17 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
     : pagesShown(section, admin, open?.id, more)).filter((p) => summaryListed(store, p, open?.id));
   const registering = useSignal(false);
   useUserScopeStatus(store, section === "status");
-  // Work shown: the list it opens on read ahead (#4930), from this device's copy and then the machines, so it draws at once.
-  const forgeOn = forgeHosts(store).map((h) => h.id).join(",");
+  // Work shown: the list it opens on read ahead (#4930), from this device's copy and then the machines, so it draws at once;
+  // and again when a machine joins or a folder is added (#6152). A list read already for them is not read again.
+  const forgeIds = forgeHosts(store).map((h) => h.id);
+  const forgeOn = forgeIds.join(",");
+  const forgeOnFolders = forgeFolders(store, forgeIds);
   useEffect(() => {
     if (section !== "work" || !forgeOn) return;
     const kind: WorkKind = r.section === "pr" || r.section === "release" ? r.section : "issue";
     const l = workList(kind);
-    if (l.lists.peek() === null && !l.loading.peek()) void loadList(store, l);
-  }, [section, forgeOn]);
+    if (!l.loading.peek() || l.read !== askKey(store, l)) void loadList(store, l);
+  }, [section, forgeOn, forgeOnFolders]);
   // Status ▸ Events' grey line reads who waits on each machine that answers; events/changed keeps it.
   const online = store.hosts.value.filter((h) => hostAnswers(h.state)).map((h) => h.id);
   useEffect(() => {

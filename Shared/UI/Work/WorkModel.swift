@@ -17,9 +17,12 @@ protocol WorkModel: AnyObject, Sendable {
     /// The machines that narrow their forges to a board (#3282), the home one first. None on the
     /// Remote: boards are the Mac's and the web page's (tier Mac + web).
     var boardMachines: [(id: MachineRef, name: String)] { get }
-    /// The machines that draw Work ▸ Timeline (`work/timeline`, #4173), the home one first. None on
-    /// the Remote: the Timeline is the Mac's (remote: by design).
+    /// The machines that draw Work ▸ Timeline (`work/timeline`, #4173), the home one first. Core
+    /// since #6044: the Remote has them too.
     var timelineMachines: [(id: MachineRef, name: String)] { get }
+    /// The projects Work ▸ Timeline can draw: `workProjects` on the Mac; on the Remote, whose lists
+    /// have no Project filter, New Session's projects (#6044).
+    var timelineProjects: [WorkList.Project] { get }
     /// The machines that say their deploys' targets (`deploys/targets`, #5270), the home one first.
     /// None on the Remote: Work ▸ Deploys is Mac + web.
     var deploysMachines: [(id: MachineRef, name: String)] { get }
@@ -28,6 +31,8 @@ protocol WorkModel: AnyObject, Sendable {
     var featuresMachines: [(id: MachineRef, name: String)] { get }
     /// The person's projects (#3283), for Work's Project filter: Mac + web, so the Remote has none.
     var workProjects: [WorkList.Project] { get }
+    /// Every machine's live folders, as this app knows them: Work's lists read again when they change (#6152).
+    var workFolders: [FolderKey] { get }
     /// The machines that keep links, the home one first.
     var lineageMachines: [(id: MachineRef, name: String)] { get }
     /// Whether a machine takes the Work pages' writes (#3130).
@@ -78,6 +83,7 @@ protocol WorkModel: AnyObject, Sendable {
 
 extension WorkModel {
     var workProjects: [WorkList.Project] { [] }
+    var timelineProjects: [WorkList.Project] { workProjects }
     func askWorkConnectors() -> Bool { false }
     var workCopy: LocalCopy? { nil }
     func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
@@ -171,13 +177,21 @@ extension WorkModel {
         board.isEmpty ? forgeMachines : boardMachines
     }
 
-    /// The sidebar shows Work (#4930): the first page of the list the Work page opens on is read
-    /// now, from this device's copy and then its machines, so the page draws it at once.
+    /// What Work's lists are read from (#6152): the machines that read their forges and every machine's folders. A
+    /// list read before a machine joined or a folder was added is read again when this changes, as Refresh does.
+    var workSource: String {
+        (forgeMachines.map(\.id.rawValue) + ["|"] + workFolders.map(\.description).sorted()).joined(separator: "\n")
+    }
+
+    /// The sidebar shows Work (#4930), or what Work reads from changed (#6152): the first page of the list the Work
+    /// page opens on is read now, from this device's copy and then its machines, so the page draws it at once. A list
+    /// read already for the same source is not read again.
     func prefetchWork() async {
+        workLists.source = workSource
         let kind = workPlace.kind
         guard [.issue, .pr, .release].contains(kind), !kind.fromForge || !forgeMachines.isEmpty else { return }
         let list = workLists[kind]
-        guard list.lists == nil, !list.reading else { return }
+        guard !list.readingAsk else { return }
         await list.load(model: self)
     }
 

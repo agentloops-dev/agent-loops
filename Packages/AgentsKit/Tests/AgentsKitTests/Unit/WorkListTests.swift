@@ -167,6 +167,13 @@ struct WorkListTests {
         #expect(shown[2].isEmpty)
     }
 
+    /// With one machine, the window asks it directly, not through the control plane (#6141).
+    @Test func oneMachineIsAskedDirectly() {
+        #expect(!WorkList.asksControlPlane(machines: 0))
+        #expect(!WorkList.asksControlPlane(machines: 1))
+        #expect(WorkList.asksControlPlane(machines: 2))
+    }
+
     /// forge/listAll's next pages (#5592): each machine with a cursor gets its page; one that could not read it keeps its
     /// rows and cursor, and the page says why.
     @Test func theNextPagesComeInOneAnswerAndAFailedOneKeepsItsCursor() throws {
