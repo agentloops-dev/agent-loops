@@ -380,13 +380,16 @@ struct WorkPageTests {
     @Test func aRowsPriorityMenuFollowsItsForge() {
         let github = DaemonAPI.ForgeCapabilities(forge: "github", issues: true, priority: true, hold: true)
         let jira = DaemonAPI.ForgeCapabilities(forge: "jira", issues: true, priority: true)
-        let issue = WorkList.Row(item(1), on: .mac)
+        func row(_ kind: String, _ ref: String) -> WorkList.Row {
+            WorkList.Row(.init(node: .init(kind: kind, ref: ref), title: "T", state: "open", updatedAt: at), on: .mac)
+        }
+        let issue = row("issue", "github:alexec/Agents#1")
         #expect(WorkList.rowSetsPriority(issue, forges: [jira, github], writes: true) == (true, true))
         #expect(WorkList.rowSetsPriority(issue, forges: [github], writes: false) == (false, false))
         #expect(WorkList.rowSetsPriority(issue, forges: [jira], writes: true) == (false, false))
         #expect(WorkList.rowSetsPriority(issue, forges: nil, writes: true) == (false, false))
-        #expect(WorkList.rowSetsPriority(WorkList.Row(item(2, kind: "pr"), on: .mac), forges: [github], writes: true) == (false, false))
-        let ticket = WorkList.Row(.init(node: Node(kind: "issue", ref: "jira:PROJ-7"), title: "T", state: "open", updatedAt: day), on: .mac)
+        #expect(WorkList.rowSetsPriority(row("pr", "github:alexec/Agents#2"), forges: [github], writes: true) == (false, false))
+        let ticket = row("issue", "jira:PROJ-7")
         #expect(WorkList.rowSetsPriority(ticket, forges: [github, jira], writes: true) == (true, false))
     }
 
