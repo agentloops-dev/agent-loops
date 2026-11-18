@@ -196,7 +196,6 @@
 .with-sidebar .sidebar-foot .host-down { padding: 8px 12px 0; }
 .with-sidebar .foot-line { margin: 0; padding: 8px 12px 0; font-size: 0.75rem; color: var(--paper-secondary); }
 /* Start beside a stopped workspace's line (#961), as on its strip. */
-.with-sidebar .foot-line .foot-start { margin-left: 6px; font-size: inherit; }
 
 /* Nothing chosen: what the sidebar is for, and its keys. A chosen session that was deleted, the same (#2652). */
 .with-sidebar .session-deleted { display: flex; flex-direction: column; text-align: center; padding: 0 24px; gap: 4px; }
