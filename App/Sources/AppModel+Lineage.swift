@@ -229,7 +229,11 @@ extension AppModel {
         let answer = try await FanAllHere.answer(method, JSONValue.encoding(params), hosts: { capabilities in
             machines.filter { m in capabilities.allSatisfy(m.has) }.map(FanAllHere.Host.init)
         }, ask: { method, params, host in
-            try? await clients[host]?.call(method, params, returning: JSONValue.self)
+            guard let client = clients[host] else { return nil }
+            // The window's link to a machine can be down a moment (just after the machine joined the lock): it is
+            // opened again here, within FanAllHere's patience, rather than counting the machine as not answering.
+            if await !client.isConnected { try? await client.connect(startIfNeeded: false, timeout: .seconds(4)) }
+            return try? await client.call(method, params, returning: JSONValue.self)
         })
         return try answer?.decode(R.self)
     }
