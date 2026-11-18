@@ -73,14 +73,14 @@ func (h *testHooks) change(f func(*testHooks)) {
 	h.mu.Lock()
 	f(h)
 	running := slices.Clone(h.running)
-	named, home, locate, env := h.homeNamed, h.opts.namedHome, h.opts.locate, h.opts.runtimeEnv
+	named, home, locate, env, attach := h.homeNamed, h.opts.namedHome, h.opts.locate, h.opts.runtimeEnv, h.opts.attach
 	h.mu.Unlock()
 	for _, d := range running {
 		o := d.startOpts()
 		if named {
 			o.namedHome = home
 		}
-		o.locate, o.runtimeEnv = locate, env
+		o.locate, o.runtimeEnv, o.attach = locate, env, attach
 		d.opts.Store(&o)
 	}
 }

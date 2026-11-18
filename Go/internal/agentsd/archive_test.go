@@ -15,7 +15,7 @@ import (
 func TestAnArchiveDuringATurnStaysArchived(t *testing.T) {
 	t.Parallel()
 
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	root := t.TempDir()
 	first, c := start(t, root)
 	id := startAgent(t, c, 1, t.TempDir(), "keep going")

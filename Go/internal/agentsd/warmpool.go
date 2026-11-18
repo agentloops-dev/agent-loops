@@ -323,6 +323,10 @@ func backgroundIn(table map[int32]procInfo, root int32, own map[int32]bool, grou
 // backgroundOf is the runtime's background processes, its terminals' first.
 func backgroundOf(s *acp.Session, own map[int32]bool, groups map[int]bool, table map[int32]procInfo) []acp.Command {
 	out := s.Terminals()
+	// An attached runtime has no process of its own to look under (#6143).
+	if s.Pid() <= 0 {
+		return out
+	}
 	seen := map[int32]bool{}
 	for _, c := range out {
 		seen[int32(c.Pid)] = true
