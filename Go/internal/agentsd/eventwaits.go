@@ -499,6 +499,49 @@ func parsePattern(given string, filters map[string][]string) (waitPattern, strin
 	return p, ""
 }
 
+// appWhereKeys is the where keys that the app's own events in names take (#6032), and
+// whether names has a server's event, which says for itself which keys it takes. An event
+// whose schema is open takes every key.
+func appWhereKeys(names []string, filters map[string][]string) (map[string]bool, bool) {
+	taken := map[string]bool{}
+	hasServer := false
+	for _, n := range names {
+		name := strings.ToLower(strings.TrimSpace(n))
+		if name == timeReached {
+			continue
+		}
+		if isServerPattern(name) {
+			hasServer = true
+			continue
+		}
+		schema := inputSchemaFor(name)
+		for k := range filters {
+			key := strings.TrimSpace(k)
+			if _, ok := schema.Properties[key]; ok || schema.AdditionalProperties == nil || *schema.AdditionalProperties {
+				taken[key] = true
+			}
+		}
+	}
+	return taken, hasServer
+}
+
+// ownWhere is the part of one where for several events that the app's event name takes
+// (#6032): a key it does not take is left out when another event in the list takes it, as
+// lease.granted leaves pr to pr.merged. A key that no event takes stays, so the event
+// refuses it and says what it takes.
+func ownWhere(name string, filters map[string][]string, appTaken map[string]bool, hasServer bool) map[string][]string {
+	schema := inputSchemaFor(strings.ToLower(strings.TrimSpace(name)))
+	open := schema.AdditionalProperties == nil || *schema.AdditionalProperties
+	own := map[string][]string{}
+	for k, v := range filters {
+		key := strings.TrimSpace(k)
+		if _, ok := schema.Properties[key]; ok || open || !appTaken[key] && !hasServer {
+			own[k] = v
+		}
+	}
+	return own
+}
+
 // unnamedBranchWords is why a wait on branch.moved that names no branch, and does not set
 // any: true, is refused (#3797), or "": it woke on every branch an agent works on.
 func unnamedBranchWords(p waitPattern, filters map[string][]string) string {
@@ -1022,12 +1065,17 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	var patterns []waitPattern
 	var serverNames []string
 	warning0 := ""
+	appTaken, hasServer := appWhereKeys(names, filters)
 	for _, n := range names {
 		if timeOnly {
 			patterns = append(patterns, waitPattern{name: timeReached, filters: map[string][]string{}})
 			continue
 		}
-		p, problem := parsePattern(n, filters)
+		own := filters
+		if len(names) > 1 && !isServerPattern(strings.ToLower(strings.TrimSpace(n))) {
+			own = ownWhere(n, filters, appTaken, hasServer)
+		}
+		p, problem := parsePattern(n, own)
 		if problem != "" {
 			return "", eventRefused(problem)
 		}
@@ -1097,7 +1145,7 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	// checked against what the folder's servers offer, `where` as its arguments. One that
 	// names the envelope also hears the bus (#4730), so a server here that cannot give it
 	// is said, not refused.
-	servers, err := d.checkMCPWait(serverNames, bus.localWhere(filters), folderPath(a))
+	servers, err := d.checkMCPWait(serverNames, bus.localWhere(filters), folderPath(a), appTaken)
 	if err != nil && bus.wide() {
 		words := err.Error()
 		if e, ok := err.(*Error); ok {
