@@ -3,6 +3,7 @@ package agentsd
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -182,15 +183,34 @@ func (d *Daemon) helperWorktree(written, folder string) (*wire.WorktreeChoice, e
 	}
 	list, _ := worktreeList(folder)
 	var names []string
+	var onBranch []worktreeEntry
+	branches := branchForms(written)
 	for _, w := range list {
 		if canonical(w.root) == canonical(folder) {
 			continue
 		}
 		name := filepathBase(w.root)
-		if name == written || w.branch == written {
+		if name == written {
 			return &wire.WorktreeChoice{Existing: &wire.WorktreeChoiceExisting{Value: store.FolderURL(w.root)}}, nil
 		}
+		if w.branch != "" && slices.Contains(branches, w.branch) {
+			onBranch = append(onBranch, w)
+		}
 		names = append(names, name)
+	}
+	// The worktree's branch, with or without agents/ and origin/ (#6033): leads give
+	// agents/<name> or origin/agents/<name> for the worktree <name>.
+	switch len(onBranch) {
+	case 0:
+	case 1:
+		return &wire.WorktreeChoice{Existing: &wire.WorktreeChoiceExisting{Value: store.FolderURL(onBranch[0].root)}}, nil
+	default:
+		var both []string
+		for _, w := range onBranch {
+			both = append(both, filepathBase(w.root)+" (on "+w.branch+")")
+		}
+		return nil, &Error{Code: wire.FailureNotAWorktree, Message: `more than one worktree has the branch "` + written + `": ` +
+			strings.Join(both, ", ") + `. Say which by its name.`}
 	}
 	if _, err := git(folder, "rev-parse", "--verify", "--quiet", "refs/heads/"+written); err == nil {
 		return &wire.WorktreeChoice{Branch: &wire.WorktreeChoiceBranch{Value: written}}, nil
@@ -206,6 +226,20 @@ func (d *Daemon) helperWorktree(written, folder string) (*wire.WorktreeChoice, e
 	}
 	return nil, &Error{Code: wire.FailureNotAWorktree, Message: `there is no worktree called "` + written + `" here. There are: ` +
 		strings.Join(names, ", ") + `, or say "new".`}
+}
+
+// branchForms are the local branches that a written branch can mean: as written, and
+// with refs/heads/, refs/remotes/origin/ or origin/ taken off, each also with agents/
+// before it when it has none (#6033).
+func branchForms(written string) []string {
+	b := strings.TrimPrefix(written, "refs/heads/")
+	b = strings.TrimPrefix(b, "refs/remotes/")
+	b = strings.TrimPrefix(b, "origin/")
+	forms := []string{written, b}
+	if !strings.HasPrefix(b, "agents/") {
+		forms = append(forms, "agents/"+b)
+	}
+	return forms
 }
 
 func filepathBase(p string) string {
