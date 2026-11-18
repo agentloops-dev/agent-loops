@@ -173,124 +173,141 @@ func TestTheShippedDigitalOceanMap(t *testing.T) {
 // binary as the stdio server (FAKE_PROVIDER says how it misbehaves).
 
 func fakeProvider(mode string) {
-	out := bufio.NewWriter(os.Stdout)
-	var lock sync.Mutex
-	send := func(m any) {
-		lock.Lock()
-		defer lock.Unlock()
-		data, _ := json.Marshal(m)
-		out.Write(append(data, '\n'))
-		out.Flush()
-	}
-	answer := func(id any, content any, text *string, isError bool) {
-		t := ""
-		if text != nil {
-			t = *text
-		} else {
-			data, _ := json.Marshal(content)
-			t = string(data)
-		}
-		result := map[string]any{"content": []any{map[string]any{"type": "text", "text": t}}}
-		if content != nil && text == nil {
-			result["structuredContent"] = content
-		}
-		if isError {
-			result["isError"] = true
-		}
-		send(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
-	}
-	item := func(extra map[string]any) map[string]any {
-		out := map[string]any{"id": "devbox", "name": "devbox", "state": "stopped"}
-		for k, v := range extra {
-			out[k] = v
-		}
-		return out
-	}
-	listing := func() any {
-		switch mode {
-		case "no-contract":
-			return map[string]any{"workspaces": []any{item(nil)}}
-		case "contract-2":
-			return map[string]any{"contract": 2, "workspaces": []any{item(nil)}}
-		case "odd-items":
-			return map[string]any{"contract": 1, "workspaces": []any{item(map[string]any{"state": "Hibernating"}),
-				map[string]any{"name": "no-id", "state": "running"}, item(map[string]any{"id": "", "name": "empty-id"}),
-				item(map[string]any{"name": "twin", "state": "running"}), "not an object", item(map[string]any{"id": 7, "name": "numbered"})}}
-		}
-		return map[string]any{"contract": 1, "workspaces": []any{item(nil)}}
-	}
-	call := func(id any, tool string) {
-		switch {
-		case tool == "workspaces_list" && mode == "not-json":
-			text := "devbox is stopped"
-			answer(id, nil, &text, false)
-		case tool == "workspaces_list":
-			answer(id, listing(), nil, false)
-		case mode == "crash" && tool == "workspace_start":
-			os.Exit(3)
-		case mode == "hang" && tool == "workspace_start":
-			time.Sleep(30 * time.Second)
-		case mode == "refuse":
-			text := "Quota exceeded. " + strings.Repeat("x", 3000)
-			answer(id, nil, &text, true)
-		case mode == "silent-refusal":
-			text := ""
-			answer(id, nil, &text, true)
-		case mode == "bare-start":
-			answer(id, map[string]any{}, nil, false)
-		default:
-			state := "stopped"
-			if tool == "workspace_start" {
-				state = "running"
-			}
-			answer(id, map[string]any{"workspace": item(map[string]any{"state": state})}, nil, false)
-		}
-	}
-	dropped := false // drops-stop: once the provider was added (its first call), workspace_stop goes
+	f := &fakeServer{mode: mode, out: bufio.NewWriter(os.Stdout)}
 	in := bufio.NewReader(os.Stdin)
 	for {
 		line, err := in.ReadBytes('\n')
 		if len(line) > 0 {
 			var message map[string]any
 			json.Unmarshal(line, &message)
-			method, _ := message["method"].(string)
-			id := message["id"]
-			switch {
-			case method == "initialize":
-				if mode == "noise" {
-					lock.Lock()
-					out.WriteString("starting up...\n")
-					out.Flush()
-					lock.Unlock()
-				}
-				send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"protocolVersion": mcpProtocolVersion,
-					"capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "fake", "version": "1"}}})
-			case method == "tools/list":
-				names := []string{"workspaces_list", "workspace_start", "workspace_stop"}
-				if mode == "no-stop" || dropped {
-					names = names[:2]
-				}
-				var tools []any
-				for _, n := range names {
-					tools = append(tools, map[string]any{"name": n, "inputSchema": map[string]any{"type": "object"}})
-				}
-				send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": tools}})
-			case method == "tools/call":
-				params, _ := message["params"].(map[string]any)
-				name, _ := params["name"].(string)
-				if dropped && name == "workspace_stop" {
-					send(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32602, "message": "Unknown tool: workspace_stop"}})
-					continue
-				}
-				dropped = mode == "drops-stop"
-				go call(id, name)
-			case id != nil:
-				send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
-			}
+			f.handle(message)
 		}
 		if err != nil {
 			return
 		}
+	}
+}
+
+// fakeServer is the stdio server fakeProvider runs.
+type fakeServer struct {
+	mode    string
+	out     *bufio.Writer
+	lock    sync.Mutex
+	dropped bool // drops-stop: once the provider was added (its first call), workspace_stop goes
+}
+
+func (f *fakeServer) send(m any) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	data, _ := json.Marshal(m)
+	_, _ = f.out.Write(append(data, '\n'))
+	f.out.Flush()
+}
+
+func (f *fakeServer) answer(id any, content any, text *string, isError bool) {
+	t := ""
+	if text != nil {
+		t = *text
+	} else {
+		data, _ := json.Marshal(content)
+		t = string(data)
+	}
+	result := map[string]any{"content": []any{map[string]any{"type": "text", "text": t}}}
+	if content != nil && text == nil {
+		result["structuredContent"] = content
+	}
+	if isError {
+		result["isError"] = true
+	}
+	f.send(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+func fakeItem(extra map[string]any) map[string]any {
+	out := map[string]any{"id": "devbox", "name": "devbox", "state": "stopped"}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
+}
+
+func (f *fakeServer) listing() any {
+	switch f.mode {
+	case "no-contract":
+		return map[string]any{"workspaces": []any{fakeItem(nil)}}
+	case "contract-2":
+		return map[string]any{"contract": 2, "workspaces": []any{fakeItem(nil)}}
+	case "odd-items":
+		return map[string]any{"contract": 1, "workspaces": []any{fakeItem(map[string]any{"state": "Hibernating"}),
+			map[string]any{"name": "no-id", "state": "running"}, fakeItem(map[string]any{"id": "", "name": "empty-id"}),
+			fakeItem(map[string]any{"name": "twin", "state": "running"}), "not an object", fakeItem(map[string]any{"id": 7, "name": "numbered"})}}
+	}
+	return map[string]any{"contract": 1, "workspaces": []any{fakeItem(nil)}}
+}
+
+func (f *fakeServer) call(id any, tool string) {
+	mode := f.mode
+	switch {
+	case tool == "workspaces_list" && mode == "not-json":
+		text := "devbox is stopped"
+		f.answer(id, nil, &text, false)
+	case tool == "workspaces_list":
+		f.answer(id, f.listing(), nil, false)
+	case mode == "crash" && tool == "workspace_start":
+		os.Exit(3)
+	case mode == "hang" && tool == "workspace_start":
+		time.Sleep(30 * time.Second)
+	case mode == "refuse":
+		text := "Quota exceeded. " + strings.Repeat("x", 3000)
+		f.answer(id, nil, &text, true)
+	case mode == "silent-refusal":
+		text := ""
+		f.answer(id, nil, &text, true)
+	case mode == "bare-start":
+		f.answer(id, map[string]any{}, nil, false)
+	default:
+		state := "stopped"
+		if tool == "workspace_start" {
+			state = "running"
+		}
+		f.answer(id, map[string]any{"workspace": fakeItem(map[string]any{"state": state})}, nil, false)
+	}
+}
+
+// handle answers one message.
+func (f *fakeServer) handle(message map[string]any) {
+	method, _ := message["method"].(string)
+	id := message["id"]
+	switch {
+	case method == "initialize":
+		if f.mode == "noise" {
+			f.lock.Lock()
+			_, _ = f.out.WriteString("starting up...\n")
+			f.out.Flush()
+			f.lock.Unlock()
+		}
+		f.send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"protocolVersion": mcpProtocolVersion,
+			"capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "fake", "version": "1"}}})
+	case method == "tools/list":
+		names := []string{"workspaces_list", "workspace_start", "workspace_stop"}
+		if f.mode == "no-stop" || f.dropped {
+			names = names[:2]
+		}
+		var tools []any
+		for _, n := range names {
+			tools = append(tools, map[string]any{"name": n, "inputSchema": map[string]any{"type": "object"}})
+		}
+		f.send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": tools}})
+	case method == "tools/call":
+		params, _ := message["params"].(map[string]any)
+		name, _ := params["name"].(string)
+		if f.dropped && name == "workspace_stop" {
+			f.send(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32602, "message": "Unknown tool: workspace_stop"}})
+			return
+		}
+		f.dropped = f.mode == "drops-stop"
+		go f.call(id, name)
+	case id != nil:
+		f.send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
 	}
 }
 

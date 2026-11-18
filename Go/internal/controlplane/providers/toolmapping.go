@@ -430,39 +430,7 @@ func double(f float64) string {
 func fill(template any, values map[string]any) any {
 	switch t := template.(type) {
 	case string:
-		if len(t) >= 2 && strings.HasPrefix(t, "{") && strings.HasSuffix(t, "}") && !strings.Contains(t[1:], "{") {
-			key := t[1 : len(t)-1]
-			// {id:number}: for a server whose ids are numbers (DigitalOcean's).
-			if base, ok := strings.CutSuffix(key, ":number"); ok {
-				value, found := values[base]
-				if !found {
-					return nil
-				}
-				text, ok := str(value)
-				if !ok {
-					if text, ok = scalar(value); !ok {
-						return nil
-					}
-				}
-				if whole, err := strconv.Atoi(text); err == nil {
-					return whole
-				}
-				if number, err := strconv.ParseFloat(text, 64); err == nil && !math.IsInf(number, 0) && !math.IsNaN(number) {
-					return number
-				}
-				return nil
-			}
-			return values[key]
-		}
-		out := t
-		for key, value := range values {
-			text, ok := scalar(value)
-			if !ok {
-				continue
-			}
-			out = strings.ReplaceAll(out, "{"+key+"}", text)
-		}
-		return out
+		return fillString(t, values)
 	case []any:
 		out := []any{}
 		for _, item := range t {
@@ -481,4 +449,48 @@ func fill(template any, values map[string]any) any {
 		return out
 	}
 	return template
+}
+
+// fillString fills in one of a template's strings: one that is only {key} is the value
+// as it is, and any other has each {key} replaced by its value's text.
+func fillString(t string, values map[string]any) any {
+	if len(t) >= 2 && strings.HasPrefix(t, "{") && strings.HasSuffix(t, "}") && !strings.Contains(t[1:], "{") {
+		key := t[1 : len(t)-1]
+		// {id:number}: for a server whose ids are numbers (DigitalOcean's).
+		if base, ok := strings.CutSuffix(key, ":number"); ok {
+			return numberValue(values, base)
+		}
+		return values[key]
+	}
+	out := t
+	for key, value := range values {
+		text, ok := scalar(value)
+		if !ok {
+			continue
+		}
+		out = strings.ReplaceAll(out, "{"+key+"}", text)
+	}
+	return out
+}
+
+// numberValue is the value of key as a number, a whole one when it can be; nil when it
+// has none or it is not a number.
+func numberValue(values map[string]any, key string) any {
+	value, found := values[key]
+	if !found {
+		return nil
+	}
+	text, ok := str(value)
+	if !ok {
+		if text, ok = scalar(value); !ok {
+			return nil
+		}
+	}
+	if whole, err := strconv.Atoi(text); err == nil {
+		return whole
+	}
+	if number, err := strconv.ParseFloat(text, 64); err == nil && !math.IsInf(number, 0) && !math.IsNaN(number) {
+		return number
+	}
+	return nil
 }
