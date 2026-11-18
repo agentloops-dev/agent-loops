@@ -502,18 +502,10 @@ func (g *RealGitHub) ItemPage(ctx context.Context, repo string, number int, befo
 					Nodes []gqlLinked `json:"nodes"`
 				} `json:"closes"`
 				LatestReviews struct {
-					Nodes []struct {
-						Author *gqlActor `json:"author"`
-						State  string    `json:"state"`
-					} `json:"nodes"`
+					Nodes []gqlLatestReview `json:"nodes"`
 				} `json:"latestReviews"`
 				ReviewRequests struct {
-					Nodes []struct {
-						Reviewer *struct {
-							gqlActor
-							CombinedSlug string `json:"combinedSlug"`
-						} `json:"requestedReviewer"`
-					} `json:"nodes"`
+					Nodes []gqlReviewRequest `json:"nodes"`
 				} `json:"reviewRequests"`
 			} `json:"issueOrPullRequest"`
 			mergeSettings
@@ -537,68 +529,95 @@ func (g *RealGitHub) ItemPage(ctx context.Context, repo string, number int, befo
 		d.Before = n.Comments.PageInfo.StartCursor
 	}
 	if !d.PR {
-		d.Children, d.LinkedPulls, d.Events = []Linked{}, []Linked{}, []Event{}
-		for _, c := range n.Children.Nodes {
-			if l, ok := c.linked(false); ok {
-				d.Children = append(d.Children, l)
-			}
-		}
-		for _, c := range n.LinkedPulls.Nodes {
-			if l, ok := c.linked(true); ok {
-				d.LinkedPulls = append(d.LinkedPulls, l)
-			}
-		}
-		for _, e := range n.Events.Nodes {
-			if ev, ok := e.event(); ok {
-				d.Events = append(d.Events, ev)
-			}
-		}
+		d.Children, d.LinkedPulls, d.Events = linkedOf(n.Children.Nodes, false), linkedOf(n.LinkedPulls.Nodes, true), issueEventsOf(n.Events.Nodes)
 	}
 	if d.PR {
 		d.ReviewThreads, d.FilesChanged, d.Head = n.ReviewThreads.TotalCount, n.ChangedFiles, n.HeadRefOid
 		d.MergeMethods = data.Repository.methods()
-		d.CheckRuns = []Check{}
-		for _, c := range n.Commits.items() {
-			name, link := c.Name, c.DetailsURL
-			if c.Typename == "StatusContext" {
-				name, link = c.Context, c.TargetURL
-			}
-			check := Check{Name: name, State: c.state(), URL: link}
-			if c.Typename != "StatusContext" {
-				check.StartedAt, check.FinishedAt = c.StartedAt, c.CompletedAt
-			}
-			d.CheckRuns = append(d.CheckRuns, check)
-		}
+		d.CheckRuns = checksOf(n.Commits.items())
 		d.Additions, d.Deletions, d.Commits = n.Additions, n.Deletions, n.CommitCount.TotalCount
-		d.Closes = []Linked{}
-		for _, c := range n.Closes.Nodes {
-			if l, ok := c.linked(false); ok {
-				d.Closes = append(d.Closes, l)
-			}
-		}
-		// Each reviewer once: asked again since their review, they are pending, as GitHub shows it.
-		var reviewers []Reviewer
-		asked := map[string]bool{}
-		for _, q := range n.ReviewRequests.Nodes {
-			if q.Reviewer == nil {
-				continue
-			}
-			login := cmp.Or(q.Reviewer.Login, q.Reviewer.CombinedSlug)
-			if login != "" && !asked[login] {
-				asked[login] = true
-				reviewers = append(reviewers, Reviewer{Login: login, Avatar: q.Reviewer.AvatarURL, State: "pending"})
-			}
-		}
-		for _, v := range n.LatestReviews.Nodes {
-			state := reviewStates[v.State]
-			if login := v.Author.login(); login != "" && state != "" && !asked[login] {
-				asked[login] = true
-				reviewers = append(reviewers, Reviewer{Login: login, Avatar: v.Author.avatar(), State: state})
-			}
-		}
-		d.Reviewers = append([]Reviewer{}, reviewers...)
+		d.Closes = linkedOf(n.Closes.Nodes, false)
+		d.Reviewers = reviewersOf(n.ReviewRequests.Nodes, n.LatestReviews.Nodes)
 	}
 	return d, nil
+}
+
+// gqlLatestReview is a reviewer's latest review of a pull request.
+type gqlLatestReview struct {
+	Author *gqlActor `json:"author"`
+	State  string    `json:"state"`
+}
+
+// gqlReviewRequest is a review a pull request asks of a person or a team.
+type gqlReviewRequest struct {
+	Reviewer *struct {
+		gqlActor
+		CombinedSlug string `json:"combinedSlug"`
+	} `json:"requestedReviewer"`
+}
+
+// linkedOf is the issues or pull requests (pr) that nodes link, never nil.
+func linkedOf(nodes []gqlLinked, pr bool) []Linked {
+	out := []Linked{}
+	for _, c := range nodes {
+		if l, ok := c.linked(pr); ok {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// issueEventsOf is an issue's events that the page shows, never nil.
+func issueEventsOf(nodes []gqlEvent) []Event {
+	out := []Event{}
+	for _, e := range nodes {
+		if ev, ok := e.event(); ok {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+// checksOf is a head commit's check runs and statuses, never nil.
+func checksOf(items []checkItem) []Check {
+	out := []Check{}
+	for _, c := range items {
+		name, link := c.Name, c.DetailsURL
+		if c.Typename == "StatusContext" {
+			name, link = c.Context, c.TargetURL
+		}
+		check := Check{Name: name, State: c.state(), URL: link}
+		if c.Typename != "StatusContext" {
+			check.StartedAt, check.FinishedAt = c.StartedAt, c.CompletedAt
+		}
+		out = append(out, check)
+	}
+	return out
+}
+
+// reviewersOf is each reviewer once, never nil: asked again since their review, they are
+// pending, as GitHub shows it.
+func reviewersOf(requests []gqlReviewRequest, latest []gqlLatestReview) []Reviewer {
+	reviewers := []Reviewer{}
+	asked := map[string]bool{}
+	for _, q := range requests {
+		if q.Reviewer == nil {
+			continue
+		}
+		login := cmp.Or(q.Reviewer.Login, q.Reviewer.CombinedSlug)
+		if login != "" && !asked[login] {
+			asked[login] = true
+			reviewers = append(reviewers, Reviewer{Login: login, Avatar: q.Reviewer.AvatarURL, State: "pending"})
+		}
+	}
+	for _, v := range latest {
+		state := reviewStates[v.State]
+		if login := v.Author.login(); login != "" && state != "" && !asked[login] {
+			asked[login] = true
+			reviewers = append(reviewers, Reviewer{Login: login, Avatar: v.Author.avatar(), State: state})
+		}
+	}
+	return reviewers
 }
 
 // reviewStates are GitHub's review states in the one model's words; a dismissed review, and the
