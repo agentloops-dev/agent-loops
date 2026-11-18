@@ -727,7 +727,8 @@ func (d *Daemon) restoreArchive(archive, madeIn string, mine, withRoot bool, int
 			return r.res, err
 		}
 	}
-	return r.res, r.flush()
+	err = r.flush()
+	return r.res, err
 }
 
 // archiveRestore is the state of one restoreArchive: the counts so far, and the agent whose
