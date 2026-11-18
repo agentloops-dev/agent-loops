@@ -27,6 +27,7 @@ var goroutinesNotCounted = map[string]int{
 	"handoffwindow.go frontApp":                 2, // agents-drive's answer, or a kill at windowWaitsLongest
 	"mcpclient.go (*stdioMCP).end":              1,
 	"mcpeventclient.go (*mcpEventConns).endAll": 1,
+	"mcpeventclient.go (*mcpEventConns).drop":   1, // endAll waits for it, by the pool's ending (#6171)
 	"runtimes.go (*Daemon).runtimeStatuses":     1,
 	"screencalls.go (*driveProcess).call":       1, // a write to agents-drive; stop closes its stdin
 	"screencalls.go (*driveProcess).stop":       1,
@@ -34,7 +35,6 @@ var goroutinesNotCounted = map[string]int{
 	"workfeatures.go (*Daemon).workFeatures":    1,
 	// They end when a value they alone own closes, and Shutdown closes it (stopFolderWatches,
 	// stopScreenDrives, stopMCPEvents, the socket's and the page's close).
-	"mcpeventclient.go (*mcpEventConns).drop": 1, // ends a connection the pool no longer holds
 	"pagerelay.go newPageOut":                 1,
 	"pagerelay.go (*pageChannel).take":        1,
 	"rpc.go newSockConn":                      1,

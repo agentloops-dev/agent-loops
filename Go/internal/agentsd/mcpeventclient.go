@@ -192,6 +192,9 @@ type mcpEventConns struct {
 	// hosted is the way to a hosted entry's one copy (#4516): errHostedTooMany when the host
 	// has no room, and the connection runs its own copy.
 	hosted func(s eventServer, heard func(string)) (mcpConn, error)
+	// ending counts the ends that drop starts (#6171): a dropped connection is no longer in
+	// held, and endAll waits for it all the same, so none outlives Shutdown.
+	ending sync.WaitGroup
 }
 
 func newMCPEventConns(heard func(string)) *mcpEventConns {
@@ -365,9 +368,12 @@ func (p *mcpEventConns) drop(key string) {
 	p.mu.Lock()
 	c := p.held[key]
 	delete(p.held, key)
+	if c != nil {
+		p.ending.Add(1)
+	}
 	p.mu.Unlock()
 	if c != nil {
-		go c.end()
+		go func() { defer p.ending.Done(); c.end() }()
 	}
 }
 
@@ -395,7 +401,8 @@ func (p *mcpEventConns) keepOnly(keys map[string]bool) {
 	}
 }
 
-// endAll ends every connection: the host is stopping.
+// endAll ends every connection, and waits for those that drop is ending: the host is
+// stopping.
 func (p *mcpEventConns) endAll() {
 	p.mu.Lock()
 	all := p.held
@@ -407,6 +414,7 @@ func (p *mcpEventConns) endAll() {
 		go func() { defer wg.Done(); c.end() }()
 	}
 	wg.Wait()
+	p.ending.Wait()
 }
 
 // mcpEventsWords is DaemonCore.mcpWords.
