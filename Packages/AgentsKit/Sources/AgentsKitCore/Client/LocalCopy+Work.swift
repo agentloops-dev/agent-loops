@@ -16,7 +16,7 @@ extension LocalCopy {
         case plan
         /// Work ▸ Features (`work/features`).
         case features
-        /// Work ▸ Timeline (`work/timeline`, the Mac's).
+        /// Work ▸ Timeline (`work/timeline`; Core since #6044).
         case timeline
         /// Work ▸ Deploys (`deploys/targets`, the Mac's).
         case deploys

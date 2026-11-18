@@ -208,8 +208,10 @@ struct WorkItemPage: View {
     /// Back to the place before, the list when it was one; else to the list (a page opened from a link).
     private var backWords: String {
         let history = model.workHistory
-        guard history.canGoBack, let ref = history.places[history.at - 1].ref else { return place.kind.title }
-        return WorkList.shortRef(ref)
+        guard history.canGoBack else { return place.kind.title }
+        // The place before: an item by its number, a page by its name (‹ Timeline, ‹ Features; #6044).
+        let before = history.places[history.at - 1]
+        return before.ref.map(WorkList.shortRef) ?? before.kind.title
     }
 
     private func back() {

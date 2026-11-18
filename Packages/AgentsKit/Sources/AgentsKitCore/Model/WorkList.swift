@@ -10,7 +10,7 @@ public enum WorkList {
         /// Features (#3269) are the `feature:` labels on the epics, not a lineage kind: an epic opens as an issue.
         /// Deploys (#5270) is every component in every environment (`WorkDeploys`), Mac + web; its
         /// raw value is lineage's deploy kind, but a deploy node opens no Work page.
-        /// Timeline (#4173) is the epics on a time axis, the Mac's alone for now (`WorkTimeline`).
+        /// Timeline (#4173) is the epics on a time axis (`WorkTimeline`), Core since #6044.
         case issue, pr, feature, release, deploy, timeline
 
         public var id: Self { self }
