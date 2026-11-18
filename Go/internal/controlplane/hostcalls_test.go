@@ -123,6 +123,61 @@ func TestASlowHostCallLeavesTheLinkRead(t *testing.T) {
 	}
 }
 
+// asksBack answers machine/machines by asking the same host, as a provider the host carries
+// does (providers.Ask, providers/carry).
+type asksBack struct{ r *Router }
+
+func (h *asksBack) Handles(string) bool { return false }
+func (h *asksBack) Handle(string, json.RawMessage, Caller) (any, error) {
+	return nil, nil
+}
+func (h *asksBack) HostSaid(host, method string, _ json.RawMessage) (any, error) {
+	if method != "machine/machines" {
+		return map[string]any{}, nil
+	}
+	if reply := h.r.Ask(host, "providers/carry", map[string]any{}, 10*time.Second); reply == nil {
+		return nil, fail(hostOffline, "it did not answer")
+	}
+	return map[string]any{}, nil
+}
+
+// #6223, the slow call it was: an agent's machine/machines on the Mac lists a provider the
+// Mac carries, so its handler asks the Mac and waits. The Mac's answer comes on the same
+// link, so a handler on the read loop waited on itself until the Mac dropped the link.
+func TestAHostCallThatAsksTheSameHostIsAnswered(t *testing.T) {
+	t.Parallel()
+	h := &asksBack{}
+	r := NewRouter(h, nil)
+	h.r = r
+	ws, lines := hostLink(t, r)
+
+	callHost(t, ws, "list", "machine/machines")
+	deadline := time.After(5 * time.Second)
+	for asked := false; !asked; {
+		select {
+		case line := <-lines:
+			var f struct {
+				M struct {
+					ID     string `json:"id"`
+					Method string `json:"method"`
+				} `json:"m"`
+			}
+			if json.Unmarshal([]byte(line), &f) == nil && f.M.Method == "providers/carry" {
+				answered := `{"c":0,"m":{"jsonrpc":"2.0","id":"` + f.M.ID + `","result":{}}}`
+				if err := ws.Write(context.Background(), websocket.MessageText, []byte(answered)); err != nil {
+					t.Fatal(err)
+				}
+				asked = true
+			}
+		case <-deadline:
+			t.Fatal("the control plane did not ask the host")
+		}
+	}
+	if answer(t, lines, "list", 5*time.Second) {
+		t.Fatal("machine/machines failed: the host's answer to the control plane's ask was not read")
+	}
+}
+
 // #6223: a lane with no room refuses a call at once, so the host asks again, and the
 // link's reads still go on.
 func TestAHostLaneWithNoRoomRefusesACall(t *testing.T) {
