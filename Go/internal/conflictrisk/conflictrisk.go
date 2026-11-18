@@ -258,7 +258,8 @@ func cleanRefs(ctx context.Context, r runner, refs string, now func() time.Time)
 		}
 	}
 	if deleteRefs(ctx, r, append(mine, old...)) != nil {
-		deleteRefs(ctx, r, mine)
+		// Best effort: a folder that stays is deleted by a later run once it is stale.
+		_ = deleteRefs(ctx, r, mine)
 	}
 }
 
