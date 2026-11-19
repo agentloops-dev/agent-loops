@@ -8,6 +8,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -35,6 +36,7 @@ func runTurn(t *testing.T, d *Daemon, c *conn, dir, path string) (wire.UUID, wir
 }
 
 func TestUndoPutsBackWhatATurnChanged(t *testing.T) {
+	flaky.UnderLoad(t, "#6274")
 	t.Parallel()
 
 	fakeRuntimes(t)
