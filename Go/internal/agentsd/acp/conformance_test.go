@@ -146,20 +146,9 @@ func attached(t *testing.T, s script) Launch {
 		var once sync.Once
 		r.end = func() { once.Do(func() { _ = inW.Close(); _ = outW.Close(); close(r.closed) }) }
 		go r.serve()
-		current.Store(r)
 		return Attached{Stdin: inW, Stdout: outR, End: r.end, Done: r.closed}, nil
 	}}
 }
-
-// current is the last runtime started, for a test that has to end it from outside.
-var current runHolder
-
-type runHolder struct {
-	mu sync.Mutex
-	r  *run
-}
-
-func (h *runHolder) Store(r *run) { h.mu.Lock(); h.r = r; h.mu.Unlock() }
 
 // recorder is a Sink that keeps what the driver hands on.
 type recorder struct {
@@ -169,6 +158,9 @@ type recorder struct {
 	answer   string
 	asking   chan struct{}
 	released chan struct{}
+	// spoke, when set, is closed at the first words heard.
+	spoke chan struct{}
+	once  sync.Once
 }
 
 func (r *recorder) Update(n sdk.SessionNotification) {
@@ -176,6 +168,9 @@ func (r *recorder) Update(n sdk.SessionNotification) {
 		r.mu.Lock()
 		r.said = append(r.said, m.Content.Text.Text)
 		r.mu.Unlock()
+		if r.spoke != nil {
+			r.once.Do(func() { close(r.spoke) })
+		}
 	}
 }
 
@@ -218,6 +213,9 @@ func start(t *testing.T, s script, sink Sink) *Session {
 
 func text(s string) []sdk.ContentBlock { return []sdk.ContentBlock{sdk.TextBlock(s)} }
 
+// deadline is the channel a hang is waited out on.
+func deadline(d time.Duration) <-chan time.Time { return time.NewTimer(d).C }
+
 // finishesIn fails the test when f does not return in d: a hang is the fault, not a slow test.
 func finishesIn(t *testing.T, d time.Duration, what string, f func()) {
 	t.Helper()
@@ -225,7 +223,7 @@ func finishesIn(t *testing.T, d time.Duration, what string, f func()) {
 	go func() { f(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(d):
+	case <-deadline(d):
 		t.Fatalf("%s did not return in %v", what, d)
 	}
 }
@@ -259,13 +257,13 @@ func TestConformanceCrashDuringATurn(t *testing.T) {
 	other := &recorder{}
 	otherSession := start(t, script{on: answersTurn}, other)
 
-	sink := &recorder{}
+	sink := &recorder{spoke: make(chan struct{})}
 	s := start(t, script{on: func(r *run, l line) bool {
 		if l.Method != "session/prompt" {
 			return false
 		}
 		r.say("s1", "partial ")
-		time.Sleep(50 * time.Millisecond)
+		<-sink.spoke
 		r.end() // exit with the turn open
 		return true
 	}}, sink)
@@ -280,7 +278,7 @@ func TestConformanceCrashDuringATurn(t *testing.T) {
 	}
 	select {
 	case <-s.Done():
-	case <-time.After(5 * time.Second):
+	case <-deadline(5 * time.Second):
 		t.Fatal("Done is not closed after the runtime exited")
 	}
 	finishesIn(t, 10*time.Second, "Stop after a crash", s.Stop)
@@ -322,7 +320,8 @@ while read line; do
 done
 `
 	exe := filepath.Join(dir, "runtime")
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
+	err := os.WriteFile(exe, []byte(script), 0o755) //nolint:gosec // a script the test runs: it must be executable
+	if err != nil {
 		t.Fatal(err)
 	}
 	s, err := Start(context.Background(), Launch{Command: exe, Dir: dir, Name: "Scripted"}, &recorder{}, nil, nil, nil, "", "")
@@ -438,25 +437,23 @@ func TestConformanceUnreadableTurnAnswer(t *testing.T) {
 // A request the runtime made that the driver cannot serve gets an error answer: the runtime
 // is told, and does not wait.
 func TestConformanceUnknownRequestIsAnswered(t *testing.T) {
+	got := make(chan string, 1)
 	s := start(t, script{on: func(r *run, l line) bool {
 		if l.Method != "session/prompt" {
 			return false
 		}
 		r.raw(`{"jsonrpc":"2.0","id":"q1","method":"vendor/ask","params":{}}`)
-		time.Sleep(200 * time.Millisecond)
+		got <- <-r.answers
 		r.reply(l, map[string]any{"stopReason": "end_turn"})
 		return true
 	}}, &recorder{})
-	current.mu.Lock()
-	r := current.r
-	current.mu.Unlock()
 	finishesIn(t, 10*time.Second, "a turn", func() { _, _ = s.Prompt(context.Background(), text("go")) })
 	select {
-	case a := <-r.answers:
+	case a := <-got:
 		if !strings.Contains(a, `"q1"`) || !strings.Contains(a, `"error"`) {
 			t.Fatalf("answer %s", a)
 		}
-	case <-time.After(2 * time.Second):
+	default:
 		t.Fatal("the request of an unknown method was never answered")
 	}
 }
@@ -542,16 +539,18 @@ func TestConformanceResumeThatHangsIsNotALostConversation(t *testing.T) {
 // the turn ends cancelled.
 func TestConformanceCardAfterCancel(t *testing.T) {
 	sink := &recorder{}
-	cancelled := make(chan struct{})
+	cancelled, prompted := make(chan struct{}), make(chan struct{})
+	sink.asking = make(chan struct{})
 	s := start(t, script{on: func(r *run, l line) bool {
 		switch l.Method {
 		case "session/prompt":
+			close(prompted)
 			go func() {
 				<-cancelled
 				r.send(map[string]any{"jsonrpc": "2.0", "id": "perm1", "method": "session/request_permission", "params": map[string]any{
 					"sessionId": "s1", "toolCall": map[string]any{"toolCallId": "t1", "title": "Run it"},
 					"options": []map[string]any{{"optionId": "allow", "name": "Allow", "kind": "allow_once"}}}})
-				time.Sleep(200 * time.Millisecond)
+				<-sink.asking
 				r.reply(l, map[string]any{"stopReason": "cancelled"})
 			}()
 			return true
@@ -563,7 +562,7 @@ func TestConformanceCardAfterCancel(t *testing.T) {
 	}}, sink)
 	var stop sdk.StopReason
 	finishesIn(t, 10*time.Second, "a turn cancelled with a card after", func() {
-		go func() { time.Sleep(100 * time.Millisecond); _ = s.Cancel(context.Background()) }()
+		go func() { <-prompted; _ = s.Cancel(context.Background()) }()
 		r, err := s.Prompt(context.Background(), text("go"))
 		if err != nil {
 			t.Errorf("%v", err)
@@ -596,7 +595,7 @@ func TestConformanceStopWithACardOpen(t *testing.T) {
 	go func() { _, _ = s.Prompt(context.Background(), text("go")) }()
 	select {
 	case <-sink.asking:
-	case <-time.After(5 * time.Second):
+	case <-deadline(5 * time.Second):
 		t.Fatal("the card never came")
 	}
 	finishesIn(t, 15*time.Second, "Stop with a card open", s.Stop)
@@ -649,7 +648,8 @@ while read line; do
 done
 `
 	exe := filepath.Join(dir, "runtime")
-	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
+	err := os.WriteFile(exe, []byte(script), 0o755) //nolint:gosec // a script the test runs: it must be executable
+	if err != nil {
 		t.Fatal(err)
 	}
 	s, err := Start(context.Background(), Launch{Command: exe, Dir: dir, Name: "Scripted"}, &recorder{}, nil, nil, nil, "", "")
