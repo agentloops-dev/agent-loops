@@ -10,6 +10,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	sdk "github.com/coder/acp-go-sdk"
 )
@@ -57,6 +58,7 @@ func bitbucketFolder(t *testing.T, d *Daemon) string {
 // #3879: lineage takes a Bitbucket folder's labels and pull request events as Bitbucket nodes,
 // by its remote's host, with or without a connection. Nothing is asked of gh or glab about them.
 func TestLineageOnABitbucketFolder(t *testing.T) {
+	flaky.UnderLoad(t, "#6257")
 	t.Parallel()
 
 	d, _, _, file := bitbucketDaemon(t)

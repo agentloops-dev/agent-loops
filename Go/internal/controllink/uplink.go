@@ -75,6 +75,16 @@ type Uplink struct {
 	pingEvery time.Duration
 	// firstWait, lastWait and steadyFor are upFirstWait, upLastWait and upSteady when 0.
 	firstWait, lastWait, steadyFor time.Duration
+	// toldLine is what waits for Told, off the read loop (#6260).
+	toldLine toldLine
+	// slowAfter is slowHandler when 0.
+	slowAfter time.Duration
+}
+
+// SetRedial sets the waits Run keeps between dials (below), for a test that cuts a link many
+// times and must not wait out the real ones; call it before Run.
+func (u *Uplink) SetRedial(first, last, steady time.Duration) {
+	u.firstWait, u.lastWait, u.steadyFor = first, last, steady
 }
 
 // Run waits firstWait before it dials again, twice as long each time up to lastWait, while
@@ -262,14 +272,16 @@ func (u *Uplink) Run(ctx context.Context) {
 		u.hello(ctx, hello)
 		log.Printf("uplink: connected to the control plane as %s", u.Member.Host)
 		if u.OnChange != nil {
-			u.OnChange(true, "")
+			u.timed("saying the link is up", func() { u.OnChange(true, "") })
 		}
+		// Nothing on this loop waits (#6260): while it does, no pong is read, and the link
+		// drops. What can wait runs off it (told, Asked, Accept).
 		for {
 			line, err := l.Read(ctx)
 			if err != nil {
 				break
 			}
-			u.receive(line)
+			u.timed("a line on the read loop", func() { u.receive(line) })
 		}
 		out.drop()
 		u.mu.Lock()
@@ -623,14 +635,14 @@ func (u *Uplink) message(n int, message string) {
 			return
 		}
 		if told.ID == nil {
-			if u.Told != nil {
-				u.Told(told.Method, told.Params)
-			}
+			u.told(told.Method, told.Params)
 			return
 		}
 		if asked := u.Asked; asked != nil {
 			safe.Go("control asked", func() {
-				result, ok := asked(told.Method, told.Params)
+				var result any
+				ok := false
+				u.timed(told.Method, func() { result, ok = asked(told.Method, told.Params) })
 				if !ok {
 					return
 				}

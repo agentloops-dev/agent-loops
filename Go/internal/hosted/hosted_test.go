@@ -200,6 +200,35 @@ func TestSignUpGivesAControlPlaneOfYourOwn(t *testing.T) {
 		t.Fatal(page)
 	}
 
+	id := signUpIsSentToItsControlPlane(t, b, st)
+	signInAgainOpensTheSameAccount(t, s, b, id)
+	token := s.sessions.form(id)
+
+	// Deleting asks for the name first, then takes the control plane's whole store.
+	if _, page := b.post("https://"+domain+"/account/delete", url.Values{"token": {token}, "confirm": {"nope"}}); !strings.Contains(page, "Type the account") {
+		t.Fatal(page)
+	}
+	if _, page := b.post("https://"+domain+"/account/delete", url.Values{"token": {token}, "confirm": {id}}); !strings.Contains(page, "are deleted") {
+		t.Fatal(page)
+	}
+	if left, _ := st.List(context.Background(), "accounts/"+id+"/"); len(left) != 0 {
+		t.Fatalf("%d objects left", len(left))
+	}
+	if res, _ := b.get("https://" + id + "." + domain + "/readyz"); res.StatusCode != http.StatusNotFound {
+		t.Fatal("a deleted account's control plane answered")
+	}
+	// The same GitHub user can sign up again, with a new control plane.
+	res := b.signIn("good")
+	if again, _ := url.Parse(res.Header.Get("Location")); again == nil || strings.HasPrefix(again.Host, id) {
+		t.Fatal(res.Header.Get("Location"))
+	}
+}
+
+// signUpIsSentToItsControlPlane signs up and checks the browser is sent to the account's
+// own control plane with its code, and that the control plane answers there. It gives the
+// account's id.
+func signUpIsSentToItsControlPlane(t *testing.T, b *browser, st store.Store) string {
+	t.Helper()
 	res := b.signIn("good")
 	to, err := url.Parse(res.Header.Get("Location"))
 	if err != nil || res.StatusCode != http.StatusSeeOther {
@@ -226,6 +255,14 @@ func TestSignUpGivesAControlPlaneOfYourOwn(t *testing.T) {
 	if o, _ := st.Get(context.Background(), "accounts/"+id+"/v1/keys/control.sealed"); o == nil {
 		t.Fatal("the account's key is not sealed in its prefix")
 	}
+	controlPlaneAnswersAtItsName(t, b, id)
+	return id
+}
+
+// controlPlaneAnswersAtItsName checks the account's control plane answers at its own name,
+// a WebSocket included, and that a certificate is asked for only for names that exist.
+func controlPlaneAnswersAtItsName(t *testing.T, b *browser, id string) {
+	t.Helper()
 	// Its control plane answers at its own name, through this service.
 	if res, body := b.get("https://" + id + "." + domain + "/readyz"); res.StatusCode != http.StatusOK {
 		t.Fatalf("%d %s", res.StatusCode, body)
@@ -251,12 +288,18 @@ func TestSignUpGivesAControlPlaneOfYourOwn(t *testing.T) {
 		}
 	}
 
+}
+
+// signInAgainOpensTheSameAccount signs in again: the same account, and this browser can
+// be sent to it again, by its own form only.
+func signInAgainOpensTheSameAccount(t *testing.T, s *Service, b *browser, id string) {
+	t.Helper()
 	// Signing in again is the same account, and this browser can be sent to it again.
-	res = b.signIn("good")
+	res := b.signIn("good")
 	if res.Header.Get("Location") != "/account" {
 		t.Fatal(res.Header.Get("Location"))
 	}
-	_, page = b.get("https://" + domain + "/account")
+	_, page := b.get("https://" + domain + "/account")
 	if !strings.Contains(page, "https://"+id+"."+domain) || !strings.Contains(page, "as ana") {
 		t.Fatal(page)
 	}
@@ -267,25 +310,6 @@ func TestSignUpGivesAControlPlaneOfYourOwn(t *testing.T) {
 	}
 	// A form from anywhere else does nothing.
 	if res, _ := b.post("https://"+domain+"/account/open", url.Values{"token": {"forged"}}); res.Header.Get("Location") != "/" {
-		t.Fatal(res.Header.Get("Location"))
-	}
-
-	// Deleting asks for the name first, then takes the control plane's whole store.
-	if _, page := b.post("https://"+domain+"/account/delete", url.Values{"token": {token}, "confirm": {"nope"}}); !strings.Contains(page, "Type the account") {
-		t.Fatal(page)
-	}
-	if _, page := b.post("https://"+domain+"/account/delete", url.Values{"token": {token}, "confirm": {id}}); !strings.Contains(page, "are deleted") {
-		t.Fatal(page)
-	}
-	if left, _ := st.List(context.Background(), "accounts/"+id+"/"); len(left) != 0 {
-		t.Fatalf("%d objects left", len(left))
-	}
-	if res, _ := b.get("https://" + id + "." + domain + "/readyz"); res.StatusCode != http.StatusNotFound {
-		t.Fatal("a deleted account's control plane answered")
-	}
-	// The same GitHub user can sign up again, with a new control plane.
-	res = b.signIn("good")
-	if again, _ := url.Parse(res.Header.Get("Location")); again == nil || strings.HasPrefix(again.Host, id) {
 		t.Fatal(res.Header.Get("Location"))
 	}
 }

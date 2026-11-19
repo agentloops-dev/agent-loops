@@ -277,14 +277,9 @@ func (d *Daemon) undoTurn(r wire.UndoTurnRequest) (wire.UndoTurnResult, error) {
 	if err != nil {
 		return wire.UndoTurnResult{}, err
 	}
-	var tc *wire.TurnChanges
-	for _, e := range entries {
-		if k := e.Kind.TurnChanged; k != nil && k.Value.Turn == r.Turn {
-			tc = &k.Value
-		}
-		if k := e.Kind.TurnUndone; k != nil && k.Value.Turn == r.Turn {
-			return wire.UndoTurnResult{}, &Error{Code: wire.FailureNotChanged, Message: "That turn's changes are undone already."}
-		}
+	tc, err := undoTurnFindChanges(entries, r.Turn)
+	if err != nil {
+		return wire.UndoTurnResult{}, err
 	}
 	if tc == nil || tc.Before == nil || tc.After == nil {
 		return wire.UndoTurnResult{}, Invalid("That turn changed no files the app can put back.")
@@ -294,24 +289,9 @@ func (d *Daemon) undoTurn(r wire.UndoTurnRequest) (wire.UndoTurnResult, error) {
 		return wire.UndoTurnResult{}, &Error{Code: wire.FailureFolderGone, Message: store.FolderPath(a.Cwd) + " is not a git folder any more."}
 	}
 	root = changeKey(root)
-	var rels []string
-	if tc.More != nil && (tc.OnlyReported == nil || !*tc.OnlyReported) {
-		changes, err := treeChanges(root, *tc.Before, *tc.After)
-		if err != nil {
-			return wire.UndoTurnResult{}, &Error{Code: wire.FailureNotChanged, Message: "The snapshot of that turn is gone, so its changes cannot be put back."}
-		}
-		for _, c := range changes {
-			rels = append(rels, c.path)
-		}
-	} else {
-		for _, f := range tc.Files {
-			// The path within the repository, as the turn's end recorded it.
-			if f.RelativePath != nil {
-				rels = append(rels, *f.RelativePath)
-			} else if rel, ok := relativeTo(changeKey(f.Path), root); ok {
-				rels = append(rels, rel)
-			}
-		}
+	rels, err := undoTurnPaths(root, tc)
+	if err != nil {
+		return wire.UndoTurnResult{}, err
 	}
 	if len(rels) == 0 {
 		return wire.UndoTurnResult{}, Invalid("That turn changed no files the app can put back.")
@@ -331,23 +311,9 @@ func (d *Daemon) undoTurn(r wire.UndoTurnRequest) (wire.UndoTurnResult, error) {
 	if len(result.ChangedSince) > 0 && (r.Confirmed == nil || !*r.Confirmed) {
 		return result, nil
 	}
-	var restore []string
-	for _, rel := range rels {
-		path := filepath.Join(root, rel)
-		if _, ok := before[rel]; ok {
-			if now[rel] != before[rel].object {
-				restore = append(restore, rel)
-			}
-			continue
-		}
-		// Made in the turn: it goes.
-		if _, there := now[rel]; there {
-			if err := os.Remove(path); err != nil {
-				return result, fileError(CodeFileNotReadable, err.Error())
-			}
-			removeEmptyParents(root, filepath.Dir(path))
-		}
-		result.PutBack = append(result.PutBack, root+"/"+rel)
+	restore, err := undoTurnRemoveMade(root, rels, before, now, &result)
+	if err != nil {
+		return result, err
 	}
 	if len(restore) > 0 {
 		// A file is put back as checkout would write it (its filters and mode), and the
@@ -443,4 +409,67 @@ func (d *Daemon) lastPrompt(id wire.UUID) (wire.UUID, bool) {
 		}
 	}
 	return "", false
+}
+
+// undoTurnFindChanges finds the changes of a turn in a transcript. It gives nil when the
+// turn has none, and an error when they are undone already.
+func undoTurnFindChanges(entries []wire.TranscriptEntry, turn wire.UUID) (*wire.TurnChanges, error) {
+	var tc *wire.TurnChanges
+	for _, e := range entries {
+		if k := e.Kind.TurnChanged; k != nil && k.Value.Turn == turn {
+			tc = &k.Value
+		}
+		if k := e.Kind.TurnUndone; k != nil && k.Value.Turn == turn {
+			return nil, &Error{Code: wire.FailureNotChanged, Message: "That turn's changes are undone already."}
+		}
+	}
+	return tc, nil
+}
+
+// undoTurnPaths gives the paths within the repository at root that a turn changed.
+func undoTurnPaths(root string, tc *wire.TurnChanges) ([]string, error) {
+	var rels []string
+	if tc.More != nil && (tc.OnlyReported == nil || !*tc.OnlyReported) {
+		changes, err := treeChanges(root, *tc.Before, *tc.After)
+		if err != nil {
+			return nil, &Error{Code: wire.FailureNotChanged, Message: "The snapshot of that turn is gone, so its changes cannot be put back."}
+		}
+		for _, c := range changes {
+			rels = append(rels, c.path)
+		}
+		return rels, nil
+	}
+	for _, f := range tc.Files {
+		// The path within the repository, as the turn's end recorded it.
+		if f.RelativePath != nil {
+			rels = append(rels, *f.RelativePath)
+		} else if rel, ok := relativeTo(changeKey(f.Path), root); ok {
+			rels = append(rels, rel)
+		}
+	}
+	return rels, nil
+}
+
+// undoTurnRemoveMade removes each file that the turn made, and adds it to the result's
+// put-back list. It gives the files that were there before and changed since, to restore.
+func undoTurnRemoveMade(root string, rels []string, before map[string]treeEntry, now map[string]string, result *wire.UndoTurnResult) ([]string, error) {
+	var restore []string
+	for _, rel := range rels {
+		path := filepath.Join(root, rel)
+		if _, ok := before[rel]; ok {
+			if now[rel] != before[rel].object {
+				restore = append(restore, rel)
+			}
+			continue
+		}
+		// Made in the turn: it goes.
+		if _, there := now[rel]; there {
+			if err := os.Remove(path); err != nil {
+				return restore, fileError(CodeFileNotReadable, err.Error())
+			}
+			removeEmptyParents(root, filepath.Dir(path))
+		}
+		result.PutBack = append(result.PutBack, root+"/"+rel)
+	}
+	return restore, nil
 }

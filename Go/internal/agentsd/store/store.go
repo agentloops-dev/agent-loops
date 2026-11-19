@@ -642,7 +642,9 @@ func (s *Store) appendEntries(id wire.UUID, es []wire.TranscriptEntry, hold bool
 	s.mu.Lock()
 	n, ok := s.lines[id]
 	if !ok {
-		n = countLines(s.Loc.Transcript(string(id)))
+		file := s.Loc.Transcript(string(id))
+		endTornLine(file)
+		n = countLines(file)
 		s.lines[id] = n
 	}
 	if len(es) == 0 {
@@ -658,6 +660,9 @@ func (s *Store) appendEntries(id wire.UUID, es []wire.TranscriptEntry, hold bool
 // writeTranscript appends whole lines to a transcript. A write the disk cut short is
 // taken back, so the next line is never glued to half of this one.
 func (s *Store) writeTranscript(id wire.UUID, buf []byte) error {
+	if err := fault(s.Loc.Transcript(string(id)), true, buf); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.Loc.Agent(string(id)), 0o755); err != nil {
 		return err
 	}
@@ -677,6 +682,26 @@ func (s *Store) writeTranscript(id wire.UUID, buf []byte) error {
 		return err
 	}
 	return nil
+}
+
+// endTornLine ends the last line of a transcript that a kill cut short (#6184): with no
+// newline after it, the first line written after the restart would be glued to it, and both
+// would be lost. The cut line stays, ended, and is skipped by a read as any line that will
+// not decode is.
+func endTornLine(file string) {
+	f, err := os.OpenFile(file, os.O_RDWR|os.O_APPEND, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.Size() == 0 {
+		return
+	}
+	last := make([]byte, 1)
+	if _, err := f.ReadAt(last, info.Size()-1); err == nil && last[0] != '\n' {
+		_, _ = f.Write([]byte{'\n'})
+	}
 }
 
 func countLines(file string) int {

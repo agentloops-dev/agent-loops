@@ -144,20 +144,7 @@ func AddTools(server *mcp.Server, m *Meta, inbox *Inbox) {
 			"WhatsApp takes it only within 24 hours of the person's last message; after that, use send_template.",
 		Annotations: sends},
 		func(ctx context.Context, in sendArgs) (*mcp.CallToolResult, error) {
-			to, replyTo, err := checkTo(in.To, in.ReplyTo)
-			if err != nil {
-				return nil, err
-			}
-			text, err := checkText("text", in.Text, maxText)
-			if err != nil {
-				return nil, err
-			}
-			id, err := m.Send(ctx, outgoing(to, replyTo, "text", map[string]any{"body": text, "preview_url": false}))
-			if err != nil {
-				return nil, err
-			}
-			inbox.sent(id, to, replyTo, text)
-			return structured(map[string]any{"message": id, "to": to}), nil
+			return sendMessage(ctx, m, inbox, in)
 		})
 
 	tool(server, &mcp.Tool{Name: "ask_question", Title: "Ask a question",
@@ -166,49 +153,7 @@ func AddTools(server *mcp.Server, m *Meta, inbox *Inbox) {
 			"to a person who is not at the app. Like send_message, only within 24 hours of the person's last message.",
 		Annotations: sends},
 		func(ctx context.Context, in askArgs) (*mcp.CallToolResult, error) {
-			to, replyTo, err := checkTo(in.To, in.ReplyTo)
-			if err != nil {
-				return nil, err
-			}
-			question, err := checkText("question", in.Question, maxQuestion)
-			if err != nil {
-				return nil, err
-			}
-			if len(in.Options) < 2 || len(in.Options) > maxOptions {
-				return nil, fmt.Errorf("options must be two to %d", maxOptions)
-			}
-			most := maxButton
-			if len(in.Options) > maxButtons {
-				most = maxRow
-			}
-			seen := map[string]bool{}
-			for i, o := range in.Options {
-				o.ID, o.Label = strings.TrimSpace(o.ID), strings.TrimSpace(o.Label)
-				if !idRule.MatchString(o.ID) || seen[o.ID] {
-					return nil, fmt.Errorf("option %d: id must be unique, of letters, digits, _ . : -", i+1)
-				}
-				if o.Label == "" || utf8.RuneCountInString(o.Label) > most {
-					return nil, fmt.Errorf("option %d: label must be 1 to %d characters (WhatsApp's most for %d options)", i+1, most, len(in.Options))
-				}
-				seen[o.ID] = true
-				in.Options[i] = o
-			}
-			id := strings.TrimSpace(in.ID)
-			if id == "" {
-				id = newID()
-			} else if !idRule.MatchString(id) {
-				return nil, fmt.Errorf("id must be 1 to 64 letters, digits, _ . : -")
-			}
-			sent, err := m.Send(ctx, outgoing(to, replyTo, "interactive", questionContent(id, cut(strings.TrimSpace(in.Title), maxHeader), question, in.Options)))
-			if err != nil {
-				return nil, err
-			}
-			labels := make([]string, len(in.Options))
-			for i, o := range in.Options {
-				labels[i] = o.Label
-			}
-			inbox.sent(sent, to, replyTo, question+"\n("+strings.Join(labels, " / ")+")")
-			return structured(map[string]any{"question": id, "message": sent, "to": to}), nil
+			return askQuestion(ctx, m, inbox, in)
 		})
 
 	tool(server, &mcp.Tool{Name: "send_template", Title: "Send a template",
@@ -216,47 +161,150 @@ func AddTools(server *mcp.Server, m *Meta, inbox *Inbox) {
 			"after the person last wrote, so the way to write first. The template is made and approved in WhatsApp Manager; parameters fill its body's {{1}}, {{2}}….",
 		Annotations: sends},
 		func(ctx context.Context, in templateArgs) (*mcp.CallToolResult, error) {
-			to, _, err := checkTo(in.To, "")
-			if err != nil {
-				return nil, err
-			}
-			name := strings.TrimSpace(in.Template)
-			if !templateRule.MatchString(name) {
-				return nil, fmt.Errorf("template must be a template's name: lower-case letters, digits and _")
-			}
-			language := strings.TrimSpace(in.Language)
-			if language == "" {
-				language = "en_US"
-			}
-			if !languageRule.MatchString(language) {
-				return nil, fmt.Errorf("language must be a code such as en_US or de")
-			}
-			content := map[string]any{"name": name, "language": map[string]any{"code": language}}
-			if len(in.Parameters) > 0 {
-				params := make([]any, len(in.Parameters))
-				for i, p := range in.Parameters {
-					text, err := checkText(fmt.Sprintf("parameter %d", i+1), p, maxTemplate)
-					if err != nil {
-						return nil, err
-					}
-					params[i] = map[string]any{"type": "text", "text": text}
-				}
-				content["components"] = []any{map[string]any{"type": "body", "parameters": params}}
-			}
-			id, err := m.Send(ctx, outgoing(to, "", "template", content))
-			if err != nil {
-				return nil, err
-			}
-			words := "template " + name
-			if len(in.Parameters) > 0 {
-				words += ": " + strings.Join(in.Parameters, ", ")
-			}
-			inbox.sent(id, to, "", words)
-			return structured(map[string]any{"message": id, "to": to, "template": name}), nil
+			return sendTemplate(ctx, m, inbox, in)
 		})
 
 	addMessagingTools(server, inbox)
 	addReplyTool(server, m, inbox)
+}
+
+// sendMessage is send_message: a text to one person, kept in the inbox's store.
+func sendMessage(ctx context.Context, m *Meta, inbox *Inbox, in sendArgs) (*mcp.CallToolResult, error) {
+	to, replyTo, err := checkTo(in.To, in.ReplyTo)
+	if err != nil {
+		return nil, err
+	}
+	text, err := checkText("text", in.Text, maxText)
+	if err != nil {
+		return nil, err
+	}
+	id, err := m.Send(ctx, outgoing(to, replyTo, "text", map[string]any{"body": text, "preview_url": false}))
+	if err != nil {
+		return nil, err
+	}
+	inbox.sent(id, to, replyTo, text)
+	return structured(map[string]any{"message": id, "to": to}), nil
+}
+
+// askQuestion is ask_question: a question with its options as buttons or a list, kept in
+// the inbox's store with its options' labels.
+func askQuestion(ctx context.Context, m *Meta, inbox *Inbox, in askArgs) (*mcp.CallToolResult, error) {
+	to, replyTo, err := checkTo(in.To, in.ReplyTo)
+	if err != nil {
+		return nil, err
+	}
+	question, err := checkText("question", in.Question, maxQuestion)
+	if err != nil {
+		return nil, err
+	}
+	options, err := checkOptions(in.Options)
+	if err != nil {
+		return nil, err
+	}
+	id, err := questionID(in.ID)
+	if err != nil {
+		return nil, err
+	}
+	sent, err := m.Send(ctx, outgoing(to, replyTo, "interactive", questionContent(id, cut(strings.TrimSpace(in.Title), maxHeader), question, options)))
+	if err != nil {
+		return nil, err
+	}
+	labels := make([]string, len(options))
+	for i, o := range options {
+		labels[i] = o.Label
+	}
+	inbox.sent(sent, to, replyTo, question+"\n("+strings.Join(labels, " / ")+")")
+	return structured(map[string]any{"question": id, "message": sent, "to": to}), nil
+}
+
+// checkOptions is a question's options, trimmed: two to ten, each with a unique id and a
+// label that fits a button (up to three options) or a list row (more).
+func checkOptions(options []choice) ([]choice, error) {
+	if len(options) < 2 || len(options) > maxOptions {
+		return nil, fmt.Errorf("options must be two to %d", maxOptions)
+	}
+	most := maxButton
+	if len(options) > maxButtons {
+		most = maxRow
+	}
+	seen := map[string]bool{}
+	for i, o := range options {
+		o.ID, o.Label = strings.TrimSpace(o.ID), strings.TrimSpace(o.Label)
+		if !idRule.MatchString(o.ID) || seen[o.ID] {
+			return nil, fmt.Errorf("option %d: id must be unique, of letters, digits, _ . : -", i+1)
+		}
+		if o.Label == "" || utf8.RuneCountInString(o.Label) > most {
+			return nil, fmt.Errorf("option %d: label must be 1 to %d characters (WhatsApp's most for %d options)", i+1, most, len(options))
+		}
+		seen[o.ID] = true
+		options[i] = o
+	}
+	return options, nil
+}
+
+// questionID is the question's id as given, checked, or a new one when left out.
+func questionID(given string) (string, error) {
+	id := strings.TrimSpace(given)
+	if id == "" {
+		return newID(), nil
+	}
+	if !idRule.MatchString(id) {
+		return "", fmt.Errorf("id must be 1 to 64 letters, digits, _ . : -")
+	}
+	return id, nil
+}
+
+// sendTemplate is send_template: an approved template to one person, kept in the inbox's
+// store as its name and parameters.
+func sendTemplate(ctx context.Context, m *Meta, inbox *Inbox, in templateArgs) (*mcp.CallToolResult, error) {
+	to, _, err := checkTo(in.To, "")
+	if err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(in.Template)
+	if !templateRule.MatchString(name) {
+		return nil, fmt.Errorf("template must be a template's name: lower-case letters, digits and _")
+	}
+	content, err := templateContent(name, in.Language, in.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	id, err := m.Send(ctx, outgoing(to, "", "template", content))
+	if err != nil {
+		return nil, err
+	}
+	words := "template " + name
+	if len(in.Parameters) > 0 {
+		words += ": " + strings.Join(in.Parameters, ", ")
+	}
+	inbox.sent(id, to, "", words)
+	return structured(map[string]any{"message": id, "to": to, "template": name}), nil
+}
+
+// templateContent is a template message's content: its name, its language (en_US when left
+// out) and its body's parameters, checked.
+func templateContent(name, language string, parameters []string) (map[string]any, error) {
+	language = strings.TrimSpace(language)
+	if language == "" {
+		language = "en_US"
+	}
+	if !languageRule.MatchString(language) {
+		return nil, fmt.Errorf("language must be a code such as en_US or de")
+	}
+	content := map[string]any{"name": name, "language": map[string]any{"code": language}}
+	if len(parameters) == 0 {
+		return content, nil
+	}
+	params := make([]any, len(parameters))
+	for i, p := range parameters {
+		text, err := checkText(fmt.Sprintf("parameter %d", i+1), p, maxTemplate)
+		if err != nil {
+			return nil, err
+		}
+		params[i] = map[string]any{"type": "text", "text": text}
+	}
+	content["components"] = []any{map[string]any{"type": "body", "parameters": params}}
+	return content, nil
 }
 
 func newID() string {

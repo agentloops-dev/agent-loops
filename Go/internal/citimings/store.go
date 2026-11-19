@@ -336,52 +336,60 @@ type Days interface {
 // loses its pull request runs' steps; past MostRuns, the oldest pull request runs go first,
 // then the oldest runs of any kind. It says the days it changed or removed.
 func SweepDays(d Days, now time.Time) ([]string, error) {
+	kept, changed, total, err := boundEachDay(d, now)
+	if err != nil || total <= mostRuns {
+		return changed, err
+	}
+	return dropOldestRuns(d, kept, changed, total-mostRuns)
+}
+
+// heldDay is a day SweepDays keeps: how many runs it has, how many of them are pull request
+// runs, and whether it was removed for the bound on runs.
+type heldDay struct {
+	day     string
+	n       int
+	pr      int
+	removed bool
+}
+
+// boundEachDay removes each day past KeepDays and takes the steps off each day past StepDays.
+// It says the days it keeps, the days it changed or removed, and how many runs it keeps.
+func boundEachDay(d Days, now time.Time) ([]heldDay, []string, int, error) {
 	days, err := d.List()
 	if err != nil {
-		return nil, err
+		return nil, nil, 0, err
 	}
 	oldest, stepsFrom := dayOf(now.AddDate(0, 0, -KeepDays)), dayOf(now.AddDate(0, 0, -StepDays))
-	type held struct {
-		day     string
-		n       int
-		pr      int
-		removed bool
-	}
-	var kept []held
+	var kept []heldDay
 	var changed []string
 	total := 0
 	for _, day := range days {
 		if day < oldest {
 			if err := d.Remove(day); err != nil {
-				return changed, err
+				return kept, changed, total, err
 			}
 			changed = append(changed, day)
 			continue
 		}
 		runs, err := d.Read(day)
 		if err != nil {
-			return changed, err
+			return kept, changed, total, err
 		}
 		if stripped, ok := stripSteps(day, stepsFrom, runs); ok {
 			if err := d.Write(day, stripped); err != nil {
-				return changed, err
+				return kept, changed, total, err
 			}
 			changed = append(changed, day)
 		}
-		h := held{day: day, n: len(runs)}
-		for _, run := range runs {
-			if run.pullRequest() {
-				h.pr++
-			}
-		}
-		kept = append(kept, h)
+		kept = append(kept, heldDay{day: day, n: len(runs), pr: pullRequestRuns(runs)})
 		total += len(runs)
 	}
-	if total <= mostRuns {
-		return changed, nil
-	}
-	// Past the bound: the oldest pull request runs first, then the oldest runs of any kind.
-	over := total - mostRuns
+	return kept, changed, total, nil
+}
+
+// dropOldestRuns drops over runs from the kept days: the oldest pull request runs first, then
+// the oldest runs of any kind. It says changed with the days it changed or removed.
+func dropOldestRuns(d Days, kept []heldDay, changed []string, over int) ([]string, error) {
 	for _, onlyPRs := range []bool{true, false} {
 		for i := range kept {
 			if over == 0 {
@@ -394,37 +402,53 @@ func SweepDays(d Days, now time.Time) ([]string, error) {
 			if err != nil {
 				return changed, err
 			}
-			sortRuns(runs)
 			var left []Run
-			for _, run := range runs {
-				if over > 0 && (!onlyPRs || run.pullRequest()) {
-					over--
-					continue
-				}
-				left = append(left, run)
-			}
+			left, over = dropOldest(runs, onlyPRs, over)
 			if !slices.Contains(changed, kept[i].day) {
 				changed = append(changed, kept[i].day)
 			}
-			if len(left) == 0 {
-				kept[i].removed = true
-				if err := d.Remove(kept[i].day); err != nil {
-					return changed, err
-				}
-				continue
-			}
-			kept[i].pr = 0
-			for _, run := range left {
-				if run.pullRequest() {
-					kept[i].pr++
-				}
-			}
-			if err := d.Write(kept[i].day, left); err != nil {
+			if err := keepDayRuns(d, &kept[i], left); err != nil {
 				return changed, err
 			}
 		}
 	}
 	return changed, nil
+}
+
+// dropOldest is runs without the oldest over of them (only pull request runs when onlyPRs),
+// and how many more are still to drop.
+func dropOldest(runs []Run, onlyPRs bool, over int) ([]Run, int) {
+	sortRuns(runs)
+	var left []Run
+	for _, run := range runs {
+		if over > 0 && (!onlyPRs || run.pullRequest()) {
+			over--
+			continue
+		}
+		left = append(left, run)
+	}
+	return left, over
+}
+
+// keepDayRuns writes left as h's day, or removes the day when nothing is left.
+func keepDayRuns(d Days, h *heldDay, left []Run) error {
+	if len(left) == 0 {
+		h.removed = true
+		return d.Remove(h.day)
+	}
+	h.pr = pullRequestRuns(left)
+	return d.Write(h.day, left)
+}
+
+// pullRequestRuns is how many of runs are pull request runs.
+func pullRequestRuns(runs []Run) int {
+	n := 0
+	for _, run := range runs {
+		if run.pullRequest() {
+			n++
+		}
+	}
+	return n
 }
 
 // BoundDay is a day's runs as the bounds at now keep them: none past KeepDays, and no steps

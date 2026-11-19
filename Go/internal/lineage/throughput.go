@@ -388,16 +388,8 @@ func ToComplete(history []Past, nodes []wire.LineageCostNode, epic wire.LineageN
 			open = append(open, matches)
 			continue
 		}
-		n, ok := byNode[c.Node]
-		if !ok || n.Estimate == nil {
-			continue
-		}
-		actual := Rollup(nodes, c.Node).Total.Cost
-		for currency, kept := range n.Estimate.Cost {
-			if a := actual[currency]; kept > 0 && a > 0 {
-				logs[currency] = append(logs[currency], math.Log(a/kept))
-				actuals[currency] += a
-			}
+		if n, ok := byNode[c.Node]; ok && n.Estimate != nil {
+			addEstimateRatios(logs, actuals, n.Estimate.Cost, Rollup(nodes, c.Node).Total.Cost)
 		}
 	}
 	if len(open) == 0 {
@@ -416,35 +408,13 @@ func ToComplete(history []Past, nodes []wire.LineageCostNode, epic wire.LineageN
 	t := &wire.LineageForecastToComplete{Cost: map[string]wire.LineageEstimateRange{}}
 	own := byNode[epic].Banked.Cost
 	for _, currency := range currencies {
-		costs := make([][]float64, 0, len(open))
-		for _, matches := range open {
-			var v []float64
-			for _, m := range matches {
-				if c, ok := m.Cost.Cost[currency]; ok {
-					v = append(v, c)
-				}
-			}
-			if len(v) < EstimateMinMatches {
-				costs = nil
-				break
-			}
-			costs = append(costs, v)
-		}
+		costs := openCosts(open, currency)
 		if costs == nil {
 			continue
 		}
 		mu, sigma := meanSD(logs[currency])
 		lead := own[currency] / actuals[currency]
-		rng := Rng("complete:" + currency + ":" + epic.Ref)
-		sums := make([]float64, ThroughputDraws)
-		for i := range sums {
-			factor := math.Exp(mu + sigma*rng.NormFloat64())
-			for _, v := range costs {
-				sums[i] += v[rng.IntN(len(v))] * factor
-			}
-			sums[i] *= 1 + lead
-		}
-		t.Cost[currency] = *rangeOf(sums)
+		t.Cost[currency] = *rangeOf(drawToComplete(costs, mu, sigma, lead, "complete:"+currency+":"+epic.Ref))
 		if t.Closed == 0 || currency == "USD" {
 			t.Ratio, t.Closed, t.LeadRatio = math.Exp(mu), int64(len(logs[currency])), lead
 		}
@@ -453,6 +423,51 @@ func ToComplete(history []Past, nodes []wire.LineageCostNode, epic wire.LineageN
 		return nil
 	}
 	return t
+}
+
+// addEstimateRatios adds a closed child's log of actual over kept estimate, and its actual
+// cost, for each currency where both are above 0.
+func addEstimateRatios(logs map[string][]float64, actuals map[string]float64, kept, actual map[string]float64) {
+	for currency, k := range kept {
+		if a := actual[currency]; k > 0 && a > 0 {
+			logs[currency] = append(logs[currency], math.Log(a/k))
+			actuals[currency] += a
+		}
+	}
+}
+
+// openCosts is, for each open child, the costs in currency of the past issues that match
+// it, or nil when one has fewer than EstimateMinMatches.
+func openCosts(open [][]Past, currency string) [][]float64 {
+	costs := make([][]float64, 0, len(open))
+	for _, matches := range open {
+		var v []float64
+		for _, m := range matches {
+			if c, ok := m.Cost.Cost[currency]; ok {
+				v = append(v, c)
+			}
+		}
+		if len(v) < EstimateMinMatches {
+			return nil
+		}
+		costs = append(costs, v)
+	}
+	return costs
+}
+
+// drawToComplete draws ThroughputDraws sums of one match's cost per open child, each scaled
+// by a drawn ratio and the epic's own lead, seeded by key.
+func drawToComplete(costs [][]float64, mu, sigma, lead float64, key string) []float64 {
+	rng := Rng(key)
+	sums := make([]float64, ThroughputDraws)
+	for i := range sums {
+		factor := math.Exp(mu + sigma*rng.NormFloat64())
+		for _, v := range costs {
+			sums[i] += v[rng.IntN(len(v))] * factor
+		}
+		sums[i] *= 1 + lead
+	}
+	return sums
 }
 
 // meanSD is the mean and the sample standard deviation of v.

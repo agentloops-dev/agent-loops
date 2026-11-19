@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // SyncWrites is whether WriteAtomically syncs the file before it renames it. Only tests
@@ -16,10 +17,37 @@ import (
 // (#4709). A test proves nothing about a crash, so it gives up nothing.
 var SyncWrites = true
 
+// The write fault is a test's way into every write the store makes (#6184): it is called before
+// the write, with the file, whether the write appends to it (a transcript line) or makes it
+// whole, and the bytes. A test copies the root there, which is what a kill at that point
+// leaves, or returns an error, which is a disk that refuses the write. Nil in a build.
+var writeFault atomic.Pointer[func(file string, appends bool, data []byte) error]
+
+// SetWriteFault sets (or, with nil, clears) the hook. Other tests' daemons write
+// at the same time, so a hook looks at the file's path and lets a file that is not its own go.
+func SetWriteFault(f func(file string, appends bool, data []byte) error) {
+	if f == nil {
+		writeFault.Store(nil)
+		return
+	}
+	writeFault.Store(&f)
+}
+
+// fault runs the hook, if there is one.
+func fault(file string, appends bool, data []byte) error {
+	if f := writeFault.Load(); f != nil {
+		return (*f)(file, appends, data)
+	}
+	return nil
+}
+
 // WriteAtomically writes data whole, as StoreCoding.writeAtomically does: to a temporary
 // file beside it, synced, then renamed into place, so a crash leaves the old file or the
 // new one and never a torn one.
 func WriteAtomically(file string, data []byte, mode os.FileMode) error {
+	if err := fault(file, false, data); err != nil {
+		return err
+	}
 	dir := filepath.Dir(file)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err

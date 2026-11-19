@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -50,6 +51,18 @@ func supervise(args []string) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 	wait, starts := time.Second, 0
+	// SIGUSR1 asks the host for its stacks (#6260): the supervisor, which would end on it,
+	// passes it on to the host it runs.
+	var running atomic.Pointer[os.Process]
+	usr1 := make(chan os.Signal, 1)
+	signal.Notify(usr1, syscall.SIGUSR1)
+	go func() {
+		for range usr1 {
+			if p := running.Load(); p != nil {
+				_ = p.Signal(syscall.SIGUSR1)
+			}
+		}
+	}()
 	for {
 		cmd := exec.Command(host, args...)
 		// The host stamps its own lines; a panic's stack goes in as it is.
@@ -64,6 +77,7 @@ func supervise(args []string) {
 		up := time.Now()
 		exited := make(chan error, 1)
 		go func() { exited <- cmd.Wait() }()
+		running.Store(cmd.Process)
 		var err error
 		select {
 		case s := <-sigs:

@@ -99,6 +99,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	dumpStacksOnSignal(ctx)
 	d, err := agentsd.New(ctx, cl.root)
 	if err != nil {
 		log.Fatal(err)

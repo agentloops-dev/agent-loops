@@ -83,85 +83,22 @@ func (d *Daemon) countReportEvents() {
 	d.reportMu.Lock()
 	seen := d.reportLocked().EventsSeen
 	d.reportMu.Unlock()
-	d.eventMu.Lock()
-	// A log that starts again (its state lost) gives out its positions again.
-	if n := len(d.eventList); n > 0 && d.eventList[n-1].Position < seen {
-		seen = 0
-	}
-	var list []wire.Event
-	for _, e := range d.eventList {
-		if e.Position > seen {
-			list = append(list, e)
-		}
-	}
-	d.eventMu.Unlock()
+	list := d.reportEventsAfter(seen)
 	if len(list) == 0 {
 		return
 	}
-	type add struct {
-		folder, runtime, workflow, hour string
-		counts                          *wire.ReportCounts
-	}
-	var adds []add
+	var adds []reportEventAdd
 	var branches map[string]*wire.Agent
 	for _, e := range list {
 		switch e.Name {
 		case "agent.started", "agent.failed":
-			c := blankCounts()
-			workflow := ""
-			if a := d.Store.Agent(wire.UUID(e.Details["agent"])); a != nil {
-				workflow = reportWorkflow(a)
-			}
-			if e.Name == "agent.started" {
-				c.Sessions = 1
-			} else {
-				c.FailedSessions = 1
-				if workflow != "" {
-					c.WorkflowFailures = 1
-				}
-			}
-			adds = append(adds, add{eventFolder(e), e.Details["runtime"], workflow, utcHour(e.At.Time()), c})
+			adds = append(adds, d.reportEventAddOfAgent(e))
 		case "workflow.ran":
-			c := blankCounts()
-			c.WorkflowRuns = 1
-			runtime := ""
-			if a := d.Store.Agent(wire.UUID(e.Details["agent"])); a != nil {
-				runtime = a.RuntimeID
-			}
-			adds = append(adds, add{eventFolder(e), runtime, e.Details["workflow"], utcHour(e.At.Time()), c})
+			adds = append(adds, d.reportEventAddOfWorkflowRan(e))
 		case "pr.opened", "pr.merged":
-			var p prPayload
-			if json.Unmarshal([]byte(e.Details["payload"]), &p) != nil || p.PR.Branch == "" {
-				continue
+			if add, ok := d.reportEventAddOfPR(e, &branches); ok {
+				adds = append(adds, add)
 			}
-			if branches == nil {
-				branches = d.agentBranches()
-			}
-			a := branches[p.PR.Branch]
-			if a == nil {
-				continue
-			}
-			at := e.At.Time()
-			stamp := p.OpenedAt
-			if e.Name == "pr.merged" {
-				stamp = p.MergedAt
-			}
-			if t, err := time.Parse(time.RFC3339, stamp); err == nil {
-				at = t
-			}
-			c := blankCounts()
-			if e.Name == "pr.opened" {
-				c.PrsOpened = 1
-			} else {
-				c.PrsMerged = 1
-				if strings.HasPrefix(p.PR.Title, "Revert") {
-					c.PrsReverted = 1
-				}
-				if took := at.Sub(a.CreatedAt.Time()); took > 0 {
-					c.MergeSeconds = took.Seconds()
-				}
-			}
-			adds = append(adds, add{reportFolder(a), a.RuntimeID, reportWorkflow(a), utcHour(at), c})
 		}
 	}
 	last := list[len(list)-1].Position
@@ -176,6 +113,97 @@ func (d *Daemon) countReportEvents() {
 	}
 	d.reportLocked().EventsSeen = last
 	d.reportChangedLocked()
+}
+
+// reportEventAdd is the counts of one event, with the folder, runtime, workflow and hour
+// they go to.
+type reportEventAdd struct {
+	folder, runtime, workflow, hour string
+	counts                          *wire.ReportCounts
+}
+
+// reportEventsAfter is the events in the log after position seen, or every event when the
+// log started again.
+func (d *Daemon) reportEventsAfter(seen int64) []wire.Event {
+	d.eventMu.Lock()
+	defer d.eventMu.Unlock()
+	// A log that starts again (its state lost) gives out its positions again.
+	if n := len(d.eventList); n > 0 && d.eventList[n-1].Position < seen {
+		seen = 0
+	}
+	var list []wire.Event
+	for _, e := range d.eventList {
+		if e.Position > seen {
+			list = append(list, e)
+		}
+	}
+	return list
+}
+
+// reportEventAddOfAgent is the counts of an agent.started or agent.failed event.
+func (d *Daemon) reportEventAddOfAgent(e wire.Event) reportEventAdd {
+	c := blankCounts()
+	workflow := ""
+	if a := d.Store.Agent(wire.UUID(e.Details["agent"])); a != nil {
+		workflow = reportWorkflow(a)
+	}
+	if e.Name == "agent.started" {
+		c.Sessions = 1
+	} else {
+		c.FailedSessions = 1
+		if workflow != "" {
+			c.WorkflowFailures = 1
+		}
+	}
+	return reportEventAdd{eventFolder(e), e.Details["runtime"], workflow, utcHour(e.At.Time()), c}
+}
+
+// reportEventAddOfWorkflowRan is the counts of a workflow.ran event.
+func (d *Daemon) reportEventAddOfWorkflowRan(e wire.Event) reportEventAdd {
+	c := blankCounts()
+	c.WorkflowRuns = 1
+	runtime := ""
+	if a := d.Store.Agent(wire.UUID(e.Details["agent"])); a != nil {
+		runtime = a.RuntimeID
+	}
+	return reportEventAdd{eventFolder(e), runtime, e.Details["workflow"], utcHour(e.At.Time()), c}
+}
+
+// reportEventAddOfPR is the counts of a pr.opened or pr.merged event, when its branch is an
+// agent's. It reads the agents' branches into *branches the first time it needs them.
+func (d *Daemon) reportEventAddOfPR(e wire.Event, branches *map[string]*wire.Agent) (reportEventAdd, bool) {
+	var p prPayload
+	if json.Unmarshal([]byte(e.Details["payload"]), &p) != nil || p.PR.Branch == "" {
+		return reportEventAdd{}, false
+	}
+	if *branches == nil {
+		*branches = d.agentBranches()
+	}
+	a := (*branches)[p.PR.Branch]
+	if a == nil {
+		return reportEventAdd{}, false
+	}
+	at := e.At.Time()
+	stamp := p.OpenedAt
+	if e.Name == "pr.merged" {
+		stamp = p.MergedAt
+	}
+	if t, err := time.Parse(time.RFC3339, stamp); err == nil {
+		at = t
+	}
+	c := blankCounts()
+	if e.Name == "pr.opened" {
+		c.PrsOpened = 1
+	} else {
+		c.PrsMerged = 1
+		if strings.HasPrefix(p.PR.Title, "Revert") {
+			c.PrsReverted = 1
+		}
+		if took := at.Sub(a.CreatedAt.Time()); took > 0 {
+			c.MergeSeconds = took.Seconds()
+		}
+	}
+	return reportEventAdd{reportFolder(a), a.RuntimeID, reportWorkflow(a), utcHour(at), c}, true
 }
 
 // agentBranches is each branch an agent here works in, the newest agent's.

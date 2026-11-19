@@ -161,8 +161,7 @@ Go/internal/azuredevopsmcp/events.go <-> Go/internal/bitbucketmcp/events.go
 Go/internal/azuredevopsmcp/events.go <-> Go/internal/bitbucketmcp/events.go
 Go/internal/azuredevopsmcp/events.go <-> Go/internal/bitbucketmcp/events.go
 Go/internal/azuredevopsmcp/events.go <-> Go/internal/bitbucketmcp/events.go
-Go/internal/azuredevopsmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/azuredevopsmcp/events.go <-> Go/internal/forgejomcp/events.go
+Go/internal/azuredevopsmcp/events.go <-> Go/internal/bitbucketmcp/events.go
 Go/internal/azuredevopsmcp/events.go <-> Go/internal/forgejomcp/events.go
 Go/internal/azuredevopsmcp/events.go <-> Go/internal/forgejomcp/events.go
 Go/internal/azuredevopsmcp/events.go <-> Go/internal/forgejomcp/events.go
@@ -215,15 +214,6 @@ Go/internal/bitbucketmcp/bitbucket.go <-> Go/internal/gitlabmcp/gitlab.go
 Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
 Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
 Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
-Go/internal/bitbucketmcp/events.go <-> Go/internal/forgejomcp/events.go
 Go/internal/bitbucketmcp/events.go <-> Go/internal/githubmcp/events.go
 Go/internal/bitbucketmcp/events.go <-> Go/internal/githubmcp/events.go
 Go/internal/bitbucketmcp/events.go <-> Go/internal/githubmcp/events.go
@@ -252,7 +242,6 @@ Go/internal/bitbucketmcp/schema.go <-> Go/internal/githubmcp/schema.go
 Go/internal/bitbucketmcp/schema.go <-> Go/internal/gitlabmcp/schema.go
 Go/internal/bitbucketmcp/schema.go <-> Go/internal/gitlabmcp/schema.go
 Go/internal/bitbucketmcp/tools.go <-> Go/internal/bitbucketmcp/tools.go
-Go/internal/bitbucketmcp/tools.go <-> Go/internal/forgejomcp/tools.go
 Go/internal/bitbucketmcp/tools.go <-> Go/internal/forgejomcp/tools.go
 Go/internal/bitbucketmcp/tools.go <-> Go/internal/forgejomcp/tools.go
 Go/internal/bitbucketmcp/tools.go <-> Go/internal/forgejomcp/tools.go

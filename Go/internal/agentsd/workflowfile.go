@@ -324,54 +324,54 @@ func parseWorkflow(text, id, folder string) wire.Workflow {
 	w := wire.Workflow{WorkflowID: id, Folder: store.FolderURL(folder), Name: defaultWorkflowName(id), Triggers: []wire.WorkflowTrigger{},
 		Mode: wire.WorkflowModeNew, UnknownFields: map[string]wire.JSONValue{},
 		Settings: wire.WorkflowSettings{Options: map[string]string{}, Labels: []string{}}}
-	var front []string
-	broken := func(why string) wire.Workflow {
-		b := w
-		b.Problem = &wire.WorkflowProblem{Unreadable: &wire.WorkflowProblemUnreadable{Value: why}}
-		if front != nil {
-			if m, err := yamlnode.MappingFrom(front); err == nil {
-				if n, ok := m["name"].Text(); ok && n != "" {
-					b.Name = n
-				}
-				if on, ok := m["on"]; ok {
-					if ts, err := parseTriggers(on); err == nil {
-						b.Triggers = ts
-					}
-				}
-				if mode, ok := m["agent"].Text(); ok && (mode == "new" || mode == "standing" || mode == "triggering") {
-					b.Mode = wire.WorkflowMode(mode)
-				}
-				if t, ok := m["cooldown"].Text(); ok {
-					if c, err := parseCooldown(t); err == nil {
-						b.Cooldown = &c
-					}
-				}
-				if n, ok := m["hours"]; ok {
-					if h, err := parseHours(n); err == nil {
-						b.Hours = h
-					}
-				}
-				e, has := m["enabled"]
-				b.Enabled = flag(e, has)
-				a, has := m["archived"]
-				b.Archived = flag(a, has)
-				if t, ok := m["when-done"].Text(); ok {
-					if wd, ok := whenDoneOf(t); ok {
-						b.WhenDone = &wd
-					}
-				}
-				if h, ok := m["runs-on"]; ok {
-					if labels, err := runsOnLabels(h); err == nil && len(labels) > 0 {
-						b.RunsOn = labels
-					}
-				}
-			}
-		}
-		return b
+	front, body, why := workflowFrontMatter(text)
+	if why != "" {
+		return workflowBroken(w, front, why)
 	}
+	m, err := yamlnode.MappingFrom(front)
+	if err != nil {
+		return workflowBroken(w, front, failureMessage(err, "The metadata could not be read"))
+	}
+	if on, ok := m["on"]; ok {
+		ts, err := parseTriggers(on)
+		if err != nil {
+			return workflowBroken(w, front, failureMessage(err, "The triggers could not be read"))
+		}
+		w.Triggers = ts
+	}
+	workflowApplyMode(&w, m)
+	if why := workflowApplyTiming(&w, m); why != "" {
+		return workflowBroken(w, front, why)
+	}
+	if why := workflowApplyFlags(&w, m); why != "" {
+		return workflowBroken(w, front, why)
+	}
+	if why := workflowApplyPlacement(&w, m); why != "" {
+		return workflowBroken(w, front, why)
+	}
+	s, err := workflowSettings(m)
+	if err == nil && s.RuntimeID == nil {
+		err = autoWords(s) // a file with no `runtime:` runs on Auto (#2873)
+	}
+	if err != nil {
+		return workflowBroken(w, front, failureMessage(err, "The settings could not be read"))
+	}
+	w.Settings = s
+	workflowCollectUnknownFields(&w, m)
+	if n, ok := m["name"].Text(); ok && n != "" {
+		w.Name = n
+	}
+	w.Prompt = body
+	return w
+}
+
+// workflowFrontMatter splits a workflow file into its metadata lines and its prompt.
+// It gives why the file is broken, or "" when it is not. The front lines are nil until
+// the metadata block is closed.
+func workflowFrontMatter(text string) (front []string, body, why string) {
 	lines := strings.Split(text, "\n")
 	if strings.TrimSpace(lines[0]) != "---" {
-		return broken("This file does not start with a metadata block")
+		return nil, "", "This file does not start with a metadata block"
 	}
 	closing := -1
 	for i := 1; i < len(lines); i++ {
@@ -381,24 +381,71 @@ func parseWorkflow(text, id, folder string) wire.Workflow {
 		}
 	}
 	if closing < 0 {
-		return broken("The metadata block is never closed")
+		return nil, "", "The metadata block is never closed"
 	}
 	front = lines[1:closing]
-	body := stripFrontMatter(text)
+	body = stripFrontMatter(text)
 	if strings.TrimSpace(body) == "" {
-		return broken("There is no prompt under the metadata")
+		return front, body, "There is no prompt under the metadata"
 	}
-	m, err := yamlnode.MappingFrom(front)
-	if err != nil {
-		return broken(failureMessage(err, "The metadata could not be read"))
+	return front, body, ""
+}
+
+// workflowBroken is the workflow w with an unreadable problem. It keeps what it can still
+// read from the front lines.
+func workflowBroken(w wire.Workflow, front []string, why string) wire.Workflow {
+	b := w
+	b.Problem = &wire.WorkflowProblem{Unreadable: &wire.WorkflowProblemUnreadable{Value: why}}
+	if front != nil {
+		if m, err := yamlnode.MappingFrom(front); err == nil {
+			workflowSalvageFields(&b, m)
+		}
+	}
+	return b
+}
+
+// workflowSalvageFields sets on a broken workflow each field of m that is still readable.
+func workflowSalvageFields(b *wire.Workflow, m map[string]yamlnode.Node) {
+	if n, ok := m["name"].Text(); ok && n != "" {
+		b.Name = n
 	}
 	if on, ok := m["on"]; ok {
-		ts, err := parseTriggers(on)
-		if err != nil {
-			return broken(failureMessage(err, "The triggers could not be read"))
+		if ts, err := parseTriggers(on); err == nil {
+			b.Triggers = ts
 		}
-		w.Triggers = ts
 	}
+	if mode, ok := m["agent"].Text(); ok && (mode == "new" || mode == "standing" || mode == "triggering") {
+		b.Mode = wire.WorkflowMode(mode)
+	}
+	if t, ok := m["cooldown"].Text(); ok {
+		if c, err := parseCooldown(t); err == nil {
+			b.Cooldown = &c
+		}
+	}
+	if n, ok := m["hours"]; ok {
+		if h, err := parseHours(n); err == nil {
+			b.Hours = h
+		}
+	}
+	e, has := m["enabled"]
+	b.Enabled = flag(e, has)
+	a, has := m["archived"]
+	b.Archived = flag(a, has)
+	if t, ok := m["when-done"].Text(); ok {
+		if wd, ok := whenDoneOf(t); ok {
+			b.WhenDone = &wd
+		}
+	}
+	if h, ok := m["runs-on"]; ok {
+		if labels, err := runsOnLabels(h); err == nil && len(labels) > 0 {
+			b.RunsOn = labels
+		}
+	}
+}
+
+// workflowApplyMode sets the agent mode from m, and the problem for a mode or a set of
+// triggers that is not supported.
+func workflowApplyMode(w *wire.Workflow, m map[string]yamlnode.Node) {
 	if named, ok := m["agent"].Text(); ok && named != "" {
 		switch named {
 		case "new", "standing", "triggering":
@@ -416,15 +463,20 @@ func parseWorkflow(text, id, folder string) wire.Workflow {
 			w.Problem = &wire.WorkflowProblem{TriggerNotSupported: &wire.WorkflowProblemTriggerNotSupported{Value: triggerName(w.Triggers[0])}}
 		}
 	}
+}
+
+// workflowApplyTiming sets the cooldown and the hours from m. It gives why they cannot be
+// read, or "".
+func workflowApplyTiming(w *wire.Workflow, m map[string]yamlnode.Node) string {
 	if n, ok := m["cooldown"]; ok {
 		t, isText := n.Text()
 		if !isText {
-			return broken("`cooldown:` must be a single value, like 15m")
+			return "`cooldown:` must be a single value, like 15m"
 		}
 		if t != "" {
 			c, err := parseCooldown(t)
 			if err != nil {
-				return broken(failureMessage(err, ""))
+				return failureMessage(err, "")
 			}
 			w.Cooldown = &c
 		}
@@ -432,52 +484,74 @@ func parseWorkflow(text, id, folder string) wire.Workflow {
 	if n, ok := m["hours"]; ok {
 		h, err := parseHours(n)
 		if err != nil {
-			return broken(failureMessage(err, ""))
+			return failureMessage(err, "")
 		}
 		w.Hours = h
 	}
+	return ""
+}
+
+// workflowApplyFlags sets the true-or-false keys from m. It gives why one cannot be read,
+// or "".
+func workflowApplyFlags(w *wire.Workflow, m map[string]yamlnode.Node) string {
 	for _, key := range []string{"enabled", "archived", "continue-when-back", "muted"} {
-		if n, ok := m[key]; ok {
-			t, _ := n.Text()
-			var v *bool
-			switch t {
-			case "true":
-				b := true
-				v = &b
-			case "false":
-				b := false
-				v = &b
-			case "":
-			default:
-				return broken("`" + key + ":` must be true or false")
+		n, ok := m[key]
+		if !ok {
+			continue
+		}
+		v, valid := workflowFlagValue(n)
+		if !valid {
+			return "`" + key + ":` must be true or false"
+		}
+		switch key {
+		case "enabled":
+			w.Enabled = v
+		case "archived":
+			w.Archived = v
+		case "muted":
+			// Unmuted is no choice at all, as continue-when-back's off is.
+			if v != nil && *v {
+				w.Muted = v
 			}
-			switch key {
-			case "enabled":
-				w.Enabled = v
-			case "archived":
-				w.Archived = v
-			case "muted":
-				// Unmuted is no choice at all, as continue-when-back's off is.
-				if v != nil && *v {
-					w.Muted = v
-				}
-			default:
-				// Off is no choice at all, as when-done's keep is.
-				if v != nil && *v {
-					w.ContinueWhenBack = v
-				}
+		default:
+			// Off is no choice at all, as when-done's keep is.
+			if v != nil && *v {
+				w.ContinueWhenBack = v
 			}
 		}
 	}
+	return ""
+}
+
+// workflowFlagValue reads a true-or-false key: nil when it is empty, and false for valid
+// when it is neither.
+func workflowFlagValue(n yamlnode.Node) (v *bool, valid bool) {
+	t, _ := n.Text()
+	switch t {
+	case "true":
+		b := true
+		return &b, true
+	case "false":
+		b := false
+		return &b, true
+	case "":
+		return nil, true
+	}
+	return nil, false
+}
+
+// workflowApplyPlacement sets when-done and runs-on from m. It gives why they cannot be
+// read, or "".
+func workflowApplyPlacement(w *wire.Workflow, m map[string]yamlnode.Node) string {
 	if n, ok := m["when-done"]; ok {
 		t, isText := n.Text()
 		if !isText {
-			return broken("`when-done:` must be keep, archive-allowed or archive")
+			return "`when-done:` must be keep, archive-allowed or archive"
 		}
 		if t != "" {
 			wd, ok := whenDoneOf(t)
 			if !ok {
-				return broken("`when-done:` must be keep, archive-allowed or archive")
+				return "`when-done:` must be keep, archive-allowed or archive"
 			}
 			w.WhenDone = &wd
 		}
@@ -485,20 +559,17 @@ func parseWorkflow(text, id, folder string) wire.Workflow {
 	if n, ok := m["runs-on"]; ok {
 		labels, err := runsOnLabels(n)
 		if err != nil {
-			return broken(failureMessage(err, ""))
+			return failureMessage(err, "")
 		}
 		if len(labels) > 0 {
 			w.RunsOn = labels
 		}
 	}
-	s, err := workflowSettings(m)
-	if err == nil && s.RuntimeID == nil {
-		err = autoWords(s) // a file with no `runtime:` runs on Auto (#2873)
-	}
-	if err != nil {
-		return broken(failureMessage(err, "The settings could not be read"))
-	}
-	w.Settings = s
+	return ""
+}
+
+// workflowCollectUnknownFields keeps each key of m that a workflow file does not know.
+func workflowCollectUnknownFields(w *wire.Workflow, m map[string]yamlnode.Node) {
 	known := map[string]bool{"on": true, "agent": true, "name": true, "permission-mode": true, "runtime": true, "model": true,
 		"labels": true, "effort": true, "options": true, "enabled": true, "archived": true, "cooldown": true, "hours": true, "runs-on": true, "when-done": true,
 		"continue-when-back": true, "permission-requests": true, "sandbox": true}
@@ -508,11 +579,6 @@ func parseWorkflow(text, id, folder string) wire.Workflow {
 			w.UnknownFields[k] = b
 		}
 	}
-	if n, ok := m["name"].Text(); ok && n != "" {
-		w.Name = n
-	}
-	w.Prompt = body
-	return w
 }
 
 func whenDoneOf(t string) (wire.WorkflowWhenDone, bool) {
@@ -553,23 +619,9 @@ func parseTrigger(n yamlnode.Node) (wire.WorkflowTrigger, error) {
 	if name, ok := n.Text(); ok {
 		return triggerNamed(name, map[string]yamlnode.Node{})
 	}
-	// `- type: pr.merged` with its settings beside it (#4730); name is read the same way,
-	// for one release.
 	if n.IsMapping() {
-		for _, key := range []string{"type", "name"} {
-			if v, ok := n.Mapping[key]; ok {
-				name, isText := v.Text()
-				if !isText || name == "" {
-					return wire.WorkflowTrigger{}, failure("`" + key + ":` in a trigger is the event's type, such as pr.merged")
-				}
-				settings := map[string]yamlnode.Node{}
-				for k, s := range n.Mapping {
-					if k != "type" && k != "name" {
-						settings[k] = s
-					}
-				}
-				return triggerNamed(name, settings)
-			}
+		if t, found, err := parseTriggerTyped(n); found {
+			return t, err
 		}
 	}
 	if !n.IsMapping() || len(n.Mapping) != 1 {
@@ -585,6 +637,30 @@ func parseTrigger(n yamlnode.Node) (wire.WorkflowTrigger, error) {
 		return triggerNamed(name, v.Mapping)
 	}
 	return wire.WorkflowTrigger{}, failure("A trigger must be a name, or a name with settings under it")
+}
+
+// parseTriggerTyped reads `- type: pr.merged` with its settings beside it (#4730); name is
+// read the same way, for one release. found is false when the mapping has neither key.
+func parseTriggerTyped(n yamlnode.Node) (t wire.WorkflowTrigger, found bool, err error) {
+	for _, key := range []string{"type", "name"} {
+		v, ok := n.Mapping[key]
+		if !ok {
+			continue
+		}
+		name, isText := v.Text()
+		if !isText || name == "" {
+			return wire.WorkflowTrigger{}, true, failure("`" + key + ":` in a trigger is the event's type, such as pr.merged")
+		}
+		settings := map[string]yamlnode.Node{}
+		for k, s := range n.Mapping {
+			if k != "type" && k != "name" {
+				settings[k] = s
+			}
+		}
+		t, err := triggerNamed(name, settings)
+		return t, true, err
+	}
+	return wire.WorkflowTrigger{}, false, nil
 }
 
 func unrecognisedTrigger(name string, keys map[string]any) wire.WorkflowTrigger {
@@ -645,63 +721,85 @@ func triggerNamedOwn(name string, keys map[string]yamlnode.Node) (wire.WorkflowT
 		raw[k] = v.JSON()
 	}
 	if isServerEventName(name) {
-		// A server's event (#383): `noun.verbed`, not the app's, its keys the subscription's
-		// arguments rather than details matched here. Whether a server offers it is known
-		// only once one is asked, so that is said on the page, not here. Its arguments keep
-		// the types the file wrote, `anyone: true` a boolean and `pr: 12` a number, since
-		// the server's schema checks them by type (#5748).
-		typed := map[string]any{}
-		for k, v := range keys {
-			typed[k] = v.TypedJSON()
-		}
-		t := unrecognisedTrigger(name, typed)
-		mt, ok := serverTrigger(t)
-		if !ok {
-			return wire.WorkflowTrigger{}, failure("`server:` under \"" + name + "\" is a server's name, or a list of them")
-		}
-		if len(canonicalJSON(mustRaw(mt.arguments))) > mcpArgumentLimit {
-			return wire.WorkflowTrigger{}, failure("The settings under \"" + name + "\" are over 2 KB")
-		}
-		return t, nil
+		return triggerServerEvent(name, keys)
 	}
 	if strings.Contains(name, ".") {
-		filters := map[string][]string{}
-		keyed := map[string]any{}
-		for k, v := range keys {
-			if t, ok := v.Text(); ok {
-				filters[k] = []string{t}
-				keyed[k] = t
-				continue
-			}
-			if v.IsSequence() {
-				var ts []string
-				for _, e := range v.Sequence {
-					if t, ok := e.Text(); ok {
-						ts = append(ts, t)
-					}
-				}
-				if len(ts) == len(v.Sequence) && len(ts) > 0 {
-					filters[k] = ts
-					if len(ts) == 1 {
-						keyed[k] = ts[0]
-					} else {
-						keyed[k] = ts
-					}
-					continue
-				}
-			}
-			return wire.WorkflowTrigger{}, failure("The \"" + k + "\" under \"" + name + "\" should be one value or a list of values")
-		}
-		p, problem := parsePattern(name, filters)
-		if problem == "" {
-			return unrecognisedTrigger(p.name, keyed), nil
-		}
-		// A key it cannot be narrowed by, or a custom. event, leaves the trigger unreadable.
-		if !strings.HasPrefix(problem, "\"") || strings.Contains(problem, "is never raised") {
-			return wire.WorkflowTrigger{}, failure(problem)
+		t, done, err := triggerDotted(name, keys)
+		if done {
+			return t, err
 		}
 	}
 	return unrecognisedTrigger(name, raw), nil
+}
+
+// triggerServerEvent is triggerNamedOwn for a server's event (#383): `noun.verbed`, not the
+// app's, its keys the subscription's arguments rather than details matched here. Whether a
+// server offers it is known only once one is asked, so that is said on the page, not here.
+// Its arguments keep the types the file wrote, `anyone: true` a boolean and `pr: 12` a
+// number, since the server's schema checks them by type (#5748).
+func triggerServerEvent(name string, keys map[string]yamlnode.Node) (wire.WorkflowTrigger, error) {
+	typed := map[string]any{}
+	for k, v := range keys {
+		typed[k] = v.TypedJSON()
+	}
+	t := unrecognisedTrigger(name, typed)
+	mt, ok := serverTrigger(t)
+	if !ok {
+		return wire.WorkflowTrigger{}, failure("`server:` under \"" + name + "\" is a server's name, or a list of them")
+	}
+	if len(canonicalJSON(mustRaw(mt.arguments))) > mcpArgumentLimit {
+		return wire.WorkflowTrigger{}, failure("The settings under \"" + name + "\" are over 2 KB")
+	}
+	return t, nil
+}
+
+// triggerDotted is triggerNamedOwn for an app's event, narrowed by its keys. done is false
+// when the trigger is kept as written, unrecognised.
+func triggerDotted(name string, keys map[string]yamlnode.Node) (t wire.WorkflowTrigger, done bool, err error) {
+	filters := map[string][]string{}
+	keyed := map[string]any{}
+	for k, v := range keys {
+		ts, ok := triggerDottedValues(v)
+		if !ok {
+			return wire.WorkflowTrigger{}, true, failure("The \"" + k + "\" under \"" + name + "\" should be one value or a list of values")
+		}
+		filters[k] = ts
+		if len(ts) == 1 {
+			keyed[k] = ts[0]
+		} else {
+			keyed[k] = ts
+		}
+	}
+	p, problem := parsePattern(name, filters)
+	if problem == "" {
+		return unrecognisedTrigger(p.name, keyed), true, nil
+	}
+	// A key it cannot be narrowed by, or a custom. event, leaves the trigger unreadable.
+	if !strings.HasPrefix(problem, "\"") || strings.Contains(problem, "is never raised") {
+		return wire.WorkflowTrigger{}, true, failure(problem)
+	}
+	return wire.WorkflowTrigger{}, false, nil
+}
+
+// triggerDottedValues reads one key of an app's event: one text, or a list of texts that
+// is not empty. ok is false for any other value.
+func triggerDottedValues(v yamlnode.Node) ([]string, bool) {
+	if t, ok := v.Text(); ok {
+		return []string{t}, true
+	}
+	if !v.IsSequence() {
+		return nil, false
+	}
+	var ts []string
+	for _, e := range v.Sequence {
+		if t, ok := e.Text(); ok {
+			ts = append(ts, t)
+		}
+	}
+	if len(ts) == len(v.Sequence) && len(ts) > 0 {
+		return ts, true
+	}
+	return nil, false
 }
 
 func parseSchedule(keys map[string]yamlnode.Node) (wire.WorkflowSchedule, error) {

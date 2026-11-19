@@ -296,143 +296,175 @@ func (d *Daemon) manageWorkflows(caller wire.UUID, args map[string]json.RawMessa
 	id := argString(args, "id")
 	switch action := argString(args, "action"); action {
 	case "list":
-		list := d.workflowSummaries(folder)
-		if len(list) == 0 {
-			return "This folder has no workflows yet. They live in .agents/workflows, one Markdown file each.", nil
-		}
-		lines := []string{fmt.Sprintf("%d workflows:", len(list))}
-		if len(list) == 1 {
-			lines[0] = "1 workflow:"
-		}
-		for _, s := range list {
-			line := "- " + s.Workflow.WorkflowID + ": " + workflowSummaryWords(s.Workflow)
-			if s.IsArchived {
-				line += " [archived]"
-			}
-			switch {
-			case s.OffReason != nil && *s.OffReason == wire.WorkflowOffReasonFile:
-				line += " [turned off: its file says enabled: false]"
-			case s.OffReason != nil && *s.OffReason == wire.WorkflowOffReasonWrittenByAgent:
-				line += " [turned off: written by an agent, waiting for the person]"
-			case s.OffReason != nil && *s.OffReason == wire.WorkflowOffReasonAgent:
-				line += " [turned off by an agent]"
-			case !s.IsEnabled:
-				line += " [turned off]"
-			}
-			if s.OverLimit != nil {
-				line += " [over the limit, so it will not run]"
-			}
-			if n := neverHereWorkflow(s.Workflow); n != "" {
-				line += " [" + n + "]"
-			}
-			if s.LastOutcome != nil {
-				line += " — " + outcomeWords(*s.LastOutcome)
-			}
-			lines = append(lines, line)
-		}
-		return strings.Join(lines, "\n"), nil
+		return d.workflowToolList(folder)
 	case "read":
-		d.workflowMu.Lock()
-		d.scanLocked()
-		f := d.fileLocked(folder, id)
-		if f == nil {
-			path, ok := workflowPath(folder, id)
-			d.workflowMu.Unlock()
-			if !ok {
-				return "", notInFolder(id)
-			}
-			if _, _, why := readWorkflowFile(path); why != "" {
-				return "", &Error{Code: wire.FailureWorkflowUnreadable, Message: id + ".md could not be read."}
-			}
-			return "", noSuchWorkflow(id)
-		}
-		if f.scope == "user" {
-			d.workflowMu.Unlock()
-			return "", &Error{Code: wire.FailureNotAllowed, Message: "This workflow belongs to your workflows. Open it in Settings ▸ Agent Configuration ▸ Workflows."}
-		}
-		if f.wf.Problem != nil && f.wf.Problem.Unreadable != nil {
-			d.workflowMu.Unlock()
-			return "", &Error{Code: wire.FailureWorkflowUnreadable, Message: id + ".md could not be read."}
-		}
-		text := f.text
-		d.workflowMu.Unlock()
-		return text, nil
+		return d.workflowToolRead(folder, id)
 	case "write":
-		d.workflowMu.Lock()
-		d.scanLocked()
-		existing := d.fileLocked(folder, id)
-		d.workflowMu.Unlock()
-		if existing != nil && existing.scope == "user" {
-			return "", &Error{Code: wire.FailureNotAllowed, Message: "This workflow belongs to your workflows. Edit it in Settings ▸ Agent Configuration ▸ Workflows."}
-		}
-		return d.writeWorkflow(folder, id, argString(args, "content"))
+		return d.workflowToolWrite(folder, id, argString(args, "content"))
 	case "remove":
-		d.workflowMu.Lock()
-		d.scanLocked()
-		existing := d.fileLocked(folder, id)
-		d.workflowMu.Unlock()
-		if existing != nil && existing.scope == "user" {
-			return "", &Error{Code: wire.FailureNotAllowed, Message: "This workflow belongs to your workflows. Remove it in Settings ▸ Agent Configuration ▸ Workflows."}
-		}
-		path, ok := workflowPath(folder, id)
-		if !ok {
-			return "", notInFolder(id)
-		}
-		if _, err := os.Stat(path); err != nil {
-			return "", noSuchWorkflow(id)
-		}
-		if err := d.deleteWorkflow(wire.WorkflowRequest{Folder: store.FolderURL(folder), WorkflowID: id}); err != nil {
-			return "", err
-		}
-		return id + " is gone. It will not run again.", nil
+		return d.workflowToolRemove(folder, id)
 	case "enable", "disable":
-		if _, ok := workflowPath(folder, id); !ok {
-			return "", notInFolder(id)
-		}
-		s, err := d.oneWorkflow(folder, id)
-		if err != nil {
-			return "", err
-		}
-		on := action == "enable"
-		if on && s.IsEnabled {
-			return id + " is already on.", nil
-		}
-		if !on && !s.IsEnabled {
-			return id + " is already turned off.", nil
-		}
-		if on && s.OffReason != nil {
-			// The person's to turn on: asked by a Needs you card (#4538), refused only where
-			// nobody answers.
-			var refusal error
-			switch *s.OffReason {
-			case wire.WorkflowOffReasonFile:
-				refusal = &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + "'s file says `enabled: false`, so it stays off until the person turns it on from the folder page. Ask them to if it should run."}
-			case wire.WorkflowOffReasonWrittenByAgent:
-				refusal = &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + " was written by an agent, so it starts off until the person turns it on from its page. Ask them to if it should run."}
-			case wire.WorkflowOffReasonPerson:
-				refusal = &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + " was turned off by the person, so only they can turn it back on, from the folder page. Ask them to if it should run again."}
-			}
-			if refusal != nil {
-				return d.enableForPerson(a.ID, folder, id, refusal)
-			}
-		}
-		got, err := d.enableWorkflow(wire.WorkflowEnableRequest{Folder: store.FolderURL(folder), WorkflowID: id, Enabled: on}, "agent")
-		if err != nil {
-			return "", err
-		}
-		if !on {
-			return "Turned off " + id + ". None of its triggers will run it until it is turned back on; it stays on the folder page, marked off, " +
-				"where Run now still runs it. Tell them you turned it off and why.", nil
-		}
-		note := "Turned " + id + " back on. Its triggers run it again."
-		if got.AwaitingApproval != nil {
-			note += " It is still waiting for their OK, so it will not run until they approve it."
-		}
-		return note, nil
+		return d.workflowToolEnable(a, folder, id, action)
 	case "run":
 		return d.runWorkflowForAgent(a, folder, id)
 	}
 	return "", Invalid("Nothing was done: `action` has to be one of list, read, write, remove, enable, disable or run.")
+}
+
+// workflowToolList is manage_workflows' list: one line for each workflow of the folder.
+func (d *Daemon) workflowToolList(folder string) (string, error) {
+	list := d.workflowSummaries(folder)
+	if len(list) == 0 {
+		return "This folder has no workflows yet. They live in .agents/workflows, one Markdown file each.", nil
+	}
+	lines := []string{fmt.Sprintf("%d workflows:", len(list))}
+	if len(list) == 1 {
+		lines[0] = "1 workflow:"
+	}
+	for _, s := range list {
+		lines = append(lines, workflowToolListLine(s))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+// workflowToolListLine is one workflow's line in manage_workflows' list.
+func workflowToolListLine(s wire.WorkflowSummary) string {
+	line := "- " + s.Workflow.WorkflowID + ": " + workflowSummaryWords(s.Workflow)
+	if s.IsArchived {
+		line += " [archived]"
+	}
+	switch {
+	case s.OffReason != nil && *s.OffReason == wire.WorkflowOffReasonFile:
+		line += " [turned off: its file says enabled: false]"
+	case s.OffReason != nil && *s.OffReason == wire.WorkflowOffReasonWrittenByAgent:
+		line += " [turned off: written by an agent, waiting for the person]"
+	case s.OffReason != nil && *s.OffReason == wire.WorkflowOffReasonAgent:
+		line += " [turned off by an agent]"
+	case !s.IsEnabled:
+		line += " [turned off]"
+	}
+	if s.OverLimit != nil {
+		line += " [over the limit, so it will not run]"
+	}
+	if n := neverHereWorkflow(s.Workflow); n != "" {
+		line += " [" + n + "]"
+	}
+	if s.LastOutcome != nil {
+		line += " — " + outcomeWords(*s.LastOutcome)
+	}
+	return line
+}
+
+// workflowToolRead is manage_workflows' read: the workflow's file as it is.
+func (d *Daemon) workflowToolRead(folder, id string) (string, error) {
+	d.workflowMu.Lock()
+	d.scanLocked()
+	f := d.fileLocked(folder, id)
+	if f == nil {
+		path, ok := workflowPath(folder, id)
+		d.workflowMu.Unlock()
+		if !ok {
+			return "", notInFolder(id)
+		}
+		if _, _, why := readWorkflowFile(path); why != "" {
+			return "", &Error{Code: wire.FailureWorkflowUnreadable, Message: id + ".md could not be read."}
+		}
+		return "", noSuchWorkflow(id)
+	}
+	if f.scope == "user" {
+		d.workflowMu.Unlock()
+		return "", &Error{Code: wire.FailureNotAllowed, Message: "This workflow belongs to your workflows. Open it in Settings ▸ Agent Configuration ▸ Workflows."}
+	}
+	if f.wf.Problem != nil && f.wf.Problem.Unreadable != nil {
+		d.workflowMu.Unlock()
+		return "", &Error{Code: wire.FailureWorkflowUnreadable, Message: id + ".md could not be read."}
+	}
+	text := f.text
+	d.workflowMu.Unlock()
+	return text, nil
+}
+
+// workflowToolWrite is manage_workflows' write, refused for one of the person's own
+// workflows.
+func (d *Daemon) workflowToolWrite(folder, id, content string) (string, error) {
+	d.workflowMu.Lock()
+	d.scanLocked()
+	existing := d.fileLocked(folder, id)
+	d.workflowMu.Unlock()
+	if existing != nil && existing.scope == "user" {
+		return "", &Error{Code: wire.FailureNotAllowed, Message: "This workflow belongs to your workflows. Edit it in Settings ▸ Agent Configuration ▸ Workflows."}
+	}
+	return d.writeWorkflow(folder, id, content)
+}
+
+// workflowToolRemove is manage_workflows' remove: the file deleted.
+func (d *Daemon) workflowToolRemove(folder, id string) (string, error) {
+	d.workflowMu.Lock()
+	d.scanLocked()
+	existing := d.fileLocked(folder, id)
+	d.workflowMu.Unlock()
+	if existing != nil && existing.scope == "user" {
+		return "", &Error{Code: wire.FailureNotAllowed, Message: "This workflow belongs to your workflows. Remove it in Settings ▸ Agent Configuration ▸ Workflows."}
+	}
+	path, ok := workflowPath(folder, id)
+	if !ok {
+		return "", notInFolder(id)
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "", noSuchWorkflow(id)
+	}
+	if err := d.deleteWorkflow(wire.WorkflowRequest{Folder: store.FolderURL(folder), WorkflowID: id}); err != nil {
+		return "", err
+	}
+	return id + " is gone. It will not run again.", nil
+}
+
+// workflowToolEnable is manage_workflows' enable and disable. A workflow the person
+// turned off is turned on only by the person.
+func (d *Daemon) workflowToolEnable(a *wire.Agent, folder, id, action string) (string, error) {
+	if _, ok := workflowPath(folder, id); !ok {
+		return "", notInFolder(id)
+	}
+	s, err := d.oneWorkflow(folder, id)
+	if err != nil {
+		return "", err
+	}
+	on := action == "enable"
+	if on && s.IsEnabled {
+		return id + " is already on.", nil
+	}
+	if !on && !s.IsEnabled {
+		return id + " is already turned off.", nil
+	}
+	if on && s.OffReason != nil {
+		// The person's to turn on: asked by a Needs you card (#4538), refused only where
+		// nobody answers.
+		var refusal error
+		switch *s.OffReason {
+		case wire.WorkflowOffReasonFile:
+			refusal = &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + "'s file says `enabled: false`, so it stays off until the person turns it on from the folder page. Ask them to if it should run."}
+		case wire.WorkflowOffReasonWrittenByAgent:
+			refusal = &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + " was written by an agent, so it starts off until the person turns it on from its page. Ask them to if it should run."}
+		case wire.WorkflowOffReasonPerson:
+			refusal = &Error{Code: wire.FailureWorkflowTurnedOffByPerson, Message: "Nothing was changed: " + id + " was turned off by the person, so only they can turn it back on, from the folder page. Ask them to if it should run again."}
+		}
+		if refusal != nil {
+			return d.enableForPerson(a.ID, folder, id, refusal)
+		}
+	}
+	got, err := d.enableWorkflow(wire.WorkflowEnableRequest{Folder: store.FolderURL(folder), WorkflowID: id, Enabled: on}, "agent")
+	if err != nil {
+		return "", err
+	}
+	if !on {
+		return "Turned off " + id + ". None of its triggers will run it until it is turned back on; it stays on the folder page, marked off, " +
+			"where Run now still runs it. Tell them you turned it off and why.", nil
+	}
+	note := "Turned " + id + " back on. Its triggers run it again."
+	if got.AwaitingApproval != nil {
+		note += " It is still waiting for their OK, so it will not run until they approve it."
+	}
+	return note, nil
 }
 
 // runWorkflowForAgent is manage_workflows' run (#1524): Run now, as the person's, but never
@@ -492,15 +524,8 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 	if p := parsed.Problem; p != nil && p.Unreadable != nil {
 		return "", &Error{Code: wire.FailureWorkflowUnreadable, Message: "That front matter could not be read: " + p.Unreadable.Value + ". Nothing was written."}
 	}
-	for _, t := range parsed.Triggers {
-		if t.Schedule == nil && !triggerSupported(t) && !isServerEventName(triggerName(t)) {
-			name := triggerName(t)
-			guess := "."
-			if g := closestEvent(name); g != "" {
-				guess = ". Did you mean " + g + "?"
-			}
-			return "", &Error{Code: wire.FailureWorkflowUnreadable, Message: "\"" + name + "\" is not a trigger" + guess + " Under on: go schedule and event names. Nothing was written."}
-		}
+	if err := workflowWriteTriggerProblem(parsed); err != nil {
+		return "", err
 	}
 	if words := alarmWriteWords(parsed, d.personZone(), time.Now()); words != "" {
 		return "", Invalid("%s", words)
@@ -514,21 +539,7 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 	// A one-time workflow is on as soon as the person approves it (Alex, 2026-11-12, #4966):
 	// it runs once, so a second step to turn it on would only make it miss its time.
 	alarm := onceOnly(parsed)
-	off := (existing == nil && !alarm) || (existing != nil && isOff(existing.wf))
-	if isOff(parsed) != off {
-		if off {
-			text, err = setFrontMatter("enabled", strPtr("false"), text)
-		} else {
-			text, err = setFrontMatter("enabled", nil, text)
-		}
-	}
-	if err == nil && existing != nil && isArchived(parsed) != archived {
-		if archived {
-			text, err = setFrontMatter("archived", strPtr("true"), text)
-		} else {
-			text, err = setFrontMatter("archived", nil, text)
-		}
-	}
+	text, err = workflowWriteKeepState(text, parsed, existing, alarm, archived)
 	if err != nil {
 		d.workflowMu.Unlock()
 		return "", &Error{Code: wire.FailureWorkflowUnreadable, Message: "Nothing was written: " + err.Error() + "."}
@@ -555,8 +566,53 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 	awaiting, _ := d.approvalOf(folder, id, f)
 	d.workflowMu.Unlock()
 	d.tellWorkflow(folder, id)
+	return workflowWriteReply(id, parsed, existing == nil, archived, alarm, awaiting != nil), nil
+}
+
+// workflowWriteTriggerProblem is the error for the first trigger of parsed that is not a
+// schedule or an event name this host knows, or nil.
+func workflowWriteTriggerProblem(parsed wire.Workflow) error {
+	for _, t := range parsed.Triggers {
+		if t.Schedule == nil && !triggerSupported(t) && !isServerEventName(triggerName(t)) {
+			name := triggerName(t)
+			guess := "."
+			if g := closestEvent(name); g != "" {
+				guess = ". Did you mean " + g + "?"
+			}
+			return &Error{Code: wire.FailureWorkflowUnreadable, Message: "\"" + name + "\" is not a trigger" + guess + " Under on: go schedule and event names. Nothing was written."}
+		}
+	}
+	return nil
+}
+
+// workflowWriteKeepState is text with `enabled:` and `archived:` set as the app keeps
+// them: a new workflow starts off unless it is an alarm, and a changed one keeps its
+// off and archived state.
+func workflowWriteKeepState(text string, parsed wire.Workflow, existing *workflowFile, alarm, archived bool) (string, error) {
+	var err error
+	off := (existing == nil && !alarm) || (existing != nil && isOff(existing.wf))
+	if isOff(parsed) != off {
+		if off {
+			text, err = setFrontMatter("enabled", strPtr("false"), text)
+		} else {
+			text, err = setFrontMatter("enabled", nil, text)
+		}
+	}
+	if err == nil && existing != nil && isArchived(parsed) != archived {
+		if archived {
+			text, err = setFrontMatter("archived", strPtr("true"), text)
+		} else {
+			text, err = setFrontMatter("archived", nil, text)
+		}
+	}
+	return text, err
+}
+
+// workflowWriteReply is what manage_workflows' write tells the agent after it wrote the
+// file.
+func workflowWriteReply(id string, parsed wire.Workflow, created, archived, alarm, awaiting bool) string {
 	verb := "Changed"
-	if existing == nil {
+	if created {
 		verb = "Created"
 	}
 	warning := ""
@@ -566,22 +622,22 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 	summary := workflowSummaryWords(parsed)
 	switch {
 	case archived:
-		return verb + " " + id + ". " + summary + ". It is archived, though, so it will not run until they bring it back from the folder page. Tell them it is there." + warning, nil
-	case awaiting != nil:
+		return verb + " " + id + ". " + summary + ". It is archived, though, so it will not run until they bring it back from the folder page. Tell them it is there." + warning
+	case awaiting:
 		startsOff := ""
 		if alarm {
 			startsOff = " It is a one-time workflow, so it is on as soon as they approve it: approved after its time but inside its grace, it runs at once; " +
 				"past its grace it is archived as missed. After it runs it archives itself."
-		} else if existing == nil {
+		} else if created {
 			startsOff = " It starts turned off (the app wrote `enabled: false` into it): once they have approved it, they turn it on from its page when they are ready, and you cannot."
 		}
 		return verb + " " + id + ". " + summary + ". It will not run until they approve it on the folder page, so tell them it is waiting for their OK and what it does." +
-			startsOff + warning, nil
-	case existing == nil:
+			startsOff + warning
+	case created:
 		return "Created " + id + ". " + summary + ". It is turned off (the app wrote `enabled: false` into it), so none of its triggers run it until they turn it on " +
-			"from the folder page, where they can also run it, or archive it if it is not what they wanted. Tell them it is there and what it does." + warning, nil
+			"from the folder page, where they can also run it, or archive it if it is not what they wanted. Tell them it is there and what it does." + warning
 	}
-	return verb + " " + id + ". " + summary + ". It is live now; it shows on the folder page, where they can run it, or archive it if it is not what they wanted." + warning, nil
+	return verb + " " + id + ". " + summary + ". It is live now; it shows on the folder page, where they can run it, or archive it if it is not what they wanted." + warning
 }
 
 func sortStrings(s []string) { sort.Strings(s) }

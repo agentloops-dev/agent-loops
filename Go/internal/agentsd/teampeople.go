@@ -123,63 +123,43 @@ func (d *Daemon) teamPeople(ctx context.Context, ask *askControl) []map[string]a
 	conns, _ := d.connectionStore()
 	out := make([]map[string]any, 0, len(list.People))
 	for _, p := range list.People {
-		you := p.You != nil && *p.You
-		github, gitlab, linear, jira := optstr(p.GithubLogin), optstr(p.GitlabLogin), optstr(p.LinearLogin), optstr(p.JiraLogin)
-		forgejo, bitbucket, azureDevOps := optstr(p.ForgejoLogin), optstr(p.BitbucketLogin), optstr(p.AzureDevOpsLogin)
-		if you && conns != nil {
-			if github == "" {
-				github = connectionLogin(conns, connections.GitHub)
-			}
-			if gitlab == "" {
-				gitlab = connectionLogin(conns, connections.GitLab)
-			}
-			if linear == "" {
-				linear = connectionLogin(conns, connections.Linear)
-			}
-			if jira == "" {
-				jira = connectionLogin(conns, atlassianConnection)
-			}
-			if forgejo == "" {
-				forgejo = connectionLogin(conns, connections.Forgejo)
-			}
-			if bitbucket == "" {
-				bitbucket = connectionLogin(conns, connections.Bitbucket)
-			}
-			if azureDevOps == "" {
-				azureDevOps = connectionLogin(conns, connections.AzureDevOps)
-			}
-		}
-		row := map[string]any{"name": p.Name}
-		if p.Kind == "bot" {
-			row["bot"] = true
-		}
-		if github != "" {
-			row["github"] = github
-		}
-		if gitlab != "" {
-			row["gitlab"] = gitlab
-		}
-		if linear != "" {
-			row["linear"] = linear
-		}
-		if jira != "" {
-			row["jira"] = jira
-		}
-		if forgejo != "" {
-			row["forgejo"] = forgejo
-		}
-		if bitbucket != "" {
-			row["bitbucket"] = bitbucket
-		}
-		if azureDevOps != "" {
-			row["azuredevops"] = azureDevOps
-		}
-		if you {
-			row["you"] = true
-		}
-		out = append(out, row)
+		out = append(out, teamPeopleRow(p, conns))
 	}
 	return out
+}
+
+// teamPeopleRow is one person's row of people/forViews. The viewer's own blank forge
+// logins come from this machine's connections, when conns is not nil.
+func teamPeopleRow(p wire.TeamPerson, conns connections.Store) map[string]any {
+	you := p.You != nil && *p.You
+	logins := []struct {
+		key, provider, login string
+	}{
+		{"github", connections.GitHub, optstr(p.GithubLogin)},
+		{"gitlab", connections.GitLab, optstr(p.GitlabLogin)},
+		{"linear", connections.Linear, optstr(p.LinearLogin)},
+		{"jira", atlassianConnection, optstr(p.JiraLogin)},
+		{"forgejo", connections.Forgejo, optstr(p.ForgejoLogin)},
+		{"bitbucket", connections.Bitbucket, optstr(p.BitbucketLogin)},
+		{"azuredevops", connections.AzureDevOps, optstr(p.AzureDevOpsLogin)},
+	}
+	row := map[string]any{"name": p.Name}
+	if p.Kind == "bot" {
+		row["bot"] = true
+	}
+	for _, l := range logins {
+		login := l.login
+		if login == "" && you && conns != nil {
+			login = connectionLogin(conns, l.provider)
+		}
+		if login != "" {
+			row[l.key] = login
+		}
+	}
+	if you {
+		row["you"] = true
+	}
+	return row
 }
 
 func optstr(s *string) string {

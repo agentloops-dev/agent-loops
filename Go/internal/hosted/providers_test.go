@@ -168,88 +168,103 @@ func TestSignUpWithEachProviderAndSignInToTheControlPlane(t *testing.T) {
 	admin := Admin{Store: st, Domain: domain}
 	subjects := map[string]string{signin.Apple: "001234.0a1b2c3d4e5f.0987", signin.Google: "109876543210987654321", signin.GitHub: "42"}
 	for _, provider := range signin.Providers {
-		link, err := admin.Invite(context.Background(), 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		invite := strings.TrimPrefix(link, "https://"+domain+"/?invite=")
-		b := u.newBrowser()
-		if _, page := b.get(link); !strings.Contains(page, "/signin?with="+provider+"&amp;invite="+invite) {
-			t.Fatal(page)
-		}
-		var res *http.Response
-		switch provider {
-		case signin.Apple:
-			u.apple.SignInAs(signintest.Claims{"sub": subjects[provider]})
-			res = u.signUpWith(t, b, provider, invite)
-		case signin.Google:
-			u.google.SignInAs(signintest.Claims{"sub": subjects[provider], "email": "sam@example.com"})
-			res = u.signUpWith(t, b, provider, invite)
-		default:
-			res = b.signInWith("good", invite)
-		}
-		if !strings.Contains(res.Header.Get("Location"), "/#code=") {
-			t.Fatalf("%s: %d %s %s", provider, res.StatusCode, res.Header.Get("Location"), b.last)
-		}
-		acc, _ := u.s.accounts.bySignIn(context.Background(), SignIn{Provider: provider, Subject: subjects[provider]})
-		if acc == nil {
-			t.Fatalf("%s: no account", provider)
-		}
-		// Nothing but the subject is kept, and GitHub's login.
-		if o, _ := st.Get(context.Background(), accountKey(acc.ID)); strings.Contains(string(o.Data), "sam@example.com") {
-			t.Fatalf("%s: the email was kept: %s", provider, o.Data)
-		}
-		_, page := b.get("https://" + domain + "/account")
-		if want := map[string]string{signin.Apple: "Signed in with Apple.", signin.Google: "Signed in with Google.",
-			signin.GitHub: "Signed in with GitHub as ana."}[provider]; !strings.Contains(page, want) {
-			t.Fatalf("%s: %s", provider, page)
-		}
+		acc := signUpOnAnInvite(t, u, st, admin, provider, subjects[provider])
+		signInToTheCopyWith(t, u, provider, subjects[provider], acc)
+	}
+}
 
-		// The person signs in to their control plane with the same provider, from a phone.
-		base, pin := u.dialCopy(t, acc.ID)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		waited := false
-		m, err := controllink.SignIn(ctx, base, pin, nil, "Sam's iPhone", records.KindIPhone,
-			func(providers wire.SignInProviders, nonce string) (string, string, error) {
-				switch provider {
-				case signin.Apple:
-					return provider, u.appleApp.Mint(signintest.Claims{"sub": subjects[provider], "aud": appleApp, "nonce": nonce}), nil
-				case signin.Google:
-					return provider, u.googleApp.Mint(signintest.Claims{"sub": subjects[provider], "aud": googleApp, "nonce": nonce}), nil
-				}
-				return provider, u.gitHubApp.Token(42, "ana"), nil
-			}, func(wire.SignInWaiting) {
-				// A GitHub sign-in is known, and waits for Approve on another of the person's
-				// clients (#995 R3): this browser's, once it pairs.
-				waited = true
-				cancel()
-			})
-		cancel()
-		c := u.s.inUse(acc.ID)
-		if c == nil {
-			t.Fatalf("%s: the copy is not running", provider)
-		}
-		owner := *c.service.Records().Settings().Owner
-		p := c.service.Records().Person(owner)
-		u.s.done(c)
-		if p == nil || !p.IsAdmin() || !p.HasSignIn(provider, subjects[provider]) {
-			t.Fatalf("%s: the first person is %+v", provider, p)
-		}
-		if provider == signin.GitHub {
-			if !waited {
-				t.Fatalf("github: %v", err)
+// signUpOnAnInvite signs up with provider on a new invite, as subject, and checks the
+// account keeps no email and its page names the sign-in. It gives the account.
+func signUpOnAnInvite(t *testing.T, u *signUps, st store.Store, admin Admin, provider, subject string) *Account {
+	t.Helper()
+	link, err := admin.Invite(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invite := strings.TrimPrefix(link, "https://"+domain+"/?invite=")
+	b := u.newBrowser()
+	if _, page := b.get(link); !strings.Contains(page, "/signin?with="+provider+"&amp;invite="+invite) {
+		t.Fatal(page)
+	}
+	var res *http.Response
+	switch provider {
+	case signin.Apple:
+		u.apple.SignInAs(signintest.Claims{"sub": subject})
+		res = u.signUpWith(t, b, provider, invite)
+	case signin.Google:
+		u.google.SignInAs(signintest.Claims{"sub": subject, "email": "sam@example.com"})
+		res = u.signUpWith(t, b, provider, invite)
+	default:
+		res = b.signInWith("good", invite)
+	}
+	if !strings.Contains(res.Header.Get("Location"), "/#code=") {
+		t.Fatalf("%s: %d %s %s", provider, res.StatusCode, res.Header.Get("Location"), b.last)
+	}
+	acc, _ := u.s.accounts.bySignIn(context.Background(), SignIn{Provider: provider, Subject: subject})
+	if acc == nil {
+		t.Fatalf("%s: no account", provider)
+	}
+	// Nothing but the subject is kept, and GitHub's login.
+	if o, _ := st.Get(context.Background(), accountKey(acc.ID)); strings.Contains(string(o.Data), "sam@example.com") {
+		t.Fatalf("%s: the email was kept: %s", provider, o.Data)
+	}
+	_, page := b.get("https://" + domain + "/account")
+	if want := map[string]string{signin.Apple: "Signed in with Apple.", signin.Google: "Signed in with Google.",
+		signin.GitHub: "Signed in with GitHub as ana."}[provider]; !strings.Contains(page, want) {
+		t.Fatalf("%s: %s", provider, page)
+	}
+	return acc
+}
+
+// signInToTheCopyWith signs in to the account's control plane with provider, from a
+// phone: its first person is an admin with that sign-in, and the phone pairs as that
+// person; a GitHub sign-in waits for Approve instead.
+func signInToTheCopyWith(t *testing.T, u *signUps, provider, subject string, acc *Account) {
+	t.Helper()
+	// The person signs in to their control plane with the same provider, from a phone.
+	base, pin := u.dialCopy(t, acc.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	waited := false
+	m, err := controllink.SignIn(ctx, base, pin, nil, "Sam's iPhone", records.KindIPhone,
+		func(providers wire.SignInProviders, nonce string) (string, string, error) {
+			switch provider {
+			case signin.Apple:
+				return provider, u.appleApp.Mint(signintest.Claims{"sub": subject, "aud": appleApp, "nonce": nonce}), nil
+			case signin.Google:
+				return provider, u.googleApp.Mint(signintest.Claims{"sub": subject, "aud": googleApp, "nonce": nonce}), nil
 			}
-			continue
+			return provider, u.gitHubApp.Token(42, "ana"), nil
+		}, func(wire.SignInWaiting) {
+			// A GitHub sign-in is known, and waits for Approve on another of the person's
+			// clients (#995 R3): this browser's, once it pairs.
+			waited = true
+			cancel()
+		})
+	cancel()
+	c := u.s.inUse(acc.ID)
+	if c == nil {
+		t.Fatalf("%s: the copy is not running", provider)
+	}
+	owner := *c.service.Records().Settings().Owner
+	p := c.service.Records().Person(owner)
+	u.s.done(c)
+	if p == nil || !p.IsAdmin() || !p.HasSignIn(provider, subject) {
+		t.Fatalf("%s: the first person is %+v", provider, p)
+	}
+	if provider == signin.GitHub {
+		if !waited {
+			t.Fatalf("github: %v", err)
 		}
-		if err != nil {
-			t.Fatalf("%s: %v", provider, err)
-		}
-		c = u.s.inUse(acc.ID)
-		person := c.service.PersonOf(m.Client)
-		u.s.done(c)
-		if person != owner {
-			t.Fatalf("%s: paired as %s, not the first person %s", provider, person, owner)
-		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("%s: %v", provider, err)
+	}
+	c = u.s.inUse(acc.ID)
+	person := c.service.PersonOf(m.Client)
+	u.s.done(c)
+	if person != owner {
+		t.Fatalf("%s: paired as %s, not the first person %s", provider, person, owner)
 	}
 }
 

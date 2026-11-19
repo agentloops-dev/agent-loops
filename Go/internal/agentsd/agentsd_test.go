@@ -75,6 +75,18 @@ func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMes
 	}
 }
 
+// aCard takes the first agent/permission notification, and keeps its request in into.
+func aCard(into *wire.PermissionRequest) func(string, json.RawMessage) bool {
+	return func(method string, p json.RawMessage) bool {
+		var n wire.PermissionNotification
+		if method == "agent/permission" && json.Unmarshal(p, &n) == nil && n.Request != nil {
+			*into = *n.Request
+			return true
+		}
+		return false
+	}
+}
+
 // callError sends a call and is the error it answers with, or fails when it answers.
 // It reads past notifications (lines with no id), as call does: a watch's wake/changed
 // can come before the answer (#5751). Read an answer with call or callError, never

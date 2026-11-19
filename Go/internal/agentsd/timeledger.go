@@ -119,6 +119,104 @@ func working(s wire.AgentState) bool {
 	return s == wire.AgentStateRunning || s == wire.AgentStateWaitingOnUser
 }
 
+// markSplit is what splitMarks keeps while it reads the marks: the last state, the
+// open tools and asks by kind, and the kind of each open tool.
+type markSplit struct {
+	state     *wire.AgentState
+	open      map[string]map[string]bool
+	toolKinds map[string]string
+}
+
+// current is the kind of time now, or "" when no turn works.
+func (ms *markSplit) current() string {
+	if ms.state == nil || !working(*ms.state) {
+		return ""
+	}
+	switch {
+	case *ms.state == wire.AgentStateWaitingOnUser || len(ms.open["person"]) > 0:
+		return "person"
+	case len(ms.open["others"]) > 0:
+		return "others"
+	case len(ms.open["tools"]) > 0:
+		return "tools"
+	}
+	return "agent"
+}
+
+// add opens id under kind.
+func (ms *markSplit) add(kind, id string) {
+	if ms.open[kind] == nil {
+		ms.open[kind] = map[string]bool{}
+	}
+	ms.open[kind][id] = true
+}
+
+// apply changes the state, the open tools and the open asks by the mark.
+func (ms *markSplit) apply(m timeMark) {
+	switch m.kind {
+	case markState:
+		s := m.state
+		ms.state = &s
+		// A turn's end closes whatever it left open.
+		if !working(s) {
+			ms.open, ms.toolKinds = map[string]map[string]bool{}, map[string]string{}
+		}
+	case markToolStarted:
+		kind := toolTimeKind(m.name)
+		ms.toolKinds[m.id] = kind
+		ms.add(kind, m.id)
+	case markToolEnded:
+		if kind, ok := ms.toolKinds[m.id]; ok {
+			delete(ms.toolKinds, m.id)
+			delete(ms.open[kind], m.id)
+		}
+	case markAskOpened:
+		ms.add("person", "ask:"+m.id)
+	case markAskClosed:
+		if m.anyID {
+			ms.open["person"] = map[string]bool{}
+		} else {
+			delete(ms.open["person"], "ask:"+m.id)
+		}
+	}
+}
+
+// carry is the marks that open again at since what is still open, or nil when no turn works.
+func (ms *markSplit) carry(since time.Time) []timeMark {
+	if ms.state == nil || !working(*ms.state) {
+		return nil
+	}
+	carry := []timeMark{{kind: markState, state: *ms.state, at: since}}
+	ids := make([]string, 0, len(ms.toolKinds))
+	for id := range ms.toolKinds {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if kind := ms.toolKinds[id]; ms.open[kind][id] {
+			name := "tool"
+			switch kind {
+			case "person":
+				name = "ask_question"
+			case "others":
+				name = "wait_for_event"
+			}
+			carry = append(carry, timeMark{kind: markToolStarted, id: id, name: name, at: since})
+		}
+	}
+	var asks []string
+	for a := range ms.open["person"] {
+		if strings.HasPrefix(a, "ask:") {
+			asks = append(asks, a)
+		}
+	}
+	sort.Strings(asks)
+	for _, a := range asks {
+		carry = append(carry, timeMark{kind: markAskOpened, id: strings.TrimPrefix(a, "ask:"), at: since})
+	}
+	return carry
+}
+
 // splitMarks is TimeMark.split: the segments the marks make, and what is still open at the
 // last of them, carried into the next stretch.
 func splitMarks(marks []timeMark) ([]timeSegment, []timeMark) {
@@ -127,33 +225,11 @@ func splitMarks(marks []timeMark) ([]timeSegment, []timeMark) {
 	if len(marks) == 0 {
 		return nil, nil
 	}
-	var state *wire.AgentState
-	open := map[string]map[string]bool{}
-	toolKinds := map[string]string{}
+	ms := &markSplit{open: map[string]map[string]bool{}, toolKinds: map[string]string{}}
 	var segments []timeSegment
 	since := marks[0].at
-	current := func() string {
-		if state == nil || !working(*state) {
-			return ""
-		}
-		switch {
-		case *state == wire.AgentStateWaitingOnUser || len(open["person"]) > 0:
-			return "person"
-		case len(open["others"]) > 0:
-			return "others"
-		case len(open["tools"]) > 0:
-			return "tools"
-		}
-		return "agent"
-	}
-	add := func(kind, id string) {
-		if open[kind] == nil {
-			open[kind] = map[string]bool{}
-		}
-		open[kind][id] = true
-	}
 	for _, m := range marks {
-		if kind := current(); kind != "" && m.at.After(since) {
+		if kind := ms.current(); kind != "" && m.at.After(since) {
 			if n := len(segments); n > 0 && segments[n-1].kind == kind && segments[n-1].end.Equal(since) {
 				segments[n-1].end = m.at
 			} else {
@@ -161,65 +237,9 @@ func splitMarks(marks []timeMark) ([]timeSegment, []timeMark) {
 			}
 		}
 		since = m.at
-		switch m.kind {
-		case markState:
-			s := m.state
-			state = &s
-			// A turn's end closes whatever it left open.
-			if !working(s) {
-				open, toolKinds = map[string]map[string]bool{}, map[string]string{}
-			}
-		case markToolStarted:
-			kind := toolTimeKind(m.name)
-			toolKinds[m.id] = kind
-			add(kind, m.id)
-		case markToolEnded:
-			if kind, ok := toolKinds[m.id]; ok {
-				delete(toolKinds, m.id)
-				delete(open[kind], m.id)
-			}
-		case markAskOpened:
-			add("person", "ask:"+m.id)
-		case markAskClosed:
-			if m.anyID {
-				open["person"] = map[string]bool{}
-			} else {
-				delete(open["person"], "ask:"+m.id)
-			}
-		}
+		ms.apply(m)
 	}
-	var carry []timeMark
-	if state != nil && working(*state) {
-		carry = append(carry, timeMark{kind: markState, state: *state, at: since})
-		ids := make([]string, 0, len(toolKinds))
-		for id := range toolKinds {
-			ids = append(ids, id)
-		}
-		sort.Strings(ids)
-		for _, id := range ids {
-			if kind := toolKinds[id]; open[kind][id] {
-				name := "tool"
-				switch kind {
-				case "person":
-					name = "ask_question"
-				case "others":
-					name = "wait_for_event"
-				}
-				carry = append(carry, timeMark{kind: markToolStarted, id: id, name: name, at: since})
-			}
-		}
-		var asks []string
-		for a := range open["person"] {
-			if strings.HasPrefix(a, "ask:") {
-				asks = append(asks, a)
-			}
-		}
-		sort.Strings(asks)
-		for _, a := range asks {
-			carry = append(carry, timeMark{kind: markAskOpened, id: strings.TrimPrefix(a, "ask:"), at: since})
-		}
-	}
-	return segments, carry
+	return segments, ms.carry(since)
 }
 
 // MARK: TimeHistory
@@ -396,49 +416,66 @@ func (d *Daemon) noteRecapLocked(m timeMark, agent wire.UUID) {
 		if open == nil {
 			open = map[string]bool{}
 		}
-		switch m.kind {
-		case markState:
-			if m.state == wire.AgentStateWaitingOnUser {
-				open["state"] = true
-			} else {
-				delete(open, "state")
-			}
-		case markToolStarted:
-			if toolTimeKind(m.name) == "person" {
-				open["tool:"+m.id] = true
-			}
-		case markToolEnded:
-			delete(open, "tool:"+m.id)
-		case markAskOpened:
-			open["ask:"+m.id] = true
-		case markAskClosed:
-			if m.anyID {
-				for k := range open {
-					if strings.HasPrefix(k, "ask:") {
-						delete(open, k)
-					}
-				}
-			} else {
-				delete(open, "ask:"+m.id)
-			}
-		}
+		noteWaitingMark(open, m)
 		if len(open) == 0 {
 			delete(d.timeWaiting, agent)
 		} else {
 			d.timeWaiting[agent] = open
 		}
 		if m.kind == markState && m.state == wire.AgentStateRunning && len(t.marks) == 1 {
-			if d.seenDay != day {
-				d.seenDay, d.seenAgents = day, map[wire.UUID]bool{}
-			}
-			d.seenAgents[agent] = true
-			count, atOnce := int64(len(d.seenAgents)), int64(len(d.timeTurns))
-			changeRecap(d.timeLocked(), day, func(r *wire.DayRecap) {
-				r.Agents = max(r.Agents, count)
-				r.PeakAgents = max(r.PeakAgents, atOnce)
-			})
+			d.noteRecapAgentStartedLocked(day, agent)
 		}
 	}
+	d.noteRecapClearLocked(m)
+}
+
+// noteWaitingMark changes what waits for the person (open) by the mark.
+func noteWaitingMark(open map[string]bool, m timeMark) {
+	switch m.kind {
+	case markState:
+		if m.state == wire.AgentStateWaitingOnUser {
+			open["state"] = true
+		} else {
+			delete(open, "state")
+		}
+	case markToolStarted:
+		if toolTimeKind(m.name) == "person" {
+			open["tool:"+m.id] = true
+		}
+	case markToolEnded:
+		delete(open, "tool:"+m.id)
+	case markAskOpened:
+		open["ask:"+m.id] = true
+	case markAskClosed:
+		if m.anyID {
+			for k := range open {
+				if strings.HasPrefix(k, "ask:") {
+					delete(open, k)
+				}
+			}
+		} else {
+			delete(open, "ask:"+m.id)
+		}
+	}
+}
+
+// noteRecapAgentStartedLocked counts the agent in the day's recap: the agents that
+// worked, and the most at once.
+func (d *Daemon) noteRecapAgentStartedLocked(day string, agent wire.UUID) {
+	if d.seenDay != day {
+		d.seenDay, d.seenAgents = day, map[wire.UUID]bool{}
+	}
+	d.seenAgents[agent] = true
+	count, atOnce := int64(len(d.seenAgents)), int64(len(d.timeTurns))
+	changeRecap(d.timeLocked(), day, func(r *wire.DayRecap) {
+		r.Agents = max(r.Agents, count)
+		r.PeakAgents = max(r.PeakAgents, atOnce)
+	})
+}
+
+// noteRecapClearLocked starts or ends a clear stretch at the mark: work goes and
+// nothing waits for the person. An ended stretch can be the day's longest.
+func (d *Daemon) noteRecapClearLocked(m timeMark) {
 	quiet := len(d.timeTurns) > 0 && len(d.timeWaiting) == 0
 	switch {
 	case quiet && d.clearSince == nil:

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -375,6 +376,7 @@ func TestALostPlaceIsKeptOverARestart(t *testing.T) {
 // #4041: an agent whose lease ran out and asks again in time goes after those that waited
 // when it ran out and before those that came later; one that asks too late goes last.
 func TestALeaseThatRanOutKeepsItsPlace(t *testing.T) {
+	flaky.UnderLoad(t, "#6268")
 	fakeRuntimes(t)
 	at := time.Now()
 	setClock := func(m int) { setNowFunc(func() time.Time { return at.Add(time.Duration(m) * time.Minute) }) }

@@ -1,0 +1,915 @@
+{
+ "format": 1,
+ "session": "00000000-0000-4000-8000-000000000001",
+ "host": "mac",
+ "start": {
+  "agents": [],
+  "transcript": {
+   "firstIndex": 0,
+   "total": 0,
+   "entries": []
+  }
+ },
+ "steps": [
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Fix the build",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 101,
+    "runtimeID": "claude",
+    "state": "running",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Fix the build",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 101,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    }
+   }
+  },
+  {
+   "method": "agent/entry",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "entry": {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "at": 101,
+     "kind": {
+      "userMessage": {
+       "_0": "Fix the build"
+      }
+     }
+    },
+    "index": 0
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Fix the build",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 101,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 1,
+     "entries": [
+      {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "at": 101,
+       "kind": {
+        "userMessage": {
+         "_0": "Fix the build"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "agent/entry",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "entry": {
+     "id": "00000000-0000-4000-8000-000000000102",
+     "at": 102,
+     "kind": {
+      "agentMessage": {
+       "messageID": "m1",
+       "text": "Looking"
+      }
+     }
+    },
+    "index": 1
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Fix the build",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 101,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 2,
+     "entries": [
+      {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "at": 101,
+       "kind": {
+        "userMessage": {
+         "_0": "Fix the build"
+        }
+       }
+      },
+      {
+       "id": "00000000-0000-4000-8000-000000000102",
+       "at": 102,
+       "kind": {
+        "agentMessage": {
+         "messageID": "m1",
+         "text": "Looking"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000002",
+    "title": "Second chat",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 103,
+    "runtimeID": "claude",
+    "state": "running",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Fix the build",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 101,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "title": "Second chat",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 103,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 2,
+     "entries": [
+      {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "at": 101,
+       "kind": {
+        "userMessage": {
+         "_0": "Fix the build"
+        }
+       }
+      },
+      {
+       "id": "00000000-0000-4000-8000-000000000102",
+       "at": 102,
+       "kind": {
+        "agentMessage": {
+         "messageID": "m1",
+         "text": "Looking"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "agent/entry",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "entry": {
+     "id": "00000000-0000-4000-8000-000000000102",
+     "at": 102,
+     "kind": {
+      "agentMessage": {
+       "messageID": "m1",
+       "text": "Looking at the build"
+      }
+     }
+    },
+    "index": 1
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Fix the build",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 101,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "title": "Second chat",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 103,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 2,
+     "entries": [
+      {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "at": 101,
+       "kind": {
+        "userMessage": {
+         "_0": "Fix the build"
+        }
+       }
+      },
+      {
+       "id": "00000000-0000-4000-8000-000000000102",
+       "at": 102,
+       "kind": {
+        "agentMessage": {
+         "messageID": "m1",
+         "text": "Looking at the build"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "agent/entry",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "entry": {
+     "id": "00000000-0000-4000-8000-000000000103",
+     "at": 103,
+     "kind": {
+      "agentMessage": {
+       "messageID": "m2",
+       "text": "It was the cache"
+      }
+     }
+    },
+    "index": 2
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Fix the build",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 101,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "title": "Second chat",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 103,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 3,
+     "entries": [
+      {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "at": 101,
+       "kind": {
+        "userMessage": {
+         "_0": "Fix the build"
+        }
+       }
+      },
+      {
+       "id": "00000000-0000-4000-8000-000000000102",
+       "at": 102,
+       "kind": {
+        "agentMessage": {
+         "messageID": "m1",
+         "text": "Looking at the build"
+        }
+       }
+      },
+      {
+       "id": "00000000-0000-4000-8000-000000000103",
+       "at": 103,
+       "kind": {
+        "agentMessage": {
+         "messageID": "m2",
+         "text": "It was the cache"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "agent/removed",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000002"
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Fix the build",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 101,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 3,
+     "entries": [
+      {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "at": 101,
+       "kind": {
+        "userMessage": {
+         "_0": "Fix the build"
+        }
+       }
+      },
+      {
+       "id": "00000000-0000-4000-8000-000000000102",
+       "at": 102,
+       "kind": {
+        "agentMessage": {
+         "messageID": "m1",
+         "text": "Looking at the build"
+        }
+       }
+      },
+      {
+       "id": "00000000-0000-4000-8000-000000000103",
+       "at": 103,
+       "kind": {
+        "agentMessage": {
+         "messageID": "m2",
+         "text": "It was the cache"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Build fixed",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 108,
+    "runtimeID": "claude",
+    "state": "finished",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Build fixed",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 108,
+      "runtimeID": "claude",
+      "state": "finished",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 3,
+     "entries": [
+      {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "at": 101,
+       "kind": {
+        "userMessage": {
+         "_0": "Fix the build"
+        }
+       }
+      },
+      {
+       "id": "00000000-0000-4000-8000-000000000102",
+       "at": 102,
+       "kind": {
+        "agentMessage": {
+         "messageID": "m1",
+         "text": "Looking at the build"
+        }
+       }
+      },
+      {
+       "id": "00000000-0000-4000-8000-000000000103",
+       "at": 103,
+       "kind": {
+        "agentMessage": {
+         "messageID": "m2",
+         "text": "It was the cache"
+        }
+       }
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "in order, nothing lost",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    }
+   ],
+   "expect": 7
+  },
+  {
+   "name": "each notification twice",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    }
+   ],
+   "expect": 7
+  },
+  {
+   "name": "three lost, then a reconnect",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "drop",
+     "steps": [
+      3,
+      4,
+      5
+     ]
+    },
+    {
+     "op": "reconnect",
+     "read": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    }
+   ],
+   "expect": 7
+  },
+  {
+   "name": "a reconnect whose read the notifications overlap",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "drop",
+     "steps": [
+      2,
+      3,
+      4
+     ]
+    },
+    {
+     "op": "reconnect",
+     "read": 5,
+     "during": [
+      4,
+      5,
+      6
+     ]
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    }
+   ],
+   "expect": 7
+  },
+  {
+   "name": "an agent removed while the client was away",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "drop",
+     "steps": [
+      4,
+      5,
+      6
+     ]
+    },
+    {
+     "op": "reconnect",
+     "read": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    }
+   ],
+   "expect": 7
+  },
+  {
+   "name": "two reconnects in a row",
+   "fault": "#6282",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "drop",
+     "steps": [
+      1,
+      2
+     ]
+    },
+    {
+     "op": "reconnect",
+     "read": 2
+    },
+    {
+     "op": "reconnect",
+     "read": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    }
+   ],
+   "expect": 7
+  },
+  {
+   "name": "the daemon sends the whole session again after a reconnect",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "reconnect",
+     "read": 4,
+     "during": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ]
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    }
+   ],
+   "expect": 7
+  },
+  {
+   "name": "a reconnect to a daemon that has gone further than the last notification",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "reconnect",
+     "read": 7
+    }
+   ],
+   "expect": 7
+  },
+  {
+   "name": "a reconnect that starts from nothing held",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": 4
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    }
+   ],
+   "expect": 7
+  }
+ ]
+}

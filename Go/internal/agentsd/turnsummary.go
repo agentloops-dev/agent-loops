@@ -310,58 +310,9 @@ func (b *displayBuilder) add(e wire.TranscriptEntry) {
 	k := &e.Kind
 	switch {
 	case k.ToolCall != nil || k.ToolCallUpdate != nil:
-		var call wire.ToolCall
-		if k.ToolCall != nil {
-			call = k.ToolCall.Value
-		} else {
-			call = k.ToolCallUpdate.Value
-		}
-		update := k.ToolCallUpdate != nil
-		called := call.Title
-		if call.Name != nil {
-			called = *call.Name
-		}
-		// The app's own end-of-turn call is not drawn, by its name or the two it had.
-		if strings.HasSuffix(called, "finish_turn") || strings.HasSuffix(called, "suggest_next_prompts") || strings.HasSuffix(called, "report_outcome") {
-			if call.ToolCallID != nil {
-				b.suppressed[*call.ToolCallID] = true
-			}
-			return
-		}
-		if call.ToolCallID != nil && b.suppressed[*call.ToolCallID] {
-			return
-		}
-		existing := -1
-		if call.ToolCallID != nil {
-			existing = slices.IndexFunc(b.run, func(c wire.ToolCall) bool { return c.ToolCallID != nil && *c.ToolCallID == *call.ToolCallID })
-		}
-		switch {
-		case existing >= 0:
-			b.run[existing] = mergeCall(call, b.run[existing])
-		case update && call.ToolCallID != nil && b.mergeIntoClosedRun(call, *call.ToolCallID):
-			return
-		case update && saysNothing(call):
-			return
-		default:
-			b.run = append(b.run, call)
-		}
-		if b.runID == nil {
-			id := e.ID
-			b.runID, b.runAt = &id, e.At
-		}
-		b.resolveIntermittentErrors()
+		b.addToolCall(&e)
 	case k.AppView != nil:
-		id := k.AppView.Value.ID
-		if at, ok := b.viewAt[id]; ok && at < len(b.drawn) && b.drawn[at].entry != nil {
-			first := *b.drawn[at].entry
-			first.Kind = wire.TranscriptEntryKind{AppView: k.AppView}
-			b.drawn[at] = item{entry: &first}
-			return
-		}
-		b.closeRun()
-		b.resolveIntermittentErrors()
-		b.viewAt[id] = len(b.drawn)
-		b.drawn = append(b.drawn, item{entry: &e})
+		b.addAppView(&e)
 	case k.FileShown != nil, k.Notified != nil:
 		// The card stands on its own, after the run that called it (#836); so does what
 		// the agent told the person (#2805).
@@ -373,16 +324,7 @@ func (b *displayBuilder) add(e wire.TranscriptEntry) {
 		b.drawn = append(b.drawn, item{entry: &e})
 	case k.NoticeDelivered != nil:
 		// Said on the notice's line (#2860), never a line of its own.
-		if at, ok := b.noticeAt[k.NoticeDelivered.Value.Notice]; ok && at < len(b.drawn) && b.drawn[at].entry != nil {
-			line := *b.drawn[at].entry
-			if line.Kind.Notified != nil {
-				notice := line.Kind.Notified.Value
-				to := k.NoticeDelivered.Value.To
-				notice.To = &to
-				line.Kind = wire.TranscriptEntryKind{Notified: &wire.TranscriptEntryKindNotified{Value: notice}}
-				b.drawn[at] = item{entry: &line}
-			}
-		}
+		b.markNoticeDelivered(k.NoticeDelivered.Value)
 	case k.TurnChanged != nil:
 		// The card stands on its own at the end of the turn (#3437).
 		b.closeRun()
@@ -390,16 +332,7 @@ func (b *displayBuilder) add(e wire.TranscriptEntry) {
 		b.drawn = append(b.drawn, item{entry: &e})
 	case k.TurnUndone != nil:
 		// Said on the turn's card, never a line of its own.
-		undo := k.TurnUndone.Value
-		if at, ok := b.changesAt[undo.Turn]; ok && at < len(b.drawn) && b.drawn[at].entry != nil {
-			card := *b.drawn[at].entry
-			if card.Kind.TurnChanged != nil {
-				changes := card.Kind.TurnChanged.Value
-				changes.Undone = &undo
-				card.Kind = wire.TranscriptEntryKind{TurnChanged: &wire.TranscriptEntryKindTurnChanged{Value: changes}}
-				b.drawn[at] = item{entry: &card}
-			}
-		}
+		b.markTurnUndone(k.TurnUndone.Value)
 	case k.Compaction != nil:
 		if at := b.compactionAt(k.Compaction.ID); at >= 0 {
 			if merged := mergeCompaction(e, *b.drawn[at].entry); merged != nil {
@@ -434,6 +367,95 @@ func (b *displayBuilder) add(e wire.TranscriptEntry) {
 			b.settleIntermittentErrors()
 		}
 		b.drawn = append(b.drawn, item{entry: &e})
+	}
+}
+
+// addToolCall adds a tool call, or an update to one, to the run of calls being drawn.
+// The app's own end-of-turn calls are not drawn.
+func (b *displayBuilder) addToolCall(e *wire.TranscriptEntry) {
+	k := &e.Kind
+	var call wire.ToolCall
+	if k.ToolCall != nil {
+		call = k.ToolCall.Value
+	} else {
+		call = k.ToolCallUpdate.Value
+	}
+	update := k.ToolCallUpdate != nil
+	called := call.Title
+	if call.Name != nil {
+		called = *call.Name
+	}
+	// The app's own end-of-turn call is not drawn, by its name or the two it had.
+	if strings.HasSuffix(called, "finish_turn") || strings.HasSuffix(called, "suggest_next_prompts") || strings.HasSuffix(called, "report_outcome") {
+		if call.ToolCallID != nil {
+			b.suppressed[*call.ToolCallID] = true
+		}
+		return
+	}
+	if call.ToolCallID != nil && b.suppressed[*call.ToolCallID] {
+		return
+	}
+	existing := -1
+	if call.ToolCallID != nil {
+		existing = slices.IndexFunc(b.run, func(c wire.ToolCall) bool { return c.ToolCallID != nil && *c.ToolCallID == *call.ToolCallID })
+	}
+	switch {
+	case existing >= 0:
+		b.run[existing] = mergeCall(call, b.run[existing])
+	case update && call.ToolCallID != nil && b.mergeIntoClosedRun(call, *call.ToolCallID):
+		return
+	case update && saysNothing(call):
+		return
+	default:
+		b.run = append(b.run, call)
+	}
+	if b.runID == nil {
+		id := e.ID
+		b.runID, b.runAt = &id, e.At
+	}
+	b.resolveIntermittentErrors()
+}
+
+// addAppView draws an app view, or puts a later state of it on its first line.
+func (b *displayBuilder) addAppView(e *wire.TranscriptEntry) {
+	k := &e.Kind
+	id := k.AppView.Value.ID
+	if at, ok := b.viewAt[id]; ok && at < len(b.drawn) && b.drawn[at].entry != nil {
+		first := *b.drawn[at].entry
+		first.Kind = wire.TranscriptEntryKind{AppView: k.AppView}
+		b.drawn[at] = item{entry: &first}
+		return
+	}
+	b.closeRun()
+	b.resolveIntermittentErrors()
+	b.viewAt[id] = len(b.drawn)
+	b.drawn = append(b.drawn, item{entry: e})
+}
+
+// markNoticeDelivered puts who got a notice on the notice's line.
+func (b *displayBuilder) markNoticeDelivered(delivery wire.NoticeDelivery) {
+	if at, ok := b.noticeAt[delivery.Notice]; ok && at < len(b.drawn) && b.drawn[at].entry != nil {
+		line := *b.drawn[at].entry
+		if line.Kind.Notified != nil {
+			notice := line.Kind.Notified.Value
+			to := delivery.To
+			notice.To = &to
+			line.Kind = wire.TranscriptEntryKind{Notified: &wire.TranscriptEntryKindNotified{Value: notice}}
+			b.drawn[at] = item{entry: &line}
+		}
+	}
+}
+
+// markTurnUndone puts the undo of a turn on the turn's card.
+func (b *displayBuilder) markTurnUndone(undo wire.TurnUndo) {
+	if at, ok := b.changesAt[undo.Turn]; ok && at < len(b.drawn) && b.drawn[at].entry != nil {
+		card := *b.drawn[at].entry
+		if card.Kind.TurnChanged != nil {
+			changes := card.Kind.TurnChanged.Value
+			changes.Undone = &undo
+			card.Kind = wire.TranscriptEntryKind{TurnChanged: &wire.TranscriptEntryKindTurnChanged{Value: changes}}
+			b.drawn[at] = item{entry: &card}
+		}
 	}
 }
 

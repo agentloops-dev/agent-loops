@@ -171,75 +171,9 @@ func FromAzureDevOps(b AzureBuild, timelineRaw []byte, earlier map[string][]byte
 	if err := json.Unmarshal(timelineRaw, &now); err != nil {
 		return nil, fmt.Errorf("build %d: the timeline: %v", b.ID, err)
 	}
-	since := func(s string) (float64, bool) {
-		t, err := time.Parse(time.RFC3339Nano, s)
-		if err != nil || t.IsZero() {
-			return 0, false
-		}
-		return math.Round(t.Sub(made).Seconds()*10) / 10, true
-	}
-	runner := b.Queue.Pool.Name
-	if runner == "" {
-		runner = b.Queue.Name
-	}
-	base := Run{Ref: ref, ID: b.ID, Workflow: b.Definition.Name, Event: b.Reason, Branch: b.Branch(), HeadSHA: b.SourceVer,
-		Default: onDefault, Tag: onTag && !onDefault, PR: b.PullRequest(), URL: b.Links.Web.Href, Made: made.Unix()}
-	if sha := b.TriggerInfo["pr.sourceSha"]; sha != "" {
-		base.HeadSHA = sha
-	}
-	attempts := map[int]*Run{}
-	attemptOf := func(n int) *Run {
-		if attempts[n] == nil {
-			r := base
-			r.Attempt, r.Jobs = n, []Job{}
-			attempts[n] = &r
-		}
-		return attempts[n]
-	}
-	// A job of one timeline: its phase, its stage and its tasks are in the same timeline.
-	jobOf := func(records []AzureRecord, rec AzureRecord) Job {
-		byID := map[string]AzureRecord{}
-		for _, r := range records {
-			byID[r.ID] = r
-		}
-		job := Job{Name: rec.Name, Conclusion: AzureConclusion(rec.Result), Runner: runner}
-		phase, hasPhase := byID[rec.ParentID]
-		if hasPhase {
-			if stage, ok := byID[phase.ParentID]; ok && stage.Type == "Stage" && stage.Name != "" && stage.Name != "__default" {
-				job.Name = stage.Name + " / " + rec.Name
-			}
-		}
-		var okStart, okEnd bool
-		job.Started, okStart = since(rec.StartTime)
-		if job.Made, ok = since(phase.StartTime); !hasPhase || !ok || job.Made > job.Started {
-			job.Made = job.Started
-		}
-		if !okStart {
-			job.Started = job.Made
-		}
-		if job.Ended, okEnd = since(rec.FinishTime); !okEnd {
-			job.Ended = job.Started
-		}
-		var tasks []AzureRecord
-		for _, r := range records {
-			if r.ParentID == rec.ID && r.Type == "Task" {
-				tasks = append(tasks, r)
-			}
-		}
-		sort.SliceStable(tasks, func(a, b int) bool { return tasks[a].Order < tasks[b].Order })
-		for i, t := range tasks {
-			a, okA := since(t.StartTime)
-			e, okE := since(t.FinishTime)
-			if okA && okE {
-				n := t.Order
-				if n == 0 {
-					n = i + 1
-				}
-				job.Steps = append(job.Steps, Step{Name: t.Name, Number: n, Started: a, Ended: e, Conclusion: AzureConclusion(t.Result)})
-			}
-		}
-		return job
-	}
+	since := sinceMade(made, parseAzureTime)
+	reader := azureJobReader{since: since, runner: b.poolName()}
+	attempts := newAttempts(azureBase(b, ref, onDefault, onTag, made))
 	latest := 1
 	for _, rec := range now.Records {
 		if rec.Type != "Job" {
@@ -247,71 +181,145 @@ func FromAzureDevOps(b AzureBuild, timelineRaw []byte, earlier map[string][]byte
 		}
 		n := max(rec.Attempt, 1)
 		latest = max(latest, n)
-		r := attemptOf(n)
-		job := jobOf(now.Records, rec)
-		name := job.Name
-		r.Jobs = append(r.Jobs, job)
-		// Each earlier attempt of this job, from the timeline it is in.
-		for _, p := range rec.PreviousAttempts {
-			raw, ok := earlier[p.TimelineID]
-			if !ok || p.Attempt < 1 || p.Attempt >= n {
-				continue
-			}
-			var old azureTimeline
-			if json.Unmarshal(raw, &old) != nil {
-				continue
-			}
-			for _, o := range old.Records {
-				if o.ID == p.RecordID && o.Type == "Job" {
-					// Its own timeline's phase first; the name is the newest one's, as it is one job.
-					job := jobOf(append(append([]AzureRecord{}, now.Records...), old.Records...), o)
-					job.Name = name
-					attemptOf(p.Attempt).Jobs = append(attemptOf(p.Attempt).Jobs, job)
-				}
-			}
-		}
+		job := reader.job(now.Records, rec)
+		attempts.addJob(n, job)
+		reader.addEarlierTries(attempts, now.Records, rec, n, job.Name, earlier)
 	}
 	// The latest attempt is the build's: its result, its start and its end.
-	last := attemptOf(latest)
+	last := attempts.of(latest)
 	last.Conclusion = AzureConclusion(b.Result)
 	if s, ok := since(b.StartTime); ok {
 		last.Started = s
 	}
 	finished, hasFinish := since(b.FinishTime)
-	var out []Run
-	for n, r := range attempts {
-		ended, started := 0.0, math.Inf(1)
-		failed, cancelled := false, false
-		for _, j := range r.Jobs {
-			ended = math.Max(ended, j.Ended)
-			started = math.Min(started, j.Made)
-			failed = failed || j.Conclusion == "failure" || j.Conclusion == "neutral"
-			cancelled = cancelled || j.Conclusion == "cancelled"
-		}
-		r.Ended = ended
-		if n == latest && hasFinish {
-			r.Ended = math.Max(ended, finished)
-		}
-		if n != latest && !math.IsInf(started, 1) {
-			r.Started = started
-		}
-		if r.Conclusion == "" {
-			r.Conclusion = earlierConclusion(failed, cancelled)
-		}
-		out = append(out, *r)
+	for n, r := range attempts.byN {
+		finishAzureAttempt(r, n == latest, finished, hasFinish)
 	}
-	sort.Slice(out, func(a, b int) bool { return out[a].Attempt < out[b].Attempt })
-	return out, nil
+	return attempts.sorted(), nil
 }
 
-// earlierConclusion is an earlier attempt's conclusion, from its jobs': it was run again, so
-// it did not pass as a whole, but its jobs say how it ended.
-func earlierConclusion(failed, cancelled bool) string {
-	switch {
-	case failed:
-		return "failure"
-	case cancelled:
-		return "cancelled"
+// parseAzureTime is a time Azure DevOps said; its zero time is none.
+func parseAzureTime(s string) (time.Time, bool) {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	return t, err == nil && !t.IsZero()
+}
+
+// poolName is the build's agent pool, or its queue when it says no pool.
+func (b AzureBuild) poolName() string {
+	if b.Queue.Pool.Name != "" {
+		return b.Queue.Pool.Name
 	}
-	return "success"
+	return b.Queue.Name
+}
+
+// azureBase is what each attempt of b has in common.
+func azureBase(b AzureBuild, ref string, onDefault, onTag bool, made time.Time) Run {
+	base := Run{Ref: ref, ID: b.ID, Workflow: b.Definition.Name, Event: b.Reason, Branch: b.Branch(), HeadSHA: b.SourceVer,
+		Default: onDefault, Tag: onTag && !onDefault, PR: b.PullRequest(), URL: b.Links.Web.Href, Made: made.Unix()}
+	if sha := b.TriggerInfo["pr.sourceSha"]; sha != "" {
+		base.HeadSHA = sha
+	}
+	return base
+}
+
+// azureJobReader makes jobs of a build's timeline records.
+type azureJobReader struct {
+	since  sinceFn
+	runner string
+}
+
+// job is a job of one timeline: its phase, its stage and its tasks are in the same timeline.
+func (a azureJobReader) job(records []AzureRecord, rec AzureRecord) Job {
+	byID := map[string]AzureRecord{}
+	for _, r := range records {
+		byID[r.ID] = r
+	}
+	job := Job{Name: rec.Name, Conclusion: AzureConclusion(rec.Result), Runner: a.runner}
+	phase, hasPhase := byID[rec.ParentID]
+	if hasPhase {
+		if stage, ok := byID[phase.ParentID]; ok && stage.Type == "Stage" && stage.Name != "" && stage.Name != "__default" {
+			job.Name = stage.Name + " / " + rec.Name
+		}
+	}
+	a.setTimes(&job, rec, phase, hasPhase)
+	job.Steps = a.steps(records, rec.ID)
+	return job
+}
+
+// setTimes gives job its times: made when its phase started, started when an agent took it.
+func (a azureJobReader) setTimes(job *Job, rec, phase AzureRecord, hasPhase bool) {
+	var okStart, okMade, okEnd bool
+	job.Started, okStart = a.since(rec.StartTime)
+	if job.Made, okMade = a.since(phase.StartTime); !hasPhase || !okMade || job.Made > job.Started {
+		job.Made = job.Started
+	}
+	if !okStart {
+		job.Started = job.Made
+	}
+	if job.Ended, okEnd = a.since(rec.FinishTime); !okEnd {
+		job.Ended = job.Started
+	}
+}
+
+// steps is the job jobID's tasks that say both times, in their order.
+func (a azureJobReader) steps(records []AzureRecord, jobID string) []Step {
+	var tasks []AzureRecord
+	for _, r := range records {
+		if r.ParentID == jobID && r.Type == "Task" {
+			tasks = append(tasks, r)
+		}
+	}
+	sort.SliceStable(tasks, func(x, y int) bool { return tasks[x].Order < tasks[y].Order })
+	var steps []Step
+	for i, t := range tasks {
+		started, okA := a.since(t.StartTime)
+		ended, okE := a.since(t.FinishTime)
+		if okA && okE {
+			n := t.Order
+			if n == 0 {
+				n = i + 1
+			}
+			steps = append(steps, Step{Name: t.Name, Number: n, Started: started, Ended: ended, Conclusion: AzureConclusion(t.Result)})
+		}
+	}
+	return steps
+}
+
+// addEarlierTries adds each earlier attempt of the job rec (attempt n, named name) to its
+// attempt, from the timeline it is in.
+func (a azureJobReader) addEarlierTries(attempts *attemptSet, now []AzureRecord, rec AzureRecord, n int, name string, earlier map[string][]byte) {
+	for _, p := range rec.PreviousAttempts {
+		raw, ok := earlier[p.TimelineID]
+		if !ok || p.Attempt < 1 || p.Attempt >= n {
+			continue
+		}
+		var old azureTimeline
+		if json.Unmarshal(raw, &old) != nil {
+			continue
+		}
+		for _, o := range old.Records {
+			if o.ID == p.RecordID && o.Type == "Job" {
+				// Its own timeline's phase first; the name is the newest one's, as it is one job.
+				job := a.job(append(append([]AzureRecord{}, now...), old.Records...), o)
+				job.Name = name
+				attempts.addJob(p.Attempt, job)
+			}
+		}
+	}
+}
+
+// finishAzureAttempt gives an attempt its end, an earlier attempt its start, and an earlier
+// attempt its conclusion, from its jobs; the latest also ends when the build finished.
+func finishAzureAttempt(r *Run, latest bool, finished float64, hasFinish bool) {
+	s := summarize(r.Jobs, "failure", "neutral")
+	r.Ended = s.ended
+	if latest && hasFinish {
+		r.Ended = math.Max(s.ended, finished)
+	}
+	if !latest && !math.IsInf(s.made, 1) {
+		r.Started = s.made
+	}
+	if r.Conclusion == "" {
+		r.Conclusion = earlierConclusion(s.failed, s.cancelled)
+	}
 }

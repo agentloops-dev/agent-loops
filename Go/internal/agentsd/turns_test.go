@@ -375,16 +375,7 @@ func (f *fakeRuntime) SetSessionConfigOption(_ context.Context, r sdk.SetSession
 func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.PromptResponse, error) {
 	<-f.ready
 	// The person's words are the last text: ours (a preface, the brief) go before them.
-	text := ""
-	var before []string
-	for _, b := range p.Prompt {
-		if b.Text != nil {
-			if text != "" {
-				before = append(before, text)
-			}
-			text = b.Text.Text
-		}
-	}
+	text, before := fakePromptWords(p.Prompt)
 	say := func(s string) {
 		f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateAgentMessageText(s)})
 	}
@@ -435,19 +426,7 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	}
 	// Claude's plan window says spent, and the refusal comes typed beside end_turn (052).
 	if strings.Contains(text, "typed limit") || strings.Contains(text, "pay extra") {
-		var u sdk.SessionUpdate
-		w := fmt.Sprintf(`{"status":"rejected","resetsAt":%d,"rateLimitType":"five_hour","utilization":1}`, time.Now().Add(3*time.Hour).Unix())
-		if strings.Contains(text, "pay extra") {
-			w = `{"status":"allowed","rateLimitType":"five_hour","utilization":0.4,"isUsingOverage":true}`
-		}
-		json.Unmarshal([]byte(`{"sessionUpdate":"usage_update","used":10,"size":100,"_meta":{"_claude/rateLimit":`+w+`}}`), &u)
-		f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: u})
-		if strings.Contains(text, "pay extra") {
-			say("Done, on extra usage.")
-			return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
-		}
-		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn, Meta: map[string]any{"jetbrains": map[string]any{"air": map[string]any{
-			"sessionFailure": map[string]any{"id": "f1", "category": "limit", "title": "You've hit your session limit", "actions": []any{}}}}}}, nil
+		return f.promptTypedLimit(ctx, p.SessionId, text, say)
 	}
 	if strings.Contains(text, "spend it all") {
 		return sdk.PromptResponse{}, &sdk.RequestError{Code: -32603, Message: "Internal error", Data: map[string]any{"message": "Your credit balance is too low to access the API."}}
@@ -471,53 +450,14 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	// ends; "quietly" leaves out the result's usage_update, as a runtime that names no
 	// cycle's origin does.
 	if _, path, ok := strings.Cut(text, "build in the background, then wait for "); ok {
-		path = strings.Fields(path)[0]
-		quietly := strings.Contains(text, "quietly")
-		say("Started the build in the background.")
-		go func() {
-			bg := context.Background()
-			time.Sleep(200 * time.Millisecond)
-			f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateAgentMessageText("The build finished. ")})
-			// The poll of a file the test makes, not a wait for a time: it ends with the
-			// connection too, so no goroutine outlives the run in the test's process.
-			tick := time.NewTicker(20 * time.Millisecond)
-			defer tick.Stop()
-			for {
-				if _, err := os.Stat(path); err == nil {
-					break
-				}
-				select {
-				case <-f.conn.Done():
-					return
-				case <-tick.C:
-				}
-			}
-			f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateAgentMessageText("All done.")})
-			if !quietly {
-				var u sdk.SessionUpdate
-				json.Unmarshal([]byte(`{"sessionUpdate":"usage_update","used":10,"size":100,"_meta":{"_claude/origin":{"kind":"task-notification"}}}`), &u)
-				f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: p.SessionId, Update: u})
-			}
-		}()
-		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+		return f.promptBackgroundBuild(p.SessionId, text, path, say)
 	}
 	if strings.Contains(text, "a form") {
 		return f.form(ctx, p.SessionId, strings.Contains(text, "withdraw"), say)
 	}
 	// Copilot on a refused card (#3722): the call fails and the turn ends, with no word.
 	if strings.Contains(text, "deny quietly") {
-		f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.StartToolCall("call_d", "Write /tmp/out.txt",
-			sdk.WithStartKind(sdk.ToolKindEdit), sdk.WithStartStatus(sdk.ToolCallStatusPending))})
-		r, _ := f.conn.RequestPermission(ctx, sdk.RequestPermissionRequest{SessionId: p.SessionId,
-			ToolCall: sdk.ToolCallUpdate{ToolCallId: "call_d", Title: sdk.Ptr("Write /tmp/out.txt")},
-			Options: []sdk.PermissionOption{{Kind: sdk.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: "allow"},
-				{Kind: sdk.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"}}})
-		f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateToolCall("call_d",
-			sdk.WithUpdateStatus(sdk.ToolCallStatusFailed))})
-		if r.Outcome.Selected != nil && r.Outcome.Selected.OptionId == "allow" {
-			say("Written.")
-		}
-		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+		return f.promptDenyQuietly(ctx, p.SessionId, say)
 	}
 	if strings.Contains(text, "Carry on without it") {
 		say("Carrying on without it.")
@@ -525,18 +465,7 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	}
 	// Writes "agent's\n" to the file the words name, and reports the edit (#3437).
 	if _, path, ok := strings.Cut(text, "write the file "); ok {
-		path = strings.Fields(path)[0]
-		var old []string
-		if b, err := os.ReadFile(path); err == nil {
-			old = []string{string(b)}
-		}
-		os.MkdirAll(filepath.Dir(path), 0o755)
-		os.WriteFile(path, []byte("agent's\n"), 0o644)
-		f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.StartToolCall("call_w", "Write "+filepath.Base(path),
-			sdk.WithStartKind(sdk.ToolKindEdit), sdk.WithStartStatus(sdk.ToolCallStatusCompleted),
-			sdk.WithStartContent([]sdk.ToolCallContent{sdk.ToolDiffContent(path, "agent's\n", old...)}))})
-		say("Written.")
-		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+		return f.promptWriteFile(ctx, p.SessionId, path, say)
 	}
 	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.StartToolCall("call_1", "Write hi.txt",
 		sdk.WithStartKind(sdk.ToolKindEdit), sdk.WithStartStatus(sdk.ToolCallStatusPending))})
@@ -554,6 +483,105 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 		sdk.WithUpdateStatus(sdk.ToolCallStatusCompleted))})
 	say("I wrote hi.txt. ")
 	say("Anything else?")
+	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+}
+
+// fakePromptWords gives the last text of a prompt, and the texts before it.
+func fakePromptWords(blocks []sdk.ContentBlock) (text string, before []string) {
+	for _, b := range blocks {
+		if b.Text != nil {
+			if text != "" {
+				before = append(before, text)
+			}
+			text = b.Text.Text
+		}
+	}
+	return text, before
+}
+
+// promptTypedLimit answers as Claude does when its plan window says spent: the refusal
+// comes typed beside end_turn (052). With "pay extra" it is on extra usage, and answers.
+func (f *fakeRuntime) promptTypedLimit(ctx context.Context, session sdk.SessionId, text string, say func(string)) (sdk.PromptResponse, error) {
+	var u sdk.SessionUpdate
+	w := fmt.Sprintf(`{"status":"rejected","resetsAt":%d,"rateLimitType":"five_hour","utilization":1}`, time.Now().Add(3*time.Hour).Unix())
+	if strings.Contains(text, "pay extra") {
+		w = `{"status":"allowed","rateLimitType":"five_hour","utilization":0.4,"isUsingOverage":true}`
+	}
+	json.Unmarshal([]byte(`{"sessionUpdate":"usage_update","used":10,"size":100,"_meta":{"_claude/rateLimit":`+w+`}}`), &u)
+	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: session, Update: u})
+	if strings.Contains(text, "pay extra") {
+		say("Done, on extra usage.")
+		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+	}
+	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn, Meta: map[string]any{"jetbrains": map[string]any{"air": map[string]any{
+		"sessionFailure": map[string]any{"id": "f1", "category": "limit", "title": "You've hit your session limit", "actions": []any{}}}}}}, nil
+}
+
+// promptBackgroundBuild answers as Claude with a background command (#4323). The goroutine
+// it starts is the runtime's own cycle, with no prompt in flight.
+func (f *fakeRuntime) promptBackgroundBuild(session sdk.SessionId, text, path string, say func(string)) (sdk.PromptResponse, error) {
+	path = strings.Fields(path)[0]
+	quietly := strings.Contains(text, "quietly")
+	say("Started the build in the background.")
+	go func() {
+		bg := context.Background()
+		time.Sleep(200 * time.Millisecond)
+		f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: session, Update: sdk.UpdateAgentMessageText("The build finished. ")})
+		// The poll of a file the test makes, not a wait for a time: it ends with the
+		// connection too, so no goroutine outlives the run in the test's process.
+		tick := time.NewTicker(20 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			if _, err := os.Stat(path); err == nil {
+				break
+			}
+			select {
+			case <-f.conn.Done():
+				return
+			case <-tick.C:
+			}
+		}
+		f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: session, Update: sdk.UpdateAgentMessageText("All done.")})
+		if !quietly {
+			var u sdk.SessionUpdate
+			json.Unmarshal([]byte(`{"sessionUpdate":"usage_update","used":10,"size":100,"_meta":{"_claude/origin":{"kind":"task-notification"}}}`), &u)
+			f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: session, Update: u})
+		}
+	}()
+	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+}
+
+// promptDenyQuietly answers as Copilot on a refused card (#3722): the call fails and the
+// turn ends, with no word.
+func (f *fakeRuntime) promptDenyQuietly(ctx context.Context, session sdk.SessionId, say func(string)) (sdk.PromptResponse, error) {
+	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: session, Update: sdk.StartToolCall("call_d", "Write /tmp/out.txt",
+		sdk.WithStartKind(sdk.ToolKindEdit), sdk.WithStartStatus(sdk.ToolCallStatusPending))})
+	r, _ := f.conn.RequestPermission(ctx, sdk.RequestPermissionRequest{SessionId: session,
+		ToolCall: sdk.ToolCallUpdate{ToolCallId: "call_d", Title: sdk.Ptr("Write /tmp/out.txt")},
+		Options: []sdk.PermissionOption{{Kind: sdk.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: "allow"},
+			{Kind: sdk.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"}}})
+	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: session, Update: sdk.UpdateToolCall("call_d",
+		sdk.WithUpdateStatus(sdk.ToolCallStatusFailed))})
+	if r.Outcome.Selected != nil && r.Outcome.Selected.OptionId == "allow" {
+		say("Written.")
+	}
+	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+}
+
+// promptWriteFile writes "agent's\n" to the file the words name, and reports the edit
+// (#3437).
+func (f *fakeRuntime) promptWriteFile(ctx context.Context, session sdk.SessionId, path string, say func(string)) (sdk.PromptResponse, error) {
+	path = strings.Fields(path)[0]
+	var old []string
+	if b, err := os.ReadFile(path); err == nil {
+		old = []string{string(b)}
+	}
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	os.WriteFile(path, []byte("agent's\n"), 0o644)
+	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: session, Update: sdk.StartToolCall("call_w", "Write "+filepath.Base(path),
+		sdk.WithStartKind(sdk.ToolKindEdit), sdk.WithStartStatus(sdk.ToolCallStatusCompleted),
+		sdk.WithStartContent([]sdk.ToolCallContent{sdk.ToolDiffContent(path, "agent's\n", old...)}))})
+	say("Written.")
 	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
 }
 
@@ -677,17 +705,10 @@ func TestATurnWithACard(t *testing.T) {
 	d, c := start(t, root)
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work,
-		"prompt": "Please ask, then write hi.txt", "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}}), &id)
 	var permission wire.PermissionRequest
-	c.until(t, "a card", func(method string, p json.RawMessage) bool {
-		var n wire.PermissionNotification
-		if method == "agent/permission" && json.Unmarshal(p, &n) == nil && n.Request != nil {
-			permission = *n.Request
-			return true
-		}
-		return false
-	})
+	json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work,
+		"prompt": "Please ask, then write hi.txt", "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}},
+		"a card", aCard(&permission)), &id)
 	if got := d.pendingPermissions(); len(got) != 1 || got[0].ID != permission.ID {
 		t.Fatalf("pending %v", got)
 	}
@@ -772,17 +793,9 @@ func TestACardAnsweredInWordsDoesNotCarryOn(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
-		"prompt": "Please ask, then write hi.txt"}), &id)
 	var permission wire.PermissionRequest
-	c.until(t, "a card", func(method string, p json.RawMessage) bool {
-		var n wire.PermissionNotification
-		if method == "agent/permission" && json.Unmarshal(p, &n) == nil && n.Request != nil {
-			permission = *n.Request
-			return true
-		}
-		return false
-	})
+	json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+		"prompt": "Please ask, then write hi.txt"}, "a card", aCard(&permission)), &id)
 	c.call(t, 2, "permissions/answer", map[string]any{"permissionID": permission.ID, "optionID": "reject"})
 	waitFor(t, "the end", func() bool { a := d.Store.Agent(id); return a.State == wire.AgentStateFinished })
 	if a := d.Store.Agent(id); len(a.QueuedPrompts) != 0 || a.Report == nil || a.Report.Message != "You said no." {

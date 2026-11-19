@@ -67,24 +67,7 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 		return wire.WorkTimeline{}, Invalid("%s: to is before from", method)
 	}
 	out := wire.WorkTimeline{Epics: []wire.WorkTimelineEpic{}, Releases: []wire.WorkTimelineRelease{}, TimeZone: zoneName()}
-	var repos []forgeRepo
-	folderOf := map[forgeRepo]string{}
-	other := false
-	for _, f := range d.folderPaths() {
-		if projectOfFolder(f) != r.Project {
-			continue
-		}
-		repo := d.folderRepo(f)
-		if _, seen := folderOf[repo]; seen || repo.path == "" {
-			continue
-		}
-		if repo.forge != "github" {
-			other = true
-			continue
-		}
-		folderOf[repo] = f
-		repos = append(repos, repo)
-	}
+	repos, folderOf, other := d.workTimelineRepos(r.Project)
 	if other {
 		out.Errors = append(out.Errors, method+timelineGitHubOnly)
 	}
@@ -144,6 +127,28 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	})
 	slices.SortFunc(out.Releases, func(a, b wire.WorkTimelineRelease) int { return cmp.Compare(a.At, b.At) })
 	return out, nil
+}
+
+// workTimelineRepos is each repo of a project's folders, once, with the folder it came
+// from. other says that a folder's repo is on a forge other than GitHub.
+func (d *Daemon) workTimelineRepos(project string) (repos []forgeRepo, folderOf map[forgeRepo]string, other bool) {
+	folderOf = map[forgeRepo]string{}
+	for _, f := range d.folderPaths() {
+		if projectOfFolder(f) != project {
+			continue
+		}
+		repo := d.folderRepo(f)
+		if _, seen := folderOf[repo]; seen || repo.path == "" {
+			continue
+		}
+		if repo.forge != "github" {
+			other = true
+			continue
+		}
+		folderOf[repo] = f
+		repos = append(repos, repo)
+	}
+	return repos, folderOf, other
 }
 
 // githubTimeline is a repo's timeline read, kept for forgeCacheFor as the other forge reads are.

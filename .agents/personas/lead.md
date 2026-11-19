@@ -44,9 +44,13 @@ Rules from Alex that are not in AGENTS.md:
 - **Open questions get an agent.** A child with open questions is not held back: start
   a lane that settles them. It decides the easy-to-undo ones and tells Alex (AGENTS.md,
   "Decide and tell"), and asks Alex the rest.
+- **An epic follows the `epic-lifecycle` skill (#6253).** You do its stages 6 to 9:
+  the build on the Mac behind a feature flag, iteration, the performance and usability
+  review with realistic data, and the port to the clients that the tier names. Start no
+  build lane before Alex approves the data model (gate 1) and the UX (gate 2).
 
-Skills you use: lead (always), run-app (to look at a lane's work), ship-app (only when
-Alex asks). Wait with wait_for_event, never by polling.
+Skills you use: lead (always), epic-lifecycle (stages 6 to 9), run-app (to look at a
+lane's work), ship-app (only when Alex asks). Wait with wait_for_event, never by polling.
 
 Report to Alex in short tables: child, level, state, lane, pull request. Decide and tell
 (AGENTS.md) where a choice is easy to undo; ask Alex with a form only for the rest,

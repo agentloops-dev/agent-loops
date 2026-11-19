@@ -94,13 +94,32 @@ func FromGitLab(p GitLabPipeline, jobsRaw []byte, ref string, onDefault, onTag b
 	}
 	// The oldest try of a name first: GitLab numbers its jobs as it makes them.
 	sort.SliceStable(jobs, func(a, b int) bool { return jobs[a].ID < jobs[b].ID })
-	since := func(s string) (float64, bool) {
-		t, err := time.Parse(time.RFC3339, s)
-		if err != nil {
-			return 0, false
+	since := sinceMade(made, parseRFC3339)
+	attempts := newAttempts(gitLabBase(p, jobs, ref, onDefault, onTag, made))
+	tries := map[string]int{}
+	firstMade := map[int]float64{}
+	for _, j := range jobs {
+		tries[j.Name]++
+		n := tries[j.Name]
+		job, ran := gitLabJobOf(j, since)
+		if f, ok := firstMade[n]; ran && (!ok || job.Made < f) {
+			firstMade[n] = job.Made
 		}
-		return math.Round(t.Sub(made).Seconds()*10) / 10, true
+		attempts.addJob(n, job)
 	}
+	last := 1
+	for n := range attempts.byN {
+		last = max(last, n)
+	}
+	attempts.of(1)
+	for n, r := range attempts.byN {
+		finishGitLabAttempt(r, firstMade[n], n == last, p, since)
+	}
+	return attempts.sorted(), nil
+}
+
+// gitLabBase is what each attempt of p has in common; a job of a tag makes it a tag's.
+func gitLabBase(p GitLabPipeline, jobs []gitLabJob, ref string, onDefault, onTag bool, made time.Time) Run {
 	base := Run{Ref: ref, ID: p.ID, Workflow: p.Name, Event: p.Source, Branch: p.Ref, HeadSHA: p.SHA, Default: onDefault,
 		URL: p.WebURL, Made: made.Unix()}
 	if base.Workflow == "" {
@@ -113,85 +132,52 @@ func FromGitLab(p GitLabPipeline, jobsRaw []byte, ref string, onDefault, onTag b
 		onTag = onTag || j.Tag
 	}
 	base.Tag = onTag && !onDefault
-	tries := map[string]int{}
-	firstMade := map[int]float64{}
-	attempts := map[int]*Run{}
-	for _, j := range jobs {
-		tries[j.Name]++
-		n := tries[j.Name]
-		r := attempts[n]
-		if r == nil {
-			c := base
-			c.Attempt, c.Jobs = n, []Job{}
-			r = &c
-			attempts[n] = r
-		}
-		job := Job{Name: j.Name, Conclusion: gitLabConclusion(j.Status)}
-		if j.Runner != nil {
-			job.Runner = j.Runner.Description
-		}
-		started, ran := since(j.StartedAt)
-		if !ran {
-			// It never ran (skipped, manual, or cancelled before a runner took it).
-			created, ok := since(j.CreatedAt)
-			if !ok {
-				created = 0
-			}
-			job.Made, job.Started = created, created
-			job.Ended = created
-			if e, ok := since(j.FinishedAt); ok {
-				job.Ended = e
-			}
-		} else {
-			job.Started = started
-			job.Made, _ = since(j.CreatedAt)
-			if j.QueuedDuration != nil {
-				job.Made = math.Max(math.Round((started-*j.QueuedDuration)*10)/10, 0)
-			}
-			if job.Ended, ran = since(j.FinishedAt); !ran {
-				job.Ended = started
-			}
-			if f, ok := firstMade[n]; !ok || job.Made < f {
-				firstMade[n] = job.Made
-			}
-		}
-		r.Jobs = append(r.Jobs, job)
+	return base
+}
+
+// gitLabJobOf is a job of the jobs answer; ran says a runner started it.
+func gitLabJobOf(j gitLabJob, since sinceFn) (Job, bool) {
+	job := Job{Name: j.Name, Conclusion: gitLabConclusion(j.Status)}
+	if j.Runner != nil {
+		job.Runner = j.Runner.Description
 	}
-	last := 1
-	for n := range attempts {
-		last = max(last, n)
-	}
-	if attempts[1] == nil {
-		c := base
-		c.Attempt, c.Jobs = 1, []Job{}
-		attempts[1] = &c
-	}
-	var out []Run
-	for n, r := range attempts {
-		ended := 0.0
-		failed, cancelled := false, false
-		for _, j := range r.Jobs {
-			ended = math.Max(ended, j.Ended)
-			failed = failed || j.Conclusion == "failure"
-			cancelled = cancelled || j.Conclusion == "cancelled"
+	started, ran := since(j.StartedAt)
+	if !ran {
+		// It never ran (skipped, manual, or cancelled before a runner took it).
+		created, ok := since(j.CreatedAt)
+		if !ok {
+			created = 0
 		}
-		r.Started = firstMade[n]
-		if r.Ended = ended; r.Ended == 0 {
-			r.Ended, _ = since(p.UpdatedAt)
+		job.Made, job.Started, job.Ended = created, created, created
+		if e, ok := since(j.FinishedAt); ok {
+			job.Ended = e
 		}
-		switch {
-		case n == last && p.Status != "":
-			r.Conclusion = gitLabConclusion(p.Status)
-		case failed:
-			// An earlier try was run again, so it did not pass.
-			r.Conclusion = "failure"
-		case cancelled:
-			r.Conclusion = "cancelled"
-		default:
-			r.Conclusion = "success"
-		}
-		out = append(out, *r)
+		return job, false
 	}
-	sort.Slice(out, func(a, b int) bool { return out[a].Attempt < out[b].Attempt })
-	return out, nil
+	job.Started = started
+	job.Made, _ = since(j.CreatedAt)
+	if j.QueuedDuration != nil {
+		job.Made = math.Max(math.Round((started-*j.QueuedDuration)*10)/10, 0)
+	}
+	var ok bool
+	if job.Ended, ok = since(j.FinishedAt); !ok {
+		job.Ended = started
+	}
+	return job, true
+}
+
+// finishGitLabAttempt gives an attempt its start, its end and its conclusion: the last the
+// pipeline's, an earlier one its jobs'.
+func finishGitLabAttempt(r *Run, firstMade float64, last bool, p GitLabPipeline, since sinceFn) {
+	s := summarize(r.Jobs, "failure")
+	r.Started = firstMade
+	if r.Ended = s.ended; r.Ended == 0 {
+		r.Ended, _ = since(p.UpdatedAt)
+	}
+	if last && p.Status != "" {
+		r.Conclusion = gitLabConclusion(p.Status)
+		return
+	}
+	// An earlier try was run again, so it did not pass.
+	r.Conclusion = earlierConclusion(s.failed, s.cancelled)
 }

@@ -22,6 +22,30 @@ func (f *fakeForgeGitHub) Timeline(_ context.Context, repo, _ string) (githubmcp
 	return f.timeline, nil
 }
 
+// checkTimelineOpenEpic checks the open epic of TestWorkTimelineForecastsTheOpenEpics: its
+// forecast, its one segment, its children's starts, forecasts and labels. firstPR is the
+// date of the first child's PR.
+func checkTimelineOpenEpic(t *testing.T, e wire.WorkTimelineEpic, now time.Time, firstPR wire.Date) {
+	t.Helper()
+	if e.Forecast == nil || e.Forecast.Waits == nil || !(e.Forecast.Low <= e.Forecast.Mid && e.Forecast.Mid <= e.Forecast.High) || e.Forecast.Low < wire.DateOf(now) {
+		t.Fatalf("forecast %+v", e.Forecast)
+	}
+	if len(e.Segments) != 1 || e.Segments[0].ClosedAt != nil || *e.Segments[0].StartedAt != wire.DateOf(now.Add(-8*time.Hour)) {
+		t.Fatalf("segments %+v", e.Segments)
+	}
+	kids := e.Children
+	if *kids[2].StartedAt != wire.DateOf(now.Add(-8*time.Hour)) || kids[3].StartedAt != nil || *kids[0].StartedAt != firstPR {
+		t.Fatalf("starts: %v, %v, %v", kids[2].StartedAt, kids[3].StartedAt, kids[0].StartedAt)
+	}
+	if kids[2].ForecastAt == nil || kids[3].ForecastAt == nil || kids[4].ForecastAt != nil || kids[4].WaitsForPerson == nil || kids[0].ForecastAt != nil {
+		t.Fatalf("children: %+v", kids)
+	}
+	// The children's labels, with their colours, for the hover card's chips (#4428).
+	if l := kids[1].Item.Labels; len(l) != 2 || l[0].Name != "bug" || l[0].Color == nil || *l[0].Color != "#d73a4a" || l[1].Name != "ui" || l[1].Color != nil {
+		t.Fatalf("labels %+v", l)
+	}
+}
+
 // #4172: work/timeline gives a project's epics that overlap the window, each child with its
 // start (lineage's first session, else the first PR, else its close), the epic's segments, and
 // the open one's forecast; children that wait for a person are not forecast; the releases in
@@ -96,24 +120,7 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 	if len(got) != 2 || got[20].Item.Title == "" || got[23].Item.Title == "" {
 		t.Fatalf("epics in the window: %v", tl.Epics)
 	}
-	e := got[20]
-	if e.Forecast == nil || e.Forecast.Waits == nil || !(e.Forecast.Low <= e.Forecast.Mid && e.Forecast.Mid <= e.Forecast.High) || e.Forecast.Low < wire.DateOf(now) {
-		t.Fatalf("forecast %+v", e.Forecast)
-	}
-	if len(e.Segments) != 1 || e.Segments[0].ClosedAt != nil || *e.Segments[0].StartedAt != wire.DateOf(now.Add(-8*time.Hour)) {
-		t.Fatalf("segments %+v", e.Segments)
-	}
-	kids := e.Children
-	if *kids[2].StartedAt != wire.DateOf(now.Add(-8*time.Hour)) || kids[3].StartedAt != nil || *kids[0].StartedAt != forgeDate(stamp(-7)) {
-		t.Fatalf("starts: %v, %v, %v", kids[2].StartedAt, kids[3].StartedAt, kids[0].StartedAt)
-	}
-	if kids[2].ForecastAt == nil || kids[3].ForecastAt == nil || kids[4].ForecastAt != nil || kids[4].WaitsForPerson == nil || kids[0].ForecastAt != nil {
-		t.Fatalf("children: %+v", kids)
-	}
-	// The children's labels, with their colours, for the hover card's chips (#4428).
-	if l := kids[1].Item.Labels; len(l) != 2 || l[0].Name != "bug" || l[0].Color == nil || *l[0].Color != "#d73a4a" || l[1].Name != "ui" || l[1].Color != nil {
-		t.Fatalf("labels %+v", l)
-	}
+	checkTimelineOpenEpic(t, got[20], now, forgeDate(stamp(-7)))
 	if s := got[23].Segments; len(s) != 2 || s[0].ClosedAt == nil || s[1].ClosedAt != nil || got[23].Forecast == nil {
 		t.Fatalf("a child filed after the line ended starts a second: %+v", got[23])
 	}

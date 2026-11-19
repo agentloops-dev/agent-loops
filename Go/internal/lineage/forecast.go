@@ -298,41 +298,8 @@ func RunBacktest(spans []Span, closes []time.Time, now time.Time, loc *time.Loca
 		if !learnable(s) || !s.End.Before(now) || s.End.Before(now.Add(-ForecastWindow)) {
 			continue
 		}
-		xs := make([]time.Time, 0, len(s.Children))
-		for _, c := range s.Children {
-			xs = append(xs, c.Closed)
-		}
-		slices.SortFunc(xs, time.Time.Compare)
-		forecast := false
-		for _, q := range cuts {
-			t := xs[max(0, int(float64(len(xs))*q)-1)]
-			if hours(t) >= hours(s.End)-1e-6 {
-				continue
-			}
-			known, open := 0, 0
-			for _, c := range s.Children {
-				if !c.Filed.After(t) {
-					known++
-					if c.Closed.After(t) {
-						open++
-					}
-				}
-			}
-			if open == 0 {
-				continue
-			}
-			m, ok := Learn(spans, closes, t, loc)
-			if !ok {
-				continue
-			}
-			sums := m.draw(m.toCome(known, known-open, open), rng)
-			th := hours(t)
-			at := func(w float64) float64 { return m.Clock.after(th, w) - th }
-			out = append(out, backtestCut{low: at(sums[ForecastDraws/10]), mid: at(sums[ForecastDraws/2]),
-				high: at(sums[ForecastDraws*9/10]), actual: hours(s.End) - th})
-			forecast = true
-		}
-		if forecast {
+		if got := backtestSpan(s, spans, closes, loc, cuts, rng); len(got) > 0 {
+			out = append(out, got...)
 			tested++
 		}
 	}
@@ -351,6 +318,50 @@ func RunBacktest(spans []Span, closes []time.Time, now time.Time, loc *time.Loca
 	b.Error = median(errs)
 	b.Width = widthFor(out)
 	return b, true
+}
+
+// backtestSpan forecasts one ended span's end from each cut (a share of its children
+// closed), with what was known then, and keeps each forecast beside the actual end.
+func backtestSpan(s Span, spans []Span, closes []time.Time, loc *time.Location, cuts []float64, rng *rand.Rand) []backtestCut {
+	xs := make([]time.Time, 0, len(s.Children))
+	for _, c := range s.Children {
+		xs = append(xs, c.Closed)
+	}
+	slices.SortFunc(xs, time.Time.Compare)
+	var out []backtestCut
+	for _, q := range cuts {
+		t := xs[max(0, int(float64(len(xs))*q)-1)]
+		if hours(t) >= hours(s.End)-1e-6 {
+			continue
+		}
+		known, open := knownAndOpen(s, t)
+		if open == 0 {
+			continue
+		}
+		m, ok := Learn(spans, closes, t, loc)
+		if !ok {
+			continue
+		}
+		sums := m.draw(m.toCome(known, known-open, open), rng)
+		th := hours(t)
+		at := func(w float64) float64 { return m.Clock.after(th, w) - th }
+		out = append(out, backtestCut{low: at(sums[ForecastDraws/10]), mid: at(sums[ForecastDraws/2]),
+			high: at(sums[ForecastDraws*9/10]), actual: hours(s.End) - th})
+	}
+	return out
+}
+
+// knownAndOpen counts a span's children filed by t, and those of them still open at t.
+func knownAndOpen(s Span, t time.Time) (known, open int) {
+	for _, c := range s.Children {
+		if !c.Filed.After(t) {
+			known++
+			if c.Closed.After(t) {
+				open++
+			}
+		}
+	}
+	return known, open
 }
 
 // widthFor is the smallest width, in steps of 0.05 from 0.25 to 20, whose band holds

@@ -76,35 +76,16 @@ func TestEachUseOfASecretIsRecorded(t *testing.T) {
 	if err := d.setSessionSecret(a.ID, "SESSION_KEY", values[3], "", false); err != nil {
 		t.Fatal(err)
 	}
-	changed := secretEvents(d, "secret.changed")
-	var changes []string
-	for _, e := range changed {
-		changes = append(changes, e.Details["name"]+" "+e.Details["change"])
-	}
-	if strings.Join(changes, ", ") != "API_TOKEN added, DOCS_KEY added, DOCS_KEY replaced, SESSION_KEY added" ||
-		changed[3].Details["agent"] != string(a.ID) || changed[3].Details["machine"] == "" {
-		t.Fatalf("%v %+v", changes, changed)
-	}
+	checkSecretChangesRecorded(t, d, a.ID)
 
 	// The start gives the session its own secret and the docs server's header; the flagged
 	// one waits for agentsd to fill it on each request.
 	d.mcpServersFor(a.ID)
-	reads := func() map[string]string {
-		out := map[string]string{}
-		for _, e := range secretEvents(d, "secret.read") {
-			out[e.Details["name"]] = e.Details["use"] + " " + e.Details["place"] + " " + e.Details["agent"]
-		}
-		return out
-	}
+	reads := func() map[string]string { return secretReadsByName(d) }
 	if got := reads(); len(got) != 2 || got["SESSION_KEY"] != "env session "+string(a.ID) || got["DOCS_KEY"] != "env docs "+string(a.ID) {
 		t.Fatal(got)
 	}
-	var p *secretProxy
-	d.secretProxyMu.Lock()
-	for _, x := range d.secretProxies {
-		p = x
-	}
-	d.secretProxyMu.Unlock()
+	p := onlySecretProxy(d)
 	if _, words := d.secretProxyValues(p); words == "" {
 		t.Fatal("not asked")
 	}
@@ -131,15 +112,7 @@ func TestEachUseOfASecretIsRecorded(t *testing.T) {
 		ops = told()
 		return len(ops) == 8
 	})
-	var mcp *wire.SecretOperation
-	for i, op := range ops {
-		if op.What == wire.SecretOperationWhatRead && op.Use != nil && *op.Use == wire.SecretOperationUseMCP {
-			mcp = &ops[i]
-		}
-	}
-	if mcp == nil || mcp.Count == nil || *mcp.Count != 3 || *mcp.Place != "notes" || *mcp.Agent != a.ID {
-		t.Fatalf("%+v", ops)
-	}
+	checkMCPReadsBatched(t, ops, a.ID)
 
 	// The last operation of each, kept on disk.
 	if op, ok := d.secretLastOp("DOCS_KEY"); !ok || op.What != wire.SecretOperationWhatRead || *op.Use != wire.SecretOperationUseEnv || *op.Place != "docs" {
@@ -157,10 +130,67 @@ func TestEachUseOfASecretIsRecorded(t *testing.T) {
 	}
 
 	// Never a value, never its hint.
+	checkNoSecretHints(t, d, told(), raw, values)
+}
+
+// checkSecretChangesRecorded checks the secret.changed events of the secrets that
+// TestEachUseOfASecretIsRecorded saves: in order, the last one the session's.
+func checkSecretChangesRecorded(t *testing.T, d *Daemon, agent wire.UUID) {
+	t.Helper()
+	changed := secretEvents(d, "secret.changed")
+	var changes []string
+	for _, e := range changed {
+		changes = append(changes, e.Details["name"]+" "+e.Details["change"])
+	}
+	if strings.Join(changes, ", ") != "API_TOKEN added, DOCS_KEY added, DOCS_KEY replaced, SESSION_KEY added" ||
+		changed[3].Details["agent"] != string(agent) || changed[3].Details["machine"] == "" {
+		t.Fatalf("%v %+v", changes, changed)
+	}
+}
+
+// secretReadsByName is the use, place and agent of the last secret.read event of each secret.
+func secretReadsByName(d *Daemon) map[string]string {
+	out := map[string]string{}
+	for _, e := range secretEvents(d, "secret.read") {
+		out[e.Details["name"]] = e.Details["use"] + " " + e.Details["place"] + " " + e.Details["agent"]
+	}
+	return out
+}
+
+// onlySecretProxy is the daemon's secret proxy (the last one, when there are more).
+func onlySecretProxy(d *Daemon) *secretProxy {
+	var p *secretProxy
+	d.secretProxyMu.Lock()
+	for _, x := range d.secretProxies {
+		p = x
+	}
+	d.secretProxyMu.Unlock()
+	return p
+}
+
+// checkMCPReadsBatched checks that ops has the MCP server's reads as one operation with a
+// count of 3, for agent.
+func checkMCPReadsBatched(t *testing.T, ops []wire.SecretOperation, agent wire.UUID) {
+	t.Helper()
+	var mcp *wire.SecretOperation
+	for i, op := range ops {
+		if op.What == wire.SecretOperationWhatRead && op.Use != nil && *op.Use == wire.SecretOperationUseMCP {
+			mcp = &ops[i]
+		}
+	}
+	if mcp == nil || mcp.Count == nil || *mcp.Count != 3 || *mcp.Place != "notes" || *mcp.Agent != agent {
+		t.Fatalf("%+v", ops)
+	}
+}
+
+// checkNoSecretHints checks that no value's last four characters are in the events, the
+// audit told or the record raw.
+func checkNoSecretHints(t *testing.T, d *Daemon, told []wire.SecretOperation, raw []byte, values []string) {
+	t.Helper()
 	d.eventMu.Lock()
 	events, _ := json.Marshal(d.eventList)
 	d.eventMu.Unlock()
-	sent, _ := json.Marshal(told())
+	sent, _ := json.Marshal(told)
 	for _, v := range values {
 		hint := v[len(v)-4:]
 		for what, b := range map[string][]byte{"the events": events, "the audit": sent, "the record": raw} {

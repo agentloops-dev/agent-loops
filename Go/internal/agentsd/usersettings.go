@@ -148,44 +148,7 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	}
 	home := d.personalHome()
 	s := u.Settings
-	if partSent(s.McpServers) {
-		note(wire.UserSettingsPartNameMcpServers, writeMCPServers(home, s.McpServers))
-	}
-	if partSent(s.AgentConfig) {
-		files, err := writeAgentConfig(home, s.AgentConfig, agentConfigWrote(before.Files))
-		mark.Files = files
-		note(wire.UserSettingsPartNameAgentConfig, err)
-	} else {
-		// Not the control plane's any more: what it wrote stays, as this machine's own.
-		mark.Files = nil
-	}
-	if s.AgentConfigFiles != nil && len(s.AgentConfigFiles.Files) > 0 {
-		log.Printf("user settings: %d agent configuration files from other machines were not written", len(s.AgentConfigFiles.Files))
-	}
-	if partSent(s.Runtimes) {
-		note(wire.UserSettingsPartNameRuntimes, d.writeRuntimeChoices(s.Runtimes))
-	}
-	// costLimits and notifications go (#2957, research R11): their rules now come from
-	// your layer, sent in the part policy instead and applied by applyYoursFromControlPlane.
-	if partSent(s.Policy) {
-		note(wire.UserSettingsPartNamePolicy, d.applyYoursFromControlPlane(s.Policy))
-	}
-	if partSent(s.Environment) {
-		changed, err := d.writeYoursEnvLocked(home, s.Environment, before, &mark)
-		envChanged = changed
-		note(wire.UserSettingsPartNameEnvironment, err)
-	}
-	// person, auto and retention (#5573): the Mac sets each once, here, in place of a call to
-	// each of the person's machines.
-	if partSent(s.Person) {
-		note(wire.UserSettingsPartNamePerson, d.applyPersonPart(s.Person))
-	}
-	if partSent(s.Auto) {
-		note(wire.UserSettingsPartNameAuto, d.applyAutoPart(s.Auto))
-	}
-	if partSent(s.Retention) {
-		note(wire.UserSettingsPartNameRetention, d.applyRetentionPart(s.Retention))
-	}
+	envChanged = d.applyUserSettingsPartsLocked(home, s, before, &mark, note)
 	// timeZone (#4818): the zone of a workflow's hours: with no time-zone:.
 	mark.TimeZone = zoneOfPart(s.TimeZone)
 	opened, flagged, versions, kept, hints := d.openUserSecrets(u, before)
@@ -206,13 +169,7 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	}
 	mark.Secrets, mark.Versions = names, versions
 	if err == nil {
-		// A name kept as it is here keeps its hint (#4158).
-		for n, h := range readSecretHints(home) {
-			if _, opened := hints[n]; !opened {
-				hints[n] = h
-			}
-		}
-		writeSecretHints(home, hints, names)
+		keepSecretHintsHere(home, hints, names)
 	}
 	if err == nil && before.User == u.User {
 		changes = userSecretChanges(before, mark)
@@ -681,38 +638,8 @@ func agentConfigHere(home string) (wire.UserAgentConfig, []string) {
 		text := string(b)
 		config.Instructions = &text
 	}
-	if entries, err := os.ReadDir(filepath.Join(base, "personas")); err == nil {
-		for _, e := range entries {
-			name, ok := strings.CutSuffix(e.Name(), ".md")
-			if !ok || !e.Type().IsRegular() || !agentConfigName.MatchString(name) {
-				continue
-			}
-			if b, err := os.ReadFile(filepath.Join(base, "personas", e.Name())); err == nil {
-				if config.Personas == nil {
-					config.Personas = map[string]string{}
-				}
-				config.Personas[name] = string(b)
-			}
-		}
-	}
-	if entries, err := os.ReadDir(filepath.Join(base, "skills")); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() || !agentConfigName.MatchString(e.Name()) {
-				continue
-			}
-			files, _ := os.ReadDir(filepath.Join(base, "skills", e.Name()))
-			if len(files) != 1 || files[0].Name() != "SKILL.md" || !files[0].Type().IsRegular() {
-				left = append(left, e.Name())
-				continue
-			}
-			if b, err := os.ReadFile(filepath.Join(base, "skills", e.Name(), "SKILL.md")); err == nil {
-				if config.Skills == nil {
-					config.Skills = map[string]string{}
-				}
-				config.Skills[e.Name()] = string(b)
-			}
-		}
-	}
+	config.Personas = agentConfigPersonasHere(base)
+	config.Skills, left = agentConfigSkillsHere(base)
 	sort.Strings(left)
 	return config, left
 }
@@ -720,4 +647,108 @@ func agentConfigHere(home string) (wire.UserAgentConfig, []string) {
 func asJSON(v any) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+// applyUserSettingsPartsLocked writes each part of the settings that the control plane
+// sent, and gives note each part's error. It says whether the environment changed.
+// d.userScopeMu is held.
+func (d *Daemon) applyUserSettingsPartsLocked(home string, s wire.UserSettings, before userSettingsSyncState, mark *userSettingsSyncState, note func(wire.UserSettingsPartName, error)) (envChanged bool) {
+	if partSent(s.McpServers) {
+		note(wire.UserSettingsPartNameMcpServers, writeMCPServers(home, s.McpServers))
+	}
+	if partSent(s.AgentConfig) {
+		files, err := writeAgentConfig(home, s.AgentConfig, agentConfigWrote(before.Files))
+		mark.Files = files
+		note(wire.UserSettingsPartNameAgentConfig, err)
+	} else {
+		// Not the control plane's any more: what it wrote stays, as this machine's own.
+		mark.Files = nil
+	}
+	if s.AgentConfigFiles != nil && len(s.AgentConfigFiles.Files) > 0 {
+		log.Printf("user settings: %d agent configuration files from other machines were not written", len(s.AgentConfigFiles.Files))
+	}
+	if partSent(s.Runtimes) {
+		note(wire.UserSettingsPartNameRuntimes, d.writeRuntimeChoices(s.Runtimes))
+	}
+	// costLimits and notifications go (#2957, research R11): their rules now come from
+	// your layer, sent in the part policy instead and applied by applyYoursFromControlPlane.
+	if partSent(s.Policy) {
+		note(wire.UserSettingsPartNamePolicy, d.applyYoursFromControlPlane(s.Policy))
+	}
+	if partSent(s.Environment) {
+		changed, err := d.writeYoursEnvLocked(home, s.Environment, before, mark)
+		envChanged = changed
+		note(wire.UserSettingsPartNameEnvironment, err)
+	}
+	// person, auto and retention (#5573): the Mac sets each once, here, in place of a call to
+	// each of the person's machines.
+	if partSent(s.Person) {
+		note(wire.UserSettingsPartNamePerson, d.applyPersonPart(s.Person))
+	}
+	if partSent(s.Auto) {
+		note(wire.UserSettingsPartNameAuto, d.applyAutoPart(s.Auto))
+	}
+	if partSent(s.Retention) {
+		note(wire.UserSettingsPartNameRetention, d.applyRetentionPart(s.Retention))
+	}
+	return envChanged
+}
+
+// keepSecretHintsHere writes the hints of the secrets names. A name kept as it is here
+// keeps its hint (#4158).
+func keepSecretHintsHere(home string, hints map[string]secretHintRecord, names []string) {
+	for n, h := range readSecretHints(home) {
+		if _, opened := hints[n]; !opened {
+			hints[n] = h
+		}
+	}
+	writeSecretHints(home, hints, names)
+}
+
+// agentConfigPersonasHere reads the personas under base, by name, or nil when there are none.
+func agentConfigPersonasHere(base string) map[string]string {
+	var personas map[string]string
+	entries, err := os.ReadDir(filepath.Join(base, "personas"))
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		name, ok := strings.CutSuffix(e.Name(), ".md")
+		if !ok || !e.Type().IsRegular() || !agentConfigName.MatchString(name) {
+			continue
+		}
+		if b, err := os.ReadFile(filepath.Join(base, "personas", e.Name())); err == nil {
+			if personas == nil {
+				personas = map[string]string{}
+			}
+			personas[name] = string(b)
+		}
+	}
+	return personas
+}
+
+// agentConfigSkillsHere reads the skills under base, by name, or nil when there are none.
+// It also gives the skills it left out, because they hold more than a SKILL.md.
+func agentConfigSkillsHere(base string) (skills map[string]string, left []string) {
+	entries, err := os.ReadDir(filepath.Join(base, "skills"))
+	if err != nil {
+		return nil, nil
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !agentConfigName.MatchString(e.Name()) {
+			continue
+		}
+		files, _ := os.ReadDir(filepath.Join(base, "skills", e.Name()))
+		if len(files) != 1 || files[0].Name() != "SKILL.md" || !files[0].Type().IsRegular() {
+			left = append(left, e.Name())
+			continue
+		}
+		if b, err := os.ReadFile(filepath.Join(base, "skills", e.Name(), "SKILL.md")); err == nil {
+			if skills == nil {
+				skills = map[string]string{}
+			}
+			skills[e.Name()] = string(b)
+		}
+	}
+	return skills, left
 }

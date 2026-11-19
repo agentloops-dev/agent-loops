@@ -154,29 +154,11 @@ func (f *RealForgejo) FailedLog(ctx context.Context, repo string, run int, job s
 		if !j.failed() || (job != "" && j.Name != job) {
 			continue
 		}
-		logs := fmt.Sprintf("%s/actions/jobs/%d/logs", repoPath(repo), j.ID)
-		name, end := j.Name, ""
-		if srv.steps() {
-			if s, ok := f.failedStep(ctx, repo, j.ID); ok {
-				if end, err = f.jobLog(ctx, logs+"?step="+strconv.Itoa(s.number)); err != nil {
-					return "", err
-				}
-				if strings.TrimSpace(end) != "" {
-					name += " ▸ " + s.name
-				}
-			}
+		part, err := f.failedJobLog(ctx, repo, srv, j, page)
+		if err != nil {
+			return "", err
 		}
-		// A step that failed with nothing to say: the whole job's log says what ran before it.
-		if strings.TrimSpace(end) == "" {
-			if end, err = f.jobLog(ctx, logs); err != nil {
-				return "", err
-			}
-		}
-		url := j.HTMLURL
-		if url == "" {
-			url = page
-		}
-		parts = append(parts, fmt.Sprintf("== %s (%s), last %d lines ==\n%s", name, url, logLines, end))
+		parts = append(parts, part)
 	}
 	if len(parts) == 0 {
 		if job != "" {
@@ -185,6 +167,36 @@ func (f *RealForgejo) FailedLog(ctx context.Context, repo string, run int, job s
 		return fmt.Sprintf("No failed jobs in run %d (%s).", run, page), nil
 	}
 	return strings.Join(parts, "\n\n"), nil
+}
+
+// failedJobLog is one failed job's part of FailedLog: the end of its failed step's log, or of
+// the whole job's when the step has none, under a line that names the job and links it.
+func (f *RealForgejo) failedJobLog(ctx context.Context, repo string, srv forge, j jobJSON, page string) (string, error) {
+	logs := fmt.Sprintf("%s/actions/jobs/%d/logs", repoPath(repo), j.ID)
+	name, end := j.Name, ""
+	if srv.steps() {
+		if s, ok := f.failedStep(ctx, repo, j.ID); ok {
+			var err error
+			if end, err = f.jobLog(ctx, logs+"?step="+strconv.Itoa(s.number)); err != nil {
+				return "", err
+			}
+			if strings.TrimSpace(end) != "" {
+				name += " ▸ " + s.name
+			}
+		}
+	}
+	// A step that failed with nothing to say: the whole job's log says what ran before it.
+	if strings.TrimSpace(end) == "" {
+		var err error
+		if end, err = f.jobLog(ctx, logs); err != nil {
+			return "", err
+		}
+	}
+	url := j.HTMLURL
+	if url == "" {
+		url = page
+	}
+	return fmt.Sprintf("== %s (%s), last %d lines ==\n%s", name, url, logLines, end), nil
 }
 
 // runID is the id of the run with number run, or 0: Forgejo finds it by run_number, and Gitea,

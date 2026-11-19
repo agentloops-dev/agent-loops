@@ -184,26 +184,8 @@ func (c *Connection) Check() (Checked, error) {
 	}); err != nil {
 		return Checked{}, err
 	}
-	hasTool := func(name string) bool {
-		for _, t := range tools {
-			if t == name {
-				return true
-			}
-		}
-		return false
-	}
-	if c.mapping.Native {
-		var missing []string
-		for _, r := range RequiredTools {
-			if !hasTool(r) {
-				missing = append(missing, r)
-			}
-		}
-		if len(missing) > 0 {
-			return Checked{}, providerFailure("It isn’t a machine provider: it has no %s tool.", orList(missing))
-		}
-	} else if missing := c.mapping.Missing(tools); missing != "" {
-		return Checked{}, providerFailure("The tool map names %s, which the server doesn’t have.", missing)
+	if err := c.checkTools(tools); err != nil {
+		return Checked{}, err
 	}
 	content, err := c.call(c.mapping.List, map[string]any{"id": ""}, c.timing.Quick)
 	if err != nil {
@@ -211,37 +193,18 @@ func (c *Connection) Check() (Checked, error) {
 	}
 	contract := 1
 	if c.mapping.Native {
-		said, ok := integer(get(content, "contract"))
-		if !ok {
-			return Checked{}, providerFailure("Its workspaces_list doesn’t say which contract it follows.")
+		if contract, err = checkContract(content); err != nil {
+			return Checked{}, err
 		}
-		known := false
-		var words []string
-		for _, k := range Contracts {
-			known = known || k == said
-			words = append(words, fmt.Sprint(k))
-		}
-		if !known {
-			return Checked{}, providerFailure("It follows contract %d; this control plane reads %s.", said, strings.Join(words, ", "))
-		}
-		contract = said
 	} else if _, ok := arr(pathValue(c.mapping.Listing.Items, content)); !ok {
-		keys := ""
-		if o, ok := obj(content); ok {
-			var names []string
-			for k := range o {
-				names = append(names, k)
-			}
-			sort.Strings(names)
-			keys = " Its answer has the keys " + strings.Join(names, ", ") + "."
-		}
-		return Checked{}, providerFailure("The tool map’s list.items finds no list in what %s answered.%s", c.mapping.List.Tool, keys)
+		return Checked{}, providerFailure("The tool map’s list.items finds no list in what %s answered.%s", c.mapping.List.Tool,
+			keysWords(content))
 	}
 	checked := Checked{Contract: contract, Workspaces: c.mapping.Workspaces(content), Items: -1}
 	if c.mapping.Native {
 		checked.Capabilities = []string{}
 		for tool, capability := range optionalTools {
-			if hasTool(tool) {
+			if contains(tools, tool) {
 				checked.Capabilities = append(checked.Capabilities, capability)
 			}
 		}
@@ -255,6 +218,61 @@ func (c *Connection) Check() (Checked, error) {
 		}
 	}
 	return checked, nil
+}
+
+// checkTools says why a server with tools is not a provider: a native one lacks a
+// contract's tool, or a mapped one lacks a tool its map names.
+func (c *Connection) checkTools(tools []string) error {
+	if !c.mapping.Native {
+		if missing := c.mapping.Missing(tools); missing != "" {
+			return providerFailure("The tool map names %s, which the server doesn’t have.", missing)
+		}
+		return nil
+	}
+	var missing []string
+	for _, r := range RequiredTools {
+		if !contains(tools, r) {
+			missing = append(missing, r)
+		}
+	}
+	if len(missing) > 0 {
+		return providerFailure("It isn’t a machine provider: it has no %s tool.", orList(missing))
+	}
+	return nil
+}
+
+// checkContract is the contract a native provider's workspaces_list answer says it
+// follows, when this control plane reads it.
+func checkContract(content any) (int, error) {
+	said, ok := integer(get(content, "contract"))
+	if !ok {
+		return 0, providerFailure("Its workspaces_list doesn’t say which contract it follows.")
+	}
+	known := false
+	var words []string
+	for _, k := range Contracts {
+		known = known || k == said
+		words = append(words, fmt.Sprint(k))
+	}
+	if !known {
+		return 0, providerFailure("It follows contract %d; this control plane reads %s.", said, strings.Join(words, ", "))
+	}
+	return said, nil
+}
+
+// keysWords names the keys of an answer that is an object, for a failure; "" for one
+// that is not.
+func keysWords(content any) string {
+	o, ok := obj(content)
+	if !ok {
+		return ""
+	}
+	var names []string
+	for k := range o {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return " Its answer has the keys " + strings.Join(names, ", ") + "."
 }
 
 // Tools is every tool the server offers, as it described them (#858).

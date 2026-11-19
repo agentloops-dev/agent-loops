@@ -17,10 +17,15 @@ something needs a change, file an issue for it: the epic's lead, or Start lead i
 
 A spec or a wireframe goes in the forge issue, never in a file or a pull request (Alex,
 2026-11-13, #5312): write it in the issue body, or in a comment on the epic. Put a long
-one in a `<details>` block. A wireframe is text (ASCII) or an image attached to the
-issue. A lane that builds from it reads the spec in the issue and does not commit it as
-a file. **Why:** a file in a worktree is lost when its session is archived (#5205,
-#5206).
+one in a `<details>` block. A wireframe is basic HTML, not ASCII (#6253): its pictures
+in the issue and its source in a `<details>` block (the `epic-lifecycle` skill, "Where
+wireframes go"). A lane that builds from it reads the spec in the issue and does not
+commit it as a file. **Why:** a file in a worktree is lost when its session is archived
+(#5205, #5206).
+
+**A new epic follows the `epic-lifecycle` skill** (`.agents/skills/epic-lifecycle/`,
+#6253). You do its stages 1 to 5 with Alex: ideate, the data model and its access
+patterns (gate 1), and the wireframes (gate 2). The epic's lead does stages 6 to 9.
 
 Follow AGENTS.md for issues: "Keeping the three clients in step" (what each client
 needs). "Landing a change" is for the lanes that build, not for you.
