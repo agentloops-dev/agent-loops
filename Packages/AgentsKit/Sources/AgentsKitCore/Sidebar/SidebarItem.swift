@@ -47,9 +47,6 @@ public enum SidebarItem: Hashable, Sendable {
     /// The messaging connectors' conversations, read only (#4344), from the Messages row below Work. Mac + web:
     /// the Remote has no row for it (#2796).
     case messages
-    /// The daily summary's page (#3721), from the Summary row at the top of the sidebar: the
-    /// newest saved page, the earlier ones in a picker, and the control. Core: every client.
-    case summary
     /// Every resource an agent can lease, and who holds and waits for each (036). The Remote's
     /// only: the Mac and the web page show a machine's resources on its page (#3629).
     case resources

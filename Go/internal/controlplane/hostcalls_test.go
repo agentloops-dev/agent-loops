@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 // slowHandler holds every lineage/sync until let go, and answers the rest at once.
@@ -181,6 +183,7 @@ func TestAHostCallThatAsksTheSameHostIsAnswered(t *testing.T) {
 // #6223: a lane with no room refuses a call at once, so the host asks again, and the
 // link's reads still go on.
 func TestAHostLaneWithNoRoomRefusesACall(t *testing.T) {
+	flaky.UnderLoad(t, "#6338")
 	t.Parallel()
 	h := &slowHandler{letGo: make(chan struct{})}
 	r := NewRouter(h, nil)

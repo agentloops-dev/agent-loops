@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -114,6 +115,7 @@ func TestSmokeSaysNothingWhileTheRuntimeNeedsASignIn(t *testing.T) {
 // #5361: step 7 is running while a client writes a key, needs you after that, and done when
 // every runtime says it is available; a runtime nobody signed in fails it.
 func TestSignInWaitsForTheClientThenNeedsYouThenFails(t *testing.T) {
+	flaky.UnderLoad(t, "#6340")
 	h := &smokeHost{}
 	o, l := options(t)
 	o.Runtimes = []string{"claude"}

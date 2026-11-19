@@ -307,13 +307,6 @@ struct FolderListView: View {
                     .appText(.supporting).sidebarInk(.time).tag(SidebarItem.time)
                 VelocityRow().activityIcon("arrow.triangle.merge")
                     .appText(.supporting).sidebarInk(.velocity).tag(SidebarItem.velocity)
-                // The daily summary's page (#3721), a report too, while the daily summary is on.
-                if model.dailySummarySettings?.mode.writesPages == true {
-                    SummaryRowLabel(newest: model.summaryPages.first)
-                        .help("Your daily summary: what landed, what failed and what waits on you")
-                        .activityIcon(SummaryRowLabel.systemImage)
-                        .appText(.supporting).sidebarInk(.summary).tag(SidebarItem.summary)
-                }
             } header: {
                 // The size of every other group's heading (#495). Reports (Alex, 2026-11-12): every
                 // page that reports on the work, Multiplier and Velocity among them; was Usage.

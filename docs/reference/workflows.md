@@ -553,28 +553,43 @@ file once, so a folder's files may change then.
 Off is for a workflow you still use but want quiet for a while: while a test is flaky,
 or while you are away. Archive is for one you are putting away.
 
-## The daily summary
+## The daily checks
 
-**Daily summary** is one of your ready-made workflows (#3192), in `~/.agents/workflows/daily-summary.md`.
-It is off until you turn it on. **Settings ▸ Agent Configuration ▸ Workflows** has one control
-for it, for all folders, on the Mac, the iPhone and iPad, and the web page (#3351):
+**Daily checks** is one of your ready-made workflows (#3355), in
+`~/.agents/workflows/daily-checks.md`. It is off until you turn it on. By default it runs every
+4 hours from midnight (00:00, 04:00, 08:00, 12:00, 16:00 and 20:00). Its agent looks at the
+folders on that machine that had no work since the last check. It only reads: it never
+pushes, comments, sends a message or starts a session.
 
-- **Daily summary:** **Off**, **Summary only** or **Summary and checks** (#3395).
-- **Time:** when it runs, on the hour or the half hour. It is 08:00 by default.
-- **Checks:** with **Summary and checks**, how often the [daily checks](#the-daily-checks)
-  run: every 2, 3, 4, 6, 8 or 12 hours. It is every 4 hours by default.
+**Settings ▸ Agent Configuration ▸ Workflows** has one control for it, for all folders, on the
+Mac, the iPhone and iPad, and the web page (#5853):
 
-The control changes the workflow file itself: `enabled:`, and the schedule's `at:` and
-`between:`. A change to the file by hand shows in the control. It runs on weekdays. To change
-the days, edit the schedule's `days:`.
+- **Daily checks:** **Off** or **On**.
+- **How often:** with **On**, every 2, 3, 4, 6, 8 or 12 hours, from midnight. It is every 4
+  hours by default.
 
-- It runs in your home folder, in ask mode (`permission-mode: ask`), on the Auto runtime. It
-  is never copied into a project's workflows. Ask mode lets it save the page with no question
-  to you, as the app's own tools need no approval, and asks you before any change to a folder
-  (#3922). Plan mode made it wait for your approval before it saved. A copy made before
-  #3922 that you did not edit (turning it on or off is not an edit) takes `ask` by itself,
-  and asks for your approval again (#4048, #5091). A copy you edited keeps
-  `permission-mode: plan`: change it to `ask` by hand.
+The control changes the workflow file itself: `enabled:`, and the `on:` list, one schedule for
+each run. A change to the file by hand shows in the control.
+
+- It runs in your home folder, in ask mode (`permission-mode: ask`), on the Auto runtime, on
+  one of your machines: the first to claim that run from your control plane. A machine with no
+  control plane runs its own. It is never copied into a project's workflows. Its session is
+  archived when it is done.
+- Its agent calls [`check_folders`](agent-tools.md) for what looks wrong, using that machine's
+  `gh`: a workflow whose newest run on the default branch failed, a pull request in conflict
+  or unchanged for a week, an issue assigned to you that no session has, and a scheduled
+  workflow that missed its run. It can read more to decide (git, `gh`, connectors).
+- Each finding that needs you is kept as a suggestion, with a prompt that starts a session on
+  it, in `~/.agents/checks/suggestions.json` (the newest 50, for a week). The sidebar's **For
+  Review** lists them. An urgent one, such as a broken default branch, also sends a notice at
+  once.
+- There is no daily summary any more (#5853). Needs You, For Review and the notices show what
+  waits for you when it happens. The daemon removes your copy of the old **Daily summary**
+  workflow and its skill only when you did not edit them. An edited copy, and the pages it
+  saved in `~/.agents/summaries/`, stay yours.
+
+### Ready-made versions
+
 - A newer ready-made version replaces your copy only when you did not edit it. The daemon
   keeps the digest of each copy it makes in `~/.agents/settings/ready-made-workflows.json`.
   The copy keeps its `enabled:`, `archived:`, `muted:` and `continue-when-back:`. The new
@@ -592,48 +607,6 @@ the days, edit the schedule's `days:`.
   for 7 days after an update. A copy you edited is not updated: its page says "A newer
   ready-made version is available", with what the newer version changes (#4071). It says so
   only for a copy the daemon made after it started to keep digests.
-- Of your machines that have it on, only one writes each summary: the first to claim that
-  morning's run from your control plane. A machine with no control plane writes its own.
-- Its agent calls [`write_daily_summary`](agent-tools.md) for the facts. These are every folder on
-  that machine since the last summary (at most a week back): sessions done and pull requests
-  merged, sessions and workflows that failed or stopped, what waits on you (oldest first),
-  and suggestions nobody took.
-- The facts also come from each of your other machines (#3354). The control plane asks each
-  one that is online for its facts, at the same time, and each one has 30 seconds to answer.
-  Their lines start with the machine's name, and a pull request merged in a checkout on two
-  machines is listed one time. A machine that is off, or that did not answer, is named on
-  the page. Another person's machines are not in your summary. The agent writes one short page from them, with a link on each
-  line. `agents://agent/…` links open their session on the iPhone and iPad.
-- The page is saved in `~/.agents/summaries/`, where the last 3 stay. It opens in the files
-  pane, and one notice goes to the Mac and the phone. Its session stays until you archive it.
-- Until you open it, the newest summary is a row in the sidebar's **For Review**, on every
-  client, named by the page's title (such as "Daily summary, Mon 2 Nov"). Open the row to read
-  the page; the row then leaves For Review. When a new summary is saved, the older ones leave
-  For Review, also if you did not open them (#3352).
-
-### The daily checks
-
-**Daily checks** is the daily summary's other ready-made workflow (#3355), in
-`~/.agents/workflows/daily-checks.md`. It is off until you turn it on. Between summaries, by
-default every 4 hours from the summary's time (00:00, 04:00, 12:00, 16:00 and 20:00 for an
-08:00 summary), its agent looks at the folders on that machine that had
-no work since the last check. It only reads: it never pushes, comments, sends a message or
-starts a session.
-
-- It runs in your home folder, in ask mode, on the Auto runtime, on one of your machines, as
-  the summary does. Its session is archived when it is done.
-- Its agent calls [`check_folders`](agent-tools.md) for what looks wrong, using that machine's
-  `gh`: a workflow whose newest run on the default branch failed, a pull request in conflict
-  or unchanged for a week, an issue assigned to you that no session has, and a scheduled
-  workflow that missed its run. It can read more to decide (git, `gh`, connectors).
-- Each finding that needs you is kept as a suggestion, with a prompt that starts a session on
-  it, in `~/.agents/checks/suggestions.json` (the newest 50, for a week). The next daily
-  summary lists them under **Suggested next**. An urgent one, such as a broken default
-  branch, sends a notice at once.
-- **Summary and checks** in the daily summary's control turns them on (#3395). The control
-  writes the workflow's `on:` list again: one schedule every few hours from the summary's
-  time, never at it. A new time or a new interval moves them. **Off** and **Summary only**
-  turn the checks off.
 
 ## See also
 

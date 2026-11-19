@@ -541,13 +541,10 @@ public enum DaemonAPI {
         public static let desktopControlSet = "desktopControl/set"
         public static let desktopControlResume = "desktopControl/resume"
         public static let desktopControlTakeOver = "desktopControl/takeOver"
-        /// The daily summary's one control (#3351): Off or Summary, and its time, for all
-        /// folders. The home folder's Daily summary workflow keeps it.
-        public static let dailySummarySettings = "dailySummary/settings"
-        public static let dailySummarySetSettings = "dailySummary/setSettings"
-        /// The daily summary's saved pages (#3721): the sidebar's Summary row and page.
-        public static let summariesList = "summaries/list"
-        public static let summariesRead = "summaries/read"
+        /// The daily checks' one control (#3355, #5853): on or off, and how often, for all
+        /// folders. The home folder's Daily checks workflow keeps it.
+        public static let dailyChecksSettings = "dailyChecks/settings"
+        public static let dailyChecksSetSettings = "dailyChecks/setSettings"
         /// One agent's override (nil clears it), and the card's recovery (064).
         public static let agentsSetSandbox = "agents/setSandbox"
         public static let agentsAnswerSandbox = "agents/answerSandbox"
@@ -630,12 +627,9 @@ public enum DaemonAPI {
         public static let modesChanged = "modes/changed"
         /// The display choices changed: the whole map, as `preferences/get` answers (#1033).
         public static let preferencesChanged = "preferences/changed"
-        /// The daily summary's control changed (#3351): the whole of it, as
-        /// `dailySummary/settings` answers.
-        public static let dailySummaryChanged = "dailySummary/changed"
-        /// The daily summary's saved pages changed (#3721): all of them, as `summaries/list`
-        /// answers.
-        public static let summariesChanged = "summaries/changed"
+        /// The daily checks' control changed (#3355, #5853): the whole of it, as
+        /// `dailyChecks/settings` answers.
+        public static let dailyChecksChanged = "dailyChecks/changed"
         /// The whole resolved fact for one need: where it should be showing and whether
         /// the person may be buzzed. Broadcast to every connection, not only to `to`,
         /// which is what lets the losers withdraw (021).

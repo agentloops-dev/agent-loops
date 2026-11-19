@@ -67,12 +67,6 @@ extension RemoteModel {
             .sorted { $0.lastActivityAt > $1.lastActivityAt }
     }
 
-    /// The daily summary's saved pages (#3721), from the Mac's host.
-    func refreshSummaryPages() async {
-        summaryPages = (try? await client.call(DaemonAPI.Method.summariesList, DaemonAPI.Empty(),
-                                               returning: [SummaryPage].self)) ?? []
-    }
-
     /// The Multiplier (#4116), from the Mac's host, as the window asks it: on each catch-up
     /// and each time the page opens, then heard on `multiplier/changed`. With a control plane
     /// that host counts all the person's machines (#3903). A host too old to know the method
@@ -105,23 +99,17 @@ extension RemoteModel {
         work.agents.count { $0.state == .starting || $0.state == .running }
     }
 
-    /// One saved page of the daily summary (#3721); reading the newest marks it read.
-    func readSummaryPage(_ name: String) async -> SummaryPageText? {
-        try? await client.call(DaemonAPI.Method.summariesRead, SummaryReadRequest(name: name),
-                               returning: SummaryPageText.self)
-    }
-
-    /// The person chose Off or Summary, or a time, for the daily summary (#3351). Nil when it
-    /// was set; else why not, and the control goes back to what it was.
-    func setDailySummarySettings(_ settings: DailySummarySettings) async -> String? {
-        let before = dailySummarySettings
-        dailySummarySettings = settings
+    /// The person turned the daily checks on or off, or chose how often (#3355, #5853). Nil when
+    /// it was set; else why not, and the control goes back to what it was.
+    func setDailyChecksSettings(_ settings: DailyChecksSettings) async -> String? {
+        let before = dailyChecksSettings
+        dailyChecksSettings = settings
         do {
-            dailySummarySettings = try await client.call(DaemonAPI.Method.dailySummarySetSettings, settings,
-                                                         returning: DailySummarySettings.self)
+            dailyChecksSettings = try await client.call(DaemonAPI.Method.dailyChecksSetSettings, settings,
+                                                        returning: DailyChecksSettings.self)
             return nil
         } catch {
-            dailySummarySettings = before
+            dailyChecksSettings = before
             return sentence(for: error)
         }
     }

@@ -122,7 +122,7 @@ extension RemoteModel {
                 openWorkflow = nil
                 openArchive = nil
                 openReview = id
-            case .resources, .events, .runtimes, .summary, .secretsStatus, .accountsStatus, .environmentStatus:
+            case .resources, .events, .runtimes, .secretsStatus, .accountsStatus, .environmentStatus:
                 openActivity = newValue
             case .work(let kind):
                 // The list's row: its list, or the place in it still open (#4004).

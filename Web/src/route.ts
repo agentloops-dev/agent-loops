@@ -104,8 +104,6 @@ export function parseRoute(hash: string): Route {
     // still opens them.
     if (nav === "machines" && section === "runtimes") return { nav: "status", section };
     if (nav === "machines" && section === "mcp") return { nav: "settings", section };
-    // The Summary page went from the Agents sidebar to Reports (#5729): #/agents/summary opens it there.
-    if (nav === "agents" && section === "summary") return { nav: "reports", section };
     // Reports' pages that moved (#5280): Planning, Usage, Multiplier and Features, and Events (#3998). The query stays, so
     // #/reports/value/builds?repo=… keeps its filters.
     const moved = nav === "reports" ? movedReport(decodeURIComponent(section), item === undefined ? undefined : decodeURIComponent(item)) : undefined;

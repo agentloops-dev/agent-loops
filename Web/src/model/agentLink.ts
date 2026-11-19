@@ -1,4 +1,4 @@
-// agents://agent/<id>: a link to a session, as the daily summary writes one for each line (#3353).
+// agents://agent/<id>: a link to a session, as an agent writes one (#3353).
 // On the Mac window and the Remote it selects that session (AttentionLink.swift); a click on one on
 // the web page does the same. The page holds one store, so `startAgentLinks` gives the renderer a
 // way to it rather than each Markdown view taking one more prop.

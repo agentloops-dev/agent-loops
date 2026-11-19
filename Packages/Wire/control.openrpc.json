@@ -4495,27 +4495,6 @@
       }
     },
     {
-      "name": "machines/summaryFacts",
-      "x-capability": "summary.machines/1",
-      "description": "Through machine/machines only (#3354): the Daily summary workflow's facts from each of the person's other machines. The control plane asks each one online for its agents/summaryFacts at once; one that is off, or does not answer in time, is named with why.",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/core.schema.json#/definitions/SummaryFactsRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/machines.schema.json#/definitions/MachinesSummaryFacts"
-        }
-      }
-    },
-    {
       "name": "machines/unlink",
       "x-capability": "machines/1",
       "tags": [

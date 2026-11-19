@@ -48,17 +48,17 @@ struct AgentConfigurationFilesPage: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
             }
-            // Your workflows: the daily summary's one control, for all folders (#3351).
-            if kind == .workflows, folder == nil, let settings = model.dailySummarySettings {
+            // Your workflows: the daily checks' one control, for all folders (#3355, #5853).
+            if kind == .workflows, folder == nil, let settings = model.dailyChecksSettings {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 16) {
-                        DailySummaryControls(settings: settings) { changed in
-                            Task { await model.setDailySummarySettings(changed) }
+                        DailyChecksControls(settings: settings) { changed in
+                            Task { await model.setDailyChecksSettings(changed) }
                         }
                         .fixedSize()
                         Spacer()
                     }
-                    Text(DailySummaryControls.footer(for: settings.mode))
+                    Text(DailyChecksControls.footer)
                         .appText(.fine)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -76,7 +76,7 @@ struct AgentConfigurationFilesPage: View {
                 .id(personaRevision)
         }
         .task {
-            if kind == .workflows, folder == nil { await model.refreshDailySummarySettings() }
+            if kind == .workflows, folder == nil { await model.refreshDailyChecksSettings() }
         }
         // A file asked for from elsewhere, such as a workflow page's Edit File… (#2803).
         .onChange(of: model.agentConfigFileAsked, initial: true) { _, asked in
