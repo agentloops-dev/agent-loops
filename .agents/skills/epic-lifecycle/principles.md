@@ -25,6 +25,23 @@ The aim is the feel of Slack or Linear: a screen never waits on the network.
 - **A last-updated time on each record.** Each cached record keeps the time of its last
   update. Ignore a late server response that is older than the client's copy. This
   keeps an optimistic edit safe from stale data.
+- **Sync by a "changed since" cursor in each client (Alex, 2026-11-19, #6305).** The
+  clients are a distributed cluster: each one syncs on its own, so each client keeps
+  its own cursor. The daemon keeps no cursor. For example, the cache of forge items
+  (issues and pull requests) asks the forge only for the items that changed since its
+  cursor (GitHub `since`, GitLab `updated_after`, Jira `updated >=`, Linear
+  `updatedAt`).
+  - The cursor is the latest `updatedAt` that the forge sent, not the client's clock.
+  - Each read starts a small overlap (for example, 1 minute) before the cursor,
+    because times have a precision of one second and items can have the same time.
+    Remove duplicates by ID and `updatedAt`.
+  - A "changed since" read does not show a deleted item, a transferred item or an
+    item that the person can no longer see. A full check of the IDs, from time to
+    time, removes them from the cache.
+  - Some changes do not change `updatedAt` (on GitHub, the checks of a pull
+    request). Read them in one batch for all the items, not one call for each item.
+  - Send conditional requests (ETags). Then a poll that finds no change costs almost
+    nothing from the rate limit.
 - **The same cache shape on each client.** The storage is different, but the behavior
   is the same:
   - the Swift apps (Mac, iPhone, iPad) use a SQLite database;
