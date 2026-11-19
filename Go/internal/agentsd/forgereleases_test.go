@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
@@ -113,7 +112,6 @@ func TestForgeReleasesListsEveryForge(t *testing.T) {
 // #4426: forge/release is a release, the release before it and the pull requests between them,
 // from the squash titles, on GitHub and GitLab; a draft and the first release have no range.
 func TestForgeReleaseReadsItsPullRequests(t *testing.T) {
-	flaky.UnderLoad(t, "#6261")
 	t.Parallel()
 
 	_, c, _, _, _, _ := allForgesDaemon(t)

@@ -554,7 +554,7 @@ func waitNote(t *testing.T, s *controllink.Session, method string) controllink.N
 func TestACodeMadeForAPersonMakesTheirMachine(t *testing.T) {
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
-	shown, err := p.s.Codes().Issue(withCodeOwner(context.Background(), "someone"), true, false, time.Minute)
+	shown, err := p.s.Codes().Issue(withCodeOwner(context.Background(), "someone"), true, false, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}

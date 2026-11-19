@@ -24,6 +24,11 @@ import (
 // The page this host serves when the control plane runs elsewhere (#1951): a browser pairs
 // and connects at the host's loopback listener, and the control plane answers it through
 // the host. With no control plane to carry it to, the page is told it is unavailable.
+// testCodeLife is the life of a code a test makes: long, because a code's expiry is a
+// wall-clock time and a Mac that sleeps during a run moves it on, but not the test's own
+// timeouts (#6259).
+const testCodeLife = 24 * time.Hour
+
 func TestAPageThroughThisHost(t *testing.T) {
 	t.Parallel()
 
@@ -55,7 +60,7 @@ func TestAPageThroughThisHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shown, err := cp.Codes().Issue(ctx, true, false, time.Minute)
+	shown, err := cp.Codes().Issue(ctx, true, false, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +83,7 @@ func TestAPageThroughThisHost(t *testing.T) {
 
 	// A browser code, spent at this host's page: the control plane takes it, bound to the
 	// host's origin. Tried until the host's uplink is up, as the page tries again.
-	shown, err = cp.Codes().Issue(ctx, false, true, time.Minute)
+	shown, err = cp.Codes().Issue(ctx, false, true, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +101,7 @@ func TestAPageThroughThisHost(t *testing.T) {
 	host, _ := json.Marshal(member.Host)
 
 	// A code's ok is no person's: its calls to this host are never answered here.
-	shown, err = cp.Codes().Issue(ctx, false, true, time.Minute)
+	shown, err = cp.Codes().Issue(ctx, false, true, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
