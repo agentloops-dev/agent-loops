@@ -786,67 +786,95 @@ func (f *RealForgejo) timeline(ctx context.Context, repo string, i issueJSON, si
 func (f *RealForgejo) IssueActivity(ctx context.Context, repo string, kind IssueKind, since string) ([]IssueActivity, Listed, error) {
 	switch kind {
 	case IssueOpened:
-		items, listed, err := f.issuesSince(ctx, repo, "all", since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var out []IssueActivity
-		for _, i := range items {
-			if mcpevents.Before(i.CreatedAt, since) {
-				continue
-			}
-			trusted, err := f.trusted(ctx, repo, &i.User)
-			if err != nil {
-				return nil, Listed{}, err
-			}
-			out = append(out, IssueActivity{ID: strconv.Itoa(i.Number), At: i.CreatedAt, Issue: i.issue(), Kind: IssueOpened, Trusted: trusted})
-		}
-		return out, listed, nil
+		return f.openedIssues(ctx, repo, since)
 	case IssueLabelled, IssueClosed:
-		// Adding a label or closing it updates the issue, so its timeline is read only for
-		// the issues updated since; each label added and each close is a line of it.
-		state := "all"
-		if kind == IssueClosed {
-			state = "closed"
+		return f.timelineActivity(ctx, repo, kind, since)
+	}
+	return f.issueComments(ctx, repo, since)
+}
+
+// openedIssues is issue.opened's activity: the issues opened since.
+func (f *RealForgejo) openedIssues(ctx context.Context, repo, since string) ([]IssueActivity, Listed, error) {
+	items, listed, err := f.issuesSince(ctx, repo, "all", since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var out []IssueActivity
+	for _, i := range items {
+		if mcpevents.Before(i.CreatedAt, since) {
+			continue
 		}
-		items, listed, err := f.issuesSince(ctx, repo, state, since)
+		trusted, err := f.trusted(ctx, repo, &i.User)
 		if err != nil {
 			return nil, Listed{}, err
 		}
-		var out []IssueActivity
-		for _, i := range items {
-			lines, err := f.timeline(ctx, repo, i, since)
+		out = append(out, IssueActivity{ID: strconv.Itoa(i.Number), At: i.CreatedAt, Issue: i.issue(), Kind: IssueOpened, Trusted: trusted})
+	}
+	return out, listed, nil
+}
+
+// timelineActivity is issue.labelled's or issue.closed's activity. Adding a label or closing
+// it updates the issue, so its timeline is read only for the issues updated since; each label
+// added and each close is a line of it.
+func (f *RealForgejo) timelineActivity(ctx context.Context, repo string, kind IssueKind, since string) ([]IssueActivity, Listed, error) {
+	state := "all"
+	if kind == IssueClosed {
+		state = "closed"
+	}
+	items, listed, err := f.issuesSince(ctx, repo, state, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var out []IssueActivity
+	for _, i := range items {
+		lines, err := f.timeline(ctx, repo, i, since)
+		if err != nil {
+			return nil, Listed{}, err
+		}
+		for _, l := range lines {
+			a, ok, err := f.timelineLine(ctx, repo, kind, i, l, since)
 			if err != nil {
 				return nil, Listed{}, err
 			}
-			for _, l := range lines {
-				if mcpevents.Before(l.CreatedAt, since) {
-					continue
-				}
-				// A label line's body is "1" when it was added, empty when taken off.
-				added := kind == IssueLabelled && l.Type == "label" && l.Body == "1" && l.Label != nil
-				if !added && (kind != IssueClosed || l.Type != "close") {
-					continue
-				}
-				trusted, err := f.trusted(ctx, repo, l.User)
-				if err != nil {
-					return nil, Listed{}, err
-				}
-				by := ""
-				if l.User != nil {
-					by = l.User.Login
-				}
-				a := IssueActivity{ID: strconv.Itoa(l.ID), At: l.CreatedAt, Issue: i.issue(), Kind: kind, By: by, Trusted: trusted}
-				if added {
-					a.ID, a.Label = "label:"+a.ID, l.Label.Name
-				} else {
-					a.ID = strconv.Itoa(i.Number) + ":" + mcpevents.Normalized(l.CreatedAt)
-				}
+			if ok {
 				out = append(out, a)
 			}
 		}
-		return out, listed, nil
 	}
+	return out, listed, nil
+}
+
+// timelineLine is the activity one line of issue i's timeline is, when it is a label added
+// (issue.labelled) or a close (issue.closed) at or after since.
+func (f *RealForgejo) timelineLine(ctx context.Context, repo string, kind IssueKind, i issueJSON, l timelineJSON, since string) (IssueActivity, bool, error) {
+	if mcpevents.Before(l.CreatedAt, since) {
+		return IssueActivity{}, false, nil
+	}
+	// A label line's body is "1" when it was added, empty when taken off.
+	added := kind == IssueLabelled && l.Type == "label" && l.Body == "1" && l.Label != nil
+	if !added && (kind != IssueClosed || l.Type != "close") {
+		return IssueActivity{}, false, nil
+	}
+	trusted, err := f.trusted(ctx, repo, l.User)
+	if err != nil {
+		return IssueActivity{}, false, err
+	}
+	by := ""
+	if l.User != nil {
+		by = l.User.Login
+	}
+	a := IssueActivity{ID: strconv.Itoa(l.ID), At: l.CreatedAt, Issue: i.issue(), Kind: kind, By: by, Trusted: trusted}
+	if added {
+		a.ID, a.Label = "label:"+a.ID, l.Label.Name
+	} else {
+		a.ID = strconv.Itoa(i.Number) + ":" + mcpevents.Normalized(l.CreatedAt)
+	}
+	return a, true, nil
+}
+
+// issueComments is issue.commented's activity: the comments left on issues, not pull
+// requests, since.
+func (f *RealForgejo) issueComments(ctx context.Context, repo, since string) ([]IssueActivity, Listed, error) {
 	path := fmt.Sprintf("%s/issues/comments?since=%s", repoPath(repo), url.QueryEscape(since))
 	comments, truncated, err := all[commentJSON](ctx, f, path)
 	if err != nil {
@@ -865,12 +893,9 @@ func (f *RealForgejo) IssueActivity(ctx context.Context, repo string, kind Issue
 		if err != nil {
 			continue
 		}
-		i, ok := issues[number]
-		if !ok {
-			if err := f.getAsOf(ctx, fmt.Sprintf("%s/issues/%d", repoPath(repo), number), c.CreatedAt, &i); err != nil {
-				return nil, Listed{}, err
-			}
-			issues[number] = i
+		i, err := f.commentedIssue(ctx, repo, number, c.CreatedAt, issues)
+		if err != nil {
+			return nil, Listed{}, err
 		}
 		if i.PullRequest != nil {
 			continue
@@ -883,6 +908,19 @@ func (f *RealForgejo) IssueActivity(ctx context.Context, repo string, kind Issue
 			CommentAuthor: c.User.Login, CommentURL: c.HTMLURL, CommentBody: clip(c.Body), Trusted: trusted})
 	}
 	return out, listed, nil
+}
+
+// commentedIssue is issue number as of a comment at at, read once and kept in issues.
+func (f *RealForgejo) commentedIssue(ctx context.Context, repo string, number int, at string, issues map[int]issueJSON) (issueJSON, error) {
+	if i, ok := issues[number]; ok {
+		return i, nil
+	}
+	var i issueJSON
+	if err := f.getAsOf(ctx, fmt.Sprintf("%s/issues/%d", repoPath(repo), number), at, &i); err != nil {
+		return issueJSON{}, err
+	}
+	issues[number] = i
+	return i, nil
 }
 
 // reviewComments are a pull request's line comments, in every review updated at or after

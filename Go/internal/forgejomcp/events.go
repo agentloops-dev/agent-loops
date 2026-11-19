@@ -120,7 +120,7 @@ var events = append([]event{
 		Input:       namedPRInput("Only the pull request from this branch."),
 		Payload:     object(map[string]any{"pr": prSchema(nil), "conflictedAt": str})},
 	{Name: "pr.blocked", Title: "Pull request blocked",
-		Description: mcpevents.BlockedDescription("On Forgejo: only conflict, from mergeable as pr.conflicted reads it; Forgejo's listing says nothing of required checks, changes requested or auto-merge."+ownPRs),
+		Description: mcpevents.BlockedDescription("On Forgejo: only conflict, from mergeable as pr.conflicted reads it; Forgejo's listing says nothing of required checks, changes requested or auto-merge." + ownPRs),
 		Input:       namedPRInput("Only the pull request from this branch."),
 		Payload:     mcpevents.BlockedPayload(prSchema(nil))},
 	// For the person, not the repository (#2034): what asks the token's owner for something.
@@ -237,94 +237,142 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 		return nil, bad
 	}
 	if a.repo == "" {
-		repo, err := s.Forgejo.DefaultRepo(ctx)
-		if err != nil {
-			var fe *ForgejoError
-			if errors.As(err, &fe) && fe.Kind == NotFound {
-				return nil, invalidParams("%s", fe.Message)
-			}
-			return nil, eventsError(err)
+		repo, bad := s.defaultRepo(ctx)
+		if bad != nil {
+			return nil, bad
 		}
 		a.repo = repo
 	}
-	// mine: the token's owner's own open pull requests, asked once a poll (#2034).
-	var yours *Yours
-	if a.mine || e.Name == "review.requested" || e.Name == "issue.assigned" {
-		y, err := s.Forgejo.Yours(ctx, a.repo)
-		if err != nil {
-			return nil, eventsError(err)
-		}
-		yours = &y
+	yours, bad := s.yoursFor(ctx, e.Name, a)
+	if bad != nil {
+		return nil, bad
 	}
-	switch e.Name {
-	case "review.requested":
-		return s.pollDiff(e.Name, "requestedAt", a, p, func() ([]state, error) {
-			var out []state
-			for _, r := range yours.Reviews {
-				j := r.PR.json()
-				j["author"] = r.Author
-				out = append(out, state{mr: r.PR, on: new(true), json: j})
-			}
-			return out, nil
-		})
-	case "issue.assigned":
-		return s.pollDiff(e.Name, "assignedAt", a, p, func() ([]state, error) {
-			var out []state
-			for _, i := range yours.Assigned {
-				if a.wantsIssue(i.Number) {
-					out = append(out, state{mr: PR{Number: i.Number, Title: i.Title, URL: i.URL}, on: new(true), json: i.json()})
-				}
-			}
-			return out, nil
-		})
-	case "pr.blocked":
-		was := polls.CursorIDs(p)
-		return s.pollDiff(e.Name, "blockedAt", a, p, func() ([]state, error) {
-			prs, err := s.Forgejo.OpenPRs(ctx, a.repo)
-			var out []state
-			for _, m := range prs {
-				if m.SkipsBlocked || (a.mine && !a.byMe(m.PR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
-					continue
-				}
-				bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", e.Name, a.repo, m.PR.Number), m.blocking(), was)
-				out = append(out, state{mr: m.PR, on: &bs.On, key: bs.Key, json: m.PR.json(), extra: bs.Data})
-			}
-			return out, err
-		})
-	case "pr.conflicted":
-		return s.pollDiff(e.Name, "conflictedAt", a, p, func() ([]state, error) {
-			prs, err := s.Forgejo.OpenPRs(ctx, a.repo)
-			var out []state
-			for _, m := range prs {
-				if a.mine {
-					if a.byMe(m.PR, yours) {
-						out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
-					}
-				} else if a.anyone || m.Trusted {
-					out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
-				}
-			}
-			return out, err
-		})
-	case "pr.opened":
-		return s.pollDiff(e.Name, "openedAt", a, p, func() ([]state, error) {
-			prs, err := s.Forgejo.OpenPRs(ctx, a.repo)
-			var out []state
-			for _, m := range prs {
-				if !a.anyone && !m.Trusted {
-					continue
-				}
-				ready := !m.Draft
-				j := m.PR.json()
-				j["author"] = m.Author
-				out = append(out, state{mr: m.PR, on: &ready, json: j})
-			}
-			return out, err
-		})
+	if key, ok := stateKeys[e.Name]; ok {
+		return s.pollDiff(e.Name, key, a, p, s.states(ctx, e.Name, a, p, yours))
 	}
 	return s.poll(e, p, func(since string) ([]candidate, Listed, error) {
 		return candidates(ctx, s.Forgejo, e.Name, a, yours, since)
 	})
+}
+
+// defaultRepo is the repo a poll with none names: the one this folder pushes to.
+func (s *Events) defaultRepo(ctx context.Context) (string, *rpcError) {
+	repo, err := s.Forgejo.DefaultRepo(ctx)
+	if err == nil {
+		return repo, nil
+	}
+	var fe *ForgejoError
+	if errors.As(err, &fe) && fe.Kind == NotFound {
+		return "", invalidParams("%s", fe.Message)
+	}
+	return "", eventsError(err)
+}
+
+// yoursFor is mine's set: the token's owner's own open pull requests, asked once a poll
+// (#2034), or nil when the event does not need them.
+func (s *Events) yoursFor(ctx context.Context, name string, a args) (*Yours, *rpcError) {
+	if !a.mine && name != "review.requested" && name != "issue.assigned" {
+		return nil, nil
+	}
+	y, err := s.Forgejo.Yours(ctx, a.repo)
+	if err != nil {
+		return nil, eventsError(err)
+	}
+	return &y, nil
+}
+
+// stateKeys are the events polled as a state that turns on and off, with the key of the
+// time each one turned on.
+var stateKeys = map[string]string{
+	"review.requested": "requestedAt",
+	"issue.assigned":   "assignedAt",
+	"pr.blocked":       "blockedAt",
+	"pr.conflicted":    "conflictedAt",
+	"pr.opened":        "openedAt",
+}
+
+// states finds the states of a state event (one in stateKeys).
+func (s *Events) states(ctx context.Context, name string, a args, p pollParams, yours *Yours) func() ([]state, error) {
+	switch name {
+	case "review.requested":
+		return func() ([]state, error) { return reviewRequestedStates(yours), nil }
+	case "issue.assigned":
+		return func() ([]state, error) { return assignedStates(a, yours), nil }
+	case "pr.blocked":
+		was := polls.CursorIDs(p)
+		return func() ([]state, error) { return s.blockedStates(ctx, name, a, yours, was) }
+	case "pr.conflicted":
+		return func() ([]state, error) { return s.conflictedStates(ctx, a, yours) }
+	}
+	return func() ([]state, error) { return s.openedStates(ctx, a) }
+}
+
+// reviewRequestedStates is review.requested's states: the pull requests that ask the owner's review.
+func reviewRequestedStates(yours *Yours) []state {
+	var out []state
+	for _, r := range yours.Reviews {
+		j := r.PR.json()
+		j["author"] = r.Author
+		out = append(out, state{mr: r.PR, on: new(true), json: j})
+	}
+	return out
+}
+
+// assignedStates is issue.assigned's states: the issues assigned to the owner.
+func assignedStates(a args, yours *Yours) []state {
+	var out []state
+	for _, i := range yours.Assigned {
+		if a.wantsIssue(i.Number) {
+			out = append(out, state{mr: PR{Number: i.Number, Title: i.Title, URL: i.URL}, on: new(true), json: i.json()})
+		}
+	}
+	return out
+}
+
+// blockedStates is pr.blocked's states; was is the ids the cursor had.
+func (s *Events) blockedStates(ctx context.Context, name string, a args, yours *Yours, was []string) ([]state, error) {
+	prs, err := s.Forgejo.OpenPRs(ctx, a.repo)
+	var out []state
+	for _, m := range prs {
+		if m.SkipsBlocked || (a.mine && !a.byMe(m.PR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
+			continue
+		}
+		bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", name, a.repo, m.PR.Number), m.blocking(), was)
+		out = append(out, state{mr: m.PR, on: &bs.On, key: bs.Key, json: m.PR.json(), extra: bs.Data})
+	}
+	return out, err
+}
+
+// conflictedStates is pr.conflicted's states.
+func (s *Events) conflictedStates(ctx context.Context, a args, yours *Yours) ([]state, error) {
+	prs, err := s.Forgejo.OpenPRs(ctx, a.repo)
+	var out []state
+	for _, m := range prs {
+		if a.mine {
+			if a.byMe(m.PR, yours) {
+				out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
+			}
+		} else if a.anyone || m.Trusted {
+			out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
+		}
+	}
+	return out, err
+}
+
+// openedStates is pr.opened's states: each pull request is on when it is not a draft.
+func (s *Events) openedStates(ctx context.Context, a args) ([]state, error) {
+	prs, err := s.Forgejo.OpenPRs(ctx, a.repo)
+	var out []state
+	for _, m := range prs {
+		if !a.anyone && !m.Trusted {
+			continue
+		}
+		ready := !m.Draft
+		j := m.PR.json()
+		j["author"] = m.Author
+		out = append(out, state{mr: m.PR, on: &ready, json: j})
+	}
+	return out, err
 }
 
 // poll is events/poll over a cursor (mcpevents.Poller.Poll). The first poll starts from the
@@ -400,110 +448,141 @@ func diffRef(root, repo string, n int) wire.Ref {
 
 // candidates finds what an event may raise at or after since.
 func candidates(ctx context.Context, f Forgejo, name string, a args, yours *Yours, since string) ([]candidate, Listed, error) {
-	repo := a.repo
-	// mine: the owner's own pull request, trusted or not, open or not (#3797); else the
-	// trust filter (#728). fixes narrows either.
-	wanted := func(m PR, trusted bool) bool {
-		return a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) && a.closesOne(m) &&
-			(a.mine && a.byMe(m, yours) || !a.mine && (a.anyone || trusted))
-	}
 	if kind, ok := strings.CutPrefix(name, "issue."); ok {
-		items, listed, err := f.IssueActivity(ctx, repo, IssueKind(kind), since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var list []candidate
-		for _, it := range items {
-			if !a.wantsIssue(it.Issue.Number) || (!a.anyone && !it.Trusted) ||
-				(a.label != "" && !contains(it.Issue.Labels, a.label)) ||
-				(a.label != "" && it.Kind == IssueLabelled && it.Label != a.label) {
-				continue
-			}
-			at := mcpevents.Normalized(it.At)
-			if at == "" {
-				continue
-			}
-			list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at,
-				Data:    func() (map[string]any, error) { return it.data(), nil },
-				Subject: issueRef(repo, it.Issue.Number), Key: it.ID})
-		}
-		return list, listed, nil
+		return issueCandidates(ctx, f, name, IssueKind(kind), a, since)
 	}
 	switch name {
 	case "review.comment":
-		comments, listed, err := f.ReviewComments(ctx, repo, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var list []candidate
-		// Trust is about who commented; mine only narrows the pull request (#3797).
-		for _, c := range comments {
-			if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(c.PR.Number) && (a.branch == "" || c.PR.Branch == a.branch) &&
-				a.closesOne(c.PR) && a.byMe(c.PR, yours) && (a.anyone || c.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d", repo, c.ID), Time: at,
-					Data:    func() (map[string]any, error) { return c.data(), nil },
-					Subject: prRef(repo, c.PR.Number), Key: fmt.Sprint(c.ID)})
-			}
-		}
-		return list, listed, nil
+		return reviewCommentCandidates(ctx, f, a, yours, since)
 	case "run.completed":
-		runs, listed, err := f.CompletedRuns(ctx, repo, a.workflow, a.branch, a.run, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		// Its finish time in the id: a run again (its failed jobs) is a new event.
-		var list []candidate
-		for _, c := range runs {
-			if a.anyone || c.Trusted {
-				list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%s", repo, c.Number, c.At), Time: c.At,
-					Data: mcpevents.Data(c.data()), Subject: runRef(repo, c.Number), Key: c.At})
-			}
-		}
-		return list, listed, nil
+		return runCandidates(ctx, f, a, since)
 	case "checks.failed":
-		failed, listed, err := f.FailedChecks(ctx, repo, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		// The newest failed status's time is in its id: run again and failed again, it is new.
-		var list []candidate
-		for _, d := range failed {
-			if at := mcpevents.Normalized(d.At); at != "" && wanted(d.PR, d.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%s:%s", repo, d.HeadSHA, at), Time: at,
-					Data:    func() (map[string]any, error) { return d.json(), nil },
-					Subject: prRef(repo, d.PR.Number), Key: d.HeadSHA + ":" + at})
-			}
-		}
-		return list, listed, nil
+		return failedCheckCandidates(ctx, f, a, yours, since)
 	}
-	merged, closed, listed, err := f.ClosedPRs(ctx, repo, since)
+	merged, closed, listed, err := f.ClosedPRs(ctx, a.repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	if name == "pr.merged" {
+		return mergedCandidates(a, yours, merged), listed, nil
+	}
+	return closedCandidates(a, yours, closed), listed, nil
+}
+
+// wantedPR says whether an event about m is raised. mine: the owner's own pull request,
+// trusted or not, open or not (#3797); else the trust filter (#728). fixes narrows either.
+func wantedPR(a args, yours *Yours, m PR, trusted bool) bool {
+	return a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) && a.closesOne(m) &&
+		(a.mine && a.byMe(m, yours) || !a.mine && (a.anyone || trusted))
+}
+
+// wantsActivity says whether an issue's activity is raised: the issue, who did it and the label.
+func wantsActivity(a args, it IssueActivity) bool {
+	return a.wantsIssue(it.Issue.Number) && (a.anyone || it.Trusted) &&
+		(a.label == "" || contains(it.Issue.Labels, a.label)) &&
+		(a.label == "" || it.Kind != IssueLabelled || it.Label == a.label)
+}
+
+// issueCandidates is an issue event's candidates.
+func issueCandidates(ctx context.Context, f Forgejo, name string, kind IssueKind, a args, since string) ([]candidate, Listed, error) {
+	items, listed, err := f.IssueActivity(ctx, a.repo, kind, since)
 	if err != nil {
 		return nil, Listed{}, err
 	}
 	var list []candidate
-	if name == "pr.merged" {
-		for _, m := range merged {
-			if at := mcpevents.Normalized(m.MergedAt); wanted(m.PR, m.Trusted) && at != "" {
-				list = append(list, candidate{EventID: fmt.Sprintf("pr.merged:%s:%d", repo, m.PR.Number), Time: at,
-					Subject: prRef(repo, m.PR.Number),
-					Data: func() (map[string]any, error) {
-						return map[string]any{"pr": m.PR.json(), "mergedAt": m.MergedAt, "mergeSha": m.MergeSHA}, nil
-					}})
-			}
+	for _, it := range items {
+		if at := mcpevents.Normalized(it.At); at != "" && wantsActivity(a, it) {
+			list = append(list, candidate{EventID: name + ":" + a.repo + ":" + it.ID, Time: at,
+				Data:    func() (map[string]any, error) { return it.data(), nil },
+				Subject: issueRef(a.repo, it.Issue.Number), Key: it.ID})
 		}
-		return list, listed, nil
 	}
-	// Its close time in the id: a pull request reopened and closed again is a new event.
+	return list, listed, nil
+}
+
+// reviewCommentCandidates is review.comment's candidates. Trust is about who commented;
+// mine only narrows the pull request (#3797).
+func reviewCommentCandidates(ctx context.Context, f Forgejo, a args, yours *Yours, since string) ([]candidate, Listed, error) {
+	comments, listed, err := f.ReviewComments(ctx, a.repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, c := range comments {
+		if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(c.PR.Number) && (a.branch == "" || c.PR.Branch == a.branch) &&
+			a.closesOne(c.PR) && a.byMe(c.PR, yours) && (a.anyone || c.Trusted) {
+			list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d", a.repo, c.ID), Time: at,
+				Data:    func() (map[string]any, error) { return c.data(), nil },
+				Subject: prRef(a.repo, c.PR.Number), Key: fmt.Sprint(c.ID)})
+		}
+	}
+	return list, listed, nil
+}
+
+// runCandidates is run.completed's candidates. Its finish time is in the id: a run again
+// (its failed jobs) is a new event.
+func runCandidates(ctx context.Context, f Forgejo, a args, since string) ([]candidate, Listed, error) {
+	runs, listed, err := f.CompletedRuns(ctx, a.repo, a.workflow, a.branch, a.run, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, c := range runs {
+		if a.anyone || c.Trusted {
+			list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%s", a.repo, c.Number, c.At), Time: c.At,
+				Data: mcpevents.Data(c.data()), Subject: runRef(a.repo, c.Number), Key: c.At})
+		}
+	}
+	return list, listed, nil
+}
+
+// failedCheckCandidates is checks.failed's candidates. The newest failed status's time is
+// in its id: run again and failed again, it is new.
+func failedCheckCandidates(ctx context.Context, f Forgejo, a args, yours *Yours, since string) ([]candidate, Listed, error) {
+	failed, listed, err := f.FailedChecks(ctx, a.repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, d := range failed {
+		if at := mcpevents.Normalized(d.At); at != "" && wantedPR(a, yours, d.PR, d.Trusted) {
+			list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%s:%s", a.repo, d.HeadSHA, at), Time: at,
+				Data:    func() (map[string]any, error) { return d.json(), nil },
+				Subject: prRef(a.repo, d.PR.Number), Key: d.HeadSHA + ":" + at})
+		}
+	}
+	return list, listed, nil
+}
+
+// mergedCandidates is pr.merged's candidates.
+func mergedCandidates(a args, yours *Yours, merged []MergedPR) []candidate {
+	var list []candidate
+	for _, m := range merged {
+		if at := mcpevents.Normalized(m.MergedAt); wantedPR(a, yours, m.PR, m.Trusted) && at != "" {
+			list = append(list, candidate{EventID: fmt.Sprintf("pr.merged:%s:%d", a.repo, m.PR.Number), Time: at,
+				Subject: prRef(a.repo, m.PR.Number),
+				Data: func() (map[string]any, error) {
+					return map[string]any{"pr": m.PR.json(), "mergedAt": m.MergedAt, "mergeSha": m.MergeSHA}, nil
+				}})
+		}
+	}
+	return list
+}
+
+// closedCandidates is pr.closed's candidates. Its close time is in the id: a pull request
+// reopened and closed again is a new event.
+func closedCandidates(a args, yours *Yours, closed []ClosedPR) []candidate {
+	var list []candidate
 	for _, c := range closed {
-		if at := mcpevents.Normalized(c.ClosedAt); wanted(c.PR, c.Trusted) && at != "" {
-			list = append(list, candidate{EventID: fmt.Sprintf("pr.closed:%s:%d:%s", repo, c.PR.Number, at), Time: at,
-				Subject: prRef(repo, c.PR.Number), Key: at,
+		if at := mcpevents.Normalized(c.ClosedAt); wantedPR(a, yours, c.PR, c.Trusted) && at != "" {
+			list = append(list, candidate{EventID: fmt.Sprintf("pr.closed:%s:%d:%s", a.repo, c.PR.Number, at), Time: at,
+				Subject: prRef(a.repo, c.PR.Number), Key: at,
 				Data: func() (map[string]any, error) {
 					return map[string]any{"pr": c.PR.json(), "closedAt": c.ClosedAt}, nil
 				}})
 		}
 	}
-	return list, listed, nil
+	return list
 }
 
 // eventsError is a Forgejo failure as the events draft's error codes.

@@ -324,68 +324,22 @@ func (f *RealForgejo) PRPage(ctx context.Context, repo string, number int) (map[
 	if err != nil {
 		return nil, err
 	}
-	additions, deletions := 0, 0
-	files := make([]any, len(changed))
-	for i, c := range changed {
-		additions, deletions = additions+c.Additions, deletions+c.Deletions
-		files[i] = map[string]any{"path": c.Filename, "additions": c.Additions, "deletions": c.Deletions, "change": c.change()}
-	}
-	comments, _, err := all[commentJSON](ctx, f, fmt.Sprintf("%s/issues/%d/comments", repoPath(repo), number))
+	files, additions, deletions := changedFiles(changed)
+	conversation, reviews, err := f.prConversation(ctx, repo, number)
 	if err != nil {
 		return nil, err
 	}
-	conversation := []any{}
-	for _, c := range comments {
-		conversation = append(conversation, noteOf(&c.User, c.Body, c.CreatedAt, c.HTMLURL, c.ID))
-	}
-	var reviews []reviewJSON
-	if err := f.get(ctx, fmt.Sprintf("%s/pulls/%d/reviews?limit=%d", repoPath(repo), number, perPage), false, &reviews); err != nil {
-		return nil, err
-	}
-	// A review's own words are in the conversation; its line comments are threads.
-	for _, r := range reviews {
-		if strings.TrimSpace(r.Body) != "" {
-			conversation = append(conversation, noteOf(r.User, r.Body, r.SubmittedAt, r.HTMLURL, r.ID))
-		}
-	}
-	sort.SliceStable(conversation, func(i, j int) bool {
-		return mcpevents.Before(conversation[i].(map[string]any)["at"].(string), conversation[j].(map[string]any)["at"].(string))
-	})
 	lines, err := f.reviewComments(ctx, repo, p, "")
 	if err != nil {
 		return nil, err
 	}
 	threads := lineThreads(lines)
-	state := prState{checks: "none"}
-	runs := []any{}
-	if p.Head.SHA != "" {
-		c, err := f.status(ctx, repo, p.Head.SHA)
-		if err != nil {
-			return nil, err
-		}
-		if len(c.Statuses) > 0 {
-			state.checks = checkState(c.State)
-		}
-		for _, s := range c.Statuses {
-			run := map[string]any{"name": s.Context, "state": checkState(s.State), "url": s.TargetURL, "description": s.Description}
-			if m := actionsRun.FindStringSubmatch(s.TargetURL); m != nil {
-				id, _ := strconv.Atoi(m[1])
-				run["runId"] = id
-				if failedStatus(s.State) && state.runID == 0 {
-					state.runID = id
-				}
-			}
-			runs = append(runs, run)
-		}
+	state, runs, err := f.prChecks(ctx, repo, p.Head.SHA)
+	if err != nil {
+		return nil, err
 	}
 	state.review, _ = reviewOf(reviews, len(p.RequestedReviewers) > 0)
-	st := "open"
-	switch {
-	case p.Merged:
-		st = "merged"
-	case p.State == "closed":
-		st = "closed"
-	}
+	st := p.stateName()
 	squash := false
 	if methods, err := f.MergeMethods(ctx, repo); err == nil && len(methods) > 0 {
 		squash = methods[0] == "squash"
@@ -409,6 +363,83 @@ func (f *RealForgejo) PRPage(ctx context.Context, repo string, number int) (map[
 		page["review"] = state.review
 	}
 	return page, nil
+}
+
+// changedFiles are a pull request's files as its page shows them, with the lines added and
+// deleted in all of them.
+func changedFiles(changed []fileJSON) (files []any, additions, deletions int) {
+	files = make([]any, len(changed))
+	for i, c := range changed {
+		additions, deletions = additions+c.Additions, deletions+c.Deletions
+		files[i] = map[string]any{"path": c.Filename, "additions": c.Additions, "deletions": c.Deletions, "change": c.change()}
+	}
+	return files, additions, deletions
+}
+
+// prConversation is a pull request's comments and its reviews' own words, oldest first, and
+// its reviews. A review's line comments are threads, not here.
+func (f *RealForgejo) prConversation(ctx context.Context, repo string, number int) ([]any, []reviewJSON, error) {
+	comments, _, err := all[commentJSON](ctx, f, fmt.Sprintf("%s/issues/%d/comments", repoPath(repo), number))
+	if err != nil {
+		return nil, nil, err
+	}
+	conversation := []any{}
+	for _, c := range comments {
+		conversation = append(conversation, noteOf(&c.User, c.Body, c.CreatedAt, c.HTMLURL, c.ID))
+	}
+	var reviews []reviewJSON
+	if err := f.get(ctx, fmt.Sprintf("%s/pulls/%d/reviews?limit=%d", repoPath(repo), number, perPage), false, &reviews); err != nil {
+		return nil, nil, err
+	}
+	for _, r := range reviews {
+		if strings.TrimSpace(r.Body) != "" {
+			conversation = append(conversation, noteOf(r.User, r.Body, r.SubmittedAt, r.HTMLURL, r.ID))
+		}
+	}
+	sort.SliceStable(conversation, func(i, j int) bool {
+		return mcpevents.Before(conversation[i].(map[string]any)["at"].(string), conversation[j].(map[string]any)["at"].(string))
+	})
+	return conversation, reviews, nil
+}
+
+// prChecks is the checks of a pull request's head commit sha: their state, the first failed
+// Actions run, and each status as a check run. No sha has no checks.
+func (f *RealForgejo) prChecks(ctx context.Context, repo, sha string) (prState, []any, error) {
+	state := prState{checks: "none"}
+	runs := []any{}
+	if sha == "" {
+		return state, runs, nil
+	}
+	c, err := f.status(ctx, repo, sha)
+	if err != nil {
+		return state, nil, err
+	}
+	if len(c.Statuses) > 0 {
+		state.checks = checkState(c.State)
+	}
+	for _, s := range c.Statuses {
+		run := map[string]any{"name": s.Context, "state": checkState(s.State), "url": s.TargetURL, "description": s.Description}
+		if m := actionsRun.FindStringSubmatch(s.TargetURL); m != nil {
+			id, _ := strconv.Atoi(m[1])
+			run["runId"] = id
+			if failedStatus(s.State) && state.runID == 0 {
+				state.runID = id
+			}
+		}
+		runs = append(runs, run)
+	}
+	return state, runs, nil
+}
+
+// stateName is a pull request's state as its page says it: open, merged or closed.
+func (p pullJSON) stateName() string {
+	switch {
+	case p.Merged:
+		return "merged"
+	case p.State == "closed":
+		return "closed"
+	}
+	return "open"
 }
 
 // lineThreads are a pull request's line comments as threads: Forgejo keeps a thread by its

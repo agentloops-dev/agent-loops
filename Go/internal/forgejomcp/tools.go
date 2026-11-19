@@ -156,7 +156,23 @@ func AddTools(server *mcp.Server, f *RealForgejo, person bool) {
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
 	agents := visibility("model", "app")
 	addViews(server, f, repoOf)
+	addPullRequestTools(server, f, repoOf, agents, readOnly)
+	addRunTools(server, f, repoOf, agents, readOnly)
+	addIssueTools(server, f, repoOf, agents, readOnly)
+	addWriteTools(server, f, repoOf, agents)
+	addLineCommentTools(server, f, repoOf, agents, readOnly)
+	// Merge and approve are the person's. They are only on the copy the host runs (person),
+	// whose callers are the person's own windows and devices.
+	if person {
+		addPersonTools(server, f, repoOf)
+	}
+}
 
+// repoFunc is a tool's repo: the one it names, checked, or the one this folder pushes to.
+type repoFunc = func(context.Context, string) (string, error)
+
+// addPullRequestTools adds the tools that read pull requests.
+func addPullRequestTools(server *mcp.Server, f *RealForgejo, repoOf repoFunc, agents mcp.Meta, readOnly *mcp.ToolAnnotations) {
 	tool(server, &mcp.Tool{Name: "list_pull_requests", Title: "List pull requests",
 		Description: "The repository's pull requests, newest updated first, at most 50: number, title, branch, target, author, draft, " +
 			"state, whether each can merge, and its address.",
@@ -220,7 +236,10 @@ func AddTools(server *mcp.Server, f *RealForgejo, person bool) {
 			}
 			return out, nil
 		})
+}
 
+// addRunTools adds the tools of checks and Actions runs.
+func addRunTools(server *mcp.Server, f *RealForgejo, repoOf repoFunc, agents mcp.Meta, readOnly *mcp.ToolAnnotations) {
 	tool(server, &mcp.Tool{Name: "get_checks", Title: "Read a commit's checks",
 		Description: "The checks of a branch, tag or commit, or of a pull request's head: the combined state (pending, success, error " +
 			"or failure) and each check's newest status, its name, state, description and address (a Forgejo Actions run's page, or " +
@@ -288,7 +307,10 @@ func AddTools(server *mcp.Server, f *RealForgejo, person bool) {
 			}
 			return f.RetryRun(ctx, repo, in.RunID)
 		})
+}
 
+// addIssueTools adds the tools that read issues.
+func addIssueTools(server *mcp.Server, f *RealForgejo, repoOf repoFunc, agents mcp.Meta, readOnly *mcp.ToolAnnotations) {
 	tool(server, &mcp.Tool{Name: "list_issues", Title: "List issues",
 		Description: "The repository's issues (not its pull requests), newest first, at most 50: number, title, state, author, " +
 			"labels, assignees, comments and address.",
@@ -348,7 +370,10 @@ func AddTools(server *mcp.Server, f *RealForgejo, person bool) {
 			out["comments"] = list
 			return out, nil
 		})
+}
 
+// addWriteTools adds the tools that comment and open a pull request, as the person whose token it is.
+func addWriteTools(server *mcp.Server, f *RealForgejo, repoOf repoFunc, agents mcp.Meta) {
 	comment := func(ctx context.Context, in commentArgs) (map[string]any, error) {
 		repo, err := repoOf(ctx, in.Repo)
 		if err != nil {
@@ -401,7 +426,10 @@ func AddTools(server *mcp.Server, f *RealForgejo, person bool) {
 			}
 			return prSummary(p), nil
 		})
+}
 
+// addLineCommentTools adds the tools that read and answer comments on a pull request's lines.
+func addLineCommentTools(server *mcp.Server, f *RealForgejo, repoOf repoFunc, agents mcp.Meta, readOnly *mcp.ToolAnnotations) {
 	tool(server, &mcp.Tool{Name: "list_pull_request_comments", Title: "List a pull request's line comments",
 		Description: "The comments on lines of a pull request's diff, in every review, oldest first: each one's id (to answer with " +
 			"reply_to_pull_request_comment), author, file, line, body, whether it is resolved, and address.",
@@ -436,101 +464,106 @@ func AddTools(server *mcp.Server, f *RealForgejo, person bool) {
 			"a review comment on the same file and line.",
 		Meta: agents},
 		func(ctx context.Context, in replyArgs) (map[string]any, error) {
+			return replyToLineComment(ctx, f, repoOf, in)
+		})
+}
+
+// replyToLineComment is reply_to_pull_request_comment: a review comment on the same file and
+// line as the comment it answers.
+func replyToLineComment(ctx context.Context, f *RealForgejo, repoOf repoFunc, in replyArgs) (map[string]any, error) {
+	repo, err := repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Body) == "" {
+		return nil, fmt.Errorf("body is empty")
+	}
+	var p pullJSON
+	if err := f.get(ctx, fmt.Sprintf("%s/pulls/%d", repoPath(repo), in.Number), false, &p); err != nil {
+		return nil, err
+	}
+	comments, err := f.reviewComments(ctx, repo, p, "")
+	if err != nil {
+		return nil, err
+	}
+	var to *reviewCommentJSON
+	for i := range comments {
+		if comments[i].ID == in.CommentID {
+			to = &comments[i]
+		}
+	}
+	if to == nil {
+		return nil, fmt.Errorf("pull request %d has no line comment %d", in.Number, in.CommentID)
+	}
+	// Forgejo keeps a thread by its file, line and commit, so a comment there is in it.
+	line := map[string]any{"path": to.Path, "body": in.Body}
+	if to.Position > 0 {
+		line["new_position"] = to.Position
+	} else {
+		line["old_position"] = to.OriginalPosition
+	}
+	commit := to.CommitID
+	if commit == "" {
+		commit = p.Head.SHA
+	}
+	var r reviewJSON
+	if err := f.send(ctx, http.MethodPost, fmt.Sprintf("%s/pulls/%d/reviews", repoPath(repo), in.Number),
+		map[string]any{"event": "COMMENT", "commit_id": commit, "comments": []any{line}}, &r); err != nil {
+		return nil, err
+	}
+	return map[string]any{"review": r.ID, "url": r.HTMLURL}, nil
+}
+
+// addPersonTools adds merge and approve, the person's own.
+func addPersonTools(server *mcp.Server, f *RealForgejo, repoOf repoFunc) {
+	person := visibility("app")
+	tool(server, &mcp.Tool{Name: "merge_pull_request", Title: "Merge a pull request",
+		Description: "Merges a pull request and deletes its branch, as the person whose token it is; squash squashes its " +
+			"commits, auto merges once its checks succeed. Only a person may call it.",
+		Meta: person},
+		func(ctx context.Context, in mergeArgs) (map[string]any, error) {
 			repo, err := repoOf(ctx, in.Repo)
 			if err != nil {
 				return nil, err
 			}
-			if strings.TrimSpace(in.Body) == "" {
-				return nil, fmt.Errorf("body is empty")
-			}
-			var p pullJSON
-			if err := f.get(ctx, fmt.Sprintf("%s/pulls/%d", repoPath(repo), in.Number), false, &p); err != nil {
-				return nil, err
-			}
-			comments, err := f.reviewComments(ctx, repo, p, "")
+			sha, err := headSha(in.Sha)
 			if err != nil {
 				return nil, err
 			}
-			var to *reviewCommentJSON
-			for i := range comments {
-				if comments[i].ID == in.CommentID {
-					to = &comments[i]
+			do := "merge"
+			if in.Squash {
+				do = "squash"
+			}
+			body := map[string]any{"Do": do, "head_commit_id": sha, "delete_branch_after_merge": true,
+				"merge_when_checks_succeed": in.Auto}
+			if err := f.send(ctx, http.MethodPost, fmt.Sprintf("%s/pulls/%d/merge", repoPath(repo), in.Number), body, nil); err != nil {
+				var fe *ForgejoError
+				if errors.As(err, &fe) && strings.Contains(strings.ToLower(fe.Message), "head") {
+					return nil, fmt.Errorf("the pull request has a newer commit than the person saw: read it again (%w)", err)
 				}
+				return nil, err
 			}
-			if to == nil {
-				return nil, fmt.Errorf("pull request %d has no line comment %d", in.Number, in.CommentID)
+			return map[string]any{"merged": !in.Auto, "auto": in.Auto, "number": in.Number}, nil
+		})
+	tool(server, &mcp.Tool{Name: "approve_pull_request", Title: "Approve a pull request",
+		Description: "Approves a pull request at the head commit the person saw, as the person whose token it is. Only a person may call it.",
+		Meta:        person},
+		func(ctx context.Context, in approveArgs) (map[string]any, error) {
+			repo, err := repoOf(ctx, in.Repo)
+			if err != nil {
+				return nil, err
 			}
-			// Forgejo keeps a thread by its file, line and commit, so a comment there is in it.
-			line := map[string]any{"path": to.Path, "body": in.Body}
-			if to.Position > 0 {
-				line["new_position"] = to.Position
-			} else {
-				line["old_position"] = to.OriginalPosition
-			}
-			commit := to.CommitID
-			if commit == "" {
-				commit = p.Head.SHA
+			sha, err := headSha(in.Sha)
+			if err != nil {
+				return nil, err
 			}
 			var r reviewJSON
 			if err := f.send(ctx, http.MethodPost, fmt.Sprintf("%s/pulls/%d/reviews", repoPath(repo), in.Number),
-				map[string]any{"event": "COMMENT", "commit_id": commit, "comments": []any{line}}, &r); err != nil {
+				map[string]any{"event": "APPROVED", "commit_id": sha}, &r); err != nil {
 				return nil, err
 			}
-			return map[string]any{"review": r.ID, "url": r.HTMLURL}, nil
+			return map[string]any{"approved": true, "number": in.Number, "review": r.ID}, nil
 		})
-
-	// Merge and approve are the person's. They are only on the copy the host runs (person),
-	// whose callers are the person's own windows and devices.
-	if person {
-		person := visibility("app")
-		tool(server, &mcp.Tool{Name: "merge_pull_request", Title: "Merge a pull request",
-			Description: "Merges a pull request and deletes its branch, as the person whose token it is; squash squashes its " +
-				"commits, auto merges once its checks succeed. Only a person may call it.",
-			Meta: person},
-			func(ctx context.Context, in mergeArgs) (map[string]any, error) {
-				repo, err := repoOf(ctx, in.Repo)
-				if err != nil {
-					return nil, err
-				}
-				sha, err := headSha(in.Sha)
-				if err != nil {
-					return nil, err
-				}
-				do := "merge"
-				if in.Squash {
-					do = "squash"
-				}
-				body := map[string]any{"Do": do, "head_commit_id": sha, "delete_branch_after_merge": true,
-					"merge_when_checks_succeed": in.Auto}
-				if err := f.send(ctx, http.MethodPost, fmt.Sprintf("%s/pulls/%d/merge", repoPath(repo), in.Number), body, nil); err != nil {
-					var fe *ForgejoError
-					if errors.As(err, &fe) && strings.Contains(strings.ToLower(fe.Message), "head") {
-						return nil, fmt.Errorf("the pull request has a newer commit than the person saw: read it again (%w)", err)
-					}
-					return nil, err
-				}
-				return map[string]any{"merged": !in.Auto, "auto": in.Auto, "number": in.Number}, nil
-			})
-		tool(server, &mcp.Tool{Name: "approve_pull_request", Title: "Approve a pull request",
-			Description: "Approves a pull request at the head commit the person saw, as the person whose token it is. Only a person may call it.",
-			Meta:        person},
-			func(ctx context.Context, in approveArgs) (map[string]any, error) {
-				repo, err := repoOf(ctx, in.Repo)
-				if err != nil {
-					return nil, err
-				}
-				sha, err := headSha(in.Sha)
-				if err != nil {
-					return nil, err
-				}
-				var r reviewJSON
-				if err := f.send(ctx, http.MethodPost, fmt.Sprintf("%s/pulls/%d/reviews", repoPath(repo), in.Number),
-					map[string]any{"event": "APPROVED", "commit_id": sha}, &r); err != nil {
-					return nil, err
-				}
-				return map[string]any{"approved": true, "number": in.Number, "review": r.ID}, nil
-			})
-	}
 }
 
 // labelID is a label's id by its name: Forgejo filters pull requests by label id.
