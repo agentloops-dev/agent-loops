@@ -31,28 +31,7 @@ func (d *Daemon) manageAccounts(agent wire.UUID, args map[string]json.RawMessage
 	switch action {
 	case "", "list":
 	case "get":
-		id := strings.TrimSpace(argString(args, "id"))
-		if id == "" {
-			return "", Invalid("Nothing was done: give the account's id, as list gives it.")
-		}
-		listed, err := d.askAccounts(call)
-		if err != nil {
-			return "", err
-		}
-		i := slices.IndexFunc(listed.Accounts, func(a wire.OutsideAccount) bool { return accountID(a) == strings.ToLower(id) })
-		if i >= 0 {
-			waiting, err := d.approveAccountUse(agent, listed.Accounts[i], "get")
-			if err != nil || waiting != "" {
-				return waiting, err
-			}
-		}
-		note, err := accountNote(d.withLastOps(listed.Accounts), id)
-		if err == nil {
-			d.accountsDone(agent, readOps(slices.DeleteFunc(listed.Accounts, func(a wire.OutsideAccount) bool {
-				return accountID(a) != strings.ToLower(id)
-			})))
-		}
-		return note, err
+		return d.manageAccountsGet(agent, args, call)
 	case "add":
 		var a wire.OutsideAccount
 		raw, ok := args["account"]
@@ -108,6 +87,33 @@ func (d *Daemon) manageAccounts(agent wire.UUID, args map[string]json.RawMessage
 		})
 	}
 	return d.addAccounts(agent, have, plan, false, args)
+}
+
+// manageAccountsGet is manage_accounts get: one account in full. An account with Ask before use
+// waits on a person first (#4163).
+func (d *Daemon) manageAccountsGet(agent wire.UUID, args map[string]json.RawMessage, call wire.MachineAccountsCall) (string, error) {
+	id := strings.TrimSpace(argString(args, "id"))
+	if id == "" {
+		return "", Invalid("Nothing was done: give the account's id, as list gives it.")
+	}
+	listed, err := d.askAccounts(call)
+	if err != nil {
+		return "", err
+	}
+	i := slices.IndexFunc(listed.Accounts, func(a wire.OutsideAccount) bool { return accountID(a) == strings.ToLower(id) })
+	if i >= 0 {
+		waiting, err := d.approveAccountUse(agent, listed.Accounts[i], "get")
+		if err != nil || waiting != "" {
+			return waiting, err
+		}
+	}
+	note, err := accountNote(d.withLastOps(listed.Accounts), id)
+	if err == nil {
+		d.accountsDone(agent, readOps(slices.DeleteFunc(listed.Accounts, func(a wire.OutsideAccount) bool {
+			return accountID(a) != strings.ToLower(id)
+		})))
+	}
+	return note, err
 }
 
 // removeAccounts is manage_accounts remove (#5253): the accounts with the ids go. One the person

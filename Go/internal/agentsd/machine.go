@@ -62,6 +62,10 @@ func (d *Daemon) machineFirstLookDone() {
 func (d *Daemon) machineChanged(c machineChange) {
 	if c.kind == "wake" {
 		d.goJob("disk check", d.checkDisk)
+		// A timer does not count the time the Mac slept (#6190): what came due while it
+		// slept, a lease's end or a wait's deadline, is acted on now, not that much later.
+		d.goJob("leases after wake", d.lapseLeasesNow)
+		d.goJob("waits after wake", d.waitDeadlinesPassed)
 	}
 	// Kept, so the next host's first look is against it (#1219).
 	if c.kind == "away" || c.kind == "back" {

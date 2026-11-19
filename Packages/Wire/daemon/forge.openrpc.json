@@ -258,6 +258,31 @@
       }
     },
     {
+      "name": "forge/hold",
+      "x-capability": "forge-write/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/forge.schema.json#/definitions/ForgeHoldRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ForgeDone"
+        }
+      }
+    },
+    {
       "name": "forge/image",
       "x-capability": "forge.image/1",
       "tags": [
@@ -483,6 +508,31 @@
       }
     },
     {
+      "name": "forge/priority",
+      "x-capability": "forge-write/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/forge.schema.json#/definitions/ForgePriorityRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ForgeDone"
+        }
+      }
+    },
+    {
       "name": "forge/pull",
       "x-capability": "forge/1",
       "tags": [
@@ -605,6 +655,31 @@
         "name": "result",
         "schema": {
           "$ref": "schema/forge.schema.json#/definitions/ForgeReleases"
+        }
+      }
+    },
+    {
+      "name": "forge/request-changes",
+      "x-capability": "forge-write/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/forge.schema.json#/definitions/ForgeRequestChangesRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ForgeDone"
         }
       }
     },

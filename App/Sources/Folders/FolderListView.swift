@@ -74,10 +74,14 @@ struct FolderListView: View {
     /// The Machines group's rows (#5286): at most seven, This Mac, pinned and busy first.
     private var machineRows: MachinesGroup.Rows {
         let pins = Set(MachinePins.pinned(machinePins))
+        let machines = machines
+        let making = model.machinesBeingMade + model.machinesMaking.count
+        // Seven or fewer are drawn as they are: nothing asks about their sessions (P20261117-1).
+        let ranks = MachinesGroup.ranks(machines.count, making: making)
         let listed = machines.map { host in
-            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: ranks && model.machineIsActive(host))
         }
-        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count)
+        return MachinesGroup.rows(listed, making: making)
     }
 
     /// No runtime can be started on: Runtimes' icon says so in red (#587); one nearly used
@@ -224,8 +228,9 @@ struct FolderListView: View {
                         .activityIcon(kind.sidebarIcon)
                         .appText(.supporting).sidebarInk(.work(kind)).tag(SidebarItem.work(kind))
                 }
-                // Work shown: its first list read ahead, so the page draws at once (#4930).
-                .task(id: model.forgeMachines.map(\.id)) { await model.prefetchWork() }
+                // Work shown: its first list read ahead, so the page draws at once (#4930), and again when a machine
+                // joins or a folder is added (#6152).
+                .task(id: model.workSource) { await model.prefetchWork() }
             } header: {
                 Text("Work").appText(.supporting)
             }
@@ -1205,8 +1210,6 @@ private struct NewItemsMenu: View {
 /// both have nothing to say.
 private struct SidebarFoot: View {
     @Environment(AppModel.self) private var model
-    /// Machines' group open: its rows say why a server is quiet, so the foot does not (#3764).
-    @AppStorage("showsMachines", store: WindowDefaults.store) private var showsMachines = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1227,38 +1230,8 @@ private struct SidebarFoot: View {
                 }
                 .padding(.horizontal, 14)
             }
-            // At most seven, as the Machines group (#5286), then how many more.
-            let offline = showsMachines ? [] : model.hosts.servers.filter { model.hostUnreachable($0) }
-            ForEach(offline.prefix(MachinesGroup.limit), id: \.self) { host in
-                // A server gone quiet greys its folders; its row under Machines says why (#3764).
-                // With that group folded, this says it, once, where the Mac's own state is said.
-                // One on a stopped workspace says so, with Start (#961).
-                let row = model.hosts.controlRows[host]
-                HStack(spacing: 8) {
-                    Label(OfflineWords.footLine(name: model.hosts.label(host), row: row),
-                          icon: "bolt.horizontal.circle")
-                        .appText(.fine)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityElement(children: .combine)
-                    Spacer(minLength: 0)
-                    if let row, let workspace = row.workspace, OfflineWords.offersStart(state: row.state, workspace: workspace) {
-                        Button("Start") { Task { await model.startHost(host) } }
-                            .controlSize(.small)
-                            .disabled(model.hostsBeingStarted.contains(host))
-                            .help("Starts \(workspace.workspaceName) at \(workspace.providerName).")
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 4)
-            }
-            if offline.count > MachinesGroup.limit {
-                Label(MachinesGroup.moreOffline(offline.count - MachinesGroup.limit), icon: "bolt.horizontal.circle")
-                    .appText(.fine)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 4)
-            }
+            // A server gone quiet is not listed here (#6138): its folders are greyed, and its
+            // row under Machines, its page and a session's strip say why.
             // A file this Mac keeps that could not be read (#205): why paired devices or
             // folders may have gone from view, and that what they held is kept.
             ForEach(model.storeNotes, id: \.self) { note in

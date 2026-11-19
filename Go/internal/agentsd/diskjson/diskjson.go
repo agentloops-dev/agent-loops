@@ -146,57 +146,74 @@ func walk(t reflect.Type, tree any, f convert) (any, error) {
 	}
 	switch t.Kind() {
 	case reflect.Struct:
-		obj, ok := tree.(map[string]any)
-		if !ok {
-			return tree, nil
-		}
-		for name, field := range fieldsOf(t) {
-			v, ok := obj[name]
-			if ok && v == nil && field.required && field.t.Kind() == reflect.Slice && field.t.Elem().Kind() != reflect.Uint8 {
-				// A list Swift always has: a nil slice is written [], as Swift writes it.
-				obj[name] = []any{}
-				continue
-			}
-			if ok {
-				nv, err := walk(field.t, v, f)
-				if err != nil {
-					return nil, fmt.Errorf("%s: %w", name, err)
-				}
-				obj[name] = nv
-			}
-		}
-		return obj, nil
+		return walkStruct(t, tree, f)
 	case reflect.Slice, reflect.Array:
-		if t.Elem().Kind() == reflect.Uint8 {
-			return tree, nil // []byte is base64 text; json.RawMessage is any JSON
-		}
-		arr, ok := tree.([]any)
-		if !ok {
-			return tree, nil
-		}
-		for i, v := range arr {
-			nv, err := walk(t.Elem(), v, f)
-			if err != nil {
-				return nil, err
-			}
-			arr[i] = nv
-		}
-		return arr, nil
+		return walkList(t, tree, f)
 	case reflect.Map:
-		obj, ok := tree.(map[string]any)
-		if !ok {
-			return tree, nil
-		}
-		for k, v := range obj {
-			nv, err := walk(t.Elem(), v, f)
-			if err != nil {
-				return nil, err
-			}
-			obj[k] = nv
-		}
-		return obj, nil
+		return walkMap(t, tree, f)
 	}
 	return tree, nil
+}
+
+// walkStruct rewrites the dates in each field of a struct t, and writes [] for a list Swift
+// always has that came as null.
+func walkStruct(t reflect.Type, tree any, f convert) (any, error) {
+	obj, ok := tree.(map[string]any)
+	if !ok {
+		return tree, nil
+	}
+	for name, field := range fieldsOf(t) {
+		v, ok := obj[name]
+		if !ok {
+			continue
+		}
+		if v == nil && field.alwaysList() {
+			// A list Swift always has: a nil slice is written [], as Swift writes it.
+			obj[name] = []any{}
+			continue
+		}
+		nv, err := walk(field.t, v, f)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		obj[name] = nv
+	}
+	return obj, nil
+}
+
+// walkList rewrites the dates in each element of a slice or array t.
+func walkList(t reflect.Type, tree any, f convert) (any, error) {
+	if t.Elem().Kind() == reflect.Uint8 {
+		return tree, nil // []byte is base64 text; json.RawMessage is any JSON
+	}
+	arr, ok := tree.([]any)
+	if !ok {
+		return tree, nil
+	}
+	for i, v := range arr {
+		nv, err := walk(t.Elem(), v, f)
+		if err != nil {
+			return nil, err
+		}
+		arr[i] = nv
+	}
+	return arr, nil
+}
+
+// walkMap rewrites the dates in each value of a map t.
+func walkMap(t reflect.Type, tree any, f convert) (any, error) {
+	obj, ok := tree.(map[string]any)
+	if !ok {
+		return tree, nil
+	}
+	for k, v := range obj {
+		nv, err := walk(t.Elem(), v, f)
+		if err != nil {
+			return nil, err
+		}
+		obj[k] = nv
+	}
+	return obj, nil
 }
 
 var fields sync.Map // reflect.Type → map[string]field
@@ -205,6 +222,11 @@ type field struct {
 	t reflect.Type
 	// required: no omitempty or omitzero, so Swift's type has it always.
 	required bool
+}
+
+// alwaysList: the field is a list (not []byte) that Swift's type has always.
+func (f field) alwaysList() bool {
+	return f.required && f.t.Kind() == reflect.Slice && f.t.Elem().Kind() != reflect.Uint8
 }
 
 // fieldsOf is each JSON key of a struct and the type under it, embedded structs flattened.

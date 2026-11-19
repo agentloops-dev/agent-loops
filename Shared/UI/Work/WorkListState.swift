@@ -13,7 +13,7 @@ final class WorkListState {
     var filter = WorkList.Filter() { didSet { remember() } }
     /// The person's projects (#3283), as the model last said them, for the Project filter.
     var projects: [WorkList.Project] = []
-    var sort = WorkList.Sort.updated { didSet { remember() } }
+    var sort = WorkList.Sort.priority { didSet { remember() } }
     var lists: [(host: MachineRef, list: DaemonAPI.ForgeList)]?
     var lineage: [DaemonAPI.ReportNode] = []
     /// The boards the Board menu offers (#3282), read with the list.
@@ -26,8 +26,14 @@ final class WorkListState {
     var asked = 0
     /// The row whose page was opened last, which the list scrolls to when it is shown again.
     var opened: String?
+    /// What the rows are read from (#6152): the machines and their folders, as `WorkModel.workSource` says. A read
+    /// made before a machine joined or a folder was added is made again when it changes.
+    var source = ""
     /// The selected row on the Mac (lists.md section 2): ↑ and ↓ move it, Return opens it.
     var selected: String?
+    /// Why the last Priority or On hold write from a row's menu failed (epic #6086), in the machine's
+    /// words; the row has its old value back, and the list says this until it is dismissed.
+    var writeProblem: String?
     /// The rows on screen came from this device's copy (#4930): the machines are asked again,
     /// and the list says so until they answer, with when the copy was read (#5142).
     var fromDeviceRead: Date?
@@ -62,9 +68,13 @@ final class WorkListState {
         var sort: DaemonAPI.ReportNodesSort
         var asked: Int
         var board: String
+        var source: String
     }
 
-    var ask: Ask { Ask(state: filter.state.forge, sort: nodesSort, asked: asked, board: filter.board) }
+    var ask: Ask { Ask(state: filter.state.forge, sort: nodesSort, asked: asked, board: filter.board, source: source) }
+
+    /// A read for what is asked now is on its way: another would read the same again.
+    var readingAsk: Bool { reading && read == ask }
 
     /// What a list's first page is kept under in this device's copy (#4930): the kind, state, sort and board.
     var copyAsk: String { [kind.rawValue, filter.state.forge, nodesSort.rawValue, filter.board].joined(separator: "|") }
@@ -225,7 +235,8 @@ final class WorkListState {
         if failed, let read = fromDeviceRead, let kept = lists, kept.contains(where: { !$0.list.items.isEmpty }) {
             let said = got.flatMap { $0.list.errors ?? [] }
             lists = kept.enumerated().map { i, entry in
-                (entry.host, DaemonAPI.ForgeList(items: entry.list.items, errors: i == 0 ? said : nil, total: entry.list.total))
+                (entry.host, DaemonAPI.ForgeList(items: entry.list.items, errors: i == 0 ? said : nil, forges: entry.list.forges,
+                                                  total: entry.list.total))
             }
             answered(wanted)
             keptRead = read
@@ -260,11 +271,10 @@ final class WorkListState {
         await withTaskGroup(of: (MachineRef, DaemonAPI.ForgeList).self) { group in
             for machine in machines {
                 group.addTask {
-                    do {
-                        return (machine.id, try await model.forgeList(kind, request, on: machine.id))
-                    } catch {
-                        return (machine.id, .init(errors: [.init(forge: "", message: error.localizedDescription)]))
-                    }
+                    // The result first, then the tuple from one place (#5946, `Result.catching`).
+                    let read = await Result.catching { try await model.forgeList(kind, request, on: machine.id) }
+                    let list = (try? read.get()) ?? .init(errors: [.init(forge: "", message: read.error?.localizedDescription ?? "")])
+                    return (machine.id, list)
                 }
             }
             for await (host, list) in group {
@@ -282,6 +292,60 @@ final class WorkListState {
             }
         }
         return got
+    }
+
+    /// What a row's right-click menu offers (epic #6086): its priority and on hold where its forge sets
+    /// them and its machine writes; nothing on rows from this device's copy, until the machines answer.
+    func setsPriority(_ row: WorkList.Row, model: any WorkModel) -> (priority: Bool, hold: Bool) {
+        guard kind == .issue, !fromDevice, let host = row.host else { return (false, false) }
+        let forges = lists?.first { $0.host == host }?.list.forges
+        return WorkList.rowSetsPriority(row, forges: forges, writes: model.forgeWrites(on: host))
+    }
+
+    /// A row's priority from its menu (`forge/priority`): the row shows it at once, and has its old
+    /// one back when the write fails.
+    func set(priority: String?, on row: WorkList.Row, model: any WorkModel) {
+        guard let host = row.host, priority != row.priority?.lowercased() else { return }
+        let old = row.priority
+        change(row) { $0.priority = priority }
+        write(DaemonAPI.Method.forgePriority, DaemonAPI.ForgePriorityRequest(node: row.node, priority: priority),
+              on: host, model: model) { $0.change(row) { $0.priority = old } }
+    }
+
+    /// A row's On hold from its menu (`forge/hold`), as `set(priority:)` does.
+    func set(hold on: Bool, on row: WorkList.Row, model: any WorkModel) {
+        guard let host = row.host, on != row.onHold else { return }
+        let old = row.onHold
+        change(row) { $0.onHold = on }
+        write(DaemonAPI.Method.forgeHold, DaemonAPI.ForgeHoldRequest(node: row.node, on: on),
+              on: host, model: model) { $0.change(row) { $0.onHold = old } }
+    }
+
+    private func write(_ method: String, _ params: some Encodable & Sendable, on host: MachineRef,
+                       model: any WorkModel, undo: @escaping @MainActor (WorkListState) -> Void) {
+        writeProblem = nil
+        Task { [weak self] in
+            do {
+                _ = try await model.forge(method, params, returning: DaemonAPI.ForgeDone.self, on: host)
+                // The forge's own read next (its labels too), with the rows on screen until it answers.
+                self?.asked += 1
+            } catch {
+                guard let self else { return }
+                undo(self)
+                writeProblem = WorkList.failureWords(error)
+            }
+        }
+    }
+
+    /// Changes the row's item in the list it came from: the same ref on the same machine.
+    private func change(_ row: WorkList.Row, _ edit: (inout DaemonAPI.ForgeItem) -> Void) {
+        guard var all = lists else { return }
+        for i in all.indices where all[i].host == row.host {
+            for j in all[i].list.items.indices where all[i].list.items[j].node.ref == row.node.ref {
+                edit(&all[i].list.items[j])
+            }
+        }
+        lists = all
     }
 
     /// The machines answered for what is asked: the rows are theirs now.
@@ -319,7 +383,9 @@ final class WorkListState {
                     let page = try await model.forgeList(kind, .init(state: filter.state.forge, cursor: cursor, limit: 100,
                                                                      board: board.isEmpty ? nil : board),
                                                          on: entry.host)
-                    next.append((entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors)))
+                    next.append((entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors,
+                                                   forges: WorkList.joinForges(entry.list.forges, page.forges),
+                                                   total: entry.list.total)))
                 }
                 lists = next
             } else if let cursor = lineageCursor {
@@ -338,17 +404,22 @@ final class WorkListState {
 final class WorkLists {
     /// Work ▸ Features (#3269): the features read, and the ones opened.
     let features = WorkFeaturesState()
-    #if os(macOS)
-    /// Work ▸ Timeline (#4173): the Mac's alone for now (remote: by design).
+    /// Work ▸ Timeline (#4173): Core since #6044.
     let timeline = WorkTimelineState()
+    #if os(macOS)
     /// Work ▸ Deploys (#5270): Mac + web, so not on the Remote.
     let deploys = WorkDeploysState()
     #endif
     private var byKind: [WorkList.Kind: WorkListState] = [:]
+    /// What every list is read from (#6152), given to each: a change reads an open list again.
+    var source = "" {
+        didSet { if source != oldValue { for state in byKind.values { state.source = source } } }
+    }
 
     subscript(kind: WorkList.Kind) -> WorkListState {
         if let state = byKind[kind] { return state }
         let state = WorkListState(kind: kind)
+        state.source = source
         byKind[kind] = state
         return state
     }

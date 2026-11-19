@@ -329,6 +329,9 @@ func TestForgeWrites(t *testing.T) {
 	if link, err := bb.Approve(ctx, "acme/app", 8, "abc123def456"); err != nil || link != "https://bitbucket.org/acme/app/pull-requests/8" {
 		t.Fatalf("approve: %q %v", link, err)
 	}
+	if link, err := bb.RequestChanges(ctx, "acme/app", 8, "abc123def456", "Please rename it."); err != nil || link != "https://bitbucket.org/acme/app/pull-requests/8" {
+		t.Fatalf("request changes: %q %v", link, err)
+	}
 	want := []string{
 		`POST acme/app/issues/7/comments {"content":{"raw":"Done"}}`,
 		`POST acme/app/pullrequests/8/comments {"content":{"raw":"LGTM"}}`,
@@ -337,6 +340,8 @@ func TestForgeWrites(t *testing.T) {
 		`POST acme/app/pullrequests/8/decline`,
 		`POST acme/app/pullrequests/8/merge {"close_source_branch":true,"merge_strategy":"squash"}`,
 		`POST acme/app/pullrequests/8/approve`,
+		`POST acme/app/pullrequests/8/comments {"content":{"raw":"Please rename it."}}`,
+		`POST acme/app/pullrequests/8/request-changes`,
 	}
 	same(t, f.sent, want)
 

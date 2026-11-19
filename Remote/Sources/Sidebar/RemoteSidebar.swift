@@ -66,10 +66,14 @@ struct RemoteSidebar: View {
     /// The Machines group's rows (#5286): at most seven, This Mac, pinned and busy first.
     private var machineRows: MachinesGroup.Rows {
         let pins = Set(MachinePins.pinned(machinePins))
-        let listed = model.machines.map { host in
-            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: model.machineIsActive(host))
+        let machines = model.machines
+        let making = model.machinesBeingMade + model.machinesMaking.count
+        // Seven or fewer are drawn as they are: nothing asks about their sessions (P20261117-1).
+        let ranks = MachinesGroup.ranks(machines.count, making: making, all: showsAllMachines)
+        let listed = machines.map { host in
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: ranks && model.machineIsActive(host))
         }
-        return MachinesGroup.rows(listed, making: model.machinesBeingMade + model.machinesMaking.count, all: showsAllMachines)
+        return MachinesGroup.rows(listed, making: making, all: showsAllMachines)
     }
 
     private var servers: [MachineRef] {
@@ -185,15 +189,17 @@ struct RemoteSidebar: View {
                 // Work, Status, Machines, then Reports, as the window has them (#5454). New Session
                 // is in the + (#5447), and a folder's long press.
                 // Work (#3119, #3256): a row per list, as the window has them (#4004), above
-                // Status, Features too (#3269). No Timeline: it is the Mac's.
+                // Status, Features too (#3269), and Timeline after Releases, as the window has it (#6044).
+                // No Deploys: it is Mac + web.
                 Section(isExpanded: $showsWork) {
-                    ForEach(WorkList.Kind.allCases.filter { $0 != .timeline && $0 != .deploy }) { kind in
+                    ForEach(WorkList.Kind.allCases.filter { $0 != .deploy }) { kind in
                         HStack { Text(kind.title); Spacer() }
                             .accessibilityHint(kind.sidebarHelp)
                             .activityIcon(kind.sidebarIcon).appText(.supporting).paperTag(SidebarItem.work(kind))
                     }
-                    // Work shown: its first list read ahead, so the page draws at once (#4930).
-                    .task(id: model.forgeMachines.map(\.id)) { await model.prefetchWork() }
+                    // Work shown: its first list read ahead, so the page draws at once (#4930), and again when a
+                    // machine joins or a folder is added (#6152).
+                    .task(id: model.workSource) { await model.prefetchWork() }
                 } header: {
                     Text("Work")
                 }
@@ -307,40 +313,8 @@ struct RemoteSidebar: View {
                     .foregroundStyle(Paper.secondary)
             }
 
-            // A server gone quiet greys its folders; this says why, once, as the window's
-            // sidebar foot does (#534). Machines' rows say it while that group is open (#3764).
-            let offline = showsMachines && !model.machines.isEmpty ? [] : servers.filter { model.hostIsOffline($0) }
-            if !offline.isEmpty {
-                Section {
-                    // At most seven, as the Machines group (#5286), then how many more.
-                    ForEach(offline.prefix(MachinesGroup.limit), id: \.self) { host in
-                        // One on a stopped workspace says so, with Start, as its strip (#961).
-                        let row = model.controlHost(host)
-                        HStack(spacing: 8) {
-                            Label(OfflineWords.footLine(name: model.hostLabel(host), row: row),
-                                  icon: "bolt.horizontal.circle")
-                                .appText(.fine)
-                                .foregroundStyle(Paper.secondary)
-                                .accessibilityElement(children: .combine)
-                            Spacer(minLength: 0)
-                            if let row, let workspace = row.workspace,
-                               OfflineWords.offersStart(state: row.state, workspace: workspace) {
-                                Button("Start") { Task { await model.startHost(host) } }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                    .appText(.fine)
-                                    .disabled(model.hostsBeingStarted.contains(host))
-                                    .accessibilityLabel("Start \(model.hostLabel(host))")
-                            }
-                        }
-                    }
-                    if offline.count > MachinesGroup.limit {
-                        Label(MachinesGroup.moreOffline(offline.count - MachinesGroup.limit), icon: "bolt.horizontal.circle")
-                            .appText(.fine)
-                            .foregroundStyle(Paper.secondary)
-                    }
-                }
-            }
+            // A server gone quiet is not listed here (#6138), as the window's sidebar foot:
+            // its folders are greyed, and Machines, its page and a session's strip say why.
 
             // A file the Mac keeps that could not be read (#205, #223), as the window's
             // sidebar foot: why paired devices or folders may have gone from view.

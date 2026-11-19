@@ -49,9 +49,11 @@ The control plane keeps a **required set**: the capabilities that it needs to ro
 without one of them is still connected and serves what its list says, but its row says
 **Needs an update**, with a second line: "Update this host to Agent Loops 0.9.0. It does not have
 …", and the names it is missing, and **Update…** in its menu updates it over ssh (#1766). A
-Mac does not wait for that: at each join the control plane names its own version as the
-release (`machine/release`, to a host that says `host.update/1`), and Agent Loops updates itself
-to it when it is newer, between turns and with no admin password (#2178). On the Mac this is in **Settings ▸ Control plane**, on the
+Mac and a Linux machine do not wait for that: at each join the control plane names its own version as the
+release (`machine/release`, to a host that says `host.update/1`), and the host updates itself
+to it when it is newer, between turns and with no admin password (#2178, #5788). A Linux host
+older than its self-update (#5788) says no `host.update/1`, so **Update…** over ssh is still how it
+gets there. On the Mac this is in **Settings ▸ Control plane**, on the
 host's row. On the Remote and the web page it is in **Settings ▸ Versions**, which also gives
 the control plane's version and each host's, such as **Agent Loops 0.9.0 (Go)** for a host written
 in Go.

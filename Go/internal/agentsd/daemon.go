@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
@@ -208,6 +209,9 @@ type startOptions struct {
 	locate func(*runtimeDef) (string, []string, []string)
 	// runtimeEnv goes into each runtime's environment, after the rest.
 	runtimeEnv []string
+	// attach, when set, reaches each runtime in place of starting its process (acp.Launch.Attach):
+	// a test's fake runtime in the test's own process (#6143).
+	attach func(acp.Launch) (acp.Attached, error)
 }
 
 // startOpts are the daemon's start options now: none for a Daemon made without New.

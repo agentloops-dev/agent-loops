@@ -83,11 +83,27 @@ func Open(root string) (*Store, error) {
 	// The archived records come from their summaries, each read in full only when its
 	// record changed since its summary was made (#4653).
 	summaries, why := s.readSummaries()
+	// adoptInto: the root that takes the records with no root, when it was made just now.
+	var adoptInto *string
 	if adopts {
 		summaries, why = nil, "made before this root had an id"
+		adoptInto = &id
 	}
-	read, archived := 0, 0
-	entries, _ := os.ReadDir(loc.Agents())
+	read, archived := s.readAgents(summaries, adoptInto)
+	s.revisionsAtOpen()
+	s.rewriteSummaries(summaries, why, read, archived)
+	// The Swift daemon's index of archived agents is a cache this host does not keep. It
+	// goes, so a Swift daemon started on this root later makes it again from the records
+	// rather than trusting one older than them.
+	os.Remove(loc.ArchiveIndex())
+	return s, nil
+}
+
+// readAgents puts each agent in the agents folder in the store, from its summary when the
+// summary is still true, else from its record. It says how many archived records it read in
+// full, and how many archived agents there are.
+func (s *Store) readAgents(summaries map[wire.UUID]summaryRecord, adoptInto *string) (read, archived int) {
+	entries, _ := os.ReadDir(s.Loc.Agents())
 	for _, e := range entries {
 		name := e.Name()
 		if !wireUUID(name) {
@@ -99,24 +115,8 @@ func Open(root string) (*Store, error) {
 			archived++
 			continue
 		}
-		a, filled, err := s.load(name)
-		if err != nil {
-			// Left where it is, for a build that can read it, and said (AgentStore.load).
-			log.Printf("could not read agent %s, left on disk: %v", name, err)
-			continue
-		}
-		changed := mend(a) || filled
-		if a.MadeInRoot == nil && adopts {
-			a.MadeInRoot = &id
-			changed = true
-		}
-		if changed {
-			if err := s.write(a); err != nil {
-				log.Printf("could not save agent %s: %v", a.ID, err)
-			}
-		}
-		s.put(a)
-		if a.State == wire.AgentStateArchived {
+		a, ok := s.readAgent(name, adoptInto)
+		if ok && a.State == wire.AgentStateArchived {
 			if fi, err := os.Stat(s.Loc.Record(string(a.ID))); err == nil {
 				s.stamps[a.ID] = stampOf(fi)
 			}
@@ -124,7 +124,36 @@ func Open(root string) (*Store, error) {
 			archived++
 		}
 	}
-	s.revisionsAtOpen()
+	return read, archived
+}
+
+// readAgent reads one agent's record in full, mends it and saves it when it changed, and puts
+// it in the store. A record with no root gets adoptInto when it is not nil. Without ok, the
+// record could not be read and stays on disk.
+func (s *Store) readAgent(name string, adoptInto *string) (*wire.Agent, bool) {
+	a, filled, err := s.load(name)
+	if err != nil {
+		// Left where it is, for a build that can read it, and said (AgentStore.load).
+		log.Printf("could not read agent %s, left on disk: %v", name, err)
+		return nil, false
+	}
+	changed := mend(a) || filled
+	if a.MadeInRoot == nil && adoptInto != nil {
+		a.MadeInRoot = adoptInto
+		changed = true
+	}
+	if changed {
+		if err := s.write(a); err != nil {
+			log.Printf("could not save agent %s: %v", a.ID, err)
+		}
+	}
+	s.put(a)
+	return a, true
+}
+
+// rewriteSummaries writes the archived agents' summaries again when Open read a record in
+// full or a summary's record is gone, and says why.
+func (s *Store) rewriteSummaries(summaries map[wire.UUID]summaryRecord, why string, read, archived int) {
 	// A summary of no record there now (deleted by another build) is gone too.
 	gone := 0
 	for id := range summaries {
@@ -132,20 +161,16 @@ func Open(root string) (*Store, error) {
 			gone++
 		}
 	}
-	if read > 0 || gone > 0 {
-		if why == "" {
-			why = fmt.Sprintf("%d new or changed, %d gone", read, gone)
-		}
-		log.Printf("the archived agents' summaries were %s: read %d of %d archived records in full, and wrote them again", why, read, archived)
-		if err := s.WriteSummaries(); err != nil {
-			log.Printf("could not write the archived agents' summaries: %v", err)
-		}
+	if read == 0 && gone == 0 {
+		return
 	}
-	// The Swift daemon's index of archived agents is a cache this host does not keep. It
-	// goes, so a Swift daemon started on this root later makes it again from the records
-	// rather than trusting one older than them.
-	os.Remove(loc.ArchiveIndex())
-	return s, nil
+	if why == "" {
+		why = fmt.Sprintf("%d new or changed, %d gone", read, gone)
+	}
+	log.Printf("the archived agents' summaries were %s: read %d of %d archived records in full, and wrote them again", why, read, archived)
+	if err := s.WriteSummaries(); err != nil {
+		log.Printf("could not write the archived agents' summaries: %v", err)
+	}
 }
 
 func wireUUID(s string) bool {
@@ -617,7 +642,9 @@ func (s *Store) appendEntries(id wire.UUID, es []wire.TranscriptEntry, hold bool
 	s.mu.Lock()
 	n, ok := s.lines[id]
 	if !ok {
-		n = countLines(s.Loc.Transcript(string(id)))
+		file := s.Loc.Transcript(string(id))
+		endTornLine(file)
+		n = countLines(file)
 		s.lines[id] = n
 	}
 	if len(es) == 0 {
@@ -633,6 +660,9 @@ func (s *Store) appendEntries(id wire.UUID, es []wire.TranscriptEntry, hold bool
 // writeTranscript appends whole lines to a transcript. A write the disk cut short is
 // taken back, so the next line is never glued to half of this one.
 func (s *Store) writeTranscript(id wire.UUID, buf []byte) error {
+	if err := fault(s.Loc.Transcript(string(id)), true, buf); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.Loc.Agent(string(id)), 0o755); err != nil {
 		return err
 	}
@@ -652,6 +682,26 @@ func (s *Store) writeTranscript(id wire.UUID, buf []byte) error {
 		return err
 	}
 	return nil
+}
+
+// endTornLine ends the last line of a transcript that a kill cut short (#6184): with no
+// newline after it, the first line written after the restart would be glued to it, and both
+// would be lost. The cut line stays, ended, and is skipped by a read as any line that will
+// not decode is.
+func endTornLine(file string) {
+	f, err := os.OpenFile(file, os.O_RDWR|os.O_APPEND, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.Size() == 0 {
+		return
+	}
+	last := make([]byte, 1)
+	if _, err := f.ReadAt(last, info.Size()-1); err == nil && last[0] != '\n' {
+		_, _ = f.Write([]byte{'\n'})
+	}
 }
 
 func countLines(file string) int {

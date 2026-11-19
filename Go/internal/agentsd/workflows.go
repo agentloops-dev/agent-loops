@@ -292,50 +292,14 @@ func (d *Daemon) scanLocked() {
 	d.ensureReadyMadeUserWorkflowsLocked()
 	home := d.personalHome()
 	if home != "" {
-		for _, id := range workflowIDs(home) {
-			path, _ := workflowPath(home, id)
-			text, digest, why := readWorkflowFile(path)
-			f := workflowFileOf(home, id, text, digest, why)
-			f.sourceFolder, f.scope = home, "user"
-			if files[home] == nil {
-				files[home] = map[string]*workflowFile{}
-			}
-			files[home][id] = f
-		}
+		scanUserWorkflowFiles(home, files)
 	}
 	for _, folder := range d.folderPaths() {
-		if files[folder] == nil {
-			files[folder] = map[string]*workflowFile{}
-		}
-		for _, id := range workflowIDs(folder) {
-			path, _ := workflowPath(folder, id)
-			text, digest, why := readWorkflowFile(path)
-			if files[folder] == nil {
-				files[folder] = map[string]*workflowFile{}
-			}
-			f := workflowFileOf(folder, id, text, digest, why)
-			f.sourceFolder, f.scope = folder, "folder"
-			files[folder][id] = f
-		}
+		scanFolderWorkflowFiles(folder, files)
 		if home == "" || !pushesToForge(folder) {
 			continue
 		}
-		for _, id := range workflowIDs(home) {
-			if files[folder][id] != nil || files[home][id] == nil || oneMachineWorkflows[id] {
-				continue
-			}
-			user := *files[home][id]
-			user.scope = "user"
-			user.wf.Folder = store.FolderURL(folder)
-			state := d.stateLocked(folder, id, false)
-			enabled := state != nil && state.UserEnabled != nil && *state.UserEnabled
-			user.wf.Enabled = &enabled
-			if state != nil && state.UserArchived {
-				archived := true
-				user.wf.Archived = &archived
-			}
-			files[folder][id] = &user
-		}
+		d.scanSharedUserWorkflowsLocked(folder, home, files)
 	}
 	d.workflowFiles = files
 	// A server's event a workflow names, or no longer does (#383).
@@ -344,16 +308,70 @@ func (d *Daemon) scanLocked() {
 	d.kickFolderWatches()
 	// A workflow made here can earn the first workflow (#984).
 	defer d.checkAchievementsSoon()
+	d.scanFirstApprovalsLocked(home, files)
+}
+
+// scanUserWorkflowFiles reads the user's own workflows into files[home].
+func scanUserWorkflowFiles(home string, files map[string]map[string]*workflowFile) {
+	for _, id := range workflowIDs(home) {
+		path, _ := workflowPath(home, id)
+		text, digest, why := readWorkflowFile(path)
+		f := workflowFileOf(home, id, text, digest, why)
+		f.sourceFolder, f.scope = home, "user"
+		if files[home] == nil {
+			files[home] = map[string]*workflowFile{}
+		}
+		files[home][id] = f
+	}
+}
+
+// scanFolderWorkflowFiles reads a folder's own workflows into files[folder].
+func scanFolderWorkflowFiles(folder string, files map[string]map[string]*workflowFile) {
+	if files[folder] == nil {
+		files[folder] = map[string]*workflowFile{}
+	}
+	for _, id := range workflowIDs(folder) {
+		path, _ := workflowPath(folder, id)
+		text, digest, why := readWorkflowFile(path)
+		if files[folder] == nil {
+			files[folder] = map[string]*workflowFile{}
+		}
+		f := workflowFileOf(folder, id, text, digest, why)
+		f.sourceFolder, f.scope = folder, "folder"
+		files[folder][id] = f
+	}
+}
+
+// scanSharedUserWorkflowsLocked shows each user workflow in a folder that pushes to a
+// forge, when the folder has no workflow of the same id.
+func (d *Daemon) scanSharedUserWorkflowsLocked(folder, home string, files map[string]map[string]*workflowFile) {
+	for _, id := range workflowIDs(home) {
+		if files[folder][id] != nil || files[home][id] == nil || oneMachineWorkflows[id] {
+			continue
+		}
+		user := *files[home][id]
+		user.scope = "user"
+		user.wf.Folder = store.FolderURL(folder)
+		state := d.stateLocked(folder, id, false)
+		enabled := state != nil && state.UserEnabled != nil && *state.UserEnabled
+		user.wf.Enabled = &enabled
+		if state != nil && state.UserArchived {
+			archived := true
+			user.wf.Archived = &archived
+		}
+		files[folder][id] = &user
+	}
+}
+
+// scanFirstApprovalsLocked approves every file as it stands on the first start, adopts the
+// shared workflows, and approves the ready-made user workflows.
+func (d *Daemon) scanFirstApprovalsLocked(home string, files map[string]map[string]*workflowFile) {
 	r := d.recordsLocked()
 	if r.ApprovalsBegan == nil && !d.workflowRecsBad {
 		t := now()
 		r.ApprovalsBegan = &t
 		for folder, ws := range files {
-			for id, f := range ws {
-				if f.digest != "" {
-					d.keepCopyLocked(d.stateLocked(folder, id, true), f)
-				}
-			}
+			d.scanKeepCopiesLocked(folder, ws)
 		}
 		d.saveRecordsLocked(false)
 	}
@@ -362,13 +380,18 @@ func (d *Daemon) scanLocked() {
 		if r.UserApprovalsBegan == nil {
 			t := now()
 			r.UserApprovalsBegan = &t
-			for id, f := range files[home] {
-				if f.digest != "" {
-					d.keepCopyLocked(d.stateLocked(home, id, true), f)
-				}
-			}
+			d.scanKeepCopiesLocked(home, files[home])
 		}
 		d.saveRecordsLocked(false)
+	}
+}
+
+// scanKeepCopiesLocked approves each readable workflow of a folder as it stands.
+func (d *Daemon) scanKeepCopiesLocked(folder string, ws map[string]*workflowFile) {
+	for id, f := range ws {
+		if f.digest != "" {
+			d.keepCopyLocked(d.stateLocked(folder, id, true), f)
+		}
 	}
 }
 
@@ -579,11 +602,7 @@ func (d *Daemon) summaryLocked(folder, id string, over map[string]wire.WorkflowL
 		t := d.workflowTotal()
 		s.TotalLimit = &t
 	}
-	s.AwaitingApproval, s.DeniedHere = d.approvalOf(folder, id, f)
-	if st := d.stateLocked(approvalFolderOf(folder, f), id, false); st != nil && s.AwaitingApproval == nil && st.ApprovedFrom != nil &&
-		st.ApprovedDigest != nil && *st.ApprovedDigest == f.digest {
-		s.ApprovedFrom = st.ApprovedFrom
-	}
+	d.summaryApprovalLocked(&s, folder, id, f)
 	s.IsRunning = d.runningLocked(folder, id)
 	if bot := d.hearsFor(f.wf); bot != "" {
 		s.HearsFor = &bot
@@ -600,79 +619,120 @@ func (d *Daemon) summaryLocked(folder, id string, over map[string]wire.WorkflowL
 		s.IsArchived = st != nil && st.UserArchived
 	}
 	if st != nil {
-		s.LastOutcome, s.LastFiredAt, s.LastFiredBy, s.CausingEvent = st.LastOutcome, st.LastFiredAt, st.LastFiredBy, st.LastCausingEvent
-		if s.CausingEvent != nil {
-			if e := d.event(*s.CausingEvent); e != nil {
-				name := e.Name
-				s.CausingEventName = &name
-			}
-		}
-		s.HoldsAFire = st.HeldFire != nil
-		s.Queued = int64(len(st.QueuedFires))
-		if f.wf.Cooldown != nil && st.LastFiredAt != nil {
-			if ends := st.LastFiredAt.Time().Add(time.Duration(*f.wf.Cooldown * float64(time.Second))); ends.After(time.Now()) {
-				e := wire.DateOf(ends)
-				s.CooldownEndsAt = &e
-			}
-		}
-		if f.wf.Mode == wire.WorkflowModeStanding && st.StandingAgentID != nil {
-			if a := d.Store.Agent(*st.StandingAgentID); a != nil && a.State != wire.AgentStateArchived {
-				s.StandingAgentID = st.StandingAgentID
-			}
-		}
+		d.summaryFromStateLocked(&s, f, st)
 	}
 	if isOff(f.wf) {
-		reason := wire.WorkflowOffReasonFile
-		if st != nil && st.OffBy != nil && st.OffDigest != nil && *st.OffDigest == f.digest {
-			reason = wire.WorkflowOffReason(*st.OffBy)
-		}
+		reason := summaryOffReason(f, st)
 		s.OffReason = &reason
 	}
 	// Outside its hours by the time its cooldown lets it, a fire waits for them (#4818).
 	win := d.windowLocked(f.wf)
 	if win != nil {
-		from := time.Now()
-		if s.CooldownEndsAt != nil {
-			from = s.CooldownEndsAt.Time()
-		}
-		if !win.open(from) {
-			if at, ok := d.heldStartLocked(f.wf, st, win, time.Now()); ok {
-				v := wire.DateOf(at)
-				s.HoursOpenAt = &v
-			}
-		}
+		d.summaryHoursOpenLocked(&s, f, st, win)
 	}
 	runs := !s.IsArchived && s.IsEnabled && s.OverLimit == nil && s.AwaitingApproval == nil && s.DeniedHere == nil && f.wf.Problem == nil
 	if runs {
-		var next *wire.Date
-		for _, t := range f.wf.Triggers {
-			var at *wire.Date
-			if t.Schedule != nil {
-				if due, ok := nextDueOpen(t.Schedule.Value, win, time.Now()); ok {
-					v := wire.DateOf(due)
-					at = &v
-				}
-			}
-			// An alarm's time (#4966), until it is handled.
-			if a, ok := alarmOf(t); ok {
-				if due, ok := a.due(d.personZone()); ok && time.Since(due) <= a.grace &&
-					(st == nil || st.AlarmHandled == nil || !st.AlarmHandled.Time().Equal(due)) {
-					v := wire.DateOf(due)
-					at = &v
-				}
-			}
-			if at != nil && (next == nil || *at < *next) {
-				next = at
-			}
-			s.NextFireAtByTrigger = append(s.NextFireAtByTrigger, at)
-		}
-		s.NextFireAt = next
+		d.summaryNextFiresLocked(&s, f, st, win)
 	} else {
 		for range f.wf.Triggers {
 			s.NextFireAtByTrigger = append(s.NextFireAtByTrigger, nil)
 		}
 	}
 	return s
+}
+
+// summaryApprovalLocked fills whether the workflow waits for approval or is denied, and
+// where its approval came from.
+func (d *Daemon) summaryApprovalLocked(s *wire.WorkflowSummary, folder, id string, f *workflowFile) {
+	s.AwaitingApproval, s.DeniedHere = d.approvalOf(folder, id, f)
+	if st := d.stateLocked(approvalFolderOf(folder, f), id, false); st != nil && s.AwaitingApproval == nil && st.ApprovedFrom != nil &&
+		st.ApprovedDigest != nil && *st.ApprovedDigest == f.digest {
+		s.ApprovedFrom = st.ApprovedFrom
+	}
+}
+
+// summaryFromStateLocked fills what the workflow's record says: its last fire, its queue,
+// its cooldown and its standing agent.
+func (d *Daemon) summaryFromStateLocked(s *wire.WorkflowSummary, f *workflowFile, st *workflowState) {
+	s.LastOutcome, s.LastFiredAt, s.LastFiredBy, s.CausingEvent = st.LastOutcome, st.LastFiredAt, st.LastFiredBy, st.LastCausingEvent
+	if s.CausingEvent != nil {
+		if e := d.event(*s.CausingEvent); e != nil {
+			name := e.Name
+			s.CausingEventName = &name
+		}
+	}
+	s.HoldsAFire = st.HeldFire != nil
+	s.Queued = int64(len(st.QueuedFires))
+	if f.wf.Cooldown != nil && st.LastFiredAt != nil {
+		if ends := st.LastFiredAt.Time().Add(time.Duration(*f.wf.Cooldown * float64(time.Second))); ends.After(time.Now()) {
+			e := wire.DateOf(ends)
+			s.CooldownEndsAt = &e
+		}
+	}
+	if f.wf.Mode == wire.WorkflowModeStanding && st.StandingAgentID != nil {
+		if a := d.Store.Agent(*st.StandingAgentID); a != nil && a.State != wire.AgentStateArchived {
+			s.StandingAgentID = st.StandingAgentID
+		}
+	}
+}
+
+// summaryOffReason says who turned a workflow off: its file, unless the record names who
+// did it for this text.
+func summaryOffReason(f *workflowFile, st *workflowState) wire.WorkflowOffReason {
+	reason := wire.WorkflowOffReasonFile
+	if st != nil && st.OffBy != nil && st.OffDigest != nil && *st.OffDigest == f.digest {
+		reason = wire.WorkflowOffReason(*st.OffBy)
+	}
+	return reason
+}
+
+// summaryHoursOpenLocked fills when the workflow's hours open, when they are closed by the
+// time its cooldown ends.
+func (d *Daemon) summaryHoursOpenLocked(s *wire.WorkflowSummary, f *workflowFile, st *workflowState, win *hoursWindow) {
+	from := time.Now()
+	if s.CooldownEndsAt != nil {
+		from = s.CooldownEndsAt.Time()
+	}
+	if !win.open(from) {
+		if at, ok := d.heldStartLocked(f.wf, st, win, time.Now()); ok {
+			v := wire.DateOf(at)
+			s.HoursOpenAt = &v
+		}
+	}
+}
+
+// summaryNextFiresLocked fills the next fire of each trigger, and the first of them.
+func (d *Daemon) summaryNextFiresLocked(s *wire.WorkflowSummary, f *workflowFile, st *workflowState, win *hoursWindow) {
+	var next *wire.Date
+	for _, t := range f.wf.Triggers {
+		at := d.summaryTriggerNextLocked(t, st, win)
+		if at != nil && (next == nil || *at < *next) {
+			next = at
+		}
+		s.NextFireAtByTrigger = append(s.NextFireAtByTrigger, at)
+	}
+	s.NextFireAt = next
+}
+
+// summaryTriggerNextLocked is the next fire of one trigger: its schedule's next open half
+// hour, or an alarm's time until it is handled.
+func (d *Daemon) summaryTriggerNextLocked(t wire.WorkflowTrigger, st *workflowState, win *hoursWindow) *wire.Date {
+	var at *wire.Date
+	if t.Schedule != nil {
+		if due, ok := nextDueOpen(t.Schedule.Value, win, time.Now()); ok {
+			v := wire.DateOf(due)
+			at = &v
+		}
+	}
+	// An alarm's time (#4966), until it is handled.
+	if a, ok := alarmOf(t); ok {
+		if due, ok := a.due(d.personZone()); ok && time.Since(due) <= a.grace &&
+			(st == nil || st.AlarmHandled == nil || !st.AlarmHandled.Time().Equal(due)) {
+			v := wire.DateOf(due)
+			at = &v
+		}
+	}
+	return at
 }
 
 // nextDue is WorkflowSchedule.nextDue: the first half hour after t that the schedule matches.
@@ -882,19 +942,9 @@ func (d *Daemon) enableWorkflow(r wire.WorkflowEnableRequest, by string) (wire.W
 		return wire.WorkflowSummary{}, noSuchWorkflow(r.WorkflowID)
 	}
 	if r.Enabled && isOff(f.wf) && !isArchived(f.wf) {
-		awaiting, denied := d.approvalOf(folder, r.WorkflowID, f)
-		if awaiting == nil && denied == nil {
-			approved := 0
-			for id, g := range d.workflowFiles[folder] {
-				if a, dd := d.approvalOf(folder, id, g); a == nil && dd == nil && !isOff(g.wf) && !isArchived(g.wf) && d.listedHere(g.wf) {
-					approved++
-				}
-			}
-			if total := d.workflowTotal(); int64(approved) >= total {
-				d.workflowMu.Unlock()
-				return wire.WorkflowSummary{}, &Error{Code: wire.FailureWorkflowLimitReached, Message: fmt.Sprintf(
-					"%d workflows are already running in this folder, so %s was left off. Turn one off or archive one to let it run.", total, r.WorkflowID)}
-			}
+		if err := d.enableWorkflowLimitLocked(folder, r.WorkflowID, f); err != nil {
+			d.workflowMu.Unlock()
+			return wire.WorkflowSummary{}, err
 		}
 	}
 	var err error
@@ -915,18 +965,7 @@ func (d *Daemon) enableWorkflow(r wire.WorkflowEnableRequest, by string) (wire.W
 		if r.Enabled {
 			st.OffBy, st.OffDigest = nil, nil
 		} else {
-			f := d.fileLocked(folder, r.WorkflowID)
-			st.OffBy, st.OffDigest = strPtr(by), strPtr(f.digest)
-			for _, q := range st.QueuedFires {
-				if q.CausingEvent != nil {
-					d.addConsequence(wire.Consequence{Refused: &wire.ConsequenceRefused{WorkflowID: r.WorkflowID, Folder: store.FolderURL(folder),
-						Reason: wire.WorkflowRefusal{Disabled: &struct{}{}}}}, *q.CausingEvent)
-				}
-			}
-			st.HeldFire, st.QueuedFires = nil, nil
-			if st.LastOutcome != nil && st.LastOutcome.Refused != nil && st.LastOutcome.Refused.Value.Queued != nil {
-				st.LastOutcome = nil
-			}
+			d.enableWorkflowRecordOffLocked(folder, r.WorkflowID, by, st)
 		}
 		d.saveRecordsLocked(false)
 	}
@@ -936,6 +975,44 @@ func (d *Daemon) enableWorkflow(r wire.WorkflowEnableRequest, by string) (wire.W
 	}
 	d.tellEveryWorkflow()
 	return d.oneWorkflow(folder, r.WorkflowID)
+}
+
+// enableWorkflowLimitLocked refuses to turn a workflow on when the folder already runs as
+// many approved workflows as the limit lets it. A workflow that waits or is denied is not
+// refused.
+func (d *Daemon) enableWorkflowLimitLocked(folder, workflowID string, f *workflowFile) error {
+	awaiting, denied := d.approvalOf(folder, workflowID, f)
+	if awaiting != nil || denied != nil {
+		return nil
+	}
+	approved := 0
+	for id, g := range d.workflowFiles[folder] {
+		if a, dd := d.approvalOf(folder, id, g); a == nil && dd == nil && !isOff(g.wf) && !isArchived(g.wf) && d.listedHere(g.wf) {
+			approved++
+		}
+	}
+	if total := d.workflowTotal(); int64(approved) >= total {
+		return &Error{Code: wire.FailureWorkflowLimitReached, Message: fmt.Sprintf(
+			"%d workflows are already running in this folder, so %s was left off. Turn one off or archive one to let it run.", total, workflowID)}
+	}
+	return nil
+}
+
+// enableWorkflowRecordOffLocked records who turned a workflow off, and refuses the fires it
+// held or queued.
+func (d *Daemon) enableWorkflowRecordOffLocked(folder, workflowID, by string, st *workflowState) {
+	f := d.fileLocked(folder, workflowID)
+	st.OffBy, st.OffDigest = strPtr(by), strPtr(f.digest)
+	for _, q := range st.QueuedFires {
+		if q.CausingEvent != nil {
+			d.addConsequence(wire.Consequence{Refused: &wire.ConsequenceRefused{WorkflowID: workflowID, Folder: store.FolderURL(folder),
+				Reason: wire.WorkflowRefusal{Disabled: &struct{}{}}}}, *q.CausingEvent)
+		}
+	}
+	st.HeldFire, st.QueuedFires = nil, nil
+	if st.LastOutcome != nil && st.LastOutcome.Refused != nil && st.LastOutcome.Refused.Value.Queued != nil {
+		st.LastOutcome = nil
+	}
 }
 
 // archiveWorkflow is workflows/archive.
@@ -1051,99 +1128,7 @@ func (d *Daemon) workflowSettingsChange(r wire.WorkflowSettingsRequest, byPerson
 	}
 	old := f.wf
 	err := d.editWorkflowLocked(folder, r.WorkflowID, byPerson, func(text string) (string, error) {
-		var err error
-		for _, kv := range []struct {
-			key string
-			v   *string
-		}{{"permission-mode", r.Settings.PermissionMode}, {"runtime", r.Settings.RuntimeID}, {"model", r.Settings.Model}, {"effort", r.Settings.Effort}} {
-			if text, err = setFrontMatter(kv.key, kv.v, text); err != nil {
-				return "", err
-			}
-		}
-		ids := map[string]bool{}
-		for id := range r.Settings.Options {
-			ids[id] = true
-		}
-		for id := range old.Settings.Options {
-			ids[id] = true
-		}
-		var sorted []string
-		for id := range ids {
-			sorted = append(sorted, id)
-		}
-		sort.Strings(sorted)
-		for _, id := range sorted {
-			nv, has := r.Settings.Options[id]
-			if ov, had := old.Settings.Options[id]; had == has && ov == nv {
-				continue
-			}
-			var v *string
-			if has {
-				v = &nv
-			}
-			if text, err = setFrontMatterUnder(id, "options", v, text); err != nil {
-				return "", err
-			}
-		}
-		if r.Cooldown != nil {
-			c := strings.TrimSpace(*r.Cooldown)
-			var v *string
-			if c != "" {
-				secs, err := parseCooldown(c)
-				if err != nil {
-					return "", err
-				}
-				t := cooldownText(secs)
-				v = &t
-			}
-			if text, err = setFrontMatter("cooldown", v, text); err != nil {
-				return "", err
-			}
-		}
-		if r.Hours != nil {
-			lines, err := hoursLines(*r.Hours)
-			if err != nil {
-				return "", err
-			}
-			if text, err = setHoursBlock(lines, text); err != nil {
-				return "", err
-			}
-		}
-		if r.Labels != nil {
-			if text, err = setFrontMatterList("labels", r.Labels, text); err != nil {
-				return "", err
-			}
-		}
-		if r.RunsOn != nil {
-			if text, err = setFrontMatterList("runs-on", r.RunsOn, text); err != nil {
-				if text2, err2 := setFrontMatter("runs-on", nil, text); err2 == nil {
-					text, err = setFrontMatterList("runs-on", r.RunsOn, text2)
-				}
-				if err != nil {
-					return "", err
-				}
-			}
-		}
-		if r.WhenDone != nil {
-			var v *string
-			if *r.WhenDone != "keep" && *r.WhenDone != "" {
-				v = r.WhenDone
-			}
-			if text, err = setFrontMatter("when-done", v, text); err != nil {
-				return "", err
-			}
-		}
-		if r.ContinueWhenBack != nil {
-			var v *string
-			if *r.ContinueWhenBack {
-				t := "true"
-				v = &t
-			}
-			if text, err = setFrontMatter("continue-when-back", v, text); err != nil {
-				return "", err
-			}
-		}
-		return text, nil
+		return workflowSettingsText(r, old, text)
 	})
 	d.workflowMu.Unlock()
 	if err != nil {
@@ -1151,6 +1136,136 @@ func (d *Daemon) workflowSettingsChange(r wire.WorkflowSettingsRequest, byPerson
 	}
 	d.tellWorkflow(folder, r.WorkflowID)
 	return d.oneWorkflow(folder, r.WorkflowID)
+}
+
+// workflowSettingsText is a workflow's text with its keys set to what the settings sheet
+// says. old is the workflow as it was read, so an option that did not change is not written.
+func workflowSettingsText(r wire.WorkflowSettingsRequest, old wire.Workflow, text string) (string, error) {
+	var err error
+	for _, kv := range []struct {
+		key string
+		v   *string
+	}{{"permission-mode", r.Settings.PermissionMode}, {"runtime", r.Settings.RuntimeID}, {"model", r.Settings.Model}, {"effort", r.Settings.Effort}} {
+		if text, err = setFrontMatter(kv.key, kv.v, text); err != nil {
+			return "", err
+		}
+	}
+	if text, err = workflowSettingsOptionsText(r, old, text); err != nil {
+		return "", err
+	}
+	if r.Cooldown != nil {
+		if text, err = workflowSettingsCooldownText(*r.Cooldown, text); err != nil {
+			return "", err
+		}
+	}
+	if r.Hours != nil {
+		lines, err := hoursLines(*r.Hours)
+		if err != nil {
+			return "", err
+		}
+		if text, err = setHoursBlock(lines, text); err != nil {
+			return "", err
+		}
+	}
+	if r.Labels != nil {
+		if text, err = setFrontMatterList("labels", r.Labels, text); err != nil {
+			return "", err
+		}
+	}
+	if r.RunsOn != nil {
+		if text, err = workflowSettingsRunsOnText(r.RunsOn, text); err != nil {
+			return "", err
+		}
+	}
+	return workflowSettingsEndText(r, text)
+}
+
+// workflowSettingsOptionsText writes each option that the sheet added, changed or removed,
+// in the order of their ids.
+func workflowSettingsOptionsText(r wire.WorkflowSettingsRequest, old wire.Workflow, text string) (string, error) {
+	var err error
+	ids := map[string]bool{}
+	for id := range r.Settings.Options {
+		ids[id] = true
+	}
+	for id := range old.Settings.Options {
+		ids[id] = true
+	}
+	var sorted []string
+	for id := range ids {
+		sorted = append(sorted, id)
+	}
+	sort.Strings(sorted)
+	for _, id := range sorted {
+		nv, has := r.Settings.Options[id]
+		if ov, had := old.Settings.Options[id]; had == has && ov == nv {
+			continue
+		}
+		var v *string
+		if has {
+			v = &nv
+		}
+		if text, err = setFrontMatterUnder(id, "options", v, text); err != nil {
+			return "", err
+		}
+	}
+	return text, nil
+}
+
+// workflowSettingsCooldownText writes the cooldown, or removes it when it is empty.
+func workflowSettingsCooldownText(cooldown, text string) (string, error) {
+	c := strings.TrimSpace(cooldown)
+	var v *string
+	if c != "" {
+		secs, err := parseCooldown(c)
+		if err != nil {
+			return "", err
+		}
+		t := cooldownText(secs)
+		v = &t
+	}
+	return setFrontMatter("cooldown", v, text)
+}
+
+// workflowSettingsRunsOnText writes the runs-on list. When the old value is not a list, it
+// removes the key and writes the list again.
+func workflowSettingsRunsOnText(runsOn []string, text string) (string, error) {
+	var err error
+	if text, err = setFrontMatterList("runs-on", runsOn, text); err != nil {
+		if text2, err2 := setFrontMatter("runs-on", nil, text); err2 == nil {
+			text, err = setFrontMatterList("runs-on", runsOn, text2)
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	return text, nil
+}
+
+// workflowSettingsEndText writes what the workflow does when it is done, and whether it
+// continues when the person is back.
+func workflowSettingsEndText(r wire.WorkflowSettingsRequest, text string) (string, error) {
+	var err error
+	if r.WhenDone != nil {
+		var v *string
+		if *r.WhenDone != "keep" && *r.WhenDone != "" {
+			v = r.WhenDone
+		}
+		if text, err = setFrontMatter("when-done", v, text); err != nil {
+			return "", err
+		}
+	}
+	if r.ContinueWhenBack != nil {
+		var v *string
+		if *r.ContinueWhenBack {
+			t := "true"
+			v = &t
+		}
+		if text, err = setFrontMatter("continue-when-back", v, text); err != nil {
+			return "", err
+		}
+	}
+	return text, nil
 }
 
 // approveWorkflow is workflows/approve and workflows/deny, for the bytes the person saw.

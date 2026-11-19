@@ -37,7 +37,9 @@ starts lanes.
    Then, before a push, run `scripts/nx.sh affected -t gen build vet lint test` under the `build`
    lease: the tasks of what your branch changes, Go, the web app, the Mac app, the Remote
    and the Swift packages alike (AGENTS.md, "Verifying a lane's work").
-   After each push, attest it (step 6): CI then skips what your attestation covers.
+   Then, with the commit made and before the push, run `scripts/checks.sh attest run` under the
+   `build` lease (step 6), and post it just after the push: CI then skips what your attestation
+   covers.
    Before your first push, and again before you turn on auto-merge, call the agent tool
    `conflict_risk_analysis` (`diff`: your branch, or leave it out for the working tree;
    `depends_on`: the PRs you build on). It says **go**, **wait for #N** or **stack on #N**
@@ -45,14 +47,19 @@ starts lanes.
    advice, not a gate: on `wait`, rebase once #N lands; on `stack`, base on #N's branch
    (#1777); say in the PR body what it said and what you did. `scripts/conflict-risk.sh
    <branch>` is the same core for a person or a script.
-6. Commit, push, and open a pull request whose body says `Fixes #<n>`. Then run
-   `scripts/checks.sh attest` under the `build` lease, in the foreground: it runs the
-   affected test, vet and lint tasks with no cache and posts `attestation/<platform>` on
-   the PR's head as the agents' bot (#5674), and CI skips each task it covers (#5710).
-   It refuses to run before the PR's head is your commit. Do it again after each later
-   push that changes a task's inputs. CI on `main` runs 10% of attested tasks again; a
+6. Commit. Run `scripts/checks.sh attest run` under the `build` lease, in the foreground: it
+   runs the affected test, vet and lint tasks and app builds with no cache at that commit and keeps the result
+   on disk (#6059). Take the `ci` lease, push, and release it. Open a pull request whose body
+   says `Fixes #<n>`. Then, at once, run `scripts/checks.sh attest post` (no lease; seconds): it
+   posts `attestation/<platform>` on the PR's head as the agents' bot (#5674), and CI skips each
+   task it covers (#5710). Post just after the push: CI's `changes` job reads the check runs
+   about a minute after it. `post` refuses when the PR's head is not the commit you ran, or a
+   task's hash changed: run `attest run` again. Do both again for each later push that changes
+   a task's inputs. CI on `main` runs 10% of attested tasks again; a
    false attestation revokes every attestation of your lane (#5723). Turn on squash
-   auto-merge at once. **A UI enhancement is different** (an `enhancement` that changes
+   auto-merge at once. Request no review from Alex: only a PR that waits for Alex's
+   approval (below) does (#6045). When GitHub adds Alex as a reviewer anyway, remove it:
+   `gh pr edit <n> --remove-reviewer alexec`. **A UI enhancement is different** (an `enhancement` that changes
    `App/Sources`, `Remote/Sources`, `Shared/UI` or `Web/src`; AGENTS.md, "A UI
    enhancement waits for Alex", #2811, #3474):
    - Take screenshots, one per state and per client, with the run-app skill's
@@ -106,7 +113,11 @@ starts lanes.
      - `required_check_failed`: follow `.agents/skills/fix-failed-checks/SKILL.md` on
        your branch for each of `failedChecks`. You fix your own PR's checks, also when a
        Fix failed checks workflow is on. When main fails the same test, do not fix it:
-       wait for main to go green, then run the checks again (its step 2a, #5589).
+       wait for main to go green, then run the checks again (its step 2a, #5589). When
+       a test fails that your change does not touch, do not push only to get a new run
+       (#5754): run it alone 20 times first; when it fails there, it is a bug, not a
+       flake (#6129); when it passes, quarantine it in this branch and push (its step 2,
+       #6063).
      - `conflict` or `behind`: `git merge origin/main` (never a rebase, so no
        force-push), settle the conflict, push without running the tests again (AGENTS.md,
        "Lease `ci`…"), and run `scripts/rearm-automerge.sh <pr>`.

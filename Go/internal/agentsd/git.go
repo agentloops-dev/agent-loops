@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,9 +22,22 @@ import (
 
 const gitOutputLimit = 16 << 20
 
-type gitError struct{ message string }
+type gitError struct {
+	message string
+	// answered is true when git ran to its own end and said no (an exit status, as "No such
+	// remote"), false when it gave no answer: it could not start, a signal or the deadline
+	// stopped it (#6257).
+	answered bool
+}
 
 func (e *gitError) Error() string { return e.message }
+
+// gitAnswered says whether err is git's own answer, not a git that did not run to its end: a
+// read that failed under load (#6257) is not a fact to keep.
+func gitAnswered(err error) bool {
+	var g *gitError
+	return err == nil || errors.As(err, &g) && g.answered
+}
 
 func gitDeadline(args []string) time.Duration {
 	if len(args) >= 2 && args[0] == "worktree" {
@@ -63,18 +77,30 @@ func gitRawEnv(dir string, env []string, stdin []byte, args ...string) ([]byte, 
 	deadline := gitDeadline(args)
 	ctx, cancel := context.WithTimeout(context.Background(), deadline)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // git itself, with no shell: an argument cannot start another command
-	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), "GIT_OPTIONAL_LOCKS=0"), env...)
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
-	}
 	var out, errOut bytes.Buffer
-	cmd.Stdout = &limited{w: &out, n: gitOutputLimit}
-	cmd.Stderr = &errOut
-	err := cmd.Run()
+	var err error
+	for attempt := 1; ; attempt++ {
+		out.Reset()
+		errOut.Reset()
+		cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // git itself, with no shell: an argument cannot start another command
+		cmd.Dir = dir
+		cmd.Env = append(append(os.Environ(), "GIT_OPTIONAL_LOCKS=0"), env...)
+		if stdin != nil {
+			cmd.Stdin = bytes.NewReader(stdin)
+		}
+		cmd.Stdout = &limited{w: &out, n: gitOutputLimit}
+		cmd.Stderr = &errOut
+		err = cmd.Run()
+		// A git the system did not start (short of memory or processes on a busy machine)
+		// did nothing, so it is safe to start again (#6106).
+		if err == nil || cmd.ProcessState != nil || ctx.Err() != nil || attempt == gitStartAttempts ||
+			errors.Is(err, exec.ErrNotFound) || !isDir(dir) {
+			break
+		}
+		time.Sleep(time.Duration(attempt) * 50 * time.Millisecond)
+	}
 	if errors.Is(err, exec.ErrNotFound) {
-		return nil, &gitError{"Git is not installed on this Mac."}
+		return nil, &gitError{message: "Git is not installed on this Mac."}
 	}
 	if ctx.Err() != nil {
 		msg := fmt.Sprintf("git %s was stopped after %s with no end in sight, so nothing else waits on it now.",
@@ -82,17 +108,25 @@ func gitRawEnv(dir string, env []string, stdin []byte, args ...string) ([]byte, 
 		if args[0] == "worktree" {
 			msg += " If it left a half-made worktree, `git worktree prune` clears it."
 		}
-		return out.Bytes(), &gitError{msg}
+		return out.Bytes(), &gitError{message: msg}
 	}
 	if err != nil {
 		msg := strings.TrimSpace(errOut.String())
-		if msg == "" {
-			msg = "git " + args[0] + " failed."
+		var exit *exec.ExitError
+		switch {
+		case msg != "":
+		case !errors.As(err, &exit):
+			msg = "git " + args[0] + " could not start: " + err.Error() + "." // say why (#6106)
+		default:
+			msg = "git " + args[0] + " failed (" + err.Error() + ")." // a signal, with no words from git
 		}
-		return out.Bytes(), &gitError{msg}
+		return out.Bytes(), &gitError{message: msg, answered: errors.As(err, &exit) && exit.ExitCode() >= 0}
 	}
 	return out.Bytes(), nil
 }
+
+// gitStartAttempts is how many times git is started when the system does not start it.
+const gitStartAttempts = 3
 
 // gitTo runs git in dir with its output written to w, with no limit: a patch to send (#1123).
 func gitTo(dir string, w io.Writer, args ...string) error {
@@ -106,9 +140,9 @@ func gitTo(dir string, w io.Writer, args ...string) error {
 	cmd.Stderr = &errOut
 	if err := cmd.Run(); err != nil {
 		if msg := strings.TrimSpace(errOut.String()); msg != "" {
-			return &gitError{msg}
+			return &gitError{message: msg}
 		}
-		return &gitError{"git " + args[0] + " failed."}
+		return &gitError{message: "git " + args[0] + " failed."}
 	}
 	return nil
 }
@@ -131,21 +165,51 @@ func (r repository) worktreesFolder() string {
 	return filepath.Join(r.toplevel, ".agents", "worktrees")
 }
 
-// repositoryOf is GitWorktrees.repository: the checkout dir is in, or false.
+// errNotARepository is git's own answer that a folder is in no repository. Any other
+// failure (a deadline, git not starting, git killed) is not that answer, and a person is
+// told git's words instead of the false "not in a git repository" (#6106).
+var errNotARepository = errors.New("not in a git repository")
+
+// repositoryOf is GitWorktrees.repository: the checkout dir is in, or false, for a caller
+// that tells nobody why. A caller that tells a person uses findRepository.
 func repositoryOf(dir string) (repository, bool) {
-	out, err := git(dir, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir", "--show-prefix")
+	r, err := findRepository(dir)
+	return r, err == nil
+}
+
+// findRepository is the checkout dir is in; errNotARepository when git says there is
+// none, or git's own failure.
+func findRepository(dir string) (repository, error) {
+	if !isDir(dir) {
+		return repository{}, errNotARepository
+	}
+	// LC_ALL=C: git's words are read below, so they are in no other language.
+	raw, err := gitRawEnv(dir, []string{"LC_ALL=C"}, nil, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir", "--show-prefix")
+	out := strings.Trim(string(raw), "\n")
 	if err != nil {
-		return repository{}, false
+		if strings.Contains(err.Error(), "not a git repository") {
+			return repository{}, errNotARepository
+		}
+		return repository{}, err
 	}
 	lines := strings.Split(out, "\n")
 	if len(lines) < 2 {
-		return repository{}, false
+		return repository{}, &gitError{message: "git rev-parse said too little: " + strconv.Quote(out)}
 	}
 	r := repository{toplevel: lines[0], commonDir: lines[1]}
 	if len(lines) > 2 {
 		r.prefix = strings.TrimSuffix(lines[2], "/")
 	}
-	return r, true
+	return r, nil
+}
+
+// repositoryWords are a person's words for a findRepository failure: notIn when git says
+// the folder is in no repository, else git's own failure after what could not be done.
+func repositoryWords(err error, notIn, couldNot string) string {
+	if errors.Is(err, errNotARepository) {
+		return notIn
+	}
+	return couldNot + " " + strings.TrimSuffix(err.Error(), ".") + "."
 }
 
 type worktreeEntry struct {

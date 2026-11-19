@@ -624,12 +624,27 @@ func (d *Daemon) atConnectedRoot(f forge) forge {
 // folder on the connected GitLab, gitlab.com, or a host named gitlab, else a Forgejo
 // repository on the connected Forgejo, codeberg.org, or a host named forgejo, gitea or
 // codeberg. Its connection, and whether there is one, come with it: a GitLab or Forgejo
-// connection counts only on its own root.
-func (d *Daemon) forgeAt(ctx context.Context, folder string) (forge, connections.Connection, bool) {
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+// connection counts only on its own root. The remotes are read once, with one git process
+// (#6027): a process for each forge and remote ran out of time under load. A read that
+// fails is an error, never GitHub (#6064): a slow git must not put a Forgejo folder on
+// GitHub; the client says so and the person tries again.
+func (d *Daemon) forgeAt(ctx context.Context, folder string) (forge, connections.Connection, bool, error) {
+	remotes, err := folderRemotes(ctx, folder)
+	if err != nil {
+		log.Printf("forge of %s: %v", folder, err)
+		return forge{}, connections.Connection{}, false, errRemotesUnknown
+	}
+	f, c, connected := d.forgeIn(remotes)
+	return f, c, connected, nil
+}
+
+// errRemotesUnknown is what a client sees when a folder's git remotes could not be read.
+var errRemotesUnknown = &Error{Code: CodeServer, Message: "Agent Loops could not read the git remotes of this folder. Try again."}
+
+// forgeIn is forgeAt for remotes already read.
+func (d *Daemon) forgeIn(remotes []string) (forge, connections.Connection, bool) {
 	github := forge{provider: wire.ConnectionProviderGithub, site: "github.com"}
-	if repo, ok := githubmcp.RepoAt(gitCtx, folder); ok {
+	if repo, ok := githubmcp.RepoIn(remotes); ok {
 		github.repo = repo
 		c, connected := d.githubConnection()
 		return github, c, connected
@@ -639,17 +654,17 @@ func (d *Daemon) forgeAt(ctx context.Context, folder string) (forge, connections
 	if connected && c.URL != "" {
 		roots = append([]string{c.URL}, roots...)
 	}
-	root, project, ok := gitlabmcp.ProjectAt(gitCtx, folder, roots)
+	root, project, ok := gitlabmcp.ProjectIn(remotes, roots)
 	if !ok {
-		if f, ok := d.bitbucketAt(gitCtx, folder); ok {
+		if f, ok := d.bitbucketAt(remotes); ok {
 			c, connected := d.connectionFor(f)
 			return f, c, connected
 		}
-		if f, ok := d.azureDevOpsAt(gitCtx, folder); ok {
+		if f, ok := d.azureDevOpsAtRoots(remotes, d.azureDevOpsRoots()); ok {
 			c, connected := d.connectionFor(f)
 			return f, c, connected
 		}
-		if f, ok := d.forgejoAt(gitCtx, folder); ok {
+		if f, ok := d.forgejoAt(remotes); ok {
 			c, connected := d.connectionFor(f)
 			return f, c, connected
 		}
@@ -669,8 +684,8 @@ func (d *Daemon) forgeAt(ctx context.Context, folder string) (forge, connections
 
 // bitbucketAt is the Bitbucket Cloud repository the folder's git remote names, if any, at
 // the connection's API (Bitbucket Cloud's without one).
-func (d *Daemon) bitbucketAt(ctx context.Context, folder string) (forge, bool) {
-	repo, ok := bitbucketmcp.RepoAt(ctx, folder)
+func (d *Daemon) bitbucketAt(remotes []string) (forge, bool) {
+	repo, ok := bitbucketmcp.RepoIn(remotes)
 	if !ok {
 		return forge{}, false
 	}
@@ -693,15 +708,11 @@ func (d *Daemon) azureDevOpsRoots() []string {
 	return slices.Compact(roots)
 }
 
-// azureDevOpsAt is the Azure Repos repository the folder's git remote names, if any, on the
-// first of azureDevOpsRoots that it is on.
-func (d *Daemon) azureDevOpsAt(ctx context.Context, folder string) (forge, bool) {
-	return d.azureDevOpsAtRoots(ctx, folder, d.azureDevOpsRoots())
-}
-
-func (d *Daemon) azureDevOpsAtRoots(ctx context.Context, folder string, roots []string) (forge, bool) {
+// azureDevOpsAtRoots is the Azure Repos repository the folder's git remotes name, if any, on
+// the first of roots (azureDevOpsRoots) that it is on.
+func (d *Daemon) azureDevOpsAtRoots(remotes, roots []string) (forge, bool) {
 	for _, root := range roots {
-		if repo, ok := azuredevopsmcp.RepoAt(ctx, folder, root); ok {
+		if repo, ok := azuredevopsmcp.RepoIn(remotes, root); ok {
 			f := forge{provider: wire.ConnectionProviderAzuredevops, root: root, repo: repo, site: "dev.azure.com"}
 			if u, err := url.Parse(root); err == nil && u.Host != "" {
 				f.site = u.Host
@@ -712,13 +723,13 @@ func (d *Daemon) azureDevOpsAtRoots(ctx context.Context, folder string, roots []
 	return forge{}, false
 }
 
-// forgejoAt is the Forgejo repository the folder's git remote names, if any.
-func (d *Daemon) forgejoAt(ctx context.Context, folder string) (forge, bool) {
+// forgejoAt is the Forgejo repository the folder's git remotes name, if any.
+func (d *Daemon) forgejoAt(remotes []string) (forge, bool) {
 	roots := []string{connections.Codeberg}
 	if c, connected := d.forgejoConnection(); connected && c.URL != "" {
 		roots = append([]string{c.URL}, roots...)
 	}
-	root, repo, ok := forgejomcp.RepoAt(ctx, folder, roots)
+	root, repo, ok := forgejomcp.RepoIn(remotes, roots)
 	if !ok {
 		return forge{}, false
 	}
@@ -734,7 +745,10 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 	if err != nil {
 		return wire.ConnectorSetup{}, err
 	}
-	f, conn, connected := d.forgeAt(ctx, folder)
+	f, conn, connected, err := d.forgeAt(ctx, folder)
+	if err != nil {
+		return wire.ConnectorSetup{}, err
+	}
 	repo := f.repo
 	recForge := forgeName(f)
 	skipped := d.skippedSlots(folder)
@@ -758,13 +772,12 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 	// The Docs slot reads the folder itself, with or without a forge (#3248), and searches
 	// each mapped docs connector once (#3307), again as soon as its map changes.
 	docs := rec.Slots[wire.ConnectorSlotKindDocs]
-	docsDue := !skipped[wire.ConnectorSlotKindDocs] && (reading == wire.ConnectorSetupReadingFresh ||
-		(reading == wire.ConnectorSetupReadingCached && (docs == nil || time.Since(docs.ReadAt) > setupFresh ||
-			docsSearchesDue(docs, docsNames, docsMaps))))
+	docsDue := !skipped[wire.ConnectorSlotKindDocs] &&
+		setupSlotDue(reading, docs, func() bool { return docsSearchesDue(docs, docsNames, docsMaps) })
 	// The Messaging slot reads each of its connectors once (#1787), again as soon as one is added.
 	talk := rec.Slots[wire.ConnectorSlotKindMessaging]
-	messagingRead := !skipped[wire.ConnectorSlotKindMessaging] && len(messaging) > 0 && (reading == wire.ConnectorSetupReadingFresh ||
-		(reading == wire.ConnectorSetupReadingCached && (talk == nil || time.Since(talk.ReadAt) > setupFresh || messagingDue(talk, messaging))))
+	messagingRead := !skipped[wire.ConnectorSlotKindMessaging] && len(messaging) > 0 &&
+		setupSlotDue(reading, talk, func() bool { return messagingDue(talk, messaging) })
 	rec = cloneRecord(rec)
 	d.setupMu.Unlock()
 
@@ -786,12 +799,35 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 		d.setupMu.Unlock()
 	}
 
+	out := connectorSetupHead(folder, &f, conn, connected, usable, rec)
+	out.Slots = append(out.Slots, connectorSetupForgeSlots(sources, skipped, rec)...)
+	if id, tools, known := d.folderProject(folder); id != "" {
+		out.Project = &id
+		if known {
+			out.ProjectName = &tools.Name
+		}
+	}
+	out.Slots = append(out.Slots, docsSlot(rec.Slots[wire.ConnectorSlotKindDocs], skipped[wire.ConnectorSlotKindDocs], docsNames, docsWords, docsMaps))
+	out.Slots = append(out.Slots, messagingSlot(rec.Slots[wire.ConnectorSlotKindMessaging], skipped[wire.ConnectorSlotKindMessaging], messaging))
+	out.Slots = append(out.Slots, wire.ConnectorSlot{Slot: wire.ConnectorSlotKindWorkspace,
+		Choice: slotChoice[wire.ConnectorSlotKindWorkspace], State: wire.ConnectorSlotStateRead})
+	out.Done = connectorSlotsDone(out.Slots)
+	out.Events = d.setupEvents(ctx, f, folder, rec, out.Slots, reading != wire.ConnectorSetupReadingStored)
+	if reading != wire.ConnectorSetupReadingStored {
+		d.nameBoardsProject(folder, sources[wire.ConnectorSlotKindTasks], rec, out.Slots)
+	}
+	return out, nil
+}
+
+// connectorSetupHead is a connector setup with its forge, repository and connection,
+// and no slots yet.
+func connectorSetupHead(folder string, f *forge, conn connections.Connection, connected, usable bool, rec *setupRecord) wire.ConnectorSetup {
 	out := wire.ConnectorSetup{Folder: folder, Slots: []wire.ConnectorSlot{}, Forge: &f.provider, Site: &f.site}
 	if f.provider == wire.ConnectionProviderGithub {
 		install := connections.GitHubInstallURL
 		out.InstallURL = &install
 	}
-	if repo != "" {
+	if repo := f.repo; repo != "" {
 		out.Repository = &repo
 		page := f.page()
 		out.RepositoryURL = &page
@@ -799,10 +835,36 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 	if connected {
 		w := wireConnection(conn)
 		out.Connection = &w
-		if usable && repo != "" {
+		if usable && f.repo != "" {
 			out.Installed, out.Repositories = rec.Installed, rec.Repositories
 		}
 	}
+	return out
+}
+
+// connectorSlotsDone is how many of the slots are read or skipped.
+func connectorSlotsDone(slots []wire.ConnectorSlot) int64 {
+	var done int64
+	for _, s := range slots {
+		if s.State == wire.ConnectorSlotStateRead || s.State == wire.ConnectorSlotStateSkipped {
+			done++
+		}
+	}
+	return done
+}
+
+// setupSlotDue is whether a slot read at rec is read again: always for a fresh reading,
+// and for a cached one when it was never read, is old, or changed says so.
+func setupSlotDue(reading wire.ConnectorSetupReading, rec *slotRecord, changed func() bool) bool {
+	if reading == wire.ConnectorSetupReadingFresh {
+		return true
+	}
+	return reading == wire.ConnectorSetupReadingCached && (rec == nil || time.Since(rec.ReadAt) > setupFresh || changed())
+}
+
+// connectorSetupForgeSlots is the forge's slots of a connector setup, in their order.
+func connectorSetupForgeSlots(sources map[wire.ConnectorSlotKind]slotSource, skipped map[wire.ConnectorSlotKind]bool, rec *setupRecord) []wire.ConnectorSlot {
+	var slots []wire.ConnectorSlot
 	for _, s := range forgeSlots {
 		src := sources[s]
 		slot := forgeSlot(src.f, s, src.usable, skipped[s], rec.readOf(s, src.f))
@@ -814,28 +876,9 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 			yes := true
 			slot.FromProject = &yes
 		}
-		out.Slots = append(out.Slots, slot)
+		slots = append(slots, slot)
 	}
-	if id, tools, known := d.folderProject(folder); id != "" {
-		out.Project = &id
-		if known {
-			out.ProjectName = &tools.Name
-		}
-	}
-	out.Slots = append(out.Slots, docsSlot(rec.Slots[wire.ConnectorSlotKindDocs], skipped[wire.ConnectorSlotKindDocs], docsNames, docsWords, docsMaps))
-	out.Slots = append(out.Slots, messagingSlot(rec.Slots[wire.ConnectorSlotKindMessaging], skipped[wire.ConnectorSlotKindMessaging], messaging))
-	out.Slots = append(out.Slots, wire.ConnectorSlot{Slot: wire.ConnectorSlotKindWorkspace,
-		Choice: slotChoice[wire.ConnectorSlotKindWorkspace], State: wire.ConnectorSlotStateRead})
-	for _, s := range out.Slots {
-		if s.State == wire.ConnectorSlotStateRead || s.State == wire.ConnectorSlotStateSkipped {
-			out.Done++
-		}
-	}
-	out.Events = d.setupEvents(ctx, f, folder, rec, out.Slots, reading != wire.ConnectorSetupReadingStored)
-	if reading != wire.ConnectorSetupReadingStored {
-		d.nameBoardsProject(folder, sources[wire.ConnectorSlotKindTasks], rec, out.Slots)
-	}
-	return out, nil
+	return slots
 }
 
 // nameBoardsProject names the Azure Boards project of the folder's Azure Repos remote in its

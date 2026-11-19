@@ -42,6 +42,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STATEMENT = "https://in-toto.io/Statement/v1";
 const PREDICATE = "https://in-toto.io/attestation/test-result/v0.1";
 const SWIFT_PROJECTS = new Set(["agentskit", "agentskit-repo", "codetext"]);
+const APP_PROJECTS = new Set(["mac", "remote"]);
 
 // The Nx steps of ci.yml, each a group: its targets and projects are the step's `nx affected`,
 // and its platform is its job's runner. Keep them in step with ci.yml.
@@ -49,11 +50,14 @@ const SWIFT_PROJECTS = new Set(["agentskit", "agentskit-repo", "codetext"]);
 // - swift: `test-swift`'s "Nx affected, Swift" (xcode-27, Apple silicon).
 // - gomac: `test-go`'s "Nx affected, Go on a Mac" (#5755) (no lint: the Linux job's).
 // - swiftlint: `test-swift`'s "SwiftLint" (swift-lint:lint); one task, so it runs or is skipped.
+// - apps: `apps`'s "Nx affected" (mac:build, remote:build; xcode-27) (#6060). Its dependencies
+//   (wire:gen, design:gen, web:build) are not its own: they run again as Nx's dependsOn says.
 export const GROUPS = {
   linux: { platform: "linux-x64", targets: ["gen", "build", "vet", "lint", "test"], has: (t) => !t.tags.includes("xcode") },
   swift: { platform: "macos-arm64", targets: ["test"], has: (t) => SWIFT_PROJECTS.has(t.project) },
   gomac: { platform: "macos-arm64", targets: ["gen", "build", "vet", "test"], has: (t) => t.project !== "web" && !t.tags.includes("xcode") },
   swiftlint: { platform: "macos-arm64", targets: ["lint"], has: (t) => t.project === "swift-lint" },
+  apps: { platform: "macos-arm64", targets: ["build"], has: (t) => APP_PROJECTS.has(t.project) },
 };
 
 // What `uname -sm` says on each platform: the runtime input that puts the platform in a hash.
@@ -416,6 +420,18 @@ function selftest() {
   const deps = [task("agentskit-repo:test", "r", { tags: ["xcode"] }), task("web:build", "w"), task("wire:gen", "g"), task("agentskit:test-unit", "u", { tags: ["xcode"] }), task("agentskit:test", "n", { executor: "nx:noop", tags: ["xcode"] })];
   const ids = hashesFor("swift", deps).map((t) => t.id).sort();
   assert(ids.join() === "agentskit-repo:test,agentskit:test,agentskit:test-unit", `the Swift step's tasks: ${ids}`);
+
+  // The apps group (#6060): mac:build and remote:build only, not the builds they depend on.
+  const apps = [task("mac:build", "m", { tags: ["xcode"] }), task("remote:build", "r", { tags: ["xcode"] }), task("web:build", "w"), task("wire:gen", "g"), task("go:build", "b")];
+  const appIds = groupTasks("apps", hashesFor("apps", apps)).map((t) => t.id).sort();
+  assert(appIds.join() === "mac:build,remote:build", `the apps step's tasks: ${appIds}`);
+  assert(!groupTasks("gomac", apps).some((t) => t.project === "mac" || t.project === "remote"), "an app build is in the gomac group");
+  const appRows = cover(groupTasks("apps", apps), [{ task: "mac:build", hash: "m", run: {} }, { task: "remote:build", hash: "r", run: {} }]);
+  const appOut = outputs({ apps: appRows });
+  assert(appOut.includes("all-apps=true") && appOut.includes("skip-apps=mac:build remote:build"), `the apps outputs: ${appOut}`);
+  assert(outputs({ apps: cover(groupTasks("apps", apps), [{ task: "mac:build", hash: "m", run: {} }]) }).includes("all-apps=false"), "a half-covered apps group is all covered");
+  assert(outputs({ apps: cover(groupTasks("apps", apps), [{ task: "mac:build", hash: "old", run: {} }, { task: "remote:build", hash: "r", run: {} }]) }).includes("all-apps=false"), "an app build at an old hash is covered");
+  assert(JSON.stringify(plan("apps", apps, new Set(["mac:build"]))) === JSON.stringify([{ target: "build", projects: ["remote"] }]), "the apps plan");
 
   assert(parseRevocations("# c\ns1\t12\tgo:test\t2026\n\nagents/x\n").join() === "s1,agents/x", "the revocation list");
   const text = summary({ linux: rows }, [{ run: { name: "attestation/macos-arm64", url: "u", sha: "b".repeat(40) }, reason: "posted by someone" }]);

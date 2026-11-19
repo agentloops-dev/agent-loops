@@ -15,7 +15,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 REPO = "example/shop"
 LABELS = {"epic": "3e4b9e", "story": "0e8a16", "task": "c5def5", "alex-todo": "d93f0b",
-          "feature:checkout": "1d76db", "feature:accounts": "d93f0b", "feature:search": "0e8a16"}
+          "feature:checkout": "1d76db", "feature:accounts": "d93f0b", "feature:search": "0e8a16",
+          "priority:high": "b60205", "priority:medium": "fbca04", "priority:low": "c2e0c6", "on hold": "ededed"}
 START = datetime.now(timezone.utc).replace(second=0, microsecond=0)
 
 
@@ -66,6 +67,14 @@ for i in range(10):
     ])
     EPICS[200 + i][3][-1] = (EPICS[200 + i][3][-1][0], end - 30, end - 2, end, [])
 
+# The open epics' priorities, for the bands of #6089 (High at the top, on hold last).
+EPIC_LABELS = {100: ["priority:high"], 110: ["priority:medium"], 130: ["priority:high"], 140: ["priority:low"],
+               150: ["on hold"]}
+EPICS[150] = ("Epic: Loyalty points", "accounts", -30, [
+    ("Points in the store's API", -30, -20, -16, []),
+    ("Show points at checkout", -29, -12, None, []),
+])
+
 RELEASES = [("v0.41.0", -2), ("v0.40.0", -21), ("v0.39.0", -45), ("v0.38.0", -70)]
 
 
@@ -83,7 +92,7 @@ def epic(n):
     title, feature, filed, kids = EPICS[n]
     closes = [k[3] for k in kids]
     closed = max(closes) if all(c is not None for c in closes) else None
-    node = issue(n, title, ["epic", "feature:" + feature], filed, closed)
+    node = issue(n, title, ["epic", "feature:" + feature] + EPIC_LABELS.get(n, []), filed, closed)
     subs = []
     for j, (t, f, pr, c, labels) in enumerate(kids):
         sub = issue(n * 100 + j + 1, t, ["story", "feature:" + feature] + labels, f, c, parent=n)

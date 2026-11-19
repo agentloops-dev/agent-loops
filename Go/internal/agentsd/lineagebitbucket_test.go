@@ -106,6 +106,37 @@ func TestLineageOnABitbucketFolder(t *testing.T) {
 	}
 }
 
+// #6257: a git that gives no answer (here it cannot start) is not "no origin": nothing is kept,
+// and the next look reads the origin. Kept, it named a session's node with no repo for good,
+// since lineage keeps the first topic it sees for a session. No origin is git's answer, and is
+// kept. Not parallel: PATH is the process's.
+func TestAFolderTopicIsNotKeptWhenGitGivesNoAnswer(t *testing.T) {
+	folder := gitFolder(t, "git@bitbucket.org:walkalex/App.git")
+	d := &Daemon{}
+	t.Run("git does not start", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		if topic := d.folderTopic(folder); topic != "" {
+			t.Fatalf("with no git: %q", topic)
+		}
+		if r := d.folderRepo(folder); r != (forgeRepo{}) {
+			t.Fatalf("with no git: %+v", r)
+		}
+	})
+	if topic := d.folderTopic(folder); topic != "walkalex/app" {
+		t.Fatalf("a failed read was kept: %q", topic)
+	}
+	if r := d.folderRepo(folder); r != (forgeRepo{"bitbucket", "walkalex/app"}) {
+		t.Fatalf("a failed read was kept: %+v", r)
+	}
+	bare := gitFolder(t, "")
+	if topic := d.folderTopic(bare); topic != "" {
+		t.Fatalf("no origin: %q", topic)
+	}
+	if origin, known := d.folderOrigin(bare); !known || origin != "" {
+		t.Fatalf("no origin is not kept: %q %v", origin, known)
+	}
+}
+
 // #3879: lineage asks the connected Bitbucket, by its connection, for a node's title and state,
 // a release's pull requests, and the cost comment.
 func TestLineageAsksBitbucket(t *testing.T) {

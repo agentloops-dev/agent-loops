@@ -25,6 +25,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/apicalls"
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/agentloops-dev/agent-loops/Go/internal/linearmcp"
@@ -53,6 +54,10 @@ func main() {
 		return ""
 	}
 	linear := linearmcp.NewRealLinear(os.Getenv("LINEAR_MCP_API_URL"), key)
+	// Each call to the forge is counted, and the log gets a line every 10 minutes (#6164).
+	meter := apicalls.New("linear", func(line string) { fmt.Fprintln(os.Stderr, line) })
+	meter.Client(linear.Client)
+	go meter.Run(ctx)
 	upstream := linearmcp.NewServer(buildinfo.Version)
 	linearmcp.AddViews(upstream, linear)
 	front := &linearmcp.Front{

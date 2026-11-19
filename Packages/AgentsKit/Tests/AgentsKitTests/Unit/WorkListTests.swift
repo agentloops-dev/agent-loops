@@ -167,6 +167,13 @@ struct WorkListTests {
         #expect(shown[2].isEmpty)
     }
 
+    /// With one machine, the window asks it directly, not through the control plane (#6141).
+    @Test func oneMachineIsAskedDirectly() {
+        #expect(!WorkList.asksControlPlane(machines: 0))
+        #expect(!WorkList.asksControlPlane(machines: 1))
+        #expect(WorkList.asksControlPlane(machines: 2))
+    }
+
     /// forge/listAll's next pages (#5592): each machine with a cursor gets its page; one that could not read it keeps its
     /// rows and cursor, and the page says why.
     @Test func theNextPagesComeInOneAnswerAndAFailedOneKeepsItsCursor() throws {
@@ -259,6 +266,23 @@ struct WorkListTests {
         #expect(order(.cost) == [4, 9, 1])
     }
 
+    /// Priority (#6087): not on hold first, then High, Medium, none, Low; in a priority, the last updated first.
+    @Test func prioritySortsHighFirstNoneBeforeLowAndOnHoldLast() {
+        func with(_ n: Int, _ priority: String?, hold: Bool = false, ago: Double = 0) -> DaemonAPI.ForgeItem {
+            var i = item(n, at: day.addingTimeInterval(-ago))
+            i.priority = priority
+            i.onHold = hold ? true : nil
+            return i
+        }
+        let rows = WorkList.merge([(host: .mac, items: [
+            with(1, "low"), with(2, nil), with(3, "high", ago: 3600), with(4, "medium"), with(5, "high"),
+            with(6, "high", hold: true), with(7, nil, hold: true, ago: 60),
+        ])], lineage: [])
+        #expect(WorkList.sort(rows, by: .priority).map { WorkList.number($0.node.ref) } == [5, 3, 4, 2, 1, 6, 7])
+        #expect(WorkList.Kind.issue.sorts.first == .priority)
+        #expect(WorkList.Sort.priority.title == "Priority")
+    }
+
     @Test func refsRepoShortNameAndForge() {
         #expect(WorkList.repo(of: "github:alexec/Agents#12") == "github:alexec/Agents")
         #expect(WorkList.repo(of: "gitlab:group/repo!45") == "gitlab:group/repo")
@@ -326,8 +350,57 @@ struct WorkPageTests {
         #expect(WorkList.failedChecks(running).map(\.name) == ["b"])
         #expect(WorkList.doneWords(DaemonAPI.Method.forgeMerge, .init(auto: true)) == "Auto-merge is on: it merges when its checks pass.")
         #expect(WorkList.doneWords(DaemonAPI.Method.forgeRerun, .init(reran: 2)) == "2 runs started again.")
+        #expect(WorkList.doneWords(DaemonAPI.Method.forgeRequestChanges, .init()) == "Changes requested.")
         #expect(WorkList.doneWords(DaemonAPI.Method.forgeClose, .init(), reopened: true) == "Reopened.")
         #expect(WorkList.doneWords(DaemonAPI.Method.forgeClose, .init(), moved: true) == "Status changed.")
+        #expect(WorkList.doneWords(DaemonAPI.Method.forgePriority, .init()) == "Priority changed.")
+        #expect(WorkList.doneWords(DaemonAPI.Method.forgeHold, .init(), held: true) == "On hold: not picked up next.")
+        #expect(WorkList.doneWords(DaemonAPI.Method.forgeHold, .init()) == "Off hold.")
+    }
+
+    /// #6092: the Priority section shows an issue's priority and on hold, so Labels leaves out their labels.
+    @Test func theLabelsLeaveOutPriorityAndHold() {
+        let labels = ["bug", "Priority:High", "priority:low", "priority:urgent", "on hold", "On-Hold", "story"].map { DaemonAPI.ForgeLabel(name: $0) }
+        #expect(WorkList.sideLabels(labels).map(\.name) == ["bug", "priority:urgent", "story"])
+        #expect(WorkList.priorityChoices == ["high", "medium", nil, "low"])
+    }
+
+    /// #6092: the menu and the toggle show only where the item's actions have them and a machine writes.
+    @Test func thePriorityControlsFollowTheActions() {
+        let item = DaemonAPI.ForgeItem(node: .init(kind: "issue", ref: "github:o/r#1"), title: "T", state: "open", updatedAt: at)
+        let both = DaemonAPI.ForgeItemDetail(item: item, actions: ["label", "priority", "hold"])
+        #expect(WorkList.setsPriority(both, writes: true) == (true, true))
+        #expect(WorkList.setsPriority(both, writes: false) == (false, false))
+        #expect(WorkList.setsPriority(DaemonAPI.ForgeItemDetail(item: item, actions: ["priority"]), writes: true) == (true, false))
+        #expect(WorkList.setsPriority(DaemonAPI.ForgeItemDetail(item: item), writes: true) == (false, false))
+    }
+
+    /// Epic #6086: a row's right-click menu offers Priority and On hold on an issue whose forge sets
+    /// them (its capabilities), and its machine writes; never on a pull request or another forge's row.
+    @Test func aRowsPriorityMenuFollowsItsForge() {
+        let github = DaemonAPI.ForgeCapabilities(forge: "github", issues: true, priority: true, hold: true)
+        let jira = DaemonAPI.ForgeCapabilities(forge: "jira", issues: true, priority: true)
+        func row(_ kind: String, _ ref: String) -> WorkList.Row {
+            WorkList.Row(.init(node: .init(kind: kind, ref: ref), title: "T", state: "open", updatedAt: at), on: .mac)
+        }
+        let issue = row("issue", "github:alexec/Agents#1")
+        #expect(WorkList.rowSetsPriority(issue, forges: [jira, github], writes: true) == (true, true))
+        #expect(WorkList.rowSetsPriority(issue, forges: [github], writes: false) == (false, false))
+        #expect(WorkList.rowSetsPriority(issue, forges: [jira], writes: true) == (false, false))
+        #expect(WorkList.rowSetsPriority(issue, forges: nil, writes: true) == (false, false))
+        #expect(WorkList.rowSetsPriority(row("pr", "github:alexec/Agents#2"), forges: [github], writes: true) == (false, false))
+        let ticket = row("issue", "jira:PROJ-7")
+        #expect(WorkList.rowSetsPriority(ticket, forges: [github, jira], writes: true) == (true, false))
+    }
+
+    /// Epic #6086: a list's next page keeps each forge's capabilities, and adds a forge the first page did not name.
+    @Test func aNextPageKeepsTheForgesCapabilities() {
+        let github = DaemonAPI.ForgeCapabilities(forge: "github", priority: true)
+        let gitlab = DaemonAPI.ForgeCapabilities(forge: "gitlab", hold: true)
+        #expect(WorkList.joinForges(nil, nil) == nil)
+        #expect(WorkList.joinForges([github], nil) == [github])
+        #expect(WorkList.joinForges(nil, [gitlab]) == [gitlab])
+        #expect(WorkList.joinForges([github], [DaemonAPI.ForgeCapabilities(forge: "github"), gitlab]) == [github, gitlab])
     }
 
     /// #3130: a pull request's diff from the forge is the diff a view gives the app's diff page.

@@ -230,64 +230,15 @@ func (d *Daemon) driveBrowser(ctx context.Context, agent wire.UUID, name string,
 	if a == nil {
 		return failed(leaseNoCall)
 	}
-	if !d.browserAvailable() {
-		return failed("The browser can't be installed on " + thisMachine() + ".")
+	fill, device, refusal := d.browserCallPrecheck(agent, name, args)
+	if refusal != "" {
+		return failed(refusal)
 	}
-	if d.browserControlMode() == wire.DriveApprovalOff {
-		return failed(browserOffWords)
-	}
-	if name == handToPersonName && d.isBot() {
-		return failed(noOneAnswersWords)
-	}
-	if h := d.handOffOpen(agent); h != nil {
-		return failed(handOffHolds(h))
-	}
-	var fill secretFill
-	if name == fillSecretName {
-		var refusal string
-		if fill, refusal = d.fillSecretValue(agent, args); refusal != "" {
-			return failed(refusal)
+	if words, isError, stop := d.browserTakeLease(agent); stop {
+		if isError {
+			return failed(words)
 		}
-	}
-	if name == generateSecretName {
-		if refusal := d.generateSecretCheck(args); refusal != "" {
-			return failed(refusal)
-		}
-	}
-	if name == captureSecretName {
-		if refusal := d.captureSecretCheck(args); refusal != "" {
-			return failed(refusal)
-		}
-	}
-	if name == passkeyName {
-		if refusal := d.passkeyCheck(agent, args); refusal != "" {
-			return failed(refusal)
-		}
-	}
-	var device *browser.Device
-	if name == emulateDeviceName {
-		var refusal string
-		if device, refusal = emulateDeviceCheck(args); refusal != "" {
-			return failed(refusal)
-		}
-	}
-	// On a machine a person uses, the lease waits on their Approve first (#4264).
-	if !d.holdsBrowser(agent) {
-		words, err := d.approveDrive(agent, wire.SecretUseBrowser, "")
-		if err != nil {
-			return failed(browserWords(err))
-		}
-		if words != "" {
-			return []any{map[string]any{"type": "text", "text": words}}, false, words
-		}
-	}
-	reply, err := d.leaseResource(agent, browserLeaseName)
-	if err != nil {
-		return failed(browserWords(err))
-	}
-	if !d.holdsBrowser(agent) {
-		// In line behind another agent: told its place, started again on lease.granted.
-		return []any{map[string]any{"type": "text", "text": reply}}, false, reply
+		return []any{map[string]any{"type": "text", "text": words}}, false, words
 	}
 	// The tabs that open from here on are this agent's (#3916); the first call of its turn
 	// opens its session's Agent Browser pane on the clients.
@@ -321,37 +272,8 @@ func (d *Daemon) driveBrowser(ctx context.Context, agent wire.UUID, name string,
 	if name != passkeyName {
 		d.keepSessionPasskey(agent)
 	}
-	if name == fillSecretName {
-		words, isError, site := d.approveFill(ctx, agent, drive, fill, args)
-		if words != "" {
-			return []any{map[string]any{"type": "text", "text": words}}, isError, words
-		}
-		if fill.released {
-			// Approved: the value is in agentsd's memory now (#4058).
-			var refusal string
-			if fill, refusal = d.fillSecretValue(agent, args); refusal != "" || fill.released {
-				return failed(cmp.Or(refusal, "Nothing was filled: "+fill.name+" did not open."))
-			}
-		}
-		fill.agent, fill.site = agent, site
-		return d.fillSecret(ctx, drive, fill, args)
-	}
-	if name == generateSecretName {
-		return d.generateSecret(ctx, drive, args)
-	}
-	if name == captureSecretName {
-		return d.captureSecret(ctx, drive, args)
-	}
-	if name == pairWebPageName {
-		return d.pairWebPage(ctx, drive)
-	}
-	if name == passkeyName {
-		said, isError := d.usePasskey(agent, args)
-		return []any{map[string]any{"type": "text", "text": said}}, isError, said
-	}
-	if name == emulateDeviceName {
-		said, isError := d.emulateDevice(agent, device)
-		return []any{map[string]any{"type": "text", "text": said}}, isError, said
+	if content, isError, text, done := d.browserCallTool(ctx, agent, name, args, drive, fill, device); done {
+		return content, isError, text
 	}
 	if refusal := d.browserRefusal(ctx, drive, name, args); refusal != "" {
 		return failed(refusal)
@@ -364,6 +286,104 @@ func (d *Daemon) driveBrowser(ctx context.Context, agent wire.UUID, name string,
 	}
 	content, text := d.filterBrowserResult(res, drive.output)
 	return content, res.IsError, text
+}
+
+// browserCallPrecheck refuses a browser call before the lease: no browser here, the browser
+// turned off, no one to hand to, a hand-off open, or the tool's own arguments. It returns the
+// secret to fill and the device to emulate, for the tools that take them.
+func (d *Daemon) browserCallPrecheck(agent wire.UUID, name string, args map[string]json.RawMessage) (secretFill, *browser.Device, string) {
+	var fill secretFill
+	var device *browser.Device
+	if !d.browserAvailable() {
+		return fill, device, "The browser can't be installed on " + thisMachine() + "."
+	}
+	if d.browserControlMode() == wire.DriveApprovalOff {
+		return fill, device, browserOffWords
+	}
+	if name == handToPersonName && d.isBot() {
+		return fill, device, noOneAnswersWords
+	}
+	if h := d.handOffOpen(agent); h != nil {
+		return fill, device, handOffHolds(h)
+	}
+	var refusal string
+	switch name {
+	case fillSecretName:
+		fill, refusal = d.fillSecretValue(agent, args)
+	case generateSecretName:
+		refusal = d.generateSecretCheck(args)
+	case captureSecretName:
+		refusal = d.captureSecretCheck(args)
+	case passkeyName:
+		refusal = d.passkeyCheck(agent, args)
+	case emulateDeviceName:
+		device, refusal = emulateDeviceCheck(args)
+	}
+	return fill, device, refusal
+}
+
+// browserTakeLease takes the browser's lease for agent. On a machine a person uses, the lease
+// waits on their Approve first (#4264). When the call must stop, it returns the words to stop
+// with, whether they are an error, and true.
+func (d *Daemon) browserTakeLease(agent wire.UUID) (string, bool, bool) {
+	if !d.holdsBrowser(agent) {
+		words, err := d.approveDrive(agent, wire.SecretUseBrowser, "")
+		if err != nil {
+			return browserWords(err), true, true
+		}
+		if words != "" {
+			return words, false, true
+		}
+	}
+	reply, err := d.leaseResource(agent, browserLeaseName)
+	if err != nil {
+		return browserWords(err), true, true
+	}
+	if !d.holdsBrowser(agent) {
+		// In line behind another agent: told its place, started again on lease.granted.
+		return reply, false, true
+	}
+	return "", false, false
+}
+
+// browserCallTool does the browser tools that are agentsd's own, not Playwright's: the
+// secrets, pairing the web page, the passkey and the device. It returns true when name is
+// one of them.
+func (d *Daemon) browserCallTool(ctx context.Context, agent wire.UUID, name string, args map[string]json.RawMessage, drive *browserDrive, fill secretFill, device *browser.Device) ([]any, bool, string, bool) {
+	text := func(said string, isError bool) ([]any, bool, string, bool) {
+		return []any{map[string]any{"type": "text", "text": said}}, isError, said, true
+	}
+	switch name {
+	case fillSecretName:
+		words, isError, site := d.approveFill(ctx, agent, drive, fill, args)
+		if words != "" {
+			return text(words, isError)
+		}
+		if fill.released {
+			// Approved: the value is in agentsd's memory now (#4058).
+			var refusal string
+			if fill, refusal = d.fillSecretValue(agent, args); refusal != "" || fill.released {
+				return text(cmp.Or(refusal, "Nothing was filled: "+fill.name+" did not open."), true)
+			}
+		}
+		fill.agent, fill.site = agent, site
+		content, isError, said := d.fillSecret(ctx, drive, fill, args)
+		return content, isError, said, true
+	case generateSecretName:
+		content, isError, said := d.generateSecret(ctx, drive, args)
+		return content, isError, said, true
+	case captureSecretName:
+		content, isError, said := d.captureSecret(ctx, drive, args)
+		return content, isError, said, true
+	case pairWebPageName:
+		content, isError, said := d.pairWebPage(ctx, drive)
+		return content, isError, said, true
+	case passkeyName:
+		return text(d.usePasskey(agent, args))
+	case emulateDeviceName:
+		return text(d.emulateDevice(agent, device))
+	}
+	return nil, false, "", false
 }
 
 // browserDriveFor is this agent's @playwright/mcp on the browser as it runs now: started

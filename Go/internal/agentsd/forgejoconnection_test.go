@@ -205,20 +205,20 @@ func TestAForgejoRemoteOfOnesOwn(t *testing.T) {
 	ctx := context.Background()
 
 	gitea := gitFolder(t, "https://gitea.example.org/team/app.git")
-	if f, _, connected := d.forgeAt(ctx, gitea); f.provider != wire.ConnectionProviderForgejo || f.root != "https://gitea.example.org/" ||
+	if f, _, connected := forgeAtOK(t, d, ctx, gitea); f.provider != wire.ConnectionProviderForgejo || f.root != "https://gitea.example.org/" ||
 		f.repo != "team/app" || f.site != "gitea.example.org" || connected {
 		t.Fatalf("a gitea host: %+v %v", f, connected)
 	}
 	own := gitFolder(t, "ssh://git@git.example.com:2222/team/app.git")
-	if f, _, _ := d.forgeAt(ctx, own); f.provider != wire.ConnectionProviderGithub {
+	if f, _, _ := forgeAtOK(t, d, ctx, own); f.provider != wire.ConnectionProviderGithub {
 		t.Fatalf("an unknown host before connecting: %+v", f)
 	}
 	file.Put(connections.ForgejoConnection("https://git.example.com/", "fj-secret", "agentstest", time.Now()))
-	if f, c, connected := d.forgeAt(ctx, own); f.provider != wire.ConnectionProviderForgejo || f.repo != "team/app" ||
+	if f, c, connected := forgeAtOK(t, d, ctx, own); f.provider != wire.ConnectionProviderForgejo || f.repo != "team/app" ||
 		!connected || c.Access != "fj-secret" {
 		t.Fatalf("the connected Forgejo: %+v %v", f, connected)
 	}
-	if f, _, connected := d.forgeAt(ctx, gitea); f.provider != wire.ConnectionProviderForgejo || connected {
+	if f, _, connected := forgeAtOK(t, d, ctx, gitea); f.provider != wire.ConnectionProviderForgejo || connected {
 		t.Fatalf("the connection went to another Forgejo: %+v %v", f, connected)
 	}
 }
@@ -245,5 +245,42 @@ func TestAProjectsForgejoSlotUsesTheConnectionsRoot(t *testing.T) {
 	other := "git.example.com"
 	if g := d.atConnectedRoot(projectForge(wire.ProjectSlot{Forge: &forgejo, Repository: &repo, Site: &other})); g.root != "https://git.example.com/" {
 		t.Fatalf("another site: %+v", g)
+	}
+}
+
+// forgeAtOK is d.forgeAt for a read that must not fail.
+func forgeAtOK(t *testing.T, d *Daemon, ctx context.Context, folder string) (forge, connections.Connection, bool) { //nolint:revive // t first, as the other helpers
+	t.Helper()
+	f, c, connected, err := d.forgeAt(ctx, folder)
+	if err != nil {
+		t.Fatalf("forgeAt %s: %v", folder, err)
+	}
+	return f, c, connected
+}
+
+// A read of the remotes that fails says "not known", never GitHub (#6064): a slow git once
+// put a Forgejo folder on GitHub. A lookup that is kept reads again after a failed read.
+func TestAFailedRemoteReadIsNotGitHub(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
+	d.connStoreFor = func() (connections.Store, error) { return file, nil }
+	gitea := gitFolder(t, "https://gitea.example.org/team/app.git")
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if f, _, connected, err := d.forgeAt(gone, gitea); err == nil || f.provider != "" || connected {
+		t.Fatalf("a failed read: %+v %v %v, want no forge and an error", f, connected, err)
+	}
+	if root, repo := d.forgejoRepoAt(gone, gitea, ""); root != "" || repo != "" {
+		t.Fatalf("a failed read: %q %q", root, repo)
+	}
+	if root, repo := d.forgejoRepoAt(context.Background(), gitea, ""); root != "https://gitea.example.org/" || repo != "team/app" {
+		t.Fatalf("the read after a failed read: %q %q", root, repo)
+	}
+	if f, _, _ := forgeAtOK(t, d, context.Background(), gitea); f.provider != wire.ConnectionProviderForgejo {
+		t.Fatalf("the read after a failed read: %+v", f)
 	}
 }

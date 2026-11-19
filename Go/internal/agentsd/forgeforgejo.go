@@ -40,6 +40,7 @@ type forgeForgejo interface {
 	CancelAutoMerge(ctx context.Context, repo string, number int) error
 	MarkReady(ctx context.Context, repo string, number int) error
 	Approve(ctx context.Context, repo string, number int, sha string) (string, error)
+	RequestChanges(ctx context.Context, repo string, number int, sha, body string) (string, error)
 	PRDiff(ctx context.Context, repo string, number int) (map[string]any, error)
 	// What lineage asks (lineageforgejo.go).
 	Node(ctx context.Context, repo string, number int) (forgejomcp.Node, error)
@@ -92,27 +93,15 @@ func (d *Daemon) forgejoRoot() (connections.Connection, string) {
 // forgejoRepoAt is the Forgejo a folder's remote is on (connected first, then Codeberg, then a
 // host named forgejo, gitea or codeberg), and its repository there; read once, as GitLab's.
 func (d *Daemon) forgejoRepoAt(ctx context.Context, folder, connected string) (root, repo string) {
-	key := "forgejo " + folder + " " + connected
-	d.forgeMu.Lock()
-	at, ok := d.forgeRoots[key]
-	d.forgeMu.Unlock()
-	if ok {
-		return at[0], at[1]
-	}
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	roots := []string{connections.Codeberg}
-	if connected != "" {
-		roots = append([]string{connected}, roots...)
-	}
-	root, repo, _ = forgejomcp.RepoAt(gitCtx, folder, roots)
-	d.forgeMu.Lock()
-	defer d.forgeMu.Unlock()
-	if d.forgeRoots == nil || len(d.forgeRoots) >= forgeCached {
-		d.forgeRoots = map[string][2]string{}
-	}
-	d.forgeRoots[key] = [2]string{root, repo}
-	return root, repo
+	at := d.forgeRootAt(ctx, "forgejo "+folder+" "+connected, folder, func(remotes []string) [2]string {
+		roots := []string{connections.Codeberg}
+		if connected != "" {
+			roots = append([]string{connected}, roots...)
+		}
+		root, repo, _ := forgejomcp.RepoIn(remotes, roots)
+		return [2]string{root, repo}
+	})
+	return at[0], at[1]
 }
 
 // onGitHubOrGitLab says r is a GitHub or GitLab repo, which the Forgejo lists leave to theirs.
@@ -134,9 +123,10 @@ func (forgejoForge) Images() forgeImageHost { return forgejoImages{} }
 func (forgejoForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues: true, PRs: true,
+		Priority: true, Hold: true,
 		Issue: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true},
 		PR: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, Merge: true, AutoMerge: true, Approve: true,
-			Diff: true, CancelAutoMerge: true, Ready: true},
+			RequestChanges: true, Diff: true, CancelAutoMerge: true, Ready: true},
 		LabelColors: true,
 		Avatars:     true,
 		CreatedAt:   true, ClosedAt: true,
@@ -487,6 +477,18 @@ func (g forgejoForge) Approve(ctx context.Context, r forgeRef, sha string) (wire
 	return wire.ForgeDone{URL: optional(link)}, err
 }
 
+func (g forgejoForge) RequestChanges(ctx context.Context, r forgeRef, sha, body string) (wire.ForgeDone, error) {
+	if !r.pr() {
+		return wire.ForgeDone{}, cannot(actionRequestChanges)
+	}
+	fj, named, _, err := g.of(ctx, "forge/request-changes", r)
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	link, err := fj.RequestChanges(ctx, named, r.Number, sha, body)
+	return wire.ForgeDone{URL: optional(link)}, err
+}
+
 // AddChild makes a new issue in the epic's repository, or takes the issue that child.Issue names
 // (#12, owner/repo#12 or its URL on the connected Forgejo), and makes the epic depend on it: a
 // Forgejo epic's children are the issues it depends on.
@@ -593,4 +595,13 @@ func (d *Daemon) forgejoFolder(ctx context.Context, repo, named, folder string) 
 func forgejoStart(i wire.ForgeItem, n int) *wire.ForgeStart {
 	return &wire.ForgeStart{Prompt: fmt.Sprintf("#%d: %s\n\nWork on this Forgejo issue: %s", n, i.Title, deref(i.URL)),
 		Labels: []string{"#" + strconv.Itoa(n)}, Worktree: optional(strconv.Itoa(n) + " " + i.Title)}
+}
+
+// SetPriority and SetHold are the labels: Forgejo has no field for either (#6091).
+func (g forgejoForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	return labelPriority(ctx, g, r, priority)
+}
+
+func (g forgejoForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	return labelHold(ctx, g, r, on)
 }

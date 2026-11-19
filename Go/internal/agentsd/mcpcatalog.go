@@ -546,16 +546,7 @@ func (d *Daemon) mcpList(dest wire.SkillDestination) (wire.MCPListAnswer, error)
 			row.Managed = &wire.ManagedMCPServer{Name: e.name, RegistryName: record.RegistryName, Version: record.Version,
 				Run: wire.MCPRunKind(record.Run), AddedAt: wire.DateOf(record.AddedAt), Destination: dest, ByHand: &byHand}
 		}
-		seen := map[string]bool{}
-		for _, n := range mcpSecretNames(e) {
-			if !seen[n] {
-				seen[n] = true
-				row.SecretNames = append(row.SecretNames, n)
-				if _, ok := secrets[n]; !ok {
-					row.MissingSecrets = append(row.MissingSecrets, n)
-				}
-			}
-		}
+		fillMCPRowSecrets(&row, e, secrets)
 		row.Views = viewsWord(views, scope, e.name)
 		if row.Approval.Waiting != nil {
 			waiting = append(waiting, row)
@@ -566,6 +557,22 @@ func (d *Daemon) mcpList(dest wire.SkillDestination) (wire.MCPListAnswer, error)
 	answer.Servers = d.mcpSignInStates(append(append(answer.Servers, waiting...), ready...), dest)
 	log.Printf("mcp: list %s → %d", dest.Kind, len(answer.Servers))
 	return answer, nil
+}
+
+// fillMCPRowSecrets adds to row the names of the secrets that e uses, once each, and those
+// of them that secrets does not hold as missing.
+func fillMCPRowSecrets(row *wire.FolderMCPServer, e mcpEntry, secrets map[string]string) {
+	seen := map[string]bool{}
+	for _, n := range mcpSecretNames(e) {
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		row.SecretNames = append(row.SecretNames, n)
+		if _, ok := secrets[n]; !ok {
+			row.MissingSecrets = append(row.MissingSecrets, n)
+		}
+	}
 }
 
 // mcpSummary is the command line or URL, with ${NAME} still visible.

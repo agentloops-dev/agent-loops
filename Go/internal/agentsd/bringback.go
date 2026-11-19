@@ -37,22 +37,9 @@ func (d *Daemon) bringBack(r wire.BringBackRequest) (wire.BringBack, error) {
 	if err != nil {
 		return done, err
 	}
-	if len(r.Branches) == 0 {
-		return done, Invalid("Choose a branch to bring back.")
-	}
-	patchOn := ""
-	if r.PatchOn != nil {
-		patchOn = *r.PatchOn
-	}
-	patchSent := false
-	for _, b := range r.Branches {
-		if !validBranch(b.Name) || len(b.Commit) < 40 || strings.HasPrefix(b.Commit, "-") {
-			return done, Invalid("%q is not a branch this Mac can take.", b.Name)
-		}
-		patchSent = patchSent || b.Name == patchOn
-	}
-	if patch != "" && !patchSent {
-		return done, Invalid("The uncommitted changes come back only with the branch they are on.")
+	patchOn, err := bringBackCheckBranches(r, patch)
+	if err != nil {
+		return done, err
 	}
 	repo, _ := repositoryOf(path)
 	m, _ := receiveLocks.LoadOrStore(canonical(repo.commonDir), &sync.Mutex{})
@@ -68,32 +55,97 @@ func (d *Daemon) bringBack(r wire.BringBackRequest) (wire.BringBack, error) {
 			return done, err
 		}
 	}
-	defer func() {
-		if out, _ := git(path, "for-each-ref", "--format=%(refname)", "refs/agents-back"); out != "" {
-			for _, ref := range strings.Split(out, "\n") {
-				git(path, "update-ref", "-d", ref)
-			}
-		}
-	}()
+	defer bringBackDropRefs(path)
 
 	// Where each branch is checked out on this Mac, so it moves there with its files.
+	checkedOut, err := bringBackCheckedOut(path)
+	if err != nil {
+		return done, err
+	}
+
+	// Every branch moves forward, or nothing moves.
+	moves, err := bringBackPlanMoves(path, r.Branches, checkedOut)
+	if err != nil {
+		return done, err
+	}
+
+	if patch != "" {
+		if err := bringBackCheckPatch(path, here, patchOn, r.Branches, patch); err != nil {
+			return done, err
+		}
+	}
+
+	if err := bringBackApplyMoves(path, moves, checkedOut, &done); err != nil {
+		return done, err
+	}
+	if patch != "" {
+		if err := bringBackApplyPatch(path, patch, &done); err != nil {
+			return done, err
+		}
+	}
+	return done, nil
+}
+
+// bringBackMove is one branch that moves forward, from the commit it has here (or none) to
+// the host's.
+type bringBackMove struct{ name, from, to string }
+
+// bringBackCheckBranches checks the branches asked for, and that a patch comes with the branch
+// it is on. It returns the branch the patch is on.
+func bringBackCheckBranches(r wire.BringBackRequest, patch string) (string, error) {
+	if len(r.Branches) == 0 {
+		return "", Invalid("Choose a branch to bring back.")
+	}
+	patchOn := ""
+	if r.PatchOn != nil {
+		patchOn = *r.PatchOn
+	}
+	patchSent := false
+	for _, b := range r.Branches {
+		if !validBranch(b.Name) || len(b.Commit) < 40 || strings.HasPrefix(b.Commit, "-") {
+			return "", Invalid("%q is not a branch this Mac can take.", b.Name)
+		}
+		patchSent = patchSent || b.Name == patchOn
+	}
+	if patch != "" && !patchSent {
+		return "", Invalid("The uncommitted changes come back only with the branch they are on.")
+	}
+	return patchOn, nil
+}
+
+// bringBackDropRefs removes the refs the fetch of the bundle made.
+func bringBackDropRefs(path string) {
+	if out, _ := git(path, "for-each-ref", "--format=%(refname)", "refs/agents-back"); out != "" {
+		for _, ref := range strings.Split(out, "\n") {
+			git(path, "update-ref", "-d", ref)
+		}
+	}
+}
+
+// bringBackCheckedOut is the worktree root where each branch of the repository at path is
+// checked out.
+func bringBackCheckedOut(path string) (map[string]string, error) {
 	checkedOut := map[string]string{}
 	trees, err := worktreeList(path)
 	if err != nil {
-		return done, err
+		return nil, err
 	}
 	for _, w := range trees {
 		if w.branch != "" && !w.prunable {
 			checkedOut[w.branch] = w.root
 		}
 	}
+	return checkedOut, nil
+}
 
-	// Every branch moves forward, or nothing moves.
-	type move struct{ name, from, to string }
-	var moves []move
-	for _, b := range r.Branches {
+// bringBackPlanMoves is the move of each branch that is not at the host's commit yet. It
+// refuses when a branch has commits of its own here, or is checked out with uncommitted
+// changes, before anything is changed.
+func bringBackPlanMoves(path string, branches []wire.SentBranch, checkedOut map[string]string) ([]bringBackMove, error) {
+	var moves []bringBackMove
+	for _, b := range branches {
 		if _, err := git(path, "cat-file", "-e", b.Commit+"^{commit}"); err != nil {
-			return done, Invalid("This Mac does not have the commits of %s. Bring back again. Nothing was changed.", b.Name)
+			return nil, Invalid("This Mac does not have the commits of %s. Bring back again. Nothing was changed.", b.Name)
 		}
 		have, _ := git(path, "rev-parse", "-q", "--verify", "refs/heads/"+b.Name)
 		switch {
@@ -101,38 +153,46 @@ func (d *Daemon) bringBack(r wire.BringBackRequest) (wire.BringBack, error) {
 			continue
 		case have != "":
 			if _, err := git(path, "merge-base", "--is-ancestor", have, b.Commit); err != nil {
-				return done, &Error{Code: wire.FailureFolderInTheWay, Message: b.Name + " has commits of its own on this Mac that the machine does not have. Nothing was changed."}
+				return nil, &Error{Code: wire.FailureFolderInTheWay, Message: b.Name + " has commits of its own on this Mac that the machine does not have. Nothing was changed."}
 			}
 		}
 		if root, ok := checkedOut[b.Name]; ok {
 			if status, err := git(root, "status", "--porcelain"); err != nil {
-				return done, err
+				return nil, err
 			} else if status != "" {
-				return done, &Error{Code: wire.FailureFolderInTheWay, Message: b.Name + " is checked out in " + shortPath(root) + " with uncommitted changes. Commit or remove them, then bring back again. Nothing was changed."}
+				return nil, &Error{Code: wire.FailureFolderInTheWay, Message: b.Name + " is checked out in " + shortPath(root) + " with uncommitted changes. Commit or remove them, then bring back again. Nothing was changed."}
 			}
 		}
-		moves = append(moves, move{b.Name, have, b.Commit})
+		moves = append(moves, bringBackMove{b.Name, have, b.Commit})
 	}
+	return moves, nil
+}
 
-	if patch != "" {
-		cur, _ := git(path, "symbolic-ref", "-q", "--short", "HEAD")
-		if cur != patchOn {
-			return done, Invalid("The uncommitted changes are on %s, and %s has %s checked out. Nothing was changed.", patchOn, here, cur)
-		}
-		if status, err := git(path, "status", "--porcelain"); err != nil {
-			return done, err
-		} else if status != "" {
-			return done, &Error{Code: wire.FailureFolderInTheWay, Message: here + " has uncommitted changes. Commit or remove them to take the machine's, then bring back again. Nothing was changed."}
-		}
-		if err := patchApplies(path, patchOn, r.Branches, patch); err != nil {
-			return done, Invalid("The machine's uncommitted changes do not apply here: %s Nothing was changed.", err.Error())
-		}
+// bringBackCheckPatch checks that the patch can apply here: its branch is checked out at
+// path with no uncommitted changes, and it applies to the commit its branch moves to.
+func bringBackCheckPatch(path, here, patchOn string, branches []wire.SentBranch, patch string) error {
+	cur, _ := git(path, "symbolic-ref", "-q", "--short", "HEAD")
+	if cur != patchOn {
+		return Invalid("The uncommitted changes are on %s, and %s has %s checked out. Nothing was changed.", patchOn, here, cur)
 	}
+	if status, err := git(path, "status", "--porcelain"); err != nil {
+		return err
+	} else if status != "" {
+		return &Error{Code: wire.FailureFolderInTheWay, Message: here + " has uncommitted changes. Commit or remove them to take the machine's, then bring back again. Nothing was changed."}
+	}
+	if err := patchApplies(path, patchOn, branches, patch); err != nil {
+		return Invalid("The machine's uncommitted changes do not apply here: %s Nothing was changed.", err.Error())
+	}
+	return nil
+}
 
+// bringBackApplyMoves moves each branch forward, where it is checked out or by its ref, and
+// adds its name to done.Moved.
+func bringBackApplyMoves(path string, moves []bringBackMove, checkedOut map[string]string, done *wire.BringBack) error {
 	for _, m := range moves {
 		if root, ok := checkedOut[m.name]; ok {
 			if _, err := git(root, "merge", "-q", "--ff-only", m.to); err != nil {
-				return done, err
+				return err
 			}
 		} else {
 			args := []string{"update-ref", "-m", "Bring back from host", "refs/heads/" + m.name, m.to}
@@ -140,20 +200,24 @@ func (d *Daemon) bringBack(r wire.BringBackRequest) (wire.BringBack, error) {
 				args = append(args, m.from)
 			}
 			if _, err := git(path, args...); err != nil {
-				return done, err
+				return err
 			}
 		}
 		done.Moved = append(done.Moved, m.name)
 	}
-	if patch != "" {
-		if fi, err := os.Stat(patch); err == nil && fi.Size() > 0 {
-			if _, err := git(path, "apply", "--binary", "--whitespace=nowarn", patch); err != nil {
-				return done, Invalid("The commits came back, but the uncommitted changes did not apply: %s", err.Error())
-			}
-			done.Applied = true
+	return nil
+}
+
+// bringBackApplyPatch applies the host's uncommitted changes at path, when the patch is not
+// empty, and sets done.Applied.
+func bringBackApplyPatch(path, patch string, done *wire.BringBack) error {
+	if fi, err := os.Stat(patch); err == nil && fi.Size() > 0 {
+		if _, err := git(path, "apply", "--binary", "--whitespace=nowarn", patch); err != nil {
+			return Invalid("The commits came back, but the uncommitted changes did not apply: %s", err.Error())
 		}
+		done.Applied = true
 	}
-	return done, nil
+	return nil
 }
 
 // patchApplies checks the patch against the commit patchOn moves to, in an index of its

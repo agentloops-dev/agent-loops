@@ -135,6 +135,28 @@ func (f *RealForgejo) CompletedRuns(ctx context.Context, repo, workflow, branch 
 	if run != 0 {
 		list += fmt.Sprintf("?run_number=%d", run)
 	}
+	runs, listed, err := f.runsSince(ctx, list, cutoff)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var out []CompletedRun
+	for _, r := range runs {
+		at := mcpevents.Normalized(r.finishedAt())
+		if !r.finishedAs(at, workflow, branch, run, since) {
+			continue
+		}
+		c, err := f.completedRun(ctx, repo, r, at)
+		if err != nil {
+			return nil, Listed{}, err
+		}
+		out = append(out, c)
+	}
+	return out, listed, nil
+}
+
+// runsSince are the runs of list, newest first, page by page, until a run made before cutoff
+// (none: every page, up to maxPages).
+func (f *RealForgejo) runsSince(ctx context.Context, list, cutoff string) ([]actionRunJSON, Listed, error) {
 	var runs []actionRunJSON
 	var listed Listed
 	for p := 1; ; p++ {
@@ -160,27 +182,31 @@ func (f *RealForgejo) CompletedRuns(ctx context.Context, repo, workflow, branch 
 			break
 		}
 	}
-	var out []CompletedRun
-	for _, r := range runs {
-		at := mcpevents.Normalized(r.finishedAt())
-		if r.result() == "" || at == "" || mcpevents.Before(at, since) || (run != 0 && r.number() != run) ||
-			(workflow != "" && !strings.EqualFold(r.workflow(), workflow)) || (branch != "" && r.branch() != branch) {
-			continue
+	return runs, listed, nil
+}
+
+// finishedAs says whether r finished, at at, no earlier than since, and is the run, of the
+// workflow and on the branch asked for (each left out: any).
+func (r actionRunJSON) finishedAs(at, workflow, branch string, run int, since string) bool {
+	return r.result() != "" && at != "" && !mcpevents.Before(at, since) && (run == 0 || r.number() == run) &&
+		(workflow == "" || strings.EqualFold(r.workflow(), workflow)) && (branch == "" || r.branch() == branch)
+}
+
+// completedRun is r as run.completed raises it, finished at at, trusted when a collaborator
+// with write access started it and it is not a fork's pull request's.
+func (f *RealForgejo) completedRun(ctx context.Context, repo string, r actionRunJSON, at string) (CompletedRun, error) {
+	u := r.by()
+	trusted := false
+	if !r.IsForkPR {
+		var err error
+		if trusted, err = f.trusted(ctx, repo, u); err != nil {
+			return CompletedRun{}, err
 		}
-		u := r.by()
-		trusted := false
-		if !r.IsForkPR {
-			var err error
-			if trusted, err = f.trusted(ctx, repo, u); err != nil {
-				return nil, Listed{}, err
-			}
-		}
-		c := CompletedRun{Number: r.number(), Name: first(r.Title, r.DisplayTitle), Workflow: r.workflow(), Event: first(r.Event, r.TriggerEvent),
-			Branch: r.branch(), SHA: first(r.HeadSHA, r.CommitSHA), URL: r.HTMLURL, Result: r.result(), At: at, Trusted: trusted}
-		if u != nil {
-			c.Actor = u.Login
-		}
-		out = append(out, c)
 	}
-	return out, listed, nil
+	c := CompletedRun{Number: r.number(), Name: first(r.Title, r.DisplayTitle), Workflow: r.workflow(), Event: first(r.Event, r.TriggerEvent),
+		Branch: r.branch(), SHA: first(r.HeadSHA, r.CommitSHA), URL: r.HTMLURL, Result: r.result(), At: at, Trusted: trusted}
+	if u != nil {
+		c.Actor = u.Login
+	}
+	return c, nil
 }

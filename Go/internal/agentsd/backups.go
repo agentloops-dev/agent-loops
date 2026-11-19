@@ -700,47 +700,19 @@ func (d *Daemon) restoreArchive(archive, madeIn string, mine, withRoot bool, int
 		return res, err
 	}
 	defer os.RemoveAll(staging)
-	var held wire.UUID
-	var record []byte
-	files := map[string]string{}
-	drop := func() {
-		for _, p := range files {
-			os.Remove(p)
-		}
-		held, record, files = "", nil, map[string]string{}
-	}
 	// An agent this machine deleted is never restored (#1001).
 	d.erasures.mu.Lock()
 	erased := d.readErasedLocked()
 	d.erasures.mu.Unlock()
-	flush := func() error {
-		if held == "" {
-			return nil
-		}
-		if _, gone := erased[held]; gone {
-			drop()
-			res.Skipped++
-			return nil
-		}
-		restored, err := d.restoreAgent(held, record, files, madeIn, mine, into, in)
-		drop()
-		if err != nil {
-			return err
-		}
-		if restored {
-			res.Restored++
-		} else {
-			res.Skipped++
-		}
-		return nil
-	}
+	r := &archiveRestore{d: d, staging: staging, files: map[string]string{}, erased: erased,
+		madeIn: madeIn, mine: mine, into: into, in: in}
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return res, fmt.Errorf("the backup can't be read: %w", err)
+			return r.res, fmt.Errorf("the backup can't be read: %w", err)
 		}
 		if h.Typeflag != tar.TypeReg {
 			continue
@@ -749,52 +721,118 @@ func (d *Daemon) restoreArchive(archive, madeIn string, mine, withRoot bool, int
 			continue
 		}
 		if h.Size > backupEntryMost {
-			return res, fmt.Errorf("the backup can't be read: %s is more than %d MB", h.Name, backupEntryMost>>20)
+			return r.res, fmt.Errorf("the backup can't be read: %s is more than %d MB", h.Name, backupEntryMost>>20)
 		}
-		switch {
-		case h.Name == erasedFile:
-			b, err := readHeld(tr, h)
-			if err != nil {
-				return res, err
-			}
-			d.takeErasedList(b)
-		case slices.Contains(backupRootFiles, h.Name):
-			b, err := readHeld(tr, h)
-			if err != nil {
-				return res, err
-			}
-			p := filepath.Join(d.Store.Loc.Root, h.Name)
-			if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
-				if err := store.WriteAtomically(p, b, 0o600); err != nil {
-					return res, err
-				}
-			}
-		case strings.HasPrefix(h.Name, "agents/"):
-			parts := strings.Split(h.Name, "/")
-			if len(parts) != 3 || !slices.Contains(backupAgentFiles, parts[2]) || !backupAgentID(parts[1]) {
-				continue
-			}
-			id := wire.UUID(strings.ToUpper(parts[1]))
-			if id != held {
-				if err := flush(); err != nil {
-					return res, err
-				}
-				held = id
-			}
-			if parts[2] == "agent.json" {
-				if record, err = readHeld(tr, h); err != nil {
-					return res, err
-				}
-				continue
-			}
-			p := filepath.Join(staging, parts[2])
-			if err := writeStaged(p, tr, h.Size); err != nil {
-				return res, err
-			}
-			files[parts[2]] = p
+		if err := r.takeEntry(tr, h); err != nil {
+			return r.res, err
 		}
 	}
-	return res, flush()
+	err = r.flush()
+	return r.res, err
+}
+
+// archiveRestore is the state of one restoreArchive: the counts so far, and the agent whose
+// files it holds until the next agent's begin.
+type archiveRestore struct {
+	d       *Daemon
+	res     wire.BackupRestoreResult
+	staging string
+	held    wire.UUID
+	record  []byte
+	files   map[string]string
+	erased  map[wire.UUID]time.Time
+	madeIn  string
+	mine    bool
+	into    string
+	in      *arrival
+}
+
+// drop removes the held agent's staged files and forgets that agent.
+func (r *archiveRestore) drop() {
+	for _, p := range r.files {
+		os.Remove(p)
+	}
+	r.held, r.record, r.files = "", nil, map[string]string{}
+}
+
+// flush restores the held agent, or skips it when this machine erased it, and counts it.
+func (r *archiveRestore) flush() error {
+	if r.held == "" {
+		return nil
+	}
+	if _, gone := r.erased[r.held]; gone {
+		r.drop()
+		r.res.Skipped++
+		return nil
+	}
+	restored, err := r.d.restoreAgent(r.held, r.record, r.files, r.madeIn, r.mine, r.into, r.in)
+	r.drop()
+	if err != nil {
+		return err
+	}
+	if restored {
+		r.res.Restored++
+	} else {
+		r.res.Skipped++
+	}
+	return nil
+}
+
+// takeEntry takes one regular file of the archive: the erased list, a root file, or an
+// agent's file.
+func (r *archiveRestore) takeEntry(tr *tar.Reader, h *tar.Header) error {
+	switch {
+	case h.Name == erasedFile:
+		b, err := readHeld(tr, h)
+		if err != nil {
+			return err
+		}
+		r.d.takeErasedList(b)
+	case slices.Contains(backupRootFiles, h.Name):
+		b, err := readHeld(tr, h)
+		if err != nil {
+			return err
+		}
+		p := filepath.Join(r.d.Store.Loc.Root, h.Name)
+		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
+			if err := store.WriteAtomically(p, b, 0o600); err != nil {
+				return err
+			}
+		}
+	case strings.HasPrefix(h.Name, "agents/"):
+		return r.takeAgentEntry(tr, h)
+	}
+	return nil
+}
+
+// takeAgentEntry takes one file of an agent's folder. A file of a new agent first restores
+// the held one. The record is held in memory; the other files are staged on disk.
+func (r *archiveRestore) takeAgentEntry(tr *tar.Reader, h *tar.Header) error {
+	parts := strings.Split(h.Name, "/")
+	if len(parts) != 3 || !slices.Contains(backupAgentFiles, parts[2]) || !backupAgentID(parts[1]) {
+		return nil
+	}
+	id := wire.UUID(strings.ToUpper(parts[1]))
+	if id != r.held {
+		if err := r.flush(); err != nil {
+			return err
+		}
+		r.held = id
+	}
+	if parts[2] == "agent.json" {
+		record, err := readHeld(tr, h)
+		if err != nil {
+			return err
+		}
+		r.record = record
+		return nil
+	}
+	p := filepath.Join(r.staging, parts[2])
+	if err := writeStaged(p, tr, h.Size); err != nil {
+		return err
+	}
+	r.files[parts[2]] = p
+	return nil
 }
 
 // restoreAgent writes one agent's folder and saves its record archived; false when this

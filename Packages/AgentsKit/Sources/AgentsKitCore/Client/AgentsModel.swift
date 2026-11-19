@@ -28,6 +28,11 @@ public final class AgentsModel {
     /// offers a runtime reads, rather than `agents`, so it draws again only when this
     /// moves (#2732). A machine with no agent held is absent.
     public private(set) var lastRuntimes: [MachineRef: String] = [:]
+    /// How many sessions work and wait on each machine (P20261117-1), kept as agents are
+    /// filed and set only when a count moves: what the sidebar's Machines group and its rows
+    /// read, through `sessionCounts(on:)`, rather than `agents` (#165). One entry per machine
+    /// with a session working or waiting; a machine with none is absent.
+    public private(set) var sessionsByMachine: [MachineRef: MachineSessionCounts] = [:]
     /// Moves each time an agent held here becomes archived: what lets the window let go
     /// of that agent's draft without looking at everything (#176).
     public private(set) var archivals = 0
@@ -2220,10 +2225,18 @@ public final class AgentsModel {
     /// still says blocked — that is the resumed turn, and it is working.
     public func openBlock(_ agent: Agent) -> (report: WorkReport, block: Block)? {
         // Only a wait the app clears by itself (#1916): an old record's block with nothing to
-        // wait on is done, and has no Carry on.
-        guard agent.state == .finished, let report = agent.report, report.isOpenBlock, agent.isWaiting
+        // wait on is done, and has no Carry on. A report that waits with no block is a wait on
+        // events, which has a card of its own: no block is made up for it (#6065).
+        guard agent.state == .finished, agent.eventWait?.isOpen != true, let report = agent.report,
+              report.resumesByItself, let block = report.block
         else { return nil }
-        return (report, report.block ?? Block())
+        return (report, block)
+    }
+
+    /// Whether a finished agent's turn is held until the app carries it on: a block on
+    /// sessions or a deadline, or a wait on events. Carry On and Stop are for it.
+    public func isHeld(_ agent: Agent) -> Bool {
+        agent.state == .finished && agent.report?.isOpenBlock == true && agent.isWaiting
     }
 
     /// What an agent that is waited on is called now: its current title, or the one it
@@ -2302,7 +2315,7 @@ public final class AgentsModel {
         // A blocked chat too (039): it holds nothing, but a resume is coming, and Stop
         // is how the person calls it off.
         // And a queued one (#362): Stop takes it off the queue.
-        agent.state.holdsRuntime || agent.state == .queued || isComingBack(agent) || openBlock(agent) != nil
+        agent.state.holdsRuntime || agent.state == .queued || isComingBack(agent) || isHeld(agent)
     }
 
     /// The one thing every client says about a chat on its way back, so the window
@@ -2483,6 +2496,7 @@ public final class AgentsModel {
             shelf(folder).insert(agent, in: group)
         }
         filedAs[agent.id] = (folder, agent.host, group)
+        countSession(from: was.map { ($0.host, $0.group) }, to: (agent.host, group))
         cells[agent.id]?.agent = agent
         if titles[agent.id] != agent.title {
             titles[agent.id] = agent.title
@@ -2509,6 +2523,36 @@ public final class AgentsModel {
     private func noteLastRuntime(on host: MachineRef) {
         let runtimeID = agents.first { $0.host == host }.map(Self.chosenRuntime)
         if lastRuntimes[host] != runtimeID { lastRuntimes[host] = runtimeID }
+    }
+
+    /// How many of a machine's sessions work and wait (P20261117-1): what the sidebar's Machines
+    /// group, its rows and the Machines page's Working column read, never `agents`.
+    public func sessionCounts(on host: MachineRef) -> MachineSessionCounts {
+        sessionsByMachine[host] ?? MachineSessionCounts()
+    }
+
+    /// An agent out of one machine's count and into another's, as it is filed. Nothing is
+    /// set when it stays in the same count, so its readers draw only when one moves.
+    private func countSession(from was: (host: MachineRef, group: AgentGroup)?,
+                              to now: (host: MachineRef, group: AgentGroup)?) {
+        if let was, let now, was.host == now.host,
+           MachineSessions.Group(was.group) == MachineSessions.Group(now.group) { return }
+        if let was { countSession(was.host, was.group, by: -1) }
+        if let now { countSession(now.host, now.group, by: 1) }
+    }
+
+    private func countSession(_ host: MachineRef, _ group: AgentGroup, by: Int) {
+        var counts = sessionsByMachine[host] ?? MachineSessionCounts()
+        guard counts.add(group, by: by) else { return }
+        sessionsByMachine[host] = counts.busy ? counts : nil
+    }
+
+    /// Every machine's counts again, from the whole list: a refile's one pass.
+    private func countSessions() {
+        var counts: [MachineRef: MachineSessionCounts] = [:]
+        for (_, filed) in filedAs { counts[filed.host, default: MachineSessionCounts()].add(filed.group) }
+        let busy = counts.filter { $0.value.busy }
+        if busy != sessionsByMachine { sessionsByMachine = busy }
     }
 
     /// Every machine's last runtime again, in one pass of the list.
@@ -2573,6 +2617,7 @@ public final class AgentsModel {
             if started[starter]?.isEmpty == true { started[starter] = nil }
         }
         if let was = filedAs.removeValue(forKey: old.id) {
+            countSession(from: (was.host, was.group), to: nil)
             shelves[ShelfKey(folder: was.folder, host: was.host)]?.remove(old, from: was.group)
             folderShelves[was.folder]?.remove(old, from: was.group)
         }
@@ -2621,6 +2666,7 @@ public final class AgentsModel {
             byKey[ShelfKey(folder: folder, host: agent.host), default: [:]][group, default: []].append(agent)
             byFolder[folder, default: [:]][group, default: []].append(agent)
         }
+        countSessions()
         for (key, groups) in byKey { byKey[key] = groups.sortedInGroupOrder() }
         for (folder, groups) in byFolder { byFolder[folder] = groups.sortedInGroupOrder() }
         for (key, shelf) in shelves where byKey[key] == nil { shelf.replaceAll([:]) }

@@ -122,6 +122,13 @@ func (d *Daemon) register() {
 	d.registerMCPTools()
 	// Person settings sync across machines, but local edits remain allowed (#2410).
 	d.registerUserScope()
+	d.registerQuestionsAndRuntimes()
+	d.registerAgentCalls()
+}
+
+// registerQuestionsAndRuntimes serves the questions that wait for an answer, the runtimes and
+// relay/offer.
+func (d *Daemon) registerQuestionsAndRuntimes() {
 	On(d, wire.CallPermissionsPending, func(ctx context.Context, c *Client, _ wire.Empty) ([]wire.PermissionRequest, error) {
 		return d.pendingPermissions(), nil
 	})
@@ -158,7 +165,10 @@ func (d *Daemon) register() {
 		}
 		return wire.Empty{}, d.offerRelay(o)
 	})
+}
 
+// registerAgentCalls serves folders/list, folders/add and the agents/ calls.
+func (d *Daemon) registerAgentCalls() {
 	On(d, wire.CallFoldersList, func(ctx context.Context, c *Client, r wire.FoldersListRequest) ([]wire.FolderSummary, error) {
 		return d.folders(r.IncludeArchived), nil
 	})
@@ -560,6 +570,33 @@ func (d *Daemon) listAgents(r wire.ListRequest) []wire.Agent {
 	read := 0
 	issue := d.issueSearchOf(query)
 	projects := projectsOfFolders{}
+	agents := d.listAgentsRecords(r)
+	for _, a := range agents {
+		if !listAgentsKeeps(&a, r, after, projects) {
+			continue
+		}
+		// A search (#165) asks for the sessions it matches; what was said is read for the
+		// most recently active saidSessions only (#1585).
+		if issue != nil {
+			if !issue.matches(a) {
+				continue
+			}
+		} else if query != "" {
+			if read++; read > saidSessions && !d.titleMatches(a, query) || read <= saidSessions && !d.queryMatches(a, query) {
+				continue
+			}
+		}
+		out = append(out, withProject(d.listed(a, r), projects.of(&a)))
+		if int64(len(out)) == limit {
+			break
+		}
+	}
+	return out
+}
+
+// listAgentsRecords is the records agents/list reads, archived-only ones newest archived
+// first.
+func (d *Daemon) listAgentsRecords(r wire.ListRequest) []wire.Agent {
 	var agents []wire.Agent
 	switch {
 	// Only what changed since (#4785), every one and archived ones too, whatever the list
@@ -580,50 +617,39 @@ func (d *Daemon) listAgents(r wire.ListRequest) []wire.Agent {
 			return agents[i].ID < agents[j].ID
 		})
 	}
-	for _, a := range agents {
-		archived := a.State == wire.AgentStateArchived
-		if r.ChangedSince == nil && (archived && !r.IncludeArchived && !r.ArchivedOnly || r.ArchivedOnly && !archived) {
-			continue
+	return agents
+}
+
+// listAgentsKeeps is whether agents/list keeps a by the request's archived, folder, workflow
+// and project, and is after the page's cursor. The search is not checked here.
+func listAgentsKeeps(a *wire.Agent, r wire.ListRequest, after *wire.ListCursor, projects projectsOfFolders) bool {
+	archived := a.State == wire.AgentStateArchived
+	if r.ChangedSince == nil && (archived && !r.IncludeArchived && !r.ArchivedOnly || r.ArchivedOnly && !archived) {
+		return false
+	}
+	if r.Folder != nil && folderPath(a) != store.FolderPath(*r.Folder) {
+		return false
+	}
+	if r.StartedByWorkflow != nil && (a.StartedByWorkflow == nil || *a.StartedByWorkflow != *r.StartedByWorkflow) {
+		return false
+	}
+	// The project's sessions on this machine (#3276): those whose folder names it.
+	if r.Project != nil && projects.of(a) != *r.Project {
+		return false
+	}
+	if c := after; c != nil && !r.ArchivedOnly && (a.LastActivityAt > c.LastActivityAt || a.LastActivityAt == c.LastActivityAt && a.ID <= c.ID) {
+		return false
+	}
+	if c := after; c != nil && r.ArchivedOnly {
+		at := c.LastActivityAt
+		if c.ArchivedAt != nil {
+			at = *c.ArchivedAt
 		}
-		if r.Folder != nil && folderPath(&a) != store.FolderPath(*r.Folder) {
-			continue
-		}
-		if r.StartedByWorkflow != nil && (a.StartedByWorkflow == nil || *a.StartedByWorkflow != *r.StartedByWorkflow) {
-			continue
-		}
-		// The project's sessions on this machine (#3276): those whose folder names it.
-		if r.Project != nil && projects.of(&a) != *r.Project {
-			continue
-		}
-		if c := after; c != nil && !r.ArchivedOnly && (a.LastActivityAt > c.LastActivityAt || a.LastActivityAt == c.LastActivityAt && a.ID <= c.ID) {
-			continue
-		}
-		if c := after; c != nil && r.ArchivedOnly {
-			at := c.LastActivityAt
-			if c.ArchivedAt != nil {
-				at = *c.ArchivedAt
-			}
-			if o := archivedOrder(&a); o > at || o == at && a.ID <= c.ID {
-				continue
-			}
-		}
-		// A search (#165) asks for the sessions it matches; what was said is read for the
-		// most recently active saidSessions only (#1585).
-		if issue != nil {
-			if !issue.matches(a) {
-				continue
-			}
-		} else if query != "" {
-			if read++; read > saidSessions && !d.titleMatches(a, query) || read <= saidSessions && !d.queryMatches(a, query) {
-				continue
-			}
-		}
-		out = append(out, withProject(d.listed(a, r), projects.of(&a)))
-		if int64(len(out)) == limit {
-			break
+		if o := archivedOrder(a); o > at || o == at && a.ID <= c.ID {
+			return false
 		}
 	}
-	return out
+	return true
 }
 
 // maxPage is the most entries one transcript page carries (TranscriptRequest.bounded).

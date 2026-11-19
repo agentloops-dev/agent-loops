@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -186,5 +187,107 @@ func TestAHelperNamesANewWorktree(t *testing.T) {
 		if _, err := d.helperWorktree(refused, dir); err == nil || !strings.Contains(err.Error(), "there is no worktree called") {
 			t.Fatalf("%s: %v", refused, err)
 		}
+	}
+}
+
+// A worktree is also found by its branch, with or without agents/ and origin/ (#6033):
+// leads gave agents/<name> and origin/agents/<name> for the worktree <name>. A branch
+// that two worktrees have is refused, naming both.
+func TestAHelperFindsAWorktreeByItsBranch(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := repo(t)
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	lane := filepath.Join(canonical(t.TempDir()), "work-github-issue-5287")
+	run("worktree", "add", "-q", "-b", "agents/fix-github-issue-5287", lane)
+	run("branch", "loose") // checked out nowhere
+	for _, written := range []string{"work-github-issue-5287", "agents/fix-github-issue-5287", "fix-github-issue-5287",
+		"origin/agents/fix-github-issue-5287", "origin/fix-github-issue-5287", "refs/heads/agents/fix-github-issue-5287"} {
+		choice, err := d.helperWorktree(written, dir)
+		if err != nil || choice == nil || choice.Existing == nil || store.FolderPath(choice.Existing.Value) != lane {
+			t.Fatalf("%s: %+v %v", written, choice, err)
+		}
+	}
+	// A branch checked out nowhere still makes a worktree on it; a new name still names one.
+	if choice, err := d.helperWorktree("loose", dir); err != nil || choice.Branch == nil || choice.Branch.Value != "loose" {
+		t.Fatalf("loose: %+v %v", choice, err)
+	}
+	if choice, err := d.helperWorktree("fix-github-issue-6033", dir); err != nil || choice.Named == nil || choice.Named.Value != "fix-github-issue-6033" {
+		t.Fatalf("new name: %+v %v", choice, err)
+	}
+	if _, err := d.helperWorktree("origin/agents/no-such-branch", dir); err == nil || !strings.Contains(err.Error(), "there is no worktree called") {
+		t.Fatalf("no such branch: %v", err)
+	}
+
+	// Two worktrees on one branch (git worktree add --force): refused, naming both.
+	twin := filepath.Join(canonical(t.TempDir()), "twin")
+	run("worktree", "add", "-q", "--force", twin, "agents/fix-github-issue-5287")
+	_, err := d.helperWorktree("agents/fix-github-issue-5287", dir)
+	if err == nil || !strings.Contains(err.Error(), "more than one worktree") ||
+		!strings.Contains(err.Error(), "work-github-issue-5287") || !strings.Contains(err.Error(), "twin") {
+		t.Fatalf("shared branch: %v", err)
+	}
+	// Its name still finds each.
+	if choice, err := d.helperWorktree("twin", dir); err != nil || choice.Existing == nil || store.FolderPath(choice.Existing.Value) != twin {
+		t.Fatalf("twin: %+v %v", choice, err)
+	}
+}
+
+// Only git's own "not a git repository" is the folder being in none: any other failure is
+// git's words, never the false "not in a git repository" (#6106).
+func TestARepositoryGitCannotReadIsNotCalledNone(t *testing.T) {
+	t.Parallel()
+
+	if _, err := findRepository(t.TempDir()); !errors.Is(err, errNotARepository) {
+		t.Fatalf("a plain folder: %v", err)
+	}
+	dir := repo(t)
+	if r, err := findRepository(dir); err != nil || canonical(r.toplevel) != canonical(dir) {
+		t.Fatalf("a repository: %+v %v", r, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[core\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := findRepository(dir)
+	if err == nil || errors.Is(err, errNotARepository) {
+		t.Fatalf("a config git cannot read: %v", err)
+	}
+	// A git the system cannot start says why, not only that it failed.
+	if _, err := git(filepath.Join(dir, "gone"), "status"); err == nil || !strings.Contains(err.Error(), "git status could not start: ") {
+		t.Fatalf("a git that did not start: %v", err)
+	}
+	if words := repositoryWords(err, "not in one", "Git said:"); !strings.HasPrefix(words, "Git said: ") || !strings.Contains(words, "config") {
+		t.Fatal(words)
+	}
+}
+
+// A new worktree's base is the branch, or the commit when detached, and nil when git
+// cannot read it: never "", which made the note say "from ." (#6098).
+func TestANewWorktreesBaseIsNeverEmpty(t *testing.T) {
+	t.Parallel()
+
+	dir := repo(t)
+	head, err := git(dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := worktreeBase(dir, head); got == nil || *got != "main" {
+		t.Fatalf("on main: %v", got)
+	}
+	run(t, dir, "git", "checkout", "-q", "--detach")
+	if got := worktreeBase(dir, head); got == nil || *got != head {
+		t.Fatalf("detached: %v", got)
+	}
+	if got := worktreeBase(filepath.Join(dir, "gone"), head); got != nil {
+		t.Fatalf("git failed: %q", *got)
 	}
 }

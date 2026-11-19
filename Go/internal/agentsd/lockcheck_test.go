@@ -46,9 +46,10 @@ const phoneClient = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
 // channelTo is a channel the control plane opened for a client: what the machine says
 // comes back as it came, MAC and all.
-func channelTo(d *Daemon) *conn {
+func channelTo(t testing.TB, d *Daemon) *conn {
 	c := newConn()
 	go d.Accept(c)
+	t.Cleanup(func() { close(c.in) }) // Accept ends with it (#6130)
 	return c
 }
 
@@ -109,7 +110,7 @@ func TestAMachineRefusesWhatTheControlPlaneForges(t *testing.T) {
 	d, phone, _, state := lockedMachine(t)
 
 	// The control plane's own request, with a client's identity on the channel: refused.
-	cp := channelTo(d)
+	cp := channelTo(t, d)
 	cp.send(requestLine(1, "folders/list", map[string]any{}))
 	if line := cp.answer(t, 1); !notInLockAnswer(line) {
 		t.Fatalf("an unsigned request was taken: %s", line)
@@ -132,7 +133,7 @@ func TestAMachineRefusesWhatTheControlPlaneForges(t *testing.T) {
 	}
 
 	// The real client opens a channel; its requests are taken, and the answers carry a MAC.
-	phoneChannel := channelTo(d)
+	phoneChannel := channelTo(t, d)
 	ch := hello(t, phoneChannel, state, phone)
 	request := requestLine(5, "folders/list", map[string]any{})
 	sealed := ch.Seal(request)
@@ -161,7 +162,7 @@ func TestAMachineRefusesWhatTheControlPlaneForges(t *testing.T) {
 	// It sends the client's hello again on a channel of its own: the machine answers, but
 	// the keys are the client's and the machine's alone, so its own MAC does not check.
 	again, _ := machinelock.NewHello(phone)
-	replay := channelTo(d)
+	replay := channelTo(t, d)
 	replay.send(requestLine(8, wire.CallLockHello.Name, again.Params))
 	replay.answer(t, 8)
 	replay.send(ch.Seal(requestLine(9, "folders/list", map[string]any{})))
@@ -174,7 +175,7 @@ func TestSignedRequestsFromAClientOrAMachineOfTheLock(t *testing.T) {
 	t.Parallel()
 
 	d, phone, peer, _ := lockedMachine(t)
-	c := channelTo(d)
+	c := channelTo(t, d)
 	signed := func(id int, key *ecdsa.PrivateKey, to, method string, params any) string {
 		p, _ := json.Marshal(params)
 		sig, err := machinelock.SignRequest(key, to, method, p, time.Now())
@@ -223,7 +224,7 @@ func TestAMachineWithNoLockTakesWhatItDidBefore(t *testing.T) {
 	t.Parallel()
 
 	d, _, _ := joinedMachine(t)
-	c := channelTo(d)
+	c := channelTo(t, d)
 	c.send(requestLine(1, "folders/list", map[string]any{}))
 	if line := c.answer(t, 1); notInLockAnswer(line) || !strings.Contains(line, `"result"`) {
 		t.Fatalf("an unsigned request with no lock: %s", line)
@@ -262,12 +263,12 @@ func TestOnlyTheMachinesOwnAccountResetsItsLock(t *testing.T) {
 	d, phone, _, state := lockedMachine(t)
 	pinned := d.LockPin()
 
-	cp := channelTo(d)
+	cp := channelTo(t, d)
 	cp.send(requestLine(1, wire.CallDaemonLockReset.Name, map[string]any{}))
 	if line := cp.answer(t, 1); !notInLockAnswer(line) {
 		t.Fatalf("the control plane's reset was taken: %s", line)
 	}
-	phoneChannel := channelTo(d)
+	phoneChannel := channelTo(t, d)
 	ch := hello(t, phoneChannel, state, phone)
 	phoneChannel.send(ch.Seal(requestLine(2, wire.CallDaemonLockReset.Name, map[string]any{})))
 	body, err := ch.Open(phoneChannel.answer(t, 2))
@@ -328,8 +329,8 @@ func TestWhatAMachineSaysUnaskedCarriesItsMAC(t *testing.T) {
 	t.Parallel()
 
 	d, phone, _, state := lockedMachine(t)
-	cp := channelTo(d)
-	phoneChannel := channelTo(d)
+	cp := channelTo(t, d)
+	phoneChannel := channelTo(t, d)
 	ch := hello(t, phoneChannel, state, phone)
 	// Every client is reached: the control plane's own channel unsealed, the phone's with its MAC.
 	cp.send(requestLine(1, "daemon/ping", map[string]any{}))
@@ -375,7 +376,7 @@ func TestTheControlPlaneStopsOnlyADraftsWriter(t *testing.T) {
 		a.Purpose = &wire.AgentPurpose{ProviderDraft: &wire.AgentPurposeProviderDraft{ID: wire.UUID(store.NewUUID())}}
 	})
 	work := seeded(t, d, cwd, nil)
-	cp := channelTo(d)
+	cp := channelTo(t, d)
 	cp.send(requestLine(1, wire.CallAgentsStop.Name, wire.AgentStopRequest{AgentID: work.ID}))
 	if line := cp.answer(t, 1); !notInLockAnswer(line) {
 		t.Fatalf("the control plane stopped a person's agent: %s", line)

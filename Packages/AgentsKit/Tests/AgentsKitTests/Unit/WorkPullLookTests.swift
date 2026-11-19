@@ -24,7 +24,7 @@ struct WorkPullLookTests {
         #expect(box.border == .pass)
         #expect(box.rows.map(\.title) == ["Approved", "All checks passed", "No conflicts with the base branch"])
         #expect(box.rows.map(\.line) == [nil, "1 passed, 1 skipped", nil])
-        #expect(box.merges && !box.waits && box.approves && !box.reruns && !box.checksOpen)
+        #expect(box.merges && !box.waits && box.approves && box.requests && box.closes && !box.reruns && !box.checksOpen)
         #expect(WorkLook.mergeMain([.squash, .merge], waits: box.waits) == "Squash and merge")
     }
 
@@ -50,7 +50,7 @@ struct WorkPullLookTests {
         let box = try #require(WorkLook.mergeBox(pull(draft: true, review: "review_required")))
         #expect(box.rows.first?.kind == .draft)
         #expect(!box.rows.contains { $0.kind == .review })
-        #expect(!box.merges && !box.approves)
+        #expect(!box.merges && !box.approves && !box.requests && !box.closes)
         #expect(box.border == .info)
     }
 
@@ -89,8 +89,21 @@ struct WorkPullLookTests {
         #expect(WorkLook.mergeBox(of(viewer: "alexec", [Reviewer(login: "kim", state: "approved")]))?.approved == false)
         #expect(WorkLook.mergeBox(of(viewer: nil, [Reviewer(login: "alexec", state: "approved")]))?.approved == false)
         let own = try #require(WorkLook.mergeBox(of(author: "alexec", viewer: "alexec", [])))
-        #expect(!own.approves && own.ownPull)
+        #expect(!own.approves && !own.requests && own.closes && own.ownPull)
         #expect(WorkLook.ownPullWords == "You opened this pull request, so you cannot approve it.")
+    }
+
+    /// Request changes follows the forge, and is absent on the person's own pull request. Close
+    /// stays there, and both are absent on a draft (#5857).
+    @Test func requestChangesAndCloseFollowTheForge() throws {
+        var gitlab = pull()
+        gitlab.actions = ["approve", "close", "merge"]
+        let noRequest = try #require(WorkLook.mergeBox(gitlab))
+        #expect(noRequest.approves && !noRequest.requests && noRequest.closes)
+        var commentOnly = pull()
+        commentOnly.actions = ["comment"]
+        let none = try #require(WorkLook.mergeBox(commentOnly))
+        #expect(!none.requests && !none.closes)
     }
 
     @Test func noBoxOnAMergedOrClosedPullRequestOrAnIssue() {

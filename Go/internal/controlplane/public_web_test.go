@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
@@ -48,63 +47,10 @@ func TestABrowserThroughThePublicPage(t *testing.T) {
 	defer s.Stop()
 
 	// The files, at the page's own name only, with the page's policy.
-	get := func(host, path string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodGet, path, nil)
-		r.Host = host
-		w := httptest.NewRecorder()
-		s.serveHTTP(w, r)
-		return w
-	}
-	if w := get("agents.test:8444", "/"); w.Code != http.StatusOK || w.Body.String() != string(index) ||
-		!strings.Contains(w.Header().Get("Content-Security-Policy"), "connect-src wss://agents.test:8444;") ||
-		!strings.Contains(w.Header().Get("Content-Security-Policy"), "frame-src 'none'") ||
-		w.Header().Get("X-Frame-Options") != "DENY" {
-		t.Fatalf("%d %v", w.Code, w.Header())
-	}
-	if w := get("rebound.example", "/index.html"); w.Code != http.StatusMisdirectedRequest || w.Body.Len() != 0 {
-		t.Fatalf("%d", w.Code)
-	}
-	if w := get("agents.test:8444", "/sandbox.html"); w.Code != http.StatusNotFound {
-		t.Fatalf("%d", w.Code)
-	}
-	if w := get("agents.test:8444", "/healthz"); w.Code != http.StatusOK {
-		t.Fatalf("%d", w.Code)
-	}
+	assertThePageServesItsFiles(t, s, index)
 
 	pair := func(browser bool, kind, origin string) (string, []byte, error) {
-		shown, err := s.Codes().Issue(context.Background(), false, browser, time.Minute)
-		if err != nil {
-			t.Fatal(err)
-		}
-		code, _ := controllink.ParseCode(shown.Text)
-		var l *controllink.Lines
-		at := origin
-		if origin == "" {
-			l, err = controllink.Dial(context.Background(), direct, "")
-			at = address
-		} else {
-			l, err = dialBrowser(direct, origin)
-		}
-		if err != nil {
-			return "", nil, err
-		}
-		defer l.Close()
-		if _, _, err := answerHello(l, controllink.Identity{Kind: 'p', ID: code.ID()}, controllink.CodeKey(code.Secret), at, "browser"); err != nil {
-			return "", nil, err
-		}
-		private := controllink.NewPrivateKey()
-		public, _ := controllink.PublicKey(private)
-		id := records.NewUUID()
-		params, _ := json.Marshal(wire.ClientAnnounce{ID: wire.UUID(id), PublicKey: public, Name: "Chrome", Kind: wire.ClientKind(kind)})
-		l.Write(context.Background(), `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`)
-		line, err := l.Read(context.Background())
-		if err != nil {
-			return "", nil, err
-		}
-		if !strings.Contains(line, `"result"`) {
-			return "", nil, fmt.Errorf("%s", line)
-		}
-		return id, private, nil
+		return pairThroughThePage(t, s, direct, address, browser, kind, origin)
 	}
 	// A window's code is no good on the page, and a browser's code is no good for a window.
 	if _, _, err := pair(false, records.KindBrowser, page); err == nil || !strings.Contains(err.Error(), "Get one from Add a Browser") {
@@ -128,15 +74,7 @@ func TestABrowserThroughThePublicPage(t *testing.T) {
 	public, _ := controllink.PublicKey(s.cfg.PrivateKey)
 	key, _ := controllink.ClientKey(private, public, id)
 	connect := func(origin string) error {
-		var l *controllink.Lines
-		var err error
-		at := origin
-		if origin == "" {
-			l, err = controllink.Dial(context.Background(), direct, "")
-			at = address
-		} else {
-			l, err = dialBrowser(direct, origin)
-		}
+		l, at, err := dialPageOrWindow(direct, address, origin)
 		if err != nil {
 			return err
 		}
@@ -163,6 +101,77 @@ func TestABrowserThroughThePublicPage(t *testing.T) {
 	if err := connect(page); err == nil || !strings.Contains(err.Error(), "refused") {
 		t.Fatal(err)
 	}
+}
+
+// assertThePageServesItsFiles checks the page's files are served at its own name only, with
+// the page's policy.
+func assertThePageServesItsFiles(t *testing.T, s *Service, index []byte) {
+	t.Helper()
+	get := func(host, path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.Host = host
+		w := httptest.NewRecorder()
+		s.serveHTTP(w, r)
+		return w
+	}
+	if w := get("agents.test:8444", "/"); w.Code != http.StatusOK || w.Body.String() != string(index) ||
+		!strings.Contains(w.Header().Get("Content-Security-Policy"), "connect-src wss://agents.test:8444;") ||
+		!strings.Contains(w.Header().Get("Content-Security-Policy"), "frame-src 'none'") ||
+		w.Header().Get("X-Frame-Options") != "DENY" {
+		t.Fatalf("%d %v", w.Code, w.Header())
+	}
+	if w := get("rebound.example", "/index.html"); w.Code != http.StatusMisdirectedRequest || w.Body.Len() != 0 {
+		t.Fatalf("%d", w.Code)
+	}
+	if w := get("agents.test:8444", "/sandbox.html"); w.Code != http.StatusNotFound {
+		t.Fatalf("%d", w.Code)
+	}
+	if w := get("agents.test:8444", "/healthz"); w.Code != http.StatusOK {
+		t.Fatalf("%d", w.Code)
+	}
+}
+
+// dialPageOrWindow dials the listener as the page at origin, or as a window's socket when
+// origin is empty, and returns the address the hello must name.
+func dialPageOrWindow(direct, address, origin string) (*controllink.Lines, string, error) {
+	if origin == "" {
+		l, err := controllink.Dial(context.Background(), direct, "")
+		return l, address, err
+	}
+	l, err := dialBrowser(direct, origin)
+	return l, origin, err
+}
+
+// pairThroughThePage issues a code (a browser's when browser is set), pairs a client of the
+// kind with it from origin (a window's socket when empty), and returns the client's id and key.
+func pairThroughThePage(t *testing.T, s *Service, direct, address string, browser bool, kind, origin string) (string, []byte, error) {
+	t.Helper()
+	shown, err := s.Codes().Issue(context.Background(), false, browser, testCodeLife)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _ := controllink.ParseCode(shown.Text)
+	l, at, err := dialPageOrWindow(direct, address, origin)
+	if err != nil {
+		return "", nil, err
+	}
+	defer l.Close()
+	if _, _, err := answerHello(l, controllink.Identity{Kind: 'p', ID: code.ID()}, controllink.CodeKey(code.Secret), at, "browser"); err != nil {
+		return "", nil, err
+	}
+	private := controllink.NewPrivateKey()
+	public, _ := controllink.PublicKey(private)
+	id := records.NewUUID()
+	params, _ := json.Marshal(wire.ClientAnnounce{ID: wire.UUID(id), PublicKey: public, Name: "Chrome", Kind: wire.ClientKind(kind)})
+	l.Write(context.Background(), `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`)
+	line, err := l.Read(context.Background())
+	if err != nil {
+		return "", nil, err
+	}
+	if !strings.Contains(line, `"result"`) {
+		return "", nil, fmt.Errorf("%s", line)
+	}
+	return id, private, nil
 }
 
 // With a second name (#1484), the page frames the views' sandbox proxy there, and

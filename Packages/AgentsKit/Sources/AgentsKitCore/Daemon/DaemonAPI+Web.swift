@@ -303,6 +303,9 @@ public extension DaemonAPI {
                 Row(Method.forgeClose, params: ForgeCloseRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeMerge, params: ForgeMergeRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeApprove, params: ForgeApproveRequest.self, result: ForgeDone.self, kind: .hostRequest),
+                Row(Method.forgeRequestChanges, params: ForgeRequestChangesRequest.self, result: ForgeDone.self, kind: .hostRequest),
+                Row(Method.forgePriority, params: ForgePriorityRequest.self, result: ForgeDone.self, kind: .hostRequest),
+                Row(Method.forgeHold, params: ForgeHoldRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeRerun, params: ForgeNodeRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeCancelAutoMerge, params: ForgeNodeRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeReady, params: ForgeNodeRequest.self, result: ForgeDone.self, kind: .hostRequest),
@@ -554,6 +557,13 @@ public extension DaemonAPI {
                 Row(Method.hostsUnlink, params: MachineRequest.self, result: ControlMachine.self, kind: .controlRequest),
                 // Delete… on a machine's row in Machines (#3974).
                 Row(Method.hostsDeleteMachine, params: MachineRequest.self, result: Empty.self, kind: .controlRequest),
+                // Try Again on a machine's set-up (#5354), and warm pools: their cards, New Warm Pool…, Edit…,
+                // Delete… and New Machine's Start from (#5354).
+                Row(Method.hostsRetrySetup, params: MachineRequest.self, result: Empty.self, kind: .controlRequest),
+                Row(Method.poolList, params: Empty.self, result: WarmPools.self, kind: .controlRequest),
+                Row(Method.poolSet, params: WarmPoolSet.self, result: WarmPool.self, kind: .controlRequest),
+                Row(Method.poolDelete, params: WarmPoolRequest.self, result: Empty.self, kind: .controlRequest),
+                Row(Method.poolClaim, params: WarmPoolClaim.self, result: WarmPoolClaimed.self, kind: .controlRequest),
                 // Delete's question, Make Default and Check Again on a machine's row (#3979).
                 Row(Method.hostsCheckAgain, params: MachineRequest.self, result: Empty.self, kind: .controlRequest),
                 Row(Method.hostsDeletePreview, params: MachineRequest.self, result: StartedMachinePreview.self,

@@ -99,6 +99,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	dumpStacksOnSignal(ctx)
 	d, err := agentsd.New(ctx, cl.root)
 	if err != nil {
 		log.Fatal(err)
@@ -167,6 +168,13 @@ func main() {
 	<-ctx.Done()
 	log.Printf("shutting down")
 	d.Shutdown()
+	if d.RestartWanted() {
+		// A self-update put a new copy in bin/current (#5788): the service or the
+		// supervisor starts it.
+		_ = lock.Close()
+		log.Printf("restarting to run the update")
+		os.Exit(agentsd.ExitRestart)
+	}
 }
 
 // commandLine is DaemonCommandLine: the flags the install script and ssh pass.

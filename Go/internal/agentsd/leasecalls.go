@@ -20,8 +20,11 @@ import (
 
 const (
 	leaseCappedWords = " That is the longest a lease can run; extend it again before then if you need more."
-	leaseEmptyName   = "Nothing was leased: say which resource."
-	leaseNoCall      = "That conversation is not open any more, so nothing was leased."
+	// leaseLineCapWords is said when others wait in line (#6190): a holder keeps a lease at
+	// most one longest lease from when it got it, so the line moves.
+	leaseLineCapWords = " Others wait in line for it, so it cannot run past one longest lease from when you got it. Release it when you are done."
+	leaseEmptyName    = "Nothing was leased: say which resource."
+	leaseNoCall       = "That conversation is not open any more, so nothing was leased."
 )
 
 func ordinal(n int) string {
@@ -195,19 +198,7 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 	if d.Store.Agent(agent) == nil {
 		return "", &Error{Code: CodeNoSuchAgent, Message: leaseNoCall}
 	}
-	var minutes *int64
-	if raw, ok := args["minutes"]; ok {
-		var n float64
-		var s string
-		if json.Unmarshal(raw, &n) == nil {
-			m := int64(n)
-			minutes = &m
-		} else if json.Unmarshal(raw, &s) == nil {
-			if m, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
-				minutes = &m
-			}
-		}
-	}
+	minutes := leaseMinutesArg(args)
 	by := leaseBy(args["by"], now().Time())
 	wait := true
 	if raw, ok := args["wait"]; ok {
@@ -232,18 +223,7 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 		display = simulator
 	}
 	told := d.takeNotices(agent)
-	e := d.book.Entries[name]
-	if e == nil {
-		e = &leaseEntry{Kind: kind, DisplayName: display, Rules: standardRules, Line: []waiter{}, Leases: []wire.Lease{}}
-		if name == capacityResource {
-			e.Rules = capacityRules
-		}
-		for _, r := range d.declared {
-			if r.Name == name {
-				e.Rules = rulesOf(r)
-			}
-		}
-	}
+	e := d.leaseEntryOrNewLocked(name, kind, display)
 	length, capped := e.Rules.length(minutes)
 	t := now()
 	reply := ""
@@ -252,18 +232,9 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 	place := 0
 	switch i := holderIndex(e, agent); {
 	case i >= 0:
-		// Forward only: asking for less than is left does not shorten a lease.
-		l := e.Leases[i]
-		wanted := t.Time().Add(length)
-		if l.ExpiresAt.Time().After(wanted) {
-			wanted = l.ExpiresAt.Time()
-		}
-		ceiling := t.Time().Add(time.Duration(e.Rules.ceiling()) * time.Minute)
-		l.ExpiresAt = wire.DateOf(minTime(wanted, ceiling))
-		l.Warned = toldWhenItEnds(l, t)
-		e.Leases[i] = l
-		events = append(events, leaseEvent{extended: true, lease: l})
-		reply = extendedWords(l, capped || wanted.After(ceiling))
+		var ev leaseEvent
+		ev, reply = extendHeldLease(e, i, t, length, capped, len(e.Line) > 0)
+		events = append(events, ev)
 	case !e.full() && len(e.Line) == 0 && !d.heldByCapacity(name, e):
 		l := wire.Lease{Resource: name, DisplayName: e.DisplayName, Holder: agent, GrantedAt: t, ExpiresAt: wire.DateOf(t.Time().Add(length))}
 		l.Warned = toldWhenItEnds(l, t)
@@ -272,38 +243,14 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 		reply = grantedWords(l, capped)
 		d.takeKept(agent, name, t)
 	default:
-		orderLine(e, d.lineRank)
-		if j := lineIndex(e, agent); j >= 0 {
-			place = j + 1
-			queued = wait
-		} else if wait {
-			// A place it lost through no act of its own is kept (#4041).
-			asked := t
-			if kept, ok := d.takeKept(agent, name, t); ok && kept < t {
-				asked = kept
-			}
-			place = joinLine(e, waiter{AgentID: agent, AskedAt: asked, Minutes: minutes, By: by}, d.lineRank)
-			queued = true
-		}
+		place, queued = d.leaseLinePlaceLocked(e, agent, name, t, waiter{AgentID: agent, Minutes: minutes, By: by}, wait)
 	}
 	d.store(name, e)
 	higher := 0
 	if place > 0 {
 		higher = higherAhead(e, agent, d.lineRank)
 	}
-	held := d.heldWords(name, e.DisplayName)
-	// A free place held back by the machine's level says why (#4579), and a line now waits
-	// for the machine.
-	if why := d.computeHeld(); reply == "" && isCompute(name) && !e.full() && why != "" {
-		held = why
-		if queued {
-			d.capDraining = true
-		}
-	}
-	// A free place held back by the repository's CI says why (#5678).
-	if why := d.ciHeld(name); reply == "" && !e.full() && why != "" {
-		held = why
-	}
+	held := d.leaseHeldWordsLocked(name, e, reply, queued)
 	switch {
 	case reply != "":
 	case queued:
@@ -324,16 +271,7 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 	d.openLineWait(agent, name)
 	// Its turn may have come between joining the line and the wait opening: then it holds
 	// it, has been started again with the news, and nothing is left to wait for.
-	d.leaseMu.Lock()
-	var granted *wire.Lease
-	if e := d.book.Entries[name]; e != nil {
-		if i := holderIndex(e, agent); i >= 0 {
-			l := e.Leases[i]
-			granted = &l
-		}
-	}
-	d.leaseMu.Unlock()
-	if granted != nil {
+	if granted := d.heldLease(agent, name); granted != nil {
 		if a := d.Store.Agent(agent); a != nil {
 			if r, ok := lineWaitResource(a.EventWait, agent); ok && r == name && a.EventWait.Ending == nil {
 				d.endWait(agent, "agent", true)
@@ -342,6 +280,132 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 		return told + grantedWords(*granted, false), nil
 	}
 	return told + reply, nil
+}
+
+// leaseMinutesArg reads lease_resource's minutes, a number or a string of one, or nil.
+func leaseMinutesArg(args map[string]json.RawMessage) *int64 {
+	raw, ok := args["minutes"]
+	if !ok {
+		return nil
+	}
+	var n float64
+	var s string
+	if json.Unmarshal(raw, &n) == nil {
+		m := int64(n)
+		return &m
+	}
+	if json.Unmarshal(raw, &s) == nil {
+		if m, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+			return &m
+		}
+	}
+	return nil
+}
+
+// leaseEntryOrNewLocked gives the book's entry for name, or a new one with the rules
+// declared for it. A new entry is not in the book yet. Call it with leaseMu held.
+func (d *Daemon) leaseEntryOrNewLocked(name wire.ResourceName, kind wire.ResourceKind, display string) *leaseEntry {
+	if e := d.book.Entries[name]; e != nil {
+		return e
+	}
+	e := &leaseEntry{Kind: kind, DisplayName: display, Rules: standardRules, Line: []waiter{}, Leases: []wire.Lease{}}
+	if name == capacityResource {
+		e.Rules = capacityRules
+	}
+	for _, r := range d.declared {
+		if r.Name == name {
+			e.Rules = rulesOf(r)
+		}
+	}
+	return e
+}
+
+// extendHeldLease extends lease i of e to length from t, up to the rules' ceiling. It
+// only moves the end forward: asking for less than is left does not shorten a lease. When
+// others wait in line (#6190), the ceiling is from when the lease was granted, not from t: a
+// holder that asks again and again cannot keep the resource from the line for ever.
+func extendHeldLease(e *leaseEntry, i int, t wire.Date, length time.Duration, capped, lineWaits bool) (leaseEvent, string) {
+	l := e.Leases[i]
+	wanted := t.Time().Add(length)
+	if l.ExpiresAt.Time().After(wanted) {
+		wanted = l.ExpiresAt.Time()
+	}
+	longest := time.Duration(e.Rules.ceiling()) * time.Minute
+	ceiling := t.Time().Add(longest)
+	byLine := false
+	if lineWaits {
+		if fromGrant := l.GrantedAt.Time().Add(longest); fromGrant.Before(ceiling) {
+			ceiling, byLine = fromGrant, wanted.After(fromGrant)
+		}
+		// Never shorter than it is now: the cap only stops it going further.
+		ceiling = maxTime(ceiling, l.ExpiresAt.Time())
+	}
+	l.ExpiresAt = wire.DateOf(minTime(wanted, ceiling))
+	l.Warned = toldWhenItEnds(l, t)
+	e.Leases[i] = l
+	if byLine {
+		return leaseEvent{extended: true, lease: l}, extendedWords(l, false) + leaseLineCapWords
+	}
+	return leaseEvent{extended: true, lease: l}, extendedWords(l, capped || wanted.After(ceiling))
+}
+
+// leaseLinePlaceLocked gives the agent's place in e's line, and whether it waits there.
+// When it is not in line and wait is set, w joins the line, asked at t or at the place it
+// kept. Call it with leaseMu held.
+func (d *Daemon) leaseLinePlaceLocked(e *leaseEntry, agent wire.UUID, name wire.ResourceName, t wire.Date, w waiter, wait bool) (place int, queued bool) {
+	orderLine(e, d.lineRank)
+	if j := lineIndex(e, agent); j >= 0 {
+		return j + 1, wait
+	}
+	if !wait {
+		return 0, false
+	}
+	// A place it lost through no act of its own is kept (#4041).
+	w.AskedAt = t
+	if kept, ok := d.takeKept(agent, name, t); ok && kept < t {
+		w.AskedAt = kept
+	}
+	return joinLine(e, w, d.lineRank), true
+}
+
+// leaseHeldWordsLocked says why the resource is not free: its holders, or the machine's
+// level or the repository's CI when they hold back a free place. A line that waits for
+// the machine starts it draining. Call it with leaseMu held.
+func (d *Daemon) leaseHeldWordsLocked(name wire.ResourceName, e *leaseEntry, reply string, queued bool) string {
+	held := d.heldWords(name, e.DisplayName)
+	// A free place held back by the machine's level says why (#4579), and a line now waits
+	// for the machine.
+	if why := d.computeHeld(); reply == "" && isCompute(name) && !e.full() && why != "" {
+		held = why
+		if queued {
+			d.capDraining = true
+		}
+	}
+	// A free place held back by the repository's CI says why (#5678).
+	if why := d.ciHeld(name); reply == "" && !e.full() && why != "" {
+		held = why
+	}
+	return held
+}
+
+// heldLease gives a copy of the agent's lease on name, or nil when it holds none.
+func (d *Daemon) heldLease(agent wire.UUID, name wire.ResourceName) *wire.Lease {
+	d.leaseMu.Lock()
+	defer d.leaseMu.Unlock()
+	if e := d.book.Entries[name]; e != nil {
+		if i := holderIndex(e, agent); i >= 0 {
+			l := e.Leases[i]
+			return &l
+		}
+	}
+	return nil
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }
 
 func minTime(a, b time.Time) time.Time {

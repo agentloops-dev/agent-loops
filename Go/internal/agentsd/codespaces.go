@@ -262,7 +262,10 @@ func (d *Daemon) connectorCodespaces(ctx context.Context, request wire.Connector
 	if err != nil {
 		return wire.ConnectorCodespaces{}, err
 	}
-	f, connection, connected := d.forgeAt(ctx, folder)
+	f, connection, connected, err := d.forgeAt(ctx, folder)
+	if err != nil {
+		return wire.ConnectorCodespaces{}, err
+	}
 	if f.provider != wire.ConnectionProviderGithub || f.repo == "" {
 		return wire.ConnectorCodespaces{}, invalid("This folder needs a GitHub repository for Codespaces.")
 	}

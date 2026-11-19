@@ -66,17 +66,8 @@ func (d *Daemon) moveSessionTool(caller wire.UUID, args map[string]json.RawMessa
 		target, self = t, false
 	}
 	if self {
-		if _, waiting := d.machineMoves.Load(caller); waiting {
-			return "You already move when this turn ends; nothing changed.", nil
-		}
-		if me.PendingMove != nil {
-			return "", Invalid("Nothing was moved: you already move into another folder when this turn ends. Call move_worktree with no arguments to take that back first.")
-		}
-		if w := me.EventWait; w != nil && w.Ending == nil {
-			return "", Invalid("Nothing was moved: you are waiting for %s, and a move starts you again on the other machine rather than waiting. Call cancel_wait first.", waitLabel(w))
-		}
-		if me.AfterTurn != nil && *me.AfterTurn == wire.AfterTurnArchive {
-			return "", Invalid("Nothing was moved: you asked to be archived once this turn ends. Call archive_session with no id to take that back, or do not move.")
+		if msg, err := d.moveSelfRefusal(caller, me); msg != "" || err != nil {
+			return msg, err
 		}
 	}
 	if err := d.alreadyMoving(target); err != nil {
@@ -85,18 +76,10 @@ func (d *Daemon) moveSessionTool(caller wire.UUID, args map[string]json.RawMessa
 	if !self && target.PendingMove != nil {
 		return "", Invalid("Nothing was moved: %s moves into another folder when its turn ends.", quotedTitle(target.Title))
 	}
-	folder := strings.TrimSpace(argString(args, "folder"))
-	if folder == "" {
-		there, err := d.projectFolderOn(me, machine)
-		if err != nil {
-			return "", movedWords(err)
-		}
-		folder = there
+	folder, err := d.moveSessionFolder(me, machine, args)
+	if err != nil {
+		return "", err
 	}
-	if !strings.HasPrefix(folder, "/") {
-		return "", Invalid("Nothing was moved: the folder on %s is an absolute path, such as /home/me/project, not %s.", machine, folder)
-	}
-	folder = filepath.Clean(folder)
 	b, err := d.branchToSend(target)
 	if err != nil {
 		_, msg := errMessage(err)
@@ -120,6 +103,41 @@ func (d *Daemon) moveSessionTool(caller wire.UUID, args map[string]json.RawMessa
 		})
 	}
 	return d.moveThere(caller, target, self, machine, folder, b)
+}
+
+// moveSelfRefusal is why a session cannot move itself to another machine now: words
+// when it already moves there, or an error when something else waits for this turn's end.
+func (d *Daemon) moveSelfRefusal(caller wire.UUID, me *wire.Agent) (string, error) {
+	if _, waiting := d.machineMoves.Load(caller); waiting {
+		return "You already move when this turn ends; nothing changed.", nil
+	}
+	if me.PendingMove != nil {
+		return "", Invalid("Nothing was moved: you already move into another folder when this turn ends. Call move_worktree with no arguments to take that back first.")
+	}
+	if w := me.EventWait; w != nil && w.Ending == nil {
+		return "", Invalid("Nothing was moved: you are waiting for %s, and a move starts you again on the other machine rather than waiting. Call cancel_wait first.", waitLabel(w))
+	}
+	if me.AfterTurn != nil && *me.AfterTurn == wire.AfterTurnArchive {
+		return "", Invalid("Nothing was moved: you asked to be archived once this turn ends. Call archive_session with no id to take that back, or do not move.")
+	}
+	return "", nil
+}
+
+// moveSessionFolder is the folder a move goes into on the machine: the one asked for, or
+// else the project's folder there. It must be an absolute path.
+func (d *Daemon) moveSessionFolder(me *wire.Agent, machine string, args map[string]json.RawMessage) (string, error) {
+	folder := strings.TrimSpace(argString(args, "folder"))
+	if folder == "" {
+		there, err := d.projectFolderOn(me, machine)
+		if err != nil {
+			return "", movedWords(err)
+		}
+		folder = there
+	}
+	if !strings.HasPrefix(folder, "/") {
+		return "", Invalid("Nothing was moved: the folder on %s is an absolute path, such as /home/me/project, not %s.", machine, folder)
+	}
+	return filepath.Clean(folder), nil
 }
 
 // moveThere is move_session once it may move (#4261: also after a late yes).

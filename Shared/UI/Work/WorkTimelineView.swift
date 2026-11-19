@@ -1,6 +1,9 @@
-#if os(macOS)
 import AgentsKitCore
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Observation
 import SwiftUI
 
@@ -83,7 +86,7 @@ final class WorkTimelineState {
     /// The projects the Timeline can draw: those with a folder on a machine that draws it.
     func projects(model: any WorkModel) -> [WorkList.Project] {
         let machines = Set(model.timelineMachines.map(\.id.rawValue))
-        return model.workProjects.filter { project in
+        return model.timelineProjects.filter { project in
             project.folders.contains { machines.contains(String($0.prefix { $0 != "|" })) }
         }
     }
@@ -156,22 +159,22 @@ final class WorkTimelineState {
         await withTaskGroup(of: (DaemonAPI.WorkTimeline?, [String]?, String?).self) { group in
             for machine in machines {
                 group.addTask {
-                    do {
-                        let t = try await model.forge(DaemonAPI.Method.workTimeline,
-                                                      DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start,
-                                                                                    to: span.end),
-                                                      returning: DaemonAPI.WorkTimeline.self, on: machine.id)
-                        // A board narrows to its epics: the forge says which they are.
-                        var refs: [String]?
-                        if !board.isEmpty {
-                            let list = try? await model.forgeList(.issue, .init(state: "all", label: "epic", limit: 100, board: board),
-                                                                  on: machine.id)
-                            refs = list?.items.map(\.node.ref) ?? []
-                        }
-                        return (t, refs, nil)
-                    } catch {
-                        return (nil, nil, machines.count > 1 ? "\(machine.name): \(error.localizedDescription)" : error.localizedDescription)
+                    // The result first, then the tuple from one place (#5946, `Result.catching`).
+                    let read = await Result.catching {
+                        try await model.forge(DaemonAPI.Method.workTimeline,
+                                              DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start, to: span.end),
+                                              returning: DaemonAPI.WorkTimeline.self, on: machine.id)
                     }
+                    let t = try? read.get()
+                    // A board narrows to its epics: the forge says which they are.
+                    var refs: [String]?
+                    if t != nil, !board.isEmpty {
+                        let list = try? await model.forgeList(.issue, .init(state: "all", label: "epic", limit: 100, board: board),
+                                                              on: machine.id)
+                        refs = list?.items.map(\.node.ref) ?? []
+                    }
+                    let problem = read.error.map { machines.count > 1 ? "\(machine.name): \($0.localizedDescription)" : $0.localizedDescription }
+                    return (t, refs, problem)
                 }
             }
             // The first machine to answer draws the plot (#5449), and each one after adds its epics: a slow or offline
@@ -201,18 +204,30 @@ final class WorkTimelineState {
     }
 }
 
-/// Work ▸ Timeline (#4173): time across, each epic a filled block in its own row from when its first
-/// child starts to when its last one closes, a lighter tint with a dashed edge after Now (the
-/// forecast), then a thin bar to where it closes 8 times in 10 (#5506, Alex, 2026-11-14). A SwiftUI
+/// Work ▸ Timeline (#4173): time across, each epic a block in its own row: the ghost (a lighter tint)
+/// from when its first child was created to when its last one closes, solid only from when its first
+/// child started to when the work stopped (#6043), a dashed edge after Now (the forecast), then a thin bar to where it closes 8 times in 10 (#5506, Alex, 2026-11-14). A SwiftUI
 /// `Canvas` (spike #4171): the rows and the marks come from `WorkTimeline` in AgentsKitCore.
+/// Core since #6044: on the Remote the bar's controls are the navigation bar's, a tap shows the card
+/// that a pointer's hover shows on the Mac, and a phone in portrait draws the list of epics.
 struct WorkTimelinePane: View {
     let model: any WorkModel
     @Bindable var state: WorkTimelineState
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var widthClass
+    @Environment(\.verticalSizeClass) private var heightClass
+    /// A phone in portrait: the list of epics, as the web page under 700 px (note 36, #6044).
+    private var listed: Bool { widthClass == .compact && heightClass == .regular }
+    #else
+    private let listed = false
+    #endif
 
     @State private var position = ScrollPosition(edge: .leading)
     @State private var offset: Double = 0
+    /// How far the rows are scrolled down: the band names in the gutter follow them (#6089).
+    @State private var top: Double = 0
     @State private var hover: Hover?
 
     struct Hover: Equatable {
@@ -222,17 +237,32 @@ struct WorkTimelinePane: View {
 
     nonisolated static let axisHeight: Double = 26
     nonisolated static let footHeight: Double = 26
+    /// The gutter at the leading edge with each band's name (#6089).
+    nonisolated static let gutterWidth: Double = 64
 
     var body: some View {
         VStack(spacing: 0) {
+            #if os(macOS)
             bar.padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
+            #else
+            // The Remote's bar is the navigation bar's; the title line stays above the plot.
+            if let title {
+                Text(title).appText(.fine).foregroundStyle(.secondary).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.vertical, 6)
+            }
+            #endif
             content
         }
         .toolbar {
+            #if os(macOS)
             ToolbarItem(placement: .primaryAction) {
                 WorkRefreshButton(running: state.reading) { state.asked += 1 }
             }
+            #else
+            ToolbarItemGroup(placement: .topBarTrailing) { navigationMenus }
+            #endif
         }
         .workTask(id: state.ask) { await state.load(model: model) }
         // A machine sent new lineage to the control plane (#4276): the sessions again, no polling.
@@ -291,6 +321,38 @@ struct WorkTimelinePane: View {
         }
     }
 
+    #if os(iOS)
+    /// The Remote's bar (#6044): the range, Project and Board as the navigation bar's menus, and Now.
+    /// Refresh is pull to refresh. Board shows only where the machines read boards (Mac + web, #3282).
+    @ViewBuilder
+    private var navigationMenus: some View {
+        Menu {
+            Picker("Range", selection: $state.range) {
+                ForEach(WorkTimeline.Range.allCases) { Text($0.title).tag($0) }
+            }
+            if projects.count > 1 {
+                Picker("Project", selection: $state.project) {
+                    ForEach(projects) { Text($0.name).tag($0.id) }
+                }
+                .pickerStyle(.menu)
+            }
+            if !state.boards.isEmpty || !state.board.isEmpty {
+                Picker("Board", selection: $state.board) {
+                    Text("All boards").tag("")
+                    ForEach(boardOptions, id: \.self) { Text(WorkList.boardName($0, in: state.boards)).tag($0) }
+                }
+                .pickerStyle(.menu)
+            }
+        } label: {
+            Text(state.range.title)
+        }
+        .accessibilityLabel("Range, \(state.range.title)")
+        .onChange(of: state.range) { goToNow() }
+        Button("Now") { goToNow() }
+            .accessibilityHint("Back to now")
+    }
+    #endif
+
     /// The boards read, and the one picked when the machines no longer list it.
     private var boardOptions: [String] {
         let urls = state.boards.map(\.url)
@@ -339,7 +401,11 @@ struct WorkTimelinePane: View {
                 let drawn = state.timeline != nil
                 let busy = !drawn || state.reading
                 TimelineView(.animation(minimumInterval: busy && !reduceMotion ? 1.0 / 20 : 60)) { context in
-                    plot(timeline, now: context.date, drawn: drawn, reading: state.reading)
+                    if listed {
+                        epicList(timeline, now: context.date, drawn: drawn)
+                    } else {
+                        plot(timeline, now: context.date, drawn: drawn, reading: state.reading)
+                    }
                 }
                 .opacity(state.stale ? 0.5 : 1)
             }
@@ -352,7 +418,7 @@ struct WorkTimelinePane: View {
 
     private func plot(_ timeline: DaemonAPI.WorkTimeline, now: Date, drawn: Bool, reading: Bool) -> some View {
         GeometryReader { geo in
-            let visible = max(geo.size.width, 1)
+            let visible = max(geo.size.width - Self.gutterWidth, 1)
             let content = state.content
             let axis = WorkTimeline.Axis(interval: content, width: visible * content.duration / state.range.span)
             // The epics and children a session is in a turn on now (#4265): their open blocks glow.
@@ -368,7 +434,10 @@ struct WorkTimelinePane: View {
             let rows = max(WorkTimeline.rowCount(lines), 3)
             let height = max(WorkTimeline.rowTop(rows) + WorkTimeline.rowGap, geo.size.height - Self.axisHeight - Self.footHeight)
             let drawing = Drawing(lines: lines, axis: axis, now: now, height: height, offset: offset, visible: visible,
-                                  night: scheme == .dark, loading: loading, moving: !reduceMotion)
+                                  night: scheme == .dark, loading: loading, moving: !reduceMotion,
+                                  bands: loading ? [] : WorkTimeline.bands(lines))
+            HStack(spacing: 0) {
+            gutter(drawing)
             ScrollView(.horizontal) {
                 VStack(spacing: 0) {
                     // The axis at the top, the blocks under it, and Now's time at the foot (#5506).
@@ -378,6 +447,12 @@ struct WorkTimelinePane: View {
                     ScrollView(.vertical) {
                         canvas(drawing, timeline: timeline)
                             .frame(width: axis.width, height: height)
+                    }
+                    #if os(iOS)
+                    .refreshable { state.asked += 1 }
+                    #endif
+                    .onScrollGeometryChange(for: Double.self) { Double($0.contentOffset.y + $0.contentInsets.top) } action: { _, y in
+                        top = y
                     }
                     Canvas { context, _ in drawing.drawNow(&context) }
                         .frame(width: axis.width, height: Self.footHeight)
@@ -411,7 +486,105 @@ struct WorkTimelinePane: View {
                     emptyCard(timeline, now: now)
                 }
             }
+            }
         }
+    }
+
+    // MARK: The list of epics
+
+    /// A phone in portrait (#6044): the epics in the window, in the order they close, under *Now · 2:40 PM*, as
+    /// the web page draws them under 700 px (note 36). A tap opens the epic.
+    private func epicList(_ timeline: DaemonAPI.WorkTimeline, now: Date, drawn: Bool) -> some View {
+        let working = WorkTimeline.workingNow(timeline, sessions: state.sessions, agents: model.workAgents)
+        let lines = WorkTimeline.lines(timeline, now: now, working: working)
+        let window = state.range.window(now: state.anchor)
+        let rows = WorkTimeline.epicRows(lines, window: window, now: now)
+        let shows = WorkTimeline.shows(drawn: drawn, reading: state.reading, epics: rows.count)
+        let night = scheme == .dark
+        return List {
+            Text(WorkTimeline.nowWords(now)).appText(.fine).fontWeight(.semibold).foregroundStyle(.secondary)
+                .listRowSeparator(.hidden)
+            switch shows {
+            case .loading:
+                WorkPlaceholderRows()
+            case .empty:
+                emptyCard(timeline, now: now)
+                    .frame(maxWidth: .infinity)
+                    .listRowSeparator(.hidden)
+            case .epics:
+                ForEach(rows) { row in
+                    Button { open(.line(row.line)) } label: {
+                        epicRow(row, colour: Drawing.colour(row.line, night: night), working: row.line.working > 0)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(WorkTimeline.spoken([row.line], now: now).first?.words ?? row.line.title)
+                    .accessibilityHint("Opens the epic")
+                }
+            }
+        }
+        .listStyle(.plain)
+        #if os(iOS)
+        .refreshable { state.asked += 1 }
+        #endif
+    }
+
+    /// A row of the list: the epic's colour at the leading edge, its title and chips, line 2, and *11 of 16*
+    /// with a bar. ◐ beside the title while a session is in a turn on it (#4265), still with Reduce Motion.
+    private func epicRow(_ row: WorkTimeline.EpicRow, colour: Color, working: Bool) -> some View {
+        let line = row.line
+        let waits = if case .waits = line.how { true } else { false }
+        return HStack(alignment: .center, spacing: 10) {
+            RoundedRectangle(cornerRadius: 2).fill(colour).frame(width: 4).frame(maxHeight: .infinity)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(line.title).appText(.supporting).fontWeight(.semibold).lineLimit(2)
+                    WorkPriorityChip(priority: line.onHold ? nil : line.priority)
+                    WorkOnHoldChip(onHold: line.onHold)
+                    if working { WorkTimelineHalfRing(colour: colour, moving: !reduceMotion) }
+                }
+                Text(row.line2).appText(.fine)
+                    .foregroundStyle(waits ? StateTint.attention.style(or: .secondary) : AnyShapeStyle(.secondary))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                ProgressView(value: Double(line.done), total: Double(max(line.total, 1)))
+                    .tint(colour).frame(width: 56)
+                Text("\(line.done) of \(line.total)").appText(.fine).foregroundStyle(.secondary).monospacedDigit()
+            }
+            .accessibilityHidden(true)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+
+    /// Each band's name, on its first row, with a rule above every band but the first (#6089). It
+    /// stays at the leading edge while the plot scrolls in time, and moves with the rows.
+    private func gutter(_ drawing: Drawing) -> some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: Self.axisHeight)
+            ZStack(alignment: .topLeading) {
+                ForEach(drawing.bands, id: \.band) { band in
+                    if band.row > 0 {
+                        Rectangle().fill(Paper.rule).frame(height: 1)
+                            .offset(y: WorkTimeline.bandRuleY(band.row) - top)
+                    }
+                    Text(band.words).appText(.fine).fontWeight(.semibold)
+                        .foregroundStyle(Drawing.bandTint(band.band).style(or: .secondary))
+                        .lineLimit(1)
+                        .padding(.leading, 12)
+                        .frame(height: WorkTimeline.blockHeight)
+                        .offset(y: WorkTimeline.rowTop(band.row) - top)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .clipped()
+            Color.clear.frame(height: Self.footHeight)
+        }
+        .frame(width: Self.gutterWidth)
+        .background(drawing.plot)
+        .overlay(alignment: .trailing) { Rectangle().fill(Paper.rule).frame(width: 1) }
     }
 
     /// S11: no epic in the window. The axis and Now stay; the card says when the last one
@@ -461,10 +634,11 @@ struct WorkTimelinePane: View {
             .overlay(alignment: .topLeading) {
                 if let hover {
                     card(hover.hit, drawing: drawing)
-                        .offset(x: hover.at.x + 14, y: hover.at.y + 14)
+                        .offset(x: cardX(hover.at.x, drawing: drawing), y: hover.at.y + 14)
                         .allowsHitTesting(false)
                 }
             }
+            #if os(macOS)
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let p):
@@ -473,9 +647,16 @@ struct WorkTimelinePane: View {
                     hover = nil
                 }
             }
+            #endif
             .onTapGesture { p in
-                guard let hit = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis) else { return }
-                open(hit)
+                let hit = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis)
+                #if os(macOS)
+                if let hit { open(hit) }
+                #else
+                // The Remote (#6044): a tap shows the card a pointer's hover shows; a second tap on it opens it.
+                guard let hit else { hover = nil; return }
+                if hover?.hit == hit { hover = nil; open(hit) } else { hover = Hover(hit: hit, at: p) }
+                #endif
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Timeline")
@@ -517,6 +698,17 @@ struct WorkTimelinePane: View {
         }
     }
 
+    /// The card's leading edge: after the pointer; on the Remote, before the tap when it would pass the
+    /// screen's trailing edge (#6044).
+    private func cardX(_ x: Double, drawing: Drawing) -> Double {
+        #if os(iOS)
+        let width = min(360, drawing.visible - 24)
+        return min(x + 14, max(drawing.offset + drawing.visible - width - 8, x - width - 14))
+        #else
+        x + 14
+        #endif
+    }
+
     private func open(_ hit: WorkTimeline.Hit) {
         switch hit {
         case .dot(_, let dot): model.showWork(WorkPlace(kind: .issue, ref: dot.ref))
@@ -535,7 +727,7 @@ struct WorkTimelinePane: View {
             case .dot(_, let dot):
                 let child = self.child(dot.ref)
                 miniRow(glyph: dotGlyph(dot), title: dot.title, labels: child?.item.labels ?? [],
-                        line: WorkTimeline.dotLine(dot, now: drawing.now))
+                        onHold: child.map { WorkPlan.onHold($0.item) } ?? false, line: WorkTimeline.dotLine(dot, now: drawing.now))
             case .line(let line):
                 lineRow(line, drawing: drawing)
             }
@@ -552,18 +744,24 @@ struct WorkTimelinePane: View {
         let glyph = AnyView(WorkStateIcon(kind: "issue", state: epic?.item.state ?? (line.open ? "open" : "closed"),
                                           stateReason: epic?.stateReason))
         return miniRow(glyph: glyph, title: line.title, labels: epic?.item.labels ?? [],
-                       line: WorkTimeline.lineLine(line, now: drawing.now))
+                       onHold: epic.map { WorkPlan.onHold($0.item) } ?? false, line: WorkTimeline.lineLine(line, now: drawing.now),
+                       priority: epic?.item.priority)
     }
 
-    private func miniRow(glyph: AnyView, title: String, labels: [DaemonAPI.ForgeLabel], line: String) -> some View {
-        let chips = WorkLook.shownLabels(labels, limit: WorkLook.rowChips)
+    private func miniRow(glyph: AnyView, title: String, labels: [DaemonAPI.ForgeLabel], onHold: Bool,
+                         line: String, priority: String? = nil) -> some View {
+        // The On hold chip first, and the `on hold` label not again (#6090).
+        let chips = WorkLook.shownLabels(WorkPlan.labels(labels, onHold: onHold), limit: WorkLook.rowChips)
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 glyph
                 Text(title).appText(.supporting).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
+                // The priority chip, as a Features row has it (#6089).
+                WorkPriorityChip(priority: priority)
             }
-            if !chips.shown.isEmpty {
+            if !chips.shown.isEmpty || onHold {
                 HStack(spacing: 4) {
+                    WorkOnHoldChip(onHold: onHold)
                     ForEach(chips.shown, id: \.name) { WorkLabelChip(label: $0) }
                     WorkMoreChips(count: chips.more)
                 }
@@ -582,8 +780,16 @@ struct WorkTimelinePane: View {
         state.timeline?.epics.lazy.flatMap(\.children).first { $0.item.node.ref == ref }
     }
 
+    #if canImport(AppKit)
     /// The words' step, as the canvas resolves it: bold, so a block's semibold title is never wider.
     nonisolated static var labelFont: NSFont { NSFontManager.shared.convert(TextStep.fine.nsFont, toHaveTrait: .boldFontMask) }
+    #else
+    /// The words' step, as the canvas resolves it: bold, so a block's semibold title is never wider.
+    nonisolated static var labelFont: UIFont {
+        let font = TextStep.fine.uiFont
+        return font.fontDescriptor.withSymbolicTraits(.traitBold).map { UIFont(descriptor: $0, size: font.pointSize) } ?? font
+    }
+    #endif
 
     /// A title's width, as the canvas draws it.
     nonisolated static func measure(_ text: String) -> Double {
@@ -604,6 +810,18 @@ private struct Drawing {
     var loading = false
     /// Not Reduce Motion: the working blocks' ◐ turns in the overlay, on the glow's clock.
     var moving = true
+    /// The priority bands in use (#6089): a rule above each but the first.
+    var bands: [WorkTimeline.Band] = []
+
+    /// A band's name and a chip's words take the priority chip's tint (#6089): High the failure's
+    /// red, Medium the warning's orange, Low, none and on hold plain.
+    static func bandTint(_ band: Int) -> StateTint {
+        switch band {
+        case 0: .failure
+        case 1: .warning
+        default: .none
+        }
+    }
 
     /// One breath of a working block's glow and one turn of its ◐, in seconds (#4265).
     static let pulsePeriod = 1.6
@@ -613,11 +831,18 @@ private struct Drawing {
     /// Each colour, as the light appearance draws it, darkened until white text on it has 4.5:1 (#5506).
     static let fills: [Color] = palette.map { colour in
         var rgb: [Double] = [0, 0, 0]
+        #if canImport(AppKit)
         NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
             if let c = NSColor(colour).usingColorSpace(.sRGB) {
                 rgb = [Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent)]
             }
         }
+        #else
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        if UIColor(colour).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light)).getRed(&r, green: &g, blue: &b, alpha: &a) {
+            rgb = [Double(r), Double(g), Double(b)].map { min(max($0, 0), 1) }
+        }
+        #endif
         let dark = WorkTimeline.forWhiteText(rgb)
         return Color(red: dark[0], green: dark[1], blue: dark[2])
     }
@@ -631,9 +856,17 @@ private struct Drawing {
     var plot: Color { night ? Self.navy : .white }
     var faint: Color { night ? Color(white: 0.6) : Color(white: 0.55) }
 
-    /// A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not planned.
-    func colour(_ line: WorkTimeline.Line) -> Color {
-        Self.fills[line.how == .dropped ? Self.fills.count - 1 : WorkTimeline.colour(line.feature, of: Self.fills.count)]
+    /// A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not
+    /// planned or on hold (#6089).
+    func colour(_ line: WorkTimeline.Line) -> Color { Self.colour(line) }
+
+    static func colour(_ line: WorkTimeline.Line) -> Color {
+        fills[line.how == .dropped || line.onHold ? fills.count - 1 : WorkTimeline.colour(line.feature, of: fills.count)]
+    }
+
+    /// The list of epics' edge (#6044): the block's fill, lighter at night as the words after Now are.
+    static func colour(_ line: WorkTimeline.Line, night: Bool) -> Color {
+        night ? colour(line).mix(with: .white, by: 0.45) : colour(line)
     }
 
     /// The words and marks after Now, on the lighter tint: the colour itself by day, lighter at night
@@ -646,9 +879,18 @@ private struct Drawing {
     var seen: ClosedRange<Double> { (offset - visible)...(offset + 2 * visible) }
 
     func block(_ line: WorkTimeline.Line) -> CGRect {
-        let sx = axis.x(line.start)
+        let sx = axis.x(line.from)
         return CGRect(x: sx, y: WorkTimeline.rowTop(line.row), width: max(axis.x(line.end) - sx, 2), height: WorkTimeline.blockHeight)
     }
+
+    /// The solid span, full height: from when the work started to when it stopped (#6043). Clip to it.
+    func solid(_ line: WorkTimeline.Line) -> CGRect {
+        let sx = axis.x(line.start)
+        return CGRect(x: sx, y: -100, width: max(axis.x(line.stoppedAt) - sx, 0), height: height + 200)
+    }
+
+    /// The ghost's tint: the lighter one the forecast had (#6043).
+    func ghost(_ line: WorkTimeline.Line) -> Color { colour(line).opacity(night ? 0.32 : 0.22) }
 
     /// The wait pill's words: 👤 and the number, no words (Alex, 2026-11-14).
     func waitPill(_ count: Int) -> Text { Text("\(Image(icon: "person.fill")) \(count)") }
@@ -657,10 +899,15 @@ private struct Drawing {
     func draw(_ gc: inout GraphicsContext) {
         let nowX = axis.x(now)
         gc.fill(Path(CGRect(x: 0, y: 0, width: axis.width, height: height)), with: .color(plot))
-        let shown = lines.filter { axis.x($0.start) <= seen.upperBound && axis.x(WorkTimeline.reach($0)) >= seen.lowerBound }
-        let past = Path(CGRect(x: -100, y: 0, width: max(nowX + 100, 0), height: height))
+        let shown = lines.filter { axis.x($0.from) <= seen.upperBound && axis.x(WorkTimeline.reach($0)) >= seen.lowerBound }
         let ahead = Path(CGRect(x: nowX, y: 0, width: max(axis.width - nowX + 100, 0), height: height))
         let left = offset, right = offset + visible
+
+        // A rule above each priority band but the first (#6089).
+        for band in bands where band.row > 0 {
+            let y = WorkTimeline.bandRuleY(band.row)
+            gc.fill(Path(CGRect(x: 0, y: y - 0.5, width: axis.width, height: 1)), with: .color(Paper.rule))
+        }
 
         for line in shown {
             let c = colour(line), rect = block(line)
@@ -674,16 +921,20 @@ private struct Drawing {
                     layer.stroke(shape, with: .color(c.opacity(0.35)), lineWidth: 6)
                 }
             }
-            // Solid to Now.
+            // The ghost from created to closed (or Now, or the forecast), then solid only where the work
+            // happened, from started to stopped (#6043).
+            let solidRect = solid(line), work = Path(solidRect)
+            let idle = Path(CGRect(x: -100, y: -100, width: max(solidRect.minX + 100, 0), height: height + 200))
+                .union(Path(CGRect(x: solidRect.maxX, y: -100, width: max(axis.width - solidRect.maxX + 100, 0), height: height + 200)))
+            gc.fill(shape, with: .color(ghost(line)))
             gc.drawLayer { layer in
-                layer.clip(to: past)
+                layer.clip(to: work)
                 layer.fill(shape, with: .color(c))
             }
-            // After Now, the forecast: a lighter tint with a dashed edge.
+            // After Now, the forecast: the ghost with a dashed edge.
             if line.how == .forecast || { if case .waits = line.how { true } else { false } }() {
                 gc.drawLayer { layer in
                     layer.clip(to: ahead)
-                    layer.fill(shape, with: .color(c.opacity(night ? 0.32 : 0.22)))
                     layer.stroke(shape, with: .color(later(line)), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                 }
             }
@@ -697,10 +948,10 @@ private struct Drawing {
                 let x = WorkTimeline.dotX(dot, on: line, axis: axis)
                 let r = dot.closed ? 2.0 : 2.5
                 let circle = Path(ellipseIn: CGRect(x: x - r, y: WorkTimeline.dotY(line.row) - r, width: 2 * r, height: 2 * r))
-                let mark = x > nowX ? later(line) : .white
+                let mark = x >= solidRect.minX && x <= solidRect.maxX + 0.5 && solidRect.width > 0 ? Color.white : later(line)
                 if dot.closed { gc.fill(circle, with: .color(mark)) } else { gc.stroke(circle, with: .color(mark), lineWidth: 1.2) }
             }
-            // The words: the title in the block, white to Now and the colour after it; or after the block.
+            // The words: the title in the block, white on the solid span and the colour on the ghost; or after the block.
             var trailing = 0.0
             if case .waits(let n) = line.how {
                 trailing = pillWidth(n)
@@ -713,13 +964,16 @@ private struct Drawing {
             if let inside = words.inside {
                 let at = CGPoint(x: words.insideX, y: WorkTimeline.titleY(line.row))
                 gc.drawLayer { layer in
-                    layer.clip(to: past)
+                    layer.clip(to: work)
                     layer.draw(Text(inside).stepped(.fine).fontWeight(.semibold).foregroundStyle(.white), at: at, anchor: .leading)
                 }
                 gc.drawLayer { layer in
-                    layer.clip(to: ahead)
+                    layer.clip(to: idle)
                     layer.draw(Text(inside).stepped(.fine).fontWeight(.semibold).foregroundStyle(later(line)), at: at, anchor: .leading)
                 }
+            }
+            if let chip = words.chip {
+                drawChip(&gc, chip, line: line, x: words.chipX, y: words.chipInside ? WorkTimeline.titleY(line.row) : mid)
             }
             if let outside = words.outside {
                 let text = line.how == .dropped
@@ -731,7 +985,7 @@ private struct Drawing {
             if isWorking(line), !moving { drawHalfRing(&gc, line, x: nowX, turn: 0) }
             // → for a block that goes on past the right edge.
             if axis.x(WorkTimeline.reach(line)) > right {
-                gc.draw(Text("→").stepped(.fine).fontWeight(.bold).foregroundStyle(right - 10 > nowX ? later(line) : .white),
+                gc.draw(Text("→").stepped(.fine).fontWeight(.bold).foregroundStyle(right - 10 > solidRect.maxX || right - 10 < solidRect.minX ? later(line) : .white),
                         at: CGPoint(x: right - 10, y: mid))
             }
         }
@@ -743,6 +997,24 @@ private struct Drawing {
         nowLine.move(to: CGPoint(x: nowX, y: 0))
         nowLine.addLine(to: CGPoint(x: nowX, y: height))
         gc.stroke(nowLine, with: .color(Self.nowGrey), lineWidth: 1.5)
+    }
+
+    /// The priority chip after a block's title (#6089): `WorkPriorityChip`'s look, drawn in the canvas,
+    /// on the plot's own background so it reads on any block; on hold has a dashed edge.
+    func drawChip(_ gc: inout GraphicsContext, _ words: String, line: WorkTimeline.Line, x: Double, y: Double) {
+        let width = WorkTimeline.chipWidth(words, measure: WorkTimelinePane.measure)
+        let rect = CGRect(x: x, y: y - 8, width: width, height: 16)
+        let shape = Path(roundedRect: rect, cornerRadius: 8)
+        let tint = Self.bandTint(line.priorityBand)
+        let edge: Color = switch tint {
+        case .failure: Paper.lineFailure
+        case .warning: Paper.lineWarning
+        default: faint
+        }
+        gc.fill(shape, with: .color(plot))
+        gc.stroke(shape, with: .color(edge), style: StrokeStyle(lineWidth: 1, dash: line.onHold ? [3, 2] : []))
+        gc.draw(Text(words).stepped(.fine).fontWeight(.medium).foregroundStyle(tint.color ?? faint),
+                at: CGPoint(x: rect.midX, y: y))
     }
 
     /// S10: grey blocks in rows, in the window, their grey breathing with the clock.
@@ -845,4 +1117,34 @@ private struct Drawing {
         }
     }
 }
-#endif
+
+/// ◐ beside a working epic's title in the list of epics (#4265, #6044): it turns on the plot's clock;
+/// still with Reduce Motion.
+private struct WorkTimelineHalfRing: View {
+    let colour: Color
+    let moving: Bool
+
+    var body: some View {
+        if moving {
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                ring(turn: SpinnerClock.fraction(at: context.date, period: Drawing.pulsePeriod))
+            }
+        } else {
+            ring(turn: 0)
+        }
+    }
+
+    private func ring(turn: Double) -> some View {
+        Canvas { gc, size in
+            let rect = CGRect(origin: .zero, size: size).insetBy(dx: 1, dy: 1)
+            var half = Path()
+            let from = 90 + 360 * turn
+            half.addArc(center: CGPoint(x: rect.midX, y: rect.midY), radius: rect.width / 2, startAngle: .degrees(from),
+                        endAngle: .degrees(from + 180), clockwise: false)
+            gc.fill(half, with: .color(colour))
+            gc.stroke(Path(ellipseIn: rect), with: .color(colour), lineWidth: 1.5)
+        }
+        .frame(width: 11, height: 11)
+        .accessibilityHidden(true)
+    }
+}

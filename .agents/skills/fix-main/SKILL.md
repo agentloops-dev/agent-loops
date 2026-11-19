@@ -28,7 +28,8 @@ for the rest. Write every comment that you post as `alexec` with `<!-- agent -->
   and from `gh` at the start of each run, not from what you remember.
 - **Never rerun a failed job (Alex, 2026-11-15, #5754).** A rerun that passes hides a flaky test,
   and the test stays flaky in the suite. A test that fails with no cause in the batch is a
-  flake: quarantine it and file a bug to fix it (step 3).
+  flake: run it alone 20 times first; when it fails there, it is a bug, which you fix
+  forward; when it passes, quarantine it and file a bug to fix it (step 3, #6129).
 - **Never revert without Alex (Alex, 2026-11-15).** Fix forward. When you cannot make
   `main` green, ask Alex with `ask_question` (step 6). Revert only when Alex says so.
 - **Never weaken a check.** Never skip, turn off or loosen a test or a job to make
@@ -95,13 +96,46 @@ Do not rerun the failed jobs to find out (Rules). Read the failure and the batch
 
 ## 3. Quarantine a flake
 
+**First, run the test alone, 20 times (#6129).** A test that fails under load only is a
+flake; a test that fails with no load has a real fault, in the product or in the test. Two
+of the three Go tests in quarantine on 2026-11-17 were not load (#6098, #6106). Run only that
+test, under the "build" lease (a Linux machine is good for Go and web), in the foreground:
+
+```sh
+# Go: the package path is from Go/; -run takes the test's whole name ('^TestX$/^sub$' for a subtest).
+Go/scripts/go.sh test -race -count=20 -timeout=30m -run '^TestX$' ./internal/agentsd/
+# Swift (Swift Testing): it stops at the first failure.
+AGENTS_QUARANTINE=0 scripts/build-cache.sh swift test --package-path Packages/AgentsKit \
+  --filter '<Suite type>/<test function>' --repeat-until fail --maximum-repetitions 20
+# Web (node:test has no -count): a loop that stops at the first failure.
+(cd Web && for i in $(seq 20); do node --test --test-force-exit \
+  --test-name-pattern='<the test name>' test/<file>.test.mjs || { echo "failed on run $i"; exit 1; }; done)
+```
+
+The Go run takes seconds to a few minutes; the Swift run about 3 minutes with a warm cache
+(most of it the build); the web run seconds (after `scripts/web.sh build` when the test reads
+the build). Swift and web have no `-race`: Swift's thread sanitizer (`--sanitize=thread`)
+builds the package and its dependencies again with no cache, which costs more than the check
+gives, and Node has no race detector. An XCTest test has no `--repeat-until`: run its
+`swift test --filter` in the same loop as the web one.
+
+- **It fails alone, in any of the 20 runs:** it is a bug, not a flake. Do not quarantine it,
+  and do not use `flaky.UnderLoad`, `.flakyUnderLoad` or `flakyUnderLoad`. File one `bug`
+  (or update the open one) titled by what is wrong, not "flaky" ("`TestX`: <what is wrong>"),
+  with the command, how many of the 20 runs failed and the failure lines (in a fence). It is
+  a break of `main` that is older than the batch, so a bisect does not help: fix it forward
+  with that bug (step 5). When the fix is not clear, ask Alex (step 5.3).
+- **It passes 20 of 20 alone:** it is a flake. Quarantine it (the steps below), and write in
+  the bug the command and "passed 20 of 20 alone".
+
 1. Search for an open `bug` about the same test (`gh issue list --search "<test>
    in:title,body"`). When there is one, comment with the run's link and the failure lines.
    Else file one `bug`, with no milestone, the labels `bug` and `size:XS` and no priority (the quarantine
-   unblocks `main`; #5692), titled "Flaky
-   test: `<test>` fails under load on main". The body gives the job, the failure lines
-   from the log (in a fence), the run's link and why it is a flake (step 2.5). The bug
-   stays open: the bug lane (#4207) fixes the test later and removes the quarantine.
+   unblocks `main`; #5692), titled by what fails, not "flaky" ("`<test>` times out
+   waiting for <what>"). The body gives the job, the failure lines from the log (in a
+   fence), the run's link, why it is a flake (step 2.5, and the run alone above) and the **probable cause**, with
+   what the log shows. The bug stays open: its root-cause lane (step 3.7) removes the
+   quarantine.
 2. Label the session `#<bug>` with `set_session_labels`.
 3. Move to a worktree of your own with `move_worktree` on a new branch
    `fix-main/quarantine-<bug>`. Run `git fetch origin` and `git rebase origin/main`.
@@ -121,7 +155,12 @@ Do not rerun the failed jobs to find out (Rules). Read the failure and the batch
    push, and open the PR with `gh pr create`: the body says `Refs #<bug>` (not `Fixes`:
    the bug is for the fix), the failing run and step 2.5's reason. Turn on squash
    auto-merge at once. Label the session `P#<quarantine pr>`.
-7. Go to step 6.
+7. **Start a root-cause lane at once (Alex, 2026-11-17, #6037).** Start a session on the
+   bug with `start_session` (on a Linux machine when the test is Go or web), or, when you
+   cannot start one, ask the bug lane's lead (#4207) with `message_session` to start it.
+   The lane finds the cause, fixes it and takes the quarantine out. A quarantine keeps
+   `main` green, but the bug it hides stays in the product until that lane lands.
+8. Go to step 6.
 
 ## 4. File a break
 

@@ -42,6 +42,7 @@ type forgeBitbucket interface {
 	// MarkReady marks a draft pull request ready for review (#4410).
 	MarkReady(ctx context.Context, repo string, number int) error
 	Approve(ctx context.Context, repo string, number int, sha string) (string, error)
+	RequestChanges(ctx context.Context, repo string, number int, sha, body string) (string, error)
 	PRDiff(ctx context.Context, repo string, number int) (map[string]any, error)
 	RetryPipeline(ctx context.Context, repo string, run int) (map[string]any, error)
 	FailedLog(ctx context.Context, repo string, run int, step string) (string, error)
@@ -51,6 +52,9 @@ type forgeBitbucket interface {
 	Compare(ctx context.Context, repo, base, head string) ([]bitbucketmcp.Commit, error)
 	CommitPR(ctx context.Context, repo, sha string) (int, error)
 	CostComment(ctx context.Context, repo string, number int, id, mark, body string) (string, error)
+	// An issue's priority and its state on hold (#6091).
+	SetPriority(ctx context.Context, repo string, number int, priority string) error
+	SetHold(ctx context.Context, repo string, number int, on bool) error
 }
 
 // bitbucketNoAutoMerge is why a merge when checks pass is refused: Bitbucket's API has none.
@@ -93,23 +97,10 @@ func (d *Daemon) bitbucketConnectedAPI() string {
 // bitbucketRepoAt is the Bitbucket Cloud repository a folder's remote names; read once, as
 // GitLab's.
 func (d *Daemon) bitbucketRepoAt(ctx context.Context, folder string) string {
-	key := "bitbucket " + folder
-	d.forgeMu.Lock()
-	at, ok := d.forgeRoots[key]
-	d.forgeMu.Unlock()
-	if ok {
-		return at[1]
-	}
-	gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	repo, _ := bitbucketmcp.RepoAt(gitCtx, folder)
-	d.forgeMu.Lock()
-	defer d.forgeMu.Unlock()
-	if d.forgeRoots == nil || len(d.forgeRoots) >= forgeCached {
-		d.forgeRoots = map[string][2]string{}
-	}
-	d.forgeRoots[key] = [2]string{connections.BitbucketSite, repo}
-	return repo
+	return d.forgeRootAt(ctx, "bitbucket "+folder, folder, func(remotes []string) [2]string {
+		repo, _ := bitbucketmcp.RepoIn(remotes)
+		return [2]string{connections.BitbucketSite, repo}
+	})[1]
 }
 
 // bitbucketForge is Bitbucket Cloud on the forge interface (#4329, #4355): the host's Bitbucket
@@ -127,8 +118,9 @@ func (bitbucketForge) Images() forgeImageHost { return bitbucketImages{} }
 func (bitbucketForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues: true, PRs: true,
+		Priority: true, Hold: true,
 		Issue:       forgeActions{Comment: true, Label: true, Close: true, Reopen: true},
-		PR:          forgeActions{Comment: true, Close: true, Merge: true, Approve: true, Rerun: true, Log: true, Diff: true, Ready: true},
+		PR:          forgeActions{Comment: true, Close: true, Merge: true, Approve: true, RequestChanges: true, Rerun: true, Log: true, Diff: true, Ready: true},
 		Avatars:     true,
 		StateReason: true,
 		// Bitbucket says when an item opened, but no time that it closed or merged: a pull
@@ -426,6 +418,18 @@ func (b bitbucketForge) Approve(ctx context.Context, r forgeRef, sha string) (wi
 	return wire.ForgeDone{URL: optional(link)}, err
 }
 
+func (b bitbucketForge) RequestChanges(ctx context.Context, r forgeRef, sha, body string) (wire.ForgeDone, error) {
+	if !r.pr() {
+		return wire.ForgeDone{}, cannot(actionRequestChanges)
+	}
+	bb, named, _, err := b.of(ctx, "forge/request-changes", r)
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	link, err := bb.RequestChanges(ctx, named, r.Number, sha, body)
+	return wire.ForgeDone{URL: optional(link)}, err
+}
+
 // Rerun runs each failed Pipelines run of a pull request again, every step, as Pipelines cannot
 // run only the failed ones.
 func (b bitbucketForge) Rerun(ctx context.Context, r forgeRef) (wire.ForgeDone, error) {
@@ -532,4 +536,22 @@ func bitbucketFailedRuns(ctx context.Context, bb forgeBitbucket, repo string, nu
 func bitbucketStart(i wire.ForgeItem, n int) *wire.ForgeStart {
 	return &wire.ForgeStart{Prompt: fmt.Sprintf("#%d: %s\n\nWork on this Bitbucket issue: %s", n, i.Title, deref(i.URL)),
 		Labels: []string{"#" + strconv.Itoa(n)}, Worktree: optional(strconv.Itoa(n) + " " + i.Title)}
+}
+
+// SetPriority is the issue's priority field, and SetHold its state on hold (#6091): Bitbucket's
+// labels are its kinds and components, so it has no label for either.
+func (b bitbucketForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	bb, named, _, err := b.of(ctx, "forge/priority", r)
+	if err != nil {
+		return err
+	}
+	return bb.SetPriority(ctx, named, r.Number, priority)
+}
+
+func (b bitbucketForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	bb, named, _, err := b.of(ctx, "forge/hold", r)
+	if err != nil {
+		return err
+	}
+	return bb.SetHold(ctx, named, r.Number, on)
 }

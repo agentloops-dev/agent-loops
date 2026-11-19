@@ -204,29 +204,71 @@ func nodeState(r wire.ReportNode) string {
 // issue with the PRs that fix it (also an issue only its PRs name), a PR on its own, and a
 // release with its PRs and the issues those PRs fix.
 func nodeRows(nodes []wire.LineageCostNode, kind string) []wire.ReportNode {
-	byNode := map[wire.LineageNode]wire.LineageCostNode{}
-	issues := map[string]wire.LineageCostNode{}
-	fixers := map[string][]wire.LineageCostNode{}
-	members := map[string][]wire.LineageCostNode{}
-	var refs []string
+	ix := indexNodes(nodes, kind)
+	children := childrenOf(nodes)
+	issueParts := func(ref string) []wire.LineageCostNode {
+		var parts []wire.LineageCostNode
+		if n, ok := ix.issues[ref]; ok {
+			parts = append(parts, n)
+		}
+		return append(parts, ix.fixers[ref]...)
+	}
+	rows := make([]wire.ReportNode, 0, len(ix.refs))
+	for _, ref := range ix.refs {
+		of := wire.LineageNode{Kind: kind, Ref: ref}
+		var parts []wire.LineageCostNode
+		switch kind {
+		case lineage.KindIssue:
+			parts = issueParts(ref)
+		case lineage.KindPR:
+			parts = []wire.LineageCostNode{ix.byNode[of]}
+		case lineage.KindRelease:
+			parts = releaseParts(ix.members[ref], ix.issues)
+		}
+		row := nodeRow(of, ix.byNode, parts)
+		if kids := children[ref]; kind == lineage.KindIssue && len(kids) > 0 {
+			row.StartedAt, row.CycleTimeSeconds = cycleOf(epicParts(ref, kids, issueParts))
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// nodeIndex is the nodes sent, looked up for nodeRows.
+type nodeIndex struct {
+	byNode map[wire.LineageNode]wire.LineageCostNode
+	// issues is each issue's own node, by ref; fixers the PRs that fix it.
+	issues map[string]wire.LineageCostNode
+	fixers map[string][]wire.LineageCostNode
+	// members is the nodes part of each release (or other whole), by its ref.
+	members map[string][]wire.LineageCostNode
+	// refs is each ref of kind that gets a row, once, in the order first met.
+	refs []string
+}
+
+// indexNodes looks the nodes up by node, by issue and by release, and finds the refs of kind
+// that get a row.
+func indexNodes(nodes []wire.LineageCostNode, kind string) nodeIndex {
+	ix := nodeIndex{byNode: map[wire.LineageNode]wire.LineageCostNode{}, issues: map[string]wire.LineageCostNode{},
+		fixers: map[string][]wire.LineageCostNode{}, members: map[string][]wire.LineageCostNode{}}
 	seen := map[string]bool{}
 	add := func(ref string) {
 		if !seen[ref] {
 			seen[ref] = true
-			refs = append(refs, ref)
+			ix.refs = append(ix.refs, ref)
 		}
 	}
 	for _, n := range nodes {
-		byNode[n.Node] = n
+		ix.byNode[n.Node] = n
 		switch n.Node.Kind {
 		case lineage.KindIssue:
-			issues[n.Node.Ref] = n
+			ix.issues[n.Node.Ref] = n
 			if kind == lineage.KindIssue {
 				add(n.Node.Ref)
 			}
 		case lineage.KindPR:
 			for _, f := range n.Fixes {
-				fixers[f] = append(fixers[f], n)
+				ix.fixers[f] = append(ix.fixers[f], n)
 				if kind == lineage.KindIssue {
 					add(f)
 				}
@@ -236,47 +278,26 @@ func nodeRows(nodes []wire.LineageCostNode, kind string) []wire.ReportNode {
 			}
 		}
 		for _, m := range n.PartOf {
-			members[m] = append(members[m], n)
+			ix.members[m] = append(ix.members[m], n)
 			if kind == lineage.KindRelease && lineage.IsReleaseRef(m) {
 				add(m)
 			}
 		}
 	}
-	children := childrenOf(nodes)
-	issueParts := func(ref string) []wire.LineageCostNode {
-		var parts []wire.LineageCostNode
-		if n, ok := issues[ref]; ok {
-			parts = append(parts, n)
+	return ix
+}
+
+// releaseParts is a release's parts: its members and the issues they fix, each once.
+func releaseParts(members []wire.LineageCostNode, issues map[string]wire.LineageCostNode) []wire.LineageCostNode {
+	return dedupParts(members, func(n wire.LineageCostNode) []wire.LineageCostNode {
+		var fixed []wire.LineageCostNode
+		for _, f := range n.Fixes {
+			if issue, ok := issues[f]; ok {
+				fixed = append(fixed, issue)
+			}
 		}
-		return append(parts, fixers[ref]...)
-	}
-	rows := make([]wire.ReportNode, 0, len(refs))
-	for _, ref := range refs {
-		of := wire.LineageNode{Kind: kind, Ref: ref}
-		var parts []wire.LineageCostNode
-		switch kind {
-		case lineage.KindIssue:
-			parts = issueParts(ref)
-		case lineage.KindPR:
-			parts = []wire.LineageCostNode{byNode[of]}
-		case lineage.KindRelease:
-			parts = dedupParts(members[ref], func(n wire.LineageCostNode) []wire.LineageCostNode {
-				var fixed []wire.LineageCostNode
-				for _, f := range n.Fixes {
-					if issue, ok := issues[f]; ok {
-						fixed = append(fixed, issue)
-					}
-				}
-				return fixed
-			})
-		}
-		row := nodeRow(of, byNode, parts)
-		if kids := children[ref]; kind == lineage.KindIssue && len(kids) > 0 {
-			row.StartedAt, row.CycleTimeSeconds = cycleOf(epicParts(ref, kids, issueParts))
-		}
-		rows = append(rows, row)
-	}
-	return rows
+		return fixed
+	})
 }
 
 // nodeRow is of's row from its parts; its own node, when a machine sent one, says its own

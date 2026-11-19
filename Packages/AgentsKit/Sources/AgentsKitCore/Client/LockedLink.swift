@@ -15,7 +15,10 @@ import Foundation
 /// transport opened (#3642), or the lock was made after it (#4134): with no lock key yet, the
 /// transport is wrapped all the same, so that refusal opens one. A transport with a channel
 /// opens one again when the machine refuses a request sealed on it: the machine's uplink went
-/// and came back, so it forgot the channel while this transport stayed open (#4988).
+/// and came back, so it forgot the channel while this transport stayed open (#4988). Such a
+/// refusal does not reach the caller: the request goes again, once, on the new channel, and only
+/// a second refusal is the caller's (#6227). While the new channel opens, a new request waits for
+/// it, so none goes unsealed to the machine in the meantime.
 /// The web page's is `Web/src/wire/link.ts`.
 public struct LockedLink: DaemonLink {
     public typealias Source = @Sendable () async -> LockChannel.Signer?
@@ -58,10 +61,21 @@ final class LockedTransport: LineTransport, @unchecked Sendable {
     private var channel: LockChannel.Channel?
     /// A hello is on its way again, after a refusal (#3642).
     private var reopening = false
-    /// The ids of requests that went to the machine, until they are answered.
-    private var asked: Set<JSONRPCID> = []
-    /// The ids of those that went sealed on the channel as it is now, until they are answered.
-    private var onChannel: Set<JSONRPCID> = []
+    /// The requests that went to the machine, by id, as the caller wrote them, until they are
+    /// answered: one the machine refuses as not in its lock can go again (#6227).
+    private var asked: [JSONRPCID: String] = [:]
+    /// The ids of those that went sealed on a channel, with that channel's number, until they
+    /// are answered.
+    private var onChannel: [JSONRPCID: Int] = [:]
+    /// The number of the channel as it is now: one more at each channel made.
+    private var generation = 0
+    /// The requests that went again after a refusal: a second refusal is the caller's.
+    private var retried: Set<JSONRPCID> = []
+    /// Refusals held while a new channel opens: the request, and the refusal that goes to the
+    /// caller when no channel opens.
+    private var held: [(request: String, refusal: String)] = []
+    /// Requests written while a new channel opens: they go once it opens, or did not.
+    private var waiting: [String] = []
     private var helloID = JSONRPCID.string("lock-hello-" + UUID().uuidString)
     /// The hello sent, so its answer makes the channel as it is read, before the next line.
     private var hello: LockChannel.Hello?
@@ -122,7 +136,6 @@ final class LockedTransport: LineTransport, @unchecked Sendable {
         let start = lock.withLock { () -> Bool in
             guard helloWait == nil, !reopening else { return false }
             channel = nil
-            onChannel = []
             reopening = true
             return true
         }
@@ -137,7 +150,87 @@ final class LockedTransport: LineTransport, @unchecked Sendable {
                 }
                 await open(within: 15)
             }
-            lock.withLock { reopening = false }
+            reopened()
+        }
+    }
+
+    /// The new channel opened, or did not. On a channel, each held request goes again, once,
+    /// and the caller does not see its first refusal (#6227); with none, the caller gets it.
+    /// The requests that waited go as `write` sends them.
+    private func reopened() {
+        let (held, later, open) = lock.withLock { () -> ([(request: String, refusal: String)], [String], Bool) in
+            defer {
+                reopening = false
+                self.held = []
+                waiting = []
+            }
+            return (self.held, waiting, channel != nil)
+        }
+        for (request, refusal) in held {
+            if !open {
+                continuation.yield(refusal)
+                continue
+            }
+            resend(request, refusal: refusal)
+        }
+        for line in later {
+            do {
+                try write(line: line)
+            } catch {
+                WireLog.write("lock: a request to \(host.isEmpty ? "this Mac" : host) could not go: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// A refused request again, on the channel as it is now; its refusal to the caller when it
+    /// cannot go.
+    private func resend(_ request: String, refusal: String) {
+        guard case .request(let id, _, _)? = try? JSONRPCCodec.decode(line: request) else {
+            continuation.yield(refusal)
+            return
+        }
+        lock.withLock { _ = retried.insert(id) }
+        do {
+            try write(line: request)
+        } catch {
+            lock.withLock {
+                _ = retried.remove(id)
+                asked[id] = nil
+                onChannel[id] = nil
+            }
+            continuation.yield(refusal)
+        }
+    }
+
+    /// A refusal as not in the lock: whether it is held, to go again on a new channel (#6227).
+    /// It is the caller's when its request went again once already. When the request went on
+    /// a channel that is gone and a newer one is open, it goes again at once; else a hello goes
+    /// again (#3642, #4988), and it waits for that.
+    private func hold(_ refusal: String, request: String, id: JSONRPCID, sealedOn: Int?) -> Bool {
+        enum Step { case pass(reopen: Bool), hold, now }
+        let step = lock.withLock { () -> Step in
+            let current = sealedOn == generation && channel != nil
+            // The first hello is on its way: nothing would send the held request again.
+            if helloWait != nil, !reopening { return .pass(reopen: false) }
+            if retried.remove(id) != nil { return .pass(reopen: channel == nil || current) }
+            if reopening {
+                held.append((request, refusal))
+                return .hold
+            }
+            if sealedOn != nil, !current, channel != nil { return .now }
+            held.append((request, refusal))
+            return .hold
+        }
+        switch step {
+        case .pass(let again):
+            if again { reopen() }
+            return false
+        case .now:
+            resend(request, refusal: refusal)
+            return true
+        case .hold:
+            reopen()
+            return true
         }
     }
 
@@ -148,6 +241,7 @@ final class LockedTransport: LineTransport, @unchecked Sendable {
             guard let hello, let signer, case .success(_, let result) = reply,
                   let answer = try? result.decode(DaemonAPI.LockHelloReply.self) else { return }
             channel = try? LockChannel.finish(hello, state: signer.state, host: host, reply: answer)
+            if channel != nil { generation += 1 }
         }
     }
 
@@ -167,9 +261,14 @@ final class LockedTransport: LineTransport, @unchecked Sendable {
             return
         }
         try lock.withLock {
-            asked.insert(id)
+            if reopening, channel == nil {
+                // A new channel is opening (#6227): the request goes on it, not unsealed now.
+                waiting.append(line)
+                return
+            }
+            asked[id] = line
             if let channel {
-                onChannel.insert(id)
+                onChannel[id] = generation
                 try channel.sealThen(line) { try inner.write(line: $0) }
                 return
             }
@@ -199,14 +298,14 @@ final class LockedTransport: LineTransport, @unchecked Sendable {
             if let line = notice(line, method) { continuation.yield(line) }
             return
         }
-        guard let id = message.id, lock.withLock({ asked.remove(id) != nil }) else {
+        guard let id = message.id, let request = lock.withLock({ asked.removeValue(forKey: id) }) else {
             continuation.yield(line)
             return
         }
-        let sealedOnChannel = lock.withLock { onChannel.remove(id) != nil }
+        let sealedOn = lock.withLock { onChannel.removeValue(forKey: id) }
         switch message {
         case .success, .failure:
-            continuation.yield(checked(line, message, id: id, sealedOnChannel: sealedOnChannel))
+            if let answer = checked(line, message, id: id, request: request, sealedOn: sealedOn) { continuation.yield(answer) }
         default:
             continuation.yield(line)
         }
@@ -214,17 +313,23 @@ final class LockedTransport: LineTransport, @unchecked Sendable {
 
     /// An answer from the machine: taken with its MAC; with none only when it is a refusal (the
     /// control plane's own, offline say), or from a machine with no channel the lock does not name.
-    /// A refusal of a request sealed on the channel says the machine no longer has it (#4988).
-    private func checked(_ line: String, _ message: JSONRPCMessage, id: JSONRPCID, sealedOnChannel: Bool) -> String {
+    /// A refusal of a request sealed on the channel says the machine no longer has it (#4988):
+    /// it is held, and the request goes again on a new channel (#6227); nil then.
+    private func checked(_ line: String, _ message: JSONRPCMessage, id: JSONRPCID, request: String, sealedOn: Int?) -> String? {
         let channel = lock.withLock { self.channel }
         if LockChannel.sealed(line) {
+            lock.withLock { _ = retried.remove(id) }
             if let channel, let body = try? channel.open(line) { return body }
             return refusal(id, "The machine's answer does not check, so it was not taken.")
         }
         if case .success = message, channel != nil || lock.withLock({ required }) {
+            lock.withLock { _ = retried.remove(id) }
             return refusal(id, "The machine's answer was not signed, so it was not taken.")
         }
-        if channel == nil || sealedOnChannel, case .failure(_, let error) = message, error.code == DaemonAPI.Failure.notInLock { reopen() }
+        if case .failure(_, let error) = message, error.code == DaemonAPI.Failure.notInLock {
+            return hold(line, request: request, id: id, sealedOn: sealedOn) ? nil : line
+        }
+        lock.withLock { _ = retried.remove(id) }
         return line
     }
 

@@ -35,7 +35,42 @@ public struct MachineSessions: Sendable {
     public var running: Int { agents(.working).count }
 
     /// The sidebar's line under an online machine: "3 running", or "Idle".
-    public var runningLine: String { running > 0 ? "\(running) running" : "Idle" }
+    public var runningLine: String { MachineSessionCounts.line(running) }
     /// The page's header: "7 sessions · 2 running".
     public var header: String { "\(total) \(total == 1 ? "session" : "sessions") · \(running) running" }
+}
+
+/// How many of a machine's sessions work and wait (P20261117-1): all that the sidebar's
+/// Machines group, its rows and the Machines page's Working column read. `AgentsModel` keeps
+/// one per machine as agents are filed, so a reader of it draws again only when a count moves,
+/// not on every change to every agent held (#165). Grouped as `MachineSessions` groups them.
+public struct MachineSessionCounts: Equatable, Sendable {
+    /// Sessions with status Working: `MachineSessions.running`.
+    public var working = 0
+    /// Sessions waiting for the person (needs attention, blocked, waiting).
+    public var waiting = 0
+
+    public init(working: Int = 0, waiting: Int = 0) {
+        self.working = working
+        self.waiting = waiting
+    }
+
+    /// Sessions work or wait for the person there: what makes the machine active in the group.
+    public var busy: Bool { working > 0 || waiting > 0 }
+    /// The sidebar's line under an online machine, as `MachineSessions.runningLine`.
+    public var runningLine: String { Self.line(working) }
+
+    static func line(_ running: Int) -> String { running > 0 ? "\(running) running" : "Idle" }
+
+    /// One agent of `group` more (`by` 1) or less (`by` -1). False when the group is not
+    /// counted here, and nothing changed.
+    @discardableResult
+    public mutating func add(_ group: AgentGroup, by: Int = 1) -> Bool {
+        switch MachineSessions.Group(group) {
+        case .working: working += by
+        case .waiting: waiting += by
+        case .done, nil: return false
+        }
+        return true
+    }
 }

@@ -19,13 +19,11 @@ import (
 // authorization server (metadata, registration, PKCE, the code on loopback, the token),
 // its row says so, a session sends its bearer, and signing out takes it away.
 
-func TestSigningInToAnMCPServer(t *testing.T) {
-	t.Parallel()
-
-	home := t.TempDir()
-	personalHomeFor(t, home)
+// fakeSignInMCPServer is an MCP server that answers 401 until it gets the bearer "at-1",
+// with its own authorization server. It keeps the token request's code_verifier and
+// resource in verifierSeen and resourceSeen.
+func fakeSignInMCPServer(verifierSeen, resourceSeen *atomic.Value) *httptest.Server {
 	var srv *httptest.Server
-	var verifierSeen, resourceSeen atomic.Value
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/mcp":
@@ -60,6 +58,16 @@ func TestSigningInToAnMCPServer(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
+	return srv
+}
+
+func TestSigningInToAnMCPServer(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	personalHomeFor(t, home)
+	var verifierSeen, resourceSeen atomic.Value
+	srv := fakeSignInMCPServer(&verifierSeen, &resourceSeen)
 	defer srv.Close()
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

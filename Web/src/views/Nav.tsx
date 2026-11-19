@@ -2,7 +2,7 @@
 // (#1804), and every section but the Overview and Agents drawn as the Console was: its list of pages
 // on the left, the page open on the right. Below 760 the bar is one menu with the open section's
 // name. g then a letter goes to a section, when the focus is not in a field; ⌘K opens the command menu (#4788).
-import { forgeHosts, loadList, workList } from "../model/workLists";
+import { askKey, forgeFolders, forgeHosts, loadList, workList } from "../model/workLists";
 import type { WorkKind } from "../model/work";
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
@@ -33,10 +33,10 @@ import { WorkDeploysPage } from "./WorkDeploysPage";
 import { DocPage, DocsList } from "./Docs";
 import { ConversationPage, MessagesList } from "./Messages";
 import { MachinePage } from "./MachinePage";
-import { machineSessions, runningLineOf } from "../model/machineSessions";
+import { isBusy, runningLineOf } from "../model/machineSessions";
 import { machineNeed, machineNeedLine } from "./OfflineStrip";
 import { MachinesList } from "./MachinesList";
-import { type GroupRows, machinesGroupRows, machinesGroupWords, sidebarPins } from "../model/machinesGroup";
+import { type GroupRows, machinesGroupLimit, machinesGroupRows, machinesGroupWords, sidebarPins } from "../model/machinesGroup";
 import { MachineRow, MakingRow } from "./MachineRow";
 import { deleteMakingQuestion, joinTrustQuestion, type MachineMaking, makingRows, newMachineItems } from "../model/machineRow";
 import { openContextMenu, type MenuItem } from "./ContextMenu";
@@ -181,7 +181,7 @@ function MachineNeedLine({ store, host }: { store: Store; host: string }) {
   if (!row) return null;
   // Nothing wrong: how many sessions run on it, or Idle (#5490), from the count the machine's page reads.
   const words = need ? machineNeedLine(need, row)
-    : store.hostIsOnline(host) ? runningLineOf(machineSessions(store.agents.value[host] ?? [])) : null;
+    : store.hostIsOnline(host) ? runningLineOf({ running: store.sessionsByMachine.value[host]?.working ?? 0 }) : null;
   if (!words) return null;
   return (
     <p class="machine-need quiet small" role="status">{words}</p>
@@ -218,9 +218,10 @@ function EventsWaitingLine({ store }: { store: Store }) {
 function machinesGroup(store: Store, pages: readonly NavPage[], making: number): { pages: NavPage[]; rows: GroupRows } {
   const pins = sidebarPins.value;
   const macID = store.macHostID.value;
-  const listed = pages.flatMap((p) => p.draw.kind === "machine" ? [p.draw.host] : []).map((id) => ({
-    id, pinned: pins.includes(id), active: machineIsActive(store, id),
-  }));
+  const ids = pages.flatMap((p) => p.draw.kind === "machine" ? [p.draw.host] : []);
+  // With seven or fewer every machine is drawn in its order, so `active` changes nothing and is not worked out (#6158).
+  const ranks = ids.length + making > machinesGroupLimit;
+  const listed = ids.map((id) => ({ id, pinned: pins.includes(id), active: ranks && machineIsActive(store, id) }));
   const rows = machinesGroupRows(listed, making, macID);
   const byID = new Map(pages.map((p) => [p.draw.kind === "machine" ? p.draw.host : p.id, p]));
   return { pages: rows.machines.flatMap((id) => byID.get(id) ?? []), rows };
@@ -241,8 +242,7 @@ function machineIsActive(store: Store, host: string): boolean {
   if (store.hostsBeingStarted.value.includes(host)) return true;
   if (machineNeed(row, store.hostIsOnline(host), store.runtimes.value[host] ?? [], store.disk.value[host]?.alarms ?? [],
     store.capacity.value[host]?.level)) return true;
-  const sessions = machineSessions(store.agents.value[host] ?? []);
-  return sessions.groups.working.length + sessions.groups.waiting.length > 0;
+  return isBusy(store.sessionsByMachine.value[host]);
 }
 
 /** A section's list of pages on the left, the page open on the right. */
@@ -253,21 +253,25 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   const more = section === "machines" ? machinePages(store.hosts.value, store.macHostID.value) : [];
   const open = openPage(section, routePageID(section, r), admin, more);
   // At most seven machines, then All Machines (N), the Machines page, after them (#5286).
-  const making = section === "machines" ? makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value) : [];
+  const making = section === "machines" ? makingRows(store.machinesMaking.value, store.providers.list.value, store.hosts.value,
+    store.providers.pools.value.map((p) => p.name)) : [];
   const bounded = section === "machines" ? machinesGroup(store, more, making.length) : null;
   const groupRows = bounded?.rows;
   const list = (bounded ? boundedPages(pagesShown(section, admin, open?.id, bounded.pages), bounded.rows)
     : pagesShown(section, admin, open?.id, more)).filter((p) => summaryListed(store, p, open?.id));
   const registering = useSignal(false);
   useUserScopeStatus(store, section === "status");
-  // Work shown: the list it opens on read ahead (#4930), from this device's copy and then the machines, so it draws at once.
-  const forgeOn = forgeHosts(store).map((h) => h.id).join(",");
+  // Work shown: the list it opens on read ahead (#4930), from this device's copy and then the machines, so it draws at once;
+  // and again when a machine joins or a folder is added (#6152). A list read already for them is not read again.
+  const forgeIds = forgeHosts(store).map((h) => h.id);
+  const forgeOn = forgeIds.join(",");
+  const forgeOnFolders = forgeFolders(store, forgeIds);
   useEffect(() => {
     if (section !== "work" || !forgeOn) return;
     const kind: WorkKind = r.section === "pr" || r.section === "release" ? r.section : "issue";
     const l = workList(kind);
-    if (l.lists.peek() === null && !l.loading.peek()) void loadList(store, l);
-  }, [section, forgeOn]);
+    if (!l.loading.peek() || l.read !== askKey(store, l)) void loadList(store, l);
+  }, [section, forgeOn, forgeOnFolders]);
   // Status ▸ Events' grey line reads who waits on each machine that answers; events/changed keeps it.
   const online = store.hosts.value.filter((h) => hostAnswers(h.state)).map((h) => h.id);
   useEffect(() => {

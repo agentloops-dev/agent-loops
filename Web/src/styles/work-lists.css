@@ -60,6 +60,9 @@
 /* The priority chip (#5690): the label chip with the state tint in its text and line, never in its fill. */
 .work-priority.is-high { color: var(--tint-failure); border-color: var(--line-failure); }
 .work-priority.is-medium { color: var(--tint-warning); border-color: var(--line-warning); }
+/* The On hold chip (#6090, #6093): the label chip with no state tint, in the secondary ink, a pause glyph before the words. */
+.work-on-hold { gap: 3px; flex: none; color: var(--paper-secondary); }
+.work-on-hold .lucide { width: 0.95em; height: 0.95em; }
 .work-state { display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 0.8em; line-height: 1.6; color: var(--paper-on-fill); background: var(--forge-fill-draft); }
 .work-state.open { background: var(--forge-fill-open); }
 .work-state.merged { background: var(--forge-fill-done); }
@@ -192,3 +195,7 @@ a.work-row { box-sizing: border-box; text-decoration: none; color: inherit; }
 .work-row-session .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--plan-running, var(--forge-open)); }
 .work-row-session.attention .dot { background: var(--tint-attention); }
 .work-row-session.attention { color: var(--tint-attention); }
+
+/* A row menu's Priority or On hold write that failed (epic #6086): one line above the rows, with a dismiss. */
+.work-plan-problem { display: flex; gap: 8px; align-items: center; margin: 6px 12px; }
+.work-plan-problem button { border: 0; background: none; padding: 2px; color: inherit; cursor: pointer; }

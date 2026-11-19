@@ -78,37 +78,49 @@ func History(nodes []wire.LineageCostNode) []Past {
 			(n.Resolved != nil && n.Resolved.State != nil && *n.Resolved.State != "closed") {
 			continue
 		}
-		p := Past{Ref: n.Node.Ref, Cost: blankCost()}
-		if n.Level != nil {
-			p.Level = *n.Level
+		if p, ok := pastOf(n, fixers[n.Node.Ref]); ok {
+			out = append(out, p)
 		}
-		if n.Resolved != nil {
-			p.Type = TypeOf(n.Resolved.Labels)
-		}
-		AddCost(&p.Cost, n.Banked)
-		first, start := n.FirstAt, n.StartedAt
-		var merged *wire.Date
-		for _, pr := range fixers[n.Node.Ref] {
-			AddCost(&p.Cost, pr.Banked)
-			if pr.FirstAt != nil && (first == nil || *pr.FirstAt < *first) {
-				first = pr.FirstAt
-			}
-			if pr.StartedAt != nil && (start == nil || *pr.StartedAt < *start) {
-				start = pr.StartedAt
-			}
-			if pr.Outcome != nil && *pr.Outcome == OutcomeMerged && pr.EndedAt != nil && (merged == nil || *pr.EndedAt > *merged) {
-				merged = pr.EndedAt
-			}
-		}
-		if merged == nil {
-			continue
-		}
-		p.Lead, p.Cycle = since(first, *merged), since(start, *merged)
-		p.Merged = *merged
-		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Ref < out[j].Ref })
 	return out
+}
+
+// pastOf is a closed issue's cost, lead and cycle time with the PRs that fix it, or false
+// when none of them merged.
+func pastOf(n wire.LineageCostNode, fixers []wire.LineageCostNode) (Past, bool) {
+	p := Past{Ref: n.Node.Ref, Cost: blankCost()}
+	if n.Level != nil {
+		p.Level = *n.Level
+	}
+	if n.Resolved != nil {
+		p.Type = TypeOf(n.Resolved.Labels)
+	}
+	AddCost(&p.Cost, n.Banked)
+	first, start := n.FirstAt, n.StartedAt
+	var merged *wire.Date
+	for _, pr := range fixers {
+		AddCost(&p.Cost, pr.Banked)
+		first = earlier(first, pr.FirstAt)
+		start = earlier(start, pr.StartedAt)
+		if pr.Outcome != nil && *pr.Outcome == OutcomeMerged && pr.EndedAt != nil && (merged == nil || *pr.EndedAt > *merged) {
+			merged = pr.EndedAt
+		}
+	}
+	if merged == nil {
+		return Past{}, false
+	}
+	p.Lead, p.Cycle = since(first, *merged), since(start, *merged)
+	p.Merged = *merged
+	return p, true
+}
+
+// earlier is the earlier of two times, where nil is no time.
+func earlier(a, b *wire.Date) *wire.Date {
+	if b != nil && (a == nil || *b < *a) {
+		return b
+	}
+	return a
 }
 
 func since(from *wire.Date, to wire.Date) *float64 {

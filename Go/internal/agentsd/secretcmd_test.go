@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -16,6 +17,7 @@ import (
 // recorded with the session and the name. A flagged secret, a name that is not set and a dropped
 // grant get words and no value; a call with no grant asks a person (secretterminal_test.go).
 func TestAgentsSecretReadsASecretThatDoesNotAsk(t *testing.T) {
+	flaky.UnderLoad(t, "#6278")
 	t.Parallel()
 
 	home := t.TempDir()

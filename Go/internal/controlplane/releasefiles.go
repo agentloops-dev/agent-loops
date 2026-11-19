@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/linuxrelease"
 	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 )
 
@@ -25,6 +27,10 @@ import (
 // Any other file comes from the public releases the first time a machine asks: it is
 // checked against that release's SHA256SUMS, kept in ReleaseFolder, and served from there
 // after that. Only the files of its own release and the one before it are kept.
+//
+// A Linux machine's first install takes them too (#5787): GET /v1/releases/VERSION names
+// the release for install.sh, and an install over SSH with no host for the machine in the
+// server folder unpacks the release's agentsd-linux-<arch>-<version>.tar.gz (linux).
 
 // ReleaseDownloads is where a release's files are, by tag (#1064: the public releases'
 // repository, not the source's).
@@ -68,6 +74,15 @@ func newReleaseFiles(cfg Config) *releaseFiles {
 // serve answers GET /v1/releases/<version>/<file>.
 func (rf *releaseFiles) serve(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/v1/releases/")
+	if rest == "VERSION" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		// The release this control plane names (machine/release), for install.sh (#5787).
+		if rf.version == "" {
+			plain(w, http.StatusNotFound, "this control plane names no release\n")
+		} else {
+			plain(w, http.StatusOK, rf.version+"\n")
+		}
+		return
+	}
 	version, name, ok := strings.Cut(rest, "/")
 	if !ok || r.Method != http.MethodGet && r.Method != http.MethodHead ||
 		!releaseVersionPattern.MatchString(version) || !releaseFilePattern.MatchString(name) {
@@ -190,6 +205,49 @@ func (rf *releaseFiles) download(ctx context.Context, url, dest string, limit in
 		return "", err
 	}
 	return sum, os.Rename(tmp.Name(), dest) //nolint:gosec // G7xx: built from a checked version and file name, never a request path
+}
+
+// linux is a folder with this control plane's release of the Linux host for arch (x86_64
+// or aarch64), laid out as the server folder is (agentsd-linux-<arch> and the MCP
+// servers, each with its .sha256, and VERSION), for an install over SSH when the server
+// folder has none (#5787). The release's tarball is fetched and checked against
+// SHA256SUMS as any other release file, and unpacked once beside it.
+func (rf *releaseFiles) linux(ctx context.Context, arch string) (string, error) {
+	if rf.folder == "" || rf.version == "" {
+		return "", errors.New("this control plane keeps no release files")
+	}
+	if arch != "x86_64" && arch != "aarch64" {
+		return "", fmt.Errorf("no release is built for %s", arch)
+	}
+	dir := filepath.Join(rf.folder, rf.version, "linux-"+arch)
+	if fileExists(filepath.Join(dir, "VERSION")) {
+		return dir, nil
+	}
+	tarball, err := rf.find(ctx, rf.version, linuxrelease.Tarball(arch, rf.version))
+	if err != nil {
+		return "", err
+	}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if fileExists(filepath.Join(dir, "VERSION")) {
+		return dir, nil
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), ".unpack-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmp)
+	if err := linuxrelease.Unpack(tarball, tmp, arch, releaseFileLimit); err != nil {
+		return "", err
+	}
+	if !fileExists(filepath.Join(tmp, "agentsd-linux-"+arch)) {
+		return "", fmt.Errorf("release %s has no host for %s", rf.version, arch)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "VERSION"), []byte(rf.version+"\n"), 0o644); err != nil { //nolint:gosec // G306: public file
+		return "", err
+	}
+	_ = os.RemoveAll(dir)
+	return dir, os.Rename(tmp, dir)
 }
 
 // prune keeps the folders of this release and of the newest one before it.

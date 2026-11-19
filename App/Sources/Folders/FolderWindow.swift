@@ -169,6 +169,7 @@ private struct FolderWindowColumns: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             FolderWindowSidebar(window: window, summary: summary)
+                .columnFloor()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
         } detail: {
             GeometryReader { pane in
@@ -380,7 +381,7 @@ private struct FolderWindowToolbar: ToolbarContent {
             .disabled(!summary.exists)
             .help("The folder's own shell (⌃`)")
             if showsChat {
-                SidebarToggle(windowWidth: window.frame.windowWidth)
+                SidebarToggle()
             }
         }
     }

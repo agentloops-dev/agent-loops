@@ -228,7 +228,10 @@ gh issue list --limit 100 --json number,title,labels,assignees \
 ```
 
 - **The order:** the one order of `forge/next` ("The order", above): on hold last, then
-  priority, the milestone's due date and the oldest.
+  priority, the milestone's due date and the oldest. In the bug lane (#4207), a bug that
+  names a quarantine (`flaky.UnderLoad`, `.flakyUnderLoad` or `flakyUnderLoad`) goes
+  before the other bugs of its priority (Alex, 2026-11-17, #6037): while it waits, the
+  bug it hides stays in `main`.
 - **Ready** is an issue with no open blocker (`dependencies/blocked_by`, as in step 1).
 - **No block, a second block or an unknown field** (`forge/plan` says it in
   `standing.error`): start no lanes. Say it in a comment on the epic once, and ask the

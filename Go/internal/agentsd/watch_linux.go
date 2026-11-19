@@ -32,6 +32,8 @@ type folderWatch struct {
 	skip func(path, name string) bool
 	// files says the paths that changed, not the folders they were in.
 	files bool
+	// warned is whether a folder that could not be watched was logged.
+	warned bool
 }
 
 func newFilesWatch(root string, changed func([]string)) (*folderWatch, error) {
@@ -51,7 +53,13 @@ func startFolderWatch(w *folderWatch, name string) (*folderWatch, error) {
 		return nil, err
 	}
 	w.fd, w.paths, w.done = fd, map[int]string{}, make(chan struct{})
-	w.addTree(w.root)
+	// A root that cannot be watched (no inotify watches left: ENOSPC) is not a watch: one
+	// that said it was up and heard nothing lost a workflow written on disk (#6248). The
+	// folder list's next look tries it again.
+	if err := w.addTree(w.root); err != nil {
+		_ = unix.Close(fd) // the error that counts is the watch's
+		return nil, err
+	}
 	safe.Go(name, w.read)
 	return w, nil
 }
@@ -59,7 +67,11 @@ func startFolderWatch(w *folderWatch, name string) (*folderWatch, error) {
 const watchMask = unix.IN_CREATE | unix.IN_DELETE | unix.IN_MODIFY | unix.IN_MOVED_FROM | unix.IN_MOVED_TO |
 	unix.IN_CLOSE_WRITE | unix.IN_ATTRIB | unix.IN_DELETE_SELF
 
-func (w *folderWatch) addTree(dir string) {
+// addTree watches dir and every folder under it the watch does not leave out. It says why
+// the root could not be watched; a folder under it that cannot be is logged, once a watch,
+// as it is not heard (#6248).
+func (w *folderWatch) addTree(dir string) error {
+	var rootErr error
 	filepath.WalkDir(dir, func(p string, e os.DirEntry, err error) error {
 		if err != nil || !e.IsDir() {
 			return nil
@@ -75,13 +87,27 @@ func (w *folderWatch) addTree(dir string) {
 			log.Printf("files watch: %s has more than %d folders; the rest are not watched", w.root, maxWatchedFolders)
 			return filepath.SkipAll
 		}
-		if wd, err := unix.InotifyAddWatch(w.fd, p, watchMask); err == nil {
+		wd, err := unix.InotifyAddWatch(w.fd, p, watchMask)
+		if err != nil {
+			if p == w.root {
+				rootErr = err
+				return filepath.SkipAll
+			}
 			w.mu.Lock()
-			w.paths[wd] = p
+			warned := w.warned
+			w.warned = true
 			w.mu.Unlock()
+			if !warned {
+				log.Printf("files watch: %s is not heard: %v", p, err)
+			}
+			return nil
 		}
+		w.mu.Lock()
+		w.paths[wd] = p
+		w.mu.Unlock()
 		return nil
 	})
+	return rootErr
 }
 
 func (w *folderWatch) read() {
@@ -94,15 +120,7 @@ func (w *folderWatch) read() {
 		case <-w.done:
 			return
 		case <-flush.C:
-			if len(pending) > 0 {
-				folders := make([]string, 0, len(pending))
-				for f := range pending {
-					folders = append(folders, f)
-				}
-				sort.Strings(folders)
-				pending = map[string]bool{}
-				w.changed(folders)
-			}
+			pending = w.readFlush(pending)
 		default:
 		}
 		n, err := unix.Read(w.fd, buf)
@@ -119,33 +137,41 @@ func (w *folderWatch) read() {
 			return
 		}
 		for off := 0; off+unix.SizeofInotifyEvent <= n; {
-			ev := (*unix.InotifyEvent)(unsafePointer(&buf[off]))
-			nameLen := int(ev.Len)
-			w.mu.Lock()
-			dir := w.paths[int(ev.Wd)]
-			w.mu.Unlock()
-			if dir != "" {
-				name := ""
-				if nameLen > 0 {
-					name = cString(buf[off+unix.SizeofInotifyEvent : off+unix.SizeofInotifyEvent+nameLen])
-				}
-				if w.files && name != "" {
-					pending[filepath.Join(dir, name)] = true
-				} else {
-					pending[dir] = true
-				}
-				if ev.Mask&unix.IN_ISDIR != 0 && ev.Mask&(unix.IN_CREATE|unix.IN_MOVED_TO) != 0 && name != "" {
-					w.addTree(filepath.Join(dir, name))
-				}
-				// The root itself gone (a folder removed, a test's TempDir): nothing
-				// more can be heard, so the watch lets its descriptor go.
-				if ev.Mask&unix.IN_DELETE_SELF != 0 && dir == w.root {
-					go w.stop()
-				}
+			size, rootGone := w.readEvent(buf, off, pending)
+			off += size
+			// The root itself gone (a folder removed, a test's TempDir): nothing
+			// more can be heard, so the watch lets its descriptor go.
+			if rootGone {
+				go w.stop()
 			}
-			off += unix.SizeofInotifyEvent + nameLen
 		}
 	}
+}
+
+// readEvent reads the inotify event at off in buf and adds what changed to pending. It
+// gives the length of the event, and whether it says the watch's root itself is gone.
+func (w *folderWatch) readEvent(buf []byte, off int, pending map[string]bool) (int, bool) {
+	ev := (*unix.InotifyEvent)(unsafePointer(&buf[off]))
+	nameLen := int(ev.Len)
+	w.mu.Lock()
+	dir := w.paths[int(ev.Wd)]
+	w.mu.Unlock()
+	if dir != "" {
+		name := ""
+		if nameLen > 0 {
+			name = cString(buf[off+unix.SizeofInotifyEvent : off+unix.SizeofInotifyEvent+nameLen])
+		}
+		if w.files && name != "" {
+			pending[filepath.Join(dir, name)] = true
+		} else {
+			pending[dir] = true
+		}
+		if ev.Mask&unix.IN_ISDIR != 0 && ev.Mask&(unix.IN_CREATE|unix.IN_MOVED_TO) != 0 && name != "" {
+			_ = w.addTree(filepath.Join(dir, name)) // only the root says an error; a folder under it is logged
+		}
+	}
+	rootGone := dir != "" && ev.Mask&unix.IN_DELETE_SELF != 0 && dir == w.root
+	return unix.SizeofInotifyEvent + nameLen, rootGone
 }
 
 func cString(b []byte) string {
@@ -162,4 +188,19 @@ func (w *folderWatch) stop() {
 		close(w.done)
 		unix.Close(w.fd)
 	})
+}
+
+// readFlush tells what changed in pending, in order, when there is any. It gives the
+// pending set to use next.
+func (w *folderWatch) readFlush(pending map[string]bool) map[string]bool {
+	if len(pending) == 0 {
+		return pending
+	}
+	folders := make([]string, 0, len(pending))
+	for f := range pending {
+		folders = append(folders, f)
+	}
+	sort.Strings(folders)
+	w.changed(folders)
+	return map[string]bool{}
 }

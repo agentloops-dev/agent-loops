@@ -37,6 +37,7 @@ import { promptingMethods } from "./store/prompting";
 import { pinsRequestsMethods } from "./store/pinsRequests";
 import { agentSettingsMethods } from "./store/agentSettings";
 import { eventsMethods } from "./store/events";
+import { answerHere } from "./fanAll";
 
 export * from "./store/shared";
 export { Work } from "./store/work";
@@ -77,6 +78,15 @@ export class Store extends Work {
     }, undefined, (error) => this.say(describe(error)));
     // A test's fake link has none.
     link.setLock?.(() => this.machineLock.signer());
+    // In its lock, the page asks each machine itself for what the control plane would ask them all (#5996).
+    link.setAnswerHere?.(async (method, params) => {
+      if (!(await this.machineLock.signer())) return undefined;
+      return answerHere(method, params, {
+        hosts: (capability) => this.hosts.value.filter((h) => this.has(h.id, capability))
+          .map((h) => ({ id: h.id, name: h.name })),
+        ask: (m, p, host) => link.call(m as never, p as never, host),
+      });
+    });
     link.onNotification((method, params, host) => {
       // A browser frame is acked as it lands (#3528): the host sends the next only then, so a
       // slow link gets fewer frames, not a backlog.
@@ -409,6 +419,8 @@ export class Store extends Work {
 
   /** Each host's velocity/history (#4598): the PRs that landed, by hour and day, by repository. */
   readonly velocity = signal<Record<string, VelocityHistory>>({});
+  /** The hosts whose last velocity/history read failed (#5972): the page says so, not "Loading…" for ever. */
+  readonly velocityFailed = signal<Record<string, boolean>>({});
 
   /**
    * The person's bus log (#4732): every machine's events, newest first, for the rows no host here

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -156,54 +157,76 @@ func (f *fakeForgejo) serve(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"message":"no"}`))
 		return
 	}
-	reply := func(v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
-	}
-	n := func(m []string) int { i, _ := strconv.Atoi(m[1]); return i }
 	q := r.URL.Query()
 	if r.URL.Query().Get("page") != "" && r.URL.Query().Get("page") != "1" {
-		reply([]any{})
+		reply(w, []any{})
 		return
 	}
 	p := r.URL.Path
 	if r.Method == http.MethodPost {
-		body := obj{}
-		data, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(data, &body)
-		body["_path"] = p
-		f.posted = append(f.posted, body)
-		switch {
-		case pullsPath.MatchString(p):
-			reply(pull(9, body["head"].(string), alex, obj{"title": body["title"], "base": obj{"ref": body["base"], "repo_id": 7}}))
-		case reviewsPath.MatchString(p):
-			reply(obj{"id": 77, "html_url": "https://forgejo.test/acme/app/pulls/1#review-77"})
-		case commentsPath.MatchString(p):
-			reply(obj{"id": 55, "html_url": "https://forgejo.test/acme/app/issues/2#issuecomment-55"})
-		case mergePath.MatchString(p):
-			w.WriteHeader(http.StatusOK)
-		case jobRerunPath.MatchString(p):
-			// A job waiting again, after a job it needs was sent, is still running.
-			if f.rerunning[n(jobRerunPath.FindStringSubmatch(p))] {
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"message":"job is still running"}`))
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-		case runRerunPath.MatchString(p):
-			w.WriteHeader(http.StatusCreated)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
+		f.servePost(w, r, p)
 		return
 	}
+	if f.serveActions(w, r, p, q) || f.servePulls(w, r, p, q) || f.serveIssues(w, r, p, q) || f.serveAccess(w, r, p, q) {
+		return
+	}
+	if strings.HasPrefix(p, "/api/v1/orgs/") {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	f.t.Errorf("fake Forgejo: no %s %s", r.Method, r.URL)
+	w.WriteHeader(http.StatusNotFound)
+}
+
+// reply answers v as JSON.
+func reply(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// num is the number a path's pattern matched first.
+func num(m []string) int { i, _ := strconv.Atoi(m[1]); return i }
+
+// servePost answers a POST at p, and keeps its body in posted.
+func (f *fakeForgejo) servePost(w http.ResponseWriter, r *http.Request, p string) {
+	body := obj{}
+	data, _ := io.ReadAll(r.Body)
+	_ = json.Unmarshal(data, &body)
+	body["_path"] = p
+	f.posted = append(f.posted, body)
+	switch {
+	case pullsPath.MatchString(p):
+		reply(w, pull(9, body["head"].(string), alex, obj{"title": body["title"], "base": obj{"ref": body["base"], "repo_id": 7}}))
+	case reviewsPath.MatchString(p):
+		reply(w, obj{"id": 77, "html_url": "https://forgejo.test/acme/app/pulls/1#review-77"})
+	case commentsPath.MatchString(p):
+		reply(w, obj{"id": 55, "html_url": "https://forgejo.test/acme/app/issues/2#issuecomment-55"})
+	case mergePath.MatchString(p):
+		w.WriteHeader(http.StatusOK)
+	case jobRerunPath.MatchString(p):
+		// A job waiting again, after a job it needs was sent, is still running.
+		if f.rerunning[num(jobRerunPath.FindStringSubmatch(p))] {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"message":"job is still running"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case runRerunPath.MatchString(p):
+		w.WriteHeader(http.StatusCreated)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// serveActions answers the version and the Actions runs, jobs and logs; false when p is none of them.
+func (f *fakeForgejo) serveActions(w http.ResponseWriter, r *http.Request, p string, q url.Values) bool {
 	switch {
 	case p == "/api/v1/version":
 		v := f.version
 		if v == "" {
 			v = "17.0.1+gitea-1.22.0"
 		}
-		reply(obj{"version": v})
+		reply(w, obj{"version": v})
 	case p == "/api/v1/repos/acme/app/actions/runs":
 		out := []obj{}
 		for _, run := range f.runs {
@@ -212,21 +235,21 @@ func (f *fakeForgejo) serve(w http.ResponseWriter, r *http.Request) {
 				out = append(out, run)
 			}
 		}
-		reply(obj{"workflow_runs": out, "total_count": len(out)})
+		reply(w, obj{"workflow_runs": out, "total_count": len(out)})
 	case runJobsPath.MatchString(p):
-		jobs := orEmpty(f.jobs[n(runJobsPath.FindStringSubmatch(p))])
+		jobs := orEmpty(f.jobs[num(runJobsPath.FindStringSubmatch(p))])
 		if f.giteaJobs {
-			reply(obj{"jobs": jobs, "total_count": len(jobs)})
-			return
+			reply(w, obj{"jobs": jobs, "total_count": len(jobs)})
+			return true
 		}
-		reply(jobs)
+		reply(w, jobs)
 	case jobPath.MatchString(p):
-		id := n(jobPath.FindStringSubmatch(p))
+		id := num(jobPath.FindStringSubmatch(p))
 		for _, jobs := range f.jobs {
 			for _, j := range jobs {
 				if j["id"] == id {
-					reply(j)
-					return
+					reply(w, j)
+					return true
 				}
 			}
 		}
@@ -239,7 +262,7 @@ func (f *fakeForgejo) serve(w http.ResponseWriter, r *http.Request) {
 		text, ok := f.logs[key]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
-			return
+			return true
 		}
 		f.ranges = append(f.ranges, r.Header.Get("Range"))
 		// The end the Range asks for, as Forgejo's ServeContent answers it.
@@ -247,18 +270,27 @@ func (f *fakeForgejo) serve(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", len(text)-size, len(text)-1, len(text)))
 			w.WriteHeader(http.StatusPartialContent)
 			_, _ = w.Write([]byte(text[len(text)-size:]))
-			return
+			return true
 		}
 		_, _ = w.Write([]byte(text))
+	default:
+		return false
+	}
+	return true
+}
+
+// servePulls answers the user, the repository and its pull requests; false when p is none of them.
+func (f *fakeForgejo) servePulls(w http.ResponseWriter, r *http.Request, p string, q url.Values) bool {
+	switch {
 	case p == "/api/v1/user":
-		reply(obj{"id": 1, "login": f.me})
+		reply(w, obj{"id": 1, "login": f.me})
 	case p == "/api/v1/repos/acme/app":
-		reply(obj{"full_name": repo, "default_branch": "main", "allow_merge_commits": true, "allow_squash_merge": true,
+		reply(w, obj{"full_name": repo, "default_branch": "main", "allow_merge_commits": true, "allow_squash_merge": true,
 			"default_merge_style": "squash"})
 	case filesPath.MatchString(p):
-		reply(orEmpty(f.files[n(filesPath.FindStringSubmatch(p))]))
+		reply(w, orEmpty(f.files[num(filesPath.FindStringSubmatch(p))]))
 	case diffPath.MatchString(p):
-		_, _ = io.WriteString(w, f.diffs[n(diffPath.FindStringSubmatch(p))])
+		_, _ = io.WriteString(w, f.diffs[num(diffPath.FindStringSubmatch(p))])
 	case pullsPath.MatchString(p):
 		out := []obj{}
 		for _, pr := range f.pulls {
@@ -274,21 +306,30 @@ func (f *fakeForgejo) serve(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		reply(out)
+		reply(w, out)
 	case pullPath.MatchString(p):
 		for _, pr := range f.pulls {
-			if pr["number"] == n(pullPath.FindStringSubmatch(p)) {
-				reply(pr)
-				return
+			if pr["number"] == num(pullPath.FindStringSubmatch(p)) {
+				reply(w, pr)
+				return true
 			}
 		}
 		w.WriteHeader(http.StatusNotFound)
 	case reviewsPath.MatchString(p):
-		reply(orEmpty(f.reviews[n(reviewsPath.FindStringSubmatch(p))]))
+		reply(w, orEmpty(f.reviews[num(reviewsPath.FindStringSubmatch(p))]))
 	case linesPath.MatchString(p):
 		m := linesPath.FindStringSubmatch(p)
 		id, _ := strconv.Atoi(m[2])
-		reply(orEmpty(f.lines[id]))
+		reply(w, orEmpty(f.lines[id]))
+	default:
+		return false
+	}
+	return true
+}
+
+// serveIssues answers issues, comments, timelines and statuses; false when p is none of them.
+func (f *fakeForgejo) serveIssues(w http.ResponseWriter, r *http.Request, p string, q url.Values) bool {
+	switch {
 	case issuesPath.MatchString(p):
 		out := []obj{}
 		for _, i := range f.issues {
@@ -299,12 +340,12 @@ func (f *fakeForgejo) serve(w http.ResponseWriter, r *http.Request) {
 				out = append(out, i)
 			}
 		}
-		reply(out)
+		reply(w, out)
 	case issuePath.MatchString(p):
 		for _, i := range f.issues {
-			if i["number"] == n(issuePath.FindStringSubmatch(p)) {
-				reply(i)
-				return
+			if i["number"] == num(issuePath.FindStringSubmatch(p)) {
+				reply(w, i)
+				return true
 			}
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -315,39 +356,46 @@ func (f *fakeForgejo) serve(w http.ResponseWriter, r *http.Request) {
 				out = append(out, c)
 			}
 		}
-		reply(out)
+		reply(w, out)
 	case commentsPath.MatchString(p):
-		reply(orEmpty(f.thread[n(commentsPath.FindStringSubmatch(p))]))
+		reply(w, orEmpty(f.thread[num(commentsPath.FindStringSubmatch(p))]))
 	case timelinePath.MatchString(p):
-		reply(orEmpty(f.timeline[n(timelinePath.FindStringSubmatch(p))]))
+		reply(w, orEmpty(f.timeline[num(timelinePath.FindStringSubmatch(p))]))
 	case statusPath.MatchString(p):
 		if s, ok := f.statuses[statusPath.FindStringSubmatch(p)[1]]; ok {
-			reply(s)
-			return
+			reply(w, s)
+			return true
 		}
-		reply(obj{"state": "", "statuses": []any{}})
+		reply(w, obj{"state": "", "statuses": []any{}})
+	default:
+		return false
+	}
+	return true
+}
+
+// serveAccess answers permissions and collaborators; false when p is none of them.
+func (f *fakeForgejo) serveAccess(w http.ResponseWriter, r *http.Request, p string, q url.Values) bool {
+	switch {
 	case permPath.MatchString(p):
 		if f.adminless {
 			w.WriteHeader(http.StatusForbidden)
-			return
+			return true
 		}
 		perm, ok := f.perms[permPath.FindStringSubmatch(p)[1]]
 		if !ok {
 			perm = "read"
 		}
-		reply(obj{"permission": perm})
+		reply(w, obj{"permission": perm})
 	case collabPath.MatchString(p):
 		if f.collaborators[collabPath.FindStringSubmatch(p)[1]] {
 			w.WriteHeader(http.StatusNoContent)
-			return
+			return true
 		}
 		w.WriteHeader(http.StatusNotFound)
-	case strings.HasPrefix(p, "/api/v1/orgs/"):
-		w.WriteHeader(http.StatusNotFound)
 	default:
-		f.t.Errorf("fake Forgejo: no %s %s", r.Method, r.URL)
-		w.WriteHeader(http.StatusNotFound)
+		return false
 	}
+	return true
 }
 
 func orEmpty(list []obj) []obj {

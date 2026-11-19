@@ -10,7 +10,7 @@ public enum WorkList {
         /// Features (#3269) are the `feature:` labels on the epics, not a lineage kind: an epic opens as an issue.
         /// Deploys (#5270) is every component in every environment (`WorkDeploys`), Mac + web; its
         /// raw value is lineage's deploy kind, but a deploy node opens no Work page.
-        /// Timeline (#4173) is the epics on a time axis, the Mac's alone for now (`WorkTimeline`).
+        /// Timeline (#4173) is the epics on a time axis (`WorkTimeline`), Core since #6044.
         case issue, pr, feature, release, deploy, timeline
 
         public var id: Self { self }
@@ -36,8 +36,15 @@ public enum WorkList {
         /// A release's Newest is its version, the highest first (#4421).
         public var sorts: [Sort] { fromForge ? Sort.allCases : self == .release ? [.newest, .cost] : [.updated, .cost] }
 
-        /// The sort a list opens with: a release's is Newest.
-        public var defaultSort: Sort { self == .release ? .newest : .updated }
+        /// The sort a list opens with (#6087): an issue's is Priority, so High is at the top; a release's is
+        /// Newest. A pull request keeps Last updated, as its priority is rarely set.
+        public var defaultSort: Sort {
+            switch self {
+            case .issue: .priority
+            case .release: .newest
+            default: .updated
+            }
+        }
     }
 
     public enum State: String, CaseIterable, Sendable, Hashable {
@@ -50,10 +57,12 @@ public enum WorkList {
     }
 
     public enum Sort: String, CaseIterable, Sendable, Hashable {
-        case updated, newest, cost
+        /// Priority (#6087) is `forge/next`'s order (#5689): not on hold first, then High, Medium, none and Low.
+        case priority, updated, newest, cost
 
         public var title: String {
             switch self {
+            case .priority: "Priority"
             case .updated: "Last updated"
             case .newest: "Newest"
             case .cost: "Cost"
@@ -74,6 +83,9 @@ public enum WorkList {
         public var labels: [DaemonAPI.ForgeLabel]
         /// high, medium or low, from `ForgeItem.priority` (#5690); nil for none.
         public var priority: String?
+        /// On hold, from `ForgeItem.onHold` (#5747): Priority puts it below every other row (#6087),
+        /// and the row has the On hold chip (#6090).
+        public var onHold = false
         /// The ref's repo or tracker: github:alexec/Agents, linear:ENG (a Linear team, #3311), jira.
         public var repo: String
         public var author: String?
@@ -137,6 +149,7 @@ public enum WorkList {
                       status: item.status, comments: item.comments, checks: item.checks, review: item.review,
                       stateReason: item.stateReason, avatar: item.authorAvatar, created: item.createdAt, closed: item.closedAt)
             priority = item.priority
+            onHold = WorkPlan.onHold(item)
         }
 
         /// A row lineage alone knows: a release, named by its tag until the forge names it (#4426).
@@ -314,6 +327,11 @@ public enum WorkList {
     /// What a machine the control plane could not reach for a list says (#5592), as the web page's `notAnswered`.
     public static let didNotAnswer = "It did not answer."
 
+    /// Whether the window asks the control plane for every machine at once (#5592), or each machine itself (#6141).
+    /// With one machine, or none, the plane only adds two hops (window to plane, plane back to the machine) and a
+    /// way to fail: the machine is asked directly.
+    public static func asksControlPlane(machines: Int) -> Bool { machines > 1 }
+
     /// forge/listAll's answer (#5592) as each of `hosts`' list, in their order, as the web page's `hostListsOf`. A
     /// machine the control plane could not reach has an error for all its forges (forge ""); one it names that is not of
     /// `hosts` is left out, as it was not asked before.
@@ -338,7 +356,7 @@ public enum WorkList {
                 return entry
             }
             return (entry.host, .init(items: entry.list.items + page.items, cursor: page.cursor, errors: page.errors,
-                                      total: entry.list.total))
+                                      forges: joinForges(entry.list.forges, page.forges), total: entry.list.total))
         }
         return (next, failed.isEmpty ? nil : failed.joined(separator: "; "))
     }
@@ -376,9 +394,26 @@ public enum WorkList {
     /// The total cost in one figure, for sorting: the sum of its currencies.
     private static func cost(_ r: Row) -> Decimal { r.lineage?.cost.total.cost.values.reduce(0, +) ?? 0 }
 
+    /// A priority's place in Priority's order (#6087), as `forge/next` has it: High, Medium, none, Low.
+    static func priorityRank(_ priority: String?) -> Int {
+        switch priority?.lowercased() {
+        case "high": 0
+        case "medium": 1
+        case "low": 3
+        default: 2
+        }
+    }
+
     public static func sort(_ rows: [Row], by sort: Sort) -> [Row] {
         let tie: (Row, Row) -> Bool = { a, b in a.updated != b.updated ? a.updated > b.updated : a.node.ref < b.node.ref }
         switch sort {
+        case .priority:
+            // Not on hold first, then by priority; in a priority, the last updated first.
+            return rows.sorted { a, b in
+                if a.onHold != b.onHold { return !a.onHold }
+                let (x, y) = (priorityRank(a.priority), priorityRank(b.priority))
+                return x != y ? x < y : tie(a, b)
+            }
         case .updated:
             return rows.sorted(by: tie)
         case .newest:
@@ -502,6 +537,47 @@ public enum WorkList {
         return !(node.kind == "pr" && forgesWithoutPRLabels.contains(forge))
     }
 
+    /// The Labels section's labels (#6092): not `priority:high`, `priority:medium`, `priority:low` or
+    /// `on hold` (Jira's `on-hold`), in any case, which the panel's Priority section shows instead.
+    public static func sideLabels(_ labels: [DaemonAPI.ForgeLabel]) -> [DaemonAPI.ForgeLabel] {
+        labels.filter { label in
+            let name = label.name.lowercased()
+            return !priorityChoices.contains { $0.map { "priority:" + $0 } == name } && name != "on hold" && name != "on-hold"
+        }
+    }
+
+    /// The Priority menu's choices, in its order (#6092): `forge/priority`'s values, nil for none.
+    public static let priorityChoices: [String?] = ["high", "medium", nil, "low"]
+
+    /// What the page offers on an item's priority and on hold (#6092): where its `actions` say the
+    /// forge sets them, and a machine of the person's writes.
+    public static func setsPriority(_ detail: DaemonAPI.ForgeItemDetail, writes: Bool) -> (priority: Bool, hold: Bool) {
+        let actions = detail.actions ?? []
+        return (writes && actions.contains("priority"), writes && actions.contains("hold"))
+    }
+
+    /// Each forge's capabilities of a list and its next page, once each (the earlier page's first):
+    /// a page can name a forge the first did not; nil when neither says any (an earlier daemon).
+    public static func joinForges(_ had: [DaemonAPI.ForgeCapabilities]?,
+                                  _ page: [DaemonAPI.ForgeCapabilities]?) -> [DaemonAPI.ForgeCapabilities]? {
+        guard had != nil || page != nil else { return nil }
+        var out = had ?? []
+        for caps in page ?? [] where !out.contains(where: { $0.forge == caps.forge }) { out.append(caps) }
+        return out
+    }
+
+    /// What a row's right-click menu offers on Work ▸ Issues (epic #6086): an issue's priority and
+    /// on hold where its forge sets them (`ForgeCapabilities.priority` and `hold` of the forge the
+    /// row's ref names, the same rule as the item page's `actions`, #6091), and its machine writes.
+    public static func rowSetsPriority(_ row: Row, forges: [DaemonAPI.ForgeCapabilities]?,
+                                       writes: Bool) -> (priority: Bool, hold: Bool) {
+        let forge = WireRef.legacy(row.node.ref).split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
+        guard writes, row.node.kind == "issue", let caps = forges?.first(where: { $0.forge == forge }) else {
+            return (false, false)
+        }
+        return (caps.priority == true, caps.hold == true)
+    }
+
     /// Why a write failed, in the machine's own words: a JSON-RPC error's message, not Foundation's
     /// "The operation couldn't be completed".
     public static func failureWords(_ error: any Error) -> String {
@@ -562,13 +638,17 @@ public enum WorkList {
     }
 
     /// What a write did, for the line under the actions.
-    public static func doneWords(_ method: String, _ done: DaemonAPI.ForgeDone, reopened: Bool = false, moved: Bool = false) -> String {
+    public static func doneWords(_ method: String, _ done: DaemonAPI.ForgeDone, reopened: Bool = false, moved: Bool = false,
+                                 held: Bool = false) -> String {
         switch method {
+        case DaemonAPI.Method.forgePriority: "Priority changed."
+        case DaemonAPI.Method.forgeHold: held ? "On hold: not picked up next." : "Off hold."
         case DaemonAPI.Method.forgeClose where moved: "Status changed."
         case DaemonAPI.Method.forgeComment: "Commented."
         case DaemonAPI.Method.forgeLabel: "Labels changed."
         case DaemonAPI.Method.forgeMerge: done.auto == true ? "Auto-merge is on: it merges when its checks pass." : "Merged."
         case DaemonAPI.Method.forgeApprove: "Approved."
+        case DaemonAPI.Method.forgeRequestChanges: "Changes requested."
         case DaemonAPI.Method.forgeAddChild: "Child added."
         case DaemonAPI.Method.forgeBlockedBy: "Blocked by changed."
         case DaemonAPI.Method.forgeClose: reopened ? "Reopened." : "Closed."

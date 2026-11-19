@@ -339,36 +339,57 @@ func workflowSettings(m map[string]yamlnode.Node) (wire.WorkflowSettings, error)
 	if _, _, _, _, err := fileLevels(runtimeID, model, s.PermissionMode, requests, box); err != nil {
 		return s, &yamlnode.Failure{Message: err.(*Error).Message}
 	}
-	if n, ok := m["options"]; ok {
-		if v, isText := n.Text(); !(isText && v == "") {
-			if !n.IsMapping() {
-				return s, &yamlnode.Failure{Message: "`options:` must be a list of keys, like `fast: true`"}
-			}
-			for id, value := range n.Mapping {
-				text, ok := value.Text()
-				if !ok {
-					return s, &yamlnode.Failure{Message: "`" + id + ":` under `options:` must be a single value"}
-				}
-				if text != "" {
-					s.Options[id] = text
-				}
-			}
-		}
+	if err := workflowSettingsOptions(m, s.Options); err != nil {
+		return s, err
 	}
-	if n, ok := m["labels"]; ok {
-		values, ok := n.Values()
-		if !ok {
-			return s, &yamlnode.Failure{Message: "`labels:` must be a list of names"}
-		}
-		labels, err := changeLabels(nil, values, nil, nil)
-		if err != nil {
-			return s, &yamlnode.Failure{Message: "`labels:` " + err.(*Error).Message}
-		}
-		for _, l := range labels {
-			s.Labels = append(s.Labels, l.Value)
-		}
+	if err := workflowSettingsLabels(m, &s); err != nil {
+		return s, err
 	}
 	return s, nil
+}
+
+// workflowSettingsOptions puts the keys under `options:` into options.
+func workflowSettingsOptions(m map[string]yamlnode.Node, options map[string]string) error {
+	n, ok := m["options"]
+	if !ok {
+		return nil
+	}
+	if v, isText := n.Text(); isText && v == "" {
+		return nil
+	}
+	if !n.IsMapping() {
+		return &yamlnode.Failure{Message: "`options:` must be a list of keys, like `fast: true`"}
+	}
+	for id, value := range n.Mapping {
+		text, ok := value.Text()
+		if !ok {
+			return &yamlnode.Failure{Message: "`" + id + ":` under `options:` must be a single value"}
+		}
+		if text != "" {
+			options[id] = text
+		}
+	}
+	return nil
+}
+
+// workflowSettingsLabels adds the names under `labels:` to s.Labels.
+func workflowSettingsLabels(m map[string]yamlnode.Node, s *wire.WorkflowSettings) error {
+	n, ok := m["labels"]
+	if !ok {
+		return nil
+	}
+	values, ok := n.Values()
+	if !ok {
+		return &yamlnode.Failure{Message: "`labels:` must be a list of names"}
+	}
+	labels, err := changeLabels(nil, values, nil, nil)
+	if err != nil {
+		return &yamlnode.Failure{Message: "`labels:` " + err.(*Error).Message}
+	}
+	for _, l := range labels {
+		s.Labels = append(s.Labels, l.Value)
+	}
+	return nil
 }
 
 func (d *Daemon) registerSettings() {

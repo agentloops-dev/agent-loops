@@ -312,6 +312,17 @@ func (d *Daemon) driveScreen(agent wire.UUID, args map[string]json.RawMessage) (
 		d.letGoOfScreen(agent)
 		return "", &Error{Message: "drive_screen: " + err.Error()}
 	}
+	req := driveScreenRequest(args, action, app)
+	d.noteScreenApp(agent, app)
+	res, err := d.driveScreenCall(agent, p, req, action)
+	if err != nil {
+		return "", err
+	}
+	return d.driveScreenSaid(agent, app, action, args, res)
+}
+
+// driveScreenRequest is the request to agents-drive for one drive_screen call.
+func driveScreenRequest(args map[string]json.RawMessage, action, app string) map[string]any {
 	req := map[string]any{"action": action, "app": app}
 	if label := argString(args, "label"); label != "" {
 		req["label"] = label
@@ -332,22 +343,29 @@ func (d *Daemon) driveScreen(agent wire.UUID, args map[string]json.RawMessage) (
 	if keyName := argString(args, "keyName"); keyName != "" {
 		req["keyName"] = keyName
 	}
-	d.noteScreenApp(agent, app)
+	return req
+}
+
+// driveScreenCall sends req to agents-drive, and sends what is left of it again after
+// each touch of the person, until it is done without one. It waits while the screen is
+// paused.
+func (d *Daemon) driveScreenCall(agent wire.UUID, p *driveProcess, req map[string]any, action string) (map[string]any, error) {
 	var res map[string]any
+	var err error
 	touched := false
 	for {
 		// Paused by the person's touch (US3): held here until Resume or Take Over.
 		if err := d.waitWhilePaused(agent, touched); err != nil {
-			return "", err
+			return nil, err
 		}
 		if res, err = p.call(req); err != nil {
 			if d.tookOver(agent) {
 				// Take Over ended this helper under the call.
-				return "", &Error{Code: CodeNotPermitted, Message: desktopControlTakenOverWords}
+				return nil, &Error{Code: CodeNotPermitted, Message: desktopControlTakenOverWords}
 			}
 			// A dead helper takes nothing else with it: drop it so the next call starts fresh.
 			d.releaseScreenDrive(agent)
-			return "", &Error{Message: "drive_screen: " + err.Error()}
+			return nil, &Error{Message: "drive_screen: " + err.Error()}
 		}
 		touched, _ = res["touched"].(bool)
 		if !touched {
@@ -364,6 +382,12 @@ func (d *Daemon) driveScreen(agent wire.UUID, args map[string]json.RawMessage) (
 			}
 		}
 	}
+	return res, nil
+}
+
+// driveScreenSaid is what drive_screen says for agents-drive's reply res, and the live
+// tile's frame for it.
+func (d *Daemon) driveScreenSaid(agent wire.UUID, app, action string, args map[string]json.RawMessage, res map[string]any) (string, error) {
 	ok, _ := res["ok"].(bool)
 	if !ok {
 		msg, _ := res["error"].(string)

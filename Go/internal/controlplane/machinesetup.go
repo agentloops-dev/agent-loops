@@ -57,6 +57,10 @@ type storedSetup struct {
 	// (#5359). The compare step is done only when the host shows the same; "" for a machine
 	// that came by a code a person pasted, or asked to join, where a person compares.
 	Expect string `json:"expectedCode,omitempty"`
+	// Provider and Workspace are the workspace a provider made this machine as (#6075): the
+	// host that joins as this id is linked to it, also after the control plane restarted.
+	Provider  string `json:"provider,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
 }
 
 func machineSetupKey(host string) string {
@@ -235,6 +239,27 @@ func (s *Service) madeStep(host string, report wire.MachineSetupReport) {
 	if err := s.setupStep(context.Background(), host, report); err != nil {
 		s.log("machine " + host + ": set-up step " + string(report.Step) + " could not be kept: " + err.Error())
 	}
+}
+
+// madeFor is the providers' MadeFor hook (#6075): the workspace a made machine is, kept on its
+// set-up before it can join, so its join links it with no wait in memory.
+func (s *Service) madeFor(host, provider, workspace string) {
+	_, err := s.changeMachineSetup(context.Background(), host, true, func(st *storedSetup) error {
+		st.Provider, st.Workspace = provider, workspace
+		return nil
+	})
+	if err != nil {
+		s.log("machine " + host + ": the workspace it was made as could not be kept: " + err.Error())
+	}
+}
+
+// madeWorkspace is the workspace a made machine was made as (madeFor), or nil.
+func (s *Service) madeWorkspace(ctx context.Context, host string) *codeWorkspace {
+	stored, _, err := s.readMachineSetup(ctx, host)
+	if err != nil || stored == nil || stored.Provider == "" || stored.Workspace == "" {
+		return nil
+	}
+	return &codeWorkspace{Provider: stored.Provider, Workspace: stored.Workspace}
 }
 
 // retry makes the first failed step, and every one after it, wait again.

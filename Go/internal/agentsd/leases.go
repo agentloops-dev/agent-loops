@@ -296,6 +296,17 @@ func (d *Daemon) nextDeadline() (time.Time, bool) {
 	return next, !next.IsZero()
 }
 
+// lapseLeasesNow ends the leases that have run out by now and hands them on, as the
+// leases timer does.
+func (d *Daemon) lapseLeasesNow() {
+	d.leaseMu.Lock()
+	events := d.loadLeases()
+	events = append(events, d.lapse(now().Time())...)
+	d.leasesChanged()
+	d.leaseMu.Unlock()
+	d.settle(events)
+}
+
 // leasesChanged saves the book, says resources/changed and aims the timer at what is next.
 // Called with leaseMu held.
 func (d *Daemon) leasesChanged() {
@@ -457,46 +468,7 @@ func (d *Daemon) leaseSnapshot() wire.LeaseSnapshot {
 	var rows []wire.ResourceState
 	drawn := map[wire.ResourceName]bool{}
 	row := func(name wire.ResourceName, kind wire.ResourceKind, display string, gone bool, declared *wire.DeclaredResource) wire.ResourceState {
-		e := d.book.Entries[name]
-		r := wire.ResourceState{Name: name, Kind: kind, DisplayName: display, IsGone: gone, Declared: declared, Line: []wire.LineMember{}}
-		places := int64(1)
-		if e != nil {
-			r.DisplayName = e.DisplayName
-			// A copy: the snapshot is sent off this lock while the book moves on.
-			r.Holds = append([]wire.Lease{}, e.Leases...)
-			places = max(1, e.Rules.Holders)
-			for _, w := range e.Line {
-				// Open: its wait for lease.granted is open, so the event starts it (#2361).
-				open := false
-				if a := d.Store.Agent(w.AgentID); a != nil && a.EventWait != nil && a.EventWait.Ending == nil {
-					res, ok := lineWaitResource(a.EventWait, w.AgentID)
-					open = ok && res == name
-				}
-				r.Line = append(r.Line, wire.LineMember{AgentID: w.AgentID, AskedAt: w.AskedAt, IsCallOpen: open})
-			}
-			for _, l := range e.Leases {
-				if l.ExpiresAt > at && l.ExpiresAt.Time().Sub(at.Time()) <= leaseWarning {
-					r.EndingSoon = true
-				}
-			}
-		}
-		if declared != nil {
-			r.DisplayName = declared.DisplayName
-			places = declared.Holders
-		}
-		if why := d.capacityWait(name, e); why != "" {
-			r.CapacityWait = &why
-		}
-		if why := d.ciWait(name, e); why != "" {
-			r.CapacityWait = &why
-		}
-		if len(r.Holds) > 0 {
-			first := r.Holds[0]
-			r.Lease = &first
-		}
-		p := float64(places)
-		r.Places = &p
-		return r
+		return d.leaseSnapshotRowLocked(name, kind, display, gone, declared, at)
 	}
 	for i := range d.declared {
 		dr := d.declared[i]
@@ -522,6 +494,76 @@ func (d *Daemon) leaseSnapshot() wire.LeaseSnapshot {
 			rows = append(rows, row(name, e.Kind, e.DisplayName, e.Kind != "named", nil))
 		}
 	}
+	sortLeaseRows(rows)
+	if rows == nil {
+		rows = []wire.ResourceState{}
+	}
+	return wire.LeaseSnapshot{Resources: rows, At: at}
+}
+
+// leaseSnapshotRowLocked is one resource's row in the lease snapshot at the time at.
+// Call it with leaseMu held.
+func (d *Daemon) leaseSnapshotRowLocked(name wire.ResourceName, kind wire.ResourceKind, display string, gone bool, declared *wire.DeclaredResource, at wire.Date) wire.ResourceState {
+	e := d.book.Entries[name]
+	r := wire.ResourceState{Name: name, Kind: kind, DisplayName: display, IsGone: gone, Declared: declared, Line: []wire.LineMember{}}
+	places := int64(1)
+	if e != nil {
+		r.DisplayName = e.DisplayName
+		// A copy: the snapshot is sent off this lock while the book moves on.
+		r.Holds = append([]wire.Lease{}, e.Leases...)
+		places = max(1, e.Rules.Holders)
+		r.Line = append(r.Line, d.leaseLineMembersLocked(name, e)...)
+		if leaseEndingSoon(e, at) {
+			r.EndingSoon = true
+		}
+	}
+	if declared != nil {
+		r.DisplayName = declared.DisplayName
+		places = declared.Holders
+	}
+	if why := d.capacityWait(name, e); why != "" {
+		r.CapacityWait = &why
+	}
+	if why := d.ciWait(name, e); why != "" {
+		r.CapacityWait = &why
+	}
+	if len(r.Holds) > 0 {
+		first := r.Holds[0]
+		r.Lease = &first
+	}
+	p := float64(places)
+	r.Places = &p
+	return r
+}
+
+// leaseLineMembersLocked is e's line for the snapshot: each place, and whether its wait
+// for lease.granted is open. Call it with leaseMu held.
+func (d *Daemon) leaseLineMembersLocked(name wire.ResourceName, e *leaseEntry) []wire.LineMember {
+	var line []wire.LineMember
+	for _, w := range e.Line {
+		// Open: its wait for lease.granted is open, so the event starts it (#2361).
+		open := false
+		if a := d.Store.Agent(w.AgentID); a != nil && a.EventWait != nil && a.EventWait.Ending == nil {
+			res, ok := lineWaitResource(a.EventWait, w.AgentID)
+			open = ok && res == name
+		}
+		line = append(line, wire.LineMember{AgentID: w.AgentID, AskedAt: w.AskedAt, IsCallOpen: open})
+	}
+	return line
+}
+
+// leaseEndingSoon is whether a lease of e ends within leaseWarning after at.
+func leaseEndingSoon(e *leaseEntry, at wire.Date) bool {
+	for _, l := range e.Leases {
+		if l.ExpiresAt > at && l.ExpiresAt.Time().Sub(at.Time()) <= leaseWarning {
+			return true
+		}
+	}
+	return false
+}
+
+// sortLeaseRows puts the declared rows first, then by kind, then by name.
+func sortLeaseRows(rows []wire.ResourceState) {
 	order := map[wire.ResourceKind]int{"screen": 0, "simulator": 1, "browser": 2, "named": 3}
 	sort.SliceStable(rows, func(i, j int) bool {
 		a, b := rows[i], rows[j]
@@ -536,10 +578,6 @@ func (d *Daemon) leaseSnapshot() wire.LeaseSnapshot {
 		}
 		return a.Name < b.Name
 	})
-	if rows == nil {
-		rows = []wire.ResourceState{}
-	}
-	return wire.LeaseSnapshot{Resources: rows, At: at}
 }
 
 func leaseRefused(msg string) error { return &Error{Code: wire.FailureLeaseRefused, Message: msg} }
@@ -585,180 +623,225 @@ func (d *Daemon) registerLeases() {
 	On(d, wire.CallResourcesList, func(ctx context.Context, c *Client, _ wire.LeaseTokenRequest) (wire.LeaseNote, error) {
 		return wire.LeaseNote{}, noConversation()
 	})
-	person := func(f func() ([]leaseEvent, error)) (wire.LeaseSnapshot, error) {
-		d.leaseMu.Lock()
-		loaded := d.loadLeases()
-		events, err := f()
-		if err == nil || len(loaded) > 0 {
-			d.leasesChanged()
-		}
-		snap := d.leaseSnapshot()
-		d.leaseMu.Unlock()
-		d.settle(append(loaded, events...))
-		return snap, err
-	}
 	On(d, wire.CallResourcesSnapshot, func(ctx context.Context, c *Client, _ wire.Empty) (wire.LeaseSnapshot, error) {
-		d.leaseMu.Lock()
-		loaded := d.loadLeases()
-		if len(loaded) > 0 {
-			d.leasesChanged()
-		}
-		snap := d.leaseSnapshot()
-		d.leaseMu.Unlock()
-		d.settle(loaded)
-		return snap, nil
+		return d.resourcesSnapshotNow(), nil
 	})
 	On(d, wire.CallResourcesEnd, func(ctx context.Context, c *Client, r wire.PersonEndRequest) (wire.LeaseSnapshot, error) {
-		return person(func() ([]leaseEvent, error) {
-			name, ok := resourceName(r.Name)
-			if !ok {
-				return nil, leaseRefused("Say which resource to end.")
-			}
-			var holder wire.UUID
-			if r.AgentID != nil && strings.TrimSpace(*r.AgentID) != "" {
-				given := strings.ToUpper(strings.TrimSpace(*r.AgentID))
-				if !isUUID(given) {
-					return nil, leaseRefused("Say which agent's lease to end.")
-				}
-				holder = wire.UUID(given)
-			}
-			var events []leaseEvent
-			if e := d.book.Entries[name]; e != nil {
-				var kept []wire.Lease
-				for _, l := range e.Leases {
-					if holder == "" || l.Holder == holder {
-						d.leaveNotice(leaseNotice{Resource: name, DisplayName: l.DisplayName, Kind: noticeKind{EndedByPerson: &struct{}{}}, At: now()}, l.Holder)
-						events = append(events, leaseEvent{released: true, lease: l, ending: "endedByPerson"})
-					} else {
-						kept = append(kept, l)
-					}
-				}
-				if len(events) > 0 {
-					e.Leases = kept
-					events = append(events, d.handOn(name, e)...)
-					d.store(name, e)
-				}
-			}
-			if len(events) == 0 {
-				if holder == "" {
-					return nil, leaseRefused("Nobody holds " + r.Name + ".")
-				}
-				return nil, leaseRefused("That agent does not hold " + r.Name + ".")
-			}
-			return events, nil
-		})
+		return d.leaseChangeByPerson(func() ([]leaseEvent, error) { return d.endLeasesByPersonLocked(r) })
 	})
 	On(d, wire.CallResourcesRemoveWaiter, func(ctx context.Context, c *Client, r wire.PersonRemoveRequest) (wire.LeaseSnapshot, error) {
 		// Out of the line, its wait for its turn ends too, as Stop Waiting's does (#2361).
-		defer func() {
-			name, _ := resourceName(r.Name)
-			agent := wire.UUID(strings.ToUpper(strings.TrimSpace(r.AgentID)))
-			if a := d.Store.Agent(agent); a != nil {
-				if res, ok := lineWaitResource(a.EventWait, agent); ok && res == name && a.EventWait.Ending == nil {
-					d.endWait(agent, "person", true)
-				}
-			}
-		}()
-		return person(func() ([]leaseEvent, error) {
-			name, ok := resourceName(r.Name)
-			agent := strings.ToUpper(strings.TrimSpace(r.AgentID))
-			if !ok || !isUUID(agent) {
-				return nil, leaseRefused("Say which resource and which agent.")
-			}
-			display := r.Name
-			if e := d.book.Entries[name]; e != nil {
-				display = e.DisplayName
-				for i, w := range e.Line {
-					if w.AgentID == wire.UUID(agent) {
-						e.Line = append(e.Line[:i], e.Line[i+1:]...)
-						d.store(name, e)
-						return nil, nil
-					}
-				}
-			}
-			return nil, leaseRefused("That agent is not in line for " + display + ".")
-		})
+		defer d.endRemovedWaiterWait(r)
+		return d.leaseChangeByPerson(func() ([]leaseEvent, error) { return d.removeWaiterByPersonLocked(r) })
 	})
 	On(d, wire.CallResourcesDeclare, func(ctx context.Context, c *Client, r wire.DeclareResourceRequest) (wire.LeaseSnapshot, error) {
-		return person(func() ([]leaseEvent, error) {
-			res := r.Resource
-			res.DisplayName = strings.TrimSpace(res.DisplayName)
-			res.Description = strings.TrimSpace(res.Description)
-			if n, ok := resourceName(string(res.Name)); ok {
-				res.Name = n
-			}
-			if why := declaredProblem(res); why != "" {
-				return nil, leaseRefused(why)
-			}
-			var replacing wire.ResourceName
-			if r.Replacing != nil {
-				replacing, _ = resourceName(*r.Replacing)
-			}
-			var list []wire.DeclaredResource
-			for _, x := range d.declared {
-				if x.Name == res.Name && res.Name != replacing {
-					return nil, leaseRefused(res.DisplayName + " is declared already.")
-				}
-				if x.Name != res.Name && x.Name != replacing {
-					list = append(list, x)
-				}
-			}
-			list = append(list, res)
-			sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
-			if err := d.saveDeclared(list); err != nil {
-				return nil, leaseRefused("Could not save it: " + err.Error())
-			}
-			return d.setRules(res.Name, rulesOf(res)), nil
-		})
+		return d.leaseChangeByPerson(func() ([]leaseEvent, error) { return d.declareResourceLocked(r) })
 	})
 	On(d, wire.CallResourcesRemove, func(ctx context.Context, c *Client, r wire.RemoveResourceRequest) (wire.LeaseSnapshot, error) {
-		return person(func() ([]leaseEvent, error) {
-			name, _ := resourceName(r.Name)
-			var list []wire.DeclaredResource
-			found := false
-			for _, x := range d.declared {
-				if x.Name == name {
-					found = true
-				} else {
-					list = append(list, x)
-				}
-			}
-			if !found {
-				return nil, leaseRefused(r.Name + " is not declared.")
-			}
-			if err := d.saveDeclared(list); err != nil {
-				return nil, leaseRefused("Could not save it: " + err.Error())
-			}
-			return nil, nil
-		})
+		return d.leaseChangeByPerson(func() ([]leaseEvent, error) { return d.removeDeclaredResourceLocked(r) })
 	})
 	// While anything is held, the person's view is kept current every minute.
-	d.goLoop("lease ticker", func(ctx context.Context) {
-		t := time.NewTicker(time.Minute)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				d.leaseMu.Lock()
-				held := false
-				if d.book != nil {
-					for _, e := range d.book.Entries {
-						held = held || len(e.Leases) > 0
-					}
-				}
-				var snap wire.LeaseSnapshot
-				if held {
-					snap = d.leaseSnapshot()
-				}
-				d.leaseMu.Unlock()
-				if held {
-					Broadcast(d, wire.NotifyResourcesChanged, snap)
-				}
+	d.goLoop("lease ticker", d.runLeaseTicker)
+	d.goLoop("stall check", d.runStallTicker)
+}
+
+// leaseChangeByPerson runs a person's change f to the book with leaseMu held, and gives
+// the snapshot after it.
+func (d *Daemon) leaseChangeByPerson(f func() ([]leaseEvent, error)) (wire.LeaseSnapshot, error) {
+	d.leaseMu.Lock()
+	loaded := d.loadLeases()
+	events, err := f()
+	if err == nil || len(loaded) > 0 {
+		d.leasesChanged()
+	}
+	snap := d.leaseSnapshot()
+	d.leaseMu.Unlock()
+	d.settle(append(loaded, events...))
+	return snap, err
+}
+
+// resourcesSnapshotNow is resources/snapshot.
+func (d *Daemon) resourcesSnapshotNow() wire.LeaseSnapshot {
+	d.leaseMu.Lock()
+	loaded := d.loadLeases()
+	if len(loaded) > 0 {
+		d.leasesChanged()
+	}
+	snap := d.leaseSnapshot()
+	d.leaseMu.Unlock()
+	d.settle(loaded)
+	return snap
+}
+
+// endLeasesByPersonLocked is resources/end: the person ends a resource's leases, or one
+// agent's lease of it. Call it with leaseMu held.
+func (d *Daemon) endLeasesByPersonLocked(r wire.PersonEndRequest) ([]leaseEvent, error) {
+	name, ok := resourceName(r.Name)
+	if !ok {
+		return nil, leaseRefused("Say which resource to end.")
+	}
+	var holder wire.UUID
+	if r.AgentID != nil && strings.TrimSpace(*r.AgentID) != "" {
+		given := strings.ToUpper(strings.TrimSpace(*r.AgentID))
+		if !isUUID(given) {
+			return nil, leaseRefused("Say which agent's lease to end.")
+		}
+		holder = wire.UUID(given)
+	}
+	var events []leaseEvent
+	if e := d.book.Entries[name]; e != nil {
+		events = d.endHeldLeasesLocked(name, e, holder)
+	}
+	if len(events) == 0 {
+		if holder == "" {
+			return nil, leaseRefused("Nobody holds " + r.Name + ".")
+		}
+		return nil, leaseRefused("That agent does not hold " + r.Name + ".")
+	}
+	return events, nil
+}
+
+// endHeldLeasesLocked ends e's leases that holder has, or all of them when holder is
+// empty, tells each holder, and hands the resource on. Call it with leaseMu held.
+func (d *Daemon) endHeldLeasesLocked(name wire.ResourceName, e *leaseEntry, holder wire.UUID) []leaseEvent {
+	var events []leaseEvent
+	var kept []wire.Lease
+	for _, l := range e.Leases {
+		if holder == "" || l.Holder == holder {
+			d.leaveNotice(leaseNotice{Resource: name, DisplayName: l.DisplayName, Kind: noticeKind{EndedByPerson: &struct{}{}}, At: now()}, l.Holder)
+			events = append(events, leaseEvent{released: true, lease: l, ending: "endedByPerson"})
+		} else {
+			kept = append(kept, l)
+		}
+	}
+	if len(events) > 0 {
+		e.Leases = kept
+		events = append(events, d.handOn(name, e)...)
+		d.store(name, e)
+	}
+	return events
+}
+
+// endRemovedWaiterWait ends the wait for its turn of an agent the person took out of the
+// line.
+func (d *Daemon) endRemovedWaiterWait(r wire.PersonRemoveRequest) {
+	name, _ := resourceName(r.Name)
+	agent := wire.UUID(strings.ToUpper(strings.TrimSpace(r.AgentID)))
+	if a := d.Store.Agent(agent); a != nil {
+		if res, ok := lineWaitResource(a.EventWait, agent); ok && res == name && a.EventWait.Ending == nil {
+			d.endWait(agent, "person", true)
+		}
+	}
+}
+
+// removeWaiterByPersonLocked is resources/removeWaiter: the person takes an agent out of
+// a resource's line. Call it with leaseMu held.
+func (d *Daemon) removeWaiterByPersonLocked(r wire.PersonRemoveRequest) ([]leaseEvent, error) {
+	name, ok := resourceName(r.Name)
+	agent := strings.ToUpper(strings.TrimSpace(r.AgentID))
+	if !ok || !isUUID(agent) {
+		return nil, leaseRefused("Say which resource and which agent.")
+	}
+	display := r.Name
+	if e := d.book.Entries[name]; e != nil {
+		display = e.DisplayName
+		for i, w := range e.Line {
+			if w.AgentID == wire.UUID(agent) {
+				e.Line = append(e.Line[:i], e.Line[i+1:]...)
+				d.store(name, e)
+				return nil, nil
 			}
 		}
-	})
+	}
+	return nil, leaseRefused("That agent is not in line for " + display + ".")
+}
+
+// declareResourceLocked is resources/declare: the person declares a resource, or changes
+// one. Call it with leaseMu held.
+func (d *Daemon) declareResourceLocked(r wire.DeclareResourceRequest) ([]leaseEvent, error) {
+	res := r.Resource
+	res.DisplayName = strings.TrimSpace(res.DisplayName)
+	res.Description = strings.TrimSpace(res.Description)
+	if n, ok := resourceName(string(res.Name)); ok {
+		res.Name = n
+	}
+	if why := declaredProblem(res); why != "" {
+		return nil, leaseRefused(why)
+	}
+	var replacing wire.ResourceName
+	if r.Replacing != nil {
+		replacing, _ = resourceName(*r.Replacing)
+	}
+	var list []wire.DeclaredResource
+	for _, x := range d.declared {
+		if x.Name == res.Name && res.Name != replacing {
+			return nil, leaseRefused(res.DisplayName + " is declared already.")
+		}
+		if x.Name != res.Name && x.Name != replacing {
+			list = append(list, x)
+		}
+	}
+	list = append(list, res)
+	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	if err := d.saveDeclared(list); err != nil {
+		return nil, leaseRefused("Could not save it: " + err.Error())
+	}
+	return d.setRules(res.Name, rulesOf(res)), nil
+}
+
+// removeDeclaredResourceLocked is resources/remove: the person removes a declared
+// resource. Call it with leaseMu held.
+func (d *Daemon) removeDeclaredResourceLocked(r wire.RemoveResourceRequest) ([]leaseEvent, error) {
+	name, _ := resourceName(r.Name)
+	var list []wire.DeclaredResource
+	found := false
+	for _, x := range d.declared {
+		if x.Name == name {
+			found = true
+		} else {
+			list = append(list, x)
+		}
+	}
+	if !found {
+		return nil, leaseRefused(r.Name + " is not declared.")
+	}
+	if err := d.saveDeclared(list); err != nil {
+		return nil, leaseRefused("Could not save it: " + err.Error())
+	}
+	return nil, nil
+}
+
+// runLeaseTicker sends the snapshot every minute while anything is held, until ctx ends.
+func (d *Daemon) runLeaseTicker(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			d.broadcastHeldLeases()
+		}
+	}
+}
+
+// broadcastHeldLeases sends the snapshot when anything is held.
+func (d *Daemon) broadcastHeldLeases() {
+	d.leaseMu.Lock()
+	held := false
+	if d.book != nil {
+		for _, e := range d.book.Entries {
+			held = held || len(e.Leases) > 0
+		}
+	}
+	var snap wire.LeaseSnapshot
+	if held {
+		snap = d.leaseSnapshot()
+	}
+	d.leaseMu.Unlock()
+	if held {
+		Broadcast(d, wire.NotifyResourcesChanged, snap)
+	}
 }
 
 func (d *Daemon) saveDeclared(list []wire.DeclaredResource) error {

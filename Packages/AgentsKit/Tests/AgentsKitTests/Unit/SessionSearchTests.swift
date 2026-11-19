@@ -22,8 +22,10 @@ struct SessionSearchTests {
     private let slow = MachineRef(rawValue: "slow")
     private let fast = MachineRef(rawValue: "fast")
 
-    // Quarantined: the fast host can answer before the slow one is asked (#5861).
-    @Test(.flakyUnderLoad) func asksEveryHostAtOnceAndKeepsEachAnswerAsItComes() async {
+    // The fast host answers only after the slow one is asked, so the order of the two
+    // child tasks does not matter (#5861). A search that asks one host at a time never
+    // gets there, and the time limit fails it.
+    @Test(.timeLimit(.minutes(1))) func asksEveryHostAtOnceAndKeepsEachAnswerAsItComes() async {
         let asked = Asked()
         let slow = slow
         let search = Task { @MainActor in
@@ -32,6 +34,7 @@ struct SessionSearchTests {
                                              page: { host in
                 asked.hosts.append(host)
                 if host == slow { for await _ in asked.gate { break } }
+                while !asked.hosts.contains(slow) { await Task.yield() }
                 asked.answered.append(host)
             })
         }

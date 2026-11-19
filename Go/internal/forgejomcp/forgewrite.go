@@ -198,6 +198,21 @@ func (f *RealForgejo) Approve(ctx context.Context, repo string, number int, sha 
 	return r.HTMLURL, nil
 }
 
+// RequestChanges asks for changes at the head commit sha, with body as the review text, and says
+// the review's link.
+func (f *RealForgejo) RequestChanges(ctx context.Context, repo string, number int, sha, body string) (string, error) {
+	sha, err := headSha(sha)
+	if err != nil {
+		return "", err
+	}
+	var r reviewJSON
+	if err := f.send(ctx, http.MethodPost, fmt.Sprintf("%s/pulls/%d/reviews", repoPath(repo), number),
+		map[string]any{"event": "REQUEST_CHANGES", "commit_id": sha, "body": body}, &r); err != nil {
+		return "", err
+	}
+	return r.HTMLURL, nil
+}
+
 // MARK: The diff
 
 // diffLines is the most lines of hunks a diff gives, all files together; past it, a file is

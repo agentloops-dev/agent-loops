@@ -177,17 +177,7 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 		t.Fatalf("started: %+v", started)
 	}
 	close(polling)
-	var done wire.ConnectionSignIn
-	for range 50 {
-		raw := c.call(t, 4, "connections/sign-in/wait", map[string]any{"flowID": started.FlowID})
-		if strings.Contains(string(raw), "eyJ") || strings.Contains(string(raw), "rt-1") || strings.Contains(string(raw), "dc-secret") {
-			t.Fatalf("a secret went to the client: %s", raw)
-		}
-		json.Unmarshal(raw, &done)
-		if done.Status != wire.ConnectionSignInStatusWaiting {
-			break
-		}
-	}
+	done := waitEntraSignIn(t, c, started.FlowID)
 	if done.Status != wire.ConnectionSignInStatusConnected || done.Connection == nil || deref(done.Connection.Login) != "Agents Test" ||
 		done.Connection.ByToken != nil || done.Connection.ExpiresAt != nil {
 		t.Fatalf("done: %+v (%s)", done, deref(done.Message))
@@ -223,6 +213,24 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 	if len(list.Connections) != 1 || list.Connections[0].ByToken != nil || list.Connections[0].State != wire.ConnectionStateSignInAgain {
 		t.Fatalf("list: %+v", list.Connections)
 	}
+}
+
+// waitEntraSignIn waits on the Entra sign-in flowID until it is no longer waiting, at most 50
+// times, and checks that no secret goes to the client.
+func waitEntraSignIn(t *testing.T, c *conn, flowID wire.UUID) wire.ConnectionSignIn {
+	t.Helper()
+	var done wire.ConnectionSignIn
+	for range 50 {
+		raw := c.call(t, 4, "connections/sign-in/wait", map[string]any{"flowID": flowID})
+		if strings.Contains(string(raw), "eyJ") || strings.Contains(string(raw), "rt-1") || strings.Contains(string(raw), "dc-secret") {
+			t.Fatalf("a secret went to the client: %s", raw)
+		}
+		json.Unmarshal(raw, &done)
+		if done.Status != wire.ConnectionSignInStatusWaiting {
+			break
+		}
+	}
+	return done
 }
 
 // fakeSetupAzureDevOps answers an Azure DevOps set-up's reads (#3802); refuse makes the
@@ -376,20 +384,20 @@ func TestAnAzureDevOpsRemoteAtTheConnectionsServer(t *testing.T) {
 	ctx := context.Background()
 
 	cloud := gitFolder(t, "https://acme.visualstudio.com/DefaultCollection/Web/_git/app")
-	if f, _, connected := d.forgeAt(ctx, cloud); f.provider != wire.ConnectionProviderAzuredevops || f.root != azuredevopsmcp.DefaultBase ||
+	if f, _, connected := forgeAtOK(t, d, ctx, cloud); f.provider != wire.ConnectionProviderAzuredevops || f.root != azuredevopsmcp.DefaultBase ||
 		f.repo != "acme/Web/app" || f.site != "dev.azure.com" || connected {
 		t.Fatalf("before connecting: %+v %v", f, connected)
 	}
 	fake := "http://127.0.0.1:3802/"
 	file.Put(connections.AzureDevOpsConnection(fake, "acme", "ado-secret", "Agents Test", time.Now()))
 	server := gitFolder(t, fake+"acme/Web/_git/app")
-	if f, c, connected := d.forgeAt(ctx, server); f.root != fake || f.repo != "acme/Web/app" || !connected || c.Access != "ado-secret" {
+	if f, c, connected := forgeAtOK(t, d, ctx, server); f.root != fake || f.repo != "acme/Web/app" || !connected || c.Access != "ado-secret" {
 		t.Fatalf("connected to a fake: %+v %v", f, connected)
 	}
-	if _, _, connected := d.forgeAt(ctx, cloud); connected {
+	if _, _, connected := forgeAtOK(t, d, ctx, cloud); connected {
 		t.Fatal("the server's token went to dev.azure.com")
 	}
-	if f, _, _ := d.forgeAt(ctx, gitFolder(t, "git@github.com:team/app.git")); f.provider != wire.ConnectionProviderGithub {
+	if f, _, _ := forgeAtOK(t, d, ctx, gitFolder(t, "git@github.com:team/app.git")); f.provider != wire.ConnectionProviderGithub {
 		t.Fatalf("GitHub first: %+v", f)
 	}
 }

@@ -96,122 +96,136 @@ type sample struct {
 func DeliveryOf(nodes []wire.LineageCostNode, repo string, releases map[string]wire.Date, now time.Time) wire.LineageDelivery {
 	at := wire.DateOf(now)
 	since := wire.DateOf(now.Add(-DeliveryWindow))
+	d := indexDelivery(nodes, repo, releases)
+	out := wire.LineageDelivery{Since: since, At: at, WindowDays: int64(DeliveryWindow / (24 * time.Hour))}
+	out.LeadTime = d.leadTime(since, at)
+	out.DeploymentFrequency = tagFrequency(d.tags, since, at)
+	out.ChangeFailureRate, out.RecoveryTime = d.failuresAndRecovery(since, at)
+	out.ReworkRate = reworkRate(d.merged, since, at)
+	out.FlowEfficiency = flowEfficiency(d.mine, since, at)
+	out.CiTimeToGreen, out.FailedRounds = ciFigures(d.merged, since, at)
+	// The approval wait (#4553), and the share of merged PRs that waited.
+	out.ApprovalWait = approvalWaitIn(d.mine, since, at)
+	out.ApprovalShare = approvalShare(d.merged, since, at)
+	return out
+}
+
+// deliveryIndex is one repo's nodes and release tags, indexed for DeliveryOf.
+type deliveryIndex struct {
+	mine     []wire.LineageCostNode
+	releases map[string]wire.Date
+	tags     []wire.Date
+	byRef    map[string]wire.LineageCostNode
+	fixers   map[string][]wire.LineageCostNode
+	merged   []wire.LineageCostNode
+}
+
+// indexDelivery keeps the nodes and releases of repo, and indexes the nodes by ref, the
+// merged PRs, and the merged PRs that fix each issue.
+func indexDelivery(nodes []wire.LineageCostNode, repo string, releases map[string]wire.Date) deliveryIndex {
 	// The repo, a node's repo and a release's are compared in the full form (#4800), so the
 	// old form of any of them still matches.
 	repo = FullRepoText(repo)
-	var mine []wire.LineageCostNode
+	d := deliveryIndex{releases: releases, byRef: map[string]wire.LineageCostNode{}, fixers: map[string][]wire.LineageCostNode{}}
 	for _, n := range nodes {
 		if n.Repo != nil && FullRepoText(*n.Repo) == repo {
-			mine = append(mine, n)
+			d.mine = append(d.mine, n)
 		}
 	}
-	var tags []wire.Date
 	for ref, t := range releases {
 		if RepoOf(wire.LineageNode{Kind: KindRelease, Ref: ref}) == repo {
-			tags = append(tags, t)
+			d.tags = append(d.tags, t)
 		}
 	}
-	slices.Sort(tags)
-
-	byRef := map[string]wire.LineageCostNode{}
-	fixers := map[string][]wire.LineageCostNode{}
-	var merged []wire.LineageCostNode
-	for _, n := range mine {
-		byRef[n.Node.Ref] = n
+	slices.Sort(d.tags)
+	for _, n := range d.mine {
+		d.byRef[n.Node.Ref] = n
 		if n.Node.Kind != KindPR || !mergedPR(n) {
 			continue
 		}
-		merged = append(merged, n)
+		d.merged = append(d.merged, n)
 		for _, f := range n.Fixes {
-			fixers[f] = append(fixers[f], n)
+			d.fixers[f] = append(d.fixers[f], n)
 		}
 	}
+	return d
+}
 
-	out := wire.LineageDelivery{Since: since, At: at, WindowDays: int64(DeliveryWindow / (24 * time.Hour))}
-
-	// Lead time for changes, by the tag's time.
+// leadTime is the lead time for changes, by the tag's time.
+func (d deliveryIndex) leadTime(since, at wire.Date) wire.LineageDeliveryFigure {
 	var lead []sample
-	for _, n := range mine {
+	for _, n := range d.mine {
 		if n.Node.Kind != KindIssue || (n.Level != nil && *n.Level == "epic") {
 			continue
 		}
-		start := StartOf(n)
-		var shipped *wire.Date
-		for _, pr := range fixers[n.Node.Ref] {
-			if s := StartOf(pr); s != nil && (start == nil || *s < *start) {
-				start = s
-			}
-			for _, ref := range pr.PartOf {
-				if t, ok := releases[ref]; ok && (shipped == nil || t < *shipped) {
-					shipped = &t
-				}
-			}
-		}
+		start, shipped := d.startAndShipped(n)
 		if start != nil && shipped != nil && *shipped >= *start {
 			lead = append(lead, sample{*shipped, float64(*shipped - *start)})
 		}
 	}
-	out.LeadTime = figureOf(lead, since, at, median)
+	f := figureOf(lead, since, at, median)
 	if v := valuesIn(lead, since, at+1); len(v) > 0 {
 		p := percentile(v, 0.9)
-		out.LeadTime.P90 = &p
+		f.P90 = &p
 	}
-	out.LeadTime.Band = band(out.LeadTime.Value, leadBand)
+	f.Band = band(f.Value, leadBand)
+	return f
+}
 
-	// Deployment frequency: tags a week, 0 for none.
+// startAndShipped is when work on an issue started (the issue's or its first fixer's start)
+// and the first release that shipped one of its fixers.
+func (d deliveryIndex) startAndShipped(issue wire.LineageCostNode) (start, shipped *wire.Date) {
+	start = StartOf(issue)
+	for _, pr := range d.fixers[issue.Node.Ref] {
+		if s := StartOf(pr); s != nil && (start == nil || *s < *start) {
+			start = s
+		}
+		for _, ref := range pr.PartOf {
+			if t, ok := d.releases[ref]; ok && (shipped == nil || t < *shipped) {
+				shipped = &t
+			}
+		}
+	}
+	return start, shipped
+}
+
+// tagFrequency is the deployment frequency: tags a week, 0 for none.
+func tagFrequency(tags []wire.Date, since, at wire.Date) wire.LineageDeliveryFigure {
 	var deploys []sample
 	for _, t := range tags {
 		deploys = append(deploys, sample{t, 1})
 	}
-	out.DeploymentFrequency = figureOf(deploys, since, at, func(v []float64) float64 { return float64(len(v)) })
-	weeks := float64(len(out.DeploymentFrequency.Weeks))
-	perWeek := float64(out.DeploymentFrequency.Count) / weeks
-	out.DeploymentFrequency.Value = &perWeek
-	for i, w := range out.DeploymentFrequency.Weeks {
+	f := figureOf(deploys, since, at, func(v []float64) float64 { return float64(len(v)) })
+	weeks := float64(len(f.Weeks))
+	perWeek := float64(f.Count) / weeks
+	f.Value = &perWeek
+	for i, w := range f.Weeks {
 		v := float64(w.Count)
-		out.DeploymentFrequency.Weeks[i].Value = &v
+		f.Weeks[i].Value = &v
 	}
-	out.DeploymentFrequency.Band = band(&perWeek, frequencyBand)
+	f.Band = band(&perWeek, frequencyBand)
+	return f
+}
 
-	// Change failure rate and recovery time.
-	filed := func(issue wire.LineageCostNode) *wire.Date {
-		if issue.Resolved != nil && issue.Resolved.CreatedAt != nil {
-			return issue.Resolved.CreatedAt
-		}
-		return issue.FirstAt
-	}
-	afterRelease := func(t wire.Date) bool {
-		i := sort.Search(len(tags), func(i int) bool { return tags[i] > t })
-		return i > 0 && float64(t-tags[i-1]) <= FailureAfterRelease.Seconds()
-	}
-	// failureBug says an issue is a priority:high bug filed within a week after a release.
-	failureBug := map[string]wire.Date{}
-	for _, n := range mine {
-		if n.Node.Kind != KindIssue || n.Resolved == nil || !isHighBug(n) {
-			continue
-		}
-		if f := filed(n); f != nil && afterRelease(*f) {
-			failureBug[n.Node.Ref] = *f
-		}
-	}
+// failuresAndRecovery is the change failure rate and the recovery time.
+func (d deliveryIndex) failuresAndRecovery(since, at wire.Date) (rate, recoveryTime wire.LineageDeliveryFigure) {
+	failureBug := d.failureBugs()
 	byTitle := map[string]wire.LineageCostNode{}
-	for _, n := range merged {
+	for _, n := range d.merged {
 		if n.Resolved != nil && n.Resolved.Title != "" {
 			byTitle[n.Resolved.Title] = n
 		}
 	}
 	var failures, recovery []sample
-	for _, n := range merged {
+	for _, n := range d.merged {
 		failed := n.Outcome != nil && *n.Outcome == OutcomeReverted
 		if failed {
-			if r, ok := revertedBy(n, byRef, byTitle); ok && r.EndedAt != nil && *n.EndedAt >= *r.EndedAt {
+			if r, ok := revertedBy(n, d.byRef, byTitle); ok && r.EndedAt != nil && *n.EndedAt >= *r.EndedAt {
 				recovery = append(recovery, sample{*n.EndedAt, float64(*n.EndedAt - *r.EndedAt)})
 			}
 		}
-		for _, f := range n.Fixes {
-			if _, ok := failureBug[f]; ok {
-				failed = true
-			}
+		if slices.ContainsFunc(n.Fixes, func(f string) bool { _, ok := failureBug[f]; return ok }) {
+			failed = true
 		}
 		v := 0.0
 		if failed {
@@ -219,23 +233,59 @@ func DeliveryOf(nodes []wire.LineageCostNode, repo string, releases map[string]w
 		}
 		failures = append(failures, sample{*n.EndedAt, v})
 	}
-	for ref, at := range failureBug {
-		var first *wire.Date
-		for _, pr := range fixers[ref] {
-			if first == nil || *pr.EndedAt < *first {
-				first = pr.EndedAt
-			}
-		}
-		if first != nil && *first >= at {
-			recovery = append(recovery, sample{*first, float64(*first - at)})
+	for ref, filed := range failureBug {
+		if first := firstEnded(d.fixers[ref]); first != nil && *first >= filed {
+			recovery = append(recovery, sample{*first, float64(*first - filed)})
 		}
 	}
-	out.ChangeFailureRate = figureOf(failures, since, at, mean)
-	out.ChangeFailureRate.Band = band(out.ChangeFailureRate.Value, failureBand)
-	out.RecoveryTime = figureOf(recovery, since, at, median)
-	out.RecoveryTime.Band = band(out.RecoveryTime.Value, recoveryBand)
+	rate = figureOf(failures, since, at, mean)
+	rate.Band = band(rate.Value, failureBand)
+	recoveryTime = figureOf(recovery, since, at, median)
+	recoveryTime.Band = band(recoveryTime.Value, recoveryBand)
+	return rate, recoveryTime
+}
 
-	// Rework rate.
+// failureBugs is the priority:high bugs filed within a week after a release, by ref, at the
+// time each was filed.
+func (d deliveryIndex) failureBugs() map[string]wire.Date {
+	afterRelease := func(t wire.Date) bool {
+		i := sort.Search(len(d.tags), func(i int) bool { return d.tags[i] > t })
+		return i > 0 && float64(t-d.tags[i-1]) <= FailureAfterRelease.Seconds()
+	}
+	failureBug := map[string]wire.Date{}
+	for _, n := range d.mine {
+		if n.Node.Kind != KindIssue || n.Resolved == nil || !isHighBug(n) {
+			continue
+		}
+		if f := filedAt(n); f != nil && afterRelease(*f) {
+			failureBug[n.Node.Ref] = *f
+		}
+	}
+	return failureBug
+}
+
+// filedAt is when an issue was filed: its creation on the forge, else its first activity.
+func filedAt(issue wire.LineageCostNode) *wire.Date {
+	if issue.Resolved != nil && issue.Resolved.CreatedAt != nil {
+		return issue.Resolved.CreatedAt
+	}
+	return issue.FirstAt
+}
+
+// firstEnded is the earliest end of the PRs, or nil for none.
+func firstEnded(prs []wire.LineageCostNode) *wire.Date {
+	var first *wire.Date
+	for _, pr := range prs {
+		if first == nil || *pr.EndedAt < *first {
+			first = pr.EndedAt
+		}
+	}
+	return first
+}
+
+// reworkRate is the share of merged PRs that change a file another PR changed in the
+// ReworkRange before it.
+func reworkRate(merged []wire.LineageCostNode, since, at wire.Date) wire.LineageDeliveryFigure {
 	var withFiles []wire.LineageCostNode
 	for _, n := range merged {
 		if len(n.Files) > 0 {
@@ -247,36 +297,43 @@ func DeliveryOf(nodes []wire.LineageCostNode, repo string, releases map[string]w
 		if *n.EndedAt < since {
 			continue
 		}
-		from := *n.EndedAt - wire.Date(ReworkRange.Seconds())
-		recent := map[string]bool{}
-		for _, o := range withFiles {
-			if o.Node != n.Node && *o.EndedAt >= from && *o.EndedAt < *n.EndedAt {
-				for _, f := range o.Files {
-					recent[f] = true
-				}
-			}
-		}
+		recent := recentFiles(withFiles, n)
 		v := 0.0
-		for _, f := range n.Files {
-			if recent[f] {
-				v = 1
-				break
-			}
+		if slices.ContainsFunc(n.Files, func(f string) bool { return recent[f] }) {
+			v = 1
 		}
 		rework = append(rework, sample{*n.EndedAt, v})
 	}
-	out.ReworkRate = figureOf(rework, since, at, mean)
+	return figureOf(rework, since, at, mean)
+}
 
-	// Flow efficiency, by the last merge.
+// recentFiles is the files that the other PRs merged in the ReworkRange before n changed.
+func recentFiles(withFiles []wire.LineageCostNode, n wire.LineageCostNode) map[string]bool {
+	from := *n.EndedAt - wire.Date(ReworkRange.Seconds())
+	recent := map[string]bool{}
+	for _, o := range withFiles {
+		if o.Node != n.Node && *o.EndedAt >= from && *o.EndedAt < *n.EndedAt {
+			for _, f := range o.Files {
+				recent[f] = true
+			}
+		}
+	}
+	return recent
+}
+
+// flowEfficiency is the working share of each cycle, by the last merge.
+func flowEfficiency(mine []wire.LineageCostNode, since, at wire.Date) wire.LineageDeliveryFigure {
 	var flow []sample
 	for _, p := range History(mine) {
 		if p.Cycle != nil && *p.Cycle > 0 {
 			flow = append(flow, sample{p.Merged, min(p.Cost.WorkingSeconds / *p.Cycle, 1)})
 		}
 	}
-	out.FlowEfficiency = figureOf(flow, since, at, median)
+	return figureOf(flow, since, at, median)
+}
 
-	// CI time to green and failed rounds, by merge (#4554).
+// ciFigures is CI's time to green and the failed rounds, by merge (#4554).
+func ciFigures(merged []wire.LineageCostNode, since, at wire.Date) (toGreen, failedRounds wire.LineageDeliveryFigure) {
 	var green, rounds []sample
 	for _, n := range merged {
 		if ci := n.Ci; ci != nil && ci.PushedAt != nil && ci.GreenAt != nil && *ci.GreenAt >= *ci.PushedAt {
@@ -288,15 +345,16 @@ func DeliveryOf(nodes []wire.LineageCostNode, repo string, releases map[string]w
 		}
 		rounds = append(rounds, sample{*n.EndedAt, v})
 	}
-	out.CiTimeToGreen = figureOf(green, since, at, median)
+	toGreen = figureOf(green, since, at, median)
 	if v := valuesIn(green, since, at+1); len(v) > 0 {
 		p := percentile(v, 0.9)
-		out.CiTimeToGreen.P90 = &p
+		toGreen.P90 = &p
 	}
-	out.FailedRounds = figureOf(rounds, since, at, mean)
+	return toGreen, figureOf(rounds, since, at, mean)
+}
 
-	// The approval wait (#4553), and the share of merged PRs that waited.
-	out.ApprovalWait = approvalWaitIn(mine, since, at)
+// approvalShare is the share of merged PRs that waited for an approval.
+func approvalShare(merged []wire.LineageCostNode, since, at wire.Date) wire.LineageDeliveryFigure {
 	var waited []sample
 	for _, n := range merged {
 		v := 0.0
@@ -305,8 +363,7 @@ func DeliveryOf(nodes []wire.LineageCostNode, repo string, releases map[string]w
 		}
 		waited = append(waited, sample{*n.EndedAt, v})
 	}
-	out.ApprovalShare = figureOf(waited, since, at, mean)
-	return out
+	return figureOf(waited, since, at, mean)
 }
 
 // ApprovalWait is the seconds a PR waited for a person's answer (#4553): from the review

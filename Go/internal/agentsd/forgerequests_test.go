@@ -216,7 +216,7 @@ func TestAnApprovalOfTheBotsPRIsARealReview(t *testing.T) {
 		t.Fatalf("%+v", u.Request)
 	}
 	w := gh.writes()
-	if !slices.Equal(w, []string{"review alexec/agents#12 h12 approve=false"}) {
+	if !slices.Equal(w, []string{"review alexec/agents#12 h12 approve=false Move it left"}) {
 		t.Fatalf("%q", w)
 	}
 	for _, line := range w {

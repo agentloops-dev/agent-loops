@@ -6,6 +6,8 @@ import { log } from "../../log";
 import { canJoin, type MachineJoin, type MachineMaking } from "../machineRow";
 import type { Store } from "../store";
 import { machineRows, type NewMachineDraft } from "./shared";
+import { replacedNote } from "../warmPools";
+import { go } from "../../route";
 
 export const machinesMethods = {
   async startHost(this: Store, host: string): Promise<void> {
@@ -37,7 +39,9 @@ export const machinesMethods = {
     this.newMachineAsk.value = provider ? { provider } : {};
   },
   /** Make on the New Machine sheet (#4634): the sheet has closed, and the machine's row says Making until it joins.
-   * A make the provider refuses opens the sheet again on the same choices, with the provider's reason. */
+   * A make the provider refuses opens the sheet again on the same choices, with the provider's reason. With Start from a
+   * warm pool (#5354) it claims a ready machine instead; either way the machine's page opens once it is listed, and
+   * takes the sheet's Stop when idle. */
   async makeMachine(this: Store, draft: NewMachineDraft): Promise<void> {
     const making = "";
     this.machinesMaking.value = [...this.machinesMaking.value, making];
@@ -47,18 +51,63 @@ export const machinesMethods = {
     };
     const refused = (problem: string) => { this.newMachineAsk.value = { provider: draft.provider, again: draft, problem }; };
     try {
-      const made = await this.link.call("providers/create", { id: draft.provider as ProviderID, name: draft.name, options: draft.options });
-      drop(making);
-      if (made.workspace.state === "failed") {
-        refused(made.workspace.reason || `Could not make ${made.workspace.name}.`);
-        return;
+      let name: string;
+      let host: string | undefined;
+      let idle = draft.stopWhenIdleMinutes;
+      if (draft.fromPool) {
+        const size = draft.options["size"];
+        const region = draft.options["region"];
+        const claimed = await this.providers.claim({
+          provider: draft.provider as ProviderID,
+          ...(typeof size === "string" ? { size } : {}),
+          ...(typeof region === "string" ? { region } : {}),
+          ...(idle !== undefined ? { stopWhenIdle: idle } : {}),
+        });
+        name = claimed.name;
+        host = claimed.host;
+        // The claim took the person's Stop when idle already; a new machine instead takes it once it joins.
+        if (claimed.fromPool) idle = undefined;
+        const note = claimed.fromPool ? replacedNote(claimed.pool ?? "the pool") : claimed.note;
+        if (note) this.machinePoolNotes.value = { ...this.machinePoolNotes.value, [name]: note };
+      } else {
+        const made = await this.link.call("providers/create", { id: draft.provider as ProviderID, name: draft.name, options: draft.options });
+        if (made.workspace.state === "failed") {
+          drop(making);
+          refused(made.workspace.reason || `Could not make ${made.workspace.name}.`);
+          return;
+        }
+        name = made.workspace.name;
+        host = made.workspace.host;
       }
-      this.machinesMaking.value = [...this.machinesMaking.value, made.workspace.name];
+      drop(making);
+      this.machinesMaking.value = [...this.machinesMaking.value, name];
       // A row is drawn for it until a machine of that name joins, or ten minutes at most.
-      setTimeout(() => drop(made.workspace.name), 10 * 60_000);
+      setTimeout(() => drop(name), 10 * 60_000);
+      if (draft.stopWhenIdleMinutes !== undefined) void this.openNewMachine(name, host, idle);
     } catch (error) {
       drop(making);
       refused(describe(error));
+    }
+  },
+  /** After a make from the sheet (#5354), as the window's finishNewMachine: waits for the machine's row (ten minutes at
+   * most), opens its page, and sets Stop when idle when it is to be set. */
+  async openNewMachine(this: Store, name: string, host: string | undefined, idle: number | undefined): Promise<void> {
+    const listed = () => this.hosts.value.find((h) => (host !== undefined ? h.id === host : h.name === name));
+    for (let i = 0; i < 300 && !listed(); i++) await new Promise((r) => setTimeout(r, 2_000));
+    const row = listed();
+    if (!row) return;
+    go({ nav: "machines", section: `machine-${row.id}` });
+    if (idle !== undefined) {
+      const problem = await this.providers.setIdle(row.id, idle);
+      if (problem) this.say(problem);
+    }
+  },
+  /** Try Again on a machine's set-up (#5354): runs the failed step and the ones after it. */
+  async retrySetup(this: Store, host: string): Promise<void> {
+    try {
+      await this.link.call("machines/retrySetup", { host: host as MachineRef });
+    } catch (error) {
+      this.say(describe(error));
     }
   },
   /** Delete on a machine New Machine made that never joined (#4610): the provider deletes the workspace. */

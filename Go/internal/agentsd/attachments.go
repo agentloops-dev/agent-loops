@@ -215,25 +215,39 @@ func (d *Daemon) boundAttachments(root, keep string, byAge bool) (deleted int) {
 		files = append(files, f)
 	}
 	if byAge {
-		named := d.namedAttachments(root, old)
-		for _, f := range old {
-			if _, ok := named[f.path]; ok {
-				files = append(files, f)
-			} else {
-				remove(f.path)
-			}
-		}
-		d.namedMu.Lock()
-		if d.namedBy == nil {
-			d.namedBy = map[string]map[string]wire.UUID{}
-		}
-		if len(named) > 0 {
-			d.namedBy[root] = named
-		} else {
-			delete(d.namedBy, root)
-		}
-		d.namedMu.Unlock()
+		files = d.keepNamedOldAttachments(root, old, files, remove)
 	}
+	trimAttachmentsToBound(files, keep, remove)
+	return deleted
+}
+
+// keepNamedOldAttachments removes each of old that no transcript in root names, and gives
+// files with the named ones added. It keeps what it found named for the next sweep.
+func (d *Daemon) keepNamedOldAttachments(root string, old, files []attachment, remove func(string)) []attachment {
+	named := d.namedAttachments(root, old)
+	for _, f := range old {
+		if _, ok := named[f.path]; ok {
+			files = append(files, f)
+		} else {
+			remove(f.path)
+		}
+	}
+	d.namedMu.Lock()
+	if d.namedBy == nil {
+		d.namedBy = map[string]map[string]wire.UUID{}
+	}
+	if len(named) > 0 {
+		d.namedBy[root] = named
+	} else {
+		delete(d.namedBy, root)
+	}
+	d.namedMu.Unlock()
+	return files
+}
+
+// trimAttachmentsToBound removes the oldest of files, never keep, until their total size is
+// in the folder's bound.
+func trimAttachmentsToBound(files []attachment, keep string, remove func(string)) {
 	var total int64
 	for _, f := range files {
 		total += f.size
@@ -249,7 +263,6 @@ func (d *Daemon) boundAttachments(root, keep string, byAge bool) (deleted int) {
 		remove(f.path)
 		total -= f.size
 	}
-	return deleted
 }
 
 // namedAttachments is, for each of files that a transcript of an agent kept here, in

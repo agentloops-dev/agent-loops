@@ -121,6 +121,10 @@ test("Add as Machine… is offered with an ssh destination, and pressable only w
   assert.deepEqual(w.addAsMachine({ id: "x", name: "cs", state: "stopped", ssh: "cs.cs" }), { ready: false, help: w.providerWords.startFirst });
   assert.equal(w.addAsMachine({ id: "x", name: "cs", state: "running" }), undefined);
   assert.equal(w.addAsMachine({ id: "x", name: "cs", state: "running", ssh: "cs.cs", host: "4" }), undefined);
+  // A failed make is no machine (#6078): no Add as Machine…, no "not joined" line, only Delete.
+  assert.equal(w.addAsMachine({ id: "failed-cs", name: "cs", state: "failed", ssh: "cs.cs" }), undefined);
+  assert.equal(w.noHostLine({ id: "failed-cs", name: "cs", state: "failed" }, []), undefined);
+  assert.match(w.providerWords.deleteFailed("cs", "DigitalOcean"), /never made it, so nothing is deleted there/);
 });
 
 test("a provider's ssh with a port is one word, as ssh takes it", () => {
@@ -227,8 +231,8 @@ test("the model lists, asks for a fresh list, adds, removes, and takes the notic
   const link = plane();
   const p = new w.Providers(link);
   await p.load();
-  // The groups too, for each provider's group (#1761).
-  assert.deepEqual(link.asked.map((a) => a.method), ["providers/list", "groups/list", "providers/refresh"]);
+  // The groups too, for each provider's group (#1761), and the warm pools, whose machines the Machines group leaves out (#5354).
+  assert.deepEqual(link.asked.map((a) => a.method), ["providers/list", "groups/list", "pool/list", "providers/refresh"]);
   assert.deepEqual(p.list.value.map((x) => x.id), ["do"]);
   assert.equal(await p.save({ name: "N", kind: "commands", secrets: { T: "s" } }), null);
   assert.deepEqual(p.list.value.map((x) => x.id), ["do", "new"]);

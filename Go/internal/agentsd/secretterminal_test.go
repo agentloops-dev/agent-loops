@@ -3,10 +3,10 @@ package agentsd
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -15,7 +15,6 @@ import (
 // ran it, and takes once, hour or deny; hour is kept in memory, so a call in the hour does not
 // ask. A flagged secret and a name that is not set get words and no request.
 func TestATerminalsAgentsSecretAsksAPerson(t *testing.T) {
-	flaky.UnderLoad(t, "#5938")
 	answered, left := formHolds(t)
 	wasHour, wasParent := terminalHour, parentCommand
 	parentCommand = func() string { return "/bin/zsh" }
@@ -35,11 +34,16 @@ func TestATerminalsAgentsSecretAsksAPerson(t *testing.T) {
 		code     int
 		out, err string
 	}
+	// noticed is closed when a CLI's stderr says it waits for a person: its first call's hold
+	// ran out (#5938).
+	var noticed chan struct{}
 	run := func(name string) chan result {
 		done := make(chan result, 1)
+		noticed = make(chan struct{})
+		errOut := &noticeWriter{notice: "Needs you", seen: noticed}
 		go func() {
-			var out, errOut bytes.Buffer
-			code := SecretCommand([]string{name}, noGrant, sock, &out, &errOut)
+			var out bytes.Buffer
+			code := SecretCommand([]string{name}, noGrant, sock, &out, errOut)
 			done <- result{code, out.String(), errOut.String()}
 		}()
 		return done
@@ -62,7 +66,14 @@ func TestATerminalsAgentsSecretAsksAPerson(t *testing.T) {
 	if u := r.Detail.SecretUse; r.AskedBy != nil || u.Use != wire.SecretUseTerminal || u.Name != "PLAIN_KEY" || u.Place != "zsh" {
 		t.Fatalf("the request: %+v %+v", r, u)
 	}
-	time.Sleep(2 * formHoldLimit) // the CLI calls again, on the same request
+	// Wait until the CLI's first call has gone past its hold, not for a fixed time: under load
+	// the call may not get to its timer in twice the hold (#5938). The CLI then calls again, on
+	// the same request.
+	select {
+	case <-noticed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the CLI never said it waits for a person")
+	}
 	if _, err := d.answerSecretUse(r, &wire.RequestSecretUseAnswer{Action: secretUseSession}, nil); err == nil {
 		t.Fatal("a terminal's request took Approve for This Session")
 	}
@@ -122,6 +133,33 @@ func TestATerminalsAgentsSecretAsksAPerson(t *testing.T) {
 	if denied := secretEvents(d, "secret.denied"); len(denied) != 1 || denied[0].Details["place"] != terminalPlace {
 		t.Fatalf("the denial: %+v", denied)
 	}
+}
+
+// noticeWriter is a CLI's stderr that the test reads while the CLI writes: it closes seen
+// once what it has holds notice.
+type noticeWriter struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	notice string
+	seen   chan struct{}
+	closed bool
+}
+
+func (w *noticeWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.buf.Write(p)
+	if !w.closed && strings.Contains(w.buf.String(), w.notice) {
+		w.closed = true
+		close(w.seen)
+	}
+	return n, err
+}
+
+func (w *noticeWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
 }
 
 // The banner of a terminal's request names the terminal and the known gap, with its three

@@ -13,6 +13,7 @@ import { timeWords } from "./time";
 import { folderPathOf } from "./projectSettings";
 import { ago } from "./connectorSetup";
 import { legacyRef } from "../protocol/ref";
+import { nextRank } from "./forgeNextOrder";
 
 /** Work's lists, in the order of its tabs, by the lineage kind each holds. */
 export type WorkKind = "issue" | "pr" | "release";
@@ -25,14 +26,15 @@ export const workKindTitle: Record<WorkKind, string> = {
 export const fromForge = (kind: WorkKind) => kind === "issue" || kind === "pr";
 
 export type WorkState = "open" | "closed" | "merged" | "all";
-export type WorkSort = "updated" | "newest" | "cost";
-export const workSortTitle: Record<WorkSort, string> = { updated: "Last updated", newest: "Newest", cost: "Cost" };
+export type WorkSort = "priority" | "updated" | "newest" | "cost";
+export const workSortTitle: Record<WorkSort, string> = { priority: "Priority", updated: "Last updated", newest: "Newest", cost: "Cost" };
 
-/** The sorts a list offers: a release's Newest is its version, the highest first (#4421), and it has no Last updated. */
-export const workSorts = (kind: WorkKind): WorkSort[] => fromForge(kind) ? ["updated", "newest", "cost"] : ["newest", "cost"];
+/** The sorts a list offers: Priority first for issues and PRs (#6087, #6093); a release's Newest is its version, the
+ * highest first (#4421), and it has no Last updated or Priority. */
+export const workSorts = (kind: WorkKind): WorkSort[] => fromForge(kind) ? ["priority", "updated", "newest", "cost"] : ["newest", "cost"];
 
-/** The sort a list opens with: a release's is Newest. */
-export const defaultSort = (kind: WorkKind): WorkSort => kind === "release" ? "newest" : "updated";
+/** The sort a list opens with: Issues' is Priority (#6087, #6093), Pull requests' Last updated, a release's Newest. */
+export const defaultSort = (kind: WorkKind): WorkSort => kind === "release" ? "newest" : kind === "issue" ? "priority" : "updated";
 
 /** One row of a list: the item as its forge says it, or as lineage resolved it, and its lineage. */
 export interface WorkRow {
@@ -47,6 +49,8 @@ export interface WorkRow {
   labels: ForgeLabel[];
   /** high, medium or low, from ForgeItem.priority (#5690); absent for none. */
   priority?: ForgeItem["priority"];
+  /** The item is on hold (ForgeItem.onHold, #5747): the On hold chip (#6090), and last in the Priority sort. */
+  onHold?: boolean | undefined;
   /** The ref's repo or tracker: github:alexec/Agents, linear:ENG (a Linear team, #3311), jira. */
   repo: string;
   author?: string | undefined;
@@ -135,7 +139,7 @@ const unix = (at: number) => fromWireDate(at as never).getTime() / 1000;
 export function forgeRow(item: ForgeItem, host: string, lineage?: ReportNode): WorkRow {
   return {
     node: item.node, title: item.title, state: item.state, stateReason: item.stateReason, status: item.status, labels: item.labels, priority: item.priority,
-    repo: repoOf(item.node.ref), author: item.author, avatar: item.authorAvatar, assignees: item.assignees, updated: unix(item.updatedAt),
+    onHold: item.onHold, repo: repoOf(item.node.ref), author: item.author, avatar: item.authorAvatar, assignees: item.assignees, updated: unix(item.updatedAt),
     created: item.createdAt === undefined ? undefined : unix(item.createdAt), closed: item.closedAt === undefined ? undefined : unix(item.closedAt),
     url: item.url, host, folder: item.folder, draft: item.draft, comments: item.comments, checks: item.checks, review: item.review, lineage,
   };
@@ -297,6 +301,8 @@ export function sortRows(rows: readonly WorkRow[], sort: WorkSort): WorkRow[] {
   const out = [...rows];
   const tie = (a: WorkRow, b: WorkRow) => b.updated - a.updated || a.node.ref.localeCompare(b.node.ref);
   switch (sort) {
+    // The order of forge/next (#5689): not on hold first, then High, Medium, none, Low; in a priority, the last updated first.
+    case "priority": return out.sort((a, b) => nextRank(a) - nextRank(b) || tie(a, b));
     case "updated": return out.sort(tie);
     // A forge numbers its items as they are made, so the highest number is the newest; a release's version says it (#4421).
     case "newest": return out.sort((a, b) => {
@@ -463,6 +469,7 @@ export function doneWords(method: string, done: ForgeDone, reopened = false, mov
     case "forge/label": return "Labels changed.";
     case "forge/merge": return done.auto ? "Auto-merge is on: it merges when its checks pass." : "Merged.";
     case "forge/approve": return "Approved.";
+    case "forge/request-changes": return "Changes requested.";
     case "forge/add-child": return "Child added.";
     case "forge/blocked-by": return "Blocked by changed.";
     case "forge/close": return moved ? "Status changed." : reopened ? "Reopened." : "Closed.";

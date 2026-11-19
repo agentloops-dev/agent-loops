@@ -368,70 +368,92 @@ func sharedSkills(home string, present []sharedRule, plugins []string, record la
 		reach := map[string]wire.SharedReach{}
 		clash := ""
 		for _, r := range present {
-			switch {
-			case r.skillsFolder != "":
-				link := filepath.Join(home, r.skillsFolder, name)
-				where := "~/" + r.skillsFolder
-				switch {
-				case linksTo(link, skill):
-					reach[r.id] = gets("through a link in " + where)
-				case lexists(link):
-					clash = link
-					reach[r.id] = ownCopy(link)
-				case managedSkillNames[name]:
-					reach[r.id] = leftOut("another tool manages that name in " + where)
-				case record.Links[r.skillsFolder+"/"+name] != "":
-					reach[r.id] = leftOut("its link in " + where + " was removed")
-				default:
-					reach[r.id] = gets("linked in " + where + " before its next agent starts")
-				}
-			case r.readsShared:
-				reach[r.id] = gets("reads ~/.agents/skills")
-			case r.appSkillsFolder != "" && appHomes[r.id] != "":
-				link := filepath.Join(appHomes[r.id], r.appSkillsFolder, name)
-				dest, _ := os.Readlink(link)
-				switch {
-				case dest == skill:
-					reach[r.id] = gets("through a link in the home the app gives it")
-				case lexists(link):
-					reach[r.id] = ownCopy(link)
-				case record.Links[link] != "":
-					reach[r.id] = leftOut("its link in the home the app gives it was removed")
-				default:
-					reach[r.id] = gets("linked into the home the app gives it before its next agent starts")
-				}
-			default:
-				reach[r.id] = unchecked("")
+			var c string
+			reach[r.id], c = personalSkillReach(home, r, name, skill, record, appHomes)
+			if c != "" {
+				clash = c
 			}
 		}
 		row := wire.SharedSkill{Name: name, Path: skill, Description: skillDescription(skill), Source: wire.SharedSkillSource(`"personal"`), Reach: reach}
 		if clash != "" {
-			who := "It"
-			for _, r := range present {
-				if r.skillsFolder != "" {
-					who = runtimeName(r.id)
-					break
-				}
-			}
-			*looks = append(*looks, wire.SharedLook{Kind: wire.SharedLookKindClash, Page: wire.SharedLookPageSkills, Item: name,
-				Text: "A skill of that name is also in " + tildeIn(clash, home) + " and was left there. " + who + " gets that one."})
+			*looks = append(*looks, sharedSkillClashLook(home, present, name, clash))
 			row.Clash = &clash
 		}
 		list = append(list, row)
 	}
 	for _, plugin := range plugins {
-		pluginName := pluginDisplayName(plugin)
-		reach := pluginReach(home, plugin, present, record)
-		source, _ := json.Marshal(map[string]string{"plugin": pluginName})
-		dir := filepath.Join(plugin, "skills")
-		for _, name := range visibleNames(dir) {
-			skill := filepath.Join(dir, name)
-			if !lisDir(skill) {
-				continue
-			}
-			list = append(list, wire.SharedSkill{Name: name, Path: skill, Description: skillDescription(skill),
-				Source: wire.SharedSkillSource(source), Reach: reach})
+		list = append(list, pluginSharedSkills(home, plugin, present, record)...)
+	}
+	return list
+}
+
+// personalSkillReach says how one runtime gets the personal skill. When the
+// runtime's skills folder has another skill of that name, it also returns its path.
+func personalSkillReach(home string, r sharedRule, name, skill string, record layoutRecord,
+	appHomes map[string]string) (wire.SharedReach, string) {
+	switch {
+	case r.skillsFolder != "":
+		link := filepath.Join(home, r.skillsFolder, name)
+		where := "~/" + r.skillsFolder
+		switch {
+		case linksTo(link, skill):
+			return gets("through a link in " + where), ""
+		case lexists(link):
+			return ownCopy(link), link
+		case managedSkillNames[name]:
+			return leftOut("another tool manages that name in " + where), ""
+		case record.Links[r.skillsFolder+"/"+name] != "":
+			return leftOut("its link in " + where + " was removed"), ""
+		default:
+			return gets("linked in " + where + " before its next agent starts"), ""
 		}
+	case r.readsShared:
+		return gets("reads ~/.agents/skills"), ""
+	case r.appSkillsFolder != "" && appHomes[r.id] != "":
+		link := filepath.Join(appHomes[r.id], r.appSkillsFolder, name)
+		dest, _ := os.Readlink(link)
+		switch {
+		case dest == skill:
+			return gets("through a link in the home the app gives it"), ""
+		case lexists(link):
+			return ownCopy(link), ""
+		case record.Links[link] != "":
+			return leftOut("its link in the home the app gives it was removed"), ""
+		default:
+			return gets("linked into the home the app gives it before its next agent starts"), ""
+		}
+	default:
+		return unchecked(""), ""
+	}
+}
+
+// sharedSkillClashLook is the look that says a skill of the same name was left in clash.
+func sharedSkillClashLook(home string, present []sharedRule, name, clash string) wire.SharedLook {
+	who := "It"
+	for _, r := range present {
+		if r.skillsFolder != "" {
+			who = runtimeName(r.id)
+			break
+		}
+	}
+	return wire.SharedLook{Kind: wire.SharedLookKindClash, Page: wire.SharedLookPageSkills, Item: name,
+		Text: "A skill of that name is also in " + tildeIn(clash, home) + " and was left there. " + who + " gets that one."}
+}
+
+// pluginSharedSkills is a row for each skill of one plugin.
+func pluginSharedSkills(home, plugin string, present []sharedRule, record layoutRecord) []wire.SharedSkill {
+	var list []wire.SharedSkill
+	pluginName := pluginDisplayName(plugin)
+	reach := pluginReach(home, plugin, present, record)
+	source, _ := json.Marshal(map[string]string{"plugin": pluginName})
+	dir := filepath.Join(plugin, "skills")
+	for _, name := range visibleNames(dir) {
+		skill := filepath.Join(dir, name)
+		if !lisDir(skill) {
+			continue
+		}
+		list = append(list, wire.SharedSkill{Name: name, Path: skill, Description: skillDescription(skill),
+			Source: wire.SharedSkillSource(source), Reach: reach})
 	}
 	return list
 }
@@ -498,54 +520,83 @@ func sharedMCP(home string, present []sharedRule, secrets map[string]string, loo
 				ownFile = filepath.Join(home, ownServerConfigs[id])
 				clash[id] = ownFile
 			}
-			switch {
-			case taken && e.name == appName:
-				reach[id] = leftOut("the app's own agents server has the name")
-			case taken:
-				reach[id] = leftOut("an earlier server has the name")
-			case e.kind == wire.MCPTransportNameSse && refusesSSE[id]:
-				reach[id] = leftOut(runtimeName(id) + " takes no sse servers")
+			var sse bool
+			reach[id], sse = sharedServerReach(e, r, taken, e.name == appName, ownFile)
+			if sse {
 				sseLeftOut[id] = append(sseLeftOut[id], e.name)
-			case ownFile != "" && keepsOwnServer[id]:
-				reach[id] = ownCopy(ownFile)
-			case ownFile != "" && runsBothServers[id]:
-				reach[id] = gets("sent at start; its own copy runs too")
-			case e.kind == wire.MCPTransportNameStdio && !r.takesStdio:
-				reach[id] = gets("through the bridge")
-			default:
-				reach[id] = gets("sent at start")
 			}
 		}
-		for _, id := range sortedKeys(clash) {
-			what := runtimeName(id) + " uses the one from mcp.json."
-			if keepsOwnServer[id] {
-				what = runtimeName(id) + " uses its own copy."
-			} else if runsBothServers[id] {
-				what = runtimeName(id) + " runs both."
-			}
-			*looks = append(*looks, wire.SharedLook{Kind: wire.SharedLookKindClash, Page: wire.SharedLookPageMCP, Item: e.name,
-				Text: "Also in " + tildeIn(clash[id], home) + ". " + what})
-		}
-		if missing := unsetSecretNames(e, secrets); len(missing) > 0 {
-			verb := "aren't"
-			if len(missing) == 1 {
-				verb = "isn't"
-			}
-			why := strings.Join(missing, ", ") + " " + verb + " set"
-			for _, r := range present {
-				reach[r.id] = leftOut(why)
-			}
-			*looks = append(*looks, wire.SharedLook{Kind: wire.SharedLookKindLeftOut, Page: wire.SharedLookPageMCP, Item: e.name,
-				Text: why + ", so agents start without " + e.name + "."})
-		} else if needsSignInFor(e, secrets, signIns) {
-			for _, r := range present {
-				reach[r.id] = leftOut("needs sign-in")
-			}
-			*looks = append(*looks, wire.SharedLook{Kind: wire.SharedLookKindLeftOut, Page: wire.SharedLookPageMCP, Item: e.name,
-				Text: e.name + " needs sign-in, so agents start without it."})
-		}
+		sharedServerClashLooks(home, e.name, clash, looks)
+		sharedServerLeaveOutUnready(e, present, secrets, signIns, reach, looks)
 		result.Servers = append(result.Servers, serverRow(e, clash, reach))
 	}
+	sharedSSELeftOutLooks(sseLeftOut, looks)
+	result.RuntimeOnly = append(result.RuntimeOnly, sharedRuntimeOnlyServers(home, present, mine)...)
+	return result
+}
+
+// sharedServerReach says how one runtime gets the server e. The bool is true when
+// the runtime leaves it out because it takes no sse servers.
+func sharedServerReach(e mcpEntry, r sharedRule, taken, appsName bool, ownFile string) (wire.SharedReach, bool) {
+	id := r.id
+	switch {
+	case taken && appsName:
+		return leftOut("the app's own agents server has the name"), false
+	case taken:
+		return leftOut("an earlier server has the name"), false
+	case e.kind == wire.MCPTransportNameSse && refusesSSE[id]:
+		return leftOut(runtimeName(id) + " takes no sse servers"), true
+	case ownFile != "" && keepsOwnServer[id]:
+		return ownCopy(ownFile), false
+	case ownFile != "" && runsBothServers[id]:
+		return gets("sent at start; its own copy runs too"), false
+	case e.kind == wire.MCPTransportNameStdio && !r.takesStdio:
+		return gets("through the bridge"), false
+	default:
+		return gets("sent at start"), false
+	}
+}
+
+// sharedServerClashLooks adds a look for each runtime's own file that also has the server.
+func sharedServerClashLooks(home, name string, clash map[string]string, looks *[]wire.SharedLook) {
+	for _, id := range sortedKeys(clash) {
+		what := runtimeName(id) + " uses the one from mcp.json."
+		if keepsOwnServer[id] {
+			what = runtimeName(id) + " uses its own copy."
+		} else if runsBothServers[id] {
+			what = runtimeName(id) + " runs both."
+		}
+		*looks = append(*looks, wire.SharedLook{Kind: wire.SharedLookKindClash, Page: wire.SharedLookPageMCP, Item: name,
+			Text: "Also in " + tildeIn(clash[id], home) + ". " + what})
+	}
+}
+
+// sharedServerLeaveOutUnready leaves the server out for every runtime when a secret
+// it names is not set, or when it needs sign-in, and adds a look that says why.
+func sharedServerLeaveOutUnready(e mcpEntry, present []sharedRule, secrets map[string]string, signIns *mcpcatalog.SignIns,
+	reach map[string]wire.SharedReach, looks *[]wire.SharedLook) {
+	if missing := unsetSecretNames(e, secrets); len(missing) > 0 {
+		verb := "aren't"
+		if len(missing) == 1 {
+			verb = "isn't"
+		}
+		why := strings.Join(missing, ", ") + " " + verb + " set"
+		for _, r := range present {
+			reach[r.id] = leftOut(why)
+		}
+		*looks = append(*looks, wire.SharedLook{Kind: wire.SharedLookKindLeftOut, Page: wire.SharedLookPageMCP, Item: e.name,
+			Text: why + ", so agents start without " + e.name + "."})
+	} else if needsSignInFor(e, secrets, signIns) {
+		for _, r := range present {
+			reach[r.id] = leftOut("needs sign-in")
+		}
+		*looks = append(*looks, wire.SharedLook{Kind: wire.SharedLookKindLeftOut, Page: wire.SharedLookPageMCP, Item: e.name,
+			Text: e.name + " needs sign-in, so agents start without it."})
+	}
+}
+
+// sharedSSELeftOutLooks adds a look for each runtime that left out sse servers.
+func sharedSSELeftOutLooks(sseLeftOut map[string][]string, looks *[]wire.SharedLook) {
 	for _, id := range sortedKeys(sseLeftOut) {
 		left := sseLeftOut[id]
 		verb := "don't"
@@ -555,6 +606,11 @@ func sharedMCP(home string, present []sharedRule, secrets map[string]string, loo
 		*looks = append(*looks, wire.SharedLook{Kind: wire.SharedLookKindLeftOut, Page: wire.SharedLookPageMCP, Item: runtimeName(id),
 			Text: "Takes no sse servers from the app: " + strings.Join(left, " and ") + " " + verb + " reach it."})
 	}
+}
+
+// sharedRuntimeOnlyServers is each server in a runtime's own file that mcp.json does not have.
+func sharedRuntimeOnlyServers(home string, present []sharedRule, mine []mcpEntry) []wire.SharedRuntimeOnlyServer {
+	var out []wire.SharedRuntimeOnlyServer
 	personal := map[string]bool{}
 	for _, e := range mine {
 		personal[e.name] = true
@@ -566,11 +622,11 @@ func sharedMCP(home string, present []sharedRule, secrets map[string]string, loo
 		}
 		for _, n := range ownServerNames(home, r.id) {
 			if !personal[n] {
-				result.RuntimeOnly = append(result.RuntimeOnly, wire.SharedRuntimeOnlyServer{Name: n, RuntimeID: r.id, File: filepath.Join(home, f)})
+				out = append(out, wire.SharedRuntimeOnlyServer{Name: n, RuntimeID: r.id, File: filepath.Join(home, f)})
 			}
 		}
 	}
-	return result
+	return out
 }
 
 func sortedKeys[V any](m map[string]V) []string {

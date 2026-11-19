@@ -87,7 +87,7 @@ func (st *scimTokens) Authenticate(ctx context.Context, bearer, address string) 
 	st.mu.Lock()
 	kept, ok := st.read[hash]
 	st.mu.Unlock()
-	if !ok || now.Sub(kept.at) > scimTokenKept {
+	if !ok || now.Sub(kept.at) > st.s.backstop(scimTokenKept) {
 		t, err := st.get(ctx, hash)
 		if err != nil {
 			return scim.Caller{}, false

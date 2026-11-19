@@ -384,35 +384,8 @@ func (d *Daemon) matchLevelsWith(a *wire.Agent, settings wire.AutoSettings) *wir
 	if len(offers) == 0 {
 		offers = d.runtimeOffers(a.RuntimeID)
 	}
-	value := func(id string) string {
-		if v, ok := a.StartOptions.Values[id]; ok {
-			return stringValue(v)
-		}
-		for _, o := range a.AdvertisedOptions {
-			if o.ID == id {
-				return stringValue(o.CurrentValue)
-			}
-		}
-		return ""
-	}
 	matches := func(m wire.AutoMapping, field wire.AutoField) bool {
-		if m.Native == nil || m.Mark == wire.AutoMarkNotPossible {
-			return false
-		}
-		if len(m.Native.Options) == 0 && field == wire.AutoFieldModel {
-			// The runtime's own default: the agent set no model of its own.
-			_, set := a.StartOptions.Values[modelOptionID(offers)]
-			return !set
-		}
-		for k, v := range m.Native.Options {
-			if value(k) != stringValue(v) {
-				return false
-			}
-		}
-		if field == wire.AutoFieldPermission && m.Native.ClientPermission != nil && a.Auto != nil {
-			return a.ClientPermission != nil && *a.ClientPermission == *m.Native.ClientPermission
-		}
-		return true
+		return agentMatchesMapping(a, offers, m, field)
 	}
 	out := wire.Levels{}
 	// The more particular cells first: Fast and Smart set a model, Balanced may set none.
@@ -444,6 +417,41 @@ func (d *Daemon) matchLevelsWith(a *wire.Agent, settings wire.AutoSettings) *wir
 		out.PermissionRequests = &c
 	}
 	return &out
+}
+
+// agentOptionValue is the value of the option id on agent a: its start value, else the
+// value the runtime says now, else "".
+func agentOptionValue(a *wire.Agent, id string) string {
+	if v, ok := a.StartOptions.Values[id]; ok {
+		return stringValue(v)
+	}
+	for _, o := range a.AdvertisedOptions {
+		if o.ID == id {
+			return stringValue(o.CurrentValue)
+		}
+	}
+	return ""
+}
+
+// agentMatchesMapping says if agent a has the native setting of cell mapping m for field.
+func agentMatchesMapping(a *wire.Agent, offers []wire.ConfigOption, m wire.AutoMapping, field wire.AutoField) bool {
+	if m.Native == nil || m.Mark == wire.AutoMarkNotPossible {
+		return false
+	}
+	if len(m.Native.Options) == 0 && field == wire.AutoFieldModel {
+		// The runtime's own default: the agent set no model of its own.
+		_, set := a.StartOptions.Values[modelOptionID(offers)]
+		return !set
+	}
+	for k, v := range m.Native.Options {
+		if agentOptionValue(a, k) != stringValue(v) {
+			return false
+		}
+	}
+	if field == wire.AutoFieldPermission && m.Native.ClientPermission != nil && a.Auto != nil {
+		return a.ClientPermission != nil && *a.ClientPermission == *m.Native.ClientPermission
+	}
+	return true
 }
 
 // setLevels is agents/setLevels: a running agent's model level or permission mode, mapped

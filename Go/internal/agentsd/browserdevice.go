@@ -118,11 +118,11 @@ func (d *Daemon) giveTabDevice(owner wire.UUID, tab target.ID) {
 		return
 	}
 	// Away from the browser's own events, which must not wait on a call to it.
-	go func() {
+	d.goJob("emulate tab device", func() {
 		if err := t.Emulate(tab, device); err != nil {
 			log.Printf("browser: couldn't give a tab its session's device: %v", err)
 		}
-	}()
+	})
 }
 
 // castDeviceChanged lays the cast of agent's session out as its new profile.

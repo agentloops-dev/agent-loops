@@ -287,41 +287,7 @@ func (d *Daemon) watchedFilesChanged(folder string, paths []string) {
 	d.fileMu.Unlock()
 	found := map[string]bool{}
 	for _, p := range paths {
-		rel, err := filepath.Rel(folder, p)
-		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-		rel = filepath.ToSlash(rel)
-		if rel == ".git" || strings.HasPrefix(rel, ".git/") {
-			continue
-		}
-		info, err := os.Lstat(p)
-		switch {
-		case err != nil:
-			// Gone: it, and every file seen under it (a folder removed or moved away).
-			if matchesAnyGlob(rel, globs) {
-				found[rel] = true
-			}
-			for _, s := range seen {
-				if strings.HasPrefix(s, rel+"/") {
-					found[s] = true
-				}
-			}
-		case info.IsDir():
-			// A folder made or moved in says only its own path: what is in it.
-			if globsCouldHold(rel, globs) && !skipWatched(folder, p, info.Name()) {
-				for s := range walkWatched(folder, p, globs) {
-					found[s] = true
-				}
-			}
-			for _, s := range seen {
-				if strings.HasPrefix(s, rel+"/") {
-					found[s] = true
-				}
-			}
-		case matchesAnyGlob(rel, globs):
-			found[rel] = true
-		}
+		watchedPathFound(folder, p, globs, seen, found)
 	}
 	if len(found) == 0 {
 		return
@@ -335,6 +301,48 @@ func (d *Daemon) watchedFilesChanged(folder string, paths []string) {
 		st.pending[rel] = true
 	}
 	d.scheduleFileCheckLocked(folder, st)
+}
+
+// watchedPathFound adds to found the files that one heard path p touches: the
+// path itself when a glob matches it, what a new folder holds, and every file
+// seen under a folder that is gone or new. It skips paths outside the folder and in .git.
+func watchedPathFound(folder, p string, globs, seen []string, found map[string]bool) {
+	rel, err := filepath.Rel(folder, p)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == ".git" || strings.HasPrefix(rel, ".git/") {
+		return
+	}
+	info, err := os.Lstat(p)
+	switch {
+	case err != nil:
+		// Gone: it, and every file seen under it (a folder removed or moved away).
+		if matchesAnyGlob(rel, globs) {
+			found[rel] = true
+		}
+		watchedSeenUnder(rel, seen, found)
+	case info.IsDir():
+		// A folder made or moved in says only its own path: what is in it.
+		if globsCouldHold(rel, globs) && !skipWatched(folder, p, info.Name()) {
+			for s := range walkWatched(folder, p, globs) {
+				found[s] = true
+			}
+		}
+		watchedSeenUnder(rel, seen, found)
+	case matchesAnyGlob(rel, globs):
+		found[rel] = true
+	}
+}
+
+// watchedSeenUnder adds to found every seen file under the folder rel.
+func watchedSeenUnder(rel string, seen []string, found map[string]bool) {
+	for _, s := range seen {
+		if strings.HasPrefix(s, rel+"/") {
+			found[s] = true
+		}
+	}
 }
 
 // scheduleFileCheckLocked looks in a moment, unless a look is already due. Holds fileMu.

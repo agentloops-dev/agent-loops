@@ -260,8 +260,20 @@ func TestAFireOutsideHoursIsHeld(t *testing.T) {
 	}
 	c.call(t, 4, "agents/stop", map[string]any{"agentID": s.LastOutcome.Ran.AgentID})
 	waitFor(t, "the run over", func() bool { return !d.runningOf(dir, "night") })
-	// Open today: the next ticks start the held fire.
+	// Open today: the next ticks start the held fire. A tick between the change and its
+	// approval keeps the fire held, not refused as awaiting approval and lost (#6035).
 	write(string(today))
+	// The first tick only notes its time; the second releases what is due.
+	for i := 1; i <= 2; i++ {
+		d.workflowTickOnce(time.Now().Add(time.Duration(i) * time.Millisecond))
+	}
+	d.workflowMu.Lock()
+	st := d.stateLocked(dir, "night", false)
+	kept := st != nil && st.HeldFire != nil
+	d.workflowMu.Unlock()
+	if !kept {
+		t.Fatal("a tick before the approval let go of the held fire")
+	}
 	approveAll(t, c, folder)
 	waitFor(t, "the held fire ran", func() bool {
 		d.workflowTickOnce(time.Now())

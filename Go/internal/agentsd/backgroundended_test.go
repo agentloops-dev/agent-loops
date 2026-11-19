@@ -14,8 +14,17 @@ import (
 )
 
 // asNotWakingItself makes the fake runtime one that does not start itself again when its
-// background command ends, as Codex does not (#4577).
+// background command ends, as Codex does not (#4577). Call it before start: the daemon's
+// warm-pool pass reads wakesItself, so a write while a daemon runs is a data race (#6009).
 func asNotWakingItself(t *testing.T) {
+	t.Helper()
+	h := testHooksOf(t)
+	h.mu.Lock()
+	running := h.daemons > 0
+	h.mu.Unlock()
+	if running {
+		t.Fatal("asNotWakingItself after start: its daemon reads wakesItself")
+	}
 	setFor(t, &wakesItself, func(string) bool { return false })
 }
 
@@ -75,7 +84,7 @@ func TestCommandNamesShortensAndCounts(t *testing.T) {
 // A session that waits for its background command, on a runtime that does not wake
 // itself, is started again when the warm pass sees the command end.
 func TestBackgroundEndedWakesTheWaitingSession(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	asNotWakingItself(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -112,7 +121,7 @@ func TestBackgroundEndedWakesTheWaitingSession(t *testing.T) {
 
 // Another session's background commands wake nobody else.
 func TestBackgroundEndedWakesOnlyItsOwnSession(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	asNotWakingItself(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -147,10 +156,9 @@ func TestBackgroundEndedWakesOnlyItsOwnSession(t *testing.T) {
 	}
 }
 
-// A wait on it alone is refused where nothing would raise it: a runtime that wakes itself,
-// and nothing in the background.
-func TestBackgroundWaitRefusedWhenNothingWouldEnd(t *testing.T) {
-	fakeRuntimes(t)
+// A wait on it alone is refused for a runtime that wakes itself.
+func TestBackgroundWaitRefusedWhenTheRuntimeWakesItself(t *testing.T) {
+	fakeRuntimeProcesses(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := warmAgent(t, d, c, t.TempDir())
@@ -159,8 +167,22 @@ func TestBackgroundWaitRefusedWhenNothingWouldEnd(t *testing.T) {
 	if text, _ := m.tool(2, "wait_for_event", map[string]any{"events": backgroundEndedEvent, "until_minutes": 5}); !strings.Contains(text, "starts your session again itself") {
 		t.Fatal(text)
 	}
+	if waitOf(d.Store.Agent(id)) != nil {
+		t.Fatal("a refused wait waits")
+	}
+}
+
+// A wait on it alone is refused where nothing runs in the background. The hook is set
+// before start: the daemon's warm-pool pass reads it (#6009).
+func TestBackgroundWaitRefusedWhenNothingWouldEnd(t *testing.T) {
+	fakeRuntimeProcesses(t)
 	asNotWakingItself(t)
-	if text, _ := m.tool(3, "wait_for_event", map[string]any{"events": backgroundEndedEvent, "until_minutes": 5}); !strings.Contains(text, "Nothing you started runs in the background now") {
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	id := warmAgent(t, d, c, t.TempDir())
+	m := appClient(t, d, id)
+	m.post("initialize", map[string]any{}, 1)
+	if text, _ := m.tool(2, "wait_for_event", map[string]any{"events": backgroundEndedEvent, "until_minutes": 5}); !strings.Contains(text, "Nothing you started runs in the background now") {
 		t.Fatal(text)
 	}
 	if waitOf(d.Store.Agent(id)) != nil {
@@ -208,7 +230,7 @@ func writeHandover(t *testing.T, d *Daemon, h backgroundHandover) {
 func TestAdoptedBackgroundEndsAfterARestart(t *testing.T) {
 	t.Parallel()
 
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := warmAgent(t, d, c, t.TempDir())
@@ -255,7 +277,7 @@ func TestAdoptedBackgroundEndsAfterARestart(t *testing.T) {
 // A process that is not the one handed over (its pid used again, or ended in the gap) is
 // not adopted, and its end is raised at the first look.
 func TestAdoptionChecksTheStartTime(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	asNotWakingItself(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

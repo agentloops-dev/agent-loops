@@ -41,6 +41,100 @@ func nextBringBack(c *conn, wait time.Duration) *wire.BringBackNotification {
 	}
 }
 
+// bringBackPeer is the other machine of a bring-back test: this host, which
+// answers the bring-back's steps with its own methods. It keeps each step and
+// who asked. While offline, it refuses. It holds the last part until held closes.
+type bringBackPeer struct {
+	d          *Daemon
+	mu         sync.Mutex
+	steps, who []string
+	offline    bool
+	held       chan struct{}
+}
+
+// ask is the control plane's ask for the bring-back's steps.
+func (p *bringBackPeer) ask(_ context.Context, method string, params any) (json.RawMessage, error) {
+	// Only the bring-back's steps: the host's other calls to the control plane go nowhere.
+	call, ok := params.(wire.MachineWorkspaceCall)
+	if !ok || call.Method != sendFolderMethod {
+		return json.RawMessage(`{}`), nil
+	}
+	b, _ := json.Marshal(call.Params)
+	p.mu.Lock()
+	p.who = append(p.who, call.Agent)
+	if p.offline {
+		p.mu.Unlock()
+		return nil, &controllink.AskError{Code: wire.FailureHostOffline, Message: "pc is offline."}
+	}
+	p.mu.Unlock()
+	var s wire.MachineFolderSend
+	json.Unmarshal(b, &s)
+	out, step, err := p.step(s)
+	p.mu.Lock()
+	p.steps = append(p.steps, step)
+	p.mu.Unlock()
+	if err != nil {
+		code, msg := errMessage(err)
+		return nil, &controllink.AskError{Code: code, Message: msg}
+	}
+	r, _ := json.Marshal(out)
+	return r, nil
+}
+
+// step does one step of the bring-back on this host, and says its name.
+func (p *bringBackPeer) step(s wire.MachineFolderSend) (wire.MachineFolderSent, string, error) {
+	var out wire.MachineFolderSent
+	var err error
+	step := ""
+	switch {
+	case s.Facts != nil:
+		step = "facts"
+		f, e := p.d.sendFacts(*s.Facts)
+		out.Facts, err = &f, e
+	case s.Pack != nil:
+		step = "pack"
+		pk, e := p.d.sendPack(*s.Pack)
+		out.Pack, err = &pk, e
+	case s.Read != nil:
+		step = "read"
+		r, e := p.d.sendRead(*s.Read)
+		out.Read, err = &r, e
+		// The last part is held until the test has seen the bring-back under way.
+		if e == nil && r.End && len(r.Data) > 0 && len(r.Data) < sendPartSize && s.Read.Offset > 0 {
+			<-p.held
+		}
+	}
+	return out, step, err
+}
+
+// checkAsked fails the test when the steps were not want (joined by commas), or
+// when a step was not asked as You.
+func (p *bringBackPeer) checkAsked(t *testing.T, want string) {
+	t.Helper()
+	p.mu.Lock()
+	if strings.Join(p.steps, ",") != want {
+		t.Fatalf("steps %v", p.steps)
+	}
+	for _, w := range p.who {
+		if w != "You" {
+			t.Fatalf("asked as %q", w)
+		}
+	}
+	p.mu.Unlock()
+}
+
+// waitBringBackFinished waits, from last, for the bringBack/changed that says
+// the bring-back is finished.
+func waitBringBackFinished(t *testing.T, c *conn, last *wire.BringBackNotification) *wire.BringBackNotification {
+	t.Helper()
+	for last == nil || !last.Finished {
+		if last = nextBringBack(c, 10*time.Second); last == nil {
+			t.Fatal("no finished bringBack/changed")
+		}
+	}
+	return last
+}
+
 func TestFoldersBringBackFromBringsOnItsOwn(t *testing.T) {
 	t.Parallel()
 
@@ -62,70 +156,21 @@ func TestFoldersBringBackFromBringsOnItsOwn(t *testing.T) {
 	os.WriteFile(filepath.Join(there, "notes.txt"), []byte("not committed\n"), 0o644)
 	head := sendGit(t, there, nil, "rev-parse", "HEAD")
 
-	var mu sync.Mutex
-	var steps, who []string
-	offline := false
-	held := make(chan struct{})
-	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		// Only the bring-back's steps: the host's other calls to the control plane go nowhere.
-		call, ok := params.(wire.MachineWorkspaceCall)
-		if !ok || call.Method != sendFolderMethod {
-			return json.RawMessage(`{}`), nil
-		}
-		b, _ := json.Marshal(call.Params)
-		mu.Lock()
-		who = append(who, call.Agent)
-		if offline {
-			mu.Unlock()
-			return nil, &controllink.AskError{Code: wire.FailureHostOffline, Message: "pc is offline."}
-		}
-		mu.Unlock()
-		var s wire.MachineFolderSend
-		json.Unmarshal(b, &s)
-		var out wire.MachineFolderSent
-		var err error
-		step := ""
-		switch {
-		case s.Facts != nil:
-			step = "facts"
-			f, e := d.sendFacts(*s.Facts)
-			out.Facts, err = &f, e
-		case s.Pack != nil:
-			step = "pack"
-			p, e := d.sendPack(*s.Pack)
-			out.Pack, err = &p, e
-		case s.Read != nil:
-			step = "read"
-			r, e := d.sendRead(*s.Read)
-			out.Read, err = &r, e
-			// The last part is held until the test has seen the bring-back under way.
-			if e == nil && r.End && len(r.Data) > 0 && len(r.Data) < sendPartSize && s.Read.Offset > 0 {
-				<-held
-			}
-		}
-		mu.Lock()
-		steps = append(steps, step)
-		mu.Unlock()
-		if err != nil {
-			code, msg := errMessage(err)
-			return nil, &controllink.AskError{Code: code, Message: msg}
-		}
-		r, _ := json.Marshal(out)
-		return r, nil
-	})
+	peer := &bringBackPeer{d: d, held: make(chan struct{})}
+	d.SetControlAsk(peer.ask)
 	from := map[string]any{"folder": store.PathURL(src), "machine": "pc-id", "machineName": "pc", "source": there,
 		"branches": []string{"fix-login"}, "includeChanges": true}
 
 	// Offline: refused at once, and nothing is under way.
-	mu.Lock()
-	offline = true
-	mu.Unlock()
+	peer.mu.Lock()
+	peer.offline = true
+	peer.mu.Unlock()
 	if e := c.callError(t, 1, "folders/bringBackFrom", from); e.Message != "Nothing was brought back from pc: pc is offline." {
 		t.Fatal(e.Message)
 	}
-	mu.Lock()
-	offline = false
-	mu.Unlock()
+	peer.mu.Lock()
+	peer.offline = false
+	peer.mu.Unlock()
 
 	// A branch it does not have: refused at once.
 	nope := map[string]any{}
@@ -136,9 +181,9 @@ func TestFoldersBringBackFromBringsOnItsOwn(t *testing.T) {
 	if e := c.callError(t, 2, "folders/bringBackFrom", nope); e.Message != "Nothing was brought back from pc: "+there+" on pc has no branch nope." {
 		t.Fatal(e.Message)
 	}
-	mu.Lock()
-	steps = nil
-	mu.Unlock()
+	peer.mu.Lock()
+	peer.steps = nil
+	peer.mu.Unlock()
 
 	// It answers before the bring-back is done.
 	var s wire.BringBackSummary
@@ -169,25 +214,12 @@ func TestFoldersBringBackFromBringsOnItsOwn(t *testing.T) {
 	if e := c.callError(t, 5, "folders/bringBackFrom", from); e.Message != shortPath(src)+" is already bringing back." {
 		t.Fatal(e.Message)
 	}
-	close(held)
-	for last == nil || !last.Finished {
-		if last = nextBringBack(c, 10*time.Second); last == nil {
-			t.Fatal("no finished bringBack/changed")
-		}
-	}
+	close(peer.held)
+	last = waitBringBackFinished(t, c, last)
 	if last.Problem != nil || last.Result == nil || strings.Join(last.Result.Moved, ",") != "fix-login" || !last.Result.Applied {
 		t.Fatalf("%+v", last)
 	}
-	mu.Lock()
-	if strings.Join(steps, ",") != "facts,pack,read,read,read" {
-		t.Fatalf("steps %v", steps)
-	}
-	for _, w := range who {
-		if w != "You" {
-			t.Fatalf("asked as %q", w)
-		}
-	}
-	mu.Unlock()
+	peer.checkAsked(t, "facts,pack,read,read,read")
 	if got := sendGit(t, src, nil, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("here is at %s, not %s", got, head)
 	}
@@ -206,11 +238,7 @@ func TestFoldersBringBackFromBringsOnItsOwn(t *testing.T) {
 
 	// Now uncommitted changes here: the bring-back stops, says why, and changes nothing.
 	json.Unmarshal(c.call(t, 7, "folders/bringBackFrom", from), &s)
-	for last = nil; last == nil || !last.Finished; {
-		if last = nextBringBack(c, 10*time.Second); last == nil {
-			t.Fatal("no finished bringBack/changed")
-		}
-	}
+	last = waitBringBackFinished(t, c, nil)
 	if last.Problem == nil || !strings.HasPrefix(*last.Problem, "Nothing came back into "+filepath.Base(src)+" from pc: ") {
 		t.Fatalf("%+v", last)
 	}

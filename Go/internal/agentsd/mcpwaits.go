@@ -302,8 +302,9 @@ type mcpWaitCheck struct {
 
 // checkMCPWait checks a wait's servers' events as a trigger's are checked. Refused, with
 // the sentence, when no server offers a name or its arguments fit none; a server that
-// could not be asked is a warning.
-func (d *Daemon) checkMCPWait(names []string, filters map[string][]string, folder string) (mcpWaitCheck, error) {
+// could not be asked is a warning. appTaken is the where keys that the wait's app events
+// take (#6032): a server's event leaves them out when it does not take them.
+func (d *Daemon) checkMCPWait(names []string, filters map[string][]string, folder string, appTaken map[string]bool) (mcpWaitCheck, error) {
 	var check mcpWaitCheck
 	if len(names) == 0 {
 		return check, nil
@@ -316,16 +317,8 @@ func (d *Daemon) checkMCPWait(names []string, filters map[string][]string, folde
 	delete(given, mcpServerKey)
 	here := d.mcpServerNames(folder)
 	if isNarrowed {
-		for _, n := range narrowed {
-			if !contains(here, n) {
-				msg := n + " is not an MCP server here."
-				if len(here) > 0 {
-					sorted := append([]string(nil), here...)
-					sort.Strings(sorted)
-					msg += " Servers here: " + strings.Join(sorted, ", ") + "."
-				}
-				return check, eventRefused(msg + " Nothing is waiting.")
-			}
+		if err := mcpWaitServersNotHere(narrowed, here); err != nil {
+			return check, err
 		}
 	}
 	asked := here
@@ -335,106 +328,32 @@ func (d *Daemon) checkMCPWait(names []string, filters map[string][]string, folde
 	asked = append([]string(nil), asked...)
 	sort.Strings(asked)
 	offered, mayComeBack := d.mcpOfferedEvents(asked, folder)
-	servers := make([]string, 0, len(offered))
+	scope := mcpWaitScope{names: names, given: given, offered: offered, folder: folder, appTaken: appTaken}
 	for s := range offered {
-		servers = append(servers, s)
+		scope.servers = append(scope.servers, s)
 	}
-	sort.Strings(servers)
-	var servedBy []string
+	sort.Strings(scope.servers)
 	if isNarrowed {
-		servedBy = narrowed
+		scope.servedBy = narrowed
 	}
-	// One where for several events (#3797): each event takes only the keys it offers, so a
-	// lead names its children's issues for issue.closed and their fixes for pr.merged in one
-	// wait. A key none of them offers still goes to each, which says what it takes.
-	takenBySome := map[string]bool{}
-	for _, name := range names {
-		probe := mcpTrigger{event: name, servers: servedBy}
-		for _, server := range servers {
-			for _, def := range offered[server].events {
-				if probe.covers(def.Name) && def.offersPoll() {
-					for k := range propertiesOf(def.InputSchema) {
-						takenBySome[k] = true
-					}
-				}
-			}
-		}
-	}
+	scope.takenBySome = scope.keysTakenBySome()
 	var warnings, unnamed []string
 	for _, name := range names {
-		probe := mcpTrigger{event: name, servers: servedBy}
-		var on []string
-		var arguments map[string]json.RawMessage
-		var problems []string
-		var keys []string
-		for _, server := range servers {
-			for _, def := range offered[server].events {
-				if !probe.covers(def.Name) || !def.offersPoll() {
-					continue
-				}
-				own := given
-				if len(names) > 1 {
-					own = map[string][]string{}
-					offers := propertiesOf(def.InputSchema)
-					for k, v := range given {
-						if offers[k] || !takenBySome[k] {
-							own[k] = v
-						}
-					}
-				}
-				typed := mcpWaitArguments(own, def.InputSchema)
-				if len(def.InputSchema) > 0 {
-					if p := jsonSchemaProblem(mustRaw(typed), def.InputSchema, server+"'s "+def.Name); p != "" {
-						problems = append(problems, p+oneValueWords(own, def.InputSchema))
-						continue
-					}
-				}
-				if p := unnamedWaitWords(def.Name, own, def.InputSchema); p != "" {
-					unnamed = append(unnamed, server+"'s "+def.Name+": "+p)
-					continue
-				}
-				if arguments == nil {
-					arguments = typed
-				}
-				if !contains(on, server) {
-					on = append(on, server)
-				}
-				key := mcpTrigger{event: def.Name, servers: servedBy, arguments: arguments}.subscriptionKey(server)
-				keys = append(keys, mcpRecordKey(folder, key))
-			}
-		}
-		if arguments == nil {
-			arguments = mcpWaitArguments(given, nil)
-		}
-		trigger := mcpTrigger{event: name, servers: servedBy, arguments: arguments}
+		m := scope.match(name, &unnamed)
+		trigger := mcpTrigger{event: name, servers: scope.servedBy, arguments: m.arguments}
 		switch {
-		case len(on) > 0:
-			check.events = append(check.events, wire.WaitServerEvent{Trigger: trigger.wire(), Servers: on})
-			d.mcpEvMu.Lock()
-			for _, k := range keys {
-				if d.mcpSubs[k] == nil {
-					check.fresh = append(check.fresh, k)
-				}
-			}
-			d.mcpEvMu.Unlock()
-		case len(problems) > 0:
-			return check, eventRefused(strings.Join(problems, " ") + " Nothing is waiting.")
+		case len(m.on) > 0:
+			check.events = append(check.events, wire.WaitServerEvent{Trigger: trigger.wire(), Servers: m.on})
+			check.fresh = append(check.fresh, d.mcpWaitFreshKeys(m.keys)...)
+		case len(m.problems) > 0:
+			return check, eventRefused(strings.Join(m.problems, " ") + " Nothing is waiting.")
 		case len(unnamed) > 0:
 			return mcpWaitCheck{}, eventRefused(strings.Join(unnamed, " ") + " Nothing is waiting.")
 		case len(mayComeBack) > 0:
 			check.events = append(check.events, wire.WaitServerEvent{Trigger: trigger.wire(), Servers: []string{}})
 			warnings = append(warnings, serversMayComeBackWords(name, mayComeBack))
 		default:
-			offers := map[string][]string{}
-			for s, o := range offered {
-				var n []string
-				for _, e := range o.events {
-					n = append(n, e.Name)
-				}
-				sort.Strings(n)
-				offers[s] = n
-			}
-			return check, eventRefused(notOfferedWords(name, offers) + " Nothing is waiting.")
+			return check, eventRefused(notOfferedWords(name, mcpOfferedEventNames(offered)) + " Nothing is waiting.")
 		}
 	}
 	// One server's event that names nothing refuses the whole wait, not only that server's
@@ -444,6 +363,156 @@ func (d *Daemon) checkMCPWait(names []string, filters map[string][]string, folde
 	}
 	check.warning = strings.Join(warnings, "")
 	return check, nil
+}
+
+// mcpWaitServersNotHere refuses a wait that names a server this folder does not have.
+func mcpWaitServersNotHere(narrowed, here []string) error {
+	for _, n := range narrowed {
+		if contains(here, n) {
+			continue
+		}
+		msg := n + " is not an MCP server here."
+		if len(here) > 0 {
+			sorted := append([]string(nil), here...)
+			sort.Strings(sorted)
+			msg += " Servers here: " + strings.Join(sorted, ", ") + "."
+		}
+		return eventRefused(msg + " Nothing is waiting.")
+	}
+	return nil
+}
+
+// mcpWaitScope is what checkMCPWait matches each event name against.
+type mcpWaitScope struct {
+	names    []string
+	given    map[string][]string
+	servers  []string
+	offered  map[string]offeredEvents
+	servedBy []string
+	folder   string
+	appTaken map[string]bool
+	// takenBySome are the where keys that some of the wait's events take.
+	takenBySome map[string]bool
+}
+
+// mcpWaitNameMatch is what one event name of a wait matched on the servers.
+type mcpWaitNameMatch struct {
+	on        []string
+	arguments map[string]json.RawMessage
+	problems  []string
+	keys      []string
+}
+
+// keysTakenBySome is every where key that one of the wait's events takes. One where for
+// several events (#3797): each event takes only the keys it offers, so a lead names its
+// children's issues for issue.closed and their fixes for pr.merged in one wait. A key none
+// of them offers still goes to each, which says what it takes. The keys the wait's app
+// events take count too (#6032), as lease.granted's resource with pr.merged.
+func (sc mcpWaitScope) keysTakenBySome() map[string]bool {
+	takenBySome := map[string]bool{}
+	for k := range sc.appTaken {
+		takenBySome[k] = true
+	}
+	for _, name := range sc.names {
+		probe := mcpTrigger{event: name, servers: sc.servedBy}
+		for _, server := range sc.servers {
+			for _, def := range sc.offered[server].events {
+				if !probe.covers(def.Name) || !def.offersPoll() {
+					continue
+				}
+				for k := range propertiesOf(def.InputSchema) {
+					takenBySome[k] = true
+				}
+			}
+		}
+	}
+	return takenBySome
+}
+
+// ownWhere is the where keys that go to one event: all of them for a wait on one event,
+// else those it offers and those no event takes.
+func (sc mcpWaitScope) ownWhere(def mcpEventDef) map[string][]string {
+	if len(sc.names) <= 1 && len(sc.appTaken) == 0 {
+		return sc.given
+	}
+	own := map[string][]string{}
+	offers := propertiesOf(def.InputSchema)
+	for k, v := range sc.given {
+		if offers[k] || !sc.takenBySome[k] {
+			own[k] = v
+		}
+	}
+	return own
+}
+
+// match matches one event name on every server that offers it. A server's event that names
+// nothing goes in unnamed.
+func (sc mcpWaitScope) match(name string, unnamed *[]string) mcpWaitNameMatch {
+	var m mcpWaitNameMatch
+	probe := mcpTrigger{event: name, servers: sc.servedBy}
+	for _, server := range sc.servers {
+		for _, def := range sc.offered[server].events {
+			if !probe.covers(def.Name) || !def.offersPoll() {
+				continue
+			}
+			sc.matchDef(server, def, &m, unnamed)
+		}
+	}
+	if m.arguments == nil {
+		m.arguments = mcpWaitArguments(sc.given, nil)
+	}
+	return m
+}
+
+// matchDef matches one server's event, which the name covers, with the where keys.
+func (sc mcpWaitScope) matchDef(server string, def mcpEventDef, m *mcpWaitNameMatch, unnamed *[]string) {
+	own := sc.ownWhere(def)
+	typed := mcpWaitArguments(own, def.InputSchema)
+	if len(def.InputSchema) > 0 {
+		if p := jsonSchemaProblem(mustRaw(typed), def.InputSchema, server+"'s "+def.Name); p != "" {
+			m.problems = append(m.problems, p+oneValueWords(own, def.InputSchema))
+			return
+		}
+	}
+	if p := unnamedWaitWords(def.Name, own, def.InputSchema); p != "" {
+		*unnamed = append(*unnamed, server+"'s "+def.Name+": "+p)
+		return
+	}
+	if m.arguments == nil {
+		m.arguments = typed
+	}
+	if !contains(m.on, server) {
+		m.on = append(m.on, server)
+	}
+	key := mcpTrigger{event: def.Name, servers: sc.servedBy, arguments: m.arguments}.subscriptionKey(server)
+	m.keys = append(m.keys, mcpRecordKey(sc.folder, key))
+}
+
+// mcpWaitFreshKeys is the keys that no subscription holds now.
+func (d *Daemon) mcpWaitFreshKeys(keys []string) []string {
+	var fresh []string
+	d.mcpEvMu.Lock()
+	for _, k := range keys {
+		if d.mcpSubs[k] == nil {
+			fresh = append(fresh, k)
+		}
+	}
+	d.mcpEvMu.Unlock()
+	return fresh
+}
+
+// mcpOfferedEventNames is each server's event names, sorted.
+func mcpOfferedEventNames(offered map[string]offeredEvents) map[string][]string {
+	offers := map[string][]string{}
+	for s, o := range offered {
+		var n []string
+		for _, e := range o.events {
+			n = append(n, e.Name)
+		}
+		sort.Strings(n)
+		offers[s] = n
+	}
+	return offers
 }
 
 // startMCPWait starts a new wait's subscriptions from now: an old wait's record, kept a

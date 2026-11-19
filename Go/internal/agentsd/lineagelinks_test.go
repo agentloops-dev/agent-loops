@@ -2,6 +2,8 @@ package agentsd
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -179,5 +181,51 @@ func TestPROfURL(t *testing.T) {
 		if got != want {
 			t.Errorf("%s: got %q, want %q", raw, got, want)
 		}
+	}
+}
+
+// #6261: a failed read of a folder's origin keeps nothing, so the next call reads it again: one
+// slow or failing git under load does not put a folder off its forge for good. A folder with no
+// origin is still kept as on no forge.
+func TestAFailedOriginReadIsNotKept(t *testing.T) {
+	t.Parallel()
+
+	d := &Daemon{}
+	folder := gitFolder(t, "git@github.com:alexec/agents.git")
+	config := filepath.Join(folder, ".git", "config")
+	if err := os.Rename(config, config+".good"); err != nil {
+		t.Fatal(err)
+	}
+	// git refuses a config it cannot parse, as it fails for a slow or a killed read.
+	if err := os.WriteFile(config, []byte("not a config line\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r := d.folderRepo(folder); r.forge != "" {
+		t.Fatalf("with a config git refuses: %+v", r)
+	}
+	// The good config again, at the same time, so the config stamp does not forget it.
+	fi, err := os.Stat(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(config+".good", config); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(config, fi.ModTime(), fi.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if r := d.folderRepo(folder); r != (forgeRepo{"github", "alexec/agents"}) {
+		t.Fatalf("after the failed read: %+v", r)
+	}
+
+	none := gitFolder(t, "")
+	if r := d.folderRepo(none); r.forge != "" {
+		t.Fatalf("with no origin: %+v", r)
+	}
+	d.repoMu.Lock()
+	_, kept := d.repos[none]
+	d.repoMu.Unlock()
+	if !kept {
+		t.Fatal("a folder with no origin was not kept")
 	}
 }

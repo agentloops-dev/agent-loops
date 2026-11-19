@@ -52,34 +52,41 @@ func (d *Daemon) forwardSetupReports(ctx context.Context, file string, every tim
 			// The installer began a new run.
 			offset, prelude = 0, false
 		}
-		for {
-			rest := data[offset:]
-			end := bytes.IndexByte(rest, '\n')
-			if end < 0 {
-				break
-			}
-			var report wire.MachineSetupReport
-			if json.Unmarshal(rest[:end], &report) != nil {
-				offset += int64(end) + 1
-				continue
-			}
-			if !prelude {
-				// This host has joined, so its machine was made and reached: an installer
-				// pasted on a machine the control plane did not make says so too. A step said
-				// again, or done already, is not an error to the control plane.
-				for _, step := range []wire.MachineSetupStepID{wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin} {
-					_, _ = (*ask)(ctx, wire.CallMachineSetupStep.Name, wire.MachineSetupReport{Step: step, State: wire.MachineSetupStateDone})
-				}
-				prelude = true
-			}
-			if _, err := (*ask)(ctx, wire.CallMachineSetupStep.Name, report); err != nil {
-				if tries++; tries < setupForwardTries {
-					break // the same line again at the next look
-				}
-				log.Printf("setup: step %s was not taken by the control plane: %v", report.Step, err)
-			}
-			tries = 0
-			offset += int64(end) + 1
+		offset, tries, prelude = d.forwardSetupReportLines(ctx, *ask, data, offset, tries, prelude)
+	}
+}
+
+// forwardSetupReportLines sends each whole line of data after offset to the control
+// plane. It returns the new offset, the count of failed tries and whether the prelude
+// was sent. It stops at a part line, or at a line the control plane did not take yet.
+func (d *Daemon) forwardSetupReportLines(ctx context.Context, ask askControl, data []byte, offset int64, tries int, prelude bool) (int64, int, bool) {
+	for {
+		rest := data[offset:]
+		end := bytes.IndexByte(rest, '\n')
+		if end < 0 {
+			return offset, tries, prelude
 		}
+		var report wire.MachineSetupReport
+		if json.Unmarshal(rest[:end], &report) != nil {
+			offset += int64(end) + 1
+			continue
+		}
+		if !prelude {
+			// This host has joined, so its machine was made and reached: an installer
+			// pasted on a machine the control plane did not make says so too. A step said
+			// again, or done already, is not an error to the control plane.
+			for _, step := range []wire.MachineSetupStepID{wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin} {
+				_, _ = ask(ctx, wire.CallMachineSetupStep.Name, wire.MachineSetupReport{Step: step, State: wire.MachineSetupStateDone})
+			}
+			prelude = true
+		}
+		if _, err := ask(ctx, wire.CallMachineSetupStep.Name, report); err != nil {
+			if tries++; tries < setupForwardTries {
+				return offset, tries, prelude // the same line again at the next look
+			}
+			log.Printf("setup: step %s was not taken by the control plane: %v", report.Step, err)
+		}
+		tries = 0
+		offset += int64(end) + 1
 	}
 }

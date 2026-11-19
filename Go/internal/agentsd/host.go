@@ -412,55 +412,9 @@ func (d *Daemon) checkDisk() {
 	d.writeHeld()
 	// The first look after a restart: a crossing it finds happened in the gap (#1219).
 	noticed := d.noticedAfterRestart()
-	type mount struct {
-		reading wire.DiskReading
-		t       diskThresholds
-		set     bool
-	}
-	mounts := map[string]*mount{}
-	override := sync.OnceValues(d.diskOverride)
-	look := func(folder string, t diskThresholds, has bool) {
-		var st syscall.Statfs_t
-		var fi syscall.Stat_t
-		if syscall.Statfs(folder, &st) != nil || syscall.Stat(folder, &fi) != nil {
-			return
-		}
-		volume, key := diskVolume(&st, uint64(fi.Dev))
-		m := mounts[key]
-		if m == nil {
-			m = &mount{reading: wire.DiskReading{Volume: volume, Mount: key,
-				FreeBytes: int64(st.Bavail) * int64(st.Bsize), TotalBytes: int64(st.Blocks) * int64(st.Bsize)}, t: defaultDiskThresholds}
-			if free, ok := override(); ok {
-				m.reading.FreeBytes = min(free, m.reading.TotalBytes)
-			}
-			mounts[key] = m
-		}
-		if has {
-			// The strictest of the folders on the mount.
-			if !m.set {
-				m.t, m.set = t, true
-			} else {
-				m.t = diskThresholds{max(m.t.lowPercent, t.lowPercent), max(m.t.criticalPercent, t.criticalPercent)}
-			}
-		}
-	}
-	look(d.Store.Loc.Root, diskThresholds{}, false)
-	for _, p := range d.folders(false) {
-		folder := store.FolderPath(p.Folder.Folder)
-		t, has := folderThresholds(folder)
-		look(folder, t, has)
-	}
+	mounts := d.readDiskMounts()
 	d.diskMu.Lock()
-	if d.diskLevels == nil {
-		// How each stood at the last look, kept in events-state.json, so a crossing is
-		// raised once and a restart does not raise it again.
-		d.diskLevels = map[string]wire.DiskLevel{}
-		d.eventMu.Lock()
-		for k, v := range d.eventStateNow.DiskLevels {
-			d.diskLevels[k] = wire.DiskLevel(v)
-		}
-		d.eventMu.Unlock()
-	}
+	d.loadDiskLevelsLocked()
 	var alarms, volumes []wire.DiskAlarm
 	var crossedLow []wire.DiskAlarm
 	type crossedOK struct {
@@ -510,10 +464,7 @@ func (d *Daemon) checkDisk() {
 	}
 	sort.Slice(alarms, worstFirst(alarms))
 	sort.Slice(volumes, worstFirst(volumes))
-	changed := len(alarms) != len(d.diskAlarms)
-	for i := 0; !changed && i < len(alarms); i++ {
-		changed = alarms[i].Level != d.diskAlarms[i].Level || alarms[i].Reading.Mount != d.diskAlarms[i].Reading.Mount
-	}
+	changed := diskAlarmsChanged(alarms, d.diskAlarms)
 	d.diskAlarms = alarms
 	d.diskVolumes = volumes
 	d.diskMu.Unlock()
@@ -534,6 +485,82 @@ func (d *Daemon) checkDisk() {
 	if changed {
 		Broadcast(d, wire.NotifyDiskChanged, wire.DiskState{Alarms: alarms})
 	}
+}
+
+// diskMount is one mount that checkDisk looked at: its reading, and the strictest
+// thresholds of the folders on it when set.
+type diskMount struct {
+	reading wire.DiskReading
+	t       diskThresholds
+	set     bool
+}
+
+// readDiskMounts reads the disk of the root and of every folder, one reading for each
+// mount, keyed by the mount.
+func (d *Daemon) readDiskMounts() map[string]*diskMount {
+	mounts := map[string]*diskMount{}
+	override := sync.OnceValues(d.diskOverride)
+	look := func(folder string, t diskThresholds, has bool) {
+		var st syscall.Statfs_t
+		var fi syscall.Stat_t
+		if syscall.Statfs(folder, &st) != nil || syscall.Stat(folder, &fi) != nil {
+			return
+		}
+		volume, key := diskVolume(&st, uint64(fi.Dev))
+		m := mounts[key]
+		if m == nil {
+			m = &diskMount{reading: wire.DiskReading{Volume: volume, Mount: key,
+				FreeBytes: int64(st.Bavail) * int64(st.Bsize), TotalBytes: int64(st.Blocks) * int64(st.Bsize)}, t: defaultDiskThresholds}
+			if free, ok := override(); ok {
+				m.reading.FreeBytes = min(free, m.reading.TotalBytes)
+			}
+			mounts[key] = m
+		}
+		if has {
+			m.addThresholds(t)
+		}
+	}
+	look(d.Store.Loc.Root, diskThresholds{}, false)
+	for _, p := range d.folders(false) {
+		folder := store.FolderPath(p.Folder.Folder)
+		t, has := folderThresholds(folder)
+		look(folder, t, has)
+	}
+	return mounts
+}
+
+// addThresholds keeps the strictest of the folders' thresholds on the mount.
+func (m *diskMount) addThresholds(t diskThresholds) {
+	if !m.set {
+		m.t, m.set = t, true
+	} else {
+		m.t = diskThresholds{max(m.t.lowPercent, t.lowPercent), max(m.t.criticalPercent, t.criticalPercent)}
+	}
+}
+
+// loadDiskLevelsLocked loads how each mount stood at the last look, the first time. Call
+// it with diskMu held.
+func (d *Daemon) loadDiskLevelsLocked() {
+	if d.diskLevels != nil {
+		return
+	}
+	// How each stood at the last look, kept in events-state.json, so a crossing is
+	// raised once and a restart does not raise it again.
+	d.diskLevels = map[string]wire.DiskLevel{}
+	d.eventMu.Lock()
+	for k, v := range d.eventStateNow.DiskLevels {
+		d.diskLevels[k] = wire.DiskLevel(v)
+	}
+	d.eventMu.Unlock()
+}
+
+// diskAlarmsChanged is whether the alarms differ from the old ones in a level or a mount.
+func diskAlarmsChanged(alarms, old []wire.DiskAlarm) bool {
+	changed := len(alarms) != len(old)
+	for i := 0; !changed && i < len(alarms); i++ {
+		changed = alarms[i].Level != old[i].Level || alarms[i].Reading.Mount != old[i].Reading.Mount
+	}
+	return changed
 }
 
 // diskOverride is the free space a scratch root says every volume has (#195, #4851), so

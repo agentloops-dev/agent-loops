@@ -2,7 +2,7 @@
 // the cursors to the next pages, kept per kind for the tab's life. An item's page goes through the list
 // it was opened from (Previous and Next, j and k), and Back finds the list as it was left.
 import { signal, type Signal } from "@preact/signals";
-import type { ForgeItem, ForgeListAll, ForgeListError, ProjectBoard, ReportNode, ReportNodesSort } from "../protocol/generated";
+import type { ForgeCapabilities, ForgeItem, ForgeListAll, ForgeListError, ProjectBoard, ReportNode, ReportNodesSort } from "../protocol/generated";
 import type { Store } from "./store";
 import { Capability } from "../protocol/capabilities.generated";
 import { CallFailed } from "../wire/link";
@@ -16,6 +16,7 @@ import {
   type Neighbours, type WorkFilter, type WorkKind, type WorkProject, type WorkProjectRepos, type WorkRow, type WorkSort, type WorkState,
 } from "./work";
 import { rememberEach, remembered } from "./workRemembered";
+import { joinForges, rowSetsPriority } from "./forgeNextOrder";
 
 /** How many pages of reports/nodes a list reads for its lineage: at most 500 nodes. */
 const lineagePages = 5;
@@ -27,6 +28,8 @@ export interface HostList {
   total?: number | undefined;
   /** The refs of the items carried from the last read for a forge this read could not reach, shown dimmed (#4392). */
   stale?: string[] | undefined;
+  /** What each forge on the list fills and sets (#4361): a row's menu offers Priority and On hold by it (epic #6086). */
+  forges?: ForgeCapabilities[] | undefined;
 }
 
 export interface WorkListState {
@@ -152,10 +155,18 @@ async function readLineage(store: Store, kind: WorkKind, sort: ReportNodesSort, 
   return { nodes, cursor: next };
 }
 
-/** What the list is read for: its state, board, sort, machines and Refresh. */
+/** What the list is read for: its state, board, sort, machines, their folders and Refresh. */
 export function askKey(store: Store, l: WorkListState): string {
   const { state, board } = l.filter.value;
-  return [forgeState(state), board, nodesSort(l), listHosts(store, board).map((h) => h.id).join(","), l.asked.value].join("|");
+  const hosts = listHosts(store, board).map((h) => h.id);
+  return [forgeState(state), board, nodesSort(l), hosts.join(","), forgeFolders(store, hosts), l.asked.value].join("|");
+}
+
+/** The machines' live folders, as the page knows them (#6152): a list read before a folder was added is read again when
+ * one is added or goes, as Refresh does. */
+export function forgeFolders(store: Store, hosts: readonly string[]): string {
+  return hosts.flatMap((host) => (store.folders.value[host] ?? []).filter((f) => f.folder.archivedAt === undefined)
+    .map((f) => `${host} ${f.folder.folder}`)).sort().join(",");
 }
 
 /** A read with errors keeps, dimmed under the error (#4392), the items of the last read from each forge it could not reach
@@ -176,7 +187,7 @@ export const notAnswered = "It did not answer.";
  * of `hosts` (offline when the page asked) is left out, as it was not asked before. */
 export function hostListsOf(got: ForgeListAll, hosts: readonly string[], before: readonly HostList[]): HostList[] {
   const by = new Map<string, HostList>();
-  for (const l of got.lists) by.set(l.machine, { host: l.machine, items: l.list.items, cursor: l.list.cursor, errors: l.list.errors ?? [], total: l.list.total });
+  for (const l of got.lists) by.set(l.machine, { host: l.machine, items: l.list.items, cursor: l.list.cursor, errors: l.list.errors ?? [], total: l.list.total, forges: l.list.forges });
   for (const u of got.unreached) by.set(u.machine, { host: u.machine, items: [], errors: [{ forge: "", message: notAnswered }] });
   return hosts.flatMap((h) => {
     const list = by.get(h);
@@ -309,7 +320,7 @@ export async function loadMore(store: Store, l: WorkListState): Promise<void> {
           failed.push(...next.errors!.map((e) => e.message));
           return h;
         }
-        return { ...h, items: [...h.items, ...next.items], cursor: next.cursor, errors: next.errors ?? [] };
+        return { ...h, items: [...h.items, ...next.items], cursor: next.cursor, errors: next.errors ?? [], forges: joinForges(h.forges, next.forges) };
       });
       if (failed.length > 0) l.moreFailed.value = failed.join("; ");
     } else if (l.lineageCursor.peek()) {
@@ -321,6 +332,51 @@ export async function loadMore(store: Store, l: WorkListState): Promise<void> {
     l.moreFailed.value = describe(e);
   } finally {
     l.more.value = false;
+  }
+}
+
+/** What a row's right-click menu offers (epic #6086): its priority and on hold where its forge sets them and its machine
+ * writes; nothing on rows from this device's copy, until the machines answer. */
+export function rowSets(store: Store, l: WorkListState, row: WorkRow): { priority: boolean; hold: boolean } {
+  const host = row.host;
+  if (l.kind !== "issue" || l.fromDevice.value || !host) return { priority: false, hold: false };
+  const forges = l.lists.value?.find((h) => h.host === host)?.forges;
+  return rowSetsPriority(row, forges, store.has(host, Capability.forgeWrite1));
+}
+
+/** A row's priority (forge/priority) or On hold (forge/hold) from its menu: the row shows it at once, and has its old value
+ * back when the write fails, which `failed` says; after it, the forges' own read (their labels too). */
+export async function setRowPlan(store: Store, l: WorkListState, row: WorkRow,
+  to: { priority: ForgeItem["priority"] | undefined } | { onHold: boolean }, failed: (why: string) => void): Promise<void> {
+  const host = row.host;
+  if (!host) return;
+  const change = (edit: (i: ForgeItem) => ForgeItem) => {
+    l.lists.value = (l.lists.peek() ?? []).map((h) => h.host !== host ? h
+      : { ...h, items: h.items.map((i) => i.node.ref === row.node.ref ? edit(i) : i) });
+  };
+  const withPriority = (i: ForgeItem, p: ForgeItem["priority"] | undefined): ForgeItem => {
+    const { priority: _, ...rest } = i;
+    return p ? { ...rest, priority: p } : rest;
+  };
+  const withHold = (i: ForgeItem, on: boolean): ForgeItem => {
+    const { onHold: _, ...rest } = i;
+    return on ? { ...rest, onHold: true } : rest;
+  };
+  try {
+    if ("priority" in to) {
+      if (to.priority === row.priority) return;
+      change((i) => withPriority(i, to.priority));
+      await store.link.call("forge/priority", to.priority ? { node: row.node, priority: to.priority } : { node: row.node }, host);
+    } else {
+      if (to.onHold === (row.onHold === true)) return;
+      change((i) => withHold(i, to.onHold));
+      await store.link.call("forge/hold", { node: row.node, on: to.onHold }, host);
+    }
+    l.asked.value++;
+  } catch (e) {
+    if ("priority" in to) change((i) => withPriority(i, row.priority));
+    else change((i) => withHold(i, row.onHold === true));
+    failed(describe(e));
   }
 }
 

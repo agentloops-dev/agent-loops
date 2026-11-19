@@ -200,6 +200,48 @@ func TestPollRefusesWhatItDoesNotOffer(t *testing.T) {
 	}
 }
 
+// frontClient is the Agents daemon's side of the front's pipes: it writes JSON-RPC lines and
+// reads the answers.
+type frontClient struct {
+	t     *testing.T
+	out   io.Writer
+	lines *bufio.Scanner
+}
+
+func (c *frontClient) send(msg map[string]any) {
+	data, _ := json.Marshal(msg)
+	if _, err := c.out.Write(append(data, '\n')); err != nil {
+		c.t.Fatal(err)
+	}
+}
+
+// call sends a request and gives back the answer with its id, past the other lines.
+func (c *frontClient) call(id int, method string, params any) map[string]any {
+	c.t.Helper()
+	c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+	for c.lines.Scan() {
+		var reply map[string]any
+		if err := json.Unmarshal(c.lines.Bytes(), &reply); err != nil {
+			c.t.Fatalf("%s: %v", c.lines.Text(), err)
+		}
+		if reply["id"] == float64(id) {
+			return reply
+		}
+	}
+	c.t.Fatalf("%s: no answer (%v)", method, c.lines.Err())
+	return nil
+}
+
+// tool calls a tool that must not fail and gives back its structured content.
+func (c *frontClient) tool(id int, name string, args map[string]any) map[string]any {
+	c.t.Helper()
+	result := c.call(id, "tools/call", map[string]any{"name": name, "arguments": args})["result"].(map[string]any)
+	if result["isError"] == true {
+		c.t.Fatalf("%s: %v", name, result["content"])
+	}
+	return result["structuredContent"].(map[string]any)
+}
+
 // The front as the Agents daemon talks to it: initialize carries the events capability, the
 // events are answered here, and the tools post through the Chat API.
 func TestTheFrontOffersTheEventsAndTools(t *testing.T) {
@@ -217,45 +259,40 @@ func TestTheFrontOffersTheEventsAndTools(t *testing.T) {
 
 	lines := bufio.NewScanner(clientIn)
 	lines.Buffer(nil, 16<<20)
-	send := func(msg map[string]any) {
-		data, _ := json.Marshal(msg)
-		if _, err := clientOut.Write(append(data, '\n')); err != nil {
-			t.Fatal(err)
-		}
-	}
-	call := func(id int, method string, params any) map[string]any {
-		t.Helper()
-		send(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
-		for lines.Scan() {
-			var reply map[string]any
-			if err := json.Unmarshal(lines.Bytes(), &reply); err != nil {
-				t.Fatalf("%s: %v", lines.Text(), err)
-			}
-			if reply["id"] == float64(id) {
-				return reply
-			}
-		}
-		t.Fatalf("%s: no answer (%v)", method, lines.Err())
-		return nil
-	}
-	tool := func(id int, name string, args map[string]any) map[string]any {
-		t.Helper()
-		result := call(id, "tools/call", map[string]any{"name": name, "arguments": args})["result"].(map[string]any)
-		if result["isError"] == true {
-			t.Fatalf("%s: %v", name, result["content"])
-		}
-		return result["structuredContent"].(map[string]any)
-	}
+	c := &frontClient{t: t, out: clientOut, lines: lines}
 
-	init := call(1, "initialize", map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
+	checkFrontInitialize(t, c)
+	checkFrontLists(t, c)
+	checkFrontPosts(t, c, f)
+	checkFrontRefusesBadArguments(t, c)
+
+	// A refused key says to check it.
+	f.mu.Lock()
+	f.refuse = http.StatusUnauthorized
+	f.mu.Unlock()
+	r := c.call(30, "tools/call", map[string]any{"name": "list_spaces", "arguments": map[string]any{}})["result"].(map[string]any)
+	if r["isError"] != true || !strings.Contains(r["content"].([]any)[0].(map[string]any)["text"].(string), "GOOGLE_CHAT_CREDENTIALS") {
+		t.Fatalf("a refused key: %v", r)
+	}
+}
+
+// checkFrontInitialize: initialize carries the events capability, the server's name and its
+// instructions.
+func checkFrontInitialize(t *testing.T, c *frontClient) {
+	t.Helper()
+	init := c.call(1, "initialize", map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{},
 		"clientInfo": map[string]any{"name": "Agents", "version": "1"}})["result"].(map[string]any)
 	if !reflect.DeepEqual(init["capabilities"].(map[string]any)["events"], map[string]any{"listChanged": false}) ||
 		init["serverInfo"].(map[string]any)["name"] != "googlechat-mcp" || init["instructions"] != Instructions {
 		t.Fatalf("initialize: %v", init)
 	}
-	send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
+	c.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
+}
 
-	listed := call(2, "events/list", map[string]any{})["result"].(map[string]any)["events"].([]any)
+// checkFrontLists: events/list and tools/list name every event and tool.
+func checkFrontLists(t *testing.T, c *frontClient) {
+	t.Helper()
+	listed := c.call(2, "events/list", map[string]any{})["result"].(map[string]any)["events"].([]any)
 	var events []string
 	for _, ev := range listed {
 		events = append(events, ev.(map[string]any)["name"].(string))
@@ -264,7 +301,7 @@ func TestTheFrontOffersTheEventsAndTools(t *testing.T) {
 		t.Fatalf("events/list: %v", events)
 	}
 
-	tools := call(3, "tools/list", map[string]any{})["result"].(map[string]any)["tools"].([]any)
+	tools := c.call(3, "tools/list", map[string]any{})["result"].(map[string]any)["tools"].([]any)
 	var names []string
 	for _, tl := range tools {
 		names = append(names, tl.(map[string]any)["name"].(string))
@@ -272,16 +309,20 @@ func TestTheFrontOffersTheEventsAndTools(t *testing.T) {
 	if want := []string{"ask_question", "list_conversations", "list_spaces", "read_messages", "reply", "send_message"}; !reflect.DeepEqual(names, want) {
 		t.Fatalf("tools: %v", names)
 	}
+}
 
-	spaces := tool(4, "list_spaces", map[string]any{})["spaces"].([]any)
+// checkFrontPosts: list_spaces, send_message and ask_question go through the Chat API.
+func checkFrontPosts(t *testing.T, c *frontClient, f *fakeGoogle) {
+	t.Helper()
+	spaces := c.tool(4, "list_spaces", map[string]any{})["spaces"].([]any)
 	if len(spaces) != 2 || spaces[0].(map[string]any)["name"] != "spaces/AAA" || spaces[1].(map[string]any)["type"] != "DIRECT_MESSAGE" {
 		t.Fatalf("list_spaces: %v", spaces)
 	}
-	sent := tool(5, "send_message", map[string]any{"space": "spaces/AAA", "text": "On it.", "thread": "spaces/AAA/threads/th1"})
+	sent := c.tool(5, "send_message", map[string]any{"space": "spaces/AAA", "text": "On it.", "thread": "spaces/AAA/threads/th1"})
 	if sent["thread"] != "spaces/AAA/threads/th1" || !strings.HasPrefix(sent["message"].(string), "spaces/AAA/messages/") {
 		t.Fatalf("send_message: %v", sent)
 	}
-	asked := tool(6, "ask_question", map[string]any{"space": "spaces/AAA", "question": "Merge <PR 12>?", "id": "s-42", "title": "Fix the build",
+	asked := c.tool(6, "ask_question", map[string]any{"space": "spaces/AAA", "question": "Merge <PR 12>?", "id": "s-42", "title": "Fix the build",
 		"options": []any{map[string]any{"id": "yes", "label": "Merge"}, map[string]any{"id": "no", "label": "Not yet"}}})
 	if asked["question"] != "s-42" {
 		t.Fatalf("ask_question: %v", asked)
@@ -300,13 +341,18 @@ func TestTheFrontOffersTheEventsAndTools(t *testing.T) {
 	if posted[1]["fallbackText"] != "Merge <PR 12>?" {
 		t.Fatalf("the question's fallback text: %v", posted[1])
 	}
+}
 
+// checkFrontRefusesBadArguments: a bad place, an empty text, too few options, a repeated
+// option and a bad id are each an error.
+func checkFrontRefusesBadArguments(t *testing.T, c *frontClient) {
+	t.Helper()
 	for i, bad := range []map[string]any{
 		{"space": "AAA", "text": "x"},
 		{"space": "spaces/AAA", "text": "x", "thread": "spaces/BBB/threads/t"},
 		{"space": "spaces/AAA", "text": "  "},
 	} {
-		if r := call(10+i, "tools/call", map[string]any{"name": "send_message", "arguments": bad})["result"].(map[string]any); r["isError"] != true {
+		if r := c.call(10+i, "tools/call", map[string]any{"name": "send_message", "arguments": bad})["result"].(map[string]any); r["isError"] != true {
 			t.Fatalf("send_message %v: %v", bad, r)
 		}
 	}
@@ -315,17 +361,8 @@ func TestTheFrontOffersTheEventsAndTools(t *testing.T) {
 		{"space": "spaces/AAA", "question": "q", "options": []any{map[string]any{"id": "a", "label": "A"}, map[string]any{"id": "a", "label": "B"}}},
 		{"space": "spaces/AAA", "question": "q", "id": "no spaces", "options": []any{map[string]any{"id": "a", "label": "A"}, map[string]any{"id": "b", "label": "B"}}},
 	} {
-		if r := call(20+i, "tools/call", map[string]any{"name": "ask_question", "arguments": bad})["result"].(map[string]any); r["isError"] != true {
+		if r := c.call(20+i, "tools/call", map[string]any{"name": "ask_question", "arguments": bad})["result"].(map[string]any); r["isError"] != true {
 			t.Fatalf("ask_question %v: %v", bad, r)
 		}
-	}
-
-	// A refused key says to check it.
-	f.mu.Lock()
-	f.refuse = http.StatusUnauthorized
-	f.mu.Unlock()
-	r := call(30, "tools/call", map[string]any{"name": "list_spaces", "arguments": map[string]any{}})["result"].(map[string]any)
-	if r["isError"] != true || !strings.Contains(r["content"].([]any)[0].(map[string]any)["text"].(string), "GOOGLE_CHAT_CREDENTIALS") {
-		t.Fatalf("a refused key: %v", r)
 	}
 }

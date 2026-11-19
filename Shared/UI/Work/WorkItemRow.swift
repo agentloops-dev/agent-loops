@@ -43,6 +43,9 @@ struct WorkItemRow: View {
         return [author: avatar]
     }
 
+    /// The label chips: the `on hold` label is the On hold chip's (#6090).
+    private var labels: [DaemonAPI.ForgeLabel] { WorkPlan.labels(row.labels, onHold: row.onHold) }
+
     private var title: Text { Text.forgeTitle(row.title).fontWeight(.semibold) }
 
     private var wide: some View {
@@ -54,6 +57,7 @@ struct WorkItemRow: View {
                 // The Remote's Work lists have no priority chip: only its Features rows do (#5690, tier).
                 WorkPriorityChip(priority: row.priority)
                 #endif
+                WorkOnHoldChip(onHold: row.onHold)
                 // As many chips as fit whole, the rest as "+2", so a narrow window never squeezes one.
                 ViewThatFits(in: .horizontal) {
                     ForEach((0 ... WorkLook.rowChips).reversed(), id: \.self) { chips($0) }
@@ -74,7 +78,7 @@ struct WorkItemRow: View {
     }
 
     private func chips(_ limit: Int) -> some View {
-        let chips = WorkLook.shownLabels(row.labels, limit: limit)
+        let chips = WorkLook.shownLabels(labels, limit: limit)
         return HStack(spacing: 6) {
             ForEach(chips.shown, id: \.name) { WorkLabelChip(label: $0, pick: pick).fixedSize() }
             WorkMoreChips(count: chips.more).fixedSize()
@@ -87,9 +91,10 @@ struct WorkItemRow: View {
                 title.lineLimit(2)
                 if latest { WorkReleaseChip.latest.fixedSize() }
             }
-            if !row.labels.isEmpty || several {
+            if !labels.isEmpty || row.onHold || several {
                 WrappingHStack(spacing: 4) {
-                    ForEach(row.labels, id: \.name) { WorkLabelChip(label: $0) }
+                    WorkOnHoldChip(onHold: row.onHold)
+                    ForEach(labels, id: \.name) { WorkLabelChip(label: $0) }
                     if several {
                         Text(WorkList.repoName(row.repo)).appText(.fine).foregroundStyle(.secondary)
                     }
@@ -164,7 +169,8 @@ struct WorkItemRow: View {
         var parts = [WorkLook.glyph(kind: row.node.kind, state: row.state, draft: row.draft, stateReason: row.stateReason)?
             .accessibilityLabel, row.title,
                      latest ? WorkReleaseChip.latest.words : nil]
-        parts.append(row.labels.isEmpty ? nil : "labels " + row.labels.map(\.name).joined(separator: ", "))
+        parts.append(row.onHold ? WorkPlan.onHoldWords.lowercased() : nil)
+        parts.append(labels.isEmpty ? nil : "labels " + labels.map(\.name).joined(separator: ", "))
         parts.append(WorkLook.rowLine(row, compact: false))
         parts.append(session.map { "session " + WorkFeatures.workingWords($0.state).lowercased() })
         parts.append(WorkLook.checks(row.checks)?.accessibilityLabel)

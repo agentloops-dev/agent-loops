@@ -694,27 +694,12 @@ func (t *macToolset) installNode(progress func(string)) error {
 	if sum == "" {
 		return installFailure("This build of the app carries no Node.js for " + thisMachine() + ".")
 	}
-	if serverToolsets {
-		// Node's own Linux builds need glibc 2.28 or later, and musl has none (043, R2).
-		if libc := serverLibc(); !glibcAtLeast(libc, 2, 28) {
-			has := "musl or an unknown C library"
-			if libc != "" {
-				has = libc
-			}
-			return installFailure(name + " needs glibc 2.28 or later, and this server has " + has + ".")
-		}
+	if err := nodeServerLibcRefusal(name); err != nil {
+		return err
 	}
 	err := t.build(func(part string) error {
 		lib := filepath.Join(part, "lib")
-		if err := os.MkdirAll(lib, 0o755); err != nil {
-			return err
-		}
-		for _, f := range []string{"package.json", "package-lock.json"} {
-			if err := copyFile(filepath.Join(t.folder, f), filepath.Join(lib, f)); err != nil {
-				return err
-			}
-		}
-		if err := copyFile(filepath.Join(t.folder, "manifest.json"), filepath.Join(part, "manifest.json")); err != nil {
+		if err := t.copyNodeAdapter(part, lib); err != nil {
 			return err
 		}
 		if err := linkNode(part, v, sum, progress); err != nil {
@@ -722,12 +707,7 @@ func (t *macToolset) installNode(progress func(string)) error {
 		}
 		node := filepath.Join(part, "node")
 		progress("Installing " + name)
-		env := loginEnvironment()
-		for i, kv := range env {
-			if strings.HasPrefix(kv, "PATH=") {
-				env[i] = "PATH=" + filepath.Join(node, "bin") + ":" + strings.TrimPrefix(kv, "PATH=")
-			}
-		}
+		env := npmPathEnvironment(node)
 		args := []string{"ci", "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", "--prefix", lib, "--cache", filepath.Join(part, ".npm")}
 		out, err := step(2*installTimeout, part, env, filepath.Join(node, "bin", "npm"), args...)
 		if err == context.DeadlineExceeded {
@@ -751,6 +731,47 @@ func (t *macToolset) installNode(progress func(string)) error {
 		tidyNode()
 	}
 	return err
+}
+
+// nodeServerLibcRefusal refuses Node on a server whose C library Node's own Linux builds
+// cannot run on. It gives nil on a Mac.
+func nodeServerLibcRefusal(name string) error {
+	if !serverToolsets {
+		return nil
+	}
+	// Node's own Linux builds need glibc 2.28 or later, and musl has none (043, R2).
+	if libc := serverLibc(); !glibcAtLeast(libc, 2, 28) {
+		has := "musl or an unknown C library"
+		if libc != "" {
+			has = libc
+		}
+		return installFailure(name + " needs glibc 2.28 or later, and this server has " + has + ".")
+	}
+	return nil
+}
+
+// copyNodeAdapter copies the adapter's package files into lib, and its manifest into part.
+func (t *macToolset) copyNodeAdapter(part, lib string) error {
+	if err := os.MkdirAll(lib, 0o755); err != nil {
+		return err
+	}
+	for _, f := range []string{"package.json", "package-lock.json"} {
+		if err := copyFile(filepath.Join(t.folder, f), filepath.Join(lib, f)); err != nil {
+			return err
+		}
+	}
+	return copyFile(filepath.Join(t.folder, "manifest.json"), filepath.Join(part, "manifest.json"))
+}
+
+// npmPathEnvironment is the login environment with node's bin first on PATH.
+func npmPathEnvironment(node string) []string {
+	env := loginEnvironment()
+	for i, kv := range env {
+		if strings.HasPrefix(kv, "PATH=") {
+			env[i] = "PATH=" + filepath.Join(node, "bin") + ":" + strings.TrimPrefix(kv, "PATH=")
+		}
+	}
+	return env
 }
 
 // nodeMu holds <tools>/node still (#3959): linkNode makes a Node and links a toolset to it,
@@ -1028,46 +1049,54 @@ func untarXZ(file, dest string) error {
 		if err != nil {
 			return err
 		}
-		_, rest, found := strings.Cut(strings.TrimPrefix(h.Name, "./"), "/")
-		rest = strings.TrimSuffix(rest, "/")
-		if !found || rest == "" {
-			continue
-		}
-		target := filepath.Join(dest, rest)
-		if !strings.HasPrefix(target, filepath.Clean(dest)+string(filepath.Separator)) {
-			return fmt.Errorf("%s is outside the archive", h.Name)
-		}
-		switch h.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(h.Mode)&0o755|0o600)
-			if err != nil {
-				return err
-			}
-			_, err = io.Copy(out, r)
-			if cerr := out.Close(); err == nil {
-				err = cerr
-			}
-			if err != nil {
-				return err
-			}
-		case tar.TypeSymlink:
-			if filepath.IsAbs(h.Linkname) || !strings.HasPrefix(filepath.Join(filepath.Dir(target), h.Linkname), filepath.Clean(dest)+string(filepath.Separator)) {
-				return fmt.Errorf("%s links outside the archive", h.Name)
-			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			os.Remove(target)
-			if err := os.Symlink(h.Linkname, target); err != nil {
-				return err
-			}
+		if err := untarXZEntry(r, h, dest); err != nil {
+			return err
 		}
 	}
+}
+
+// untarXZEntry unpacks one entry of Node's tar into dest, dropping its first folder. It
+// skips the first folder itself and refuses an entry or a link outside dest.
+func untarXZEntry(r *tar.Reader, h *tar.Header, dest string) error {
+	_, rest, found := strings.Cut(strings.TrimPrefix(h.Name, "./"), "/")
+	rest = strings.TrimSuffix(rest, "/")
+	if !found || rest == "" {
+		return nil
+	}
+	target := filepath.Join(dest, rest)
+	if !strings.HasPrefix(target, filepath.Clean(dest)+string(filepath.Separator)) {
+		return fmt.Errorf("%s is outside the archive", h.Name)
+	}
+	switch h.Typeflag {
+	case tar.TypeDir:
+		return os.MkdirAll(target, 0o755)
+	case tar.TypeReg:
+		return untarXZFile(r, h, target)
+	case tar.TypeSymlink:
+		if filepath.IsAbs(h.Linkname) || !strings.HasPrefix(filepath.Join(filepath.Dir(target), h.Linkname), filepath.Clean(dest)+string(filepath.Separator)) {
+			return fmt.Errorf("%s links outside the archive", h.Name)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		os.Remove(target)
+		return os.Symlink(h.Linkname, target)
+	}
+	return nil
+}
+
+// untarXZFile writes the tar's current file to target.
+func untarXZFile(r *tar.Reader, h *tar.Header, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(h.Mode)&0o755|0o600)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, r)
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }

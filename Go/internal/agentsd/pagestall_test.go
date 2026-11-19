@@ -20,10 +20,7 @@ func TestAStalledPageDoesNotHoldAnAgentChange(t *testing.T) {
 	t.Parallel()
 
 	d, c := start(t, t.TempDir())
-	go func() {
-		for range c.out {
-		}
-	}()
+	c.drain()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	page, browser := pipedPage(t, ctx)

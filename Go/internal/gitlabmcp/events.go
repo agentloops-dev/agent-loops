@@ -142,7 +142,7 @@ var events = append([]event{
 		Input:       namedInput(),
 		Payload:     object(map[string]any{"pr": mrSchema(nil), "conflictedAt": str})},
 	{Name: "pr.blocked", Title: "Merge request blocked",
-		Description: mcpevents.BlockedDescription("On GitLab: detailed_merge_status, one reason at a time (conflict, need_rebase as behind, ci_must_pass as required_check_failed with the head pipeline, requested_changes); automerge_disabled is never read, as GitLab does not say who turned auto-merge off."+ownMRs),
+		Description: mcpevents.BlockedDescription("On GitLab: detailed_merge_status, one reason at a time (conflict, need_rebase as behind, ci_must_pass as required_check_failed with the head pipeline, requested_changes); automerge_disabled is never read, as GitLab does not say who turned auto-merge off." + ownMRs),
 		Input:       namedInput(),
 		Payload:     mcpevents.BlockedPayload(mrSchema(nil))},
 	// For the person, not the project (#2034): what asks the connection's owner for something.
@@ -267,95 +267,144 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 	if bad != nil {
 		return nil, bad
 	}
-	if a.project == "" {
-		project, err := s.GitLab.DefaultProject(ctx)
-		if err != nil {
-			var gl *GitLabError
-			if errors.As(err, &gl) && gl.Kind == NotFound {
-				return nil, invalidParams("%s", gl.Message)
-			}
-			return nil, eventsError(err)
-		}
-		a.project = project
+	if bad := s.defaultProject(ctx, &a); bad != nil {
+		return nil, bad
 	}
-	// mine: the connection's owner's own open merge requests, asked once a poll (#2034).
-	var yours *Yours
-	if a.mine || e.Name == "review.requested" || e.Name == "issue.assigned" {
-		y, err := s.GitLab.Yours(ctx, a.project)
-		if err != nil {
-			return nil, eventsError(err)
-		}
-		yours = &y
+	yours, bad := s.yoursFor(ctx, e.Name, a)
+	if bad != nil {
+		return nil, bad
 	}
-	switch e.Name {
-	case "review.requested":
-		return s.pollDiff(e.Name, "requestedAt", a, p, func() ([]state, error) {
-			var out []state
-			for _, r := range yours.Reviews {
-				j := r.MR.json()
-				j["author"] = r.Author
-				out = append(out, state{mr: r.MR, on: new(true), json: j})
-			}
-			return out, nil
-		})
-	case "issue.assigned":
-		return s.pollDiff(e.Name, "assignedAt", a, p, func() ([]state, error) {
-			var out []state
-			for _, i := range yours.Assigned {
-				if a.wantsIssue(i.Number) {
-					out = append(out, state{mr: MR{Number: i.Number, Title: i.Title, URL: i.URL}, on: new(true), json: i.json()})
-				}
-			}
-			return out, nil
-		})
-	case "pr.conflicted":
-		return s.pollDiff(e.Name, "conflictedAt", a, p, func() ([]state, error) {
-			mrs, err := s.GitLab.OpenMRs(ctx, a.project)
-			var out []state
-			for _, m := range mrs {
-				if a.mine {
-					if a.byMe(m.MR, yours) {
-						out = append(out, state{mr: m.MR, on: m.Conflicts, json: m.MR.json()})
-					}
-				} else if a.anyone || m.Trusted {
-					out = append(out, state{mr: m.MR, on: m.Conflicts, json: m.MR.json()})
-				}
-			}
-			return out, err
-		})
-	case "pr.blocked":
-		was := polls.CursorIDs(p)
-		return s.pollDiff(e.Name, "blockedAt", a, p, func() ([]state, error) {
-			mrs, err := s.GitLab.OpenMRs(ctx, a.project)
-			var out []state
-			for _, m := range mrs {
-				if m.SkipsBlocked || (a.mine && !a.byMe(m.MR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
-					continue
-				}
-				bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", e.Name, a.project, m.MR.Number), m.Blocking, was)
-				out = append(out, state{mr: m.MR, on: &bs.On, key: bs.Key, json: m.MR.json(), extra: bs.Data})
-			}
-			return out, err
-		})
-	case "pr.opened":
-		return s.pollDiff(e.Name, "openedAt", a, p, func() ([]state, error) {
-			mrs, err := s.GitLab.OpenMRs(ctx, a.project)
-			var out []state
-			for _, m := range mrs {
-				if !a.anyone && !m.Trusted {
-					continue
-				}
-				ready := !m.Draft
-				j := m.MR.json()
-				j["author"] = m.Author
-				out = append(out, state{mr: m.MR, on: &ready, json: j})
-			}
-			return out, err
-		})
+	if key, states := s.diffStates(ctx, e.Name, a, p, yours); states != nil {
+		return s.pollDiff(e.Name, key, a, p, states)
 	}
 	return s.poll(e, p, func(since string) ([]candidate, Listed, error) {
 		return candidates(ctx, s.GitLab, e.Name, a, yours, since)
 	})
+}
+
+// defaultProject sets a's project to the default project when a names none.
+func (s *Events) defaultProject(ctx context.Context, a *args) *rpcError {
+	if a.project != "" {
+		return nil
+	}
+	project, err := s.GitLab.DefaultProject(ctx)
+	if err != nil {
+		var gl *GitLabError
+		if errors.As(err, &gl) && gl.Kind == NotFound {
+			return invalidParams("%s", gl.Message)
+		}
+		return eventsError(err)
+	}
+	a.project = project
+	return nil
+}
+
+// yoursFor is the connection's owner's own open merge requests, asked once a poll (#2034),
+// for mine and for the events that are about the owner; else nil.
+func (s *Events) yoursFor(ctx context.Context, name string, a args) (*Yours, *rpcError) {
+	if !a.mine && name != "review.requested" && name != "issue.assigned" {
+		return nil, nil
+	}
+	y, err := s.GitLab.Yours(ctx, a.project)
+	if err != nil {
+		return nil, eventsError(err)
+	}
+	return &y, nil
+}
+
+// diffStates is, for an event raised when a state turns on (pollDiff), its time key and how
+// to read the states now; nil states for an event that polls candidates instead.
+func (s *Events) diffStates(ctx context.Context, name string, a args, p pollParams, yours *Yours) (string, func() ([]state, error)) {
+	switch name {
+	case "review.requested":
+		return "requestedAt", func() ([]state, error) { return requestedStates(yours), nil }
+	case "issue.assigned":
+		return "assignedAt", func() ([]state, error) { return assignedStates(a, yours), nil }
+	case "pr.conflicted":
+		return "conflictedAt", func() ([]state, error) {
+			mrs, err := s.GitLab.OpenMRs(ctx, a.project)
+			return conflictedStates(a, yours, mrs), err
+		}
+	case "pr.blocked":
+		was := polls.CursorIDs(p)
+		return "blockedAt", func() ([]state, error) {
+			mrs, err := s.GitLab.OpenMRs(ctx, a.project)
+			return blockedStates(name, a, yours, mrs, was), err
+		}
+	case "pr.opened":
+		return "openedAt", func() ([]state, error) {
+			mrs, err := s.GitLab.OpenMRs(ctx, a.project)
+			return openedStates(a, mrs), err
+		}
+	}
+	return "", nil
+}
+
+// requestedStates is each merge request the owner is asked to review, with its author.
+func requestedStates(yours *Yours) []state {
+	var out []state
+	for _, r := range yours.Reviews {
+		j := r.MR.json()
+		j["author"] = r.Author
+		out = append(out, state{mr: r.MR, on: new(true), json: j})
+	}
+	return out
+}
+
+// assignedStates is each issue assigned to the owner that a wants.
+func assignedStates(a args, yours *Yours) []state {
+	var out []state
+	for _, i := range yours.Assigned {
+		if a.wantsIssue(i.Number) {
+			out = append(out, state{mr: MR{Number: i.Number, Title: i.Title, URL: i.URL}, on: new(true), json: i.json()})
+		}
+	}
+	return out
+}
+
+// conflictedStates is whether each open merge request a wants is in conflict: with mine, the
+// owner's own; else the trusted ones, or all with anyone.
+func conflictedStates(a args, yours *Yours, mrs []OpenMR) []state {
+	var out []state
+	for _, m := range mrs {
+		if a.mine {
+			if a.byMe(m.MR, yours) {
+				out = append(out, state{mr: m.MR, on: m.Conflicts, json: m.MR.json()})
+			}
+		} else if a.anyone || m.Trusted {
+			out = append(out, state{mr: m.MR, on: m.Conflicts, json: m.MR.json()})
+		}
+	}
+	return out
+}
+
+// blockedStates is whether each open merge request a wants is blocked, and by what (#5321);
+// was is the ids the cursor had.
+func blockedStates(name string, a args, yours *Yours, mrs []OpenMR, was []string) []state {
+	var out []state
+	for _, m := range mrs {
+		if m.SkipsBlocked || (a.mine && !a.byMe(m.MR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
+			continue
+		}
+		bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", name, a.project, m.MR.Number), m.Blocking, was)
+		out = append(out, state{mr: m.MR, on: &bs.On, key: bs.Key, json: m.MR.json(), extra: bs.Data})
+	}
+	return out
+}
+
+// openedStates is whether each open merge request a wants is ready (not a draft), with its author.
+func openedStates(a args, mrs []OpenMR) []state {
+	var out []state
+	for _, m := range mrs {
+		if !a.anyone && !m.Trusted {
+			continue
+		}
+		ready := !m.Draft
+		j := m.MR.json()
+		j["author"] = m.Author
+		out = append(out, state{mr: m.MR, on: &ready, json: j})
+	}
+	return out
 }
 
 // poll is events/poll over a cursor (mcpevents.Poller.Poll), from now on the first poll.
@@ -429,37 +478,12 @@ func diffRef(root, project string, n int) wire.Ref {
 
 // candidates finds what an event may raise at or after since.
 func candidates(ctx context.Context, gl GitLab, name string, a args, yours *Yours, since string) ([]candidate, Listed, error) {
-	project := a.project
-	// mine: the owner's own merge request, open or merged or closed, trusted or not; else the
-	// trust filter (#728, #3797). fixes narrows every one by the issues it closes.
-	wanted := func(m MR, trusted bool) bool {
-		return a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) && a.closesOne(m) &&
-			(a.mine && a.byMe(m, yours) || !a.mine && (a.anyone || trusted))
-	}
+	f := finder{ctx: ctx, gl: gl, name: name, a: a, yours: yours, project: a.project, since: since}
 	if kind, ok := strings.CutPrefix(name, "issue."); ok {
-		items, listed, err := gl.IssueActivity(ctx, project, IssueKind(kind), since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var list []candidate
-		for _, it := range items {
-			if !a.wantsIssue(it.Issue.Number) || (!a.anyone && !it.Trusted) ||
-				(a.label != "" && !contains(it.Issue.Labels, a.label)) ||
-				(a.label != "" && it.Kind == IssueLabelled && it.Label != a.label) {
-				continue
-			}
-			at := mcpevents.Normalized(it.At)
-			if at == "" {
-				continue
-			}
-			list = append(list, candidate{EventID: name + ":" + project + ":" + it.ID, Time: at,
-				Data:    func() (map[string]any, error) { return it.data(), nil },
-				Subject: issueRef(project, it.Issue.Number), Key: it.ID})
-		}
-		return list, listed, nil
+		return f.issueActivity(IssueKind(kind))
 	}
 	if mcpevents.IsDeployEvent(name) {
-		deploys, listed, err := gl.Deployments(ctx, project, a.deploy.Environment, since)
+		deploys, listed, err := gl.Deployments(ctx, f.project, a.deploy.Environment, since)
 		if err != nil {
 			return nil, Listed{}, err
 		}
@@ -467,140 +491,240 @@ func candidates(ctx context.Context, gl GitLab, name string, a args, yours *Your
 	}
 	switch name {
 	case "review.comment":
-		comments, listed, err := gl.ReviewComments(ctx, project, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var list []candidate
-		for _, c := range comments {
-			// Trust is the commenter's; mine only narrows the merge request (#3797).
-			m := c.MR
-			if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) &&
-				a.closesOne(m) && a.byMe(m, yours) && (a.anyone || c.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d", project, c.ID), Time: at,
-					Data:    func() (map[string]any, error) { return c.data(), nil },
-					Subject: prRef(project, m.Number), Key: fmt.Sprint(c.ID)})
-			}
-		}
-		return list, listed, nil
+		return f.reviewComments()
 	case "run.completed":
-		pipelines, listed, err := gl.FinishedPipelines(ctx, project, a.branch, a.run, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		// Its update time in the id: a pipeline retried that finishes again is a new event. Who
-		// started it, its name and its deploys are read only for one that is taken.
-		var list []candidate
-		for _, pl := range pipelines {
-			at := mcpevents.Normalized(pl.UpdatedAt)
-			if at == "" || (a.pipeline != "" && pl.Listed != "" && !strings.EqualFold(pl.Listed, a.pipeline)) {
-				continue
-			}
-			list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%s", project, pl.ID, at), Time: at,
-				Subject: pipelineRef(project, pl.ID), Key: at,
-				Data: func() (map[string]any, error) {
-					c, err := gl.CompletedPipeline(ctx, project, pl.ID)
-					if err != nil || c == nil || (a.pipeline != "" && !strings.EqualFold(c.Name, a.pipeline)) || (!a.anyone && !c.Trusted) {
-						return nil, err
-					}
-					deploys, err := gl.PipelineDeploys(ctx, project, *c)
-					if err != nil {
-						return nil, err
-					}
-					return c.data(deploys), nil
-				}})
-		}
-		return list, listed, nil
+		return f.completedRuns()
 	case "deploy.waiting":
-		waiting, err := gl.WaitingDeploys(ctx, project, a.branch)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var list []candidate
-		for _, w := range waiting {
-			if w.Since == "" || (a.pipeline != "" && w.Pipeline.Listed != "" && !strings.EqualFold(w.Pipeline.Listed, a.pipeline)) {
-				continue
-			}
-			list = append(list, candidate{EventID: fmt.Sprintf("deploy.waiting:%s:%d:%s", project, w.Pipeline.ID, w.key()), Time: w.Since,
-				Subject: pipelineRef(project, w.Pipeline.ID), Key: w.key(),
-				Data: func() (map[string]any, error) {
-					c, err := gl.CompletedPipeline(ctx, project, w.Pipeline.ID)
-					if err != nil || c == nil || (a.pipeline != "" && !strings.EqualFold(c.Name, a.pipeline)) || (!a.anyone && !c.Trusted) {
-						return nil, err
-					}
-					reviewers, canApprove, err := gl.Approvers(ctx, project, w)
-					if err != nil {
-						return nil, err
-					}
-					envs := make([]any, len(w.Environments))
-					for i, e := range w.Environments {
-						envs[i] = map[string]any{"id": e.ID, "name": e.Name, "url": e.URL}
-					}
-					return map[string]any{"run": c.run(), "environments": envs, "reviewers": reviewers,
-						"canApprove": canApprove, "waitingSince": w.Since}, nil
-				}})
-		}
-		return list, Listed{}, nil
+		return f.waitingDeploys()
 	case "checks.failed":
-		pipelines, listed, err := gl.FailedPipelines(ctx, project, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		// A pipeline that names another merge request is skipped before its details are
-		// fetched; one that names none is checked against the one its details find. The cursor
-		// still moves past both. Its update time is in its id: retried and failed again, it is new.
-		var list []candidate
-		for _, pl := range pipelines {
-			at := mcpevents.Normalized(pl.UpdatedAt)
-			if at == "" {
-				continue
-			}
-			list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%d:%s", project, pl.ID, at), Time: at,
-				Subject: pipelineRef(project, pl.ID), Key: at,
-				Data: func() (map[string]any, error) {
-					if pl.MRNumber != 0 && !a.wantsPR(pl.MRNumber) {
-						return nil, nil
-					}
-					details, err := gl.PipelineDetails(ctx, project, pl)
-					if err != nil || details == nil {
-						return nil, err
-					}
-					if !wanted(details.MR, details.Trusted) {
-						return nil, nil
-					}
-					return details.json(), nil
-				}})
-		}
-		return list, listed, nil
+		return f.failedChecks()
 	}
-	merged, closed, listed, err := gl.ClosedMRs(ctx, project, since)
+	return f.closedMRs()
+}
+
+// finder is one poll's search for candidates: the event, its arguments and the cursor's time.
+type finder struct {
+	ctx     context.Context
+	gl      GitLab
+	name    string
+	a       args
+	yours   *Yours
+	project string
+	since   string
+}
+
+// wanted is whether a merge request is one the arguments want. mine: the owner's own merge
+// request, open or merged or closed, trusted or not; else the trust filter (#728, #3797).
+// fixes narrows every one by the issues it closes.
+func (f finder) wanted(m MR, trusted bool) bool {
+	a := f.a
+	return a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) && a.closesOne(m) &&
+		(a.mine && a.byMe(m, f.yours) || !a.mine && (a.anyone || trusted))
+}
+
+// wantsActivity is whether an issue's activity is one the arguments want.
+func (f finder) wantsActivity(it IssueActivity) bool {
+	a := f.a
+	if !a.wantsIssue(it.Issue.Number) || (!a.anyone && !it.Trusted) {
+		return false
+	}
+	return a.label == "" || (contains(it.Issue.Labels, a.label) && (it.Kind != IssueLabelled || it.Label == a.label))
+}
+
+func (f finder) issueActivity(kind IssueKind) ([]candidate, Listed, error) {
+	items, listed, err := f.gl.IssueActivity(f.ctx, f.project, kind, f.since)
 	if err != nil {
 		return nil, Listed{}, err
 	}
 	var list []candidate
-	if name == "pr.merged" {
-		for _, m := range merged {
-			if at := mcpevents.Normalized(m.MergedAt); wanted(m.MR, m.Trusted) && at != "" {
-				list = append(list, candidate{EventID: fmt.Sprintf("pr.merged:%s:%d", project, m.MR.Number), Time: at,
-					Subject: prRef(project, m.MR.Number),
-					Data: func() (map[string]any, error) {
-						return map[string]any{"pr": m.MR.json(), "mergedAt": m.MergedAt, "mergeSha": m.MergeSHA}, nil
-					}})
-			}
+	for _, it := range items {
+		if !f.wantsActivity(it) {
+			continue
 		}
-		return list, listed, nil
+		at := mcpevents.Normalized(it.At)
+		if at == "" {
+			continue
+		}
+		list = append(list, candidate{EventID: f.name + ":" + f.project + ":" + it.ID, Time: at,
+			Data:    func() (map[string]any, error) { return it.data(), nil },
+			Subject: issueRef(f.project, it.Issue.Number), Key: it.ID})
 	}
-	// Its close time in the id: a merge request reopened and closed again is a new event.
+	return list, listed, nil
+}
+
+func (f finder) reviewComments() ([]candidate, Listed, error) {
+	a := f.a
+	comments, listed, err := f.gl.ReviewComments(f.ctx, f.project, f.since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, c := range comments {
+		// Trust is the commenter's; mine only narrows the merge request (#3797).
+		m := c.MR
+		if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) &&
+			a.closesOne(m) && a.byMe(m, f.yours) && (a.anyone || c.Trusted) {
+			list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d", f.project, c.ID), Time: at,
+				Data:    func() (map[string]any, error) { return c.data(), nil },
+				Subject: prRef(f.project, m.Number), Key: fmt.Sprint(c.ID)})
+		}
+	}
+	return list, listed, nil
+}
+
+// listedOtherPipeline is whether a pipeline's listed name says it is not the one asked for.
+func (f finder) listedOtherPipeline(listed string) bool {
+	return f.a.pipeline != "" && listed != "" && !strings.EqualFold(listed, f.a.pipeline)
+}
+
+// completedPipeline is a pipeline's details, or nil when it is not one the arguments want.
+func (f finder) completedPipeline(id int) (*CompletedPipeline, error) {
+	c, err := f.gl.CompletedPipeline(f.ctx, f.project, id)
+	if err != nil || c == nil || (f.a.pipeline != "" && !strings.EqualFold(c.Name, f.a.pipeline)) || (!f.a.anyone && !c.Trusted) {
+		return nil, err
+	}
+	return c, nil
+}
+
+func (f finder) completedRuns() ([]candidate, Listed, error) {
+	pipelines, listed, err := f.gl.FinishedPipelines(f.ctx, f.project, f.a.branch, f.a.run, f.since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	// Its update time in the id: a pipeline retried that finishes again is a new event. Who
+	// started it, its name and its deploys are read only for one that is taken.
+	var list []candidate
+	for _, pl := range pipelines {
+		at := mcpevents.Normalized(pl.UpdatedAt)
+		if at == "" || f.listedOtherPipeline(pl.Listed) {
+			continue
+		}
+		list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%s", f.project, pl.ID, at), Time: at,
+			Subject: pipelineRef(f.project, pl.ID), Key: at,
+			Data: func() (map[string]any, error) {
+				c, err := f.completedPipeline(pl.ID)
+				if c == nil {
+					return nil, err
+				}
+				deploys, err := f.gl.PipelineDeploys(f.ctx, f.project, *c)
+				if err != nil {
+					return nil, err
+				}
+				return c.data(deploys), nil
+			}})
+	}
+	return list, listed, nil
+}
+
+func (f finder) waitingDeploys() ([]candidate, Listed, error) {
+	waiting, err := f.gl.WaitingDeploys(f.ctx, f.project, f.a.branch)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, w := range waiting {
+		if w.Since == "" || f.listedOtherPipeline(w.Pipeline.Listed) {
+			continue
+		}
+		list = append(list, candidate{EventID: fmt.Sprintf("deploy.waiting:%s:%d:%s", f.project, w.Pipeline.ID, w.key()), Time: w.Since,
+			Subject: pipelineRef(f.project, w.Pipeline.ID), Key: w.key(),
+			Data: func() (map[string]any, error) { return f.waitingDeployData(w) }})
+	}
+	return list, Listed{}, nil
+}
+
+// waitingDeployData is deploy.waiting's data for w, or nil when its pipeline is not one the
+// arguments want.
+func (f finder) waitingDeployData(w WaitingDeploy) (map[string]any, error) {
+	c, err := f.completedPipeline(w.Pipeline.ID)
+	if c == nil {
+		return nil, err
+	}
+	reviewers, canApprove, err := f.gl.Approvers(f.ctx, f.project, w)
+	if err != nil {
+		return nil, err
+	}
+	envs := make([]any, len(w.Environments))
+	for i, e := range w.Environments {
+		envs[i] = map[string]any{"id": e.ID, "name": e.Name, "url": e.URL}
+	}
+	return map[string]any{"run": c.run(), "environments": envs, "reviewers": reviewers,
+		"canApprove": canApprove, "waitingSince": w.Since}, nil
+}
+
+func (f finder) failedChecks() ([]candidate, Listed, error) {
+	pipelines, listed, err := f.gl.FailedPipelines(f.ctx, f.project, f.since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	// A pipeline that names another merge request is skipped before its details are
+	// fetched; one that names none is checked against the one its details find. The cursor
+	// still moves past both. Its update time is in its id: retried and failed again, it is new.
+	var list []candidate
+	for _, pl := range pipelines {
+		at := mcpevents.Normalized(pl.UpdatedAt)
+		if at == "" {
+			continue
+		}
+		list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%d:%s", f.project, pl.ID, at), Time: at,
+			Subject: pipelineRef(f.project, pl.ID), Key: at,
+			Data: func() (map[string]any, error) {
+				if pl.MRNumber != 0 && !f.a.wantsPR(pl.MRNumber) {
+					return nil, nil
+				}
+				details, err := f.gl.PipelineDetails(f.ctx, f.project, pl)
+				if err != nil || details == nil {
+					return nil, err
+				}
+				if !f.wanted(details.MR, details.Trusted) {
+					return nil, nil
+				}
+				return details.json(), nil
+			}})
+	}
+	return list, listed, nil
+}
+
+// closedMRs is pr.merged's or pr.closed's candidates.
+func (f finder) closedMRs() ([]candidate, Listed, error) {
+	merged, closed, listed, err := f.gl.ClosedMRs(f.ctx, f.project, f.since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	if f.name == "pr.merged" {
+		return f.mergedCandidates(merged), listed, nil
+	}
+	return f.closedCandidates(closed), listed, nil
+}
+
+func (f finder) mergedCandidates(merged []MergedMR) []candidate {
+	var list []candidate
+	for _, m := range merged {
+		if at := mcpevents.Normalized(m.MergedAt); f.wanted(m.MR, m.Trusted) && at != "" {
+			list = append(list, candidate{EventID: fmt.Sprintf("pr.merged:%s:%d", f.project, m.MR.Number), Time: at,
+				Subject: prRef(f.project, m.MR.Number),
+				Data: func() (map[string]any, error) {
+					return map[string]any{"pr": m.MR.json(), "mergedAt": m.MergedAt, "mergeSha": m.MergeSHA}, nil
+				}})
+		}
+	}
+	return list
+}
+
+// closedCandidates has its close time in the id: a merge request reopened and closed again is
+// a new event.
+func (f finder) closedCandidates(closed []ClosedMR) []candidate {
+	var list []candidate
 	for _, c := range closed {
-		if at := mcpevents.Normalized(c.ClosedAt); wanted(c.MR, c.Trusted) && at != "" {
-			list = append(list, candidate{EventID: fmt.Sprintf("pr.closed:%s:%d:%s", project, c.MR.Number, at), Time: at,
-				Subject: prRef(project, c.MR.Number), Key: at,
+		if at := mcpevents.Normalized(c.ClosedAt); f.wanted(c.MR, c.Trusted) && at != "" {
+			list = append(list, candidate{EventID: fmt.Sprintf("pr.closed:%s:%d:%s", f.project, c.MR.Number, at), Time: at,
+				Subject: prRef(f.project, c.MR.Number), Key: at,
 				Data: func() (map[string]any, error) {
 					return map[string]any{"pr": c.MR.json(), "closedAt": c.ClosedAt}, nil
 				}})
 		}
 	}
-	return list, listed, nil
+	return list
 }
 
 // eventsError is a GitLab failure as the events draft's error codes.

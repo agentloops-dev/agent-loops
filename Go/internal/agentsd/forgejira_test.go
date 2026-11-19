@@ -22,6 +22,8 @@ type fakeForgeJira struct {
 	wrote    []string
 	// blocked are the keys Blockers was asked about (#4242).
 	blocked []string
+	// pages are the issues ItemPage gives by key, in place of its own (#6091).
+	pages map[string]jiramcp.ItemDetail
 }
 
 func (f *fakeForgeJira) Search(_ context.Context, projects []string, sf jiramcp.SearchFilter, after string, _ int) (jiramcp.SearchPage, error) {
@@ -38,6 +40,9 @@ func (f *fakeForgeJira) Search(_ context.Context, projects []string, sf jiramcp.
 func (f *fakeForgeJira) ItemPage(_ context.Context, key, before string) (jiramcp.ItemDetail, error) {
 	if key == "PROJ-404" {
 		return jiramcp.ItemDetail{}, &jiramcp.JiraError{Kind: jiramcp.NotFound, Message: "Jira: Issue does not exist"}
+	}
+	if d, ok := f.pages[key]; ok {
+		return d, nil
 	}
 	return jiramcp.ItemDetail{Item: jiramcp.Item{Key: key, Project: "PROJ", State: "open", Status: "To Do", Title: "Export the invoices",
 		URL: "https://acme.atlassian.net/browse/" + key, UpdatedAt: "2026-11-01T12:00:00.000Z", SubTotal: 2, SubDone: 1},

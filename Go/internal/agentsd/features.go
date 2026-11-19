@@ -191,15 +191,10 @@ func (d *Daemon) featureUsage(now time.Time) wire.FeatureUsage {
 		week[dayStamp(now.AddDate(0, 0, -i))] = true
 	}
 	oldest := dayStamp(now.AddDate(0, 0, -(featuresDaysKept - 1)))
-	type tally struct {
-		week, quarter int64
-		clients       map[string]bool
-		last          string
-	}
 	names := d.featureNames()
-	tallies := make(map[string]*tally, len(names))
+	tallies := make(map[string]*featureTally, len(names))
 	for m := range names {
-		tallies[m] = &tally{clients: map[string]bool{}}
+		tallies[m] = &featureTally{clients: map[string]bool{}}
 	}
 	d.featureMu.Lock()
 	f := d.featuresLocked()
@@ -216,18 +211,7 @@ func (d *Daemon) featureUsage(now time.Time) wire.FeatureUsage {
 			if t == nil {
 				continue // a method an earlier build served
 			}
-			for client, n := range clients {
-				t.quarter += n
-				if week[day] {
-					t.week += n
-				}
-				if n > 0 {
-					t.clients[client] = true
-				}
-			}
-			if day > t.last {
-				t.last = day
-			}
+			t.add(day, clients, week[day])
 		}
 	}
 	d.featureMu.Unlock()
@@ -257,6 +241,30 @@ func (d *Daemon) featureUsage(now time.Time) wire.FeatureUsage {
 		return a.Method < b.Method
 	})
 	return out
+}
+
+// featureTally is one method's use: its calls in the week and the quarter, the clients
+// that called it, and the last day it was called.
+type featureTally struct {
+	week, quarter int64
+	clients       map[string]bool
+	last          string
+}
+
+// add counts one day's calls of the method, by client. inWeek says the day is in the week.
+func (t *featureTally) add(day string, clients map[string]int64, inWeek bool) {
+	for client, n := range clients {
+		t.quarter += n
+		if inWeek {
+			t.week += n
+		}
+		if n > 0 {
+			t.clients[client] = true
+		}
+	}
+	if day > t.last {
+		t.last = day
+	}
 }
 
 func (d *Daemon) registerFeatures() {

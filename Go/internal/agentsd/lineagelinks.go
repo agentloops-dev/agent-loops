@@ -16,6 +16,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -59,6 +60,9 @@ type lineageLinker struct {
 	otherHost map[string]bool
 	// topics is each folder's topic for its agents nodes (folderTopic), looked up once.
 	topics map[string]string
+	// origins is each folder's origin URL as git said it ("" with none), read once for repos and
+	// topics both (folderOrigin, #6257).
+	origins map[string]string
 	// configs is each folder's git config file and when it last changed, as repos and topics
 	// were read: a change (a new origin after a repo moved) reads them again (#5335).
 	configs map[string]gitConfigStamp
@@ -77,7 +81,11 @@ func (d *Daemon) forgetChangedRemote(folder string) {
 	c, ok := d.configs[folder]
 	d.repoMu.Unlock()
 	if !ok {
-		if dir, err := git(folder, "rev-parse", "--git-common-dir"); err == nil && dir != "" {
+		dir, err := git(folder, "rev-parse", "--git-common-dir")
+		if !gitAnswered(err) {
+			return // no answer: no stamp, so the next call asks again (#6257)
+		}
+		if err == nil && dir != "" {
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(folder, dir)
 			}
@@ -99,6 +107,7 @@ func (d *Daemon) forgetChangedRemote(folder string) {
 		delete(d.repos, folder)
 		delete(d.otherHost, folder)
 		delete(d.topics, folder)
+		delete(d.origins, folder)
 	}
 	if d.configs == nil {
 		d.configs = map[string]gitConfigStamp{}
@@ -356,6 +365,41 @@ func (d *Daemon) agentsTopic(kind, id string) string {
 	return ""
 }
 
+// folderOrigin is folder's origin URL, "" when git says it has none (or the folder is no git
+// repository). It asks git once per folder for folderRepo and folderTopic both, so the two
+// cannot disagree. known is false, and nothing is kept, when there is no answer: the folder is
+// gone (it may come back), or git did not run to its end (it could not start or was stopped,
+// as on a loaded machine). That is not "no origin": kept, it named a session's node with no
+// repo for good, since lineage keeps the first topic it sees for an id (#6257).
+func (d *Daemon) folderOrigin(folder string) (origin string, known bool) {
+	d.repoMu.Lock()
+	o, ok := d.origins[folder]
+	d.repoMu.Unlock()
+	if ok {
+		return o, true
+	}
+	out, err := git(folder, "remote", "get-url", "origin")
+	if err != nil {
+		if !isDir(folder) {
+			return "", false
+		}
+		if !gitAnswered(err) || !gitSaidNoOrigin(err) {
+			// A read that failed (a slow or a killed git, a config git refuses) is not "no
+			// origin": it keeps nothing, so the next call reads again (#6261).
+			log.Printf("forge of %s: read the origin: %v", folder, err)
+			return "", false
+		}
+		out = ""
+	}
+	d.repoMu.Lock()
+	if d.origins == nil {
+		d.origins = map[string]string{}
+	}
+	d.origins[folder] = out
+	d.repoMu.Unlock()
+	return out, true
+}
+
 // folderTopic is the topic of a folder's agents nodes: the path of its origin's repo, lower
 // case, as forgeOf reads it on a forge it knows (owner/repo), else the remote's path; "" with
 // no origin. It asks git once per folder, and never a forge, so it does not change with a
@@ -368,11 +412,11 @@ func (d *Daemon) folderTopic(folder string) string {
 	if ok {
 		return t
 	}
-	out, err := git(folder, "remote", "get-url", "origin")
-	if err != nil && !isDir(folder) {
+	out, ok := d.folderOrigin(folder)
+	if !ok {
 		return ""
 	}
-	if remote, ok := parseRemote(out); err == nil && ok {
+	if remote, ok := parseRemote(out); ok {
 		if r := forgeOf(remote.host, remote.path); r.forge != "" {
 			t = r.path
 		} else {
@@ -468,14 +512,13 @@ func (d *Daemon) folderRepo(folder string) forgeRepo {
 		}
 		return r
 	}
-	if out, err := git(folder, "remote", "get-url", "origin"); err == nil {
-		if remote, ok := parseRemote(out); ok {
-			r = forgeOf(remote.host, remote.path)
-			other = r.forge == ""
-		}
-	} else if !isDir(folder) {
-		// A folder gone is not remembered, in case it comes back.
+	out, known := d.folderOrigin(folder)
+	if !known {
 		return forgeRepo{}
+	}
+	if remote, ok := parseRemote(out); ok {
+		r = forgeOf(remote.host, remote.path)
+		other = r.forge == ""
 	}
 	d.repoMu.Lock()
 	if d.repos == nil {
@@ -493,6 +536,13 @@ func (d *Daemon) folderRepo(folder string) forgeRepo {
 		return d.connectedRepo(folder)
 	}
 	return r
+}
+
+// gitSaidNoOrigin says git's refusal of `git remote get-url origin` is an answer: the folder has
+// no origin, or is not in a git repository.
+func gitSaidNoOrigin(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "No such remote") || gitremote.NotARepository(msg)
 }
 
 // connectedRepo is folder's repo on the connected Forgejo, else on the connected GitLab (#4118),
@@ -622,32 +672,9 @@ func (d *Daemon) noteLineage(before *wire.Agent, a wire.Agent) {
 	if before != nil {
 		was = *before
 	}
-	had := map[string]bool{}
-	for _, l := range was.Labels {
-		had[l.Value] = true
-	}
-	has := map[string]bool{}
-	var added []wire.SessionLabel
-	for _, l := range a.Labels {
-		has[l.Value] = true
-		if !had[l.Value] {
-			added = append(added, l)
-		}
-	}
-	var removed []string
-	for _, l := range was.Labels {
-		if !has[l.Value] {
-			removed = append(removed, l.Value)
-		}
-	}
-	newly := func(now, then *wire.UUID) *wire.UUID {
-		if now != nil && (then == nil || *then != *now) {
-			return now
-		}
-		return nil
-	}
-	helper := newly(a.StartedByAgent, was.StartedByAgent)
-	run := newly(a.StartedByRun, was.StartedByRun)
+	added, removed := sessionLabelChanges(was.Labels, a.Labels)
+	helper := newlySetUUID(a.StartedByAgent, was.StartedByAgent)
+	run := newlySetUUID(a.StartedByRun, was.StartedByRun)
 	var workflow *string
 	if a.StartedByWorkflow != nil && (was.StartedByWorkflow == nil || *was.StartedByWorkflow != *a.StartedByWorkflow) {
 		workflow = a.StartedByWorkflow
@@ -666,47 +693,9 @@ func (d *Daemon) noteLineage(before *wire.Agent, a wire.Agent) {
 			d.link(d.sessionNode(*helper), s, lineage.RelStarted, lineage.SourceHelper)
 		}
 		if workflow != nil || run != nil {
-			var wf wire.LineageNode
-			if workflow != nil {
-				wf = lineage.NodeOf(lineage.KindWorkflow,
-					wire.Ref{Provider: "agents", Type: "workflow", Topic: d.folderTopic(folder), ID: folder + "/" + *workflow})
-				wf = d.lineage().Canon(wf)
-			}
-			switch {
-			case run != nil:
-				r := d.lineage().Canon(lineage.NodeOf(lineage.KindWorkflowRun,
-					wire.Ref{Provider: "agents", Type: "workflow-run", Topic: d.folderTopic(folder), ID: string(*run)}))
-				d.link(r, s, lineage.RelStarted, lineage.SourceHelper)
-				if workflow != nil {
-					d.link(r, wf, lineage.RelPartOf, lineage.SourceHelper)
-				}
-			default:
-				d.link(wf, s, lineage.RelStarted, lineage.SourceHelper)
-			}
+			d.noteLineageStarter(s, folder, workflow, run)
 		}
-		for _, l := range added {
-			to, ok := d.labelNode(folder, l.Value)
-			if !ok {
-				continue
-			}
-			source := lineage.SourceStart
-			if before != nil {
-				source = lineage.SourcePerson
-				if l.Owner == wire.SessionLabelOwnerAgent {
-					source = lineage.SourceAgent
-				}
-			}
-			d.link(s, to, lineage.RelWorksOn, source)
-			d.lineageReportsHealth(s, to)
-			if repo, n, ok := issueOfNode(to); ok {
-				d.noteIssueParent(folder, repo, n)
-			}
-		}
-		for _, v := range removed {
-			if to, ok := d.labelNode(folder, v); ok {
-				d.unlink(s, to, lineage.RelWorksOn)
-			}
-		}
+		d.noteLineageLabels(s, folder, added, removed, before != nil)
 		if archived {
 			d.endLinks(s, func(l wire.LineageLink) bool { return l.From == s })
 		}
@@ -714,6 +703,86 @@ func (d *Daemon) noteLineage(before *wire.Agent, a wire.Agent) {
 			d.refreshPriorities(map[wire.UUID]bool{a.ID: true})
 		}
 	})
+}
+
+// sessionLabelChanges gives the labels in has that are not in had, and the values of the
+// labels in had that are not in has.
+func sessionLabelChanges(had, has []wire.SessionLabel) (added []wire.SessionLabel, removed []string) {
+	hadValue := map[string]bool{}
+	for _, l := range had {
+		hadValue[l.Value] = true
+	}
+	hasValue := map[string]bool{}
+	for _, l := range has {
+		hasValue[l.Value] = true
+		if !hadValue[l.Value] {
+			added = append(added, l)
+		}
+	}
+	for _, l := range had {
+		if !hasValue[l.Value] {
+			removed = append(removed, l.Value)
+		}
+	}
+	return added, removed
+}
+
+// newlySetUUID is now when it is set and is not then, else nil.
+func newlySetUUID(now, then *wire.UUID) *wire.UUID {
+	if now != nil && (then == nil || *then != *now) {
+		return now
+	}
+	return nil
+}
+
+// noteLineageStarter links the session s to the workflow or the workflow run that started it.
+// At least one of workflow and run is set. It runs in lineageDo.
+func (d *Daemon) noteLineageStarter(s wire.LineageNode, folder string, workflow *string, run *wire.UUID) {
+	var wf wire.LineageNode
+	if workflow != nil {
+		wf = lineage.NodeOf(lineage.KindWorkflow,
+			wire.Ref{Provider: "agents", Type: "workflow", Topic: d.folderTopic(folder), ID: folder + "/" + *workflow})
+		wf = d.lineage().Canon(wf)
+	}
+	switch {
+	case run != nil:
+		r := d.lineage().Canon(lineage.NodeOf(lineage.KindWorkflowRun,
+			wire.Ref{Provider: "agents", Type: "workflow-run", Topic: d.folderTopic(folder), ID: string(*run)}))
+		d.link(r, s, lineage.RelStarted, lineage.SourceHelper)
+		if workflow != nil {
+			d.link(r, wf, lineage.RelPartOf, lineage.SourceHelper)
+		}
+	default:
+		d.link(wf, s, lineage.RelStarted, lineage.SourceHelper)
+	}
+}
+
+// noteLineageLabels links the session s works-on what each added label names, and ends the
+// links of the removed labels. changed is false for a new record. It runs in lineageDo.
+func (d *Daemon) noteLineageLabels(s wire.LineageNode, folder string, added []wire.SessionLabel, removed []string, changed bool) {
+	for _, l := range added {
+		to, ok := d.labelNode(folder, l.Value)
+		if !ok {
+			continue
+		}
+		source := lineage.SourceStart
+		if changed {
+			source = lineage.SourcePerson
+			if l.Owner == wire.SessionLabelOwnerAgent {
+				source = lineage.SourceAgent
+			}
+		}
+		d.link(s, to, lineage.RelWorksOn, source)
+		d.lineageReportsHealth(s, to)
+		if repo, n, ok := issueOfNode(to); ok {
+			d.noteIssueParent(folder, repo, n)
+		}
+	}
+	for _, v := range removed {
+		if to, ok := d.labelNode(folder, v); ok {
+			d.unlink(s, to, lineage.RelWorksOn)
+		}
+	}
 }
 
 // prEventPayload is what a pr.* event of the GitHub and GitLab servers says of its PR.
@@ -795,11 +864,7 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 	}
 	var sessions []wire.UUID
 	if e.Name == "pr.opened" && p.PR.Branch != "" {
-		for _, a := range d.Store.Agents() {
-			if a.Worktree != nil && a.Worktree.Branch != nil && *a.Worktree.Branch == p.PR.Branch && a.Purpose == nil {
-				sessions = append(sessions, a.ID)
-			}
-		}
+		sessions = d.prBranchSessions(p.PR.Branch)
 	}
 	d.lineageDo(func() {
 		for _, id := range sessions {
@@ -810,42 +875,12 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 		}
 		// A PR closed without a merge links its issues too, and the links end below: it fixed
 		// nothing, but its cost stays against them, as waste (#2350).
-		folder := ""
-		if len(p.PR.Fixes) > 0 {
-			folder = d.repoFolder(repo)
-		}
-		for _, f := range p.PR.Fixes {
-			if issue, ok := fixedIssue(repo, f); ok {
-				d.link(pr, issue, lineage.RelFixes, lineage.SourcePRBody)
-				if r, n, ok := issueOfNode(issue); ok {
-					d.noteIssueParent(folder, r, n)
-				}
-			}
-		}
+		d.linkPRFixes(repo, pr, p.PR.Fixes)
 		if len(p.PR.Fixes) > 0 {
 			// A session labelled P#n goes by the priority of the issues it fixes (#5847).
 			defer d.refreshPrioritiesSoon()
 		}
-		// A Jira key in its title or branch, of a project its repo's folder names (#3260): a PR
-		// is never on the Jira site, so this is the way its cost reaches the Jira issue.
-		if jira := d.folderJiraProjects(d.repoFolder(repo)); len(jira) > 0 {
-			for _, key := range jiraKeys(p.PR.Title, jira) {
-				d.link(pr, jiraNode(key), lineage.RelFixes, lineage.SourcePRBody)
-			}
-			for _, key := range jiraKeys(p.PR.Branch, jira) {
-				d.link(pr, jiraNode(key), lineage.RelFixes, lineage.SourceBranch)
-			}
-		}
-		// AB#12 in its title or branch, a work item of its repo's folder's first Azure Boards
-		// project (#3815), as Azure Boards itself links a commit or a pull request to one.
-		if boards := d.folderBoardsProjects(d.repoFolder(repo)); len(boards) > 0 {
-			for _, id := range boardsKeys(p.PR.Title) {
-				d.link(pr, boardsNode(boards[0], id), lineage.RelFixes, lineage.SourcePRBody)
-			}
-			for _, id := range boardsKeys(p.PR.Branch) {
-				d.link(pr, boardsNode(boards[0], id), lineage.RelFixes, lineage.SourceBranch)
-			}
-		}
+		d.linkPRTrackerKeys(repo, pr, p.PR.Title, p.PR.Branch)
 		// The approval wait's start when its label is unknown (#4553).
 		if at, ok := payloadTime(p.OpenedAt); ok && e.Name == "pr.opened" {
 			d.notePROpened(pr, at)
@@ -866,6 +901,59 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 			return l.To == pr && l.From.Kind == lineage.KindSession || closed && l.From == pr && l.Rel == lineage.RelFixes
 		})
 	})
+}
+
+// prBranchSessions gives the sessions, not helpers, whose worktree is on branch.
+func (d *Daemon) prBranchSessions(branch string) []wire.UUID {
+	var sessions []wire.UUID
+	for _, a := range d.Store.Agents() {
+		if a.Worktree != nil && a.Worktree.Branch != nil && *a.Worktree.Branch == branch && a.Purpose == nil {
+			sessions = append(sessions, a.ID)
+		}
+	}
+	return sessions
+}
+
+// linkPRFixes links the PR pr fixes each issue that its fixes name, and notes each issue's
+// parent. It runs in lineageDo.
+func (d *Daemon) linkPRFixes(repo forgeRepo, pr wire.LineageNode, fixes []string) {
+	folder := ""
+	if len(fixes) > 0 {
+		folder = d.repoFolder(repo)
+	}
+	for _, f := range fixes {
+		if issue, ok := fixedIssue(repo, f); ok {
+			d.link(pr, issue, lineage.RelFixes, lineage.SourcePRBody)
+			if r, n, ok := issueOfNode(issue); ok {
+				d.noteIssueParent(folder, r, n)
+			}
+		}
+	}
+}
+
+// linkPRTrackerKeys links the PR pr fixes each Jira issue and Azure Boards work item that
+// its title or branch names. It runs in lineageDo.
+func (d *Daemon) linkPRTrackerKeys(repo forgeRepo, pr wire.LineageNode, title, branch string) {
+	// A Jira key in its title or branch, of a project its repo's folder names (#3260): a PR
+	// is never on the Jira site, so this is the way its cost reaches the Jira issue.
+	if jira := d.folderJiraProjects(d.repoFolder(repo)); len(jira) > 0 {
+		for _, key := range jiraKeys(title, jira) {
+			d.link(pr, jiraNode(key), lineage.RelFixes, lineage.SourcePRBody)
+		}
+		for _, key := range jiraKeys(branch, jira) {
+			d.link(pr, jiraNode(key), lineage.RelFixes, lineage.SourceBranch)
+		}
+	}
+	// AB#12 in its title or branch, a work item of its repo's folder's first Azure Boards
+	// project (#3815), as Azure Boards itself links a commit or a pull request to one.
+	if boards := d.folderBoardsProjects(d.repoFolder(repo)); len(boards) > 0 {
+		for _, id := range boardsKeys(title) {
+			d.link(pr, boardsNode(boards[0], id), lineage.RelFixes, lineage.SourcePRBody)
+		}
+		for _, id := range boardsKeys(branch) {
+			d.link(pr, boardsNode(boards[0], id), lineage.RelFixes, lineage.SourceBranch)
+		}
+	}
 }
 
 // fixedIssue is the issue a PR's fixes names: "#12" in the PR's own repo, or

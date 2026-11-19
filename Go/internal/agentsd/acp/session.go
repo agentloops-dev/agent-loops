@@ -52,6 +52,19 @@ type Launch struct {
 	// Name is the runtime as the person knows it ("Claude"), for errors; "" is the
 	// command's own name.
 	Name string
+	// Attach, when set, reaches a runtime that is not a process of its own (a test's runtime
+	// in the test's process, #6143) in place of starting Command: the session talks ACP over
+	// what it gives, and has no pid.
+	Attach func(Launch) (Attached, error)
+}
+
+// Attached is a runtime that Launch.Attach reached: its stdin and stdout, and its end.
+type Attached struct {
+	Stdin  io.WriteCloser
+	Stdout io.Reader
+	// End stops the runtime; Done is closed once it has stopped.
+	End  func()
+	Done <-chan struct{}
 }
 
 // ErrNoAnswer is a runtime that did not answer initialize in handshakeWait (#1440).
@@ -62,7 +75,9 @@ var handshakeWait = 60 * time.Second
 
 // Session is one runtime process and its one ACP session.
 type Session struct {
+	// cmd is the runtime's process; nil for an attached one, which end stops.
 	cmd       *exec.Cmd
+	end       func()
 	conn      *sdk.ClientSideConnection
 	ID        sdk.SessionId
 	Init      sdk.InitializeResponse
@@ -91,32 +106,13 @@ func Handshake(ctx context.Context, l Launch, sink Sink) (*Session, error) {
 // handshake is one launch and initialize; silent is a runtime that did not answer in
 // handshakeWait and wrote nothing to stderr.
 func handshake(ctx context.Context, l Launch, sink Sink) (_ *Session, silent bool, _ error) {
-	argv := append([]string{l.Command}, l.Args...)
-	if l.Wrap != nil {
-		argv = l.Wrap(argv)
-	}
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Dir = l.Dir
-	cmd.Env = l.Env
-	// Its own process group, so npx's node child goes with it.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	stdin, err := cmd.StdinPipe()
+	s, stdin, stdout, err := launch(l)
 	if err != nil {
 		return nil, false, err
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, false, err
-	}
-	stderr := &tail{}
-	cmd.Stderr = stderr
-	if err := cmd.Start(); err != nil {
-		return nil, false, fmt.Errorf("start %s: %w", l.Command, err)
-	}
-	s := &Session{cmd: cmd, stderr: stderr, done: make(chan struct{})}
+	stderr := s.stderr
 	s.client = &client{sink: sink, dir: l.Dir, env: l.Env, runtime: l.Name, terminals: map[string]*terminal{}, updates: newUpdateGate()}
 	s.conn = sdk.NewClientSideConnection(s.client, &sessionPromptWriter{w: stdin, c: s.client}, &rawElicitations{r: bufio.NewReader(stdout), c: s.client})
-	safe.Go("runtime wait", func() { _ = cmd.Wait(); close(s.done) })
 
 	ictx, cancel := context.WithTimeout(ctx, handshakeWait)
 	defer cancel()
@@ -147,6 +143,44 @@ func handshake(ctx context.Context, l Launch, sink Sink) (_ *Session, silent boo
 		return nil, false, fmt.Errorf("initialize: %w%s", err, stderr.say())
 	}
 	return s, false, nil
+}
+
+// launch starts the runtime's process, or attaches to it, and is its stdin and stdout.
+func launch(l Launch) (*Session, io.Writer, io.Reader, error) {
+	if l.Attach != nil {
+		a, err := l.Attach(l)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("attach %s: %w", l.Command, err)
+		}
+		done := make(chan struct{})
+		safe.Go("runtime wait", func() { <-a.Done; close(done) })
+		return &Session{end: a.End, stderr: &tail{}, done: done}, a.Stdin, a.Stdout, nil
+	}
+	argv := append([]string{l.Command}, l.Args...)
+	if l.Wrap != nil {
+		argv = l.Wrap(argv)
+	}
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Dir = l.Dir
+	cmd.Env = l.Env
+	// Its own process group, so npx's node child goes with it.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	stderr := &tail{}
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		return nil, nil, nil, fmt.Errorf("start %s: %w", l.Command, err)
+	}
+	s := &Session{cmd: cmd, stderr: stderr, done: make(chan struct{})}
+	safe.Go("runtime wait", func() { _ = cmd.Wait(); close(s.done) })
+	return s, stdin, stdout, nil
 }
 
 // takes is the servers the runtime takes: one over http or sse only where it says so
@@ -191,7 +225,10 @@ func Start(ctx context.Context, l Launch, sink Sink, mcp []sdk.McpServer, meta, 
 			s.Continued = true
 			s.ID = sdk.SessionId(continuing)
 			return s, nil
-		} else if errors.Is(err, context.DeadlineExceeded) {
+		} else if errors.Is(err, context.DeadlineExceeded) || ictx.Err() != nil {
+			// The SDK hands a timeout back as a JSON-RPC error, which errors.Is does not see
+			// (as at initialize): a resume that timed out is not a lost conversation, and must
+			// not begin a second one beside it (#6186).
 			s.Stop()
 			return nil, fmt.Errorf("the runtime did not answer: %w%s", err, stderr.say())
 		}
@@ -234,10 +271,16 @@ func (s *Session) continueSession(ctx context.Context, id, cwd string, mcp []sdk
 func (s *Session) Prompt(ctx context.Context, blocks []sdk.ContentBlock) (sdk.PromptResponse, error) {
 	r, err := s.conn.Prompt(ctx, sdk.PromptRequest{SessionId: s.ID, Prompt: blocks})
 	if err != nil {
+		// The SDK sees the output end before the process is reaped: give the exit a moment, so
+		// a crash says so, with the end of its stderr, not only "peer disconnected" (#6186).
+		wait := time.Duration(0)
+		if strings.Contains(err.Error(), "peer disconnected") {
+			wait = 2 * time.Second
+		}
 		select {
 		case <-s.done:
 			return r, fmt.Errorf("the runtime exited: %w%s", err, s.stderr.say())
-		default:
+		case <-time.After(wait):
 		}
 	}
 	return r, err
@@ -320,17 +363,22 @@ func (s *Session) SetConfig(ctx context.Context, id, value string) error {
 	return err
 }
 
-// Stop ends the process group: TERM, then KILL.
+// Stop ends the process group: TERM, then KILL. An attached runtime is ended.
 func (s *Session) Stop() {
-	if s.cmd.Process == nil {
+	switch {
+	case s.cmd != nil && s.cmd.Process != nil:
+		pgid := s.cmd.Process.Pid
+		_ = syscall.Kill(-pgid, syscall.SIGTERM)
+		select {
+		case <-s.done:
+		case <-time.After(3 * time.Second):
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+	case s.end != nil:
+		s.end()
+		<-s.done
+	default:
 		return
-	}
-	pgid := s.cmd.Process.Pid
-	_ = syscall.Kill(-pgid, syscall.SIGTERM)
-	select {
-	case <-s.done:
-	case <-time.After(3 * time.Second):
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	}
 	s.client.closeTerminals()
 	// The SDK hands on what it read before the output ended after the process is gone:
@@ -342,13 +390,16 @@ func (s *Session) Stop() {
 
 func (s *Session) Done() <-chan struct{} { return s.done }
 
-// Pids is the runtime's process, then each terminal's it asked for that has not ended
+// Pids is the runtime's process (none for an attached one), then each terminal's it asked for that has not ended
 // (processes/list, #3453): the daemon starts both, so a terminal is not the runtime's child.
 func (s *Session) Pids() []int {
-	if s.cmd.Process == nil {
-		return nil
+	var pids []int
+	if s.cmd != nil {
+		if s.cmd.Process == nil {
+			return nil
+		}
+		pids = append(pids, s.cmd.Process.Pid)
 	}
-	pids := []int{s.cmd.Process.Pid}
 	s.client.mu.Lock()
 	defer s.client.mu.Unlock()
 	for _, t := range s.client.terminals {
@@ -363,9 +414,10 @@ func (s *Session) Pids() []int {
 	return pids
 }
 
-// Pid is the runtime's own process, the leader of its process group; 0 before it started.
+// Pid is the runtime's own process, the leader of its process group; 0 before it started,
+// and for an attached runtime.
 func (s *Session) Pid() int {
-	if s.cmd.Process == nil {
+	if s.cmd == nil || s.cmd.Process == nil {
 		return 0
 	}
 	return s.cmd.Process.Pid
@@ -566,7 +618,7 @@ var (
 func (e *rawElicitations) Read(b []byte) (int, error) {
 	if len(e.pending) == 0 {
 		e.c.updates.wait()
-		line, err := e.r.ReadBytes('\n')
+		line, err := e.readLine()
 		if len(line) == 0 {
 			if err != nil {
 				e.c.updates.end()
@@ -580,6 +632,48 @@ func (e *rawElicitations) Read(b []byte) (int, error) {
 	n := copy(b, e.pending)
 	e.pending = e.pending[n:]
 	return n, nil
+}
+
+// maxLine is the longest line handed to the SDK, whose reader fails the whole connection
+// on a line over 10 MiB ("peer disconnected"), also for one session/update that holds a
+// tool's large output (#6186). Longer is read and dropped when it is an update; it is never
+// held whole in memory.
+const maxLine = 9 << 20
+
+// readLine is the next line of the runtime's output. A session/update over maxLine is read to
+// its end and dropped, with a note in the log, and the next line is read in its place; any
+// other line over maxLine is cut at maxLine, which the SDK ends the connection on.
+func (e *rawElicitations) readLine() ([]byte, error) {
+	for {
+		var line []byte
+		long := false
+		for {
+			part, err := e.r.ReadSlice('\n')
+			if !long {
+				line = append(line, part...)
+				if len(line) > maxLine {
+					long = true
+				}
+			}
+			if errors.Is(err, bufio.ErrBufferFull) {
+				continue
+			}
+			if long && err == nil && !bytes.Contains(line[:min(len(line), 4096)], sessionUpdateMarker) {
+				return line, nil
+			}
+			if long && err == nil {
+				log.Printf("acp: %s sent a session/update over %d MiB: dropped", e.c.runtime, maxLine>>20)
+				break
+			}
+			if err != nil {
+				if long && bytes.Contains(line[:min(len(line), 4096)], sessionUpdateMarker) {
+					return nil, err
+				}
+				return line, err
+			}
+			return line, nil
+		}
+	}
 }
 
 func (e *rawElicitations) keep(line []byte) {
@@ -796,9 +890,50 @@ func resolve(path string) (string, error) {
 	}
 }
 
+// readable is inside, and also lets a read into ~/.agents/memory/, the facts about the
+// person and this machine that the brief tells every agent to read (#6034, Alex 2026-11-17).
+// Only reads: a write or a terminal stays in the agent's folder. The links are followed
+// first, so a link in that folder to a path outside it is refused.
+func (c *client) readable(path string) (string, error) {
+	resolved, err := c.inside(path)
+	if err == nil {
+		return resolved, nil
+	}
+	if r, ok := within(memoryDir(), path); ok {
+		return r, nil
+	}
+	return "", err
+}
+
+// memoryDir is ~/.agents/memory with its links followed, or "" when there is no home.
+func memoryDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Join(home, ".agents", "memory"))
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+// within is path with its links followed, and whether that is dir or in it.
+func within(dir, path string) (string, bool) {
+	if dir == "" || !filepath.IsAbs(path) {
+		return "", false
+	}
+	resolved, err := resolve(path)
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(dir, resolved)
+	return resolved, err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
+}
+
 func (c *client) ReadTextFile(ctx context.Context, p sdk.ReadTextFileRequest) (_ sdk.ReadTextFileResponse, err error) {
 	defer safe.Err("acp ReadTextFile", &err)
-	path, err := c.inside(p.Path)
+	path, err := c.readable(p.Path)
 	if err != nil {
 		return sdk.ReadTextFileResponse{}, err
 	}

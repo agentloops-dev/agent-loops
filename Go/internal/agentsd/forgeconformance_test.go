@@ -725,157 +725,216 @@ func TestForgeConformance(t *testing.T) {
 	for _, row := range conformRows {
 		t.Run(row.name, func(t *testing.T) {
 			d, c := row.daemon(t)
-			var f Forge
-			for _, g := range d.forges() {
-				if g.Name() == row.name {
-					f = g
-				}
-			}
-			if f == nil {
-				t.Fatalf("%s is not in the registry", row.name)
-			}
+			f := conformForgeNamed(t, d, row.name)
 			caps := f.Caps()
 			ctx := context.Background()
 
-			all := map[bool][]wire.ForgeItem{}
-			for _, prs := range []bool{false, true} {
-				method := map[bool]string{false: "forge/issues", true: "forge/pulls"}[prs]
-				all[prs] = conformList(t, c, method, forgeListMost)
-				// 4. The list pages: a limit of 1 gives every item once, by the cursors.
-				d.forgeWrote()
-				one, totals := conformPages(t, c, method, 1)
-				if !slices.EqualFunc(one, all[prs], func(a, b wire.ForgeItem) bool { return a.Node == b.Node }) {
-					t.Errorf("%s by ones: %v, want %v", method, conformNodes(one), conformNodes(all[prs]))
-				}
-				// 5. The total (#4396): a forge that counts says the whole list's on every page; one
-				// that does not says none, unless its list ends on its first page.
-				for n, total := range totals {
-					counts := caps.Total || len(all[prs]) <= 1
-					if counts != (total != nil) || total != nil && *total != int64(len(all[prs])) {
-						got := "none"
-						if total != nil {
-							got = strconv.FormatInt(*total, 10)
-						}
-						t.Errorf("%s page %d: total %s, want %d (caps say total=%v)", method, n, got, len(all[prs]), caps.Total)
-					}
-				}
-			}
-			// The list says the forge's capabilities (#4361).
-			var page wire.ForgeList
-			method := map[bool]string{false: "forge/issues", true: "forge/pulls"}[caps.PRs && !caps.Issues]
-			if err := json.Unmarshal(c.call(t, 990, method, wire.ForgeListRequest{State: new("all")}), &page); err != nil {
-				t.Fatal(err)
-			}
-			if want := []wire.ForgeCapabilities{caps.wire(f.Name())}; !reflect.DeepEqual(page.Forges, want) {
-				t.Errorf("%s forges = %+v, want %+v", method, page.Forges, want)
-			}
-			// Issues and PRs agree with the kinds that List returns.
-			if caps.Issues != (len(all[false]) > 0) || caps.PRs != (len(all[true]) > 0) {
-				t.Errorf("caps say issues=%v prs=%v; the lists gave %d and %d", caps.Issues, caps.PRs, len(all[false]), len(all[true]))
-			}
+			all := conformListsPage(t, d, c, caps)
+			conformListCaps(t, c, f, caps, all)
 
 			refs := map[string]forgeRef{}
 			for prs, items := range all {
 				for _, i := range items {
-					// 1. The node goes round, and no other forge owns it.
-					r, ok := f.Owns(i.Node)
-					if !ok || r.Node != i.Node {
-						t.Fatalf("Owns(%v) = %+v, %v", i.Node, r, ok)
-					}
-					if (i.Node.Kind == lineage.KindPR) != prs {
-						t.Errorf("%v is in the wrong list", i.Node)
-					}
-					for _, g := range d.forges() {
-						if _, ok := g.Owns(i.Node); ok && g.Name() != f.Name() {
-							t.Errorf("%s owns %s's %v too", g.Name(), f.Name(), i.Node)
-						}
-					}
-					detail, err := f.Item(ctx, r, "")
-					if err != nil || detail.Item.Node != i.Node {
-						t.Fatalf("Item(%v) = %v, %v", i.Node, detail.Item.Node, err)
-					}
-					// 3. The model is filled.
-					for _, m := range []wire.ForgeItem{i, detail.Item} {
-						conformModel(t, d, caps, m)
-					}
-					refs[i.Node.Kind+" "+i.State] = r
-					// 5. actions follows the state, on the item's page.
-					var page wire.ForgeItemDetail
-					if err := json.Unmarshal(c.call(t, 991, itemMethod(i.Node.Kind), wire.ForgeItemRequest{Node: i.Node}), &page); err != nil {
-						t.Fatal(err)
-					}
-					conformItemActions(t, caps, i, page.Actions)
-					conformComments(t, caps, i, page)
-					conformAvatars(t, d, caps, page)
-					conformLinks(t, d, f, caps, page)
-					conformPull(t, d, f, caps, i, page)
+					refs[i.Node.Kind+" "+i.State] = conformItem(t, ctx, d, c, f, caps, prs, i)
 				}
 			}
 
-			// forge/labels gives the colours as the lists do (#4362).
-			for _, kind := range []string{lineage.KindIssue, lineage.KindPR} {
-				r, ok := refs[kind+" open"]
-				if !ok {
-					continue
-				}
-				labels, err := f.Labels(ctx, r)
-				if errors.Is(err, errForgeCannot) && !caps.PR.Label && kind == lineage.KindPR {
-					continue
-				}
-				if err != nil {
-					t.Fatalf("Labels(%v): %v", r.Node, err)
-				}
-				if len(labels) == 0 {
-					t.Errorf("Labels(%v): none", r.Node)
-				}
-				conformLabelColors(t, "labels of "+fmt.Sprint(r.Node), caps, labels)
-			}
-
-			// 2. Caps agrees with the methods.
-			for kind, actions := range map[string]forgeActions{lineage.KindIssue: caps.Issue, lineage.KindPR: caps.PR} {
-				r, ok := refs[kind+" open"]
-				if !ok {
-					continue
-				}
-				for name, call := range conformActions(f, r) {
-					err := call(ctx)
-					cannotNow := errors.Is(err, errForgeCannot)
-					switch {
-					case actions.on(name) && cannotNow:
-						t.Errorf("%s %s: caps say yes, the method says %v", kind, name, err)
-					case !actions.on(name) && !cannotNow:
-						t.Errorf("%s %s: caps say no, the method says %v", kind, name, err)
-					case !actions.on(name):
-						if cannotReason(f, err) == "" {
-							t.Errorf("%s %s: no reason", kind, name)
-						}
-					}
-				}
-			}
-			if r, ok := refs[lineage.KindIssue+" open"]; ok {
-				for name, on := range map[string]bool{actionPlan: caps.Plan, actionAddChild: caps.AddChild, actionBlockedBy: caps.BlockedBy} {
-					var err error
-					switch name {
-					case actionPlan:
-						_, err = f.Plan(ctx, r)
-					case actionAddChild:
-						_, err = f.AddChild(ctx, r, forgeChild{Title: "A child"})
-					case actionBlockedBy:
-						err = f.SetBlockedBy(ctx, r, refs[lineage.KindIssue+" closed"], true)
-					}
-					if errors.Is(err, errForgeCannot) == on {
-						t.Errorf("issue %s: caps say %v, the method says %v", name, on, err)
-					}
-				}
-			}
-			// 6. Releases agrees with Caps (#4426): a forge with none says why.
-			s, _ := f.Sources(ctx, d.folderPaths(), caps.PRs && !caps.Issues)
-			if _, err := f.Releases(ctx, s, 1); errors.Is(err, errForgeCannot) == caps.Releases {
-				t.Errorf("releases: caps say %v, the method says %v", caps.Releases, err)
-			} else if !caps.Releases && cannotReason(f, err) == "the forge cannot releases" {
-				t.Errorf("releases: no reason of its own")
-			}
+			conformLabelsColors(t, ctx, f, caps, refs)
+			conformCapsWrites(t, ctx, f, caps, refs)
+			conformCapsPlan(t, ctx, f, caps, refs)
+			conformReleases(t, ctx, d, f, caps)
 		})
+	}
+}
+
+// conformForgeNamed is the forge of the registry with that name.
+func conformForgeNamed(t *testing.T, d *Daemon, name string) Forge {
+	t.Helper()
+	var f Forge
+	for _, g := range d.forges() {
+		if g.Name() == name {
+			f = g
+		}
+	}
+	if f == nil {
+		t.Fatalf("%s is not in the registry", name)
+	}
+	return f
+}
+
+// conformListsPage reads the issues and the pull requests, and checks that the lists
+// page (4) and say their totals (5).
+func conformListsPage(t *testing.T, d *Daemon, c *conn, caps forgeCaps) map[bool][]wire.ForgeItem {
+	t.Helper()
+	all := map[bool][]wire.ForgeItem{}
+	for _, prs := range []bool{false, true} {
+		method := map[bool]string{false: "forge/issues", true: "forge/pulls"}[prs]
+		all[prs] = conformList(t, c, method, forgeListMost)
+		// 4. The list pages: a limit of 1 gives every item once, by the cursors.
+		d.forgeWrote()
+		one, totals := conformPages(t, c, method, 1)
+		if !slices.EqualFunc(one, all[prs], func(a, b wire.ForgeItem) bool { return a.Node == b.Node }) {
+			t.Errorf("%s by ones: %v, want %v", method, conformNodes(one), conformNodes(all[prs]))
+		}
+		conformTotals(t, method, caps, totals, len(all[prs]))
+	}
+	return all
+}
+
+// conformTotals checks the total (#4396): a forge that counts says the whole list's on every
+// page; one that does not says none, unless its list ends on its first page.
+func conformTotals(t *testing.T, method string, caps forgeCaps, totals []*int64, count int) {
+	t.Helper()
+	for n, total := range totals {
+		counts := caps.Total || count <= 1
+		if counts != (total != nil) || total != nil && *total != int64(count) {
+			got := "none"
+			if total != nil {
+				got = strconv.FormatInt(*total, 10)
+			}
+			t.Errorf("%s page %d: total %s, want %d (caps say total=%v)", method, n, got, count, caps.Total)
+		}
+	}
+}
+
+// conformListCaps checks that the list says the forge's capabilities (#4361), and that
+// Issues and PRs agree with the kinds that List returns.
+func conformListCaps(t *testing.T, c *conn, f Forge, caps forgeCaps, all map[bool][]wire.ForgeItem) {
+	t.Helper()
+	var page wire.ForgeList
+	method := map[bool]string{false: "forge/issues", true: "forge/pulls"}[caps.PRs && !caps.Issues]
+	if err := json.Unmarshal(c.call(t, 990, method, wire.ForgeListRequest{State: new("all")}), &page); err != nil {
+		t.Fatal(err)
+	}
+	if want := []wire.ForgeCapabilities{caps.wire(f.Name())}; !reflect.DeepEqual(page.Forges, want) {
+		t.Errorf("%s forges = %+v, want %+v", method, page.Forges, want)
+	}
+	if caps.Issues != (len(all[false]) > 0) || caps.PRs != (len(all[true]) > 0) {
+		t.Errorf("caps say issues=%v prs=%v; the lists gave %d and %d", caps.Issues, caps.PRs, len(all[false]), len(all[true]))
+	}
+}
+
+// conformItem checks one listed item: its node (1), its model (3) and its page (5). It
+// gives the item's ref.
+func conformItem(t *testing.T, ctx context.Context, d *Daemon, c *conn, f Forge, caps forgeCaps, prs bool, i wire.ForgeItem) forgeRef {
+	t.Helper()
+	// 1. The node goes round, and no other forge owns it.
+	r, ok := f.Owns(i.Node)
+	if !ok || r.Node != i.Node {
+		t.Fatalf("Owns(%v) = %+v, %v", i.Node, r, ok)
+	}
+	if (i.Node.Kind == lineage.KindPR) != prs {
+		t.Errorf("%v is in the wrong list", i.Node)
+	}
+	for _, g := range d.forges() {
+		if _, ok := g.Owns(i.Node); ok && g.Name() != f.Name() {
+			t.Errorf("%s owns %s's %v too", g.Name(), f.Name(), i.Node)
+		}
+	}
+	detail, err := f.Item(ctx, r, "")
+	if err != nil || detail.Item.Node != i.Node {
+		t.Fatalf("Item(%v) = %v, %v", i.Node, detail.Item.Node, err)
+	}
+	// 3. The model is filled.
+	for _, m := range []wire.ForgeItem{i, detail.Item} {
+		conformModel(t, d, caps, m)
+	}
+	// 5. actions follows the state, on the item's page.
+	var page wire.ForgeItemDetail
+	if err := json.Unmarshal(c.call(t, 991, itemMethod(i.Node.Kind), wire.ForgeItemRequest{Node: i.Node}), &page); err != nil {
+		t.Fatal(err)
+	}
+	conformItemActions(t, caps, i, page.Actions)
+	conformComments(t, caps, i, page)
+	conformAvatars(t, d, caps, page)
+	conformLinks(t, d, f, caps, page)
+	conformPull(t, d, f, caps, i, page)
+	return r
+}
+
+// conformLabelsColors checks that forge/labels gives the colours as the lists do (#4362).
+func conformLabelsColors(t *testing.T, ctx context.Context, f Forge, caps forgeCaps, refs map[string]forgeRef) {
+	t.Helper()
+	for _, kind := range []string{lineage.KindIssue, lineage.KindPR} {
+		r, ok := refs[kind+" open"]
+		if !ok {
+			continue
+		}
+		labels, err := f.Labels(ctx, r)
+		if errors.Is(err, errForgeCannot) && !caps.PR.Label && kind == lineage.KindPR {
+			continue
+		}
+		if err != nil {
+			t.Fatalf("Labels(%v): %v", r.Node, err)
+		}
+		if len(labels) == 0 {
+			t.Errorf("Labels(%v): none", r.Node)
+		}
+		conformLabelColors(t, "labels of "+fmt.Sprint(r.Node), caps, labels)
+	}
+}
+
+// conformCapsWrites checks that Caps agrees with the write methods (2).
+func conformCapsWrites(t *testing.T, ctx context.Context, f Forge, caps forgeCaps, refs map[string]forgeRef) {
+	t.Helper()
+	for kind, actions := range map[string]forgeActions{lineage.KindIssue: caps.Issue, lineage.KindPR: caps.PR} {
+		r, ok := refs[kind+" open"]
+		if !ok {
+			continue
+		}
+		for name, call := range conformActions(f, r) {
+			conformCapsWrite(t, f, kind, name, actions.on(name), call(ctx))
+		}
+	}
+}
+
+// conformCapsWrite checks one write's error against what the caps say of it.
+func conformCapsWrite(t *testing.T, f Forge, kind, name string, on bool, err error) {
+	t.Helper()
+	cannotNow := errors.Is(err, errForgeCannot)
+	switch {
+	case on && cannotNow:
+		t.Errorf("%s %s: caps say yes, the method says %v", kind, name, err)
+	case !on && !cannotNow:
+		t.Errorf("%s %s: caps say no, the method says %v", kind, name, err)
+	case !on:
+		if cannotReason(f, err) == "" {
+			t.Errorf("%s %s: no reason", kind, name)
+		}
+	}
+}
+
+// conformCapsPlan checks that Caps agrees with the plan methods on an open issue.
+func conformCapsPlan(t *testing.T, ctx context.Context, f Forge, caps forgeCaps, refs map[string]forgeRef) {
+	t.Helper()
+	r, ok := refs[lineage.KindIssue+" open"]
+	if !ok {
+		return
+	}
+	for name, on := range map[string]bool{actionPlan: caps.Plan, actionAddChild: caps.AddChild, actionBlockedBy: caps.BlockedBy} {
+		var err error
+		switch name {
+		case actionPlan:
+			_, err = f.Plan(ctx, r)
+		case actionAddChild:
+			_, err = f.AddChild(ctx, r, forgeChild{Title: "A child"})
+		case actionBlockedBy:
+			err = f.SetBlockedBy(ctx, r, refs[lineage.KindIssue+" closed"], true)
+		}
+		if errors.Is(err, errForgeCannot) == on {
+			t.Errorf("issue %s: caps say %v, the method says %v", name, on, err)
+		}
+	}
+}
+
+// conformReleases checks that Releases agrees with Caps (6, #4426): a forge with none says why.
+func conformReleases(t *testing.T, ctx context.Context, d *Daemon, f Forge, caps forgeCaps) {
+	t.Helper()
+	s, _ := f.Sources(ctx, d.folderPaths(), caps.PRs && !caps.Issues)
+	if _, err := f.Releases(ctx, s, 1); errors.Is(err, errForgeCannot) == caps.Releases {
+		t.Errorf("releases: caps say %v, the method says %v", caps.Releases, err)
+	} else if !caps.Releases && cannotReason(f, err) == "the forge cannot releases" {
+		t.Errorf("releases: no reason of its own")
 	}
 }
 
@@ -893,14 +952,15 @@ func conformActions(f Forge, r forgeRef) map[string]func(context.Context) error 
 		actionTransition: func(ctx context.Context) error {
 			return f.SetState(ctx, r, true, "31")
 		},
-		actionMerge:      func(ctx context.Context) error { _, err := f.Merge(ctx, r, "abc", "", false); return err },
-		actionAutoMerge:  func(ctx context.Context) error { _, err := f.Merge(ctx, r, "abc", "", true); return err },
-		actionApprove:    func(ctx context.Context) error { _, err := f.Approve(ctx, r, "abc"); return err },
-		actionCancelAuto: func(ctx context.Context) error { return f.CancelAutoMerge(ctx, r) },
-		actionReady:      func(ctx context.Context) error { return f.Ready(ctx, r) },
-		actionRerun:      func(ctx context.Context) error { _, err := f.Rerun(ctx, r); return err },
-		actionLog:        func(ctx context.Context) error { _, err := f.Log(ctx, r, ""); return err },
-		actionDiff:       func(ctx context.Context) error { _, err := f.Diff(ctx, r); return err },
+		actionMerge:          func(ctx context.Context) error { _, err := f.Merge(ctx, r, "abc", "", false); return err },
+		actionAutoMerge:      func(ctx context.Context) error { _, err := f.Merge(ctx, r, "abc", "", true); return err },
+		actionApprove:        func(ctx context.Context) error { _, err := f.Approve(ctx, r, "abc"); return err },
+		actionRequestChanges: func(ctx context.Context) error { _, err := f.RequestChanges(ctx, r, "abc", "Change it."); return err },
+		actionCancelAuto:     func(ctx context.Context) error { return f.CancelAutoMerge(ctx, r) },
+		actionReady:          func(ctx context.Context) error { return f.Ready(ctx, r) },
+		actionRerun:          func(ctx context.Context) error { _, err := f.Rerun(ctx, r); return err },
+		actionLog:            func(ctx context.Context) error { _, err := f.Log(ctx, r, ""); return err },
+		actionDiff:           func(ctx context.Context) error { _, err := f.Diff(ctx, r); return err },
 	}
 }
 
@@ -1022,6 +1082,13 @@ func conformLinks(t *testing.T, d *Daemon, f Forge, caps forgeCaps, page wire.Fo
 	if (page.Events != nil) != (caps.Events && issue) {
 		t.Errorf("%v: events %v, caps say %v", page.Item.Node, page.Events, caps.Events)
 	}
+	conformEvents(t, page)
+}
+
+// conformEvents checks that each event on an item's page is of a kind the wire has, has a
+// time, is in order, and names what its kind needs.
+func conformEvents(t *testing.T, page wire.ForgeItemDetail) {
+	t.Helper()
 	kinds := []wire.ForgeEventKind{wire.ForgeEventKindLabeled, wire.ForgeEventKindUnlabeled, wire.ForgeEventKindAssigned,
 		wire.ForgeEventKindUnassigned, wire.ForgeEventKindClosed, wire.ForgeEventKindReopened, wire.ForgeEventKindReferenced}
 	for n, e := range page.Events {
@@ -1082,17 +1149,7 @@ func conformPull(t *testing.T, d *Daemon, f Forge, caps forgeCaps, listed wire.F
 	if (page.Reviewers != nil) != (caps.Reviewers && pr) {
 		t.Errorf("%v: reviewers %v, caps say %v", node, page.Reviewers, caps.Reviewers)
 	}
-	states := []wire.ForgeReviewerState{wire.ForgeReviewerStateApproved, wire.ForgeReviewerStateChangesRequested, wire.ForgeReviewerStateCommented, wire.ForgeReviewerStatePending}
-	seen := map[string]bool{}
-	for _, r := range page.Reviewers {
-		if r.Login == "" || seen[r.Login] || !slices.Contains(states, r.State) {
-			t.Errorf("%v: reviewer %+v: no login, twice, or an unknown state", node, r)
-		}
-		seen[r.Login] = true
-		if caps.Avatars && r.Avatar != nil {
-			conformAvatar(t, d, fmt.Sprint(node), r.Avatar)
-		}
-	}
+	conformPullReviewers(t, d, caps, node, page.Reviewers)
 	if (page.Closes != nil) != (caps.Closes && pr) {
 		t.Errorf("%v: closes %v, caps say %v", node, page.Closes, caps.Closes)
 	}
@@ -1101,11 +1158,34 @@ func conformPull(t *testing.T, d *Daemon, f Forge, caps forgeCaps, listed wire.F
 			t.Errorf("%v: closes %+v, not an issue of %s", node, c, f.Name())
 		}
 	}
+	conformPullChecks(t, caps, pr, node, page.Checks)
+}
+
+// conformPullReviewers checks that each reviewer has a login, once, a known state, and an
+// avatar that forge/image reads when the forge gives avatars.
+func conformPullReviewers(t *testing.T, d *Daemon, caps forgeCaps, node wire.LineageNode, reviewers []wire.ForgeReviewer) {
+	t.Helper()
+	states := []wire.ForgeReviewerState{wire.ForgeReviewerStateApproved, wire.ForgeReviewerStateChangesRequested, wire.ForgeReviewerStateCommented, wire.ForgeReviewerStatePending}
+	seen := map[string]bool{}
+	for _, r := range reviewers {
+		if r.Login == "" || seen[r.Login] || !slices.Contains(states, r.State) {
+			t.Errorf("%v: reviewer %+v: no login, twice, or an unknown state", node, r)
+		}
+		seen[r.Login] = true
+		if caps.Avatars && r.Avatar != nil {
+			conformAvatar(t, d, fmt.Sprint(node), r.Avatar)
+		}
+	}
+}
+
+// conformPullChecks checks a pull request's checks' times against checkTimes.
+func conformPullChecks(t *testing.T, caps forgeCaps, pr bool, node wire.LineageNode, checks []wire.ForgeCheck) {
+	t.Helper()
 	// A forge that gives check times gives them on its page: the fixtures have a check that started.
-	if caps.CheckTimes && pr && !slices.ContainsFunc(page.Checks, func(c wire.ForgeCheck) bool { return c.StartedAt != nil }) {
+	if caps.CheckTimes && pr && !slices.ContainsFunc(checks, func(c wire.ForgeCheck) bool { return c.StartedAt != nil }) {
 		t.Errorf("%v: no check has times; caps say checkTimes=true", node)
 	}
-	for _, c := range page.Checks {
+	for _, c := range checks {
 		switch {
 		case !caps.CheckTimes && (c.StartedAt != nil || c.FinishedAt != nil):
 			t.Errorf("%v: check %s has times; caps say checkTimes=false", node, c.Name)
@@ -1153,7 +1233,7 @@ func conformItemActions(t *testing.T, caps forgeCaps, i wire.ForgeItem, actions 
 		a = caps.PR
 	}
 	for _, name := range actions {
-		if n := string(name); n != actionAddChild && n != actionBlockedBy && !a.on(n) {
+		if n := string(name); n != actionAddChild && n != actionBlockedBy && n != actionPriority && n != actionHold && !a.on(n) {
 			t.Errorf("%v: actions has %s, which caps say no to", i.Node, n)
 		}
 	}
@@ -1173,6 +1253,11 @@ func conformItemActions(t *testing.T, caps forgeCaps, i wire.ForgeItem, actions 
 			has(wire.ForgeActionCloseNotPlanned) != a.CloseNotPlanned {
 			t.Errorf("%v (open): actions %v", i.Node, actions)
 		}
+	}
+	// An issue's priority and on hold are its forge's (#6092): on an issue where caps say so, never on a pull request.
+	issue := i.Node.Kind == lineage.KindIssue
+	if has(wire.ForgeActionPriority) != (caps.Priority && issue) || has(wire.ForgeActionHold) != (caps.Hold && issue) {
+		t.Errorf("%v: priority and hold in actions %v, caps say %v, %v", i.Node, actions, caps.Priority, caps.Hold)
 	}
 	if i.Node.Kind == lineage.KindPR && (has(wire.ForgeActionAddChild) || has(wire.ForgeActionBlockedBy)) {
 		t.Errorf("%v: a pull request with a plan's actions %v", i.Node, actions)

@@ -86,18 +86,7 @@ func TestEachViewHasAToolThatFeedsItAndAPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	visibility := map[string][]any{}
-	feeds := map[string]string{}
-	for _, tool := range tools.Tools {
-		ui, _ := tool.Meta["ui"].(map[string]any)
-		visibility[tool.Name], _ = ui["visibility"].([]any)
-		if uri, _ := ui["resourceUri"].(string); uri != "" {
-			feeds[tool.Name] = uri
-			if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
-				t.Errorf("%s feeds a view but is not read-only, so it can't feed a pin", tool.Name)
-			}
-		}
-	}
+	visibility, feeds := toolsUI(t, tools.Tools)
 	for name, uri := range map[string]string{"show_pull_requests": pullsURI, "show_issues": issuesURI, "show_pull_request": prURI} {
 		if feeds[name] != uri {
 			t.Errorf("%s feeds %q, not %s", name, feeds[name], uri)
@@ -114,29 +103,56 @@ func TestEachViewHasAToolThatFeedsItAndAPage(t *testing.T) {
 		if err != nil || len(r.Contents) != 1 {
 			t.Fatalf("%s: %v", uri, err)
 		}
-		html := r.Contents[0].Text
-		if r.Contents[0].MIMEType != viewMime || !strings.HasPrefix(html, "<!doctype html>") || strings.Contains(html, "/*common.css*/") ||
-			strings.Contains(html, "/*bridge.js*/") || strings.Contains(html, "/*lineage.js*/") || !strings.Contains(html, "const bridge") {
-			t.Errorf("%s is not a whole page", uri)
+		checkViewPage(t, uri, r.Contents[0], visibility)
+	}
+}
+
+// toolsUI is each tool's visibility, and the view each tool that feeds one feeds; a tool that
+// feeds a view must be read-only.
+func toolsUI(t *testing.T, tools []*mcp.Tool) (visibility map[string][]any, feeds map[string]string) {
+	t.Helper()
+	visibility, feeds = map[string][]any{}, map[string]string{}
+	for _, tool := range tools {
+		ui, _ := tool.Meta["ui"].(map[string]any)
+		visibility[tool.Name], _ = ui["visibility"].([]any)
+		uri, _ := ui["resourceUri"].(string)
+		if uri == "" {
+			continue
 		}
-		if uri != issuesURI && !strings.Contains(html, "const prPage") {
-			t.Errorf("%s has no pull request page in it", uri)
+		feeds[tool.Name] = uri
+		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+			t.Errorf("%s feeds a view but is not read-only, so it can't feed a pin", tool.Name)
 		}
-		// Its diff names its forge, so the app's diff says Open on Bitbucket (#4128).
-		if uri != issuesURI && !strings.Contains(html, `site: "Bitbucket"`) {
-			t.Errorf("%s asks the app's diff with no site: it says Open on GitHub", uri)
+	}
+	return visibility, feeds
+}
+
+// checkViewPage checks that the view at uri is a whole page of Bitbucket's that calls only
+// tools this server has.
+func checkViewPage(t *testing.T, uri string, page *mcp.ResourceContents, visibility map[string][]any) {
+	t.Helper()
+	html := page.Text
+	if page.MIMEType != viewMime || !strings.HasPrefix(html, "<!doctype html>") || strings.Contains(html, "/*common.css*/") ||
+		strings.Contains(html, "/*bridge.js*/") || strings.Contains(html, "/*lineage.js*/") || !strings.Contains(html, "const bridge") {
+		t.Errorf("%s is not a whole page", uri)
+	}
+	if uri != issuesURI && !strings.Contains(html, "const prPage") {
+		t.Errorf("%s has no pull request page in it", uri)
+	}
+	// Its diff names its forge, so the app's diff says Open on Bitbucket (#4128).
+	if uri != issuesURI && !strings.Contains(html, `site: "Bitbucket"`) {
+		t.Errorf("%s asks the app's diff with no site: it says Open on GitHub", uri)
+	}
+	// Every tool a page calls is one this server has.
+	for _, called := range []string{"show_pull_requests", "show_pull_request", "show_pull_request_diff", "failed_log", "retry_pipeline",
+		"comment_on_pull_request", "approve_pull_request", "merge_pull_request", "show_issues", "show_issue_details"} {
+		if strings.Contains(html, `"`+called+`"`) && visibility[called] == nil {
+			t.Errorf("%s calls %s, which is not a tool", uri, called)
 		}
-		// Every tool a page calls is one this server has.
-		for _, called := range []string{"show_pull_requests", "show_pull_request", "show_pull_request_diff", "failed_log", "retry_pipeline",
-			"comment_on_pull_request", "approve_pull_request", "merge_pull_request", "show_issues", "show_issue_details"} {
-			if strings.Contains(html, `"`+called+`"`) && visibility[called] == nil {
-				t.Errorf("%s calls %s, which is not a tool", uri, called)
-			}
-		}
-		for _, other := range []string{"GitLab", "GitHub", "Forgejo", "merge request", "project"} {
-			if strings.Contains(html, other) {
-				t.Errorf("%s still speaks of %s", uri, other)
-			}
+	}
+	for _, other := range []string{"GitLab", "GitHub", "Forgejo", "merge request", "project"} {
+		if strings.Contains(html, other) {
+			t.Errorf("%s still speaks of %s", uri, other)
 		}
 	}
 }

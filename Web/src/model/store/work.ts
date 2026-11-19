@@ -14,6 +14,7 @@ import { PendingWrites } from "../pendingWrites";
 import { type Sending } from "../sending";
 import { type Inverse } from "../changeUndo";
 import { type MachineJoin } from "../machineRow";
+import { type MachineSessionCounts } from "../machineSessions";
 import { type NewMachineAsk, historyEntriesCap, historyTurnsCap, entriesTrimmedAt, type ByHost, keepingLatestByID, storedTurnOf, type UsageRead } from "./shared";
 import { mixin } from "./mixin";
 import { chatStateMethods } from "./chatState";
@@ -48,6 +49,14 @@ export class Work {
   readonly moveFollows = new Map<string, () => void>();
 
   readonly agents = signal<ByHost<Agent>>({});
+
+  /**
+   * The working and waiting counts of each machine with a session working or waiting (#6158); a
+   * machine with none is absent. `setAgents` sets it only when a count moves, so the sidebar's
+   * Machines group and the Machines page read it, not `agents`, and a change to a session that
+   * moves no count redraws neither.
+   */
+  readonly sessionsByMachine = signal<Record<string, MachineSessionCounts>>({});
 
   readonly permissions = signal<ByHost<PermissionRequest>>({});
 
@@ -543,6 +552,10 @@ export class Work {
   /** The New Machine sheet (#4634), or null while it is shut: on a provider (the default one when none), or opened
    * again on the choices of a make the provider refused, with its reason. */
   readonly newMachineAsk = signal<NewMachineAsk | null>(null);
+
+  /** What a machine's page says of the warm pool it came from (#5354), by the machine's name: the pool replaced it, or
+   * no pool machine was ready and a new one is being made. */
+  readonly machinePoolNotes = signal<Readonly<Record<string, string>>>({});
 
   /** Prompts and starts the control plane keeps for a stopped workspace (#691 US3), every host's. */
   readonly kept = signal<readonly KeptRequest[]>([]);

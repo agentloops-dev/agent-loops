@@ -329,18 +329,7 @@ func (m *Mailbox) Folders(ctx context.Context) ([]Folder, error) {
 // RETURN (SPECIAL-USE) (RFC 6154), it asks for the roles too, which some servers give only then.
 func folders(c *imapclient.Client) ([]Folder, error) {
 	counts := &imap.StatusOptions{NumMessages: true, NumUnseen: true}
-	caps := c.Caps()
-	options := &imap.ListOptions{}
-	if caps.Has(imap.CapListStatus) || caps.Has(imap.CapIMAP4rev2) {
-		options.ReturnStatus = counts
-	}
-	if caps.Has(imap.CapIMAP4rev2) || caps.Has(imap.CapSpecialUse) && caps.Has(imap.CapListExtended) {
-		options.ReturnSpecialUse = true
-	}
-	if options.ReturnStatus == nil && !options.ReturnSpecialUse {
-		options = nil
-	}
-	list, err := c.List("", "*", options).Collect()
+	list, err := c.List("", "*", listOptions(c.Caps(), counts)).Collect()
 	if err != nil {
 		return nil, err
 	}
@@ -352,21 +341,7 @@ func folders(c *imapclient.Client) ([]Folder, error) {
 		if slices.Contains(l.Attrs, imap.MailboxAttrNoSelect) || slices.Contains(l.Attrs, imap.MailboxAttrNonExistent) {
 			continue
 		}
-		f := Folder{Name: l.Mailbox}
-		if strings.EqualFold(l.Mailbox, "INBOX") {
-			f.Role = "inbox"
-		}
-		for _, a := range l.Attrs {
-			if r, ok := roles[a]; ok {
-				f.Role = r
-			}
-		}
-		if f.Role == "" && slices.Contains(junkNames, strings.ToLower(l.Mailbox)) {
-			f.Role = "junk" // a server without SPECIAL-USE, or one that names no role
-		}
-		if f.Role == "" && slices.Contains(sentNames, strings.ToLower(l.Mailbox)) {
-			f.Role = "sent" // read_messages reads a thread's answers there (threads.go)
-		}
+		f := Folder{Name: l.Mailbox, Role: folderRole(l)}
 		status := l.Status
 		if status == nil {
 			if status, err = c.Status(l.Mailbox, counts).Wait(); err != nil {
@@ -382,6 +357,42 @@ func folders(c *imapclient.Client) ([]Folder, error) {
 		out = append(out, f)
 	}
 	return out, nil
+}
+
+// listOptions is the LIST options the server's caps take: the counts with LIST-STATUS, and
+// the roles with RETURN (SPECIAL-USE); nil when it takes neither.
+func listOptions(caps imap.CapSet, counts *imap.StatusOptions) *imap.ListOptions {
+	options := &imap.ListOptions{}
+	if caps.Has(imap.CapListStatus) || caps.Has(imap.CapIMAP4rev2) {
+		options.ReturnStatus = counts
+	}
+	if caps.Has(imap.CapIMAP4rev2) || caps.Has(imap.CapSpecialUse) && caps.Has(imap.CapListExtended) {
+		options.ReturnSpecialUse = true
+	}
+	if options.ReturnStatus == nil && !options.ReturnSpecialUse {
+		return nil
+	}
+	return options
+}
+
+// folderRole is the folder's role: from its SPECIAL-USE attributes, else from its name.
+func folderRole(l *imap.ListData) string {
+	role := ""
+	if strings.EqualFold(l.Mailbox, "INBOX") {
+		role = "inbox"
+	}
+	for _, a := range l.Attrs {
+		if r, ok := roles[a]; ok {
+			role = r
+		}
+	}
+	if role == "" && slices.Contains(junkNames, strings.ToLower(l.Mailbox)) {
+		role = "junk" // a server without SPECIAL-USE, or one that names no role
+	}
+	if role == "" && slices.Contains(sentNames, strings.ToLower(l.Mailbox)) {
+		role = "sent" // read_messages reads a thread's answers there (threads.go)
+	}
+	return role
 }
 
 func limited(limit int) uint32 {

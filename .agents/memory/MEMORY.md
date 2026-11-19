@@ -11,6 +11,7 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Brief, not AGENTS.md, for app tools](brief-not-agents-md-for-app-tools.md) — AGENTS.md/skills are this repo only; a new app tool gets a gated brief line
 - [Channels are MCP servers](channels-are-mcp-servers.md) — Alex 2026-10-16: no built-in Slack/Discord adapters; #1223 removed Slack + Need…
 - [Animated top inset loops AppKit layout](animated-top-inset-loops-appkit-layout.md) — #5189: no animated height in the Mac chat's top inset; repro at 1058x662, presses 0.3–0.6 s apart while working
+- [Toolbar reading layout loops AppKit](toolbar-reading-layout-loops-appkit.md) — #5947: no measured width in a toolbar, focused values class or Equatable; read the crash note's exception backtrace
 - [chat-transcript-scroll-geometry-lies](chat-transcript-scroll-geometry-lies.md) — ChatTranscript's LazyVStack re-measures every frame, so geometry can't tell a reader's scroll from the stack; 
 - [Check every check before arming](check-go-darwin-before-arming.md) — auto-merge ignores non-required checks; #3503 broke main (#3517); go-darwin is in the required `test` since #5645
 - [Go tests on the Mac host](go-tests-on-the-mac-host.md) — #4709: go.sh clean env, go/tmp TMPDIR, go.mod toolchain, tests skip F_FULLFSYNC
@@ -31,7 +32,7 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Launch the app with a clean environment](launch-the-app-with-a-clean-environment.md) — `open` from this session leaks CLAUDE_* into th…
 - [Lead waits 30m on many events](lead-waits-30m-on-many-events.md) — until_minutes 30; pr.merged + pr.blocked (#5433) + agent.f…
 - [leftover-launchd-jobs-look-like-crashes](leftover-launchd-jobs-look-like-crashes.md) — An app that "keeps crashing" every ~60s with no crash report is usually a leftover launchctl-submitted helper 
-- [Local first, no cloud login](local-first-no-cloud-login.md) — every cloud service has a local version; plain files, no SQLite (2026-10-1…
+- [Local first, no cloud login](local-first-no-cloud-login.md) — every cloud service has a local version; backend store is plain files, no SQLite; client caches may use SQLite/IndexedDB (#6253)
 - [Mac is for engineers, no reports](mac-is-for-engineers-no-reports.md) — Alex 2026-11-01: reports + other people's data are web only (#3224); Mac = personal usage
 - [mac-swipe-walk-needs-hid-and-a-wide-window](mac-swipe-walk-needs-hid-and-a-wide-window.md) — Walking a trackpad swipe on a scratch window needs HID-tap scroll events with the window in front, and a windo
 - [Machines and groups](machines-and-groups.md) — Alex 2026-10-15: one user per machine, scopes control plane/user/project, approve-to-join…
@@ -87,3 +88,6 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Go baseline from Linux](go-baseline-from-linux.md) — golangci-lint differs Mac vs Linux; --baseline on a Mac drops Linux-only entries (#5682)
 - [Homebrew Node is not the pinned Node](homebrew-node-is-not-the-pinned-node.md) — system zlib gzips to other sizes than CI; checks.sh attest does not attest web tasks with it (#5774)
 - [A press on a sidebar header breaks layout](sidebar-section-header-press-breaks-layout.md) — #5567: AXPress on a Section header stood the window 41,378 pt tall; open pages from a tagged row
+- [A split column's least size is measured at no width](split-column-least-size-measured-at-no-width.md) — #5932: a foot banner's fixed-height text stood the split view 2116 pt tall; `.columnFloor()` on every column; repro: kill the scratch daemon
+- [Task tuples miscompile at -O](task-tuple-returns-miscompile.md) — #5946: a tuple returned from both a do that awaits and its catch loses its key in Swift 6.4.2 -O and crashed the window in completeFuture/TaskGroup::offer; use Result.catching, one return
+- [agentsd stacks on SIGUSR1](agentsd-stacks-on-sigusr1.md) — #6260: `kill -USR1` logs every goroutine to daemon.log, no stop; uplink logs handlers over 2 s

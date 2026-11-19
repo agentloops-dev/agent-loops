@@ -57,7 +57,11 @@ struct MachinePage: View {
             ScrollViewReader { proxy in
                 Form {
                     if let row = model.hosts.controlRows[host], let setup = row.setup {
-                        MachineSetupSection(host: host, row: row, setup: setup)
+                        MachineSetupSection(row: row, setup: setup,
+                                            onRetry: { Task { await model.retrySetup(host) } },
+                                            onDelete: { Task { await model.deleteMachine(host) } }) {
+                            MachineSignInCards(host: host)
+                        }
                         // From a warm pool, or a claim that found it empty (#5366, board 4).
                         if let note = model.machinePoolNotes[row.name], !MachineSetupWords.foldedAway(setup) {
                             Section { Text(note).appText(.supporting).foregroundStyle(.secondary) }
@@ -367,7 +371,7 @@ struct MachineRow: View {
         let dot = MachineDot.of(row, online: !model.hostUnreachable(host),
                                 starting: model.hostsBeingStarted.contains(host))
         let online = dot == .online && !model.diskWarns(host)
-        let words = state ?? (online ? model.machineSessions(host).runningLine : nil)
+        let words = state ?? (online ? model.work.sessionCounts(on: host).runningLine : nil)
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             // A laptop, a cloud or a rack, in its state's colour (#4113): the row has no dot.
             MachineIconView(symbol: MachineIcon.symbol(isThisMac: host == .mac, row: row),
@@ -548,11 +552,11 @@ extension AppModel {
     }
 
     /// Whether the Machines group shows the machine before the rest (#5286): it needs something,
-    /// it is starting, or sessions work or wait for the person there.
+    /// it is starting, or sessions work or wait for the person there. It reads the machine's
+    /// counts, not every agent held, so one agent changing does not redraw the group (P20261117-1).
     func machineIsActive(_ host: MachineRef) -> Bool {
         if need(of: host) != nil || hostsBeingStarted.contains(host) { return true }
-        let sessions = machineSessions(host)
-        return !sessions.agents(.working).isEmpty || !sessions.agents(.waiting).isEmpty
+        return work.sessionCounts(on: host).busy
     }
 
     /// A machine's most urgent need, as its row says it (#3764). Sign-in is what its runtimes

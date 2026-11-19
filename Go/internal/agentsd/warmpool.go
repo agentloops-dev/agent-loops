@@ -18,7 +18,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -250,29 +249,6 @@ type procInfo struct {
 	name   string
 }
 
-// processTable is every process's parent and name. A look costs a few milliseconds, so it
-// is made once a pass, and only when the pool has a runtime to look at.
-func processTable(ctx context.Context) map[int32]procInfo {
-	out := map[int32]procInfo{}
-	pids, err := process.PidsWithContext(ctx)
-	if err != nil {
-		return out
-	}
-	for _, pid := range pids {
-		p, err := process.NewProcessWithContext(ctx, pid)
-		if err != nil {
-			continue
-		}
-		parent, err := p.PpidWithContext(ctx)
-		if err != nil {
-			continue
-		}
-		name, _ := p.NameWithContext(ctx)
-		out[pid] = procInfo{parent: parent, name: name}
-	}
-	return out
-}
-
 // descendantsIn is every process under root, not root itself.
 func descendantsIn(table map[int32]procInfo, root int32) map[int32]bool {
 	children := map[int32][]int32{}
@@ -346,6 +322,10 @@ func backgroundIn(table map[int32]procInfo, root int32, own map[int32]bool, grou
 // backgroundOf is the runtime's background processes, its terminals' first.
 func backgroundOf(s *acp.Session, own map[int32]bool, groups map[int]bool, table map[int32]procInfo) []acp.Command {
 	out := s.Terminals()
+	// An attached runtime has no process of its own to look under (#6143).
+	if s.Pid() <= 0 {
+		return out
+	}
 	seen := map[int32]bool{}
 	for _, c := range out {
 		seen[int32(c.Pid)] = true
@@ -385,16 +365,42 @@ func (d *Daemon) warmPass() {
 	capacity, pressure := d.warmCap(s)
 	hours, idle := backgroundHoursOf(s), releaseAfterOf(s)
 	now := warmNow()
-	type look struct {
-		l       *live
-		session *acp.Session
-		own     map[int32]bool
-		groups  map[int]bool
-		busy    bool
+	looks, es, idles := d.warmLooksLocked(now)
+	if len(looks) == 0 {
+		return
 	}
-	var looks []look
-	var es []warmEntry
-	idles := 0
+	table := processTable(d.ctx)
+	background := map[wire.UUID][]acp.Command{}
+	ended := map[wire.UUID][]acp.Command{}
+	for _, i := range looks {
+		if e, ok := d.warmLookAtLocked(i, table, now, background, ended); ok {
+			es = append(es, e)
+		}
+	}
+	for id, cmds := range ended {
+		d.raiseBackgroundEnded(id, cmds, false)
+	}
+	if idles == 0 {
+		return
+	}
+	for _, r := range warmDecide(es, now, capacity, hours, idle) {
+		d.warmReleaseLocked(r, pressure, hours, background)
+	}
+}
+
+// warmLook is what warmPass saw of one live session, under the session's lock.
+type warmLook struct {
+	l       *live
+	session *acp.Session
+	own     map[int32]bool
+	groups  map[int]bool
+	busy    bool
+}
+
+// warmLooksLocked looks at each live agent once. It gives the sessions to look at again,
+// the entries of those that are prewarming, and how many sessions are idle. d.warmMu is
+// held.
+func (d *Daemon) warmLooksLocked(now time.Time) (looks []warmLook, es []warmEntry, idles int) {
 	for _, l := range d.everyLive() {
 		l.mu.Lock()
 		switch {
@@ -411,70 +417,65 @@ func (d *Daemon) warmPass() {
 			if l.warm.groups == nil {
 				l.warm.groups = map[int]bool{}
 			}
-			looks = append(looks, look{l: l, session: l.session, own: l.warm.own, groups: l.warm.groups, busy: busy})
+			looks = append(looks, warmLook{l: l, session: l.session, own: l.warm.own, groups: l.warm.groups, busy: busy})
 		}
 		l.mu.Unlock()
 	}
-	if len(looks) == 0 {
+	return looks, es, idles
+}
+
+// warmLookAtLocked notes one session's background processes in background and ended. It
+// gives the session's entry, and false when the session is busy or changed since the
+// look. d.warmMu is held.
+func (d *Daemon) warmLookAtLocked(i warmLook, table map[int32]procInfo, now time.Time, background, ended map[wire.UUID][]acp.Command) (warmEntry, bool) {
+	l := i.l
+	a := d.Store.Agent(l.id)
+	w := waitOf(a)
+	selfWaking := a != nil && wakesItself(a.RuntimeID)
+	// A turn's look only gathers the groups its commands run in.
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	bg := backgroundOf(i.session, i.own, i.groups, table)
+	if l.session == i.session {
+		// Ended in a turn, the turn saw it end; unless the session waits already.
+		busy := i.busy || l.running || l.inTurn
+		if e := l.pool.noteBackground(bg); e != nil && !selfWaking && (!busy || w != nil) {
+			ended[l.id] = e
+		}
+	}
+	if i.busy || l.session != i.session {
+		return warmEntry{}, false
+	}
+	if len(bg) > 0 {
+		background[l.id] = bg
+	} else if l.pool.background {
+		// Its last process ended: warmIdle starts now.
+		l.pool.quietSince = now
+	}
+	l.pool.background = len(bg) > 0
+	kept := keptForWait(l, i.session, w)
+	return warmEntry{id: l.id, lastUsed: l.pool.lastUsed, quietSince: l.pool.quietSince, background: l.pool.background, kept: kept}, true
+}
+
+// warmReleaseLocked lets go of one session that warmDecide chose, and says why on the
+// record. d.warmMu is held.
+func (d *Daemon) warmReleaseLocked(r warmRelease, pressure string, hours int, background map[wire.UUID][]acp.Command) {
+	l := d.liveIfAny(r.id)
+	if l == nil {
 		return
 	}
-	table := processTable(d.ctx)
-	background := map[wire.UUID][]acp.Command{}
-	ended := map[wire.UUID][]acp.Command{}
-	for _, i := range looks {
-		l := i.l
-		a := d.Store.Agent(l.id)
-		w := waitOf(a)
-		selfWaking := a != nil && wakesItself(a.RuntimeID)
-		// A turn's look only gathers the groups its commands run in.
-		l.mu.Lock()
-		bg := backgroundOf(i.session, i.own, i.groups, table)
-		if l.session == i.session {
-			// Ended in a turn, the turn saw it end; unless the session waits already.
-			busy := i.busy || l.running || l.inTurn
-			if e := l.pool.noteBackground(bg); e != nil && !selfWaking && (!busy || w != nil) {
-				ended[l.id] = e
-			}
-		}
-		if i.busy || l.session != i.session {
-			l.mu.Unlock()
-			continue
-		}
-		if len(bg) > 0 {
-			background[l.id] = bg
-		} else if l.pool.background {
-			// Its last process ended: warmIdle starts now.
-			l.pool.quietSince = now
-		}
-		l.pool.background = len(bg) > 0
-		kept := keptForWait(l, i.session, w)
-		es = append(es, warmEntry{id: l.id, lastUsed: l.pool.lastUsed, quietSince: l.pool.quietSince, background: l.pool.background, kept: kept})
-		l.mu.Unlock()
+	if pressure != "" && !r.background {
+		r.why += "; " + pressure
 	}
-	for id, cmds := range ended {
-		d.raiseBackgroundEnded(id, cmds, false)
+	if w := waitOf(d.Store.Agent(r.id)); w != nil {
+		r.why += "; it waits for " + waitLabel(w) + ", and its next turn continues the conversation"
 	}
-	if idles == 0 {
-		return
+	var bg []acp.Command
+	if r.background {
+		bg = background[r.id]
 	}
-	for _, r := range warmDecide(es, now, capacity, hours, idle) {
-		l := d.liveIfAny(r.id)
-		if l == nil {
-			continue
-		}
-		if pressure != "" && !r.background {
-			r.why += "; " + pressure
-		}
-		if w := waitOf(d.Store.Agent(r.id)); w != nil {
-			r.why += "; it waits for " + waitLabel(w) + ", and its next turn continues the conversation"
-		}
-		var bg []acp.Command
-		if r.background {
-			bg = background[r.id]
-		}
-		if d.releaseWarm(l, r.why, bg, false) && len(bg) > 0 {
-			d.record(r.id, runtimeNote(backgroundNote(hours, bg)))
-		}
+	if d.releaseWarm(l, r.why, bg, false) && len(bg) > 0 {
+		d.record(r.id, runtimeNote(backgroundNote(hours, bg)))
 	}
 }
 
@@ -541,7 +542,7 @@ func (d *Daemon) releaseWarm(l *live, why string, background []acp.Command, inTu
 	log.Printf("warm pool: released %s (%s)", l.id, why)
 	s.Stop()
 	for _, c := range background {
-		endProcess(c.Pid)
+		d.endProcess(c.Pid)
 	}
 	// As the session's watch does for one of its own: it sees the session is not ours.
 	d.dropStandIn(l.id)
@@ -553,13 +554,21 @@ func (d *Daemon) releaseWarm(l *live, why string, background []acp.Command, inTu
 	return true
 }
 
-// endProcess ends a background process: TERM, then KILL if it is still there.
-func endProcess(pid int) {
+// endProcess ends a background process: TERM, then KILL if it is still there 3 s on. The
+// wait is a job of the daemon's, so Shutdown waits for it (#6130), and it ends as soon as
+// the process is gone, so a KILL never goes to a pid used again.
+func (d *Daemon) endProcess(pid int) {
 	if pid <= 1 || syscall.Kill(pid, syscall.SIGTERM) != nil {
 		return
 	}
-	safe.Go("end background process", func() {
-		time.Sleep(3 * time.Second)
+	d.goJobOrNow("end background process", func() {
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if syscall.Kill(pid, 0) != nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 	})
 }

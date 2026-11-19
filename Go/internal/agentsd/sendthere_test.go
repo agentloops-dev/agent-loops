@@ -19,6 +19,35 @@ import (
 // start, and only after the person's yes; a folder there with work of its own, or an
 // offline machine, refuses before the person is asked.
 
+// sendThereFolderStep does one step of machines/sendFolder on this machine's own methods,
+// and adds its name to steps.
+func sendThereFolderStep(d *Daemon, s wire.MachineFolderSend, steps *[]string) (json.RawMessage, error) {
+	var out wire.MachineFolderSent
+	switch {
+	case s.State != nil:
+		*steps = append(*steps, "state")
+		st, err := d.receiveState(*s.State)
+		if err != nil {
+			return nil, err
+		}
+		out.State = &st
+	case s.Upload != nil:
+		*steps = append(*steps, "upload")
+		if err := d.receiveUpload(*s.Upload); err != nil {
+			return nil, err
+		}
+	case s.Receive != nil:
+		*steps = append(*steps, "receive")
+		f, err := d.receive(*s.Receive)
+		if err != nil {
+			return nil, &controllink.AskError{Code: wire.FailureFolderInTheWay, Message: err.Error()}
+		}
+		out.Folder = &f
+	}
+	r, _ := json.Marshal(out)
+	return r, nil
+}
+
 func TestStartSessionSendsTheBranchFirst(t *testing.T) {
 	t.Parallel()
 
@@ -60,30 +89,7 @@ func TestStartSessionSendsTheBranchFirst(t *testing.T) {
 			}
 			var s wire.MachineFolderSend
 			json.Unmarshal(b, &s)
-			var out wire.MachineFolderSent
-			switch {
-			case s.State != nil:
-				steps = append(steps, "state")
-				st, err := d.receiveState(*s.State)
-				if err != nil {
-					return nil, err
-				}
-				out.State = &st
-			case s.Upload != nil:
-				steps = append(steps, "upload")
-				if err := d.receiveUpload(*s.Upload); err != nil {
-					return nil, err
-				}
-			case s.Receive != nil:
-				steps = append(steps, "receive")
-				f, err := d.receive(*s.Receive)
-				if err != nil {
-					return nil, &controllink.AskError{Code: wire.FailureFolderInTheWay, Message: err.Error()}
-				}
-				out.Folder = &f
-			}
-			r, _ := json.Marshal(out)
-			return r, nil
+			return sendThereFolderStep(d, s, &steps)
 		case "machines/startSession":
 			var s wire.MachineSessionStart
 			json.Unmarshal(b, &s)

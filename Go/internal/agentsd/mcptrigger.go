@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,46 +53,63 @@ func mcpTriggerOf(name string, keys map[string]json.RawMessage) (mcpTrigger, boo
 			t.arguments[k] = v
 			continue
 		}
-		var one string
-		var list []json.RawMessage
-		switch {
-		case json.Unmarshal(v, &one) == nil:
-			t.servers = []string{one}
-		case json.Unmarshal(v, &list) == nil && len(list) > 0:
-			for _, e := range list {
-				var s string
-				if json.Unmarshal(e, &s) != nil {
-					return mcpTrigger{}, false
-				}
-				t.servers = append(t.servers, s)
-			}
-		default:
+		servers, ok := mcpTriggerServers(v)
+		if !ok {
 			return mcpTrigger{}, false
 		}
-		for _, s := range t.servers {
-			if !serverNameRule.MatchString(s) {
-				return mcpTrigger{}, false
+		t.servers = servers
+	}
+	mcpTriggerAddBusArguments(t.arguments, name, keys)
+	return t, true
+}
+
+// mcpTriggerServers reads `server:` as a name or a list of names. False when it is neither,
+// or a name breaks the rule for server names.
+func mcpTriggerServers(v json.RawMessage) ([]string, bool) {
+	var servers []string
+	var one string
+	var list []json.RawMessage
+	switch {
+	case json.Unmarshal(v, &one) == nil:
+		servers = []string{one}
+	case json.Unmarshal(v, &list) == nil && len(list) > 0:
+		for _, e := range list {
+			var s string
+			if json.Unmarshal(e, &s) != nil {
+				return nil, false
 			}
+			servers = append(servers, s)
+		}
+	default:
+		return nil, false
+	}
+	for _, s := range servers {
+		if !serverNameRule.MatchString(s) {
+			return nil, false
 		}
 	}
-	// A forge's repo and thing the envelope names, when the trigger's own keys do not.
+	return servers, true
+}
+
+// mcpTriggerAddBusArguments adds to arguments a forge's repo and thing that the envelope
+// names, when the trigger's own keys do not.
+func mcpTriggerAddBusArguments(arguments map[string]json.RawMessage, name string, keys map[string]json.RawMessage) {
 	if bus, _, ok := triggerBus(wire.WorkflowTrigger{Unrecognised: &wire.WorkflowTriggerStoredUnrecognised{Name: name, Keys: keys}}); ok && bus.wide() {
 		given := map[string][]string{}
-		for k := range t.arguments {
+		for k := range arguments {
 			given[k] = nil
 		}
 		for k, vs := range bus.localWhere(given) {
-			if _, had := t.arguments[k]; had || len(vs) != 1 {
+			if _, had := arguments[k]; had || len(vs) != 1 {
 				continue
 			}
 			if n, err := strconv.ParseInt(vs[0], 10, 64); err == nil {
-				t.arguments[k] = mustRaw(n)
+				arguments[k] = mustRaw(n)
 			} else {
-				t.arguments[k] = mustRaw(vs[0])
+				arguments[k] = mustRaw(vs[0])
 			}
 		}
 	}
-	return t, true
 }
 
 // serverTrigger is the trigger as a server's event, when it is one.
@@ -293,6 +312,27 @@ func schemaSubsetProblem(v, schema any, path string) (words string, isKey, bad b
 	if path != "" {
 		here = path + " "
 	}
+	if w, bad := schemaTypeProblem(v, schemaTypesOf(s)); bad {
+		return here + w, false, true
+	}
+	if w, bad := schemaEnumProblem(v, s); bad {
+		return here + w, false, true
+	}
+	if obj, ok := v.(map[string]any); ok {
+		if w, key, bad := schemaObjectProblem(obj, s, path); bad {
+			return w, key, true
+		}
+	}
+	if items, ok := v.([]any); ok {
+		if w, key, bad := schemaItemsProblem(items, s, path); bad {
+			return w, key, true
+		}
+	}
+	return "", false, false
+}
+
+// schemaTypesOf is the schema's "type": one name, or a list of them.
+func schemaTypesOf(s map[string]any) []string {
 	var types []string
 	switch t := s["type"].(type) {
 	case string:
@@ -304,76 +344,93 @@ func schemaSubsetProblem(v, schema any, path string) (words string, isKey, bad b
 			}
 		}
 	}
-	if len(types) > 0 {
-		fitsOne := false
-		for _, t := range types {
-			fitsOne = fitsOne || schemaFits(v, t)
-		}
-		if !fitsOne {
-			var as []string
-			for _, t := range types {
-				as = append(as, schemaArticle(t))
-			}
-			return here + "should be " + strings.Join(as, " or "), false, true
+	return types
+}
+
+// schemaTypeProblem says what v should be when it fits none of the types. No types is no
+// problem.
+func schemaTypeProblem(v any, types []string) (string, bool) {
+	if len(types) == 0 {
+		return "", false
+	}
+	for _, t := range types {
+		if schemaFits(v, t) {
+			return "", false
 		}
 	}
-	if allowed, ok := s["enum"].([]any); ok {
-		found := false
-		var each []string
-		for _, a := range allowed {
-			found = found || schemaEqual(a, v)
-			each = append(each, schemaText(a))
-		}
-		if !found {
-			return here + "is one of " + strings.Join(each, ", ") + ", not " + schemaText(v), false, true
+	var as []string
+	for _, t := range types {
+		as = append(as, schemaArticle(t))
+	}
+	return "should be " + strings.Join(as, " or "), true
+}
+
+// schemaEnumProblem says the allowed values when the schema has an "enum" and v is not in it.
+func schemaEnumProblem(v any, s map[string]any) (string, bool) {
+	allowed, ok := s["enum"].([]any)
+	if !ok {
+		return "", false
+	}
+	found := false
+	var each []string
+	for _, a := range allowed {
+		found = found || schemaEqual(a, v)
+		each = append(each, schemaText(a))
+	}
+	if found {
+		return "", false
+	}
+	return "is one of " + strings.Join(each, ", ") + ", not " + schemaText(v), true
+}
+
+// schemaObjectProblem is the first problem of an object: a needed key that is not there, a
+// key the schema does not allow, or a problem in a key's value.
+func schemaObjectProblem(obj, s map[string]any, path string) (words string, isKey, bad bool) {
+	props, _ := s["properties"].(map[string]any)
+	for _, r := range asList(s["required"]) {
+		if k, ok := r.(string); ok {
+			if _, there := obj[k]; !there {
+				return k + " is needed", path == "", true
+			}
 		}
 	}
-	if obj, ok := v.(map[string]any); ok {
-		props, _ := s["properties"].(map[string]any)
-		for _, r := range asList(s["required"]) {
-			if k, ok := r.(string); ok {
-				if _, there := obj[k]; !there {
-					return k + " is needed", path == "", true
-				}
-			}
-		}
-		keys := make([]string, 0, len(obj))
-		for k := range obj {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		if extra, ok := s["additionalProperties"].(bool); ok && !extra {
-			for _, k := range keys {
-				if _, known := props[k]; !known {
-					return "\"" + k + "\" is not one of its arguments", path == "", true
-				}
-			}
-		}
+	keys := slices.Sorted(maps.Keys(obj))
+	if extra, ok := s["additionalProperties"].(bool); ok && !extra {
 		for _, k := range keys {
-			inner, ok := props[k]
-			if !ok {
-				continue
-			}
-			p := k
-			if path != "" {
-				p = path + "." + k
-			}
-			if w, key, b := schemaSubsetProblem(obj[k], inner, p); b {
-				return w, key, true
+			if _, known := props[k]; !known {
+				return "\"" + k + "\" is not one of its arguments", path == "", true
 			}
 		}
 	}
-	if items, ok := v.([]any); ok {
-		if inner, ok := s["items"].(map[string]any); ok {
-			base := path
-			if base == "" {
-				base = "the list"
-			}
-			for i, item := range items {
-				if w, key, b := schemaSubsetProblem(item, inner, base+"["+strconv.Itoa(i)+"]"); b {
-					return w, key, true
-				}
-			}
+	for _, k := range keys {
+		inner, ok := props[k]
+		if !ok {
+			continue
+		}
+		p := k
+		if path != "" {
+			p = path + "." + k
+		}
+		if w, key, b := schemaSubsetProblem(obj[k], inner, p); b {
+			return w, key, true
+		}
+	}
+	return "", false, false
+}
+
+// schemaItemsProblem is the first problem of a list's items, when the schema has "items".
+func schemaItemsProblem(items []any, s map[string]any, path string) (words string, isKey, bad bool) {
+	inner, ok := s["items"].(map[string]any)
+	if !ok {
+		return "", false, false
+	}
+	base := path
+	if base == "" {
+		base = "the list"
+	}
+	for i, item := range items {
+		if w, key, b := schemaSubsetProblem(item, inner, base+"["+strconv.Itoa(i)+"]"); b {
+			return w, key, true
 		}
 	}
 	return "", false, false

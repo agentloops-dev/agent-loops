@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"io"
 	"log"
@@ -625,10 +626,21 @@ func (d *Daemon) hostedSend(h *hostedServer, method string, params json.RawMessa
 	case <-timer.C:
 		d.hostedMu.Lock()
 		delete(h.waiting, id)
+		log.Printf("hosted mcp: %s did not answer %s in %s (%s)", h.key.name, method, timeout, d.hostedCopyLocked(h))
 		d.hostedMu.Unlock()
 		return nil, &Error{Code: -32001, Message: h.key.name + " did not answer in time."}
 	}
 	return hostedReplyOf(raw)
+}
+
+// hostedCopyLocked is the copy's state in a few words, for a log line when it does not
+// answer (#5988): its process, its state and what it still owes an answer to.
+func (d *Daemon) hostedCopyLocked(h *hostedServer) string {
+	pid := 0
+	if h.cmd != nil && h.cmd.Process != nil {
+		pid = h.cmd.Process.Pid
+	}
+	return fmt.Sprintf("pid %d, %s, generation %d, initialized %v, %d waiting", pid, h.state, h.generation, h.initialized != nil, len(h.waiting))
 }
 
 // hostedReplyOf is the server's answer: its result, or its error with the error's data. The

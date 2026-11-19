@@ -159,13 +159,16 @@ func TestAWatchSaysWhichFoldersChanged(t *testing.T) {
 }
 
 // callHearing makes a call and, in the same loop, waits for a notification that ok
-// accepts: one the call sets off can come before its answer, and c.call reads past it.
-func (c *conn) callHearing(t *testing.T, id int, method string, params any, what string, ok func(method string, params json.RawMessage) bool) {
+// accepts: one the call sets off can come before its answer, and c.call reads past it. A
+// call that starts a turn answers after the turn has begun on its own goroutine, so an
+// in-process fake runtime (#6143) can ask its card first (#6251). It is the call's result.
+func (c *conn) callHearing(t *testing.T, id int, method string, params any, what string, ok func(method string, params json.RawMessage) bool) json.RawMessage {
 	t.Helper()
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 	c.send(string(b))
+	var result json.RawMessage
 	answered, heard := false, false
-	for deadline := time.After(waitLimit(t)); !answered || !heard; {
+	for deadline := afterLimit(t); !answered || !heard; {
 		select {
 		case line := <-c.out:
 			var m message
@@ -175,7 +178,7 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 				if m.Error != nil {
 					t.Fatalf("%s: %v", method, m.Error)
 				}
-				answered = true
+				result, answered = m.Result, true
 			case m.Method != "" && !heard:
 				heard = ok(m.Method, m.Params)
 			}
@@ -183,6 +186,7 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 			waitFailed(t, "%s: answered %v, heard %s %v", method, answered, what, heard)
 		}
 	}
+	return result
 }
 
 func TestATerminal(t *testing.T) {

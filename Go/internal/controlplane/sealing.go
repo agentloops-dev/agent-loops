@@ -113,55 +113,81 @@ func (m *Methods) sealingMethod(ctx context.Context, method string, params json.
 	case "sealing/work":
 		return m.s.sealingWork(ctx, user, from.Client)
 	case "sealing/add":
-		request, err := require[wire.SealingAdd](params, "SealingAdd")
-		if err != nil {
-			return nil, err
-		}
-		if len(request.Items) > mostOrgRoutes+usersettings.MaxSecrets {
-			return nil, fail(invalidParams, "Too many items.")
-		}
-		routes := false
-		secrets := false
-		for _, item := range request.Items {
-			switch item.Item {
-			case wire.SealingItemKindOrgRoute:
-				if !m.s.isAdmin(user) {
-					return nil, fail(notPermitted, "Only an admin can seal the organisation's routes.")
-				}
-				added, err := m.s.addRouteCopies(ctx, item)
-				if err != nil {
-					return nil, err
-				}
-				if added {
-					routes = true
-					m.s.log(fmt.Sprintf("org route %s sealed again for %d more", item.ID, len(item.Values)))
-					m.s.announce("orgRoutesChanged", item.ID, user)
-				}
-			case wire.SealingItemKindUserSecret:
-				values := map[string]wire.SealedEnvelope{}
-				for recipient, byField := range item.Values {
-					if e, ok := byField["value"]; ok && len(byField) == 1 {
-						values[recipient] = e
-					}
-				}
-				added, err := m.s.users.AddSealed(ctx, user, item.ID, item.Version, values, recipientIDs(m.s.userRecipients(user)))
-				if err != nil {
-					return nil, userFailure(err)
-				}
-				secrets = secrets || added
-			default:
-				return nil, fail(invalidParams, "%q is not something to seal.", item.Item)
-			}
-		}
-		if routes {
-			m.s.orgRoutesChangedHere()
-		}
-		if secrets {
-			m.s.userChanged(user, nil, true, from.Client)
-		}
-		return wire.Empty{}, nil
+		return m.sealingAdd(ctx, user, params, from)
 	}
 	return nil, notFound(method)
+}
+
+// sealingAdd is sealing/add: it keeps the copies a client sealed of the organisation's
+// routes and of the person's own secrets, then tells who must know.
+func (m *Methods) sealingAdd(ctx context.Context, user string, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.SealingAdd](params, "SealingAdd")
+	if err != nil {
+		return nil, err
+	}
+	if len(request.Items) > mostOrgRoutes+usersettings.MaxSecrets {
+		return nil, fail(invalidParams, "Too many items.")
+	}
+	routes := false
+	secrets := false
+	for _, item := range request.Items {
+		switch item.Item {
+		case wire.SealingItemKindOrgRoute:
+			added, err := m.sealOrgRoute(ctx, user, item)
+			if err != nil {
+				return nil, err
+			}
+			routes = routes || added
+		case wire.SealingItemKindUserSecret:
+			added, err := m.sealUserSecret(ctx, user, item)
+			if err != nil {
+				return nil, err
+			}
+			secrets = secrets || added
+		default:
+			return nil, fail(invalidParams, "%q is not something to seal.", item.Item)
+		}
+	}
+	if routes {
+		m.s.orgRoutesChangedHere()
+	}
+	if secrets {
+		m.s.userChanged(user, nil, true, from.Client)
+	}
+	return wire.Empty{}, nil
+}
+
+// sealOrgRoute keeps an admin's copies of one organisation route, and says whether it
+// added any.
+func (m *Methods) sealOrgRoute(ctx context.Context, user string, item wire.SealingAddItem) (bool, error) {
+	if !m.s.isAdmin(user) {
+		return false, fail(notPermitted, "Only an admin can seal the organisation's routes.")
+	}
+	added, err := m.s.addRouteCopies(ctx, item)
+	if err != nil {
+		return false, err
+	}
+	if added {
+		m.s.log(fmt.Sprintf("org route %s sealed again for %d more", item.ID, len(item.Values)))
+		m.s.announce("orgRoutesChanged", item.ID, user)
+	}
+	return added, nil
+}
+
+// sealUserSecret keeps the copies of one of the person's secrets, and says whether it
+// added any.
+func (m *Methods) sealUserSecret(ctx context.Context, user string, item wire.SealingAddItem) (bool, error) {
+	values := map[string]wire.SealedEnvelope{}
+	for recipient, byField := range item.Values {
+		if e, ok := byField["value"]; ok && len(byField) == 1 {
+			values[recipient] = e
+		}
+	}
+	added, err := m.s.users.AddSealed(ctx, user, item.ID, item.Version, values, recipientIDs(m.s.userRecipients(user)))
+	if err != nil {
+		return false, userFailure(err)
+	}
+	return added, nil
 }
 
 // sealingWork is sealing/work for one client: each value it has a copy of whose
@@ -228,28 +254,9 @@ func (s *Service) addRouteCopies(ctx context.Context, item wire.SealingAddItem) 
 		if tag == "" || item.Version != record.SealVersion || item.Version != deref(r.SealVersion) {
 			return false, nil
 		}
-		allowed := recipientIDs(s.routeRecipients(r.Groups))
-		next := orgSecretRecord{ID: r.ID, SealVersion: record.SealVersion, Sealed: map[string]map[string]wire.SealedEnvelope{}}
-		for recipient, byField := range record.Sealed {
-			if allowed[recipient] {
-				next.Sealed[recipient] = byField
-			}
-		}
-		added := false
-		for recipient, byField := range item.Values {
-			if !allowed[recipient] || hasFields(next.Sealed[recipient], r.SecretFields) || !hasFields(byField, r.SecretFields) {
-				continue
-			}
-			for _, e := range byField {
-				if len(e.Encapsulated) != 65 || len(e.Ciphertext) > mostRouteSecret+16 || len(e.Ciphertext) < 17 {
-					return false, fail(invalidParams, "A secret is at most %d KiB.", mostRouteSecret>>10)
-				}
-			}
-			next.Sealed[recipient] = maps.Clone(byField)
-			added = true
-		}
-		if !added {
-			return false, nil
+		next, added, err := s.routeCopiesWith(r, record, item)
+		if err != nil || !added {
+			return false, err
 		}
 		if len(next.Sealed) > mostRecipients {
 			return false, fail(invalidParams, "A key is sealed to at most %d machines and apps.", mostRecipients)
@@ -262,6 +269,40 @@ func (s *Service) addRouteCopies(ctx context.Context, item wire.SealingAddItem) 
 		}
 		return true, nil
 	}
+}
+
+// routeCopiesWith is the route's record with only the copies of its recipients, and the
+// copies the item adds for recipients that had none. It says whether the item added any.
+func (s *Service) routeCopiesWith(r wire.OrgRoute, record orgSecretRecord, item wire.SealingAddItem) (orgSecretRecord, bool, error) {
+	allowed := recipientIDs(s.routeRecipients(r.Groups))
+	next := orgSecretRecord{ID: r.ID, SealVersion: record.SealVersion, Sealed: map[string]map[string]wire.SealedEnvelope{}}
+	for recipient, byField := range record.Sealed {
+		if allowed[recipient] {
+			next.Sealed[recipient] = byField
+		}
+	}
+	added := false
+	for recipient, byField := range item.Values {
+		if !allowed[recipient] || hasFields(next.Sealed[recipient], r.SecretFields) || !hasFields(byField, r.SecretFields) {
+			continue
+		}
+		if err := checkRouteCopy(byField); err != nil {
+			return next, false, err
+		}
+		next.Sealed[recipient] = maps.Clone(byField)
+		added = true
+	}
+	return next, added, nil
+}
+
+// checkRouteCopy fails when a sealed copy is not the size of a route's secret.
+func checkRouteCopy(byField map[string]wire.SealedEnvelope) error {
+	for _, e := range byField {
+		if len(e.Encapsulated) != 65 || len(e.Ciphertext) > mostRouteSecret+16 || len(e.Ciphertext) < 17 {
+			return fail(invalidParams, "A secret is at most %d KiB.", mostRouteSecret>>10)
+		}
+	}
+	return nil
 }
 
 // routeAsk is the key of one recipient's copy of a route at its seal version.

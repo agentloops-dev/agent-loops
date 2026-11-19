@@ -386,33 +386,15 @@ func changeLabels(current []wire.SessionLabel, add, remove []string, folder []wi
 	return changeLabelsAs(wire.SessionLabelOwnerPerson, current, add, remove, folder)
 }
 
-// changeLabelsAs is SessionLabelPolicy.change by an actor: an agent cannot change a label
-// the person gave.
+// changeLabelsAs is SessionLabelPolicy.change by an actor: an agent cannot remove a label
+// the person gave, and its add of one is skipped.
 func changeLabelsAs(actor wire.SessionLabelOwner, current []wire.SessionLabel, add, remove []string, folder []wire.SessionLabel) ([]wire.SessionLabel, error) {
 	ownedByPerson := func(v string) error {
 		return Invalid("The label %s belongs to the person, so an agent cannot change it.", v)
 	}
-	var adding, removing []string
-	for _, v := range add {
-		c, err := cleanedLabel(v)
-		if err != nil {
-			return nil, err
-		}
-		adding = append(adding, c)
-	}
-	addKeys := map[string]bool{}
-	for _, v := range adding {
-		addKeys[labelKey(v)] = true
-	}
-	for _, v := range remove {
-		c, err := cleanedLabel(v)
-		if err != nil {
-			return nil, err
-		}
-		if addKeys[labelKey(c)] {
-			return nil, Invalid("The label %s cannot be added and removed in the same change.", c)
-		}
-		removing = append(removing, c)
+	adding, removing, err := cleanedLabelChange(add, remove)
+	if err != nil {
+		return nil, err
 	}
 	result := append([]wire.SessionLabel{}, current...)
 	for _, v := range removing {
@@ -426,13 +408,44 @@ func changeLabelsAs(actor wire.SessionLabelOwner, current []wire.SessionLabel, a
 			}
 		}
 	}
+	return addLabelsAs(actor, result, adding, folder)
+}
+
+// cleanedLabelChange cleans the labels to add and to remove, and refuses a label that is in both.
+func cleanedLabelChange(add, remove []string) (adding, removing []string, err error) {
+	for _, v := range add {
+		c, err := cleanedLabel(v)
+		if err != nil {
+			return nil, nil, err
+		}
+		adding = append(adding, c)
+	}
+	addKeys := map[string]bool{}
+	for _, v := range adding {
+		addKeys[labelKey(v)] = true
+	}
+	for _, v := range remove {
+		c, err := cleanedLabel(v)
+		if err != nil {
+			return nil, nil, err
+		}
+		if addKeys[labelKey(c)] {
+			return nil, nil, Invalid("The label %s cannot be added and removed in the same change.", c)
+		}
+		removing = append(removing, c)
+	}
+	return adding, removing, nil
+}
+
+// addLabelsAs adds each of adding to result by an actor, with the folder's spelling of a
+// label it has. A label result has already is not added again.
+func addLabelsAs(actor wire.SessionLabelOwner, result []wire.SessionLabel, adding []string, folder []wire.SessionLabel) ([]wire.SessionLabel, error) {
 	for _, v := range adding {
 		found := false
 		for i, l := range result {
 			if labelKey(l.Value) == labelKey(v) {
-				if actor == wire.SessionLabelOwnerAgent && l.Owner == wire.SessionLabelOwnerPerson {
-					return nil, ownedByPerson(l.Value)
-				}
+				// An agent's add of a label the person gave changes nothing: it is skipped, and
+				// the person stays its owner (#6177). Only a remove of it is refused.
 				if actor == wire.SessionLabelOwnerPerson {
 					result[i].Owner = wire.SessionLabelOwnerPerson
 				}

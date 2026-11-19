@@ -523,32 +523,51 @@ func (b *backupStore) prune(ctx context.Context, owner, host string, keep int64)
 		drop := []string{}
 		switch {
 		case id == host:
-			if n := len(h.complete) - int(keep); n > 0 {
-				drop = h.complete[:n]
-			}
-			var bytes int64
-			for i := len(h.complete) - 1; i >= len(drop); i-- {
-				bytes += h.bytes[h.complete[i]]
-				if bytes > b.quota && i < len(h.complete)-1 {
-					drop = h.complete[:i+1]
-					break
-				}
-			}
+			drop = b.overKeep(h, keep)
 		case b.records.Host(id) == nil && len(h.complete) > 0 && b.older(h.complete[len(h.complete)-1], now, backupOrphanAge):
 			drop = h.complete
 		}
-		for _, name := range drop {
-			b.store.Delete(ctx, folder+name+".json")
-			for _, k := range h.parts[name] {
-				b.store.Delete(ctx, k)
-			}
-			delete(h.parts, name)
+		b.deleteBackups(ctx, folder, h, drop)
+		b.deleteStrayParts(ctx, h, now)
+	}
+}
+
+// overKeep is the oldest of the host's complete backups past the newest keep, and past
+// backupHostQuota bytes counted from the newest; the newest is always kept.
+func (b *backupStore) overKeep(h *hostBackups, keep int64) []string {
+	drop := []string{}
+	if n := len(h.complete) - int(keep); n > 0 {
+		drop = h.complete[:n]
+	}
+	var bytes int64
+	for i := len(h.complete) - 1; i >= len(drop); i-- {
+		bytes += h.bytes[h.complete[i]]
+		if bytes > b.quota && i < len(h.complete)-1 {
+			drop = h.complete[:i+1]
+			break
 		}
-		for name, keys := range h.parts {
-			if !contains(h.complete, name) && (b.older(name, now, backupStrayAge) || b.ahead(name, now)) {
-				for _, k := range keys {
-					b.store.Delete(ctx, k)
-				}
+	}
+	return drop
+}
+
+// deleteBackups deletes each named backup of the host: its .json first, then its parts.
+func (b *backupStore) deleteBackups(ctx context.Context, folder string, h *hostBackups, drop []string) {
+	for _, name := range drop {
+		b.store.Delete(ctx, folder+name+".json")
+		for _, k := range h.parts[name] {
+			b.store.Delete(ctx, k)
+		}
+		delete(h.parts, name)
+	}
+}
+
+// deleteStrayParts deletes the parts of a backup with no .json that is a day old, or
+// named for a time not yet come.
+func (b *backupStore) deleteStrayParts(ctx context.Context, h *hostBackups, now time.Time) {
+	for name, keys := range h.parts {
+		if !contains(h.complete, name) && (b.older(name, now, backupStrayAge) || b.ahead(name, now)) {
+			for _, k := range keys {
+				b.store.Delete(ctx, k)
 			}
 		}
 	}

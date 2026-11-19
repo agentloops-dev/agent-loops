@@ -13,6 +13,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/linuxrelease"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -258,20 +259,7 @@ func JoinCommand(url, pin, person string) string {
 }
 
 // serverFileNames is ServerFiles.names: the only files /v1/servers/ hands out.
-var serverFileNames = func() map[string]bool {
-	names := map[string]bool{"VERSION": true}
-	for _, arch := range []string{"x86_64", "aarch64"} {
-		// The host (Go, #1136; one name since #1381); github-mcp (#1232), linear-mcp (#839), gitlab-mcp (#1629),
-		// email-mcp (#1780), jira-mcp (#3247), slack-mcp (#3475), googlechat-mcp (#1016),
-		// whatsapp-mcp (#1352), sentry-mcp (#3583), betterstack-mcp (#3655), forgejo-mcp (#1753),
-		// bitbucket-mcp (#2828), azuredevops-mcp (#2829), azureboards-mcp (#3804).
-		for _, program := range []string{"agentsd", "github-mcp", "linear-mcp", "gitlab-mcp", "email-mcp", "jira-mcp", "slack-mcp", "googlechat-mcp", "whatsapp-mcp", "sentry-mcp", "betterstack-mcp", "forgejo-mcp", "bitbucket-mcp", "azuredevops-mcp", "azureboards-mcp"} {
-			names[program+"-linux-"+arch] = true
-			names[program+"-linux-"+arch+".sha256"] = true
-		}
-	}
-	return names
-}()
+var serverFileNames = linuxrelease.FileNames
 
 // ServerFolder is ServerFiles.folder: AGENTS_CONTROL_SERVERS, the app bundle's
 // Resources/servers beside Helpers/agents-control, or a container's /servers; the first

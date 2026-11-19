@@ -11,101 +11,120 @@ import (
 // MARK: Users
 
 func (s *Server) users(w http.ResponseWriter, r *http.Request, c Caller, id string, body []byte) {
-	ctx := r.Context()
 	switch {
 	case id == "" && r.Method == http.MethodGet:
-		clauses, err := ParseFilter(r.URL.Query().Get("filter"))
-		if err == nil {
-			err = onlyAttrs(clauses, userFilters)
-		}
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		start, count, err := page(r)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		matched, e := s.Directory.Users(ctx, c.Provider, func(u User) bool { return userMatches(u, clauses) })
-		if e != nil {
-			writeError(w, asError(e))
-			return
-		}
-		var resources []any
-		for i := start - 1; i < len(matched) && len(resources) < count; i++ {
-			resources = append(resources, shape(r, s.userMap(matched[i])))
-		}
-		writeJSON(w, http.StatusOK, listResponse(resources, len(matched), start))
+		s.listUsers(w, r, c)
 	case id == "" && r.Method == http.MethodPost:
-		m, err := readJSON(body)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		u, err := userFrom(m)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		made, e := s.Directory.CreateUser(ctx, c, u)
-		if e != nil {
-			s.refused(r, e)
-			writeError(w, asError(e))
-			return
-		}
-		w.Header().Set("Location", s.base()+"/Users/"+made.ID)
-		writeJSON(w, http.StatusCreated, s.userMap(*made))
+		s.createUser(w, r, c, body)
 	case id == "":
 		writeError(w, Errorf(http.StatusMethodNotAllowed, "", "%s is not supported on /Users.", r.Method))
 	default:
-		u, e := s.Directory.User(ctx, c.Provider, id)
-		if e != nil {
+		s.oneUser(w, r, c, id, body)
+	}
+}
+
+// listUsers answers GET /Users: a page of the users that match the filter.
+func (s *Server) listUsers(w http.ResponseWriter, r *http.Request, c Caller) {
+	clauses, err := ParseFilter(r.URL.Query().Get("filter"))
+	if err == nil {
+		err = onlyAttrs(clauses, userFilters)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	start, count, err := page(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	matched, e := s.Directory.Users(r.Context(), c.Provider, func(u User) bool { return userMatches(u, clauses) })
+	if e != nil {
+		writeError(w, asError(e))
+		return
+	}
+	var resources []any
+	for i := start - 1; i < len(matched) && len(resources) < count; i++ {
+		resources = append(resources, shape(r, s.userMap(matched[i])))
+	}
+	writeJSON(w, http.StatusOK, listResponse(resources, len(matched), start))
+}
+
+// createUser answers POST /Users.
+func (s *Server) createUser(w http.ResponseWriter, r *http.Request, c Caller, body []byte) {
+	m, err := readJSON(body)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	u, err := userFrom(m)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	made, e := s.Directory.CreateUser(r.Context(), c, u)
+	if e != nil {
+		s.refused(r, e)
+		writeError(w, asError(e))
+		return
+	}
+	w.Header().Set("Location", s.base()+"/Users/"+made.ID)
+	writeJSON(w, http.StatusCreated, s.userMap(*made))
+}
+
+// oneUser answers a request on /Users/<id>.
+func (s *Server) oneUser(w http.ResponseWriter, r *http.Request, c Caller, id string, body []byte) {
+	u, e := s.Directory.User(r.Context(), c.Provider, id)
+	if e != nil {
+		writeError(w, asError(e))
+		return
+	}
+	if u == nil {
+		writeError(w, Errorf(http.StatusNotFound, "", "No user %s here.", id))
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, shape(r, s.userMap(*u)))
+	case http.MethodPut, http.MethodPatch:
+		s.replaceUser(w, r, c, u, body)
+	case http.MethodDelete:
+		if e := s.Directory.DeleteUser(r.Context(), c, id); e != nil {
 			writeError(w, asError(e))
 			return
 		}
-		if u == nil {
-			writeError(w, Errorf(http.StatusNotFound, "", "No user %s here.", id))
-			return
-		}
-		switch r.Method {
-		case http.MethodGet:
-			writeJSON(w, http.StatusOK, shape(r, s.userMap(*u)))
-		case http.MethodPut, http.MethodPatch:
-			var m map[string]any
-			var err *Error
-			if r.Method == http.MethodPut {
-				m, err = readJSON(body)
-			} else {
-				m, err = s.patched(s.userMap(*u), body)
-			}
-			if err != nil {
-				writeError(w, err)
-				return
-			}
-			next, err := userFrom(m)
-			if err != nil {
-				writeError(w, err)
-				return
-			}
-			next.ID, next.Created = u.ID, u.Created
-			kept, e := s.Directory.ReplaceUser(ctx, c, next)
-			if e != nil {
-				s.refused(r, e)
-				writeError(w, asError(e))
-				return
-			}
-			writeJSON(w, http.StatusOK, s.userMap(*kept))
-		case http.MethodDelete:
-			if e := s.Directory.DeleteUser(ctx, c, id); e != nil {
-				writeError(w, asError(e))
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			writeError(w, Errorf(http.StatusMethodNotAllowed, "", "%s is not supported on a user.", r.Method))
-		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeError(w, Errorf(http.StatusMethodNotAllowed, "", "%s is not supported on a user.", r.Method))
 	}
+}
+
+// replaceUser answers PUT and PATCH on a user.
+func (s *Server) replaceUser(w http.ResponseWriter, r *http.Request, c Caller, u *User, body []byte) {
+	var m map[string]any
+	var err *Error
+	if r.Method == http.MethodPut {
+		m, err = readJSON(body)
+	} else {
+		m, err = s.patched(s.userMap(*u), body)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	next, err := userFrom(m)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	next.ID, next.Created = u.ID, u.Created
+	kept, e := s.Directory.ReplaceUser(r.Context(), c, next)
+	if e != nil {
+		s.refused(r, e)
+		writeError(w, asError(e))
+		return
+	}
+	writeJSON(w, http.StatusOK, s.userMap(*kept))
 }
 
 func (s *Server) refused(r *http.Request, err error) {
@@ -177,46 +196,8 @@ func userFrom(m map[string]any) (User, *Error) {
 	u.Active = true
 	u.Extra = map[string]json.RawMessage{}
 	for k, v := range m {
-		switch strings.ToLower(k) {
-		case "username":
-			u.UserName, _ = v.(string)
-		case "externalid":
-			u.ExternalID, _ = v.(string)
-		case "displayname":
-			u.DisplayName, _ = v.(string)
-		case "active":
-			a, ok := boolOf(v)
-			if !ok {
-				return u, InvalidValue("active is true or false.")
-			}
-			u.Active = a
-		case "name":
-			if v == nil {
-				continue
-			}
-			var n Name
-			if !fromAny(v, &n) {
-				return u, InvalidValue("name is an object.")
-			}
-			if n != (Name{}) {
-				u.Name = &n
-			}
-		case "emails":
-			if v == nil {
-				continue
-			}
-			if !fromAny(v, &u.Emails) {
-				return u, InvalidValue("emails is a list of {value, type, primary}.")
-			}
-			u.Emails = slices.DeleteFunc(u.Emails, func(e Email) bool { return e.Value == "" })
-		default:
-			if readOnly[strings.ToLower(k)] {
-				continue
-			}
-			data, err := json.Marshal(v)
-			if err == nil {
-				u.Extra[k] = data
-			}
+		if err := setUserAttr(&u, k, v); err != nil {
+			return u, err
 		}
 	}
 	u.UserName = strings.TrimSpace(u.UserName)
@@ -230,6 +211,65 @@ func userFrom(m map[string]any) (User, *Error) {
 		u.Extra = nil
 	}
 	return u, nil
+}
+
+// setUserAttr sets one attribute a client sent on u. An attribute SCIM does not name
+// goes to u.Extra, unless it is read only.
+func setUserAttr(u *User, k string, v any) *Error {
+	switch strings.ToLower(k) {
+	case "username":
+		u.UserName, _ = v.(string)
+	case "externalid":
+		u.ExternalID, _ = v.(string)
+	case "displayname":
+		u.DisplayName, _ = v.(string)
+	case "active":
+		a, ok := boolOf(v)
+		if !ok {
+			return InvalidValue("active is true or false.")
+		}
+		u.Active = a
+	case "name":
+		return setUserName(u, v)
+	case "emails":
+		return setUserEmails(u, v)
+	default:
+		if readOnly[strings.ToLower(k)] {
+			return nil
+		}
+		data, err := json.Marshal(v)
+		if err == nil {
+			u.Extra[k] = data
+		}
+	}
+	return nil
+}
+
+// setUserName sets u.Name from a name object; null or an empty object leaves it unset.
+func setUserName(u *User, v any) *Error {
+	if v == nil {
+		return nil
+	}
+	var n Name
+	if !fromAny(v, &n) {
+		return InvalidValue("name is an object.")
+	}
+	if n != (Name{}) {
+		u.Name = &n
+	}
+	return nil
+}
+
+// setUserEmails sets u.Emails from a list, without the emails that have no value.
+func setUserEmails(u *User, v any) *Error {
+	if v == nil {
+		return nil
+	}
+	if !fromAny(v, &u.Emails) {
+		return InvalidValue("emails is a list of {value, type, primary}.")
+	}
+	u.Emails = slices.DeleteFunc(u.Emails, func(e Email) bool { return e.Value == "" })
+	return nil
 }
 
 func boolOf(v any) (bool, bool) {
@@ -258,103 +298,122 @@ func fromAny(v, into any) bool {
 // MARK: Groups
 
 func (s *Server) groups(w http.ResponseWriter, r *http.Request, c Caller, id string, body []byte) {
-	ctx := r.Context()
 	switch {
 	case id == "" && r.Method == http.MethodGet:
-		clauses, err := ParseFilter(r.URL.Query().Get("filter"))
-		if err == nil {
-			err = onlyAttrs(clauses, groupFilters)
-		}
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		start, count, err := page(r)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		matched, e := s.Directory.Groups(ctx, c.Provider, func(g Group) bool { return groupMatches(g, clauses) })
-		if e != nil {
-			writeError(w, asError(e))
-			return
-		}
-		var resources []any
-		for i := start - 1; i < len(matched) && len(resources) < count; i++ {
-			resources = append(resources, shape(r, s.groupMap(matched[i])))
-		}
-		writeJSON(w, http.StatusOK, listResponse(resources, len(matched), start))
+		s.listGroups(w, r, c)
 	case id == "" && r.Method == http.MethodPost:
-		m, err := readJSON(body)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		g, err := groupFrom(m)
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		made, e := s.Directory.CreateGroup(ctx, c, g)
-		if e != nil {
-			s.refused(r, e)
-			writeError(w, asError(e))
-			return
-		}
-		w.Header().Set("Location", s.base()+"/Groups/"+made.ID)
-		writeJSON(w, http.StatusCreated, s.groupMap(*made))
+		s.createGroup(w, r, c, body)
 	case id == "":
 		writeError(w, Errorf(http.StatusMethodNotAllowed, "", "%s is not supported on /Groups.", r.Method))
 	default:
-		g, e := s.Directory.Group(ctx, c.Provider, id)
-		if e != nil {
+		s.oneGroup(w, r, c, id, body)
+	}
+}
+
+// listGroups answers GET /Groups: a page of the groups that match the filter.
+func (s *Server) listGroups(w http.ResponseWriter, r *http.Request, c Caller) {
+	clauses, err := ParseFilter(r.URL.Query().Get("filter"))
+	if err == nil {
+		err = onlyAttrs(clauses, groupFilters)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	start, count, err := page(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	matched, e := s.Directory.Groups(r.Context(), c.Provider, func(g Group) bool { return groupMatches(g, clauses) })
+	if e != nil {
+		writeError(w, asError(e))
+		return
+	}
+	var resources []any
+	for i := start - 1; i < len(matched) && len(resources) < count; i++ {
+		resources = append(resources, shape(r, s.groupMap(matched[i])))
+	}
+	writeJSON(w, http.StatusOK, listResponse(resources, len(matched), start))
+}
+
+// createGroup answers POST /Groups.
+func (s *Server) createGroup(w http.ResponseWriter, r *http.Request, c Caller, body []byte) {
+	m, err := readJSON(body)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	g, err := groupFrom(m)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	made, e := s.Directory.CreateGroup(r.Context(), c, g)
+	if e != nil {
+		s.refused(r, e)
+		writeError(w, asError(e))
+		return
+	}
+	w.Header().Set("Location", s.base()+"/Groups/"+made.ID)
+	writeJSON(w, http.StatusCreated, s.groupMap(*made))
+}
+
+// oneGroup answers a request on /Groups/<id>.
+func (s *Server) oneGroup(w http.ResponseWriter, r *http.Request, c Caller, id string, body []byte) {
+	g, e := s.Directory.Group(r.Context(), c.Provider, id)
+	if e != nil {
+		writeError(w, asError(e))
+		return
+	}
+	if g == nil {
+		writeError(w, Errorf(http.StatusNotFound, "", "No group %s here.", id))
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, shape(r, s.groupMap(*g)))
+	case http.MethodPut, http.MethodPatch:
+		s.replaceGroup(w, r, c, g, body)
+	case http.MethodDelete:
+		if e := s.Directory.DeleteGroup(r.Context(), c, id); e != nil {
 			writeError(w, asError(e))
 			return
 		}
-		if g == nil {
-			writeError(w, Errorf(http.StatusNotFound, "", "No group %s here.", id))
-			return
-		}
-		switch r.Method {
-		case http.MethodGet:
-			writeJSON(w, http.StatusOK, shape(r, s.groupMap(*g)))
-		case http.MethodPut, http.MethodPatch:
-			var m map[string]any
-			var err *Error
-			if r.Method == http.MethodPut {
-				m, err = readJSON(body)
-			} else {
-				m, err = s.patched(s.groupMap(*g), body)
-			}
-			if err != nil {
-				writeError(w, err)
-				return
-			}
-			next, err := groupFrom(m)
-			if err != nil {
-				writeError(w, err)
-				return
-			}
-			next.ID, next.Created = g.ID, g.Created
-			kept, e := s.Directory.ReplaceGroup(ctx, c, next)
-			if e != nil {
-				s.refused(r, e)
-				writeError(w, asError(e))
-				return
-			}
-			// Entra reads nothing back from a PATCH: 204 would do, but 200 with the group
-			// is what Okta wants, and both take it.
-			writeJSON(w, http.StatusOK, shape(r, s.groupMap(*kept)))
-		case http.MethodDelete:
-			if e := s.Directory.DeleteGroup(ctx, c, id); e != nil {
-				writeError(w, asError(e))
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			writeError(w, Errorf(http.StatusMethodNotAllowed, "", "%s is not supported on a group.", r.Method))
-		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeError(w, Errorf(http.StatusMethodNotAllowed, "", "%s is not supported on a group.", r.Method))
 	}
+}
+
+// replaceGroup answers PUT and PATCH on a group.
+func (s *Server) replaceGroup(w http.ResponseWriter, r *http.Request, c Caller, g *Group, body []byte) {
+	var m map[string]any
+	var err *Error
+	if r.Method == http.MethodPut {
+		m, err = readJSON(body)
+	} else {
+		m, err = s.patched(s.groupMap(*g), body)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	next, err := groupFrom(m)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	next.ID, next.Created = g.ID, g.Created
+	kept, e := s.Directory.ReplaceGroup(r.Context(), c, next)
+	if e != nil {
+		s.refused(r, e)
+		writeError(w, asError(e))
+		return
+	}
+	// Entra reads nothing back from a PATCH: 204 would do, but 200 with the group
+	// is what Okta wants, and both take it.
+	writeJSON(w, http.StatusOK, shape(r, s.groupMap(*kept)))
 }
 
 func (s *Server) groupMap(g Group) map[string]any {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -65,13 +66,7 @@ func TestAgentsTakeTurnsWithAResource(t *testing.T) {
 	if name, ok := lineWaitResource(w, secondAgent.ID); !ok || name != "build" || w.Deadline == nil {
 		t.Fatalf("%+v", w)
 	}
-	var snap wire.LeaseSnapshot
-	json.Unmarshal(c.call(t, 1, "resources/snapshot", nil), &snap)
-	for _, r := range snap.Resources {
-		if r.Name == "build" && (len(r.Line) != 1 || !r.Line[0].IsCallOpen) {
-			t.Fatalf("%+v", r)
-		}
-	}
+	checkBuildLineCallOpen(t, c)
 	if s := d.waitStatus(d.Store.Agent(secondAgent.ID)); s == nil || !strings.HasPrefix(s.Line, "◷ Waiting for your turn with build · since ") {
 		t.Fatalf("%+v", s)
 	}
@@ -79,14 +74,7 @@ func TestAgentsTakeTurnsWithAResource(t *testing.T) {
 	if text, _ := first.tool(4, "release_resource", map[string]any{"name": "Build"}); text != "Released Build. It has gone to “Test it”." {
 		t.Fatal(text)
 	}
-	waitFor(t, "the wake in its chat", func() bool {
-		for _, u := range userMessages(d, secondAgent.ID) {
-			if strings.HasPrefix(u, "The event you were waiting for happened.\n\nlease.granted at ") && strings.Contains(u, "\nresource: build") {
-				return true
-			}
-		}
-		return false
-	})
+	waitForBuildGrantedWake(t, d, secondAgent.ID)
 	if w := d.Store.Agent(secondAgent.ID).EventWait; w == nil || w.Ending == nil || w.Ending.Matched == nil {
 		t.Fatalf("%+v", w)
 	}
@@ -109,6 +97,32 @@ func TestAgentsTakeTurnsWithAResource(t *testing.T) {
 	if text, isErr := first.tool(7, "release_resource", map[string]any{}); !isErr || text != "Nothing was released: say which resource, in `name`." {
 		t.Fatal(text)
 	}
+}
+
+// checkBuildLineCallOpen checks that the snapshot's build has one in line, whose call
+// is still open.
+func checkBuildLineCallOpen(t *testing.T, c *conn) {
+	t.Helper()
+	var snap wire.LeaseSnapshot
+	json.Unmarshal(c.call(t, 1, "resources/snapshot", nil), &snap)
+	for _, r := range snap.Resources {
+		if r.Name == "build" && (len(r.Line) != 1 || !r.Line[0].IsCallOpen) {
+			t.Fatalf("%+v", r)
+		}
+	}
+}
+
+// waitForBuildGrantedWake waits for the lease.granted wake for build in the agent's chat.
+func waitForBuildGrantedWake(t *testing.T, d *Daemon, id wire.UUID) {
+	t.Helper()
+	waitFor(t, "the wake in its chat", func() bool {
+		for _, u := range userMessages(d, id) {
+			if strings.HasPrefix(u, "The event you were waiting for happened.\n\nlease.granted at ") && strings.Contains(u, "\nresource: build") {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 // Stop Waiting, and cancel_wait, take an agent out of the line; a wait that replaces its
@@ -362,6 +376,7 @@ func TestALostPlaceIsKeptOverARestart(t *testing.T) {
 // #4041: an agent whose lease ran out and asks again in time goes after those that waited
 // when it ran out and before those that came later; one that asks too late goes last.
 func TestALeaseThatRanOutKeepsItsPlace(t *testing.T) {
+	flaky.UnderLoad(t, "#6268")
 	fakeRuntimes(t)
 	at := time.Now()
 	setClock := func(m int) { setNowFunc(func() time.Time { return at.Add(time.Duration(m) * time.Minute) }) }

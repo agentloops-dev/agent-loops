@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -172,120 +173,136 @@ func (d *Daemon) prepareWorktree(folder string, choice wire.WorktreeChoice, prom
 // checked out: the folder for a start, or the worktree an agent moves out of
 // (053), so its commits come along.
 func (d *Daemon) prepareWorktreeFrom(folder, from string, choice wire.WorktreeChoice, prompt string) (*wire.AgentWorktree, string, error) {
-	repo, ok := repositoryOf(folder)
-	if !ok {
-		return nil, "", worktreeFailed(folder + " is not in a git repository, so it has no worktrees.")
+	repo, err := findRepository(folder)
+	if err != nil {
+		return nil, "", worktreeFailed(repositoryWords(err,
+			folder+" is not in a git repository, so it has no worktrees.",
+			"No worktree was made: git could not read the repository of "+folder+", so try again. Git said:"))
 	}
 	folderURL := store.FolderURL(folder)
 	switch {
 	case choice.New != nil || choice.Named != nil:
-		wanted := ""
-		if choice.Named != nil {
-			wanted = worktreeName(choice.Named.Value, true, time.Now())
-		} else {
-			wanted = worktreeName(prompt, false, time.Now())
+		return d.prepareNewWorktree(repo, folder, from, choice, prompt, folderURL)
+	case choice.Branch != nil:
+		return d.prepareBranchWorktree(repo, folder, choice.Branch.Value, folderURL)
+	case choice.Existing != nil:
+		return prepareExistingWorktree(repo, folder, choice, folderURL)
+	}
+	return nil, "", Invalid("A worktree choice names new, named, branch or existing.")
+}
+
+// prepareNewWorktree makes a new worktree, on a new branch, from what from has checked out.
+// A named choice keeps its name; a new one takes a name from the prompt.
+func (d *Daemon) prepareNewWorktree(repo repository, folder, from string, choice wire.WorktreeChoice, prompt string, folderURL wire.URL) (*wire.AgentWorktree, string, error) {
+	wanted := ""
+	if choice.Named != nil {
+		wanted = worktreeName(choice.Named.Value, true, time.Now())
+	} else {
+		wanted = worktreeName(prompt, false, time.Now())
+	}
+	head, err := git(from, "rev-parse", "--verify", "-q", "HEAD")
+	if err != nil {
+		return nil, "", worktreeFailed("There is no commit here yet to base a worktree on. Commit something first.")
+	}
+	base := worktreeBase(from, head)
+	if err := ensureExcluded(repo.commonDir); err != nil {
+		return nil, "", err
+	}
+	for attempt := 0; attempt < 20; attempt++ {
+		name := d.reserveName(repo, wanted)
+		root := filepath.Join(repo.worktreesFolder(), name)
+		branch := branchPrefix + name
+		if _, err := git(folder, "show-ref", "--verify", "-q", "refs/heads/"+branch); err == nil {
+			d.release(name)
+			d.reservedMu.Lock()
+			d.reserved[name] = true // taken by a branch: try the next
+			d.reservedMu.Unlock()
+			continue
 		}
-		if _, err := git(from, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
-			return nil, "", worktreeFailed("There is no commit here yet to base a worktree on. Commit something first.")
-		}
-		base, _ := git(from, "rev-parse", "--abbrev-ref", "HEAD")
-		if base == "HEAD" {
-			base, _ = git(from, "rev-parse", "HEAD")
-		}
-		if err := ensureExcluded(repo.commonDir); err != nil {
-			return nil, "", err
-		}
-		for attempt := 0; attempt < 20; attempt++ {
-			name := d.reserveName(repo, wanted)
-			root := filepath.Join(repo.worktreesFolder(), name)
-			branch := branchPrefix + name
-			if _, err := git(folder, "show-ref", "--verify", "-q", "refs/heads/"+branch); err == nil {
-				d.release(name)
+		_, err := git(from, "worktree", "add", "-b", branch, root, "HEAD")
+		d.release(name)
+		if err != nil {
+			if strings.Contains(err.Error(), "already exists") {
 				d.reservedMu.Lock()
-				d.reserved[name] = true // taken by a branch: try the next
+				d.reserved[name] = true
 				d.reservedMu.Unlock()
 				continue
 			}
-			_, err := git(from, "worktree", "add", "-b", branch, root, "HEAD")
-			d.release(name)
-			if err != nil {
-				if strings.Contains(err.Error(), "already exists") {
-					d.reservedMu.Lock()
-					d.reserved[name] = true
-					d.reservedMu.Unlock()
-					continue
-				}
-				return nil, "", worktreeFailed("Could not make a worktree: " + err.Error())
-			}
-			b := branch
-			wt := &wire.AgentWorktree{Name: name, Root: store.FolderURL(canonical(root)), Branch: &b, Folder: folderURL, Base: &base, MadeByApp: true}
-			return wt, workingFolder(canonical(root), repo.prefix), nil
+			return nil, "", worktreeFailed("Could not make a worktree: " + err.Error())
 		}
-		return nil, "", worktreeFailed("Could not find a free name for a worktree like " + wanted + ".")
-	case choice.Branch != nil:
-		b := choice.Branch.Value
-		list, _ := worktreeList(folder)
-		for _, e := range list {
-			if e.branch == b {
-				return nil, "", worktreeFailed(b + " is already checked out in " + e.root + ". Choose that worktree instead.")
-			}
-		}
-		local := false
-		if _, err := git(folder, "show-ref", "--verify", "-q", "refs/heads/"+b); err == nil {
-			local = true
-		}
-		remote := ""
-		if !local {
-			remotes, _ := git(folder, "remote")
-			for _, r := range strings.Fields(remotes) {
-				if _, err := git(folder, "show-ref", "--verify", "-q", "refs/remotes/"+r+"/"+b); err == nil {
-					remote = r
-					break
-				}
-			}
-			if remote == "" {
-				return nil, "", worktreeFailed("There is no branch called " + b + " here.")
-			}
-		}
-		if err := ensureExcluded(repo.commonDir); err != nil {
-			return nil, "", err
-		}
-		name := d.reserveName(repo, folderForBranch(b))
-		defer d.release(name)
-		root := filepath.Join(repo.worktreesFolder(), name)
-		var err error
-		if local {
-			_, err = git(folder, "worktree", "add", root, b)
-		} else {
-			_, err = git(folder, "worktree", "add", "--track", "-b", b, root, remote+"/"+b)
-		}
-		if err != nil {
-			return nil, "", worktreeFailed("Could not make a worktree on " + b + ": " + err.Error())
-		}
-		wt := &wire.AgentWorktree{Name: name, Root: store.FolderURL(canonical(root)), Branch: &b, Folder: folderURL, MadeByApp: true}
+		b := branch
+		wt := &wire.AgentWorktree{Name: name, Root: store.FolderURL(canonical(root)), Branch: &b, Folder: folderURL, Base: base, MadeByApp: true}
 		return wt, workingFolder(canonical(root), repo.prefix), nil
-	case choice.Existing != nil:
-		root := canonical(store.FolderPath(choice.Existing.Value))
-		list, _ := worktreeList(folder)
-		for _, e := range list {
-			if canonical(e.root) != root {
-				continue
-			}
-			if e.prunable || !isDir(root) {
-				return nil, "", &Error{Code: wire.FailureWorktreeMissing, Message: "The worktree " + filepath.Base(root) + " is not there any more."}
-			}
-			var branch *string
-			if e.branch != "" {
-				b := e.branch
-				branch = &b
-			}
-			made := strings.HasPrefix(root, canonical(repo.worktreesFolder())+"/") && branch != nil
-			wt := &wire.AgentWorktree{Name: filepath.Base(root), Root: store.FolderURL(root), Branch: branch, Folder: folderURL, MadeByApp: made}
-			return wt, workingFolder(root, repo.prefix), nil
-		}
-		return nil, "", &Error{Code: wire.FailureNotAWorktree, Message: root + " is not a worktree of " + folder + "'s repository."}
 	}
-	return nil, "", Invalid("A worktree choice names new, named, branch or existing.")
+	return nil, "", worktreeFailed("Could not find a free name for a worktree like " + wanted + ".")
+}
+
+// prepareBranchWorktree makes a worktree on branch b: a local branch, or a new local one
+// that tracks a remote's.
+func (d *Daemon) prepareBranchWorktree(repo repository, folder, b string, folderURL wire.URL) (*wire.AgentWorktree, string, error) {
+	list, _ := worktreeList(folder)
+	for _, e := range list {
+		if e.branch == b {
+			return nil, "", worktreeFailed(b + " is already checked out in " + e.root + ". Choose that worktree instead.")
+		}
+	}
+	local := false
+	if _, err := git(folder, "show-ref", "--verify", "-q", "refs/heads/"+b); err == nil {
+		local = true
+	}
+	remote := ""
+	if !local {
+		remotes, _ := git(folder, "remote")
+		for _, r := range strings.Fields(remotes) {
+			if _, err := git(folder, "show-ref", "--verify", "-q", "refs/remotes/"+r+"/"+b); err == nil {
+				remote = r
+				break
+			}
+		}
+		if remote == "" {
+			return nil, "", worktreeFailed("There is no branch called " + b + " here.")
+		}
+	}
+	if err := ensureExcluded(repo.commonDir); err != nil {
+		return nil, "", err
+	}
+	name := d.reserveName(repo, folderForBranch(b))
+	defer d.release(name)
+	root := filepath.Join(repo.worktreesFolder(), name)
+	var err error
+	if local {
+		_, err = git(folder, "worktree", "add", root, b)
+	} else {
+		_, err = git(folder, "worktree", "add", "--track", "-b", b, root, remote+"/"+b)
+	}
+	if err != nil {
+		return nil, "", worktreeFailed("Could not make a worktree on " + b + ": " + err.Error())
+	}
+	wt := &wire.AgentWorktree{Name: name, Root: store.FolderURL(canonical(root)), Branch: &b, Folder: folderURL, MadeByApp: true}
+	return wt, workingFolder(canonical(root), repo.prefix), nil
+}
+
+// prepareExistingWorktree is the worktree of the folder's repository that the choice names.
+func prepareExistingWorktree(repo repository, folder string, choice wire.WorktreeChoice, folderURL wire.URL) (*wire.AgentWorktree, string, error) {
+	root := canonical(store.FolderPath(choice.Existing.Value))
+	list, _ := worktreeList(folder)
+	for _, e := range list {
+		if canonical(e.root) != root {
+			continue
+		}
+		if e.prunable || !isDir(root) {
+			return nil, "", &Error{Code: wire.FailureWorktreeMissing, Message: "The worktree " + filepath.Base(root) + " is not there any more."}
+		}
+		var branch *string
+		if e.branch != "" {
+			b := e.branch
+			branch = &b
+		}
+		made := strings.HasPrefix(root, canonical(repo.worktreesFolder())+"/") && branch != nil
+		wt := &wire.AgentWorktree{Name: filepath.Base(root), Root: store.FolderURL(root), Branch: branch, Folder: folderURL, MadeByApp: made}
+		return wt, workingFolder(root, repo.prefix), nil
+	}
+	return nil, "", &Error{Code: wire.FailureNotAWorktree, Message: root + " is not a worktree of " + folder + "'s repository."}
 }
 
 // reserveName is WorktreeName.next over the worktrees folder and the names being made.
@@ -324,6 +341,28 @@ func undoWorktree(choice wire.WorktreeChoice, wt *wire.AgentWorktree) {
 	if (choice.New != nil || choice.Named != nil) && wt.Branch != nil {
 		git(folder, "branch", "-D", *wt.Branch)
 	}
+}
+
+// worktreeBase is what a new worktree is made from: the branch from has checked out, or
+// head, its commit, when from is detached. A failed read gives nil, never "", so a note
+// says nothing of the base rather than "from ." (#6098); git is asked again once first,
+// as a read can fail on a busy machine.
+func worktreeBase(from, head string) *string {
+	for attempt := 0; attempt < 2; attempt++ {
+		branch, err := git(from, "rev-parse", "--abbrev-ref", "HEAD")
+		switch {
+		case err != nil || branch == "":
+			continue
+		case branch == "HEAD":
+			if head == "" {
+				return nil
+			}
+			return &head
+		default:
+			return &branch
+		}
+	}
+	return nil
 }
 
 func worktreeNote(wt wire.AgentWorktree) string {
@@ -442,8 +481,22 @@ func (d *Daemon) listWorktrees(folder string) wire.WorktreesListResponse {
 		}
 		resp.Worktrees = append(resp.Worktrees, s)
 	}
-	// Status for at most 12: the folder, those with agents, then the rest.
-	order := make([]int, len(resp.Worktrees))
+	worktreesFillStatus(resp.Worktrees, base)
+	d.wantSizes(wanted)
+	if hasCommit {
+		resp.CanMakeNew = true
+		resp.Branches = branches(folder, checkedOut)
+	} else {
+		why := "There is no commit here yet to base a worktree on."
+		resp.WhyNot = &why
+	}
+	return resp
+}
+
+// worktreesFillStatus gives a status to at most 12 worktrees that are there: the folder,
+// those with agents, then the rest.
+func worktreesFillStatus(worktrees []wire.WorktreeSummary, base string) {
+	order := make([]int, len(worktrees))
 	for i := range order {
 		order[i] = i
 	}
@@ -456,38 +509,36 @@ func (d *Daemon) listWorktrees(folder string) wire.WorktreesListResponse {
 		}
 		return 2
 	}
-	sort.SliceStable(order, func(i, j int) bool { return rank(resp.Worktrees[order[i]]) < rank(resp.Worktrees[order[j]]) })
+	sort.SliceStable(order, func(i, j int) bool { return rank(worktrees[order[i]]) < rank(worktrees[order[j]]) })
 	for n, i := range order {
-		s := &resp.Worktrees[i]
+		s := &worktrees[i]
 		if n >= 12 || !s.Exists {
 			continue
 		}
-		root := store.FolderPath(s.Root)
-		st := wire.WorktreeStatus{Uncommitted: porcelainCount(root)}
-		if out, err := git(root, "rev-list", "--left-right", "--count", "HEAD...@{upstream}"); err == nil {
-			if f := strings.Fields(out); len(f) == 2 {
-				ahead, _ := strconv.ParseInt(f[0], 10, 64)
-				behind, _ := strconv.ParseInt(f[1], 10, 64)
-				st.Ahead, st.Behind = &ahead, &behind
-			}
-		}
-		if !s.IsFolder && s.Branch != nil && base != "" && *s.Branch != base {
-			if out, err := git(root, "rev-list", "--count", base+".."+*s.Branch); err == nil {
-				n, _ := strconv.ParseInt(out, 10, 64)
-				st.Unmerged = &n
-			}
-		}
+		st := worktreeStatusOf(s, base)
 		s.Status = &st
 	}
-	d.wantSizes(wanted)
-	if hasCommit {
-		resp.CanMakeNew = true
-		resp.Branches = branches(folder, checkedOut)
-	} else {
-		why := "There is no commit here yet to base a worktree on."
-		resp.WhyNot = &why
+}
+
+// worktreeStatusOf is a worktree's uncommitted changes, how far it is ahead of and behind
+// its upstream, and its commits not in base.
+func worktreeStatusOf(s *wire.WorktreeSummary, base string) wire.WorktreeStatus {
+	root := store.FolderPath(s.Root)
+	st := wire.WorktreeStatus{Uncommitted: porcelainCount(root)}
+	if out, err := git(root, "rev-list", "--left-right", "--count", "HEAD...@{upstream}"); err == nil {
+		if f := strings.Fields(out); len(f) == 2 {
+			ahead, _ := strconv.ParseInt(f[0], 10, 64)
+			behind, _ := strconv.ParseInt(f[1], 10, 64)
+			st.Ahead, st.Behind = &ahead, &behind
+		}
 	}
-	return resp
+	if !s.IsFolder && s.Branch != nil && base != "" && *s.Branch != base {
+		if out, err := git(root, "rev-list", "--count", base+".."+*s.Branch); err == nil {
+			n, _ := strconv.ParseInt(out, 10, 64)
+			st.Unmerged = &n
+		}
+	}
+	return st
 }
 
 // branches is GitWorktrees.branches less those checked out: local first, then remote ones a
@@ -623,8 +674,11 @@ type removalFacts struct {
 
 func (d *Daemon) removalFacts(r wire.WorktreeRemovalRequest) (removalFacts, error) {
 	folder := store.FolderPath(r.Folder)
-	repo, ok := repositoryOf(folder)
-	if !ok {
+	repo, err := findRepository(folder)
+	if err != nil {
+		if !errors.Is(err, errNotARepository) {
+			return removalFacts{}, worktreeFailed(repositoryWords(err, "", "Nothing was removed: git could not read the repository of "+folder+", so try again. Git said:"))
+		}
 		return removalFacts{}, &Error{Code: wire.FailureNotAWorktree, Message: folder + " is not in a git repository."}
 	}
 	root := canonical(store.FolderPath(r.Root))
@@ -646,28 +700,35 @@ func (d *Daemon) removalFacts(r wire.WorktreeRemovalRequest) (removalFacts, erro
 		f.uncommitted = porcelainCount(root)
 	}
 	if strings.HasPrefix(f.entry.branch, branchPrefix) {
-		for _, a := range d.Store.Agents() {
-			if a.Worktree != nil && a.Worktree.Base != nil && folderPath(&a) == folder {
-				f.base = *a.Worktree.Base
-				break
-			}
+		d.removalFactsBase(&f, folder, list)
+	}
+	return f, nil
+}
+
+// removalFactsBase finds the base of a worktree the app made, and whether its branch has
+// commits not in that base. The base is an agent's in the folder, else what the folder has
+// checked out.
+func (d *Daemon) removalFactsBase(f *removalFacts, folder string, list []worktreeEntry) {
+	for _, a := range d.Store.Agents() {
+		if a.Worktree != nil && a.Worktree.Base != nil && folderPath(&a) == folder {
+			f.base = *a.Worktree.Base
+			break
 		}
-		if f.base == "" {
-			for _, e := range list {
-				if canonical(e.root) == canonical(repo.toplevel) {
-					f.base = e.branch
-					if f.base == "" {
-						f.base = e.head
-					}
+	}
+	if f.base == "" {
+		for _, e := range list {
+			if canonical(e.root) == canonical(f.repo.toplevel) {
+				f.base = e.branch
+				if f.base == "" {
+					f.base = e.head
 				}
 			}
 		}
-		if f.base != "" {
-			_, err := git(folder, "merge-base", "--is-ancestor", f.entry.branch, f.base)
-			f.unmerged = err != nil
-		}
 	}
-	return f, nil
+	if f.base != "" {
+		_, err := git(folder, "merge-base", "--is-ancestor", f.entry.branch, f.base)
+		f.unmerged = err != nil
+	}
 }
 
 func (d *Daemon) blockedWords(ids []wire.UUID) string {
@@ -783,48 +844,62 @@ func (d *Daemon) removeBuildOutput(r wire.WorktreeRemovalRequest) (wire.BuildOut
 	if !isDir(f.root) {
 		return wire.BuildOutputRemoved{}, &Error{Code: wire.FailureWorktreeMissing, Message: "The worktree " + name + " is not there any more."}
 	}
-	var candidates []string
-	top, _ := os.ReadDir(f.root)
-	consider := func(dir string, e fs.DirEntry) {
-		if e.IsDir() && e.Type()&fs.ModeSymlink == 0 && buildOutputFolders[e.Name()] {
-			candidates = append(candidates, filepath.Join(dir, e.Name()))
-		}
-	}
-	for _, e := range top {
-		consider(f.root, e)
-		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !buildOutputFolders[e.Name()] {
-			sub, _ := os.ReadDir(filepath.Join(f.root, e.Name()))
-			for _, s := range sub {
-				consider(filepath.Join(f.root, e.Name()), s)
-			}
-		}
-	}
+	candidates := buildOutputCandidates(f.root)
 	out := wire.BuildOutputRemoved{Removed: []string{}}
 	if len(candidates) > 0 {
-		ignored, err := git(f.root, append([]string{"check-ignore", "--"}, candidates...)...)
-		if err == nil {
-			deadline := time.Now().Add(10 * time.Second)
-			for _, p := range strings.Split(ignored, "\n") {
-				if p == "" {
-					continue
-				}
-				if tracked, _ := git(f.root, "ls-files", "--", p); tracked != "" {
-					continue
-				}
-				size := measure(p, deadline)
-				if os.RemoveAll(p) == nil {
-					out.Removed = append(out.Removed, p)
-					out.Freed.Bytes += size.Bytes
-					out.Freed.Partial = out.Freed.Partial || size.Partial
-				}
-			}
-		}
+		removeIgnoredBuildOutput(f.root, candidates, &out)
 	}
 	d.sizeMu.Lock()
 	delete(d.sizes, f.root)
 	d.sizeMu.Unlock()
 	d.wantSizes([]string{f.root})
 	return out, nil
+}
+
+// buildOutputCandidates is each build output folder at the top of root, or one level
+// down in a folder that is not hidden and not build output itself. It skips symlinks.
+func buildOutputCandidates(root string) []string {
+	var candidates []string
+	top, _ := os.ReadDir(root)
+	consider := func(dir string, e fs.DirEntry) {
+		if e.IsDir() && e.Type()&fs.ModeSymlink == 0 && buildOutputFolders[e.Name()] {
+			candidates = append(candidates, filepath.Join(dir, e.Name()))
+		}
+	}
+	for _, e := range top {
+		consider(root, e)
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !buildOutputFolders[e.Name()] {
+			sub, _ := os.ReadDir(filepath.Join(root, e.Name()))
+			for _, s := range sub {
+				consider(filepath.Join(root, e.Name()), s)
+			}
+		}
+	}
+	return candidates
+}
+
+// removeIgnoredBuildOutput removes each candidate that git ignores and tracks no file in,
+// and adds it and its size to out.
+func removeIgnoredBuildOutput(root string, candidates []string, out *wire.BuildOutputRemoved) {
+	ignored, err := git(root, append([]string{"check-ignore", "--"}, candidates...)...)
+	if err != nil {
+		return
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for _, p := range strings.Split(ignored, "\n") {
+		if p == "" {
+			continue
+		}
+		if tracked, _ := git(root, "ls-files", "--", p); tracked != "" {
+			continue
+		}
+		size := measure(p, deadline)
+		if os.RemoveAll(p) == nil {
+			out.Removed = append(out.Removed, p)
+			out.Freed.Bytes += size.Bytes
+			out.Freed.Partial = out.Freed.Partial || size.Partial
+		}
+	}
 }
 
 // recreateWorktree is DaemonCore.recreateWorktree: made again from its branch, where it was.

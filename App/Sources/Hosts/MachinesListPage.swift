@@ -158,7 +158,7 @@ struct MachinesListPage: View {
             TableColumn("Version") { row in Text(MachineListChoice.versionWords(row)).lineLimit(1) }
                 .width(min: 100, ideal: 150)
             TableColumn("Working") { row in
-                let running = model.machineSessions(row.id).running
+                let running = model.work.sessionCounts(on: row.id).working
                 Text(running == 0 ? "—" : "\(running)").monospacedDigit().lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)
             }
             .width(min: 60, ideal: 70)

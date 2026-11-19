@@ -259,28 +259,7 @@ func (d *Daemon) registerFiles() {
 		return listing(path)
 	})
 	On(d, wire.CallFilesMention, func(ctx context.Context, c *Client, r wire.FileMentionRequest) ([]wire.FileMentionDTO, error) {
-		out := []wire.FileMentionDTO{}
-		root, err := d.agentFolder(r.AgentID)
-		if err != nil {
-			return out, nil
-		}
-		term := strings.ToLower(r.Term)
-		seen := 0
-		filepath.WalkDir(root, func(path string, e os.DirEntry, err error) error {
-			seen++
-			if err != nil || len(out) >= 50 || seen > 20000 {
-				return filepath.SkipDir
-			}
-			if e.IsDir() && excludedName(e.Name()) {
-				return filepath.SkipDir
-			}
-			rel, _ := filepath.Rel(root, path)
-			if !e.IsDir() && strings.Contains(strings.ToLower(rel), term) {
-				out = append(out, wire.FileMentionDTO{Path: path, RelativePath: rel})
-			}
-			return nil
-		})
-		return out, nil
+		return d.filesMentionMatches(r), nil
 	})
 	On(d, wire.CallFilesWatch, func(ctx context.Context, c *Client, r wire.FilesWatchRequest) (wire.Empty, error) {
 		return wire.Empty{}, d.watchFiles(c, r)
@@ -292,29 +271,10 @@ func (d *Daemon) registerFiles() {
 
 	// Settings files, and attachments.
 	On(d, wire.CallFilesReadText, func(ctx context.Context, c *Client, r wire.FilesTextRequest) (wire.FilesText, error) {
-		path := expandHome(r.Path)
-		b, err := os.ReadFile(path)
-		if os.IsNotExist(err) {
-			return wire.FilesText{}, nil
-		}
-		if err != nil || len(b) > 1<<20 {
-			return wire.FilesText{}, fileError(CodeFileNotReadable, filepath.Base(path)+" can't be opened.")
-		}
-		text := string(b)
-		return wire.FilesText{Text: &text}, nil
+		return filesReadSettingsText(r)
 	})
 	On(d, wire.CallFilesSaveText, func(ctx context.Context, c *Client, r wire.FilesSaveTextRequest) (wire.Empty, error) {
-		path := expandHome(r.Path)
-		if len(r.Text) > 1<<20 {
-			return wire.Empty{}, Invalid("That is more than 1 MB.")
-		}
-		if _, err := os.Stat(path); err == nil && r.OnlyIfAbsent != nil && *r.OnlyIfAbsent {
-			return wire.Empty{}, nil
-		}
-		if err := store.WriteAtomically(path, []byte(r.Text), 0o644); err != nil {
-			return wire.Empty{}, fileError(CodeFileNotReadable, err.Error())
-		}
-		return wire.Empty{}, nil
+		return filesSaveSettingsText(r)
 	})
 	On(d, wire.CallFilesWrite, func(ctx context.Context, c *Client, r wire.FilesWriteRequest) (wire.FilesWriteResponse, error) {
 		root, err := d.agentFolder(r.AgentID)
@@ -330,6 +290,64 @@ func (d *Daemon) registerFiles() {
 		}
 		return wire.FilesWriteResponse{Path: path}, nil
 	})
+}
+
+// filesMentionMatches finds up to 50 files in the agent's folder whose relative
+// path holds the term. It looks at no more than 20000 entries.
+func (d *Daemon) filesMentionMatches(r wire.FileMentionRequest) []wire.FileMentionDTO {
+	out := []wire.FileMentionDTO{}
+	root, err := d.agentFolder(r.AgentID)
+	if err != nil {
+		return out
+	}
+	term := strings.ToLower(r.Term)
+	seen := 0
+	filepath.WalkDir(root, func(path string, e os.DirEntry, err error) error {
+		seen++
+		if err != nil || len(out) >= 50 || seen > 20000 {
+			return filepath.SkipDir
+		}
+		if e.IsDir() && excludedName(e.Name()) {
+			return filepath.SkipDir
+		}
+		rel, _ := filepath.Rel(root, path)
+		if !e.IsDir() && strings.Contains(strings.ToLower(rel), term) {
+			out = append(out, wire.FileMentionDTO{Path: path, RelativePath: rel})
+		}
+		return nil
+	})
+	return out
+}
+
+// filesReadSettingsText reads a settings file of at most 1 MB. A file that is
+// not there gives no text and no error.
+func filesReadSettingsText(r wire.FilesTextRequest) (wire.FilesText, error) {
+	path := expandHome(r.Path)
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return wire.FilesText{}, nil
+	}
+	if err != nil || len(b) > 1<<20 {
+		return wire.FilesText{}, fileError(CodeFileNotReadable, filepath.Base(path)+" can't be opened.")
+	}
+	text := string(b)
+	return wire.FilesText{Text: &text}, nil
+}
+
+// filesSaveSettingsText writes a settings file of at most 1 MB. With
+// OnlyIfAbsent, it keeps a file that is there.
+func filesSaveSettingsText(r wire.FilesSaveTextRequest) (wire.Empty, error) {
+	path := expandHome(r.Path)
+	if len(r.Text) > 1<<20 {
+		return wire.Empty{}, Invalid("That is more than 1 MB.")
+	}
+	if _, err := os.Stat(path); err == nil && r.OnlyIfAbsent != nil && *r.OnlyIfAbsent {
+		return wire.Empty{}, nil
+	}
+	if err := store.WriteAtomically(path, []byte(r.Text), 0o644); err != nil {
+		return wire.Empty{}, fileError(CodeFileNotReadable, err.Error())
+	}
+	return wire.Empty{}, nil
 }
 
 // buildOutputNames is what a folder's watch leaves out (#216), as DaemonCore does.

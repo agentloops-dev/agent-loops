@@ -32,16 +32,12 @@ func TestACardReachesTheWindowAfterThePause(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	c.call(t, 1, "presence/report", map[string]any{"active": true})
-	id := startAgent(t, c, 2, t.TempDir(), "Please ask, then write hi.txt")
+	var id wire.UUID
 	var card wire.PermissionRequest
-	c.until(t, "a card", func(method string, p json.RawMessage) bool {
-		var n wire.PermissionNotification
-		if method == "agent/permission" && json.Unmarshal(p, &n) == nil && n.Request != nil {
-			card = *n.Request
-			return true
-		}
-		return false
-	})
+	if err := json.Unmarshal(c.callHearing(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+		"prompt": "Please ask, then write hi.txt"}, "a card", aCard(&card)), &id); err != nil {
+		t.Fatal(err)
+	}
 	var told wire.AttentionNotification
 	c.until(t, "the window told", attentionNote(func(n wire.AttentionNotification) bool {
 		told = n

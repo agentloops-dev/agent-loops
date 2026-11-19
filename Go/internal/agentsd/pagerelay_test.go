@@ -24,6 +24,11 @@ import (
 // The page this host serves when the control plane runs elsewhere (#1951): a browser pairs
 // and connects at the host's loopback listener, and the control plane answers it through
 // the host. With no control plane to carry it to, the page is told it is unavailable.
+// testCodeLife is the life of a code a test makes: long, because a code's expiry is a
+// wall-clock time and a Mac that sleeps during a run moves it on, but not the test's own
+// timeouts (#6259).
+const testCodeLife = 24 * time.Hour
+
 func TestAPageThroughThisHost(t *testing.T) {
 	t.Parallel()
 
@@ -55,7 +60,7 @@ func TestAPageThroughThisHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shown, err := cp.Codes().Issue(ctx, true, false, time.Minute)
+	shown, err := cp.Codes().Issue(ctx, true, false, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,27 +83,12 @@ func TestAPageThroughThisHost(t *testing.T) {
 
 	// A browser code, spent at this host's page: the control plane takes it, bound to the
 	// host's origin. Tried until the host's uplink is up, as the page tries again.
-	shown, err = cp.Codes().Issue(ctx, false, true, time.Minute)
+	shown, err = cp.Codes().Issue(ctx, false, true, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
 	code, _ := controllink.ParseCode(shown.Text)
-	var l *controllink.Lines
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		l, err = controllink.DialOrigin(ctx, origin, origin)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err = exchange(ctx, l, controllink.Identity{Kind: 'p', ID: code.ID()}, controllink.CodeKey(code.Secret), origin); err == nil {
-			break
-		}
-		l.Close()
-		if time.Now().After(deadline) {
-			t.Fatalf("the page was never carried: %v", err)
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	l := pageDialUntilCarried(t, ctx, origin, code)
 	browser := controllink.NewPrivateKey()
 	public, _ := controllink.PublicKey(browser)
 	id := records.NewUUID()
@@ -111,7 +101,7 @@ func TestAPageThroughThisHost(t *testing.T) {
 	host, _ := json.Marshal(member.Host)
 
 	// A code's ok is no person's: its calls to this host are never answered here.
-	shown, err = cp.Codes().Issue(ctx, false, true, time.Minute)
+	shown, err = cp.Codes().Issue(ctx, false, true, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,17 +113,7 @@ func TestAPageThroughThisHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.Write(ctx, `{"h":`+string(host)+`,"m":{"jsonrpc":"2.0","id":3,"method":"daemon/status"}}`)
-	for {
-		rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		line, err := l.Read(rctx)
-		cancel()
-		if err != nil {
-			break
-		}
-		if strings.Contains(line, `"id":3`) && strings.Contains(line, `"result"`) {
-			t.Fatalf("a code's call was answered by this host: %s", line)
-		}
-	}
+	pageCheckNoHostAnswer(t, ctx, l)
 	l.Close()
 
 	// The browser connects there with its own key, and the control plane answers it.
@@ -146,19 +126,8 @@ func TestAPageThroughThisHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.Write(ctx, `{"m":{"jsonrpc":"2.0","id":7,"method":"control/status"}}`)
-	for {
-		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		line, err := l.Read(rctx)
-		cancel()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(line, `"id":7`) {
-			if !strings.Contains(line, `"result"`) {
-				t.Fatal(line)
-			}
-			break
-		}
+	if line := pageReplyTo(t, ctx, l, `"id":7`); !strings.Contains(line, `"result"`) {
+		t.Fatal(line)
 	}
 
 	// Its calls to this host are answered here (#1970): with the uplink gone, so the control
@@ -166,36 +135,14 @@ func TestAPageThroughThisHost(t *testing.T) {
 	stopUplink()
 	time.Sleep(300 * time.Millisecond)
 	l.Write(ctx, `{"h":`+string(host)+`,"m":{"jsonrpc":"2.0","id":8,"method":"daemon/status"}}`)
-	for {
-		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		line, err := l.Read(rctx)
-		cancel()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(line, `"id":8`) {
-			if !strings.Contains(line, `"result"`) || !strings.HasPrefix(line, `{"h":`+string(host)+`,"m":`) {
-				t.Fatal(line)
-			}
-			break
-		}
+	if line := pageReplyTo(t, ctx, l, `"id":8`); !strings.Contains(line, `"result"`) || !strings.HasPrefix(line, `{"h":`+string(host)+`,"m":`) {
+		t.Fatal(line)
 	}
 	// A call the audit keeps still goes through the control plane, which says the machine
 	// is offline: this host never answers it itself.
 	l.Write(ctx, `{"h":`+string(host)+`,"m":{"jsonrpc":"2.0","id":9,"method":"agents/stop","params":{"agentID":"`+records.NewUUID()+`"}}}`)
-	for {
-		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		line, err := l.Read(rctx)
-		cancel()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(line, `"id":9`) {
-			if !strings.Contains(line, "offline") {
-				t.Fatal(line)
-			}
-			break
-		}
+	if line := pageReplyTo(t, ctx, l, `"id":9`); !strings.Contains(line, "offline") {
+		t.Fatal(line)
 	}
 	l.Close()
 
@@ -210,6 +157,61 @@ func TestAPageThroughThisHost(t *testing.T) {
 	line, err := l.Read(rctx)
 	if err != nil || !strings.Contains(line, controllink.Unavailable) {
 		t.Fatalf("%q %v", line, err)
+	}
+}
+
+// pageDialUntilCarried spends a browser code at the host's page, and dials again until
+// the host's uplink is up and carries the page, as the page tries again.
+func pageDialUntilCarried(t *testing.T, ctx context.Context, origin string, code *controllink.Code) *controllink.Lines {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		l, err := controllink.DialOrigin(ctx, origin, origin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = exchange(ctx, l, controllink.Identity{Kind: 'p', ID: code.ID()}, controllink.CodeKey(code.Secret), origin); err == nil {
+			return l
+		}
+		l.Close()
+		if time.Now().After(deadline) {
+			t.Fatalf("the page was never carried: %v", err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// pageCheckNoHostAnswer reads the page's lines until none comes for 2 s, and fails when
+// one is a result for the call with id 3.
+func pageCheckNoHostAnswer(t *testing.T, ctx context.Context, l *controllink.Lines) {
+	t.Helper()
+	for {
+		rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		line, err := l.Read(rctx)
+		cancel()
+		if err != nil {
+			return
+		}
+		if strings.Contains(line, `"id":3`) && strings.Contains(line, `"result"`) {
+			t.Fatalf("a code's call was answered by this host: %s", line)
+		}
+	}
+}
+
+// pageReplyTo reads the page's lines until one has id, and gives it. It fails when no
+// line comes for 10 s.
+func pageReplyTo(t *testing.T, ctx context.Context, l *controllink.Lines, id string) string {
+	t.Helper()
+	for {
+		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		line, err := l.Read(rctx)
+		cancel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(line, id) {
+			return line
+		}
 	}
 }
 

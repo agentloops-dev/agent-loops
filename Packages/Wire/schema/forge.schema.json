@@ -28,6 +28,7 @@
         "merge",
         "autoMerge",
         "approve",
+        "requestChanges",
         "rerun",
         "log",
         "diff",
@@ -35,9 +36,11 @@
         "blockedBy",
         "assign",
         "cancelAutoMerge",
-        "ready"
+        "ready",
+        "priority",
+        "hold"
       ],
-      "description": "A write or a read that an item's page offers (#4329, #4361): forge/comment, forge/label, forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve, forge/rerun, forge/log, forge/diff, forge/add-child, forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410)."
+      "description": "A write or a read that an item's page offers (#4329, #4361): forge/comment, forge/label, forge/close (a close, a reopen or a transition; closeNotPlanned is a close with reason not_planned, where the forge has it, #4404), forge/merge (now, or with auto), forge/approve, forge/request-changes (#5857), forge/rerun, forge/log, forge/diff, forge/add-child, forge/blocked-by, forge/assign (#4403), forge/cancel-auto-merge and forge/ready (#4410), and on an issue forge/priority and forge/hold (#6091, #6092)."
     },
     "ForgeAddChildRequest": {
       "type": "object",
@@ -156,7 +159,7 @@
     },
     "ForgeCapabilities": {
       "type": "object",
-      "description": "What one forge on a list's page fills (#4329, #4361), so a client hides what it does not: issues and pulls say it has them; labelColors that its labels have a #rrggbb colour; avatars that its items have authorAvatar; stateReason that its closed issues have stateReason. createdAt that its items have createdAt, and closedAt that its closed and merged items have closedAt; children, linkedPulls and events that an item's read has them (#4373); total that it counts a list's items, for ForgeList.total (#4396); releases that it has releases, for forge/releases and forge/release (#4426); a pull request's fields (#4409): branches that it has headRef and baseRef, mergedBy and mergeCommit that a merged one says them, size that its read has additions, deletions and commits, reviewers and closes that its read has them, and checkTimes that its checks have startedAt and finishedAt; each is absent from an earlier daemon, which has none. commentCount says how to read ForgeItem.comments: exact; capped at commentsMost (show 50+ there); or detail, only on an item's own page (hide it on the row).",
+      "description": "What one forge on a list's page fills (#4329, #4361), so a client hides what it does not: issues and pulls say it has them; labelColors that its labels have a #rrggbb colour; avatars that its items have authorAvatar; stateReason that its closed issues have stateReason. createdAt that its items have createdAt, and closedAt that its closed and merged items have closedAt; children, linkedPulls and events that an item's read has them (#4373); total that it counts a list's items, for ForgeList.total (#4396); releases that it has releases, for forge/releases and forge/release (#4426); a pull request's fields (#4409): branches that it has headRef and baseRef, mergedBy and mergeCommit that a merged one says them, size that its read has additions, deletions and commits, reviewers and closes that its read has them, and checkTimes that its checks have startedAt and finishedAt; priority and hold that forge/priority and forge/hold set an issue's priority and on hold, in the forge's own field or else by the labels (#6091); each is absent from an earlier daemon, which has none. commentCount says how to read ForgeItem.comments: exact; capped at commentsMost (show 50+ there); or detail, only on an item's own page (hide it on the row).",
       "properties": {
         "forge": {
           "type": "string"
@@ -216,6 +219,12 @@
           "type": "boolean"
         },
         "checkTimes": {
+          "type": "boolean"
+        },
+        "priority": {
+          "type": "boolean"
+        },
+        "hold": {
           "type": "boolean"
         },
         "commentCount": {
@@ -574,6 +583,23 @@
           "description": "A board's url, from forge/boards (#3282): only the epics on that board."
         }
       },
+      "additionalProperties": false
+    },
+    "ForgeHoldRequest": {
+      "type": "object",
+      "description": "forge/hold (#6091): put an issue on hold (on) or take it off hold. The daemon writes the forge's own field where it has one (Bitbucket: the state on hold; Jira: a status named On hold where the workflow has one), else the label on hold.",
+      "properties": {
+        "node": {
+          "$ref": "lineage.schema.json#/definitions/LineageNode"
+        },
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node",
+        "on"
+      ],
       "additionalProperties": false
     },
     "ForgeImage": {
@@ -1306,6 +1332,27 @@
       ],
       "additionalProperties": false
     },
+    "ForgePriorityRequest": {
+      "type": "object",
+      "description": "forge/priority (#6091): set an issue's priority to high, medium or low, or to none when priority is absent. The daemon writes the forge's own field where it has one (#5747: Linear, Jira, GitHub's Priority issue field, Bitbucket, Azure Boards), else the label priority:<priority>, and takes off the other two.",
+      "properties": {
+        "node": {
+          "$ref": "lineage.schema.json#/definitions/LineageNode"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        }
+      },
+      "required": [
+        "node"
+      ],
+      "additionalProperties": false
+    },
     "ForgeProgress": {
       "type": "object",
       "description": "A parent issue's children (#3267): done are closed, of total.",
@@ -1497,6 +1544,27 @@
           "type": "integer"
         }
       },
+      "additionalProperties": false
+    },
+    "ForgeRequestChangesRequest": {
+      "type": "object",
+      "description": "forge/request-changes (#5857): request changes on a pull request at sha, the head commit its page shows (refused when the head moved). body is the review text, and it is required.",
+      "properties": {
+        "node": {
+          "$ref": "lineage.schema.json#/definitions/LineageNode"
+        },
+        "sha": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "sha",
+        "body"
+      ],
       "additionalProperties": false
     },
     "ForgeReviewer": {

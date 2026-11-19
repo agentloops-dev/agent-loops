@@ -60,6 +60,10 @@ type Installer struct {
 	Codes CodeIssuer
 	// ServerFolder is ServerFiles.folder: the Linux hosts to copy. "" has none.
 	ServerFolder string
+	// Releases is a folder laid out as ServerFolder with the control plane's release for
+	// an architecture (x86_64, aarch64), taken from the public releases, for a machine
+	// that ServerFolder has no host for (#5787). Nil: none.
+	Releases func(ctx context.Context, arch string) (string, error)
 	// ToolsetFolder is the app's Resources/toolsets: the runtimes to put on a server
 	// beside the host (#1136). "" puts none.
 	ToolsetFolder string
@@ -166,6 +170,9 @@ func (i *Installer) Install(ctx context.Context, params json.RawMessage) (any, e
 // are copied, and the host starts again with its root, membership and agents as they were.
 // name is the host's, as the control plane knows it. The answer is an install's:
 // {needsTrust, name} for a key to trust first, then {updated: true, name}.
+//
+// A host that says host.update/1 updates itself (#5788, epic #5785): this stays for one
+// too old to, which a release before its self-update is.
 func (i *Installer) Update(ctx context.Context, update wire.MachineUpdate, name string) (any, error) {
 	request := Request{Destination: update.Destination, Key: update.Key, Trust: update.Trust, Name: &name}
 	return i.run(ctx, request, false, string(update.Host))
@@ -288,7 +295,18 @@ func (i *Installer) run(ctx context.Context, request Request, personsKnownHosts 
 		}
 	}
 	arch := binarySuffix(found.architecture)
-	binary, ok := binaryFor(arch, i.ServerFolder)
+	files := i.ServerFolder
+	binary, ok := binaryFor(arch, files)
+	if arch != "" && !ok && i.Releases != nil {
+		// No host for this machine here: the control plane's release, from the public
+		// releases (#5787, epic #5785).
+		if released, err := i.Releases(ctx, arch); err == nil {
+			files = released
+			binary, ok = binaryFor(arch, files)
+		} else if i.Log != nil {
+			i.Log("The releases gave no host for %s-linux: %v", arch, err)
+		}
+	}
 	if arch == "" || !ok {
 		return nil, &Failure{Code: NotAllowed, Message: name + " is " + found.system + " " +
 			displayArchitecture(found.architecture) + ", which this control plane has no host for."}
@@ -302,7 +320,7 @@ func (i *Installer) run(ctx context.Context, request Request, personsKnownHosts 
 	}
 	// The MCP servers Agents ships (#700), beside agentsd. One that fails to copy leaves
 	// the host without it, not without a host.
-	for _, shipped := range shippedFor(arch, i.ServerFolder) {
+	for _, shipped := range shippedFor(arch, files) {
 		server.installServer(ctx, shipped.name, shipped.file, shipped.sha256)
 	}
 	// The runtimes' toolsets (#1136), as the window's ToolsetInstaller puts them on a server

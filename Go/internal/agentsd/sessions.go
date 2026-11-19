@@ -148,47 +148,11 @@ func (d *Daemon) listSessions(caller wire.UUID, args map[string]json.RawMessage)
 	after := strings.TrimSpace(argString(args, "after"))
 	folder := folderPath(me)
 	scope := scopeWords(folder)
-	// The project's sessions on this machine, then on the person's other machines (#3277).
-	var sorted []listedSession
-	for _, a := range d.projectSessionsHere(folder) {
-		sorted = append(sorted, listedSession{Agent: a})
-	}
-	elsewhere, unreached, asked, err := d.projectElsewhere(me, true)
-	for _, s := range elsewhere {
-		sorted = append(sorted, listedSession{Agent: s.Session, machine: s.MachineName})
-	}
-	sort.SliceStable(sorted, func(i, j int) bool {
-		if sorted[i].LastActivityAt != sorted[j].LastActivityAt {
-			return sorted[i].LastActivityAt > sorted[j].LastActivityAt
-		}
-		return sorted[i].ID < sorted[j].ID
-	})
-	notReached := ""
-	switch {
-	case asked && err != nil:
-		_, msg := errMessage(err)
-		notReached = "\n\nSessions on your other machines are not listed: " + strings.TrimSuffix(msg, ".") + "."
-	case len(unreached) > 0:
-		var names []string
-		for _, m := range unreached {
-			names = append(names, m.MachineName)
-		}
-		notReached = "\n\nNot reached, so their sessions are not listed: " + strings.Join(names, ", ") + "."
-	}
+	sorted, notReached := d.listSessionsGather(me, folder)
 	if len(sorted) == 0 {
 		return "There are no sessions in " + scope + "." + notReached, nil
 	}
-	var all []listedSession
-	for _, a := range sorted {
-		if a.State != wire.AgentStateArchived {
-			all = append(all, a)
-		}
-	}
-	for _, a := range sorted {
-		if a.State == wire.AgentStateArchived {
-			all = append(all, a)
-		}
-	}
+	all := listSessionsArchivedLast(sorted)
 	from := 0
 	if after != "" {
 		at := -1
@@ -207,6 +171,67 @@ func (d *Daemon) listSessions(caller wire.UUID, args map[string]json.RawMessage)
 	if len(page) == 0 {
 		return "There are no more sessions in " + scope + ".", nil
 	}
+	holding := d.listSessionsLeaseHolders()
+	lines := []string{"Sessions in " + scope + ", not archived first, most recent first. Read one with read_session, by id or exact title."}
+	for _, l := range page {
+		lines = append(lines, listSessionsLine(l, caller, folder, holding))
+	}
+	text := strings.Join(lines, "\n")
+	if rest := all[end:]; len(rest) > 0 {
+		text += listSessionsMoreLine(rest, page)
+	}
+	return text + notReached, nil
+}
+
+// listSessionsGather is the project's sessions on this machine, then on the person's other
+// machines (#3277), most recent first, and the words for the machines it did not reach.
+func (d *Daemon) listSessionsGather(me *wire.Agent, folder string) (sorted []listedSession, notReached string) {
+	for _, a := range d.projectSessionsHere(folder) {
+		sorted = append(sorted, listedSession{Agent: a})
+	}
+	elsewhere, unreached, asked, err := d.projectElsewhere(me, true)
+	for _, s := range elsewhere {
+		sorted = append(sorted, listedSession{Agent: s.Session, machine: s.MachineName})
+	}
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].LastActivityAt != sorted[j].LastActivityAt {
+			return sorted[i].LastActivityAt > sorted[j].LastActivityAt
+		}
+		return sorted[i].ID < sorted[j].ID
+	})
+	switch {
+	case asked && err != nil:
+		_, msg := errMessage(err)
+		notReached = "\n\nSessions on your other machines are not listed: " + strings.TrimSuffix(msg, ".") + "."
+	case len(unreached) > 0:
+		var names []string
+		for _, m := range unreached {
+			names = append(names, m.MachineName)
+		}
+		notReached = "\n\nNot reached, so their sessions are not listed: " + strings.Join(names, ", ") + "."
+	}
+	return sorted, notReached
+}
+
+// listSessionsArchivedLast is sorted with the sessions that are not archived first, each
+// part in its order.
+func listSessionsArchivedLast(sorted []listedSession) []listedSession {
+	var all []listedSession
+	for _, a := range sorted {
+		if a.State != wire.AgentStateArchived {
+			all = append(all, a)
+		}
+	}
+	for _, a := range sorted {
+		if a.State == wire.AgentStateArchived {
+			all = append(all, a)
+		}
+	}
+	return all
+}
+
+// listSessionsLeaseHolders is the names of the resources each session holds a lease on.
+func (d *Daemon) listSessionsLeaseHolders() map[wire.UUID][]string {
 	d.leaseMu.Lock()
 	loaded := d.loadLeases()
 	holding := map[wire.UUID][]string{}
@@ -217,53 +242,56 @@ func (d *Daemon) listSessions(caller wire.UUID, args map[string]json.RawMessage)
 	}
 	d.leaseMu.Unlock()
 	d.settle(loaded)
-	lines := []string{"Sessions in " + scope + ", not archived first, most recent first. Read one with read_session, by id or exact title."}
-	for _, l := range page {
-		a := l.Agent
-		name := quoted(a.Title)
-		if a.ID == caller {
-			name += " (you)"
-		}
-		line := "- " + string(a.ID) + ": " + name + " — " + runtimeName(a.RuntimeID) + ", " + sessionStatus(&a) + ", last active " + isoWhen(a.LastActivityAt) + "."
-		if l.machine != "" {
-			line += " On " + l.machine + ", in " + store.FolderPath(a.Cwd) + "."
-		} else if f := folderPath(&a); f != folder {
-			line += " In " + f + "."
-		}
-		if w := a.Worktree; w != nil {
-			line += " Worktree: " + store.FolderPath(w.Root)
-			if w.Branch != nil {
-				line += " on " + *w.Branch
-			}
-			line += "."
-		}
-		if held := holding[a.ID]; len(held) > 0 {
-			sort.Strings(held)
-			line += " Holding: " + strings.Join(held, ", ") + "."
-		}
-		if a.Report != nil {
-			line += " Last said: " + a.Report.Message
-		}
-		lines = append(lines, line+labelsLine(&a)+waitingLine(&a, caller))
+	return holding
+}
+
+// listSessionsLine is the line of list_sessions for one session.
+func listSessionsLine(l listedSession, caller wire.UUID, folder string, holding map[wire.UUID][]string) string {
+	a := l.Agent
+	name := quoted(a.Title)
+	if a.ID == caller {
+		name += " (you)"
 	}
-	text := strings.Join(lines, "\n")
-	if rest := all[end:]; len(rest) > 0 {
-		archived := 0
-		for _, a := range rest {
-			if a.State == wire.AgentStateArchived {
-				archived++
-			}
-		}
-		more := fmt.Sprintf("\n\n%d more", len(rest))
-		switch {
-		case archived == len(rest):
-			more += ", all archived"
-		case archived > 0:
-			more += fmt.Sprintf(", %d of them archived", archived)
-		}
-		text += more + ". For the next page, call list_sessions with after: \"" + string(page[len(page)-1].ID) + "\"."
+	line := "- " + string(a.ID) + ": " + name + " — " + runtimeName(a.RuntimeID) + ", " + sessionStatus(&a) + ", last active " + isoWhen(a.LastActivityAt) + "."
+	if l.machine != "" {
+		line += " On " + l.machine + ", in " + store.FolderPath(a.Cwd) + "."
+	} else if f := folderPath(&a); f != folder {
+		line += " In " + f + "."
 	}
-	return text + notReached, nil
+	if w := a.Worktree; w != nil {
+		line += " Worktree: " + store.FolderPath(w.Root)
+		if w.Branch != nil {
+			line += " on " + *w.Branch
+		}
+		line += "."
+	}
+	if held := holding[a.ID]; len(held) > 0 {
+		sort.Strings(held)
+		line += " Holding: " + strings.Join(held, ", ") + "."
+	}
+	if a.Report != nil {
+		line += " Last said: " + a.Report.Message
+	}
+	return line + labelsLine(&a) + waitingLine(&a, caller)
+}
+
+// listSessionsMoreLine says how many sessions are after page (rest), how many of them are
+// archived, and how to read the next page.
+func listSessionsMoreLine(rest, page []listedSession) string {
+	archived := 0
+	for _, a := range rest {
+		if a.State == wire.AgentStateArchived {
+			archived++
+		}
+	}
+	more := fmt.Sprintf("\n\n%d more", len(rest))
+	switch {
+	case archived == len(rest):
+		more += ", all archived"
+	case archived > 0:
+		more += fmt.Sprintf(", %d of them archived", archived)
+	}
+	return more + ". For the next page, call list_sessions with after: \"" + string(page[len(page)-1].ID) + "\"."
 }
 
 // listedSession is one line of list_sessions: a session, and the machine it is on when it
@@ -328,63 +356,13 @@ func (b *historyBuilder) add(e wire.TranscriptEntry) {
 	switch {
 	case k.UserMessage != nil:
 		b.close()
-		who := "The person"
-		if k.UserMessage.From != nil {
-			switch *k.UserMessage.From {
-			case wire.PromptOriginApp:
-				who = "The app"
-			case wire.PromptOriginAgent:
-				name := "Another agent"
-				if e.Sender != nil {
-					name = e.Sender.Title
-				}
-				who = "“" + name + "”"
-			}
-		}
-		b.current = []historyPiece{{line: "**" + who + ":** " + k.UserMessage.Value}}
+		b.current = []historyPiece{{line: "**" + historyUserWho(e) + ":** " + k.UserMessage.Value}}
 	case k.AgentMessage != nil:
 		m := *k.AgentMessage
 		b.current = append(b.current, historyPiece{reply: &m})
 		b.replyOpen = true
 	case k.ToolCall != nil || k.ToolCallUpdate != nil:
-		var call wire.ToolCall
-		if k.ToolCall != nil {
-			call = k.ToolCall.Value
-		} else {
-			call = k.ToolCallUpdate.Value
-		}
-		id := deref(call.ToolCallID)
-		if id != "" && b.suppressed[id] {
-			return
-		}
-		if isTheAppsTool(call) {
-			if id != "" {
-				b.suppressed[id] = true
-			}
-			return
-		}
-		for i := len(b.current) - 1; i >= 0 && id != ""; i-- {
-			if t := b.current[i].tool; t != nil && deref(t.ToolCallID) == id {
-				merged := *t
-				if call.Title != "" {
-					merged.Title = call.Title
-				}
-				if call.Status != nil {
-					merged.Status = call.Status
-				}
-				if len(call.Locations) > 0 {
-					merged.Locations = call.Locations
-				}
-				if call.RawInput != nil {
-					merged.RawInput = call.RawInput
-				}
-				b.current[i].tool = &merged
-				return
-			}
-		}
-		if k.ToolCall != nil {
-			b.current = append(b.current, historyPiece{tool: &call})
-		}
+		b.addHistoryToolCall(k)
 	case k.WorkReported != nil:
 		r := k.WorkReported.Value
 		b.current = append(b.current, historyPiece{line: "*Said how the work went: " + string(r.Outcome) + ". " + r.Message + "*"})
@@ -396,6 +374,74 @@ func (b *historyBuilder) add(e wire.TranscriptEntry) {
 			b.plan = nil
 		}
 	}
+}
+
+// historyUserWho is who sent a user message of the history: the person, the app or the
+// agent that sent it.
+func historyUserWho(e wire.TranscriptEntry) string {
+	k := e.Kind
+	who := "The person"
+	if k.UserMessage.From != nil {
+		switch *k.UserMessage.From {
+		case wire.PromptOriginApp:
+			who = "The app"
+		case wire.PromptOriginAgent:
+			name := "Another agent"
+			if e.Sender != nil {
+				name = e.Sender.Title
+			}
+			who = "“" + name + "”"
+		}
+	}
+	return who
+}
+
+// addHistoryToolCall adds a tool call to the turn, or merges an update into the call it
+// updates. It leaves out the app's own tools.
+func (b *historyBuilder) addHistoryToolCall(k wire.TranscriptEntryKind) {
+	var call wire.ToolCall
+	if k.ToolCall != nil {
+		call = k.ToolCall.Value
+	} else {
+		call = k.ToolCallUpdate.Value
+	}
+	id := deref(call.ToolCallID)
+	if id != "" && b.suppressed[id] {
+		return
+	}
+	if isTheAppsTool(call) {
+		if id != "" {
+			b.suppressed[id] = true
+		}
+		return
+	}
+	for i := len(b.current) - 1; i >= 0 && id != ""; i-- {
+		if t := b.current[i].tool; t != nil && deref(t.ToolCallID) == id {
+			b.current[i].tool = mergedHistoryToolCall(*t, call)
+			return
+		}
+	}
+	if k.ToolCall != nil {
+		b.current = append(b.current, historyPiece{tool: &call})
+	}
+}
+
+// mergedHistoryToolCall is t with what call sets of title, status, locations and input.
+func mergedHistoryToolCall(t wire.ToolCall, call wire.ToolCall) *wire.ToolCall {
+	merged := t
+	if call.Title != "" {
+		merged.Title = call.Title
+	}
+	if call.Status != nil {
+		merged.Status = call.Status
+	}
+	if len(call.Locations) > 0 {
+		merged.Locations = call.Locations
+	}
+	if call.RawInput != nil {
+		merged.RawInput = call.RawInput
+	}
+	return &merged
 }
 
 func (b *historyBuilder) render(p historyPiece) string {
@@ -626,16 +672,7 @@ func (d *Daemon) messageSession(caller wire.UUID, args map[string]json.RawMessag
 	folder := folderPath(me)
 	target, refused := d.findSession(argString(args, "to"), folder)
 	if target == nil {
-		if s := d.thereNamed(caller, argString(args, "to")); s != nil {
-			return d.messageThere(me, s, text, argBool(args, "replace"))
-		}
-		// One of the project on another machine (#3277).
-		if s, ambiguous := d.elsewhereNamed(me, argString(args, "to")); s != nil {
-			return d.messageElsewhere(me, s, text, argBool(args, "replace"))
-		} else if ambiguous != "" {
-			refused = ambiguous
-		}
-		return "", refusedMessage(strings.ReplaceAll(refused, "Read one by id.", "Message one by id."))
+		return d.messageSessionNotHere(caller, me, args, text, refused)
 	}
 	name := quoted(target.Title)
 	if target.Title == nil {
@@ -645,49 +682,14 @@ func (d *Daemon) messageSession(caller wire.UUID, args map[string]json.RawMessag
 		return "", refusedMessage("that is this session.")
 	}
 	replace := argBool(args, "replace")
-	if waiting := waitingFrom(target, caller); waiting != nil {
-		if !replace {
-			return "", refusedMessage(fmt.Sprintf("you already have a message waiting for %s: “%s”. Replace it with message_session and replace: true, or take it back with cancel_message.", name, oneLine(waiting.Text)))
-		}
-		d.replaceWaiting(target.ID, waiting.ID, text)
-		return "Replaced the waiting message to " + name + ".", nil
-	}
-	if replace {
-		return "", refusedMessage("nothing is waiting for " + name + ". Send a new message with message_session.")
-	}
-	if target.State == wire.AgentStateArchived {
-		return "", refusedMessage(name + " is archived. Only the person can unarchive it.")
-	}
-	// Another session's helper takes its words from that session only, which would not know
-	// of a message sent past it (#1695). This refuses siblings too.
-	if target.StartedByAgent != nil && *target.StartedByAgent != caller {
-		starter := d.holderName(*target.StartedByAgent)
-		return "", refusedMessage(name + " was started by " + starter + ", and a session started by another session takes messages only from it. Send this to " + starter + ".")
-	}
-	if err := d.refuseToRun(target); err != nil {
-		msg := err.Error()
-		if e, ok := err.(*Error); ok {
-			msg = e.Message
-		}
-		return "", refusedMessage(msg)
+	if words, done, err := d.messageSessionCheckTarget(caller, target, name, text, replace); done {
+		return words, err
 	}
 	t := time.Now()
-	d.messageMu.Lock()
-	var sent []time.Time
-	for _, at := range d.messagesSent[caller] {
-		if t.Sub(at) < time.Hour {
-			sent = append(sent, at)
-		}
+	sent, err := d.messageSessionSentInTheHour(caller, t)
+	if err != nil {
+		return "", err
 	}
-	if len(sent) >= messagesPerHour {
-		if d.messagesSent == nil {
-			d.messagesSent = map[wire.UUID][]time.Time{}
-		}
-		d.messagesSent[caller] = sent
-		d.messageMu.Unlock()
-		return "", refusedMessage(fmt.Sprintf("this session has sent %d messages in the last hour, the most it may.", messagesPerHour))
-	}
-	d.messageMu.Unlock()
 	title := "Untitled"
 	if me.Title != nil {
 		title = *me.Title
@@ -746,6 +748,75 @@ func (d *Daemon) messageSession(caller wire.UUID, args map[string]json.RawMessag
 		return "Sent to " + name + ". It is waiting on the person's answer, so it reads this once they answer." + queuedMessageNote, nil
 	}
 	return "Sent to " + name + ", which is working on it now. A reply, if it sends one, comes to this session as a message." + queuedMessageNote, nil
+}
+
+// messageSessionNotHere is message_session for a target that is not a session here: one
+// sent there, or one of the project on another machine (#3277). Else it refuses with refused.
+func (d *Daemon) messageSessionNotHere(caller wire.UUID, me *wire.Agent, args map[string]json.RawMessage, text, refused string) (string, error) {
+	if s := d.thereNamed(caller, argString(args, "to")); s != nil {
+		return d.messageThere(me, s, text, argBool(args, "replace"))
+	}
+	// One of the project on another machine (#3277).
+	if s, ambiguous := d.elsewhereNamed(me, argString(args, "to")); s != nil {
+		return d.messageElsewhere(me, s, text, argBool(args, "replace"))
+	} else if ambiguous != "" {
+		refused = ambiguous
+	}
+	return "", refusedMessage(strings.ReplaceAll(refused, "Read one by id.", "Message one by id."))
+}
+
+// messageSessionCheckTarget refuses a message to target that may not go, or replaces the
+// caller's waiting message. done is true when message_session ends with words and err.
+func (d *Daemon) messageSessionCheckTarget(caller wire.UUID, target *wire.Agent, name, text string, replace bool) (words string, done bool, err error) {
+	if waiting := waitingFrom(target, caller); waiting != nil {
+		if !replace {
+			return "", true, refusedMessage(fmt.Sprintf("you already have a message waiting for %s: “%s”. Replace it with message_session and replace: true, or take it back with cancel_message.", name, oneLine(waiting.Text)))
+		}
+		d.replaceWaiting(target.ID, waiting.ID, text)
+		return "Replaced the waiting message to " + name + ".", true, nil
+	}
+	if replace {
+		return "", true, refusedMessage("nothing is waiting for " + name + ". Send a new message with message_session.")
+	}
+	if target.State == wire.AgentStateArchived {
+		return "", true, refusedMessage(name + " is archived. Only the person can unarchive it.")
+	}
+	// Another session's helper takes its words from that session only, which would not know
+	// of a message sent past it (#1695). This refuses siblings too.
+	if target.StartedByAgent != nil && *target.StartedByAgent != caller {
+		starter := d.holderName(*target.StartedByAgent)
+		return "", true, refusedMessage(name + " was started by " + starter + ", and a session started by another session takes messages only from it. Send this to " + starter + ".")
+	}
+	if err := d.refuseToRun(target); err != nil {
+		msg := err.Error()
+		if e, ok := err.(*Error); ok {
+			msg = e.Message
+		}
+		return "", true, refusedMessage(msg)
+	}
+	return "", false, nil
+}
+
+// messageSessionSentInTheHour is the times the caller sent a message in the hour before t.
+// It refuses when that is the most it may send.
+func (d *Daemon) messageSessionSentInTheHour(caller wire.UUID, t time.Time) ([]time.Time, error) {
+	d.messageMu.Lock()
+	var sent []time.Time
+	for _, at := range d.messagesSent[caller] {
+		if t.Sub(at) < time.Hour {
+			sent = append(sent, at)
+		}
+	}
+	if len(sent) >= messagesPerHour {
+		if d.messagesSent == nil {
+			d.messagesSent = map[wire.UUID][]time.Time{}
+		}
+		d.messagesSent[caller] = sent
+		d.messageMu.Unlock()
+		return nil, refusedMessage(fmt.Sprintf("this session has sent %d messages in the last hour, the most it may.", messagesPerHour))
+	}
+	d.messageMu.Unlock()
+	return sent, nil
 }
 
 // replaceWaiting puts text in place of a queued message's words.

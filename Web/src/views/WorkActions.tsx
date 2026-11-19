@@ -1,6 +1,6 @@
 // The actions on an issue's or a pull request's Work page (#3130): the comment box with Close or Reopen, a tracker's
-// status menu (#3260) and the labels picker on any item; on a pull request the merge box (Merge, Approve, Rerun
-// failed and the failed checks' logs), Files changed and the Checks page (#4408). Each goes to the machine that read the
+// status menu (#3260) and the labels picker on any item; on a pull request the merge box (Merge, Approve, Request
+// changes, Close pull request, Rerun failed and the failed checks' logs), Files changed and the Checks page (#4408). Each goes to the machine that read the
 // item (forge/*), as the person: their own click, so no approval card. `wrote` reads the page again.
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
@@ -52,7 +52,7 @@ function CheckGlyph({ state }: { state: string }) {
 
 /** A pull request's merge box (pull-request.md note 10), as the window's WorkMergeBox (#4406): a bordered box at the end
  * of the timeline (at the top of a page under 700 px, `top`) with a row for the review, the checks and conflicts, each
- * with a glyph in its state's colour, then Merge ▾, Approve and Rerun failed. The checks list opens with Show all, and
+ * with a glyph in its state's colour, then Merge ▾, Approve, Request changes, Close pull request and Rerun failed. The checks list opens with Show all, and
  * is open from the start when a check failed; a failed check has Log. On the top box the checks row opens the Checks
  * page (`checksPage`) in place of the list. `writes`: a machine of the person's writes to the forge; else the rows and
  * why no buttons. */
@@ -66,22 +66,35 @@ export function WorkMergeBox({ store, host, detail, box, writes, waiting = false
   const said = useSignal<{ words: string; failed: boolean } | null>(null);
   const log = useSignal<{ title: string; text: string } | null>(null);
   const shows = useSignal<boolean | null>(null);
+  /** Request changes is open: the field for what should change, in place of its button (#5857). */
+  const asking = useSignal(false);
+  const change = useSignal("");
   const item = detail.item;
   const node = item.node;
   const checks = checksInOrder(detail.checks ?? []);
   const open = shows.value ?? box.checksOpen;
   const reads = offers(detail, "log");
 
-  const act = async (method: "forge/merge" | "forge/approve" | "forge/rerun", params: unknown) => {
+  const act = async (method: "forge/merge" | "forge/approve" | "forge/request-changes" | "forge/close" | "forge/rerun", params: unknown): Promise<boolean> => {
     busy.value = true;
     try {
       const done = await store.link.call(method, params as never, host) as ForgeDone;
       said.value = { words: doneWords(method, done), failed: false };
       wrote();
+      return true;
     } catch (e) {
       said.value = { words: describe(e), failed: true };
+      return false;
     } finally {
       busy.value = false;
+    }
+  };
+  const sendChanges = async () => {
+    const body = change.value.trim();
+    if (!body || !detail.head) return;
+    if (await act("forge/request-changes", { node, sha: detail.head, body })) {
+      change.value = "";
+      asking.value = false;
     }
   };
   const readLog = async (check: string) => {
@@ -148,26 +161,47 @@ export function WorkMergeBox({ store, host, detail, box, writes, waiting = false
           {waiting ? null : !writes ? <p class="quiet small">{noWriter(node.ref)}</p>
             : item.draft ? <p class="quiet small">{readyOnForge(node.ref)}</p>
             : (
-              <div class="work-actions-bar">
-                {box.merges && detail.head && (
-                  <span class={`split-button work-merge-button${box.waits ? " waits" : ""}`}>
-                    <button type="button" class="prominent" disabled={busy.value} onClick={() => merge(methods[0], box.waits)}>{mergeMain(methods, box.waits)}</button>
-                    <button type="button" class="prominent" disabled={busy.value || menu.length === 0} aria-label="More ways to merge"
-                      onClick={(e) => openContextMenu(e, menu)}><Icon name="chevron-down" /></button>
-                  </span>
+              <>
+                <div class="work-actions-bar">
+                  {box.merges && detail.head && (
+                    <span class={`split-button work-merge-button${box.waits ? " waits" : ""}`}>
+                      <button type="button" class="prominent" disabled={busy.value} onClick={() => merge(methods[0], box.waits)}>{mergeMain(methods, box.waits)}</button>
+                      <button type="button" class="prominent" disabled={busy.value || menu.length === 0} aria-label="More ways to merge"
+                        onClick={(e) => openContextMenu(e, menu)}><Icon name="chevron-down" /></button>
+                    </span>
+                  )}
+                  {box.resolve && item.url && <button type="button" onClick={() => openLink(`${item.url}/conflicts`)}>{resolveOnForge(node.ref)}</button>}
+                  {box.approves && detail.head && (
+                    <button type="button" class="work-approve" disabled={busy.value || box.approved}
+                      onClick={() => void act("forge/approve", { node, sha: detail.head })}>
+                      <Icon name="check" />{approveWords(box.approved)}</button>
+                  )}
+                  {box.requests && detail.head && !asking.value && (
+                    <button type="button" disabled={busy.value} onClick={() => { asking.value = true; }}>Request changes</button>
+                  )}
+                  {box.closes && (
+                    <button type="button" disabled={busy.value} title="Close it without merging"
+                      onClick={() => void act("forge/close", { node })}>
+                      <Icon name="x" />Close pull request</button>
+                  )}
+                  {box.reruns && (
+                    <button type="button" class="work-rerun" disabled={busy.value} onClick={() => void act("forge/rerun", { node })}>
+                      <Icon name="rotate-cw" />Rerun failed</button>
+                  )}
+                  {busy.value && <span class="work-spinner" aria-label="Working" />}
+                </div>
+                {asking.value && detail.head && (
+                  <form class="work-request" onSubmit={(e) => { e.preventDefault(); if (change.value.trim()) void sendChanges(); }}>
+                    <textarea aria-label="What should change?" rows={4} value={change.value} placeholder="What should change?"
+                      disabled={busy.value} onInput={(e) => { change.value = e.currentTarget.value; }} />
+                    <div class="work-actions-bar">
+                      <span class="spacer" />
+                      <button type="button" disabled={busy.value} onClick={() => { asking.value = false; }}>Cancel</button>
+                      <button type="submit" class="prominent" disabled={busy.value || !change.value.trim()}>Request changes</button>
+                    </div>
+                  </form>
                 )}
-                {box.resolve && item.url && <button type="button" onClick={() => openLink(`${item.url}/conflicts`)}>{resolveOnForge(node.ref)}</button>}
-                {box.approves && detail.head && (
-                  <button type="button" class="work-approve" disabled={busy.value || box.approved}
-                    onClick={() => void act("forge/approve", { node, sha: detail.head })}>
-                    <Icon name="check" />{approveWords(box.approved)}</button>
-                )}
-                {box.reruns && (
-                  <button type="button" class="work-rerun" disabled={busy.value} onClick={() => void act("forge/rerun", { node })}>
-                    <Icon name="rotate-cw" />Rerun failed</button>
-                )}
-                {busy.value && <span class="work-spinner" aria-label="Working" />}
-              </div>
+              </>
             )}
           {box.ownPull && writes && !waiting && <p class="quiet small">{ownPullWords}</p>}
           {said.value && <p class={said.value.failed ? "hint failure small" : "quiet small"} role="status">{said.value.words}</p>}

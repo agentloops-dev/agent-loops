@@ -15,7 +15,7 @@ import (
 func TestAnArchiveDuringATurnStaysArchived(t *testing.T) {
 	t.Parallel()
 
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	root := t.TempDir()
 	first, c := start(t, root)
 	id := startAgent(t, c, 1, t.TempDir(), "keep going")
@@ -68,9 +68,9 @@ func TestAnArchiveWhileACardWaitsStaysArchived(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
-		"prompt": "Please ask, then write hi.txt"}), &id)
-	c.until(t, "a card", func(method string, _ json.RawMessage) bool { return method == "agent/permission" })
+	var card wire.PermissionRequest
+	json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+		"prompt": "Please ask, then write hi.txt"}, "a card", aCard(&card)), &id)
 	c.call(t, 2, "agents/archive", map[string]any{"agentID": id})
 	waitFor(t, "the turn over", func() bool {
 		l := d.live(id)

@@ -95,15 +95,34 @@
 .timeline { position: relative; }
 .timeline-scroll { position: relative; overflow: auto; height: max(360px, calc(100vh - 240px)); border: 1px solid var(--paper-rule);
   border-radius: var(--radius-control); background: var(--timeline-plot); overscroll-behavior-x: contain; }
-.timeline-content { position: relative; }
+.timeline-content { position: relative; display: flex; align-items: stretch; }
+/* The priority bands' gutter (#6089, #6093): at the leading edge while the plot scrolls in time; it scrolls with the rows. */
+.timeline-gutter { position: sticky; left: 0; z-index: 3; flex: none; background: var(--timeline-plot); border-right: 1px solid var(--paper-rule);
+  font: 11px var(--font-text); }
+.timeline-gutter svg { display: block; }
+.timeline-gutter-corner { position: sticky; top: 0; z-index: 1; background: var(--timeline-plot); border-bottom: 1px solid var(--paper-rule); }
+.timeline-plot-column { position: relative; flex: none; }
+.timeline-band-name text { font-weight: 600; fill: var(--timeline-faint); }
+.timeline-band-name.is-high text, .timeline-chip.is-high text { fill: var(--tint-failure); }
+.timeline-band-name.is-medium text, .timeline-chip.is-medium text { fill: var(--tint-warning); }
+.timeline-band-name line, .timeline-band-rule { stroke: var(--paper-rule); stroke-width: 1; }
+/* The priority chip after a block's title (#6089): the plot's ground, the tint in its text and line; on hold dashed. */
+.timeline-chip rect { fill: var(--timeline-plot); stroke: var(--timeline-faint); stroke-width: 1; }
+.timeline-chip.is-high rect { stroke: var(--line-failure); }
+.timeline-chip.is-medium rect { stroke: var(--line-warning); }
+.timeline-chip.is-on-hold rect { stroke-dasharray: 3 2; }
+.timeline-chip text { font-weight: 500; fill: var(--timeline-faint); }
+.timeline-list-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .timeline-plot, .timeline-axis, .timeline-foot { display: block; font: 11px var(--font-text); }
 .timeline-plot.pointing { cursor: pointer; }
 .timeline-axis { position: sticky; top: 0; z-index: 1; border-bottom: 1px solid var(--paper-rule); }
 .timeline-foot { position: sticky; bottom: 0; z-index: 1; }
 .timeline-ground { fill: var(--timeline-plot); }
-.timeline-block rect.past, .timeline-block rect.ahead, .timeline-block rect.breathing, .timeline-placeholder rect { rx: var(--radius-code); }
+.timeline-block rect.ghost, .timeline-block rect.past, .timeline-block rect.ahead, .timeline-block rect.breathing, .timeline-placeholder rect { rx: var(--radius-code); }
 .timeline-block .past { fill: var(--c); }
-.timeline-block .ahead { fill: var(--c); fill-opacity: var(--timeline-tint); stroke: var(--c-later); stroke-width: 1; stroke-dasharray: 4 3; }
+/* The ghost (#6043): the lighter tint from created to closed; the solid span is drawn over it. */
+.timeline-block .ghost { fill: var(--c); fill-opacity: var(--timeline-tint); }
+.timeline-block .ahead { fill: none; stroke: var(--c-later); stroke-width: 1; stroke-dasharray: 4 3; }
 .timeline-block .band { fill: var(--c-later); opacity: 0.35; }
 .timeline-block .title { font-weight: 600; }
 .timeline-block .title.past { fill: var(--paper-on-fill); }

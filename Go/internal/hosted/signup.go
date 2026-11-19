@@ -187,109 +187,154 @@ type signUpResult struct {
 
 // gate decides what a sign-in with no account gets.
 func (s *Service) gate(ctx context.Context, from string, user SignIn, invite string) signUpResult {
-	st := s.cfg.Store
 	if !user.valid() {
 		return unreadable(fmt.Errorf("%s is not a sign-in", user))
 	}
-	blocked := signUpResult{refused: "Sign-up is not open to this " + signin.Title(user.Provider) + " account.", status: http.StatusForbidden, kind: "blocked"}
-	if o, err := st.Get(ctx, blockedKey(user)); err != nil {
-		return unreadable(err)
-	} else if o != nil {
-		return blocked
-	}
 	mark := emailMark(s.markKey, user.Email)
-	if mark != "" {
-		if o, err := st.Get(ctx, blockedEmailKey(mark)); err != nil {
-			return unreadable(err)
-		} else if o != nil {
-			return blocked
-		}
-		// One account per email (#3388): another provider's sign-in with the same email
-		// gets the account that email has.
-		if acc, err := s.accounts.byEmail(ctx, mark); err != nil {
-			return unreadable(err)
-		} else if acc != nil {
-			s.leaveWaitlist(ctx, user)
-			return signUpResult{account: acc}
-		}
+	if res, done := s.blockedOrKnown(ctx, user, mark); done {
+		return res
 	}
 	if s.cfg.SignUp == SignUpClosed {
 		return signUpResult{refused: "Sign-up is not open yet.", status: http.StatusServiceUnavailable, kind: "closed"}
 	}
 	gitHub := user.Provider == signin.GitHub
-	listed := false
-	if gitHub && validLogin(user.Login) {
-		o, err := st.Get(ctx, allowKey(user.Login))
-		if err != nil {
-			return unreadable(err)
-		}
-		listed = o != nil
+	listed, err := s.allowListed(ctx, user)
+	if err != nil {
+		return unreadable(err)
 	}
 	// Open is open to a sign-in with a verified email (#3387); GitHub's age is checked too.
 	open := s.cfg.SignUp == SignUpOpen
 	allowed := open && mark != "" || listed
 	var inv *store.Object
 	if !allowed && validInvite(invite) {
-		o, err := st.Get(ctx, inviteKey(invite))
+		inv, err = s.unusedInvite(ctx, invite)
 		if err != nil {
 			return unreadable(err)
 		}
-		var rec Invite
-		if o != nil && json.Unmarshal(o.Data, &rec) == nil && rec.Used == nil && s.cfg.Now().Before(rec.Expires) {
-			allowed, inv = true, o
-		}
+		allowed = inv != nil
 	}
 	if !allowed && open && mark == "" && invite == "" {
 		return signUpResult{refused: noEmailText(user.Provider), status: http.StatusForbidden, kind: "no_email"}
 	}
-	why := ""
+	why, err := s.whyWait(ctx, user, invite, allowed, gitHub && !listed)
+	if err != nil {
+		return unreadable(err)
+	}
+	if why != "" {
+		return s.wait(ctx, from, user, why, why == whyCap, false)
+	}
+	return s.admit(ctx, from, user, mark, invite, inv)
+}
+
+// blockedOrKnown gives the result for a sign-in that is blocked, by its own key or its
+// email's, or whose email has an account already; done is false for any other.
+func (s *Service) blockedOrKnown(ctx context.Context, user SignIn, mark string) (res signUpResult, done bool) {
+	st := s.cfg.Store
+	blocked := signUpResult{refused: "Sign-up is not open to this " + signin.Title(user.Provider) + " account.", status: http.StatusForbidden, kind: "blocked"}
+	if o, err := st.Get(ctx, blockedKey(user)); err != nil {
+		return unreadable(err), true
+	} else if o != nil {
+		return blocked, true
+	}
+	if mark == "" {
+		return signUpResult{}, false
+	}
+	if o, err := st.Get(ctx, blockedEmailKey(mark)); err != nil {
+		return unreadable(err), true
+	} else if o != nil {
+		return blocked, true
+	}
+	// One account per email (#3388): another provider's sign-in with the same email
+	// gets the account that email has.
+	if acc, err := s.accounts.byEmail(ctx, mark); err != nil {
+		return unreadable(err), true
+	} else if acc != nil {
+		s.leaveWaitlist(ctx, user)
+		return signUpResult{account: acc}, true
+	}
+	return signUpResult{}, false
+}
+
+// allowListed says whether a GitHub sign-in's login is on the allow list.
+func (s *Service) allowListed(ctx context.Context, user SignIn) (bool, error) {
+	if user.Provider != signin.GitHub || !validLogin(user.Login) {
+		return false, nil
+	}
+	o, err := s.cfg.Store.Get(ctx, allowKey(user.Login))
+	if err != nil {
+		return false, err
+	}
+	return o != nil, nil
+}
+
+// unusedInvite gives the invite's record when it is there, unused and not expired, else nil.
+func (s *Service) unusedInvite(ctx context.Context, invite string) (*store.Object, error) {
+	o, err := s.cfg.Store.Get(ctx, inviteKey(invite))
+	if err != nil {
+		return nil, err
+	}
+	var rec Invite
+	if o != nil && json.Unmarshal(o.Data, &rec) == nil && rec.Used == nil && s.cfg.Now().Before(rec.Expires) {
+		return o, nil
+	}
+	return nil, nil
+}
+
+// whyWait gives why a sign-in goes on the waitlist, or "" when it may sign up now.
+// ageChecked says its GitHub account's age counts.
+func (s *Service) whyWait(ctx context.Context, user SignIn, invite string, allowed, ageChecked bool) (string, error) {
 	switch {
 	case !allowed && invite != "":
-		why = whyInviteUsed
+		return whyInviteUsed, nil
 	case !allowed:
-		why = whyNoInvite
-	case gitHub && !listed && s.cfg.Now().Sub(user.Created) < s.cfg.MinGitHubAge:
-		why = whyAge
-	default:
-		n, err := s.accounts.count(ctx)
-		if err != nil {
-			return unreadable(err)
-		}
-		if n >= s.cfg.MaxAccounts {
-			why = whyCap
-		} else if room, err := s.roomFor(ctx, plans[PlanFree].Storage); err != nil {
-			return unreadable(err)
-		} else if !room {
-			// The plans' storage would add up to more than the disk (#3121).
-			why = whyCap
-		}
+		return whyNoInvite, nil
+	case ageChecked && s.cfg.Now().Sub(user.Created) < s.cfg.MinGitHubAge:
+		return whyAge, nil
 	}
-	if why == "" {
-		if !s.rates.allow(from, s.cfg.Now(), s.cfg.SignUpsPerAddress, s.cfg.SignUpsPerHour) {
-			return tooMany()
-		}
-		if inv != nil {
-			var rec Invite
-			_ = json.Unmarshal(inv.Data, &rec)
-			by := SignIn{Provider: user.Provider, Subject: user.Subject, Login: user.Login}
-			rec.Used = &Used{By: &by, At: s.cfg.Now().UTC()}
-			data, _ := json.Marshal(rec)
-			if _, err := st.Put(ctx, inviteKey(invite), data, store.Matching(inv.ETag)); err != nil {
-				if !store.IsConflict(err) {
-					return unreadable(err)
-				}
-				// Someone else used it first.
-				return s.wait(ctx, from, user, whyInviteUsed, false, true)
+	n, err := s.accounts.count(ctx)
+	if err != nil {
+		return "", err
+	}
+	if n >= s.cfg.MaxAccounts {
+		return whyCap, nil
+	}
+	room, err := s.roomFor(ctx, plans[PlanFree].Storage)
+	if err != nil {
+		return "", err
+	}
+	if !room {
+		// The plans' storage would add up to more than the disk (#3121).
+		return whyCap, nil
+	}
+	return "", nil
+}
+
+// admit makes the account of a sign-in that may sign up, using its invite (inv) when it
+// came by one.
+func (s *Service) admit(ctx context.Context, from string, user SignIn, mark, invite string, inv *store.Object) signUpResult {
+	if !s.rates.allow(from, s.cfg.Now(), s.cfg.SignUpsPerAddress, s.cfg.SignUpsPerHour) {
+		return tooMany()
+	}
+	if inv != nil {
+		var rec Invite
+		_ = json.Unmarshal(inv.Data, &rec)
+		by := SignIn{Provider: user.Provider, Subject: user.Subject, Login: user.Login}
+		rec.Used = &Used{By: &by, At: s.cfg.Now().UTC()}
+		data, _ := json.Marshal(rec)
+		if _, err := s.cfg.Store.Put(ctx, inviteKey(invite), data, store.Matching(inv.ETag)); err != nil {
+			if !store.IsConflict(err) {
+				return unreadable(err)
 			}
+			// Someone else used it first.
+			return s.wait(ctx, from, user, whyInviteUsed, false, true)
 		}
-		acc, made, err := s.accounts.makeMarked(ctx, user, mark)
-		if err != nil || acc == nil {
-			return unreadable(err)
-		}
-		s.leaveWaitlist(ctx, user)
-		return signUpResult{account: acc, made: made}
 	}
-	return s.wait(ctx, from, user, why, why == whyCap, false)
+	acc, made, err := s.accounts.makeMarked(ctx, user, mark)
+	if err != nil || acc == nil {
+		return unreadable(err)
+	}
+	s.leaveWaitlist(ctx, user)
+	return signUpResult{account: acc, made: made}
 }
 
 // wait puts a sign-in on the waitlist, at the front for one who may sign up once there is

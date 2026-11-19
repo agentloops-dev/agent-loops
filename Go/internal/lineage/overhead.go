@@ -30,26 +30,8 @@ func Overhead(nodes []wire.LineageCostNode, now time.Time) wire.LineageOverhead 
 	since := wire.DateOf(now.Add(-OverheadWindow))
 	o := wire.LineageOverhead{WindowDays: int64(OverheadWindow / (24 * time.Hour)), Linked: blankCost(), Unlinked: blankCost(),
 		Uncounted: []string{UncountedPeopleTime, UncountedCIMinutes}}
-	fixers := map[string][]wire.LineageCostNode{}
-	epics := map[string]bool{}
-	lastAt := map[string]wire.Date{}
-	for _, n := range nodes {
-		switch n.Node.Kind {
-		case KindPR:
-			for _, f := range n.Fixes {
-				fixers[f] = append(fixers[f], n)
-			}
-		case KindIssue:
-			lastAt[n.Node.Ref] = n.LastAt
-			if n.Level != nil && *n.Level == "epic" {
-				epics[n.Node.Ref] = true
-			}
-			if n.Parent != nil {
-				epics[*n.Parent] = true
-			}
-		}
-	}
-	own, children := blankCost(), blankCost()
+	x := indexOverhead(nodes)
+	own := blankCost()
 	for _, n := range nodes {
 		if n.LastAt < since {
 			continue
@@ -60,23 +42,11 @@ func Overhead(nodes []wire.LineageCostNode, now time.Time) wire.LineageOverhead 
 		case KindIssue, KindPR, KindRelease:
 			AddCost(&o.Linked, n.Banked)
 		}
-		if n.Node.Kind == KindIssue && epics[n.Node.Ref] {
+		if n.Node.Kind == KindIssue && x.epics[n.Node.Ref] {
 			AddCost(&own, n.Banked)
 		}
 	}
-	// Each epic changed in the window, against all its children, whenever they changed.
-	for _, n := range nodes {
-		if n.Node.Kind != KindIssue || n.Parent == nil || epics[n.Node.Ref] {
-			continue
-		}
-		if at, ok := lastAt[*n.Parent]; !ok || at < since {
-			continue
-		}
-		AddCost(&children, n.Banked)
-		for _, pr := range fixers[n.Node.Ref] {
-			AddCost(&children, pr.Banked)
-		}
-	}
+	children := x.childrenCost(nodes, since)
 	currency := mainCurrency(o.Linked)
 	if currency == "" {
 		return o
@@ -91,6 +61,54 @@ func Overhead(nodes []wire.LineageCostNode, now time.Time) wire.LineageOverhead 
 		o.EpicRatio = &r
 	}
 	return o
+}
+
+// overheadIndex is the PRs that fix each issue, the epics (an issue that is one or has
+// children), and each issue's last change.
+type overheadIndex struct {
+	fixers map[string][]wire.LineageCostNode
+	epics  map[string]bool
+	lastAt map[string]wire.Date
+}
+
+func indexOverhead(nodes []wire.LineageCostNode) overheadIndex {
+	x := overheadIndex{fixers: map[string][]wire.LineageCostNode{}, epics: map[string]bool{}, lastAt: map[string]wire.Date{}}
+	for _, n := range nodes {
+		switch n.Node.Kind {
+		case KindPR:
+			for _, f := range n.Fixes {
+				x.fixers[f] = append(x.fixers[f], n)
+			}
+		case KindIssue:
+			x.lastAt[n.Node.Ref] = n.LastAt
+			if n.Level != nil && *n.Level == "epic" {
+				x.epics[n.Node.Ref] = true
+			}
+			if n.Parent != nil {
+				x.epics[*n.Parent] = true
+			}
+		}
+	}
+	return x
+}
+
+// childrenCost is the cost of the children of each epic changed since since, with the PRs
+// that fix them, whenever they changed.
+func (x overheadIndex) childrenCost(nodes []wire.LineageCostNode, since wire.Date) wire.LineageCost {
+	children := blankCost()
+	for _, n := range nodes {
+		if n.Node.Kind != KindIssue || n.Parent == nil || x.epics[n.Node.Ref] {
+			continue
+		}
+		if at, ok := x.lastAt[*n.Parent]; !ok || at < since {
+			continue
+		}
+		AddCost(&children, n.Banked)
+		for _, pr := range x.fixers[n.Node.Ref] {
+			AddCost(&children, pr.Banked)
+		}
+	}
+	return children
 }
 
 // mainCurrency is the currency c has most of; none when it has none.

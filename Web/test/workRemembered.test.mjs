@@ -30,7 +30,7 @@ test("a list keeps its filters and sort, and the next visit opens with them", as
 
     // Clear and the defaults: nothing is kept, so the next visit opens on the defaults.
     again.filter.value = { ...again.filter.value, label: "", project: "", state: "open" };
-    again.sort.value = "updated";
+    again.sort.value = "priority";
     assert.equal(localStorage.getItem("agents.work.filters.issue"), null);
   } finally {
     delete globalThis.localStorage;

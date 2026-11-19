@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -54,6 +54,10 @@ func (d *Daemon) personalHome() string {
 	}
 	return d.PersonalHome
 }
+
+// errNoPersonalHome refuses a write under the personal home when there is none (a scratch
+// root): a path joined to "" is relative, the daemon's working folder (#5815).
+var errNoPersonalHome = errors.New("this machine has no personal home")
 
 // orderedKeys is the keys of a JSON object in the file's own order.
 func orderedKeys(raw json.RawMessage) []string {
@@ -101,74 +105,82 @@ func readMCPFile(path string) ([]mcpEntry, string) {
 	var out []mcpEntry
 	for _, name := range orderedKeys(servers) {
 		raw := each[name]
-		var e struct {
-			Command *string           `json:"command"`
-			Args    []string          `json:"args"`
-			Env     map[string]string `json:"env"`
-			URL     *string           `json:"url"`
-			Headers map[string]string `json:"headers"`
-			Type    *string           `json:"type"`
-			Hosted  *bool             `json:"hosted"`
-		}
+		var e mcpFileServer
 		if json.Unmarshal(raw, &e) != nil {
 			return nil, "The server “" + name + "” is not written as a server."
 		}
 		entry := mcpEntry{name: name, raw: raw, hosted: e.Hosted != nil && *e.Hosted}
-		switch {
-		case e.Command != nil:
-			var env []sdk.EnvVariable
-			keys := make([]string, 0, len(e.Env))
-			for k := range e.Env {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				env = append(env, sdk.EnvVariable{Name: k, Value: e.Env[k]})
-			}
-			if env == nil {
-				env = []sdk.EnvVariable{}
-			}
-			args := e.Args
-			if args == nil {
-				args = []string{}
-			}
-			entry.server = sdk.McpServer{Stdio: &sdk.McpServerStdio{Name: name, Command: *e.Command, Args: args, Env: env}}
-			entry.kind = wire.MCPTransportNameStdio
-		case e.Hosted != nil && *e.Hosted:
-			return nil, "The server “" + name + "” is hosted but has no command: only a local server can be hosted."
-		case e.URL != nil:
-			var headers []sdk.HttpHeader
-			keys := make([]string, 0, len(e.Headers))
-			for k := range e.Headers {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				headers = append(headers, sdk.HttpHeader{Name: k, Value: e.Headers[k]})
-			}
-			if headers == nil {
-				headers = []sdk.HttpHeader{}
-			}
-			kind := "http"
-			if e.Type != nil {
-				kind = *e.Type
-			}
-			switch kind {
-			case "http", "streamable-http", "streamableHttp":
-				entry.server = sdk.McpServer{Http: &sdk.McpServerHttpInline{Name: name, Type: "http", Url: *e.URL, Headers: headers}}
-				entry.kind = wire.MCPTransportNameHttp
-			case "sse":
-				entry.server = sdk.McpServer{Sse: &sdk.McpServerSseInline{Name: name, Type: "sse", Url: *e.URL, Headers: headers}}
-				entry.kind = wire.MCPTransportNameSse
-			default:
-				return nil, "The server “" + name + "” has a type that is not http or sse."
-			}
-		default:
-			return nil, "The server “" + name + "” has neither a command nor a url."
+		if problem := mcpFileEntryServer(&entry, e); problem != "" {
+			return nil, problem
 		}
 		out = append(out, entry)
 	}
 	return out, ""
+}
+
+// mcpFileServer is one server as mcp.json writes it.
+type mcpFileServer struct {
+	Command *string           `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env"`
+	URL     *string           `json:"url"`
+	Headers map[string]string `json:"headers"`
+	Type    *string           `json:"type"`
+	Hosted  *bool             `json:"hosted"`
+}
+
+// mcpFileEntryServer sets the entry's server and kind from e. It gives the problem when e
+// is not a server.
+func mcpFileEntryServer(entry *mcpEntry, e mcpFileServer) string {
+	name := entry.name
+	switch {
+	case e.Command != nil:
+		args := e.Args
+		if args == nil {
+			args = []string{}
+		}
+		entry.server = sdk.McpServer{Stdio: &sdk.McpServerStdio{Name: name, Command: *e.Command, Args: args, Env: mcpEnvVars(e.Env)}}
+		entry.kind = wire.MCPTransportNameStdio
+	case e.Hosted != nil && *e.Hosted:
+		return "The server “" + name + "” is hosted but has no command: only a local server can be hosted."
+	case e.URL != nil:
+		headers := mcpHTTPHeaders(e.Headers)
+		kind := "http"
+		if e.Type != nil {
+			kind = *e.Type
+		}
+		switch kind {
+		case "http", "streamable-http", "streamableHttp":
+			entry.server = sdk.McpServer{Http: &sdk.McpServerHttpInline{Name: name, Type: "http", Url: *e.URL, Headers: headers}}
+			entry.kind = wire.MCPTransportNameHttp
+		case "sse":
+			entry.server = sdk.McpServer{Sse: &sdk.McpServerSseInline{Name: name, Type: "sse", Url: *e.URL, Headers: headers}}
+			entry.kind = wire.MCPTransportNameSse
+		default:
+			return "The server “" + name + "” has a type that is not http or sse."
+		}
+	default:
+		return "The server “" + name + "” has neither a command nor a url."
+	}
+	return ""
+}
+
+// mcpEnvVars is the env map as variables, sorted by name. It is never nil.
+func mcpEnvVars(m map[string]string) []sdk.EnvVariable {
+	env := []sdk.EnvVariable{}
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		env = append(env, sdk.EnvVariable{Name: k, Value: m[k]})
+	}
+	return env
+}
+
+// mcpHTTPHeaders is the headers map as headers, sorted by name. It is never nil.
+func mcpHTTPHeaders(m map[string]string) []sdk.HttpHeader {
+	headers := []sdk.HttpHeader{}
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		headers = append(headers, sdk.HttpHeader{Name: k, Value: m[k]})
+	}
+	return headers
 }
 
 // secrets is every secret with Ask before use off: secrets.env's NAME=value lines, and the

@@ -169,7 +169,7 @@ func TestBackgroundNoteNamesTheProcesses(t *testing.T) {
 func TestReleaseEndsBackgroundProcesses(t *testing.T) {
 	t.Parallel()
 
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := warmAgent(t, d, c, t.TempDir())
@@ -216,7 +216,7 @@ func startsIn(file string) int {
 
 // A warm runtime takes the next turn when nothing changed; a changed start starts a new one.
 func TestWarmRuntimeReusedOnlyWhenNothingChanged(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	personalHomeFor(t, t.TempDir())
 	starts := filepath.Join(t.TempDir(), "starts")
 	t.Setenv("AGENTS_FAKE_STARTS", starts)
@@ -253,7 +253,7 @@ func TestWarmRuntimeReusedOnlyWhenNothingChanged(t *testing.T) {
 // agents/prewarm starts a finished session's runtime with no word in its chat, and the
 // next turn takes it; with the pool off it starts nothing.
 func TestPrewarmStartsTheRuntimeQuietly(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	starts := filepath.Join(t.TempDir(), "starts")
 	t.Setenv("AGENTS_FAKE_STARTS", starts)
 	d, c := start(t, t.TempDir())
@@ -381,7 +381,7 @@ func waitIdle(t *testing.T, d *Daemon, id wire.UUID) {
 // and the event's turn starts one that continues the same conversation with session/load
 // (#4513).
 func TestAWaitingAgentsRuntimeIsReleasedAndTheEventContinuesIt(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	t.Setenv("AGENTS_FAKE_CONTINUE", "load")
 	starts := filepath.Join(t.TempDir(), "starts")
 	t.Setenv("AGENTS_FAKE_STARTS", starts)
@@ -432,7 +432,7 @@ func TestAWaitingAgentsRuntimeIsReleasedAndTheEventContinuesIt(t *testing.T) {
 // A waiting agent whose runtime can neither load nor resume keeps it: a release would lose
 // the conversation. Without the wait it goes as before.
 func TestAWaitingAgentWhoseRuntimeCannotContinueIsKept(t *testing.T) {
-	fakeRuntimes(t)
+	fakeRuntimeProcesses(t)
 	t.Setenv("AGENTS_FAKE_CONTINUE", "none")
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()

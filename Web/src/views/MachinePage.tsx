@@ -25,6 +25,8 @@ import { Resources } from "./Resources";
 import { signInRuntime } from "./RuntimeSignInDialog";
 import { isInstalled, machineRuntimeLine, offersMachineSignIn, offersUpdate, signInOnTheMac } from "../model/runtimes";
 import { forCleanup, pageLine, tally, worktreesIntro } from "../model/worktrees";
+import { failedStep, foldedLine, setupChip } from "../model/machineSetup";
+import { MachineSetupSection } from "./MachineSetup";
 
 const disksHelp = "Each disk its agents write to. Low and almost full are the lines set in Folder Settings ▸ Disk Space.";
 
@@ -54,6 +56,7 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
   }, [store, host, asks]);
 
   if (!machine) return <p class="hint">No machine by that name here now.</p>;
+  const setup = machine.setup;
   // The disk the summary names and Disks shows open: the worst, or the folders' own; the others fold (#3743).
   const disks = usage?.disks ?? [];
   const top = headline(disks, (store.worktreeLists.value[host] ?? []).map((g) => decodeURIComponent(new URL(g.folder, "file:///").pathname)));
@@ -74,10 +77,14 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
   return (
     <>
       <div class="setting">
-        <span>{answers ? "Online" : <span class="failure">Offline</span>}</span>
+        {/* While it sets itself up, the chip (#5354): Setting up · 7 of 8, Set-up failed, Ready · 3 min 42 s. */}
+        {setup && !foldedLine(setup)
+          ? <span class={failedStep(setup) ? "failure" : "quiet"}>{setupChip(setup)}</span>
+          : <span>{answers ? "Online" : <span class="failure">Offline</span>}</span>}
         <button type="button" title={`${name}’s sleep, backups and desktop control, in Settings`}
           onClick={() => { chooseSettingsMachine(host); go({ nav: "settings" }); }}>Settings…</button>
       </div>
+      {setup && <MachineSetupSection store={store} row={machine} setup={setup} />}
       <MachineSessionsSection store={store} host={host} name={name} online={answers} />
       <MachineLabels store={store} host={host} machine={machine} />
       {!answers ? <p class="hint">{name} is offline, so it can’t say how it is doing now.</p>

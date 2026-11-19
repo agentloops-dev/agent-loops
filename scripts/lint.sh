@@ -267,10 +267,14 @@ run_zsh() {
 }
 
 # Every finding, then only those not in Go/.golangci-baseline.txt: a finding's key is its line
-# with the line and column taken out, and each key in the baseline covers one finding.
+# with the line and column taken out, and each key in the baseline covers one finding. A
+# gocognit finding's key has no number either: a function in the baseline stays there when an
+# edit makes it a little harder or easier to read, until its task splits it (#6182).
 # golangci-lint exits 1 for findings and something else when it could not finish.
+# --allow-serial-runners: a run waits for the lock that every worktree's run shares (in the temp
+# folder), not fail with "parallel golangci-lint is running" when another lane lints (#6039).
 run_go() {
-	local args=(run --max-issues-per-linter 0 --max-same-issues 0 --show-stats=false
+	local args=(run --allow-serial-runners --max-issues-per-linter 0 --max-same-issues 0 --show-stats=false
 		--output.text.print-issued-lines=false ./...) all status
 	[ "$fix" = 1 ] && args=("${args[@]}" --fix)
 	all=$(mktemp)
@@ -290,7 +294,7 @@ run_go() {
 	# Each key in the baseline covers one finding; lines that are not findings print as they are.
 	awk 'NR == FNR { n[$0]++; next }
 		!/^[^:[:space:]]+:[0-9]+(:[0-9]+)?: / { print; next }
-		{ k = $0; sub(/:[0-9]+(:[0-9]+)?: /, ": ", k); if (n[k] > 0) { n[k]--; old++ } else { print; new++ } }
+		{ k = $0; sub(/:[0-9]+(:[0-9]+)?: /, ": ", k); sub(/cognitive complexity [0-9]+ of /, "cognitive complexity of ", k); if (n[k] > 0) { n[k]--; old++ } else { print; new++ } }
 		END { if (old) printf "lint.sh: %d old finding(s) in the baseline not shown\n", old > "/dev/stderr"; exit new > 0 }' \
 		"$GO_BASELINE" "$all"
 	status=$?
@@ -298,9 +302,10 @@ run_go() {
 	return "$status"
 }
 
-# go_key: each finding without its line and column, as Go/.golangci-baseline.txt holds it.
+# go_key: each finding without its line and column (and gocognit's number), as
+# Go/.golangci-baseline.txt holds it.
 go_key() {
-	sed -nE 's/^([^:[:space:]]+):[0-9]+(:[0-9]+)?: /\1: /p'
+	sed -nE -e 's/cognitive complexity [0-9]+ of /cognitive complexity of /' -e 's/^([^:[:space:]]+):[0-9]+(:[0-9]+)?: /\1: /p'
 }
 
 # govulncheck exits 3 for a vulnerability the code calls. One whose id is in
@@ -376,6 +381,8 @@ run_checks() {
 	python3 scripts/listing-watch.py --selftest || status=1
 	python3 scripts/check-stacked-labels.py --selftest || status=1
 	python3 scripts/check-stacked-labels.py || status=1
+	python3 scripts/check-task-tuple-returns.py --selftest || status=1
+	python3 scripts/check-task-tuple-returns.py || status=1
 	python3 scripts/check-approval-words.py --selftest || status=1
 	python3 scripts/check-approval-words.py || status=1
 	python3 scripts/check-workflow-github-reads.py --selftest || status=1
@@ -416,7 +423,12 @@ for linter in $linters; do
 		;;
 	esac
 	if ! have "$(tool "$linter")"; then
-		echo "== $linter: failed, as $(tool "$linter") is not on the PATH and could not be got"
+		if [ "$(uname -s)" = Darwin ]; then
+			echo "== $linter: failed, as $(tool "$linter") is not on the PATH and could not be got"
+		else
+			# On Linux lint.sh gets nothing itself: the job puts the pinned linters on the PATH (#5890).
+			echo "== $linter: failed, as $(tool "$linter") is not on the PATH; on Linux, run scripts/lint.sh --tools DIR $(tool "$linter") first and put DIR on the PATH"
+		fi
 		failed="$failed $linter"
 		continue
 	fi

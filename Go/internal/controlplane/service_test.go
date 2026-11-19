@@ -39,6 +39,8 @@ type plane struct {
 	told func(host, method string, params json.RawMessage)
 	// asked answers what the control plane asks a fake host on channel 0 (#2011).
 	asked func(host, method string, params json.RawMessage) (any, bool)
+	// redial, when set, is each host's waits between dials: first, last and steady (#6185).
+	redial []time.Duration
 }
 
 func freePort(t *testing.T) int {
@@ -98,8 +100,15 @@ func tryStartPlane(t *testing.T, st store.Store, private []byte, change func(*Co
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
+// testCodeLife is the life of a code a test makes. A code's expiry is a wall-clock time,
+// and the wall clock goes on while the Mac sleeps, but a test's timeouts do not (Go's
+// monotonic clock stops on macOS). A Mac in maintenance sleep during a run can sleep for
+// more than a minute between making a code and using it: a code of one minute was then
+// refused as expired in a test that took 1.25 s (#6259).
+const testCodeLife = 24 * time.Hour
+
 func (p *plane) code(host bool) *controllink.Code {
-	shown, err := p.s.Codes().Issue(context.Background(), host, false, time.Minute)
+	shown, err := p.s.Codes().Issue(context.Background(), host, false, testCodeLife)
 	if err != nil {
 		p.t.Fatal(err)
 	}
@@ -212,6 +221,9 @@ func (p *plane) serveHost(root string, member *controllink.Membership, private [
 		}
 	}}
 	h.uplink = u
+	if len(p.redial) == 3 {
+		u.SetRedial(p.redial[0], p.redial[1], p.redial[2])
+	}
 	if asked != nil {
 		u.Asked = func(method string, params json.RawMessage) (any, bool) { return asked(member.Host, method, params) }
 	}
@@ -639,7 +651,7 @@ func TestABrowserThroughTheLoopbackListener(t *testing.T) {
 	origin := web.OriginFor(s.WebPort())
 
 	pair := func(browser bool, kind string, at string) (string, []byte, error) {
-		shown, err := s.Codes().Issue(context.Background(), false, browser, time.Minute)
+		shown, err := s.Codes().Issue(context.Background(), false, browser, testCodeLife)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -857,7 +869,7 @@ func TestProvidersAnswerWhereTheyCanRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Stop()
-	shown, _ := s.Codes().Issue(context.Background(), false, false, time.Minute)
+	shown, _ := s.Codes().Issue(context.Background(), false, false, testCodeLife)
 	code, _ := controllink.ParseCode(shown.Text)
 	member, err := controllink.PairClient(context.Background(), code, "Window")
 	if err != nil {

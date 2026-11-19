@@ -30,9 +30,10 @@ func (githubForge) Images() forgeImageHost { return githubImages{} }
 func (githubForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues: true, PRs: true,
+		Priority: true, Hold: true,
 		Issue: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, CloseNotPlanned: true},
 		PR: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, Merge: true, AutoMerge: true, Approve: true,
-			Rerun: true, Log: true, Diff: true, CancelAutoMerge: true, Ready: true},
+			RequestChanges: true, Rerun: true, Log: true, Diff: true, CancelAutoMerge: true, Ready: true},
 		LabelColors: true,
 		Avatars:     true,
 		StateReason: true,
@@ -446,6 +447,23 @@ func (g githubForge) Approve(ctx context.Context, r forgeRef, sha string) (wire.
 	return wire.ForgeDone{URL: optional(url)}, nil
 }
 
+// RequestChanges asks for changes at the head the page shows, with body as the review text.
+func (g githubForge) RequestChanges(ctx context.Context, r forgeRef, sha, body string) (wire.ForgeDone, error) {
+	if !r.pr() {
+		return wire.ForgeDone{}, cannot(actionRequestChanges)
+	}
+	gh, err := g.d.forgeGitHub()
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	out, err := gh.ReviewPR(ctx, r.Repo, r.Number, sha, false, body)
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	url, _ := out["url"].(string)
+	return wire.ForgeDone{URL: optional(url)}, nil
+}
+
 // Rerun reruns the failed jobs of the failing checks' Actions runs.
 func (g githubForge) Rerun(ctx context.Context, r forgeRef) (wire.ForgeDone, error) {
 	if !r.pr() {
@@ -521,4 +539,21 @@ func githubStart(i wire.ForgeItem) *wire.ForgeStart {
 	on := " --repo " + repo.path
 	return numberedStart(fmt.Sprintf("#%d: %s\n\nWork on this GitHub issue (`gh issue view %d%s`).\n\n"+
 		"First assign it to yourself: `gh issue edit %d%s --add-assignee @me`.", n, i.Title, n, on, n, on), n, i.Title)
+}
+
+// SetPriority writes the repo's Priority issue field where it has one (#6091), else the labels.
+func (g githubForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	gh, err := g.d.forgeGitHub()
+	if err != nil {
+		return err
+	}
+	if has, err := gh.SetPriorityField(ctx, r.Repo, r.Number, priority); has || err != nil {
+		return err
+	}
+	return labelPriority(ctx, g, r, priority)
+}
+
+// SetHold is the label on hold: GitHub has no hold field (#6091).
+func (g githubForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	return labelHold(ctx, g, r, on)
 }

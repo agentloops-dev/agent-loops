@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os/exec"
 	"strings"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 	"github.com/agentloops-dev/agent-loops/Go/internal/mcpevents"
 )
 
@@ -95,13 +95,11 @@ func checksOutcome(state string) string {
 // Forgejo too, at its host's root, when no root matches: one of one's own before it is
 // connected.
 func RepoAt(ctx context.Context, folder string, roots []string) (root, repo string, ok bool) {
-	var remotes []string
-	for _, name := range remotesAt(ctx, folder) {
-		out, err := exec.CommandContext(ctx, "git", "-C", folder, "remote", "get-url", name).Output()
-		if err == nil {
-			remotes = append(remotes, strings.TrimSpace(string(out)))
-		}
-	}
+	return RepoIn(gitremote.URLs(ctx, folder), roots)
+}
+
+// RepoIn is RepoAt for remotes already read (gitremote.URLs).
+func RepoIn(remotes, roots []string) (root, repo string, ok bool) {
 	for _, r := range roots {
 		for _, remote := range remotes {
 			if path, ok := RepoOfRemote(r, remote); ok {
@@ -134,20 +132,4 @@ func remoteHost(remote string) string {
 	}
 	h, _, _ := strings.Cut(at, ":")
 	return h
-}
-
-func remotesAt(ctx context.Context, folder string) []string {
-	out, err := exec.CommandContext(ctx, "git", "-C", folder, "remote").Output()
-	if err != nil {
-		return nil
-	}
-	remotes := []string{}
-	for _, r := range strings.Fields(string(out)) {
-		if r == "origin" {
-			remotes = append([]string{r}, remotes...)
-		} else {
-			remotes = append(remotes, r)
-		}
-	}
-	return remotes
 }

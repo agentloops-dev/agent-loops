@@ -15,10 +15,11 @@ struct WorkTimelineTests {
                             state: state, updatedAt: now, feature: feature)
     }
 
-    static func child(_ n: Int, started: Double? = nil, closed: Double? = nil, forecast: Double? = nil,
+    /// `created` is when it was filed: by default when it started (or closed), so the ghost adds nothing.
+    static func child(_ n: Int, created: Double? = nil, started: Double? = nil, closed: Double? = nil, forecast: Double? = nil,
                       waits: Bool = false, reason: String? = nil) -> DaemonAPI.WorkTimelineChild {
         DaemonAPI.WorkTimelineChild(item: item(n, state: closed == nil ? "open" : "closed"), stateReason: reason,
-                                    createdAt: h(-100), startedAt: started.map(h), closedAt: closed.map(h),
+                                    createdAt: h(created ?? started ?? closed ?? forecast ?? -100), startedAt: started.map(h), closedAt: closed.map(h),
                                     waitsForPerson: waits ? true : nil, forecastAt: forecast.map(h))
     }
 
@@ -119,6 +120,48 @@ struct WorkTimelineTests {
         #expect(past[0].dots.allSatisfy(\.closed) && past[0].band == nil)
     }
 
+    /// #6043: the ghost from created to closed, solid only from started to stopped.
+    @Test func aBlockIsSolidFromStartedToStoppedAndGhostFromCreatedToClosed() throws {
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            // Open, nobody on it, its last close 3 h before Now: solid to there, the ghost to Now.
+            Self.epic(1, [Self.child(10, created: -12, started: -10, closed: -3), Self.child(11, created: -9)],
+                      segments: [(-10, nil)]),
+            // A child filed a day before it started: the ghost before the solid span.
+            Self.epic(2, [Self.child(12, created: -30, started: -6)], segments: [(-6, nil)]),
+            // Joined: ghost from created to started, solid to its last close.
+            Self.epic(3, [Self.child(13, created: -20, started: -15, closed: -14)], segments: [(-15, -14)]),
+            // Dropped: the same spans, in grey.
+            Self.epic(4, [Self.child(14, created: -8, started: -7, closed: -5)], segments: [(-7, -5)], reason: "not_planned"),
+        ])
+        let lines = WorkTimeline.lines(timeline, now: Self.now)
+        try #require(lines.count == 4)
+        let stopped = lines[0], filed = lines[1], joined = lines[2], dropped = lines[3]
+        #expect(stopped.createdAt == Self.h(-12) && stopped.start == Self.h(-10))
+        #expect(stopped.stoppedAt == Self.h(-3) && stopped.end == Self.now)
+        #expect(stopped.stopped(now: Self.now))
+        #expect(WorkTimeline.lineLine(stopped, now: Self.now) == "#1 · 1 of 2 · stopped 3 h ago · open")
+        #expect(WorkTimeline.spoken([stopped], now: Self.now).first?.words == "Issue 1, 1 of 2 done, open, stopped 3 h ago")
+        // The dots do not move: #10 is still at its close.
+        #expect(stopped.dots.map(\.at) == [Self.h(-3)])
+        #expect(filed.createdAt == Self.h(-30) && filed.start == Self.h(-6) && filed.stoppedAt == Self.h(-6))
+        #expect(joined.createdAt == Self.h(-20) && joined.start == Self.h(-15) && joined.stoppedAt == Self.h(-14)
+            && joined.end == Self.h(-14) && !joined.stopped(now: Self.now))
+        #expect(WorkTimeline.lineLine(joined, now: Self.now) == "#3 · 1 of 1 · closed 14 h ago")
+        #expect(dropped.how == .dropped && dropped.createdAt == Self.h(-8) && dropped.stoppedAt == Self.h(-5))
+        // A session in a turn on it: the work did not stop, solid to Now.
+        let working = try #require(WorkTimeline.lines(timeline, now: Self.now, working: ["github:alexec/Agents#11"]).first)
+        #expect(working.stoppedAt == Self.now && !working.stopped(now: Self.now))
+        #expect(WorkTimeline.lineLine(working, now: Self.now) == "#1 · 1 of 2 · open")
+        // The rows pack by the created time: #2 is filed before #1 starts, so it takes row 0.
+        let rows = WorkTimeline.layout(lines)
+        #expect(rows.first { $0.number == "#2" }?.row == 0)
+        // The block, its words and its hit start at the ghost.
+        let words = WorkTimeline.blockWords(filed, axis: Self.axis, measure: { Double($0.count) * 6 })
+        #expect(words.insideX == Self.axis.x(Self.h(-30)) + 6)
+        let y = WorkTimeline.rowTop(filed.row) + 4
+        #expect(WorkTimeline.hit((x: Self.axis.x(Self.h(-20)), y: y), lines: [filed], axis: Self.axis) == .line(filed))
+    }
+
     @Test func aDroppedEpicEndsInACross() {
         let timeline = DaemonAPI.WorkTimeline(epics: [
             Self.epic(8, [Self.child(30, started: -5, closed: -4)], segments: [(-5, -4)], reason: "not_planned"),
@@ -158,6 +201,87 @@ struct WorkTimelineTests {
             Self.epic(17, [Self.child(45, started: -1, closed: -0.5)], segments: [(-1, -0.5)]),
         ]), now: Self.now))
         #expect(waits.map(\.row) == [0, 1])
+    }
+
+    static func with(_ epic: DaemonAPI.WorkTimelineEpic, priority: String? = nil, onHold: Bool = false) -> DaemonAPI.WorkTimelineEpic {
+        var epic = epic
+        epic.item.priority = priority
+        epic.item.onHold = onHold ? true : nil
+        return epic
+    }
+
+    @Test func eachPriorityIsABandOfRowsHighAtTheTop() {
+        let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(1), mid: Self.h(2), high: Self.h(4))
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            // No priority, and it starts first.
+            Self.epic(30, [Self.child(70, started: -20, closed: -10)], segments: [(-20, -10)]),
+            // High, and it starts later: it still goes above the one with none (#6089).
+            Self.with(Self.epic(31, [Self.child(71, started: -8, closed: -2)], segments: [(-8, -2)]), priority: "high"),
+            Self.with(Self.epic(32, [Self.child(72, started: -15, closed: -12)], segments: [(-15, -12)]), priority: "HIGH"),
+            Self.with(Self.epic(33, [Self.child(73, started: -6, closed: -3)], segments: [(-6, -3)]), priority: "low"),
+            // On hold: last, and not forecast.
+            Self.with(Self.epic(34, [Self.child(74, started: -4), Self.child(75, forecast: 2)], segments: [(-4, nil)],
+                                forecast: forecast), priority: "high", onHold: true),
+            Self.with(Self.epic(35, [Self.child(76, started: -30, closed: -25)], segments: [(-30, -25)]), priority: "medium"),
+        ])
+        let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))
+        let rows = Dictionary(uniqueKeysWithValues: lines.map { ($0.number, $0.row) })
+        // In a band, the blocks still pack in time: #32 and #31 share High's row.
+        #expect(rows == ["#32": 0, "#31": 0, "#35": 1, "#30": 2, "#33": 3, "#34": 4])
+        let held = lines.first { $0.number == "#34" }
+        #expect(held?.how == .open && held?.band == nil && held?.dots.allSatisfy(\.closed) == true)
+        #expect(lines.map(\.chip) == ["High", "High", "Medium", nil, "Low", "On hold"])
+        // Each band in use has its name on its first row; a band with no block takes no room.
+        #expect(WorkTimeline.bands(lines).map { "\($0.words)@\($0.row)" } == ["High@0", "Medium@1", "None@2", "Low@3", "On hold@4"])
+        let some = WorkTimeline.layout(lines.filter { $0.number == "#31" || $0.number == "#33" })
+        #expect(some.map(\.row) == [0, 1] && WorkTimeline.bands(some).map(\.words) == ["High", "Low"])
+        // A band of two rows: its next band starts below both.
+        let two = WorkTimeline.layout(WorkTimeline.lines(DaemonAPI.WorkTimeline(epics: [
+            Self.with(Self.epic(36, [Self.child(77, started: -10, closed: -2)], segments: [(-10, -2)]), priority: "high"),
+            Self.with(Self.epic(37, [Self.child(78, started: -9, closed: -3)], segments: [(-9, -3)]), priority: "high"),
+            Self.epic(38, [Self.child(79, started: -20, closed: -15)], segments: [(-20, -15)]),
+        ]), now: Self.now))
+        #expect(two.map(\.row) == [0, 1, 2])
+        #expect(WorkTimeline.bands(two).map { "\($0.words)@\($0.row)x\($0.rows)" } == ["High@0x2", "None@2x1"])
+        // The list: High first, then in time.
+        let spoken = WorkTimeline.spoken(lines, now: Self.now).map(\.line.number)
+        #expect(spoken == ["#32", "#31", "#35", "#30", "#33", "#34"])
+        #expect(WorkTimeline.spoken(lines, now: Self.now).first?.words.hasPrefix("Issue 32, priority high, 1 of 1 done") == true)
+        #expect(WorkTimeline.spoken(lines, now: Self.now).last?.words.hasPrefix("Issue 34, on hold, 0 of 2 done") == true)
+    }
+
+    @Test func thePriorityChipIsAfterTheTitleInTheBlockOrAfterIt() throws {
+        let measure: (String) -> Double = { Double($0.count) * 6 }
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            Self.with(Self.epic(19, [Self.child(60, started: -9, closed: -1)], segments: [(-9, -1)]), priority: "high"),
+            Self.with(Self.epic(20, [Self.child(61, started: -24, closed: -23.5)], segments: [(-24, -23.5)]), priority: "medium"),
+            Self.with(Self.epic(23, [Self.child(63, started: -6, closed: -4)], segments: [(-6, -4)]), priority: "low"),
+            Self.epic(24, [Self.child(64, started: -9, closed: -1)], segments: [(-9, -1)]),
+        ])
+        let lines = WorkTimeline.lines(timeline, now: Self.now)
+        try #require(lines.count == 4)
+        let (high, medium, low, none) = (lines[0], lines[1], lines[2], lines[3])
+        // 160 pt: "Issue 19" (48) and "High" (24 + 10) fit in it, 6 pt after the title.
+        let inside = WorkTimeline.blockWords(high, axis: Self.axis, measure: measure)
+        #expect(inside.chip == "High" && inside.chipInside && inside.chipX == inside.insideX + 48 + 6)
+        // 10 pt: the title and the chip after the block.
+        let after = WorkTimeline.blockWords(medium, axis: Self.axis, measure: measure)
+        #expect(after.outside == "Issue 20" && after.chip == "Medium" && !after.chipInside && after.chipX == after.outsideX + 48 + 6)
+        // No room before the next block for the chip: the words keep it, cut.
+        let cut = WorkTimeline.blockWords(medium, axis: Self.axis, measure: measure, next: Self.h(-21.6))
+        #expect(cut.chip == nil && cut.outside == "Iss…")
+        // 40 pt: neither fits in it; both go after the block.
+        let tight = WorkTimeline.blockWords(low, axis: Self.axis, measure: measure)
+        #expect(tight.inside == nil && tight.outside == "Issue 23" && tight.chip == "Low" && !tight.chipInside)
+        // 160 pt with a title of 140: the title fits, the chip does not, so it goes after the block.
+        var long = none
+        long.title = String(repeating: "x", count: 23)
+        long.priority = "low"
+        let squeezed = WorkTimeline.blockWords(long, axis: Self.axis, measure: measure)
+        #expect(squeezed.inside == long.title && squeezed.outside == nil && squeezed.chip == "Low"
+            && !squeezed.chipInside && squeezed.chipX == squeezed.outsideX)
+        // None: no chip.
+        #expect(WorkTimeline.blockWords(none, axis: Self.axis, measure: measure).chip == nil)
     }
 
     @Test func theRowsDoNotChangeBetweenRangesForTheSameRead() {
@@ -262,7 +386,7 @@ struct WorkTimelineTests {
         ])
         let line = WorkTimeline.lines(timeline, now: Self.now)[0]
         let words = WorkTimeline.lineLine(line, now: Self.now, calendar: calendar)
-        #expect(words.hasPrefix("#22 · 1 of 2 · closes about "))
+        #expect(words.hasPrefix("#22 · 1 of 2 · stopped 1 h ago · closes about "))
         #expect(words.hasSuffix(", 8 in 10"))
         #expect(WorkTimeline.errorWords(backtest) == "Past forecasts were off by ×2.2")
         let spoken = WorkTimeline.spoken([line], now: Self.now, calendar: calendar)
@@ -283,7 +407,7 @@ struct WorkTimelineTests {
         #expect(joined.dots.map { WorkTimeline.dotLine($0, now: Self.now) }
             == ["#31 · closed 2 h ago", "#32 · closed as not planned 1 h ago"])
         let waits = try #require(lines.first { $0.number == "#33" })
-        #expect(WorkTimeline.lineLine(waits, now: Self.now) == "#33 · 0 of 2 · 1 waits for you")
+        #expect(WorkTimeline.lineLine(waits, now: Self.now) == "#33 · 0 of 2 · stopped 3 h ago · 1 waits for you")
     }
 
     @Test func theTitleLineAndTheEmptyCardSayTheRange() {
@@ -301,6 +425,38 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.lastJoined(timeline, before: Self.h(-200)) == nil)
         let lines = WorkTimeline.lines(timeline, now: Self.now)
         #expect(WorkTimeline.epicCount(lines, in: WorkTimeline.Range.twoDays.window(now: Self.now)) == 1)
+    }
+
+    /// #6044: the phone in portrait draws the list of epics, in the order the web page's `epicRows` gives.
+    @Test func theListOfEpicsIsInTheOrderTheyClose() throws {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let timeline = DaemonAPI.WorkTimeline(epics: [
+            Self.epic(50, [Self.child(51, started: -10, closed: -6)], segments: [(-10, -6)]),
+            Self.epic(52, [Self.child(53, started: -3, closed: -2)], segments: [(-3, -2)]),
+            Self.epic(54, [Self.child(55, started: -4)], segments: [(-4, nil)]),
+            Self.epic(56, [Self.child(57, started: -1, forecast: 6)], segments: [(-1, nil)],
+                      forecast: .init(low: Self.h(5), mid: Self.h(6), high: Self.h(9))),
+            Self.epic(58, [Self.child(59, started: -1, forecast: 2)], segments: [(-1, nil)],
+                      forecast: .init(low: Self.h(2), mid: Self.h(2), high: Self.h(2))),
+            Self.epic(60, [Self.child(61, started: -2), Self.child(62, waits: true)], segments: [(-2, nil)],
+                      forecast: .init(low: Self.h(1), mid: Self.h(1), high: Self.h(1), waits: true)),
+            Self.with(Self.epic(63, [Self.child(64, started: -5, closed: -4)], segments: [(-5, -4)]), priority: "high"),
+        ])
+        let rows = WorkTimeline.epicRows(WorkTimeline.lines(timeline, now: Self.now), window: Self.axis.interval, now: Self.now,
+                                         calendar: utc)
+        // High first; then the forecasts, the soonest first; the wait; the open one; the joined, the latest first.
+        #expect(rows.map(\.line.number) == ["#63", "#58", "#56", "#60", "#54", "#52", "#50"])
+        try #require(rows.count == 7)
+        let six = Self.h(6).formatted(Date.FormatStyle(timeZone: utc.timeZone).hour().minute())
+        let nine = Self.h(9).formatted(Date.FormatStyle(timeZone: utc.timeZone).hour().minute())
+        let five = Self.h(5).formatted(Date.FormatStyle(timeZone: utc.timeZone).hour().minute())
+        // Now is 8:00 UTC, so 5:00 PM is the same day: the time alone. No session is in a turn: each open one stopped.
+        #expect(rows[2].line2 == "closes about \(six) · \(five)–\(nine) · stopped 1 h ago")
+        #expect(rows[3].line2 == "1 waits for you · stopped 2 h ago")
+        #expect(rows[4].line2 == "open · stopped 4 h ago")
+        #expect(rows[5].line2.hasPrefix("joined "))
+        #expect(WorkTimeline.nowWords(Self.now, calendar: utc).hasPrefix("Now · "))
     }
 
     /// #5925: two reads, the first with no epic and the second with one; S11 never shows between them.

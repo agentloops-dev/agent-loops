@@ -19,7 +19,24 @@ the App Store. Pushing a version tag on main publishes a release. The tag starts
   `Agents-<version>.zip`, and `Agents Host.app`, as `Agents-Host-<version>.zip`. An install
   of the earlier Agents or Agents Host updates itself from its zip. When it runs, agentsd
   renames it to `Agent Loops.app`, one time, so no second app stays (#5297, #4225);
-- builds the static Linux agentsd (Go) as `agentsd-linux-<arch>-<version>.tar.gz`;
+- builds the static Linux agentsd (Go) as `agentsd-linux-<arch>-<version>.tar.gz`, with
+  the MCP servers beside it, each file with its `.sha256`. A Linux machine's first install
+  takes it when its control plane's server folder has no host for the machine (#5787):
+  `install.sh` asks the control plane for its release (`GET /v1/releases/VERSION`),
+  downloads the tarball and `SHA256SUMS` from the public releases itself
+  (`AGENTS_RELEASE_DOWNLOADS` replaces them, for a test), checks the sum and unpacks it; an
+  install over SSH has the control plane take the tarball as a release file (below),
+  unpack it in its releases folder and copy it over SSH as from its server folder. A
+  Linux machine then updates itself from the same tarball (#5788), as a Mac does from its
+  zip (below): agentsd downloads `SHA256SUMS` and `agentsd-linux-<arch>-<version>.tar.gz`
+  from its control plane first, and from the public releases when it does not answer,
+  checks the sum and each program's `.sha256`, asks the new agentsd its `--version`, puts
+  it at `bin/agentsd-<sha256>` and the MCP servers beside it between turns, points
+  `bin/current` at it in one step and ends with status 75. systemd's `Restart=always`, or
+  the supervisor that `--detach` starts (which starts itself again from `bin/current`),
+  runs the new copy; a host with neither does not update itself. A new copy that does not
+  stay up gives `bin/current` back to the old one. Keep the tarball's names flat, as the
+  server folder's;
 - creates the release, titled **Agent Loops <version>**, with these files and a
   `SHA256SUMS`. Agent Loops on a Mac updates itself from them (#2178): agentsd downloads
   `SHA256SUMS` and `Agent-Loops-<version>.zip`, first from its control plane

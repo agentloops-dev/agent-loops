@@ -419,7 +419,7 @@ func (d *Daemon) answerElicitation(r wire.AnswerElicitationRequest) error {
 			note = dismissedWords
 		}
 		// Off the client's call: what the answer does can take a while (providers/create).
-		go pe.late(note)
+		d.goJob("late form answer", func() { pe.late(note) })
 		return nil
 	}
 	// A dismissed form left open (#5295): the person's next message is the reply, so

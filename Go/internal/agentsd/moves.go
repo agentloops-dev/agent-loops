@@ -157,9 +157,11 @@ func (d *Daemon) askMove(id wire.UUID, move wire.PendingMove) (string, error) {
 		return "", worktreeFailed(whyCannotMove(a.RuntimeID))
 	}
 	folder := folderPath(a)
-	repo, ok := repositoryOf(folder)
-	if !ok {
-		return "", worktreeFailed("Moving needs a git repository, and " + filepath.Base(folder) + " is not in one.")
+	repo, err := findRepository(folder)
+	if err != nil {
+		return "", worktreeFailed(repositoryWords(err,
+			"Moving needs a git repository, and "+filepath.Base(folder)+" is not in one.",
+			"Nothing was moved: git could not read the repository of "+filepath.Base(folder)+", so try again. Git said:"))
 	}
 	cwd := store.FolderPath(a.Cwd)
 	if e := move.Target.Existing; e != nil && canonical(store.FolderPath(e.Value)) == canonical(repo.toplevel) {
@@ -167,18 +169,50 @@ func (d *Daemon) askMove(id wire.UUID, move wire.PendingMove) (string, error) {
 	}
 	// A local branch's name moves to the worktree it is checked out in, or to a new
 	// worktree on it, so an agent never runs git worktree add by hand (#3174).
-	if n := move.Target.NewWorktree; n != nil && n.Name != nil && isLocalBranch(folder, *n.Name) {
-		list, _ := worktreeList(folder)
-		for _, e := range list {
-			if e.branch != *n.Name {
-				continue
-			}
-			if canonical(e.root) == canonical(repo.toplevel) {
-				return "", Invalid("Nothing was moved: %s is checked out in the folder itself. Name another branch, or a new worktree.", *n.Name)
-			}
-			move.Target = wire.MoveTarget{Existing: &wire.MoveTargetExisting{Value: store.FolderURL(e.root)}}
-		}
+	if err := moveBranchWorktree(folder, repo.toplevel, &move); err != nil {
+		return "", err
 	}
+	if msg, err := settleMoveTarget(a, folder, cwd, &move); msg != "" || err != nil {
+		return msg, err
+	}
+	removing, err := d.moveRemovingWords(a, id, move)
+	if err != nil {
+		return "", err
+	}
+	d.change(id, func(a *wire.Agent) { a.PendingMove = &move })
+	if !d.turnIsRunning(id) {
+		d.applyPendingMove(id)
+		return movedMessage(d.Store.Agent(id)), nil
+	}
+	whereTo := destinationWords(move.Target)
+	d.record(id, runtimeNote("Will move to "+whereTo+removing+" when this turn ends."))
+	return "Moving to " + whereTo + removing + " when this turn ends. " + moveStayingWords(cwd) + " End your turn to move; " + d.moveCarryWords(id), nil
+}
+
+// moveBranchWorktree points a move to a new worktree named for a local branch at the
+// worktree that has the branch checked out, if one has. It refuses the branch when the
+// folder itself has it checked out.
+func moveBranchWorktree(folder, toplevel string, move *wire.PendingMove) error {
+	n := move.Target.NewWorktree
+	if n == nil || n.Name == nil || !isLocalBranch(folder, *n.Name) {
+		return nil
+	}
+	list, _ := worktreeList(folder)
+	for _, e := range list {
+		if e.branch != *n.Name {
+			continue
+		}
+		if canonical(e.root) == canonical(toplevel) {
+			return Invalid("Nothing was moved: %s is checked out in the folder itself. Name another branch, or a new worktree.", *n.Name)
+		}
+		move.Target = wire.MoveTarget{Existing: &wire.MoveTargetExisting{Value: store.FolderURL(e.root)}}
+	}
+	return nil
+}
+
+// settleMoveTarget checks the move's target and settles a new worktree's name. It returns
+// words for the agent when there is nothing to do, or an error when the move is refused.
+func settleMoveTarget(a *wire.Agent, folder, cwd string, move *wire.PendingMove) (string, error) {
 	switch t := move.Target; {
 	case t.FolderPath != nil:
 		if a.Worktree == nil {
@@ -189,20 +223,7 @@ func (d *Daemon) askMove(id wire.UUID, move wire.PendingMove) (string, error) {
 		if a.Worktree != nil && canonical(store.FolderPath(a.Worktree.Root)) == root {
 			return "Already working in " + filepath.Base(root) + "; nothing to do.", nil
 		}
-		found := false
-		list, _ := worktreeList(folder)
-		for _, e := range list {
-			if canonical(e.root) != root {
-				continue
-			}
-			found = true
-			if e.prunable || !isDir(root) {
-				return "", &Error{Code: wire.FailureWorktreeMissing, Message: "The worktree " + filepath.Base(root) + " is not there any more."}
-			}
-		}
-		if !found {
-			return "", &Error{Code: wire.FailureNotAWorktree, Message: root + " is not a worktree of " + filepath.Base(folder) + "'s repository."}
-		}
+		return "", checkMoveWorktreeExists(folder, root)
 	case t.NewWorktree != nil:
 		if _, err := git(cwd, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
 			return "", worktreeFailed("There is no commit here yet to base a worktree on. Commit something first.")
@@ -219,36 +240,64 @@ func (d *Daemon) askMove(id wire.UUID, move wire.PendingMove) (string, error) {
 		name := moveName(given, a)
 		move.Target.NewWorktree = &wire.MoveTargetNewWorktree{Name: &name}
 	}
-	removing := ""
-	if move.RemoveLeft {
-		if a.Worktree == nil || move.Target.FolderPath == nil {
-			return "", Invalid("Only a move back to the folder can remove the worktree left.")
+	return "", nil
+}
+
+// checkMoveWorktreeExists refuses a move to root when root is not a worktree of the
+// folder's repository, or is one that is not there any more.
+func checkMoveWorktreeExists(folder, root string) error {
+	found := false
+	list, _ := worktreeList(folder)
+	for _, e := range list {
+		if canonical(e.root) != root {
+			continue
 		}
-		if err := d.whyNotRemoveLeft(*a.Worktree, id, move.DiscardChanges); err != nil {
-			return "", err
+		found = true
+		if e.prunable || !isDir(root) {
+			return &Error{Code: wire.FailureWorktreeMissing, Message: "The worktree " + filepath.Base(root) + " is not there any more."}
 		}
-		removing = ", and remove " + a.Worktree.Name + " after"
 	}
-	d.change(id, func(a *wire.Agent) { a.PendingMove = &move })
-	if !d.turnIsRunning(id) {
-		d.applyPendingMove(id)
-		return movedMessage(d.Store.Agent(id)), nil
+	if !found {
+		return &Error{Code: wire.FailureNotAWorktree, Message: root + " is not a worktree of " + filepath.Base(folder) + "'s repository."}
 	}
-	whereTo := destinationWords(move.Target)
-	d.record(id, runtimeNote("Will move to "+whereTo+removing+" when this turn ends."))
-	staying := "Nothing uncommitted comes with you."
-	if n := porcelainCount(cwd); n > 0 {
-		files := "files here are"
-		if n == 1 {
-			files = "file here is"
-		}
-		staying = "Nothing uncommitted comes with you (" + strconv.FormatInt(n, 10) + " " + files + " uncommitted)."
+	return nil
+}
+
+// moveRemovingWords checks a move that removes the worktree left, and gives the words
+// that say so. It gives "" when the move removes nothing.
+func (d *Daemon) moveRemovingWords(a *wire.Agent, id wire.UUID, move wire.PendingMove) (string, error) {
+	if !move.RemoveLeft {
+		return "", nil
 	}
-	carry := "you will be started again there to carry on."
+	if a.Worktree == nil || move.Target.FolderPath == nil {
+		return "", Invalid("Only a move back to the folder can remove the worktree left.")
+	}
+	if err := d.whyNotRemoveLeft(*a.Worktree, id, move.DiscardChanges); err != nil {
+		return "", err
+	}
+	return ", and remove " + a.Worktree.Name + " after", nil
+}
+
+// moveStayingWords says that uncommitted files stay, and how many there are in cwd.
+func moveStayingWords(cwd string) string {
+	n := porcelainCount(cwd)
+	if n <= 0 {
+		return "Nothing uncommitted comes with you."
+	}
+	files := "files here are"
+	if n == 1 {
+		files = "file here is"
+	}
+	return "Nothing uncommitted comes with you (" + strconv.FormatInt(n, 10) + " " + files + " uncommitted)."
+}
+
+// moveCarryWords says what the agent does after the move: it starts again, or it waits
+// for the person to approve its archive.
+func (d *Daemon) moveCarryWords(id wire.UUID) string {
 	if a := d.Store.Agent(id); a != nil && a.AfterTurn != nil && *a.AfterTurn == wire.AfterTurnRequestArchive {
-		carry = "you stay there, waiting for the person to approve archiving you, rather than being started again."
+		return "you stay there, waiting for the person to approve archiving you, rather than being started again."
 	}
-	return "Moving to " + whereTo + removing + " when this turn ends. " + staying + " End your turn to move; " + carry, nil
+	return "you will be started again there to carry on."
 }
 
 // turnIsRunning is whether a turn is in flight: a move waits for it to be over.

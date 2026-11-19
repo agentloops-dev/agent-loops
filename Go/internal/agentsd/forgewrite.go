@@ -18,7 +18,7 @@ import (
 // Boards (#3815) views, on the Work pages' issue and pull request pages: comment, labels (a work
 // item's tags), assignees (#4403), close and reopen (a Jira issue's move by a transition of its workflow, a work
 // item's to another state of its type), and a pull request's merge, auto-merge turned off and ready
-// for review (#4410), approve, rerun of its failed
+// for review (#4410), approve, request changes (#5857), rerun of its failed
 // checks, their logs and its diff. Next to the reads (forge.go), with the same tokens and the
 // connectors' own write code.
 //
@@ -72,6 +72,8 @@ type forgeGitHubWrites interface {
 	Unassign(ctx context.Context, repo string, number int, logins []string) error
 	// The issue page's Assignees (#4403).
 	Assign(ctx context.Context, repo string, number int, logins []string) error
+	// The Priority issue field (#6091); has is false where the repo has none.
+	SetPriorityField(ctx context.Context, repo string, number int, priority string) (has bool, err error)
 }
 
 // forgeGitLabWrites is what the writes ask of GitLab; a test gives a fake.
@@ -102,6 +104,8 @@ type forgeLinearWrites interface {
 	AddChild(ctx context.Context, epic, title string, labels []string) (string, string, error)
 	SetParent(ctx context.Context, identifier, epic string) error
 	SetBlockedBy(ctx context.Context, identifier, blocker string, blocked bool) error
+	// SetPriority sets its priority (#6091).
+	SetPriority(ctx context.Context, identifier, priority string) error
 }
 
 func (d *Daemon) registerForgeWrites() {
@@ -131,6 +135,9 @@ func (d *Daemon) registerForgeWrites() {
 	})
 	On(d, wire.CallForgeApprove, func(ctx context.Context, _ *Client, r wire.ForgeApproveRequest) (wire.ForgeDone, error) {
 		return d.forgeApprove(ctx, r)
+	})
+	On(d, wire.CallForgeRequestChanges, func(ctx context.Context, _ *Client, r wire.ForgeRequestChangesRequest) (wire.ForgeDone, error) {
+		return d.forgeRequestChanges(ctx, r)
 	})
 	On(d, wire.CallForgeRerun, func(ctx context.Context, _ *Client, r wire.ForgeNodeRequest) (wire.ForgeDone, error) {
 		return d.forgeRerun(ctx, r)
@@ -355,6 +362,30 @@ func (d *Daemon) forgeApprove(ctx context.Context, r wire.ForgeApproveRequest) (
 		return wire.ForgeDone{}, err
 	}
 	done, err := t.forge.Approve(ctx, t.ref, r.Sha)
+	if err != nil {
+		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
+	}
+	d.forgeWrote()
+	return wire.ForgeDone{URL: done.URL}, nil
+}
+
+func (d *Daemon) forgeRequestChanges(ctx context.Context, r wire.ForgeRequestChangesRequest) (wire.ForgeDone, error) {
+	const method = "forge/request-changes"
+	if strings.TrimSpace(r.Sha) == "" {
+		return wire.ForgeDone{}, Invalid("%s: sha is needed: the head commit that the page shows", method)
+	}
+	body := strings.TrimSpace(r.Body)
+	if body == "" {
+		return wire.ForgeDone{}, Invalid("%s: write what should change first", method)
+	}
+	if len(body) > forgeCommentMost {
+		return wire.ForgeDone{}, Invalid("%s: a review is at most %d bytes", method, forgeCommentMost)
+	}
+	t, err := d.forgeTargetOf(ctx, method, r.Node, true)
+	if err != nil {
+		return wire.ForgeDone{}, err
+	}
+	done, err := t.forge.RequestChanges(ctx, t.ref, r.Sha, body)
 	if err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}

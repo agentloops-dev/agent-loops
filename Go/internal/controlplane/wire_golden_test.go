@@ -15,7 +15,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 var update = flag.Bool("update", false, "write testdata/wire.golden from what the control plane says now")
@@ -28,8 +27,6 @@ var update = flag.Bool("update", false, "write testdata/wire.golden from what th
 // the hand-written wire types before they moved to Go/wire, so this is the proof that the
 // move changed no byte.
 func TestTheWireIsWhatItWas(t *testing.T) {
-	// clients/list can come back before the lastSeen write bumps rev, under load.
-	flaky.UnderLoad(t, "#5992")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	ctx := context.Background()
@@ -38,6 +35,12 @@ func TestTheWireIsWhatItWas(t *testing.T) {
 	box := p.olderHost("MACHINE-2")
 	plainID, plain := p.rawHost("plain mac")
 	member, window := p.client("Golden window")
+	// The window's connect notes its epoch in the background (rev 2, knownEpoch): the
+	// lists are read after that write, not before it (#5992).
+	p.waitFor(func() bool {
+		c := p.s.Records().Client(member.Client)
+		return c != nil && c.KnownEpoch != nil
+	}, "the window's epoch noted")
 
 	var out []string
 	say := func(what, line string) { out = append(out, what+"\n"+pretty(line, "")) }

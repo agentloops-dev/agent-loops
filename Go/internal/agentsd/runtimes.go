@@ -352,6 +352,42 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		env = append(env, d.sessionSecretEnv(agent)...)
 	}
 	root := d.Store.Loc.Root
+	env, err := d.withRuntimeOwnEnv(r, dir, account, env)
+	if err != nil {
+		return acp.Launch{}, err
+	}
+	if isOrgAccount(account) {
+		var err error
+		if env, err = d.withOrgAccount(env, r.ID, account, agent); err != nil {
+			return acp.Launch{}, err
+		}
+	} else if account != nil {
+		d.linkShared(*account)
+		env = withAccount(env, account)
+	}
+	env = append(env, d.startOpts().runtimeEnv...)
+	l := withToolPolicy(acp.Launch{Command: path, Args: args, Env: env, Dir: dir, Name: r.Name, Attach: d.startOpts().attach}, r.ID)
+	for _, f := range toolPolicyFiles[r.ID] {
+		file := filepath.Join(root, "runtimes", f.name)
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			return acp.Launch{}, err
+		}
+		if err := os.WriteFile(file, []byte(f.contents), 0o600); err != nil {
+			return acp.Launch{}, err
+		}
+		if f.variable != "" {
+			l.Env = append(without(l.Env, f.variable), f.variable+"="+file)
+		} else {
+			l.Args = append(slices.Clone(l.Args), f.argument, file)
+		}
+	}
+	return l, nil
+}
+
+// withRuntimeOwnEnv is env with what each runtime needs of its own: a relay, a sign-in made
+// here, or a home of its own in the root.
+func (d *Daemon) withRuntimeOwnEnv(r *runtimeDef, dir string, account *wire.AccountProfile, env []string) ([]string, error) {
+	root := d.Store.Loc.Root
 	switch r.ID {
 	case "claude":
 		// Claude Code gives a model newer than claude-opus-4-7 no to-do tools unless this
@@ -391,36 +427,11 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		// would point this copy at that database, so it is dropped.
 		data := d.appHomes()["opencode"]
 		if err := os.MkdirAll(data, 0o700); err != nil {
-			return acp.Launch{}, err
+			return nil, err
 		}
 		env = append(without(env, "XDG_DATA_HOME"), "XDG_DATA_HOME="+data)
 	}
-	if isOrgAccount(account) {
-		var err error
-		if env, err = d.withOrgAccount(env, r.ID, account, agent); err != nil {
-			return acp.Launch{}, err
-		}
-	} else if account != nil {
-		d.linkShared(*account)
-		env = withAccount(env, account)
-	}
-	env = append(env, d.startOpts().runtimeEnv...)
-	l := withToolPolicy(acp.Launch{Command: path, Args: args, Env: env, Dir: dir, Name: r.Name}, r.ID)
-	for _, f := range toolPolicyFiles[r.ID] {
-		file := filepath.Join(root, "runtimes", f.name)
-		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
-			return acp.Launch{}, err
-		}
-		if err := os.WriteFile(file, []byte(f.contents), 0o600); err != nil {
-			return acp.Launch{}, err
-		}
-		if f.variable != "" {
-			l.Env = append(without(l.Env, f.variable), f.variable+"="+file)
-		} else {
-			l.Args = append(slices.Clone(l.Args), f.argument, file)
-		}
-	}
-	return l, nil
+	return env, nil
 }
 
 func appendPath(env []string, dir string) []string {

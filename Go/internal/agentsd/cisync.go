@@ -191,18 +191,7 @@ func (d *Daemon) sendCITimings() {
 func (d *Daemon) unsentCITimings() (wire.BuildsSync, ciSent, bool, error) {
 	d.ciSyncMu.Lock()
 	f := d.ciSyncLocked()
-	keys := make([]string, 0, len(f.Repos))
-	for k, r := range f.Repos {
-		// Not a repository the store can have. One with nothing to send stays, so it is not
-		// new to the file the next time.
-		if _, err := citimings.ParseRepo(k); err != nil {
-			delete(f.Repos, k)
-			continue
-		}
-		if r.Full || r.Reset || r.Meta > 0 || len(r.Days) > 0 {
-			keys = append(keys, k)
-		}
-	}
+	keys := ciSyncUnsentKeysLocked(f)
 	if len(keys) == 0 {
 		d.ciSyncMu.Unlock()
 		return wire.BuildsSync{}, ciSent{}, false, nil
@@ -219,20 +208,7 @@ func (d *Daemon) unsentCITimings() (wire.BuildsSync, ciSent, bool, error) {
 			return wire.BuildsSync{}, ciSent{key: key}, false, err
 		}
 		d.ciSyncMu.Lock()
-		r = d.ciSyncRepoLocked(key)
-		if r.Full {
-			r.Full, r.Reset = false, true
-			if r.Days == nil {
-				r.Days = map[string]int{}
-			}
-			d.ciSyncGen++
-			r.Meta = d.ciSyncGen
-			for _, day := range all {
-				if _, ok := r.Days[day]; !ok {
-					r.Days[day] = d.ciSyncGen
-				}
-			}
-		}
+		r = d.ciSyncTakeFullLocked(key, all)
 	}
 	took := ciSent{key: key, reset: r.Reset, meta: r.Meta, days: map[string]int{}}
 	days := make([]string, 0, len(r.Days))
@@ -255,6 +231,52 @@ func (d *Daemon) unsentCITimings() (wire.BuildsSync, ciSent, bool, error) {
 		send.DefaultBranch, send.ReadAt, send.FilledFrom = st.wireMeta()
 	}
 	d.ciMu.Unlock()
+	if err := d.ciSyncAddDays(repo, days, gens, &send, took); err != nil {
+		return wire.BuildsSync{}, took, false, err
+	}
+	return send, took, true, nil
+}
+
+// ciSyncUnsentKeysLocked is the repositories of f with something to send. It drops one that is
+// not a repository the store can have. One with nothing to send stays, so it is not new to
+// the file the next time. ciSyncMu is held.
+func ciSyncUnsentKeysLocked(f *ciSyncFile) []string {
+	keys := make([]string, 0, len(f.Repos))
+	for k, r := range f.Repos {
+		if _, err := citimings.ParseRepo(k); err != nil {
+			delete(f.Repos, k)
+			continue
+		}
+		if r.Full || r.Reset || r.Meta > 0 || len(r.Days) > 0 {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
+// ciSyncTakeFullLocked marks every day in all to send for the repository key, when it still
+// has to send all, and says the send resets the copy. ciSyncMu is held.
+func (d *Daemon) ciSyncTakeFullLocked(key string, all []string) *ciSyncRepo {
+	r := d.ciSyncRepoLocked(key)
+	if r.Full {
+		r.Full, r.Reset = false, true
+		if r.Days == nil {
+			r.Days = map[string]int{}
+		}
+		d.ciSyncGen++
+		r.Meta = d.ciSyncGen
+		for _, day := range all {
+			if _, ok := r.Days[day]; !ok {
+				r.Days[day] = d.ciSyncGen
+			}
+		}
+	}
+	return r
+}
+
+// ciSyncAddDays adds the runs of days to send, oldest first, until a send's bound, and notes in
+// took each day added with its generation in gens.
+func (d *Daemon) ciSyncAddDays(repo citimings.Repo, days []string, gens map[string]int, send *wire.BuildsSync, took ciSent) error {
 	runs := 0
 	for _, day := range days {
 		if len(send.Days) >= ciSyncDays {
@@ -262,7 +284,7 @@ func (d *Daemon) unsentCITimings() (wire.BuildsSync, ciSent, bool, error) {
 		}
 		kept, err := d.ciTimings().Day(repo, day)
 		if err != nil {
-			return wire.BuildsSync{}, took, false, err
+			return err
 		}
 		if len(send.Days) > 0 && runs+len(kept) > ciSyncRuns {
 			break
@@ -275,7 +297,7 @@ func (d *Daemon) unsentCITimings() (wire.BuildsSync, ciSent, bool, error) {
 		send.Days = append(send.Days, w)
 		took.days[day] = gens[day]
 	}
-	return send, took, true, nil
+	return nil
 }
 
 // ciTimingsSent drops what went, but a day that changed on its way. When the control plane

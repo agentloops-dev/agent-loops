@@ -159,7 +159,7 @@ func TestAMachineTakesTheBotsKeyOnlyFromItsOwnLock(t *testing.T) {
 	d, _, peer, state := lockedMachine(t)
 	defer d.Shutdown()
 	file := botStore(t, d)
-	c := channelTo(d)
+	c := channelTo(t, d)
 	signed := func(id int, key *ecdsa.PrivateKey, method string, params any) string {
 		p, _ := json.Marshal(params)
 		sig, err := machinelock.SignRequest(key, "h-1", method, p, time.Now())

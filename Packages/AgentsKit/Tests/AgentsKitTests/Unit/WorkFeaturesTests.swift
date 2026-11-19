@@ -116,6 +116,43 @@ struct WorkFeaturesTests {
         #expect(WorkFeatures.progressWords(issue(1, level: "epic")) == "0 of 0")
     }
 
+    func ranked(_ n: Int, _ priority: String?, onHold: Bool = false, level: String? = "epic",
+                at: TimeInterval = 0) -> DaemonAPI.ForgeItem {
+        var item = issue(n, level: level, at: at)
+        item.priority = priority
+        item.onHold = onHold ? true : nil
+        return item
+    }
+
+    /// #6088: a feature's epics and its loose issues go in the order of `forge/next`: not on hold
+    /// first, then High, Medium, none, Low; then the last updated first.
+    @Test func anOpenedFeatureShowsItsEpicsInPriorityOrder() {
+        let shown = WorkFeatures.opened([
+            ranked(1, nil, at: 50), ranked(2, "low", at: 60), ranked(3, "high", onHold: true, at: 70),
+            ranked(4, "medium", at: 10), ranked(5, "high", at: 1), ranked(6, "HIGH", at: 5), ranked(7, nil, onHold: true, at: 80),
+            ranked(8, "low", level: nil, at: 9), ranked(9, "high", level: nil, at: 1),
+        ])
+        #expect(shown.epics.map { WorkList.shortRef($0.node.ref) } == ["#6", "#5", "#4", "#1", "#2", "#3", "#7"])
+        #expect(shown.loose.map { WorkList.shortRef($0.node.ref) } == ["#9", "#8"])
+        #expect(ranked(1, "high").nextRank < ranked(1, "medium").nextRank)
+        #expect(ranked(1, "medium").nextRank < ranked(1, nil).nextRank)
+        #expect(ranked(1, nil).nextRank < ranked(1, "low").nextRank)
+        #expect(ranked(1, "low").nextRank < ranked(1, "high", onHold: true).nextRank)
+        #expect(ranked(1, "urgent").nextRank == ranked(1, nil).nextRank)
+    }
+
+    /// #6088: an epic's children in flight keep Needs you above Working; within each, priority, then
+    /// the last updated first.
+    @Test func theChildrenInFlightGoInPriorityOrderWithinTheirFlight() {
+        let agents = [agent(["#1"], state: .running), agent(["#2"], state: .running), agent(["#3"], state: .running),
+                      agent(["#4"], state: .waitingOnUser), agent(["#5"], state: .waitingOnUser)]
+        let items = [ranked(1, nil, level: "task", at: 30), ranked(2, "high", level: "task", at: 1),
+                     ranked(3, "high", onHold: true, level: "task", at: 40), ranked(4, nil, level: "task", at: 20),
+                     ranked(5, "low", level: "task", at: 50), ranked(6, "high", level: "task")]
+        let lines = WorkFeatures.inFlight(items, work: { WorkFeatures.work(of: $0, agents: agents, pulls: [:]) }, approvals: [])
+        #expect(lines.map { WorkList.shortRef($0.item.node.ref) } == ["#4", "#5", "#2", "#1", "#3"])
+    }
+
     @Test func theLeadIsTheLiveSessionLabelledLeadAndTheEpic() {
         let epic = Node(kind: "issue", ref: "github:alexec/Agents#3265")
         let ended = agent(["#3265", "lead"], state: .stopped, at: 100)

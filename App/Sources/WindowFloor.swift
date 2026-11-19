@@ -15,4 +15,17 @@ extension View {
         frame(minWidth: width, maxWidth: width == nil ? nil : .infinity,
               minHeight: height, maxHeight: .infinity)
     }
+
+    /// A split view column whose content can never raise the split view's height (#5932).
+    ///
+    /// AppKit asks a column for its least size at almost no width. Wrapped text that is
+    /// `fixedSize` on its height (the sidebar foot's "not answering" banner, an offline
+    /// machine's line) then wraps a character to a line and reports thousands of points. The
+    /// split view took that as its height, the window's floor kept the window at its own
+    /// height, and the split view stood centred in it, taller than the window: the sidebar
+    /// blank and the prompt bar cut off. The column's least height is none; the list scrolls
+    /// and the foot clips in the window's height.
+    func columnFloor() -> some View {
+        frame(minHeight: 0, maxHeight: .infinity)
+    }
 }

@@ -48,11 +48,11 @@ extension RemoteModel {
     }
 
     /// Whether the Machines group shows the machine before the rest (#5286), as the window's:
-    /// it needs something, it is starting, or sessions work or wait for the person there.
+    /// it needs something, it is starting, or sessions work or wait for the person there. It
+    /// reads the machine's counts, not every agent held (P20261117-1).
     func machineIsActive(_ host: MachineRef) -> Bool {
         if need(of: host) != nil || hostsBeingStarted.contains(host) { return true }
-        let sessions = MachineSessions(work.agents.filter { $0.host == host })
-        return !sessions.agents(.working).isEmpty || !sessions.agents(.waiting).isEmpty
+        return work.sessionCounts(on: host).busy
     }
 
     /// A machine's most urgent need, as its row says it (#3764).
@@ -144,6 +144,20 @@ extension RemoteModel {
     /// Delete… on a machine a provider made (#3973): the provider deletes it, then the host goes.
     func deleteMachine(_ host: MachineRef) async {
         await machineCall(DaemonAPI.Method.hostsDeleteMachine, host)
+    }
+
+    /// Try Again on a machine's set-up (#5357, #6012): the control plane runs the failed step and
+    /// the ones after it. The row stays; its next push says how the run goes.
+    func retrySetup(_ host: MachineRef) async {
+        guard let control = controlPlane else {
+            problem = "The control plane isn’t answering."
+            return
+        }
+        do {
+            _ = try await control.call(DaemonAPI.Method.hostsRetrySetup, DaemonAPI.MachineRequest(host: host))
+        } catch {
+            problem = sentence(for: error)
+        }
     }
 
     /// Remove… on a registered machine (#3973): Agents forgets it; the computer stays.

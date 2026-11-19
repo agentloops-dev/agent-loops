@@ -67,9 +67,16 @@ type Forge interface {
 	CancelAutoMerge(ctx context.Context, r forgeRef) error
 	Ready(ctx context.Context, r forgeRef) error
 	Approve(ctx context.Context, r forgeRef, sha string) (wire.ForgeDone, error)
+	// RequestChanges asks for changes at sha, with body as the review text (#5857).
+	RequestChanges(ctx context.Context, r forgeRef, sha, body string) (wire.ForgeDone, error)
 	Rerun(ctx context.Context, r forgeRef) (wire.ForgeDone, error)
 	AddChild(ctx context.Context, epic forgeRef, child forgeChild) (wire.ForgeDone, error)
 	SetBlockedBy(ctx context.Context, r, blocker forgeRef, blocked bool) error
+	// SetPriority sets an issue's priority (high, medium, low, or "" for none) and SetHold puts
+	// it on hold or takes it off (#6091): in the forge's own field where it has one, else by the
+	// labels (forgeprioritywrite.go).
+	SetPriority(ctx context.Context, r forgeRef, priority string) error
+	SetHold(ctx context.Context, r forgeRef, on bool) error
 }
 
 // forgeCaps is what a forge does, as data (#4329): the clients hide what it does not.
@@ -97,6 +104,9 @@ type forgeCaps struct {
 	Plan, BlockedBy, AddChild bool
 	// Releases: forge/releases and forge/release read its releases (#4426).
 	Releases bool
+	// Priority and Hold: forge/priority and forge/hold set an issue's priority and on hold
+	// (#6091).
+	Priority, Hold bool
 	// Reasons say why an action is missing, by the action's name, in the words a person reads,
 	// as bitbucketNoAutoMerge says it now.
 	Reasons map[string]string
@@ -104,7 +114,7 @@ type forgeCaps struct {
 
 // forgeActions are the writes a forge allows on one kind of item.
 type forgeActions struct {
-	Comment, Label, Assign, Close, Reopen, Transition, Merge, AutoMerge, Approve, Rerun, Log, Diff bool
+	Comment, Label, Assign, Close, Reopen, Transition, Merge, AutoMerge, Approve, RequestChanges, Rerun, Log, Diff bool
 	// CancelAutoMerge turns auto-merge off; Ready marks a draft ready for review (#4410).
 	CancelAutoMerge, Ready bool
 	// CloseNotPlanned: a close with reason not_planned (#4404).
@@ -126,6 +136,7 @@ const (
 	actionCancelAuto      = "cancelAutoMerge"
 	actionReady           = "ready"
 	actionApprove         = "approve"
+	actionRequestChanges  = "requestChanges"
 	actionRerun           = "rerun"
 	actionLog             = "log"
 	actionDiff            = "diff"
@@ -138,7 +149,7 @@ const (
 // on says whether the actions allow the action of that name.
 func (a forgeActions) on(action string) bool {
 	return map[string]bool{actionComment: a.Comment, actionLabel: a.Label, actionAssign: a.Assign, actionClose: a.Close, actionReopen: a.Reopen,
-		actionTransition: a.Transition, actionMerge: a.Merge, actionAutoMerge: a.AutoMerge, actionApprove: a.Approve,
+		actionTransition: a.Transition, actionMerge: a.Merge, actionAutoMerge: a.AutoMerge, actionApprove: a.Approve, actionRequestChanges: a.RequestChanges,
 		actionRerun: a.Rerun, actionLog: a.Log, actionDiff: a.Diff, actionCancelAuto: a.CancelAutoMerge, actionReady: a.Ready,
 		actionCloseNotPlanned: a.CloseNotPlanned}[action]
 }
@@ -155,6 +166,7 @@ func (c forgeCaps) wire(name string) wire.ForgeCapabilities {
 		on  bool
 		out **bool
 	}{{c.CreatedAt, &out.CreatedAt}, {c.ClosedAt, &out.ClosedAt}, {c.Children, &out.Children}, {c.LinkedPulls, &out.LinkedPulls}, {c.Events, &out.Events}, {c.Total, &out.Total}, {c.Releases, &out.Releases},
+		{c.Priority, &out.Priority}, {c.Hold, &out.Hold},
 		{c.Branches, &out.Branches}, {c.MergedBy, &out.MergedBy}, {c.MergeCommit, &out.MergeCommit}, {c.Size, &out.Size},
 		{c.Reviewers, &out.Reviewers}, {c.Closes, &out.Closes}, {c.CheckTimes, &out.CheckTimes}} {
 		if f.on {
@@ -192,6 +204,7 @@ func (c forgeCaps) itemActions(d wire.ForgeItemDetail) []wire.ForgeAction {
 		{wire.ForgeActionMerge, a.Merge && open},
 		{wire.ForgeActionAutoMerge, a.AutoMerge && open},
 		{wire.ForgeActionApprove, a.Approve && open},
+		{wire.ForgeActionRequestChanges, a.RequestChanges && open},
 		{wire.ForgeActionRerun, a.Rerun && open},
 		{wire.ForgeActionLog, a.Log},
 		{wire.ForgeActionDiff, a.Diff},
@@ -199,6 +212,9 @@ func (c forgeCaps) itemActions(d wire.ForgeItemDetail) []wire.ForgeAction {
 		{wire.ForgeActionReady, a.Ready && open && i.Draft != nil && *i.Draft},
 		{wire.ForgeActionAddChild, c.AddChild && issue},
 		{wire.ForgeActionBlockedBy, c.BlockedBy && issue},
+		// An issue's priority and on hold, where the forge sets them (#6091); the page's menu and toggle (#6092).
+		{wire.ForgeActionPriority, c.Priority && issue},
+		{wire.ForgeActionHold, c.Hold && issue},
 	} {
 		if on.on {
 			out = append(out, on.action)
@@ -312,6 +328,9 @@ func (forgeNone) Ready(context.Context, forgeRef) error {
 func (forgeNone) Approve(context.Context, forgeRef, string) (wire.ForgeDone, error) {
 	return wire.ForgeDone{}, cannot(actionApprove)
 }
+func (forgeNone) RequestChanges(context.Context, forgeRef, string, string) (wire.ForgeDone, error) {
+	return wire.ForgeDone{}, cannot(actionRequestChanges)
+}
 func (forgeNone) Rerun(context.Context, forgeRef) (wire.ForgeDone, error) {
 	return wire.ForgeDone{}, cannot(actionRerun)
 }
@@ -320,6 +339,12 @@ func (forgeNone) AddChild(context.Context, forgeRef, forgeChild) (wire.ForgeDone
 }
 func (forgeNone) SetBlockedBy(context.Context, forgeRef, forgeRef, bool) error {
 	return cannot(actionBlockedBy)
+}
+func (forgeNone) SetPriority(context.Context, forgeRef, string) error {
+	return cannot(actionPriority)
+}
+func (forgeNone) SetHold(context.Context, forgeRef, bool) error {
+	return cannot(actionHold)
 }
 
 // forgeRef is an item on one forge: its node, and the forge's own parts of it. It is the key of

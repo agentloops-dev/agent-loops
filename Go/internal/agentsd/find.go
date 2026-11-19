@@ -101,21 +101,7 @@ func (d *Daemon) find(ctx context.Context, client int64, r wire.FindRequest) (wi
 	}
 	wanted, done := d.startFind(findKey{client: client, agent: r.AgentID})
 	defer done()
-	var current *findMessage
-	take := func() {
-		if current == nil {
-			return
-		}
-		if line, ok := findLine(current.text.String(), text); ok {
-			result.Matches = append(result.Matches, wire.FindMatch{Index: int64(current.at), EntryID: current.id, Line: line})
-			// Bounded as it goes: the newest `limit` are kept.
-			if len(result.Matches) > limit {
-				result.Matches = result.Matches[1:]
-				result.More = true
-			}
-		}
-		current = nil
-	}
+	scan := &findScan{text: text, limit: limit, result: &result}
 	var stopped error
 	err = d.Store.EachLine(r.AgentID, ends, 0, len(ends), func(line []byte, i int) bool {
 		if i%findCheck == 0 {
@@ -126,33 +112,7 @@ func (d *Daemon) find(ctx context.Context, client int64, r wire.FindRequest) (wi
 				return false
 			}
 		}
-		message := slices.ContainsFunc(findKeys, func(k []byte) bool { return bytes.Contains(line, k) })
-		// Some other entry can only end the message being joined: with none, it is not read.
-		if !message && current == nil || len(bytes.TrimSpace(line)) == 0 {
-			return true
-		}
-		var e wire.TranscriptEntry
-		if diskjson.Unmarshal(line, &e) != nil {
-			return true
-		}
-		// A subagent's words are its own, and do not break the reply around them.
-		if e.SubagentID != nil {
-			return true
-		}
-		// A chunk that goes on with the reply before it (joinEntry), joined without copying
-		// what came before.
-		if m := e.Kind.AgentMessage; m != nil && current != nil && current.reply && sameMessageID(current.messageID, m.MessageID) {
-			current.text.WriteString(m.Text)
-			return true
-		}
-		take()
-		if said := findText(e); said != "" {
-			current = &findMessage{id: e.ID, at: i, reply: e.Kind.AgentMessage != nil}
-			if current.reply {
-				current.messageID = e.Kind.AgentMessage.MessageID
-			}
-			current.text.WriteString(said)
-		}
+		scan.line(line, i)
 		return true
 	})
 	if err != nil {
@@ -161,8 +121,65 @@ func (d *Daemon) find(ctx context.Context, client int64, r wire.FindRequest) (wi
 	if stopped != nil {
 		return wire.FindResult{}, stopped
 	}
-	take()
+	scan.take()
 	return result, nil
+}
+
+// findScan joins a transcript's lines into messages, and keeps the newest
+// `limit` messages that hold the text.
+type findScan struct {
+	text    string
+	limit   int
+	result  *wire.FindResult
+	current *findMessage
+}
+
+// take ends the message being joined, and keeps it when it holds the text.
+func (s *findScan) take() {
+	if s.current == nil {
+		return
+	}
+	if line, ok := findLine(s.current.text.String(), s.text); ok {
+		s.result.Matches = append(s.result.Matches, wire.FindMatch{Index: int64(s.current.at), EntryID: s.current.id, Line: line})
+		// Bounded as it goes: the newest `limit` are kept.
+		if len(s.result.Matches) > s.limit {
+			s.result.Matches = s.result.Matches[1:]
+			s.result.More = true
+		}
+	}
+	s.current = nil
+}
+
+// line reads the transcript's line i: it joins it to the message being joined,
+// or ends that message and starts a new one.
+func (s *findScan) line(line []byte, i int) {
+	message := slices.ContainsFunc(findKeys, func(k []byte) bool { return bytes.Contains(line, k) })
+	// Some other entry can only end the message being joined: with none, it is not read.
+	if !message && s.current == nil || len(bytes.TrimSpace(line)) == 0 {
+		return
+	}
+	var e wire.TranscriptEntry
+	if diskjson.Unmarshal(line, &e) != nil {
+		return
+	}
+	// A subagent's words are its own, and do not break the reply around them.
+	if e.SubagentID != nil {
+		return
+	}
+	// A chunk that goes on with the reply before it (joinEntry), joined without copying
+	// what came before.
+	if m := e.Kind.AgentMessage; m != nil && s.current != nil && s.current.reply && sameMessageID(s.current.messageID, m.MessageID) {
+		s.current.text.WriteString(m.Text)
+		return
+	}
+	s.take()
+	if said := findText(e); said != "" {
+		s.current = &findMessage{id: e.ID, at: i, reply: e.Kind.AgentMessage != nil}
+		if s.current.reply {
+			s.current.messageID = e.Kind.AgentMessage.MessageID
+		}
+		s.current.text.WriteString(said)
+	}
 }
 
 func sameMessageID(a, b *string) bool {

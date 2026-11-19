@@ -158,382 +158,425 @@ func prStates(state string) (string, error) {
 // AddTools puts the tools and the views (views.go) on server; with person, also the tools only
 // a person may call.
 func AddTools(server *mcp.Server, b *RealBitbucket, person bool) {
-	repoOf := func(ctx context.Context, repo string) (string, error) {
-		if repo != "" {
-			if !repoPattern.MatchString(repo) {
-				return "", fmt.Errorf("repo is %s", repoWords)
-			}
-			return repo, nil
-		}
-		return b.DefaultRepo(ctx)
+	t := bbTools{b: b}
+	addViews(server, b, t.repoOf)
+	t.addPullRequestTools(server)
+	t.addPipelineTools(server)
+	t.addIssueTools(server)
+	t.addCommentTools(server)
+	// Merge and approve are the person's. They are only on the copy the host runs (person),
+	// whose callers are the person's own windows and devices.
+	if person {
+		t.addPersonTools(server)
 	}
-	pull := func(ctx context.Context, repo string, number int) (pullJSON, error) {
-		var p pullJSON
-		err := b.get(ctx, fmt.Sprintf("%s/pullrequests/%d", repoPath(repo), number), false, &p)
-		return p, err
-	}
-	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
-	agents := visibility("model", "app")
-	addViews(server, b, repoOf)
+}
 
+// bbTools are the tools' handlers, on one Bitbucket.
+type bbTools struct{ b *RealBitbucket }
+
+var (
+	readOnly = &mcp.ToolAnnotations{ReadOnlyHint: true}
+	agents   = visibility("model", "app")
+)
+
+// repoOf is repo when it is one, else the token's default repository.
+func (t bbTools) repoOf(ctx context.Context, repo string) (string, error) {
+	if repo != "" {
+		if !repoPattern.MatchString(repo) {
+			return "", fmt.Errorf("repo is %s", repoWords)
+		}
+		return repo, nil
+	}
+	return t.b.DefaultRepo(ctx)
+}
+
+// pull reads one pull request.
+func (t bbTools) pull(ctx context.Context, repo string, number int) (pullJSON, error) {
+	var p pullJSON
+	err := t.b.get(ctx, fmt.Sprintf("%s/pullrequests/%d", repoPath(repo), number), false, &p)
+	return p, err
+}
+
+func (t bbTools) addPullRequestTools(server *mcp.Server) {
 	tool(server, &mcp.Tool{Name: "list_pull_requests", Title: "List pull requests",
 		Description: "The repository's pull requests, newest updated first, at most 50: number, title, branch, target, author, draft, " +
 			"state, whether it is from a fork, and its address.",
-		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in listPRArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			states, err := prStates(in.State)
-			if err != nil {
-				return nil, err
-			}
-			path := fmt.Sprintf("%s/pullrequests?%s&sort=-updated_on&pagelen=%d", repoPath(repo), states, perPage)
-			if in.Branch != "" {
-				path += "&" + bbql(fmt.Sprintf("source.branch.name=%q", in.Branch))
-			}
-			var list paged[pullJSON]
-			if err := b.get(ctx, path, false, &list); err != nil {
-				return nil, err
-			}
-			out := []any{}
-			for _, p := range list.Values {
-				if in.Branch == "" || p.Source.Branch.Name == in.Branch {
-					out = append(out, prSummary(p))
-				}
-			}
-			return map[string]any{"repo": repo, "pullRequests": out}, nil
-		})
-
+		Annotations: readOnly, Meta: agents}, t.listPullRequests)
 	tool(server, &mcp.Tool{Name: "get_pull_request", Title: "Read a pull request",
 		Description: "One pull request: its description (the first 20000 characters), branch, target, author, reviewers, draft, " +
 			"state, its head commit and its checks' combined state (pending, success or failure).",
-		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in numberArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			p, err := pull(ctx, repo, in.Number)
-			if err != nil {
-				return nil, err
-			}
-			out := prSummary(p)
-			out["description"] = clipDescription(p.Description)
-			reviewers := []string{}
-			for _, r := range p.Reviewers {
-				reviewers = append(reviewers, r.name())
-			}
-			out["reviewers"] = reviewers
-			out["headSha"] = p.Source.hash()
-			out["fixes"] = closingRefs(p.Description)
-			if sha := p.Source.hash(); sha != "" {
-				if s, err := b.statuses(ctx, repo, sha, false); err == nil {
-					out["checks"] = combined(s)
-				}
-			}
-			return out, nil
-		})
-
+		Annotations: readOnly, Meta: agents}, t.getPullRequest)
 	tool(server, &mcp.Tool{Name: "get_checks", Title: "Read a commit's checks",
 		Description: "The checks of a commit or branch, or of a pull request's head: the combined state (pending, success or failure) " +
 			"and each check's status, its name, state (SUCCESSFUL, FAILED, INPROGRESS or STOPPED), description and address (a " +
 			"Pipelines run's page, or another CI's).",
-		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in checksArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			ref := in.Ref
-			if ref == "" {
-				if in.PR == 0 {
-					return nil, fmt.Errorf("ref or number is needed")
-				}
-				p, err := pull(ctx, repo, in.PR)
-				if err != nil {
-					return nil, err
-				}
-				ref = p.Source.hash()
-			}
-			statuses, err := b.statuses(ctx, repo, ref, false)
-			if err != nil {
-				return nil, err
-			}
-			checks := []any{}
-			for _, s := range statuses {
-				checks = append(checks, map[string]any{"name": s.title(), "key": s.Key, "state": s.State, "description": s.Description,
-					"url": s.URL, "updatedAt": s.UpdatedOn})
-			}
-			return map[string]any{"repo": repo, "sha": ref, "state": combined(statuses), "checks": checks}, nil
-		})
+		Annotations: readOnly, Meta: agents}, t.getChecks)
+	tool(server, &mcp.Tool{Name: "create_pull_request", Title: "Open a pull request",
+		Description: "Opens a pull request from a branch already pushed, as the person whose token it is. Never merges it.",
+		Meta:        agents}, t.createPullRequest)
+}
 
+func (t bbTools) addPipelineTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{Name: "failed_log", Title: "Read a failed pipeline's log",
 		Description: fmt.Sprintf("The last %d lines of each failed step's log in a Bitbucket Pipelines run, or of one step by name. "+
 			"Another CI's logs are on its own pages (get_checks gives their addresses).", logLines),
-		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in logArgs) (*mcp.CallToolResult, any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			if in.PipelineID <= 0 {
-				return failed(fmt.Errorf("pipelineId is a Pipelines run's build number")), nil, nil
-			}
-			text, err := b.FailedLog(ctx, repo, in.PipelineID, in.Step)
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
-		})
-
+		Annotations: readOnly, Meta: agents}, t.failedLog)
 	tool(server, &mcp.Tool{Name: "retry_pipeline", Title: "Run a pipeline again",
 		Description: "Starts a new run of a Bitbucket Pipelines run that has ended: the same pipeline on the same commit, with the same " +
 			"variables. Pipelines cannot run only the failed steps again, so every step runs. Use it for a failure that is known to " +
 			"be flaky, not to hide a real one.",
-		Meta: agents},
-		func(ctx context.Context, in retryArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			if in.PipelineID <= 0 {
-				return nil, fmt.Errorf("pipelineId is a Pipelines run's build number")
-			}
-			return b.RetryPipeline(ctx, repo, in.PipelineID)
-		})
+		Meta: agents}, t.retryPipeline)
+}
 
+func (t bbTools) addIssueTools(server *mcp.Server) {
 	tool(server, &mcp.Tool{Name: "list_issues", Title: "List issues",
 		Description: "The repository's issues, newest updated first, at most 50: number, title, state, kind, priority, component, " +
 			"author, assignee and address. Bitbucket's issues have no labels: their kind and component are their labels. A " +
 			"repository whose issue tracker is off has none.",
-		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in listIssuesArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			var q []string
-			switch in.State {
-			case "", "open":
-				q = append(q, openIssues)
-			case "closed":
-				q = append(q, closedIssues)
-			case "all":
-			default:
-				return nil, fmt.Errorf("state is open, closed or all")
-			}
-			if in.Label != "" {
-				q = append(q, fmt.Sprintf("(kind=%q OR component.name=%q)", in.Label, in.Label))
-			}
-			path := fmt.Sprintf("%s/issues?sort=-updated_on&pagelen=%d", repoPath(repo), perPage)
-			if len(q) > 0 {
-				path += "&" + bbql(strings.Join(q, " AND "))
-			}
-			var list paged[issueJSON]
-			if err := b.get(ctx, path, false, &list); err != nil {
-				if noTracker(err) {
-					return nil, fmt.Errorf("%w: %s may have no issue tracker", err, repo)
-				}
-				return nil, err
-			}
-			out := []any{}
-			for _, i := range list.Values {
-				out = append(out, issueSummary(i))
-			}
-			return map[string]any{"repo": repo, "issues": out}, nil
-		})
-
+		Annotations: readOnly, Meta: agents}, t.listIssues)
 	tool(server, &mcp.Tool{Name: "get_issue", Title: "Read an issue",
 		Description: "One issue: its description (the first 20000 characters), state, kind, priority, component, author, assignee, " +
 			"and its first 50 comments, each with its author, time and body.",
-		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in numberArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			var i issueJSON
-			if err := b.get(ctx, fmt.Sprintf("%s/issues/%d", repoPath(repo), in.Number), false, &i); err != nil {
-				return nil, err
-			}
-			var comments paged[commentJSON]
-			if err := b.get(ctx, fmt.Sprintf("%s/issues/%d/comments?sort=created_on&pagelen=%d", repoPath(repo), in.Number, perPage), false, &comments); err != nil {
-				return nil, err
-			}
-			out := issueSummary(i)
-			out["description"] = clipDescription(i.Content.Raw)
-			list := []any{}
-			for _, c := range comments.Values {
-				if strings.TrimSpace(c.Content.Raw) == "" {
-					continue
-				}
-				list = append(list, map[string]any{"id": c.ID, "author": c.User.name(), "createdAt": c.CreatedOn,
-					"body": clipDescription(c.Content.Raw), "url": c.Links.HTML.Href})
-			}
-			out["comments"] = list
-			return out, nil
-		})
+		Annotations: readOnly, Meta: agents}, t.getIssue)
+}
 
-	comment := func(kind string) func(ctx context.Context, in commentArgs) (map[string]any, error) {
-		return func(ctx context.Context, in commentArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			if strings.TrimSpace(in.Body) == "" {
-				return nil, fmt.Errorf("body is empty")
-			}
-			var c commentJSON
-			if err := b.send(ctx, http.MethodPost, fmt.Sprintf("%s/%s/%d/comments", repoPath(repo), kind, in.Number),
-				map[string]any{"content": map[string]any{"raw": in.Body}}, &c); err != nil {
-				return nil, err
-			}
-			return map[string]any{"id": c.ID, "url": c.Links.HTML.Href}, nil
-		}
-	}
+func (t bbTools) addCommentTools(server *mcp.Server) {
 	tool(server, &mcp.Tool{Name: "comment_on_pull_request", Title: "Comment on a pull request",
-		Description: "Adds a comment to a pull request, as the person whose token it is.", Meta: agents}, comment("pullrequests"))
+		Description: "Adds a comment to a pull request, as the person whose token it is.", Meta: agents}, t.comment("pullrequests"))
 	tool(server, &mcp.Tool{Name: "comment_on_issue", Title: "Comment on an issue",
-		Description: "Adds a comment to an issue, as the person whose token it is.", Meta: agents}, comment("issues"))
-
-	tool(server, &mcp.Tool{Name: "create_pull_request", Title: "Open a pull request",
-		Description: "Opens a pull request from a branch already pushed, as the person whose token it is. Never merges it.",
-		Meta:        agents},
-		func(ctx context.Context, in createPRArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			if strings.TrimSpace(in.Branch) == "" || strings.TrimSpace(in.Title) == "" {
-				return nil, fmt.Errorf("branch and title are needed")
-			}
-			body := map[string]any{"title": in.Title, "description": in.Description, "draft": in.Draft,
-				"source": map[string]any{"branch": map[string]any{"name": in.Branch}}}
-			// Left out, Bitbucket takes the repository's main branch.
-			if in.Target != "" {
-				body["destination"] = map[string]any{"branch": map[string]any{"name": in.Target}}
-			}
-			var p pullJSON
-			if err := b.send(ctx, http.MethodPost, repoPath(repo)+"/pullrequests", body, &p); err != nil {
-				return nil, err
-			}
-			return prSummary(p), nil
-		})
-
+		Description: "Adds a comment to an issue, as the person whose token it is.", Meta: agents}, t.comment("issues"))
 	tool(server, &mcp.Tool{Name: "list_pull_request_comments", Title: "List a pull request's line comments",
 		Description: "The comments on lines of a pull request's diff, and the answers in their threads, oldest first: each one's id " +
 			"(to answer with reply_to_pull_request_comment), author, file, line, body, whether it is resolved, and address.",
-		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in numberArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			p, err := pull(ctx, repo, in.Number)
-			if err != nil {
-				return nil, err
-			}
-			comments, err := b.inlineComments(ctx, repo, p, "")
-			if err != nil {
-				return nil, err
-			}
-			list := []any{}
-			for i := len(comments) - 1; i >= 0; i-- {
-				c := comments[i]
-				list = append(list, map[string]any{"id": c.ID, "author": c.User.name(), "path": c.Inline.Path, "line": c.line(),
-					"body": clipDescription(c.Content.Raw), "resolved": c.Resolution != nil, "createdAt": c.CreatedOn, "url": c.Links.HTML.Href})
-			}
-			return map[string]any{"repo": repo, "number": in.Number, "comments": list}, nil
-		})
-
+		Annotations: readOnly, Meta: agents}, t.listPullRequestComments)
 	tool(server, &mcp.Tool{Name: "reply_to_pull_request_comment", Title: "Answer a pull request's comment",
 		Description: "Answers a comment on a line of a pull request's diff in its own thread, as the person whose token it is.",
-		Meta:        agents},
-		func(ctx context.Context, in replyArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			if strings.TrimSpace(in.Body) == "" {
-				return nil, fmt.Errorf("body is empty")
-			}
-			var to commentJSON
-			if err := b.get(ctx, fmt.Sprintf("%s/pullrequests/%d/comments/%d", repoPath(repo), in.Number, in.CommentID), false, &to); err != nil {
-				if noTracker(err) {
-					return nil, fmt.Errorf("pull request %d has no comment %d", in.Number, in.CommentID)
-				}
-				return nil, err
-			}
-			if to.Inline == nil {
-				return nil, fmt.Errorf("comment %d is not on a line of pull request %d's diff: use comment_on_pull_request", in.CommentID, in.Number)
-			}
-			var c commentJSON
-			if err := b.send(ctx, http.MethodPost, fmt.Sprintf("%s/pullrequests/%d/comments", repoPath(repo), in.Number),
-				map[string]any{"content": map[string]any{"raw": in.Body}, "parent": map[string]any{"id": in.CommentID}}, &c); err != nil {
-				return nil, err
-			}
-			return map[string]any{"id": c.ID, "url": c.Links.HTML.Href}, nil
-		})
+		Meta:        agents}, t.replyToPullRequestComment)
+}
 
-	// Merge and approve are the person's. They are only on the copy the host runs (person),
-	// whose callers are the person's own windows and devices.
-	if person {
-		person := visibility("app")
-		// atHead is the pull request when its head is still the commit the person saw.
-		atHead := func(ctx context.Context, repo string, number int, sha string) error {
-			if strings.TrimSpace(sha) == "" {
-				return fmt.Errorf("sha is the head commit the person saw: read the pull request again")
-			}
-			p, err := pull(ctx, repo, number)
-			if err != nil {
-				return err
-			}
-			if !sameCommit(p.Source.hash(), sha) {
-				return fmt.Errorf("the pull request has a newer commit (%s) than the person saw: read it again", p.Source.hash())
-			}
-			return nil
-		}
-		tool(server, &mcp.Tool{Name: "merge_pull_request", Title: "Merge a pull request",
-			Description: "Merges a pull request and deletes its branch, as the person whose token it is; squash squashes its " +
-				"commits. Only a person may call it.",
-			Meta: person},
-			func(ctx context.Context, in mergeArgs) (map[string]any, error) {
-				repo, err := repoOf(ctx, in.Repo)
-				if err != nil {
-					return nil, err
-				}
-				if err := atHead(ctx, repo, in.Number, in.Sha); err != nil {
-					return nil, err
-				}
-				strategy := "merge_commit"
-				if in.Squash {
-					strategy = "squash"
-				}
-				if err := b.send(ctx, http.MethodPost, fmt.Sprintf("%s/pullrequests/%d/merge", repoPath(repo), in.Number),
-					map[string]any{"merge_strategy": strategy, "close_source_branch": true}, nil); err != nil {
-					return nil, err
-				}
-				return map[string]any{"merged": true, "number": in.Number}, nil
-			})
-		tool(server, &mcp.Tool{Name: "approve_pull_request", Title: "Approve a pull request",
-			Description: "Approves a pull request at the head commit the person saw, as the person whose token it is. Only a person may call it.",
-			Meta:        person},
-			func(ctx context.Context, in approveArgs) (map[string]any, error) {
-				repo, err := repoOf(ctx, in.Repo)
-				if err != nil {
-					return nil, err
-				}
-				if err := atHead(ctx, repo, in.Number, in.Sha); err != nil {
-					return nil, err
-				}
-				if err := b.send(ctx, http.MethodPost, fmt.Sprintf("%s/pullrequests/%d/approve", repoPath(repo), in.Number), nil, nil); err != nil {
-					return nil, err
-				}
-				return map[string]any{"approved": true, "number": in.Number}, nil
-			})
+func (t bbTools) addPersonTools(server *mcp.Server) {
+	person := visibility("app")
+	tool(server, &mcp.Tool{Name: "merge_pull_request", Title: "Merge a pull request",
+		Description: "Merges a pull request and deletes its branch, as the person whose token it is; squash squashes its " +
+			"commits. Only a person may call it.",
+		Meta: person}, t.mergePullRequest)
+	tool(server, &mcp.Tool{Name: "approve_pull_request", Title: "Approve a pull request",
+		Description: "Approves a pull request at the head commit the person saw, as the person whose token it is. Only a person may call it.",
+		Meta:        person}, t.approvePullRequest)
+}
+
+func (t bbTools) listPullRequests(ctx context.Context, in listPRArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
 	}
+	states, err := prStates(in.State)
+	if err != nil {
+		return nil, err
+	}
+	path := fmt.Sprintf("%s/pullrequests?%s&sort=-updated_on&pagelen=%d", repoPath(repo), states, perPage)
+	if in.Branch != "" {
+		path += "&" + bbql(fmt.Sprintf("source.branch.name=%q", in.Branch))
+	}
+	var list paged[pullJSON]
+	if err := t.b.get(ctx, path, false, &list); err != nil {
+		return nil, err
+	}
+	out := []any{}
+	for _, p := range list.Values {
+		if in.Branch == "" || p.Source.Branch.Name == in.Branch {
+			out = append(out, prSummary(p))
+		}
+	}
+	return map[string]any{"repo": repo, "pullRequests": out}, nil
+}
+
+func (t bbTools) getPullRequest(ctx context.Context, in numberArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	p, err := t.pull(ctx, repo, in.Number)
+	if err != nil {
+		return nil, err
+	}
+	out := prSummary(p)
+	out["description"] = clipDescription(p.Description)
+	reviewers := []string{}
+	for _, r := range p.Reviewers {
+		reviewers = append(reviewers, r.name())
+	}
+	out["reviewers"] = reviewers
+	out["headSha"] = p.Source.hash()
+	out["fixes"] = closingRefs(p.Description)
+	if sha := p.Source.hash(); sha != "" {
+		if s, err := t.b.statuses(ctx, repo, sha, false); err == nil {
+			out["checks"] = combined(s)
+		}
+	}
+	return out, nil
+}
+
+func (t bbTools) getChecks(ctx context.Context, in checksArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	ref := in.Ref
+	if ref == "" {
+		if in.PR == 0 {
+			return nil, fmt.Errorf("ref or number is needed")
+		}
+		p, err := t.pull(ctx, repo, in.PR)
+		if err != nil {
+			return nil, err
+		}
+		ref = p.Source.hash()
+	}
+	statuses, err := t.b.statuses(ctx, repo, ref, false)
+	if err != nil {
+		return nil, err
+	}
+	checks := []any{}
+	for _, s := range statuses {
+		checks = append(checks, map[string]any{"name": s.title(), "key": s.Key, "state": s.State, "description": s.Description,
+			"url": s.URL, "updatedAt": s.UpdatedOn})
+	}
+	return map[string]any{"repo": repo, "sha": ref, "state": combined(statuses), "checks": checks}, nil
+}
+
+func (t bbTools) createPullRequest(ctx context.Context, in createPRArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Branch) == "" || strings.TrimSpace(in.Title) == "" {
+		return nil, fmt.Errorf("branch and title are needed")
+	}
+	body := map[string]any{"title": in.Title, "description": in.Description, "draft": in.Draft,
+		"source": map[string]any{"branch": map[string]any{"name": in.Branch}}}
+	// Left out, Bitbucket takes the repository's main branch.
+	if in.Target != "" {
+		body["destination"] = map[string]any{"branch": map[string]any{"name": in.Target}}
+	}
+	var p pullJSON
+	if err := t.b.send(ctx, http.MethodPost, repoPath(repo)+"/pullrequests", body, &p); err != nil {
+		return nil, err
+	}
+	return prSummary(p), nil
+}
+
+func (t bbTools) failedLog(ctx context.Context, _ *mcp.CallToolRequest, in logArgs) (*mcp.CallToolResult, any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return failed(err), nil, nil
+	}
+	if in.PipelineID <= 0 {
+		return failed(fmt.Errorf("pipelineId is a Pipelines run's build number")), nil, nil
+	}
+	text, err := t.b.FailedLog(ctx, repo, in.PipelineID, in.Step)
+	if err != nil {
+		return failed(err), nil, nil
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+}
+
+func (t bbTools) retryPipeline(ctx context.Context, in retryArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if in.PipelineID <= 0 {
+		return nil, fmt.Errorf("pipelineId is a Pipelines run's build number")
+	}
+	return t.b.RetryPipeline(ctx, repo, in.PipelineID)
+}
+
+// issueQuery is list_issues's BBQL terms for a state and a label.
+func issueQuery(state, label string) ([]string, error) {
+	var q []string
+	switch state {
+	case "", "open":
+		q = append(q, openIssues)
+	case "closed":
+		q = append(q, closedIssues)
+	case "all":
+	default:
+		return nil, fmt.Errorf("state is open, closed or all")
+	}
+	if label != "" {
+		q = append(q, fmt.Sprintf("(kind=%q OR component.name=%q)", label, label))
+	}
+	return q, nil
+}
+
+func (t bbTools) listIssues(ctx context.Context, in listIssuesArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	q, err := issueQuery(in.State, in.Label)
+	if err != nil {
+		return nil, err
+	}
+	path := fmt.Sprintf("%s/issues?sort=-updated_on&pagelen=%d", repoPath(repo), perPage)
+	if len(q) > 0 {
+		path += "&" + bbql(strings.Join(q, " AND "))
+	}
+	var list paged[issueJSON]
+	if err := t.b.get(ctx, path, false, &list); err != nil {
+		if noTracker(err) {
+			return nil, fmt.Errorf("%w: %s may have no issue tracker", err, repo)
+		}
+		return nil, err
+	}
+	out := []any{}
+	for _, i := range list.Values {
+		out = append(out, issueSummary(i))
+	}
+	return map[string]any{"repo": repo, "issues": out}, nil
+}
+
+func (t bbTools) getIssue(ctx context.Context, in numberArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	var i issueJSON
+	if err := t.b.get(ctx, fmt.Sprintf("%s/issues/%d", repoPath(repo), in.Number), false, &i); err != nil {
+		return nil, err
+	}
+	var comments paged[commentJSON]
+	if err := t.b.get(ctx, fmt.Sprintf("%s/issues/%d/comments?sort=created_on&pagelen=%d", repoPath(repo), in.Number, perPage), false, &comments); err != nil {
+		return nil, err
+	}
+	out := issueSummary(i)
+	out["description"] = clipDescription(i.Content.Raw)
+	list := []any{}
+	for _, c := range comments.Values {
+		if strings.TrimSpace(c.Content.Raw) == "" {
+			continue
+		}
+		list = append(list, map[string]any{"id": c.ID, "author": c.User.name(), "createdAt": c.CreatedOn,
+			"body": clipDescription(c.Content.Raw), "url": c.Links.HTML.Href})
+	}
+	out["comments"] = list
+	return out, nil
+}
+
+// comment is the handler that comments on an item of kind (pullrequests or issues).
+func (t bbTools) comment(kind string) func(ctx context.Context, in commentArgs) (map[string]any, error) {
+	return func(ctx context.Context, in commentArgs) (map[string]any, error) {
+		repo, err := t.repoOf(ctx, in.Repo)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(in.Body) == "" {
+			return nil, fmt.Errorf("body is empty")
+		}
+		var c commentJSON
+		if err := t.b.send(ctx, http.MethodPost, fmt.Sprintf("%s/%s/%d/comments", repoPath(repo), kind, in.Number),
+			map[string]any{"content": map[string]any{"raw": in.Body}}, &c); err != nil {
+			return nil, err
+		}
+		return map[string]any{"id": c.ID, "url": c.Links.HTML.Href}, nil
+	}
+}
+
+func (t bbTools) listPullRequestComments(ctx context.Context, in numberArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	p, err := t.pull(ctx, repo, in.Number)
+	if err != nil {
+		return nil, err
+	}
+	comments, err := t.b.inlineComments(ctx, repo, p, "")
+	if err != nil {
+		return nil, err
+	}
+	list := []any{}
+	for i := len(comments) - 1; i >= 0; i-- {
+		c := comments[i]
+		list = append(list, map[string]any{"id": c.ID, "author": c.User.name(), "path": c.Inline.Path, "line": c.line(),
+			"body": clipDescription(c.Content.Raw), "resolved": c.Resolution != nil, "createdAt": c.CreatedOn, "url": c.Links.HTML.Href})
+	}
+	return map[string]any{"repo": repo, "number": in.Number, "comments": list}, nil
+}
+
+func (t bbTools) replyToPullRequestComment(ctx context.Context, in replyArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Body) == "" {
+		return nil, fmt.Errorf("body is empty")
+	}
+	var to commentJSON
+	if err := t.b.get(ctx, fmt.Sprintf("%s/pullrequests/%d/comments/%d", repoPath(repo), in.Number, in.CommentID), false, &to); err != nil {
+		if noTracker(err) {
+			return nil, fmt.Errorf("pull request %d has no comment %d", in.Number, in.CommentID)
+		}
+		return nil, err
+	}
+	if to.Inline == nil {
+		return nil, fmt.Errorf("comment %d is not on a line of pull request %d's diff: use comment_on_pull_request", in.CommentID, in.Number)
+	}
+	var c commentJSON
+	if err := t.b.send(ctx, http.MethodPost, fmt.Sprintf("%s/pullrequests/%d/comments", repoPath(repo), in.Number),
+		map[string]any{"content": map[string]any{"raw": in.Body}, "parent": map[string]any{"id": in.CommentID}}, &c); err != nil {
+		return nil, err
+	}
+	return map[string]any{"id": c.ID, "url": c.Links.HTML.Href}, nil
+}
+
+// atHead is nil when the pull request's head is still the commit the person saw.
+func (t bbTools) atHead(ctx context.Context, repo string, number int, sha string) error {
+	if strings.TrimSpace(sha) == "" {
+		return fmt.Errorf("sha is the head commit the person saw: read the pull request again")
+	}
+	p, err := t.pull(ctx, repo, number)
+	if err != nil {
+		return err
+	}
+	if !sameCommit(p.Source.hash(), sha) {
+		return fmt.Errorf("the pull request has a newer commit (%s) than the person saw: read it again", p.Source.hash())
+	}
+	return nil
+}
+
+func (t bbTools) mergePullRequest(ctx context.Context, in mergeArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if err := t.atHead(ctx, repo, in.Number, in.Sha); err != nil {
+		return nil, err
+	}
+	strategy := "merge_commit"
+	if in.Squash {
+		strategy = "squash"
+	}
+	if err := t.b.send(ctx, http.MethodPost, fmt.Sprintf("%s/pullrequests/%d/merge", repoPath(repo), in.Number),
+		map[string]any{"merge_strategy": strategy, "close_source_branch": true}, nil); err != nil {
+		return nil, err
+	}
+	return map[string]any{"merged": true, "number": in.Number}, nil
+}
+
+func (t bbTools) approvePullRequest(ctx context.Context, in approveArgs) (map[string]any, error) {
+	repo, err := t.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if err := t.atHead(ctx, repo, in.Number, in.Sha); err != nil {
+		return nil, err
+	}
+	if err := t.b.send(ctx, http.MethodPost, fmt.Sprintf("%s/pullrequests/%d/approve", repoPath(repo), in.Number), nil, nil); err != nil {
+		return nil, err
+	}
+	return map[string]any{"approved": true, "number": in.Number}, nil
 }
 
 func prSummary(p pullJSON) map[string]any {

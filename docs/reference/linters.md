@@ -12,7 +12,7 @@ is what each target runs.
 
 | Target | Linter | Fails on | Runs in CI |
 |---|---|---|---|
-| `go:lint` | golangci-lint, every rule in `Go/.golangci.yml` | a finding not in `Go/.golangci-baseline.txt` | `go` (Linux) |
+| `go:lint` | golangci-lint, every rule in `Go/.golangci.yml` (bugs, security, and gocognit for readability) | a finding not in `Go/.golangci-baseline.txt` | `go` (Linux) |
 | `go:lint` | govulncheck | a known vulnerability that the code calls and that `Go/.govulncheck-excluded.txt` does not name | `go` (Linux) |
 | `web:lint` | tsc, `Web/test/lint.mjs`, the licence list | an error | `go` (Linux) |
 | `web:lint` | Biome, the rules in `Web/biome.json` | an error or a warning | `go` (Linux) |
@@ -47,6 +47,29 @@ findings main had when they were made to fail. A finding that only moves stays i
 as no baseline holds a line number. jscpd's key is the pair of files of a clone, one line per
 clone, so a second clone between the same two files is new. Fix an old finding, then run
 `scripts/lint.sh --baseline` to drop it from the list. Never add a new finding to a baseline.
+
+## Cognitive complexity
+
+`go:lint` runs gocognit (#6182): it fails on a Go function whose cognitive complexity is over 30,
+gocognit's default. Cognitive complexity is how hard a function is to read: each `if`, loop,
+`switch`, `&&` and `||` adds to it, and more when it is nested. It is not the function's run time
+(big-O); the performance review looks at that. Split a function that is over the limit into
+smaller ones, each with a name that says what it does, and keep its behaviour.
+
+When gocognit came, main had 401 functions over 30 (914 over 20, and 1524 over 15). The first PR
+split 5 of them. The other 396 are in `Go/.golangci-baseline.txt`, and one `task` under #6182 for
+each Go package takes them out. A gocognit finding's key in the baseline has no number: a function
+there stays there when an edit changes its complexity, until its task splits it. A new function
+over 30 fails.
+
+## No fixed wait in an agentsd test
+
+`go:lint` fails on `time.Sleep` and `time.After` in `Go/internal/agentsd/*_test.go` (forbidigo,
+#6128, epic #6126). A fixed wait ends before a loaded `-race` runner answers (spike #5600, cause
+B). A test waits on a channel or an event, or for `afterLimit(t)`: the limit from `t.Deadline()`
+(`waitLimit`, #5632). A short poll step inside such a wait gets `//nolint:forbidigo // why` on its
+line. The waits that were there when the rule came are in `Go/.golangci-baseline.txt`; the lanes
+of #6126 take them out.
 
 ## What is left out, and why
 

@@ -4239,6 +4239,11 @@
     {
       "name": "machines/retrySetup",
       "x-capability": "machines/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "description": "Try Again on a machine's set-up (#5355): runs the failed step and the ones after it. Every step is safe to run again.",
       "paramStructure": "by-name",
       "params": [
@@ -5288,6 +5293,11 @@
     {
       "name": "pool/claim",
       "x-capability": "pools/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "description": "New Machine's Start from a warm pool (#5365, #5366): checks the oldest ready machine of a pool of this provider and size, takes it in one write, binds it to the person and has the pool replace it. With no ready machine it makes a new one and says so in note: a claim never waits on a pool.",
       "paramStructure": "by-name",
       "params": [
@@ -5309,6 +5319,11 @@
     {
       "name": "pool/delete",
       "x-capability": "pools/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "description": "Deletes a warm pool and its ready machines (#5363). Machines already claimed are unaffected.",
       "paramStructure": "by-name",
       "params": [
@@ -5330,6 +5345,11 @@
     {
       "name": "pool/list",
       "x-capability": "pools/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "description": "The person's warm pools (#5363): each with how many machines are ready and being set up.",
       "paramStructure": "by-name",
       "params": [
@@ -5351,6 +5371,11 @@
     {
       "name": "pool/set",
       "x-capability": "pools/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "description": "Makes a warm pool or changes one (#5363). Min ready must not be above max size; max size is at least 1. A change takes effect at once: the pool's reconcile loop runs.",
       "paramStructure": "by-name",
       "params": [

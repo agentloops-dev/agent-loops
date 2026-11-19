@@ -167,9 +167,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # CI's go job leaves the Xcode projects out on Linux; test and apps run them on macOS.
           - os: linux
             runs-on: ubuntu-latest
-            exclude: ""
+            exclude: --exclude=tag:xcode
           - os: macos
             runs-on: macos-latest
             exclude: --exclude=web
@@ -190,6 +191,23 @@ jobs:
           echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
           echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
+      # The Xcode that .xcode-version names, which every Swift task's hash reads (rule 4 of
+      # #5627), as ci.yml's macOS jobs set it. Without it the runner's default Xcode compiled
+      # at hashes that say another one, and its type checker gave up on SidebarSmartRow.swift,
+      # where 27.2 passes (#5892, #5893, #5894).
+      - name: Xcode
+        if: matrix.os == 'macos'
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
+      # What ci.yml's `apps` and `test-swift` set up: mac:build and remote:build need
+      # xcodegen, and the app and AgentsKit compile Metal.
+      - name: Tools
+        if: matrix.os == 'macos'
+        run: |
+          xcodebuild -version
+          brew install xcodegen &
+          xcodegen_pid=$!
+          xcodebuild -downloadComponent MetalToolchain
+          wait "$xcodegen_pid"
       - uses: actions/setup-node@v5
         with:
           node-version-file: Web/.node-version
@@ -210,6 +228,15 @@ jobs:
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
+      # The pinned linters on the PATH, as ci.yml's go job puts them there (#5890): on Linux
+      # scripts/lint.sh runs only a linter on the PATH, so without this step every lint target
+      # fails here and is filed as an input that nobody declared. On macOS lint.sh gets them.
+      - name: Lint tools
+        if: matrix.os == 'linux'
+        timeout-minutes: 5
+        run: |
+          scripts/lint.sh --tools "$RUNNER_TEMP/lint-tools" shellcheck golangci-lint govulncheck biome jscpd
+          echo "$RUNNER_TEMP/lint-tools" >> "$GITHUB_PATH"
       # Before the run, which may write its own results over them.
       - name: The cached passes
         run: node scripts/nx-undeclared.mjs passes > "$RUNNER_TEMP/passes.txt"

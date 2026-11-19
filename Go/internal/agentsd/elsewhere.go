@@ -323,7 +323,8 @@ func (d *Daemon) heardThere(session wire.UUID, machine, title string, ended *wir
 }
 
 // thereAgents is the sessions on other machines that count in folder's helper limits, as
-// records helpersIn can count: running until heard to have ended.
+// records helpersIn can count: running until heard to have ended, and not while their
+// machine was last listed as offline (#5976).
 func (d *Daemon) thereAgents(folder string) []wire.Agent {
 	d.elsewhereMu.Lock()
 	defer d.elsewhereMu.Unlock()
@@ -334,8 +335,11 @@ func (d *Daemon) thereAgents(folder string) []wire.Agent {
 		}
 		title, starter := s.Title+" (on "+s.Machine+")", s.Starter
 		a := wire.Agent{ID: s.Session, Title: &title, CreatedAt: s.At, StartedByAgent: &starter, State: wire.AgentStateRunning}
-		if s.Ended != nil {
+		switch {
+		case s.Ended != nil:
 			a.State = wire.AgentStateFinished
+		case d.thereMachineDown(s.Machine):
+			a.State = wire.AgentStateStopped
 		}
 		out = append(out, a)
 	}
@@ -360,6 +364,11 @@ func (d *Daemon) callThere(caller wire.UUID, s *startedThere, call wire.SessionC
 		out, err = d.askWorkspacesPatient(caller, sessionCallMethod, params, patience)
 	} else {
 		out, err = d.askWorkspaces(caller, sessionCallMethod, params)
+	}
+	if failureCode(err) == wire.FailureNoSuchHost {
+		if gone, ok := d.machineGone(s, call.Op); ok {
+			return gone, nil
+		}
 	}
 	if err != nil {
 		return reply, err

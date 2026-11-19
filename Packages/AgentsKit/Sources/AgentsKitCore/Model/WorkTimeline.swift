@@ -150,8 +150,10 @@ public extension DaemonAPI.Method {
 
 // MARK: - The layout (#4173, #5506)
 
-/// Work ▸ Timeline (#4173): each epic a filled block in its own row, from when its first child starts
-/// to when its last child closes, on a linear time axis (#5506, Alex, 2026-11-14). This is the part
+/// Work ▸ Timeline (#4173): each epic a block in its own row on a linear time axis (#5506, Alex,
+/// 2026-11-14). The block is the ghost (the lighter tint) from when its first child was created to when
+/// its last child closes (or Now, or the forecast), and solid inside it only from when its first child
+/// started to when the work stopped (#6043). This is the part
 /// both clients share (the web page has a TypeScript copy, `Web/src/model/workTimeline.ts`): the
 /// range, the blocks, their rows, the marks and the words. The Mac draws it with a `Canvas`.
 public enum WorkTimeline {
@@ -274,19 +276,41 @@ public enum WorkTimeline {
         /// The epic's children closed, and all of them.
         public var done: Int
         public var total: Int
+        /// When its first child started: the solid span starts here (#4276).
         public var start: Date
         /// The join, the forecast join, the pill, or Now.
         public var end: Date
+        /// When its first child was created: the block (the ghost) starts here, at or before `start` (#6043).
+        public var createdAt: Date
+        /// When the work stopped: its last child's close, or Now while a session is in a turn on it. The
+        /// solid span ends here, from `start` to at most `end` and Now (#6043).
+        public var stoppedAt: Date
         public var how: End
         public var band: DateInterval?
         public var dots: [Dot]
         /// The epic and its open children that a session is in a turn on now (#4265): the line
         /// pulses and a ring turns at Now while it is above 0.
         public var working: Int
+        /// The epic's priority (`ForgeItem.priority`: high, medium or low; nil for none) and
+        /// whether it is on hold (#6089): they give its band.
+        public var priority: String?
+        public var onHold = false
         /// The row, 0 at the top (#5506).
         public var row: Int = 0
 
+        /// Its band (#6089): High 0, Medium 1, none 2, Low 3, on hold 4.
+        public var priorityBand: Int { WorkTimeline.priorityBand(priority: priority, onHold: onHold) }
+
+        /// Its chip's words, after its title (#6089): *High*, *Medium*, *Low* or *On hold*; nil for none.
+        public var chip: String? { onHold ? WorkTimeline.onHoldWords : WorkPlan.priorityWords(priority) }
+
         public var id: String { "\(epic.ref)/\(segment)" }
+
+        /// Where the block's leading edge is: the ghost's start (#6043).
+        public var from: Date { createdAt }
+
+        /// The work stopped before Now on an open block (a minute's slack): the hover card says so.
+        public func stopped(now: Date) -> Bool { open && stoppedAt < now.addingTimeInterval(-60) }
 
         /// The hover card's figures, `#n · 6 of 8`. A block shows its title only (Alex, 2026-11-14).
         public var figures: String { "\(number) · \(done) of \(total)" }
@@ -308,6 +332,9 @@ public enum WorkTimeline {
                              working: Set<String> = []) -> [Line] {
         timeline.epics.flatMap { epic -> [Line] in
             guard !epic.children.isEmpty else { return [] }
+            // An epic on hold is not forecast (#6089): its open line stops at Now.
+            let onHold = epic.item.onHold == true
+            let forecast = forecast && !onHold
             let total = epic.children.count
             let done = epic.children.filter { $0.closedAt != nil }.count
             let last = epic.segments.count - 1
@@ -345,6 +372,11 @@ public enum WorkTimeline {
                     how = .dropped
                 }
                 end = max(end, start)
+                // The ghost starts when its first child was created; a later line's no earlier than the
+                // line before it closed (#6043).
+                let prior = i > 0 ? epic.segments[i - 1].closedAt : nil
+                let created = max(mine.map(\.createdAt).min() ?? start, prior ?? .distantPast)
+                let createdAt = min(created, start)
                 let dots = mine.compactMap { child -> Dot? in
                     let number = WorkList.shortRef(child.item.node.ref)
                     if let closed = child.closedAt {
@@ -361,10 +393,21 @@ public enum WorkTimeline {
                     ? mine.filter { $0.closedAt == nil && working.contains($0.item.node.ref) }.count
                         + (working.contains(epic.item.node.ref) ? 1 : 0)
                     : 0
+                // The work stopped at its last child's close (or the last start after it); while a
+                // session is in a turn on it, it did not stop (#6043). A line not started has no solid span.
+                var stoppedAt = end
+                if isOpen {
+                    let marks = mine.compactMap(\.closedAt) + mine.compactMap(\.startedAt)
+                    stoppedAt = segment.startedAt == nil ? start
+                        : working > 0 ? now : min(max(marks.max() ?? start, start), now)
+                }
+                stoppedAt = min(max(stoppedAt, start), end)
                 return Line(epic: epic.item.node, segment: i, title: epic.item.title,
                             number: WorkList.shortRef(epic.item.node.ref), feature: epic.item.feature,
-                            done: done, total: total, start: start, end: end, how: how, band: band,
-                            dots: dots.sorted { $0.at < $1.at }, working: working)
+                            done: done, total: total, start: start, end: end, createdAt: createdAt,
+                            stoppedAt: stoppedAt, how: how, band: band,
+                            dots: dots.sorted { $0.at < $1.at }, working: working, priority: epic.item.priority,
+                            onHold: onHold)
             }
         }
     }
@@ -378,7 +421,7 @@ public enum WorkTimeline {
         lines.filter { line in
             let end: Date
             if case .waits = line.how { end = .distantFuture } else { end = reach(line) }
-            return line.start <= window.end && end >= window.start
+            return line.from <= window.end && end >= window.start
         }
     }
 
@@ -396,23 +439,76 @@ public enum WorkTimeline {
         return DateInterval(start: window.start.addingTimeInterval(-widest.span), end: window.end.addingTimeInterval(widest.span))
     }
 
-    /// Put each block in the first row that is free at its start, sorted by start, then by id
-    /// (#5506). It packs in time, not in points: a row is busy until the block's reach and `gap`
-    /// after it, so the rows do not change with the range. A block that waits for the person has no
-    /// end: it holds its row while it is open. A label outside a block takes no room.
-    public static func layout(_ lines: [Line], gap: TimeInterval = packGap) -> [Line] {
-        var busy: [Date] = []
-        return lines.sorted { ($0.start, $0.id) < ($1.start, $1.id) }.map { line in
-            var placed = line
-            var row = 0
-            while row < busy.count, busy[row] > line.start { row += 1 }
-            let until: Date
-            if case .waits = line.how { until = .distantFuture } else { until = reach(line).addingTimeInterval(gap) }
-            if row == busy.count { busy.append(until) } else { busy[row] = until }
-            placed.row = row
-            return placed
+    /// A priority's band (#6089), the top first: High 0, Medium 1, none 2, Low 3, on hold 4.
+    public static func priorityBand(priority: String?, onHold: Bool) -> Int {
+        if onHold { return 4 }
+        switch priority?.lowercased() {
+        case "high": return 0
+        case "medium": return 1
+        case "low": return 3
+        default: return 2
         }
     }
+
+    /// An on hold epic's chip and band (#6089).
+    public static let onHoldWords = "On hold"
+
+    /// A band's name at the plot's leading edge (#6089).
+    public static func bandWords(_ band: Int) -> String {
+        switch band {
+        case 0: "High"
+        case 1: "Medium"
+        case 3: "Low"
+        case 4: onHoldWords
+        default: "None"
+        }
+    }
+
+    /// Each priority is a band of rows, High at the top, then Medium, none, Low and on hold last
+    /// (#6089, Alex, 2026-11-17). In a band, each block goes in the first row that is free at its
+    /// start (its created time, #6043), sorted by it, then by id (#5506), so a block never moves into a
+    /// higher band's row.
+    /// It packs in time, not in points: a row is busy until the block's reach and `gap` after it, so
+    /// the rows do not change with the range. A block that waits for the person has no end: it holds
+    /// its row while it is open. A label outside a block takes no room. A band with no block takes no row.
+    public static func layout(_ lines: [Line], gap: TimeInterval = packGap) -> [Line] {
+        var out: [Line] = []
+        var first = 0
+        for band in 0...4 {
+            var busy: [Date] = []
+            let mine = lines.filter { $0.priorityBand == band }.sorted { ($0.from, $0.id) < ($1.from, $1.id) }
+            for line in mine {
+                var placed = line
+                var row = 0
+                while row < busy.count, busy[row] > line.from { row += 1 }
+                let until: Date
+                if case .waits = line.how { until = .distantFuture } else { until = reach(line).addingTimeInterval(gap) }
+                if row == busy.count { busy.append(until) } else { busy[row] = until }
+                placed.row = first + row
+                out.append(placed)
+            }
+            first += busy.count
+        }
+        return out
+    }
+
+    /// The bands in use, each with its first row and its rows, the top first (#6089).
+    public struct Band: Sendable, Hashable {
+        public var band: Int
+        public var words: String
+        public var row: Int
+        public var rows: Int
+    }
+
+    public static func bands(_ lines: [Line]) -> [Band] {
+        Dictionary(grouping: lines, by: \.priorityBand).map { band, mine in
+            let rows = mine.map(\.row)
+            return Band(band: band, words: bandWords(band), row: rows.min() ?? 0, rows: (rows.max() ?? 0) - (rows.min() ?? 0) + 1)
+        }.sorted { $0.row < $1.row }
+    }
+
+    /// Where the rule above a band's first row goes: in the gap between the rows.
+    public static func bandRuleY(_ row: Int) -> Double { rowTop(row) - rowGap / 2 }
 
     /// The rows in use.
     public static func rowCount(_ lines: [Line]) -> Int { (lines.map(\.row).max() ?? -1) + 1 }
@@ -432,7 +528,7 @@ public enum WorkTimeline {
 
     /// The next block's start in the same row, after `line`'s: a label outside `line` stops before it.
     public static func nextInRow(_ lines: [Line], after line: Line) -> Date? {
-        lines.filter { $0.row == line.row && $0.start > line.start }.map(\.start).min()
+        lines.filter { $0.row == line.row && $0.from > line.from }.map(\.from).min()
     }
 
     /// Where a dot is drawn: at its time, held inside its block.
@@ -474,12 +570,23 @@ public enum WorkTimeline {
         public var arrow: Bool
         public var outside: String?
         public var outsideX: Double
+        /// The priority chip (#6089): after the title in the block when both fit, else after the
+        /// words outside it, where there is room before the next block; nil when there is none.
+        public var chip: String?
+        public var chipX: Double = 0
+        public var chipInside = false
     }
+
+    /// A chip's padding on each side of its words, and the gap before it (#6089).
+    public static let chipPadding: Double = 5
+    public static let chipGap: Double = 6
+    /// A chip's width, in points.
+    public static func chipWidth(_ words: String, measure: (String) -> Double) -> Double { measure(words) + 2 * chipPadding }
 
     /// `trailing` is the width of what is drawn after the block first (the wait pill).
     public static func blockWords(_ line: Line, axis: Axis, measure: (String) -> Double, next: Date? = nil,
                                   left: Double = -.infinity, trailing: Double = 0) -> BlockWords {
-        let sx = axis.x(line.start), ex = max(axis.x(line.end), sx)
+        let sx = axis.x(line.from), ex = max(axis.x(line.end), sx)
         let fits = measure(line.title) + 2 * titleInset <= ex - sx
         let arrow = fits && sx < left
         let insideX = (arrow ? left : sx) + titleInset
@@ -487,8 +594,32 @@ public enum WorkTimeline {
         let outsideX = axis.x(reach(line)) + 6 + (trailing > 0 ? trailing + 6 : 0)
         let words = [fits ? "" : line.title, line.how == .dropped ? droppedWords : ""].filter { !$0.isEmpty }.joined(separator: "  ")
         let room = (next.map { axis.x($0) - 6 } ?? .infinity) - outsideX
-        return BlockWords(inside: inside, insideX: insideX, arrow: arrow,
-                          outside: words.isEmpty ? nil : cut(words, room: room, measure: measure), outsideX: outsideX)
+        var out = BlockWords(inside: inside, insideX: insideX, arrow: arrow,
+                             outside: words.isEmpty ? nil : cut(words, room: room, measure: measure), outsideX: outsideX)
+        guard let chip = line.chip else { return out }
+        let width = chipWidth(chip, measure: measure)
+        // In the block, after the whole title.
+        if let inside, !inside.hasSuffix("…") {
+            let x = insideX + measure(inside) + chipGap
+            if x + width <= ex - titleInset {
+                out.chip = chip
+                out.chipX = x
+                out.chipInside = true
+                return out
+            }
+        }
+        // After the block's words, with the words cut to leave it room.
+        let wordsRoom = room - width - (words.isEmpty ? 0 : chipGap)
+        guard wordsRoom >= 0 else { return out }
+        if !words.isEmpty {
+            guard let shown = cut(words, room: wordsRoom, measure: measure) else { return out }
+            out.outside = shown
+            out.chipX = outsideX + measure(shown) + chipGap
+        } else {
+            out.chipX = outsideX
+        }
+        out.chip = chip
+        return out
     }
 
     // MARK: - Colours
@@ -544,7 +675,7 @@ public enum WorkTimeline {
         return lines.first { line in
             let top = rowTop(line.row)
             return point.y >= top && point.y <= top + blockHeight
-                && point.x >= axis.x(line.start) - 2 && point.x <= axis.x(reach(line)) + 2
+                && point.x >= axis.x(line.from) - 2 && point.x <= axis.x(reach(line)) + 2
         }.map(Hit.line)
     }
 
@@ -577,6 +708,7 @@ public enum WorkTimeline {
     /// On an epic's block: "#4250 · 11 of 16 · closes about 5:00 PM · 3:00 PM–9:00 PM, 8 in 10".
     public static func lineLine(_ line: Line, now: Date, calendar: Calendar = .current) -> String {
         var out = [line.figures]
+        if line.stopped(now: now) { out.append(stoppedWords(line, now: now)) }
         switch line.how {
         case .joined: out.append("closed \(agoWords(line.end, now: now))")
         case .dropped: out.append("closed as not planned")
@@ -590,6 +722,9 @@ public enum WorkTimeline {
         }
         return out.joined(separator: " · ")
     }
+
+    /// "stopped 3 h ago": an open block whose work stopped before Now (#6043).
+    public static func stoppedWords(_ line: Line, now: Date) -> String { "stopped \(agoWords(line.stoppedAt, now: now))" }
 
     /// "2 h ago", or "just now".
     static func agoWords(_ date: Date, now: Date) -> String {
@@ -634,7 +769,8 @@ public enum WorkTimeline {
     /// What VoiceOver reads, a row per line in time order (section 5): "Azure DevOps, 3 of 7 done,
     /// closes about 6:00 PM".
     public static func spoken(_ lines: [Line], now: Date, calendar: Calendar = .current) -> [(line: Line, words: String)] {
-        lines.sorted { ($0.start, $0.id) < ($1.start, $1.id) }.map { line in
+        // In priority order, then in time (#6089): High first.
+        lines.sorted { ($0.priorityBand, $0.from, $0.id) < ($1.priorityBand, $1.from, $1.id) }.map { line in
             let end = switch line.how {
             case .joined: "closed \(time(line.end, now: now, calendar: calendar))"
             case .dropped: "closed as not planned"
@@ -642,8 +778,58 @@ public enum WorkTimeline {
             case .waits(let n): waitWords(n)
             case .open: "open"
             }
-            return (line, "\(line.title), \(line.done) of \(line.total) done, \(end)")
+            let chip = line.chip.map { line.onHold ? ", \($0.lowercased())" : ", priority \($0.lowercased())" } ?? ""
+            let stopped = line.stopped(now: now) ? ", \(stoppedWords(line, now: now))" : ""
+            return (line, "\(line.title)\(chip), \(line.done) of \(line.total) done, \(end)\(stopped)")
         }
+    }
+
+    /// A row of the list of epics (note 36 of `specs/4328-work-look/milestones.md`): the Timeline on a phone in
+    /// portrait (#6044), as on the web page under 700 px. `line2`: "closes about 5:00 PM · 3:00 PM–9:00 PM".
+    public struct EpicRow: Sendable, Hashable, Identifiable {
+        public var line: Line
+        public var line2: String
+        public var id: String { line.id }
+    }
+
+    /// The list of epics in the window, as the web page's `epicRows`: in priority order (High first, on hold
+    /// last), then in the order they close: the forecast first (the soonest first), then those that wait for
+    /// the person, then those still open, then those that joined (the latest first).
+    public static func epicRows(_ lines: [Line], window: DateInterval, now: Date, calendar: Calendar = .current) -> [EpicRow] {
+        func rank(_ line: Line) -> Int {
+            switch line.how {
+            case .forecast: 0
+            case .waits: 1
+            case .open: 2
+            case .joined, .dropped: 3
+            }
+        }
+        func line2(_ line: Line) -> String {
+            switch line.how {
+            case .forecast:
+                let about = "closes about \(time(line.end, now: now, calendar: calendar))"
+                guard let band = line.band else { return about }
+                return "\(about) · \(time(band.start, now: now, calendar: calendar))–\(time(band.end, now: now, calendar: calendar))"
+            case .waits(let n): return waitWords(n)
+            case .open: return "open"
+            case .joined: return "joined \(time(line.end, now: now, calendar: calendar))"
+            case .dropped: return "closed as not planned"
+            }
+        }
+        return overlapping(lines, window).sorted { a, b in
+            if a.priorityBand != b.priorityBand { return a.priorityBand < b.priorityBand }
+            if rank(a) != rank(b) { return rank(a) < rank(b) }
+            if a.end != b.end { return rank(a) == 3 ? a.end > b.end : a.end < b.end }
+            return a.title < b.title
+        }
+        .map { line in
+            EpicRow(line: line, line2: line.stopped(now: now) ? "\(line2(line)) · \(stoppedWords(line, now: now))" : line2(line))
+        }
+    }
+
+    /// "Now · 2:40 PM": the list of epics' first line.
+    public static func nowWords(_ now: Date, calendar: Calendar = .current) -> String {
+        "Now · \(time(now, now: now, calendar: calendar))"
     }
 
     /// Several machines' timelines of one project as one: each epic and release once.

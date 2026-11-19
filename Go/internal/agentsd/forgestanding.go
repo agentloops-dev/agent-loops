@@ -34,20 +34,7 @@ func standingOf(body string) wire.ForgeStanding {
 		return wire.ForgeStanding{Labels: []string{}, Any: []string{}, Not: []string{}, Lanes: 1,
 			Error: new(fmt.Sprintf(format, a...))}
 	}
-	var block []string
-	blocks, in := 0, false
-	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
-		t := strings.TrimSpace(line)
-		switch {
-		case in && strings.HasPrefix(t, "```"):
-			in = false
-		case in:
-			block = append(block, t)
-		case strings.HasPrefix(t, "```") && strings.EqualFold(strings.TrimSpace(t[3:]), standingLabel):
-			blocks++
-			in = true
-		}
-	}
+	block, blocks := standingBlock(body)
 	switch {
 	case blocks == 0:
 		return fail("the epic is labelled standing but its body has no standing block")
@@ -71,36 +58,65 @@ func standingOf(body string) wire.ForgeStanding {
 			return fail("the standing block says %s twice", key)
 		}
 		seen[key] = true
-		switch key {
-		case "labels":
-			out.Labels = standingList(value)
-		case "any":
-			out.Any = standingList(value)
-		case "not":
-			out.Not = standingList(value)
-		case "milestone":
-			if value == "" {
-				return fail("the standing block's milestone is empty; it is none, any or a milestone's name")
-			}
-			if strings.EqualFold(value, "none") || strings.EqualFold(value, "any") {
-				value = strings.ToLower(value)
-			}
-			out.Milestone = &value
-		case "parent":
-			if !strings.EqualFold(value, "none") {
-				return fail("the standing block's parent is %q; it is none", value)
-			}
-			// parent: none (#4335) takes only issues that are no other issue's sub-issue.
-			out.Parent = new("none")
-		case "lanes":
-			n, err := strconv.Atoi(value)
-			if err != nil || n < 1 {
-				return fail("the standing block's lanes is %q; it is 1 or more", value)
-			}
-			out.Lanes = int64(n)
+		if msg := standingField(&out, key, value); msg != "" {
+			return fail("%s", msg)
 		}
 	}
 	return out
+}
+
+// standingBlock is the trimmed lines of the standing blocks in body, and how
+// many such blocks it has.
+func standingBlock(body string) ([]string, int) {
+	var block []string
+	blocks, in := 0, false
+	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case in && strings.HasPrefix(t, "```"):
+			in = false
+		case in:
+			block = append(block, t)
+		case strings.HasPrefix(t, "```") && strings.EqualFold(strings.TrimSpace(t[3:]), standingLabel):
+			blocks++
+			in = true
+		}
+	}
+	return block, blocks
+}
+
+// standingField sets one known field of a standing block on out. It gives why
+// the value is bad, or "" when it is good.
+func standingField(out *wire.ForgeStanding, key, value string) string {
+	switch key {
+	case "labels":
+		out.Labels = standingList(value)
+	case "any":
+		out.Any = standingList(value)
+	case "not":
+		out.Not = standingList(value)
+	case "milestone":
+		if value == "" {
+			return "the standing block's milestone is empty; it is none, any or a milestone's name"
+		}
+		if strings.EqualFold(value, "none") || strings.EqualFold(value, "any") {
+			value = strings.ToLower(value)
+		}
+		out.Milestone = &value
+	case "parent":
+		if !strings.EqualFold(value, "none") {
+			return fmt.Sprintf("the standing block's parent is %q; it is none", value)
+		}
+		// parent: none (#4335) takes only issues that are no other issue's sub-issue.
+		out.Parent = new("none")
+	case "lanes":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 {
+			return fmt.Sprintf("the standing block's lanes is %q; it is 1 or more", value)
+		}
+		out.Lanes = int64(n)
+	}
+	return ""
 }
 
 // standingList is a comma-separated list, each trimmed, with no empty ones.

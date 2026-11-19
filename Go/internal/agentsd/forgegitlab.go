@@ -26,6 +26,10 @@ type gitlabForge struct {
 // gitlabNoPlanWrite is why a GitLab plan is not changed here.
 const gitlabNoPlanWrite = "a GitLab plan is changed on GitLab, not yet here"
 
+// gitlabNoRequestChanges is why Request changes is not offered: GitLab's documented REST API
+// has no write for a request-changes review (#5857).
+const gitlabNoRequestChanges = "GitLab's API has no request-changes review"
+
 func (gitlabForge) Name() string { return "gitlab" }
 
 func (gitlabForge) Images() forgeImageHost { return gitlabImages{} }
@@ -33,6 +37,7 @@ func (gitlabForge) Images() forgeImageHost { return gitlabImages{} }
 func (gitlabForge) Caps() forgeCaps {
 	return forgeCaps{
 		Issues: true, PRs: true,
+		Priority: true, Hold: true,
 		Issue: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true},
 		PR: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, Merge: true, AutoMerge: true, Approve: true,
 			Rerun: true, Log: true, Diff: true, CancelAutoMerge: true, Ready: true},
@@ -51,9 +56,10 @@ func (gitlabForge) Caps() forgeCaps {
 		Total: true,
 		Plan:  true,
 		Reasons: map[string]string{
-			actionTransition: "only a Jira issue or an Azure Boards work item moves by a transition",
-			actionAddChild:   gitlabNoPlanWrite,
-			actionBlockedBy:  gitlabNoPlanWrite,
+			actionTransition:     "only a Jira issue or an Azure Boards work item moves by a transition",
+			actionRequestChanges: gitlabNoRequestChanges,
+			actionAddChild:       gitlabNoPlanWrite,
+			actionBlockedBy:      gitlabNoPlanWrite,
 		},
 	}
 }
@@ -453,4 +459,13 @@ func gitlabStart(i wire.ForgeItem) *wire.ForgeStart {
 		return nil
 	}
 	return numberedStart(fmt.Sprintf("#%d: %s\n\nWork on this GitLab issue: %s", n, i.Title, deref(i.URL)), n, i.Title)
+}
+
+// SetPriority and SetHold are the labels: GitLab has no field for either (#6091).
+func (g gitlabForge) SetPriority(ctx context.Context, r forgeRef, priority string) error {
+	return labelPriority(ctx, g, r, priority)
+}
+
+func (g gitlabForge) SetHold(ctx context.Context, r forgeRef, on bool) error {
+	return labelHold(ctx, g, r, on)
 }

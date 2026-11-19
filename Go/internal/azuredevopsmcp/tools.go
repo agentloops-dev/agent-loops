@@ -142,346 +142,392 @@ func tool[In any](server *mcp.Server, t *mcp.Tool, f func(context.Context, In) (
 
 // AddTools puts the tools and the views (views.go) on server; with person, also the tools only
 // a person may call.
-func AddTools(server *mcp.Server, f *RealAzureDevOps, person bool) {
-	repoOf := func(ctx context.Context, repo string) (string, error) {
-		if repo != "" {
-			if !repoPattern.MatchString(repo) {
-				return "", fmt.Errorf("repo is %s", repoWords)
-			}
-			return repo, nil
-		}
-		return f.DefaultRepo(ctx)
-	}
+func AddTools(server *mcp.Server, ado *RealAzureDevOps, person bool) {
+	f := tools{ado}
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
 	agents := visibility("model", "app")
-	addViews(server, f, repoOf)
-	pull := func(ctx context.Context, repo string, number int) (pullJSON, error) {
-		var p pullJSON
-		err := f.get(ctx, api(fmt.Sprintf("%s/pullrequests/%d", repoPath(repo), number), nil), false, &p)
-		return p, err
-	}
+	addViews(server, ado, f.repoOf)
 
 	tool(server, &mcp.Tool{Name: "list_pull_requests", Title: "List pull requests",
 		Description: "The repository's pull requests, newest first, at most 100: number, title, branch, target, author, draft, " +
 			"state (open, merged or abandoned), whether it can merge, and its address.",
 		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in listPRArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			st, ok := map[string]string{"": "active", "open": "active", "merged": "completed", "abandoned": "abandoned", "all": "all"}[in.State]
-			if !ok {
-				return nil, fmt.Errorf("state is open, merged, abandoned or all")
-			}
-			q := url.Values{"searchCriteria.status": {st}, "$top": {strconv.Itoa(perPage)}}
-			if in.Branch != "" {
-				q.Set("searchCriteria.sourceRefName", "refs/heads/"+in.Branch)
-			}
-			var list struct {
-				Value []pullJSON `json:"value"`
-			}
-			if err := f.get(ctx, api(repoPath(repo)+"/pullrequests", q), false, &list); err != nil {
-				return nil, err
-			}
-			out := []any{}
-			for _, p := range list.Value {
-				if in.Label == "" || hasLabel(p, in.Label) {
-					out = append(out, f.prSummary(repo, p))
-				}
-			}
-			return map[string]any{"repo": repo, "pullRequests": out}, nil
-		})
+		f.listPullRequests)
 
 	tool(server, &mcp.Tool{Name: "get_pull_request", Title: "Read a pull request",
 		Description: "One pull request: its description (the first 20000 characters), branch, target, author, tags, draft, state, " +
 			"whether it can merge, its head commit, its reviewers and their votes, and its builds' combined state.",
 		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in numberArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			p, err := pull(ctx, repo, in.Number)
-			if err != nil {
-				return nil, err
-			}
-			out := f.prSummary(repo, p)
-			out["description"] = clipDescription(p.Description)
-			out["labels"] = p.labels()
-			out["headSha"] = p.head()
-			out["fixes"] = closingRefs(p.Description)
-			reviewers := []any{}
-			for _, r := range p.Reviewers {
-				reviewers = append(reviewers, map[string]any{"name": r.name(), "vote": voteWords(r.Vote), "required": r.IsRequired})
-			}
-			out["reviewers"] = reviewers
-			if builds, err := f.newestBuilds(ctx, repo, fmt.Sprintf("refs/pull/%d/merge", p.ID)); err == nil {
-				out["checks"] = combined(builds)
-			}
-			return out, nil
-		})
+		f.getPullRequest)
 
 	tool(server, &mcp.Tool{Name: "get_checks", Title: "Read the checks",
 		Description: "The Azure Pipelines builds of a branch, or of a pull request (its build validation), the newest of each " +
 			"pipeline: the combined state (pending, succeeded or failed) and each build's id (for get_build_log), pipeline, state, " +
 			"result, commit and address; for a pull request, also the statuses other services set on it.",
 		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in checksArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			ref := "refs/heads/" + in.Branch
-			if in.Branch == "" {
-				if in.PR == 0 {
-					return nil, fmt.Errorf("branch or number is needed")
-				}
-				ref = fmt.Sprintf("refs/pull/%d/merge", in.PR)
-			}
-			builds, err := f.newestBuilds(ctx, repo, ref)
-			if err != nil {
-				return nil, err
-			}
-			checks := []any{}
-			for _, b := range builds {
-				checks = append(checks, map[string]any{"id": b.ID, "name": b.Definition.Name, "number": b.BuildNumber, "state": b.Status,
-					"result": b.Result, "sha": b.sha(), "url": b.Links.Web.Href, "finishedAt": b.FinishTime})
-			}
-			out := map[string]any{"repo": repo, "ref": ref, "state": combined(builds), "checks": checks}
-			if in.Branch == "" {
-				statuses, err := f.statuses(ctx, repo, in.PR, false)
-				if err != nil {
-					return nil, err
-				}
-				list := []any{}
-				for _, s := range statuses {
-					list = append(list, map[string]any{"name": s.name(), "state": s.State, "description": s.Description, "url": s.TargetURL})
-				}
-				out["statuses"] = list
-			}
-			return out, nil
-		})
+		f.getChecks)
 
 	tool(server, &mcp.Tool{Name: "get_build_log", Title: "Read a failed build's log",
 		Description: "An Azure Pipelines build's failed steps: each one's name, its job's, its errors, and the end of its log " +
 			"(the last 20000 characters), where the failure is.",
 		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in buildLogArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			if in.Build <= 0 {
-				return nil, fmt.Errorf("buildId is needed")
-			}
-			return f.buildLog(ctx, repo, in.Build)
-		})
+		f.getBuildLog)
 
 	tool(server, &mcp.Tool{Name: "retry_build", Title: "Run a build's failed jobs again",
 		Description: "Runs a finished Azure Pipelines build's failed jobs again, in the same build, as the person whose token it is. " +
 			"Use it for a failure that is known to be flaky, not to hide a real one.",
 		Meta: agents},
-		func(ctx context.Context, in buildLogArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			if in.Build <= 0 {
-				return nil, fmt.Errorf("buildId is needed")
-			}
-			link, err := f.RetryBuild(ctx, repo, in.Build)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]any{"buildId": in.Build, "url": link}, nil
-		})
+		f.retryBuild)
 
 	tool(server, &mcp.Tool{Name: "comment_on_pull_request", Title: "Comment on a pull request",
 		Description: "Adds a comment to a pull request, in a thread of its own, as the person whose token it is.", Meta: agents},
-		func(ctx context.Context, in commentArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			if strings.TrimSpace(in.Body) == "" {
-				return nil, fmt.Errorf("body is empty")
-			}
-			var t threadJSON
-			if err := f.send(ctx, http.MethodPost, api(fmt.Sprintf("%s/pullRequests/%d/threads", repoPath(repo), in.Number), nil),
-				map[string]any{"status": "active", "comments": []any{map[string]any{"parentCommentId": 0, "content": in.Body, "commentType": "text"}}},
-				&t); err != nil {
-				return nil, err
-			}
-			return map[string]any{"threadId": t.ID, "url": fmt.Sprintf("%s?discussionId=%d", f.prURL(repo, in.Number), t.ID)}, nil
-		})
+		f.commentOnPullRequest)
 
 	tool(server, &mcp.Tool{Name: "create_pull_request", Title: "Open a pull request",
 		Description: "Opens a pull request from a branch already pushed, as the person whose token it is. Never merges it.",
 		Meta:        agents},
-		func(ctx context.Context, in createPRArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			if strings.TrimSpace(in.Branch) == "" || strings.TrimSpace(in.Title) == "" {
-				return nil, fmt.Errorf("branch and title are needed")
-			}
-			target := "refs/heads/" + in.Target
-			if in.Target == "" {
-				r, err := f.repository(ctx, repo)
-				if err != nil {
-					return nil, err
-				}
-				target = r.DefaultBranch
-			}
-			var p pullJSON
-			if err := f.send(ctx, http.MethodPost, api(repoPath(repo)+"/pullrequests", nil),
-				map[string]any{"sourceRefName": "refs/heads/" + in.Branch, "targetRefName": target, "title": in.Title,
-					"description": in.Description, "isDraft": in.Draft}, &p); err != nil {
-				return nil, err
-			}
-			return f.prSummary(repo, p), nil
-		})
+		f.createPullRequest)
 
 	tool(server, &mcp.Tool{Name: "list_pull_request_comments", Title: "List a pull request's line comments",
 		Description: "The comments on lines of a pull request's diff, thread by thread, oldest first: each one's threadId (to answer " +
 			"with reply_to_pull_request_comment), id, author, file, line, body, whether its thread is resolved, and address.",
 		Annotations: readOnly, Meta: agents},
-		func(ctx context.Context, in numberArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			threads, err := f.threads(ctx, repo, in.Number, false)
-			if err != nil {
-				return nil, err
-			}
-			list := []any{}
-			for _, t := range threads {
-				if !t.onALine() {
-					continue
-				}
-				for _, c := range t.Comments {
-					if c.IsDeleted || c.CommentType == "system" {
-						continue
-					}
-					list = append(list, map[string]any{"threadId": t.ID, "id": c.ID, "author": c.Author.name(), "path": t.path(),
-						"line": t.line(), "body": clipDescription(c.Content), "resolved": t.resolved(), "createdAt": c.PublishedDate,
-						"url": fmt.Sprintf("%s?discussionId=%d", f.prURL(repo, in.Number), t.ID)})
-				}
-			}
-			return map[string]any{"repo": repo, "number": in.Number, "comments": list}, nil
-		})
+		f.listPullRequestComments)
 
 	tool(server, &mcp.Tool{Name: "reply_to_pull_request_comment", Title: "Answer a pull request's comment",
 		Description: "Answers a comment on a line of a pull request's diff in its own thread, as the person whose token it is.",
 		Meta:        agents},
-		func(ctx context.Context, in replyArgs) (map[string]any, error) {
-			repo, err := repoOf(ctx, in.Repo)
-			if err != nil {
-				return nil, err
-			}
-			if strings.TrimSpace(in.Body) == "" {
-				return nil, fmt.Errorf("body is empty")
-			}
-			threads, err := f.threads(ctx, repo, in.Number, false)
-			if err != nil {
-				return nil, err
-			}
-			var to *threadJSON
-			for i := range threads {
-				if threads[i].ID == in.ThreadID && threads[i].onALine() {
-					to = &threads[i]
-				}
-			}
-			if to == nil || len(to.Comments) == 0 {
-				return nil, fmt.Errorf("pull request %d has no line comment thread %d", in.Number, in.ThreadID)
-			}
-			var c threadCommentJSON
-			if err := f.send(ctx, http.MethodPost, api(fmt.Sprintf("%s/pullRequests/%d/threads/%d/comments", repoPath(repo), in.Number, to.ID), nil),
-				map[string]any{"parentCommentId": to.Comments[0].ID, "content": in.Body, "commentType": "text"}, &c); err != nil {
-				return nil, err
-			}
-			return map[string]any{"threadId": to.ID, "id": c.ID, "url": fmt.Sprintf("%s?discussionId=%d", f.prURL(repo, in.Number), to.ID)}, nil
-		})
+		f.replyToPullRequestComment)
 
 	// Merge and approve are the person's. They are only on the copy the host runs (person),
 	// whose callers are the person's own windows and devices.
 	if person {
-		person := visibility("app")
-		tool(server, &mcp.Tool{Name: "merge_pull_request", Title: "Merge a pull request",
-			Description: "Completes a pull request and deletes its branch, as the person whose token it is; squash squashes its " +
-				"commits, auto completes it once its policies pass. Only a person may call it.",
-			Meta: person},
-			func(ctx context.Context, in mergeArgs) (map[string]any, error) {
-				repo, err := repoOf(ctx, in.Repo)
-				if err != nil {
-					return nil, err
-				}
-				sha, err := headSha(in.Sha)
-				if err != nil {
-					return nil, err
-				}
-				strategy := "noFastForward"
-				if in.Squash {
-					strategy = "squash"
-				}
-				body := map[string]any{"completionOptions": map[string]any{"mergeStrategy": strategy, "deleteSourceBranch": true}}
-				if in.Auto {
-					id, err := f.me(ctx, repo)
-					if err != nil {
-						return nil, err
-					}
-					p, err := pull(ctx, repo, in.Number)
-					if err != nil {
-						return nil, err
-					}
-					if !strings.EqualFold(p.head(), sha) {
-						return nil, fmt.Errorf("the pull request has a newer commit than the person saw: read it again")
-					}
-					body["autoCompleteSetBy"] = map[string]any{"id": id}
-				} else {
-					// Azure DevOps refuses when the head is not this commit.
-					body["status"] = "completed"
-					body["lastMergeSourceCommit"] = map[string]any{"commitId": sha}
-				}
-				if err := f.send(ctx, http.MethodPatch, api(fmt.Sprintf("%s/pullrequests/%d", repoPath(repo), in.Number), nil), body, nil); err != nil {
-					return nil, err
-				}
-				return map[string]any{"merged": !in.Auto, "auto": in.Auto, "number": in.Number}, nil
-			})
-		tool(server, &mcp.Tool{Name: "approve_pull_request", Title: "Approve a pull request",
-			Description: "Approves a pull request at the head commit the person saw, as the person whose token it is: a vote of " +
-				"approved. Only a person may call it.",
-			Meta: person},
-			func(ctx context.Context, in approveArgs) (map[string]any, error) {
-				repo, err := repoOf(ctx, in.Repo)
-				if err != nil {
-					return nil, err
-				}
-				sha, err := headSha(in.Sha)
-				if err != nil {
-					return nil, err
-				}
-				p, err := pull(ctx, repo, in.Number)
-				if err != nil {
-					return nil, err
-				}
-				if !strings.EqualFold(p.head(), sha) {
-					return nil, fmt.Errorf("the pull request has a newer commit than the person saw: read it again")
-				}
-				id, err := f.me(ctx, repo)
-				if err != nil {
-					return nil, err
-				}
-				if err := f.send(ctx, http.MethodPut, api(fmt.Sprintf("%s/pullrequests/%d/reviewers/%s", repoPath(repo), in.Number, url.PathEscape(id)), nil),
-					map[string]any{"vote": 10}, nil); err != nil {
-					return nil, err
-				}
-				return map[string]any{"approved": true, "number": in.Number}, nil
-			})
+		addPersonTools(server, f)
 	}
+}
+
+// addPersonTools puts the tools only a person may call on server.
+func addPersonTools(server *mcp.Server, f tools) {
+	person := visibility("app")
+	tool(server, &mcp.Tool{Name: "merge_pull_request", Title: "Merge a pull request",
+		Description: "Completes a pull request and deletes its branch, as the person whose token it is; squash squashes its " +
+			"commits, auto completes it once its policies pass. Only a person may call it.",
+		Meta: person},
+		f.mergePullRequest)
+	tool(server, &mcp.Tool{Name: "approve_pull_request", Title: "Approve a pull request",
+		Description: "Approves a pull request at the head commit the person saw, as the person whose token it is: a vote of " +
+			"approved. Only a person may call it.",
+		Meta: person},
+		f.approvePullRequest)
+}
+
+// tools are the tools' answers, over an Azure DevOps.
+type tools struct{ *RealAzureDevOps }
+
+// repoOf is repo, checked, or the default repository when it is "".
+func (f tools) repoOf(ctx context.Context, repo string) (string, error) {
+	if repo != "" {
+		if !repoPattern.MatchString(repo) {
+			return "", fmt.Errorf("repo is %s", repoWords)
+		}
+		return repo, nil
+	}
+	return f.DefaultRepo(ctx)
+}
+
+// pull is a pull request, read now.
+func (f tools) pull(ctx context.Context, repo string, number int) (pullJSON, error) {
+	var p pullJSON
+	err := f.get(ctx, api(fmt.Sprintf("%s/pullrequests/%d", repoPath(repo), number), nil), false, &p)
+	return p, err
+}
+
+// listPullRequests answers list_pull_requests.
+func (f tools) listPullRequests(ctx context.Context, in listPRArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	st, ok := map[string]string{"": "active", "open": "active", "merged": "completed", "abandoned": "abandoned", "all": "all"}[in.State]
+	if !ok {
+		return nil, fmt.Errorf("state is open, merged, abandoned or all")
+	}
+	q := url.Values{"searchCriteria.status": {st}, "$top": {strconv.Itoa(perPage)}}
+	if in.Branch != "" {
+		q.Set("searchCriteria.sourceRefName", "refs/heads/"+in.Branch)
+	}
+	var list struct {
+		Value []pullJSON `json:"value"`
+	}
+	if err := f.get(ctx, api(repoPath(repo)+"/pullrequests", q), false, &list); err != nil {
+		return nil, err
+	}
+	out := []any{}
+	for _, p := range list.Value {
+		if in.Label == "" || hasLabel(p, in.Label) {
+			out = append(out, f.prSummary(repo, p))
+		}
+	}
+	return map[string]any{"repo": repo, "pullRequests": out}, nil
+}
+
+// getPullRequest answers get_pull_request.
+func (f tools) getPullRequest(ctx context.Context, in numberArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	p, err := f.pull(ctx, repo, in.Number)
+	if err != nil {
+		return nil, err
+	}
+	out := f.prSummary(repo, p)
+	out["description"] = clipDescription(p.Description)
+	out["labels"] = p.labels()
+	out["headSha"] = p.head()
+	out["fixes"] = closingRefs(p.Description)
+	reviewers := []any{}
+	for _, r := range p.Reviewers {
+		reviewers = append(reviewers, map[string]any{"name": r.name(), "vote": voteWords(r.Vote), "required": r.IsRequired})
+	}
+	out["reviewers"] = reviewers
+	if builds, err := f.newestBuilds(ctx, repo, fmt.Sprintf("refs/pull/%d/merge", p.ID)); err == nil {
+		out["checks"] = combined(builds)
+	}
+	return out, nil
+}
+
+// getChecks answers get_checks.
+func (f tools) getChecks(ctx context.Context, in checksArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	ref := "refs/heads/" + in.Branch
+	if in.Branch == "" {
+		if in.PR == 0 {
+			return nil, fmt.Errorf("branch or number is needed")
+		}
+		ref = fmt.Sprintf("refs/pull/%d/merge", in.PR)
+	}
+	builds, err := f.newestBuilds(ctx, repo, ref)
+	if err != nil {
+		return nil, err
+	}
+	checks := []any{}
+	for _, b := range builds {
+		checks = append(checks, map[string]any{"id": b.ID, "name": b.Definition.Name, "number": b.BuildNumber, "state": b.Status,
+			"result": b.Result, "sha": b.sha(), "url": b.Links.Web.Href, "finishedAt": b.FinishTime})
+	}
+	out := map[string]any{"repo": repo, "ref": ref, "state": combined(builds), "checks": checks}
+	if in.Branch == "" {
+		statuses, err := f.statuses(ctx, repo, in.PR, false)
+		if err != nil {
+			return nil, err
+		}
+		list := []any{}
+		for _, s := range statuses {
+			list = append(list, map[string]any{"name": s.name(), "state": s.State, "description": s.Description, "url": s.TargetURL})
+		}
+		out["statuses"] = list
+	}
+	return out, nil
+}
+
+// getBuildLog answers get_build_log.
+func (f tools) getBuildLog(ctx context.Context, in buildLogArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if in.Build <= 0 {
+		return nil, fmt.Errorf("buildId is needed")
+	}
+	return f.buildLog(ctx, repo, in.Build)
+}
+
+// retryBuild answers retry_build.
+func (f tools) retryBuild(ctx context.Context, in buildLogArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if in.Build <= 0 {
+		return nil, fmt.Errorf("buildId is needed")
+	}
+	link, err := f.RetryBuild(ctx, repo, in.Build)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"buildId": in.Build, "url": link}, nil
+}
+
+// commentOnPullRequest answers comment_on_pull_request.
+func (f tools) commentOnPullRequest(ctx context.Context, in commentArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Body) == "" {
+		return nil, fmt.Errorf("body is empty")
+	}
+	var t threadJSON
+	if err := f.send(ctx, http.MethodPost, api(fmt.Sprintf("%s/pullRequests/%d/threads", repoPath(repo), in.Number), nil),
+		map[string]any{"status": "active", "comments": []any{map[string]any{"parentCommentId": 0, "content": in.Body, "commentType": "text"}}},
+		&t); err != nil {
+		return nil, err
+	}
+	return map[string]any{"threadId": t.ID, "url": fmt.Sprintf("%s?discussionId=%d", f.prURL(repo, in.Number), t.ID)}, nil
+}
+
+// createPullRequest answers create_pull_request.
+func (f tools) createPullRequest(ctx context.Context, in createPRArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Branch) == "" || strings.TrimSpace(in.Title) == "" {
+		return nil, fmt.Errorf("branch and title are needed")
+	}
+	target := "refs/heads/" + in.Target
+	if in.Target == "" {
+		r, err := f.repository(ctx, repo)
+		if err != nil {
+			return nil, err
+		}
+		target = r.DefaultBranch
+	}
+	var p pullJSON
+	if err := f.send(ctx, http.MethodPost, api(repoPath(repo)+"/pullrequests", nil),
+		map[string]any{"sourceRefName": "refs/heads/" + in.Branch, "targetRefName": target, "title": in.Title,
+			"description": in.Description, "isDraft": in.Draft}, &p); err != nil {
+		return nil, err
+	}
+	return f.prSummary(repo, p), nil
+}
+
+// listPullRequestComments answers list_pull_request_comments.
+func (f tools) listPullRequestComments(ctx context.Context, in numberArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	threads, err := f.threads(ctx, repo, in.Number, false)
+	if err != nil {
+		return nil, err
+	}
+	list := []any{}
+	for _, t := range threads {
+		if !t.onALine() {
+			continue
+		}
+		for _, c := range t.Comments {
+			if c.IsDeleted || c.CommentType == "system" {
+				continue
+			}
+			list = append(list, map[string]any{"threadId": t.ID, "id": c.ID, "author": c.Author.name(), "path": t.path(),
+				"line": t.line(), "body": clipDescription(c.Content), "resolved": t.resolved(), "createdAt": c.PublishedDate,
+				"url": fmt.Sprintf("%s?discussionId=%d", f.prURL(repo, in.Number), t.ID)})
+		}
+	}
+	return map[string]any{"repo": repo, "number": in.Number, "comments": list}, nil
+}
+
+// replyToPullRequestComment answers reply_to_pull_request_comment.
+func (f tools) replyToPullRequestComment(ctx context.Context, in replyArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Body) == "" {
+		return nil, fmt.Errorf("body is empty")
+	}
+	threads, err := f.threads(ctx, repo, in.Number, false)
+	if err != nil {
+		return nil, err
+	}
+	var to *threadJSON
+	for i := range threads {
+		if threads[i].ID == in.ThreadID && threads[i].onALine() {
+			to = &threads[i]
+		}
+	}
+	if to == nil || len(to.Comments) == 0 {
+		return nil, fmt.Errorf("pull request %d has no line comment thread %d", in.Number, in.ThreadID)
+	}
+	var c threadCommentJSON
+	if err := f.send(ctx, http.MethodPost, api(fmt.Sprintf("%s/pullRequests/%d/threads/%d/comments", repoPath(repo), in.Number, to.ID), nil),
+		map[string]any{"parentCommentId": to.Comments[0].ID, "content": in.Body, "commentType": "text"}, &c); err != nil {
+		return nil, err
+	}
+	return map[string]any{"threadId": to.ID, "id": c.ID, "url": fmt.Sprintf("%s?discussionId=%d", f.prURL(repo, in.Number), to.ID)}, nil
+}
+
+// mergePullRequest answers merge_pull_request.
+func (f tools) mergePullRequest(ctx context.Context, in mergeArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	sha, err := headSha(in.Sha)
+	if err != nil {
+		return nil, err
+	}
+	strategy := "noFastForward"
+	if in.Squash {
+		strategy = "squash"
+	}
+	body := map[string]any{"completionOptions": map[string]any{"mergeStrategy": strategy, "deleteSourceBranch": true}}
+	if in.Auto {
+		id, err := f.me(ctx, repo)
+		if err != nil {
+			return nil, err
+		}
+		p, err := f.pull(ctx, repo, in.Number)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.EqualFold(p.head(), sha) {
+			return nil, fmt.Errorf("the pull request has a newer commit than the person saw: read it again")
+		}
+		body["autoCompleteSetBy"] = map[string]any{"id": id}
+	} else {
+		// Azure DevOps refuses when the head is not this commit.
+		body["status"] = "completed"
+		body["lastMergeSourceCommit"] = map[string]any{"commitId": sha}
+	}
+	if err := f.send(ctx, http.MethodPatch, api(fmt.Sprintf("%s/pullrequests/%d", repoPath(repo), in.Number), nil), body, nil); err != nil {
+		return nil, err
+	}
+	return map[string]any{"merged": !in.Auto, "auto": in.Auto, "number": in.Number}, nil
+}
+
+// approvePullRequest answers approve_pull_request.
+func (f tools) approvePullRequest(ctx context.Context, in approveArgs) (map[string]any, error) {
+	repo, err := f.repoOf(ctx, in.Repo)
+	if err != nil {
+		return nil, err
+	}
+	sha, err := headSha(in.Sha)
+	if err != nil {
+		return nil, err
+	}
+	p, err := f.pull(ctx, repo, in.Number)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(p.head(), sha) {
+		return nil, fmt.Errorf("the pull request has a newer commit than the person saw: read it again")
+	}
+	id, err := f.me(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	if err := f.send(ctx, http.MethodPut, api(fmt.Sprintf("%s/pullrequests/%d/reviewers/%s", repoPath(repo), in.Number, url.PathEscape(id)), nil),
+		map[string]any{"vote": 10}, nil); err != nil {
+		return nil, err
+	}
+	return map[string]any{"approved": true, "number": in.Number}, nil
 }
 
 func hasLabel(p pullJSON, name string) bool {

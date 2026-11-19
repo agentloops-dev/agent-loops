@@ -362,3 +362,28 @@ func (l *RealLinear) SetBlockedBy(ctx context.Context, identifier, blocker strin
 	}
 	return nil
 }
+
+// linearPriorities are Linear's priority numbers for each priority (#6091): high is High (2;
+// Urgent, 1, is above it), medium is Medium (3), low is Low (4), and none is No priority (0).
+var linearPriorities = map[string]int{"high": 2, "medium": 3, "low": 4, "": 0}
+
+// SetPriority sets an issue's priority: high, medium, low, or "" for No priority (#6091).
+func (l *RealLinear) SetPriority(ctx context.Context, identifier, priority string) error {
+	p, ok := linearPriorities[priority]
+	if !ok {
+		return &LinearError{Kind: Failed, Message: fmt.Sprintf("%q is not a priority", priority)}
+	}
+	var done struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+	const update = `mutation($id: String!, $priority: Int!) { issueUpdate(id: $id, input: {priority: $priority}) { success } }`
+	if err := l.query(ctx, update, map[string]any{"id": identifier, "priority": p}, &done); err != nil {
+		return err
+	}
+	if !done.IssueUpdate.Success {
+		return refused("set the priority of", identifier)
+	}
+	return nil
+}

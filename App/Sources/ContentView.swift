@@ -103,6 +103,9 @@ struct ContentView: View {
     private var folders: some View {
         @Bindable var model = model
         return FolderListView(selection: $model.sidebarItem)
+            // The foot's banner, measured at no width, stood the split view thousands of
+            // points tall while this Mac's host did not answer (#5932).
+            .columnFloor()
             .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
             // A server asking to borrow a sign-in (T091) is the window's one alert, below.
             // A known server with a new key: rebuilt, or not what it says (043).
@@ -300,7 +303,7 @@ struct ContentView: View {
         }
         if showsChat {
             ToolbarItem {
-                SidebarToggle(windowWidth: frame.windowWidth)
+                SidebarToggle()
             }
         }
     }

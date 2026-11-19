@@ -76,93 +76,126 @@ func (f *fakeGoogle) serve(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"error":{"code":` + fmt.Sprint(refuse) + `,"message":"refused"}}`))
 		return
 	}
-	answer := func(v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
-	}
 	path := r.URL.Path
+	messages := strings.HasPrefix(path, "/v1/spaces/") && strings.HasSuffix(path, "/messages")
 	switch {
 	case r.Method == http.MethodPost && path == "/v1/"+fakeSubscription+":pull":
-		f.mu.Lock()
-		got := f.queue
-		f.queue = nil
-		f.mu.Unlock()
-		if len(got) == 0 {
-			select {
-			case <-r.Context().Done():
-			case <-time.After(50 * time.Millisecond):
-			}
-		}
-		select {
-		case f.pulled <- struct{}{}:
-		default:
-		}
-		answer(map[string]any{"receivedMessages": got})
+		f.servePull(w, r)
 	case r.Method == http.MethodPost && path == "/v1/"+fakeSubscription+":acknowledge":
-		f.mu.Lock()
-		for _, id := range in["ackIds"].([]any) {
-			f.acked = append(f.acked, id.(string))
-		}
-		f.mu.Unlock()
-		answer(map[string]any{})
+		f.serveAcknowledge(w, in)
 	case r.Method == http.MethodGet && path == "/v1/spaces":
-		answer(map[string]any{"spaces": f.spaces})
-	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/spaces/") && strings.HasSuffix(path, "/messages"):
-		space := strings.TrimSuffix(strings.TrimPrefix(path, "/v1/"), "/messages")
-		q := r.URL.Query()
-		f.mu.Lock()
-		f.listed = append(f.listed, r.URL.RawQuery)
-		history, allowed := f.history[space]
-		allowed = allowed || f.history != nil
-		f.mu.Unlock()
-		if !allowed {
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte(`{"error":{"code":403,"message":"This method requires admin approval","status":"PERMISSION_DENIED"}}`))
-			return
-		}
-		if q.Get("orderBy") != "createTime DESC" {
-			f.t.Errorf("fake Google: messages listed in order %q", q.Get("orderBy"))
-		}
-		newest := []map[string]any{}
-		thread := strings.TrimPrefix(q.Get("filter"), "thread.name = ")
-		for i := len(history) - 1; i >= 0; i-- {
-			if m := history[i]; q.Get("filter") == "" || m["thread"].(map[string]any)["name"] == thread {
-				newest = append(newest, m)
-			}
-		}
-		from := 0
-		_, _ = fmt.Sscan(q.Get("pageToken"), &from)
-		size := 25
-		_, _ = fmt.Sscan(q.Get("pageSize"), &size)
-		page := map[string]any{"messages": newest[min(from, len(newest)):min(from+size, len(newest))]}
-		if from+size < len(newest) {
-			page["nextPageToken"] = fmt.Sprint(from + size)
-		}
-		answer(page)
-	case r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/spaces/") && strings.HasSuffix(path, "/messages"):
-		space := strings.TrimSuffix(strings.TrimPrefix(path, "/v1/"), "/messages")
-		f.mu.Lock()
-		f.nextID++
-		name := fmt.Sprintf("%s/messages/m%d", space, f.nextID)
-		in["_name"], in["_replyOption"] = name, r.URL.Query().Get("messageReplyOption")
-		f.posted = append(f.posted, in)
-		f.mu.Unlock()
-		thread := space + "/threads/t1"
-		if th, ok := in["thread"].(map[string]any); ok {
-			thread = th["name"].(string)
-		}
-		answer(map[string]any{"name": name, "thread": map[string]any{"name": thread}, "createTime": time.Now().UTC().Format(time.RFC3339Nano),
-			"sender": map[string]any{"name": "users/app", "type": "BOT"}})
+		fakeAnswer(w, map[string]any{"spaces": f.spaces})
+	case r.Method == http.MethodGet && messages:
+		f.serveList(w, r)
+	case r.Method == http.MethodPost && messages:
+		f.servePost(w, r, in)
 	case r.Method == http.MethodPatch && strings.HasPrefix(path, "/v1/spaces/"):
-		f.mu.Lock()
-		in["_name"], in["_mask"] = strings.TrimPrefix(path, "/v1/"), r.URL.Query().Get("updateMask")
-		f.edited = append(f.edited, in)
-		f.mu.Unlock()
-		answer(in)
+		f.serveEdit(w, r, in)
 	default:
 		f.t.Errorf("fake Google: %s %s", r.Method, r.URL)
 		w.WriteHeader(http.StatusNotFound)
 	}
+}
+
+// fakeAnswer writes v as the JSON answer.
+func fakeAnswer(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// servePull gives the queued events, after a short wait when there are none.
+func (f *fakeGoogle) servePull(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	got := f.queue
+	f.queue = nil
+	f.mu.Unlock()
+	if len(got) == 0 {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	select {
+	case f.pulled <- struct{}{}:
+	default:
+	}
+	fakeAnswer(w, map[string]any{"receivedMessages": got})
+}
+
+func (f *fakeGoogle) serveAcknowledge(w http.ResponseWriter, in map[string]any) {
+	f.mu.Lock()
+	for _, id := range in["ackIds"].([]any) {
+		f.acked = append(f.acked, id.(string))
+	}
+	f.mu.Unlock()
+	fakeAnswer(w, map[string]any{})
+}
+
+// serveList is spaces.messages.list: a page of a space's messages, the newest first, of one
+// thread when the filter names it.
+func (f *fakeGoogle) serveList(w http.ResponseWriter, r *http.Request) {
+	space := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/"), "/messages")
+	q := r.URL.Query()
+	f.mu.Lock()
+	f.listed = append(f.listed, r.URL.RawQuery)
+	history, allowed := f.history[space]
+	allowed = allowed || f.history != nil
+	f.mu.Unlock()
+	if !allowed {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"code":403,"message":"This method requires admin approval","status":"PERMISSION_DENIED"}}`))
+		return
+	}
+	if q.Get("orderBy") != "createTime DESC" {
+		f.t.Errorf("fake Google: messages listed in order %q", q.Get("orderBy"))
+	}
+	newest := newestOfThread(history, q.Get("filter"))
+	from := 0
+	_, _ = fmt.Sscan(q.Get("pageToken"), &from)
+	size := 25
+	_, _ = fmt.Sscan(q.Get("pageSize"), &size)
+	page := map[string]any{"messages": newest[min(from, len(newest)):min(from+size, len(newest))]}
+	if from+size < len(newest) {
+		page["nextPageToken"] = fmt.Sprint(from + size)
+	}
+	fakeAnswer(w, page)
+}
+
+// newestOfThread is history the newest first, only the thread's when filter names one.
+func newestOfThread(history []map[string]any, filter string) []map[string]any {
+	newest := []map[string]any{}
+	thread := strings.TrimPrefix(filter, "thread.name = ")
+	for i := len(history) - 1; i >= 0; i-- {
+		if m := history[i]; filter == "" || m["thread"].(map[string]any)["name"] == thread {
+			newest = append(newest, m)
+		}
+	}
+	return newest
+}
+
+// servePost keeps a posted message and answers with its name and thread.
+func (f *fakeGoogle) servePost(w http.ResponseWriter, r *http.Request, in map[string]any) {
+	space := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/"), "/messages")
+	f.mu.Lock()
+	f.nextID++
+	name := fmt.Sprintf("%s/messages/m%d", space, f.nextID)
+	in["_name"], in["_replyOption"] = name, r.URL.Query().Get("messageReplyOption")
+	f.posted = append(f.posted, in)
+	f.mu.Unlock()
+	thread := space + "/threads/t1"
+	if th, ok := in["thread"].(map[string]any); ok {
+		thread = th["name"].(string)
+	}
+	fakeAnswer(w, map[string]any{"name": name, "thread": map[string]any{"name": thread}, "createTime": time.Now().UTC().Format(time.RFC3339Nano),
+		"sender": map[string]any{"name": "users/app", "type": "BOT"}})
+}
+
+func (f *fakeGoogle) serveEdit(w http.ResponseWriter, r *http.Request, in map[string]any) {
+	f.mu.Lock()
+	in["_name"], in["_mask"] = strings.TrimPrefix(r.URL.Path, "/v1/"), r.URL.Query().Get("updateMask")
+	f.edited = append(f.edited, in)
+	f.mu.Unlock()
+	fakeAnswer(w, in)
 }
 
 func (f *fakeGoogle) snapshot() (acked []string, posted, edited []map[string]any) {

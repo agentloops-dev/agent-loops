@@ -183,30 +183,7 @@ func schemaProblem(values map[string]string, s jsonSchema, name string) string {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	takes := func(problem string) string {
-		var listed []string
-		props := make([]string, 0, len(s.Properties))
-		for k := range s.Properties {
-			props = append(props, k)
-		}
-		sort.Strings(props)
-		required := map[string]bool{}
-		for _, r := range s.Required {
-			required[r] = true
-		}
-		for _, k := range props {
-			if required[k] {
-				listed = append(listed, k+" (required)")
-			} else {
-				listed = append(listed, k)
-			}
-		}
-		t := "takes no arguments"
-		if len(listed) > 0 {
-			t = "takes " + strings.Join(listed, ", ")
-		}
-		return name + " " + t + "; " + problem + "."
-	}
+	takes := func(problem string) string { return schemaTakesWords(s, name, problem) }
 	for _, r := range s.Required {
 		if _, ok := values[r]; !ok {
 			return takes(r + " is needed")
@@ -235,6 +212,32 @@ func schemaProblem(values map[string]string, s jsonSchema, name string) string {
 		}
 	}
 	return ""
+}
+
+// schemaTakesWords says the problem, after the arguments that s takes.
+func schemaTakesWords(s jsonSchema, name, problem string) string {
+	var listed []string
+	props := make([]string, 0, len(s.Properties))
+	for k := range s.Properties {
+		props = append(props, k)
+	}
+	sort.Strings(props)
+	required := map[string]bool{}
+	for _, r := range s.Required {
+		required[r] = true
+	}
+	for _, k := range props {
+		if required[k] {
+			listed = append(listed, k+" (required)")
+		} else {
+			listed = append(listed, k)
+		}
+	}
+	t := "takes no arguments"
+	if len(listed) > 0 {
+		t = "takes " + strings.Join(listed, ", ")
+	}
+	return name + " " + t + "; " + problem + "."
 }
 
 // waitPattern is EventPattern on the Go side: a name, and the values each detail may take.
@@ -323,14 +326,7 @@ func (p waitPattern) matches(e wire.Event) bool {
 	for k, vs := range p.filters {
 		// A file event's paths are globs, and it matches when one of its files does (#3795).
 		if k == "paths" && strings.HasPrefix(e.Name, "file.") {
-			matched := false
-			for _, rel := range eventPaths(e) {
-				if matchesAnyGlob(rel, vs) {
-					matched = true
-					break
-				}
-			}
-			if !matched {
+			if !fileEventPathsMatch(e, vs) {
 				return false
 			}
 			continue
@@ -341,6 +337,16 @@ func (p waitPattern) matches(e wire.Event) bool {
 		}
 	}
 	return true
+}
+
+// fileEventPathsMatch is whether one of a file event's files matches one of the globs.
+func fileEventPathsMatch(e wire.Event, globs []string) bool {
+	for _, rel := range eventPaths(e) {
+		if matchesAnyGlob(rel, globs) {
+			return true
+		}
+	}
+	return false
 }
 
 // repoKeys are the details that name a forge's repo, which an owner's move renames (#4957).
@@ -435,19 +441,7 @@ func parsePattern(given string, filters map[string][]string) (waitPattern, strin
 		return p, `"` + name + `" is never raised: agents no longer publish events, so there are no custom.* events to wait or trigger on. ` +
 			"Use one the app raises, such as agent.ended or branch.moved; to wait for particular agents, use agent.ended with agent."
 	}
-	unknown := func() (waitPattern, string) {
-		kinds, _ := catalogue()
-		var names []string
-		for _, k := range kinds {
-			names = append(names, k.Name)
-		}
-		guess := ""
-		if g := closestEvent(name); g != "" {
-			guess = " Did you mean " + g + "?"
-		}
-		return p, `"` + name + `" is not an event.` + guess + " Events you can wait on: " + strings.Join(names, ", ") +
-			", or a subject with .* such as agent.*. To wait until a time with no event, use time.reached alone."
-	}
+	unknown := func() (waitPattern, string) { return p, unknownEventWords(name) }
 	if subject, ok := strings.CutSuffix(name, ".*"); ok {
 		if !isSubject(subject) {
 			if isServerEventName(subject + ".any") {
@@ -465,30 +459,7 @@ func parsePattern(given string, filters map[string][]string) (waitPattern, strin
 	if words := fileGlobsWords(p); words != "" {
 		return p, words
 	}
-	schema := inputSchemaFor(name)
-	first := map[string]string{}
-	for k, vs := range clean {
-		first[k] = vs[0]
-	}
-	problem := schemaProblem(first, schema, name)
-	if problem == "" {
-		keys := make([]string, 0, len(clean))
-		for k := range clean {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			for _, v := range clean[k][1:] {
-				if problem = schemaProblem(map[string]string{k: v}, schema, name); problem != "" {
-					break
-				}
-			}
-			if problem != "" {
-				break
-			}
-		}
-	}
-	if problem != "" {
+	if problem := patternSchemaProblem(clean, name); problem != "" {
 		if strings.HasPrefix(name, "agent.") {
 			problem += " To wait for particular agents, use agent.ended with agent."
 		}
@@ -497,6 +468,91 @@ func parsePattern(given string, filters map[string][]string) (waitPattern, strin
 	// any says which ones (#3797), every one; no event carries it as a detail.
 	delete(p.filters, "any")
 	return p, ""
+}
+
+// unknownEventWords says that name is not an event, and which events are.
+func unknownEventWords(name string) string {
+	kinds, _ := catalogue()
+	var names []string
+	for _, k := range kinds {
+		names = append(names, k.Name)
+	}
+	guess := ""
+	if g := closestEvent(name); g != "" {
+		guess = " Did you mean " + g + "?"
+	}
+	return `"` + name + `" is not an event.` + guess + " Events you can wait on: " + strings.Join(names, ", ") +
+		", or a subject with .* such as agent.*. To wait until a time with no event, use time.reached alone."
+}
+
+// patternSchemaProblem checks each value of the filters against the event's schema: the
+// first value of each key together, then every other value alone. It is the first
+// problem, or "".
+func patternSchemaProblem(clean map[string][]string, name string) string {
+	schema := inputSchemaFor(name)
+	first := map[string]string{}
+	for k, vs := range clean {
+		first[k] = vs[0]
+	}
+	if problem := schemaProblem(first, schema, name); problem != "" {
+		return problem
+	}
+	keys := make([]string, 0, len(clean))
+	for k := range clean {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		for _, v := range clean[k][1:] {
+			if problem := schemaProblem(map[string]string{k: v}, schema, name); problem != "" {
+				return problem
+			}
+		}
+	}
+	return ""
+}
+
+// appWhereKeys is the where keys that the app's own events in names take (#6032), and
+// whether names has a server's event, which says for itself which keys it takes. An event
+// whose schema is open takes every key.
+func appWhereKeys(names []string, filters map[string][]string) (map[string]bool, bool) {
+	taken := map[string]bool{}
+	hasServer := false
+	for _, n := range names {
+		name := strings.ToLower(strings.TrimSpace(n))
+		if name == timeReached {
+			continue
+		}
+		if isServerPattern(name) {
+			hasServer = true
+			continue
+		}
+		schema := inputSchemaFor(name)
+		for k := range filters {
+			key := strings.TrimSpace(k)
+			if _, ok := schema.Properties[key]; ok || schema.AdditionalProperties == nil || *schema.AdditionalProperties {
+				taken[key] = true
+			}
+		}
+	}
+	return taken, hasServer
+}
+
+// ownWhere is the part of one where for several events that the app's event name takes
+// (#6032): a key it does not take is left out when another event in the list takes it, as
+// lease.granted leaves pr to pr.merged. A key that no event takes stays, so the event
+// refuses it and says what it takes.
+func ownWhere(name string, filters map[string][]string, appTaken map[string]bool, hasServer bool) map[string][]string {
+	schema := inputSchemaFor(strings.ToLower(strings.TrimSpace(name)))
+	open := schema.AdditionalProperties == nil || *schema.AdditionalProperties
+	own := map[string][]string{}
+	for k, v := range filters {
+		key := strings.TrimSpace(k)
+		if _, ok := schema.Properties[key]; ok || open || !appTaken[key] && !hasServer {
+			own[k] = v
+		}
+	}
+	return own
 }
 
 // unnamedBranchWords is why a wait on branch.moved that names no branch, and does not set
@@ -971,185 +1027,44 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	if a == nil {
 		return "", &Error{Code: CodeNoSuchAgent, Message: leaseNoCall}
 	}
-
-	var names []string
-	// type is the word for it everywhere (#4730), and name is read for one release.
-	for _, key := range []string{"events", "type", "name"} {
-		if s, err := stringList(args, key); err == nil {
-			for _, n := range s {
-				if n = strings.TrimSpace(n); n != "" && !contains(names, n) {
-					names = append(names, n)
-				}
-			}
-		}
+	req, err := readEventWaitRequest(args)
+	if err != nil {
+		return "", err
 	}
-	if len(names) == 0 {
-		return "", eventRefused(`Say what to wait for in events, e.g. ["agent.finished"]. Unknown events and filters say what is offered.`)
+	patterns, serverNames, appTaken, err := eventWaitPatterns(req)
+	if err != nil {
+		return "", err
 	}
-	minutes, ok := argInt(args, "until_minutes")
-	if !ok {
-		return "", eventRefused(deadlineRequiredWords())
-	}
-	if minutes < waitMinutesLow || minutes > waitMinutesHigh {
-		return "", eventRefused(fmt.Sprintf("until_minutes has to be from %d to %d.", waitMinutesLow, waitMinutesHigh))
-	}
-	// A wait on a time alone (#4843): with other events it is refused, since every wait
-	// already ends at its deadline, so the agent learns the rule.
-	timeOnly := false
-	for _, n := range names {
-		if strings.EqualFold(n, timeReached) {
-			timeOnly = true
-		}
-	}
-	if timeOnly && len(names) > 1 {
-		return "", eventRefused(timeReachedMixedWords)
-	}
-	filters, problem := readFilters(args["where"])
-	if problem != "" {
-		return "", eventRefused(problem)
-	}
-	bus, problem := waitBusFilter(args)
-	if problem != "" {
-		return "", eventRefused(problem + " Nothing is waiting.")
-	}
-	if timeOnly && (len(filters) > 0 || bus.wide() || argString(args, "wake_on") != "") {
-		return "", eventRefused("time.reached takes no where, provider, topic, subject or wake_on: it is a time, not an event. Nothing is waiting.")
-	}
-	wakeOn := strings.ToLower(strings.TrimSpace(argString(args, "wake_on")))
-	if words := endedWaitWords(names, filters, wakeOn); words != "" {
-		return "", eventRefused(words)
-	}
-	var patterns []waitPattern
-	var serverNames []string
 	warning0 := ""
-	for _, n := range names {
-		if timeOnly {
-			patterns = append(patterns, waitPattern{name: timeReached, filters: map[string][]string{}})
-			continue
-		}
-		p, problem := parsePattern(n, filters)
-		if problem != "" {
-			return "", eventRefused(problem)
-		}
-		if words := unnamedBranchWords(p, filters); words != "" {
-			return "", eventRefused(words)
-		}
-		p.bus = bus
-		if isServerPattern(p.name) {
-			// A server's event is matched by its subscription, not its details: `where`
-			// goes to the server (#577). One that names the envelope keeps its where, so
-			// the bus, which cannot check it, does not wake it (#4730).
-			kept := map[string][]string{}
-			if bus.wide() {
-				for k, v := range filters {
-					if k != mcpServerKey {
-						kept[k] = v
-					}
-				}
-			}
-			patterns = append(patterns, waitPattern{name: p.name, filters: kept, bus: bus})
-			serverNames = append(serverNames, p.name)
-			continue
-		}
-		patterns = append(patterns, p)
-	}
-	if bus.wide() && len(filters) > 0 {
+	if req.bus.wide() && len(req.filters) > 0 {
 		warning0 = "From the person's other machines, where is not checked, so their events do not wake this wait: name the thing in subject to hear them. "
 	}
 	// agent.ended on named sessions is a block on them (#3799), as a wait on sessions was:
 	// it reaches every session of the project, on every machine, and wakes on all or any.
 	if len(patterns) == 1 && patterns[0].name == "agent.ended" {
 		if who := patterns[0].filters["agent"]; len(who) > 0 {
-			return d.waitForEnded(agent, who, wakeOn, minutes, argString(args, "message"))
+			return d.waitForEnded(agent, who, req.wakeOn, req.minutes, argString(args, "message"))
 		}
 	}
-	// A wait for its own background commands that nothing would end (#4577).
-	if onlyBackgroundEnded(patterns) {
-		if words := d.backgroundWaitWords(a); words != "" {
-			return "", eventRefused(words)
-		}
-	}
-	if branches, ok := filters["branch"]; ok {
-		for _, p := range patterns {
-			if p.name == "branch.moved" {
-				if main := defaultBranch(folderPath(a)); contains(branches, main) {
-					return "", eventRefused("branch.moved is not raised for " + main + ", the default branch: this Mac's copy moves only when someone " +
-						"pulls. To wait for a pull request to land, wait for pr.merged (or pr.closed) with its pr. Nothing is waiting.")
-				}
-			}
-		}
-	}
-	// A server never raises what only a Mac does: a wait on nothing else is refused.
-	var neverHere []string
-	for _, p := range patterns {
-		if neverRaisedHere(p.name) {
-			neverHere = append(neverHere, p.name)
-		}
-	}
-	if len(neverHere) > 0 && len(neverHere) == len(patterns) {
-		return "", eventRefused(neverHereWords(neverHere) + " Nothing is waiting.")
-	}
-	warning := warning0
-	if len(neverHere) > 0 {
-		warning += neverHereWords(neverHere) + " "
-	}
-	// A server's event is a subscription the wait holds, as a trigger's is (#577):
-	// checked against what the folder's servers offer, `where` as its arguments. One that
-	// names the envelope also hears the bus (#4730), so a server here that cannot give it
-	// is said, not refused.
-	servers, err := d.checkMCPWait(serverNames, bus.localWhere(filters), folderPath(a))
-	if err != nil && bus.wide() {
-		words := err.Error()
-		if e, ok := err.(*Error); ok {
-			words = e.Message
-		}
-		warning += "This folder's servers do not give it (" + strings.TrimSuffix(strings.TrimSpace(strings.TrimSuffix(words, "Nothing is waiting.")), ".") +
-			"), so it is heard from the person's other machines only. "
-		servers, err = mcpWaitCheck{}, nil
-	}
+	neverHereWarning, err := d.eventWaitRefusal(a, req.filters, patterns)
 	if err != nil {
 		return "", err
 	}
-	warning += servers.warning
+	warning := warning0 + neverHereWarning
+	servers, serverWarning, err := d.checkEventWaitServers(serverNames, req, folderPath(a), appTaken)
+	if err != nil {
+		return "", err
+	}
+	warning += serverWarning
 	d.eventMu.Lock()
 	from := d.eventHead()
 	d.eventMu.Unlock()
 	at := now()
-	deadline := wire.DateOf(at.Time().Add(time.Duration(minutes) * time.Minute))
-	wait := wire.EventWait{ID: store.NewUUID(), From: from, Deadline: &deadline, Since: at}
-	if len(serverNames) > 0 {
-		wait.ServerEvents = servers.events
-	}
-	for _, p := range patterns {
-		wait.Patterns = append(wait.Patterns, p.wire())
-	}
-	for _, n := range serverNames {
-		if isForPersonEvent(n) {
-			forPerson := true
-			wait.ForPerson = &forPerson
-			break
-		}
-	}
+	wait := newEventWait(from, at, req.minutes, patterns, serverNames, servers)
 
 	// Something already after from, or a server's event that came in a short time before
 	// (#4716): answered now, and nothing is left waiting.
-	var hit *wire.Event
-	d.waitMu.Lock()
-	floor := d.wokeAt[agent]
-	d.waitMu.Unlock()
-	d.eventMu.Lock()
-	for _, e := range d.eventList {
-		if d.inScope(e, a) && waitMatches(&wait, e) {
-			c := copyEvent(e)
-			hit = &c
-			break
-		}
-	}
-	if hit == nil {
-		hit = d.missedServerEvent(&wait, a, floor, at.Time())
-	}
-	d.eventMu.Unlock()
-	if hit != nil {
+	if hit := d.eventWaitHitNow(agent, a, &wait, at); hit != nil {
 		d.woke(agent, hit.Position)
 		prev := d.endWait(agent, "agent", true)
 		replaced := ""
@@ -1175,19 +1090,7 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 		d.takeOpenWait(agent)
 		return "", &Error{Code: CodeNoSuchAgent, Message: "That agent is not here."}
 	}
-	// A wait on a request is one of its waiters (#3863).
-	for _, p := range patterns {
-		if strings.HasPrefix(p.name, "request.") {
-			for _, id := range p.filters["request"] {
-				d.addRequestWaiter(wire.UUID(id), agent)
-			}
-			for _, item := range []string{"pr", "issue"} {
-				for _, n := range p.filters[item] {
-					d.addForgeRequestWaiter(item, n, agent)
-				}
-			}
-		}
-	}
+	d.addEventWaitRequestWaiters(agent, patterns)
 	// What the files it watches are now is not raised as added (#3795).
 	d.followFileGlobs(folderPath(a))
 	d.startMCPWait(servers)
@@ -1204,6 +1107,257 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 		return prefix + text, nil
 	case <-d.ctx.Done():
 		return prefix + stillWaitingWords(&wait), nil
+	}
+}
+
+// eventWaitRequest is what a wait_for_event call asks for, after its checks.
+type eventWaitRequest struct {
+	names    []string
+	minutes  int
+	timeOnly bool
+	filters  map[string][]string
+	bus      busFilter
+	wakeOn   string
+}
+
+// eventWaitNames is the events a wait_for_event call names, each once.
+func eventWaitNames(args map[string]json.RawMessage) []string {
+	var names []string
+	// type is the word for it everywhere (#4730), and name is read for one release.
+	for _, key := range []string{"events", "type", "name"} {
+		s, err := stringList(args, key)
+		if err != nil {
+			continue
+		}
+		for _, n := range s {
+			if n = strings.TrimSpace(n); n != "" && !contains(names, n) {
+				names = append(names, n)
+			}
+		}
+	}
+	return names
+}
+
+// readEventWaitRequest reads and checks a wait_for_event call's arguments. The error is
+// the refusal.
+func readEventWaitRequest(args map[string]json.RawMessage) (eventWaitRequest, error) {
+	req := eventWaitRequest{names: eventWaitNames(args)}
+	if len(req.names) == 0 {
+		return req, eventRefused(`Say what to wait for in events, e.g. ["agent.finished"]. Unknown events and filters say what is offered.`)
+	}
+	minutes, ok := argInt(args, "until_minutes")
+	if !ok {
+		return req, eventRefused(deadlineRequiredWords())
+	}
+	if minutes < waitMinutesLow || minutes > waitMinutesHigh {
+		return req, eventRefused(fmt.Sprintf("until_minutes has to be from %d to %d.", waitMinutesLow, waitMinutesHigh))
+	}
+	req.minutes = minutes
+	// A wait on a time alone (#4843): with other events it is refused, since every wait
+	// already ends at its deadline, so the agent learns the rule.
+	for _, n := range req.names {
+		if strings.EqualFold(n, timeReached) {
+			req.timeOnly = true
+		}
+	}
+	if req.timeOnly && len(req.names) > 1 {
+		return req, eventRefused(timeReachedMixedWords)
+	}
+	filters, problem := readFilters(args["where"])
+	if problem != "" {
+		return req, eventRefused(problem)
+	}
+	req.filters = filters
+	bus, problem := waitBusFilter(args)
+	if problem != "" {
+		return req, eventRefused(problem + " Nothing is waiting.")
+	}
+	req.bus = bus
+	if req.timeOnly && (len(filters) > 0 || bus.wide() || argString(args, "wake_on") != "") {
+		return req, eventRefused("time.reached takes no where, provider, topic, subject or wake_on: it is a time, not an event. Nothing is waiting.")
+	}
+	req.wakeOn = strings.ToLower(strings.TrimSpace(argString(args, "wake_on")))
+	if words := endedWaitWords(req.names, filters, req.wakeOn); words != "" {
+		return req, eventRefused(words)
+	}
+	return req, nil
+}
+
+// eventWaitPatterns is the pattern for each name of the wait, the names that are a
+// server's events, and the where keys the app's events take. The error is the refusal.
+func eventWaitPatterns(req eventWaitRequest) ([]waitPattern, []string, map[string]bool, error) {
+	var patterns []waitPattern
+	var serverNames []string
+	appTaken, hasServer := appWhereKeys(req.names, req.filters)
+	for _, n := range req.names {
+		if req.timeOnly {
+			patterns = append(patterns, waitPattern{name: timeReached, filters: map[string][]string{}})
+			continue
+		}
+		own := req.filters
+		if len(req.names) > 1 && !isServerPattern(strings.ToLower(strings.TrimSpace(n))) {
+			own = ownWhere(n, req.filters, appTaken, hasServer)
+		}
+		p, problem := parsePattern(n, own)
+		if problem != "" {
+			return nil, nil, nil, eventRefused(problem)
+		}
+		if words := unnamedBranchWords(p, req.filters); words != "" {
+			return nil, nil, nil, eventRefused(words)
+		}
+		p.bus = req.bus
+		if isServerPattern(p.name) {
+			// A server's event is matched by its subscription, not its details: `where`
+			// goes to the server (#577). One that names the envelope keeps its where, so
+			// the bus, which cannot check it, does not wake it (#4730).
+			patterns = append(patterns, waitPattern{name: p.name, filters: serverWaitWhere(req.bus, req.filters), bus: req.bus})
+			serverNames = append(serverNames, p.name)
+			continue
+		}
+		patterns = append(patterns, p)
+	}
+	return patterns, serverNames, appTaken, nil
+}
+
+// serverWaitWhere is the where that a server's event pattern keeps: none, or, when it
+// names the envelope, all but the server's name.
+func serverWaitWhere(bus busFilter, filters map[string][]string) map[string][]string {
+	kept := map[string][]string{}
+	if !bus.wide() {
+		return kept
+	}
+	for k, v := range filters {
+		if k != mcpServerKey {
+			kept[k] = v
+		}
+	}
+	return kept
+}
+
+// eventWaitRefusal refuses a wait that nothing would end. Else it is the warning for
+// the events that this machine never raises, or "".
+func (d *Daemon) eventWaitRefusal(a *wire.Agent, filters map[string][]string, patterns []waitPattern) (string, error) {
+	// A wait for its own background commands that nothing would end (#4577).
+	if onlyBackgroundEnded(patterns) {
+		if words := d.backgroundWaitWords(a); words != "" {
+			return "", eventRefused(words)
+		}
+	}
+	if words := branchMovedOnDefaultWords(a, filters, patterns); words != "" {
+		return "", eventRefused(words)
+	}
+	// A server never raises what only a Mac does: a wait on nothing else is refused.
+	var neverHere []string
+	for _, p := range patterns {
+		if neverRaisedHere(p.name) {
+			neverHere = append(neverHere, p.name)
+		}
+	}
+	if len(neverHere) > 0 && len(neverHere) == len(patterns) {
+		return "", eventRefused(neverHereWords(neverHere) + " Nothing is waiting.")
+	}
+	if len(neverHere) > 0 {
+		return neverHereWords(neverHere) + " ", nil
+	}
+	return "", nil
+}
+
+// branchMovedOnDefaultWords refuses a branch.moved wait on the default branch, or is "".
+func branchMovedOnDefaultWords(a *wire.Agent, filters map[string][]string, patterns []waitPattern) string {
+	branches, ok := filters["branch"]
+	if !ok {
+		return ""
+	}
+	for _, p := range patterns {
+		if p.name != "branch.moved" {
+			continue
+		}
+		if main := defaultBranch(folderPath(a)); contains(branches, main) {
+			return "branch.moved is not raised for " + main + ", the default branch: this Mac's copy moves only when someone " +
+				"pulls. To wait for a pull request to land, wait for pr.merged (or pr.closed) with its pr. Nothing is waiting."
+		}
+	}
+	return ""
+}
+
+// checkEventWaitServers checks a wait's server events against what the folder's servers
+// offer, `where` as their arguments. It is the check and its warning. One that names the
+// envelope also hears the bus (#4730), so a server here that cannot give it is said, not
+// refused.
+func (d *Daemon) checkEventWaitServers(serverNames []string, req eventWaitRequest, folder string, appTaken map[string]bool) (mcpWaitCheck, string, error) {
+	warning := ""
+	servers, err := d.checkMCPWait(serverNames, req.bus.localWhere(req.filters), folder, appTaken)
+	if err != nil && req.bus.wide() {
+		words := err.Error()
+		if e, ok := err.(*Error); ok {
+			words = e.Message
+		}
+		warning += "This folder's servers do not give it (" + strings.TrimSuffix(strings.TrimSpace(strings.TrimSuffix(words, "Nothing is waiting.")), ".") +
+			"), so it is heard from the person's other machines only. "
+		servers, err = mcpWaitCheck{}, nil
+	}
+	if err != nil {
+		return servers, "", err
+	}
+	return servers, warning + servers.warning, nil
+}
+
+// newEventWait is the wait record for patterns, from the event at from to minutes after at.
+func newEventWait(from int64, at wire.Date, minutes int, patterns []waitPattern, serverNames []string, servers mcpWaitCheck) wire.EventWait {
+	deadline := wire.DateOf(at.Time().Add(time.Duration(minutes) * time.Minute))
+	wait := wire.EventWait{ID: store.NewUUID(), From: from, Deadline: &deadline, Since: at}
+	if len(serverNames) > 0 {
+		wait.ServerEvents = servers.events
+	}
+	for _, p := range patterns {
+		wait.Patterns = append(wait.Patterns, p.wire())
+	}
+	for _, n := range serverNames {
+		if isForPersonEvent(n) {
+			forPerson := true
+			wait.ForPerson = &forPerson
+			break
+		}
+	}
+	return wait
+}
+
+// eventWaitHitNow is an event that already answers the wait, or nil: one after its from,
+// or a server's event that came in a short time before (#4716).
+func (d *Daemon) eventWaitHitNow(agent wire.UUID, a *wire.Agent, wait *wire.EventWait, at wire.Date) *wire.Event {
+	var hit *wire.Event
+	d.waitMu.Lock()
+	floor := d.wokeAt[agent]
+	d.waitMu.Unlock()
+	d.eventMu.Lock()
+	for _, e := range d.eventList {
+		if d.inScope(e, a) && waitMatches(wait, e) {
+			c := copyEvent(e)
+			hit = &c
+			break
+		}
+	}
+	if hit == nil {
+		hit = d.missedServerEvent(wait, a, floor, at.Time())
+	}
+	d.eventMu.Unlock()
+	return hit
+}
+
+// addEventWaitRequestWaiters makes the agent a waiter of each request its wait names (#3863).
+func (d *Daemon) addEventWaitRequestWaiters(agent wire.UUID, patterns []waitPattern) {
+	for _, p := range patterns {
+		if !strings.HasPrefix(p.name, "request.") {
+			continue
+		}
+		for _, id := range p.filters["request"] {
+			d.addRequestWaiter(wire.UUID(id), agent)
+		}
+		for _, item := range []string{"pr", "issue"} {
+			for _, n := range p.filters[item] {
+				d.addForgeRequestWaiter(item, n, agent)
+			}
+		}
 	}
 }
 
@@ -1370,33 +1524,38 @@ func (d *Daemon) matchWaits(e wire.Event) {
 			}
 			d.wakeWait(a, w, e, "")
 		} else if m := w.Ending.Matched; m != nil && w.ResumePromptID != nil && e.Position != m.Position {
-			// Woken, and not running yet: counted in the prompt it will read.
-			first := d.event(m.Position)
-			if first == nil {
-				continue
-			}
-			promptID := *w.ResumePromptID
-			notice := d.restartNotice(w)
-			d.woke(a.ID, e.Position)
-			d.change(a.ID, func(a *wire.Agent) {
-				if a.EventWait == nil || a.EventWait.Ending == nil || a.EventWait.Ending.Matched == nil {
-					return
-				}
-				// Copied, not written through: the record's parts are shared with readers.
-				prompts := append([]wire.QueuedPrompt{}, a.QueuedPrompts...)
-				for i := range prompts {
-					if prompts[i].ID == promptID {
-						w, ending, matched := *a.EventWait, *a.EventWait.Ending, *a.EventWait.Ending.Matched
-						matched.ExtraMatches++
-						ending.Matched, w.Ending = &matched, &ending
-						a.EventWait = &w
-						prompts[i].Text = wakeWords(*first, int(matched.ExtraMatches)) + notice
-					}
-				}
-				a.QueuedPrompts = prompts
-			})
+			d.countExtraWakeMatch(a, w, m, e)
 		}
 	}
+}
+
+// countExtraWakeMatch counts e in the wake prompt of a wait that was woken by the match m
+// and is not running yet: the prompt it will read says so.
+func (d *Daemon) countExtraWakeMatch(a wire.Agent, w *wire.EventWait, m *wire.EventWaitEndingMatched, e wire.Event) {
+	first := d.event(m.Position)
+	if first == nil {
+		return
+	}
+	promptID := *w.ResumePromptID
+	notice := d.restartNotice(w)
+	d.woke(a.ID, e.Position)
+	d.change(a.ID, func(a *wire.Agent) {
+		if a.EventWait == nil || a.EventWait.Ending == nil || a.EventWait.Ending.Matched == nil {
+			return
+		}
+		// Copied, not written through: the record's parts are shared with readers.
+		prompts := append([]wire.QueuedPrompt{}, a.QueuedPrompts...)
+		for i := range prompts {
+			if prompts[i].ID == promptID {
+				w, ending, matched := *a.EventWait, *a.EventWait.Ending, *a.EventWait.Ending.Matched
+				matched.ExtraMatches++
+				ending.Matched, w.Ending = &matched, &ending
+				a.EventWait = &w
+				prompts[i].Text = wakeWords(*first, int(matched.ExtraMatches)) + notice
+			}
+		}
+		a.QueuedPrompts = prompts
+	})
 }
 
 // wakeWait ends the wait on e: the call answered when it is still open, else the wake
@@ -1555,7 +1714,7 @@ func (d *Daemon) waitDeadlinesPassed() {
 		if w == nil || w.Ending != nil || w.Deadline == nil || w.Deadline.Time().After(at.Time()) {
 			continue
 		}
-		d.endWaitWithNoMatch(a.ID, w, timedOutWords(w, at))
+		d.endWaitWithNoMatch(a.ID, w, timedOutWords(w, at)+d.serverTroubleWords(w))
 	}
 	d.tellEvents(nil)
 	d.armWaitTimer()

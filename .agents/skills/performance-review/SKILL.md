@@ -1,6 +1,6 @@
 ---
 name: performance-review
-description: Review what changed on main since the last release tag for performance costs (main thread, growth, descriptors, polling, transcripts, start-up, reconnects), write the findings under .agents/reviews/performance/, and have a helper fix the most severe critical or high one on a branch for Alex. Use when the Performance review workflow runs in a release (#1462), or when Alex asks for a performance review.
+description: Review what changed on main since the last release tag for performance costs (main thread, growth, descriptors, polling, transcripts, start-up, reconnects, complexity), write the findings under .agents/reviews/performance/, and have a helper fix the most severe critical or high one on a branch for Alex. Use when the Performance review workflow runs in a release (#1462), or when Alex asks for a performance review.
 ---
 
 Paused until 1.0 (#3215).
@@ -76,15 +76,22 @@ at the keyboard, that is true only of a run of the workflow.
      6. `start-up`: work done before the first window draws or before the daemon
         answers;
      7. `reconnects`: Remote and web reconnects: retries without backoff, state rebuilt
-        from scratch on each.
+        from scratch on each;
+     8. `complexity`: work that grows faster than linear in the number of agents,
+        sessions, events, files or transcript bytes: nested loops over the same
+        collection, `contains`, `firstIndex` or `slices.Contains` in a loop, a sort or a
+        full copy on each insert or update, a full rebuild of an index on each change.
+        In the daemon, the control plane, the window, the Remote and the web page.
 
 ## 2. Review
 
 For each finding, give **severity** (critical: the app hangs, crashes or runs out of a
 resource in normal use; high: a cost a person feels every day, or growth with no bound;
 medium and low: the rest), **evidence** (`file:line` and the code, and how it scales:
-per agent, per event, per byte of transcript), **the cost** in one or two sentences,
-and **a fix** with the measurement that would prove it. Drop anything already recorded
+per agent, per event, per byte of transcript), **the order** in big-O notation with its
+variable and when the work runs (for example "O(n²) in sessions, per list update"),
+**the cost** in one or two sentences, and **a fix** with its order in big-O notation (for
+example "O(n) in sessions") and the measurement that would prove it. Drop anything already recorded
 (steps 1.2 and 1.3), unless it has got worse; then say what changed.
 
 ## 3. Write it down

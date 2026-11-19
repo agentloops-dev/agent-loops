@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 	"time"
 
@@ -68,10 +69,12 @@ func (c *hostedViewConn) call(ctx context.Context, _ int, method string, params 
 		err    *Error
 	}
 	done := make(chan answer, 1)
-	go func() {
+	if !c.d.goJobAt("hosted view call", callerSite(0), func() {
 		r, e := c.d.hostedCall(c.h, method, raw)
 		done <- answer{r, e}
-	}()
+	}) {
+		return nil, &mcpCheckFailure{kind: "stopped", message: "The host is stopping."}
+	}
 	select {
 	case a := <-done:
 		if a.err != nil {
@@ -79,6 +82,9 @@ func (c *hostedViewConn) call(ctx context.Context, _ int, method string, params 
 		}
 		return a.result, nil
 	case <-ctx.Done():
+		c.d.hostedMu.Lock()
+		log.Printf("hosted mcp: a view's %s to %s ran out of time (%s)", method, c.h.key.name, c.d.hostedCopyLocked(c.h))
+		c.d.hostedMu.Unlock()
 		return nil, &mcpCheckFailure{kind: "timedOut"}
 	}
 }

@@ -8,7 +8,7 @@ metadata:
 Since #4709 (2026-11-11) `Go/scripts/go.sh` runs the Mac's own Go, not Colima. Four things made agentsd's tests pass and run fast there; keep them:
 
 - **A clean environment** (`env -i`, PATH of GOROOT/bin and the system only): a session's PATH has a real `codex` in `~/.local/bin` before a test's fake one.
-- **TMPDIR = `~/Library/Caches/Agents-build/go/tmp`**: tests fail with TMPDIR under `/var/folders`, `/tmp` or `/private/tmp` (symlinks and `/private` paths), as CI's `$RUNNER_TEMP` never is.
+- **TMPDIR = `~/Library/Caches/Agents-build/go/tmp/<go.sh's pid>`** (one per run since #5726, removed when the run ends; a run removes dead runs' folders first): tests fail with TMPDIR under `/var/folders`, `/tmp` or `/private/tmp` (symlinks and `/private` paths), as CI's `$RUNNER_TEMP` never is.
 - **GOTOOLCHAIN = go.mod's `go` line**: the Homebrew Go (1.27) failed an allocation bound under -race, and govulncheck built with 1.26 cannot read 1.27's stdlib.
 - **`store.SyncWrites = false` in agentsd's TestMain**: on darwin Go's `File.Sync` is F_FULLFSYNC, about 3.7 ms a write against 0.2 ms for fsync(2); it doubled the package's time (335 s against 196 s).
 

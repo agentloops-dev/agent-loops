@@ -131,43 +131,7 @@ func (g *RealGitHub) CodeRabbitPRs(ctx context.Context, repo string) ([]Reviewed
 		Data struct {
 			Repository *struct {
 				PullRequests struct {
-					Nodes []struct {
-						Number      int       `json:"number"`
-						Title       string    `json:"title"`
-						Body        string    `json:"body"`
-						HeadRefName string    `json:"headRefName"`
-						HeadRefOid  string    `json:"headRefOid"`
-						URL         string    `json:"url"`
-						CrossRepo   bool      `json:"isCrossRepository"`
-						Association string    `json:"authorAssociation"`
-						Author      *gqlActor `json:"author"`
-						Reviews     struct {
-							Nodes []struct {
-								Author     *gqlActor `json:"author"`
-								Body       string    `json:"body"`
-								State      string    `json:"state"`
-								URL        string    `json:"url"`
-								DatabaseID int       `json:"databaseId"`
-								Commit     *struct {
-									Oid string `json:"oid"`
-								} `json:"commit"`
-							} `json:"nodes"`
-						} `json:"reviews"`
-						Commits struct {
-							Nodes []struct {
-								Commit struct {
-									Oid    string `json:"oid"`
-									Status *struct {
-										Context *struct {
-											State       string `json:"state"`
-											Description string `json:"description"`
-											CreatedAt   string `json:"createdAt"`
-										} `json:"context"`
-									} `json:"status"`
-								} `json:"commit"`
-							} `json:"nodes"`
-						} `json:"commits"`
-					} `json:"nodes"`
+					Nodes []gqlReviewedPR `json:"nodes"`
 				} `json:"pullRequests"`
 			} `json:"repository"`
 		} `json:"data"`
@@ -187,34 +151,79 @@ func (g *RealGitHub) CodeRabbitPRs(ctx context.Context, repo string) ([]Reviewed
 	}
 	var out []ReviewedPR
 	for _, n := range answer.Data.Repository.PullRequests.Nodes {
-		r := ReviewedPR{PR: PR{Number: n.Number, Title: n.Title, Branch: n.HeadRefName, URL: n.URL, Fixes: closingRefs(n.Body)}, HeadSHA: n.HeadRefOid}
-		if n.Author != nil {
-			r.PR.Author = n.Author.Login
-		}
-		if n.Author != nil && !n.CrossRepo {
-			r.Trusted = isOwnAuthor(n.Association, n.Author.Login, n.Author.Typename)
-		}
-		for _, v := range n.Reviews.Nodes {
-			if v.Author.isCodeRabbit() && isWholeReview(v.Body, v.State) && v.Commit != nil && v.Commit.Oid == n.HeadRefOid {
-				r.Reviewed, r.Review, r.ReviewID, r.URL = true, strings.ToLower(v.State), v.DatabaseID, v.URL
-			}
-		}
-		for _, c := range n.Commits.Nodes {
-			if c.Commit.Oid == n.HeadRefOid && c.Commit.Status != nil && c.Commit.Status.Context != nil {
-				// Its status rules: pending while it reviews, even with an earlier review on the commit.
-				r.Reviewed = statusReviewed(c.Commit.Status.Context.State, c.Commit.Status.Context.Description)
-				r.StatusAt = mcpevents.Normalized(c.Commit.Status.Context.CreatedAt)
-				if r.StatusAt == "" {
-					r.StatusAt = c.Commit.Status.Context.CreatedAt
-				}
-			}
-		}
-		if r.URL == "" {
-			r.URL = n.URL
-		}
-		out = append(out, r)
+		out = append(out, n.reviewed())
 	}
 	return out, nil
+}
+
+// gqlReviewedPR is an open pull request with its reviews and its head commit's CodeRabbit
+// status.
+type gqlReviewedPR struct {
+	Number      int       `json:"number"`
+	Title       string    `json:"title"`
+	Body        string    `json:"body"`
+	HeadRefName string    `json:"headRefName"`
+	HeadRefOid  string    `json:"headRefOid"`
+	URL         string    `json:"url"`
+	CrossRepo   bool      `json:"isCrossRepository"`
+	Association string    `json:"authorAssociation"`
+	Author      *gqlActor `json:"author"`
+	Reviews     struct {
+		Nodes []struct {
+			Author     *gqlActor `json:"author"`
+			Body       string    `json:"body"`
+			State      string    `json:"state"`
+			URL        string    `json:"url"`
+			DatabaseID int       `json:"databaseId"`
+			Commit     *struct {
+				Oid string `json:"oid"`
+			} `json:"commit"`
+		} `json:"nodes"`
+	} `json:"reviews"`
+	Commits struct {
+		Nodes []struct {
+			Commit struct {
+				Oid    string `json:"oid"`
+				Status *struct {
+					Context *struct {
+						State       string `json:"state"`
+						Description string `json:"description"`
+						CreatedAt   string `json:"createdAt"`
+					} `json:"context"`
+				} `json:"status"`
+			} `json:"commit"`
+		} `json:"nodes"`
+	} `json:"commits"`
+}
+
+// reviewed is n as a ReviewedPR: whether CodeRabbit reviewed its head, and how.
+func (n gqlReviewedPR) reviewed() ReviewedPR {
+	r := ReviewedPR{PR: PR{Number: n.Number, Title: n.Title, Branch: n.HeadRefName, URL: n.URL, Fixes: closingRefs(n.Body)}, HeadSHA: n.HeadRefOid}
+	if n.Author != nil {
+		r.PR.Author = n.Author.Login
+	}
+	if n.Author != nil && !n.CrossRepo {
+		r.Trusted = isOwnAuthor(n.Association, n.Author.Login, n.Author.Typename)
+	}
+	for _, v := range n.Reviews.Nodes {
+		if v.Author.isCodeRabbit() && isWholeReview(v.Body, v.State) && v.Commit != nil && v.Commit.Oid == n.HeadRefOid {
+			r.Reviewed, r.Review, r.ReviewID, r.URL = true, strings.ToLower(v.State), v.DatabaseID, v.URL
+		}
+	}
+	for _, c := range n.Commits.Nodes {
+		if c.Commit.Oid == n.HeadRefOid && c.Commit.Status != nil && c.Commit.Status.Context != nil {
+			// Its status rules: pending while it reviews, even with an earlier review on the commit.
+			r.Reviewed = statusReviewed(c.Commit.Status.Context.State, c.Commit.Status.Context.Description)
+			r.StatusAt = mcpevents.Normalized(c.Commit.Status.Context.CreatedAt)
+			if r.StatusAt == "" {
+				r.StatusAt = c.Commit.Status.Context.CreatedAt
+			}
+		}
+	}
+	if r.URL == "" {
+		r.URL = n.URL
+	}
+	return r
 }
 
 // statusReviewed is whether CodeRabbit's status says it reviewed the commit. It sets success
