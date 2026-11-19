@@ -49,7 +49,7 @@ const scenarios = [
   { name: "three lost, then a reconnect", ops: [{ op: "reconnect", read: -1 }, ...deliver(0, 1, 2), { op: "drop", steps: [3, 4, 5] }, { op: "reconnect", read: 5 }, ...deliver(6, 7)], expect: 7 },
   { name: "a reconnect whose read the notifications overlap", ops: [{ op: "reconnect", read: -1 }, ...deliver(0, 1), { op: "drop", steps: [2, 3, 4] }, { op: "reconnect", read: 5, during: [4, 5, 6] }, ...deliver(7)], expect: 7 },
   { name: "an agent removed while the client was away", ops: [{ op: "reconnect", read: -1 }, ...deliver(0, 1, 2, 3), { op: "drop", steps: [4, 5, 6] }, { op: "reconnect", read: 6 }, ...deliver(7)], expect: 7 },
-  { name: "two reconnects in a row", fault: "#6282", ops: [{ op: "reconnect", read: -1 }, ...deliver(0), { op: "drop", steps: [1, 2] }, { op: "reconnect", read: 2 }, { op: "reconnect", read: 5 }, ...deliver(6, 7)], expect: 7 },
+  { name: "two reconnects in a row", ops: [{ op: "reconnect", read: -1 }, ...deliver(0), { op: "drop", steps: [1, 2] }, { op: "reconnect", read: 2 }, { op: "reconnect", read: 5 }, ...deliver(6, 7)], expect: 7 },
   { name: "the daemon sends the whole session again after a reconnect", ops: [{ op: "reconnect", read: -1 }, ...deliver(0, 1, 2, 3, 4), { op: "reconnect", read: 4, during: [0, 1, 2, 3, 4] }, ...deliver(5, 6, 7)], expect: 7 },
   { name: "a reconnect to a daemon that has gone further than the last notification", ops: [{ op: "reconnect", read: -1 }, ...deliver(0, 1), { op: "reconnect", read: 7 }], expect: 7 },
   { name: "a reconnect that starts from nothing held", ops: [{ op: "reconnect", read: 4 }, ...deliver(5, 6, 7)], expect: 7 },
