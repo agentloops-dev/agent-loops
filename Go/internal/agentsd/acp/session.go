@@ -268,10 +268,16 @@ func (s *Session) continueSession(ctx context.Context, id, cwd string, mcp []sdk
 func (s *Session) Prompt(ctx context.Context, blocks []sdk.ContentBlock) (sdk.PromptResponse, error) {
 	r, err := s.conn.Prompt(ctx, sdk.PromptRequest{SessionId: s.ID, Prompt: blocks})
 	if err != nil {
+		// The SDK sees the output end before the process is reaped: give the exit a moment, so
+		// a crash says so, with the end of its stderr, not only "peer disconnected" (#6186).
+		wait := time.Duration(0)
+		if strings.Contains(err.Error(), "peer disconnected") {
+			wait = 2 * time.Second
+		}
 		select {
 		case <-s.done:
 			return r, fmt.Errorf("the runtime exited: %w%s", err, s.stderr.say())
-		default:
+		case <-time.After(wait):
 		}
 	}
 	return r, err
@@ -609,7 +615,7 @@ var (
 func (e *rawElicitations) Read(b []byte) (int, error) {
 	if len(e.pending) == 0 {
 		e.c.updates.wait()
-		line, err := e.r.ReadBytes('\n')
+		line, err := e.readLine()
 		if len(line) == 0 {
 			if err != nil {
 				e.c.updates.end()
@@ -623,6 +629,48 @@ func (e *rawElicitations) Read(b []byte) (int, error) {
 	n := copy(b, e.pending)
 	e.pending = e.pending[n:]
 	return n, nil
+}
+
+// maxLine is the longest line handed to the SDK, whose reader fails the whole connection
+// on a line over 10 MiB ("peer disconnected"), also for one session/update that holds a
+// tool's large output (#6186). Longer is read and dropped when it is an update; it is never
+// held whole in memory.
+const maxLine = 9 << 20
+
+// readLine is the next line of the runtime's output. A session/update over maxLine is read to
+// its end and dropped, with a note in the log, and the next line is read in its place; any
+// other line over maxLine is cut at maxLine, which the SDK ends the connection on.
+func (e *rawElicitations) readLine() ([]byte, error) {
+	for {
+		var line []byte
+		long := false
+		for {
+			part, err := e.r.ReadSlice('\n')
+			if !long {
+				line = append(line, part...)
+				if len(line) > maxLine {
+					long = true
+				}
+			}
+			if errors.Is(err, bufio.ErrBufferFull) {
+				continue
+			}
+			if long && err == nil && !bytes.Contains(line[:min(len(line), 4096)], sessionUpdateMarker) {
+				return line, nil
+			}
+			if long && err == nil {
+				log.Printf("acp: %s sent a session/update over %d MiB: dropped", e.c.runtime, maxLine>>20)
+				break
+			}
+			if err != nil {
+				if long && bytes.Contains(line[:min(len(line), 4096)], sessionUpdateMarker) {
+					return nil, err
+				}
+				return line, err
+			}
+			return line, nil
+		}
+	}
 }
 
 func (e *rawElicitations) keep(line []byte) {
