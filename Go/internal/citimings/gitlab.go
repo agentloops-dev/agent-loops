@@ -74,12 +74,6 @@ func gitLabConclusion(status string) string {
 	return status
 }
 
-// GitLabJobsFull says a jobs answer is a full page, so there may be more jobs than it gave.
-func GitLabJobsFull(raw []byte, perPage int) bool {
-	var j []json.RawMessage
-	return json.Unmarshal(raw, &j) == nil && len(j) >= perPage
-}
-
 // FromGitLab is each attempt of p, from its jobs answer (every page joined into one array): ref
 // is its ci-run ref; onDefault and onTag say what its ref is. A job that never ran has no time
 // of its own and is made, started and ended when its pipeline was made.
