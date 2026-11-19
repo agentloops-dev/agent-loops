@@ -778,7 +778,6 @@
   },
   {
    "name": "two reconnects in a row",
-   "fault": "#6282",
    "ops": [
     {
      "op": "reconnect",

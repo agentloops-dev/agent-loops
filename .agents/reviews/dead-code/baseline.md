@@ -103,3 +103,12 @@ Added 2026-10-29 (`2026-10-29.md`, the first complete `GOOS=darwin -test` scan):
   `Shared/UI/Voice/KokoroVoice.swift` `link(from:)` (#3747): they delete files that an
   older copy of the app left on the device (TextEdit copies, old voice-model links). A
   clean-up of the device, as `retiredFileKey`; not migration code (added 2026-11-12).
+- `Go/internal/controlplane/people.go` `saveForgeLogins` and `peopleList` ("the local
+  owner's own record may not exist yet", "before the migration has written the local
+  owner", #994): `records.Migrate` runs at every start (`service.go`), so a new control
+  plane has no people record until then. The first start of a new store, not a shim for
+  an old build; live (added 2026-11-19).
+- deadcode needs `GOTOOLCHAIN` set to `go.mod`'s Go (as `Go/scripts/go.sh` sets it) when
+  it runs in a clean environment. Without it, the Mac's newer Go runs `go list` for a
+  deadcode built with the older one, and the scan fails with "packages contain errors"
+  (added 2026-11-19).

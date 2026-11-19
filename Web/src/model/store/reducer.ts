@@ -358,14 +358,29 @@ export const reducerMethods = {
     return this.listPoints.get(host);
   },
   /**
-   * The entries written since the open chat's last page (#4794), asked `from` its end, laid after
-   * what is held with what was heard meanwhile. False, and nothing changed, when the page does not
-   * start where the held one ended: the chat then opens whole.
+   * Where a resume reads the open chat from (#4794, #6282): the first entry held, not the end. An
+   * entry changes in place (a reply's text grows, a tool call ends), so one held can be older than
+   * the host's; the page from here has the newer copy. Null when nothing is held.
+   */
+  chatResumeStart(this: Work): number | null {
+    const end = this.transcriptEnd;
+    return end === null ? null : Math.min(this.firstEntryIndex.value, end);
+  },
+  /**
+   * The open chat's entries from `chatResumeStart` again (#4794, #6282), with those written since
+   * its last page, laid over what is held with what was heard meanwhile, an entry changed in place
+   * included. False, and nothing changed, when the page leaves a gap: it starts after the held end
+   * (more was written than one page holds) or before the held page, or counts fewer than the held
+   * end. The chat then opens whole.
    */
   takeResumed(this: Work, page: TranscriptPage): boolean {
     const end = this.transcriptEnd;
-    if (end === null || page.firstIndex !== end || page.total < end) return false;
-    const entries = keepingLatestByID([...this.entries.value, ...page.entries, ...(this.heardSincePage ?? [])]);
+    if (end === null || page.firstIndex > end || page.total < end) return false;
+    if (page.firstIndex < Math.min(this.firstEntryIndex.value, end)) return false;
+    // What is held before the page stays; from where the page starts, the host's page is the truth,
+    // as an opening's is (a copy's entry the host does not have goes).
+    const before = this.entries.value.slice(0, Math.max(0, page.firstIndex - this.firstEntryIndex.value));
+    const entries = keepingLatestByID([...before, ...page.entries, ...(this.heardSincePage ?? [])]);
     this.heardSincePage = null;
     this.transcriptEnd = page.total;
     batch(() => {
