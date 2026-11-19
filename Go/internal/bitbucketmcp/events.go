@@ -245,13 +245,9 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 		return nil, bad
 	}
 	if a.repo == "" {
-		repo, err := s.Bitbucket.DefaultRepo(ctx)
-		if err != nil {
-			var fe *BitbucketError
-			if errors.As(err, &fe) && fe.Kind == NotFound {
-				return nil, invalidParams("%s", fe.Message)
-			}
-			return nil, eventsError(err)
+		repo, bad := s.defaultRepo(ctx)
+		if bad != nil {
+			return nil, bad
 		}
 		a.repo = repo
 	}
@@ -264,75 +260,129 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 		}
 		yours = &y
 	}
-	switch e.Name {
-	case "review.requested":
-		return s.pollDiff(e.Name, "requestedAt", a, p, func() ([]state, error) {
-			var out []state
-			for _, r := range yours.Reviews {
-				j := r.PR.json()
-				j["author"] = r.Author
-				out = append(out, state{mr: r.PR, on: new(true), json: j})
-			}
-			return out, nil
-		})
-	case "issue.assigned":
-		return s.pollDiff(e.Name, "assignedAt", a, p, func() ([]state, error) {
-			var out []state
-			for _, i := range yours.Assigned {
-				if a.wantsIssue(i.Number) {
-					out = append(out, state{mr: PR{Number: i.Number, Title: i.Title, URL: i.URL}, on: new(true), json: i.json()})
-				}
-			}
-			return out, nil
-		})
-	case "pr.blocked":
-		was := polls.CursorIDs(p)
-		return s.pollDiff(e.Name, "blockedAt", a, p, func() ([]state, error) {
-			prs, err := s.Bitbucket.OpenPRs(ctx, a.repo, true)
-			var out []state
-			for _, m := range prs {
-				if m.SkipsBlocked || (a.mine && !a.byMe(m.PR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
-					continue
-				}
-				bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", e.Name, a.repo, m.PR.Number), m.blocking(), was)
-				out = append(out, state{mr: m.PR, on: &bs.On, key: bs.Key, json: m.PR.json(), extra: bs.Data})
-			}
-			return out, err
-		})
-	case "pr.conflicted":
-		return s.pollDiff(e.Name, "conflictedAt", a, p, func() ([]state, error) {
-			prs, err := s.Bitbucket.OpenPRs(ctx, a.repo, true)
-			var out []state
-			for _, m := range prs {
-				if a.mine {
-					if a.byMe(m.PR, yours) {
-						out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
-					}
-				} else if a.anyone || m.Trusted {
-					out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
-				}
-			}
-			return out, err
-		})
-	case "pr.opened":
-		return s.pollDiff(e.Name, "openedAt", a, p, func() ([]state, error) {
-			prs, err := s.Bitbucket.OpenPRs(ctx, a.repo, false)
-			var out []state
-			for _, m := range prs {
-				if !a.anyone && !m.Trusted {
-					continue
-				}
-				ready := !m.Draft
-				j := m.PR.json()
-				j["author"] = m.Author
-				out = append(out, state{mr: m.PR, on: &ready, json: j})
-			}
-			return out, err
-		})
+	if states := s.stateFinder(ctx, e.Name, a, p, yours); states != nil {
+		return s.pollDiff(e.Name, diffKeys[e.Name], a, p, states)
 	}
 	return s.poll(e, p, func(since string) ([]candidate, Listed, error) {
 		return candidates(ctx, s.Bitbucket, e.Name, a, yours, since)
 	})
+}
+
+// defaultRepo is the token's default repository, for a poll that names none.
+func (s *Events) defaultRepo(ctx context.Context) (string, *rpcError) {
+	repo, err := s.Bitbucket.DefaultRepo(ctx)
+	if err == nil {
+		return repo, nil
+	}
+	var fe *BitbucketError
+	if errors.As(err, &fe) && fe.Kind == NotFound {
+		return "", invalidParams("%s", fe.Message)
+	}
+	return "", eventsError(err)
+}
+
+// diffKeys is the time key of each event that pollDiff raises when a state turns on.
+var diffKeys = map[string]string{
+	"review.requested": "requestedAt",
+	"issue.assigned":   "assignedAt",
+	"pr.blocked":       "blockedAt",
+	"pr.conflicted":    "conflictedAt",
+	"pr.opened":        "openedAt",
+}
+
+// stateFinder is the function that finds the states of an event that pollDiff raises, or nil
+// for an event that poll raises from its candidates.
+func (s *Events) stateFinder(ctx context.Context, name string, a args, p pollParams, yours *Yours) func() ([]state, error) {
+	switch name {
+	case "review.requested":
+		return func() ([]state, error) { return requestedStates(yours), nil }
+	case "issue.assigned":
+		return func() ([]state, error) { return assignedStates(a, yours), nil }
+	case "pr.blocked":
+		was := polls.CursorIDs(p)
+		return func() ([]state, error) {
+			prs, err := s.Bitbucket.OpenPRs(ctx, a.repo, true)
+			return blockedStates(name, a, yours, prs, was), err
+		}
+	case "pr.conflicted":
+		return func() ([]state, error) {
+			prs, err := s.Bitbucket.OpenPRs(ctx, a.repo, true)
+			return conflictedStates(a, yours, prs), err
+		}
+	case "pr.opened":
+		return func() ([]state, error) {
+			prs, err := s.Bitbucket.OpenPRs(ctx, a.repo, false)
+			return openedStates(a, prs), err
+		}
+	}
+	return nil
+}
+
+// requestedStates is review.requested's: each pull request that asks the owner for a review.
+func requestedStates(yours *Yours) []state {
+	out := make([]state, 0, len(yours.Reviews))
+	for _, r := range yours.Reviews {
+		pr := r.PR.json()
+		pr["author"] = r.Author
+		out = append(out, state{mr: r.PR, on: new(true), json: pr})
+	}
+	return out
+}
+
+// assignedStates is issue.assigned's: each issue assigned to the owner that the poll wants.
+func assignedStates(a args, yours *Yours) []state {
+	var out []state
+	for _, i := range yours.Assigned {
+		if !a.wantsIssue(i.Number) {
+			continue
+		}
+		mr := PR{Number: i.Number, Title: i.Title, URL: i.URL}
+		out = append(out, state{mr: mr, on: new(true), json: i.json()})
+	}
+	return out
+}
+
+// blockedStates is pr.blocked's: each open pull request the poll wants, blocked or not.
+func blockedStates(name string, a args, yours *Yours, prs []OpenPR, was []string) []state {
+	var out []state
+	for _, m := range prs {
+		if m.SkipsBlocked || (a.mine && !a.byMe(m.PR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
+			continue
+		}
+		bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", name, a.repo, m.PR.Number), m.blocking(), was)
+		out = append(out, state{mr: m.PR, on: &bs.On, key: bs.Key, json: m.PR.json(), extra: bs.Data})
+	}
+	return out
+}
+
+// conflictedStates is pr.conflicted's: each open pull request the poll wants, in conflict or not.
+func conflictedStates(a args, yours *Yours, prs []OpenPR) []state {
+	var out []state
+	for _, m := range prs {
+		if a.mine {
+			if a.byMe(m.PR, yours) {
+				out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
+			}
+		} else if a.anyone || m.Trusted {
+			out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
+		}
+	}
+	return out
+}
+
+// openedStates is pr.opened's: each open pull request the poll wants, on when it is ready.
+func openedStates(a args, prs []OpenPR) []state {
+	var out []state
+	for _, m := range prs {
+		if !a.anyone && !m.Trusted {
+			continue
+		}
+		ready := !m.Draft
+		j := m.PR.json()
+		j["author"] = m.Author
+		out = append(out, state{mr: m.PR, on: &ready, json: j})
+	}
+	return out
 }
 
 func (s *Events) poll(e event, p pollParams, find func(since string) ([]candidate, Listed, error)) (map[string]any, *rpcError) {
@@ -403,37 +453,11 @@ func diffRef(root, repo string, n int) wire.Ref {
 
 // candidates finds what an event may raise at or after since.
 func candidates(ctx context.Context, f Bitbucket, name string, a args, yours *Yours, since string) ([]candidate, Listed, error) {
-	repo := a.repo
-	// mine: the owner's own pull request, open or merged or declined, trusted or not; else the
-	// trust filter (#728, #3797). fixes narrows every one by the issues it closes.
-	wanted := func(m PR, trusted bool) bool {
-		return a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) && a.closesOne(m) &&
-			(a.mine && a.byMe(m, yours) || !a.mine && (a.anyone || trusted))
-	}
 	if kind, ok := strings.CutPrefix(name, "issue."); ok {
-		items, listed, err := f.IssueActivity(ctx, repo, IssueKind(kind), since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var list []candidate
-		for _, it := range items {
-			if !a.wantsIssue(it.Issue.Number) || (!a.anyone && !it.Trusted) ||
-				(a.label != "" && !contains(it.Issue.Labels, a.label)) ||
-				(a.label != "" && it.Kind == IssueLabelled && it.Label != a.label) {
-				continue
-			}
-			at := mcpevents.Normalized(it.At)
-			if at == "" {
-				continue
-			}
-			list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at,
-				Data:    func() (map[string]any, error) { return it.data(), nil },
-				Subject: issueRef(repo, it.Issue.Number), Key: it.ID})
-		}
-		return list, listed, nil
+		return issueCandidates(ctx, f, name, IssueKind(kind), a, since)
 	}
 	if mcpevents.IsDeployEvent(name) {
-		deploys, err := f.Deployments(ctx, repo)
+		deploys, err := f.Deployments(ctx, a.repo)
 		if err != nil {
 			return nil, Listed{}, err
 		}
@@ -441,59 +465,122 @@ func candidates(ctx context.Context, f Bitbucket, name string, a args, yours *Yo
 	}
 	switch name {
 	case "review.comment":
-		comments, listed, err := f.ReviewComments(ctx, repo, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var list []candidate
-		for _, c := range comments {
-			// Trust is the commenter's; mine only narrows the pull request (#3797).
-			m := c.PR
-			if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) &&
-				a.closesOne(m) && a.byMe(m, yours) && (a.anyone || c.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d", repo, c.ID), Time: at,
-					Data:    func() (map[string]any, error) { return c.data(), nil },
-					Subject: prRef(repo, m.Number), Key: fmt.Sprint(c.ID)})
-			}
-		}
-		return list, listed, nil
+		return reviewCommentCandidates(ctx, f, a, yours, since)
 	case "run.completed":
-		runs, listed, err := f.CompletedPipelines(ctx, repo, a.pipeline, a.branch, a.run, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		// Its finish time in the id: a run again (its failed steps) is a new event.
-		var list []candidate
-		for _, c := range runs {
-			if c.At != "" && (a.anyone || c.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%s", repo, c.ID, c.At), Time: c.At,
-					Subject: runRef(repo, c.ID), Key: c.At,
-					Data: func() (map[string]any, error) {
-						deploys, err := f.PipelineDeploys(ctx, repo, c)
-						if err != nil {
-							return nil, err
-						}
-						return c.data(deploys), nil
-					}})
-			}
-		}
-		return list, listed, nil
+		return runCandidates(ctx, f, a, since)
 	case "checks.failed":
-		failed, listed, err := f.FailedChecks(ctx, repo, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		// The newest failed status's time is in its id: run again and failed again, it is new.
-		var list []candidate
-		for _, d := range failed {
-			if at := mcpevents.Normalized(d.At); at != "" && wanted(d.PR, d.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%s:%s", repo, d.HeadSHA, at), Time: at,
-					Data:    func() (map[string]any, error) { return d.json(), nil },
-					Subject: prRef(repo, d.PR.Number), Key: d.HeadSHA + ":" + at})
-			}
-		}
-		return list, listed, nil
+		return failedCheckCandidates(ctx, f, a, yours, since)
 	}
+	return closedCandidates(ctx, f, name, a, yours, since)
+}
+
+// wanted says if a poll wants a pull request's event. mine: the owner's own pull request,
+// open or merged or declined, trusted or not; else the trust filter (#728, #3797). fixes
+// narrows every one by the issues it closes.
+func (a args) wanted(m PR, trusted bool, yours *Yours) bool {
+	return a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) && a.closesOne(m) &&
+		(a.mine && a.byMe(m, yours) || !a.mine && (a.anyone || trusted))
+}
+
+// wantsActivity says if a poll wants an issue's activity: its issue, its trust and its label.
+func (a args) wantsActivity(it IssueActivity) bool {
+	if !a.wantsIssue(it.Issue.Number) || (!a.anyone && !it.Trusted) {
+		return false
+	}
+	return a.label == "" || (contains(it.Issue.Labels, a.label) && (it.Kind != IssueLabelled || it.Label == a.label))
+}
+
+// issueCandidates is an issue event's: the issues' activity of its kind.
+func issueCandidates(ctx context.Context, f Bitbucket, name string, kind IssueKind, a args, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	items, listed, err := f.IssueActivity(ctx, repo, kind, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, it := range items {
+		if !a.wantsActivity(it) {
+			continue
+		}
+		at := mcpevents.Normalized(it.At)
+		if at == "" {
+			continue
+		}
+		list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at,
+			Data:    func() (map[string]any, error) { return it.data(), nil },
+			Subject: issueRef(repo, it.Issue.Number), Key: it.ID})
+	}
+	return list, listed, nil
+}
+
+// reviewCommentCandidates is review.comment's.
+func reviewCommentCandidates(ctx context.Context, f Bitbucket, a args, yours *Yours, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	comments, listed, err := f.ReviewComments(ctx, repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, c := range comments {
+		// Trust is the commenter's; mine only narrows the pull request (#3797).
+		m := c.PR
+		if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) &&
+			a.closesOne(m) && a.byMe(m, yours) && (a.anyone || c.Trusted) {
+			list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d", repo, c.ID), Time: at,
+				Data:    func() (map[string]any, error) { return c.data(), nil },
+				Subject: prRef(repo, m.Number), Key: fmt.Sprint(c.ID)})
+		}
+	}
+	return list, listed, nil
+}
+
+// runCandidates is run.completed's.
+func runCandidates(ctx context.Context, f Bitbucket, a args, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	runs, listed, err := f.CompletedPipelines(ctx, repo, a.pipeline, a.branch, a.run, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	// Its finish time in the id: a run again (its failed steps) is a new event.
+	var list []candidate
+	for _, c := range runs {
+		if c.At != "" && (a.anyone || c.Trusted) {
+			list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%s", repo, c.ID, c.At), Time: c.At,
+				Subject: runRef(repo, c.ID), Key: c.At,
+				Data: func() (map[string]any, error) {
+					deploys, err := f.PipelineDeploys(ctx, repo, c)
+					if err != nil {
+						return nil, err
+					}
+					return c.data(deploys), nil
+				}})
+		}
+	}
+	return list, listed, nil
+}
+
+// failedCheckCandidates is checks.failed's.
+func failedCheckCandidates(ctx context.Context, f Bitbucket, a args, yours *Yours, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	failed, listed, err := f.FailedChecks(ctx, repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	// The newest failed status's time is in its id: run again and failed again, it is new.
+	var list []candidate
+	for _, d := range failed {
+		if at := mcpevents.Normalized(d.At); at != "" && a.wanted(d.PR, d.Trusted, yours) {
+			list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%s:%s", repo, d.HeadSHA, at), Time: at,
+				Data:    func() (map[string]any, error) { return d.json(), nil },
+				Subject: prRef(repo, d.PR.Number), Key: d.HeadSHA + ":" + at})
+		}
+	}
+	return list, listed, nil
+}
+
+// closedCandidates is pr.merged's and pr.closed's.
+func closedCandidates(ctx context.Context, f Bitbucket, name string, a args, yours *Yours, since string) ([]candidate, Listed, error) {
+	repo := a.repo
 	merged, closed, listed, err := f.ClosedPRs(ctx, repo, since)
 	if err != nil {
 		return nil, Listed{}, err
@@ -501,7 +588,7 @@ func candidates(ctx context.Context, f Bitbucket, name string, a args, yours *Yo
 	var list []candidate
 	if name == "pr.merged" {
 		for _, m := range merged {
-			if at := mcpevents.Normalized(m.MergedAt); wanted(m.PR, m.Trusted) && at != "" {
+			if at := mcpevents.Normalized(m.MergedAt); a.wanted(m.PR, m.Trusted, yours) && at != "" {
 				list = append(list, candidate{EventID: fmt.Sprintf("pr.merged:%s:%d", repo, m.PR.Number), Time: at,
 					Subject: prRef(repo, m.PR.Number),
 					Data: func() (map[string]any, error) {
@@ -513,7 +600,7 @@ func candidates(ctx context.Context, f Bitbucket, name string, a args, yours *Yo
 	}
 	// Its close time in the id: a pull request reopened and closed again is a new event.
 	for _, c := range closed {
-		if at := mcpevents.Normalized(c.ClosedAt); wanted(c.PR, c.Trusted) && at != "" {
+		if at := mcpevents.Normalized(c.ClosedAt); a.wanted(c.PR, c.Trusted, yours) && at != "" {
 			list = append(list, candidate{EventID: fmt.Sprintf("pr.closed:%s:%d:%s", repo, c.PR.Number, at), Time: at,
 				Subject: prRef(repo, c.PR.Number), Key: at,
 				Data: func() (map[string]any, error) {

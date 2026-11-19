@@ -192,8 +192,7 @@ var (
 func (f *fakeBitbucket) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	user, pass, basic := r.BasicAuth()
-	if (f.email == "" && r.Header.Get("Authorization") != "Bearer "+token) || (f.email != "" && (!basic || user != f.email || pass != token)) {
+	if !f.authorized(r) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -203,114 +202,179 @@ func (f *fakeBitbucket) serve(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"type":"error","error":{"message":"no"}}`))
 		return
 	}
-	reply := func(v any) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v)
-	}
-	page := func(list []obj) {
-		if list == nil {
-			list = []obj{}
-		}
-		reply(obj{"values": list, "pagelen": 50})
-	}
-	notFound := func() {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"type":"error","error":{"message":"not here"}}`))
-	}
-	n := func(m []string) int { i, _ := strconv.Atoi(m[1]); return i }
+	rp := fakeReply{w}
 	q := r.URL.Query()
 	p := r.URL.Path
-	if commitsPath.MatchString(p) {
-		// Two to a page; the next page's token is not a number.
-		list := f.compares[q.Get("include")+".."+q.Get("exclude")]
-		if q.Get("page") == "t2" {
-			list = list[min(2, len(list)):]
-		} else if len(list) > 2 {
-			reply(obj{"values": list[:2], "next": f.server.URL + p + "?include=" + q.Get("include") + "&exclude=" + q.Get("exclude") + "&page=t2"})
+	switch {
+	case commitsPath.MatchString(p):
+		f.serveCommits(rp, p, q)
+	case q.Get("page") != "" && q.Get("page") != "1":
+		rp.page(nil)
+	case f.noTracker && strings.HasPrefix(p, root+"/issues"):
+		rp.notFound()
+	case r.Method == http.MethodPut && prCommentPath.MatchString(p):
+		f.serveCommentEdit(rp, r, p)
+	case r.Method == http.MethodPost:
+		f.servePost(rp, r, p)
+	case f.serveGet(rp, r, p, q):
+	default:
+		f.t.Errorf("fake Bitbucket: no %s %s", r.Method, r.URL)
+		rp.notFound()
+	}
+}
+
+// serveGet answers a GET; false when the fake has no such path.
+func (f *fakeBitbucket) serveGet(rp fakeReply, r *http.Request, p string, q url.Values) bool {
+	return f.serveRepo(rp, p, q) || f.servePulls(rp, p) || f.serveIssues(rp, p, q) || f.servePipelines(rp, r, p, q) || f.serveAccess(rp, p)
+}
+
+// authorized says if r has the fake's token: a bearer token, or the email's basic auth.
+func (f *fakeBitbucket) authorized(r *http.Request) bool {
+	if f.email == "" {
+		return r.Header.Get("Authorization") == "Bearer "+token
+	}
+	user, pass, basic := r.BasicAuth()
+	return basic && user == f.email && pass == token
+}
+
+// fakeReply writes the fake's answers.
+type fakeReply struct{ w http.ResponseWriter }
+
+func (rp fakeReply) json(v any) {
+	rp.w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(rp.w).Encode(v)
+}
+
+func (rp fakeReply) page(list []obj) {
+	if list == nil {
+		list = []obj{}
+	}
+	rp.json(obj{"values": list, "pagelen": 50})
+}
+
+func (rp fakeReply) notFound() {
+	rp.w.WriteHeader(http.StatusNotFound)
+	_, _ = rp.w.Write([]byte(`{"type":"error","error":{"message":"not here"}}`))
+}
+
+// num is the number a path's first group matched.
+func num(m []string) int { i, _ := strconv.Atoi(m[1]); return i }
+
+// serveCommits is a compare's commits, two to a page; the next page's token is not a number.
+func (f *fakeBitbucket) serveCommits(rp fakeReply, p string, q url.Values) {
+	list := f.compares[q.Get("include")+".."+q.Get("exclude")]
+	if q.Get("page") == "t2" {
+		list = list[min(2, len(list)):]
+	} else if len(list) > 2 {
+		rp.json(obj{"values": list[:2], "next": f.server.URL + p + "?include=" + q.Get("include") + "&exclude=" + q.Get("exclude") + "&page=t2"})
+		return
+	}
+	rp.page(list)
+}
+
+// serveCommentEdit is a PUT to a pull request's comment: its new content.
+func (f *fakeBitbucket) serveCommentEdit(rp fakeReply, r *http.Request, p string) {
+	var body obj
+	data, _ := io.ReadAll(r.Body)
+	_ = json.Unmarshal(data, &body)
+	m := prCommentPath.FindStringSubmatch(p)
+	id, _ := strconv.Atoi(m[2])
+	for _, c := range f.prComments[num(m)] {
+		if c["id"] == id && c["deleted"] != true {
+			c["content"] = body["content"]
+			body["_path"] = p
+			f.posted = append(f.posted, body)
+			rp.json(c)
 			return
 		}
-		page(list)
-		return
 	}
-	if q.Get("page") != "" && q.Get("page") != "1" {
-		page(nil)
-		return
+	rp.notFound()
+}
+
+// servePost keeps a POST's body in posted, and answers it.
+func (f *fakeBitbucket) servePost(rp fakeReply, r *http.Request, p string) {
+	var body obj
+	data, _ := io.ReadAll(r.Body)
+	_ = json.Unmarshal(data, &body)
+	if body == nil {
+		body = obj{}
 	}
-	if f.noTracker && strings.HasPrefix(p, root+"/issues") {
-		notFound()
-		return
-	}
-	if r.Method == http.MethodPut && prCommentPath.MatchString(p) {
-		var body obj
-		data, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(data, &body)
-		m := prCommentPath.FindStringSubmatch(p)
-		id, _ := strconv.Atoi(m[2])
-		for _, c := range f.prComments[n(m)] {
-			if c["id"] == id && c["deleted"] != true {
-				c["content"] = body["content"]
-				body["_path"] = p
-				f.posted = append(f.posted, body)
-				reply(c)
-				return
-			}
+	body["_path"] = p
+	f.posted = append(f.posted, body)
+	switch {
+	case pullsPath.MatchString(p):
+		source := body["source"].(obj)["branch"].(obj)["name"].(string)
+		target := "main"
+		if d, ok := body["destination"].(obj); ok {
+			target = d["branch"].(obj)["name"].(string)
 		}
-		notFound()
+		rp.json(pull(9, source, alex, obj{"title": body["title"], "draft": body["draft"],
+			"destination": obj{"branch": obj{"name": target}, "repository": obj{"full_name": repo}}}))
+	case prCommentsPath.MatchString(p), issueCommentsPath.MatchString(p):
+		rp.json(obj{"id": 55, "links": obj{"html": obj{"href": "https://bitbucket.org/c/55"}}})
+	case mergePath.MatchString(p):
+		rp.json(obj{})
+	case pipelinesPath.MatchString(p):
+		f.startPipeline(rp, body)
+	default:
+		rp.notFound()
+	}
+}
+
+// startPipeline is a new run of the pipeline body names.
+func (f *fakeBitbucket) startPipeline(rp fakeReply, body obj) {
+	next := 1
+	for n := range f.pipelines {
+		next = max(next, n+1)
+	}
+	run := obj{"uuid": fmt.Sprintf("{p%d}", next), "build_number": next, "target": body["target"], "state": obj{"name": "PENDING"}}
+	f.pipelines[next] = run
+	rp.w.Header().Set("Content-Type", "application/json")
+	rp.w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(rp.w).Encode(run)
+}
+
+// replyFound is v when ok, else a 404.
+func (rp fakeReply) replyFound(v any, ok bool) {
+	if !ok {
+		rp.notFound()
 		return
 	}
-	if r.Method == http.MethodPost {
-		var body obj
-		data, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(data, &body)
-		if body == nil {
-			body = obj{}
+	rp.json(v)
+}
+
+// findID is the first of list whose id is id.
+func findID(list []obj, id int) (obj, bool) {
+	for _, o := range list {
+		if o["id"] == id {
+			return o, true
 		}
-		body["_path"] = p
-		f.posted = append(f.posted, body)
-		switch {
-		case pullsPath.MatchString(p):
-			source := body["source"].(obj)["branch"].(obj)["name"].(string)
-			target := "main"
-			if d, ok := body["destination"].(obj); ok {
-				target = d["branch"].(obj)["name"].(string)
-			}
-			reply(pull(9, source, alex, obj{"title": body["title"], "draft": body["draft"],
-				"destination": obj{"branch": obj{"name": target}, "repository": obj{"full_name": repo}}}))
-		case prCommentsPath.MatchString(p), issueCommentsPath.MatchString(p):
-			reply(obj{"id": 55, "links": obj{"html": obj{"href": "https://bitbucket.org/c/55"}}})
-		case mergePath.MatchString(p):
-			reply(obj{})
-		case pipelinesPath.MatchString(p):
-			next := 1
-			for n := range f.pipelines {
-				next = max(next, n+1)
-			}
-			run := obj{"uuid": fmt.Sprintf("{p%d}", next), "build_number": next, "target": body["target"], "state": obj{"name": "PENDING"}}
-			f.pipelines[next] = run
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(run)
-		default:
-			notFound()
-		}
-		return
 	}
+	return nil, false
+}
+
+// newestUpdated sorts list by updated_on, newest first.
+func newestUpdated(list []obj) {
+	sort.SliceStable(list, func(i, j int) bool { return list[i]["updated_on"].(string) > list[j]["updated_on"].(string) })
+}
+
+// serveRepo is a GET of the user, the repository or a branch; false for another path.
+func (f *fakeBitbucket) serveRepo(rp fakeReply, p string, q url.Values) bool {
 	switch {
 	case p == "/user":
-		reply(f.me)
+		rp.json(f.me)
 	case p == root:
-		reply(obj{"full_name": repo, "has_issues": !f.noTracker, "mainbranch": obj{"name": "main"},
+		rp.json(obj{"full_name": repo, "has_issues": !f.noTracker, "mainbranch": obj{"name": "main"},
 			"links": obj{"html": obj{"href": "https://bitbucket.org/" + repo}}})
 	case branchPath.MatchString(p):
-		if hash, ok := f.branches[branchPath.FindStringSubmatch(p)[1]]; ok {
-			reply(obj{"name": branchPath.FindStringSubmatch(p)[1], "target": obj{"hash": hash}})
-			return
+		name := branchPath.FindStringSubmatch(p)[1]
+		if hash, ok := f.branches[name]; ok {
+			rp.json(obj{"name": name, "target": obj{"hash": hash}})
+		} else if f.defaultMerge != "" && name == "main" {
+			rp.json(obj{"name": "main", "merge_strategies": []string{"merge_commit", "squash"}, "default_merge_strategy": f.defaultMerge})
+		} else {
+			rp.notFound()
 		}
-		if f.defaultMerge != "" && branchPath.FindStringSubmatch(p)[1] == "main" {
-			reply(obj{"name": "main", "merge_strategies": []string{"merge_commit", "squash"}, "default_merge_strategy": f.defaultMerge})
-			return
-		}
-		notFound()
 	case pullsPath.MatchString(p):
 		out := []obj{}
 		for _, pr := range f.pulls {
@@ -320,67 +384,94 @@ func (f *fakeBitbucket) serve(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		sort.SliceStable(out, func(i, j int) bool { return out[i]["updated_on"].(string) > out[j]["updated_on"].(string) })
-		page(out)
-	case pullPath.MatchString(p):
-		for _, pr := range f.pulls {
-			if pr["id"] == n(pullPath.FindStringSubmatch(p)) {
-				reply(pr)
-				return
-			}
+		newestUpdated(out)
+		rp.page(out)
+	case statusesPath.MatchString(p):
+		rp.page(f.statuses[statusesPath.FindStringSubmatch(p)[1]])
+	case commitPullsPath.MatchString(p):
+		list, ok := f.commitPulls[commitPullsPath.FindStringSubmatch(p)[1]]
+		if !ok {
+			rp.notFound()
+		} else {
+			rp.page(list)
 		}
-		notFound()
+	case commitPath.MatchString(p):
+		c, ok := f.commits[commitPath.FindStringSubmatch(p)[1]]
+		rp.replyFound(c, ok)
+	default:
+		return false
+	}
+	return true
+}
+
+// servePulls is a GET of a pull request or what it has; false for another path.
+func (f *fakeBitbucket) servePulls(rp fakeReply, p string) bool {
+	switch {
+	case pullPath.MatchString(p):
+		pr, ok := findID(f.pulls, num(pullPath.FindStringSubmatch(p)))
+		rp.replyFound(pr, ok)
 	case activityPath.MatchString(p):
-		page(f.activity[n(activityPath.FindStringSubmatch(p))])
+		rp.page(f.activity[num(activityPath.FindStringSubmatch(p))])
 	case diffstatPath.MatchString(p):
-		page(f.diffstat[n(diffstatPath.FindStringSubmatch(p))])
+		rp.page(f.diffstat[num(diffstatPath.FindStringSubmatch(p))])
 	case diffPath.MatchString(p):
-		_, _ = io.WriteString(w, f.diffs[n(diffPath.FindStringSubmatch(p))])
+		_, _ = io.WriteString(rp.w, f.diffs[num(diffPath.FindStringSubmatch(p))])
 	case prCommentsPath.MatchString(p):
-		page(newestFirst(f.prComments[n(prCommentsPath.FindStringSubmatch(p))]))
+		rp.page(newestFirst(f.prComments[num(prCommentsPath.FindStringSubmatch(p))]))
 	case prCommentPath.MatchString(p):
 		m := prCommentPath.FindStringSubmatch(p)
 		id, _ := strconv.Atoi(m[2])
-		for _, c := range f.prComments[n(m)] {
-			if c["id"] == id {
-				reply(c)
-				return
-			}
-		}
-		notFound()
-	case statusesPath.MatchString(p):
-		page(f.statuses[statusesPath.FindStringSubmatch(p)[1]])
+		c, ok := findID(f.prComments[num(m)], id)
+		rp.replyFound(c, ok)
+	default:
+		return false
+	}
+	return true
+}
+
+// serveIssues is a GET of the issues, an issue or what it has; false for another path.
+func (f *fakeBitbucket) serveIssues(rp fakeReply, p string, q url.Values) bool {
+	switch {
 	case issuesPath.MatchString(p):
-		out := []obj{}
-		since, assignee := sinceQuery.FindStringSubmatch(q.Get("q")), assigneeQuery.FindStringSubmatch(q.Get("q"))
-		kind := kindQuery.FindStringSubmatch(q.Get("q"))
-		for _, i := range f.issues {
-			// (kind="x" OR component.name="x"), as list_issues and show_issues ask.
-			if kind != nil && i["kind"] != kind[1] && (i["component"] == nil || i["component"].(obj)["name"] != kind[1]) {
-				continue
-			}
-			if since != nil && mcpevents.Before(i["updated_on"].(string), since[1]) {
-				continue
-			}
-			if assignee != nil && (i["assignee"] == nil || i["assignee"].(obj)["uuid"] != assignee[1] || closedStates[i["state"].(string)]) {
-				continue
-			}
-			out = append(out, i)
-		}
-		sort.SliceStable(out, func(i, j int) bool { return out[i]["updated_on"].(string) > out[j]["updated_on"].(string) })
-		page(out)
+		rp.page(f.issuesAsked(q.Get("q")))
 	case issuePath.MatchString(p):
-		for _, i := range f.issues {
-			if i["id"] == n(issuePath.FindStringSubmatch(p)) {
-				reply(i)
-				return
-			}
-		}
-		notFound()
+		i, ok := findID(f.issues, num(issuePath.FindStringSubmatch(p)))
+		rp.replyFound(i, ok)
 	case issueCommentsPath.MatchString(p):
-		page(newestFirst(f.issueComments[n(issueCommentsPath.FindStringSubmatch(p))]))
+		rp.page(newestFirst(f.issueComments[num(issueCommentsPath.FindStringSubmatch(p))]))
 	case changesPath.MatchString(p):
-		page(newestFirst(f.changes[n(changesPath.FindStringSubmatch(p))]))
+		rp.page(newestFirst(f.changes[num(changesPath.FindStringSubmatch(p))]))
+	default:
+		return false
+	}
+	return true
+}
+
+// issuesAsked are the issues that BBQL query asks for, newest updated first.
+func (f *fakeBitbucket) issuesAsked(query string) []obj {
+	out := []obj{}
+	since, assignee := sinceQuery.FindStringSubmatch(query), assigneeQuery.FindStringSubmatch(query)
+	kind := kindQuery.FindStringSubmatch(query)
+	for _, i := range f.issues {
+		// (kind="x" OR component.name="x"), as list_issues and show_issues ask.
+		if kind != nil && i["kind"] != kind[1] && (i["component"] == nil || i["component"].(obj)["name"] != kind[1]) {
+			continue
+		}
+		if since != nil && mcpevents.Before(i["updated_on"].(string), since[1]) {
+			continue
+		}
+		if assignee != nil && (i["assignee"] == nil || i["assignee"].(obj)["uuid"] != assignee[1] || closedStates[i["state"].(string)]) {
+			continue
+		}
+		out = append(out, i)
+	}
+	newestUpdated(out)
+	return out
+}
+
+// servePipelines is a GET of the pipelines, deployments or a step's log; false for another path.
+func (f *fakeBitbucket) servePipelines(rp fakeReply, r *http.Request, p string, q url.Values) bool {
+	switch {
 	case pipelinesPath.MatchString(p):
 		// COMPLETED runs, newest created first, as status and sort=-created_on ask.
 		var list []obj
@@ -390,61 +481,48 @@ func (f *fakeBitbucket) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i]["created_on"].(string) > list[j]["created_on"].(string) })
-		page(list)
+		rp.page(list)
 	case deploymentsPath.MatchString(p):
-		page(f.deployments)
+		rp.page(f.deployments)
 	case environmentsPath.MatchString(p):
-		page(f.environments)
+		rp.page(f.environments)
 	case pipelinePath.MatchString(p):
-		if run, ok := f.pipelines[n(pipelinePath.FindStringSubmatch(p))]; ok {
-			reply(run)
-			return
-		}
-		notFound()
+		run, ok := f.pipelines[num(pipelinePath.FindStringSubmatch(p))]
+		rp.replyFound(run, ok)
 	case stepsPath.MatchString(p):
-		page(f.steps[n(stepsPath.FindStringSubmatch(p))])
+		rp.page(f.steps[num(stepsPath.FindStringSubmatch(p))])
 	case logPath.MatchString(p):
 		uuid := logPath.FindStringSubmatch(p)[2]
 		if _, ok := f.logs[uuid]; !ok {
-			notFound()
-			return
+			rp.notFound()
+			return true
 		}
 		// Another host's name, as Bitbucket's file store has: Go keeps the token on a redirect to the same one.
 		store := strings.Replace(f.storage.URL, "127.0.0.1", "localhost", 1)
-		http.Redirect(w, r, store+"/logs/"+url.PathEscape(uuid), http.StatusTemporaryRedirect)
-	case commitPullsPath.MatchString(p):
-		if list, ok := f.commitPulls[commitPullsPath.FindStringSubmatch(p)[1]]; ok {
-			page(list)
-			return
-		}
-		notFound()
-	case commitPath.MatchString(p):
-		if c, ok := f.commits[commitPath.FindStringSubmatch(p)[1]]; ok {
-			reply(c)
-			return
-		}
-		notFound()
+		http.Redirect(rp.w, r, store+"/logs/"+url.PathEscape(uuid), http.StatusTemporaryRedirect)
+	default:
+		return false
+	}
+	return true
+}
+
+// serveAccess is a GET of a user's permission or a workspace's member; false for another path.
+func (f *fakeBitbucket) serveAccess(rp fakeReply, p string) bool {
+	switch {
 	case permPath.MatchString(p):
 		if f.adminless {
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte(`{"type":"error","error":{"message":"You must be an admin"}}`))
-			return
+			rp.w.WriteHeader(http.StatusForbidden)
+			_, _ = rp.w.Write([]byte(`{"type":"error","error":{"message":"You must be an admin"}}`))
+			return true
 		}
-		if perm, ok := f.perms[permPath.FindStringSubmatch(p)[1]]; ok {
-			reply(obj{"permission": perm})
-			return
-		}
-		notFound()
+		perm, ok := f.perms[permPath.FindStringSubmatch(p)[1]]
+		rp.replyFound(obj{"permission": perm}, ok)
 	case memberPath.MatchString(p):
-		if f.members[memberPath.FindStringSubmatch(p)[1]] {
-			reply(obj{"type": "workspace_membership"})
-			return
-		}
-		notFound()
+		rp.replyFound(obj{"type": "workspace_membership"}, f.members[memberPath.FindStringSubmatch(p)[1]])
 	default:
-		f.t.Errorf("fake Bitbucket: no %s %s", r.Method, r.URL)
-		notFound()
+		return false
 	}
+	return true
 }
 
 // serveLog is the file store a step's log redirects to: it takes a Range of the log's end,

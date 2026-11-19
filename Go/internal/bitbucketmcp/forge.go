@@ -496,29 +496,66 @@ const forgeComments = perPage
 // before the cursor before (the newest page for ""), and a pull request's commit statuses,
 // reviews and files changed.
 func (b *RealBitbucket) ItemPage(ctx context.Context, repo string, number int, pr bool, before string) (ItemDetail, error) {
-	page := 1
-	if before != "" {
-		n, err := strconv.Atoi(before)
-		if err != nil || n < 2 {
-			return ItemDetail{}, &BitbucketError{Kind: Failed, Message: "Bitbucket: the cursor is not one an item gave"}
-		}
-		page = n
+	page, err := itemCommentPage(before)
+	if err != nil {
+		return ItemDetail{}, err
 	}
-	kind := map[bool]string{false: "issues", true: "pullrequests"}[pr]
-	var d ItemDetail
+	d, p, err := b.readItem(ctx, repo, number, pr)
+	if err != nil {
+		return ItemDetail{}, err
+	}
+	if err := b.readThread(ctx, &d, repo, number, pr, page); err != nil {
+		return ItemDetail{}, err
+	}
+	if !pr {
+		b.readIssueEvents(ctx, &d, repo, number)
+		return d, nil
+	}
+	d.Head = p.Source.hash()
+	if err := b.readPullFiles(ctx, &d, repo, number); err != nil {
+		return ItemDetail{}, err
+	}
+	d.Reviewers = p.reviewers()
+	if err := b.readCheckRuns(ctx, &d, repo); err != nil {
+		return ItemDetail{}, err
+	}
+	return d, nil
+}
+
+// itemCommentPage is the page of comments that an item's cursor before names: 1, the newest,
+// for "".
+func itemCommentPage(before string) (int, error) {
+	if before == "" {
+		return 1, nil
+	}
+	n, err := strconv.Atoi(before)
+	if err != nil || n < 2 {
+		return 0, &BitbucketError{Kind: Failed, Message: "Bitbucket: the cursor is not one an item gave"}
+	}
+	return n, nil
+}
+
+// readItem reads an issue or a pull request with its body; for a pull request, it also gives
+// what Bitbucket said of it.
+func (b *RealBitbucket) readItem(ctx context.Context, repo string, number int, pr bool) (ItemDetail, forgePullJSON, error) {
 	var p forgePullJSON
 	if pr {
 		if err := b.get(ctx, fmt.Sprintf("%s/pullrequests/%d", repoPath(repo), number), false, &p); err != nil {
-			return ItemDetail{}, err
+			return ItemDetail{}, p, err
 		}
-		d = ItemDetail{Item: p.item(repo), Body: p.Description}
-	} else {
-		var i issueJSON
-		if err := b.get(ctx, fmt.Sprintf("%s/issues/%d", repoPath(repo), number), false, &i); err != nil {
-			return ItemDetail{}, err
-		}
-		d = ItemDetail{Item: i.forgeItem(repo), Body: i.Content.Raw}
+		return ItemDetail{Item: p.item(repo), Body: p.Description}, p, nil
 	}
+	var i issueJSON
+	if err := b.get(ctx, fmt.Sprintf("%s/issues/%d", repoPath(repo), number), false, &i); err != nil {
+		return ItemDetail{}, p, err
+	}
+	return ItemDetail{Item: i.forgeItem(repo), Body: i.Content.Raw}, p, nil
+}
+
+// readThread reads the page of an item's comments into d's thread, oldest first, and counts
+// a pull request's open review threads on it.
+func (b *RealBitbucket) readThread(ctx context.Context, d *ItemDetail, repo string, number int, pr bool, page int) error {
+	kind := map[bool]string{false: "issues", true: "pullrequests"}[pr]
 	d.Thread = []Comment{}
 	// The newest page first: Bitbucket sorts by created_on, and the page is given oldest first.
 	var comments struct {
@@ -527,7 +564,7 @@ func (b *RealBitbucket) ItemPage(ctx context.Context, repo string, number int, p
 	}
 	path := fmt.Sprintf("%s/%s/%d/comments?sort=-created_on&pagelen=%d&page=%d", repoPath(repo), kind, number, forgeComments, page)
 	if err := b.get(ctx, path, false, &comments); err != nil {
-		return ItemDetail{}, err
+		return err
 	}
 	if comments.Next != "" {
 		d.Before = strconv.Itoa(page + 1)
@@ -552,22 +589,29 @@ func (b *RealBitbucket) ItemPage(ctx context.Context, repo string, number int, p
 		}
 		d.Thread = append(d.Thread, Comment{Author: by.name(), Avatar: by.avatar(), Body: c.Content.Raw, At: c.CreatedOn, URL: c.Links.HTML.Href, Bot: isBot(by.name(), by.Type)})
 	}
-	if !pr {
-		// The changes are the one read more of an issue's page, and a nicety (#4626).
-		d.Events = []Event{}
-		var changes paged[changeJSON]
-		if err := b.get(ctx, fmt.Sprintf("%s/issues/%d/changes?pagelen=100", repoPath(repo), number), false, &changes); err == nil {
-			for _, c := range changes.Values {
-				d.Events = append(d.Events, c.events()...)
-			}
-			slices.SortStableFunc(d.Events, func(a, b Event) int { return strings.Compare(a.At, b.At) })
-		}
-		return d, nil
+	return nil
+}
+
+// readIssueEvents reads an issue's changes into d's events, oldest first. The changes are
+// the one read more of an issue's page, and a nicety (#4626): an error leaves none.
+func (b *RealBitbucket) readIssueEvents(ctx context.Context, d *ItemDetail, repo string, number int) {
+	d.Events = []Event{}
+	var changes paged[changeJSON]
+	if err := b.get(ctx, fmt.Sprintf("%s/issues/%d/changes?pagelen=100", repoPath(repo), number), false, &changes); err != nil {
+		return
 	}
-	d.Head = p.Source.hash()
+	for _, c := range changes.Values {
+		d.Events = append(d.Events, c.events()...)
+	}
+	slices.SortStableFunc(d.Events, func(a, b Event) int { return strings.Compare(a.At, b.At) })
+}
+
+// readPullFiles reads a pull request's files changed into d: their count, its size and, when
+// it is open, whether it merges.
+func (b *RealBitbucket) readPullFiles(ctx context.Context, d *ItemDetail, repo string, number int) error {
 	files, _, err := all[fileJSON](ctx, b, fmt.Sprintf("%s/pullrequests/%d/diffstat", repoPath(repo), number), false)
 	if err != nil {
-		return ItemDetail{}, err
+		return err
 	}
 	d.FilesChanged = len(files)
 	additions, deletions := 0, 0
@@ -581,7 +625,6 @@ func (b *RealBitbucket) ItemPage(ctx context.Context, repo string, number int, p
 	}](ctx, b, fmt.Sprintf("%s/pullrequests/%d/commits", repoPath(repo), number), false); err == nil {
 		d.Size = &Size{Additions: additions, Deletions: deletions, Commits: len(commits)}
 	}
-	d.Reviewers = p.reviewers()
 	if d.State == "open" {
 		d.Mergeable = "mergeable"
 		for _, f := range files {
@@ -590,23 +633,30 @@ func (b *RealBitbucket) ItemPage(ctx context.Context, repo string, number int, p
 			}
 		}
 	}
+	return nil
+}
+
+// readCheckRuns reads the commit statuses of a pull request's head into d's check runs and
+// checks.
+func (b *RealBitbucket) readCheckRuns(ctx context.Context, d *ItemDetail, repo string) error {
 	d.CheckRuns = []CheckRun{}
 	d.Checks = "none"
-	if d.Head != "" {
-		statuses, err := b.statuses(ctx, repo, d.Head, false)
-		if err != nil {
-			return ItemDetail{}, err
-		}
-		for _, s := range statuses {
-			run := CheckRun{Name: s.title(), State: checkState(s.State), URL: s.URL, Run: PipelineRun(s.URL), StartedAt: s.CreatedOn}
-			if run.State != "running" && s.CreatedOn != "" {
-				run.FinishedAt = s.UpdatedOn
-			}
-			d.CheckRuns = append(d.CheckRuns, run)
-		}
-		if state := combined(statuses); state != "" {
-			d.Checks = checkState(state)
-		}
+	if d.Head == "" {
+		return nil
 	}
-	return d, nil
+	statuses, err := b.statuses(ctx, repo, d.Head, false)
+	if err != nil {
+		return err
+	}
+	for _, s := range statuses {
+		run := CheckRun{Name: s.title(), State: checkState(s.State), URL: s.URL, Run: PipelineRun(s.URL), StartedAt: s.CreatedOn}
+		if run.State != "running" && s.CreatedOn != "" {
+			run.FinishedAt = s.UpdatedOn
+		}
+		d.CheckRuns = append(d.CheckRuns, run)
+	}
+	if state := combined(statuses); state != "" {
+		d.Checks = checkState(state)
+	}
+	return nil
 }

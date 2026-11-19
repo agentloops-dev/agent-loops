@@ -899,68 +899,99 @@ func (b *RealBitbucket) IssueActivity(ctx context.Context, repo string, kind Iss
 	}
 	var out []IssueActivity
 	for _, i := range items {
+		var found []IssueActivity
 		switch kind {
 		case IssueOpened:
-			if mcpevents.Before(i.CreatedOn, since) {
-				continue
-			}
-			trusted, err := b.trusted(ctx, repo, i.Reporter)
-			if err != nil {
-				return nil, Listed{}, err
-			}
-			out = append(out, IssueActivity{ID: strconv.Itoa(i.ID), At: i.CreatedOn, Issue: i.issue(), Kind: IssueOpened, Trusted: trusted})
+			found, err = b.issueOpened(ctx, repo, i, since)
 		case IssueLabelled, IssueClosed:
-			// A change updates the issue, so its changes are read only for the issues updated
-			// since; a kind or component set anew, and a state set to a closed one, is a change.
-			changes, _, err := newest(ctx, b, fmt.Sprintf("%s/issues/%d/changes?sort=-created_on", repoPath(repo), i.ID), since, i.UpdatedOn,
-				func(c changeJSON) string { return c.CreatedOn })
-			if err != nil {
-				return nil, Listed{}, err
-			}
-			for _, c := range changes {
-				var found []IssueActivity
-				if kind == IssueLabelled {
-					for _, field := range []string{"kind", "component"} {
-						if ch, ok := c.Changes[field]; ok && ch.New != "" && ch.New != ch.Old {
-							found = append(found, IssueActivity{ID: fmt.Sprintf("label:%d:%s", c.ID, field), Label: ch.New})
-						}
-					}
-				} else if ch, ok := c.Changes["state"]; ok && closedStates[ch.New] && !closedStates[ch.Old] {
-					found = append(found, IssueActivity{ID: strconv.Itoa(i.ID) + ":" + mcpevents.Normalized(c.CreatedOn)})
-				}
-				if len(found) == 0 {
-					continue
-				}
-				trusted, err := b.trusted(ctx, repo, c.User)
-				if err != nil {
-					return nil, Listed{}, err
-				}
-				for _, a := range found {
-					a.At, a.Issue, a.Kind, a.By, a.Trusted = c.CreatedOn, i.issue(), kind, c.User.name(), trusted
-					out = append(out, a)
-				}
-			}
+			found, err = b.issueChanged(ctx, repo, i, kind, since)
 		case IssueCommented:
-			comments, _, err := newest(ctx, b, fmt.Sprintf("%s/issues/%d/comments?sort=-created_on", repoPath(repo), i.ID), since, i.UpdatedOn,
-				func(c commentJSON) string { return c.CreatedOn })
-			if err != nil {
-				return nil, Listed{}, err
-			}
-			for _, c := range comments {
-				// A change with no words is a comment too.
-				if strings.TrimSpace(c.Content.Raw) == "" {
-					continue
-				}
-				trusted, err := b.trusted(ctx, repo, c.User)
-				if err != nil {
-					return nil, Listed{}, err
-				}
-				out = append(out, IssueActivity{ID: strconv.Itoa(c.ID), At: c.CreatedOn, Issue: i.issue(), Kind: IssueCommented,
-					CommentAuthor: c.User.name(), CommentURL: c.Links.HTML.Href, CommentBody: clip(c.Content.Raw), Trusted: trusted})
-			}
+			found, err = b.issueCommented(ctx, repo, i, since)
 		}
+		if err != nil {
+			return nil, Listed{}, err
+		}
+		out = append(out, found...)
 	}
 	return out, listed, nil
+}
+
+// issueOpened is issue i's opening, when it was at or after since.
+func (b *RealBitbucket) issueOpened(ctx context.Context, repo string, i issueJSON, since string) ([]IssueActivity, error) {
+	if mcpevents.Before(i.CreatedOn, since) {
+		return nil, nil
+	}
+	trusted, err := b.trusted(ctx, repo, i.Reporter)
+	if err != nil {
+		return nil, err
+	}
+	return []IssueActivity{{ID: strconv.Itoa(i.ID), At: i.CreatedOn, Issue: i.issue(), Kind: IssueOpened, Trusted: trusted}}, nil
+}
+
+// issueChanged is issue i's labels or closes (by kind) made at or after since. A change
+// updates the issue, so its changes are read only for the issues updated since; a kind or
+// component set anew, and a state set to a closed one, is a change.
+func (b *RealBitbucket) issueChanged(ctx context.Context, repo string, i issueJSON, kind IssueKind, since string) ([]IssueActivity, error) {
+	changes, _, err := newest(ctx, b, fmt.Sprintf("%s/issues/%d/changes?sort=-created_on", repoPath(repo), i.ID), since, i.UpdatedOn,
+		func(c changeJSON) string { return c.CreatedOn })
+	if err != nil {
+		return nil, err
+	}
+	var out []IssueActivity
+	for _, c := range changes {
+		found := changeActivity(c, kind, i.ID)
+		if len(found) == 0 {
+			continue
+		}
+		trusted, err := b.trusted(ctx, repo, c.User)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range found {
+			a.At, a.Issue, a.Kind, a.By, a.Trusted = c.CreatedOn, i.issue(), kind, c.User.name(), trusted
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// changeActivity is what change c of issue id did of kind: a label for each kind or component
+// set anew, or a close for a state set to a closed one. It has only the IDs and labels.
+func changeActivity(c changeJSON, kind IssueKind, id int) []IssueActivity {
+	var found []IssueActivity
+	if kind == IssueLabelled {
+		for _, field := range []string{"kind", "component"} {
+			if ch, ok := c.Changes[field]; ok && ch.New != "" && ch.New != ch.Old {
+				found = append(found, IssueActivity{ID: fmt.Sprintf("label:%d:%s", c.ID, field), Label: ch.New})
+			}
+		}
+	} else if ch, ok := c.Changes["state"]; ok && closedStates[ch.New] && !closedStates[ch.Old] {
+		found = append(found, IssueActivity{ID: strconv.Itoa(id) + ":" + mcpevents.Normalized(c.CreatedOn)})
+	}
+	return found
+}
+
+// issueCommented is issue i's comments made at or after since.
+func (b *RealBitbucket) issueCommented(ctx context.Context, repo string, i issueJSON, since string) ([]IssueActivity, error) {
+	comments, _, err := newest(ctx, b, fmt.Sprintf("%s/issues/%d/comments?sort=-created_on", repoPath(repo), i.ID), since, i.UpdatedOn,
+		func(c commentJSON) string { return c.CreatedOn })
+	if err != nil {
+		return nil, err
+	}
+	var out []IssueActivity
+	for _, c := range comments {
+		// A change with no words is a comment too.
+		if strings.TrimSpace(c.Content.Raw) == "" {
+			continue
+		}
+		trusted, err := b.trusted(ctx, repo, c.User)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, IssueActivity{ID: strconv.Itoa(c.ID), At: c.CreatedOn, Issue: i.issue(), Kind: IssueCommented,
+			CommentAuthor: c.User.name(), CommentURL: c.Links.HTML.Href, CommentBody: clip(c.Content.Raw), Trusted: trusted})
+	}
+	return out, nil
 }
 
 // inlineComments are a pull request's comments on lines of its diff, and the answers in their
