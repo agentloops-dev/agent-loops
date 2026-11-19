@@ -32,6 +32,8 @@ type folderWatch struct {
 	skip func(path, name string) bool
 	// files says the paths that changed, not the folders they were in.
 	files bool
+	// warned is whether a folder that could not be watched was logged.
+	warned bool
 }
 
 func newFilesWatch(root string, changed func([]string)) (*folderWatch, error) {
@@ -51,7 +53,13 @@ func startFolderWatch(w *folderWatch, name string) (*folderWatch, error) {
 		return nil, err
 	}
 	w.fd, w.paths, w.done = fd, map[int]string{}, make(chan struct{})
-	w.addTree(w.root)
+	// A root that cannot be watched (no inotify watches left: ENOSPC) is not a watch: one
+	// that said it was up and heard nothing lost a workflow written on disk (#6248). The
+	// folder list's next look tries it again.
+	if err := w.addTree(w.root); err != nil {
+		unix.Close(fd)
+		return nil, err
+	}
 	safe.Go(name, w.read)
 	return w, nil
 }
@@ -59,7 +67,11 @@ func startFolderWatch(w *folderWatch, name string) (*folderWatch, error) {
 const watchMask = unix.IN_CREATE | unix.IN_DELETE | unix.IN_MODIFY | unix.IN_MOVED_FROM | unix.IN_MOVED_TO |
 	unix.IN_CLOSE_WRITE | unix.IN_ATTRIB | unix.IN_DELETE_SELF
 
-func (w *folderWatch) addTree(dir string) {
+// addTree watches dir and every folder under it the watch does not leave out. It says why
+// the root could not be watched; a folder under it that cannot be is logged, once a watch,
+// as it is not heard (#6248).
+func (w *folderWatch) addTree(dir string) error {
+	var rootErr error
 	filepath.WalkDir(dir, func(p string, e os.DirEntry, err error) error {
 		if err != nil || !e.IsDir() {
 			return nil
@@ -75,13 +87,27 @@ func (w *folderWatch) addTree(dir string) {
 			log.Printf("files watch: %s has more than %d folders; the rest are not watched", w.root, maxWatchedFolders)
 			return filepath.SkipAll
 		}
-		if wd, err := unix.InotifyAddWatch(w.fd, p, watchMask); err == nil {
+		wd, err := unix.InotifyAddWatch(w.fd, p, watchMask)
+		if err != nil {
+			if p == w.root {
+				rootErr = err
+				return filepath.SkipAll
+			}
 			w.mu.Lock()
-			w.paths[wd] = p
+			warned := w.warned
+			w.warned = true
 			w.mu.Unlock()
+			if !warned {
+				log.Printf("files watch: %s is not heard: %v", p, err)
+			}
+			return nil
 		}
+		w.mu.Lock()
+		w.paths[wd] = p
+		w.mu.Unlock()
 		return nil
 	})
+	return rootErr
 }
 
 func (w *folderWatch) read() {
@@ -141,7 +167,7 @@ func (w *folderWatch) readEvent(buf []byte, off int, pending map[string]bool) (i
 			pending[dir] = true
 		}
 		if ev.Mask&unix.IN_ISDIR != 0 && ev.Mask&(unix.IN_CREATE|unix.IN_MOVED_TO) != 0 && name != "" {
-			w.addTree(filepath.Join(dir, name))
+			_ = w.addTree(filepath.Join(dir, name)) // only the root says an error; a folder under it is logged
 		}
 	}
 	rootGone := dir != "" && ev.Mask&unix.IN_DELETE_SELF != 0 && dir == w.root
