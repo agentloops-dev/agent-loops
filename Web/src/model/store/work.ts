@@ -474,6 +474,9 @@ export class Work {
   /** What was heard while a page is on its way, to lay over it; null when none is (#214). */
   heardSincePage: TranscriptEntry[] | null = [];
 
+  /** By host: the card notifications heard since each pending read on its way was sent (#6291). */
+  cardsHeard = new Map<string, [string, unknown][][]>();
+
   /**
    * How many entries the open chat's host had when it last gave a page of it (#4794): every entry
    * from here on was written after, so a reconnect asks `from` here. Null when no page is held.

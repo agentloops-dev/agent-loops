@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { load } from "./load.mjs";
-import { streams, play, viewOf, daemonAt } from "./streamPlayer.mjs";
+import { streams, play, viewOf, daemonAt, cardsOf } from "./streamPlayer.mjs";
 
 const { Work } = await load("test/bounded.ts");
 
@@ -18,8 +18,12 @@ function webClient(stream) {
       // As loadPage: heard from now is laid after the page; the page from the first entry held
       // resumes it (#6282), and one that leaves a gap opens the chat whole.
       work.heardSincePage = [];
+      // As hostLifecycle's catch-up: the pending reads replace the host's cards (#6188), with what
+      // was heard while they were on their way laid over them (#6291).
+      const cards = work.beginCardsRead(host);
       work.replaceAgents(snapshot.agents, host);
       for (const [method, params] of during) work.apply(method, params, host);
+      work.takePendingCards(cards, snapshot.permissions ?? [], snapshot.elicitations ?? []);
       const start = work.chatResumeStart();
       const page = snapshot.transcript;
       if (start !== null && page.total >= start) {
@@ -31,6 +35,7 @@ function webClient(stream) {
     view: () => ({
       agents: [...(work.agents.value[host] ?? [])].map((a) => ({ id: a.id, title: a.title, state: a.state })).sort((a, b) => a.id.localeCompare(b.id)),
       entries: work.entries.value.map((e) => ({ id: e.id, text: (e.kind.agentMessage ?? e.kind.userMessage)?.text ?? e.kind.userMessage?._0 })),
+      cards: cardsOf(work.permissions.value[host] ?? [], work.elicitations.value[host] ?? []),
     }),
   };
 }

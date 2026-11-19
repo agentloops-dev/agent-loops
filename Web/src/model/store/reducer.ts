@@ -2,12 +2,15 @@
 import { preferencesSaid } from "../preferences";
 import { fromDesktopControl } from "../liveTile";
 import { batch } from "@preact/signals";
-import type { Agent, AgentRemovedNotification, ResumingNotification, BrowserFrame, BrowserPageState, DesktopControlLiveFrame, LiveFrame, ElicitationNotification, EntryNotification, PermissionNotification, FolderSummary, TranscriptPage, WorkflowSummary, FilesChangedNotification, ShowFileNotification, WorkflowRemovedNotification, FolderRemovedNotification, DraftOptionsNotification, JSONValue, AccountProfile, WriteFailure, CloneNotification, LeaseSnapshot, HostedMCPSnapshot, MCPHealthSnapshot, DiskState, CapacityState, StoreNotes, EventsChange, PagesChangedNotification, PinsChangedNotification, Approval, Achievements, Multiplier, WorktreesSized, BackupState, DailyChecksSettings, PolicyState, MoveNotification, RequestUpdate, AgentChanges, ListRevision } from "../../protocol/generated";
+import type { Agent, AgentRemovedNotification, ResumingNotification, BrowserFrame, BrowserPageState, DesktopControlLiveFrame, LiveFrame, ElicitationNotification, ElicitationRequest, EntryNotification, PermissionNotification, PermissionRequest, FolderSummary, TranscriptPage, WorkflowSummary, FilesChangedNotification, ShowFileNotification, WorkflowRemovedNotification, FolderRemovedNotification, DraftOptionsNotification, JSONValue, AccountProfile, WriteFailure, CloneNotification, LeaseSnapshot, HostedMCPSnapshot, MCPHealthSnapshot, DiskState, CapacityState, StoreNotes, EventsChange, PagesChangedNotification, PinsChangedNotification, Approval, Achievements, Multiplier, WorktreesSized, BackupState, DailyChecksSettings, PolicyState, MoveNotification, RequestUpdate, AgentChanges, ListRevision } from "../../protocol/generated";
 import { takeEventsChange } from "../eventsWaiting";
 import { folderKey, folderPath as agentFolderPath } from "../groups";
 import { approvalID } from "../approvals";
 import { Work } from "./work";
-import { filesNamedAtMost, quietSettle, filesSettle, keepingLists, newestFirst, keepingLatestByID } from "./shared";
+import { filesNamedAtMost, quietSettle, filesSettle, keepingLists, newestFirst, keepingLatestByID, heardSincePageLimit } from "./shared";
+
+/** A pending read of a host's cards on its way, and the card notifications heard since it was sent (#6291). */
+export interface CardsRead { host: string; heard: [string, unknown][] }
 
 export const reducerMethods = {
   /** One notification from one host. Returns false for one this does not know. */
@@ -51,22 +54,11 @@ export const reducerMethods = {
       case "agent/entry":
         this.takeEntry(params as EntryNotification, host);
         return true;
-      case "agent/permission": {
-        const note = params as PermissionNotification;
-        let list = (this.permissions.value[host] ?? []).filter((p) =>
-          !(p.agentID === note.agentID && p.id === note.requestID));
-        if (note.request) list = [...list, note.request];
-        list.sort((a, b) => a.askedAt - b.askedAt);
-        this.permissions.value = { ...this.permissions.value, [host]: list };
+      case "agent/permission":
+      case "agent/elicitation":
+        this.hearCard(method, params, host);
+        this.applyCard(method, params, host);
         return true;
-      }
-      case "agent/elicitation": {
-        const note = params as ElicitationNotification;
-        let list = (this.elicitations.value[host] ?? []).filter((e) => e.id !== note.requestID);
-        if (note.request) list = [...list, note.request];
-        this.elicitations.value = { ...this.elicitations.value, [host]: list };
-        return true;
-      }
       case "agents/draftOptions":
         this.draftOptions.value = params as DraftOptionsNotification;
         return true;
@@ -203,18 +195,74 @@ export const reducerMethods = {
         const { agentID } = params as AgentRemovedNotification;
         const held = this.agents.value[host] ?? [];
         const gone = held.find((a) => a.id === agentID);
+        this.hearCard(method, params, host);
         batch(() => {
           if (gone) this.setAgents(host, held.filter((a) => a !== gone), [agentFolderPath(gone)]);
-          this.permissions.value = { ...this.permissions.value,
-            [host]: (this.permissions.value[host] ?? []).filter((p) => p.agentID !== agentID) };
-          this.elicitations.value = { ...this.elicitations.value,
-            [host]: (this.elicitations.value[host] ?? []).filter((e) => e.agentID !== agentID) };
+          this.applyCard(method, params, host);
         });
         return true;
       }
       default:
         return false;
     }
+  },
+  /**
+   * What a card notification does to the host's cards: `agent/permission` and `agent/elicitation`
+   * put up or take down one card, and `agent/removed` takes down the agent's cards.
+   */
+  applyCard(this: Work, method: string, params: unknown, host: string): void {
+    if (method === "agent/permission") {
+      const note = params as PermissionNotification;
+      let list = (this.permissions.value[host] ?? []).filter((p) =>
+        !(p.agentID === note.agentID && p.id === note.requestID));
+      if (note.request) list = [...list, note.request];
+      list.sort((a, b) => a.askedAt - b.askedAt);
+      this.permissions.value = { ...this.permissions.value, [host]: list };
+    } else if (method === "agent/elicitation") {
+      const note = params as ElicitationNotification;
+      let list = (this.elicitations.value[host] ?? []).filter((e) => e.id !== note.requestID);
+      if (note.request) list = [...list, note.request];
+      this.elicitations.value = { ...this.elicitations.value, [host]: list };
+    } else if (method === "agent/removed") {
+      const { agentID } = params as AgentRemovedNotification;
+      this.permissions.value = { ...this.permissions.value,
+        [host]: (this.permissions.value[host] ?? []).filter((p) => p.agentID !== agentID) };
+      this.elicitations.value = { ...this.elicitations.value,
+        [host]: (this.elicitations.value[host] ?? []).filter((e) => e.agentID !== agentID) };
+    }
+  },
+  /** Keeps a card notification for each pending read of the host that is on its way (#6291). */
+  hearCard(this: Work, method: string, params: unknown, host: string): void {
+    for (const heard of this.cardsHeard.get(host) ?? []) {
+      heard.push([method, params]);
+      if (heard.length > heardSincePageLimit) heard.splice(0, heard.length - heardSincePageLimit);
+    }
+  },
+  /**
+   * Call as the `permissions/pending` and `elicitations/pending` reads are sent; give what it returns
+   * to `takePendingCards` with their replies. A card raised or answered after the daemon made a reply
+   * and before the client got it is heard first, so it is laid over the older reply (#6291), as
+   * `heardSincePage` is for a page.
+   */
+  beginCardsRead(this: Work, host: string): CardsRead {
+    const read: CardsRead = { host, heard: [] };
+    this.cardsHeard.set(host, [...(this.cardsHeard.get(host) ?? []), read.heard]);
+    return read;
+  },
+  /**
+   * The pending reads' replies replace the host's cards, with what was heard while they were on
+   * their way laid over them. A reply that failed (undefined) keeps that kind as held.
+   */
+  takePendingCards(this: Work, read: CardsRead, permissions: PermissionRequest[] | undefined, elicitations: ElicitationRequest[] | undefined): void {
+    const open = (this.cardsHeard.get(read.host) ?? []).filter((heard) => heard !== read.heard);
+    if (open.length > 0) this.cardsHeard.set(read.host, open);
+    else this.cardsHeard.delete(read.host);
+    batch(() => {
+      if (permissions) this.permissions.value = { ...this.permissions.value,
+        [read.host]: [...permissions].sort((a, b) => a.askedAt - b.askedAt) };
+      if (elicitations) this.elicitations.value = { ...this.elicitations.value, [read.host]: elicitations };
+      for (const [method, params] of read.heard) this.applyCard(method, params, read.host);
+    });
   },
   removeFolder(this: Work, folder: string, host: string): void {
     const list = (this.folders.value[host] ?? []).filter((p) => folderKey(p.folder.folder) !== folderKey(folder));

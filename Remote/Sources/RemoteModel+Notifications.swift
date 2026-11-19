@@ -152,6 +152,9 @@ extension RemoteModel {
     /// The snapshot, or nil when it failed.
     func refreshSnapshot(with parts: Set<CatchUpPart>) async -> DaemonAPI.CatchUpSnapshot? {
         let snapshot: DaemonAPI.CatchUpSnapshot
+        // A card heard while the snapshot is on its way is laid over its cards (#6291).
+        let cards = work.beginCardsRead()
+        defer { work.endCardsRead(cards) }
         do {
             // Only what changed since the point held (#4794): the last catch-up's, or the copy's
             // at launch. A host that cannot say what changed since then sends the first page.
@@ -175,8 +178,8 @@ extension RemoteModel {
             takeLiveAgents(snapshot.agents, page: DaemonAPI.CatchUpRequest.firstPage)
             work.notePoint(snapshot.agentChanges, of: .mac)
         }
-        work.replacePermissions(snapshot.permissions)
-        work.replaceElicitations(snapshot.elicitations)
+        work.replacePermissions(snapshot.permissions, since: cards)
+        work.replaceElicitations(snapshot.elicitations, since: cards)
         work.replaceAttention(snapshot.attention)
         work.setResuming(snapshot.resuming)
         toNotifier { [deviceID = self.deviceID] notifier in await notifier.sweep(keeping: snapshot.attention, me: .device(deviceID)) }

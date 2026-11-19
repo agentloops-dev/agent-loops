@@ -469,11 +469,18 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	}
 	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.StartToolCall("call_1", "Write hi.txt",
 		sdk.WithStartKind(sdk.ToolKindEdit), sdk.WithStartStatus(sdk.ToolCallStatusPending))})
-	if strings.Contains(text, "Please ask") {
+	// The restart's words (wordsAboutTheRestart) say the question went: with
+	// AGENTS_FAKE_ASK_AGAIN=1 it asks again, as a runtime that still needs it does (#6188).
+	askAgain := f.getenv("AGENTS_FAKE_ASK_AGAIN") == "1" && strings.Contains(text, "the question you had asked went with it")
+	if strings.Contains(text, "Please ask") || askAgain {
 		r, _ := f.conn.RequestPermission(ctx, sdk.RequestPermissionRequest{SessionId: p.SessionId,
 			ToolCall: sdk.ToolCallUpdate{ToolCallId: "call_1", Title: sdk.Ptr("Write hi.txt")},
 			Options: []sdk.PermissionOption{{Kind: sdk.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: "allow"},
 				{Kind: sdk.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"}}})
+		// A stop answers the card cancelled, and the turn ends cancelled, as ACP says (#6188).
+		if r.Outcome.Cancelled != nil || ctx.Err() != nil {
+			return sdk.PromptResponse{StopReason: sdk.StopReasonCancelled}, nil
+		}
 		if r.Outcome.Selected == nil || r.Outcome.Selected.OptionId != "allow" {
 			say("You said no.")
 			return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
