@@ -16,7 +16,8 @@ struct StreamHarnessTests {
         if run.scenario.fault != nil { return }
         let client = ModelStreamClient(session: run.file.session, host: run.file.host)
         try run.scenario.play(run.file, on: client)
-        #expect(client.view() == (try run.file.view(after: run.scenario.expect)))
+        let held = client.view()
+        #expect(held == (try run.file.view(after: run.scenario.expect)).tail(run.scenario.tail, held: held))
     }
 }
 
@@ -26,11 +27,20 @@ struct StreamView: Equatable, CustomTestStringConvertible {
     var agents: [String]
     var entries: [String]
     var cards: [String] = []
-    var testDescription: String { "agents \(agents) entries \(entries) cards \(cards)" }
+    var testDescription: String { "agents \(agents) entries \(entries.count): \(entries.suffix(3)) cards \(cards)" }
 
     static func cards(_ permissions: [PermissionRequest], _ elicitations: [ElicitationRequest]) -> [String] {
         (permissions.map { "permission|\($0.id.uuidString)|\($0.agentID.uuidString)" }
             + elicitations.map { "question|\($0.id.uuidString)|\($0.agentID.uuidString)" }).sorted()
+    }
+
+    /// With `tail` (a long chat), the daemon's last entries, as many as the client kept and at least
+    /// `tail`: a client keeps a chat's end (`AgentsModel.entriesKept`), so a turn lost or doubled in it fails.
+    func tail(_ tail: Int?, held: StreamView) -> StreamView {
+        guard let tail else { return self }
+        var view = self
+        view.entries = Array(entries.suffix(max(tail, min(held.entries.count, entries.count))))
+        return view
     }
 }
 
@@ -62,6 +72,8 @@ struct StreamScenario: Sendable {
     var expect: Int
     /// The bug a scenario fails on, until its fix removes the field from the file: the scenario is skipped.
     var fault: String?
+    /// The client may keep only the chat's end, but at least this many of its entries (README.md).
+    var tail: Int?
 
     @MainActor
     func play(_ file: StreamFile, on client: some StreamClient) throws {
@@ -106,7 +118,8 @@ struct StreamFile: Sendable {
                               start: start, steps: steps, scenarios: scenarios.compactMap {
                 guard let name = $0["name"]?.stringValue, let ops = $0["ops"]?.arrayValue,
                       let expect = $0["expect"]?.intValue else { return nil }
-                return StreamScenario(name: name, ops: ops.compactMap(\.objectValue), expect: expect, fault: $0["fault"]?.stringValue)
+                return StreamScenario(name: name, ops: ops.compactMap(\.objectValue), expect: expect, fault: $0["fault"]?.stringValue,
+                                      tail: $0["tail"]?.intValue)
             })
         }
     }()
@@ -117,10 +130,17 @@ struct StreamFile: Sendable {
         return (method, params)
     }
 
+    /// A read that says `startEntries: n` begins with the first n entries of `start` (a long chat, README.md).
     private func state(after step: Int) throws -> JSONValue {
         if step < 0 { return start }
-        guard steps.indices.contains(step), let after = steps[step]["after"] else { throw StreamError.noStep(step) }
-        return after
+        guard steps.indices.contains(step), case .object(var after) = steps[step]["after"] else { throw StreamError.noStep(step) }
+        guard case .object(var transcript) = after["transcript"], let base = transcript["startEntries"]?.intValue
+        else { return .object(after) }
+        let held = Array((start["transcript"]?["entries"]?.arrayValue ?? []).prefix(base))
+        transcript["entries"] = .array(held + (transcript["entries"]?.arrayValue ?? []))
+        transcript["startEntries"] = nil
+        after["transcript"] = .object(transcript)
+        return .object(after)
     }
 
     func snapshot(after step: Int) throws -> StreamSnapshot {

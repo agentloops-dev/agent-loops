@@ -40,13 +40,23 @@ function webClient(stream) {
   };
 }
 
+/**
+ * What the client must hold: the daemon's view, or with `tail` (a long chat) its last entries, as many as
+ * the client kept and at least `tail`, so a turn lost or doubled anywhere in them still fails.
+ */
+function expected(daemon, held, tail) {
+  if (tail === undefined) return daemon;
+  const kept = Math.max(tail, Math.min(held.entries.length, daemon.entries.length));
+  return { ...daemon, entries: daemon.entries.slice(-kept) };
+}
+
 for (const stream of streams()) {
   for (const scenario of stream.scenarios) {
     // A scenario with a `fault` fails on a bug that is filed: it runs again once the fix removes the field.
     test(`${stream.file}: ${scenario.name}`, { skip: scenario.fault }, () => {
       const client = webClient(stream);
       play(stream, scenario, client);
-      assert.deepEqual(client.view(), viewOf(daemonAt(stream, scenario.expect)));
+      assert.deepEqual(client.view(), expected(viewOf(daemonAt(stream, scenario.expect)), client.view(), scenario.tail));
     });
   }
 }

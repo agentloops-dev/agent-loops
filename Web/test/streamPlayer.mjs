@@ -13,8 +13,16 @@ export function streams() {
     .map((f) => ({ file: f, ...JSON.parse(readFileSync(dir + f, "utf8")) }));
 }
 
-/** What the daemon holds after step `k` (-1: before the first): the file's own record of it. */
-export const daemonAt = (stream, k) => (k < 0 ? stream.start : stream.steps[k].after);
+/**
+ * What the daemon holds after step `k` (-1: before the first): the file's own record of it. A read that
+ * says `startEntries: n` begins with the first n entries of `start` (a long chat, README.md).
+ */
+export function daemonAt(stream, k) {
+  const held = k < 0 ? stream.start : stream.steps[k].after;
+  const { startEntries = 0, ...transcript } = held.transcript;
+  if (startEntries === 0) return held;
+  return { ...held, transcript: { ...transcript, entries: [...stream.start.transcript.entries.slice(0, startEntries), ...transcript.entries] } };
+}
 
 /**
  * Runs one scenario. `client` has: `catchUp(snapshot, during)`, which reads `snapshot` as the catch-up
