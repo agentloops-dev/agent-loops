@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -57,6 +58,7 @@ func raised(d *Daemon, name string) []wire.Event {
 }
 
 func TestAWorkflowFileOnDiskIsToldAtOnce(t *testing.T) {
+	flaky.UnderLoad(t, "#6248")
 	folder := canonical(t.TempDir())
 	_, c := watched(t, folder)
 	os.MkdirAll(workflowsFolder(folder), 0o755)

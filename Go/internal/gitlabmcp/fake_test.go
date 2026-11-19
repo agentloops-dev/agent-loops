@@ -132,84 +132,29 @@ func (f *fakeGitLab) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, r.Method+" "+r.URL.RequestURI())
-	answer := func(status int, v any) {
-		w.Header().Set("Content-Type", "application/json")
-		for k, vs := range f.header {
-			w.Header()[k] = vs
-		}
-		body, _ := json.Marshal(v)
-		// GitLab's Rack ETag: a weak one over the body, and 304 for a GET that sends it back.
-		if r.Method == http.MethodGet && status == 200 {
-			etag := fmt.Sprintf(`W/"%x"`, sha256.Sum256(body))
-			w.Header().Set("ETag", etag)
-			if r.Header.Get("If-None-Match") == etag {
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
-		}
-		w.WriteHeader(status)
-		f.sent += len(body)
-		_, _ = w.Write(body)
-	}
+	rq := &fakeRequest{f: f, w: w, r: r, q: r.URL.Query()}
 	if r.Header.Get("Authorization") != "Bearer "+token {
-		answer(401, obj{"message": "401 Unauthorized"})
+		rq.answer(401, obj{"message": "401 Unauthorized"})
 		return
 	}
 	if f.status != 0 {
-		answer(f.status, obj{"message": "refused"})
+		rq.answer(f.status, obj{"message": "refused"})
 		return
 	}
 	if r.URL.Path == "/api/v4/user" {
-		answer(200, alex)
+		rq.answer(200, alex)
 		return
 	}
 	if id, ok := strings.CutPrefix(r.URL.Path, "/api/v4/groups/9/members/all/"); ok {
-		if n, _ := strconv.Atoi(id); f.groupMember[n] {
-			answer(200, obj{"id": n, "access_level": 30})
-			return
-		}
-		answer(404, obj{"message": "404 Not found"})
+		rq.groupMember(id)
 		return
 	}
 	m := path.FindStringSubmatch(r.URL.EscapedPath())
 	if m == nil {
-		answer(404, obj{"message": "404 Project Not Found"})
+		rq.answer(404, obj{"message": "404 Project Not Found"})
 		return
 	}
-	parts := strings.Split(m[1], "/")
-	q := r.URL.Query()
-	byIID := func(list []obj, key string, n string) (obj, bool) {
-		for _, o := range list {
-			if strconv.Itoa(o[key].(int)) == n {
-				return o, true
-			}
-		}
-		return nil, false
-	}
-	// atHead is whether this request sent merge request iid's head sha.
-	atHead := func(iid string) bool {
-		o, ok := byIID(f.mrs, "iid", iid)
-		return ok && len(f.posted) > 0 && f.posted[len(f.posted)-1]["sha"] == o["sha"]
-	}
-	// stated is list's items in that state, in the order asked for and the page asked for, as
-	// GitLab answers.
-	stated := func(list []obj, key, want string) []obj {
-		out := []obj{}
-		for _, o := range list {
-			if want == "" || want == "all" || o[key] == want {
-				out = append(out, o)
-			}
-		}
-		if by := q.Get("order_by"); strings.HasSuffix(by, "_at") && q.Get("sort") == "desc" {
-			sort.SliceStable(out, func(i, j int) bool { s, _ := out[i][by].(string); t, _ := out[j][by].(string); return s > t })
-		}
-		if size, _ := strconv.Atoi(q.Get("per_page")); size > 0 {
-			page, _ := strconv.Atoi(q.Get("page"))
-			first := min(len(out), max(0, page-1)*size)
-			out = out[first:min(len(out), first+size)]
-		}
-		return out
-	}
+	rq.parts = strings.Split(m[1], "/")
 	if r.Method != http.MethodGet {
 		body, _ := io.ReadAll(r.Body)
 		var sent obj
@@ -217,137 +162,252 @@ func (f *fakeGitLab) serve(w http.ResponseWriter, r *http.Request) {
 		sent["path"] = m[1]
 		f.posted = append(f.posted, sent)
 	}
+	// The routes in order: the first that matches answers.
+	if !rq.routeProjectAndMergeRequests() {
+		rq.routePipelinesIssuesAndMembers()
+	}
+}
+
+// fakeRequest is one request to the fake GitLab, with the path's parts after the project.
+type fakeRequest struct {
+	f     *fakeGitLab
+	w     http.ResponseWriter
+	r     *http.Request
+	q     url.Values
+	parts []string
+}
+
+func (rq *fakeRequest) answer(status int, v any) {
+	w := rq.w
+	w.Header().Set("Content-Type", "application/json")
+	for k, vs := range rq.f.header {
+		w.Header()[k] = vs
+	}
+	body, _ := json.Marshal(v)
+	// GitLab's Rack ETag: a weak one over the body, and 304 for a GET that sends it back.
+	if rq.r.Method == http.MethodGet && status == 200 {
+		etag := fmt.Sprintf(`W/"%x"`, sha256.Sum256(body))
+		w.Header().Set("ETag", etag)
+		if rq.r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
+	w.WriteHeader(status)
+	rq.f.sent += len(body)
+	_, _ = w.Write(body)
+}
+
+func (rq *fakeRequest) notFound() { rq.answer(404, obj{"message": "404 Not found"}) }
+
+// one answers the item of list whose key is n, or 404.
+func (rq *fakeRequest) one(list []obj, key, n string) {
+	if o, ok := byIID(list, key, n); ok {
+		rq.answer(200, o)
+		return
+	}
+	rq.notFound()
+}
+
+func (rq *fakeRequest) groupMember(id string) {
+	if n, _ := strconv.Atoi(id); rq.f.groupMember[n] {
+		rq.answer(200, obj{"id": n, "access_level": 30})
+		return
+	}
+	rq.notFound()
+}
+
+func byIID(list []obj, key string, n string) (obj, bool) {
+	for _, o := range list {
+		if strconv.Itoa(o[key].(int)) == n {
+			return o, true
+		}
+	}
+	return nil, false
+}
+
+// atHead is whether this request sent merge request iid's head sha.
+func (rq *fakeRequest) atHead(iid string) bool {
+	f := rq.f
+	o, ok := byIID(f.mrs, "iid", iid)
+	return ok && len(f.posted) > 0 && f.posted[len(f.posted)-1]["sha"] == o["sha"]
+}
+
+// stated is list's items in that state, in the order asked for and the page asked for, as
+// GitLab answers.
+func (rq *fakeRequest) stated(list []obj, key, want string) []obj {
+	q := rq.q
+	out := []obj{}
+	for _, o := range list {
+		if want == "" || want == "all" || o[key] == want {
+			out = append(out, o)
+		}
+	}
+	if by := q.Get("order_by"); strings.HasSuffix(by, "_at") && q.Get("sort") == "desc" {
+		sort.SliceStable(out, func(i, j int) bool { s, _ := out[i][by].(string); t, _ := out[j][by].(string); return s > t })
+	}
+	if size, _ := strconv.Atoi(q.Get("per_page")); size > 0 {
+		page, _ := strconv.Atoi(q.Get("page"))
+		first := min(len(out), max(0, page-1)*size)
+		out = out[first:min(len(out), first+size)]
+	}
+	return out
+}
+
+// is is whether the path has n parts and the first is first.
+func (rq *fakeRequest) is(n int, first string) bool {
+	return len(rq.parts) == n && rq.parts[0] == first
+}
+
+// routeProjectAndMergeRequests answers the project, its merge requests, writes of notes and
+// a job's trace; false when none of them matches.
+func (rq *fakeRequest) routeProjectAndMergeRequests() bool {
+	f, parts, q, post := rq.f, rq.parts, rq.q, rq.r.Method == http.MethodPost
 	switch {
 	case len(parts) == 1 && parts[0] == "":
-		answer(200, obj{"id": projectID, "path_with_namespace": project, "default_branch": "main"})
-	case len(parts) == 1 && parts[0] == "merge_requests" && r.Method == http.MethodPost:
-		answer(201, mrJSON(12, "agent/issue-2", alex, nil))
-	case len(parts) == 5 && parts[0] == "merge_requests" && parts[2] == "discussions" && parts[4] == "notes" && r.Method == http.MethodPost:
-		answer(201, obj{"id": 901, "body": "x"})
-	case len(parts) == 3 && parts[0] == "issues" && parts[2] == "notes" && r.Method == http.MethodGet:
-		answer(200, []obj{{"id": 50, "body": "added ~bug", "system": true, "author": alex},
+		rq.answer(200, obj{"id": projectID, "path_with_namespace": project, "default_branch": "main"})
+	case rq.is(1, "merge_requests") && post:
+		rq.answer(201, mrJSON(12, "agent/issue-2", alex, nil))
+	case rq.is(5, "merge_requests") && parts[2] == "discussions" && parts[4] == "notes" && post:
+		rq.answer(201, obj{"id": 901, "body": "x"})
+	case rq.is(3, "issues") && parts[2] == "notes" && rq.r.Method == http.MethodGet:
+		rq.answer(200, []obj{{"id": 50, "body": "added ~bug", "system": true, "author": alex},
 			{"id": 51, "body": "Please also do this.", "author": stranger}, {"id": 52, "body": "Yes, do.", "author": dev}})
-	case len(parts) == 3 && parts[0] == "issues" && parts[2] == "resource_label_events":
+	case rq.is(3, "issues") && parts[2] == "resource_label_events":
 		id, _ := strconv.Atoi(parts[1])
-		answer(200, orEmpty(f.labelled[id]))
-	case len(parts) == 1 && parts[0] == "merge_requests":
-		answer(200, whose(stated(f.mrs, "state", q.Get("state")), q))
-	case len(parts) == 2 && parts[0] == "merge_requests":
-		if o, ok := byIID(f.mrs, "iid", parts[1]); ok {
-			answer(200, o)
-			return
-		}
-		answer(404, obj{"message": "404 Not found"})
-	case len(parts) == 3 && parts[0] == "merge_requests" && (parts[2] == "merge" || parts[2] == "approve") && !atHead(parts[1]):
+		rq.answer(200, orEmpty(f.labelled[id]))
+	case rq.is(1, "merge_requests"):
+		rq.answer(200, whose(rq.stated(f.mrs, "state", q.Get("state")), q))
+	case rq.is(2, "merge_requests"):
+		rq.one(f.mrs, "iid", parts[1])
+	case rq.is(3, "merge_requests") && (parts[2] == "merge" || parts[2] == "approve") && !rq.atHead(parts[1]):
 		// GitLab's answer to a sha that is not the head.
-		answer(409, obj{"message": "SHA does not match HEAD of source branch"})
-	case len(parts) == 3 && parts[0] == "merge_requests" && parts[2] == "merge" && r.Method == http.MethodPut:
-		answer(200, obj{"iid": 1, "state": "merged", "merge_commit_sha": "merged1"})
-	case len(parts) == 3 && parts[0] == "merge_requests" && parts[2] == "diffs":
+		rq.answer(409, obj{"message": "SHA does not match HEAD of source branch"})
+	case rq.is(3, "merge_requests") && parts[2] == "merge" && rq.r.Method == http.MethodPut:
+		rq.answer(200, obj{"iid": 1, "state": "merged", "merge_commit_sha": "merged1"})
+	case rq.is(3, "merge_requests") && parts[2] == "diffs":
 		id, _ := strconv.Atoi(parts[1])
-		answer(200, stated(orEmpty(f.diffs[id]), "", ""))
-	case len(parts) == 3 && parts[0] == "merge_requests" && parts[2] == "discussions":
+		rq.answer(200, rq.stated(orEmpty(f.diffs[id]), "", ""))
+	case rq.is(3, "merge_requests") && parts[2] == "discussions":
 		id, _ := strconv.Atoi(parts[1])
-		answer(200, orEmpty(f.discuss[id]))
-	case len(parts) == 3 && parts[0] == "merge_requests" && parts[2] == "approve" && r.Method == http.MethodPost:
-		answer(201, obj{"id": 1})
-	case len(parts) == 3 && parts[0] == "pipelines" && parts[2] == "retry" && r.Method == http.MethodPost:
-		answer(201, obj{"id": 100, "status": "pending", "web_url": "https://gitlab.test/p/100"})
-	case len(parts) == 3 && parts[0] == "jobs" && parts[2] == "trace":
+		rq.answer(200, orEmpty(f.discuss[id]))
+	case rq.is(3, "merge_requests") && parts[2] == "approve" && post:
+		rq.answer(201, obj{"id": 1})
+	case rq.is(3, "pipelines") && parts[2] == "retry" && post:
+		rq.answer(201, obj{"id": 100, "status": "pending", "web_url": "https://gitlab.test/p/100"})
+	case rq.is(3, "jobs") && parts[2] == "trace":
 		id, _ := strconv.Atoi(parts[1])
-		w.WriteHeader(200)
-		_, _ = io.WriteString(w, f.traces[id])
-	case len(parts) == 3 && parts[2] == "notes" && r.Method == http.MethodPost:
-		answer(201, obj{"id": 900, "body": "x"})
-	case len(parts) == 1 && parts[0] == "pipelines" && q.Get("scope") == "finished":
-		done := []obj{}
-		for _, p := range f.pipes {
-			if finished(fmt.Sprint(p["status"])) {
-				done = append(done, p)
-			}
-		}
-		answer(200, stated(done, "", ""))
-	case len(parts) == 1 && parts[0] == "pipelines":
-		answer(200, stated(f.pipes, "status", q.Get("status")))
-	case len(parts) == 1 && parts[0] == "deployments" && q.Get("updated_after") != "":
-		// GitLab's updated_after and environment, newest updated first (#5244).
-		out := []obj{}
-		for _, d := range orEmpty(f.deploys) {
-			env, _ := d["environment"].(obj)
-			if up, _ := d["updated_at"].(string); up >= q.Get("updated_after") && (q.Get("environment") == "" || env["name"] == q.Get("environment")) {
-				out = append(out, d)
-			}
-		}
-		sort.SliceStable(out, func(i, j int) bool { return fmt.Sprint(out[i]["updated_at"]) > fmt.Sprint(out[j]["updated_at"]) })
-		answer(200, out)
-	case len(parts) == 1 && parts[0] == "deployments":
-		// GitLab's finished_after and finished_before, by finished_at.
-		out := []obj{}
-		for _, d := range stated(orEmpty(f.deploys), "status", q.Get("status")) {
-			done, _ := d["finished_at"].(string)
-			if (q.Get("finished_after") == "" || done > q.Get("finished_after")) && (q.Get("finished_before") == "" || done != "" && done < q.Get("finished_before")) {
-				out = append(out, d)
-			}
-		}
-		answer(200, out)
-	case len(parts) == 2 && parts[0] == "deployments":
-		if o, ok := byIID(f.deploys, "id", parts[1]); ok {
-			answer(200, o)
-			return
-		}
-		answer(404, obj{"message": "404 Not found"})
-	case len(parts) == 2 && parts[0] == "pipelines":
-		if o, ok := byIID(f.pipes, "id", parts[1]); ok {
-			answer(200, o)
-			return
-		}
-		answer(404, obj{"message": "404 Not found"})
-	case len(parts) == 3 && parts[0] == "pipelines" && parts[2] == "jobs":
-		id, _ := strconv.Atoi(parts[1])
-		jobs := f.jobs[id]
-		if jobs == nil {
-			jobs = []obj{}
-		}
-		if q.Get("scope[]") == "failed" {
-			jobs = stated(jobs, "status", "failed")
-		}
-		answer(200, jobs)
-	case len(parts) == 4 && parts[0] == "repository" && parts[1] == "commits" && parts[3] == "merge_requests":
-		list := f.commits[parts[2]]
-		if list == nil {
-			list = []obj{}
-		}
-		answer(200, list)
-	case len(parts) == 1 && parts[0] == "issues":
-		answer(200, whose(stated(f.issues, "state", q.Get("state")), q))
-	case len(parts) == 2 && parts[0] == "issues":
-		if o, ok := byIID(f.issues, "iid", parts[1]); ok {
-			answer(200, o)
-			return
-		}
-		answer(404, obj{"message": "404 Not found"})
-	case len(parts) == 1 && parts[0] == "events":
-		answer(200, f.activity)
-	case len(parts) == 2 && parts[0] == "members" && parts[1] == "all":
-		f.memberLists++
-		out := []obj{}
-		for _, v := range q["user_ids[]"] {
-			id, _ := strconv.Atoi(v)
-			if level, ok := f.members[id]; ok {
-				out = append(out, obj{"id": id, "access_level": level})
-			}
-		}
-		answer(200, out)
-	case len(parts) == 3 && parts[0] == "members" && parts[1] == "all":
-		id, _ := strconv.Atoi(parts[2])
-		if level, ok := f.members[id]; ok {
-			answer(200, obj{"id": id, "access_level": level})
-			return
-		}
-		answer(404, obj{"message": "404 Not found"})
+		rq.w.WriteHeader(200)
+		_, _ = io.WriteString(rq.w, f.traces[id])
+	case len(parts) == 3 && parts[2] == "notes" && post:
+		rq.answer(201, obj{"id": 900, "body": "x"})
 	default:
-		answer(404, obj{"message": "404 Not found"})
+		return false
 	}
+	return true
+}
+
+// routePipelinesIssuesAndMembers answers pipelines, deployments, commits, issues, events and
+// members, and 404 for the rest.
+func (rq *fakeRequest) routePipelinesIssuesAndMembers() {
+	f, parts, q := rq.f, rq.parts, rq.q
+	switch {
+	case rq.is(1, "pipelines") && q.Get("scope") == "finished":
+		rq.finishedPipelines()
+	case rq.is(1, "pipelines"):
+		rq.answer(200, rq.stated(f.pipes, "status", q.Get("status")))
+	case rq.is(1, "deployments") && q.Get("updated_after") != "":
+		rq.deploymentsUpdated()
+	case rq.is(1, "deployments"):
+		rq.deploymentsFinished()
+	case rq.is(2, "deployments"):
+		rq.one(f.deploys, "id", parts[1])
+	case rq.is(2, "pipelines"):
+		rq.one(f.pipes, "id", parts[1])
+	case rq.is(3, "pipelines") && parts[2] == "jobs":
+		rq.pipelineJobs()
+	case rq.is(4, "repository") && parts[1] == "commits" && parts[3] == "merge_requests":
+		rq.answer(200, orEmpty(f.commits[parts[2]]))
+	case rq.is(1, "issues"):
+		rq.answer(200, whose(rq.stated(f.issues, "state", q.Get("state")), q))
+	case rq.is(2, "issues"):
+		rq.one(f.issues, "iid", parts[1])
+	case rq.is(1, "events"):
+		rq.answer(200, f.activity)
+	case rq.is(2, "members") && parts[1] == "all":
+		rq.membersListed()
+	case rq.is(3, "members") && parts[1] == "all":
+		rq.member(parts[2])
+	default:
+		rq.notFound()
+	}
+}
+
+func (rq *fakeRequest) finishedPipelines() {
+	done := []obj{}
+	for _, p := range rq.f.pipes {
+		if finished(fmt.Sprint(p["status"])) {
+			done = append(done, p)
+		}
+	}
+	rq.answer(200, rq.stated(done, "", ""))
+}
+
+// deploymentsUpdated is GitLab's updated_after and environment, newest updated first (#5244).
+func (rq *fakeRequest) deploymentsUpdated() {
+	q := rq.q
+	out := []obj{}
+	for _, d := range orEmpty(rq.f.deploys) {
+		env, _ := d["environment"].(obj)
+		if up, _ := d["updated_at"].(string); up >= q.Get("updated_after") && (q.Get("environment") == "" || env["name"] == q.Get("environment")) {
+			out = append(out, d)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return fmt.Sprint(out[i]["updated_at"]) > fmt.Sprint(out[j]["updated_at"]) })
+	rq.answer(200, out)
+}
+
+// deploymentsFinished is GitLab's finished_after and finished_before, by finished_at.
+func (rq *fakeRequest) deploymentsFinished() {
+	q := rq.q
+	out := []obj{}
+	for _, d := range rq.stated(orEmpty(rq.f.deploys), "status", q.Get("status")) {
+		done, _ := d["finished_at"].(string)
+		if (q.Get("finished_after") == "" || done > q.Get("finished_after")) && (q.Get("finished_before") == "" || done != "" && done < q.Get("finished_before")) {
+			out = append(out, d)
+		}
+	}
+	rq.answer(200, out)
+}
+
+func (rq *fakeRequest) pipelineJobs() {
+	id, _ := strconv.Atoi(rq.parts[1])
+	jobs := orEmpty(rq.f.jobs[id])
+	if rq.q.Get("scope[]") == "failed" {
+		jobs = rq.stated(jobs, "status", "failed")
+	}
+	rq.answer(200, jobs)
+}
+
+func (rq *fakeRequest) membersListed() {
+	rq.f.memberLists++
+	out := []obj{}
+	for _, v := range rq.q["user_ids[]"] {
+		id, _ := strconv.Atoi(v)
+		if level, ok := rq.f.members[id]; ok {
+			out = append(out, obj{"id": id, "access_level": level})
+		}
+	}
+	rq.answer(200, out)
+}
+
+func (rq *fakeRequest) member(raw string) {
+	id, _ := strconv.Atoi(raw)
+	if level, ok := rq.f.members[id]; ok {
+		rq.answer(200, obj{"id": id, "access_level": level})
+		return
+	}
+	rq.notFound()
 }
 
 func orEmpty(list []obj) []obj {

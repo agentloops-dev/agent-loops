@@ -833,46 +833,62 @@ func (g *RealGitLab) PipelineDetails(ctx context.Context, project string, p Pipe
 func (g *RealGitLab) IssueActivity(ctx context.Context, project string, kind IssueKind, since string) ([]IssueActivity, Listed, error) {
 	switch kind {
 	case IssueOpened:
-		path := fmt.Sprintf("projects/%s/issues?created_after=%s&order_by=created_at&sort=desc", pid(project), url.QueryEscape(since))
-		items, listed, err := newest(ctx, g, path, since, func(i issueJSON) string { return i.CreatedAt })
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var out []IssueActivity
-		for _, i := range items {
-			trusted, err := g.trusted(ctx, project, &i.Author)
-			if err != nil {
-				return nil, Listed{}, err
-			}
-			out = append(out, IssueActivity{ID: strconv.Itoa(i.IID), At: i.CreatedAt, Issue: i.issue(), Kind: IssueOpened, Trusted: trusted})
-		}
-		return out, listed, nil
+		return g.issuesOpened(ctx, project, since)
 	case IssueLabelled:
 		return g.labelled(ctx, project, since)
 	case IssueClosed:
-		path := fmt.Sprintf("projects/%s/issues?state=closed&updated_after=%s&order_by=updated_at&sort=desc", pid(project), url.QueryEscape(since))
-		items, listed, err := newest(ctx, g, path, since, func(i issueJSON) string { return i.UpdatedAt })
+		return g.issuesClosed(ctx, project, since)
+	}
+	return g.issuesCommented(ctx, project, since)
+}
+
+// issuesOpened is the issues created at or after since.
+func (g *RealGitLab) issuesOpened(ctx context.Context, project, since string) ([]IssueActivity, Listed, error) {
+	path := fmt.Sprintf("projects/%s/issues?created_after=%s&order_by=created_at&sort=desc", pid(project), url.QueryEscape(since))
+	items, listed, err := newest(ctx, g, path, since, func(i issueJSON) string { return i.CreatedAt })
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var out []IssueActivity
+	for _, i := range items {
+		trusted, err := g.trusted(ctx, project, &i.Author)
 		if err != nil {
 			return nil, Listed{}, err
 		}
-		var out []IssueActivity
-		for _, i := range items {
-			if i.ClosedAt == nil || mcpevents.Before(*i.ClosedAt, since) {
-				continue
-			}
-			trusted, err := g.trusted(ctx, project, i.ClosedBy)
-			if err != nil {
-				return nil, Listed{}, err
-			}
-			by := ""
-			if i.ClosedBy != nil {
-				by = i.ClosedBy.Username
-			}
-			out = append(out, IssueActivity{ID: strconv.Itoa(i.IID) + ":" + mcpevents.Normalized(*i.ClosedAt), At: *i.ClosedAt, Issue: i.issue(),
-				Kind: IssueClosed, By: by, Trusted: trusted})
-		}
-		return out, listed, nil
+		out = append(out, IssueActivity{ID: strconv.Itoa(i.IID), At: i.CreatedAt, Issue: i.issue(), Kind: IssueOpened, Trusted: trusted})
 	}
+	return out, listed, nil
+}
+
+// issuesClosed is the issues closed at or after since; the close time is in the id, so an
+// issue reopened and closed again is new.
+func (g *RealGitLab) issuesClosed(ctx context.Context, project, since string) ([]IssueActivity, Listed, error) {
+	path := fmt.Sprintf("projects/%s/issues?state=closed&updated_after=%s&order_by=updated_at&sort=desc", pid(project), url.QueryEscape(since))
+	items, listed, err := newest(ctx, g, path, since, func(i issueJSON) string { return i.UpdatedAt })
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var out []IssueActivity
+	for _, i := range items {
+		if i.ClosedAt == nil || mcpevents.Before(*i.ClosedAt, since) {
+			continue
+		}
+		trusted, err := g.trusted(ctx, project, i.ClosedBy)
+		if err != nil {
+			return nil, Listed{}, err
+		}
+		by := ""
+		if i.ClosedBy != nil {
+			by = i.ClosedBy.Username
+		}
+		out = append(out, IssueActivity{ID: strconv.Itoa(i.IID) + ":" + mcpevents.Normalized(*i.ClosedAt), At: *i.ClosedAt, Issue: i.issue(),
+			Kind: IssueClosed, By: by, Trusted: trusted})
+	}
+	return out, listed, nil
+}
+
+// issuesCommented is the comments on issues made at or after since.
+func (g *RealGitLab) issuesCommented(ctx context.Context, project, since string) ([]IssueActivity, Listed, error) {
 	notes, listed, err := g.notes(ctx, project, since)
 	if err != nil {
 		return nil, Listed{}, err
