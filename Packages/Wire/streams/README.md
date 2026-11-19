@@ -17,7 +17,8 @@ The same file is the input of both, so a difference between the clients is a fai
 | `session`, `host` | The chat the client has open, and the host its notifications come from. |
 | `start` | What the daemon held before step 0: `agents` (a list read) and `transcript` (a page read, from the first entry). |
 | `steps[i]` | `method`, `params`: one notification, as the daemon sent it. `after`: what a read gives right after it (same shape as `start`). |
-| `scenarios[]` | `name`, `ops`, `expect`: the step whose `after` the client must hold when the ops end (-1: `start`). `fault` (optional): the issue of a bug the scenario finds; both runners skip it, and the fix removes the field. |
+| `transcript.startEntries` (optional, in an `after`) | The read begins with the first n entries of `start`'s transcript, and `entries` lists only those after them. A long chat (`session-long.json`) writes its 2,000 turns once, not once a step. |
+| `scenarios[]` | `name`, `ops`, `expect`: the step whose `after` the client must hold when the ops end (-1: `start`). `fault` (optional): the issue of a bug the scenario finds; both runners skip it, and the fix removes the field. `tail` (optional): the client may let go of a long chat's oldest entries, as both do by design (`entriesKept`), but holds at least the last `tail` of them, and what it holds is the end of the daemon's transcript, each entry once and in order. |
 
 Ops:
 
@@ -34,7 +35,7 @@ arrive in order, so reorder is a notification arriving after the read that alrea
 
 A scenario is a few lines in `record.mjs`; a new session is a new function in it. Run
 `node Packages/Wire/streams/record.mjs` to write the files again, and commit them: no runner changes. A runner needs
-only the small surface of a client (`notify`, `catchUp`, `view`), so a later check (#6188, #6189) plays the same files
+only the small surface of a client (`notify`, `catchUp`, `view`), so a later check (#6188) plays the same files
 into another part of the client model by giving it that surface.
 
 `record.mjs` holds a stand-in for the daemon. When a type changes in `Packages/Wire/schema`, change the records there:
