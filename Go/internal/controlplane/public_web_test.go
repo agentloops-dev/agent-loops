@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
@@ -147,7 +146,7 @@ func dialPageOrWindow(direct, address, origin string) (*controllink.Lines, strin
 // kind with it from origin (a window's socket when empty), and returns the client's id and key.
 func pairThroughThePage(t *testing.T, s *Service, direct, address string, browser bool, kind, origin string) (string, []byte, error) {
 	t.Helper()
-	shown, err := s.Codes().Issue(context.Background(), false, browser, time.Minute)
+	shown, err := s.Codes().Issue(context.Background(), false, browser, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
