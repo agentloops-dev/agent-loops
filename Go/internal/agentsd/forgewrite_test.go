@@ -267,7 +267,9 @@ func TestForgeWritesReturnTheItem(t *testing.T) {
 
 	missing := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#404"}
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 20, "forge/label", wire.ForgeLabelRequest{Node: missing, Add: []string{"bug"}}), &done)
+	if err := json.Unmarshal(c.call(t, 20, "forge/label", wire.ForgeLabelRequest{Node: missing, Add: []string{"bug"}}), &done); err != nil {
+		t.Fatal(err)
+	}
 	if done.Item != nil {
 		t.Fatalf("a failed read after the write: item %+v", done.Item)
 	}
