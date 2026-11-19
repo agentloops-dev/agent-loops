@@ -57,6 +57,19 @@ Open issues: `is:open label:integration runtime`.
 | --- | --- | --- | --- | --- | --- |
 | Goose | — | removed (shelved, spec 050) | — | — | #44, closed as not planned |
 
+
+**Driver conformance (#6186).** `Go/internal/agentsd/acp/conformance_test.go` runs the ACP
+driver against a scripted runtime that crashes, hangs, sends bad messages, loses a
+conversation, asks a card after a cancel, and sends a very large message or stderr; it runs in
+`go:test`. `Go/scripts/go.sh test -tags live -run Live -v ./internal/agentsd/acp/` runs the
+checks that need no model against each adapter installed (the app's own copy, else `PATH`).
+The runtime check runs it after an adapter update.
+
+| Adapter | Live conformance | Last run |
+| --- | --- | --- |
+| Claude | passed: handshake, new session, resume of an unknown conversation (begins again), kill during a turn | 2026-11-19, `claude-agent-acp` of the app's toolset |
+| Codex | passed: the same | 2026-11-19, `codex-acp` of the app's toolset |
+| Grok, Copilot, Cursor, OpenCode | not run: not installed on the machine of the run | — |
 ## Runtime sign-in and allowance
 
 How the app reads a runtime's account, its plan and what is left of it.
