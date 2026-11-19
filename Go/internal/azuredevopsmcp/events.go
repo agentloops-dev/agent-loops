@@ -216,85 +216,124 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 	if bad != nil {
 		return nil, bad
 	}
-	if a.repo == "" {
-		repo, err := s.AzureDevOps.DefaultRepo(ctx)
-		if err != nil {
-			var ae *AzureDevOpsError
-			if errors.As(err, &ae) && ae.Kind == NotFound {
-				return nil, invalidParams("%s", ae.Message)
-			}
-			return nil, eventsError(err)
-		}
-		a.repo = repo
+	if bad := s.defaultRepo(ctx, &a); bad != nil {
+		return nil, bad
 	}
-	// mine: the token's owner's own open pull requests, asked once a poll (#2034).
-	var yours *Yours
-	if a.mine || e.Name == "review.requested" {
-		y, err := s.AzureDevOps.Yours(ctx, a.repo)
-		if err != nil {
-			return nil, eventsError(err)
-		}
-		yours = &y
+	yours, bad := s.yoursFor(ctx, e.Name, a)
+	if bad != nil {
+		return nil, bad
 	}
-	switch e.Name {
-	case "review.requested":
-		return s.pollDiff(e.Name, "requestedAt", a, p, func() ([]state, error) {
-			var out []state
-			for _, r := range yours.Reviews {
-				j := r.PR.json()
-				j["author"] = r.Author
-				out = append(out, state{mr: r.PR, on: new(true), json: j})
-			}
-			return out, nil
-		})
-	case "pr.blocked":
-		was := polls.CursorIDs(p)
-		return s.pollDiff(e.Name, "blockedAt", a, p, func() ([]state, error) {
-			prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo)
-			var out []state
-			for _, m := range prs {
-				if m.SkipsBlocked || (a.mine && !a.byMe(m.PR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
-					continue
-				}
-				bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", e.Name, a.repo, m.PR.Number), m.blocking(), was)
-				out = append(out, state{mr: m.PR, on: &bs.On, key: bs.Key, json: m.PR.json(), extra: bs.Data})
-			}
-			return out, err
-		})
-	case "pr.conflicted":
-		return s.pollDiff(e.Name, "conflictedAt", a, p, func() ([]state, error) {
-			prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo)
-			var out []state
-			for _, m := range prs {
-				if a.mine {
-					if a.byMe(m.PR, yours) {
-						out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
-					}
-				} else if a.anyone || m.Trusted {
-					out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
-				}
-			}
-			return out, err
-		})
-	case "pr.opened":
-		return s.pollDiff(e.Name, "openedAt", a, p, func() ([]state, error) {
-			prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo)
-			var out []state
-			for _, m := range prs {
-				if !a.anyone && !m.Trusted {
-					continue
-				}
-				ready := !m.Draft
-				j := m.PR.json()
-				j["author"] = m.Author
-				out = append(out, state{mr: m.PR, on: &ready, json: j})
-			}
-			return out, err
-		})
+	if key, states := s.prStates(ctx, e.Name, a, p, yours); states != nil {
+		return s.pollDiff(e.Name, key, a, p, states)
 	}
 	return s.poll(e, p, func(since string) ([]candidate, Listed, error) {
 		return candidates(ctx, s.AzureDevOps, e.Name, a, yours, since)
 	})
+}
+
+// defaultRepo sets a's repository to the default one when it names none.
+func (s *Events) defaultRepo(ctx context.Context, a *args) *rpcError {
+	if a.repo != "" {
+		return nil
+	}
+	repo, err := s.AzureDevOps.DefaultRepo(ctx)
+	if err != nil {
+		var ae *AzureDevOpsError
+		if errors.As(err, &ae) && ae.Kind == NotFound {
+			return invalidParams("%s", ae.Message)
+		}
+		return eventsError(err)
+	}
+	a.repo = repo
+	return nil
+}
+
+// yoursFor is the token's owner's own open pull requests, asked once a poll (#2034), when
+// the event needs them (mine, or review.requested); else nil.
+func (s *Events) yoursFor(ctx context.Context, name string, a args) (*Yours, *rpcError) {
+	if !a.mine && name != "review.requested" {
+		return nil, nil
+	}
+	y, err := s.AzureDevOps.Yours(ctx, a.repo)
+	if err != nil {
+		return nil, eventsError(err)
+	}
+	return &y, nil
+}
+
+// prStates is how an event that diffs pull requests' states reads them, with the name of
+// the time its data has; nil for an event that does not.
+func (s *Events) prStates(ctx context.Context, name string, a args, p pollParams, yours *Yours) (string, func() ([]state, error)) {
+	switch name {
+	case "review.requested":
+		return "requestedAt", func() ([]state, error) { return requestedStates(yours), nil }
+	case "pr.blocked":
+		was := polls.CursorIDs(p)
+		return "blockedAt", func() ([]state, error) { return s.blockedStates(ctx, name, a, yours, was) }
+	case "pr.conflicted":
+		return "conflictedAt", func() ([]state, error) { return s.conflictedStates(ctx, a, yours) }
+	case "pr.opened":
+		return "openedAt", func() ([]state, error) { return s.openedStates(ctx, a) }
+	}
+	return "", nil
+}
+
+// requestedStates are the pull requests whose review the token's owner was asked for.
+func requestedStates(yours *Yours) []state {
+	var out []state
+	for _, r := range yours.Reviews {
+		j := r.PR.json()
+		j["author"] = r.Author
+		out = append(out, state{mr: r.PR, on: new(true), json: j})
+	}
+	return out
+}
+
+// blockedStates are the open pull requests and whether each is blocked; was are the ids
+// the cursor had.
+func (s *Events) blockedStates(ctx context.Context, name string, a args, yours *Yours, was []string) ([]state, error) {
+	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo)
+	var out []state
+	for _, m := range prs {
+		if m.SkipsBlocked || (a.mine && !a.byMe(m.PR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
+			continue
+		}
+		bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", name, a.repo, m.PR.Number), m.blocking(), was)
+		out = append(out, state{mr: m.PR, on: &bs.On, key: bs.Key, json: m.PR.json(), extra: bs.Data})
+	}
+	return out, err
+}
+
+// conflictedStates are the open pull requests and whether each is in conflict.
+func (s *Events) conflictedStates(ctx context.Context, a args, yours *Yours) ([]state, error) {
+	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo)
+	var out []state
+	for _, m := range prs {
+		if a.mine {
+			if a.byMe(m.PR, yours) {
+				out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
+			}
+		} else if a.anyone || m.Trusted {
+			out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
+		}
+	}
+	return out, err
+}
+
+// openedStates are the open pull requests and whether each is ready (not a draft).
+func (s *Events) openedStates(ctx context.Context, a args) ([]state, error) {
+	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo)
+	var out []state
+	for _, m := range prs {
+		if !a.anyone && !m.Trusted {
+			continue
+		}
+		ready := !m.Draft
+		j := m.PR.json()
+		j["author"] = m.Author
+		out = append(out, state{mr: m.PR, on: &ready, json: j})
+	}
+	return out, err
 }
 
 func (s *Events) poll(e event, p pollParams, find func(since string) ([]candidate, Listed, error)) (map[string]any, *rpcError) {
@@ -359,101 +398,141 @@ func diffRef(_ string, repo string, n int) wire.Ref { return prRef(repo, n) }
 
 // candidates finds what an event may raise at or after since.
 func candidates(ctx context.Context, f AzureDevOps, name string, a args, yours *Yours, since string) ([]candidate, Listed, error) {
-	repo := a.repo
-	// mine: the owner's own pull request, active or completed or abandoned, trusted or not;
-	// else the trust filter (#728, #3797). fixes narrows every one by the work items it closes.
-	wanted := func(m PR, trusted bool) bool {
-		return a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) && a.closesOne(m) &&
-			(a.mine && a.byMe(m, yours) || !a.mine && (a.anyone || trusted))
-	}
 	if mcpevents.IsDeployEvent(name) {
 		list, err := deployCandidates(ctx, f, name, a)
 		return list, Listed{}, err
 	}
 	switch name {
 	case "run.completed":
-		builds, listed, err := f.CompletedBuilds(ctx, repo, a.pipeline, a.branch, a.run, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		// Its finish time in the id: a build run again (its failed jobs) is a new event.
-		var list []candidate
-		for _, b := range builds {
-			if b.At != "" && (a.anyone || b.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%s", repo, b.ID, b.At), Time: b.At,
-					Subject: runRef(repo, b.ID), Key: b.At,
-					Data: func() (map[string]any, error) {
-						deploys, err := f.BuildDeploys(ctx, repo, b.ID)
-						if err != nil {
-							return nil, err
-						}
-						return b.data(deploys), nil
-					}})
-			}
-		}
-		return list, listed, nil
+		return runCandidates(ctx, f, a, since)
 	case "deploy.waiting":
-		waiting, err := f.WaitingDeploys(ctx, repo, a.pipeline, a.branch)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var list []candidate
-		for _, w := range waiting {
-			if w.Since != "" && (a.anyone || w.Build.Trusted) {
-				list = append(list, candidate{EventID: "deploy.waiting:" + repo + ":" + w.key(), Time: w.Since,
-					Data:    func() (map[string]any, error) { return w.data(), nil },
-					Subject: runRef(repo, w.Build.ID), Key: strings.TrimPrefix(w.key(), fmt.Sprint(w.Build.ID)+":")})
-			}
-		}
-		return list, Listed{}, nil
+		list, err := waitingCandidates(ctx, f, a)
+		return list, Listed{}, err
 	case "review.comment":
-		comments, listed, err := f.ReviewComments(ctx, repo, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		var list []candidate
-		for _, c := range comments {
-			// Trust is the commenter's; mine only narrows the pull request (#3797).
-			m := c.PR
-			if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) &&
-				a.closesOne(m) && a.byMe(m, yours) && (a.anyone || c.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d:%d:%d", repo, c.PR.Number, c.ThreadID, c.ID), Time: at,
-					Data:    func() (map[string]any, error) { return c.data(), nil },
-					Subject: prRef(repo, c.PR.Number), Key: fmt.Sprintf("%d:%d", c.ThreadID, c.ID)})
-			}
-		}
-		return list, listed, nil
+		return commentCandidates(ctx, f, a, yours, since)
 	case "checks.failed":
-		failed, listed, err := f.FailedChecks(ctx, repo, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		// The newest failed build's time is in its id: run again and failed again, it is new.
-		var list []candidate
-		for _, d := range failed {
-			if at := mcpevents.Normalized(d.At); at != "" && wanted(d.PR, d.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%s:%s", repo, d.HeadSHA, at), Time: at,
-					Data:    func() (map[string]any, error) { return d.json(), nil },
-					Subject: prRef(repo, d.PR.Number), Key: d.HeadSHA + ":" + at})
-			}
-		}
-		return list, listed, nil
+		return failedCandidates(ctx, f, a, wantedPR(a, yours), since)
 	case "checks.passed":
-		passed, listed, err := f.PassedChecks(ctx, repo, since)
-		if err != nil {
-			return nil, Listed{}, err
-		}
-		// One a build or a status, at its time: a build run again that passes again is a new one.
-		var list []candidate
-		for _, d := range passed {
-			if at := mcpevents.Normalized(d.At); at != "" && wanted(d.PR, d.Trusted) {
-				list = append(list, candidate{EventID: fmt.Sprintf("checks.passed:%s:%s:%s:%s", repo, d.HeadSHA, d.Key, at), Time: at,
-					Data:    func() (map[string]any, error) { return d.json(), nil },
-					Subject: prRef(repo, d.PR.Number), Key: d.HeadSHA + ":" + d.Key + ":" + at})
-			}
-		}
-		return list, listed, nil
+		return passedCandidates(ctx, f, a, wantedPR(a, yours), since)
 	}
+	return closedCandidates(ctx, f, name, a, wantedPR(a, yours), since)
+}
+
+// wantedPR says whether an event of a pull request is wanted. mine: the owner's own pull
+// request, active or completed or abandoned, trusted or not; else the trust filter (#728,
+// #3797). fixes narrows every one by the work items it closes.
+func wantedPR(a args, yours *Yours) func(m PR, trusted bool) bool {
+	return func(m PR, trusted bool) bool {
+		return a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) && a.closesOne(m) &&
+			(a.mine && a.byMe(m, yours) || !a.mine && (a.anyone || trusted))
+	}
+}
+
+// runCandidates are the builds that completed at or after since.
+func runCandidates(ctx context.Context, f AzureDevOps, a args, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	builds, listed, err := f.CompletedBuilds(ctx, repo, a.pipeline, a.branch, a.run, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	// Its finish time in the id: a build run again (its failed jobs) is a new event.
+	var list []candidate
+	for _, b := range builds {
+		if b.At != "" && (a.anyone || b.Trusted) {
+			list = append(list, candidate{EventID: fmt.Sprintf("run.completed:%s:%d:%s", repo, b.ID, b.At), Time: b.At,
+				Subject: runRef(repo, b.ID), Key: b.At,
+				Data: func() (map[string]any, error) {
+					deploys, err := f.BuildDeploys(ctx, repo, b.ID)
+					if err != nil {
+						return nil, err
+					}
+					return b.data(deploys), nil
+				}})
+		}
+	}
+	return list, listed, nil
+}
+
+// waitingCandidates are the builds that wait for an approval.
+func waitingCandidates(ctx context.Context, f AzureDevOps, a args) ([]candidate, error) {
+	repo := a.repo
+	waiting, err := f.WaitingDeploys(ctx, repo, a.pipeline, a.branch)
+	if err != nil {
+		return nil, err
+	}
+	var list []candidate
+	for _, w := range waiting {
+		if w.Since != "" && (a.anyone || w.Build.Trusted) {
+			list = append(list, candidate{EventID: "deploy.waiting:" + repo + ":" + w.key(), Time: w.Since,
+				Data:    func() (map[string]any, error) { return w.data(), nil },
+				Subject: runRef(repo, w.Build.ID), Key: strings.TrimPrefix(w.key(), fmt.Sprint(w.Build.ID)+":")})
+		}
+	}
+	return list, nil
+}
+
+// commentCandidates are the review comments made at or after since.
+func commentCandidates(ctx context.Context, f AzureDevOps, a args, yours *Yours, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	comments, listed, err := f.ReviewComments(ctx, repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, c := range comments {
+		// Trust is the commenter's; mine only narrows the pull request (#3797).
+		m := c.PR
+		if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) &&
+			a.closesOne(m) && a.byMe(m, yours) && (a.anyone || c.Trusted) {
+			list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d:%d:%d", repo, c.PR.Number, c.ThreadID, c.ID), Time: at,
+				Data:    func() (map[string]any, error) { return c.data(), nil },
+				Subject: prRef(repo, c.PR.Number), Key: fmt.Sprintf("%d:%d", c.ThreadID, c.ID)})
+		}
+	}
+	return list, listed, nil
+}
+
+// failedCandidates are the pull requests whose checks failed at or after since.
+func failedCandidates(ctx context.Context, f AzureDevOps, a args, wanted func(PR, bool) bool, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	failed, listed, err := f.FailedChecks(ctx, repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	// The newest failed build's time is in its id: run again and failed again, it is new.
+	var list []candidate
+	for _, d := range failed {
+		if at := mcpevents.Normalized(d.At); at != "" && wanted(d.PR, d.Trusted) {
+			list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%s:%s", repo, d.HeadSHA, at), Time: at,
+				Data:    func() (map[string]any, error) { return d.json(), nil },
+				Subject: prRef(repo, d.PR.Number), Key: d.HeadSHA + ":" + at})
+		}
+	}
+	return list, listed, nil
+}
+
+// passedCandidates are the pull requests' builds and statuses that passed at or after since.
+func passedCandidates(ctx context.Context, f AzureDevOps, a args, wanted func(PR, bool) bool, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	passed, listed, err := f.PassedChecks(ctx, repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	// One a build or a status, at its time: a build run again that passes again is a new one.
+	var list []candidate
+	for _, d := range passed {
+		if at := mcpevents.Normalized(d.At); at != "" && wanted(d.PR, d.Trusted) {
+			list = append(list, candidate{EventID: fmt.Sprintf("checks.passed:%s:%s:%s:%s", repo, d.HeadSHA, d.Key, at), Time: at,
+				Data:    func() (map[string]any, error) { return d.json(), nil },
+				Subject: prRef(repo, d.PR.Number), Key: d.HeadSHA + ":" + d.Key + ":" + at})
+		}
+	}
+	return list, listed, nil
+}
+
+// closedCandidates are the pull requests merged (pr.merged) or else closed at or after since.
+func closedCandidates(ctx context.Context, f AzureDevOps, name string, a args, wanted func(PR, bool) bool, since string) ([]candidate, Listed, error) {
+	repo := a.repo
 	merged, closed, listed, err := f.ClosedPRs(ctx, repo, since)
 	if err != nil {
 		return nil, Listed{}, err
