@@ -127,29 +127,58 @@ type Thread struct {
 
 // group puts list (newest first) into threads, the newest first.
 func group(folder string, list []Summary) []Thread {
-	parent := make([]int, len(list))
+	sets := newDisjointSets(len(list))
+	joinByHeaders(sets, list)
+	joinBySubject(sets, list)
+	members := map[int][]int{}
+	var heads []int
+	for i := range list {
+		h := sets.find(i)
+		if _, ok := members[h]; !ok {
+			heads = append(heads, h)
+		}
+		members[h] = append(members[h], i)
+	}
+	out := make([]Thread, 0, len(heads))
+	for _, h := range heads {
+		out = append(out, threadOf(folder, list, members[h]))
+	}
+	return out
+}
+
+// disjointSets joins the indexes of one thread; each set's head is its lowest index.
+type disjointSets []int
+
+func newDisjointSets(n int) disjointSets {
+	parent := make(disjointSets, n)
 	for i := range parent {
 		parent[i] = i
 	}
-	var find func(int) int
-	find = func(i int) int {
-		if parent[i] != i {
-			parent[i] = find(parent[i])
-		}
-		return parent[i]
+	return parent
+}
+
+func (d disjointSets) find(i int) int {
+	if d[i] != i {
+		d[i] = d.find(d[i])
 	}
-	union := func(a, b int) {
-		if ra, rb := find(a), find(b); ra != rb {
-			parent[max(ra, rb)] = min(ra, rb)
-		}
+	return d[i]
+}
+
+func (d disjointSets) union(a, b int) {
+	if ra, rb := d.find(a), d.find(b); ra != rb {
+		d[max(ra, rb)] = min(ra, rb)
 	}
+}
+
+// joinByHeaders joins the mail that share a Message-ID, References or In-Reply-To id.
+func joinByHeaders(sets disjointSets, list []Summary) {
 	byID := map[string]int{}
 	join := func(i int, id string) {
 		if id == "" {
 			return
 		}
 		if j, ok := byID[id]; ok {
-			union(i, j)
+			sets.union(i, j)
 		} else {
 			byID[id] = i
 		}
@@ -163,64 +192,66 @@ func group(folder string, list []Summary) []Thread {
 			join(i, r)
 		}
 	}
+}
+
+// joinBySubject joins each mail that joins by subject to the first mail of the same subject
+// key: the first one that does not join by subject, else the first one that does.
+func joinBySubject(sets disjointSets, list []Summary) {
 	bySubject := map[string]int{}
 	for i, s := range list {
-		if !joinsBySubject(s) {
-			if k := subjectKey(s.Subject); k != "" {
-				if _, ok := bySubject[k]; !ok {
-					bySubject[k] = i
-				}
-			}
-		}
-	}
-	for i, s := range list {
 		if joinsBySubject(s) {
-			k := subjectKey(s.Subject)
-			if j, ok := bySubject[k]; ok {
-				union(i, j)
-			} else {
+			continue
+		}
+		if k := subjectKey(s.Subject); k != "" {
+			if _, ok := bySubject[k]; !ok {
 				bySubject[k] = i
 			}
 		}
 	}
-	members := map[int][]int{}
-	var heads []int
-	for i := range list {
-		h := find(i)
-		if _, ok := members[h]; !ok {
-			heads = append(heads, h)
+	for i, s := range list {
+		if !joinsBySubject(s) {
+			continue
 		}
-		members[h] = append(members[h], i)
+		k := subjectKey(s.Subject)
+		if j, ok := bySubject[k]; ok {
+			sets.union(i, j)
+		} else {
+			bySubject[k] = i
+		}
 	}
-	out := make([]Thread, 0, len(heads))
-	for _, h := range heads {
-		idx := members[h]
-		newest, oldest := list[idx[0]], list[idx[len(idx)-1]]
-		t := Thread{Newest: newest, Title: cmp.Or(newest.Subject, "(no subject)")}
-		for _, i := range idx {
-			if list[i].Unread {
-				t.Unread++
-			}
+}
+
+// threadOf is the thread of the mail idx of list (newest first) in folder.
+func threadOf(folder string, list []Summary, idx []int) Thread {
+	newest, oldest := list[idx[0]], list[idx[len(idx)-1]]
+	t := Thread{Newest: newest, Title: cmp.Or(newest.Subject, "(no subject)")}
+	for _, i := range idx {
+		if list[i].Unread {
+			t.Unread++
 		}
-		id := threadID{Folder: folder}
-		switch {
-		case len(oldest.refs) > 0:
-			id.Root = oldest.refs[0]
-		case len(oldest.inReplyTo) > 0:
-			id.Root = oldest.inReplyTo[0]
-		default:
-			id.Root = oldest.messageID
-		}
-		if id.Root == "" {
-			id.Message = oldest.ID
-		}
-		if k := subjectKey(oldest.Subject); k != "" && id.Root != "" {
-			id.Subject = k
-		}
-		t.ID = id.String()
-		out = append(out, t)
 	}
-	return out
+	t.ID = threadIDOf(folder, oldest).String()
+	return t
+}
+
+// threadIDOf is the id of the thread whose oldest mail is oldest.
+func threadIDOf(folder string, oldest Summary) threadID {
+	id := threadID{Folder: folder}
+	switch {
+	case len(oldest.refs) > 0:
+		id.Root = oldest.refs[0]
+	case len(oldest.inReplyTo) > 0:
+		id.Root = oldest.inReplyTo[0]
+	default:
+		id.Root = oldest.messageID
+	}
+	if id.Root == "" {
+		id.Message = oldest.ID
+	}
+	if k := subjectKey(oldest.Subject); k != "" && id.Root != "" {
+		id.Subject = k
+	}
+	return id
 }
 
 // listCursor is a list_conversations cursor: the folder's UIDVALIDITY, and the UID below
@@ -245,60 +276,17 @@ func (m *Mailbox) Threads(ctx context.Context, folder, cursor string, unreadOnly
 		if err := m.open(c, folder); err != nil {
 			return err
 		}
-		var before imap.UID
-		if cursor != "" {
-			v, b, ok := strings.Cut(cursor, ":")
-			vn, err1 := strconv.ParseUint(v, 10, 32)
-			bn, err2 := strconv.ParseUint(b, 10, 32)
-			if !ok || err1 != nil || err2 != nil || bn == 0 || uint32(vn) != m.validity {
-				return badCursor(cursor)
-			}
-			before = imap.UID(bn)
-		}
-		total, err := count(c, folder)
+		before, err := m.parseListCursor(cursor)
 		if err != nil {
 			return err
 		}
-		var list []Summary
-		if before == 0 {
-			var newest imap.SeqSet
-			if total > 0 {
-				newest.AddRange(total-min(total, window)+1, total)
-			}
-			list, err = m.summaries(c, folder, newest)
-		} else {
-			var older imap.UIDSet
-			older.AddRange(1, before-1)
-			var uids []imap.UID
-			if before > 1 {
-				uids, err = newestMatching(c, &imap.SearchCriteria{UID: []imap.UIDSet{older}}, total, window)
-			}
-			if err == nil {
-				list, err = m.summaries(c, folder, imap.UIDSetNum(uids...))
-			}
-		}
+		list, err := m.listWindow(c, folder, before, window)
 		if err != nil {
 			return err
 		}
-		var kept []Thread
-		for _, t := range group(folder, list) {
-			if unreadOnly && t.Unread == 0 {
-				continue
-			}
-			if before != 0 {
-				// A thread with newer mail was on an earlier page.
-				shown, err := m.newerInThread(c, t.ID, before)
-				if err != nil {
-					return err
-				}
-				if shown {
-					continue
-				}
-			}
-			kept = append(kept, t)
-			if len(kept) > n {
-				break
-			}
+		kept, err := m.keepThreads(c, group(folder, list), unreadOnly, before, n)
+		if err != nil {
+			return err
 		}
 		switch {
 		case len(kept) > n:
@@ -311,6 +299,73 @@ func (m *Mailbox) Threads(ctx context.Context, folder, cursor string, unreadOnly
 		return nil
 	})
 	return out, next, err
+}
+
+// parseListCursor is the UID below which a list_conversations page starts: 0 with no cursor.
+// A cursor of another UIDVALIDITY than the open folder's is bad.
+func (m *Mailbox) parseListCursor(cursor string) (imap.UID, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	v, b, ok := strings.Cut(cursor, ":")
+	vn, err1 := strconv.ParseUint(v, 10, 32)
+	bn, err2 := strconv.ParseUint(b, 10, 32)
+	if !ok || err1 != nil || err2 != nil || bn == 0 || uint32(vn) != m.validity {
+		return 0, badCursor(cursor)
+	}
+	return imap.UID(bn), nil
+}
+
+// listWindow is the summaries of the selected folder's newest window of mail, below the UID
+// before when it is not 0.
+func (m *Mailbox) listWindow(c *imapclient.Client, folder string, before imap.UID, window uint32) ([]Summary, error) {
+	total, err := count(c, folder)
+	if err != nil {
+		return nil, err
+	}
+	if before == 0 {
+		var newest imap.SeqSet
+		if total > 0 {
+			newest.AddRange(total-min(total, window)+1, total)
+		}
+		return m.summaries(c, folder, newest)
+	}
+	var older imap.UIDSet
+	older.AddRange(1, before-1)
+	var uids []imap.UID
+	if before > 1 {
+		uids, err = newestMatching(c, &imap.SearchCriteria{UID: []imap.UIDSet{older}}, total, window)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return m.summaries(c, folder, imap.UIDSetNum(uids...))
+}
+
+// keepThreads is the threads to list, at most n+1: with unreadOnly only those with unread
+// mail, and on a later page (before not 0) only those with no newer mail on an earlier page.
+func (m *Mailbox) keepThreads(c *imapclient.Client, threads []Thread, unreadOnly bool, before imap.UID, n int) ([]Thread, error) {
+	var kept []Thread
+	for _, t := range threads {
+		if unreadOnly && t.Unread == 0 {
+			continue
+		}
+		if before != 0 {
+			// A thread with newer mail was on an earlier page.
+			shown, err := m.newerInThread(c, t.ID, before)
+			if err != nil {
+				return nil, err
+			}
+			if shown {
+				continue
+			}
+		}
+		kept = append(kept, t)
+		if len(kept) > n {
+			break
+		}
+	}
+	return kept, nil
 }
 
 // newerInThread is true when the selected folder has a mail of the thread id at or above
@@ -358,48 +413,20 @@ func (m *Mailbox) ThreadMessages(ctx context.Context, id, cursor string, limit i
 	if err != nil {
 		return nil, "", err
 	}
-	var at time.Time
-	var atID string
-	if cursor != "" {
-		nanos, rest, ok := strings.Cut(cursor, " ")
-		n, err := strconv.ParseInt(nanos, 10, 64)
-		if !ok || err != nil || rest == "" {
-			return nil, "", badCursor(cursor)
-		}
-		at, atID = time.Unix(0, n).UTC(), rest
+	at, atID, err := parseReadCursor(cursor)
+	if err != nil {
+		return nil, "", err
 	}
-	folders := []string{t.Folder}
-	if t.Message == "" {
-		if list, err := m.Folders(ctx); err == nil {
-			for _, f := range list {
-				if f.Role == "sent" && f.Name != t.Folder {
-					folders = append(folders, f.Name)
-				}
-			}
-		}
-	}
+	folders := m.threadFolders(ctx, t)
 	n := int(limited(limit))
 	var out []Message
 	next := ""
 	err = m.with(ctx, func(c *imapclient.Client) error {
 		out, next = []Message{}, ""
-		var all []Summary
-		for i, folder := range folders {
-			list, err := m.threadIn(c, t, folder)
-			if err != nil {
-				if i > 0 {
-					continue // the Sent folder is extra
-				}
-				return err
-			}
-			all = append(all, list...)
+		all, err := m.threadInFolders(c, t, folders)
+		if err != nil {
+			return err
 		}
-		slices.SortFunc(all, func(a, b Summary) int {
-			if c := b.Date.Compare(a.Date); c != 0 {
-				return c
-			}
-			return strings.Compare(b.ID, a.ID)
-		})
 		if atID != "" {
 			all = slices.DeleteFunc(all, func(s Summary) bool { return !older(s, at, atID) })
 		}
@@ -407,11 +434,65 @@ func (m *Mailbox) ThreadMessages(ctx context.Context, id, cursor string, limit i
 			next = readCursor(all[n-1])
 			all = all[:n]
 		}
-		var err error
 		out, err = m.texts(c, all)
 		return err
 	})
 	return out, next, err
+}
+
+// parseReadCursor is the date and id of a read_messages cursor: zero with no cursor.
+func parseReadCursor(cursor string) (time.Time, string, error) {
+	if cursor == "" {
+		return time.Time{}, "", nil
+	}
+	nanos, rest, ok := strings.Cut(cursor, " ")
+	n, err := strconv.ParseInt(nanos, 10, 64)
+	if !ok || err != nil || rest == "" {
+		return time.Time{}, "", badCursor(cursor)
+	}
+	return time.Unix(0, n).UTC(), rest, nil
+}
+
+// threadFolders is the folders to read thread t in: its own, and the Sent folders when t is
+// more than one message.
+func (m *Mailbox) threadFolders(ctx context.Context, t threadID) []string {
+	folders := []string{t.Folder}
+	if t.Message != "" {
+		return folders
+	}
+	list, err := m.Folders(ctx)
+	if err != nil {
+		return folders
+	}
+	for _, f := range list {
+		if f.Role == "sent" && f.Name != t.Folder {
+			folders = append(folders, f.Name)
+		}
+	}
+	return folders
+}
+
+// threadInFolders is thread t's mail in folders, the newest first. An error in a folder after
+// the first (the Sent folder, which is extra) leaves that folder out.
+func (m *Mailbox) threadInFolders(c *imapclient.Client, t threadID, folders []string) ([]Summary, error) {
+	var all []Summary
+	for i, folder := range folders {
+		list, err := m.threadIn(c, t, folder)
+		if err != nil {
+			if i > 0 {
+				continue // the Sent folder is extra
+			}
+			return nil, err
+		}
+		all = append(all, list...)
+	}
+	slices.SortFunc(all, func(a, b Summary) int {
+		if c := b.Date.Compare(a.Date); c != 0 {
+			return c
+		}
+		return strings.Compare(b.ID, a.ID)
+	})
+	return all, nil
 }
 
 // threadIn is the thread's newest mail in folder, without text.

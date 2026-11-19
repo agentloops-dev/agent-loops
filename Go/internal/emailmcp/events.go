@@ -301,34 +301,19 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 	if bad != nil {
 		return nil, bad
 	}
-	var c cursor
 	if p.FirstPoll() {
-		folders, err := s.watched(ctx, a.folder)
-		if err != nil {
-			return nil, eventsError(err)
-		}
-		for _, folder := range folders {
-			c.Places = append(c.Places, place{Folder: folder})
-		}
-	} else if c, bad = decodeCursor(p.Cursor, a); bad != nil {
+		return s.firstPoll(ctx, a)
+	}
+	c, bad := decodeCursor(p.Cursor, a)
+	if bad != nil {
 		return nil, bad
 	}
-
 	out := []any{}
 	more, allLive, budget := false, true, p.Limit()
 	for i := range c.Places {
 		at := &c.Places[i]
 		changes, live := s.Watchers.Folder(at.Folder).State()
 		allLive = allLive && live
-		if p.FirstPoll() {
-			mark, err := s.Mailbox.Mark(ctx, at.Folder)
-			if err != nil {
-				return nil, eventsError(err)
-			}
-			s.remember(at.Folder, live, changes, mark)
-			at.Validity, at.UID = mark.Validity, uint32(mark.Next)-1
-			continue
-		}
 		if more || s.unchanged(at.Folder, live, changes, *at) {
 			continue // after a full page, the next poll goes on
 		}
@@ -336,41 +321,86 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 			more = true
 			continue
 		}
-		found, mark, folderMore, err := s.Mailbox.Since(ctx, at.Folder, at.Validity, imap.UID(at.UID), budget)
+		events, folderMore, used, err := s.pollPlace(ctx, at, a, live, changes, budget)
+		if err != nil {
+			return nil, eventsError(err)
+		}
+		more, budget = folderMore, budget-used
+		out = append(out, events...)
+	}
+	return pollReply(out, c, more, allLive), nil
+}
+
+// firstPoll starts a cursor at the end of each watched folder, with no events.
+func (s *Events) firstPoll(ctx context.Context, a args) (map[string]any, *rpcError) {
+	folders, err := s.watched(ctx, a.folder)
+	if err != nil {
+		return nil, eventsError(err)
+	}
+	var c cursor
+	for _, folder := range folders {
+		c.Places = append(c.Places, place{Folder: folder})
+	}
+	allLive := true
+	for i := range c.Places {
+		at := &c.Places[i]
+		changes, live := s.Watchers.Folder(at.Folder).State()
+		allLive = allLive && live
+		mark, err := s.Mailbox.Mark(ctx, at.Folder)
 		if err != nil {
 			return nil, eventsError(err)
 		}
 		s.remember(at.Folder, live, changes, mark)
-		if mark.Validity != at.Validity {
-			// The server renumbered the folder: start it again from now, and say mail may be missed.
-			at.Validity, at.UID = mark.Validity, uint32(mark.Next)-1
-			continue
-		}
-		more, budget = folderMore, budget-len(found)
-		if !folderMore && mark.Next > 0 {
-			at.UID = max(at.UID, uint32(mark.Next)-1) // past mail deleted before it was seen, too
-		}
-		for _, m := range found {
-			at.UID = max(at.UID, uint32(m.uid))
-			if !a.match(m) {
-				continue
-			}
-			event := map[string]any{
-				"eventId":   fmt.Sprintf("%s:%s", EventName, m.ID),
-				"name":      EventName,
-				"timestamp": m.Date.Format(time.RFC3339),
-				"data": map[string]any{"id": m.ID, "folder": m.Folder, "from": m.From, "to": m.To,
-					"subject": m.Subject, "date": m.Date.Format(time.RFC3339), "authenticated": m.Authenticated},
-			}
-			event["sender"] = senderOf(m)
-			out = append(out, mcpevents.Enveloped(event, s.messageRef(m), ""))
+		at.Validity, at.UID = mark.Validity, uint32(mark.Next)-1
+	}
+	return pollReply([]any{}, c, false, allLive), nil
+}
+
+// pollPlace reads at most budget new mail of the folder at, moves at past it, and gives the
+// events of the mail that match a, whether the folder has more, and how many mail it read.
+func (s *Events) pollPlace(ctx context.Context, at *place, a args, live bool, changes uint64, budget int) ([]any, bool, int, error) {
+	found, mark, folderMore, err := s.Mailbox.Since(ctx, at.Folder, at.Validity, imap.UID(at.UID), budget)
+	if err != nil {
+		return nil, false, 0, err
+	}
+	s.remember(at.Folder, live, changes, mark)
+	if mark.Validity != at.Validity {
+		// The server renumbered the folder: start it again from now, and say mail may be missed.
+		at.Validity, at.UID = mark.Validity, uint32(mark.Next)-1
+		return nil, false, 0, nil
+	}
+	if !folderMore && mark.Next > 0 {
+		at.UID = max(at.UID, uint32(mark.Next)-1) // past mail deleted before it was seen, too
+	}
+	var events []any
+	for _, m := range found {
+		at.UID = max(at.UID, uint32(m.uid))
+		if a.match(m) {
+			events = append(events, mcpevents.Enveloped(newMailEvent(m), s.messageRef(m), ""))
 		}
 	}
+	return events, folderMore, len(found), nil
+}
+
+// newMailEvent is the event of the new mail m, before its envelope.
+func newMailEvent(m Summary) map[string]any {
+	return map[string]any{
+		"eventId":   fmt.Sprintf("%s:%s", EventName, m.ID),
+		"name":      EventName,
+		"timestamp": m.Date.Format(time.RFC3339),
+		"data": map[string]any{"id": m.ID, "folder": m.Folder, "from": m.From, "to": m.To,
+			"subject": m.Subject, "date": m.Date.Format(time.RFC3339), "authenticated": m.Authenticated},
+		"sender": senderOf(m),
+	}
+}
+
+// pollReply is events/poll's result; the next poll comes sooner when IDLE holds every folder.
+func pollReply(out []any, c cursor, more, allLive bool) map[string]any {
 	pace := plainPollMs
 	if allLive {
 		pace = idlePollMs
 	}
-	return map[string]any{"events": out, "cursor": c.encoded(), "truncated": false, "hasMore": more, "nextPollMs": pace}, nil
+	return map[string]any{"events": out, "cursor": c.encoded(), "truncated": false, "hasMore": more, "nextPollMs": pace}
 }
 
 // messageRef is the ref of the mail an event is about (#4728): email:message:<mailbox>#<id>,
