@@ -263,11 +263,6 @@ export const hostLifecycleMethods = {
     if (host === this.macHostID.peek()) {
       void this.link.call("preferences/get", {}, host).then((said) => preferencesSaid(said))
         .catch(failed("preferences/get"));
-      // The Summary row (#3721): shown only while the daily summary is on, with its newest page.
-      void this.link.call("dailySummary/settings", {}, host).then((settings) => { this.dailySummary.value = settings; })
-        .catch(failed("dailySummary/settings"));
-      void this.link.call("summaries/list", {}, host).then((pages) => { this.summaryPages.value = pages; })
-        .catch(failed("summaries/list"));
     }
     // A card heard while the reads are on their way is laid over their older replies (#6291).
     const read = this.beginCardsRead(host);

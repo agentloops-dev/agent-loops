@@ -2,7 +2,7 @@
 import { preferencesSaid } from "../preferences";
 import { fromDesktopControl } from "../liveTile";
 import { batch } from "@preact/signals";
-import type { Agent, AgentRemovedNotification, ResumingNotification, BrowserFrame, BrowserPageState, DesktopControlLiveFrame, LiveFrame, ElicitationNotification, ElicitationRequest, EntryNotification, PermissionNotification, PermissionRequest, FolderSummary, TranscriptPage, WorkflowSummary, FilesChangedNotification, ShowFileNotification, WorkflowRemovedNotification, FolderRemovedNotification, DraftOptionsNotification, JSONValue, AccountProfile, WriteFailure, CloneNotification, LeaseSnapshot, HostedMCPSnapshot, MCPHealthSnapshot, DiskState, CapacityState, StoreNotes, EventsChange, PagesChangedNotification, PinsChangedNotification, Approval, Achievements, Multiplier, WorktreesSized, BackupState, DailySummarySettings, SummaryPage, PolicyState, MoveNotification, RequestUpdate, AgentChanges, ListRevision } from "../../protocol/generated";
+import type { Agent, AgentRemovedNotification, ResumingNotification, BrowserFrame, BrowserPageState, DesktopControlLiveFrame, LiveFrame, ElicitationNotification, ElicitationRequest, EntryNotification, PermissionNotification, PermissionRequest, FolderSummary, TranscriptPage, WorkflowSummary, FilesChangedNotification, ShowFileNotification, WorkflowRemovedNotification, FolderRemovedNotification, DraftOptionsNotification, JSONValue, AccountProfile, WriteFailure, CloneNotification, LeaseSnapshot, HostedMCPSnapshot, MCPHealthSnapshot, DiskState, CapacityState, StoreNotes, EventsChange, PagesChangedNotification, PinsChangedNotification, Approval, Achievements, Multiplier, WorktreesSized, BackupState, DailyChecksSettings, PolicyState, MoveNotification, RequestUpdate, AgentChanges, ListRevision } from "../../protocol/generated";
 import { takeEventsChange } from "../eventsWaiting";
 import { folderKey, folderPath as agentFolderPath } from "../groups";
 import { approvalID } from "../approvals";
@@ -185,11 +185,8 @@ export const reducerMethods = {
       case "preferences/changed":
         if (this.isMac(host)) preferencesSaid(params as Record<string, JSONValue>);
         return true;
-      case "dailySummary/changed":
-        if (this.isMac(host)) this.dailySummary.value = params as DailySummarySettings;
-        return true;
-      case "summaries/changed":
-        if (this.isMac(host)) this.summaryPages.value = params as SummaryPage[];
+      case "dailyChecks/changed":
+        if (this.isMac(host)) this.dailyChecks.value = params as DailyChecksSettings;
         return true;
       case "modes/changed":
         this.rememberedModes.value = { ...this.rememberedModes.value, [host]: params as Record<string, JSONValue> };

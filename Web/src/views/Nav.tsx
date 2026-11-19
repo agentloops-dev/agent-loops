@@ -23,7 +23,6 @@ import { ReportsPage, lensName } from "./Reports";
 import { lensAsked, lensTitle } from "../model/reports";
 import { BuildsPage } from "./Builds";
 import { DeliveryPage } from "./Delivery";
-import { nonePage, SummaryPage } from "./SummaryPage";
 import { WorkList, WorkPage } from "./Work";
 import { WorkReleasePage } from "./WorkRelease";
 import { WorkNext } from "./WorkNext";
@@ -158,8 +157,6 @@ function PageMark({ store, page }: { store: Store; page: NavPage }) {
     const low = runtimesLowWords(store);
     if (low) return <span class="small attention" title={low.detail} aria-hidden="true">●</span>;
   }
-  // Reports ▸ Summary (#3721, #5729): a dot while the newest page is unread, as the window's Summary row.
-  if (page.draw.kind === "summary" && store.summaryPages.value[0]?.unread) return <span class="dot" aria-label="Unread" />;
   if (page.id === "requests" && requestCount(store) > 0) return <span class="sub-app-count">{requestCount(store)}</span>;
   if (page.id === "reportPolicy" && policyNotSaved(store)) return <span class="quiet small attention">Not saved</span>;
   if (page.id === "policy" && orgPolicyNotSaved(store)) return <span class="quiet small attention">Not saved</span>;
@@ -191,17 +188,6 @@ function MachineNeedLine({ store, host }: { store: Store; host: string }) {
 function RuntimesLowLine({ store }: { store: Store }) {
   const low = runtimesLowWords(store);
   return low ? <p class="page-need quiet small" role="status" title={low.detail} aria-label={low.detail}>{low.words}</p> : null;
-}
-
-/** Under Reports ▸ Summary (#3721, #5729), in grey: the newest page's title, or "No summary yet", as the window's SummaryRowLabel. */
-function SummaryNewestLine({ store }: { store: Store }) {
-  return <p class="page-need quiet small">{store.summaryPages.value[0]?.title ?? nonePage}</p>;
-}
-
-/** Reports ▸ Summary is listed only while the daily summary is on, as the window's row (#3721); its address still opens it. */
-function summaryListed(store: Store, page: NavPage, open: string | undefined): boolean {
-  const settings = store.dailySummary.value;
-  return page.draw.kind !== "summary" || page.id === open || (!!settings && settings.mode !== "off");
 }
 
 const isEventsPage = (page: NavPage) => page.draw.kind === "activity" && page.draw.page === "events";
@@ -257,7 +243,7 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   const bounded = section === "machines" ? machinesGroup(store, more, making.length) : null;
   const groupRows = bounded?.rows;
   const list = (bounded ? boundedPages(pagesShown(section, admin, open?.id, bounded.pages), bounded.rows)
-    : pagesShown(section, admin, open?.id, more)).filter((p) => summaryListed(store, p, open?.id));
+    : pagesShown(section, admin, open?.id, more));
   const registering = useSignal(false);
   useUserScopeStatus(store, section === "status");
   // Work shown: the list it opens on read ahead (#4930), from this device's copy and then the machines, so it draws at once;
@@ -303,14 +289,13 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
                 </MachineRow>
               ) : (
                 <Fragment key={p.id}>
-                  <button type="button" class={`sub-app-row${p.id === open?.id ? " on" : ""}${p.under ? " under" : ""}${p.draw.kind === "summary" && store.summaryPages.value[0]?.unread ? " unread" : ""}`}
+                  <button type="button" class={`sub-app-row${p.id === open?.id ? " on" : ""}${p.under ? " under" : ""}`}
                     aria-current={p.id === open?.id ? "page" : undefined} onClick={() => go(pageRoute(section, p))}>
                     {p.title}
                     <PageMark store={store} page={p} />
                   </button>
                   {isRuntimesPage(p) && <RuntimesLowLine store={store} />}
                   {isEventsPage(p) && <EventsWaitingLine store={store} />}
-                  {p.draw.kind === "summary" && <SummaryNewestLine store={store} />}
                   {(p.draw.kind === "secrets" || p.draw.kind === "accounts") && <StatusListLastLine store={store} list={p.draw.kind} />}
                 </Fragment>
               ))}
@@ -353,7 +338,6 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
         : page.draw.kind === "report" ? <ReportsPage store={store} section={page.draw.section} down={down} />
         : page.draw.kind === "builds" ? <BuildsPage store={store} down={down} />
         : page.draw.kind === "delivery" ? <DeliveryPage store={store} down={down} />
-        : page.draw.kind === "summary" ? <SummaryPage store={store} />
         : page.draw.kind === "machines" ? (admin === true ? <><MachinesList store={store} /><h2 class="section-head">Everyone’s machines</h2><MachinesPage store={store} down={down} /></> : <MachinesList store={store} />)
         : page.draw.kind === "workflows" ? <AllWorkflows store={store} down={down} />
         // An item of a list Work no longer has (#/work/milestone/<ref>, #3878) opens the Work default's list.

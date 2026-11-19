@@ -277,7 +277,6 @@ func TestTheBriefSaysTheRestWhereItApplies(t *testing.T) {
 // of it instead (#3608).
 var toolsBriefSkips = map[string]string{
 	"hang_up":             "voice mode's own words (agents.go)",
-	"write_daily_summary": "the Daily summary workflow's prompt",
 	"check_folders":       "the Daily checks workflow's prompt",
 	"cancel_wait":         "every wait's answer",
 	"cancel_message":      "message_session's refusal of a second message",

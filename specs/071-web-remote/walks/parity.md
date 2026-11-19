@@ -34,7 +34,7 @@ Alex chose tiers on 2026-10-27 (#2796). Each row has a **Tier** cell after its F
 - the workflow page's Activity, Run Now, Approve and Enabled; today's cost in Activity and the limit banners;
 - the join and sign-in approval cards, pairing and sign-in, and the strips that say a machine or the control plane is away;
 - the Remote's trimmed Settings: This app (Voice, Notifications, Sidebar) and Help;
-- the daily summary: its Off / Summary control and time in Settings ▸ Agent Configuration ▸ Workflows, the summary page and its notice (Alex, 2026-11-01, #3192, #3351).
+- the daily checks: their Off / On control and how often in Settings ▸ Agent Configuration ▸ Workflows (Alex, 2026-11-01, #3192, #3351; the daily summary it was the control of went in #5853).
 - day-to-day coding from the Remote (Alex, 2026-11-07, #4030): the person's Secrets and For One Session, Accounts, the Machines group (its rows, New, Start, Stop, Delete, what a machine needs, and a machine's page), a machine's runtimes' **Sign In…** and **Update**, **Add Folder…** and **Clone Git URL…**, and **Move to Machine…**.
 - the Velocity page, the PRs that landed over time, under Reports after Achievements on the Remote (named Multiplier until #5736) (Alex, 2026-11-11, #4758).
 - Work ▸ Timeline, after Releases in the Work group; on a phone in portrait it is the list of epics (Alex, 2026-11-17, #6044: "Timeline is Work, and then goes on the Remotes").

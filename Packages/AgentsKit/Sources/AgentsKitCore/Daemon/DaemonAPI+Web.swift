@@ -90,13 +90,10 @@ public extension DaemonAPI {
                 // runtime with background processes is kept.
                 Row(Method.wakeSettings, params: Empty.self, result: WakeSettings.self, kind: .hostRequest),
                 Row(Method.wakeSet, params: WakeSettings.self, result: WakeSettings.self, kind: .hostRequest),
-                // The daily summary's Off / Summary control and its time (#3351), for Settings.
-                Row(Method.dailySummarySettings, params: Empty.self, result: DailySummarySettings.self, kind: .hostRequest),
-                Row(Method.dailySummarySetSettings, params: DailySummarySettings.self, result: DailySummarySettings.self,
+                // The daily checks' Off / On control and how often (#3355, #5853), for Settings.
+                Row(Method.dailyChecksSettings, params: Empty.self, result: DailyChecksSettings.self, kind: .hostRequest),
+                Row(Method.dailyChecksSetSettings, params: DailyChecksSettings.self, result: DailyChecksSettings.self,
                     kind: .hostRequest),
-                // The Summary row and page (#3721): the saved pages, and one page's Markdown.
-                Row(Method.summariesList, params: Empty.self, result: [SummaryPage].self, kind: .hostRequest),
-                Row(Method.summariesRead, params: SummaryReadRequest.self, result: SummaryPageText.self, kind: .hostRequest),
                 // Auto (#2658): the order and cells, what it would pick now.
                 Row(Method.autoState, params: Empty.self, result: AutoSettings.self, kind: .hostRequest),
                 Row(Method.autoSet, params: AutoSettings.self, result: AutoSettings.self, kind: .hostRequest),
@@ -784,9 +781,8 @@ public extension DaemonAPI {
                 Row(Notification.modesChanged, params: RememberedModes.self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.preferencesChanged, params: DisplayPreferences.self, result: Empty.self,
                     kind: .hostNotification),
-                Row(Notification.dailySummaryChanged, params: DailySummarySettings.self, result: Empty.self,
+                Row(Notification.dailyChecksChanged, params: DailyChecksSettings.self, result: Empty.self,
                     kind: .hostNotification),
-                Row(Notification.summariesChanged, params: [SummaryPage].self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.workflowChanged, params: WorkflowSummary.self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.workflowRemoved, params: WorkflowRemovedNotification.self, result: Empty.self,
                     kind: .hostNotification),

@@ -12,6 +12,8 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/coder/websocket"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 // slowHandler holds every lineage/sync until let go, and answers the rest at once.

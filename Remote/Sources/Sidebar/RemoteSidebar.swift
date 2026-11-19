@@ -277,12 +277,6 @@ struct RemoteSidebar: View {
                     HStack { Text("Velocity"); Spacer() }
                         .accessibilityHint("The pull requests that landed, over time")
                         .activityIcon("arrow.triangle.merge").appText(.supporting).paperTag(SidebarItem.velocity)
-                    // The daily summary's page (#3721), a report too, while the daily summary is on.
-                    if model.dailySummarySettings?.mode.writesPages == true {
-                        SummaryRowLabel(newest: model.summaryPages.first)
-                            .accessibilityHint("Opens your daily summary")
-                            .activityIcon(SummaryRowLabel.systemImage).appText(.supporting).paperTag(SidebarItem.summary)
-                    }
                 } header: {
                     Text("Reports")
                 }

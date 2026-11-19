@@ -47,7 +47,7 @@ const mostSeen = 4096
 // runs a command or reads a file.
 var controlAsks = methodSet([]string{
 	"daemon/ping", "daemon/status", wire.CallLockHello.Name,
-	wire.CallAgentsList.Name, wire.CallWorktreesAll.Name, wire.CallAgentsSummaryFacts.Name,
+	wire.CallAgentsList.Name, wire.CallWorktreesAll.Name,
 	wire.CallBackupsMake.Name, "folders/clone",
 })
 

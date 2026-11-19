@@ -3687,31 +3687,15 @@ export interface DaemonStatus {
 }
 
 /**
- * How much the daily summary does (#3351, #3395): off, the summary only, or the summary and the
- * read-only checks between summaries (the home folder's Daily checks workflow).
+ * The daily checks' one control, for all folders (#3355, #5853). It is the home folder's ready-made
+ * Daily checks workflow: enabled turns it on or off, and every is how many hours apart its
+ * schedules run, from midnight.
  */
-export type DailySummaryMode =
-  | "off"
-  | "summary"
-  | "summaryAndChecks";
-
-/**
- * The daily summary's one control, for all folders (#3351). It is the home folder's ready-made
- * Daily summary workflow: the mode turns it on or off, and the time is its schedule's. The days
- * stay as the workflow says (weekdays by default).
- */
-export interface DailySummarySettings {
-  mode: DailySummaryMode;
-  /**
-   * The time it runs, HH:MM in this machine's time zone, on the hour or the half hour. 08:00 by
-   * default.
-   */
-  at: string;
-  /**
-   * With summaryAndChecks, how many hours apart the checks run, counted from the summary's time and
-   * never at it (#3395): 2, 3, 4, 6, 8 or 12. 4 by default.
-   */
-  checksEvery?: number;
+export interface DailyChecksSettings {
+  /** The Daily checks workflow is on. */
+  enabled: boolean;
+  /** How many hours apart the checks run, from midnight: 2, 3, 4, 6, 8 or 12. 4 by default. */
+  every: number;
 }
 
 export interface DayRecap {
@@ -8989,17 +8973,6 @@ export interface MachineStop {
   confirmRunning?: boolean;
 }
 
-/**
- * One of the person's other machines in machines/summaryFacts (#3354): its facts, or, when it is
- * off or did not answer, unreached, the words that say why.
- */
-export interface MachineSummaryFacts {
-  machine: MachineRef;
-  machineName: string;
-  facts?: SummaryFacts;
-  unreached?: string;
-}
-
 export interface MachineTunnel {
   up: boolean;
   problem?: string;
@@ -9158,14 +9131,6 @@ export interface MachineWorkspaceCall {
   method: string;
   params: JSONValue;
   deliver?: LockDelivery;
-}
-
-/**
- * machines/summaryFacts (#3354): the daily summary's facts from each of the person's other
- * machines, by name.
- */
-export interface MachinesSummaryFacts {
-  machines: MachineSummaryFacts[];
 }
 
 export interface ManagedMCPServer {
@@ -14879,54 +14844,6 @@ export interface SuggestionRequest {
   id: string;
 }
 
-/**
- * agents/summaryFacts (#3354): one machine's lines for the daily summary since a time, each list at
- * most 40 lines, newest last; folders is how many folders it has.
- */
-export interface SummaryFacts {
-  folders: number;
-  landed: string[];
-  failed: string[];
-  waiting: string[];
-  suggested: string[];
-  checked: string[];
-}
-
-/** agents/summaryFacts and machines/summaryFacts (#3354): the facts since this time. */
-export interface SummaryFactsRequest {
-  since: WireDate;
-}
-
-/**
- * One saved page of the daily summary (#3721), in ~/.agents/summaries on this machine: the
- * sidebar's Summary row and the Summary page.
- */
-export interface SummaryPage {
-  /** The file's name without .md, such as 2026-11-06-1810: what summaries/read names. */
-  name: string;
-  /** The page's first heading, such as "Daily summary, Fri 6 Nov"; the name when it has none. */
-  title: string;
-  savedAt: WireDate;
-  /** Nobody has read it with summaries/read since it was saved. */
-  unread: boolean;
-  /**
-   * The Daily summary workflow's session that wrote it: the page's "How this was written". Absent
-   * for a page saved before #3721.
-   */
-  writer?: UUID;
-}
-
-/** summaries/read (#3721): a saved page of the daily summary and its Markdown. */
-export interface SummaryPageText {
-  page: SummaryPage;
-  markdown: string;
-}
-
-/** summaries/read (#3721): the page to read, as SummaryPage.name says it. */
-export interface SummaryReadRequest {
-  name: string;
-}
-
 /** Surface (Attention/Surface.swift): a tagged object, `{ mac: {} }` or `{ device: "<uuid>" }`. */
 export type Surface =
   | { mac: Record<string, never> }
@@ -16862,8 +16779,8 @@ export interface Methods {
   "cost/state": { params: Empty; result: CostState };
   "credentials/offer": { params: CredentialsOffer; result: Empty };
   "daemon/policyState": { params: Empty; result: PolicyState };
-  "dailySummary/setSettings": { params: DailySummarySettings; result: DailySummarySettings };
-  "dailySummary/settings": { params: Empty; result: DailySummarySettings };
+  "dailyChecks/setSettings": { params: DailyChecksSettings; result: DailyChecksSettings };
+  "dailyChecks/settings": { params: Empty; result: DailyChecksSettings };
   "deploys/delivery": { params: DeploysDeliveryRequest; result: DeploysDelivery };
   "deploys/deliveryAll": { params: DeploysDeliveryRequest; result: DeploysDelivery };
   "deploys/targets": { params: DeployTargetsRequest; result: DeployTargets };
@@ -17170,8 +17087,6 @@ export interface Methods {
   "store/notes": { params: Empty; result: StoreNotes };
   "suggestions/dismiss": { params: SuggestionRequest; result: Empty };
   "suggestions/start": { params: SuggestionRequest; result: UUID };
-  "summaries/list": { params: Empty; result: SummaryPage[] };
-  "summaries/read": { params: SummaryReadRequest; result: SummaryPageText };
   "surface/identify": { params: SurfaceIdentification; result: Empty };
   "time/history": { params: Empty; result: TimeHistory };
   "usage/history": { params: Empty; result: UsageHistory };
@@ -17344,8 +17259,8 @@ export const MethodTarget = {
   "cost/state": "host",
   "credentials/offer": "host",
   "daemon/policyState": "host",
-  "dailySummary/setSettings": "host",
-  "dailySummary/settings": "host",
+  "dailyChecks/setSettings": "host",
+  "dailyChecks/settings": "host",
   "deploys/delivery": "host",
   "deploys/deliveryAll": "control",
   "deploys/targets": "host",
@@ -17652,8 +17567,6 @@ export const MethodTarget = {
   "store/notes": "host",
   "suggestions/dismiss": "host",
   "suggestions/start": "host",
-  "summaries/list": "host",
-  "summaries/read": "host",
   "surface/identify": "host",
   "time/history": "host",
   "usage/history": "host",
@@ -17747,7 +17660,7 @@ export interface Notifications {
   "control/stopAll": PolicyView;
   "control/userSettingsChanged": UserSettingsChanged;
   "daemon/policyStateChanged": PolicyState;
-  "dailySummary/changed": DailySummarySettings;
+  "dailyChecks/changed": DailyChecksSettings;
   "desktopControl/liveFrame": DesktopControlLiveFrame;
   "disk/changed": DiskState;
   "env/changed": EnvChanged;
@@ -17770,7 +17683,6 @@ export interface Notifications {
   "runtimes/accountProfilesChanged": AccountProfile[];
   "storage/writeFailed": WriteFailure;
   "store/notesChanged": StoreNotes;
-  "summaries/changed": SummaryPage[];
   "workflow/changed": WorkflowSummary;
   "workflow/removed": WorkflowRemovedNotification;
   "worktrees/sized": WorktreesSized;
@@ -18041,7 +17953,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   CostState: { required: ["limits", "today", "day", "tokensToday"], optional: ["note", "organisation", "setBy"] },
   CredentialsOffer: { required: ["runtimes", "ownSignInOnly"], optional: ["notRelayed", "signIns"] },
   DaemonStatus: { required: ["turnsInFlight", "agentsLive"], optional: [] },
-  DailySummarySettings: { required: ["mode", "at"], optional: ["checksEvery"] },
+  DailyChecksSettings: { required: ["enabled", "every"], optional: [] },
   DayRecap: { required: ["agents", "peakAgents", "longestClear"], optional: ["prsMerged"] },
   DeclareResourceRequest: { required: ["resource"], optional: ["replacing"] },
   DeclaredResource: { required: ["name", "displayName", "description", "holders"], optional: ["defaultMinutes", "maximumMinutes"] },
@@ -18460,7 +18372,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
-  MachineSummaryFacts: { required: ["machine", "machineName"], optional: ["facts", "unreached"] },
   MachineTunnel: { required: ["up"], optional: ["problem"] },
   MachineTunnelChanged: { required: ["name", "tunnel"], optional: ["host"] },
   MachineUpdate: { required: ["host", "destination"], optional: ["key", "trust"] },
@@ -18471,7 +18382,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineVersions: { required: ["host", "version", "deploys"], optional: ["firstSeen", "seen", "previous"] },
   MachineWorkspace: { required: ["provider", "providerName", "workspace", "workspaceName", "workspaceState", "canStart", "canStop", "startWhenUsed", "current"], optional: ["hostState", "phase", "since", "problem", "stoppedBy", "stopWhenIdleMinutes", "cost", "idleTimeoutMinutes", "startForSchedules", "tellsSchedule", "nextWorkflow", "nextWorkflowAt", "wakeAt"] },
   MachineWorkspaceCall: { required: ["agent", "method", "params"], optional: ["deliver"] },
-  MachinesSummaryFacts: { required: ["machines"], optional: [] },
   ManagedMCPServer: { required: ["name", "registryName", "version", "run", "addedAt", "destination"], optional: ["byHand"] },
   ManagedPersona: { required: ["destination", "id", "source", "path", "edited", "update"], optional: ["commit"] },
   ManagedSkill: { required: ["destination", "name", "source", "edited", "update"], optional: ["skillPath", "recordedHash", "commit", "committedAt", "catalogue"] },
@@ -18963,11 +18873,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   StoreNotes: { required: ["notes"], optional: [] },
   SuggestedPrompt: { required: ["id", "label", "prompt"], optional: [] },
   SuggestionRequest: { required: ["folder", "id"], optional: [] },
-  SummaryFacts: { required: ["folders", "landed", "failed", "waiting", "suggested", "checked"], optional: [] },
-  SummaryFactsRequest: { required: ["since"], optional: [] },
-  SummaryPage: { required: ["name", "title", "savedAt", "unread"], optional: ["writer"] },
-  SummaryPageText: { required: ["page", "markdown"], optional: [] },
-  SummaryReadRequest: { required: ["name"], optional: [] },
   SurfaceIdentification: { required: ["id", "name", "kind"], optional: [] },
   TeamBot: { required: ["user", "name", "spentTodayUSD", "capped", "machines", "online", "workflows", "live"], optional: ["group", "groupName", "caps"] },
   TeamBotRun: { required: ["host", "hostName", "agent"], optional: ["workflow", "since"] },

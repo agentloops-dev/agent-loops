@@ -64,10 +64,10 @@ struct RemoteSettings: View {
                     }
                 }
                 .paperListRow()
-                // The daily summary is Core (#3351): its one control, as the Mac's and the web's
-                // Agent Configuration ▸ Workflows.
+                // The daily checks are Core (#3355, #5853): their one control, as the Mac's and the
+                // web's Agent Configuration ▸ Workflows.
                 Section("Agent Configuration") {
-                    SettingsPageLink("Workflows", systemImage: "clock.arrow.circlepath") { DailySummarySettingsSection() }
+                    SettingsPageLink("Workflows", systemImage: "clock.arrow.circlepath") { DailyChecksSettingsSection() }
                 }
                 .paperListRow()
                 // The docs site (#1327), as the Mac's Help ▸ Agents Help.
