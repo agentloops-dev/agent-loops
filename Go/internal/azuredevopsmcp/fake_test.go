@@ -155,20 +155,7 @@ var (
 func (f *fakeAzureDevOps) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.signIn {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusNonAuthoritativeInfo)
-		_, _ = w.Write([]byte("<html>Sign in</html>"))
-		return
-	}
-	if r.Header.Get("Authorization") != "Basic "+base64.StdEncoding.EncodeToString([]byte(":"+token)) {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-	if f.status != 0 {
-		w.Header().Set("Retry-After", "7")
-		w.WriteHeader(f.status)
-		_, _ = w.Write([]byte(`{"message":"no"}`))
+	if !f.admits(w, r) {
 		return
 	}
 	q := r.URL.Query()
@@ -176,145 +163,212 @@ func (f *fakeAzureDevOps) serve(w http.ResponseWriter, r *http.Request) {
 	if p != "/acme/_apis/connectionData" && q.Get("api-version") != apiVersion {
 		f.t.Errorf("fake Azure DevOps: %s %s has no api-version %s", r.Method, r.URL, apiVersion)
 	}
-	reply := func(v any) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(v)
+	rp := fakeReply{w: w, q: q}
+	switch {
+	case r.Method != http.MethodGet:
+		f.serveWrite(r, p, rp)
+	case f.serveGit(p, rp):
+	case f.serveBuilds(p, rp):
+	default:
+		f.t.Errorf("fake Azure DevOps: no %s %s", r.Method, r.URL)
+		w.WriteHeader(http.StatusNotFound)
 	}
-	list := func(items []obj) {
-		if items == nil {
-			items = []obj{}
-		}
-		if skip, _ := strconv.Atoi(q.Get("$skip")); skip > 0 {
-			items = items[min(skip, len(items)):]
-		}
-		reply(obj{"count": len(items), "value": items})
+}
+
+// admits answers a request that is not signed in, or that the fake fails, and says whether
+// the request goes on.
+func (f *fakeAzureDevOps) admits(w http.ResponseWriter, r *http.Request) bool {
+	if f.signIn {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusNonAuthoritativeInfo)
+		_, _ = w.Write([]byte("<html>Sign in</html>"))
+		return false
 	}
-	n := func(m []string) int { i, _ := strconv.Atoi(m[1]); return i }
-	if r.Method != http.MethodGet {
-		var body obj
-		data, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(data, &body)
-		if body == nil {
-			body = obj{}
+	if r.Header.Get("Authorization") != "Basic "+base64.StdEncoding.EncodeToString([]byte(":"+token)) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return false
+	}
+	if f.status != 0 {
+		w.Header().Set("Retry-After", "7")
+		w.WriteHeader(f.status)
+		_, _ = w.Write([]byte(`{"message":"no"}`))
+		return false
+	}
+	return true
+}
+
+// fakeReply writes the fake's answers to one request.
+type fakeReply struct {
+	w http.ResponseWriter
+	q url.Values
+}
+
+// reply writes v as JSON.
+func (rp fakeReply) reply(v any) {
+	rp.w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(rp.w).Encode(v)
+}
+
+// list writes items as a list, from $skip on.
+func (rp fakeReply) list(items []obj) {
+	if items == nil {
+		items = []obj{}
+	}
+	if skip, _ := strconv.Atoi(rp.q.Get("$skip")); skip > 0 {
+		items = items[min(skip, len(items)):]
+	}
+	rp.reply(obj{"count": len(items), "value": items})
+}
+
+// notFound writes a 404 with message, or with no body when message is "".
+func (rp fakeReply) notFound(message string) {
+	rp.w.WriteHeader(http.StatusNotFound)
+	if message != "" {
+		_, _ = rp.w.Write([]byte(`{"message":"` + message + `"}`))
+	}
+}
+
+// num is a path's first number.
+func num(m []string) int { i, _ := strconv.Atoi(m[1]); return i }
+
+// serveWrite answers a request that is not a GET, and keeps its body in posted.
+func (f *fakeAzureDevOps) serveWrite(r *http.Request, p string, rp fakeReply) {
+	var body obj
+	data, _ := io.ReadAll(r.Body)
+	_ = json.Unmarshal(data, &body)
+	if body == nil {
+		body = obj{}
+	}
+	body["_method"], body["_path"] = r.Method, p
+	f.posted = append(f.posted, body)
+	switch {
+	case pullsPath.MatchString(p):
+		rp.reply(pull(9, body["sourceRefName"].(string)[len("refs/heads/"):], alex,
+			obj{"title": body["title"], "targetRefName": body["targetRefName"], "isDraft": body["isDraft"]}))
+	case threadsPath.MatchString(p):
+		rp.reply(obj{"id": 77})
+	case replyPath.MatchString(p):
+		rp.reply(obj{"id": 2})
+	case commentPath.MatchString(p):
+		m := commentPath.FindStringSubmatch(p)
+		if !f.hasComment(num(m), m[2], m[3]) {
+			rp.notFound("TF401181: The comment was not found.")
+			return
 		}
-		body["_method"], body["_path"] = r.Method, p
-		f.posted = append(f.posted, body)
-		switch {
-		case pullsPath.MatchString(p):
-			reply(pull(9, body["sourceRefName"].(string)[len("refs/heads/"):], alex,
-				obj{"title": body["title"], "targetRefName": body["targetRefName"], "isDraft": body["isDraft"]}))
-		case threadsPath.MatchString(p):
-			reply(obj{"id": 77})
-		case replyPath.MatchString(p):
-			reply(obj{"id": 2})
-		case commentPath.MatchString(p):
-			m := commentPath.FindStringSubmatch(p)
-			if !f.hasComment(n(m), m[2], m[3]) {
-				w.WriteHeader(http.StatusNotFound)
-				_, _ = w.Write([]byte(`{"message":"TF401181: The comment was not found."}`))
-				return
+		id, _ := strconv.Atoi(m[3])
+		rp.reply(obj{"id": id})
+	case p == gitRoot+"/pullrequestquery":
+		rp.reply(obj{"results": []obj{f.mergedOf(body)}})
+	case labelsPath.MatchString(p):
+		rp.reply(obj{"name": body["name"], "active": true})
+	case p == gitRoot+"/filediffs":
+		rp.reply(f.fileDiffs)
+	case buildPath.MatchString(p):
+		rp.reply(obj{"id": num(buildPath.FindStringSubmatch(p)), "_links": obj{"web": obj{"href": "https://ado.test/build"}}})
+	case pullPath.MatchString(p), reviewerPath.MatchString(p):
+		rp.reply(obj{})
+	default:
+		rp.notFound("")
+	}
+}
+
+// mergedOf is pullrequestquery's answer: the merged pull request of each commit asked.
+func (f *fakeAzureDevOps) mergedOf(body obj) obj {
+	found := obj{}
+	for _, q := range body["queries"].([]any) {
+		for _, sha := range q.(map[string]any)["items"].([]any) {
+			if pr, ok := f.merged[sha.(string)]; ok {
+				found[sha.(string)] = []obj{{"pullRequestId": pr, "status": "completed"}}
 			}
-			id, _ := strconv.Atoi(m[3])
-			reply(obj{"id": id})
-		case p == gitRoot+"/pullrequestquery":
-			found := obj{}
-			for _, q := range body["queries"].([]any) {
-				for _, sha := range q.(map[string]any)["items"].([]any) {
-					if pr, ok := f.merged[sha.(string)]; ok {
-						found[sha.(string)] = []obj{{"pullRequestId": pr, "status": "completed"}}
-					}
-				}
-			}
-			reply(obj{"results": []obj{found}})
-		case labelsPath.MatchString(p):
-			reply(obj{"name": body["name"], "active": true})
-		case p == gitRoot+"/filediffs":
-			reply(f.fileDiffs)
-		case buildPath.MatchString(p):
-			reply(obj{"id": n(buildPath.FindStringSubmatch(p)), "_links": obj{"web": obj{"href": "https://ado.test/build"}}})
-		case pullPath.MatchString(p), reviewerPath.MatchString(p):
-			reply(obj{})
-		default:
-			w.WriteHeader(http.StatusNotFound)
 		}
-		return
 	}
+	return found
+}
+
+// serveGit answers a GET of the repository, its pull requests and its commits, and says
+// whether it was one.
+func (f *fakeAzureDevOps) serveGit(p string, rp fakeReply) bool {
+	q := rp.q
 	switch {
 	case p == "/acme/_apis/connectionData":
-		reply(obj{"authenticatedUser": obj{"id": f.me, "providerDisplayName": "Alex"}})
+		rp.reply(obj{"authenticatedUser": obj{"id": f.me, "providerDisplayName": "Alex"}})
 	case p == gitRoot:
-		reply(obj{"id": "repo-guid", "name": "app", "defaultBranch": "refs/heads/main"})
+		rp.reply(obj{"id": "repo-guid", "name": "app", "defaultBranch": "refs/heads/main"})
 	case pullsPath.MatchString(p):
-		out := []obj{}
-		for _, pr := range f.pulls {
-			status := q.Get("searchCriteria.status")
-			if status != "all" && pr["status"] != status {
-				continue
-			}
-			if q.Get("searchCriteria.queryTimeRangeType") == "closed" {
-				closed, _ := pr["closedDate"].(string)
-				if closed == "" || mcpevents.Before(closed, q.Get("searchCriteria.minTime")) {
-					continue
-				}
-			}
-			if src := q.Get("searchCriteria.sourceRefName"); src != "" && pr["sourceRefName"] != src {
-				continue
-			}
-			out = append(out, pr)
-		}
-		list(out)
+		rp.list(f.pullsOf(q))
 	case pullPath.MatchString(p):
 		for _, pr := range f.pulls {
-			if pr["pullRequestId"] == n(pullPath.FindStringSubmatch(p)) {
-				reply(pr)
-				return
+			if pr["pullRequestId"] == num(pullPath.FindStringSubmatch(p)) {
+				rp.reply(pr)
+				return true
 			}
 		}
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"message":"TF401180: The requested pull request was not found."}`))
+		rp.notFound("TF401180: The requested pull request was not found.")
 	case threadsPath.MatchString(p):
-		list(f.threads[n(threadsPath.FindStringSubmatch(p))])
+		rp.list(f.threads[num(threadsPath.FindStringSubmatch(p))])
 	case statusesPath.MatchString(p):
-		list(f.statuses[n(statusesPath.FindStringSubmatch(p))])
+		rp.list(f.statuses[num(statusesPath.FindStringSubmatch(p))])
 	case p == gitRoot+"/commits":
-		list(f.commitsOf(q))
+		rp.list(f.commitsOf(q))
 	case changesPath.MatchString(p):
-		reply(obj{"changeEntries": f.changes[n(changesPath.FindStringSubmatch(p))]})
+		rp.reply(obj{"changeEntries": f.changes[num(changesPath.FindStringSubmatch(p))]})
 	case p == gitRoot+"/items":
 		text, ok := f.files[q.Get("versionDescriptor.version")+":"+q.Get("path")]
 		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			return
+			rp.notFound("")
+			return true
 		}
-		reply(obj{"path": q.Get("path"), "content": text})
+		rp.reply(obj{"path": q.Get("path"), "content": text})
 	case p == "/acme/Web App/_apis/git/policy/configurations":
-		list(f.policies)
+		rp.list(f.policies)
 	case iterationsPath.MatchString(p):
-		list(f.iterations[n(iterationsPath.FindStringSubmatch(p))])
+		rp.list(f.iterations[num(iterationsPath.FindStringSubmatch(p))])
+	default:
+		return false
+	}
+	return true
+}
+
+// pullsOf are the pull requests that a list's search criteria in q take.
+func (f *fakeAzureDevOps) pullsOf(q url.Values) []obj {
+	out := []obj{}
+	for _, pr := range f.pulls {
+		status := q.Get("searchCriteria.status")
+		if status != "all" && pr["status"] != status {
+			continue
+		}
+		if q.Get("searchCriteria.queryTimeRangeType") == "closed" {
+			closed, _ := pr["closedDate"].(string)
+			if closed == "" || mcpevents.Before(closed, q.Get("searchCriteria.minTime")) {
+				continue
+			}
+		}
+		if src := q.Get("searchCriteria.sourceRefName"); src != "" && pr["sourceRefName"] != src {
+			continue
+		}
+		out = append(out, pr)
+	}
+	return out
+}
+
+// serveBuilds answers a GET of builds, environments, approvals and logs, and says whether it
+// was one.
+func (f *fakeAzureDevOps) serveBuilds(p string, rp fakeReply) bool {
+	q := rp.q
+	switch {
 	case p == "/acme/Web App/_apis/build/builds":
 		if q.Get("repositoryId") != "repo-guid" {
 			f.t.Errorf("builds of %q", q.Get("repositoryId"))
 		}
-		out := []obj{}
-		for i := len(f.builds) - 1; i >= 0; i-- { // newest first
-			b := f.builds[i]
-			if (q.Get("resultFilter") != "" && b["result"] != q.Get("resultFilter")) ||
-				(q.Get("minTime") != "" && mcpevents.Before(b["finishTime"].(string), q.Get("minTime"))) ||
-				(q.Get("branchName") != "" && b["sourceBranch"] != q.Get("branchName")) {
-				continue
-			}
-			out = append(out, b)
-		}
-		list(out)
+		rp.list(f.buildsOf(q))
 	case buildPath.MatchString(p):
 		for _, b := range f.builds {
-			if b["id"] == n(buildPath.FindStringSubmatch(p)) {
-				reply(b)
-				return
+			if b["id"] == num(buildPath.FindStringSubmatch(p)) {
+				rp.reply(b)
+				return true
 			}
 		}
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"message":"The requested build could not be found."}`))
+		rp.notFound("The requested build could not be found.")
 	case p == "/acme/Web App/_apis/distributedtask/environments":
 		var envs []obj
 		for _, e := range f.environments {
@@ -322,27 +376,42 @@ func (f *fakeAzureDevOps) serve(w http.ResponseWriter, r *http.Request) {
 				envs = append(envs, e)
 			}
 		}
-		list(envs)
+		rp.list(envs)
 	case recordsPath.MatchString(p):
-		list(f.records[n(recordsPath.FindStringSubmatch(p))])
+		rp.list(f.records[num(recordsPath.FindStringSubmatch(p))])
 	case p == "/acme/Web App/_apis/pipelines/approvals":
 		if q.Get("state") != "pending" || q.Get("$expand") != "steps,permissions" {
 			f.t.Errorf("approvals %v", q)
 		}
-		list(f.approvals)
+		rp.list(f.approvals)
 	case timelinePath.MatchString(p):
-		reply(obj{"records": f.timeline[n(timelinePath.FindStringSubmatch(p))]})
+		rp.reply(obj{"records": f.timeline[num(timelinePath.FindStringSubmatch(p))]})
 	case logPath.MatchString(p):
 		id, _ := strconv.Atoi(logPath.FindStringSubmatch(p)[2])
 		lines := []string{}
 		if text, ok := f.logs[id]; ok {
 			lines = append(lines, "start", text)
 		}
-		reply(obj{"count": len(lines), "value": lines})
+		rp.reply(obj{"count": len(lines), "value": lines})
 	default:
-		f.t.Errorf("fake Azure DevOps: no %s %s", r.Method, r.URL)
-		w.WriteHeader(http.StatusNotFound)
+		return false
 	}
+	return true
+}
+
+// buildsOf are the builds that a list's filters in q take, newest first.
+func (f *fakeAzureDevOps) buildsOf(q url.Values) []obj {
+	out := []obj{}
+	for i := len(f.builds) - 1; i >= 0; i-- { // newest first
+		b := f.builds[i]
+		if (q.Get("resultFilter") != "" && b["result"] != q.Get("resultFilter")) ||
+			(q.Get("minTime") != "" && mcpevents.Before(b["finishTime"].(string), q.Get("minTime"))) ||
+			(q.Get("branchName") != "" && b["sourceBranch"] != q.Get("branchName")) {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 // hasComment says whether a pull request's thread has a comment that is not deleted.

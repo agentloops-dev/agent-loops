@@ -316,61 +316,92 @@ func (c *blockChange) UnmarshalJSON(b []byte) error {
 // contextLines around it, changes that close together in one hunk. A block that changes
 // none of one side's lines says where it is by the other side's.
 func hunksOf(blocks []lineBlock, was, now []string) ([]Hunk, int, int) {
-	line := func(lines []string, n int) string {
-		if n >= 1 && n <= len(lines) {
-			return lines[n-1]
-		}
-		return ""
-	}
-	var hunks []Hunk
-	var h *Hunk
+	hb := hunkBuilder{was: was, now: now, nextNew: 1}
 	additions, deletions := 0, 0
 	delta := 0 // an old line's number less its new line's, between blocks
-	nextNew := 1
 	for _, b := range blocks {
 		if b.ChangeType == "none" || (b.OriginalCount == 0 && b.ModifiedCount == 0) {
 			continue
 		}
-		newStart := b.ModifiedStart
-		if b.ModifiedCount == 0 {
-			newStart = b.OriginalStart - delta
-		}
-		oldStart := newStart + delta
-		if b.OriginalCount > 0 {
-			oldStart = b.OriginalStart
-		}
-		if h != nil && newStart-nextNew > 2*contextLines {
-			for n := nextNew; n < nextNew+contextLines && n <= len(now); n++ {
-				h.Lines = append(h.Lines, DiffLine{"context", line(now, n)})
-			}
-			h = nil
-		}
-		if h == nil {
-			from := max(1, newStart-contextLines)
-			hunks = append(hunks, Hunk{OldStart: from + (oldStart - newStart), NewStart: from, Lines: []DiffLine{}})
-			h = &hunks[len(hunks)-1]
-			nextNew = from
-		}
-		for n := nextNew; n < newStart; n++ {
-			h.Lines = append(h.Lines, DiffLine{"context", line(now, n)})
-		}
-		for n := oldStart; n < oldStart+b.OriginalCount; n++ {
-			h.Lines = append(h.Lines, DiffLine{"removed", line(was, n)})
-		}
-		for n := newStart; n < newStart+b.ModifiedCount; n++ {
-			h.Lines = append(h.Lines, DiffLine{"added", line(now, n)})
-		}
+		oldStart, newStart := b.starts(delta)
+		hb.add(b, oldStart, newStart)
 		deletions += b.OriginalCount
 		additions += b.ModifiedCount
-		nextNew = newStart + b.ModifiedCount
-		delta = oldStart + b.OriginalCount - nextNew
+		delta = oldStart + b.OriginalCount - hb.nextNew
 	}
-	if h != nil {
-		for n := nextNew; n < nextNew+contextLines && n <= len(now); n++ {
-			h.Lines = append(h.Lines, DiffLine{"context", line(now, n)})
-		}
+	hb.close()
+	return hb.hunks, additions, deletions
+}
+
+// starts are the first old and new line of a block; delta is an old line's number less its
+// new line's before it. A side the block changes no line of is placed by the other side.
+func (b lineBlock) starts(delta int) (oldStart, newStart int) {
+	newStart = b.ModifiedStart
+	if b.ModifiedCount == 0 {
+		newStart = b.OriginalStart - delta
 	}
-	return hunks, additions, deletions
+	oldStart = newStart + delta
+	if b.OriginalCount > 0 {
+		oldStart = b.OriginalStart
+	}
+	return oldStart, newStart
+}
+
+// hunkBuilder makes a file's hunks, a block at a time.
+type hunkBuilder struct {
+	was, now []string
+	hunks    []Hunk
+	// open says the last of hunks takes more lines; nextNew is the new line after its last.
+	open    bool
+	nextNew int
+}
+
+// lineAt is lines' line n (from 1), or "" when there is none.
+func lineAt(lines []string, n int) string {
+	if n >= 1 && n <= len(lines) {
+		return lines[n-1]
+	}
+	return ""
+}
+
+// last is the hunk that takes lines now.
+func (hb *hunkBuilder) last() *Hunk { return &hb.hunks[len(hb.hunks)-1] }
+
+// add adds a block that starts at old line oldStart and new line newStart: in the open hunk
+// when it is close enough, else in a new one, with the context before it.
+func (hb *hunkBuilder) add(b lineBlock, oldStart, newStart int) {
+	if hb.open && newStart-hb.nextNew > 2*contextLines {
+		hb.close()
+	}
+	if !hb.open {
+		from := max(1, newStart-contextLines)
+		hb.hunks = append(hb.hunks, Hunk{OldStart: from + (oldStart - newStart), NewStart: from, Lines: []DiffLine{}})
+		hb.open = true
+		hb.nextNew = from
+	}
+	h := hb.last()
+	for n := hb.nextNew; n < newStart; n++ {
+		h.Lines = append(h.Lines, DiffLine{"context", lineAt(hb.now, n)})
+	}
+	for n := oldStart; n < oldStart+b.OriginalCount; n++ {
+		h.Lines = append(h.Lines, DiffLine{"removed", lineAt(hb.was, n)})
+	}
+	for n := newStart; n < newStart+b.ModifiedCount; n++ {
+		h.Lines = append(h.Lines, DiffLine{"added", lineAt(hb.now, n)})
+	}
+	hb.nextNew = newStart + b.ModifiedCount
+}
+
+// close ends the open hunk, if any, with the context after its last change.
+func (hb *hunkBuilder) close() {
+	if !hb.open {
+		return
+	}
+	h := hb.last()
+	for n := hb.nextNew; n < hb.nextNew+contextLines && n <= len(hb.now); n++ {
+		h.Lines = append(h.Lines, DiffLine{"context", lineAt(hb.now, n)})
+	}
+	hb.open = false
 }
 
 // changeOf is a change entry's change in the diff's words: added, removed, renamed or modified.
@@ -422,42 +453,14 @@ func (f *RealAzureDevOps) PRDiff(ctx context.Context, repo string, number int) (
 	if last.ID == 0 || last.SourceRefCommit == nil {
 		return nil, &AzureDevOpsError{Kind: Failed, Message: "Azure DevOps has no push of this pull request yet"}
 	}
-	head := last.SourceRefCommit.CommitID
-	base := ""
-	if last.CommonRefCommit != nil {
-		base = last.CommonRefCommit.CommitID
-	} else if last.TargetRefCommit != nil {
-		base = last.TargetRefCommit.CommitID
-	}
+	head, base := last.SourceRefCommit.CommitID, last.base()
 	changes, err := f.changes(ctx, repo, number, last.ID)
 	if err != nil {
 		return nil, err
 	}
-	// The ranges of the files whose lines are shown, in one call.
-	type fileDiff struct {
-		Path   string      `json:"path"`
-		Blocks []lineBlock `json:"lineDiffBlocks"`
-	}
-	ranges := map[string][]lineBlock{}
-	var params []any
-	for _, c := range changes[:min(diffFiles, len(changes))] {
-		if change := changeOf(c); change == "modified" || change == "renamed" {
-			p := map[string]any{"path": c.Item.Path}
-			if c.OriginalPath != "" {
-				p["originalPath"] = c.OriginalPath
-			}
-			params = append(params, p)
-		}
-	}
-	if len(params) > 0 && base != "" {
-		var diffs []fileDiff
-		if err := f.send(ctx, http.MethodPost, api(repoPath(repo)+"/filediffs", nil),
-			map[string]any{"baseVersionCommit": base, "targetVersionCommit": head, "fileDiffParams": params}, &diffs); err != nil {
-			return nil, err
-		}
-		for _, d := range diffs {
-			ranges[d.Path] = d.Blocks
-		}
+	ranges, err := f.lineRanges(ctx, repo, changes, base, head)
+	if err != nil {
+		return nil, err
 	}
 	files := []any{}
 	left, cut := diffLines, false
@@ -473,46 +476,113 @@ func (f *RealAzureDevOps) PRDiff(ctx context.Context, repo string, number int) (
 			files = append(files, j)
 			continue
 		}
-		var was, now []string
-		binary := false
-		if change != "added" && base != "" {
-			from := c.Item.Path
-			if c.OriginalPath != "" {
-				from = c.OriginalPath
-			}
-			if was, binary, err = f.content(ctx, repo, from, base); err != nil {
-				return nil, err
-			}
+		was, now, binary, err := f.fileLines(ctx, repo, c, change, base, head)
+		if err != nil {
+			return nil, err
 		}
-		if change != "removed" && !binary {
-			if now, binary, err = f.content(ctx, repo, c.Item.Path, head); err != nil {
-				return nil, err
-			}
-		}
-		blocks := ranges[c.Item.Path]
-		switch change {
-		case "added":
-			blocks = []lineBlock{{ChangeType: "add", ModifiedStart: 1, ModifiedCount: len(now)}}
-		case "removed":
-			blocks = []lineBlock{{ChangeType: "delete", OriginalStart: 1, OriginalCount: len(was)}}
-		}
-		hunks, additions, deletions := hunksOf(blocks, was, now)
+		hunks, additions, deletions := hunksOf(blocksOf(change, ranges[c.Item.Path], was, now), was, now)
 		j["additions"], j["deletions"] = additions, deletions
-		lines := 0
-		for _, h := range hunks {
-			lines += len(h.Lines)
-		}
-		switch {
-		case binary || len(hunks) == 0:
-			j["note"] = "No lines to show: a binary file, a rename, or a file mode's change."
-		case lines > left:
-			j["note"], cut = "Not shown: the diff is too long. Open it on Azure DevOps.", true
-		default:
-			j["hunks"] = hunks
-			left -= lines
+		if fileCut := showHunks(j, hunks, binary, &left); fileCut {
+			cut = true
 		}
 		files = append(files, j)
 	}
 	return map[string]any{"repo": repo, "number": number, "url": f.prURL(repo, number) + "?_a=files", "sha": head,
 		"files": files, "cut": cut}, nil
+}
+
+// base is the commit a push is compared with: the merge base with its target, else the
+// target's head, else "".
+func (it iteration) base() string {
+	switch {
+	case it.CommonRefCommit != nil:
+		return it.CommonRefCommit.CommitID
+	case it.TargetRefCommit != nil:
+		return it.TargetRefCommit.CommitID
+	}
+	return ""
+}
+
+// lineRanges are the changed ranges of lines of the modified and renamed files among the
+// first diffFiles, by path, in one call; none when there is no base.
+func (f *RealAzureDevOps) lineRanges(ctx context.Context, repo string, changes []changeJSON, base, head string) (map[string][]lineBlock, error) {
+	type fileDiff struct {
+		Path   string      `json:"path"`
+		Blocks []lineBlock `json:"lineDiffBlocks"`
+	}
+	ranges := map[string][]lineBlock{}
+	var params []any
+	for _, c := range changes[:min(diffFiles, len(changes))] {
+		if change := changeOf(c); change == "modified" || change == "renamed" {
+			p := map[string]any{"path": c.Item.Path}
+			if c.OriginalPath != "" {
+				p["originalPath"] = c.OriginalPath
+			}
+			params = append(params, p)
+		}
+	}
+	if len(params) == 0 || base == "" {
+		return ranges, nil
+	}
+	var diffs []fileDiff
+	if err := f.send(ctx, http.MethodPost, api(repoPath(repo)+"/filediffs", nil),
+		map[string]any{"baseVersionCommit": base, "targetVersionCommit": head, "fileDiffParams": params}, &diffs); err != nil {
+		return nil, err
+	}
+	for _, d := range diffs {
+		ranges[d.Path] = d.Blocks
+	}
+	return ranges, nil
+}
+
+// fileLines are a changed file's old lines at base and new lines at head; binary says
+// either is not text, and then the new lines are not read.
+func (f *RealAzureDevOps) fileLines(ctx context.Context, repo string, c changeJSON, change, base, head string) (was, now []string, binary bool, err error) {
+	if change != "added" && base != "" {
+		from := c.Item.Path
+		if c.OriginalPath != "" {
+			from = c.OriginalPath
+		}
+		if was, binary, err = f.content(ctx, repo, from, base); err != nil {
+			return nil, nil, false, err
+		}
+	}
+	if change != "removed" && !binary {
+		if now, binary, err = f.content(ctx, repo, c.Item.Path, head); err != nil {
+			return nil, nil, false, err
+		}
+	}
+	return was, now, binary, nil
+}
+
+// blocksOf are a file's blocks: Azure DevOps's ranges, or the whole file for one added or
+// removed.
+func blocksOf(change string, ranges []lineBlock, was, now []string) []lineBlock {
+	switch change {
+	case "added":
+		return []lineBlock{{ChangeType: "add", ModifiedStart: 1, ModifiedCount: len(now)}}
+	case "removed":
+		return []lineBlock{{ChangeType: "delete", OriginalStart: 1, OriginalCount: len(was)}}
+	}
+	return ranges
+}
+
+// showHunks puts a file's hunks in j when they fit in the lines left, and takes them from
+// left, else a note why not; it says whether the diff was cut.
+func showHunks(j map[string]any, hunks []Hunk, binary bool, left *int) bool {
+	lines := 0
+	for _, h := range hunks {
+		lines += len(h.Lines)
+	}
+	switch {
+	case binary || len(hunks) == 0:
+		j["note"] = "No lines to show: a binary file, a rename, or a file mode's change."
+	case lines > *left:
+		j["note"] = "Not shown: the diff is too long. Open it on Azure DevOps."
+		return true
+	default:
+		j["hunks"] = hunks
+		*left -= lines
+	}
+	return false
 }
