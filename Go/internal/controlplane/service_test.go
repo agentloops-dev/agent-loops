@@ -39,6 +39,8 @@ type plane struct {
 	told func(host, method string, params json.RawMessage)
 	// asked answers what the control plane asks a fake host on channel 0 (#2011).
 	asked func(host, method string, params json.RawMessage) (any, bool)
+	// redial, when set, is each host's waits between dials: first, last and steady (#6185).
+	redial []time.Duration
 }
 
 func freePort(t *testing.T) int {
@@ -219,6 +221,9 @@ func (p *plane) serveHost(root string, member *controllink.Membership, private [
 		}
 	}}
 	h.uplink = u
+	if len(p.redial) == 3 {
+		u.SetRedial(p.redial[0], p.redial[1], p.redial[2])
+	}
 	if asked != nil {
 		u.Asked = func(method string, params json.RawMessage) (any, bool) { return asked(member.Host, method, params) }
 	}
