@@ -35,7 +35,7 @@ extension AppModel {
             let update = await Task.detached { AgentsModel.read(method, params, showing: shown.id, alsoShowing: shown.also) }.value
             await self?.receivedFromServer(host, method, params, update)
         }
-        hosts.offerFor = { [weak self] id in self?.credentialOffer(id) }
+        hosts.offerFor = { [weak self] _ in self?.credentialOffer() }
         hosts.lenderFor = { [weak self] id in
             { [weak self] wanted in
                 guard let model = self else { return false }

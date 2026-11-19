@@ -61,11 +61,10 @@ final class FakeControlClient: @unchecked Sendable {
     let transport: PairedTransport
     private let lock = NSLock()
     private var heard: [String] = []
-    private var task: Task<Void, Never>?
 
     init(transport: PairedTransport) {
         self.transport = transport
-        task = Task { [weak self] in
+        Task { [weak self] in
             do {
                 for try await line in transport.lines() { self?.lock.withLock { self?.heard.append(line) } }
             } catch {}

@@ -23,12 +23,4 @@ public struct FolderPlugin: Codable, Hashable, Sendable, Identifiable {
     public var awaitingApproval: WorkflowApproval?
 
     public var id: URL { folder }
-
-    public init(folderPath: URL, folder: URL, name: String, carries: [String], awaitingApproval: WorkflowApproval?) {
-        self.folderPath = folderPath
-        self.folder = folder
-        self.name = name
-        self.carries = carries
-        self.awaitingApproval = awaitingApproval
-    }
 }

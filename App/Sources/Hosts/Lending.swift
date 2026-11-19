@@ -79,8 +79,8 @@ extension AppModel {
 
     /// What a server may be lent from here, sent on every connect (043). Names only. No
     /// runtime takes a pasted key now that Gemini is retired (#3043), so it names none.
-    func credentialOffer(_ id: MachineRef) -> DaemonAPI.CredentialsOffer {
-        let ownOnly = hosts.host(id)?.ownSignInOnly ?? false
+    func credentialOffer() -> DaemonAPI.CredentialsOffer {
+        let ownOnly = hosts.host()?.ownSignInOnly ?? false
         // The window relays no sign-in and lends no sign-in file: Agents Host does, on its
         // Mac (T091).
         return DaemonAPI.CredentialsOffer(runtimes: [], ownSignInOnly: ownOnly, notRelayed: nil, signIns: nil)
@@ -91,7 +91,7 @@ extension AppModel {
     /// now that Gemini, the last one that did, is retired (#3043), so there is no other way
     /// to answer one.
     func answerCredentialWanted(_ wanted: DaemonAPI.CredentialWanted, on id: MachineRef) async -> Bool {
-        guard id != .mac, !(hosts.host(id)?.ownSignInOnly ?? false) else { return false }
+        guard id != .mac, !(hosts.host()?.ownSignInOnly ?? false) else { return false }
         return await relaySignInThroughControl(wanted, to: id) ?? false
     }
 }

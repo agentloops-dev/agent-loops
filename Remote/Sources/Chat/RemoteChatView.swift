@@ -437,7 +437,7 @@ struct RemoteChatView: View {
             cards.append(WaitingCard(id: "block:" + agent.id.uuidString, asks: false) {
                 BlockWaitCard(block: block, since: report.at, lines: model.blockLines(agent),
                               stop: { await model.carryOn(agent.id) },
-                              help: AgentsModel.carryOnHelp(for: agent),
+                              help: AgentsModel.carryOnHelp(),
                               isDisabled: model.isStale(agent))
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             })
@@ -577,7 +577,6 @@ struct RemoteChatView: View {
             reloadTranscript: { [model, popped] in
                 if let popped { await model.loadTranscript(of: popped) } else { await model.loadTranscript() }
             },
-            continueWithoutSandbox: sandboxAnswer(carryOn: true),
             keepStopped: sandboxAnswer(carryOn: false),
             waitingSandbox: waitingSandbox,
             kept: { [model] agentID in model.kept(for: agentID) },
@@ -657,7 +656,7 @@ struct RemoteChatView: View {
         ChatMenuState(agentID: agent.id,
                       isArchived: agent.state == .archived,
                       isBlocked: model.isBlocked(agent),
-                      carryOnHelp: AgentsModel.carryOnHelp(for: agent),
+                      carryOnHelp: AgentsModel.carryOnHelp(),
                       isStale: model.isStale(agent),
                       isActing: model.acting(agent.id) != nil,
                       isPinned: model.isPinned(agent),

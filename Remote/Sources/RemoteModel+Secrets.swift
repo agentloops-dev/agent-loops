@@ -458,7 +458,4 @@ extension RemoteModel {
     func sentence(for error: any Error) -> String {
         (error as? JSONRPCError).map(OlderPeer.controlRefusal) ?? "Your Mac did not answer."
     }
-
-    /// A refusal in the Remote's words.
-    func refusal(_ error: any Error) -> String { sentence(for: error) }
 }

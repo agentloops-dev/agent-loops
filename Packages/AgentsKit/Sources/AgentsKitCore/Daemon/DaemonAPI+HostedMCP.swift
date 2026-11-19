@@ -45,24 +45,11 @@ extension DaemonAPI {
         public var users: Int
 
         public var id: String { (folder ?? "~") + "|" + name }
-
-        public init(name: String, folder: String?, state: HostedMCPState, since: Date? = nil,
-                    retryAt: Date? = nil, lastError: String? = nil, restarts: Int = 0, users: Int = 0) {
-            self.name = name; self.folder = folder; self.state = state; self.since = since
-            self.retryAt = retryAt; self.lastError = lastError; self.restarts = restarts; self.users = users
-        }
     }
 
     /// Every hosted server, and the daemon's time when it was read.
     public struct HostedMCPSnapshot: Codable, Sendable, Hashable {
         public var servers: [HostedMCPStatus]
         public var at: Date
-
-        public init(servers: [HostedMCPStatus], at: Date) {
-            self.servers = servers
-            self.at = at
-        }
-
-        public static let empty = HostedMCPSnapshot(servers: [], at: .distantPast)
     }
 }

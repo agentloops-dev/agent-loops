@@ -347,12 +347,6 @@ public extension DaemonAPI {
         public var id: String
         public var name: String
         public var category: String?
-
-        public init(id: String, name: String, category: String? = nil) {
-            self.id = id
-            self.name = name
-            self.category = category
-        }
     }
 
     /// One item with its body and a page of its comments: the newest page first, at most 50,
@@ -431,13 +425,6 @@ public extension DaemonAPI {
         public var title: String
         public var state: String
         public var url: String?
-
-        public init(node: LineageNode, title: String, state: String, url: String? = nil) {
-            self.node = node
-            self.title = title
-            self.state = state
-            self.url = url
-        }
     }
 
     /// One event on an issue's timeline (#4373). `kind` is labeled, unlabeled, assigned,
@@ -657,15 +644,11 @@ public extension DaemonAPI {
     /// `forge/labels`: the labels it can have, at most 100.
     struct ForgeLabels: Codable, Sendable, Hashable {
         public var labels: [ForgeLabel]
-
-        public init(labels: [ForgeLabel] = []) { self.labels = labels }
     }
 
     /// `forge/log`: the last lines of each failed check's log.
     struct ForgeLog: Codable, Sendable, Hashable {
         public var text: String
-
-        public init(text: String) { self.text = text }
     }
 
     /// One @@ block of a file's diff.
@@ -773,12 +756,6 @@ public extension DaemonAPI {
         public var session: UUID
         public var title: String?
         public var state: AgentState
-
-        public init(session: UUID, title: String? = nil, state: AgentState) {
-            self.session = session
-            self.title = title
-            self.state = state
-        }
     }
 
     /// An epic and its plan: its children, step by step; the steps; and its lead, if any. A
@@ -853,11 +830,6 @@ public extension DaemonAPI {
     struct ForgeImage: Codable, Sendable, Hashable {
         public var mimeType: String
         public var data: Data
-
-        public init(mimeType: String, data: Data) {
-            self.mimeType = mimeType
-            self.data = data
-        }
     }
 }
 

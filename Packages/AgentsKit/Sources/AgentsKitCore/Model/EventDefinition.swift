@@ -21,13 +21,6 @@ public struct EventDefinition: Equatable, Sendable {
         self.payloadSchema = payloadSchema
     }
 
-    public init?(_ raw: JSONValue) {
-        guard let name = raw["name"]?.stringValue else { return nil }
-        self.init(name: name, description: raw["description"]?.stringValue,
-                  delivery: raw["delivery"]?.arrayValue?.compactMap(\.stringValue) ?? [],
-                  inputSchema: raw["inputSchema"], payloadSchema: raw["payloadSchema"])
-    }
-
     public var wire: JSONValue {
         var object: [String: JSONValue] = ["name": .string(name), "delivery": .array(delivery.map(JSONValue.string))]
         if let description { object["description"] = .string(description) }

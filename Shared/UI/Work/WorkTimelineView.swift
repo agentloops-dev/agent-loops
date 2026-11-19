@@ -445,7 +445,7 @@ struct WorkTimelinePane: View {
                         .frame(width: axis.width, height: Self.axisHeight)
                         .accessibilityHidden(true)
                     ScrollView(.vertical) {
-                        canvas(drawing, timeline: timeline)
+                        canvas(drawing)
                             .frame(width: axis.width, height: height)
                     }
                     #if os(iOS)
@@ -627,7 +627,7 @@ struct WorkTimelinePane: View {
         }
     }
 
-    private func canvas(_ drawing: Drawing, timeline: DaemonAPI.WorkTimeline) -> some View {
+    private func canvas(_ drawing: Drawing) -> some View {
         Canvas { context, _ in drawing.draw(&context) }
             .overlay { working(drawing) }
             .overlay { pulses(drawing) }

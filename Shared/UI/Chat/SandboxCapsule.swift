@@ -40,10 +40,10 @@ struct SandboxCapsule: View {
         } else {
             // The pill says the value; the menu marks the one Settings gives (#2658).
             SelectCapsule(name: standing?.reason.map { "\(LevelWords.sandboxField): \($0)" } ?? "\(LevelWords.sandboxField): \(state)",
-                          title: SandboxWords.override(override, runtimeDefault: runtimeDefault, runtimeID: runtimeID)) { dismiss in
+                          title: SandboxWords.override(override, runtimeDefault: runtimeDefault)) { dismiss in
                 SelectGroupHeading(title: LevelWords.sandboxField)
                 ForEach(choices, id: \.self) { choice in
-                    SelectChoice(title: SandboxWords.choice(choice, runtimeID: runtimeID),
+                    SelectChoice(title: SandboxWords.choice(choice),
                                  description: description(for: choice),
                                  isChosen: asked == choice,
                                  setBy: choice == .on ? nil : setBy,

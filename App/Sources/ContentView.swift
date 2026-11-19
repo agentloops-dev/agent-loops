@@ -434,7 +434,7 @@ struct ContentView: View {
         }
         // The window's one alert, held while it is open (#101): a reconnect clearing the
         // problem, or a second arriving, waits for its button rather than closing it.
-        .heldAlert(\.title, item: { WindowAlert.wanted(by: model) }, dismiss: { $0.closed(in: model) }) { alert in
+        .heldAlert(\.title, item: { WindowAlert.wanted(by: model) }, dismiss: { $0.closed() }) { alert in
             switch alert {
             case .lend(let ask):
                 Button("Approve") { model.finishSignInLendAsk(ask, allowed: true) }
@@ -512,7 +512,7 @@ enum WindowAlert: Identifiable {
     /// Closed, by its button or by Escape (its cancel button). An ask the model has moved
     /// on from is not the model's to forget again.
     @MainActor
-    func closed(in model: AppModel) {
+    func closed() {
         switch self {
         // Its buttons answer it, Escape as Deny, and only once: its answer is a
         // continuation, so nothing here answers it again.

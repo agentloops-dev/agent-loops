@@ -56,16 +56,6 @@ public struct QuickAnswer: Hashable, Sendable, Codable {
         return answer
     }
 
-    /// A permission's answers: one button for each of its options, in the runtime's order.
-    /// Nil when it has none, or more than a banner shows.
-    public static func answers(for request: PermissionRequest) -> [QuickAnswer]? {
-        guard !request.options.isEmpty, request.options.count <= most else { return nil }
-        return request.options.map { option in
-            QuickAnswer(kind: .choice, id: option.optionID, title: option.name,
-                        isDestructive: option.kind == .rejectOnce || option.kind == .rejectAlways)
-        }
-    }
-
     /// A question's answers: one button for each option of a one-choice form with two to
     /// four options, or a Reply for a form with one free-text field. A choice may carry
     /// its optional note beside it (`question_0_custom`, see `ElicitationSchema.pages`):

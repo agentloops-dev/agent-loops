@@ -89,13 +89,6 @@ public extension DaemonAPI {
         public var cursor: String?
         public var limited: Bool
         public var unresolved: Int
-
-        public init(nodes: [ReportNode] = [], cursor: String? = nil, limited: Bool = false, unresolved: Int = 0) {
-            self.nodes = nodes
-            self.cursor = cursor
-            self.limited = limited
-            self.unresolved = unresolved
-        }
     }
 }
 

@@ -154,7 +154,6 @@ final class AppModel {
     var permissions: [PermissionRequest] { work.permissions }
     var elicitations: [ElicitationRequest] { work.elicitations }
     var entries: [TranscriptEntry] { work.entries }
-    var transcriptItems: [TranscriptItem] { work.transcriptItems }
     var filesToShow: [UUID: ShownFile] { work.filesToShow }
     var chartHints: [String: ChartHint] { work.chartHints }
     /// What the reader will allow and what today has cost. Nil until the daemon has
@@ -162,7 +161,6 @@ final class AppModel {
     var costState: DaemonAPI.CostState? { work.costState }
     /// Every resource an agent can lease and who holds it (036).
     var leases: DaemonAPI.LeaseSnapshot? { work.leases }
-    var hostedMCP: DaemonAPI.HostedMCPSnapshot? { work.hostedMCP }
     var costLimits: CostLimits { work.costState?.limits ?? CostLimits() }
     /// How long archived agents are kept (051). Nil until the daemon has said.
     var retentionState: DaemonAPI.RetentionState? { work.retentionState }
@@ -1450,7 +1448,7 @@ final class AppModel {
     /// pass through `needsFirstRun`: Settings makes its control plane's model again.
     private(set) var controlPlaneMoves = 0
     /// The servers (037). This Mac is `client`, as it always was.
-    let hosts = HostSet(locations: .default)
+    let hosts = HostSet()
     /// Step 7 of a machine's set-up: a key from Secrets, or a device-code card (#5361).
     let machineSignIn = MachineSignInDriver()
     /// The Export… or Import Agents… on its way, drawn as a busy sheet with Cancel (#2437).
@@ -1469,7 +1467,7 @@ final class AppModel {
         if let through = controlHosts[host] { return through }
         // A control plane's host is never reached by this window's own ssh (T024).
         if controlLink != nil { return Self.unreachable }
-        return hosts.client(for: host) ?? Self.unreachable
+        return hosts.client() ?? Self.unreachable
     }
 
     /// This Mac's host, for what is this Mac's own rather than a folder's: its runtimes,
@@ -1762,7 +1760,6 @@ final class AppModel {
     // MARK: Workflows
 
     func workflows(in folder: URL?) -> [WorkflowSummary] { work.workflows(in: folder) }
-    var userWorkflows: [WorkflowSummary] { work.userWorkflows }
 
     func refreshWorkflows() async {
         do {
@@ -2588,11 +2585,11 @@ final class AppModel {
         }
         guard let saved else { return }
         clientPermissions = saved
-        await pushClientPermissionsToServers(saved)
+        await pushClientPermissionsToServers()
     }
 
     /// As the part runtimes, once, at the control plane (#5573).
-    func pushClientPermissionsToServers(_ settings: ClientPermissionSettings) async {
+    func pushClientPermissionsToServers() async {
         await sendRuntimeChoicesToMachines()
     }
 
@@ -2728,14 +2725,6 @@ final class AppModel {
         return LevelMatch.level(field, runtimeID: runtimeID, mappings: autoMappings, preferring: chosen) { id in
             self.draftChosen[id] ?? self.draftOptions.first { $0.id == id }?.currentValue
         }
-    }
-
-    /// Where Auto would start an Auto session's successor now (FR-022), on its machine.
-    func autoPreview(for agent: Agent) async -> AutoPreview? {
-        guard let pick = agent.auto else { return nil }
-        return try? await client(forAgent: agent.id).call(DaemonAPI.Method.autoPreview,
-                                                          AutoPreviewRequest(cwd: agent.cwd, levels: pick.levels, sandbox: agent.sandboxOverride),
-                                                          returning: AutoPreview.self)
     }
 
     /// A running agent's value, mapped on its own runtime from its next step (Story 2).
@@ -3544,7 +3533,7 @@ final class AppModel {
             clientPermissions = settings
             // Remote and web clients set the Mac's host directly. Keep connected servers
             // in step just as the Settings control did before the move under the prompt.
-            if changed { Task { await pushClientPermissionsToServers(settings) } }
+            if changed { Task { await pushClientPermissionsToServers() } }
 
         case DaemonAPI.Notification.personChanged:
             guard let settings = try? params?.decode(PersonSettings.self) else { return }
@@ -3769,7 +3758,7 @@ final class AppModel {
         await server.setCredentialLender { [weak self] wanted in
             await self?.answerCredentialWanted(wanted, on: id) ?? false
         }
-        _ = try? await server.call(DaemonAPI.Method.credentialsOffer, credentialOffer(id))
+        _ = try? await server.call(DaemonAPI.Method.credentialsOffer, credentialOffer())
         let shown = work.shown
         Task.detached(priority: .userInitiated) { [weak self] in
             for await note in server.notifications() {
@@ -3943,7 +3932,7 @@ final class AppModel {
         if let listed = try? await server.call(DaemonAPI.Method.foldersList, DaemonAPI.FoldersListRequest(),
                                                returning: [DaemonAPI.FolderSummary].self) {
             work.replaceFolders(listed, from: host)
-            hosts.noteFolders(host, listed: listed)
+            hosts.noteFolders()
             pruneFolderDefaults(of: host, listed: listed)
             settleFolderSelection()
         }
@@ -5026,12 +5015,6 @@ final class AppModel {
     /// What is on its way to this agent, if anything: for the control that sent it to
     /// show, and the others to hold. Its own cell, so one row's is not every row's (#285).
     func acting(_ id: UUID) -> AgentAct? { work.act(of: id) }
-
-    /// What the runtime behind the current agent, or the draft, says it will take.
-    /// Nothing is refused on a guess: this is what the runtime advertised.
-    var promptCapabilities: ACP.PromptCapabilities {
-        promptCapabilities(for: selectedAgent?.runtimeID ?? draftRuntimeID)
-    }
 
     /// On Auto it is the runtime Auto would pick now; before that is known, nothing is
     /// refused, as on the Remote and the web page: the host picks one that takes what is

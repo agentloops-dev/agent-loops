@@ -186,23 +186,6 @@ public extension DaemonAPI {
         /// token (#5359, #5776): a signer approves it with no card.
         public var compared: Bool?
 
-        public init(request: String, client: String, machine: String? = nil, name: String, kind: ClientRecord.Kind, key: Data,
-                    commitment: Data, expires: Date, nonce: Data? = nil, answeredBy: String? = nil, reveal: Data? = nil,
-                    compared: Bool? = nil) {
-            self.request = request
-            self.client = client
-            self.machine = machine
-            self.name = name
-            self.kind = kind
-            self.key = key
-            self.commitment = commitment
-            self.expires = expires
-            self.nonce = nonce
-            self.answeredBy = answeredBy
-            self.reveal = reveal
-            self.compared = compared
-        }
-
         public var id: String { request }
     }
 
@@ -301,13 +284,11 @@ public enum MachineLock {
     /// A key the lock names.
     public struct Member: Sendable, Hashable {
         public var kind: DaemonAPI.LockEntryKind
-        public var key: Data
         public var sealingKey: Data?
         public var id: String?
         public var name: String?
         public var clientKind: String?
         public var expires: Date?
-        public var entry: Int
 
         /// A client, so a signer.
         public var isClient: Bool { kind == .root || kind == .addClient }
@@ -372,7 +353,7 @@ public enum MachineLock {
                 guard body.signer == body.key else { throw .forged("the root is not signed by the key it names") }
                 person = body.person
                 members = [:]
-                take(body, at: i)
+                take(body)
                 root = MachineLock.hash(entry)
                 hashes.append(root)
                 return
@@ -409,15 +390,15 @@ public enum MachineLock {
                 recoverySealed = body.sealed
             default:
                 guard members[body.key] == nil, body.key != recovery else { throw .invalid("entry \(i): its key is in the lock already") }
-                take(body, at: i)
+                take(body)
             }
             if let spent { members[spent] = nil }
             hashes.append(MachineLock.hash(entry))
         }
 
-        private mutating func take(_ body: DaemonAPI.LockBody, at i: Int) {
-            members[body.key] = Member(kind: body.kind, key: body.key, sealingKey: body.sealingKey, id: body.id, name: body.name,
-                                       clientKind: body.clientKind, expires: body.expires, entry: i)
+        private mutating func take(_ body: DaemonAPI.LockBody) {
+            members[body.key] = Member(kind: body.kind, sealingKey: body.sealingKey, id: body.id, name: body.name,
+                                       clientKind: body.clientKind, expires: body.expires)
         }
     }
 

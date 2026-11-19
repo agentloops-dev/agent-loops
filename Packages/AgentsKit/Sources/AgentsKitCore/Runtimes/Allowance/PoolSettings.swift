@@ -34,22 +34,3 @@ public enum Payment: Codable, Hashable, Sendable {
     /// A balance topped up once, with auto-recharge off, as the person says.
     case prepaid(amount: Cost?, expires: Date?)
 }
-
-/// One runtime with one way of paying for it (052, FR-001).
-public struct PoolEntry: Codable, Hashable, Sendable, Identifiable {
-    public var id: UUID
-    public var runtimeID: String
-    public var payment: Payment
-    /// Which lent credential it runs on. `nil` is the runtime's own sign-in. No runtime
-    /// takes a pasted key now that Gemini is retired (#3043, #3137), so this is kept on the
-    /// wire only as a name.
-    public var credentialRef: String?
-
-    public init(id: UUID = UUID(), runtimeID: String, payment: Payment,
-                credentialRef: String? = nil) {
-        self.id = id
-        self.runtimeID = runtimeID
-        self.payment = payment
-        self.credentialRef = credentialRef
-    }
-}

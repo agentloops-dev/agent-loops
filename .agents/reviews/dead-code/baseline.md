@@ -6,8 +6,7 @@ false positive. Do not add broad suppressions to make a scan quiet.
 
 Tool pins for the first scan:
 
-- Periphery 3.8.0
-- `periphery-3.8.0.zip` SHA-256 `07d4e286e31dd79164df39097e0b59f533c94badbe18158464a455ea88a166d7`
+- Periphery: pinned in `scripts/lint.sh` since #6336 (3.8.0)
 - `golang.org/x/tools/cmd/deadcode` v0.49.0
 - Knip 6.42.1
 
@@ -40,20 +39,11 @@ Added 2026-10-29 (`2026-10-29.md`, the first complete `GOOS=darwin -test` scan):
 
 ### Periphery (Swift)
 
-- `Packages/AgentsKit/Sources/AgentsKitCore/Runtimes/Allowance/LimitRecognition.swift`
-  `isAntigravityUsageLimit(_:)`: Periphery lists it as unused, but line 101 passes it to
-  `contains(where:)`. A function reference has no `(` after the name, so a label test
-  misses it; look for `.name` and `where: name` too (added 2026-10-31).
-
-- `Shared/UI/Paper.swift` `forgeWaitingWash` and `forgeWaitingRule`: Periphery lists them
-  as unused, but they are design tokens. `design/tokens.json` names each one in its
-  `dev.agentloops.swift` extension, and `DesignTokensTests` reads them by that name. A
-  Paper colour with a `dev.agentloops.swift` entry is live until the token goes
-  (added 2026-11-12).
-
-- `Agents.xcodeproj` is not checked in. Run `xcodegen generate` in the review worktree
-  after merging `main` and before the index build, or files added since the project was
-  made are missing from the build and from the index (added 2026-10-30).
+- Since #6336, Periphery is a gate on every PR (`scripts/lint.sh periphery`, in
+  `swift-lint:lint`), not this review's: a Swift declaration kept on purpose is a line in
+  `.periphery-allowed.txt`, with why. Of the entries that were here, the whole-program scan no
+  longer reports `isAntigravityUsageLimit`; `Paper.forgeWaitingWash` and `forgeWaitingRule`
+  are in the allowlist; and `run_periphery` runs `xcodegen generate` itself (added 2026-11-19).
 
 ### Knip (Web)
 

@@ -18,8 +18,6 @@ struct PromptBar: View {
     /// Set in a scene of its own (#888): its session, not the selection.
     @Environment(\.poppedChat) private var popped
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.chatActions) private var chatActions
     let agent: Agent
     /// A question or a form is floating above. The bar keeps to its field row while it
     /// is not being typed in, so the question has the room.

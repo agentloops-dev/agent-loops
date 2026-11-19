@@ -16,11 +16,6 @@ public extension DaemonAPI {
         public var path: String
         public var content: String
         public var id: String { path }
-
-        public init(path: String, content: String) {
-            self.path = path
-            self.content = content
-        }
     }
 
     struct AgentConfigEditorRequest: Codable, Sendable {

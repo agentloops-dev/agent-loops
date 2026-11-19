@@ -62,7 +62,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
                 Divider()
                 if wide {
                     HStack(spacing: 0) {
-                        list(items, wide: true)
+                        list(items)
                             .frame(width: min(440, geo.size.width * 0.45))
                         Divider()
                         detailOrEmpty(items)
@@ -190,7 +190,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
 
     // MARK: List
 
-    private func list(_ items: [SecretsPage.Item], wide: Bool) -> some View {
+    private func list(_ items: [SecretsPage.Item]) -> some View {
         let groups = SecretsPage.groups(items, search: search, chip: chip, project: project, sort: sort)
         return List(selection: $selection) {
             if let problem = problem ?? state.problem {
@@ -279,7 +279,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
 
     @ViewBuilder private func narrow(_ items: [SecretsPage.Item]) -> some View {
         #if os(iOS)
-        list(items, wide: false)
+        list(items)
             .navigationDestination(item: $selection) { id in
                 if let item = self.items.first(where: { $0.id == id }) {
                     ScrollView { detail(item) }
@@ -300,7 +300,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
                 ScrollView { detail(item) }
             }
         } else {
-            list(items, wide: false)
+            list(items)
         }
         #endif
     }

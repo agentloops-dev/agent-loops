@@ -129,22 +129,6 @@ public struct Cost: Codable, Hashable, Sendable {
         self.currency = currency
     }
 
-    /// Nil for an amount of zero as well as for none. A runtime reports zero for a model it
-    /// has no per-token price for — OpenCode's free Zen models, a subscription, a local
-    /// model (049 research R2) — and no runtime bills a turn at exactly zero on purpose. So
-    /// the meter says the cost is not measured rather than "$0", and no cost limit is ever
-    /// taken to cover it (Alex, 2026-09-28: for every runtime).
-    public init?(wire: JSONValue?) {
-        guard let wire, let currency = wire["currency"]?.stringValue else { return nil }
-        switch wire["amount"] {
-        case .double(let value): self.amount = Decimal(value)
-        case .int(let value): self.amount = Decimal(value)
-        default: return nil
-        }
-        guard amount != 0 else { return nil }
-        self.currency = currency
-    }
-
     public func adding(_ other: Cost) -> Cost? {
         guard other.currency == currency else { return nil }
         return Cost(amount: amount + other.amount, currency: currency)

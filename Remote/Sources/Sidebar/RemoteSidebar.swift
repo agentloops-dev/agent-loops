@@ -24,8 +24,6 @@ struct RemoteSidebar: View {
     @State private var searched = ""
     /// Folders whose every archived match is on show, past the first few (#176).
     @State private var showingAllMatches: Set<FolderKey> = []
-    /// Archived folders, open or closed, kept as the window keeps it (#343).
-    @AppStorage("showsArchivedFolders") private var showsArchived = false
     /// Status, open until folded, and kept so, as the window keeps it. It keeps Activity's
     /// key (#915), so it opens as Activity was left.
     @AppStorage("showsActivity") private var showsStatus = true

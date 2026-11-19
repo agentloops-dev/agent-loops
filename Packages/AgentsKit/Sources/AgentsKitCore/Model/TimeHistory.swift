@@ -55,47 +55,6 @@ public struct TimeHistory: Codable, Sendable, Hashable {
         self.recap[day] = recap
         records.note(recap, day: day)
     }
-
-    /// Add a stretch of one kind of time, split across the hours it covers, so no hour
-    /// holds more than happened in it.
-    public mutating func add(_ kind: TimeKind, from start: Date, to end: Date, runtime: String,
-                             calendar: Calendar = .current) {
-        var from = start
-        while from < end {
-            let hourStart = calendar.dateInterval(of: .hour, for: from)?.start ?? from
-            let next = min(end, calendar.date(byAdding: .hour, value: 1, to: hourStart) ?? end)
-            guard next > from else { break }
-            var bucket = TimeBucket()
-            bucket[kind] = next.timeIntervalSince(from)
-            add(bucket, runtime: runtime, hour: UsageHistory.hourStamp(for: from, calendar: calendar))
-            from = next
-        }
-    }
-
-    /// Add a bucket into both tiers.
-    public mutating func add(_ bucket: TimeBucket, runtime: String, hour: String) {
-        hours[hour, default: [:]][runtime, default: TimeBucket()].add(bucket)
-        days[String(hour.prefix(10)), default: [:]][runtime, default: TimeBucket()].add(bucket)
-    }
-
-    /// One turn's split, banked as `add` does, and counted as a turn in the hour it ended.
-    public mutating func add(_ segments: [TimeSegment], runtime: String, calendar: Calendar = .current) {
-        guard let last = segments.last else { return }
-        for segment in segments {
-            add(segment.kind, from: segment.start, to: segment.end, runtime: runtime, calendar: calendar)
-        }
-        add(TimeBucket(turns: 1), runtime: runtime, hour: UsageHistory.hourStamp(for: last.end, calendar: calendar))
-    }
-
-    /// Drop what is past the bound, by count as `UsageHistory.prune` does.
-    public mutating func prune() {
-        let hoursKept = Set(hours.keys.sorted().suffix(UsageHistory.hoursKept))
-        hours = hours.filter { hoursKept.contains($0.key) }
-        let daysKept = Set(days.keys.sorted().suffix(UsageHistory.daysKept))
-        days = days.filter { daysKept.contains($0.key) }
-        let recapKept = Set(recap.keys.sorted().suffix(UsageHistory.daysKept))
-        recap = recap.filter { recapKept.contains($0.key) }
-    }
 }
 
 /// The four kinds of time in a running chat, drawn in this order from the bottom.

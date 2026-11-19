@@ -42,50 +42,6 @@ public struct AppViewPolicy: Codable, Hashable, Sendable {
     /// The strict default: nothing declared.
     public static let strict = AppViewPolicy()
 
-    /// The policy for a resource's `_meta.ui.csp`, as declared or absent.
-    public init(csp: JSONValue?) {
-        var refused: [String] = []
-        func origins(_ key: String) -> [String] {
-            var kept: [String] = []
-            for value in csp?[key]?.arrayValue ?? [] {
-                guard let text = value.stringValue, let origin = Self.origin(text) else {
-                    refused.append(value.stringValue ?? "\(value)")
-                    continue
-                }
-                if !kept.contains(origin) { kept.append(origin) }
-            }
-            return kept
-        }
-        self.init(connectDomains: origins("connectDomains"), resourceDomains: origins("resourceDomains"),
-                  frameDomains: origins("frameDomains"), baseURIDomains: origins("baseUriDomains"))
-        self.refused = refused
-    }
-
-    /// `text` as a plain origin, lower-cased, or nil when it is anything else.
-    static func origin(_ text: String) -> String? {
-        let value = text.trimmingCharacters(in: .whitespaces).lowercased()
-        let schemes = ["https://", "wss://", "http://", "ws://"]
-        guard let scheme = schemes.first(where: value.hasPrefix) else { return nil }
-        var rest = String(value.dropFirst(scheme.count))
-        if rest.hasSuffix("/") { rest.removeLast() }
-        var host = rest
-        if let colon = rest.lastIndex(of: ":") {
-            let port = rest[rest.index(after: colon)...]
-            guard port.allSatisfy({ $0.isASCII && $0.isNumber }), let number = Int(port), (1...65535).contains(number) else {
-                return nil
-            }
-            host = String(rest[..<colon])
-        }
-        if host.hasPrefix("*.") { host.removeFirst(2) }
-        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
-        guard !host.isEmpty, host.count <= 253,
-              labels.allSatisfy({ label in
-                  !label.isEmpty && label.count <= 63 && !label.hasPrefix("-") && !label.hasSuffix("-")
-                      && label.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
-              }) else { return nil }
-        return scheme + rest
-    }
-
     /// The Content-Security-Policy, as a header's value or a `<meta>`'s content.
     public var header: String {
         func list(_ base: [String], _ extra: [String], none: Bool = false) -> String {

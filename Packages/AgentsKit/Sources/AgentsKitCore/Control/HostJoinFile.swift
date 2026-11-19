@@ -13,13 +13,6 @@ public extension DaemonAPI {
         /// When this was so.
         public var at: Date
 
-        public init(member: Bool, connected: Bool, problem: String? = nil, at: Date = Date()) {
-            self.member = member
-            self.connected = connected
-            self.problem = problem
-            self.at = at
-        }
-
         /// Not connected, and a try failed: it is trying again on its backoff.
         public var failed: Bool { !connected && problem != nil }
 

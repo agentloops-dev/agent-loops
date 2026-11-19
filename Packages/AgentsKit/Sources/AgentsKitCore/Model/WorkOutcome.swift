@@ -144,9 +144,7 @@ public struct WorkReport: Codable, Hashable, Sendable {
     /// Thrown for an outcome this build does not know, so the record around the report
     /// can drop the report and keep everything else (039, research R8). The synthesized
     /// decoder threw a plain `dataCorrupted` here, which took the whole agent with it.
-    public struct UnknownOutcome: Error {
-        public let word: String
-    }
+    public struct UnknownOutcome: Error {}
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -154,7 +152,7 @@ public struct WorkReport: Codable, Hashable, Sendable {
         // An old record's stuck, partly_done or blocked reads as done (#1916, #2981).
         guard let outcome = WorkOutcome(rawValue: word)
                 ?? (WorkOutcome.readAsDone.contains(word) ? .done : nil)
-        else { throw UnknownOutcome(word: word) }
+        else { throw UnknownOutcome() }
         self.outcome = outcome
         message = try c.decode(String.self, forKey: .message)
         at = try c.decode(Date.self, forKey: .at)

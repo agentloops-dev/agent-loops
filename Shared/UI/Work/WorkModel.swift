@@ -115,13 +115,6 @@ extension WorkModel {
         return got.data
     }
 
-    /// What the boards are kept under: the machines asked.
-    var boardsAsked: String { boardMachines.map(\.id.rawValue).joined(separator: ",") }
-
-    /// The boards this device kept from the last read of the same machines (#4930).
-    func keptBoards() async -> [DaemonAPI.ProjectBoard]? {
-        await keptWork([DaemonAPI.ProjectBoard].self, .boards, boardsAsked)
-    }
     var timelineMachines: [(id: MachineRef, name: String)] { [] }
     var deploysMachines: [(id: MachineRef, name: String)] { [] }
     func lineageSessionsOn(_ nodes: [DaemonAPI.LineageNode]) async -> DaemonAPI.LineageSessionsOn? { nil }

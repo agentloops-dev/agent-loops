@@ -35,24 +35,6 @@ public struct Plan: Codable, Hashable, Sendable, Identifiable {
         state = try c.decodeIfPresent(State.self, forKey: .state) ?? .current
         at = try c.decodeIfPresent(Date.self, forKey: .at) ?? Date()
     }
-
-    /// Apply an update to a list of plans: the same id replaces, a new id is added.
-    public static func applying(_ plan: Plan, to plans: [Plan]) -> [Plan] {
-        var plans = plans
-        if let existing = plans.firstIndex(where: { $0.id == plan.id }) {
-            plans[existing] = plan
-        } else {
-            plans.append(plan)
-        }
-        return plans
-    }
-
-    public static func withdrawing(_ planID: String, in plans: [Plan]) -> [Plan] {
-        var plans = plans
-        guard let existing = plans.firstIndex(where: { $0.id == planID }) else { return plans }
-        plans[existing].state = .withdrawn
-        return plans
-    }
 }
 
 public struct PlanEntry: Codable, Hashable, Sendable, Identifiable {
@@ -83,12 +65,5 @@ public struct PlanEntry: Codable, Hashable, Sendable, Identifiable {
         content = try c.decodeIfPresent(String.self, forKey: .content) ?? ""
         priority = try c.decodeIfPresent(Priority.self, forKey: .priority) ?? .medium
         status = try c.decodeIfPresent(Status.self, forKey: .status) ?? .pending
-    }
-
-    public init?(wire: JSONValue) {
-        guard let content = wire["content"]?.stringValue else { return nil }
-        self.content = content
-        self.priority = wire["priority"]?.stringValue.flatMap(Priority.init(rawValue:)) ?? .medium
-        self.status = wire["status"]?.stringValue.flatMap(Status.init(rawValue:)) ?? .pending
     }
 }

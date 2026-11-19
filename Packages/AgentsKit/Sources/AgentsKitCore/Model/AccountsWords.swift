@@ -35,10 +35,6 @@ public enum AccountsWords {
         usd == usd.rounded() ? "$\(Int(usd))" : String(format: "$%.2f", usd)
     }
 
-    public static func cost(_ a: DaemonAPI.OutsideAccount) -> String {
-        a.monthlyCostUsd.map { "\(money($0))/month" } ?? ""
-    }
-
     /// The description (#4164), under the address; an account made before it has none.
     public static func about(_ a: DaemonAPI.OutsideAccount) -> String {
         let text = (a.description ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -58,11 +54,6 @@ public enum AccountsWords {
 
     /// The sheet's field for Ask before use: "off" when it is off, else none.
     public static let askField = "askBeforeUse"
-
-    /// The address and the plan, under the service.
-    public static func detail(_ a: DaemonAPI.OutsideAccount) -> String {
-        [a.address, a.plan].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
 
     /// The foot: how many, and what they cost a month together.
     public static func foot(_ shown: [DaemonAPI.OutsideAccount]) -> String {

@@ -49,7 +49,8 @@ const APP_PROJECTS = new Set(["mac", "remote"]);
 // - linux: `go`'s "Nx affected" (ubuntu-latest).
 // - swift: `test-swift`'s "Nx affected, Swift" (xcode-27, Apple silicon).
 // - gomac: `test-go`'s "Nx affected, Go on a Mac" (#5755) (no lint: the Linux job's).
-// - swiftlint: `test-swift`'s "SwiftLint" (swift-lint:lint); one task, so it runs or is skipped.
+// - swiftlint: the `swift-lint` job (swift-lint:lint: SwiftLint and Periphery, #6336); one task,
+//   so it runs or is skipped.
 // - apps: `apps`'s "Nx affected" (mac:build, remote:build; xcode-27) (#6060). Its dependencies
 //   (wire:gen, design:gen, web:build) are not its own: they run again as Nx's dependsOn says.
 export const GROUPS = {

@@ -48,7 +48,7 @@ struct AgentConfigurationView: View {
             }
             HStack(spacing: 0) {
                 AgentConfigurationPageList(snapshot: snapshot, workflows: workflows, chosen: page, waiting: waiting,
-                                           choose: choose, place: place)
+                                           choose: choose)
                 chosenPage
             }
         }
@@ -378,7 +378,6 @@ struct AgentConfigurationPageList: View {
     let chosen: AgentConfigurationPage
     var waiting: Set<AgentConfigurationPage> = []
     let choose: (AgentConfigurationPage) -> Void
-    var place: AgentsPlace = .you
 
     private var pages: [AgentConfigurationPage] { AgentConfigurationPage.allCases }
 

@@ -161,10 +161,6 @@ public enum PoolWords {
         "\(runtimeName(runtimeID))’s credit is used up."
     }
 
-    public static func rateLimited(_ runtimeID: String, retryAt: Date, now: Date) -> String {
-        "\(runtimeName(runtimeID)) is rate limited. Trying again at \(time(retryAt, now: now))."
-    }
-
     /// Above a new chat's prompt, when its runtime is out (US3).
     public static func startingOnOut(_ runtimeID: String, state: AllowanceState, now: Date) -> String {
         let name = runtimeName(runtimeID)

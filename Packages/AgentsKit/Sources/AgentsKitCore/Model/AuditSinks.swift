@@ -9,13 +9,6 @@ public extension DaemonAPI {
         public var address: String
         public var token: String?
         public var hasToken: Bool?
-
-        public init(kind: String, address: String, token: String? = nil, hasToken: Bool? = nil) {
-            self.kind = kind
-            self.address = address
-            self.token = token
-            self.hasToken = hasToken
-        }
     }
 
     /// A sink and how this copy of the control plane is sending to it.

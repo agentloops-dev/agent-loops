@@ -12,10 +12,10 @@ extension RemoteModel {
     /// a pasted key now that Gemini, the only one that did, is retired (#3043), and this
     /// device has no sign-in of its own to relay (that is the Mac window's alone), so
     /// there is nothing to lend here.
-    func answerHomeCredentialWanted(_ wanted: DaemonAPI.CredentialWanted) async -> Bool { false }
+    func answerHomeCredentialWanted() async -> Bool { false }
 
     /// A server's daemon wants a key to start a runtime (043, R6): nothing to lend (#3043).
-    func answerCredentialWanted(_ wanted: DaemonAPI.CredentialWanted, on id: MachineRef) async -> Bool { false }
+    func answerCredentialWanted() async -> Bool { false }
 
     /// Put what the person typed on a page on disk, through the daemon, which is the one
     /// writer and the one that tells the agent (022). The same request the Mac's page

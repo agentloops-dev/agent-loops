@@ -7,10 +7,6 @@ public enum WorkflowLimit: String, Codable, Hashable, Sendable {
 
     /// The total when the person has set none.
     public static let defaultTotal = 20
-    /// The most the total can be set to, whatever a request or a hand-edited file says.
-    public static let maximumTotal = 100
-    /// The numbers the setting offers, in all three clients.
-    public static let totalRange = 1...maximumTotal
 
     /// How many this ceiling allows, given the total in force.
     public func allowed(total: Int) -> Int {
@@ -39,29 +35,6 @@ public enum WorkflowLimit: String, Codable, Hashable, Sendable {
         switch self {
         case .folder: return "This folder already has \(allowed(total: total)) workflows running"
         }
-    }
-}
-
-/// The person's setting for the total (#506), kept by the daemon in its own folder as
-/// `workflow-limit.json`, beside the wake settings, and copied to every server the way
-/// retention is. Nil until they set it, which is the default.
-public struct WorkflowLimitSettings: Codable, Hashable, Sendable {
-    public var total: Int?
-
-    public init(total: Int? = nil) {
-        self.total = total
-    }
-
-    /// What is enforced: the person's number, or the default, between 1 and the
-    /// maximum whatever the file says.
-    public var effectiveTotal: Int {
-        Swift.max(1, Swift.min(total ?? WorkflowLimit.defaultTotal, WorkflowLimit.maximumTotal))
-    }
-
-    /// Why a setting cannot be kept, in the person's words; nil when it can.
-    public var problem: String? {
-        guard let total, !WorkflowLimit.totalRange.contains(total) else { return nil }
-        return "Workflows turned on must be between 1 and \(WorkflowLimit.maximumTotal)."
     }
 }
 
@@ -241,32 +214,6 @@ public enum WorkflowRefusal: Codable, Hashable, Sendable {
         case .deniedHere: return false
         }
     }
-
-    /// Whether two refusals are the same reason, for the purpose of collapsing repeats.
-    /// The depth in `chainTooDeep` is not part of it: three identical loop refusals are
-    /// one thing that keeps happening, not three things.
-    public func isSameReason(as other: WorkflowRefusal) -> Bool {
-        switch (self, other) {
-        case (.chainTooDeep, .chainTooDeep), (.runInFlight, .runInFlight),
-             (.archived, .archived), (.disabled, .disabled), (.agentUnavailable, .agentUnavailable),
-             (.noTriggeringAgent, .noTriggeringAgent), (.missedWhileClosed, .missedWhileClosed),
-             (.folderGone, .folderGone), (.dayLimitReached, .dayLimitReached),
-             (.awaitingApproval, .awaitingApproval), (.deniedHere, .deniedHere),
-             (.coolingDown, .coolingDown), (.outsideHours, .outsideHours), (.queued, .queued), (.queueFull, .queueFull):
-            return true
-        // The ceiling only, not the number it stood at: raising it by one is not a
-        // different reason to be past it.
-        case (.overLimit(let a, _), .overLimit(let b, _)): return a == b
-        case (.unreadable(let a), .unreadable(let b)): return a == b
-        case (.triggerNotSupported(let a), .triggerNotSupported(let b)): return a == b
-        // The setting only, and never the detail — the same rule `chainTooDeep` follows
-        // by ignoring its depth. The sentence names what the runtime offers, and that
-        // list can change between two fires that are the same refusal; comparing it
-        // would turn a weekend of one problem into a column of near-identical rows.
-        case (.settingRefused(let a, _), .settingRefused(let b, _)): return a == b
-        default: return false
-        }
-    }
 }
 
 /// What the last fire produced.
@@ -283,15 +230,6 @@ public enum WorkflowOutcome: Codable, Hashable, Sendable {
         switch self {
         case .ran(_, let at), .refused(_, let at, _): return at
         }
-    }
-
-    /// The outcome after this one arrives: a refusal for the same reason as the one
-    /// already recorded counts up, and anything else starts again at one.
-    public func following(_ previous: WorkflowOutcome?) -> WorkflowOutcome {
-        guard case .refused(let refusal, let at, _) = self,
-              case .refused(let old, _, let count) = previous,
-              refusal.isSameReason(as: old) else { return self }
-        return .refused(refusal, at: at, repeats: count + 1)
     }
 
     /// The line the folder page puts under a workflow's name.
@@ -323,35 +261,4 @@ extension Workflow {
     /// How many triggers may wait while a run is going (#422). Fixed: ten runs back to
     /// back is already an afternoon of one workflow.
     public static let queueLimit = 10
-}
-
-/// One firing of one workflow, while it is in flight.
-///
-/// Not a history: it exists to hold the depth its children inherit and to be the thing
-/// a second fire collides with. Once the agent has finished, what is left is an
-/// outcome and an agent, both of which are shown elsewhere.
-public struct WorkflowRun: Codable, Hashable, Sendable, Identifiable {
-    public var id: UUID
-    public var workflowID: String
-    public var folder: URL
-    public var trigger: WorkflowTrigger
-    public var triggeringAgentID: UUID?
-    /// How far this is from something a person or a clock did. Zero for a schedule, for
-    /// Run now, and for an agent nobody automated; one more for each step after that.
-    public var depth: Int
-    public var agentID: UUID?
-    public var startedAt: Date
-
-    public init(id: UUID = UUID(), workflowID: String, folder: URL,
-                trigger: WorkflowTrigger, triggeringAgentID: UUID? = nil,
-                depth: Int = 0, agentID: UUID? = nil, startedAt: Date = Date()) {
-        self.id = id
-        self.workflowID = workflowID
-        self.folder = Folder.standardize(folder)
-        self.trigger = trigger
-        self.triggeringAgentID = triggeringAgentID
-        self.depth = depth
-        self.agentID = agentID
-        self.startedAt = startedAt
-    }
 }

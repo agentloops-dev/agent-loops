@@ -76,17 +76,6 @@ public struct AutoMapping: Codable, Sendable, Hashable {
     public var words: String
     public var mark: AutoMark
     public var note: String?
-
-    public init(runtimeID: String, field: AutoField, level: String, native: NativeSetting? = nil, words: String,
-                mark: AutoMark, note: String? = nil) {
-        self.runtimeID = runtimeID
-        self.field = field
-        self.level = level
-        self.native = native
-        self.words = words
-        self.mark = mark
-        self.note = note
-    }
 }
 
 /// One of a runtime's own settings a cell can be set to.
@@ -95,13 +84,6 @@ public struct AutoNativeChoice: Codable, Sendable, Hashable {
     public var field: AutoField
     public var native: NativeSetting
     public var words: String
-
-    public init(runtimeID: String, field: AutoField, native: NativeSetting, words: String) {
-        self.runtimeID = runtimeID
-        self.field = field
-        self.native = native
-        self.words = words
-    }
 }
 
 /// auto/mappings.
@@ -232,12 +214,6 @@ public struct AutoPreview: Codable, Sendable, Hashable {
     public var runtimeID: String?
     public var native: NativeSetting?
     public var skipped: [AutoSkip]
-
-    public init(runtimeID: String? = nil, native: NativeSetting? = nil, skipped: [AutoSkip] = []) {
-        self.runtimeID = runtimeID
-        self.native = native
-        self.skipped = skipped
-    }
 }
 
 public struct SetLevelsRequest: Codable, Sendable, Hashable {

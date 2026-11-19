@@ -348,14 +348,6 @@ final class VoiceMode {
         turnOff()
     }
 
-    /// Stop: the voice stops at once, and it listens again. What was not said stays on
-    /// the screen.
-    func stopSpeaking() {
-        guard phase == .speaking else { return }
-        quiet()
-        listen()
-    }
-
     /// The voice stops, and what it had still to say is dropped: it is on the screen.
     private func quiet() {
         speaking?.cancel()

@@ -63,11 +63,6 @@ public extension DaemonAPI {
     struct PolicyConnectorRule: Codable, Sendable, Hashable {
         public var writes: ConnectorToolLevel?
         public var tools: [String: ConnectorToolLevel]?
-
-        public init(writes: ConnectorToolLevel? = nil, tools: [String: ConnectorToolLevel]? = nil) {
-            self.writes = writes
-            self.tools = tools
-        }
     }
 
     /// The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the
@@ -130,12 +125,6 @@ public extension DaemonAPI {
         public var folder: String
         public var name: String
         public var count: Int
-
-        public init(folder: String, name: String, count: Int) {
-            self.folder = folder
-            self.name = name
-            self.count = count
-        }
     }
 
     /// A machine of the person's that does not say `host.policy-layers/1` (Edge Cases, "A
@@ -242,12 +231,6 @@ public extension DaemonAPI {
         public var pending: GuardedChange?
         /// Why the file on disk cannot be read as a layer, when that is why a change is pending.
         public var invalid: String?
-
-        public init(rules: PolicyRules, pending: GuardedChange? = nil, invalid: String? = nil) {
-            self.rules = rules
-            self.pending = pending
-            self.invalid = invalid
-        }
     }
 
     /// `policy/setFolder` (#2957): writes `.agents/policy.json` in a stable order and approves

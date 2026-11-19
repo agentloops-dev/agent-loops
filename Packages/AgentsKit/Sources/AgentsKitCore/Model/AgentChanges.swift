@@ -214,13 +214,6 @@ public struct FolderHunk: Codable, Hashable, Sendable {
     public var newStart: Int
     public var noNewlineAtEnd: Bool
     public var lines: [DiffLine]
-
-    public init(oldStart: Int, newStart: Int, noNewlineAtEnd: Bool = false, lines: [DiffLine]) {
-        self.oldStart = oldStart
-        self.newStart = newStart
-        self.noNewlineAtEnd = noNewlineAtEnd
-        self.lines = lines
-    }
 }
 
 /// `changes/list`.
@@ -231,13 +224,6 @@ public struct ChangesList: Codable, Hashable, Sendable {
     public var reportsEdits: Bool
     /// Files changed beyond those listed; nil when all are (#210).
     public var more: Int?
-
-    public init(files: [ChangedFile], git: GitView, reportsEdits: Bool, more: Int? = nil) {
-        self.files = files
-        self.git = git
-        self.reportsEdits = reportsEdits
-        self.more = more
-    }
 }
 
 /// `changes/file`.
@@ -248,12 +234,4 @@ public struct ChangedFileDetail: Codable, Hashable, Sendable {
     public var hunks: [FolderHunk]?
     /// Only when asked for, and only with git.
     public var whole: [DiffLine]?
-
-    public init(file: ChangedFile, edits: [ReportedEdit], hunks: [FolderHunk]? = nil,
-                whole: [DiffLine]? = nil) {
-        self.file = file
-        self.edits = edits
-        self.hunks = hunks
-        self.whole = whole
-    }
 }
