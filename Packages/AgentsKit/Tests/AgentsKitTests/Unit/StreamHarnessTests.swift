@@ -21,11 +21,18 @@ struct StreamHarnessTests {
     }
 }
 
-/// What a client holds that the streams check: each agent's id, title and state, and the open chat's entries.
+/// What a client holds that the streams check: each agent's id, title and state, the open chat's entries,
+/// and the permission and question cards (#6188), each as `kind|id|agentID`, sorted.
 struct StreamView: Equatable, CustomTestStringConvertible {
     var agents: [String]
     var entries: [String]
-    var testDescription: String { "agents \(agents) entries \(entries.count): \(entries.suffix(3))" }
+    var cards: [String] = []
+    var testDescription: String { "agents \(agents) entries \(entries.count): \(entries.suffix(3)) cards \(cards)" }
+
+    static func cards(_ permissions: [PermissionRequest], _ elicitations: [ElicitationRequest]) -> [String] {
+        (permissions.map { "permission|\($0.id.uuidString)|\($0.agentID.uuidString)" }
+            + elicitations.map { "question|\($0.id.uuidString)|\($0.agentID.uuidString)" }).sorted()
+    }
 
     /// With `tail` (a long chat), the daemon's last entries, as many as the client kept and at least
     /// `tail`: a client keeps a chat's end (`AgentsModel.entriesKept`), so a turn lost or doubled in it fails.
@@ -48,6 +55,9 @@ protocol StreamClient {
 struct StreamSnapshot {
     var agents: [Agent]
     var page: TranscriptPage
+    /// The pending reads (`permissions/pending`, `elicitations/pending`); empty in a stream with no cards.
+    var permissions: [PermissionRequest] = []
+    var elicitations: [ElicitationRequest] = []
 }
 
 struct StreamCase: CustomTestStringConvertible, Sendable {
@@ -140,14 +150,17 @@ struct StreamFile: Sendable {
             try decoder.decode(type, from: JSONEncoder().encode(value))
         }
         return StreamSnapshot(agents: try decode([Agent].self, state["agents"]),
-                              page: try decode(TranscriptPage.self, state["transcript"]))
+                              page: try decode(TranscriptPage.self, state["transcript"]),
+                              permissions: try state["permissions"].map { try decode([PermissionRequest].self, $0) } ?? [],
+                              elicitations: try state["elicitations"].map { try decode([ElicitationRequest].self, $0) } ?? [])
     }
 
     /// The file's own record of what the daemon holds after `step`, as a client's view of it.
     func view(after step: Int) throws -> StreamView {
         let snapshot = try snapshot(after: step)
         return StreamView(agents: snapshot.agents.map { "\($0.id.uuidString)|\($0.title ?? "")|\($0.state)" }.sorted(),
-                          entries: snapshot.page.entries.map(\.streamLine))
+                          entries: snapshot.page.entries.map(\.streamLine),
+                          cards: StreamView.cards(snapshot.permissions, snapshot.elicitations))
     }
 }
 
@@ -183,6 +196,8 @@ final class ModelStreamClient: StreamClient {
         let load = model.beginTranscriptLoad()
         model.replaceAgents(snapshot.agents, from: host)
         for (method, params) in during { model.apply(method, params, from: host) }
+        // As AppModel's catch-up of a host: its pending reads replace its agents' cards (#6188).
+        model.replaceCards(from: host, permissions: snapshot.permissions, elicitations: snapshot.elicitations)
         if let start = model.resumeStart, snapshot.page.total >= start {
             let rest = TranscriptPage(firstIndex: start, total: snapshot.page.total,
                                       entries: Array(snapshot.page.entries.dropFirst(start - snapshot.page.firstIndex)))
@@ -193,6 +208,7 @@ final class ModelStreamClient: StreamClient {
 
     func view() -> StreamView {
         StreamView(agents: model.agents.filter { $0.host == host }.map { "\($0.id.uuidString)|\($0.title ?? "")|\($0.state)" }.sorted(),
-                   entries: model.entries.map(\.streamLine))
+                   entries: model.entries.map(\.streamLine),
+                   cards: StreamView.cards(model.permissions, model.elicitations))
     }
 }

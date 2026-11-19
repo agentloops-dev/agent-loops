@@ -1767,6 +1767,21 @@ public final class AgentsModel {
         elicitations = listed.filter { !answering.contains($0.id) }
     }
 
+    /// One host's pending reads (`permissions/pending`, `elicitations/pending`) replace its
+    /// cards; nil leaves that kind as it is. A card is kept only when its agent is held on
+    /// another host: the card of an agent that is on no host now (removed while this client
+    /// was away) goes with the read, and does not wait for ever (#6188).
+    public func replaceCards(from host: MachineRef, permissions listedPermissions: [PermissionRequest]?,
+                             elicitations listedElicitations: [ElicitationRequest]?) {
+        let elsewhere = { (id: UUID) in self.agent(id).map { $0.host != host } ?? false }
+        if let listedPermissions {
+            replacePermissions(permissions.filter { elsewhere($0.agentID) } + listedPermissions)
+        }
+        if let listedElicitations {
+            replaceElicitations(elicitations.filter { elsewhere($0.agentID) } + listedElicitations)
+        }
+    }
+
     /// Answer a permission: its card goes at once, before the host has the answer
     /// (#4786), and comes back when the answer did not go, unless the host said in the
     /// meantime that it was answered elsewhere.
