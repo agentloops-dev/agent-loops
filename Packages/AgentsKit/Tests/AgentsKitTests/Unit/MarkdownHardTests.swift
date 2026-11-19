@@ -50,6 +50,57 @@ struct MarkdownHardTests {
         }
     }
 
+    /// A large table that streams is read again at its last rows, not whole at each chunk (#6299): the
+    /// 40-column, 300-row table read 0.44 s a time on the main thread.
+    @Test func aStreamedTableIsReadAtItsLastRows() throws {
+        let text = try String(contentsOf: Self.directory.appending(path: "huge-tables.md"), encoding: .utf8)
+        let cache = MarkdownCache()
+        let chunk = 400
+        var end = text.startIndex
+        var most = 0
+        while end < text.endIndex {
+            end = text.index(end, offsetBy: chunk, limitedBy: text.endIndex) ?? text.endIndex
+            let before = cache.charactersRead
+            let blocks = cache.blocks(for: String(text[..<end]))
+            #expect(!blocks.isEmpty)
+            most = max(most, cache.charactersRead - before)
+        }
+        // A part is about 2,000 characters and the table's head, and a cut reads two parts.
+        #expect(most < 8_000, "read \(most) of \(text.utf8.count) characters at one chunk")
+        #expect(cache.blocks(for: text) == MarkdownBlock.parse(text))
+    }
+
+    /// A long table cut by rows reads as the same table, at every row as it arrives: alignments,
+    /// marks and escaped pipes in its cells, short and long rows, and what comes after it.
+    @Test func aTableCutByRowsReadsAsOne() {
+        let filler = String(repeating: "Words enough to fill a part of the reading. ", count: 60)
+        let rows = (0..<120).map { index -> String in
+            switch index % 4 {
+            case 0: "| row \(index) | *marked* `code` | a \\| pipe |"
+            case 1: "| short \(index) |"
+            case 2: "| long \(index) | b | c | d | e |"
+            default: "| **\(index)** | [link](https://example.com) | ok |"
+            }
+        }
+        let table = "| one | two | three |\n| :-- | :-: | --: |\n" + rows.joined(separator: "\n")
+        let shapes = [
+            filler + "\n\n" + table + "\n\nAfter the table.",
+            table + "\n\n" + filler,
+            filler + "\n\n" + table + "\nlazy row after it\n\n" + table,
+            filler + "\n\nA paragraph line\n" + table,
+        ]
+        #expect(MarkdownBlock.parts(shapes[0]).contains { $0.head != nil })
+        for shape in shapes {
+            #expect(MarkdownCache().blocks(for: shape) == MarkdownBlock.parse(shape), "\(shape.prefix(80))")
+            let cache = MarkdownCache()
+            let lines = shape.components(separatedBy: "\n")
+            for end in lines.indices where end % 3 == 0 || end == lines.count - 1 {
+                let prefix = lines[...end].joined(separator: "\n")
+                #expect(cache.blocks(for: prefix) == MarkdownBlock.parse(prefix), "\(prefix.suffix(60))")
+            }
+        }
+    }
+
     static func marks(in text: String) -> Set<String> {
         Set(text.matches(of: /k\d+/).map { String($0.output) })
     }
