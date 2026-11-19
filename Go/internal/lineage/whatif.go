@@ -36,15 +36,8 @@ func InFlight(nodes []wire.LineageCostNode, landings []Landing, repo string, now
 	landed := map[string]bool{}
 	for _, l := range landings {
 		landed[l.Ref] = true
-		start := l.At
-		if took := l.Lead; took != nil || l.Cycle != nil {
-			if took == nil {
-				took = l.Cycle
-			}
-			start = l.At.Add(-time.Duration(*took * float64(time.Second)))
-		}
 		if !l.At.Before(since) {
-			add(start, l.At)
+			add(landingStart(l), l.At)
 		}
 	}
 	parents := map[string]bool{}
@@ -54,13 +47,7 @@ func InFlight(nodes []wire.LineageCostNode, landings []Landing, repo string, now
 		}
 	}
 	for _, n := range nodes {
-		if n.Node.Kind != KindIssue || landed[n.Node.Ref] || parents[n.Node.Ref] || deref(n.Level) == "epic" {
-			continue
-		}
-		if repo != "" && !SameRepo(deref(n.Repo), repo) {
-			continue
-		}
-		if n.Resolved != nil && n.Resolved.State != nil && *n.Resolved.State == "closed" {
+		if landed[n.Node.Ref] || parents[n.Node.Ref] || !openWorkIn(n, repo) {
 			continue
 		}
 		if s := StartOf(n); s != nil && !n.LastAt.Time().Before(since) {
@@ -68,6 +55,31 @@ func InFlight(nodes []wire.LineageCostNode, landings []Landing, repo string, now
 		}
 	}
 	return bins
+}
+
+// landingStart is when a landed issue's work started: its lead time, else its cycle time,
+// before it landed, or its landing when it has neither.
+func landingStart(l Landing) time.Time {
+	took := l.Lead
+	if took == nil {
+		took = l.Cycle
+	}
+	if took == nil {
+		return l.At
+	}
+	return l.At.Add(-time.Duration(*took * float64(time.Second)))
+}
+
+// openWorkIn says a node is an issue of repo (any repo for "") that is not an epic and not
+// closed.
+func openWorkIn(n wire.LineageCostNode, repo string) bool {
+	if n.Node.Kind != KindIssue || deref(n.Level) == "epic" {
+		return false
+	}
+	if repo != "" && !SameRepo(deref(n.Repo), repo) {
+		return false
+	}
+	return n.Resolved == nil || n.Resolved.State == nil || *n.Resolved.State != "closed"
 }
 
 // LanesOf is the lanes a window ran with: the issues in flight in an average hour that had
