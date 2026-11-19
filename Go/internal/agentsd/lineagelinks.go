@@ -380,7 +380,13 @@ func (d *Daemon) folderOrigin(folder string) (origin string, known bool) {
 	}
 	out, err := git(folder, "remote", "get-url", "origin")
 	if err != nil {
-		if !gitAnswered(err) || !isDir(folder) {
+		if !isDir(folder) {
+			return "", false
+		}
+		if !gitAnswered(err) || !gitSaidNoOrigin(err) {
+			// A read that failed (a slow or a killed git, a config git refuses) is not "no
+			// origin": it keeps nothing, so the next call reads again (#6261).
+			log.Printf("forge of %s: read the origin: %v", folder, err)
 			return "", false
 		}
 		out = ""
@@ -508,11 +514,6 @@ func (d *Daemon) folderRepo(folder string) forgeRepo {
 	}
 	out, known := d.folderOrigin(folder)
 	if !known {
-		return forgeRepo{}
-	} else if !gitSaidNoOrigin(err) {
-		// A read that failed (a slow or a killed git, a config git refuses) is not "on no
-		// forge": it keeps nothing, so the next call reads again (#6261).
-		log.Printf("forge of %s: read the origin: %v", folder, err)
 		return forgeRepo{}
 	}
 	if remote, ok := parseRemote(out); ok {

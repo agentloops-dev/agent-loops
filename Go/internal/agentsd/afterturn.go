@@ -4,7 +4,6 @@ import (
 	"log"
 	"sync"
 	"time"
-
 )
 
 // afterTurnLimit is how long Shutdown waits for the writes that follow a turn: long enough
@@ -14,10 +13,17 @@ const afterTurnLimit = 5 * time.Second
 // afterTurnState tracks the goroutines that run turns and write what follows them
 // (events.jsonl, workflows.json, time-history.json, achievements.json, guarded-files.json),
 // so that Shutdown can wait for them (#1272).
+//
+// A count and a channel under afterTurnMu, not a sync.WaitGroup (#6269): a WaitGroup
+// forbids an Add from zero while a Wait runs, and a wait on a live daemon (a test's, for
+// its queue check) raced a folder.changed timer's goAfterTurn.
 type afterTurnState struct {
 	afterTurnMu     sync.Mutex
 	afterTurnClosed bool
-	afterTurns      sync.WaitGroup
+	// afterTurnsUnderWay is how many have started and not ended.
+	afterTurnsUnderWay int
+	// afterTurnsIdle closes when afterTurnsUnderWay goes back to 0; nil while it is 0.
+	afterTurnsIdle chan struct{}
 }
 
 // goAfterTurn is goJob for a turn and what follows it. Once the host is going it starts
@@ -28,15 +34,39 @@ func (d *Daemon) goAfterTurn(what string, fn func()) bool {
 	if d.afterTurnClosed {
 		return false
 	}
-	d.afterTurns.Add(1)
+	d.addAfterTurnLocked()
 	if !d.goJobAt(what, callerSite(1), func() {
-		defer d.afterTurns.Done()
+		defer d.doneAfterTurn()
 		fn()
 	}) {
-		d.afterTurns.Done()
+		d.doneAfterTurnLocked()
 		return false
 	}
 	return true
+}
+
+// addAfterTurnLocked counts one more under way; afterTurnMu is held.
+func (d *Daemon) addAfterTurnLocked() {
+	if d.afterTurnsUnderWay == 0 {
+		d.afterTurnsIdle = make(chan struct{})
+	}
+	d.afterTurnsUnderWay++
+}
+
+// doneAfterTurn counts one fewer under way.
+func (d *Daemon) doneAfterTurn() {
+	d.afterTurnMu.Lock()
+	defer d.afterTurnMu.Unlock()
+	d.doneAfterTurnLocked()
+}
+
+// doneAfterTurnLocked is doneAfterTurn with afterTurnMu held.
+func (d *Daemon) doneAfterTurnLocked() {
+	d.afterTurnsUnderWay--
+	if d.afterTurnsUnderWay == 0 {
+		close(d.afterTurnsIdle)
+		d.afterTurnsIdle = nil
+	}
 }
 
 // closeAfterTurns starts no more turns or writes after them.
@@ -58,17 +88,22 @@ func (d *Daemon) going() bool {
 	return d.afterTurnClosed
 }
 
-// waitAfterTurns waits for those under way, at most limit, and is false if they were not done.
+// waitAfterTurns waits until none are under way, at most limit, and is false if they were
+// not done. It is safe on a live daemon: one that starts during the wait is waited for too,
+// until the count first goes back to 0.
 func (d *Daemon) waitAfterTurns(limit time.Duration) bool {
-	done := make(chan struct{})
-	go func() {
-		d.afterTurns.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
+	d.afterTurnMu.Lock()
+	idle := d.afterTurnsIdle
+	d.afterTurnMu.Unlock()
+	if idle == nil {
 		return true
-	case <-time.After(limit):
+	}
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	select {
+	case <-idle:
+		return true
+	case <-timer.C:
 		log.Printf("the host goes before the writes after a turn are done (waited %v)", limit)
 		return false
 	}

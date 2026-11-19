@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -19,7 +18,6 @@ import (
 // count, and a machine the control plane does not answer counts alone and says so.
 
 func TestHelperLimitsCountAcrossTheProject(t *testing.T) {
-	flaky.UnderLoad(t, "#6269")
 	t.Parallel()
 
 	fakeRuntimes(t)
