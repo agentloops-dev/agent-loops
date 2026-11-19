@@ -677,17 +677,10 @@ func TestATurnWithACard(t *testing.T) {
 	d, c := start(t, root)
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work,
-		"prompt": "Please ask, then write hi.txt", "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}}), &id)
 	var permission wire.PermissionRequest
-	c.until(t, "a card", func(method string, p json.RawMessage) bool {
-		var n wire.PermissionNotification
-		if method == "agent/permission" && json.Unmarshal(p, &n) == nil && n.Request != nil {
-			permission = *n.Request
-			return true
-		}
-		return false
-	})
+	json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work,
+		"prompt": "Please ask, then write hi.txt", "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}},
+		"a card", aCard(&permission)), &id)
 	if got := d.pendingPermissions(); len(got) != 1 || got[0].ID != permission.ID {
 		t.Fatalf("pending %v", got)
 	}
@@ -772,17 +765,9 @@ func TestACardAnsweredInWordsDoesNotCarryOn(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
-		"prompt": "Please ask, then write hi.txt"}), &id)
 	var permission wire.PermissionRequest
-	c.until(t, "a card", func(method string, p json.RawMessage) bool {
-		var n wire.PermissionNotification
-		if method == "agent/permission" && json.Unmarshal(p, &n) == nil && n.Request != nil {
-			permission = *n.Request
-			return true
-		}
-		return false
-	})
+	json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+		"prompt": "Please ask, then write hi.txt"}, "a card", aCard(&permission)), &id)
 	c.call(t, 2, "permissions/answer", map[string]any{"permissionID": permission.ID, "optionID": "reject"})
 	waitFor(t, "the end", func() bool { a := d.Store.Agent(id); return a.State == wire.AgentStateFinished })
 	if a := d.Store.Agent(id); len(a.QueuedPrompts) != 0 || a.Report == nil || a.Report.Message != "You said no." {
