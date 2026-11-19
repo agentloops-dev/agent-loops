@@ -1187,6 +1187,12 @@ func (d *Daemon) end(l *live, s wire.AgentState, why wire.EndedReason) {
 		requested, archiveNow = d.settleArchiveRequest(a, s, why, showedFile)
 	})
 	d.record(l.id, stateChanged(s, reason(why)))
+	// A stopped session holds nothing (#6190): a runtime that died, or an error that ended
+	// the turn, let go of its leases at once, not when they run out, so its line moves. Only
+	// the daemon's going keeps them: the next start picks the session up with them.
+	if s == wire.AgentStateStopped && why != wire.EndedReasonDaemonGone {
+		d.dropLeases(l.id, "holderStopped")
+	}
 	if keptBlock {
 		d.keptBlock(l.id)
 	}
