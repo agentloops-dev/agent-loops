@@ -13,15 +13,6 @@ import (
 // The forge contract (#6191) over the fake Bitbucket: pull request 1 is the story's, pull
 // request 2 the one that closes.
 
-// bitbucketMissing are the contract's events this server does not give, with their bugs.
-var bitbucketMissing = map[string]string{ //nolint:gosec // G101: event names and bugs, not credentials
-	"checks.passed":                    "#6293: no event for a pull request's head whose checks passed",
-	"pr.reviewed":                      "#6293: no event for a review (an approval or a request for changes)",
-	"pr.commented":                     "#6293: no event for a comment on a pull request",
-	"pr.blocked/required_check_failed": "#6293: openPulls reads no head statuses, so a failed check never blocks",
-	"pr.blocked/changes_requested":     "#6293: openPulls reads no participants' states",
-}
-
 func TestForgeContract(t *testing.T) {
 	f := newFake(t)
 	now := start
@@ -42,7 +33,6 @@ func TestForgeContract(t *testing.T) {
 		Name:    "bitbucket",
 		Kind:    forgecontract.CodeForge,
 		Offered: EventNames(),
-		Missing: bitbucketMissing,
 		Args:    func(string) map[string]any { return map[string]any{"pr": []int{1, 2}} },
 		Poll: func(ctx context.Context, raw json.RawMessage) (map[string]any, *mcpevents.Error) {
 			return events.Poll(ctx, raw)
