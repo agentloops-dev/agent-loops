@@ -4023,14 +4023,10 @@ final class AppModel {
             work.replaceMCPHealth(health, from: host)
         }
         let theirs = Set(work.agents.filter { $0.host == host }.map(\.id))
-        if let listed = try? await server.call(DaemonAPI.Method.permissionsPending,
-                                               returning: [PermissionRequest].self) {
-            work.replacePermissions(work.permissions.filter { !theirs.contains($0.agentID) } + listed)
-        }
-        if let listed = try? await server.call(DaemonAPI.Method.elicitationsPending,
-                                               returning: [ElicitationRequest].self) {
-            work.replaceElicitations(work.elicitations.filter { !theirs.contains($0.agentID) } + listed)
-        }
+        // A card of an agent removed while away goes with these reads (#6188).
+        let permissions = try? await server.call(DaemonAPI.Method.permissionsPending, returning: [PermissionRequest].self)
+        let elicitations = try? await server.call(DaemonAPI.Method.elicitationsPending, returning: [ElicitationRequest].self)
+        work.replaceCards(from: host, permissions: permissions, elicitations: elicitations)
         if let watching = selection, theirs.contains(watching) { await loadTranscript() }
         for chat in popouts.values where theirs.contains(chat.id) { await loadTranscript(of: chat) }
     }

@@ -10,12 +10,19 @@ reconnects, and the client must end at the daemon's state:
 
 The same file is the input of both, so a difference between the clients is a failed test.
 
+The files: `session-basic.json` (agents and a chat), and `session-cards.json` with `session-cards-server.json` (the same
+cards session from the Mac's host and from a second machine, #6188): a permission and a question, asked and answered,
+a card lost to a daemon restart and asked again, and an agent removed with its card. A restart is a reconnect in a
+scenario, never a step heard alone: the daemon's new connection says nothing about the card that went. The daemon's
+side of the cards (each client hears a card within 2 s of the ask, one offer to the control plane, two answers at once,
+a stop, a restart) is `Go/internal/agentsd/cards_test.go`.
+
 ## Format (`format: 1`)
 
 | Key | Meaning |
 |---|---|
 | `session`, `host` | The chat the client has open, and the host its notifications come from. |
-| `start` | What the daemon held before step 0: `agents` (a list read) and `transcript` (a page read, from the first entry). |
+| `start` | What the daemon held before step 0: `agents` (a list read) and `transcript` (a page read, from the first entry); in a stream with cards (#6188), also `permissions` and `elicitations` (the `permissions/pending` and `elicitations/pending` reads). |
 | `steps[i]` | `method`, `params`: one notification, as the daemon sent it. `after`: what a read gives right after it (same shape as `start`). |
 | `scenarios[]` | `name`, `ops`, `expect`: the step whose `after` the client must hold when the ops end (-1: `start`). `fault` (optional): the issue of a bug the scenario finds; both runners skip it, and the fix removes the field. |
 
