@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -40,16 +41,16 @@ func copyRoot(from, to string) error {
 		}
 		rel, _ := filepath.Rel(from, p)
 		if e.IsDir() {
-			return os.MkdirAll(filepath.Join(to, rel), 0o755)
+			return os.MkdirAll(filepath.Join(to, rel), 0o750)
 		}
 		if !e.Type().IsRegular() {
 			return nil // the daemon's socket
 		}
-		b, err := os.ReadFile(p)
+		b, err := os.ReadFile(p) //nolint:gosec // G122: the test's own temporary folders
 		if err != nil {
 			return nil
 		}
-		return os.WriteFile(filepath.Join(to, rel), b, 0o644)
+		return os.WriteFile(filepath.Join(to, rel), b, 0o600)
 	})
 }
 
@@ -84,15 +85,15 @@ func (k *killPoints) fault(file string, appends bool, data []byte) error {
 	half := data[:len(data)/2]
 	if appends {
 		add("half a line of", string(half), func(dir string) {
-			f, err := os.OpenFile(filepath.Join(dir, rel), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+			f, err := os.OpenFile(filepath.Join(dir, rel), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 			if err == nil {
-				f.Write(half)
-				f.Close()
+				_, _ = f.Write(half)
+				_ = f.Close()
 			}
 		})
 	} else {
 		add("half a file for", string(half), func(dir string) {
-			os.WriteFile(filepath.Join(dir, filepath.Dir(rel), "."+filepath.Base(rel)+".00ff.tmp"), half, 0o644)
+			_ = os.WriteFile(filepath.Join(dir, filepath.Dir(rel), "."+filepath.Base(rel)+".00ff.tmp"), half, 0o600)
 		})
 	}
 	return nil
@@ -110,8 +111,10 @@ func scriptedSession(t *testing.T) (root string, points []killPoint, id wire.UUI
 	t.Cleanup(func() { store.SetWriteFault(nil) })
 
 	var permission wire.PermissionRequest
-	json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
-		"prompt": "Please ask, then write hi.txt"}, "a card", aCard(&permission)), &id)
+	if err := json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+		"prompt": "Please ask, then write hi.txt"}, "a card", aCard(&permission)), &id); err != nil {
+		t.Fatal(err)
+	}
 	waitFor(t, "the card", func() bool { return d.Store.Agent(id).State == wire.AgentStateWaitingOnUser })
 	c.call(t, 2, "agents/prompt", map[string]any{"agentID": id, "text": "and then say done", "from": "person"})
 	waitFor(t, "the prompt queued", func() bool { return len(d.Store.Agent(id).QueuedPrompts) == 1 })
@@ -184,66 +187,67 @@ func TestAKillAtEachWriteLeavesEveryAgentWhole(t *testing.T) {
 		t.Fatalf("the scripted session made %d kill points, want a record's and a transcript's writes", len(points))
 	}
 	for _, p := range points {
-		t.Run(p.name, func(t *testing.T) {
-			fakeRuntimes(t)
-			was := agentsIn(p.dir)
-			wasLines, _ := transcriptLines(t, filepath.Join(p.dir, "agents", string(id), "transcript.jsonl"))
-			d, _ := start(t, p.dir)
-			for wid, w := range was {
-				a := d.Store.Agent(wid)
-				if a == nil {
-					t.Fatalf("agent %s (%s) is not in the store after the restart", wid, w.State)
-				}
-				waitFor(t, "agent "+string(wid)+" resumed or said it stopped (it was "+string(w.State)+")", func() bool {
-					return settledAfterKill(d.Store.Agent(wid)) && !d.anyLive()
-				})
-				a = d.Store.Agent(wid)
-				if a.State == wire.AgentStateStopped && (a.EndedReason == nil) {
-					t.Errorf("agent %s stopped and does not say why", wid)
-				}
-				// A queued prompt is kept or was sent: never lost.
-				for _, q := range w.QueuedPrompts {
-					kept := false
-					for _, now := range a.QueuedPrompts {
-						kept = kept || now.ID == q.ID
-					}
-					for _, u := range userMessages(d, wid) {
-						kept = kept || strings.Contains(u, q.Text)
-					}
-					if !kept {
-						t.Errorf("queued prompt %q is lost after the restart", q.Text)
-					}
-				}
-			}
-			file := filepath.Join(p.dir, "agents", string(id), "transcript.jsonl")
-			lines, bad := transcriptLines(t, file)
-			// A cut line stays, ended, and a read skips it: it is the only one that may not decode.
-			allowed := 0
-			if p.torn != "" && strings.HasSuffix(p.name, "transcript.jsonl") {
-				allowed = 1
-			}
-			if bad > allowed {
-				t.Errorf("%d of %d transcript lines do not decode after the restart", bad, lines)
-			}
-			if lines < wasLines-1 {
-				t.Errorf("the transcript had %d lines before the restart and %d after", wasLines, lines)
-			}
-			// The next line is a line of its own, not glued to a cut one.
-			if d.Store.Agent(id) == nil {
-				return
-			}
-			next := wire.TranscriptEntry{Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: "after the kill"}}}
-			if _, err := d.Store.Append(id, next); err != nil {
-				t.Fatal(err)
-			}
-			if after, bad := transcriptLines(t, file); after != lines+1 || bad > allowed {
-				t.Errorf("a line added after the restart: %d lines, %d that do not decode (before it: %d)", after, bad, lines)
-			}
-			// attention.json, when it is there, reads.
-			if b, err := os.ReadFile(filepath.Join(p.dir, "attention.json")); err == nil && !json.Valid(b) {
-				t.Errorf("attention.json does not read after the restart")
-			}
-		})
+		t.Run(p.name, func(t *testing.T) { checkAfterKill(t, p, id) })
+	}
+}
+
+func checkAfterKill(t *testing.T, p killPoint, id wire.UUID) {
+	fakeRuntimes(t)
+	was := agentsIn(p.dir)
+	file := filepath.Join(p.dir, "agents", string(id), "transcript.jsonl")
+	wasLines, _ := transcriptLines(t, file)
+	d, _ := start(t, p.dir)
+	for wid, w := range was {
+		checkAgentAfterKill(t, d, wid, w)
+	}
+	lines, bad := transcriptLines(t, file)
+	// A cut line stays, ended, and a read skips it: it is the only one that may not decode.
+	allowed := 0
+	if p.torn != "" && strings.HasSuffix(p.name, "transcript.jsonl") {
+		allowed = 1
+	}
+	if bad > allowed {
+		t.Errorf("%d of %d transcript lines do not decode after the restart", bad, lines)
+	}
+	if lines < wasLines-1 {
+		t.Errorf("the transcript had %d lines before the restart and %d after", wasLines, lines)
+	}
+	if d.Store.Agent(id) == nil {
+		return
+	}
+	// The next line is a line of its own, not glued to a cut one.
+	next := wire.TranscriptEntry{Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: "after the kill"}}}
+	if _, err := d.Store.Append(id, next); err != nil {
+		t.Fatal(err)
+	}
+	if after, bad := transcriptLines(t, file); after != lines+1 || bad > allowed {
+		t.Errorf("a line added after the restart: %d lines, %d that do not decode (before it: %d)", after, bad, lines)
+	}
+	if b, err := os.ReadFile(filepath.Join(p.dir, "attention.json")); err == nil && !json.Valid(b) { //nolint:gosec // the test's own folder
+		t.Errorf("attention.json does not read after the restart")
+	}
+}
+
+// checkAgentAfterKill is one agent after the restart: there, resumed or stopped with a
+// reason, and with each queued prompt kept or sent.
+func checkAgentAfterKill(t *testing.T, d *Daemon, wid wire.UUID, w wire.Agent) {
+	if d.Store.Agent(wid) == nil {
+		t.Fatalf("agent %s (%s) is not in the store after the restart", wid, w.State)
+	}
+	waitFor(t, "agent "+string(wid)+" resumed or said it stopped (it was "+string(w.State)+")", func() bool {
+		return settledAfterKill(d.Store.Agent(wid)) && !d.anyLive()
+	})
+	a := d.Store.Agent(wid)
+	if a.State == wire.AgentStateStopped && a.EndedReason == nil {
+		t.Errorf("agent %s stopped and does not say why", wid)
+	}
+	sent := userMessages(d, wid)
+	for _, q := range w.QueuedPrompts {
+		kept := slices.ContainsFunc(a.QueuedPrompts, func(now wire.QueuedPrompt) bool { return now.ID == q.ID }) ||
+			slices.ContainsFunc(sent, func(u string) bool { return strings.Contains(u, q.Text) })
+		if !kept {
+			t.Errorf("queued prompt %q is lost after the restart", q.Text)
+		}
 	}
 }
 
@@ -255,7 +259,9 @@ func TestAFullDiskLeavesTheOldRecordAndHoldsTheLine(t *testing.T) {
 	root := t.TempDir()
 	d, c := start(t, root)
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
+	if err := json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id); err != nil {
+		t.Fatal(err)
+	}
 	waitFor(t, "the turn's end", func() bool { return d.Store.Agent(id).State == wire.AgentStateFinished && !d.anyLive() })
 	before, _ := os.ReadFile(filepath.Join(root, "agents", string(id), "agent.json"))
 	_, linesBefore := transcriptLines(t, filepath.Join(root, "agents", string(id), "transcript.jsonl"))

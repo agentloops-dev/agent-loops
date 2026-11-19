@@ -689,7 +689,7 @@ func (s *Store) writeTranscript(id wire.UUID, buf []byte) error {
 // would be lost. The cut line stays, ended, and is skipped by a read as any line that will
 // not decode is.
 func endTornLine(file string) {
-	f, err := os.OpenFile(file, os.O_RDWR|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(file, os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return
 	}
@@ -700,7 +700,7 @@ func endTornLine(file string) {
 	}
 	last := make([]byte, 1)
 	if _, err := f.ReadAt(last, info.Size()-1); err == nil && last[0] != '\n' {
-		f.Write([]byte{'\n'})
+		_, _ = f.Write([]byte{'\n'})
 	}
 }
 
