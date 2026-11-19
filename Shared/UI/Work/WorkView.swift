@@ -158,6 +158,15 @@ private struct WorkListPane: View {
             }
         }
         .workTask(id: list.ask) { await list.load(model: model) }
+        // The cache proof of concept (#6358): a changed-since sync every 60 s while the list shows.
+        .task {
+            guard kind.fromForge, WorkCache.enabled, let cache = WorkCache.shared else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { return }
+                await list.syncCache(cache, model: model)
+            }
+        }
         // A row menu's write that failed (epic #6086): the row has its old value back, and this says why.
         .alert(WorkLook.couldNotSetPriority, isPresented: Binding(get: { list.writeProblem != nil },
                                                                  set: { if !$0 { list.writeProblem = nil } })) {
@@ -366,6 +375,7 @@ private struct WorkListPane: View {
                     .tag(row.id)
                 }
                 footer(shown: shown.count)
+                if kind.fromForge, WorkCache.enabled { cacheLine }
                 if !kind.fromForge {
                     Text(WorkList.lineageOnlyNote).appText(.fine).foregroundStyle(.tertiary).selectionDisabled()
                 }
@@ -443,6 +453,24 @@ private struct WorkListPane: View {
             guard list.hasMore, !list.loadingMore, list.pageProblem == nil else { return }
             await list.loadMore(model: model)
         }
+    }
+
+    /// The local cache proof of concept (#6358): the sync's progress, else the age of the last one.
+    private var cacheLine: some View {
+        HStack(spacing: 6) {
+            if let read = list.cacheRead {
+                ProgressView().controlSize(.small)
+                Text("Syncing this device's cache… \(read) items read")
+            } else if let at = list.cacheSynced {
+                LastUpdateText(read: at)
+            }
+        }
+        .appText(.fine)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+        .frame(maxWidth: .infinity)
+        .listRowSeparator(.hidden)
+        .selectionDisabled()
     }
 
     /// The forge's count of the list (#4396), where it gives one and the list shows all it counts.
