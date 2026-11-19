@@ -111,14 +111,20 @@ func (w *folderWatch) read() {
 			return
 		}
 		for off := 0; off+unix.SizeofInotifyEvent <= n; {
-			off += w.readEvent(buf, off, pending)
+			size, rootGone := w.readEvent(buf, off, pending)
+			off += size
+			// The root itself gone (a folder removed, a test's TempDir): nothing
+			// more can be heard, so the watch lets its descriptor go.
+			if rootGone {
+				go w.stop()
+			}
 		}
 	}
 }
 
 // readEvent reads the inotify event at off in buf and adds what changed to pending. It
-// gives the length of the event.
-func (w *folderWatch) readEvent(buf []byte, off int, pending map[string]bool) int {
+// gives the length of the event, and whether it says the watch's root itself is gone.
+func (w *folderWatch) readEvent(buf []byte, off int, pending map[string]bool) (int, bool) {
 	ev := (*unix.InotifyEvent)(unsafePointer(&buf[off]))
 	nameLen := int(ev.Len)
 	w.mu.Lock()
@@ -137,13 +143,9 @@ func (w *folderWatch) readEvent(buf []byte, off int, pending map[string]bool) in
 		if ev.Mask&unix.IN_ISDIR != 0 && ev.Mask&(unix.IN_CREATE|unix.IN_MOVED_TO) != 0 && name != "" {
 			w.addTree(filepath.Join(dir, name))
 		}
-		// The root itself gone (a folder removed, a test's TempDir): nothing
-		// more can be heard, so the watch lets its descriptor go.
-		if ev.Mask&unix.IN_DELETE_SELF != 0 && dir == w.root {
-			go w.stop()
-		}
 	}
-	return unix.SizeofInotifyEvent + nameLen
+	rootGone := dir != "" && ev.Mask&unix.IN_DELETE_SELF != 0 && dir == w.root
+	return unix.SizeofInotifyEvent + nameLen, rootGone
 }
 
 func cString(b []byte) string {
