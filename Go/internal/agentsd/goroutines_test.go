@@ -20,7 +20,6 @@ import (
 // waits for, or that ends when a value it alone owns closes, can stay here.
 var goroutinesNotCounted = map[string]int{
 	// Joined: the function waits for them (a WaitGroup, a channel it reads, or a kill at a limit).
-	"afterturn.go (*Daemon).waitAfterTurns":     1, // Shutdown's own wait, as waitJobs's
 	"connectorsetup.go (*Daemon).readSetup":     1, // it reads one answer from each
 	"docs.go (*Daemon).askConnectors":           1,
 	"docsmap.go (*Daemon).searchDocsServers":    1,
