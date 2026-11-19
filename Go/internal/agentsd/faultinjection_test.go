@@ -50,7 +50,7 @@ func copyRoot(from, to string) error {
 		if err != nil {
 			return nil
 		}
-		return os.WriteFile(filepath.Join(to, rel), b, 0o600)
+		return os.WriteFile(filepath.Join(to, rel), b, 0o600) //nolint:gosec // G703: the test's own temporary folders
 	})
 }
 
@@ -85,7 +85,7 @@ func (k *killPoints) fault(file string, appends bool, data []byte) error {
 	half := data[:len(data)/2]
 	if appends {
 		add("half a line of", string(half), func(dir string) {
-			f, err := os.OpenFile(filepath.Join(dir, rel), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+			f, err := os.OpenFile(filepath.Join(dir, rel), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // G703: the test's own temporary folders
 			if err == nil {
 				_, _ = f.Write(half)
 				_ = f.Close()
@@ -93,7 +93,7 @@ func (k *killPoints) fault(file string, appends bool, data []byte) error {
 		})
 	} else {
 		add("half a file for", string(half), func(dir string) {
-			_ = os.WriteFile(filepath.Join(dir, filepath.Dir(rel), "."+filepath.Base(rel)+".00ff.tmp"), half, 0o600)
+			_ = os.WriteFile(filepath.Join(dir, filepath.Dir(rel), "."+filepath.Base(rel)+".00ff.tmp"), half, 0o600) //nolint:gosec // G703: the test's own temporary folders
 		})
 	}
 	return nil
