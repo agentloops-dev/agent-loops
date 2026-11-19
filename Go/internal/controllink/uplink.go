@@ -81,6 +81,12 @@ type Uplink struct {
 	slowAfter time.Duration
 }
 
+// SetRedial sets the waits Run keeps between dials (below), for a test that cuts a link many
+// times and must not wait out the real ones; call it before Run.
+func (u *Uplink) SetRedial(first, last, steady time.Duration) {
+	u.firstWait, u.lastWait, u.steadyFor = first, last, steady
+}
+
 // Run waits firstWait before it dials again, twice as long each time up to lastWait, while
 // dials fail or links let go within steadyFor. Only a link that stays up for steadyFor
 // starts the wait again at firstWait, so a copy that lets go at once is dialled every 30 s,
