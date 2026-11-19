@@ -59,6 +59,32 @@ func replyOf(t *testing.T, done chan browserReply) browserReply {
 	return browserReply{}
 }
 
+// checkFillSecretUseRequest checks that r asks a person to approve the fill of
+// GITLAB_PASSWORD on shop.example.com, and does not hold the value.
+func checkFillSecretUseRequest(t *testing.T, r wire.Request) {
+	t.Helper()
+	if r.Kind != wire.RequestKindApprove || r.Source != wire.RequestSourceSecretUse || r.Title != "Fill GITLAB_PASSWORD on shop.example.com" ||
+		r.Detail.SecretUse.Place != "shop.example.com" || r.Detail.SecretUse.Use != wire.SecretUseFill || r.AskedBy == nil {
+		t.Fatalf("%+v", r)
+	}
+	if b, _ := json.Marshal(r); strings.Contains(string(b), filledValue) {
+		t.Fatalf("the request holds the value: %s", b)
+	}
+}
+
+// checkFillGrantKept checks that GITLAB_PASSWORD has a fill grant for shop.example.com,
+// and that its record with the grant still opens.
+func checkFillGrantKept(t *testing.T, d *Daemon) {
+	t.Helper()
+	grants := d.secretGrants()
+	if fmt.Sprint(grants.Grants) != "[{GITLAB_PASSWORD fill shop.example.com}]" {
+		t.Fatalf("%+v", grants)
+	}
+	if v, ok := d.sealedLocalSecret(personalHomeOf(t, d), "GITLAB_PASSWORD"); !ok || v != filledValue {
+		t.Fatal("the record with its grant does not open")
+	}
+}
+
 // #4015: a fill of a secret with Ask before use waits on a person, for the field's domain.
 // Once fills once; a hold that ends names the request to wait on; deny is an error; always
 // is a grant for the domain that a person can take away.
@@ -72,13 +98,7 @@ func TestAFlaggedFillWaitsOnAPerson(t *testing.T) {
 	// Approve: the held call fills.
 	done := fillAsync(m, 2)
 	r := openSecretUse(t, d)
-	if r.Kind != wire.RequestKindApprove || r.Source != wire.RequestSourceSecretUse || r.Title != "Fill GITLAB_PASSWORD on shop.example.com" ||
-		r.Detail.SecretUse.Place != "shop.example.com" || r.Detail.SecretUse.Use != wire.SecretUseFill || r.AskedBy == nil {
-		t.Fatalf("%+v", r)
-	}
-	if b, _ := json.Marshal(r); strings.Contains(string(b), filledValue) {
-		t.Fatalf("the request holds the value: %s", b)
-	}
+	checkFillSecretUseRequest(t, r)
 	answerUse(t, d, r, secretUseOnce)
 	if got := replyOf(t, done); got.IsError || replyText(got) != "GITLAB_PASSWORD filled." || page.value != filledValue {
 		t.Fatalf("%+v %q", got, page.value)
@@ -115,13 +135,7 @@ func TestAFlaggedFillWaitsOnAPerson(t *testing.T) {
 	if got := replyOf(t, done); got.IsError || page.value != filledValue {
 		t.Fatalf("%+v", got)
 	}
-	grants := d.secretGrants()
-	if fmt.Sprint(grants.Grants) != "[{GITLAB_PASSWORD fill shop.example.com}]" {
-		t.Fatalf("%+v", grants)
-	}
-	if v, ok := d.sealedLocalSecret(personalHomeOf(t, d), "GITLAB_PASSWORD"); !ok || v != filledValue {
-		t.Fatal("the record with its grant does not open")
-	}
+	checkFillGrantKept(t, d)
 	page.value = ""
 	if got := m.browserTool(6, "fill_secret", map[string]any{"secret": "GITLAB_PASSWORD", "target": "e12"}); got.IsError || page.value != filledValue {
 		t.Fatalf("%+v", got)

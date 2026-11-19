@@ -365,16 +365,42 @@ func (d *Daemon) warmPass() {
 	capacity, pressure := d.warmCap(s)
 	hours, idle := backgroundHoursOf(s), releaseAfterOf(s)
 	now := warmNow()
-	type look struct {
-		l       *live
-		session *acp.Session
-		own     map[int32]bool
-		groups  map[int]bool
-		busy    bool
+	looks, es, idles := d.warmLooksLocked(now)
+	if len(looks) == 0 {
+		return
 	}
-	var looks []look
-	var es []warmEntry
-	idles := 0
+	table := processTable(d.ctx)
+	background := map[wire.UUID][]acp.Command{}
+	ended := map[wire.UUID][]acp.Command{}
+	for _, i := range looks {
+		if e, ok := d.warmLookAtLocked(i, table, now, background, ended); ok {
+			es = append(es, e)
+		}
+	}
+	for id, cmds := range ended {
+		d.raiseBackgroundEnded(id, cmds, false)
+	}
+	if idles == 0 {
+		return
+	}
+	for _, r := range warmDecide(es, now, capacity, hours, idle) {
+		d.warmReleaseLocked(r, pressure, hours, background)
+	}
+}
+
+// warmLook is what warmPass saw of one live session, under the session's lock.
+type warmLook struct {
+	l       *live
+	session *acp.Session
+	own     map[int32]bool
+	groups  map[int]bool
+	busy    bool
+}
+
+// warmLooksLocked looks at each live agent once. It gives the sessions to look at again,
+// the entries of those that are prewarming, and how many sessions are idle. d.warmMu is
+// held.
+func (d *Daemon) warmLooksLocked(now time.Time) (looks []warmLook, es []warmEntry, idles int) {
 	for _, l := range d.everyLive() {
 		l.mu.Lock()
 		switch {
@@ -391,70 +417,65 @@ func (d *Daemon) warmPass() {
 			if l.warm.groups == nil {
 				l.warm.groups = map[int]bool{}
 			}
-			looks = append(looks, look{l: l, session: l.session, own: l.warm.own, groups: l.warm.groups, busy: busy})
+			looks = append(looks, warmLook{l: l, session: l.session, own: l.warm.own, groups: l.warm.groups, busy: busy})
 		}
 		l.mu.Unlock()
 	}
-	if len(looks) == 0 {
+	return looks, es, idles
+}
+
+// warmLookAtLocked notes one session's background processes in background and ended. It
+// gives the session's entry, and false when the session is busy or changed since the
+// look. d.warmMu is held.
+func (d *Daemon) warmLookAtLocked(i warmLook, table map[int32]procInfo, now time.Time, background, ended map[wire.UUID][]acp.Command) (warmEntry, bool) {
+	l := i.l
+	a := d.Store.Agent(l.id)
+	w := waitOf(a)
+	selfWaking := a != nil && wakesItself(a.RuntimeID)
+	// A turn's look only gathers the groups its commands run in.
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	bg := backgroundOf(i.session, i.own, i.groups, table)
+	if l.session == i.session {
+		// Ended in a turn, the turn saw it end; unless the session waits already.
+		busy := i.busy || l.running || l.inTurn
+		if e := l.pool.noteBackground(bg); e != nil && !selfWaking && (!busy || w != nil) {
+			ended[l.id] = e
+		}
+	}
+	if i.busy || l.session != i.session {
+		return warmEntry{}, false
+	}
+	if len(bg) > 0 {
+		background[l.id] = bg
+	} else if l.pool.background {
+		// Its last process ended: warmIdle starts now.
+		l.pool.quietSince = now
+	}
+	l.pool.background = len(bg) > 0
+	kept := keptForWait(l, i.session, w)
+	return warmEntry{id: l.id, lastUsed: l.pool.lastUsed, quietSince: l.pool.quietSince, background: l.pool.background, kept: kept}, true
+}
+
+// warmReleaseLocked lets go of one session that warmDecide chose, and says why on the
+// record. d.warmMu is held.
+func (d *Daemon) warmReleaseLocked(r warmRelease, pressure string, hours int, background map[wire.UUID][]acp.Command) {
+	l := d.liveIfAny(r.id)
+	if l == nil {
 		return
 	}
-	table := processTable(d.ctx)
-	background := map[wire.UUID][]acp.Command{}
-	ended := map[wire.UUID][]acp.Command{}
-	for _, i := range looks {
-		l := i.l
-		a := d.Store.Agent(l.id)
-		w := waitOf(a)
-		selfWaking := a != nil && wakesItself(a.RuntimeID)
-		// A turn's look only gathers the groups its commands run in.
-		l.mu.Lock()
-		bg := backgroundOf(i.session, i.own, i.groups, table)
-		if l.session == i.session {
-			// Ended in a turn, the turn saw it end; unless the session waits already.
-			busy := i.busy || l.running || l.inTurn
-			if e := l.pool.noteBackground(bg); e != nil && !selfWaking && (!busy || w != nil) {
-				ended[l.id] = e
-			}
-		}
-		if i.busy || l.session != i.session {
-			l.mu.Unlock()
-			continue
-		}
-		if len(bg) > 0 {
-			background[l.id] = bg
-		} else if l.pool.background {
-			// Its last process ended: warmIdle starts now.
-			l.pool.quietSince = now
-		}
-		l.pool.background = len(bg) > 0
-		kept := keptForWait(l, i.session, w)
-		es = append(es, warmEntry{id: l.id, lastUsed: l.pool.lastUsed, quietSince: l.pool.quietSince, background: l.pool.background, kept: kept})
-		l.mu.Unlock()
+	if pressure != "" && !r.background {
+		r.why += "; " + pressure
 	}
-	for id, cmds := range ended {
-		d.raiseBackgroundEnded(id, cmds, false)
+	if w := waitOf(d.Store.Agent(r.id)); w != nil {
+		r.why += "; it waits for " + waitLabel(w) + ", and its next turn continues the conversation"
 	}
-	if idles == 0 {
-		return
+	var bg []acp.Command
+	if r.background {
+		bg = background[r.id]
 	}
-	for _, r := range warmDecide(es, now, capacity, hours, idle) {
-		l := d.liveIfAny(r.id)
-		if l == nil {
-			continue
-		}
-		if pressure != "" && !r.background {
-			r.why += "; " + pressure
-		}
-		if w := waitOf(d.Store.Agent(r.id)); w != nil {
-			r.why += "; it waits for " + waitLabel(w) + ", and its next turn continues the conversation"
-		}
-		var bg []acp.Command
-		if r.background {
-			bg = background[r.id]
-		}
-		if d.releaseWarm(l, r.why, bg, false) && len(bg) > 0 {
-			d.record(r.id, runtimeNote(backgroundNote(hours, bg)))
-		}
+	if d.releaseWarm(l, r.why, bg, false) && len(bg) > 0 {
+		d.record(r.id, runtimeNote(backgroundNote(hours, bg)))
 	}
 }
 

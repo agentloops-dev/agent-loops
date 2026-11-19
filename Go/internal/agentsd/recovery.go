@@ -77,6 +77,32 @@ func (d *Daemon) recover() {
 	d.resumeMu.Lock()
 	d.interrupted, d.resuming, d.cutOff = map[wire.UUID]wire.AgentState{}, map[wire.UUID]bool{}, map[wire.UUID]wire.AgentState{}
 	d.resumeMu.Unlock()
+	left := d.recoverLeftWorking()
+	// Those a clean stop cut off in a turn, which it wrote stopped with the daemon (#1605).
+	alive := d.readAlive()
+	if alive != nil {
+		for id, was := range alive.CutOff {
+			a := d.Store.Agent(id)
+			if a == nil || !stoppedWithTheDaemon(a) {
+				continue
+			}
+			left = append(left, leftAgent{a: *a, was: was, ended: true})
+		}
+	}
+	sort.SliceStable(left, func(i, j int) bool { return left[i].a.LastActivityAt > left[j].a.LastActivityAt })
+	for _, l := range left {
+		d.recoverStopLeftAgent(l)
+	}
+	// Those a start before this one told why they stopped, and died before it picked them up
+	// (#4917): picked up now, with nothing said again.
+	if alive != nil {
+		d.recoverPickUpAgain(alive)
+	}
+}
+
+// recoverLeftWorking stops each agent made under another set-up, and is each other agent
+// that the store says was starting, running or waiting on the person.
+func (d *Daemon) recoverLeftWorking() []leftAgent {
 	var left []leftAgent
 	for _, a := range d.Store.Agents() {
 		// Made under another set-up and copied here: shown, never run (stampOrImport).
@@ -94,54 +120,47 @@ func (d *Daemon) recover() {
 			left = append(left, leftAgent{a: a, was: a.State})
 		}
 	}
-	// Those a clean stop cut off in a turn, which it wrote stopped with the daemon (#1605).
-	alive := d.readAlive()
-	if alive != nil {
-		for id, was := range alive.CutOff {
-			a := d.Store.Agent(id)
-			if a == nil || !stoppedWithTheDaemon(a) {
-				continue
-			}
-			left = append(left, leftAgent{a: *a, was: was, ended: true})
-		}
+	return left
+}
+
+// recoverStopLeftAgent says why an agent left working stopped, marks it stopped with the
+// daemon (when the last host did not), and puts it on the list to pick up when it may be.
+func (d *Daemon) recoverStopLeftAgent(l leftAgent) {
+	a := l.a
+	if l.was == wire.AgentStateWaitingOnUser {
+		d.record(a.ID, runtimeNote(questionWentUnanswered))
 	}
-	sort.SliceStable(left, func(i, j int) bool { return left[i].a.LastActivityAt > left[j].a.LastActivityAt })
-	for _, l := range left {
-		a := l.a
-		if l.was == wire.AgentStateWaitingOnUser {
-			d.record(a.ID, runtimeNote(questionWentUnanswered))
-		}
-		d.record(a.ID, runtimeNote("This agent was working when the daemon stopped, so it stopped too."))
-		if n := pickUps(&a); n >= pickUpsBeforeLeavingAlone {
-			d.record(a.ID, runtimeNote(fmt.Sprintf("Not picked back up: the app stopped %d times in a row while picking this conversation up, so picking it up may be what stops it. Send it a message to pick it up yourself.", n)))
-		}
-		after := d.Store.Agent(a.ID)
-		if !l.ended {
-			after = d.change(a.ID, func(a *wire.Agent) {
-				a.State, a.EndedReason, a.ArchivedReason = wire.AgentStateStopped, reason(wire.EndedReasonDaemonGone), nil
-			})
-			d.record(a.ID, stateChanged(wire.AgentStateStopped, reason(wire.EndedReasonDaemonGone)))
-		}
-		if after != nil && mayBePickedUp(after) && after.Purpose == nil {
-			d.resumeMu.Lock()
-			d.interrupted[a.ID] = l.was
-			d.resumeMu.Unlock()
-		}
+	d.record(a.ID, runtimeNote("This agent was working when the daemon stopped, so it stopped too."))
+	if n := pickUps(&a); n >= pickUpsBeforeLeavingAlone {
+		d.record(a.ID, runtimeNote(fmt.Sprintf("Not picked back up: the app stopped %d times in a row while picking this conversation up, so picking it up may be what stops it. Send it a message to pick it up yourself.", n)))
 	}
-	// Those a start before this one told why they stopped, and died before it picked them up
-	// (#4917): picked up now, with nothing said again.
-	if alive != nil {
-		for id, was := range alive.PickUp {
-			a := d.Store.Agent(id)
-			if a == nil || !stoppedWithTheDaemon(a) || !mayBePickedUp(a) || a.Purpose != nil {
-				continue
-			}
-			d.resumeMu.Lock()
-			if _, already := d.interrupted[id]; !already {
-				d.interrupted[id] = was
-			}
-			d.resumeMu.Unlock()
+	after := d.Store.Agent(a.ID)
+	if !l.ended {
+		after = d.change(a.ID, func(a *wire.Agent) {
+			a.State, a.EndedReason, a.ArchivedReason = wire.AgentStateStopped, reason(wire.EndedReasonDaemonGone), nil
+		})
+		d.record(a.ID, stateChanged(wire.AgentStateStopped, reason(wire.EndedReasonDaemonGone)))
+	}
+	if after != nil && mayBePickedUp(after) && after.Purpose == nil {
+		d.resumeMu.Lock()
+		d.interrupted[a.ID] = l.was
+		d.resumeMu.Unlock()
+	}
+}
+
+// recoverPickUpAgain puts on the list to pick up each agent that the last start said it
+// would pick up, when it still may be and is not on the list.
+func (d *Daemon) recoverPickUpAgain(alive *daemonAlive) {
+	for id, was := range alive.PickUp {
+		a := d.Store.Agent(id)
+		if a == nil || !stoppedWithTheDaemon(a) || !mayBePickedUp(a) || a.Purpose != nil {
+			continue
 		}
+		d.resumeMu.Lock()
+		if _, already := d.interrupted[id]; !already {
+			d.interrupted[id] = was
+		}
+		d.resumeMu.Unlock()
 	}
 }
 

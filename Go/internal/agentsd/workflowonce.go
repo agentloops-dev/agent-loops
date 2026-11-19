@@ -244,48 +244,64 @@ func (d *Daemon) alarmsDueLocked(at time.Time) []onceFire {
 			if w.Problem != nil || isArchived(w) || !d.runsHere(w) {
 				continue
 			}
-			for _, t := range w.Triggers {
-				a, ok := alarmOf(t)
-				if !ok {
-					continue
-				}
-				due, ok := a.due(zone)
-				if !ok || due.After(at) {
-					continue
-				}
-				st := d.stateLocked(folder, id, false)
-				if st != nil && st.AlarmHandled != nil && st.AlarmHandled.Time().Equal(due) {
-					continue
-				}
-				dueAt := due
-				// The run's cause carries the instant it was set for, so a page can say how
-				// late it fired.
-				fired := t
-				keys := map[string]wire.JSONValue{}
-				for k, v := range t.Unrecognised.Keys {
-					keys[k] = v
-				}
-				keys["due"], _ = json.Marshal(due.UTC().Format(time.RFC3339))
-				fired.Unrecognised = &wire.WorkflowTriggerStoredUnrecognised{Name: onceTrigger, Keys: keys}
-				fr := fireRequest{folder: folder, id: id, trigger: fired, dueAt: &dueAt}
-				if at.Sub(due) > a.grace {
-					out = append(out, onceFire{fr: fr, missed: true})
-				} else {
-					// Inside its grace it waits for the person's approval, or for them to
-					// turn it back on, and fires then.
-					if awaiting, denied := d.approvalOf(folder, id, f); awaiting != nil || denied != nil || isOff(w) {
-						continue
-					}
-					out = append(out, onceFire{fr: fr})
-				}
-				h := wire.DateOf(due)
-				d.stateLocked(folder, id, true).AlarmHandled = &h
-				d.saveRecordsLocked(false)
-				break
+			if of, ok := d.alarmDueOfFileLocked(folder, id, f, at, zone); ok {
+				out = append(out, of)
 			}
 		}
 	}
 	return out
+}
+
+// alarmDueOfFileLocked is the first of a workflow's alarms that is due by at and not
+// handled. It marks that alarm handled. ok is false when no alarm is to fire or be
+// recorded missed.
+func (d *Daemon) alarmDueOfFileLocked(folder, id string, f *workflowFile, at time.Time, zone string) (onceFire, bool) {
+	w := f.wf
+	for _, t := range w.Triggers {
+		a, ok := alarmOf(t)
+		if !ok {
+			continue
+		}
+		due, ok := a.due(zone)
+		if !ok || due.After(at) {
+			continue
+		}
+		st := d.stateLocked(folder, id, false)
+		if st != nil && st.AlarmHandled != nil && st.AlarmHandled.Time().Equal(due) {
+			continue
+		}
+		dueAt := due
+		fr := fireRequest{folder: folder, id: id, trigger: onceTriggerFiredAt(t, due), dueAt: &dueAt}
+		var of onceFire
+		if at.Sub(due) > a.grace {
+			of = onceFire{fr: fr, missed: true}
+		} else {
+			// Inside its grace it waits for the person's approval, or for them to
+			// turn it back on, and fires then.
+			if awaiting, denied := d.approvalOf(folder, id, f); awaiting != nil || denied != nil || isOff(w) {
+				continue
+			}
+			of = onceFire{fr: fr}
+		}
+		h := wire.DateOf(due)
+		d.stateLocked(folder, id, true).AlarmHandled = &h
+		d.saveRecordsLocked(false)
+		return of, true
+	}
+	return onceFire{}, false
+}
+
+// onceTriggerFiredAt is the alarm's trigger with the instant it was set for, so a page
+// can say how late the run fired.
+func onceTriggerFiredAt(t wire.WorkflowTrigger, due time.Time) wire.WorkflowTrigger {
+	fired := t
+	keys := map[string]wire.JSONValue{}
+	for k, v := range t.Unrecognised.Keys {
+		keys[k] = v
+	}
+	keys["due"], _ = json.Marshal(due.UTC().Format(time.RFC3339))
+	fired.Unrecognised = &wire.WorkflowTriggerStoredUnrecognised{Name: onceTrigger, Keys: keys}
+	return fired
 }
 
 // runAlarm fires an alarm, or records it missed, and archives its workflow: it never runs

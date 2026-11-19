@@ -91,33 +91,10 @@ func (d *Daemon) processesState(ctx context.Context) wire.ProcessesState {
 	d.procMu.Lock()
 	defer d.procMu.Unlock()
 
-	sessions := map[int32]wire.UUID{}
-	for _, l := range d.everyLive() {
-		l.mu.Lock()
-		if l.session != nil {
-			for _, pid := range l.session.Pids() {
-				sessions[int32(pid)] = l.id
-			}
-		}
-		l.mu.Unlock()
-	}
-	titles := map[wire.UUID]string{}
-	for _, a := range d.Store.Agents() {
-		if a.Title != nil {
-			titles[a.ID] = *a.Title
-		}
-	}
+	sessions := d.processesSessionPids()
+	titles := d.processesAgentTitles()
 
-	parents := map[int32]int32{}
-	if pids, err := process.PidsWithContext(ctx); err == nil {
-		for _, pid := range pids {
-			if p, err := process.NewProcessWithContext(ctx, pid); err == nil {
-				if parent, err := p.PpidWithContext(ctx); err == nil {
-					parents[pid] = parent
-				}
-			}
-		}
-	}
+	parents := processesParents(ctx)
 	root := int32(os.Getpid())
 	if _, ok := parents[root]; !ok {
 		parents[root] = int32(os.Getppid())
@@ -128,18 +105,7 @@ func (d *Daemon) processesState(ctx context.Context) wire.ProcessesState {
 	for i, n := range nodes {
 		procs[i], _ = process.NewProcessWithContext(ctx, n.pid)
 	}
-	cpuOf := func() map[int32]float64 {
-		m := map[int32]float64{}
-		for _, p := range procs {
-			if p == nil {
-				continue
-			}
-			if t, err := p.TimesWithContext(ctx); err == nil {
-				m[p.Pid] = t.User + t.System
-			}
-		}
-		return m
-	}
+	cpuOf := func() map[int32]float64 { return processesCPUSeconds(ctx, procs) }
 	machineOf := func() (busy, all float64) { return machineCPU(ctx) }
 
 	// The start of "now": the last ask's, when it is fresh, or a sample taken here.
@@ -160,20 +126,7 @@ func (d *Daemon) processesState(ctx context.Context) wire.ProcessesState {
 	out := wire.ProcessesState{Processes: make([]wire.ProcessUsage, 0, len(nodes)), Omitted: int64(omitted)}
 	elapsed := nowAt.Sub(beforeAt).Seconds()
 	for i, n := range nodes {
-		u := wire.ProcessUsage{Pid: int64(n.pid), Parent: int64(n.parent), Depth: int64(n.depth), Name: "?", AgentId: n.agent}
-		if n.agent != nil {
-			if t, ok := titles[*n.agent]; ok {
-				u.Title = &t
-			}
-		}
-		if p := procs[i]; p != nil {
-			if name, err := p.NameWithContext(ctx); err == nil && name != "" {
-				u.Name = name
-			}
-			if m, err := p.MemoryInfoWithContext(ctx); err == nil {
-				u.Memory = int64(m.RSS)
-			}
-		}
+		u := processesUsageOf(ctx, n, procs[i], titles)
 		if was, ok := before[n.pid]; ok && elapsed > 0 {
 			u.CpuPercent = max(0, (now[n.pid]-was)/elapsed*100)
 		}
@@ -182,6 +135,83 @@ func (d *Daemon) processesState(ctx context.Context) wire.ProcessesState {
 
 	out.Machine = d.withCapacity(machineUsage(ctx, beforeBusy, beforeAll, busy, all))
 	return out
+}
+
+// processesSessionPids maps each live session's process ids to the session.
+func (d *Daemon) processesSessionPids() map[int32]wire.UUID {
+	sessions := map[int32]wire.UUID{}
+	for _, l := range d.everyLive() {
+		l.mu.Lock()
+		if l.session != nil {
+			for _, pid := range l.session.Pids() {
+				sessions[int32(pid)] = l.id
+			}
+		}
+		l.mu.Unlock()
+	}
+	return sessions
+}
+
+// processesAgentTitles maps each agent that has a title to its title.
+func (d *Daemon) processesAgentTitles() map[wire.UUID]string {
+	titles := map[wire.UUID]string{}
+	for _, a := range d.Store.Agents() {
+		if a.Title != nil {
+			titles[a.ID] = *a.Title
+		}
+	}
+	return titles
+}
+
+// processesParents maps each process on the machine to its parent, when it can be read.
+func processesParents(ctx context.Context) map[int32]int32 {
+	parents := map[int32]int32{}
+	pids, err := process.PidsWithContext(ctx)
+	if err != nil {
+		return parents
+	}
+	for _, pid := range pids {
+		if p, err := process.NewProcessWithContext(ctx, pid); err == nil {
+			if parent, err := p.PpidWithContext(ctx); err == nil {
+				parents[pid] = parent
+			}
+		}
+	}
+	return parents
+}
+
+// processesCPUSeconds is each process's user and system CPU seconds. It skips a nil process.
+func processesCPUSeconds(ctx context.Context, procs []*process.Process) map[int32]float64 {
+	m := map[int32]float64{}
+	for _, p := range procs {
+		if p == nil {
+			continue
+		}
+		if t, err := p.TimesWithContext(ctx); err == nil {
+			m[p.Pid] = t.User + t.System
+		}
+	}
+	return m
+}
+
+// processesUsageOf is a node's row with no CPU: its place, its session's title, and its
+// name and memory when p can be read.
+func processesUsageOf(ctx context.Context, n processNode, p *process.Process, titles map[wire.UUID]string) wire.ProcessUsage {
+	u := wire.ProcessUsage{Pid: int64(n.pid), Parent: int64(n.parent), Depth: int64(n.depth), Name: "?", AgentId: n.agent}
+	if n.agent != nil {
+		if t, ok := titles[*n.agent]; ok {
+			u.Title = &t
+		}
+	}
+	if p != nil {
+		if name, err := p.NameWithContext(ctx); err == nil && name != "" {
+			u.Name = name
+		}
+		if m, err := p.MemoryInfoWithContext(ctx); err == nil {
+			u.Memory = int64(m.RSS)
+		}
+	}
+	return u
 }
 
 // machineCPU is the machine's busy and total CPU seconds, every core together.

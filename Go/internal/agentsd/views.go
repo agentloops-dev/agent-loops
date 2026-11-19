@@ -530,17 +530,7 @@ func (d *Daemon) answerViewShow(r wire.ViewShowRequest) error {
 // and only for a tool its catalog says a view may call.
 func (d *Daemon) callFromView(ctx context.Context, r wire.ViewCallRequest) (wire.JSONValue, error) {
 	if r.Server == nil || *r.Server == appServerName {
-		if d.Store.Agent(r.AgentID) != nil {
-			if other := d.viewServerOf(r.ViewID, r.AgentID); other != "" {
-				log.Printf("view %s of %s asked for the %s server's %s: refused", r.ViewID, other, appServerName, r.Name)
-				return nil, viewRefused("A view may call only its own server's tools, not the " + appServerName + " server's.")
-			}
-		}
-		if _, err := d.viewFolder(r.AgentID, r.Folder); err != nil {
-			return nil, err
-		}
-		log.Printf("view %s asked for %s, which no view may call", r.ViewID, r.Name)
-		return nil, viewRefused("A view may not call " + r.Name + ".")
+		return nil, d.refuseAppServerViewCall(r)
 	}
 	name := *r.Server
 	folder, err := d.viewFolder(r.AgentID, r.Folder)
@@ -549,21 +539,7 @@ func (d *Daemon) callFromView(ctx context.Context, r wire.ViewCallRequest) (wire
 	}
 	// The server the view is of, as the host wrote it, the folder pinned it or the server
 	// shows it (#2032), not as the request says.
-	own := false
-	if d.Store.Agent(r.AgentID) != nil {
-		own = d.viewServerOf(r.ViewID, r.AgentID) == name
-	} else {
-		f := d.readPins(folder)
-		for _, p := range f.pins {
-			if p.view != nil && p.view.Server == name {
-				own = true
-			}
-		}
-		// Or a server's list view, shown without a pin (#2032).
-		for _, v := range d.serverViews(folder, f) {
-			own = own || v.View.Server == name
-		}
-	}
+	own := d.viewIsOfServer(r, folder, name)
 	if !own {
 		log.Printf("view %s asked for %s's %s, which is not its server's: refused", r.ViewID, name, r.Name)
 		return nil, viewRefused("A view may call only its own server's tools, not the " + name + " server's.")
@@ -582,19 +558,8 @@ func (d *Daemon) callFromView(ctx context.Context, r wire.ViewCallRequest) (wire
 		}
 		return result, err
 	}
-	catalog := d.loadViewCatalog(ctx, s)
-	if catalog != nil && !catalog.appTool(r.Name) {
-		catalog = d.refreshViewCatalog(ctx, s)
-	}
-	if catalog == nil || !catalog.appTool(r.Name) {
-		log.Printf("view %s of %s asked for %s, which no view may call", r.ViewID, name, r.Name)
-		return nil, viewRefused("A view may not call " + r.Name + ".")
-	}
-	if r.Feed != nil && *r.Feed {
-		if t := catalog.tool(r.Name); t == nil || !t.feedsPins() {
-			log.Printf("pinned view %s asked to be fed by %s's %s, which is not read-only", r.ViewID, name, r.Name)
-			return nil, viewRefused(r.Name + " can't feed a pinned view: it is not marked read-only.")
-		}
+	if err := d.checkViewToolCall(ctx, s, r, name); err != nil {
+		return nil, err
 	}
 	args := json.RawMessage("{}")
 	if !isNull(r.Arguments) {
@@ -618,6 +583,62 @@ func (d *Daemon) callFromView(ctx context.Context, r wire.ViewCallRequest) (wire
 	}
 	log.Printf("view %s of %s called %s", r.ViewID, name, r.Name)
 	return result, nil
+}
+
+// refuseAppServerViewCall gives the error for a view's call to the app's own server: a
+// view may call none of its tools.
+func (d *Daemon) refuseAppServerViewCall(r wire.ViewCallRequest) error {
+	if d.Store.Agent(r.AgentID) != nil {
+		if other := d.viewServerOf(r.ViewID, r.AgentID); other != "" {
+			log.Printf("view %s of %s asked for the %s server's %s: refused", r.ViewID, other, appServerName, r.Name)
+			return viewRefused("A view may call only its own server's tools, not the " + appServerName + " server's.")
+		}
+	}
+	if _, err := d.viewFolder(r.AgentID, r.Folder); err != nil {
+		return err
+	}
+	log.Printf("view %s asked for %s, which no view may call", r.ViewID, r.Name)
+	return viewRefused("A view may not call " + r.Name + ".")
+}
+
+// viewIsOfServer says whether the view is of the server name: as the host wrote it, the
+// folder pinned it or the server shows it (#2032), not as the request says.
+func (d *Daemon) viewIsOfServer(r wire.ViewCallRequest, folder, name string) bool {
+	if d.Store.Agent(r.AgentID) != nil {
+		return d.viewServerOf(r.ViewID, r.AgentID) == name
+	}
+	own := false
+	f := d.readPins(folder)
+	for _, p := range f.pins {
+		if p.view != nil && p.view.Server == name {
+			own = true
+		}
+	}
+	// Or a server's list view, shown without a pin (#2032).
+	for _, v := range d.serverViews(folder, f) {
+		own = own || v.View.Server == name
+	}
+	return own
+}
+
+// checkViewToolCall gives an error when the server's catalog does not let a view call the
+// tool, or when the tool cannot feed a pinned view that asks to be fed by it.
+func (d *Daemon) checkViewToolCall(ctx context.Context, s viewServer, r wire.ViewCallRequest, name string) error {
+	catalog := d.loadViewCatalog(ctx, s)
+	if catalog != nil && !catalog.appTool(r.Name) {
+		catalog = d.refreshViewCatalog(ctx, s)
+	}
+	if catalog == nil || !catalog.appTool(r.Name) {
+		log.Printf("view %s of %s asked for %s, which no view may call", r.ViewID, name, r.Name)
+		return viewRefused("A view may not call " + r.Name + ".")
+	}
+	if r.Feed != nil && *r.Feed {
+		if t := catalog.tool(r.Name); t == nil || !t.feedsPins() {
+			log.Printf("pinned view %s asked to be fed by %s's %s, which is not read-only", r.ViewID, name, r.Name)
+			return viewRefused(r.Name + " can't feed a pinned view: it is not marked read-only.")
+		}
+	}
+	return nil
 }
 
 // logFromView is a view's notifications/message, into the host's log.
@@ -859,18 +880,7 @@ func policyOrigin(text string) (string, bool) {
 	rest := strings.TrimSuffix(value[len(scheme):], "/")
 	host := rest
 	if i := strings.LastIndex(rest, ":"); i >= 0 {
-		port := rest[i+1:]
-		n := 0
-		for _, r := range port {
-			if r < '0' || r > '9' {
-				return "", false
-			}
-			n = n*10 + int(r-'0')
-			if n > 65535 {
-				return "", false
-			}
-		}
-		if port == "" || n < 1 {
+		if !policyOriginPort(rest[i+1:]) {
 			return "", false
 		}
 		host = rest[:i]
@@ -880,16 +890,39 @@ func policyOrigin(text string) (string, bool) {
 		return "", false
 	}
 	for _, label := range strings.Split(host, ".") {
-		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+		if !policyOriginLabel(label) {
 			return "", false
-		}
-		for _, r := range label {
-			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
-				return "", false
-			}
 		}
 	}
 	return scheme + rest, true
+}
+
+// policyOriginPort says whether port is a port number from 1 to 65535.
+func policyOriginPort(port string) bool {
+	n := 0
+	for _, r := range port {
+		if r < '0' || r > '9' {
+			return false
+		}
+		n = n*10 + int(r-'0')
+		if n > 65535 {
+			return false
+		}
+	}
+	return port != "" && n >= 1
+}
+
+// policyOriginLabel says whether label is one valid label of a host name.
+func policyOriginLabel(label string) bool {
+	if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+		return false
+	}
+	for _, r := range label {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // policyLogLine is AppViewPolicy.logLine: what this view may reach.

@@ -41,23 +41,7 @@ func TestWorkflowLimitsArePerFolderAndDoNotLimitApprovals(t *testing.T) {
 		dir string
 		id  int
 	}{{first, 200}, {second, 201}} {
-		var summaries []wire.WorkflowSummary
-		json.Unmarshal(c.call(t, item.id, "workflows/list", map[string]any{"folder": store.FolderURL(item.dir)}), &summaries)
-		if len(summaries) != 21 {
-			t.Fatalf("got %d workflows", len(summaries))
-		}
-		over := 0
-		for _, s := range summaries {
-			if s.OverLimit != nil {
-				if *s.OverLimit != wire.WorkflowLimitFolder || s.TotalLimit == nil || *s.TotalLimit != 20 {
-					t.Fatalf("unexpected limit: %+v", s)
-				}
-				over++
-			}
-		}
-		if over != 1 {
-			t.Fatalf("folder %s has %d workflows over limit", item.dir, over)
-		}
+		workflowLimitsCheckOneOver(t, c, item.dir, item.id)
 	}
 
 	// More than three additional workflows can wait, and approval still succeeds.
@@ -67,27 +51,59 @@ func TestWorkflowLimitsArePerFolderAndDoNotLimitApprovals(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var summaries []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 202, "workflows/list", map[string]any{"folder": store.FolderURL(first)}), &summaries)
-	waiting := 0
-	for _, s := range summaries {
-		if s.AwaitingApproval != nil {
-			waiting++
-			if s.OverLimit != nil {
-				t.Fatalf("pending workflow was marked over limit: %+v", s)
-			}
-			var approved wire.WorkflowSummary
-			json.Unmarshal(c.call(t, 203+waiting, "workflows/approve", map[string]any{
-				"folder": store.FolderURL(first), "workflowID": s.Workflow.WorkflowID, "digest": s.AwaitingApproval.Digest,
-			}), &approved)
-			if approved.AwaitingApproval != nil {
-				t.Fatalf("approval did not apply: %+v", approved)
-			}
-		}
-	}
-	if waiting != 5 {
+	if waiting := workflowLimitsApproveWaiting(t, c, first); waiting != 5 {
 		t.Fatalf("got %d waiting approvals", waiting)
 	}
+}
+
+// workflowLimitsCheckOneOver fails the test unless dir lists 21 workflows and exactly
+// one of them is over the folder's limit of twenty.
+func workflowLimitsCheckOneOver(t *testing.T, c *conn, dir string, id int) {
+	t.Helper()
+	var summaries []wire.WorkflowSummary
+	json.Unmarshal(c.call(t, id, "workflows/list", map[string]any{"folder": store.FolderURL(dir)}), &summaries)
+	if len(summaries) != 21 {
+		t.Fatalf("got %d workflows", len(summaries))
+	}
+	over := 0
+	for _, s := range summaries {
+		if s.OverLimit != nil {
+			if *s.OverLimit != wire.WorkflowLimitFolder || s.TotalLimit == nil || *s.TotalLimit != 20 {
+				t.Fatalf("unexpected limit: %+v", s)
+			}
+			over++
+		}
+	}
+	if over != 1 {
+		t.Fatalf("folder %s has %d workflows over limit", dir, over)
+	}
+}
+
+// workflowLimitsApproveWaiting approves each workflow of dir that waits for approval,
+// checks that none is over the limit and that each approval applies, and is how many
+// waited.
+func workflowLimitsApproveWaiting(t *testing.T, c *conn, dir string) int {
+	t.Helper()
+	var summaries []wire.WorkflowSummary
+	json.Unmarshal(c.call(t, 202, "workflows/list", map[string]any{"folder": store.FolderURL(dir)}), &summaries)
+	waiting := 0
+	for _, s := range summaries {
+		if s.AwaitingApproval == nil {
+			continue
+		}
+		waiting++
+		if s.OverLimit != nil {
+			t.Fatalf("pending workflow was marked over limit: %+v", s)
+		}
+		var approved wire.WorkflowSummary
+		json.Unmarshal(c.call(t, 203+waiting, "workflows/approve", map[string]any{
+			"folder": store.FolderURL(dir), "workflowID": s.Workflow.WorkflowID, "digest": s.AwaitingApproval.Digest,
+		}), &approved)
+		if approved.AwaitingApproval != nil {
+			t.Fatalf("approval did not apply: %+v", approved)
+		}
+	}
+	return waiting
 }
 
 // Ports WorkflowFileTests, FrontMatterEditTests and WorkflowApprovalTests: a file read as

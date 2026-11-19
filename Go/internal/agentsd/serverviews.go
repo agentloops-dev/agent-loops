@@ -61,31 +61,41 @@ func (d *Daemon) serverViews(folder string, f pinsFile) []wire.PinView {
 			continue
 		}
 		title := serverTitle(s, catalog, ours, isOurs)
-		seen := map[string]bool{}
-		for _, t := range catalog.Tools {
-			if !t.feedsPins() || t.NeedsArguments || seen[t.ResourceURI] || pinned[name+" "+t.ResourceURI] {
-				continue
-			}
-			// The folder's project's repository, when its project sets the view's slot
-			// (#2669): the page follows the project, whatever the folder's own remote.
-			arguments, follows := wire.JSONValue(nil), false
-			if isOurs {
-				arguments, follows = d.projectViewArguments(folder, ours.ID, t.ResourceURI)
-			}
-			if !fits && !follows {
-				continue
-			}
-			seen[t.ResourceURI] = true
-			pin := wire.ViewPin{Server: name, URI: t.ResourceURI, Tool: t.Name, Arguments: arguments}
-			v := wire.PinView{Path: t.ResourceURI, Kind: wire.PinKindView, View: &pin,
-				Title:    title + " · " + listViewTitle(catalog, pin, title),
-				PinnedBy: wire.PinnerView{Kind: wire.PinnerKindServer, ID: name, Name: title}}
-			if hidden[t.ResourceURI] {
-				yes := true
-				v.Hidden = &yes
-			}
-			out = append(out, d.withCount(folder, v))
+		out = append(out, d.serverViewRows(folder, name, catalog, title, ours, isOurs, fits, pinned, hidden)...)
+	}
+	return out
+}
+
+// serverViewRows is the rows of the views of server name in catalog for folder: each one
+// that feeds pins with no arguments, once, and not pinned. When the server does not fit the
+// folder, only a view that follows the folder's project is a row.
+func (d *Daemon) serverViewRows(folder, name string, catalog *viewCatalog, title string, ours mcpcatalog.Ours, isOurs, fits bool,
+	pinned, hidden map[string]bool) []wire.PinView {
+	var out []wire.PinView
+	seen := map[string]bool{}
+	for _, t := range catalog.Tools {
+		if !t.feedsPins() || t.NeedsArguments || seen[t.ResourceURI] || pinned[name+" "+t.ResourceURI] {
+			continue
 		}
+		// The folder's project's repository, when its project sets the view's slot
+		// (#2669): the page follows the project, whatever the folder's own remote.
+		arguments, follows := wire.JSONValue(nil), false
+		if isOurs {
+			arguments, follows = d.projectViewArguments(folder, ours.ID, t.ResourceURI)
+		}
+		if !fits && !follows {
+			continue
+		}
+		seen[t.ResourceURI] = true
+		pin := wire.ViewPin{Server: name, URI: t.ResourceURI, Tool: t.Name, Arguments: arguments}
+		v := wire.PinView{Path: t.ResourceURI, Kind: wire.PinKindView, View: &pin,
+			Title:    title + " · " + listViewTitle(catalog, pin, title),
+			PinnedBy: wire.PinnerView{Kind: wire.PinnerKindServer, ID: name, Name: title}}
+		if hidden[t.ResourceURI] {
+			yes := true
+			v.Hidden = &yes
+		}
+		out = append(out, d.withCount(folder, v))
 	}
 	return out
 }

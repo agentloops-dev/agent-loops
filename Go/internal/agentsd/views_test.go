@@ -153,82 +153,11 @@ func TestAPersonsServersViewIsDrawnOnceShownAndCallsOnlyItsOwnServer(t *testing.
 		t.Fatal(err)
 	}
 
-	// The runtime's call, named outright, then answered.
-	d.noteAgentViewCall(agent.ID, wire.ToolCall{ToolCallID: ptr("t1"), Title: "mcp__ci__board", Status: ptr("in_progress"),
-		RawInput: json.RawMessage(`{"pr":7}`)})
-	views := func() []wire.AppViewCall {
-		entries, _, _ := d.Store.Transcript(agent.ID, 0)
-		var out []wire.AppViewCall
-		for _, e := range entries {
-			if e.Kind.AppView != nil {
-				out = append(out, e.Kind.AppView.Value)
-			}
-		}
-		return out
-	}
-	waitFor(t, "the running view", func() bool { return len(views()) == 1 })
-	d.noteAgentViewCall(agent.ID, wire.ToolCall{ToolCallID: ptr("t1"), Title: "Tool call", Status: ptr("completed"),
-		RawOutput: json.RawMessage(`"{\"prs\":[7]}"`)})
-	waitFor(t, "the answered view", func() bool { return len(views()) == 2 })
-	v := views()
-	if v[0].ID != v[1].ID || v[0].State != wire.AppViewCallStateRunning || v[1].State != wire.AppViewCallStateDone ||
-		v[1].Server != "ci" || v[1].ResourceUri != "ui://ci/board" || string(v[1].Arguments) != `{"pr":7}` ||
-		v[1].Pinnable == nil || !strings.Contains(string(v[1].Result), `"prs":[7]`) {
-		t.Fatalf("%+v", v)
-	}
-	// A call of a tool without a view writes nothing.
-	d.noteAgentViewCall(agent.ID, wire.ToolCall{ToolCallID: ptr("t2"), Title: "mcp__ci__deploy", Status: ptr("completed"),
-		RawOutput: json.RawMessage(`"{}"`)})
+	v := personsViewDrawn(t, d, agent.ID)
 
-	read := map[string]any{"agentID": agent.ID, "uri": "ui://ci/board", "server": "ci"}
-	e := c.callError(t, 2, "views/read", read)
-	var ask wire.ViewAsk
-	b, _ := json.Marshal(e.Data)
-	json.Unmarshal(b, &ask)
-	if e.Code != wire.FailureViewNeedsShow || !ask.IsNew || ask.Server != "ci" || ask.Hash == "" {
-		t.Fatalf("%+v", e)
-	}
-	c.call(t, 3, "views/show", map[string]any{"agentID": agent.ID, "server": "ci", "uri": "ui://ci/board", "hash": ask.Hash, "show": true})
-	var res wire.ViewResource
-	json.Unmarshal(c.call(t, 4, "views/read", read), &res)
-	if res.HTML != "<!doctype html><p>board</p>" || res.MimeType != viewHTML || res.PrefersBorder == nil || !*res.PrefersBorder ||
-		strings.Join(res.Policy.ConnectDomains, " ") != "https://api.ci.dev" || res.Variables["--border-radius-md"] != "10px" {
-		t.Fatalf("%+v", res)
-	}
-	approvals, _ := os.ReadFile(filepath.Join(d.Store.Loc.Root, "mcp-approvals.json"))
-	if !strings.Contains(string(approvals), `"personal|ci|ui://ci/board":"show:`+ask.Hash+`"`) {
-		t.Fatalf("%s", approvals)
-	}
+	personsViewShown(t, d, c, agent.ID)
 
-	call := func(id int, name string, server string) (json.RawMessage, *Error) {
-		p := map[string]any{"agentID": agent.ID, "viewID": v[0].ID, "name": name, "server": server}
-		if (name == "refresh" || name == "details") && server == "ci" {
-			return c.call(t, id, "views/call", p), nil
-		}
-		return nil, c.callError(t, id, "views/call", p)
-	}
-	// A fresh but stale catalog may not know about a tool the server added after it was read.
-	s, err := d.readyViewServer("ci", dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	d.keepViewCatalog(s.entry, viewCatalog{Version: viewCatalogVersion, Server: "ci", MadeAt: nowFunc().Add(-time.Hour), AppTools: []string{"refresh"}})
-	readsBeforeRefresh := catalogReads.Load()
-	if r, _ := call(5, "details", "ci"); !strings.Contains(string(r), `"called":"details"`) || calls.Load() != 1 || catalogReads.Load() != readsBeforeRefresh+1 {
-		t.Fatalf("%s: %d call(s), %d catalog read(s) after %d", r, calls.Load(), catalogReads.Load(), readsBeforeRefresh)
-	}
-	if _, e := call(6, "deploy", "ci"); e.Code != wire.FailureViewRefused || calls.Load() != 1 || catalogReads.Load() != readsBeforeRefresh+1 {
-		t.Fatalf("a view called a tool only the model may after the refresh: %+v", e)
-	}
-	if r, _ := call(7, "refresh", "ci"); !strings.Contains(string(r), `"called":"refresh"`) || calls.Load() != 2 {
-		t.Fatalf("%s", r)
-	}
-	if _, e := call(8, "refresh", "local"); e.Code != wire.FailureViewRefused || !strings.Contains(e.Message, "own server's") {
-		t.Fatalf("%+v", e)
-	}
-	if e := c.callError(t, 9, "views/read", map[string]any{"agentID": agent.ID, "uri": "ui://x", "server": "local"}); !strings.Contains(e.Message, "local servers") {
-		t.Fatalf("%+v", e)
-	}
+	personsViewCalls(t, d, c, agent.ID, v[0].ID, dir, &calls, &catalogReads)
 
 	// What the view asks the agent to know goes before the person's next words, once.
 	c.call(t, 10, "views/context", map[string]any{"agentID": agent.ID, "viewID": v[0].ID,
@@ -257,5 +186,98 @@ func TestAPersonsServersViewIsDrawnOnceShownAndCallsOnlyItsOwnServer(t *testing.
 	if r := c.call(t, 14, "views/call", map[string]any{"agentID": store.NewUUID(), "folder": store.FolderURL(dir), "viewID": store.NewUUID(),
 		"name": "board", "server": "ci", "feed": true}); !strings.Contains(string(r), `"called":"board"`) {
 		t.Fatalf("%s", r)
+	}
+}
+
+// personsViewDrawn notes the runtime's call of a view tool, named outright, then answered,
+// and checks that the view is drawn once. It gives the view's two states.
+func personsViewDrawn(t *testing.T, d *Daemon, agentID wire.UUID) []wire.AppViewCall {
+	t.Helper()
+	// The runtime's call, named outright, then answered.
+	d.noteAgentViewCall(agentID, wire.ToolCall{ToolCallID: ptr("t1"), Title: "mcp__ci__board", Status: ptr("in_progress"),
+		RawInput: json.RawMessage(`{"pr":7}`)})
+	views := func() []wire.AppViewCall {
+		entries, _, _ := d.Store.Transcript(agentID, 0)
+		var out []wire.AppViewCall
+		for _, e := range entries {
+			if e.Kind.AppView != nil {
+				out = append(out, e.Kind.AppView.Value)
+			}
+		}
+		return out
+	}
+	waitFor(t, "the running view", func() bool { return len(views()) == 1 })
+	d.noteAgentViewCall(agentID, wire.ToolCall{ToolCallID: ptr("t1"), Title: "Tool call", Status: ptr("completed"),
+		RawOutput: json.RawMessage(`"{\"prs\":[7]}"`)})
+	waitFor(t, "the answered view", func() bool { return len(views()) == 2 })
+	v := views()
+	if v[0].ID != v[1].ID || v[0].State != wire.AppViewCallStateRunning || v[1].State != wire.AppViewCallStateDone ||
+		v[1].Server != "ci" || v[1].ResourceUri != "ui://ci/board" || string(v[1].Arguments) != `{"pr":7}` ||
+		v[1].Pinnable == nil || !strings.Contains(string(v[1].Result), `"prs":[7]`) {
+		t.Fatalf("%+v", v)
+	}
+	// A call of a tool without a view writes nothing.
+	d.noteAgentViewCall(agentID, wire.ToolCall{ToolCallID: ptr("t2"), Title: "mcp__ci__deploy", Status: ptr("completed"),
+		RawOutput: json.RawMessage(`"{}"`)})
+	return v
+}
+
+// personsViewShown checks that the view is read only once the person shows it, and that
+// the approval is kept.
+func personsViewShown(t *testing.T, d *Daemon, c *conn, agentID wire.UUID) {
+	t.Helper()
+	read := map[string]any{"agentID": agentID, "uri": "ui://ci/board", "server": "ci"}
+	e := c.callError(t, 2, "views/read", read)
+	var ask wire.ViewAsk
+	b, _ := json.Marshal(e.Data)
+	json.Unmarshal(b, &ask)
+	if e.Code != wire.FailureViewNeedsShow || !ask.IsNew || ask.Server != "ci" || ask.Hash == "" {
+		t.Fatalf("%+v", e)
+	}
+	c.call(t, 3, "views/show", map[string]any{"agentID": agentID, "server": "ci", "uri": "ui://ci/board", "hash": ask.Hash, "show": true})
+	var res wire.ViewResource
+	json.Unmarshal(c.call(t, 4, "views/read", read), &res)
+	if res.HTML != "<!doctype html><p>board</p>" || res.MimeType != viewHTML || res.PrefersBorder == nil || !*res.PrefersBorder ||
+		strings.Join(res.Policy.ConnectDomains, " ") != "https://api.ci.dev" || res.Variables["--border-radius-md"] != "10px" {
+		t.Fatalf("%+v", res)
+	}
+	approvals, _ := os.ReadFile(filepath.Join(d.Store.Loc.Root, "mcp-approvals.json"))
+	if !strings.Contains(string(approvals), `"personal|ci|ui://ci/board":"show:`+ask.Hash+`"`) {
+		t.Fatalf("%s", approvals)
+	}
+}
+
+// personsViewCalls checks that the view calls only its own server's tools, and that a
+// stale catalog is read again for a tool it does not know.
+func personsViewCalls(t *testing.T, d *Daemon, c *conn, agentID, viewID wire.UUID, dir string, calls, catalogReads *atomic.Int32) {
+	t.Helper()
+	call := func(id int, name string, server string) (json.RawMessage, *Error) {
+		p := map[string]any{"agentID": agentID, "viewID": viewID, "name": name, "server": server}
+		if (name == "refresh" || name == "details") && server == "ci" {
+			return c.call(t, id, "views/call", p), nil
+		}
+		return nil, c.callError(t, id, "views/call", p)
+	}
+	// A fresh but stale catalog may not know about a tool the server added after it was read.
+	s, err := d.readyViewServer("ci", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.keepViewCatalog(s.entry, viewCatalog{Version: viewCatalogVersion, Server: "ci", MadeAt: nowFunc().Add(-time.Hour), AppTools: []string{"refresh"}})
+	readsBeforeRefresh := catalogReads.Load()
+	if r, _ := call(5, "details", "ci"); !strings.Contains(string(r), `"called":"details"`) || calls.Load() != 1 || catalogReads.Load() != readsBeforeRefresh+1 {
+		t.Fatalf("%s: %d call(s), %d catalog read(s) after %d", r, calls.Load(), catalogReads.Load(), readsBeforeRefresh)
+	}
+	if _, e := call(6, "deploy", "ci"); e.Code != wire.FailureViewRefused || calls.Load() != 1 || catalogReads.Load() != readsBeforeRefresh+1 {
+		t.Fatalf("a view called a tool only the model may after the refresh: %+v", e)
+	}
+	if r, _ := call(7, "refresh", "ci"); !strings.Contains(string(r), `"called":"refresh"`) || calls.Load() != 2 {
+		t.Fatalf("%s", r)
+	}
+	if _, e := call(8, "refresh", "local"); e.Code != wire.FailureViewRefused || !strings.Contains(e.Message, "own server's") {
+		t.Fatalf("%+v", e)
+	}
+	if e := c.callError(t, 9, "views/read", map[string]any{"agentID": agentID, "uri": "ui://x", "server": "local"}); !strings.Contains(e.Message, "local servers") {
+		t.Fatalf("%+v", e)
 	}
 }
