@@ -181,10 +181,32 @@ func (f *RealAzureDevOps) WaitingDeploys(ctx context.Context, repo, pipeline, br
 	if err := f.get(ctx, api(projectPath(repo)+"pipelines/approvals", q), true, &list); err != nil {
 		return nil, err
 	}
-	// The project's approvals, by the build each holds, in the order the builds came.
+	byBuild, order := approvalsByBuild(list.Value)
+	var out []WaitingDeploy
+	for _, id := range order {
+		var b buildJSON
+		if err := f.get(ctx, api(fmt.Sprintf("%sbuild/builds/%d", projectPath(repo), id), nil), true, &b); err != nil {
+			return nil, err
+		}
+		// An approval is the project's: one of another repository's build is not this one's.
+		if !b.matches(r.ID, pipeline, branch) {
+			continue
+		}
+		records, err := f.timeline(ctx, repo, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, waitingDeployOf(b, byBuild[id], records))
+	}
+	return out, nil
+}
+
+// approvalsByBuild groups the project's pending approvals by the build each holds, and gives
+// the builds in the order they came.
+func approvalsByBuild(approvals []approvalJSON) (map[int][]approvalJSON, []int) {
 	byBuild := map[int][]approvalJSON{}
 	var order []int
-	for _, a := range list.Value {
+	for _, a := range approvals {
 		id := a.Pipeline.Owner.ID
 		if a.Status != "pending" || id == 0 {
 			continue
@@ -194,41 +216,45 @@ func (f *RealAzureDevOps) WaitingDeploys(ctx context.Context, repo, pipeline, br
 		}
 		byBuild[id] = append(byBuild[id], a)
 	}
-	var out []WaitingDeploy
-	for _, id := range order {
-		var b buildJSON
-		if err := f.get(ctx, api(fmt.Sprintf("%sbuild/builds/%d", projectPath(repo), id), nil), true, &b); err != nil {
-			return nil, err
-		}
-		// An approval is the project's: one of another repository's build is not this one's.
-		if b.Repository.ID != r.ID || (pipeline != "" && !strings.EqualFold(b.Definition.Name, pipeline)) ||
-			(branch != "" && b.ref() != branch && b.SourceBranch != branch) {
-			continue
-		}
-		records, err := f.timeline(ctx, repo, id)
-		if err != nil {
-			return nil, err
-		}
-		approvals := byBuild[id]
-		sort.SliceStable(approvals, func(i, j int) bool {
-			return mcpevents.Normalized(approvals[i].CreatedOn) < mcpevents.Normalized(approvals[j].CreatedOn)
-		})
-		w := WaitingDeploy{Build: completed(b), CanApprove: true}
-		for _, a := range approvals {
-			w.Environments = append(w.Environments, Environment{ID: a.ID, Name: stageOf(records, a.ID), URL: b.Links.Web.Href})
-			w.CanApprove = w.CanApprove && a.canUpdate()
-			if at := mcpevents.Normalized(a.CreatedOn); at > w.Since {
-				w.Since = at
-			}
-			for _, s := range a.Steps {
-				if who := s.AssignedApprover.name(); who != "" && s.Status != "approved" && s.Status != "rejected" && !contains(w.Reviewers, who) {
-					w.Reviewers = append(w.Reviewers, who)
-				}
-			}
-		}
-		out = append(out, w)
+	return byBuild, order
+}
+
+// matches says whether a build is of the repository repoID, of pipeline (its name) when it
+// is set, and of branch (a branch or a tag) when it is set.
+func (b buildJSON) matches(repoID, pipeline, branch string) bool {
+	if b.Repository.ID != repoID {
+		return false
 	}
-	return out, nil
+	if pipeline != "" && !strings.EqualFold(b.Definition.Name, pipeline) {
+		return false
+	}
+	return branch == "" || b.ref() == branch || b.SourceBranch == branch
+}
+
+// waitingDeployOf is the wait of build b on its pending approvals, oldest first.
+func waitingDeployOf(b buildJSON, approvals []approvalJSON, records []timelineRecord) WaitingDeploy {
+	sort.SliceStable(approvals, func(i, j int) bool {
+		return mcpevents.Normalized(approvals[i].CreatedOn) < mcpevents.Normalized(approvals[j].CreatedOn)
+	})
+	w := WaitingDeploy{Build: completed(b), CanApprove: true}
+	for _, a := range approvals {
+		w.Environments = append(w.Environments, Environment{ID: a.ID, Name: stageOf(records, a.ID), URL: b.Links.Web.Href})
+		w.CanApprove = w.CanApprove && a.canUpdate()
+		if at := mcpevents.Normalized(a.CreatedOn); at > w.Since {
+			w.Since = at
+		}
+		w.addReviewers(a)
+	}
+	return w
+}
+
+// addReviewers adds the approvers of a's steps that have not answered yet, each once.
+func (w *WaitingDeploy) addReviewers(a approvalJSON) {
+	for _, s := range a.Steps {
+		if who := s.AssignedApprover.name(); who != "" && s.Status != "approved" && s.Status != "rejected" && !contains(w.Reviewers, who) {
+			w.Reviewers = append(w.Reviewers, who)
+		}
+	}
 }
 
 // stageOf is the name of the stage an approval holds: its Checkpoint.Approval record's

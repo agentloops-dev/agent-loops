@@ -787,18 +787,61 @@ func (f *RealAzureDevOps) headChecks(ctx context.Context, repo, since string) ([
 	if err != nil {
 		return nil, Listed{}, err
 	}
-	byNumber := map[int]pullJSON{}
-	byBranch := map[string][]pullJSON{}
+	listed := Listed{Truncated: truncated}
+	out, listed := buildChecks(builds, indexPulls(pulls), since, listed)
+	for _, p := range pulls[:min(maxChecked, len(pulls))] {
+		var checks []headCheck
+		if checks, listed, err = f.statusChecks(ctx, repo, p, since, listed); err != nil {
+			return nil, Listed{}, err
+		}
+		out = append(out, checks...)
+	}
+	return out, listed, nil
+}
+
+// pullIndex is the active pull requests by number, and by source branch when it is in this
+// repository.
+type pullIndex struct {
+	byNumber map[int]pullJSON
+	byBranch map[string][]pullJSON
+}
+
+func indexPulls(pulls []pullJSON) pullIndex {
+	ix := pullIndex{byNumber: map[int]pullJSON{}, byBranch: map[string][]pullJSON{}}
 	for _, p := range pulls {
-		byNumber[p.ID] = p
+		ix.byNumber[p.ID] = p
 		// A fork's branch is not in this repository, so this repository's builds are not its.
 		if !p.fork() {
-			byBranch[p.SourceRefName] = append(byBranch[p.SourceRefName], p)
+			ix.byBranch[p.SourceRefName] = append(ix.byBranch[p.SourceRefName], p)
 		}
 	}
-	listed := Listed{Truncated: truncated}
+	return ix
+}
+
+// headsOf are the pull requests whose head commit build b built: its own pull request's,
+// or a push's build of a pull request's branch, as a CI trigger starts it.
+func (ix pullIndex) headsOf(b buildJSON) []pullJSON {
+	var of []pullJSON
+	if n := b.prNumber(); n != 0 {
+		p, ok := ix.byNumber[n]
+		sha := b.TriggerInfo["pr.sourceSha"]
+		if ok && (sha == "" || p.head() == "" || strings.EqualFold(sha, p.head())) {
+			of = append(of, p)
+		}
+		return of
+	}
+	for _, p := range ix.byBranch[b.SourceBranch] {
+		if p.head() != "" && strings.EqualFold(b.SourceVer, p.head()) {
+			of = append(of, p)
+		}
+	}
+	return of
+}
+
+// buildChecks are the builds (newest first) that passed or failed at or after since at an
+// active pull request's head commit, oldest first, so the first failed build is the run.
+func buildChecks(builds []buildJSON, ix pullIndex, since string, listed Listed) ([]headCheck, Listed) {
 	var out []headCheck
-	// Oldest first, so the first failed build is the run.
 	for i := len(builds) - 1; i >= 0; i-- {
 		b := builds[i]
 		listed = listed.Saw(b.FinishTime)
@@ -806,64 +849,60 @@ func (f *RealAzureDevOps) headChecks(ctx context.Context, repo, since string) ([
 		if !done || mcpevents.Before(b.FinishTime, since) {
 			continue
 		}
-		var of []pullJSON
-		if n := b.prNumber(); n != 0 {
-			p, ok := byNumber[n]
-			sha := b.TriggerInfo["pr.sourceSha"]
-			if ok && (sha == "" || p.head() == "" || strings.EqualFold(sha, p.head())) {
-				of = append(of, p)
-			}
-		} else {
-			// A push's build of a pull request's branch, as a CI trigger starts it.
-			for _, p := range byBranch[b.SourceBranch] {
-				if p.head() != "" && strings.EqualFold(b.SourceVer, p.head()) {
-					of = append(of, p)
-				}
-			}
-		}
-		for _, p := range of {
+		for _, p := range ix.headsOf(b) {
 			out = append(out, headCheck{pr: p, at: mcpevents.Normalized(b.FinishTime), check: Check{Name: b.Definition.Name, URL: b.Links.Web.Href},
 				runID: b.ID, key: fmt.Sprintf("build:%d", b.ID), passed: passed})
 		}
 	}
-	for _, p := range pulls[:min(maxChecked, len(pulls))] {
-		statuses, err := f.statuses(ctx, repo, p.ID, true)
-		if err != nil {
-			return nil, Listed{}, err
+	return out, listed
+}
+
+// newestStatuses are a pull request's newest status of each context, by context's name.
+func newestStatuses(statuses []statusJSON) map[string]statusJSON {
+	newest := map[string]statusJSON{}
+	for _, s := range statuses {
+		if had, ok := newest[s.name()]; !ok || s.ID > had.ID {
+			newest[s.name()] = s
 		}
-		newest := map[string]statusJSON{}
-		for _, s := range statuses {
-			if had, ok := newest[s.name()]; !ok || s.ID > had.ID {
-				newest[s.name()] = s
+	}
+	return newest
+}
+
+// statusChecks are the newest statuses of each context of pull request p that passed or
+// failed at or after since, at its newest iteration, by context's name.
+func (f *RealAzureDevOps) statusChecks(ctx context.Context, repo string, p pullJSON, since string, listed Listed) ([]headCheck, Listed, error) {
+	statuses, err := f.statuses(ctx, repo, p.ID, true)
+	if err != nil {
+		return nil, listed, err
+	}
+	newest := newestStatuses(statuses)
+	names := make([]string, 0, len(newest))
+	for name := range newest {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out []headCheck
+	last := -1 // not read yet: only a status that would be raised reads it
+	for _, name := range names {
+		s := newest[name]
+		listed = listed.Saw(s.at())
+		passed, done := statusPassed(s.State)
+		if !done || mcpevents.Before(s.at(), since) {
+			continue
+		}
+		// A status of an iteration is of that push's commit; one with none is of the pull request.
+		if s.IterationID != 0 {
+			if last < 0 {
+				if last, err = f.lastIteration(ctx, repo, p.ID); err != nil {
+					return nil, listed, err
+				}
 			}
-		}
-		names := make([]string, 0, len(newest))
-		for name := range newest {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		last := -1 // not read yet: only a status that would be raised reads it
-		for _, name := range names {
-			s := newest[name]
-			listed = listed.Saw(s.at())
-			passed, done := statusPassed(s.State)
-			if !done || mcpevents.Before(s.at(), since) {
+			if s.IterationID != last {
 				continue
 			}
-			// A status of an iteration is of that push's commit; one with none is of the pull request.
-			if s.IterationID != 0 {
-				if last < 0 {
-					if last, err = f.lastIteration(ctx, repo, p.ID); err != nil {
-						return nil, Listed{}, err
-					}
-				}
-				if s.IterationID != last {
-					continue
-				}
-			}
-			out = append(out, headCheck{pr: p, at: mcpevents.Normalized(s.at()), check: Check{Name: name, URL: s.TargetURL},
-				key: fmt.Sprintf("status:%d", s.ID), passed: passed})
 		}
+		out = append(out, headCheck{pr: p, at: mcpevents.Normalized(s.at()), check: Check{Name: name, URL: s.TargetURL},
+			key: fmt.Sprintf("status:%d", s.ID), passed: passed})
 	}
 	return out, listed, nil
 }
@@ -1083,35 +1122,55 @@ func RepoOfRemote(base, remote string) (string, bool) {
 	if err != nil || b.Host == "" {
 		return "", false
 	}
-	host, prefix := strings.ToLower(b.Hostname()), strings.Trim(b.Path, "/")
-	services := host == "dev.azure.com"
-	var rhost, rpath string
+	rhost, rpath, ok := remoteHostPath(remote)
+	if !ok {
+		return "", false
+	}
+	parts, ok := pathParts(rpath)
+	if !ok {
+		return "", false
+	}
+	return repoOfParts(strings.ToLower(b.Hostname()), strings.Trim(b.Path, "/"), rhost, parts)
+}
+
+// remoteHostPath are a remote's host, in lower case, and its path, escaped and with no
+// slash at either end: of a URL, or of scp-like [user@]host:path.
+func remoteHostPath(remote string) (host, path string, ok bool) {
 	if strings.Contains(remote, "://") {
 		r, err := url.Parse(remote)
 		if err != nil {
-			return "", false
+			return "", "", false
 		}
-		rhost, rpath = strings.ToLower(r.Hostname()), strings.Trim(r.EscapedPath(), "/")
-	} else {
-		// scp-like: [user@]host:path
-		at := remote
-		if _, after, ok := strings.Cut(remote, "@"); ok {
-			at = after
-		}
-		h, path, ok := strings.Cut(at, ":")
-		if !ok {
-			return "", false
-		}
-		rhost, rpath = strings.ToLower(h), strings.Trim(path, "/")
+		return strings.ToLower(r.Hostname()), strings.Trim(r.EscapedPath(), "/"), true
 	}
+	at := remote
+	if _, after, found := strings.Cut(remote, "@"); found {
+		at = after
+	}
+	h, p, found := strings.Cut(at, ":")
+	if !found {
+		return "", "", false
+	}
+	return strings.ToLower(h), strings.Trim(p, "/"), true
+}
+
+// pathParts are an escaped path's parts, unescaped; not ok when one is empty or bad.
+func pathParts(path string) ([]string, bool) {
 	var parts []string
-	for _, p := range strings.Split(rpath, "/") {
+	for _, p := range strings.Split(path, "/") {
 		text, err := url.PathUnescape(p)
 		if err != nil || text == "" {
-			return "", false
+			return nil, false
 		}
 		parts = append(parts, text)
 	}
+	return parts, true
+}
+
+// repoOfParts is the repository of a remote at rhost with path parts, of the Azure DevOps at
+// host whose path is prefix.
+func repoOfParts(host, prefix, rhost string, parts []string) (string, bool) {
+	services := host == "dev.azure.com"
 	switch {
 	case services && (rhost == "ssh.dev.azure.com" || rhost == "vs-ssh.visualstudio.com"):
 		// v3/org/project/name
@@ -1126,19 +1185,24 @@ func RepoOfRemote(base, remote string) (string, bool) {
 		}
 		return gitPath(org, parts)
 	case rhost == host:
-		if prefix != "" {
-			p := strings.Split(prefix, "/")
-			if len(parts) < len(p) || !strings.EqualFold(strings.Join(parts[:len(p)], "/"), prefix) {
-				return "", false
-			}
-			parts = parts[len(p):]
-		}
-		if len(parts) == 0 {
-			return "", false
-		}
-		return gitPath(parts[0], parts[1:])
+		return serverRepo(prefix, parts)
 	}
 	return "", false
+}
+
+// serverRepo is the repository of a server's remote whose path parts start with prefix.
+func serverRepo(prefix string, parts []string) (string, bool) {
+	if prefix != "" {
+		p := strings.Split(prefix, "/")
+		if len(parts) < len(p) || !strings.EqualFold(strings.Join(parts[:len(p)], "/"), prefix) {
+			return "", false
+		}
+		parts = parts[len(p):]
+	}
+	if len(parts) == 0 {
+		return "", false
+	}
+	return gitPath(parts[0], parts[1:])
 }
 
 // gitPath is org's repository from what follows it: project/_git/name, or _git/name for one

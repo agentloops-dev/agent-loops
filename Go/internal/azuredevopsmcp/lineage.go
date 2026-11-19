@@ -136,40 +136,59 @@ func (f *RealAzureDevOps) CommitPR(ctx context.Context, repo, sha string) (int, 
 func (f *RealAzureDevOps) CostComment(ctx context.Context, repo string, number int, id, mark, body string) (string, error) {
 	given := id
 	if id == "" {
-		// Not shared: a comment posted a moment ago must be found.
-		threads, err := f.threads(ctx, repo, number, false)
+		found, err := f.markedComment(ctx, repo, number, mark)
 		if err != nil {
 			return "", err
 		}
-	find:
-		for _, t := range threads {
-			if t.IsDeleted || t.onALine() {
-				continue
-			}
-			for _, c := range t.Comments {
-				if !c.IsDeleted && c.ParentCommentID == 0 && strings.HasPrefix(c.Content, mark) {
-					id = fmt.Sprintf("%d/%d", t.ID, c.ID)
-					break find
-				}
+		id = found
+	}
+	if id == "" {
+		return f.postClosedComment(ctx, repo, number, body)
+	}
+	err := f.editComment(ctx, repo, number, id, body)
+	if IsNotFound(err) && given != "" {
+		return f.CostComment(ctx, repo, number, "", mark, body)
+	}
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// markedComment is the id (thread/comment) of the first of the pull request's comments not
+// on a line that starts with mark, or "" when there is none.
+func (f *RealAzureDevOps) markedComment(ctx context.Context, repo string, number int, mark string) (string, error) {
+	// Not shared: a comment posted a moment ago must be found.
+	threads, err := f.threads(ctx, repo, number, false)
+	if err != nil {
+		return "", err
+	}
+	for _, t := range threads {
+		if t.IsDeleted || t.onALine() {
+			continue
+		}
+		for _, c := range t.Comments {
+			if !c.IsDeleted && c.ParentCommentID == 0 && strings.HasPrefix(c.Content, mark) {
+				return fmt.Sprintf("%d/%d", t.ID, c.ID), nil
 			}
 		}
 	}
-	if id != "" {
-		thread, comment, ok := strings.Cut(id, "/")
-		if !ok {
-			return "", fmt.Errorf("%q is not a thread and a comment", id)
-		}
-		path := fmt.Sprintf("%s/pullRequests/%d/threads/%s/comments/%s", repoPath(repo), number, url.PathEscape(thread), url.PathEscape(comment))
-		var c threadCommentJSON
-		err := f.send(ctx, http.MethodPatch, api(path, nil), map[string]any{"content": body}, &c)
-		if IsNotFound(err) && given != "" {
-			return f.CostComment(ctx, repo, number, "", mark, body)
-		}
-		if err != nil {
-			return "", err
-		}
-		return id, nil
+	return "", nil
+}
+
+// editComment sets the text of the comment id names (thread/comment) to body.
+func (f *RealAzureDevOps) editComment(ctx context.Context, repo string, number int, id, body string) error {
+	thread, comment, ok := strings.Cut(id, "/")
+	if !ok {
+		return fmt.Errorf("%q is not a thread and a comment", id)
 	}
+	path := fmt.Sprintf("%s/pullRequests/%d/threads/%s/comments/%s", repoPath(repo), number, url.PathEscape(thread), url.PathEscape(comment))
+	var c threadCommentJSON
+	return f.send(ctx, http.MethodPatch, api(path, nil), map[string]any{"content": body}, &c)
+}
+
+// postClosedComment posts body in a closed thread of its own and says its id (thread/comment).
+func (f *RealAzureDevOps) postClosedComment(ctx context.Context, repo string, number int, body string) (string, error) {
 	var t threadJSON
 	if err := f.send(ctx, http.MethodPost, api(fmt.Sprintf("%s/pullRequests/%d/threads", repoPath(repo), number), nil),
 		map[string]any{"status": "closed", "comments": []any{map[string]any{"parentCommentId": 0, "content": body, "commentType": "text"}}},
