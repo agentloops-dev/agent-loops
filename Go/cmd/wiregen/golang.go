@@ -326,29 +326,9 @@ func (g *goGen) inline(hint string, s *Schema) string {
 func (g *goGen) typeOf(s *Schema, hint string) string {
 	switch {
 	case s.Ref != "":
-		name := s.RefName()
-		if t := g.doc.Definitions[name].GoType; t != "" {
-			return t
-		}
-		return name
+		return g.refType(s)
 	case s.AnyOf != nil:
-		if inner, ok := s.Nullable(); ok {
-			t := g.typeOf(inner, hint)
-			if g.nilable(t) {
-				return t
-			}
-			return "*" + t
-		}
-		if _, _, ok := s.Cases(); ok {
-			return g.inline(hint, s)
-		}
-		if _, ok := s.Tagged(); ok {
-			return g.inline(hint, s)
-		}
-		if s.Strings() {
-			return "string"
-		}
-		return "JSONValue"
+		return g.anyOfType(s, hint)
 	case s.HasConst || s.Enum != nil:
 		if s.Is("string") || s.Types == nil {
 			return "string"
@@ -359,6 +339,42 @@ func (g *goGen) typeOf(s *Schema, hint string) string {
 		}
 		return "JSONValue"
 	}
+	return g.plainType(s, hint)
+}
+
+// refType is the Go type for a reference: the definition's own Go type, or its name.
+func (g *goGen) refType(s *Schema) string {
+	name := s.RefName()
+	if t := g.doc.Definitions[name].GoType; t != "" {
+		return t
+	}
+	return name
+}
+
+// anyOfType is the Go type for an anyOf: a pointer for a nullable one, a made type for
+// cases or a tagged union, a string for strings, else JSONValue.
+func (g *goGen) anyOfType(s *Schema, hint string) string {
+	if inner, ok := s.Nullable(); ok {
+		t := g.typeOf(inner, hint)
+		if g.nilable(t) {
+			return t
+		}
+		return "*" + t
+	}
+	if _, _, ok := s.Cases(); ok {
+		return g.inline(hint, s)
+	}
+	if _, ok := s.Tagged(); ok {
+		return g.inline(hint, s)
+	}
+	if s.Strings() {
+		return "string"
+	}
+	return "JSONValue"
+}
+
+// plainType is the Go type for a schema of one JSON type.
+func (g *goGen) plainType(s *Schema, hint string) string {
 	switch {
 	case s.Is("string"):
 		return "string"
@@ -369,27 +385,38 @@ func (g *goGen) typeOf(s *Schema, hint string) string {
 	case s.Is("boolean"):
 		return "bool"
 	case s.Is("array"):
-		if s.Items == nil {
-			return "[]JSONValue"
-		}
-		item := g.typeOf(s.Items, hint+"Item")
-		if s.MinItems != nil && s.MaxItems != nil && *s.MinItems == *s.MaxItems && *s.MinItems > 0 {
-			return fmt.Sprintf("[%d]%s", *s.MinItems, item)
-		}
-		return "[]" + item
+		return g.arrayType(s, hint)
 	case s.Is("object"):
-		if len(s.Properties) > 0 {
-			return g.inline(hint, s)
-		}
-		if s.More != nil && s.More.Not != nil {
-			return "struct{}"
-		}
-		if s.More != nil {
-			return "map[string]" + g.typeOf(s.More, hint+"Value")
-		}
-		return "struct{}"
+		return g.objectType(s, hint)
 	}
 	return "JSONValue"
+}
+
+// arrayType is the Go type for an array: a Go array for a fixed length, else a slice.
+func (g *goGen) arrayType(s *Schema, hint string) string {
+	if s.Items == nil {
+		return "[]JSONValue"
+	}
+	item := g.typeOf(s.Items, hint+"Item")
+	if s.MinItems != nil && s.MaxItems != nil && *s.MinItems == *s.MaxItems && *s.MinItems > 0 {
+		return fmt.Sprintf("[%d]%s", *s.MinItems, item)
+	}
+	return "[]" + item
+}
+
+// objectType is the Go type for an object: a made struct for named properties, a map for
+// other properties, else an empty struct.
+func (g *goGen) objectType(s *Schema, hint string) string {
+	if len(s.Properties) > 0 {
+		return g.inline(hint, s)
+	}
+	if s.More != nil && s.More.Not != nil {
+		return "struct{}"
+	}
+	if s.More != nil {
+		return "map[string]" + g.typeOf(s.More, hint+"Value")
+	}
+	return "struct{}"
 }
 
 var initialisms = map[string]string{"id": "ID", "url": "URL", "uri": "URI", "mcp": "MCP", "acp": "ACP", "html": "HTML", "json": "JSON", "ssh": "SSH", "cli": "CLI"}

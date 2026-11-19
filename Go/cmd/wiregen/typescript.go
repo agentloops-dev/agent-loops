@@ -24,6 +24,16 @@ func typescript(doc *Document, rpcs []*RPC) string {
 // Change the schema, then run scripts/wire.sh gen (#1135).
 
 `)
+	writeTSDefinitions(&b, doc, rpcs)
+	methods, notes := webMethods(rpcs)
+	writeTSMethods(&b, methods, notes)
+	writeTSShapes(&b, doc)
+	return b.String()
+}
+
+// writeTSDefinitions writes every definition: the prelude and the TypeScript-typed ones
+// first, then each OpenRPC document's Failure codes, then the rest.
+func writeTSDefinitions(b *strings.Builder, doc *Document, rpcs []*RPC) {
 	done := map[string]bool{}
 	for _, name := range prelude {
 		if s, ok := doc.Definitions[name]; ok {
@@ -37,64 +47,82 @@ func typescript(doc *Document, rpcs []*RPC) string {
 			done[name] = true
 		}
 	}
-
 	for _, rpc := range rpcs {
-		if len(rpc.Errors) == 0 {
-			continue
-		}
-		b.WriteString("\n/** DaemonAPI.Failure: the codes a call can fail with. */\nexport const Failure = {\n")
-		for _, e := range rpc.Errors {
-			fmt.Fprintf(&b, "  %s: %d,\n", e.Name, e.Code)
-		}
-		b.WriteString("} as const;\n")
+		writeTSFailure(b, rpc)
 	}
-
 	for _, name := range doc.Names {
 		if !done[name] {
 			b.WriteString("\n" + tsDefinition(name, doc.Definitions[name]))
 		}
 	}
+}
 
-	type row struct {
-		m      Method
-		target string
+// writeTSFailure writes an OpenRPC document's error codes as Failure, when it has any.
+func writeTSFailure(b *strings.Builder, rpc *RPC) {
+	if len(rpc.Errors) == 0 {
+		return
 	}
-	var methods, notes []row
+	b.WriteString("\n/** DaemonAPI.Failure: the codes a call can fail with. */\nexport const Failure = {\n")
+	for _, e := range rpc.Errors {
+		fmt.Fprintf(b, "  %s: %d,\n", e.Name, e.Code)
+	}
+	b.WriteString("} as const;\n")
+}
+
+// webRow is a method the web page uses, and where it goes.
+type webRow struct {
+	m      Method
+	target string
+}
+
+// webMethods is the methods and the notifications tagged `web`, each sorted by name.
+func webMethods(rpcs []*RPC) (methods, notes []webRow) {
 	for _, rpc := range rpcs {
 		for _, m := range rpc.Methods {
 			if !m.Web {
 				continue
 			}
 			if m.Notification {
-				notes = append(notes, row{m, rpc.Target})
+				notes = append(notes, webRow{m, rpc.Target})
 			} else {
-				methods = append(methods, row{m, rpc.Target})
+				methods = append(methods, webRow{m, rpc.Target})
 			}
 		}
 	}
-	sortRows := func(rows []row) {
-		for i := 1; i < len(rows); i++ {
-			for j := i; j > 0 && rows[j].m.Name < rows[j-1].m.Name; j-- {
-				rows[j], rows[j-1] = rows[j-1], rows[j]
-			}
-		}
-	}
-	sortRows(methods)
-	sortRows(notes)
+	sortWebRows(methods)
+	sortWebRows(notes)
+	return methods, notes
+}
 
+// sortWebRows sorts rows by method name, keeping the order of equal names.
+func sortWebRows(rows []webRow) {
+	for i := 1; i < len(rows); i++ {
+		for j := i; j > 0 && rows[j].m.Name < rows[j-1].m.Name; j-- {
+			rows[j], rows[j-1] = rows[j-1], rows[j]
+		}
+	}
+}
+
+// writeTSMethods writes Methods, MethodTarget and Notifications.
+func writeTSMethods(b *strings.Builder, methods, notes []webRow) {
 	b.WriteString("\n/** Every method the web remote may call: its params and its result. */\nexport interface Methods {\n")
 	for _, r := range methods {
-		fmt.Fprintf(&b, "  %q: { params: %s; result: %s };\n", r.m.Name, tsType(r.m.Params), tsType(r.m.Result))
+		fmt.Fprintf(b, "  %q: { params: %s; result: %s };\n", r.m.Name, tsType(r.m.Params), tsType(r.m.Result))
 	}
 	b.WriteString("}\n\n/** Whether a method goes to a host (with `h`) or to the control plane itself. */\nexport const MethodTarget = {\n")
 	for _, r := range methods {
-		fmt.Fprintf(&b, "  %q: %q,\n", r.m.Name, r.target)
+		fmt.Fprintf(b, "  %q: %q,\n", r.m.Name, r.target)
 	}
 	b.WriteString("} as const;\n\n/** Every notification the web remote hears, and its params. */\nexport interface Notifications {\n")
 	for _, r := range notes {
-		fmt.Fprintf(&b, "  %q: %s;\n", r.m.Name, tsType(r.m.Params))
+		fmt.Fprintf(b, "  %q: %s;\n", r.m.Name, tsType(r.m.Params))
 	}
-	b.WriteString("}\n\n/** Each interface's keys, for checking Swift-encoded fixtures against these types. */\n" +
+	b.WriteString("}\n")
+}
+
+// writeTSShapes writes Shapes: each interface's required and optional keys.
+func writeTSShapes(b *strings.Builder, doc *Document) {
+	b.WriteString("\n/** Each interface's keys, for checking Swift-encoded fixtures against these types. */\n" +
 		"export const Shapes: Record<string, { required: readonly string[]; optional: readonly string[] }> = {\n")
 	for _, name := range doc.Names {
 		s := doc.Definitions[name]
@@ -109,11 +137,10 @@ func typescript(doc *Document, rpcs []*RPC) string {
 				optional = append(optional, fmt.Sprintf("%q", p.Name))
 			}
 		}
-		fmt.Fprintf(&b, "  %s: { required: [%s], optional: [%s] },\n", tsKey(name),
+		fmt.Fprintf(b, "  %s: { required: [%s], optional: [%s] },\n", tsKey(name),
 			strings.Join(required, ", "), strings.Join(optional, ", "))
 	}
 	b.WriteString("};\n")
-	return b.String()
 }
 
 // tsInterface says whether a definition is written as an interface: an object with named
@@ -129,52 +156,73 @@ func tsDefinition(name string, s *Schema) string {
 	case s.TSType != "":
 		fmt.Fprintf(&b, "export type %s = %s;\n", name, s.TSType)
 	case tsInterface(s):
-		if len(s.Properties) == 0 {
-			fmt.Fprintf(&b, "export interface %s {}\n", name)
-			break
-		}
-		fmt.Fprintf(&b, "export interface %s {\n", name)
-		for _, p := range s.Properties {
-			b.WriteString(tsComment(p.Schema.Description, "  "))
-			optional := "?"
-			if s.IsRequired(p.Name) {
-				optional = ""
-			}
-			fmt.Fprintf(&b, "  %s%s: %s;\n", tsKey(p.Name), optional, tsType(p.Schema))
-		}
-		b.WriteString("}\n")
+		writeTSInterface(&b, name, s)
 	default:
-		_, _, cases := s.Cases()
-		_, tagged := s.Tagged()
-		if cases || tagged {
-			fmt.Fprintf(&b, "export type %s =\n", name)
-			for i, m := range s.AnyOf {
-				end := ""
-				if i == len(s.AnyOf)-1 {
-					end = ";"
-				}
-				member := tsType(m)
-				if tagged {
-					member = tsMember(m)
-				}
-				fmt.Fprintf(&b, "  | %s%s\n", member, end)
-			}
-		} else if len(s.Enum) > 1 {
-			// A value per line, so that two features that each add one do not touch the
-			// same line (#2020).
-			fmt.Fprintf(&b, "export type %s =\n", name)
-			for i, v := range s.Enum {
-				end := ""
-				if i == len(s.Enum)-1 {
-					end = ";"
-				}
-				fmt.Fprintf(&b, "  | %s%s\n", tsLiteral(v), end)
-			}
-		} else {
-			fmt.Fprintf(&b, "export type %s = %s;\n", name, tsType(s))
-		}
+		writeTSAlias(&b, name, s)
 	}
 	return b.String()
+}
+
+// writeTSInterface writes an interface, a line per property.
+func writeTSInterface(b *strings.Builder, name string, s *Schema) {
+	if len(s.Properties) == 0 {
+		fmt.Fprintf(b, "export interface %s {}\n", name)
+		return
+	}
+	fmt.Fprintf(b, "export interface %s {\n", name)
+	for _, p := range s.Properties {
+		b.WriteString(tsComment(p.Schema.Description, "  "))
+		fmt.Fprintf(b, "  %s%s: %s;\n", tsKey(p.Name), tsOptional(s, p.Name), tsType(p.Schema))
+	}
+	b.WriteString("}\n")
+}
+
+// writeTSAlias writes a type alias: a union or an enum a member per line, else one line.
+func writeTSAlias(b *strings.Builder, name string, s *Schema) {
+	_, _, cases := s.Cases()
+	_, tagged := s.Tagged()
+	switch {
+	case cases || tagged:
+		members := make([]string, len(s.AnyOf))
+		for i, m := range s.AnyOf {
+			if tagged {
+				members[i] = tsMember(m)
+			} else {
+				members[i] = tsType(m)
+			}
+		}
+		writeTSLines(b, name, members)
+	case len(s.Enum) > 1:
+		// A value per line, so that two features that each add one do not touch the
+		// same line (#2020).
+		values := make([]string, len(s.Enum))
+		for i, v := range s.Enum {
+			values[i] = tsLiteral(v)
+		}
+		writeTSLines(b, name, values)
+	default:
+		fmt.Fprintf(b, "export type %s = %s;\n", name, tsType(s))
+	}
+}
+
+// writeTSLines writes a union type with a member per line.
+func writeTSLines(b *strings.Builder, name string, members []string) {
+	fmt.Fprintf(b, "export type %s =\n", name)
+	for i, m := range members {
+		end := ""
+		if i == len(members)-1 {
+			end = ";"
+		}
+		fmt.Fprintf(b, "  | %s%s\n", m, end)
+	}
+}
+
+// tsOptional is "?" for a property the object does not require, else "".
+func tsOptional(s *Schema, name string) string {
+	if s.IsRequired(name) {
+		return ""
+	}
+	return "?"
 }
 
 // tsMember is one member of a union on a line of its own: an object too long for the line
@@ -187,11 +235,7 @@ func tsMember(s *Schema) string {
 	var b strings.Builder
 	b.WriteString("{\n")
 	for _, p := range s.Properties {
-		optional := "?"
-		if s.IsRequired(p.Name) {
-			optional = ""
-		}
-		fmt.Fprintf(&b, "      %s%s: %s;\n", tsKey(p.Name), optional, tsType(p.Schema))
+		fmt.Fprintf(&b, "      %s%s: %s;\n", tsKey(p.Name), tsOptional(s, p.Name), tsType(p.Schema))
 	}
 	b.WriteString("    }")
 	return b.String()
@@ -267,6 +311,13 @@ func tsType(s *Schema) string {
 			parts[i] = tsType(&Schema{Types: []string{t}})
 		}
 		return strings.Join(parts, " | ")
+	}
+	return tsPlainType(s)
+}
+
+// tsPlainType is the TypeScript for a schema of one JSON type.
+func tsPlainType(s *Schema) string {
+	switch {
 	case s.Is("string"):
 		return "string"
 	case s.Is("number"), s.Is("integer"):
@@ -276,40 +327,46 @@ func tsType(s *Schema) string {
 	case s.Is("null"):
 		return "null"
 	case s.Is("array"):
-		if s.Items == nil {
-			return "JSONValue[]"
-		}
-		item := tsType(s.Items)
-		if s.MinItems != nil && s.MaxItems != nil && *s.MinItems == *s.MaxItems && *s.MinItems > 0 {
-			parts := make([]string, *s.MinItems)
-			for i := range parts {
-				parts[i] = item
-			}
-			return "[" + strings.Join(parts, ", ") + "]"
-		}
-		if strings.ContainsAny(item, "|&") && !strings.HasPrefix(item, "{") {
-			item = "(" + item + ")"
-		}
-		return item + "[]"
+		return tsArrayType(s)
 	case s.Is("object"):
-		if len(s.Properties) > 0 {
-			parts := make([]string, len(s.Properties))
-			for i, p := range s.Properties {
-				optional := "?"
-				if s.IsRequired(p.Name) {
-					optional = ""
-				}
-				parts[i] = fmt.Sprintf("%s%s: %s", tsKey(p.Name), optional, tsType(p.Schema))
-			}
-			return "{ " + strings.Join(parts, "; ") + " }"
-		}
-		if s.More != nil && s.More.Not != nil {
-			return "Record<string, never>"
-		}
-		if s.More != nil {
-			return "Record<string, " + tsType(s.More) + ">"
-		}
-		return "{}"
+		return tsObjectType(s)
 	}
 	return "JSONValue"
+}
+
+// tsArrayType is the TypeScript for an array: a tuple for a fixed length, else T[].
+func tsArrayType(s *Schema) string {
+	if s.Items == nil {
+		return "JSONValue[]"
+	}
+	item := tsType(s.Items)
+	if s.MinItems != nil && s.MaxItems != nil && *s.MinItems == *s.MaxItems && *s.MinItems > 0 {
+		parts := make([]string, *s.MinItems)
+		for i := range parts {
+			parts[i] = item
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	}
+	if strings.ContainsAny(item, "|&") && !strings.HasPrefix(item, "{") {
+		item = "(" + item + ")"
+	}
+	return item + "[]"
+}
+
+// tsObjectType is the TypeScript for an object written inline.
+func tsObjectType(s *Schema) string {
+	if len(s.Properties) > 0 {
+		parts := make([]string, len(s.Properties))
+		for i, p := range s.Properties {
+			parts[i] = fmt.Sprintf("%s%s: %s", tsKey(p.Name), tsOptional(s, p.Name), tsType(p.Schema))
+		}
+		return "{ " + strings.Join(parts, "; ") + " }"
+	}
+	if s.More != nil && s.More.Not != nil {
+		return "Record<string, never>"
+	}
+	if s.More != nil {
+		return "Record<string, " + tsType(s.More) + ">"
+	}
+	return "{}"
 }
