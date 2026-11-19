@@ -3931,22 +3931,13 @@ type DaemonStatus struct {
 	AgentsLive int64 `json:"agentsLive"`
 }
 
-// How much the daily summary does (#3351, #3395): off, the summary only, or the summary and the read-only checks between summaries (the home folder's Daily checks workflow).
-type DailySummaryMode string
+// The daily checks' one control, for all folders (#3355, #5853). It is the home folder's ready-made Daily checks workflow: enabled turns it on or off, and every is how many hours apart its schedules run, from midnight.
+type DailyChecksSettings struct {
+	// The Daily checks workflow is on.
+	Enabled bool `json:"enabled"`
 
-const DailySummaryModeOff DailySummaryMode = "off"
-const DailySummaryModeSummary DailySummaryMode = "summary"
-const DailySummaryModeSummaryAndChecks DailySummaryMode = "summaryAndChecks"
-
-// The daily summary's one control, for all folders (#3351). It is the home folder's ready-made Daily summary workflow: the mode turns it on or off, and the time is its schedule's. The days stay as the workflow says (weekdays by default).
-type DailySummarySettings struct {
-	Mode DailySummaryMode `json:"mode"`
-
-	// The time it runs, HH:MM in this machine's time zone, on the hour or the half hour. 08:00 by default.
-	At string `json:"at"`
-
-	// With summaryAndChecks, how many hours apart the checks run, counted from the summary's time and never at it (#3395): 2, 3, 4, 6, 8 or 12. 4 by default.
-	ChecksEvery *int64 `json:"checksEvery,omitzero"`
+	// How many hours apart the checks run, from midnight: 2, 3, 4, 6, 8 or 12. 4 by default.
+	Every int64 `json:"every"`
 }
 
 type DayRecap struct {
@@ -9593,17 +9584,6 @@ type MachineStop struct {
 	ConfirmRunning *bool `json:"confirmRunning,omitzero"`
 }
 
-// One of the person's other machines in machines/summaryFacts (#3354): its facts, or, when it is off or did not answer, unreached, the words that say why.
-type MachineSummaryFacts struct {
-	Machine MachineRef `json:"machine"`
-
-	MachineName string `json:"machineName"`
-
-	Facts *SummaryFacts `json:"facts,omitzero"`
-
-	Unreached *string `json:"unreached,omitzero"`
-}
-
 type MachineTunnel struct {
 	Up bool `json:"up"`
 
@@ -9766,11 +9746,6 @@ type MachineWorkspaceCall struct {
 	Params JSONValue `json:"params"`
 
 	Deliver *LockDelivery `json:"deliver,omitzero"`
-}
-
-// machines/summaryFacts (#3354): the daily summary's facts from each of the person's other machines, by name.
-type MachinesSummaryFacts struct {
-	Machines []MachineSummaryFacts `json:"machines"`
 }
 
 type ManagedMCPServer struct {
@@ -15802,55 +15777,6 @@ type SuggestionRequest struct {
 
 	// The suggestion's id, as its CheckSuggestion says it.
 	ID string `json:"id"`
-}
-
-// agents/summaryFacts (#3354): one machine's lines for the daily summary since a time, each list at most 40 lines, newest last; folders is how many folders it has.
-type SummaryFacts struct {
-	Folders int64 `json:"folders"`
-
-	Landed []string `json:"landed"`
-
-	Failed []string `json:"failed"`
-
-	Waiting []string `json:"waiting"`
-
-	Suggested []string `json:"suggested"`
-
-	Checked []string `json:"checked"`
-}
-
-// agents/summaryFacts and machines/summaryFacts (#3354): the facts since this time.
-type SummaryFactsRequest struct {
-	Since Date `json:"since"`
-}
-
-// One saved page of the daily summary (#3721), in ~/.agents/summaries on this machine: the sidebar's Summary row and the Summary page.
-type SummaryPage struct {
-	// The file's name without .md, such as 2026-11-06-1810: what summaries/read names.
-	Name string `json:"name"`
-
-	// The page's first heading, such as "Daily summary, Fri 6 Nov"; the name when it has none.
-	Title string `json:"title"`
-
-	SavedAt Date `json:"savedAt"`
-
-	// Nobody has read it with summaries/read since it was saved.
-	Unread bool `json:"unread"`
-
-	// The Daily summary workflow's session that wrote it: the page's "How this was written". Absent for a page saved before #3721.
-	Writer *UUID `json:"writer,omitzero"`
-}
-
-// summaries/read (#3721): a saved page of the daily summary and its Markdown.
-type SummaryPageText struct {
-	Page SummaryPage `json:"page"`
-
-	Markdown string `json:"markdown"`
-}
-
-// summaries/read (#3721): the page to read, as SummaryPage.name says it.
-type SummaryReadRequest struct {
-	Name string `json:"name"`
 }
 
 // Surface (Attention/Surface.swift): a tagged object, `{ mac: {} }` or `{ device: "<uuid>" }`.

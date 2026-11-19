@@ -133,14 +133,11 @@ extension RemoteModel {
         publishAttention()
         liveActivities.settle(with: work)
         if let pendingOpen { open(pendingOpen) }
-        // The Summary row (#3721): shown only while the daily summary is on, with its newest page.
-        async let dailySummary: Void = refreshDailySummarySettings()
-        async let summaries: Void = refreshSummaryPages()
         // The Achievements page (#4116), on the iPad's empty detail as well as its row.
         async let multiplier: Void = refreshMultiplier()
         async let achievements: Void = refreshAchievements()
         async let moving: Void = refreshMoves(on: .mac, through: client)
-        _ = await (dailySummary, summaries, multiplier, achievements, moving)
+        _ = await (multiplier, achievements, moving)
         if let pendingNeed {
             self.pendingNeed = nil
             if let agentID = agentID(forNeedToken: pendingNeed) { open(agentID) } else { openUnheld(needToken: pendingNeed) }

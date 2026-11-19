@@ -56,7 +56,7 @@ const CapControl1 = "control/1"
 const CapCost1 = "cost/1"
 const CapCredentials1 = "credentials/1"
 const CapDaemon1 = "daemon/1"
-const CapDailySummary1 = "daily-summary/1"
+const CapDailyChecks1 = "daily-checks/1"
 const CapDeploysCopy1 = "deploys.copy/1"
 const CapDeploysDelivery1 = "deploys.delivery/1"
 const CapDeploysRead1 = "deploys.read/1"
@@ -227,8 +227,6 @@ const CapSkills1 = "skills/1"
 const CapStorage1 = "storage/1"
 const CapStore1 = "store/1"
 const CapSuggestions1 = "suggestions/1"
-const CapSummaries1 = "summaries/1"
-const CapSummaryMachines1 = "summary.machines/1"
 const CapSurface1 = "surface/1"
 const CapTime1 = "time/1"
 const CapTunnel1 = "tunnel/1"
@@ -300,7 +298,6 @@ var HostCapabilities = pairs([][2]string{
 	{"agents/startNow", "agents.start-now/1"},
 	{"agents/stop", "agents/1"},
 	{"agents/stopBackground", "agents/1"},
-	{"agents/summaryFacts", "summary.machines/1"},
 	{"agents/touchedPaths", "agents/1"},
 	{"agents/transcript", "agents/1"},
 	{"agents/turns", "agents/1"},
@@ -365,8 +362,8 @@ var HostCapabilities = pairs([][2]string{
 	{"daemon/policyState", "host.policy/1"},
 	{"daemon/quit", "daemon/1"},
 	{"daemon/status", "daemon/1"},
-	{"dailySummary/setSettings", "daily-summary/1"},
-	{"dailySummary/settings", "daily-summary/1"},
+	{"dailyChecks/setSettings", "daily-checks/1"},
+	{"dailyChecks/settings", "daily-checks/1"},
 	{"deploys/delivery", "deploys.delivery/1"},
 	{"deploys/targets", "deploys.targets/1"},
 	{"desktopControl/resume", "host.desktop-control/1"},
@@ -632,8 +629,6 @@ var HostCapabilities = pairs([][2]string{
 	{"store/notes", "store/1"},
 	{"suggestions/dismiss", "suggestions/1"},
 	{"suggestions/start", "suggestions/1"},
-	{"summaries/list", "summaries/1"},
-	{"summaries/read", "summaries/1"},
 	{"surface/identify", "surface/1"},
 	{"time/history", "time/1"},
 	{"usage/history", "usage/1"},
@@ -691,7 +686,7 @@ var HostCapabilities = pairs([][2]string{
 	{"clone/changed", "clone/1"},
 	{"cost/changed", "cost/1"},
 	{"daemon/policyStateChanged", "host.policy/1"},
-	{"dailySummary/changed", "daily-summary/1"},
+	{"dailyChecks/changed", "daily-checks/1"},
 	{"desktopControl/liveFrame", "host.desktop-control/1"},
 	{"device/changed", "device/1"},
 	{"disk/changed", "disk/1"},
@@ -726,7 +721,6 @@ var HostCapabilities = pairs([][2]string{
 	{"shell/stateChanged", "shell/1"},
 	{"storage/writeFailed", "storage/1"},
 	{"store/notesChanged", "store/1"},
-	{"summaries/changed", "summaries/1"},
 	{"wake/changed", "wake/1"},
 	{"workflow/changed", "workflow/1"},
 	{"workflow/removed", "workflow/1"},
@@ -755,7 +749,7 @@ var HostNotifications = set([]string{
 	"clone/changed",
 	"cost/changed",
 	"daemon/policyStateChanged",
-	"dailySummary/changed",
+	"dailyChecks/changed",
 	"desktopControl/liveFrame",
 	"device/changed",
 	"disk/changed",
@@ -790,7 +784,6 @@ var HostNotifications = set([]string{
 	"shell/stateChanged",
 	"storage/writeFailed",
 	"store/notesChanged",
-	"summaries/changed",
 	"wake/changed",
 	"workflow/changed",
 	"workflow/removed",
@@ -945,7 +938,6 @@ var ControlCapabilities = pairs([][2]string{
 	{"machines/startEnroll", "machines/1"},
 	{"machines/startSession", "sessions.on-machine/1"},
 	{"machines/stop", "machines/1"},
-	{"machines/summaryFacts", "summary.machines/1"},
 	{"machines/unlink", "machines/1"},
 	{"machines/update", "machines/1"},
 	{"machines/versions", "machines/1"},

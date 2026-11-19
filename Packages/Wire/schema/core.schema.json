@@ -314,34 +314,22 @@
     "Changed": {
       "type": "boolean"
     },
-    "DailySummaryMode": {
-      "type": "string",
-      "description": "How much the daily summary does (#3351, #3395): off, the summary only, or the summary and the read-only checks between summaries (the home folder's Daily checks workflow).",
-      "enum": [
-        "off",
-        "summary",
-        "summaryAndChecks"
-      ]
-    },
-    "DailySummarySettings": {
+    "DailyChecksSettings": {
       "type": "object",
-      "description": "The daily summary's one control, for all folders (#3351). It is the home folder's ready-made Daily summary workflow: the mode turns it on or off, and the time is its schedule's. The days stay as the workflow says (weekdays by default).",
+      "description": "The daily checks' one control, for all folders (#3355, #5853). It is the home folder's ready-made Daily checks workflow: enabled turns it on or off, and every is how many hours apart its schedules run, from midnight.",
       "properties": {
-        "mode": {
-          "$ref": "#/definitions/DailySummaryMode"
+        "enabled": {
+          "type": "boolean",
+          "description": "The Daily checks workflow is on."
         },
-        "at": {
-          "type": "string",
-          "description": "The time it runs, HH:MM in this machine's time zone, on the hour or the half hour. 08:00 by default."
-        },
-        "checksEvery": {
+        "every": {
           "type": "integer",
-          "description": "With summaryAndChecks, how many hours apart the checks run, counted from the summary's time and never at it (#3395): 2, 3, 4, 6, 8 or 12. 4 by default."
+          "description": "How many hours apart the checks run, from midnight: 2, 3, 4, 6, 8 or 12. 4 by default."
         }
       },
       "required": [
-        "mode",
-        "at"
+        "enabled",
+        "every"
       ],
       "additionalProperties": false
     },
@@ -1610,80 +1598,6 @@
       },
       "required": [
         "notes"
-      ],
-      "additionalProperties": false
-    },
-    "SummaryFacts": {
-      "type": "object",
-      "description": "agents/summaryFacts (#3354): one machine's lines for the daily summary since a time, each list at most 40 lines, newest last; folders is how many folders it has.",
-      "properties": {
-        "folders": {
-          "type": "integer"
-        },
-        "landed": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-        "failed": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-        "waiting": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-        "suggested": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-        "checked": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      }
-      },
-      "required": [
-        "folders",
-        "landed",
-        "failed",
-        "waiting",
-        "suggested",
-        "checked"
-      ],
-      "additionalProperties": false
-    },
-    "SummaryFactsRequest": {
-      "type": "object",
-      "description": "agents/summaryFacts and machines/summaryFacts (#3354): the facts since this time.",
-      "properties": {
-        "since": {
-          "$ref": "#/definitions/WireDate"
-        }
-      },
-      "required": [
-        "since"
-      ],
-      "additionalProperties": false
-    },
-    "SummaryReadRequest": {
-      "type": "object",
-      "description": "summaries/read (#3721): the page to read, as SummaryPage.name says it.",
-      "properties": {
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
       ],
       "additionalProperties": false
     },

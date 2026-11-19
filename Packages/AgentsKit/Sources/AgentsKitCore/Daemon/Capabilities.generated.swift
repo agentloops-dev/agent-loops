@@ -57,7 +57,7 @@ public enum Capability {
     public static let cost1 = "cost/1"
     public static let credentials1 = "credentials/1"
     public static let daemon1 = "daemon/1"
-    public static let dailySummary1 = "daily-summary/1"
+    public static let dailyChecks1 = "daily-checks/1"
     public static let deploysCopy1 = "deploys.copy/1"
     public static let deploysDelivery1 = "deploys.delivery/1"
     public static let deploysRead1 = "deploys.read/1"
@@ -228,8 +228,6 @@ public enum Capability {
     public static let storage1 = "storage/1"
     public static let store1 = "store/1"
     public static let suggestions1 = "suggestions/1"
-    public static let summaries1 = "summaries/1"
-    public static let summaryMachines1 = "summary.machines/1"
     public static let surface1 = "surface/1"
     public static let time1 = "time/1"
     public static let tunnel1 = "tunnel/1"
@@ -301,7 +299,6 @@ public enum Capability {
         "agents/startNow": "agents.start-now/1",
         "agents/stop": "agents/1",
         "agents/stopBackground": "agents/1",
-        "agents/summaryFacts": "summary.machines/1",
         "agents/touchedPaths": "agents/1",
         "agents/transcript": "agents/1",
         "agents/turns": "agents/1",
@@ -366,8 +363,8 @@ public enum Capability {
         "daemon/policyState": "host.policy/1",
         "daemon/quit": "daemon/1",
         "daemon/status": "daemon/1",
-        "dailySummary/setSettings": "daily-summary/1",
-        "dailySummary/settings": "daily-summary/1",
+        "dailyChecks/setSettings": "daily-checks/1",
+        "dailyChecks/settings": "daily-checks/1",
         "deploys/delivery": "deploys.delivery/1",
         "deploys/targets": "deploys.targets/1",
         "desktopControl/resume": "host.desktop-control/1",
@@ -633,8 +630,6 @@ public enum Capability {
         "store/notes": "store/1",
         "suggestions/dismiss": "suggestions/1",
         "suggestions/start": "suggestions/1",
-        "summaries/list": "summaries/1",
-        "summaries/read": "summaries/1",
         "surface/identify": "surface/1",
         "time/history": "time/1",
         "usage/history": "usage/1",
@@ -692,7 +687,7 @@ public enum Capability {
         "clone/changed": "clone/1",
         "cost/changed": "cost/1",
         "daemon/policyStateChanged": "host.policy/1",
-        "dailySummary/changed": "daily-summary/1",
+        "dailyChecks/changed": "daily-checks/1",
         "desktopControl/liveFrame": "host.desktop-control/1",
         "device/changed": "device/1",
         "disk/changed": "disk/1",
@@ -727,7 +722,6 @@ public enum Capability {
         "shell/stateChanged": "shell/1",
         "storage/writeFailed": "storage/1",
         "store/notesChanged": "store/1",
-        "summaries/changed": "summaries/1",
         "wake/changed": "wake/1",
         "workflow/changed": "workflow/1",
         "workflow/removed": "workflow/1",
@@ -882,7 +876,6 @@ public enum Capability {
         "machines/startEnroll": "machines/1",
         "machines/startSession": "sessions.on-machine/1",
         "machines/stop": "machines/1",
-        "machines/summaryFacts": "summary.machines/1",
         "machines/unlink": "machines/1",
         "machines/update": "machines/1",
         "machines/versions": "machines/1",

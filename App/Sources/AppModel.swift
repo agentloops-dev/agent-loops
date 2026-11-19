@@ -200,13 +200,10 @@ final class AppModel {
     /// This Mac). Nil until the daemon has said, including a daemon too old to know the
     /// method, which Settings draws as Off.
     private(set) var desktopControlSettings: DesktopControlSettings?
-    /// The daily summary's Off / Summary control and its time (#3351, Settings ▸ Agent
+    /// The daily checks' Off / On control and how often (#3355, #5853, Settings ▸ Agent
     /// Configuration ▸ Workflows). Nil until the daemon has said, including a daemon too old
     /// to know the method, which Settings leaves out.
-    private(set) var dailySummarySettings: DailySummarySettings?
-    /// The daily summary's saved pages on this Mac's host, newest first (#3721): the Summary
-    /// row and page. Empty from a host too old to know `summaries/list`.
-    private(set) var summaryPages: [SummaryPage] = []
+    private(set) var dailyChecksSettings: DailyChecksSettings?
     /// How this Mac's host updates Agents Host by itself (#2178). Nil from a host that
     /// cannot (a test's, or one older than the method), and Settings draws nothing for it.
     private(set) var selfUpdate: DaemonAPI.SelfUpdate?
@@ -262,7 +259,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             // The same rule as picking a folder: what you picked is what you see,
             // and a conversation or a workflow left open underneath would be waiting
@@ -291,7 +287,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -319,7 +314,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -344,7 +338,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -369,7 +362,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -394,7 +386,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -419,7 +410,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -436,7 +426,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -462,7 +451,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -486,7 +474,6 @@ final class AppModel {
             guard showsWork, showsWork != oldValue else { return }
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -509,7 +496,6 @@ final class AppModel {
     var showsDocs = false {
         didSet {
             guard showsDocs, showsDocs != oldValue else { return }
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -534,7 +520,6 @@ final class AppModel {
     var showsMessages = false {
         didSet {
             guard showsMessages, showsMessages != oldValue else { return }
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -557,32 +542,6 @@ final class AppModel {
     /// The Messages page's list and the conversation open on it, kept while the window is open.
     let messagesList = MessagesListState()
 
-    /// Whether the window is showing the Summary page (#3721): the daily summary's newest saved
-    /// page, from the Summary row at the top of the sidebar. A page like Docs, and not persisted
-    /// for the same reason.
-    var showsSummary = false {
-        didSet {
-            guard showsSummary, showsSummary != oldValue else { return }
-            showsAchievements = false
-            showsSpending = false
-            showsEvents = false
-            showsRuntimes = false
-            statusSecretsPage = nil
-            showsTime = false
-            showsVelocity = false
-            showsTokens = false
-            machinePage = nil
-            showsMachines = false
-            showsWork = false
-            showsDocs = false
-            showsMessages = false
-            selection = nil
-            openWorkflow = nil
-            folderPage = nil
-            composing = false
-        }
-    }
-
     /// Whether the window is showing the Achievements page (#3986), from its row under Usage or
     /// View ▸ Achievements (⌘0). A page like Velocity, and not persisted for the same reason. The
     /// window opens to the Dashboard instead (#5696).
@@ -601,7 +560,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -716,7 +674,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         if let agent = agents.first(where: { $0.id == agentID }) {
             pendingOpen = nil
@@ -745,7 +702,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         // Not listed yet: settling the selection would pick another, so it waits (#1055).
         pendingOpen = liveFolders.contains { $0.key == key } ? nil : .folder(key)
@@ -797,7 +753,6 @@ final class AppModel {
             if showsWork { return .work(workPlace.kind) }
             if showsDocs { return .docs }
             if showsMessages { return .messages }
-            if showsSummary { return .summary }
             if showsAchievements { return .achievements }
             // Nothing else open is the Dashboard (#5696), as the detail draws it.
             guard let key = selectedFolderKey else { return selection == nil && !composing ? .dashboard : nil }
@@ -829,7 +784,6 @@ final class AppModel {
                 showsWork = false
                 showsDocs = false
                 showsMessages = false
-                showsSummary = false
                 showsAchievements = false
                 select(key)
                 openWorkflow = id
@@ -862,8 +816,6 @@ final class AppModel {
                 showDocs(docsHistory.current ?? DocsPlace())
             case .messages:
                 showsMessages = true
-            case .summary:
-                showsSummary = true
             case .resources:
                 // The Remote's row (#3629): on the Mac, This Mac's page at its Resources.
                 showResources()
@@ -894,7 +846,6 @@ final class AppModel {
                 showsWork = false
                 showsDocs = false
                 showsMessages = false
-                showsSummary = false
                 showsAchievements = false
                 showFolder(key)
             case nil:
@@ -928,7 +879,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         showNothing()
     }
@@ -947,7 +897,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         select(key)
         folderPage = page
@@ -981,7 +930,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         select(key)
         // A new session in it (#366): the folder's own page is where a session starts,
@@ -1230,7 +1178,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         select(key)
         openPin = path
@@ -2248,35 +2195,23 @@ final class AppModel {
             .sorted { $0.lastActivityAt > $1.lastActivityAt }
     }
 
-    /// The daily summary's control (#3351). A daemon too old to know the method leaves this nil.
-    func refreshDailySummarySettings() async {
-        dailySummarySettings = try? await macClient.call(DaemonAPI.Method.dailySummarySettings,
-                                                      DaemonAPI.Empty(),
-                                                      returning: DailySummarySettings.self)
+    /// The daily checks' control (#3355, #5853). A daemon too old to know the method leaves this nil.
+    func refreshDailyChecksSettings() async {
+        dailyChecksSettings = try? await macClient.call(DaemonAPI.Method.dailyChecksSettings,
+                                                        DaemonAPI.Empty(),
+                                                        returning: DailyChecksSettings.self)
     }
 
-    /// The daily summary's saved pages (#3721). A daemon too old to know the method leaves none.
-    func refreshSummaryPages() async {
-        summaryPages = (try? await macClient.call(DaemonAPI.Method.summariesList, DaemonAPI.Empty(),
-                                                  returning: [SummaryPage].self)) ?? []
-    }
-
-    /// One saved page of the daily summary (#3721); reading the newest marks it read.
-    func readSummaryPage(_ name: String) async -> SummaryPageText? {
-        try? await macClient.call(DaemonAPI.Method.summariesRead, SummaryReadRequest(name: name),
-                                  returning: SummaryPageText.self)
-    }
-
-    /// The person chose Off or Summary, or a time, for the daily summary (#3351).
-    func setDailySummarySettings(_ settings: DailySummarySettings) async {
-        let before = dailySummarySettings
-        dailySummarySettings = settings
+    /// The person turned the daily checks on or off, or chose how often they run (#3355, #5853).
+    func setDailyChecksSettings(_ settings: DailyChecksSettings) async {
+        let before = dailyChecksSettings
+        dailyChecksSettings = settings
         let saved = await attempt {
-            self.dailySummarySettings = try await self.macClient.call(DaemonAPI.Method.dailySummarySetSettings,
-                                                                   settings,
-                                                                   returning: DailySummarySettings.self)
+            self.dailyChecksSettings = try await self.macClient.call(DaemonAPI.Method.dailyChecksSetSettings,
+                                                                     settings,
+                                                                     returning: DailyChecksSettings.self)
         }
-        if !saved { dailySummarySettings = before }
+        if !saved { dailyChecksSettings = before }
     }
 
     /// Every resource and who holds it (036). A daemon too old to know the method
@@ -3626,13 +3561,9 @@ final class AppModel {
             guard let settings = try? params?.decode(SandboxSettings.self) else { return }
             sandboxSettings = settings
 
-        case DaemonAPI.Notification.dailySummaryChanged:
-            guard let settings = try? params?.decode(DailySummarySettings.self) else { return }
-            dailySummarySettings = settings
-
-        case DaemonAPI.Notification.summariesChanged:
-            guard let pages = try? params?.decode([SummaryPage].self) else { return }
-            summaryPages = pages
+        case DaemonAPI.Notification.dailyChecksChanged:
+            guard let settings = try? params?.decode(DailyChecksSettings.self) else { return }
+            dailyChecksSettings = settings
 
         case DaemonAPI.Notification.autoChanged:
             guard let settings = try? params?.decode(AutoSettings.self) else { return }
@@ -3938,8 +3869,7 @@ final class AppModel {
              DaemonAPI.Notification.attentionChanged, DaemonAPI.Notification.storeNotesChanged,
              DaemonAPI.Notification.achievementsChanged, DaemonAPI.Notification.preferencesChanged,
              DaemonAPI.Notification.multiplierChanged,
-             DaemonAPI.Notification.backupsChanged, DaemonAPI.Notification.dailySummaryChanged,
-             DaemonAPI.Notification.summariesChanged:
+             DaemonAPI.Notification.backupsChanged, DaemonAPI.Notification.dailyChecksChanged:
             // The achievements and display choices are the person's, kept on the Mac's own
             // host (#984, #1033). Settings ▸ Machines ▸ This Mac ▸ Backups is this Mac's (#1810).
             return
@@ -4047,8 +3977,7 @@ final class AppModel {
         DaemonAPI.Notification.signInNeeded, DaemonAPI.Notification.clientPermissionsChanged,
         DaemonAPI.Notification.personChanged, DaemonAPI.Notification.sandboxChanged, DaemonAPI.Notification.autoChanged,
         DaemonAPI.Notification.backupsChanged, DaemonAPI.Notification.runtimesAccountProfilesChanged,
-        DaemonAPI.Notification.daemonPolicyStateChanged, DaemonAPI.Notification.dailySummaryChanged,
-        DaemonAPI.Notification.summariesChanged,
+        DaemonAPI.Notification.daemonPolicyStateChanged, DaemonAPI.Notification.dailyChecksChanged,
     ]
 
     /// What is this Mac's own, from this Mac's host by an id of its own (#1496). Its
@@ -4072,10 +4001,9 @@ final class AppModel {
         async let modes: Void = refreshModes()
         async let display: Void = refreshDisplayPreferences()
         async let auto: Void = refreshAuto()
-        async let dailySummary: Void = refreshDailySummarySettings()
-        async let summaries: Void = refreshSummaryPages()
+        async let dailyChecks: Void = refreshDailyChecksSettings()
         _ = await (runtimes, accounts, cost, retention, clientPermissions, sandbox, policy, person, runtimeStates, wake,
-                   storeNotes, achievements, leases, hostedMCP, events, modes, display, auto, dailySummary, summaries)
+                   storeNotes, achievements, leases, hostedMCP, events, modes, display, auto, dailyChecks)
     }
 
     func refreshEverything() async {
@@ -4120,13 +4048,11 @@ final class AppModel {
         async let transcript: Void = loadTranscript()
         async let popped: Void = loadPoppedTranscripts()
         async let auto: Void = refreshAuto()
-        // The Summary row (#3721): shown only while the daily summary is on, with its newest page.
-        async let dailySummary: Void = refreshDailySummarySettings()
-        async let summaries: Void = refreshSummaryPages()
+        async let dailyChecks: Void = refreshDailyChecksSettings()
         _ = await (popped, runtimes, accounts, workflows, pinned, requests, permissions,
                    elicitations, attention, resuming, cost, retention, clientPermissions, cloning, sending, bringing, moving, wake, leases, events, modes,
                    transcript, runtimeStates, sandbox, person, disk, capacity, storeNotes, hostedMCP, mcpHealth, achievements, multiplier,
-                   display, auto, dailySummary, summaries)
+                   display, auto, dailyChecks)
     }
 
     #if DEBUG
