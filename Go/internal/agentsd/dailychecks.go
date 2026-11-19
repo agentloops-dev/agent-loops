@@ -252,31 +252,9 @@ func (d *Daemon) forgeChecks(gh, folder string, at time.Time) []string {
 		return []string{"gh could not read this folder's repository: " + err.Error()}
 	}
 	var out []string
-	add := func(kind []string) {
-		for i, line := range kind {
-			if i == checkLines {
-				out = append(out, fmt.Sprintf("and %d more like that", len(kind)-checkLines))
-				break
-			}
-			out = append(out, line)
-		}
-	}
+	add := func(kind []string) { out = appendCheckLines(out, kind) }
 	if branch := repo.DefaultBranchRef.Name; branch != "" {
-		var runs []ghRun
-		if err := ghJSON(d.ctx, gh, folder, &runs, "run", "list", "--branch", branch, "--limit", "30",
-			"--json", "workflowName,conclusion,url,createdAt"); err == nil {
-			seen := map[string]bool{}
-			var failing []string
-			for _, run := range runs { // newest first
-				if run.Conclusion == "" || seen[run.WorkflowName] {
-					continue
-				}
-				seen[run.WorkflowName] = true
-				if failedConclusions[run.Conclusion] {
-					failing = append(failing, fmt.Sprintf("CI on %s fails: the newest %q run, at %s, ended %s. %s",
-						branch, run.WorkflowName, summaryClock(run.CreatedAt), run.Conclusion, run.URL))
-				}
-			}
+		if failing, ok := d.forgeCIFailures(gh, folder, branch); ok {
 			add(failing)
 		}
 	}
@@ -319,6 +297,42 @@ func (d *Daemon) forgeChecks(gh, folder string, at time.Time) []string {
 		add(waiting)
 	}
 	return out
+}
+
+// appendCheckLines appends at most checkLines lines of one kind to out, and a line that
+// counts the rest.
+func appendCheckLines(out, kind []string) []string {
+	for i, line := range kind {
+		if i == checkLines {
+			out = append(out, fmt.Sprintf("and %d more like that", len(kind)-checkLines))
+			break
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// forgeCIFailures is a line for each workflow whose newest run on branch failed. It is
+// false when gh could not read the runs.
+func (d *Daemon) forgeCIFailures(gh, folder, branch string) ([]string, bool) {
+	var runs []ghRun
+	if err := ghJSON(d.ctx, gh, folder, &runs, "run", "list", "--branch", branch, "--limit", "30",
+		"--json", "workflowName,conclusion,url,createdAt"); err != nil {
+		return nil, false
+	}
+	seen := map[string]bool{}
+	var failing []string
+	for _, run := range runs { // newest first
+		if run.Conclusion == "" || seen[run.WorkflowName] {
+			continue
+		}
+		seen[run.WorkflowName] = true
+		if failedConclusions[run.Conclusion] {
+			failing = append(failing, fmt.Sprintf("CI on %s fails: the newest %q run, at %s, ended %s. %s",
+				branch, run.WorkflowName, summaryClock(run.CreatedAt), run.Conclusion, run.URL))
+		}
+	}
+	return failing, true
 }
 
 // issueLabels is every label of the sessions in a folder that are not archived, such as "#12".

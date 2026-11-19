@@ -84,18 +84,7 @@ func (d *Daemon) eventStatePath() string {
 func (d *Daemon) loadEvents() {
 	d.eventMu.Lock()
 	defer d.eventMu.Unlock()
-	d.eventStateNow = eventState{NextPosition: 1}
-	if b, err := os.ReadFile(d.eventStatePath()); err == nil {
-		if diskjson.Unmarshal(b, &d.eventStateNow) != nil {
-			log.Printf("events-state.json: unreadable, starting afresh")
-			d.eventStateNow = eventState{NextPosition: 1}
-		} else {
-			d.eventStateSaved = b
-		}
-	}
-	if d.eventStateNow.NextPosition < 1 {
-		d.eventStateNow.NextPosition = 1
-	}
+	d.loadEventStateLocked()
 	data, err := os.ReadFile(d.eventsPath())
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Printf("events.jsonl: %v; starting with no events", err)
@@ -118,34 +107,13 @@ func (d *Daemon) loadEvents() {
 			}
 			continue
 		}
-		switch {
-		case line.Event != nil:
-			e := *line.Event
-			if e.Consequences == nil {
-				e.Consequences = []wire.Consequence{}
-			}
-			d.envelopeOld(&e)
-			d.insertEvent(e)
-		case line.Consequence != nil && line.Position != nil:
-			d.addConsequenceLocked(*line.Consequence, *line.Position)
-		case line.Repeat != nil && line.At != nil && line.Count != nil:
-			if i := d.eventIndex(*line.Repeat); i >= 0 {
-				at := *line.At
-				d.eventList[i].Count, d.eventList[i].LastAt = *line.Count, &at
-			}
+		if d.applyEventLineLocked(line) {
 			repeats++
 		}
 	}
 	d.eventLinesAppended = repeats
 	if unreadable > 0 {
-		aside := fmt.Sprintf("%s.unreadable-%d", d.eventsPath(), time.Now().Unix())
-		if len(d.eventList) == 0 {
-			os.Rename(d.eventsPath(), aside)
-		} else {
-			os.WriteFile(aside, data, 0o644)
-		}
-		store.TrimSetAsides(d.eventsPath())
-		log.Printf("events.jsonl: skipped %d unreadable line(s); the whole file is kept as %s", unreadable, filepath.Base(aside))
+		d.setAsideUnreadableEventsLocked(data, unreadable)
 	}
 	if torn {
 		log.Printf("events.jsonl: skipped a torn last line (%d bytes), from a daemon stopped mid-write", len(kept[len(kept)-1]))
@@ -156,6 +124,64 @@ func (d *Daemon) loadEvents() {
 	}
 	d.positionsReserved = d.eventStateNow.NextPosition
 	d.pruneEventsLocked()
+	d.startEventPrunerLocked()
+}
+
+// loadEventStateLocked reads events-state.json, or starts afresh when it is missing or
+// unreadable.
+func (d *Daemon) loadEventStateLocked() {
+	d.eventStateNow = eventState{NextPosition: 1}
+	if b, err := os.ReadFile(d.eventStatePath()); err == nil {
+		if diskjson.Unmarshal(b, &d.eventStateNow) != nil {
+			log.Printf("events-state.json: unreadable, starting afresh")
+			d.eventStateNow = eventState{NextPosition: 1}
+		} else {
+			d.eventStateSaved = b
+		}
+	}
+	if d.eventStateNow.NextPosition < 1 {
+		d.eventStateNow.NextPosition = 1
+	}
+}
+
+// applyEventLineLocked applies one line of events.jsonl: an event, a consequence or a
+// repeat. It is true for a repeat.
+func (d *Daemon) applyEventLineLocked(line eventLine) bool {
+	switch {
+	case line.Event != nil:
+		e := *line.Event
+		if e.Consequences == nil {
+			e.Consequences = []wire.Consequence{}
+		}
+		d.envelopeOld(&e)
+		d.insertEvent(e)
+	case line.Consequence != nil && line.Position != nil:
+		d.addConsequenceLocked(*line.Consequence, *line.Position)
+	case line.Repeat != nil && line.At != nil && line.Count != nil:
+		if i := d.eventIndex(*line.Repeat); i >= 0 {
+			at := *line.At
+			d.eventList[i].Count, d.eventList[i].LastAt = *line.Count, &at
+		}
+		return true
+	}
+	return false
+}
+
+// setAsideUnreadableEventsLocked keeps the whole of events.jsonl, data, beside it when
+// some of its lines were unreadable.
+func (d *Daemon) setAsideUnreadableEventsLocked(data []byte, unreadable int) {
+	aside := fmt.Sprintf("%s.unreadable-%d", d.eventsPath(), time.Now().Unix())
+	if len(d.eventList) == 0 {
+		os.Rename(d.eventsPath(), aside)
+	} else {
+		os.WriteFile(aside, data, 0o644)
+	}
+	store.TrimSetAsides(d.eventsPath())
+	log.Printf("events.jsonl: skipped %d unreadable line(s); the whole file is kept as %s", unreadable, filepath.Base(aside))
+}
+
+// startEventPrunerLocked prunes the events once an hour, until the daemon stops.
+func (d *Daemon) startEventPrunerLocked() {
 	d.eventPruner = time.NewTicker(time.Hour)
 	t := d.eventPruner
 	d.goLoop("event pruner", func(ctx context.Context) {

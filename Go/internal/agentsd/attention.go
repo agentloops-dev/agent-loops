@@ -142,37 +142,7 @@ func (d *Daemon) loadAttention() {
 	d.presences, d.raisedAt, d.raisedNeed = map[int64]presence{}, map[string]wire.Date{}, map[string]wire.NeedID{}
 	d.deliveries, d.settling = map[string]delivery{}, map[string]*time.Timer{}
 	d.forwarded, d.announced = map[string]wire.NeedID{}, map[string]wire.NeedID{}
-	var r attentionRecords
-	if b, err := os.ReadFile(d.attentionFile()); err == nil {
-		var raw struct {
-			Raised      []json.RawMessage `json:"raised"`
-			Deliveries  []json.RawMessage `json:"deliveries"`
-			Withdrawing []json.RawMessage `json:"withdrawing"`
-			Forwarded   []json.RawMessage `json:"forwarded"`
-		}
-		if json.Unmarshal(b, &raw) == nil {
-			// Each entry read on its own: one that will not read is dropped, not the file.
-			for _, e := range raw.Raised {
-				var n raisedNote
-				if diskjson.Unmarshal(e, &n) == nil && token(n.Need) != "" {
-					r.Raised = append(r.Raised, n)
-				}
-			}
-			for _, e := range raw.Deliveries {
-				var dv delivery
-				if diskjson.Unmarshal(e, &dv) == nil && token(dv.NeedID) != "" && (dv.To == nil || dv.To.Mac != nil) {
-					r.Deliveries = append(r.Deliveries, dv)
-				}
-			}
-			for _, e := range raw.Forwarded {
-				var id wire.NeedID
-				if diskjson.Unmarshal(e, &id) == nil && token(id) != "" {
-					r.Forwarded = append(r.Forwarded, id)
-				}
-			}
-			r.Withdrawing = raw.Withdrawing
-		}
-	}
+	r := readAttentionRecords(d.attentionFile())
 	for _, n := range r.Raised {
 		d.raisedAt[token(n.Need)], d.raisedNeed[token(n.Need)] = n.At, n.Need
 	}
@@ -187,6 +157,45 @@ func (d *Daemon) loadAttention() {
 	d.kept = attentionRecords{Withdrawing: r.Withdrawing}
 	written := d.records()
 	d.lastWritten = &written
+}
+
+// readAttentionRecords reads the notes in the file at path. Each entry is read on its own:
+// one that will not read is dropped, not the file.
+func readAttentionRecords(path string) attentionRecords {
+	var r attentionRecords
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return r
+	}
+	var raw struct {
+		Raised      []json.RawMessage `json:"raised"`
+		Deliveries  []json.RawMessage `json:"deliveries"`
+		Withdrawing []json.RawMessage `json:"withdrawing"`
+		Forwarded   []json.RawMessage `json:"forwarded"`
+	}
+	if json.Unmarshal(b, &raw) != nil {
+		return r
+	}
+	for _, e := range raw.Raised {
+		var n raisedNote
+		if diskjson.Unmarshal(e, &n) == nil && token(n.Need) != "" {
+			r.Raised = append(r.Raised, n)
+		}
+	}
+	for _, e := range raw.Deliveries {
+		var dv delivery
+		if diskjson.Unmarshal(e, &dv) == nil && token(dv.NeedID) != "" && (dv.To == nil || dv.To.Mac != nil) {
+			r.Deliveries = append(r.Deliveries, dv)
+		}
+	}
+	for _, e := range raw.Forwarded {
+		var id wire.NeedID
+		if diskjson.Unmarshal(e, &id) == nil && token(id) != "" {
+			r.Forwarded = append(r.Forwarded, id)
+		}
+	}
+	r.Withdrawing = raw.Withdrawing
+	return r
 }
 
 func (d *Daemon) records() attentionRecords {
@@ -367,121 +376,28 @@ func formAnswers(r wire.ElicitationRequest) []wire.QuickAnswer {
 // needs is DaemonCore.needs: derived, never stored, but for when each was first seen.
 // Called with attentionMu held.
 func (d *Daemon) needs() []wire.Need {
-	at := now()
-	archived := map[string]bool{}
+	c := &needsCollector{d: d, at: now(), archived: map[string]bool{}}
 	for _, p := range d.Store.Folders() {
 		if p.ArchivedAt != nil {
-			archived[store.FolderPath(p.Folder)] = true
+			c.archived[store.FolderPath(p.Folder)] = true
 		}
 	}
-	var found []wire.Need
-	var ids []wire.NeedID
-	need := func(id wire.NeedID, a *wire.Agent, kind wire.NeedKind, wanted string, answers []wire.QuickAnswer) {
-		t := token(id)
-		raised, ok := d.raisedAt[t]
-		if !ok {
-			raised = at
-			d.raisedAt[t], d.raisedNeed[t] = raised, id
-		}
-		ids = append(ids, id)
-		title := ""
-		if a.Title != nil {
-			title = *a.Title
-		}
-		folder := folderPath(a)
-		agentID := a.ID
-		found = append(found, wire.Need{ID: id, AgentID: &agentID, Folder: fileURL(folder, true), Kind: kind, RaisedAt: raised,
-			Headline: truncating(wire.Headline{H1: filepath.Base(folder), H2: title, H3: wanted, Answers: answers})})
-	}
-	for _, p := range d.pendingPermissions() {
-		if a := d.Store.Agent(p.AgentID); a != nil && !archived[folderPath(a)] {
-			id := p.ID
-			need(wire.NeedID{Permission: &id}, a, wire.NeedKindPermission, "Wants to "+line(p.ToolCall), permissionAnswers(p))
-		}
-	}
-	for _, e := range d.pendingElicitations() {
-		if d.requestDeferred(e.ID) {
-			continue // in Later until it comes back (#4233)
-		}
-		if a := d.Store.Agent(e.AgentID); a != nil && !archived[folderPath(a)] {
-			id := e.ID
-			need(wire.NeedID{Elicitation: &id}, a, wire.NeedKindElicitation, "Asks: "+elicitationTitle(e), formAnswers(e))
-		}
-	}
-	for _, a := range d.Store.LiveAgents() {
-		if a.State != wire.AgentStateFinished || a.Report == nil || !needsAPerson(a.Report.Outcome) || archived[folderPath(&a)] {
-			continue
-		}
-		if a.ReportSeenAt != nil && *a.ReportSeenAt == a.Report.At {
-			continue // looked at already
-		}
-		r := *a.Report
-		need(wire.NeedID{Report: &wire.NeedIDReport{AgentID: a.ID, At: r.At}}, &a, wire.NeedKindReport, headings[r.Outcome]+": "+r.Message, nil)
-	}
+	c.addAgentNeedsLocked()
 	// A change to the app's own files, made outside it (#531): asked in the session of the
 	// agent that made it, or of the folder when none did.
-	for _, p := range d.Store.Folders() {
-		folder := store.FolderPath(p.Folder)
-		if p.ArchivedAt != nil {
-			continue
-		}
-		for _, c := range d.guardedChanges(folder) {
-			id := wire.NeedID{GuardedChange: &wire.NeedIDGuardedChange{Folder: fileURL(folder, true), Path: c.Path}}
-			t := token(id)
-			raised, ok := d.raisedAt[t]
-			if !ok {
-				raised = at
-				d.raisedAt[t], d.raisedNeed[t] = raised, id
-			}
-			ids = append(ids, id)
-			title := ""
-			if c.AskedIn != nil {
-				if a := d.Store.Agent(*c.AskedIn); a != nil && a.Title != nil {
-					title = *a.Title
-				}
-			}
-			found = append(found, wire.Need{ID: id, AgentID: c.AskedIn, Folder: fileURL(folder, true), Kind: wire.NeedKindGuardedChange,
-				RaisedAt: raised, Headline: truncating(wire.Headline{H1: filepath.Base(folder), H2: title, H3: guardedHeadline(c)})})
-		}
-	}
+	c.addGuardedChangesLocked()
 	// A secret's use waiting on a person (#4017): posted, so a phone answers it from its
 	// banner. Its Needs you row is the request's own.
-	for _, r := range d.listRequests(wire.RequestsListStateOpen, "") {
-		u := r.Detail.SecretUse
-		if r.Deferred != nil {
-			continue // in Later until it comes back (#4233)
-		}
-		if u != nil && u.Use == wire.SecretUseTerminal && r.AskedBy == nil {
-			// A terminal's (#4179): no session, so the banner names the terminal.
-			id := wire.NeedID{Request: &r.ID}
-			t := token(id)
-			raised, ok := d.raisedAt[t]
-			if !ok {
-				raised = at
-				d.raisedAt[t], d.raisedNeed[t] = raised, id
-			}
-			ids = append(ids, id)
-			found = append(found, wire.Need{ID: id, Folder: wire.URL(r.Folder), Kind: wire.NeedKindRequest, RaisedAt: raised,
-				Headline: truncating(wire.Headline{H1: "Terminal", H2: u.Place, H3: secretUseWanted(*u), Answers: secretUseAnswers(*u)})})
-			continue
-		}
-		if u == nil || r.AskedBy == nil {
-			continue
-		}
-		if a := d.Store.Agent(*r.AskedBy); a != nil && !archived[folderPath(a)] {
-			id := r.ID
-			need(wire.NeedID{Request: &id}, a, wire.NeedKindRequest, secretUseWanted(*u), secretUseAnswers(*u))
-		}
-	}
+	c.addSecretUsesLocked()
 	// What an agent told the person (#2805): posted as a need is, never a Needs you row.
-	notices := d.noticeNeedsLocked(at.Time())
-	found = append(found, notices...)
+	notices := d.noticeNeedsLocked(c.at.Time())
+	c.found = append(c.found, notices...)
 	for _, n := range notices {
-		ids = append(ids, n.ID)
+		c.ids = append(c.ids, n.ID)
 	}
 	// Forget the first-seen time of anything no longer outstanding.
 	live := map[string]bool{}
-	for _, id := range ids {
+	for _, id := range c.ids {
 		live[token(id)] = true
 	}
 	for t := range d.raisedAt {
@@ -490,8 +406,125 @@ func (d *Daemon) needs() []wire.Need {
 			delete(d.raisedNeed, t)
 		}
 	}
+	found := c.found
 	sort.SliceStable(found, func(i, j int) bool { return found[i].RaisedAt < found[j].RaisedAt })
 	return found
+}
+
+// needsCollector gathers the needs of one call of needs, with the ids it saw. Its methods
+// are called with attentionMu held.
+type needsCollector struct {
+	d        *Daemon
+	at       wire.Date
+	archived map[string]bool
+	found    []wire.Need
+	ids      []wire.NeedID
+}
+
+// seenLocked notes id as outstanding and gives when it was first seen: now, when it is new.
+func (c *needsCollector) seenLocked(id wire.NeedID) wire.Date {
+	t := token(id)
+	raised, ok := c.d.raisedAt[t]
+	if !ok {
+		raised = c.at
+		c.d.raisedAt[t], c.d.raisedNeed[t] = raised, id
+	}
+	c.ids = append(c.ids, id)
+	return raised
+}
+
+// addLocked adds a need of an agent's session.
+func (c *needsCollector) addLocked(id wire.NeedID, a *wire.Agent, kind wire.NeedKind, wanted string, answers []wire.QuickAnswer) {
+	raised := c.seenLocked(id)
+	title := ""
+	if a.Title != nil {
+		title = *a.Title
+	}
+	folder := folderPath(a)
+	agentID := a.ID
+	c.found = append(c.found, wire.Need{ID: id, AgentID: &agentID, Folder: fileURL(folder, true), Kind: kind, RaisedAt: raised,
+		Headline: truncating(wire.Headline{H1: filepath.Base(folder), H2: title, H3: wanted, Answers: answers})})
+}
+
+// addAgentNeedsLocked adds the permissions and questions that wait on the person, and the
+// reports that need the person, outside archived folders.
+func (c *needsCollector) addAgentNeedsLocked() {
+	d := c.d
+	for _, p := range d.pendingPermissions() {
+		if a := d.Store.Agent(p.AgentID); a != nil && !c.archived[folderPath(a)] {
+			id := p.ID
+			c.addLocked(wire.NeedID{Permission: &id}, a, wire.NeedKindPermission, "Wants to "+line(p.ToolCall), permissionAnswers(p))
+		}
+	}
+	for _, e := range d.pendingElicitations() {
+		if d.requestDeferred(e.ID) {
+			continue // in Later until it comes back (#4233)
+		}
+		if a := d.Store.Agent(e.AgentID); a != nil && !c.archived[folderPath(a)] {
+			id := e.ID
+			c.addLocked(wire.NeedID{Elicitation: &id}, a, wire.NeedKindElicitation, "Asks: "+elicitationTitle(e), formAnswers(e))
+		}
+	}
+	for _, a := range d.Store.LiveAgents() {
+		if a.State != wire.AgentStateFinished || a.Report == nil || !needsAPerson(a.Report.Outcome) || c.archived[folderPath(&a)] {
+			continue
+		}
+		if a.ReportSeenAt != nil && *a.ReportSeenAt == a.Report.At {
+			continue // looked at already
+		}
+		r := *a.Report
+		c.addLocked(wire.NeedID{Report: &wire.NeedIDReport{AgentID: a.ID, At: r.At}}, &a, wire.NeedKindReport, headings[r.Outcome]+": "+r.Message, nil)
+	}
+}
+
+// addGuardedChangesLocked adds each change to the app's own files, made outside it, in a
+// folder that is not archived.
+func (c *needsCollector) addGuardedChangesLocked() {
+	d := c.d
+	for _, p := range d.Store.Folders() {
+		folder := store.FolderPath(p.Folder)
+		if p.ArchivedAt != nil {
+			continue
+		}
+		for _, g := range d.guardedChanges(folder) {
+			id := wire.NeedID{GuardedChange: &wire.NeedIDGuardedChange{Folder: fileURL(folder, true), Path: g.Path}}
+			raised := c.seenLocked(id)
+			title := ""
+			if g.AskedIn != nil {
+				if a := d.Store.Agent(*g.AskedIn); a != nil && a.Title != nil {
+					title = *a.Title
+				}
+			}
+			c.found = append(c.found, wire.Need{ID: id, AgentID: g.AskedIn, Folder: fileURL(folder, true), Kind: wire.NeedKindGuardedChange,
+				RaisedAt: raised, Headline: truncating(wire.Headline{H1: filepath.Base(folder), H2: title, H3: guardedHeadline(g)})})
+		}
+	}
+}
+
+// addSecretUsesLocked adds each open request for a secret's use that waits on a person.
+func (c *needsCollector) addSecretUsesLocked() {
+	d := c.d
+	for _, r := range d.listRequests(wire.RequestsListStateOpen, "") {
+		u := r.Detail.SecretUse
+		if r.Deferred != nil {
+			continue // in Later until it comes back (#4233)
+		}
+		if u != nil && u.Use == wire.SecretUseTerminal && r.AskedBy == nil {
+			// A terminal's (#4179): no session, so the banner names the terminal.
+			id := wire.NeedID{Request: &r.ID}
+			raised := c.seenLocked(id)
+			c.found = append(c.found, wire.Need{ID: id, Folder: wire.URL(r.Folder), Kind: wire.NeedKindRequest, RaisedAt: raised,
+				Headline: truncating(wire.Headline{H1: "Terminal", H2: u.Place, H3: secretUseWanted(*u), Answers: secretUseAnswers(*u)})})
+			continue
+		}
+		if u == nil || r.AskedBy == nil {
+			continue
+		}
+		if a := d.Store.Agent(*r.AskedBy); a != nil && !c.archived[folderPath(a)] {
+			id := r.ID
+			c.addLocked(wire.NeedID{Request: &id}, a, wire.NeedKindRequest, secretUseWanted(*u), secretUseAnswers(*u))
+		}
+	}
 }
 
 // muted says whether the need's session is muted (#2003): it sends no banner and no push,
@@ -580,37 +613,87 @@ func (d *Daemon) reconsider() {
 	for _, n := range outstanding {
 		live[token(n.ID)] = true
 	}
-	var notes []wire.AttentionNotification
-	// Notices sent to the window now, for their lines (#2860), recorded once unlocked.
-	var toComputer []string
-	tell := d.tellControl.Load()
-	var told []wire.AttentionNeed
-	withdraw := func(t string) {
-		if id, ok := d.forwarded[t]; ok {
-			delete(d.forwarded, t)
-			told = append(told, wire.AttentionNeed{Withdraw: &id})
-			log.Printf("attention: %s withdrawn from the control plane", t)
-		}
+	r := &attentionRound{d: d, at: at, tell: d.tellControl.Load()}
+	r.dropMetLocked(live)
+	here := d.macHereLocked(at)
+	for _, n := range outstanding {
+		r.considerLocked(n, here)
 	}
+	// Each recent turn that moved, for its Live Activity (#1744).
+	var turns []wire.AttentionTurn
+	if r.tell != nil {
+		turns = d.turnsMoved(outstanding, at)
+	}
+	// Every message carries the whole Needs you count, and the count goes alone when it
+	// moved with nothing to offer or withdraw (#1163).
+	if r.tell != nil {
+		r.countWaitingLocked()
+	}
+	d.writeAttentionIfMoved()
+	d.attentionMu.Unlock()
+	for _, note := range r.notes {
+		Broadcast(d, wire.NotifyAttentionChanged, note)
+	}
+	for _, m := range r.told {
+		(*r.tell)(wire.CallAttentionNeed.Name, m)
+	}
+	for _, turn := range turns {
+		(*r.tell)(wire.CallAttentionTurn.Name, turn)
+	}
+	for _, id := range r.toComputer {
+		d.noticeWentTo(id, wire.NoticeDeviceComputer)
+	}
+}
+
+// attentionRound is one call of reconsider: what it tells the clients and the control
+// plane once attentionMu is free. Its methods with the Locked suffix are called with
+// attentionMu held.
+type attentionRound struct {
+	d    *Daemon
+	at   time.Time
+	tell *func(method string, params any)
+	// notes go to every client as attention/changed.
+	notes []wire.AttentionNotification
+	// toComputer are the notices sent to the window now, for their lines (#2860), recorded
+	// once unlocked.
+	toComputer []string
+	// told goes to the control plane.
+	told []wire.AttentionNeed
+}
+
+// withdrawLocked withdraws the need with token t from the control plane, when it was offered.
+func (r *attentionRound) withdrawLocked(t string) {
+	d := r.d
+	if id, ok := d.forwarded[t]; ok {
+		delete(d.forwarded, t)
+		r.told = append(r.told, wire.AttentionNeed{Withdraw: &id})
+		log.Printf("attention: %s withdrawn from the control plane", t)
+	}
+}
+
+// dropMetLocked forgets the deliveries, offers and timers of each need that is not live
+// any more, and says so.
+func (r *attentionRound) dropMetLocked(live map[string]bool) {
+	d := r.d
 	for t, dv := range d.deliveries {
 		if !live[t] {
 			delete(d.deliveries, t)
 			delete(d.announced, t)
-			notes = append(notes, wire.AttentionNotification{NeedID: dv.NeedID})
+			r.notes = append(r.notes, wire.AttentionNotification{NeedID: dv.NeedID})
 		}
 	}
 	for t, id := range d.announced {
 		if !live[t] {
 			delete(d.announced, t)
-			notes = append(notes, wire.AttentionNotification{NeedID: id})
+			r.notes = append(r.notes, wire.AttentionNotification{NeedID: id})
 		}
 	}
 	// Met, or a need this build does not know (a Swift host's): the control plane hears
 	// it is over, so a phone takes its banner and widget row down (#1367).
-	if tell != nil {
+	if r.tell != nil {
 		for t := range d.forwarded {
 			if !live[t] {
-				withdraw(t)
+				r.withdrawLocked(t)
 			}
 		}
 	}
@@ -620,124 +703,130 @@ func (d *Daemon) reconsider() {
 			delete(d.settling, t)
 		}
 	}
-	here := d.macHereLocked(at)
-	for _, n := range outstanding {
-		t := token(n.ID)
-		var to *wire.Surface
-		alert, wait := false, false
-		watched := false
-		for _, p := range d.presences {
-			watched = watched || (p.active && p.watching != nil && n.AgentID != nil && *p.watching == *n.AgentID)
-		}
-		muted := d.muted(n.AgentID)
-		switch {
-		case muted: // Mute Notifications (#2003): under Needs you, and nowhere else
-		case watched: // rung 1: it is on screen already
-		case here: // rung 2: at the window, after a moment to look
-			if at.Sub(n.RaisedAt.Time()) < settlingPause {
-				wait = true
-			} else {
-				to = &wire.Surface{Mac: &struct{}{}}
-				// Routing.alert: always for a first delivery, never for the same surface,
-				// and again elsewhere once the interval has passed.
-				switch dv, ok := d.deliveries[t]; {
-				case !ok:
-					alert = true
-				case reflect.DeepEqual(dv.To, to):
-				default:
-					alert = at.Sub(dv.AlertedAt.Time()) >= reAlertInterval
-				}
-			}
-		}
-		// forward: a need shown nowhere this host can see goes to the control plane, which
-		// chooses the device; one being looked at, or about to be, is withdrawn from it.
-		if tell != nil {
-			if wait || to != nil || watched || muted {
-				withdraw(t)
-			} else if _, ok := d.forwarded[t]; !ok {
-				need, buzz, headline := n, true, n.Headline
-				d.forwarded[t] = n.ID
-				told = append(told, wire.AttentionNeed{Need: &need, Headline: &headline, Buzz: &buzz})
-				log.Printf("attention: %s offered to the control plane", t)
-			}
-		}
-		if wait {
-			if d.settling[t] == nil {
-				due := max(0, n.RaisedAt.Time().Add(settlingPause).Sub(at))
-				d.settling[t] = time.AfterFunc(due, d.jobFunc("attention timer", func() {
-					d.attentionMu.Lock()
-					delete(d.settling, t)
-					d.attentionMu.Unlock()
-					d.reconsider()
-				}))
-			}
-			continue
-		}
-		if timer := d.settling[t]; timer != nil {
-			timer.Stop()
-			delete(d.settling, t)
-		}
-		dv, ok := d.deliveries[t]
-		need := n
-		switch {
-		case ok && reflect.DeepEqual(dv.To, to):
-		case ok:
-			dv.To, dv.UnsentAlert = to, nil
-			if alert {
-				dv.AlertedAt, dv.AlertCount = wire.DateOf(at), dv.AlertCount+1
-			}
-			d.deliveries[t] = dv
-			notes = append(notes, wire.AttentionNotification{NeedID: n.ID, Need: &need, To: to, Alert: alert})
-			if to != nil && n.ID.Notice != nil {
-				toComputer = append(toComputer, *n.ID.Notice)
-			}
-		case to == nil:
-			// Shown nowhere, yet still news to every client (#1367): its model is what
-			// Needs you and the phone's widget draw from. Not a banner: no surface is named.
-			if _, ok := d.announced[t]; !ok {
-				d.announced[t] = n.ID
-				notes = append(notes, wire.AttentionNotification{NeedID: n.ID, Need: &need})
-			}
-		default:
-			d.deliveries[t] = delivery{NeedID: n.ID, To: to, AlertedAt: wire.DateOf(at), AlertCount: 1}
-			notes = append(notes, wire.AttentionNotification{NeedID: n.ID, Need: &need, To: to, Alert: true})
-			if n.ID.Notice != nil {
-				toComputer = append(toComputer, *n.ID.Notice)
+}
+
+// attentionRoute is where the ladder sends one need: to a surface, with or without an
+// alert, or nowhere yet (wait), and whether it is on screen or muted.
+type attentionRoute struct {
+	to             *wire.Surface
+	alert, wait    bool
+	watched, muted bool
+}
+
+// routeLocked climbs the ladder for one outstanding need. here says whether the person is
+// at the Mac.
+func (r *attentionRound) routeLocked(n wire.Need, here bool) attentionRoute {
+	d := r.d
+	var route attentionRoute
+	for _, p := range d.presences {
+		route.watched = route.watched || (p.active && p.watching != nil && n.AgentID != nil && *p.watching == *n.AgentID)
+	}
+	route.muted = d.muted(n.AgentID)
+	switch {
+	case route.muted: // Mute Notifications (#2003): under Needs you, and nowhere else
+	case route.watched: // rung 1: it is on screen already
+	case here: // rung 2: at the window, after a moment to look
+		if r.at.Sub(n.RaisedAt.Time()) < settlingPause {
+			route.wait = true
+		} else {
+			route.to = &wire.Surface{Mac: &struct{}{}}
+			// Routing.alert: always for a first delivery, never for the same surface,
+			// and again elsewhere once the interval has passed.
+			switch dv, ok := d.deliveries[token(n.ID)]; {
+			case !ok:
+				route.alert = true
+			case reflect.DeepEqual(dv.To, route.to):
+			default:
+				route.alert = r.at.Sub(dv.AlertedAt.Time()) >= reAlertInterval
 			}
 		}
 	}
-	// Each recent turn that moved, for its Live Activity (#1744).
-	var turns []wire.AttentionTurn
-	if tell != nil {
-		turns = d.turnsMoved(outstanding, at)
-	}
-	// Every message carries the whole Needs you count, and the count goes alone when it
-	// moved with nothing to offer or withdraw (#1163).
-	if tell != nil {
-		waiting := d.waitingCount()
-		if len(told) == 0 && (d.toldWaiting == nil || *d.toldWaiting != waiting) {
-			told = append(told, wire.AttentionNeed{})
+	return route
+}
+
+// considerLocked routes one outstanding need: it offers it to the control plane or
+// withdraws it, waits a moment, or delivers it.
+func (r *attentionRound) considerLocked(n wire.Need, here bool) {
+	d := r.d
+	t := token(n.ID)
+	route := r.routeLocked(n, here)
+	// forward: a need shown nowhere this host can see goes to the control plane, which
+	// chooses the device; one being looked at, or about to be, is withdrawn from it.
+	if r.tell != nil {
+		if route.wait || route.to != nil || route.watched || route.muted {
+			r.withdrawLocked(t)
+		} else if _, ok := d.forwarded[t]; !ok {
+			need, buzz, headline := n, true, n.Headline
+			d.forwarded[t] = n.ID
+			r.told = append(r.told, wire.AttentionNeed{Need: &need, Headline: &headline, Buzz: &buzz})
+			log.Printf("attention: %s offered to the control plane", t)
 		}
-		for i := range told {
-			told[i].Waiting = &waiting
+	}
+	if route.wait {
+		if d.settling[t] == nil {
+			due := max(0, n.RaisedAt.Time().Add(settlingPause).Sub(r.at))
+			d.settling[t] = time.AfterFunc(due, d.jobFunc("attention timer", func() {
+				d.attentionMu.Lock()
+				delete(d.settling, t)
+				d.attentionMu.Unlock()
+				d.reconsider()
+			}))
 		}
-		if len(told) > 0 {
-			d.toldWaiting = &waiting
+		return
+	}
+	if timer := d.settling[t]; timer != nil {
+		timer.Stop()
+		delete(d.settling, t)
+	}
+	r.deliverLocked(n, t, route.to, route.alert)
+}
+
+// deliverLocked records where the need with token t is shown now, and says so when it moved.
+func (r *attentionRound) deliverLocked(n wire.Need, t string, to *wire.Surface, alert bool) {
+	d := r.d
+	dv, ok := d.deliveries[t]
+	need := n
+	switch {
+	case ok && reflect.DeepEqual(dv.To, to):
+	case ok:
+		dv.To, dv.UnsentAlert = to, nil
+		if alert {
+			dv.AlertedAt, dv.AlertCount = wire.DateOf(r.at), dv.AlertCount+1
+		}
+		d.deliveries[t] = dv
+		r.notes = append(r.notes, wire.AttentionNotification{NeedID: n.ID, Need: &need, To: to, Alert: alert})
+		if to != nil && n.ID.Notice != nil {
+			r.toComputer = append(r.toComputer, *n.ID.Notice)
+		}
+	case to == nil:
+		// Shown nowhere, yet still news to every client (#1367): its model is what
+		// Needs you and the phone's widget draw from. Not a banner: no surface is named.
+		if _, ok := d.announced[t]; !ok {
+			d.announced[t] = n.ID
+			r.notes = append(r.notes, wire.AttentionNotification{NeedID: n.ID, Need: &need})
+		}
+	default:
+		d.deliveries[t] = delivery{NeedID: n.ID, To: to, AlertedAt: wire.DateOf(r.at), AlertCount: 1}
+		r.notes = append(r.notes, wire.AttentionNotification{NeedID: n.ID, Need: &need, To: to, Alert: true})
+		if n.ID.Notice != nil {
+			r.toComputer = append(r.toComputer, *n.ID.Notice)
 		}
 	}
-	d.writeAttentionIfMoved()
-	d.attentionMu.Unlock()
-	for _, note := range notes {
-		Broadcast(d, wire.NotifyAttentionChanged, note)
+}
+
+// countWaitingLocked puts the whole Needs you count on each message to the control plane,
+// and sends the count alone when it moved with nothing to offer or withdraw.
+func (r *attentionRound) countWaitingLocked() {
+	d := r.d
+	waiting := d.waitingCount()
+	if len(r.told) == 0 && (d.toldWaiting == nil || *d.toldWaiting != waiting) {
+		r.told = append(r.told, wire.AttentionNeed{})
 	}
-	for _, m := range told {
-		(*tell)(wire.CallAttentionNeed.Name, m)
+	for i := range r.told {
+		r.told[i].Waiting = &waiting
 	}
-	for _, turn := range turns {
-		(*tell)(wire.CallAttentionTurn.Name, turn)
-	}
-	for _, id := range toComputer {
-		d.noticeWentTo(id, wire.NoticeDeviceComputer)
+	if len(r.told) > 0 {
+		d.toldWaiting = &waiting
 	}
 }
 

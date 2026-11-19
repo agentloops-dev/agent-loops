@@ -150,19 +150,7 @@ func (d *Daemon) lineageDeployEvent(e wire.Event) {
 		return
 	}
 	repo := forgeRepo{r.Provider, repoPath(r.Topic)}
-	envs := []string{}
-	for _, n := range p.Notices {
-		env, a, ok := deployNotice(n)
-		if !ok {
-			continue
-		}
-		if ref := repo.node(lineage.KindEnvironment, "environment", env).Ref; !slices.Contains(envs, ref) {
-			envs = append(envs, ref)
-		}
-		if !slices.ContainsFunc(p.Deploy.Version.Artifacts, func(x wire.DeployArtifact) bool { return x.Ref != nil && *x.Ref == *a.Ref }) {
-			p.Deploy.Version.Artifacts = append(p.Deploy.Version.Artifacts, a)
-		}
-	}
+	envs := deployNoticeEnvironments(repo, &p)
 	if len(envs) == 0 && p.Deploy.Target.Environment.Name != "" {
 		envs = append(envs, repo.node(lineage.KindEnvironment, "environment", p.Deploy.Target.Environment.Name).Ref)
 	}
@@ -177,14 +165,7 @@ func (d *Daemon) lineageDeployEvent(e wire.Event) {
 	} else if sha := deploySHA(rec.Deploy); sha != "" {
 		version = repo.node(lineage.KindCommit, "commit", sha)
 	}
-	var run wire.LineageNode
-	if rec.Deploy.URL != nil {
-		if m := runOfJob.FindStringSubmatch(*rec.Deploy.URL); m != nil {
-			if id, err := strconv.ParseInt(m[1], 10, 64); err == nil {
-				run = repo.ciRun(id)
-			}
-		}
-	}
+	run := deployRunNode(repo, rec.Deploy)
 	d.lineageDo(func() {
 		if version.Ref != "" {
 			d.linkAt(deploy, version, lineage.RelDeploys, lineage.SourceForge, at)
@@ -201,6 +182,41 @@ func (d *Daemon) lineageDeployEvent(e wire.Event) {
 			d.linkAt(run, deploy, lineage.RelBuilds, lineage.SourceForge, at)
 		}
 	})
+}
+
+// deployNoticeEnvironments gives the environments that p's notices name, in order and once each.
+// It also adds to p's version each artifact that a notice names and the version does not have.
+func deployNoticeEnvironments(repo forgeRepo, p *deployEventPayload) []string {
+	envs := []string{}
+	for _, n := range p.Notices {
+		env, a, ok := deployNotice(n)
+		if !ok {
+			continue
+		}
+		if ref := repo.node(lineage.KindEnvironment, "environment", env).Ref; !slices.Contains(envs, ref) {
+			envs = append(envs, ref)
+		}
+		if !slices.ContainsFunc(p.Deploy.Version.Artifacts, func(x wire.DeployArtifact) bool { return x.Ref != nil && *x.Ref == *a.Ref }) {
+			p.Deploy.Version.Artifacts = append(p.Deploy.Version.Artifacts, a)
+		}
+	}
+	return envs
+}
+
+// deployRunNode is the Actions run of dep's job url, or the zero node when the url names no run.
+func deployRunNode(repo forgeRepo, dep wire.Deploy) wire.LineageNode {
+	if dep.URL == nil {
+		return wire.LineageNode{}
+	}
+	m := runOfJob.FindStringSubmatch(*dep.URL)
+	if m == nil {
+		return wire.LineageNode{}
+	}
+	id, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return wire.LineageNode{}
+	}
+	return repo.ciRun(id)
 }
 
 // keepDeploy keeps rec as ref's last event, and says the record kept: an event that comes
@@ -359,13 +375,7 @@ func deployResolvedLocked(f *deploysFile, ref string, rec deployRecord) wire.Lin
 // A deploy whose brings the cache lacks, or holds for another deploy before it, or past
 // resolveRecheck, is worked out in the background, and resolving says some are still to come.
 func (d *Daemon) deployGraph(g wire.LineageGraph) wire.LineageGraph {
-	type ask struct {
-		ref, prev string
-		repo      forgeRepo
-		base      string
-		head      string
-	}
-	var asks []ask
+	var asks []deployBringsAsk
 	pending := false
 	now := nowFunc()
 	in := map[wire.LineageNode]bool{}
@@ -377,22 +387,8 @@ func (d *Daemon) deployGraph(g wire.LineageGraph) wire.LineageGraph {
 	// An environment's live and next deploys (#5246), so the deploy pass resolves them and
 	// works out what each brings.
 	for _, n := range slices.Clone(g.Nodes) {
-		if n.Kind != lineage.KindEnvironment {
-			continue
-		}
-		add := func(ref, rel string, at time.Time) {
-			dep := wire.LineageNode{Kind: lineage.KindDeploy, Ref: ref}
-			if !in[dep] {
-				in[dep] = true
-				g.Nodes = append(g.Nodes, dep)
-			}
-			g.Links = append(g.Links, wire.LineageLink{From: n, To: dep, Rel: rel, Source: lineage.SourceComputed, At: wire.DateOf(at)})
-		}
-		for _, l := range liveLocked(f, n.Ref) {
-			add(l.ref, lineage.RelLive, l.since)
-		}
-		for _, k := range nextLocked(f, n.Ref) {
-			add(k, lineage.RelNext, deployStart(f.Deploys[k]))
+		if n.Kind == lineage.KindEnvironment {
+			deployGraphAddLiveAndNextLocked(f, &g, in, n)
 		}
 	}
 	for _, n := range slices.Clone(g.Nodes) {
@@ -413,19 +409,7 @@ func (d *Daemon) deployGraph(g wire.LineageGraph) wire.LineageGraph {
 		repo := forgeRepo{r.Provider, r.Topic}
 		e, cached := d.brings[n.Ref]
 		if cached && e.prev == prev && e.ok {
-			at := wire.DateOf(deployTime(rec))
-			shown := e.prs[:min(len(e.prs), mostBroughtShown)]
-			if len(shown) < len(e.prs) {
-				g.Limited = new(true)
-			}
-			for _, num := range shown {
-				pr := repo.pr(num)
-				if !in[pr] {
-					in[pr] = true
-					g.Nodes = append(g.Nodes, pr)
-				}
-				g.Links = append(g.Links, wire.LineageLink{From: n, To: pr, Rel: lineage.RelBrings, Source: lineage.SourceComputed, At: at})
-			}
+			deployGraphAddBrings(&g, in, n, repo, e, deployTime(rec))
 		}
 		if cached && e.prev == prev && now.Sub(e.at) < resolveRecheck {
 			continue
@@ -434,27 +418,80 @@ func (d *Daemon) deployGraph(g wire.LineageGraph) wire.LineageGraph {
 			pending = true
 		}
 		if !d.bringsAsking[n.Ref] {
-			asks = append(asks, ask{n.Ref, prev, repo, base, head})
+			asks = append(asks, deployBringsAsk{n.Ref, prev, repo, base, head})
 		}
 	}
-	if len(asks) > 0 {
-		if d.bringsAsking == nil {
-			d.bringsAsking = map[string]bool{}
-			d.bringsSlots = make(chan struct{}, bringsWorkers)
-		}
-		if d.bringsIdle == nil {
-			d.bringsIdle = make(chan struct{})
-		}
-		for _, a := range asks {
-			d.bringsAsking[a.ref] = true
-			d.goJob("deploy brings", func() { d.workOutBrings(a.ref, a.prev, a.repo, a.base, a.head) })
-		}
-	}
+	d.startBringsAsksLocked(asks)
 	d.deployBookMu.Unlock()
 	if pending {
 		g.Resolving = &pending
 	}
 	return g
+}
+
+// deployBringsAsk is a deploy whose brings deployGraph asks the forge for: the commits
+// from base to head in repo, after the deploy prev.
+type deployBringsAsk struct {
+	ref, prev string
+	repo      forgeRepo
+	base      string
+	head      string
+}
+
+// deployGraphAddLiveAndNextLocked adds to g the live and next deploys of the environment env,
+// as deploy nodes and live and next links. The caller holds deployBookMu.
+func deployGraphAddLiveAndNextLocked(f *deploysFile, g *wire.LineageGraph, in map[wire.LineageNode]bool, env wire.LineageNode) {
+	add := func(ref, rel string, at time.Time) {
+		dep := wire.LineageNode{Kind: lineage.KindDeploy, Ref: ref}
+		if !in[dep] {
+			in[dep] = true
+			g.Nodes = append(g.Nodes, dep)
+		}
+		g.Links = append(g.Links, wire.LineageLink{From: env, To: dep, Rel: rel, Source: lineage.SourceComputed, At: wire.DateOf(at)})
+	}
+	for _, l := range liveLocked(f, env.Ref) {
+		add(l.ref, lineage.RelLive, l.since)
+	}
+	for _, k := range nextLocked(f, env.Ref) {
+		add(k, lineage.RelNext, deployStart(f.Deploys[k]))
+	}
+}
+
+// deployGraphAddBrings adds to g the PRs that the cached entry e says the deploy n brings,
+// at most mostBroughtShown of them, as brings links at the time at.
+func deployGraphAddBrings(g *wire.LineageGraph, in map[wire.LineageNode]bool, n wire.LineageNode, repo forgeRepo, e bringsEntry, at time.Time) {
+	date := wire.DateOf(at)
+	shown := e.prs[:min(len(e.prs), mostBroughtShown)]
+	if len(shown) < len(e.prs) {
+		g.Limited = new(true)
+	}
+	for _, num := range shown {
+		pr := repo.pr(num)
+		if !in[pr] {
+			in[pr] = true
+			g.Nodes = append(g.Nodes, pr)
+		}
+		g.Links = append(g.Links, wire.LineageLink{From: n, To: pr, Rel: lineage.RelBrings, Source: lineage.SourceComputed, At: date})
+	}
+}
+
+// startBringsAsksLocked starts a background job for each ask, which works out what its deploy
+// brings. The caller holds deployBookMu.
+func (d *Daemon) startBringsAsksLocked(asks []deployBringsAsk) {
+	if len(asks) == 0 {
+		return
+	}
+	if d.bringsAsking == nil {
+		d.bringsAsking = map[string]bool{}
+		d.bringsSlots = make(chan struct{}, bringsWorkers)
+	}
+	if d.bringsIdle == nil {
+		d.bringsIdle = make(chan struct{})
+	}
+	for _, a := range asks {
+		d.bringsAsking[a.ref] = true
+		d.goJob("deploy brings", func() { d.workOutBrings(a.ref, a.prev, a.repo, a.base, a.head) })
+	}
 }
 
 // workOutBrings asks the forge for the commits between base and head, once a place is free,

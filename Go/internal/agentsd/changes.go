@@ -466,6 +466,59 @@ func untrackedCount(path string) (int64, bool) {
 	return lineCount(string(b)), true
 }
 
+// gitChangeState is the state of one change git sees at path, and its lines added and removed:
+// none for a binary file, and an untracked file's lines all added.
+func gitChangeState(ch gitChange, path string) (wire.ChangeState, *int64, *int64) {
+	added, removed := ch.added, ch.removed
+	binary := ch.added == nil && ch.status != "?" && ch.status != "D"
+	if ch.status == "?" {
+		if n, ok := untrackedCount(path); ok {
+			zero := int64(0)
+			added, removed = &n, &zero
+		} else {
+			binary = true
+		}
+	}
+	state := wire.ChangeStateModified
+	switch {
+	case binary:
+		state = wire.ChangeStateBinary
+	case ch.status == "D":
+		state = wire.ChangeStateDeleted
+	case ch.status == "A":
+		state = wire.ChangeStateAdded
+	case ch.status == "?":
+		state = wire.ChangeStateUntracked
+	case ch.status == "R":
+		state = wire.ChangeStateRenamed
+	}
+	if binary {
+		added, removed = nil, nil
+	}
+	return state, added, removed
+}
+
+// mergeRenamedEdits adds edits, the edit count of a reported file renamed away, to the file at
+// path: a reported one when there is one, else a seen one, which is then reported too.
+func mergeRenamedEdits(files, seen []wire.ChangedFile, path string, edits int64) {
+	merged := false
+	for i := range files {
+		if files[i].Path == path {
+			files[i].EditCount += edits
+			merged = true
+		}
+	}
+	if merged {
+		return
+	}
+	for i := range seen {
+		if seen[i].Path == path {
+			seen[i].EditCount += edits
+			seen[i].Source = wire.ChangeSourceReportedAndSeen
+		}
+	}
+}
+
 func mergeChanges(changed []gitChange, files []wire.ChangedFile, c *gitContext, a *wire.Agent) []wire.ChangedFile {
 	index := map[string]int{}
 	for i, f := range files {
@@ -480,32 +533,7 @@ func mergeChanges(changed []gitChange, files []wire.ChangedFile, c *gitContext, 
 	renamedAway := map[string]bool{}
 	for _, ch := range changed {
 		path := c.root + "/" + ch.path
-		added, removed := ch.added, ch.removed
-		binary := ch.added == nil && ch.status != "?" && ch.status != "D"
-		if ch.status == "?" {
-			if n, ok := untrackedCount(path); ok {
-				zero := int64(0)
-				added, removed = &n, &zero
-			} else {
-				binary = true
-			}
-		}
-		state := wire.ChangeStateModified
-		switch {
-		case binary:
-			state = wire.ChangeStateBinary
-		case ch.status == "D":
-			state = wire.ChangeStateDeleted
-		case ch.status == "A":
-			state = wire.ChangeStateAdded
-		case ch.status == "?":
-			state = wire.ChangeStateUntracked
-		case ch.status == "R":
-			state = wire.ChangeStateRenamed
-		}
-		if binary {
-			added, removed = nil, nil
-		}
+		state, added, removed := gitChangeState(ch, path)
 		var oldPath *string
 		if ch.oldPath != "" {
 			p := c.root + "/" + ch.oldPath
@@ -527,21 +555,7 @@ func mergeChanges(changed []gitChange, files []wire.ChangedFile, c *gitContext, 
 		if oldPath != nil {
 			if at, ok := index[*oldPath]; ok && at >= 0 {
 				renamedAway[*oldPath] = true
-				merged := false
-				for i := range files {
-					if files[i].Path == path {
-						files[i].EditCount += files[at].EditCount
-						merged = true
-					}
-				}
-				if !merged {
-					for i := range seen {
-						if seen[i].Path == path {
-							seen[i].EditCount += files[at].EditCount
-							seen[i].Source = wire.ChangeSourceReportedAndSeen
-						}
-					}
-				}
+				mergeRenamedEdits(files, seen, path, files[at].EditCount)
 			}
 		}
 	}
@@ -756,44 +770,56 @@ func (d *Daemon) registerChanges() {
 		return list, nil
 	})
 	On(d, wire.CallChangesFile, func(ctx context.Context, cl *Client, r wire.ChangesFileRequest) (wire.ChangedFileDetail, error) {
-		a := d.Store.Agent(r.AgentID)
-		if a == nil {
-			return wire.ChangedFileDetail{}, noSuchAgent()
-		}
-		list, f, c := d.changes(a)
-		path := changeKey(r.Path)
-		var file *wire.ChangedFile
-		for i := range list.Files {
-			if list.Files[i].Path == path {
-				file = &list.Files[i]
-			}
-		}
-		if file == nil {
-			return wire.ChangedFileDetail{}, &Error{Code: wire.FailureNotChanged, Message: filepath.Base(path) + " has not changed."}
-		}
-		detail := wire.ChangedFileDetail{File: *file, Edits: []wire.ReportedEdit{}}
-		for _, fe := range f.byFile() {
-			if fe.path == path {
-				detail.Edits = fe.edits
-			}
-		}
-		if r.Whole && c != nil && !file.OutsideFolder && file.State != wire.ChangeStateBinary {
-			if rel, ok := relativeTo(path, c.root); ok {
-				if file.State == wire.ChangeStateAdded || file.State == wire.ChangeStateUntracked {
-					if text, ok := currentText(path); ok {
-						detail.Whole = allLines(text, wire.DiffLineKindAdded)
-					}
-				} else {
-					oldRel := ""
-					if file.OldPath != nil {
-						oldRel, _ = relativeTo(*file.OldPath, c.root)
-					}
-					detail.Whole = wholeDiff(c, rel, oldRel)
-				}
-			}
-		}
-		return detail, nil
+		return d.changesFileDetail(r)
 	})
+}
+
+// changesFileDetail is changes/file: one changed file of an agent, with its reported edits,
+// and its whole diff when asked.
+func (d *Daemon) changesFileDetail(r wire.ChangesFileRequest) (wire.ChangedFileDetail, error) {
+	a := d.Store.Agent(r.AgentID)
+	if a == nil {
+		return wire.ChangedFileDetail{}, noSuchAgent()
+	}
+	list, f, c := d.changes(a)
+	path := changeKey(r.Path)
+	var file *wire.ChangedFile
+	for i := range list.Files {
+		if list.Files[i].Path == path {
+			file = &list.Files[i]
+		}
+	}
+	if file == nil {
+		return wire.ChangedFileDetail{}, &Error{Code: wire.FailureNotChanged, Message: filepath.Base(path) + " has not changed."}
+	}
+	detail := wire.ChangedFileDetail{File: *file, Edits: []wire.ReportedEdit{}}
+	for _, fe := range f.byFile() {
+		if fe.path == path {
+			detail.Edits = fe.edits
+		}
+	}
+	if r.Whole && c != nil && !file.OutsideFolder && file.State != wire.ChangeStateBinary {
+		if rel, ok := relativeTo(path, c.root); ok {
+			detail.Whole = changedFileWhole(c, file, path, rel)
+		}
+	}
+	return detail, nil
+}
+
+// changedFileWhole is the whole diff of file at path, rel in the repository of c: every line
+// added for a new file.
+func changedFileWhole(c *gitContext, file *wire.ChangedFile, path, rel string) []wire.DiffLine {
+	if file.State == wire.ChangeStateAdded || file.State == wire.ChangeStateUntracked {
+		if text, ok := currentText(path); ok {
+			return allLines(text, wire.DiffLineKindAdded)
+		}
+		return nil
+	}
+	oldRel := ""
+	if file.OldPath != nil {
+		oldRel, _ = relativeTo(*file.OldPath, c.root)
+	}
+	return wholeDiff(c, rel, oldRel)
 }
 
 // nobody is a sink for a runtime started only to answer a question of the host's.

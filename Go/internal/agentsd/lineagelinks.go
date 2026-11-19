@@ -622,32 +622,9 @@ func (d *Daemon) noteLineage(before *wire.Agent, a wire.Agent) {
 	if before != nil {
 		was = *before
 	}
-	had := map[string]bool{}
-	for _, l := range was.Labels {
-		had[l.Value] = true
-	}
-	has := map[string]bool{}
-	var added []wire.SessionLabel
-	for _, l := range a.Labels {
-		has[l.Value] = true
-		if !had[l.Value] {
-			added = append(added, l)
-		}
-	}
-	var removed []string
-	for _, l := range was.Labels {
-		if !has[l.Value] {
-			removed = append(removed, l.Value)
-		}
-	}
-	newly := func(now, then *wire.UUID) *wire.UUID {
-		if now != nil && (then == nil || *then != *now) {
-			return now
-		}
-		return nil
-	}
-	helper := newly(a.StartedByAgent, was.StartedByAgent)
-	run := newly(a.StartedByRun, was.StartedByRun)
+	added, removed := sessionLabelChanges(was.Labels, a.Labels)
+	helper := newlySetUUID(a.StartedByAgent, was.StartedByAgent)
+	run := newlySetUUID(a.StartedByRun, was.StartedByRun)
 	var workflow *string
 	if a.StartedByWorkflow != nil && (was.StartedByWorkflow == nil || *was.StartedByWorkflow != *a.StartedByWorkflow) {
 		workflow = a.StartedByWorkflow
@@ -666,47 +643,9 @@ func (d *Daemon) noteLineage(before *wire.Agent, a wire.Agent) {
 			d.link(d.sessionNode(*helper), s, lineage.RelStarted, lineage.SourceHelper)
 		}
 		if workflow != nil || run != nil {
-			var wf wire.LineageNode
-			if workflow != nil {
-				wf = lineage.NodeOf(lineage.KindWorkflow,
-					wire.Ref{Provider: "agents", Type: "workflow", Topic: d.folderTopic(folder), ID: folder + "/" + *workflow})
-				wf = d.lineage().Canon(wf)
-			}
-			switch {
-			case run != nil:
-				r := d.lineage().Canon(lineage.NodeOf(lineage.KindWorkflowRun,
-					wire.Ref{Provider: "agents", Type: "workflow-run", Topic: d.folderTopic(folder), ID: string(*run)}))
-				d.link(r, s, lineage.RelStarted, lineage.SourceHelper)
-				if workflow != nil {
-					d.link(r, wf, lineage.RelPartOf, lineage.SourceHelper)
-				}
-			default:
-				d.link(wf, s, lineage.RelStarted, lineage.SourceHelper)
-			}
+			d.noteLineageStarter(s, folder, workflow, run)
 		}
-		for _, l := range added {
-			to, ok := d.labelNode(folder, l.Value)
-			if !ok {
-				continue
-			}
-			source := lineage.SourceStart
-			if before != nil {
-				source = lineage.SourcePerson
-				if l.Owner == wire.SessionLabelOwnerAgent {
-					source = lineage.SourceAgent
-				}
-			}
-			d.link(s, to, lineage.RelWorksOn, source)
-			d.lineageReportsHealth(s, to)
-			if repo, n, ok := issueOfNode(to); ok {
-				d.noteIssueParent(folder, repo, n)
-			}
-		}
-		for _, v := range removed {
-			if to, ok := d.labelNode(folder, v); ok {
-				d.unlink(s, to, lineage.RelWorksOn)
-			}
-		}
+		d.noteLineageLabels(s, folder, added, removed, before != nil)
 		if archived {
 			d.endLinks(s, func(l wire.LineageLink) bool { return l.From == s })
 		}
@@ -714,6 +653,86 @@ func (d *Daemon) noteLineage(before *wire.Agent, a wire.Agent) {
 			d.refreshPriorities(map[wire.UUID]bool{a.ID: true})
 		}
 	})
+}
+
+// sessionLabelChanges gives the labels in has that are not in had, and the values of the
+// labels in had that are not in has.
+func sessionLabelChanges(had, has []wire.SessionLabel) (added []wire.SessionLabel, removed []string) {
+	hadValue := map[string]bool{}
+	for _, l := range had {
+		hadValue[l.Value] = true
+	}
+	hasValue := map[string]bool{}
+	for _, l := range has {
+		hasValue[l.Value] = true
+		if !hadValue[l.Value] {
+			added = append(added, l)
+		}
+	}
+	for _, l := range had {
+		if !hasValue[l.Value] {
+			removed = append(removed, l.Value)
+		}
+	}
+	return added, removed
+}
+
+// newlySetUUID is now when it is set and is not then, else nil.
+func newlySetUUID(now, then *wire.UUID) *wire.UUID {
+	if now != nil && (then == nil || *then != *now) {
+		return now
+	}
+	return nil
+}
+
+// noteLineageStarter links the session s to the workflow or the workflow run that started it.
+// At least one of workflow and run is set. It runs in lineageDo.
+func (d *Daemon) noteLineageStarter(s wire.LineageNode, folder string, workflow *string, run *wire.UUID) {
+	var wf wire.LineageNode
+	if workflow != nil {
+		wf = lineage.NodeOf(lineage.KindWorkflow,
+			wire.Ref{Provider: "agents", Type: "workflow", Topic: d.folderTopic(folder), ID: folder + "/" + *workflow})
+		wf = d.lineage().Canon(wf)
+	}
+	switch {
+	case run != nil:
+		r := d.lineage().Canon(lineage.NodeOf(lineage.KindWorkflowRun,
+			wire.Ref{Provider: "agents", Type: "workflow-run", Topic: d.folderTopic(folder), ID: string(*run)}))
+		d.link(r, s, lineage.RelStarted, lineage.SourceHelper)
+		if workflow != nil {
+			d.link(r, wf, lineage.RelPartOf, lineage.SourceHelper)
+		}
+	default:
+		d.link(wf, s, lineage.RelStarted, lineage.SourceHelper)
+	}
+}
+
+// noteLineageLabels links the session s works-on what each added label names, and ends the
+// links of the removed labels. changed is false for a new record. It runs in lineageDo.
+func (d *Daemon) noteLineageLabels(s wire.LineageNode, folder string, added []wire.SessionLabel, removed []string, changed bool) {
+	for _, l := range added {
+		to, ok := d.labelNode(folder, l.Value)
+		if !ok {
+			continue
+		}
+		source := lineage.SourceStart
+		if changed {
+			source = lineage.SourcePerson
+			if l.Owner == wire.SessionLabelOwnerAgent {
+				source = lineage.SourceAgent
+			}
+		}
+		d.link(s, to, lineage.RelWorksOn, source)
+		d.lineageReportsHealth(s, to)
+		if repo, n, ok := issueOfNode(to); ok {
+			d.noteIssueParent(folder, repo, n)
+		}
+	}
+	for _, v := range removed {
+		if to, ok := d.labelNode(folder, v); ok {
+			d.unlink(s, to, lineage.RelWorksOn)
+		}
+	}
 }
 
 // prEventPayload is what a pr.* event of the GitHub and GitLab servers says of its PR.
@@ -795,11 +814,7 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 	}
 	var sessions []wire.UUID
 	if e.Name == "pr.opened" && p.PR.Branch != "" {
-		for _, a := range d.Store.Agents() {
-			if a.Worktree != nil && a.Worktree.Branch != nil && *a.Worktree.Branch == p.PR.Branch && a.Purpose == nil {
-				sessions = append(sessions, a.ID)
-			}
-		}
+		sessions = d.prBranchSessions(p.PR.Branch)
 	}
 	d.lineageDo(func() {
 		for _, id := range sessions {
@@ -810,42 +825,12 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 		}
 		// A PR closed without a merge links its issues too, and the links end below: it fixed
 		// nothing, but its cost stays against them, as waste (#2350).
-		folder := ""
-		if len(p.PR.Fixes) > 0 {
-			folder = d.repoFolder(repo)
-		}
-		for _, f := range p.PR.Fixes {
-			if issue, ok := fixedIssue(repo, f); ok {
-				d.link(pr, issue, lineage.RelFixes, lineage.SourcePRBody)
-				if r, n, ok := issueOfNode(issue); ok {
-					d.noteIssueParent(folder, r, n)
-				}
-			}
-		}
+		d.linkPRFixes(repo, pr, p.PR.Fixes)
 		if len(p.PR.Fixes) > 0 {
 			// A session labelled P#n goes by the priority of the issues it fixes (#5847).
 			defer d.refreshPrioritiesSoon()
 		}
-		// A Jira key in its title or branch, of a project its repo's folder names (#3260): a PR
-		// is never on the Jira site, so this is the way its cost reaches the Jira issue.
-		if jira := d.folderJiraProjects(d.repoFolder(repo)); len(jira) > 0 {
-			for _, key := range jiraKeys(p.PR.Title, jira) {
-				d.link(pr, jiraNode(key), lineage.RelFixes, lineage.SourcePRBody)
-			}
-			for _, key := range jiraKeys(p.PR.Branch, jira) {
-				d.link(pr, jiraNode(key), lineage.RelFixes, lineage.SourceBranch)
-			}
-		}
-		// AB#12 in its title or branch, a work item of its repo's folder's first Azure Boards
-		// project (#3815), as Azure Boards itself links a commit or a pull request to one.
-		if boards := d.folderBoardsProjects(d.repoFolder(repo)); len(boards) > 0 {
-			for _, id := range boardsKeys(p.PR.Title) {
-				d.link(pr, boardsNode(boards[0], id), lineage.RelFixes, lineage.SourcePRBody)
-			}
-			for _, id := range boardsKeys(p.PR.Branch) {
-				d.link(pr, boardsNode(boards[0], id), lineage.RelFixes, lineage.SourceBranch)
-			}
-		}
+		d.linkPRTrackerKeys(repo, pr, p.PR.Title, p.PR.Branch)
 		// The approval wait's start when its label is unknown (#4553).
 		if at, ok := payloadTime(p.OpenedAt); ok && e.Name == "pr.opened" {
 			d.notePROpened(pr, at)
@@ -866,6 +851,59 @@ func (d *Daemon) lineageEvent(e wire.Event) {
 			return l.To == pr && l.From.Kind == lineage.KindSession || closed && l.From == pr && l.Rel == lineage.RelFixes
 		})
 	})
+}
+
+// prBranchSessions gives the sessions, not helpers, whose worktree is on branch.
+func (d *Daemon) prBranchSessions(branch string) []wire.UUID {
+	var sessions []wire.UUID
+	for _, a := range d.Store.Agents() {
+		if a.Worktree != nil && a.Worktree.Branch != nil && *a.Worktree.Branch == branch && a.Purpose == nil {
+			sessions = append(sessions, a.ID)
+		}
+	}
+	return sessions
+}
+
+// linkPRFixes links the PR pr fixes each issue that its fixes name, and notes each issue's
+// parent. It runs in lineageDo.
+func (d *Daemon) linkPRFixes(repo forgeRepo, pr wire.LineageNode, fixes []string) {
+	folder := ""
+	if len(fixes) > 0 {
+		folder = d.repoFolder(repo)
+	}
+	for _, f := range fixes {
+		if issue, ok := fixedIssue(repo, f); ok {
+			d.link(pr, issue, lineage.RelFixes, lineage.SourcePRBody)
+			if r, n, ok := issueOfNode(issue); ok {
+				d.noteIssueParent(folder, r, n)
+			}
+		}
+	}
+}
+
+// linkPRTrackerKeys links the PR pr fixes each Jira issue and Azure Boards work item that
+// its title or branch names. It runs in lineageDo.
+func (d *Daemon) linkPRTrackerKeys(repo forgeRepo, pr wire.LineageNode, title, branch string) {
+	// A Jira key in its title or branch, of a project its repo's folder names (#3260): a PR
+	// is never on the Jira site, so this is the way its cost reaches the Jira issue.
+	if jira := d.folderJiraProjects(d.repoFolder(repo)); len(jira) > 0 {
+		for _, key := range jiraKeys(title, jira) {
+			d.link(pr, jiraNode(key), lineage.RelFixes, lineage.SourcePRBody)
+		}
+		for _, key := range jiraKeys(branch, jira) {
+			d.link(pr, jiraNode(key), lineage.RelFixes, lineage.SourceBranch)
+		}
+	}
+	// AB#12 in its title or branch, a work item of its repo's folder's first Azure Boards
+	// project (#3815), as Azure Boards itself links a commit or a pull request to one.
+	if boards := d.folderBoardsProjects(d.repoFolder(repo)); len(boards) > 0 {
+		for _, id := range boardsKeys(title) {
+			d.link(pr, boardsNode(boards[0], id), lineage.RelFixes, lineage.SourcePRBody)
+		}
+		for _, id := range boardsKeys(branch) {
+			d.link(pr, boardsNode(boards[0], id), lineage.RelFixes, lineage.SourceBranch)
+		}
+	}
 }
 
 // fixedIssue is the issue a PR's fixes names: "#12" in the PR's own repo, or

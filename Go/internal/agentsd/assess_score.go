@@ -367,36 +367,16 @@ func (r assessRecord) workspaces() (verdict, string) {
 
 func (r assessRecord) workflows() (verdict, string) {
 	all := r.callsOf("workflows/manage")
-	action := func(name string) []appToolCall {
-		var out []appToolCall
-		for _, c := range all {
-			if arg(c, "action") == name {
-				out = append(out, c)
-			}
-		}
-		return out
-	}
-	listed := action("list")
+	listed := assessCallsWithAction(all, "list")
 	if !anyOk(listed) {
 		if len(listed) == 0 {
 			return failedStep, said(all, "manage_workflows list")
 		}
 		return failedStep, said(listed, "manage_workflows list")
 	}
-	id := ""
-	if r.start != nil {
-		id = "assess-" + r.start.ShortID
-	}
-	isThrowaway := func(c appToolCall) bool {
-		named := arg(c, "workflowID", "id", "workflow")
-		if id != "" {
-			return named == id
-		}
-		return strings.HasPrefix(named, "assess-")
-	}
 	var writes []appToolCall
-	for _, c := range action("write") {
-		if isThrowaway(c) {
+	for _, c := range assessCallsWithAction(all, "write") {
+		if r.isAssessThrowaway(c) {
 			writes = append(writes, c)
 		}
 	}
@@ -407,24 +387,67 @@ func (r assessRecord) workflows() (verdict, string) {
 			break
 		}
 	}
-	shown := id
+	if written == nil {
+		return r.workflowsNotWritten(all, writes)
+	}
+	return r.workflowsAfterWrite(all, listed, *written)
+}
+
+// assessCallsWithAction gives the calls of all whose action is name.
+func assessCallsWithAction(all []appToolCall, name string) []appToolCall {
+	var out []appToolCall
+	for _, c := range all {
+		if arg(c, "action") == name {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// assessWorkflowID is the id of the assessment's throwaway workflow, or "" when the record
+// has no start.
+func (r assessRecord) assessWorkflowID() string {
+	if r.start != nil {
+		return "assess-" + r.start.ShortID
+	}
+	return ""
+}
+
+// isAssessThrowaway says whether a manage_workflows call names the assessment's throwaway
+// workflow.
+func (r assessRecord) isAssessThrowaway(c appToolCall) bool {
+	id := r.assessWorkflowID()
+	named := arg(c, "workflowID", "id", "workflow")
+	if id != "" {
+		return named == id
+	}
+	return strings.HasPrefix(named, "assess-")
+}
+
+// workflowsNotWritten is the verdict of the workflows step when no write of the throwaway
+// was kept.
+func (r assessRecord) workflowsNotWritten(all, writes []appToolCall) (verdict, string) {
+	shown := r.assessWorkflowID()
 	if shown == "" {
 		shown = "assess-…"
 	}
-	if written == nil {
-		if n := len(writes); n > 0 && strings.Contains(answerOfCall(writes[n-1]), "waiting for their OK in this folder") {
-			return notOffered, "the folder already has as many workflows waiting for an OK as it may, so none could be written"
-		}
-		if len(writes) == 0 {
-			return failedStep, said(action("write"), "manage_workflows write "+shown)
-		}
-		return failedStep, said(writes, "manage_workflows write "+shown)
+	if n := len(writes); n > 0 && strings.Contains(answerOfCall(writes[n-1]), "waiting for their OK in this folder") {
+		return notOffered, "the folder already has as many workflows waiting for an OK as it may, so none could be written"
 	}
-	name := arg(*written, "workflowID", "id", "workflow")
+	if len(writes) == 0 {
+		return failedStep, said(assessCallsWithAction(all, "write"), "manage_workflows write "+shown)
+	}
+	return failedStep, said(writes, "manage_workflows write "+shown)
+}
+
+// workflowsAfterWrite is the verdict of the workflows step after the throwaway was written:
+// it waited for an OK, was listed again and was removed.
+func (r assessRecord) workflowsAfterWrite(all, listed []appToolCall, written appToolCall) (verdict, string) {
+	name := arg(written, "workflowID", "id", "workflow")
 	if name == "" {
 		name = "the throwaway"
 	}
-	if a := answerOfCall(*written); !strings.Contains(a, "until they approve") && !strings.Contains(a, "turned off") {
+	if a := answerOfCall(written); !strings.Contains(a, "until they approve") && !strings.Contains(a, "turned off") {
 		return failedStep, name + " was written live, not left waiting for the person's OK"
 	}
 	listedAfter := false
@@ -435,8 +458,8 @@ func (r assessRecord) workflows() (verdict, string) {
 		return failedStep, name + " was written but never listed again"
 	}
 	var removed []appToolCall
-	for _, c := range action("remove") {
-		if isThrowaway(c) && c.At > written.At {
+	for _, c := range assessCallsWithAction(all, "remove") {
+		if r.isAssessThrowaway(c) && c.At > written.At {
 			removed = append(removed, c)
 		}
 	}
@@ -448,7 +471,7 @@ func (r assessRecord) workflows() (verdict, string) {
 	}
 	others := false
 	for _, c := range all {
-		if a := arg(c, "action"); c.Ok && !isThrowaway(c) && a != "list" && a != "read" {
+		if a := arg(c, "action"); c.Ok && !r.isAssessThrowaway(c) && a != "list" && a != "read" {
 			others = true
 		}
 	}
@@ -460,19 +483,9 @@ func (r assessRecord) workflows() (verdict, string) {
 }
 
 func (r assessRecord) eventSteps() (verdict, string) {
-	isPing := func(name string) bool {
-		name = strings.ToLower(strings.TrimSpace(name))
-		if name == "" {
-			return false
-		}
-		if r.start != nil {
-			return name == "assess-"+r.start.ShortID+"-ping"
-		}
-		return strings.HasSuffix(name, "-ping")
-	}
 	var leased []appToolCall
 	for _, c := range r.callsOf("resources/lease") {
-		if isPing(arg(c, "name")) {
+		if r.isAssessPing(arg(c, "name")) {
 			leased = append(leased, c)
 		}
 	}
@@ -481,13 +494,34 @@ func (r assessRecord) eventSteps() (verdict, string) {
 	}
 	raised := false
 	for _, e := range r.events {
-		raised = raised || e.Name == assessPingEvent && e.Details["agent"] == string(r.agent.ID) && isPing(e.Details["resource"])
+		raised = raised || e.Name == assessPingEvent && e.Details["agent"] == string(r.agent.ID) && r.isAssessPing(e.Details["resource"])
 	}
 	if !raised {
 		return failedStep, "no " + assessPingEvent + " to this agent for its second lease on the log"
 	}
 	// from is gone, so a wait after the ping lease cannot see the already-raised event.
 	// Require an unknown name to be refused, naming what is offered.
+	if why := r.eventStepsUnknownName(); why != "" {
+		return failedStep, why
+	}
+	return r.eventStepsWaits()
+}
+
+// isAssessPing says whether a resource name is the assessment's ping resource.
+func (r assessRecord) isAssessPing(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	if r.start != nil {
+		return name == "assess-"+r.start.ShortID+"-ping"
+	}
+	return strings.HasSuffix(name, "-ping")
+}
+
+// eventStepsUnknownName says why the event steps failed on an unknown event name: never
+// waited on one, or it was refused without naming what is offered. It is "" when they passed.
+func (r assessRecord) eventStepsUnknownName() string {
 	var unknown []appToolCall
 	for _, c := range r.callsOf("events/wait") {
 		if c.Ok {
@@ -502,20 +536,21 @@ func (r assessRecord) eventSteps() (verdict, string) {
 		}
 	}
 	if len(unknown) == 0 {
-		return failedStep, "never waited on an unknown event name"
+		return "never waited on an unknown event name"
 	}
-	namedOffers := false
 	for _, c := range unknown {
 		a := answerOfCall(c)
 		if strings.Contains(a, "is not an event") || strings.Contains(a, "Events you can wait on") ||
 			strings.Contains(a, "Did you mean") {
-			namedOffers = true
-			break
+			return ""
 		}
 	}
-	if !namedOffers {
-		return failedStep, "an unknown event name was refused without naming what is offered"
-	}
+	return "an unknown event name was refused without naming what is offered"
+}
+
+// eventStepsWaits is the verdict of the event steps' waits: one with no until_minutes is
+// refused, and a long one is cancelled.
+func (r assessRecord) eventStepsWaits() (verdict, string) {
 	var onNever []appToolCall
 	for _, c := range r.callsOf("events/wait") {
 		if waitsOn(c, assessNeverEvent) {
@@ -919,15 +954,7 @@ func (r assessRecord) worktree() (verdict, string) {
 		}
 	}
 	if moved == nil {
-		if n := len(into); n > 0 {
-			if a := answerOfCall(into[n-1]); strings.Contains(a, "git repository") || a == why {
-				return notOffered, a
-			}
-		}
-		if len(into) == 0 {
-			return notOffered, "move_worktree is not one of this machine's tools yet"
-		}
-		return failedStep, said(into, "move_worktree worktree")
+		return worktreeNotMoved(into, why)
 	}
 	var inNote string
 	for _, n := range r.runtimeNotes() {
@@ -939,6 +966,25 @@ func (r assessRecord) worktree() (verdict, string) {
 	if inNote == "" {
 		return failedStep, "never moved into the worktree"
 	}
+	return r.worktreeMovedBack(back, *moved, inNote)
+}
+
+// worktreeNotMoved is the verdict of the worktree step when no move into a worktree was kept.
+func worktreeNotMoved(into []appToolCall, why string) (verdict, string) {
+	if n := len(into); n > 0 {
+		if a := answerOfCall(into[n-1]); strings.Contains(a, "git repository") || a == why {
+			return notOffered, a
+		}
+	}
+	if len(into) == 0 {
+		return notOffered, "move_worktree is not one of this machine's tools yet"
+	}
+	return failedStep, said(into, "move_worktree worktree")
+}
+
+// worktreeMovedBack is the verdict of the worktree step after the move into the worktree:
+// the agent left it with remove, and it was removed.
+func (r assessRecord) worktreeMovedBack(back []appToolCall, moved appToolCall, inNote string) (verdict, string) {
 	var leaving *appToolCall
 	for i := range back {
 		if back[i].Ok && back[i].At > moved.At {

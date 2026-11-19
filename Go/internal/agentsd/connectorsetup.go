@@ -772,13 +772,12 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 	// The Docs slot reads the folder itself, with or without a forge (#3248), and searches
 	// each mapped docs connector once (#3307), again as soon as its map changes.
 	docs := rec.Slots[wire.ConnectorSlotKindDocs]
-	docsDue := !skipped[wire.ConnectorSlotKindDocs] && (reading == wire.ConnectorSetupReadingFresh ||
-		(reading == wire.ConnectorSetupReadingCached && (docs == nil || time.Since(docs.ReadAt) > setupFresh ||
-			docsSearchesDue(docs, docsNames, docsMaps))))
+	docsDue := !skipped[wire.ConnectorSlotKindDocs] &&
+		setupSlotDue(reading, docs, func() bool { return docsSearchesDue(docs, docsNames, docsMaps) })
 	// The Messaging slot reads each of its connectors once (#1787), again as soon as one is added.
 	talk := rec.Slots[wire.ConnectorSlotKindMessaging]
-	messagingRead := !skipped[wire.ConnectorSlotKindMessaging] && len(messaging) > 0 && (reading == wire.ConnectorSetupReadingFresh ||
-		(reading == wire.ConnectorSetupReadingCached && (talk == nil || time.Since(talk.ReadAt) > setupFresh || messagingDue(talk, messaging))))
+	messagingRead := !skipped[wire.ConnectorSlotKindMessaging] && len(messaging) > 0 &&
+		setupSlotDue(reading, talk, func() bool { return messagingDue(talk, messaging) })
 	rec = cloneRecord(rec)
 	d.setupMu.Unlock()
 
@@ -800,12 +799,35 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 		d.setupMu.Unlock()
 	}
 
+	out := connectorSetupHead(folder, &f, conn, connected, usable, rec)
+	out.Slots = append(out.Slots, connectorSetupForgeSlots(sources, skipped, rec)...)
+	if id, tools, known := d.folderProject(folder); id != "" {
+		out.Project = &id
+		if known {
+			out.ProjectName = &tools.Name
+		}
+	}
+	out.Slots = append(out.Slots, docsSlot(rec.Slots[wire.ConnectorSlotKindDocs], skipped[wire.ConnectorSlotKindDocs], docsNames, docsWords, docsMaps))
+	out.Slots = append(out.Slots, messagingSlot(rec.Slots[wire.ConnectorSlotKindMessaging], skipped[wire.ConnectorSlotKindMessaging], messaging))
+	out.Slots = append(out.Slots, wire.ConnectorSlot{Slot: wire.ConnectorSlotKindWorkspace,
+		Choice: slotChoice[wire.ConnectorSlotKindWorkspace], State: wire.ConnectorSlotStateRead})
+	out.Done = connectorSlotsDone(out.Slots)
+	out.Events = d.setupEvents(ctx, f, folder, rec, out.Slots, reading != wire.ConnectorSetupReadingStored)
+	if reading != wire.ConnectorSetupReadingStored {
+		d.nameBoardsProject(folder, sources[wire.ConnectorSlotKindTasks], rec, out.Slots)
+	}
+	return out, nil
+}
+
+// connectorSetupHead is a connector setup with its forge, repository and connection,
+// and no slots yet.
+func connectorSetupHead(folder string, f *forge, conn connections.Connection, connected, usable bool, rec *setupRecord) wire.ConnectorSetup {
 	out := wire.ConnectorSetup{Folder: folder, Slots: []wire.ConnectorSlot{}, Forge: &f.provider, Site: &f.site}
 	if f.provider == wire.ConnectionProviderGithub {
 		install := connections.GitHubInstallURL
 		out.InstallURL = &install
 	}
-	if repo != "" {
+	if repo := f.repo; repo != "" {
 		out.Repository = &repo
 		page := f.page()
 		out.RepositoryURL = &page
@@ -813,10 +835,36 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 	if connected {
 		w := wireConnection(conn)
 		out.Connection = &w
-		if usable && repo != "" {
+		if usable && f.repo != "" {
 			out.Installed, out.Repositories = rec.Installed, rec.Repositories
 		}
 	}
+	return out
+}
+
+// connectorSlotsDone is how many of the slots are read or skipped.
+func connectorSlotsDone(slots []wire.ConnectorSlot) int64 {
+	var done int64
+	for _, s := range slots {
+		if s.State == wire.ConnectorSlotStateRead || s.State == wire.ConnectorSlotStateSkipped {
+			done++
+		}
+	}
+	return done
+}
+
+// setupSlotDue is whether a slot read at rec is read again: always for a fresh reading,
+// and for a cached one when it was never read, is old, or changed says so.
+func setupSlotDue(reading wire.ConnectorSetupReading, rec *slotRecord, changed func() bool) bool {
+	if reading == wire.ConnectorSetupReadingFresh {
+		return true
+	}
+	return reading == wire.ConnectorSetupReadingCached && (rec == nil || time.Since(rec.ReadAt) > setupFresh || changed())
+}
+
+// connectorSetupForgeSlots is the forge's slots of a connector setup, in their order.
+func connectorSetupForgeSlots(sources map[wire.ConnectorSlotKind]slotSource, skipped map[wire.ConnectorSlotKind]bool, rec *setupRecord) []wire.ConnectorSlot {
+	var slots []wire.ConnectorSlot
 	for _, s := range forgeSlots {
 		src := sources[s]
 		slot := forgeSlot(src.f, s, src.usable, skipped[s], rec.readOf(s, src.f))
@@ -828,28 +876,9 @@ func (d *Daemon) connectorSetup(ctx context.Context, folder string, reading wire
 			yes := true
 			slot.FromProject = &yes
 		}
-		out.Slots = append(out.Slots, slot)
+		slots = append(slots, slot)
 	}
-	if id, tools, known := d.folderProject(folder); id != "" {
-		out.Project = &id
-		if known {
-			out.ProjectName = &tools.Name
-		}
-	}
-	out.Slots = append(out.Slots, docsSlot(rec.Slots[wire.ConnectorSlotKindDocs], skipped[wire.ConnectorSlotKindDocs], docsNames, docsWords, docsMaps))
-	out.Slots = append(out.Slots, messagingSlot(rec.Slots[wire.ConnectorSlotKindMessaging], skipped[wire.ConnectorSlotKindMessaging], messaging))
-	out.Slots = append(out.Slots, wire.ConnectorSlot{Slot: wire.ConnectorSlotKindWorkspace,
-		Choice: slotChoice[wire.ConnectorSlotKindWorkspace], State: wire.ConnectorSlotStateRead})
-	for _, s := range out.Slots {
-		if s.State == wire.ConnectorSlotStateRead || s.State == wire.ConnectorSlotStateSkipped {
-			out.Done++
-		}
-	}
-	out.Events = d.setupEvents(ctx, f, folder, rec, out.Slots, reading != wire.ConnectorSetupReadingStored)
-	if reading != wire.ConnectorSetupReadingStored {
-		d.nameBoardsProject(folder, sources[wire.ConnectorSlotKindTasks], rec, out.Slots)
-	}
-	return out, nil
+	return slots
 }
 
 // nameBoardsProject names the Azure Boards project of the folder's Azure Repos remote in its

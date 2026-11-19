@@ -316,83 +316,22 @@ func (d *Daemon) answerForgeRequest(ctx context.Context, rec wire.Request, a wir
 	if err != nil {
 		return wire.RequestUpdate{}, err
 	}
-	number := int(f.Number)
 	var answer string
 	switch {
 	case a.Checklist != nil && f.Item == lineage.KindIssue:
-		page, err := gh.ItemPage(ctx, f.Repo, number, "")
+		var open *wire.RequestUpdate
+		answer, open, err = d.answerForgeChecklist(ctx, gh, rec, a)
 		if err != nil {
 			return wire.RequestUpdate{}, err
 		}
-		body := tickChecklist(page.Body, a.Checklist.Done)
-		if body != page.Body {
-			if err := gh.SetBody(ctx, f.Repo, number, body); err != nil {
-				return wire.RequestUpdate{}, err
-			}
+		if open != nil {
+			return *open, nil
 		}
-		lines := checklistOf(body)
-		if !allDone(lines) {
-			d.requests.mu.Lock()
-			r := d.requests.byID[rec.ID]
-			if r != nil && r.Forge != nil {
-				r.Forge.Checklist = lines
-				d.saveRequestLocked(r)
-				rec = copyRequest(r)
-			}
-			d.requests.mu.Unlock()
-			Broadcast(d, wire.NotifyRequestsChanged, wire.RequestUpdate{Request: rec})
-			return wire.RequestUpdate{Request: rec}, nil
-		}
-		if err := gh.SetLabels(ctx, f.Repo, number, nil, []string{f.Label}); err != nil {
-			return wire.RequestUpdate{}, err
-		}
-		if c, ok := d.githubConnection(); ok && c.Login != "" {
-			if err := gh.Unassign(ctx, f.Repo, number, []string{c.Login}); err != nil {
-				log.Printf("requests: %s: unassign: %v", f.URL, err)
-			}
-		}
-		if _, err := gh.CommentOnPR(ctx, f.Repo, number, "Done in Agent Loops: every step is ticked."); err != nil {
-			log.Printf("requests: %s: comment: %v", f.URL, err)
-		}
-		d.requests.mu.Lock()
-		if r := d.requests.byID[rec.ID]; r != nil && r.Forge != nil {
-			r.Forge.Checklist = lines
-		}
-		d.requests.mu.Unlock()
-		answer = "Every step is done"
 	case a.Approval != nil && f.Item == lineage.KindPR:
-		action := a.Approval.Action
-		note := strings.TrimSpace(deref(a.Approval.Note))
-		switch action {
-		case "approve":
-			if note == "" {
-				note = "Approved in Agent Loops."
-			}
-		case "changes":
-			if note == "" {
-				return wire.RequestUpdate{}, Invalid("Say what to change in the note.")
-			}
-		default:
-			return wire.RequestUpdate{}, Invalid("An approval is approve or changes, not %q.", action)
-		}
-		page, err := gh.ItemPage(ctx, f.Repo, number, "")
+		answer, err = d.answerForgeApproval(ctx, gh, f, a)
 		if err != nil {
 			return wire.RequestUpdate{}, err
 		}
-		login := d.reviewer()
-		if login == "" || page.Head == "" {
-			return wire.RequestUpdate{}, Invalid("Connect GitHub as yourself to review %s.", f.URL)
-		}
-		// The one way a pull request is approved (epic #5802): the person's own review of the head
-		// commit, which GitHub's approval rule and a required review count (#3860). GitHub takes
-		// no review of a pull request from its author.
-		if strings.EqualFold(page.Author, login) {
-			return wire.RequestUpdate{}, Invalid("You opened this pull request, so you cannot approve it.")
-		}
-		if _, err := gh.ReviewPR(ctx, f.Repo, number, page.Head, action == "approve", note); err != nil {
-			return wire.RequestUpdate{}, err
-		}
-		answer = action + ": " + note
 	default:
 		return wire.RequestUpdate{}, Invalid("This request takes a %s answer.", map[string]string{"issue": "checklist", "pr": "approval"}[f.Item])
 	}
@@ -401,6 +340,93 @@ func (d *Daemon) answerForgeRequest(ctx context.Context, rec wire.Request, a wir
 	}
 	after := d.request(rec.ID)
 	return wire.RequestUpdate{Request: *after}, nil
+}
+
+// answerForgeChecklist ticks the steps of an issue's checklist on GitHub. When
+// a step is still open, it keeps the request open and gives its update as open.
+// When every step is done, it takes the label off, unassigns the person, comments,
+// and gives the answer.
+func (d *Daemon) answerForgeChecklist(ctx context.Context, gh forgeGitHub, rec wire.Request, a wire.RequestAnswer) (string, *wire.RequestUpdate, error) {
+	f := rec.Forge
+	number := int(f.Number)
+	page, err := gh.ItemPage(ctx, f.Repo, number, "")
+	if err != nil {
+		return "", nil, err
+	}
+	body := tickChecklist(page.Body, a.Checklist.Done)
+	if body != page.Body {
+		if err := gh.SetBody(ctx, f.Repo, number, body); err != nil {
+			return "", nil, err
+		}
+	}
+	lines := checklistOf(body)
+	if !allDone(lines) {
+		d.requests.mu.Lock()
+		r := d.requests.byID[rec.ID]
+		if r != nil && r.Forge != nil {
+			r.Forge.Checklist = lines
+			d.saveRequestLocked(r)
+			rec = copyRequest(r)
+		}
+		d.requests.mu.Unlock()
+		Broadcast(d, wire.NotifyRequestsChanged, wire.RequestUpdate{Request: rec})
+		return "", &wire.RequestUpdate{Request: rec}, nil
+	}
+	if err := gh.SetLabels(ctx, f.Repo, number, nil, []string{f.Label}); err != nil {
+		return "", nil, err
+	}
+	if c, ok := d.githubConnection(); ok && c.Login != "" {
+		if err := gh.Unassign(ctx, f.Repo, number, []string{c.Login}); err != nil {
+			log.Printf("requests: %s: unassign: %v", f.URL, err)
+		}
+	}
+	if _, err := gh.CommentOnPR(ctx, f.Repo, number, "Done in Agent Loops: every step is ticked."); err != nil {
+		log.Printf("requests: %s: comment: %v", f.URL, err)
+	}
+	d.requests.mu.Lock()
+	if r := d.requests.byID[rec.ID]; r != nil && r.Forge != nil {
+		r.Forge.Checklist = lines
+	}
+	d.requests.mu.Unlock()
+	return "Every step is done", nil, nil
+}
+
+// answerForgeApproval sends the person's review of a pull request to GitHub:
+// approve, or changes with a note. It gives the answer.
+func (d *Daemon) answerForgeApproval(ctx context.Context, gh forgeGitHub, f *wire.RequestForge, a wire.RequestAnswer) (string, error) {
+	number := int(f.Number)
+	action := a.Approval.Action
+	note := strings.TrimSpace(deref(a.Approval.Note))
+	switch action {
+	case "approve":
+		if note == "" {
+			note = "Approved in Agent Loops."
+		}
+	case "changes":
+		if note == "" {
+			return "", Invalid("Say what to change in the note.")
+		}
+	default:
+		return "", Invalid("An approval is approve or changes, not %q.", action)
+	}
+	page, err := gh.ItemPage(ctx, f.Repo, number, "")
+	if err != nil {
+		return "", err
+	}
+	login := d.reviewer()
+	if login == "" || page.Head == "" {
+		return "", Invalid("Connect GitHub as yourself to review %s.", f.URL)
+	}
+	// The one way a pull request is approved (epic #5802): the person's own review of the head
+	// commit, which GitHub's approval rule and a required review count (#3860). GitHub takes
+	// no review of a pull request from its author.
+	if strings.EqualFold(page.Author, login) {
+		return "", Invalid("You opened this pull request, so you cannot approve it.")
+	}
+	if _, err := gh.ReviewPR(ctx, f.Repo, number, page.Head, action == "approve", note); err != nil {
+		return "", err
+	}
+	return action + ": " + note, nil
 }
 
 // addForgeRequestWaiter is a session that waits on request.* with where: {pr: <n>} or

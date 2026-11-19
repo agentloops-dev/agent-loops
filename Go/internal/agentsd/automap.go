@@ -434,66 +434,93 @@ func (d *Daemon) autoMappings() wire.AutoMappings {
 // nativeChoices is what a cell of a field can be set to on a runtime: the values it offers,
 // or the shipped cells' values before it has said.
 func nativeChoices(runtimeID string, field wire.AutoField, offers []wire.ConfigOption) []wire.AutoNativeChoice {
-	var out []wire.AutoNativeChoice
-	add := func(n wire.NativeSetting) {
-		for _, c := range out {
-			if sameJSON(c.Native, n) {
-				return
-			}
-		}
-		out = append(out, wire.AutoNativeChoice{RuntimeID: runtimeID, Field: field, Native: n, Words: nativeWords(runtimeID, n, offers)})
-	}
-	single := func(id string) bool {
-		choices, ok := optionChoices(offers, id)
-		for _, c := range choices {
-			add(wire.NativeSetting{Options: map[string]wire.JSONValue{id: jsonString(c.Value)}})
-		}
-		return ok && len(choices) > 0
-	}
+	l := &nativeChoiceList{runtimeID: runtimeID, field: field, offers: offers}
 	switch field {
 	case wire.AutoFieldModel:
-		if single(modelOptionID(offers)) {
-			return out
+		if l.addOption(modelOptionID(offers)) {
+			return l.out
 		}
 	case wire.AutoFieldPermission:
-		mo := modeOption(offers)
-		if mo != nil {
-			choices, _ := optionChoices(offers, mo.ID)
-			for _, c := range choices {
-				opts := map[string]wire.JSONValue{mo.ID: jsonString(c.Value)}
-				if clientAnswered[runtimeID] {
-					add(wire.NativeSetting{Options: opts, ClientPermission: requestCards})
-					add(wire.NativeSetting{Options: opts, ClientPermission: yesToAll})
-				} else {
-					add(wire.NativeSetting{Options: opts})
-				}
-			}
-			if len(out) > 0 {
-				return out
+		if mo := modeOption(offers); mo != nil {
+			l.addPermissionModes(mo.ID)
+			if len(l.out) > 0 {
+				return l.out
 			}
 		}
 	case wire.AutoFieldPermissionRequests:
-		if clientAnswered[runtimeID] {
-			add(wire.NativeSetting{ClientPermission: requestCards})
-			add(wire.NativeSetting{ClientPermission: yesToAll})
-		}
-		return out
+		l.addClientPermissions(nil)
+		return l.out
 	case wire.AutoFieldSandbox:
 		for _, c := range append([]wire.SandboxChoice{wire.SandboxChoiceRuntime}, sandboxChoices(runtimeID)...) {
-			add(wire.NativeSetting{Sandbox: &c})
+			l.add(wire.NativeSetting{Sandbox: &c})
 		}
-		return out
+		return l.out
 	}
+	l.addShippedCells()
+	return l.out
+}
+
+// nativeChoiceList collects the native choices of one field on one runtime, with no duplicates.
+type nativeChoiceList struct {
+	runtimeID string
+	field     wire.AutoField
+	offers    []wire.ConfigOption
+	out       []wire.AutoNativeChoice
+}
+
+// add appends n when the list does not have it yet.
+func (l *nativeChoiceList) add(n wire.NativeSetting) {
+	for _, c := range l.out {
+		if sameJSON(c.Native, n) {
+			return
+		}
+	}
+	l.out = append(l.out, wire.AutoNativeChoice{RuntimeID: l.runtimeID, Field: l.field, Native: n, Words: nativeWords(l.runtimeID, n, l.offers)})
+}
+
+// addOption adds each value of the option id. It says if the runtime offers the option with values.
+func (l *nativeChoiceList) addOption(id string) bool {
+	choices, ok := optionChoices(l.offers, id)
+	for _, c := range choices {
+		l.add(wire.NativeSetting{Options: map[string]wire.JSONValue{id: jsonString(c.Value)}})
+	}
+	return ok && len(choices) > 0
+}
+
+// addClientPermissions adds the two client permission choices with opts, when the client answers
+// the runtime's requests.
+func (l *nativeChoiceList) addClientPermissions(opts map[string]wire.JSONValue) {
+	if clientAnswered[l.runtimeID] {
+		l.add(wire.NativeSetting{Options: opts, ClientPermission: requestCards})
+		l.add(wire.NativeSetting{Options: opts, ClientPermission: yesToAll})
+	}
+}
+
+// addPermissionModes adds each value of the mode option modeID, with each client permission
+// when the client answers the runtime's requests.
+func (l *nativeChoiceList) addPermissionModes(modeID string) {
+	choices, _ := optionChoices(l.offers, modeID)
+	for _, c := range choices {
+		opts := map[string]wire.JSONValue{modeID: jsonString(c.Value)}
+		if clientAnswered[l.runtimeID] {
+			l.addClientPermissions(opts)
+		} else {
+			l.add(wire.NativeSetting{Options: opts})
+		}
+	}
+}
+
+// addShippedCells adds the native value of each shipped cell of the field that is possible.
+func (l *nativeChoiceList) addShippedCells() {
 	settings := wire.AutoSettings{}
-	for _, l := range levelsOf(field) {
-		c := shippedCell(runtimeID, field, l)
+	for _, lv := range levelsOf(l.field) {
+		c := shippedCell(l.runtimeID, l.field, lv)
 		if c.mark == wire.AutoMarkNotPossible {
 			continue
 		}
-		m := cellMapping(runtimeID, field, l, settings, offers)
+		m := cellMapping(l.runtimeID, l.field, lv, settings, l.offers)
 		if m.Native != nil {
-			add(*m.Native)
+			l.add(*m.Native)
 		}
 	}
-	return out
 }

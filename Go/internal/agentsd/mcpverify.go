@@ -83,128 +83,176 @@ func buildHandEntry(hand wire.MCPHandServer, secrets skillcatalog.Secrets) (hand
 		return handEntry{}, invalid("A name is letters, digits, dots, dashes and underscores, starting with a letter or digit.")
 	}
 	h := handEntry{name: name, newSecrets: map[string]string{}}
-	held := func(v wire.MCPHandValue, header bool) (string, error) {
-		if !v.Secret {
-			return v.Value, nil
-		}
-		secretName := ""
-		if v.SecretName != nil {
-			secretName = strings.TrimSpace(*v.SecretName)
-		}
-		if secretName == "" {
-			secretName = defaultSecretName(name, v.Name, header)
-		}
-		if !variableName.MatchString(secretName) {
-			return "", invalid("A secret's name is letters, digits and underscores: " + secretName + " is not.")
-		}
-		if v.Value != "" {
-			if other, ok := h.newSecrets[secretName]; ok && other != v.Value {
-				return "", invalid(secretName + " is given two different values.")
-			}
-			h.newSecrets[secretName] = v.Value
-		} else if !secrets.IsSet(secretName) {
-			return "", mcpcatalog.MissingSecret(secretName)
-		}
-		return "${" + secretName + "}", nil
-	}
-	type kv struct{ k, v string }
-	var pairs []kv
+	var err error
 	switch hand.Kind {
 	case wire.MCPHandServerKindCommand:
-		command := strings.TrimSpace(hand.Command)
-		if command == "" {
-			return handEntry{}, invalid("A local server needs a command.")
-		}
-		for _, v := range hand.Env {
-			if v.Name == "" && v.Value == "" {
-				continue
-			}
-			key := strings.TrimSpace(v.Name)
-			if !variableName.MatchString(key) {
-				which := key + " is not"
-				if key == "" {
-					which = "one has none"
-				}
-				return handEntry{}, invalid("A variable's name is letters, digits and underscores: " + which + ".")
-			}
-			for _, p := range pairs {
-				if p.k == key {
-					return handEntry{}, invalid(key + " is set twice.")
-				}
-			}
-			value, err := held(v, false)
-			if err != nil {
-				return handEntry{}, err
-			}
-			pairs = append(pairs, kv{key, value})
-		}
-		args := hand.Args
-		if args == nil {
-			args = []string{}
-		}
-		list := skillcatalog.Value{Kind: 'a', Items: []skillcatalog.Value{}}
-		for _, a := range args {
-			list.Items = append(list.Items, skillcatalog.String(a))
-		}
-		h.entry = skillcatalog.Object(skillcatalog.Pair{Key: "command", Value: skillcatalog.String(command)},
-			skillcatalog.Pair{Key: "args", Value: list})
-		env := []sdk.EnvVariable{}
-		if len(pairs) > 0 {
-			o := skillcatalog.Object()
-			for _, p := range pairs {
-				o.Set(p.k, skillcatalog.String(p.v))
-				env = append(env, sdk.EnvVariable{Name: p.k, Value: p.v})
-			}
-			h.entry.Set("env", o)
-		}
-		h.filled = sdk.McpServer{Stdio: &sdk.McpServerStdio{Name: name, Command: command, Args: args, Env: env}}
-		h.run = wire.MCPRunKindCommand
+		err = h.setCommand(hand, secrets)
 	case wire.MCPHandServerKindURL:
-		u := strings.TrimSpace(hand.URL)
-		p, err := url.Parse(u)
-		if err != nil || (strings.ToLower(p.Scheme) != "http" && strings.ToLower(p.Scheme) != "https") || p.Host == "" {
-			return handEntry{}, invalid("A remote server's URL starts with https:// (or http://).")
-		}
-		for _, v := range hand.Headers {
-			if v.Name == "" && v.Value == "" {
-				continue
-			}
-			key := strings.TrimSpace(v.Name)
-			if !headerName.MatchString(key) {
-				which := key + " is not"
-				if key == "" {
-					which = "one has none"
-				}
-				return handEntry{}, invalid("A header's name is one word: " + which + ".")
-			}
-			for _, p := range pairs {
-				if strings.EqualFold(p.k, key) {
-					return handEntry{}, invalid(key + " is set twice.")
-				}
-			}
-			value, err := held(v, true)
-			if err != nil {
-				return handEntry{}, err
-			}
-			pairs = append(pairs, kv{key, value})
-		}
-		h.entry = skillcatalog.Object(skillcatalog.Pair{Key: "type", Value: skillcatalog.String("http")},
-			skillcatalog.Pair{Key: "url", Value: skillcatalog.String(u)})
-		headers := []sdk.HttpHeader{}
-		if len(pairs) > 0 {
-			o := skillcatalog.Object()
-			for _, p := range pairs {
-				o.Set(p.k, skillcatalog.String(p.v))
-				headers = append(headers, sdk.HttpHeader{Name: p.k, Value: p.v})
-			}
-			h.entry.Set("headers", o)
-		}
-		h.filled = sdk.McpServer{Http: &sdk.McpServerHttpInline{Name: name, Type: "http", Url: u, Headers: headers}}
-		h.run = wire.MCPRunKindRemote
+		err = h.setURL(hand, secrets)
 	default:
 		return handEntry{}, invalid("A server is a command or a URL.")
 	}
-	// A plain value may name a secret already set, as ${NAME}: every one has to be.
+	if err != nil {
+		return handEntry{}, err
+	}
+	if err := h.fillSecretRefs(secrets); err != nil {
+		return handEntry{}, err
+	}
+	return h, nil
+}
+
+// handKV is one variable or header of a hand-written server, its value as written.
+type handKV struct{ k, v string }
+
+// held is the value as the entry writes it: the plain value, or ${NAME} for a secret. A
+// secret's new value goes in newSecrets.
+func (h *handEntry) held(v wire.MCPHandValue, header bool, secrets skillcatalog.Secrets) (string, error) {
+	if !v.Secret {
+		return v.Value, nil
+	}
+	secretName := ""
+	if v.SecretName != nil {
+		secretName = strings.TrimSpace(*v.SecretName)
+	}
+	if secretName == "" {
+		secretName = defaultSecretName(h.name, v.Name, header)
+	}
+	if !variableName.MatchString(secretName) {
+		return "", invalid("A secret's name is letters, digits and underscores: " + secretName + " is not.")
+	}
+	if v.Value != "" {
+		if other, ok := h.newSecrets[secretName]; ok && other != v.Value {
+			return "", invalid(secretName + " is given two different values.")
+		}
+		h.newSecrets[secretName] = v.Value
+	} else if !secrets.IsSet(secretName) {
+		return "", mcpcatalog.MissingSecret(secretName)
+	}
+	return "${" + secretName + "}", nil
+}
+
+// setCommand sets the entry of a local server: its command, args and env.
+func (h *handEntry) setCommand(hand wire.MCPHandServer, secrets skillcatalog.Secrets) error {
+	command := strings.TrimSpace(hand.Command)
+	if command == "" {
+		return invalid("A local server needs a command.")
+	}
+	pairs, err := h.envPairs(hand.Env, secrets)
+	if err != nil {
+		return err
+	}
+	args := hand.Args
+	if args == nil {
+		args = []string{}
+	}
+	list := skillcatalog.Value{Kind: 'a', Items: []skillcatalog.Value{}}
+	for _, a := range args {
+		list.Items = append(list.Items, skillcatalog.String(a))
+	}
+	h.entry = skillcatalog.Object(skillcatalog.Pair{Key: "command", Value: skillcatalog.String(command)},
+		skillcatalog.Pair{Key: "args", Value: list})
+	env := []sdk.EnvVariable{}
+	if len(pairs) > 0 {
+		o := skillcatalog.Object()
+		for _, p := range pairs {
+			o.Set(p.k, skillcatalog.String(p.v))
+			env = append(env, sdk.EnvVariable{Name: p.k, Value: p.v})
+		}
+		h.entry.Set("env", o)
+	}
+	h.filled = sdk.McpServer{Stdio: &sdk.McpServerStdio{Name: h.name, Command: command, Args: args, Env: env}}
+	h.run = wire.MCPRunKindCommand
+	return nil
+}
+
+// envPairs is the local server's variables, in order, each name checked once.
+func (h *handEntry) envPairs(values []wire.MCPHandValue, secrets skillcatalog.Secrets) ([]handKV, error) {
+	var pairs []handKV
+	for _, v := range values {
+		if v.Name == "" && v.Value == "" {
+			continue
+		}
+		key := strings.TrimSpace(v.Name)
+		if !variableName.MatchString(key) {
+			which := key + " is not"
+			if key == "" {
+				which = "one has none"
+			}
+			return nil, invalid("A variable's name is letters, digits and underscores: " + which + ".")
+		}
+		for _, p := range pairs {
+			if p.k == key {
+				return nil, invalid(key + " is set twice.")
+			}
+		}
+		value, err := h.held(v, false, secrets)
+		if err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, handKV{key, value})
+	}
+	return pairs, nil
+}
+
+// setURL sets the entry of a remote server: its url and headers.
+func (h *handEntry) setURL(hand wire.MCPHandServer, secrets skillcatalog.Secrets) error {
+	u := strings.TrimSpace(hand.URL)
+	p, err := url.Parse(u)
+	if err != nil || (strings.ToLower(p.Scheme) != "http" && strings.ToLower(p.Scheme) != "https") || p.Host == "" {
+		return invalid("A remote server's URL starts with https:// (or http://).")
+	}
+	pairs, err := h.headerPairs(hand.Headers, secrets)
+	if err != nil {
+		return err
+	}
+	h.entry = skillcatalog.Object(skillcatalog.Pair{Key: "type", Value: skillcatalog.String("http")},
+		skillcatalog.Pair{Key: "url", Value: skillcatalog.String(u)})
+	headers := []sdk.HttpHeader{}
+	if len(pairs) > 0 {
+		o := skillcatalog.Object()
+		for _, p := range pairs {
+			o.Set(p.k, skillcatalog.String(p.v))
+			headers = append(headers, sdk.HttpHeader{Name: p.k, Value: p.v})
+		}
+		h.entry.Set("headers", o)
+	}
+	h.filled = sdk.McpServer{Http: &sdk.McpServerHttpInline{Name: h.name, Type: "http", Url: u, Headers: headers}}
+	h.run = wire.MCPRunKindRemote
+	return nil
+}
+
+// headerPairs is the remote server's headers, in order, each name checked once (in any case).
+func (h *handEntry) headerPairs(values []wire.MCPHandValue, secrets skillcatalog.Secrets) ([]handKV, error) {
+	var pairs []handKV
+	for _, v := range values {
+		if v.Name == "" && v.Value == "" {
+			continue
+		}
+		key := strings.TrimSpace(v.Name)
+		if !headerName.MatchString(key) {
+			which := key + " is not"
+			if key == "" {
+				which = "one has none"
+			}
+			return nil, invalid("A header's name is one word: " + which + ".")
+		}
+		for _, p := range pairs {
+			if strings.EqualFold(p.k, key) {
+				return nil, invalid(key + " is set twice.")
+			}
+		}
+		value, err := h.held(v, true, secrets)
+		if err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, handKV{key, value})
+	}
+	return pairs, nil
+}
+
+// fillSecretRefs puts the secrets' values in filled. A plain value may name a secret already
+// set, as ${NAME}: every one has to be.
+func (h *handEntry) fillSecretRefs(secrets skillcatalog.Secrets) error {
 	overlay := map[string]string{}
 	for k, v := range h.newSecrets {
 		overlay[k] = v
@@ -251,9 +299,9 @@ func buildHandEntry(hand wire.MCPHandServer, secrets skillcatalog.Secrets) (hand
 		h.filled = sdk.McpServer{Http: &s}
 	}
 	if len(missing) > 0 {
-		return handEntry{}, mcpcatalog.MissingSecret(missing[0])
+		return mcpcatalog.MissingSecret(missing[0])
 	}
-	return h, nil
+	return nil
 }
 
 // verifyMCP connects as an agent would, and says what the server calls itself and its tools.

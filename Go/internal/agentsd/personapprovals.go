@@ -215,35 +215,44 @@ func (d *Daemon) adoptSharedWorkflowsLocked(files map[string]map[string]*workflo
 	changed := false
 	for folder, ws := range files {
 		for id, f := range ws {
-			if f.digest == "" || !d.listedHere(f.wf) || d.hearsFor(f.wf) != "" {
-				continue
+			if d.adoptOneSharedWorkflowLocked(folder, id, f) {
+				changed = true
 			}
-			a, ok := d.sharedApproval(approvalKindWorkflow, f.digest)
-			if !ok {
-				continue
-			}
-			home := approvalFolderOf(folder, f)
-			if st := d.stateLocked(home, id, false); st != nil {
-				if st.ApprovedDigest != nil && *st.ApprovedDigest == f.digest || st.DeniedDigest != nil && *st.DeniedDigest == f.digest {
-					continue
-				}
-			}
-			st := d.stateLocked(home, id, true)
-			d.keepCopyLocked(st, f)
-			from := approvedByWords(a)
-			st.ApprovedFrom = &from
-			if here := d.stateLocked(folder, id, false); here != nil {
-				if o := here.LastOutcome; o != nil && o.Refused != nil && o.Refused.Value.AwaitingApproval != nil {
-					here.LastOutcome = nil
-				}
-			}
-			changed = true
-			log.Printf("workflows: %s approved here, as the person approved it on %s", id, a.Host)
 		}
 	}
 	if changed {
 		d.saveRecordsLocked(true)
 	}
+}
+
+// adoptOneSharedWorkflowLocked approves one workflow file that waits here, when the person
+// approved its digest on another machine. It is true when it approved the file. With
+// workflowMu held.
+func (d *Daemon) adoptOneSharedWorkflowLocked(folder, id string, f *workflowFile) bool {
+	if f.digest == "" || !d.listedHere(f.wf) || d.hearsFor(f.wf) != "" {
+		return false
+	}
+	a, ok := d.sharedApproval(approvalKindWorkflow, f.digest)
+	if !ok {
+		return false
+	}
+	home := approvalFolderOf(folder, f)
+	if st := d.stateLocked(home, id, false); st != nil {
+		if st.ApprovedDigest != nil && *st.ApprovedDigest == f.digest || st.DeniedDigest != nil && *st.DeniedDigest == f.digest {
+			return false
+		}
+	}
+	st := d.stateLocked(home, id, true)
+	d.keepCopyLocked(st, f)
+	from := approvedByWords(a)
+	st.ApprovedFrom = &from
+	if here := d.stateLocked(folder, id, false); here != nil {
+		if o := here.LastOutcome; o != nil && o.Refused != nil && o.Refused.Value.AwaitingApproval != nil {
+			here.LastOutcome = nil
+		}
+	}
+	log.Printf("workflows: %s approved here, as the person approved it on %s", id, a.Host)
+	return true
 }
 
 // adoptSharedMCPAll is adoptSharedMCPFolder for every folder here.

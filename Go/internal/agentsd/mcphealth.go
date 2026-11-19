@@ -245,55 +245,10 @@ func (d *Daemon) mcpHealthPass() (wire.MCPHealthSnapshot, []mcpDue) {
 	}
 	listed := map[string]bool{}
 	row := func(e mcpEntry, folder *string, cwd string, waiting bool) {
-		h := wire.MCPServerHealth{Name: e.name, Folder: folder, Transport: e.kind, Hosted: e.hosted, Check: wire.MCPCheckStateUnchecked}
-		id := healthID(folder, e.name)
-		listed[id] = true
-		mcpLevels(&h, e, nil)
-		filled, gone := filledServer(e.server, secrets)
-		switch {
-		case e.hosted:
-			h.Live = d.hostedStatus(folder, e.name)
-			if waiting || len(gone) > 0 {
-				break
-			}
-			digest := serverDigest(filled)
-			kept, ok := d.results[id]
-			if ok && kept.digest == digest {
-				mcpLevels(&h, e, &kept)
-			} else {
-				ok = false
-			}
-			if !d.running[id] && (!ok || at.Sub(kept.at.Time()) >= mcpHealthInterval) {
-				due = append(due, mcpDue{id: id, cwd: cwd, digest: digest, name: e.name, server: filled})
-			}
-		case e.kind == wire.MCPTransportNameSse:
-			h.Check = wire.MCPCheckStateOldTransport
-		case waiting:
-			h.Check = wire.MCPCheckStateWaiting
-		case len(gone) > 0:
-			h.Check = wire.MCPCheckStateMissingSecret
-		default:
-			digest := serverDigest(filled)
-			kept, ok := d.results[id]
-			if ok && kept.digest == digest {
-				h.Check, h.CheckedAt = kept.check, &kept.at
-				if kept.err != "" {
-					h.LastError = &kept.err
-				}
-				if kept.check == wire.MCPCheckStateAnswered {
-					n := int64(len(kept.tools))
-					h.Tools = &n
-				}
-				mcpLevels(&h, e, &kept)
-			} else {
-				ok = false
-			}
-			switch {
-			case d.running[id]:
-				h.Check = wire.MCPCheckStateChecking
-			case d.forced[id] || !ok || at.Sub(kept.at.Time()) >= mcpHealthInterval:
-				due = append(due, mcpDue{id: id, cwd: cwd, digest: digest, name: e.name, server: filled})
-			}
+		listed[healthID(folder, e.name)] = true
+		h, one := d.mcpHealthRowLocked(e, folder, cwd, waiting, secrets, at)
+		if one != nil {
+			due = append(due, *one)
 		}
 		snap.Servers = append(snap.Servers, h)
 	}
@@ -329,7 +284,13 @@ func (d *Daemon) mcpHealthPass() (wire.MCPHealthSnapshot, []mcpDue) {
 			row(e, &f, folder, approved == nil || approved[mcpApprovalKey(folder, e.name)] != entryDigest(e.raw))
 		}
 	}
-	// What is no longer listed is forgotten.
+	d.forgetUnlistedMCPHealthLocked(listed)
+	return snap, due
+}
+
+// forgetUnlistedMCPHealthLocked forgets the results and the forced checks of the servers that
+// are no longer listed. The caller holds healthMu.
+func (d *Daemon) forgetUnlistedMCPHealthLocked(listed map[string]bool) {
 	for id := range d.results {
 		if !listed[id] {
 			delete(d.results, id)
@@ -340,7 +301,76 @@ func (d *Daemon) mcpHealthPass() (wire.MCPHealthSnapshot, []mcpDue) {
 			delete(d.forced, id)
 		}
 	}
-	return snap, due
+}
+
+// mcpHealthRowLocked is the health row of the entry e, in folder (nil for the person's), with
+// what its last check found, and its check when one is due. The caller holds healthMu.
+func (d *Daemon) mcpHealthRowLocked(e mcpEntry, folder *string, cwd string, waiting bool,
+	secrets map[string]string, at time.Time) (wire.MCPServerHealth, *mcpDue) {
+	h := wire.MCPServerHealth{Name: e.name, Folder: folder, Transport: e.kind, Hosted: e.hosted, Check: wire.MCPCheckStateUnchecked}
+	id := healthID(folder, e.name)
+	mcpLevels(&h, e, nil)
+	filled, gone := filledServer(e.server, secrets)
+	switch {
+	case e.hosted:
+		h.Live = d.hostedStatus(folder, e.name)
+		if waiting || len(gone) > 0 {
+			return h, nil
+		}
+		return h, d.mcpHealthHostedLocked(&h, e, id, cwd, filled, at)
+	case e.kind == wire.MCPTransportNameSse:
+		h.Check = wire.MCPCheckStateOldTransport
+	case waiting:
+		h.Check = wire.MCPCheckStateWaiting
+	case len(gone) > 0:
+		h.Check = wire.MCPCheckStateMissingSecret
+	default:
+		return h, d.mcpHealthCheckedLocked(&h, e, id, cwd, filled, at)
+	}
+	return h, nil
+}
+
+// mcpHealthHostedLocked adds to h the levels of the hosted entry e's last check, and gives
+// its check when one is due. The caller holds healthMu.
+func (d *Daemon) mcpHealthHostedLocked(h *wire.MCPServerHealth, e mcpEntry, id, cwd string, filled sdk.McpServer, at time.Time) *mcpDue {
+	digest := serverDigest(filled)
+	kept, ok := d.results[id]
+	if ok && kept.digest == digest {
+		mcpLevels(h, e, &kept)
+	} else {
+		ok = false
+	}
+	if !d.running[id] && (!ok || at.Sub(kept.at.Time()) >= mcpHealthInterval) {
+		return &mcpDue{id: id, cwd: cwd, digest: digest, name: e.name, server: filled}
+	}
+	return nil
+}
+
+// mcpHealthCheckedLocked adds to h what the entry e's last check found, and gives its check
+// when one is due. The caller holds healthMu.
+func (d *Daemon) mcpHealthCheckedLocked(h *wire.MCPServerHealth, e mcpEntry, id, cwd string, filled sdk.McpServer, at time.Time) *mcpDue {
+	digest := serverDigest(filled)
+	kept, ok := d.results[id]
+	if ok && kept.digest == digest {
+		h.Check, h.CheckedAt = kept.check, &kept.at
+		if kept.err != "" {
+			h.LastError = &kept.err
+		}
+		if kept.check == wire.MCPCheckStateAnswered {
+			n := int64(len(kept.tools))
+			h.Tools = &n
+		}
+		mcpLevels(h, e, &kept)
+	} else {
+		ok = false
+	}
+	switch {
+	case d.running[id]:
+		h.Check = wire.MCPCheckStateChecking
+	case d.forced[id] || !ok || at.Sub(kept.at.Time()) >= mcpHealthInterval:
+		return &mcpDue{id: id, cwd: cwd, digest: digest, name: e.name, server: filled}
+	}
+	return nil
 }
 
 func (d *Daemon) registerMCP() {

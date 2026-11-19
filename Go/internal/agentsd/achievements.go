@@ -120,65 +120,83 @@ func (d *Daemon) checkAchievements() {
 	at := time.Now()
 	found := map[string]time.Time{}
 	if want(firstAgent) {
-		var first *time.Time
-		for _, a := range d.Store.Agents() {
-			ran := a.LastActivityAt > a.CreatedAt && a.State != wire.AgentStateQueued &&
-				a.State != wire.AgentStateStarting && a.State != wire.AgentStateRunning && a.State != wire.AgentStateWaitingOnUser
-			if t := a.CreatedAt.Time(); ran && (first == nil || t.Before(*first)) {
-				first = &t
-			}
-		}
-		if first != nil {
+		if first := d.achievementFirstAgent(); first != nil {
 			found[firstAgent] = *first
 		}
 	}
 	if want(firstPairing) {
-		// The first device paired, read from devices.json as it is, which holds the
-		// devices' own table to when one is first asked for.
-		var raws []json.RawMessage
-		if b, err := os.ReadFile(d.devicesFile()); err == nil && json.Unmarshal(b, &raws) == nil {
-			for _, raw := range raws {
-				var dev wire.Device
-				if json.Unmarshal(raw, &dev) != nil || dev.ID == "" {
-					continue
-				}
-				if t := dev.AnnouncedAt.Time(); found[firstPairing].IsZero() || t.Before(found[firstPairing]) {
-					found[firstPairing] = t
-				}
-			}
-		}
+		d.achievementFirstPairing(found)
 	}
 	if want(firstWorkflow) && d.hasWorkflowHere() {
 		found[firstWorkflow] = at
 	}
 	if want(firstLandedPR) || want(fiveAtOnce) {
-		h := d.timeHistory()
-		days := make([]string, 0, len(h.Recap))
-		for day := range h.Recap {
-			days = append(days, day)
-		}
-		sort.Strings(days)
-		var prDay, fiveDay string
-		for _, day := range days {
-			r := h.Recap[day]
-			if prDay == "" && r.PrsMerged != nil && *r.PrsMerged > 0 {
-				prDay = day
-			}
-			if fiveDay == "" && r.PeakAgents >= 5 {
-				fiveDay = day
-			}
-		}
-		// The days kept say when it first happened; the record outlives them.
-		if fiveDay == "" && h.Records.MostAgents != nil && h.Records.MostAgents.Value >= 5 {
-			fiveDay = h.Records.MostAgents.Day
-		}
-		for id, day := range map[string]string{firstLandedPR: prDay, fiveAtOnce: fiveDay} {
-			if t, err := time.ParseInLocation("2006-01-02", day, time.Local); want(id) && day != "" && err == nil {
-				found[id] = t
-			}
-		}
+		d.achievementRecapDays(want, found)
 	}
 	d.earnAchievements(found, at)
+}
+
+// achievementFirstAgent gives the time the first agent that ran to an end was made, or nil
+// when none did.
+func (d *Daemon) achievementFirstAgent() *time.Time {
+	var first *time.Time
+	for _, a := range d.Store.Agents() {
+		ran := a.LastActivityAt > a.CreatedAt && a.State != wire.AgentStateQueued &&
+			a.State != wire.AgentStateStarting && a.State != wire.AgentStateRunning && a.State != wire.AgentStateWaitingOnUser
+		if t := a.CreatedAt.Time(); ran && (first == nil || t.Before(*first)) {
+			first = &t
+		}
+	}
+	return first
+}
+
+// achievementFirstPairing puts the time of the first device paired in found. It reads
+// devices.json as it is, which holds the devices' own table to when one is first asked for.
+func (d *Daemon) achievementFirstPairing(found map[string]time.Time) {
+	var raws []json.RawMessage
+	b, err := os.ReadFile(d.devicesFile())
+	if err != nil || json.Unmarshal(b, &raws) != nil {
+		return
+	}
+	for _, raw := range raws {
+		var dev wire.Device
+		if json.Unmarshal(raw, &dev) != nil || dev.ID == "" {
+			continue
+		}
+		if t := dev.AnnouncedAt.Time(); found[firstPairing].IsZero() || t.Before(found[firstPairing]) {
+			found[firstPairing] = t
+		}
+	}
+}
+
+// achievementRecapDays puts in found the first day with a landed PR and the first day with
+// five agents at once, from the time history, for each that want gives.
+func (d *Daemon) achievementRecapDays(want func(string) bool, found map[string]time.Time) {
+	h := d.timeHistory()
+	days := make([]string, 0, len(h.Recap))
+	for day := range h.Recap {
+		days = append(days, day)
+	}
+	sort.Strings(days)
+	var prDay, fiveDay string
+	for _, day := range days {
+		r := h.Recap[day]
+		if prDay == "" && r.PrsMerged != nil && *r.PrsMerged > 0 {
+			prDay = day
+		}
+		if fiveDay == "" && r.PeakAgents >= 5 {
+			fiveDay = day
+		}
+	}
+	// The days kept say when it first happened; the record outlives them.
+	if fiveDay == "" && h.Records.MostAgents != nil && h.Records.MostAgents.Value >= 5 {
+		fiveDay = h.Records.MostAgents.Day
+	}
+	for id, day := range map[string]string{firstLandedPR: prDay, fiveAtOnce: fiveDay} {
+		if t, err := time.ParseInLocation("2006-01-02", day, time.Local); want(id) && day != "" && err == nil {
+			found[id] = t
+		}
+	}
 }
 
 // earnNow earns each of ids, now, when it is not yet.

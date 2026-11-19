@@ -127,60 +127,14 @@ func (d *Daemon) forgeNext(ctx context.Context, r wire.ForgeNextRequest) (wire.F
 	}
 
 	var items []wire.ForgeItem
+	var err error
 	if r.Epic != nil {
-		// One epic's children: its plan, with their blockers, as forge/plan reads it.
-		_, children, _, err := d.forgePlanRead(ctx, method, *r.Epic)
-		if err != nil {
-			return wire.ForgeNext{}, err
-		}
-		for _, c := range children {
-			if keep(c.item) && !slices.ContainsFunc(c.blockedBy, func(b planRef) bool { return b.open }) {
-				items = append(items, c.item)
-			}
-		}
-		nextOrder(items)
+		items, err = d.forgeNextEpicChildren(ctx, method, *r.Epic, keep)
 	} else {
-		// The folder's open issues or epics, as many pages as a plan reads, then their blockers
-		// in order, a page at a time, only until the rows are full.
-		q := wire.ForgeListRequest{Folder: &r.Folder, State: new("open"), Limit: new(int64(forgeListMost))}
-		if epics {
-			q.Label = new("epic")
-		}
-		var all []wire.ForgeItem
-		for range featureEpicPages {
-			page, err := d.forgeList(ctx, false, q)
-			if err != nil {
-				return wire.ForgeNext{}, Invalid("%s: %v", method, strings.TrimPrefix(err.Error(), "forge/issues: "))
-			}
-			for _, e := range page.Errors {
-				if !slices.Contains(out.Errors, e) {
-					out.Errors = append(out.Errors, e)
-				}
-			}
-			for _, i := range page.Items {
-				if keep(i) {
-					all = append(all, i)
-				}
-			}
-			if page.Cursor == nil {
-				break
-			}
-			q.Cursor = page.Cursor
-		}
-		nextOrder(all)
-		for len(all) > 0 && len(items) < nextMost {
-			page := all[:min(len(all), forgeListMost)]
-			all = all[len(page):]
-			blocked, err := d.openBlockers(ctx, method, page)
-			if err != nil {
-				return wire.ForgeNext{}, err
-			}
-			for _, i := range page {
-				if !blocked[i.Node] {
-					items = append(items, i)
-				}
-			}
-		}
+		items, err = d.forgeNextFolderItems(ctx, method, r.Folder, epics, keep, &out)
+	}
+	if err != nil {
+		return wire.ForgeNext{}, err
 	}
 	items = items[:min(len(items), nextMost)]
 	for n, i := range items {
@@ -189,6 +143,80 @@ func (d *Daemon) forgeNext(ctx context.Context, r wire.ForgeNextRequest) (wire.F
 			OnHold: onHold(i)})
 	}
 	return out, nil
+}
+
+// forgeNextEpicChildren is one epic's children that keep keeps and that have
+// no open blocker: its plan, with their blockers, as forge/plan reads it. They are in the one order.
+func (d *Daemon) forgeNextEpicChildren(ctx context.Context, method string, epic wire.LineageNode, keep func(wire.ForgeItem) bool) ([]wire.ForgeItem, error) {
+	var items []wire.ForgeItem
+	_, children, _, err := d.forgePlanRead(ctx, method, epic)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range children {
+		if keep(c.item) && !slices.ContainsFunc(c.blockedBy, func(b planRef) bool { return b.open }) {
+			items = append(items, c.item)
+		}
+	}
+	nextOrder(items)
+	return items, nil
+}
+
+// forgeNextFolderItems is the folder's open issues or epics that keep keeps, as many pages as
+// a plan reads, then their blockers in order, a page at a time, only until the rows are full.
+// It adds the errors of the forges to out.
+func (d *Daemon) forgeNextFolderItems(ctx context.Context, method, folder string, epics bool, keep func(wire.ForgeItem) bool, out *wire.ForgeNext) ([]wire.ForgeItem, error) {
+	all, err := d.forgeNextReadOpen(ctx, method, folder, epics, keep, out)
+	if err != nil {
+		return nil, err
+	}
+	nextOrder(all)
+	var items []wire.ForgeItem
+	for len(all) > 0 && len(items) < nextMost {
+		page := all[:min(len(all), forgeListMost)]
+		all = all[len(page):]
+		blocked, err := d.openBlockers(ctx, method, page)
+		if err != nil {
+			return nil, err
+		}
+		for _, i := range page {
+			if !blocked[i.Node] {
+				items = append(items, i)
+			}
+		}
+	}
+	return items, nil
+}
+
+// forgeNextReadOpen reads the folder's open issues (or epics) that keep keeps, as many pages
+// as a plan reads. It adds each new error of the forges to out.
+func (d *Daemon) forgeNextReadOpen(ctx context.Context, method, folder string, epics bool, keep func(wire.ForgeItem) bool, out *wire.ForgeNext) ([]wire.ForgeItem, error) {
+	q := wire.ForgeListRequest{Folder: &folder, State: new("open"), Limit: new(int64(forgeListMost))}
+	if epics {
+		q.Label = new("epic")
+	}
+	var all []wire.ForgeItem
+	for range featureEpicPages {
+		page, err := d.forgeList(ctx, false, q)
+		if err != nil {
+			return nil, Invalid("%s: %v", method, strings.TrimPrefix(err.Error(), "forge/issues: "))
+		}
+		for _, e := range page.Errors {
+			if !slices.Contains(out.Errors, e) {
+				out.Errors = append(out.Errors, e)
+			}
+		}
+		for _, i := range page.Items {
+			if keep(i) {
+				all = append(all, i)
+			}
+		}
+		if page.Cursor == nil {
+			break
+		}
+		q.Cursor = page.Cursor
+	}
+	return all, nil
 }
 
 // takenIssues are the issues (by ref, in lower case) that a session on this machine that is not

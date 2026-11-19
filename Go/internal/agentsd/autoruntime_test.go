@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -22,33 +22,7 @@ func TestTheShippedAutoMapIsWholeAndSafe(t *testing.T) {
 	settings := wire.AutoSettings{}
 	for _, rt := range catalog {
 		for _, f := range autoFields {
-			minRank := 99
-			for _, l := range levelsOf(f) {
-				if c := shippedCell(rt.ID, f, l); c.mark != wire.AutoMarkNotPossible && c.rank < minRank {
-					minRank = c.rank
-				}
-			}
-			for _, l := range levelsOf(f) {
-				m := cellMapping(rt.ID, f, l, settings, nil)
-				if m.Words == "" || m.Mark == "" {
-					t.Errorf("%s %s %s: an empty cell", rt.ID, f, l)
-				}
-				if m.Mark != wire.AutoMarkNotPossible && m.Native == nil {
-					t.Errorf("%s %s %s: no setting", rt.ID, f, l)
-				}
-				ranks, ranked := levelRank[f]
-				if !ranked || m.Mark == wire.AutoMarkNotPossible {
-					continue
-				}
-				c := shippedCell(rt.ID, f, l)
-				switch {
-				case c.rank <= ranks[l]:
-				case c.mark == wire.AutoMarkNearestSafer && c.rank == minRank:
-					// No setting of the runtime gives less: the nearest one, said in the cell.
-				default:
-					t.Errorf("%s %s %s: gives more access (%d) than its value (%d)", rt.ID, f, l, c.rank, ranks[l])
-				}
-			}
+			checkShippedAutoField(t, rt.ID, f, settings)
 		}
 	}
 	if m := cellMapping("opencode", wire.AutoFieldSandbox, "on", settings, nil); m.Mark != wire.AutoMarkNotPossible {
@@ -56,6 +30,39 @@ func TestTheShippedAutoMapIsWholeAndSafe(t *testing.T) {
 	}
 	if m := cellMapping("grok", wire.AutoFieldPermission, "plan", settings, nil); m.Mark != wire.AutoMarkNearestSafer || m.Note == nil || *m.Note != "nearest safer: no plan mode" {
 		t.Fatalf("%+v", m)
+	}
+}
+
+// checkShippedAutoField checks that each cell of field f on runtime rtID is filled and gives
+// no more access than its value says.
+func checkShippedAutoField(t *testing.T, rtID string, f wire.AutoField, settings wire.AutoSettings) {
+	t.Helper()
+	minRank := 99
+	for _, l := range levelsOf(f) {
+		if c := shippedCell(rtID, f, l); c.mark != wire.AutoMarkNotPossible && c.rank < minRank {
+			minRank = c.rank
+		}
+	}
+	for _, l := range levelsOf(f) {
+		m := cellMapping(rtID, f, l, settings, nil)
+		if m.Words == "" || m.Mark == "" {
+			t.Errorf("%s %s %s: an empty cell", rtID, f, l)
+		}
+		if m.Mark != wire.AutoMarkNotPossible && m.Native == nil {
+			t.Errorf("%s %s %s: no setting", rtID, f, l)
+		}
+		ranks, ranked := levelRank[f]
+		if !ranked || m.Mark == wire.AutoMarkNotPossible {
+			continue
+		}
+		c := shippedCell(rtID, f, l)
+		switch {
+		case c.rank <= ranks[l]:
+		case c.mark == wire.AutoMarkNearestSafer && c.rank == minRank:
+			// No setting of the runtime gives less: the nearest one, said in the cell.
+		default:
+			t.Errorf("%s %s %s: gives more access (%d) than its value (%d)", rtID, f, l, c.rank, ranks[l])
+		}
 	}
 }
 

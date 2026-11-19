@@ -129,29 +129,12 @@ func (d *Daemon) usePasskey(agent wire.UUID, args map[string]json.RawMessage) (s
 	name := strings.TrimSpace(argString(args, "secret"))
 	key := sessionKey(agent)
 	if string(args["off"]) == "true" {
-		d.tabsMu.Lock()
-		t, own := d.tabs, append([]target.ID(nil), d.ownTabs[key]...)
-		delete(d.passkeys, key)
-		d.tabsMu.Unlock()
-		if t != nil {
-			for _, tab := range own {
-				t.NoPasskey(tab)
-			}
-		}
+		d.passkeyOff(key)
 		return "This session's tabs have no software passkey now. " + name + " is kept.", false
 	}
 	site := passkeySite(argString(args, "site"))
-	home := d.personalHome()
-	if secretIsSet(home, name) || d.isSessionSecret(agent, name) {
-		if d.secretIsSealed(agent, name) {
-			waiting, err := d.approveSecretUse(agent, name, wire.SecretUseFill, site)
-			if err != nil {
-				return "Nothing was done: " + err.Error(), true
-			}
-			if waiting != "" {
-				return waiting, false
-			}
-		}
+	if msg, isErr := d.approvePasskeyUse(agent, name, site); msg != "" {
+		return msg, isErr
 	}
 	kept, refusal := d.keptPasskeys(agent, name, site)
 	if refusal != "" {
@@ -198,6 +181,36 @@ func (d *Daemon) usePasskey(agent wire.UUID, args map[string]json.RawMessage) (s
 	}
 	return fmt.Sprintf("This session's tabs have a software passkey for %s now, with no passkey on it yet. "+
 		"Add one on the site (Add a passkey, Set up a passkey): it is saved as %s, and the site's passkey sign-in works after that.", site, name), false
+}
+
+// passkeyOff takes the software passkey away from the tabs of the session with key.
+func (d *Daemon) passkeyOff(key wire.UUID) {
+	d.tabsMu.Lock()
+	t, own := d.tabs, append([]target.ID(nil), d.ownTabs[key]...)
+	delete(d.passkeys, key)
+	d.tabsMu.Unlock()
+	if t != nil {
+		for _, tab := range own {
+			t.NoPasskey(tab)
+		}
+	}
+}
+
+// approvePasskeyUse asks for approval to use the sealed secret name on site. It returns the
+// words to stop with, and whether they are an error; no words when the use can go on.
+func (d *Daemon) approvePasskeyUse(agent wire.UUID, name, site string) (string, bool) {
+	home := d.personalHome()
+	if !secretIsSet(home, name) && !d.isSessionSecret(agent, name) {
+		return "", false
+	}
+	if !d.secretIsSealed(agent, name) {
+		return "", false
+	}
+	waiting, err := d.approveSecretUse(agent, name, wire.SecretUseFill, site)
+	if err != nil {
+		return "Nothing was done: " + err.Error(), true
+	}
+	return waiting, false
 }
 
 // keptPasskeys are the passkeys for site in the secret name, none when it is not set.

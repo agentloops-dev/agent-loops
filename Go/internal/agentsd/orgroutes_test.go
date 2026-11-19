@@ -813,30 +813,14 @@ func TestEachRuntimesOrgLaunch(t *testing.T) {
 		}
 		return envOf(l.Env)
 	}
-	person := func(e map[string]string) {
-		t.Helper()
-		for _, v := range []string{"sk-person", "https://person.example", "sk-person-openai"} {
-			for k, got := range e {
-				if got == v {
-					t.Fatalf("%s=%s from the person reached an org launch", k, v)
-				}
-			}
-		}
-		if _, ok := e["AWS_PROFILE"]; ok {
-			t.Fatal("AWS_PROFILE reached an org launch")
-		}
-		if e["NODE_EXTRA_CA_CERTS"] == "/lent-ca.pem" || strings.Contains(e["ANTHROPIC_BASE_URL"], ":9") {
-			t.Fatal("the 056 relay was used for an org account")
-		}
-	}
 	e := launch("claude", "org:ckey")
-	person(e)
+	checkNoPersonInOrgLaunch(t, e)
 	if e["ANTHROPIC_BASE_URL"] != base+"/ckey" || !strings.HasPrefix(e["ANTHROPIC_AUTH_TOKEN"], "agents-relay-") ||
 		e["NODE_EXTRA_CA_CERTS"] != rl.caFile || !strings.HasPrefix(e["CLAUDE_CONFIG_DIR"], filepath.Join(root, "runtimes", "org", "claude")) {
 		t.Fatalf("%v", e)
 	}
 	e = launch("claude", "org:cbed")
-	person(e)
+	checkNoPersonInOrgLaunch(t, e)
 	if e["CLAUDE_CODE_USE_BEDROCK"] != "1" || e["CLAUDE_CODE_SKIP_BEDROCK_AUTH"] != "1" || e["AWS_REGION"] != "us-east-1" ||
 		!strings.HasPrefix(e["ANTHROPIC_BEDROCK_BASE_URL"], base+"/cbed/~agents-relay-") {
 		t.Fatalf("%v", e)
@@ -851,7 +835,7 @@ func TestEachRuntimesOrgLaunch(t *testing.T) {
 		t.Fatalf("%v", e)
 	}
 	e = launch("codex", "org:xkey")
-	person(e)
+	checkNoPersonInOrgLaunch(t, e)
 	config, _ := os.ReadFile(filepath.Join(e["CODEX_HOME"], "config.toml"))
 	if !strings.Contains(string(config), `base_url = "`+base+`/xkey/v1"`) || !strings.Contains(string(config), `env_key = "AGENTS_ORG_STAND_IN"`) ||
 		e["CODEX_CA_CERTIFICATE"] != rl.caFile || !strings.HasPrefix(e[orgStandInVariable], "agents-relay-") ||
@@ -859,7 +843,7 @@ func TestEachRuntimesOrgLaunch(t *testing.T) {
 		t.Fatalf("%v %s", e, config)
 	}
 	e = launch("opencode", "org:xkey")
-	person(e)
+	checkNoPersonInOrgLaunch(t, e)
 	oc, _ := os.ReadFile(e["OPENCODE_CONFIG"])
 	if !strings.Contains(string(oc), base+"/xkey/v1") || !strings.Contains(string(oc), "{env:AGENTS_ORG_STAND_IN}") {
 		t.Fatalf("%v %s", e, oc)
@@ -872,6 +856,25 @@ func TestEachRuntimesOrgLaunch(t *testing.T) {
 	own := envOf(l.Env)
 	if own["ANTHROPIC_BASE_URL"] != "https://127.0.0.1:9" || own["NODE_EXTRA_CA_CERTS"] != "/lent-ca.pem" {
 		t.Fatalf("%v", own)
+	}
+}
+
+// checkNoPersonInOrgLaunch fails when an org launch's environment has the person's own
+// variables, or the 056 relay's.
+func checkNoPersonInOrgLaunch(t *testing.T, e map[string]string) {
+	t.Helper()
+	for _, v := range []string{"sk-person", "https://person.example", "sk-person-openai"} {
+		for k, got := range e {
+			if got == v {
+				t.Fatalf("%s=%s from the person reached an org launch", k, v)
+			}
+		}
+	}
+	if _, ok := e["AWS_PROFILE"]; ok {
+		t.Fatal("AWS_PROFILE reached an org launch")
+	}
+	if e["NODE_EXTRA_CA_CERTS"] == "/lent-ca.pem" || strings.Contains(e["ANTHROPIC_BASE_URL"], ":9") {
+		t.Fatal("the 056 relay was used for an org account")
 	}
 }
 
@@ -1210,29 +1213,7 @@ func TestAntigravityTermsByPolicy(t *testing.T) {
 // a session's turn keeps it beside the runtime's, its report row carries the route and
 // counts it for a limit; a 429 puts that account out until its time, and only it.
 func TestTheRelayCountsTheProvidersTokens(t *testing.T) {
-	sse := func(events ...string) func(w http.ResponseWriter, r *http.Request) {
-		return func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/event-stream")
-			for _, e := range events {
-				io.WriteString(w, "data: "+e+"\n\n")
-				w.(http.Flusher).Flush()
-			}
-		}
-	}
-	whole := func(body string) func(w http.ResponseWriter, r *http.Request) {
-		return func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, body)
-		}
-	}
-	bedrock := func(events ...string) func(w http.ResponseWriter, r *http.Request) {
-		return func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
-			for _, e := range events {
-				w.Write(eventStreamFrame(`{"bytes":"` + base64.StdEncoding.EncodeToString([]byte(e)) + `"}`))
-			}
-		}
-	}
+	sse, whole, bedrock := relaySSEAnswer, relayWholeAnswer, relayBedrockAnswer
 	cases := []struct {
 		name   string
 		answer func(w http.ResponseWriter, r *http.Request)
@@ -1314,7 +1295,47 @@ func TestTheRelayCountsTheProvidersTokens(t *testing.T) {
 	u := wire.TurnUsage{TotalTokens: 2, InputTokens: 1, OutputTokens: 1, Route: new("acme"),
 		RelayTokens: &wire.RelayTokens{Input: 100, Output: 55, CacheRead: 40, CacheWrite: 10}}
 	d.bankTurnUsage(a.ID, u)
+	row := relayRouteRollupRow(d)
+	if row.Route == nil || *row.Route != "acme" || row.LimitTokens == nil || *row.LimitTokens != 165 {
+		t.Fatalf("%+v", row)
+	}
+	// Its allowance row says its tokens today, and the own sign-in's says none (FR-025).
+	checkRelayAllowanceTokens(t, d)
+}
+
+// relaySSEAnswer is a provider's answer as server-sent events.
+func relaySSEAnswer(events ...string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, e := range events {
+			io.WriteString(w, "data: "+e+"\n\n")
+			w.(http.Flusher).Flush()
+		}
+	}
+}
+
+// relayWholeAnswer is a provider's answer as one JSON body.
+func relayWholeAnswer(body string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, body)
+	}
+}
+
+// relayBedrockAnswer is Bedrock's answer as AWS's event stream.
+func relayBedrockAnswer(events ...string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
+		for _, e := range events {
+			w.Write(eventStreamFrame(`{"bytes":"` + base64.StdEncoding.EncodeToString([]byte(e)) + `"}`))
+		}
+	}
+}
+
+// relayRouteRollupRow is the report's row for the route acme.
+func relayRouteRollupRow(d *Daemon) wire.UsageRollupRow {
 	d.reportMu.Lock()
+	defer d.reportMu.Unlock()
 	var row wire.UsageRollupRow
 	for _, rows := range d.reportLocked().Hours {
 		for k, v := range rows {
@@ -1323,11 +1344,13 @@ func TestTheRelayCountsTheProvidersTokens(t *testing.T) {
 			}
 		}
 	}
-	d.reportMu.Unlock()
-	if row.Route == nil || *row.Route != "acme" || row.LimitTokens == nil || *row.LimitTokens != 165 {
-		t.Fatalf("%+v", row)
-	}
-	// Its allowance row says its tokens today, and the own sign-in's says none (FR-025).
+	return row
+}
+
+// checkRelayAllowanceTokens fails unless the org account's allowance row says 165 tokens
+// today, and the own sign-in's row says none.
+func checkRelayAllowanceTokens(t *testing.T, d *Daemon) {
+	t.Helper()
 	for _, r := range d.runtimeAllowances().Rows {
 		switch r.CredentialKey {
 		case "claude:account:org:acme":

@@ -146,53 +146,7 @@ func (d *Daemon) readCIQueue(ctx context.Context, name wire.ResourceName, h ciRe
 	labels := map[string]bool{}
 	ok := true
 	for _, status := range []string{"queued", "in_progress"} {
-		raw, err := d.ciGet(ctx, h, fmt.Sprintf("repos/%s/actions/runs?status=%s&per_page=100", h.repo.path, status))
-		var list struct {
-			WorkflowRuns []struct {
-				ID        int64  `json:"id"`
-				CreatedAt string `json:"created_at"`
-			} `json:"workflow_runs"`
-		}
-		if err != nil || json.Unmarshal(raw, &list) != nil {
-			ok = false
-			break
-		}
-		for _, run := range list.WorkflowRuns {
-			d.ciqMu.Lock()
-			ghost := d.ciGhosts[run.ID]
-			d.ciqMu.Unlock()
-			if ghost {
-				continue
-			}
-			raw, err := d.ciGet(ctx, h, fmt.Sprintf("repos/%s/actions/runs/%d/jobs?per_page=100", h.repo.path, run.ID))
-			var jobs ciJobs
-			if err != nil || json.Unmarshal(raw, &jobs) != nil {
-				ok = false
-				break
-			}
-			if made, err := time.Parse(time.RFC3339, run.CreatedAt); err == nil && status == "queued" &&
-				len(jobs.Jobs) == 0 && at.Sub(made) > ciGhostAge {
-				d.ciqMu.Lock()
-				if d.ciGhosts == nil {
-					d.ciGhosts = map[int64]bool{}
-				}
-				d.ciGhosts[run.ID] = true
-				d.ciqMu.Unlock()
-			}
-			for _, j := range jobs.Jobs {
-				if j.Status != "queued" {
-					continue
-				}
-				q.jobs++
-				for _, l := range j.Labels {
-					labels[l] = true
-				}
-				if made, err := time.Parse(time.RFC3339, j.CreatedAt); err == nil && (q.oldest.IsZero() || made.Before(q.oldest)) {
-					q.oldest = made
-				}
-			}
-		}
-		if !ok {
+		if ok = d.readCIQueueStatus(ctx, h, status, at, &q, labels); !ok {
 			break
 		}
 	}
@@ -210,6 +164,72 @@ func (d *Daemon) readCIQueue(ctx context.Context, name wire.ResourceName, h ciRe
 	}
 	d.ciq[name] = q
 	d.ciqMu.Unlock()
+}
+
+// readCIQueueStatus counts into q and labels the queued jobs of h's runs that have the
+// status. A queued run with no jobs for longer than ciGhostAge is kept as a ghost and is
+// not read again. It gives false when a read fails.
+func (d *Daemon) readCIQueueStatus(ctx context.Context, h ciRepoHere, status string, at time.Time, q *ciQueue, labels map[string]bool) bool {
+	raw, err := d.ciGet(ctx, h, fmt.Sprintf("repos/%s/actions/runs?status=%s&per_page=100", h.repo.path, status))
+	var list struct {
+		WorkflowRuns []struct {
+			ID        int64  `json:"id"`
+			CreatedAt string `json:"created_at"`
+		} `json:"workflow_runs"`
+	}
+	if err != nil || json.Unmarshal(raw, &list) != nil {
+		return false
+	}
+	for _, run := range list.WorkflowRuns {
+		if d.isCIGhost(run.ID) {
+			continue
+		}
+		raw, err := d.ciGet(ctx, h, fmt.Sprintf("repos/%s/actions/runs/%d/jobs?per_page=100", h.repo.path, run.ID))
+		var jobs ciJobs
+		if err != nil || json.Unmarshal(raw, &jobs) != nil {
+			return false
+		}
+		if made, err := time.Parse(time.RFC3339, run.CreatedAt); err == nil && status == "queued" &&
+			len(jobs.Jobs) == 0 && at.Sub(made) > ciGhostAge {
+			d.markCIGhost(run.ID)
+		}
+		q.countQueuedJobs(jobs, labels)
+	}
+	return true
+}
+
+// isCIGhost is whether the run is a ghost: queued with no jobs for too long.
+func (d *Daemon) isCIGhost(id int64) bool {
+	d.ciqMu.Lock()
+	defer d.ciqMu.Unlock()
+	return d.ciGhosts[id]
+}
+
+// markCIGhost keeps the run as a ghost, so the queue does not read it again.
+func (d *Daemon) markCIGhost(id int64) {
+	d.ciqMu.Lock()
+	if d.ciGhosts == nil {
+		d.ciGhosts = map[int64]bool{}
+	}
+	d.ciGhosts[id] = true
+	d.ciqMu.Unlock()
+}
+
+// countQueuedJobs adds the queued jobs to q, their labels to labels, and keeps the time
+// of the oldest.
+func (q *ciQueue) countQueuedJobs(jobs ciJobs, labels map[string]bool) {
+	for _, j := range jobs.Jobs {
+		if j.Status != "queued" {
+			continue
+		}
+		q.jobs++
+		for _, l := range j.Labels {
+			labels[l] = true
+		}
+		if made, err := time.Parse(time.RFC3339, j.CreatedAt); err == nil && (q.oldest.IsZero() || made.Before(q.oldest)) {
+			q.oldest = made
+		}
+	}
 }
 
 // ciHeld is why a ci grant waits now, as a sentence with no full stop, or "" when it does

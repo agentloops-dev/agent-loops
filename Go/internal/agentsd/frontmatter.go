@@ -157,12 +157,7 @@ func setFrontMatterUnder(key, block string, value *string, source string) (strin
 	if err != nil {
 		return "", err
 	}
-	var heads []int
-	for i := 1; i < closing; i++ {
-		if isKeyLine(lines[i], block) {
-			heads = append(heads, i)
-		}
-	}
+	heads := frontMatterKeyLines(lines, 1, closing, "", block)
 	if len(heads) > 1 {
 		return "", refuse("`" + block + ":` appears more than once in the metadata — which one is meant is not something to pick between silently")
 	}
@@ -176,12 +171,65 @@ func setFrontMatterUnder(key, block string, value *string, source string) (strin
 	if _, v, _ := splitKeyLine(lines[head], block); v != "" {
 		return "", refuse("`" + block + ":` is written on one line, which this cannot change")
 	}
-	end := head + 1
+	end := frontMatterBlockEnd(lines, head+1, closing)
+	indent := frontMatterBlockIndent(lines, head+1, end)
+	if indent == 0 {
+		return "", refuse("`" + block + ":` has a list under it, which this cannot change")
+	}
+	pad := strings.Repeat(" ", indent)
+	matches := frontMatterKeyLines(lines, head+1, end, pad, key)
+	if len(matches) > 1 {
+		return "", refuse("`" + key + ":` appears more than once under `" + block + ":` — which one is meant is not something to pick between silently")
+	}
+	if len(matches) == 0 {
+		if value == nil {
+			return source, nil
+		}
+		last := frontMatterLastFilledLine(lines, head, end)
+		return strings.Join(insertLines(lines, last+1, pad+key+": "+quotedYAML(*value)), nl), nil
+	}
+	i := matches[0]
+	spacing, v, trailing := splitKeyLine(lines[i][indent:], key)
+	if v == "" && i+1 < end && len(lines[i+1])-len(strings.TrimLeft(lines[i+1], " ")) > indent {
+		return "", refuse("`" + key + ":` under `" + block + ":` has a block under it, which this cannot change")
+	}
+	if strings.HasPrefix(v, "[") || strings.HasPrefix(v, "{") {
+		return "", refuse("`" + key + ":` under `" + block + ":` is a list, which this cannot change")
+	}
+	if value == nil {
+		return strings.Join(removeFrontMatterUnderKey(lines, head, i, end), nl), nil
+	}
+	lines[i] = pad + key + ":" + spacing + quotedYAML(*value) + trailing
+	return strings.Join(lines, nl), nil
+}
+
+// frontMatterKeyLines gives the lines from start up to end that hold key, each after
+// the indent pad.
+func frontMatterKeyLines(lines []string, start, end int, pad, key string) []int {
+	var matches []int
+	for i := start; i < end; i++ {
+		if strings.HasPrefix(lines[i], pad) && isKeyLine(lines[i][len(pad):], key) {
+			matches = append(matches, i)
+		}
+	}
+	return matches
+}
+
+// frontMatterBlockEnd gives the first line at or after start, before closing, that is
+// not indented under a block and is not blank.
+func frontMatterBlockEnd(lines []string, start, closing int) int {
+	end := start
 	for end < closing && (isContinuation(lines[end]) || strings.TrimSpace(lines[end]) == "") {
 		end++
 	}
+	return end
+}
+
+// frontMatterBlockIndent gives the smallest indent of the keys from start up to end, or 2
+// when there is no key there. It does not count blank lines and comments.
+func frontMatterBlockIndent(lines []string, start, end int) int {
 	indent := -1
-	for i := head + 1; i < end; i++ {
+	for i := start; i < end; i++ {
 		t := strings.TrimSpace(lines[i])
 		if t == "" || strings.HasPrefix(t, "#") {
 			continue
@@ -194,52 +242,33 @@ func setFrontMatterUnder(key, block string, value *string, source string) (strin
 	if indent < 0 {
 		indent = 2
 	}
-	if indent == 0 {
-		return "", refuse("`" + block + ":` has a list under it, which this cannot change")
-	}
-	pad := strings.Repeat(" ", indent)
-	var matches []int
+	return indent
+}
+
+// frontMatterLastFilledLine gives the last line after head and before end that is not
+// blank, or head when all of them are blank.
+func frontMatterLastFilledLine(lines []string, head, end int) int {
+	last := head
 	for i := head + 1; i < end; i++ {
-		if strings.HasPrefix(lines[i], pad) && isKeyLine(lines[i][indent:], key) {
-			matches = append(matches, i)
+		if strings.TrimSpace(lines[i]) != "" {
+			last = i
 		}
 	}
-	if len(matches) > 1 {
-		return "", refuse("`" + key + ":` appears more than once under `" + block + ":` — which one is meant is not something to pick between silently")
+	return last
+}
+
+// removeFrontMatterUnderKey removes the key on line i from the block at head, and the
+// block's head too when only blank lines are left in it.
+func removeFrontMatterUnderKey(lines []string, head, i, end int) []string {
+	lines = removeLine(lines, i)
+	empty := true
+	for j := head + 1; j < end-1; j++ {
+		empty = empty && strings.TrimSpace(lines[j]) == ""
 	}
-	if len(matches) == 0 {
-		if value == nil {
-			return source, nil
-		}
-		last := head
-		for i := head + 1; i < end; i++ {
-			if strings.TrimSpace(lines[i]) != "" {
-				last = i
-			}
-		}
-		return strings.Join(insertLines(lines, last+1, pad+key+": "+quotedYAML(*value)), nl), nil
+	if empty {
+		lines = removeLine(lines, head)
 	}
-	i := matches[0]
-	spacing, v, trailing := splitKeyLine(lines[i][indent:], key)
-	if v == "" && i+1 < end && len(lines[i+1])-len(strings.TrimLeft(lines[i+1], " ")) > indent {
-		return "", refuse("`" + key + ":` under `" + block + ":` has a block under it, which this cannot change")
-	}
-	if strings.HasPrefix(v, "[") || strings.HasPrefix(v, "{") {
-		return "", refuse("`" + key + ":` under `" + block + ":` is a list, which this cannot change")
-	}
-	if value == nil {
-		lines = removeLine(lines, i)
-		empty := true
-		for j := head + 1; j < end-1; j++ {
-			empty = empty && strings.TrimSpace(lines[j]) == ""
-		}
-		if empty {
-			lines = removeLine(lines, head)
-		}
-		return strings.Join(lines, nl), nil
-	}
-	lines[i] = pad + key + ":" + spacing + quotedYAML(*value) + trailing
-	return strings.Join(lines, nl), nil
+	return lines
 }
 
 // setFrontMatterList sets a key to a list: written in flow form when new or when it is
@@ -249,12 +278,7 @@ func setFrontMatterList(key string, values []string, source string) (string, err
 	if err != nil {
 		return "", err
 	}
-	var matches []int
-	for i := 1; i < closing; i++ {
-		if isKeyLine(lines[i], key) {
-			matches = append(matches, i)
-		}
-	}
+	matches := frontMatterKeyLines(lines, 1, closing, "", key)
 	if len(matches) > 1 {
 		return "", refuse("`" + key + ":` appears more than once in the metadata — which one is meant is not something to pick between silently")
 	}
@@ -284,25 +308,48 @@ func setFrontMatterList(key string, values []string, source string) (string, err
 	if v != "" {
 		return "", refuse("`" + key + ":` is not written as a list, which this cannot change")
 	}
-	end := i + 1
-	for end < closing && (isContinuation(lines[end]) || strings.TrimSpace(lines[end]) == "") {
-		end++
+	end := frontMatterBlockEnd(lines, i+1, closing)
+	items, pad, havePad, err := frontMatterListItems(lines, i+1, end, key)
+	if err != nil {
+		return "", err
 	}
-	var items []int
-	pad := ""
-	havePad := false
-	for j := i + 1; j < end; j++ {
+	written := frontMatterListWritten(lines, items, pad, havePad, values)
+	at := i + 1
+	if len(items) > 0 {
+		at = items[0]
+	}
+	for k := len(items) - 1; k >= 0; k-- {
+		lines = removeLine(lines, items[k])
+	}
+	if len(values) == 0 {
+		lines = removeLine(lines, i)
+	} else {
+		lines = insertLines(lines, at, written...)
+	}
+	return strings.Join(lines, nl), nil
+}
+
+// frontMatterListItems gives the item lines of the block list from start up to end, and
+// their indent. It refuses a block that is not a plain list.
+func frontMatterListItems(lines []string, start, end int, key string) (items []int, pad string, havePad bool, err error) {
+	for j := start; j < end; j++ {
 		t := strings.TrimSpace(lines[j])
 		if t == "" || strings.HasPrefix(t, "#") {
 			continue
 		}
 		indent := lines[j][:len(lines[j])-len(strings.TrimLeft(lines[j], " "))]
 		if !strings.HasPrefix(t, "-") || havePad && indent != pad {
-			return "", refuse("`" + key + ":` has a block under it that is not a plain list, which this cannot change")
+			return nil, "", false, refuse("`" + key + ":` has a block under it that is not a plain list, which this cannot change")
 		}
 		pad, havePad = indent, true
 		items = append(items, j)
 	}
+	return items, pad, havePad, nil
+}
+
+// frontMatterListWritten gives the new item lines for values. An item that has the same
+// value at the same place keeps its line.
+func frontMatterListWritten(lines []string, items []int, pad string, havePad bool, values []string) []string {
 	var written []string
 	for p, v := range values {
 		if p < len(items) && havePad {
@@ -317,17 +364,5 @@ func setFrontMatterList(key string, values []string, source string) (string, err
 		}
 		written = append(written, lead+"- "+quotedYAML(v))
 	}
-	at := i + 1
-	if len(items) > 0 {
-		at = items[0]
-	}
-	for k := len(items) - 1; k >= 0; k-- {
-		lines = removeLine(lines, items[k])
-	}
-	if len(values) == 0 {
-		lines = removeLine(lines, i)
-	} else {
-		lines = insertLines(lines, at, written...)
-	}
-	return strings.Join(lines, nl), nil
+	return written
 }

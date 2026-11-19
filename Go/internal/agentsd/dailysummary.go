@@ -288,57 +288,8 @@ func (d *Daemon) machineSummaryFactsWith(me wire.UUID, since time.Time, gh strin
 		outcomes, used = d.forgeOutcomes(gh, d.summaryRepos(gh, worked), since, recent)
 		out.Landed = append(out.Landed, outcomes...)
 	}
-	// A workflow's runs are one line, not one a run (#3720); a session with no outcome is a
-	// line of its own, at most otherSessionLines of them.
-	var routine []*workflowRuns
-	byWorkflow := map[string]*workflowRuns{}
-	var others []string
-	for _, a := range done {
-		if used[a.ID] {
-			continue
-		}
-		folder := filepath.Clean(folderPath(a))
-		if a.StartedByWorkflow != nil {
-			key := filepath.Clean(store.FolderPath(a.Cwd)) + "\x00" + *a.StartedByWorkflow
-			w := byWorkflow[key]
-			if w == nil {
-				name := names[key]
-				if name == "" {
-					name = *a.StartedByWorkflow
-				}
-				w = &workflowRuns{name: name, folder: filepath.Base(folder)}
-				byWorkflow[key] = w
-				routine = append(routine, w)
-			}
-			w.runs++
-			w.last = a
-			continue
-		}
-		others = append(others, fmt.Sprintf("Session %q in %s done at %s. %s", agentTitle(a), filepath.Base(folder),
-			summaryClock(a.LastActivityAt.Time()), sessionLink(a.ID)))
-	}
-	for _, w := range routine {
-		times := "once"
-		if w.runs > 1 {
-			times = fmt.Sprintf("%d times", w.runs)
-		}
-		out.Landed = append(out.Landed, fmt.Sprintf("Workflow %q in %s ran %s, the last at %s. %s", w.name, w.folder, times,
-			summaryClock(w.last.LastActivityAt.Time()), sessionLink(w.last.ID)))
-	}
-	if len(others) > otherSessionLines {
-		others = append(others[:otherSessionLines], fmt.Sprintf("and %d other sessions done", len(others)-otherSessionLines))
-	}
-	out.Landed = append(out.Landed, others...)
-	for _, w := range workflows {
-		o := w.LastOutcome
-		if w.Workflow.WorkflowID == dailySummaryID || w.Workflow.WorkflowID == dailyChecksID || o == nil || o.Refused == nil || o.Refused.At < from {
-			continue
-		}
-		if why := refusalName(o.Refused.Value); !quietRefusals[why] {
-			out.Failed = append(out.Failed, fmt.Sprintf("Workflow %q in %s did not run at %s: %s.", w.Workflow.Name,
-				filepath.Base(store.FolderPath(w.Workflow.Folder)), summaryClock(o.Refused.At.Time()), why))
-		}
-	}
+	out.Landed = append(out.Landed, summaryDoneLines(done, used, names)...)
+	out.Failed = append(out.Failed, summaryRefusalLines(workflows, from)...)
 	needs := d.attentionPending().Needs
 	sort.SliceStable(needs, func(i, j int) bool { return needs[i].RaisedAt < needs[j].RaisedAt })
 	for _, n := range needs {
@@ -352,6 +303,73 @@ func (d *Daemon) machineSummaryFactsWith(me wire.UUID, since time.Time, gh strin
 		out.Waiting = append(out.Waiting, d.forgeWaits(gh, d.summaryRepos(gh, d.folderPaths()))...)
 	}
 	return out
+}
+
+// summaryDoneLines is the lines for the sessions done that no outcome used. A workflow's
+// runs are one line, not one a run (#3720); a session with no outcome is a line of its
+// own, at most otherSessionLines of them.
+func summaryDoneLines(done []*wire.Agent, used map[wire.UUID]bool, names map[string]string) []string {
+	var routine []*workflowRuns
+	byWorkflow := map[string]*workflowRuns{}
+	var others []string
+	for _, a := range done {
+		if used[a.ID] {
+			continue
+		}
+		folder := filepath.Clean(folderPath(a))
+		if a.StartedByWorkflow != nil {
+			key := filepath.Clean(store.FolderPath(a.Cwd)) + "\x00" + *a.StartedByWorkflow
+			w := byWorkflow[key]
+			if w == nil {
+				w = &workflowRuns{name: summaryWorkflowName(names, key, *a.StartedByWorkflow), folder: filepath.Base(folder)}
+				byWorkflow[key] = w
+				routine = append(routine, w)
+			}
+			w.runs++
+			w.last = a
+			continue
+		}
+		others = append(others, fmt.Sprintf("Session %q in %s done at %s. %s", agentTitle(a), filepath.Base(folder),
+			summaryClock(a.LastActivityAt.Time()), sessionLink(a.ID)))
+	}
+	var lines []string
+	for _, w := range routine {
+		times := "once"
+		if w.runs > 1 {
+			times = fmt.Sprintf("%d times", w.runs)
+		}
+		lines = append(lines, fmt.Sprintf("Workflow %q in %s ran %s, the last at %s. %s", w.name, w.folder, times,
+			summaryClock(w.last.LastActivityAt.Time()), sessionLink(w.last.ID)))
+	}
+	if len(others) > otherSessionLines {
+		others = append(others[:otherSessionLines], fmt.Sprintf("and %d other sessions done", len(others)-otherSessionLines))
+	}
+	return append(lines, others...)
+}
+
+// summaryWorkflowName is the name of the workflow at key, or its id when it has none.
+func summaryWorkflowName(names map[string]string, key, id string) string {
+	if name := names[key]; name != "" {
+		return name
+	}
+	return id
+}
+
+// summaryRefusalLines is a line for each workflow, but the summary's and the checks' own,
+// that was refused a run since from for a reason that is not quiet.
+func summaryRefusalLines(workflows []wire.WorkflowSummary, from wire.Date) []string {
+	var lines []string
+	for _, w := range workflows {
+		o := w.LastOutcome
+		if w.Workflow.WorkflowID == dailySummaryID || w.Workflow.WorkflowID == dailyChecksID || o == nil || o.Refused == nil || o.Refused.At < from {
+			continue
+		}
+		if why := refusalName(o.Refused.Value); !quietRefusals[why] {
+			lines = append(lines, fmt.Sprintf("Workflow %q in %s did not run at %s: %s.", w.Workflow.Name,
+				filepath.Base(store.FolderPath(w.Workflow.Folder)), summaryClock(o.Refused.At.Time()), why))
+		}
+	}
+	return lines
 }
 
 // sentSummaryFacts is agents/summaryFacts' answer: each list cut to summaryLines, with a

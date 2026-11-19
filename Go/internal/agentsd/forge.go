@@ -290,25 +290,74 @@ func (d *Daemon) forgeList(ctx context.Context, prs bool, r wire.ForgeListReques
 // (#5803), on GitHub; of every item for "".
 func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListRequest, reviewer string) (wire.ForgeList, error) {
 	method := map[bool]string{false: "forge/issues", true: "forge/pulls"}[prs]
+	limit, state, cursor, err := forgeListChecked(method, r)
+	if err != nil {
+		return wire.ForgeList{}, err
+	}
+	folders, board, ok, err := d.forgeListFolders(method, prs, r)
+	if err != nil {
+		return wire.ForgeList{}, err
+	}
+	if !ok {
+		return wire.ForgeList{Items: []wire.ForgeItem{}}, nil
+	}
+	filter := forgeFilter{PRs: prs, State: state, Label: deref(r.Label), Assignee: deref(r.Assignee), Query: deref(r.Query),
+		Feature: deref(r.Feature), Reviewer: reviewer, Board: board}
+	moved, scopeKeys := d.forgeListScopes(ctx, folders, prs, board, reviewer)
+	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit})
+	if a, ok := d.forgeCached(string(key)); ok && a.list != nil {
+		return *a.list, nil
+	}
+	out := wire.ForgeList{Items: []wire.ForgeItem{}}
+	pages := forgeListPages(ctx, moved, cursor, filter, limit)
+	var more bool
+	totals := listTotals(cursor, pages)
+	out.Items, cursor, more = mergeForgePages(pages, cursor, limit)
+	cursor.Totals = totals
+	names := make([]string, len(moved))
+	for n, m := range moved {
+		names[n] = m.forge.Name()
+	}
+	if total, ok := listTotal(names, totals); ok {
+		out.Total = new(int64(total))
+	}
+	forgeListFillForgesAndErrors(&out, moved, pages)
+	if more {
+		out.Cursor = cursor.text()
+	}
+	d.forgeRemember(string(key), forgeAnswer{list: &out})
+	d.resolvedFromForge(out.Items)
+	return out, nil
+}
+
+// forgeListChecked reads a list request's limit, state and cursor, and says
+// which one is not valid.
+func forgeListChecked(method string, r wire.ForgeListRequest) (int, string, forgeCursor, error) {
 	limit := forgeListDefault
 	if r.Limit != nil {
 		if *r.Limit < 1 || *r.Limit > forgeListMost {
-			return wire.ForgeList{}, Invalid("%s: limit is 1 to %d", method, forgeListMost)
+			return 0, "", forgeCursor{}, Invalid("%s: limit is 1 to %d", method, forgeListMost)
 		}
 		limit = int(*r.Limit)
 	}
 	state := deref(r.State)
 	if !slices.Contains([]string{"", "open", "closed", "all"}, state) {
-		return wire.ForgeList{}, Invalid("%s: state is open, closed or all", method)
+		return 0, "", forgeCursor{}, Invalid("%s: state is open, closed or all", method)
 	}
 	cursor, err := cursorOf(r.Cursor)
 	if err != nil {
-		return wire.ForgeList{}, Invalid("%s: %v", method, err)
+		return 0, "", forgeCursor{}, Invalid("%s: %v", method, err)
 	}
+	return limit, state, cursor, nil
+}
+
+// forgeListFolders is the folders a list request is of, and its board when it
+// names one. ok is false when the board is in none of the folders: the list is empty.
+func (d *Daemon) forgeListFolders(method string, prs bool, r wire.ForgeListRequest) ([]string, *forgeBoard, bool, error) {
 	folders := d.folderPaths()
 	if f := deref(r.Folder); f != "" {
 		if !slices.Contains(folders, f) {
-			return wire.ForgeList{}, Invalid("%s: %s is not a folder on this machine", method, f)
+			return nil, nil, false, Invalid("%s: %s is not a folder on this machine", method, f)
 		}
 		folders = []string{f}
 	}
@@ -318,22 +367,28 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 		var in []string
 		var ok bool
 		if boardWire, in, ok = d.boardIn(folders, url); !ok {
-			return wire.ForgeList{Items: []wire.ForgeItem{}}, nil
+			return nil, nil, false, nil
 		}
 		folders = in
 	}
 	if deref(r.Board) != "" {
 		board = narrowToBoard(boardWire, folders, prs)
 	}
-	filter := forgeFilter{PRs: prs, State: state, Label: deref(r.Label), Assignee: deref(r.Assignee), Query: deref(r.Query),
-		Feature: deref(r.Feature), Reviewer: reviewer, Board: board}
-	// The forges on the interface (#4329): each one's scope, and why it left folders out.
-	type scoped struct {
-		forge Forge
-		scope forgeScope
-		err   error
-	}
-	var moved []scoped
+	return folders, board, true, nil
+}
+
+// forgeListScoped is one forge on the interface (#4329) in a list: its scope,
+// and why it left folders out.
+type forgeListScoped struct {
+	forge Forge
+	scope forgeScope
+	err   error
+}
+
+// forgeListScopes is the forges that a list asks, each with its scope, and the
+// keys of those scopes for the cache.
+func (d *Daemon) forgeListScopes(ctx context.Context, folders []string, prs bool, board *forgeBoard, reviewer string) ([]forgeListScoped, []any) {
+	var moved []forgeListScoped
 	scopeKeys := []any{}
 	for _, f := range d.forges() {
 		// A board's list is of the board's forge only, and a list by reviewer of GitHub's.
@@ -348,14 +403,14 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 		if s == nil || s.Empty() && err == nil {
 			continue
 		}
-		moved = append(moved, scoped{f, s, err})
+		moved = append(moved, forgeListScoped{f, s, err})
 		scopeKeys = append(scopeKeys, f.Name(), s.Key())
 	}
-	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit})
-	if a, ok := d.forgeCached(string(key)); ok && a.list != nil {
-		return *a.list, nil
-	}
-	out := wire.ForgeList{Items: []wire.ForgeItem{}}
+	return moved, scopeKeys
+}
+
+// forgeListPages reads one page from each forge that the cursor has not done.
+func forgeListPages(ctx context.Context, moved []forgeListScoped, cursor forgeCursor, filter forgeFilter, limit int) []forgePage {
 	var pages []forgePage
 	for _, m := range moved {
 		name := m.forge.Name()
@@ -369,18 +424,12 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 		p.forge = name
 		pages = append(pages, p)
 	}
-	var more bool
-	totals := listTotals(cursor, pages)
-	out.Items, cursor, more = mergeForgePages(pages, cursor, limit)
-	cursor.Totals = totals
-	names := make([]string, len(moved))
-	for n, m := range moved {
-		names[n] = m.forge.Name()
-	}
-	if total, ok := listTotal(names, totals); ok {
-		out.Total = new(int64(total))
-	}
-	// What each forge with an item on the page fills, so a client draws its rows (#4361).
+	return pages
+}
+
+// forgeListFillForgesAndErrors adds to out what each forge with an item on the
+// page fills, so a client draws its rows (#4361), and why each page could not be read.
+func forgeListFillForgesAndErrors(out *wire.ForgeList, moved []forgeListScoped, pages []forgePage) {
 	for _, m := range moved {
 		if slices.ContainsFunc(out.Items, func(i wire.ForgeItem) bool { _, ok := m.forge.Owns(i.Node); return ok }) {
 			out.Forges = append(out.Forges, m.forge.Caps().wire(m.forge.Name()))
@@ -391,12 +440,6 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 			out.Errors = append(out.Errors, wire.ForgeListError{Forge: p.forge, Message: p.err.Error()})
 		}
 	}
-	if more {
-		out.Cursor = cursor.text()
-	}
-	d.forgeRemember(string(key), forgeAnswer{list: &out})
-	d.resolvedFromForge(out.Items)
-	return out, nil
 }
 
 // forgePage is one forge's page of a list: cursors[i] goes on after items[i], next after the
