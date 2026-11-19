@@ -122,6 +122,31 @@ func TestUpgradeAndTheWebhook(t *testing.T) {
 		t.Fatal(page)
 	}
 	form := url.Values{"token": {s.sessions.form(id)}}
+	upgradeGoesToCheckout(t, b, f, id, form)
+	completeCheckoutOnce(t, s, b, st, id)
+
+	_, page = b.get("https://" + domain + "/account")
+	if !strings.Contains(page, "Pro Plan") || strings.Contains(page, ">Upgrade<") || !strings.Contains(page, "Manage Billing") {
+		t.Fatal(page)
+	}
+	res, _ := b.post("https://"+domain+"/account/billing", form)
+	if res.Header.Get("Location") != "https://billing.stripe.com/p/session/bps_1" ||
+		len(f.portals) != 1 || f.portals[0] != "cus_1 https://"+domain+"/account" {
+		t.Fatalf("%s %v", res.Header.Get("Location"), f.portals)
+	}
+
+	subscriptionChangesThePlan(t, s, b, st, id)
+	// Upgrading again uses the same customer.
+	b.post("https://"+domain+"/account/upgrade", form)
+	if len(f.checkouts) != 2 || f.checkouts[1].Customer != "cus_1" {
+		t.Fatalf("%+v", f.checkouts)
+	}
+}
+
+// upgradeGoesToCheckout posts Upgrade, with no token and then with one: only the second
+// goes to Stripe's checkout, for the account's price and pages.
+func upgradeGoesToCheckout(t *testing.T, b *browser, f *fakeStripe, id string, form url.Values) {
+	t.Helper()
 	// Another site's form, with no token, is not an upgrade.
 	if res, _ := b.post("https://"+domain+"/account/upgrade", nil); res.Header.Get("Location") != "/" || len(f.checkouts) != 0 {
 		t.Fatal("an upgrade with no token")
@@ -142,7 +167,12 @@ func TestUpgradeAndTheWebhook(t *testing.T) {
 	if _, page := b.get("https://" + domain + "/account?upgraded=1"); !strings.Contains(page, "Stripe is confirming") {
 		t.Fatal(page)
 	}
+}
 
+// completeCheckoutOnce delivers the checkout's event: refused when signed wrong or old,
+// acted on once, and not again; the plan ends as Pro.
+func completeCheckoutOnce(t *testing.T, s *Service, b *browser, st store.Store, id string) {
+	t.Helper()
 	completed := event("evt_1", billing.CheckoutCompleted, map[string]any{"client_reference_id": id,
 		"customer": "cus_1", "subscription": "sub_1"})
 	// A bad signature, and an old one, change nothing (SC-007).
@@ -175,17 +205,12 @@ func TestUpgradeAndTheWebhook(t *testing.T) {
 	if err := (Admin{Store: st}).SetPlan(context.Background(), id, PlanPro); err != nil {
 		t.Fatal(err)
 	}
+}
 
-	_, page = b.get("https://" + domain + "/account")
-	if !strings.Contains(page, "Pro Plan") || strings.Contains(page, ">Upgrade<") || !strings.Contains(page, "Manage Billing") {
-		t.Fatal(page)
-	}
-	res, _ = b.post("https://"+domain+"/account/billing", form)
-	if res.Header.Get("Location") != "https://billing.stripe.com/p/session/bps_1" ||
-		len(f.portals) != 1 || f.portals[0] != "cus_1 https://"+domain+"/account" {
-		t.Fatalf("%s %v", res.Header.Get("Location"), f.portals)
-	}
-
+// subscriptionChangesThePlan delivers the subscription's events: unpaid is Free, active
+// is Pro, and its end is Free with the account's store whole.
+func subscriptionChangesThePlan(t *testing.T, s *Service, b *browser, st store.Store, id string) {
+	t.Helper()
 	// A payment that fails for good: Free. Paid again: Pro.
 	sub := func(evt, kind, status string) []byte {
 		return event(evt, kind, map[string]any{"id": "sub_1", "customer": "cus_1", "status": status,
@@ -205,17 +230,12 @@ func TestUpgradeAndTheWebhook(t *testing.T) {
 	if code := deliver(b, ended, webhookSecret, time.Now()); code != http.StatusOK {
 		t.Fatal(code)
 	}
-	acc = planOf(t, s, id)
+	acc := planOf(t, s, id)
 	if acc.Plan != PlanFree || acc.StripeCustomer != "cus_1" {
 		t.Fatalf("%+v", acc)
 	}
 	if after, _ := st.List(context.Background(), "accounts/"+id+"/"); len(after) != len(before) || len(before) == 0 {
 		t.Fatalf("records deleted: %d then %d", len(before), len(after))
-	}
-	// Upgrading again uses the same customer.
-	b.post("https://"+domain+"/account/upgrade", form)
-	if len(f.checkouts) != 2 || f.checkouts[1].Customer != "cus_1" {
-		t.Fatalf("%+v", f.checkouts)
 	}
 }
 
