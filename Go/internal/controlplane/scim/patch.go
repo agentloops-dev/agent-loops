@@ -124,98 +124,131 @@ func apply(resource map[string]any, kind, path string, value any) *Error {
 	if err != nil {
 		return err
 	}
-	container := resource
-	if t.urn != "" {
-		k := key(resource, t.urn)
-		ext, _ := resource[k].(map[string]any)
-		if ext == nil {
-			if kind == "remove" {
-				return nil
-			}
-			ext = map[string]any{}
-			resource[k] = ext
-		}
-		container = ext
+	container := containerFor(resource, kind, t.urn)
+	if container == nil {
+		return nil
 	}
 	k := key(container, t.attr)
-	current, there := container[k]
 	switch {
 	case t.filter == nil && t.sub == "":
-		switch kind {
-		case "remove":
-			list, isList := current.([]any)
-			drop, dropping := value.([]any)
-			if isList && dropping {
-				// Entra takes members out by value: remove only those.
-				container[k] = without(list, drop)
-			} else {
-				delete(container, k)
-			}
-		case "add":
-			list, isList := current.([]any)
-			if isList && there {
-				container[k] = merged(list, value)
-			} else {
-				container[k] = value
-			}
-		default:
-			container[k] = value
-		}
+		applyToAttr(container, k, kind, value)
 	case t.filter == nil:
-		object, _ := current.(map[string]any)
-		if object == nil {
-			if kind == "remove" {
-				return nil
-			}
-			object = map[string]any{}
-			container[k] = object
-		}
-		if kind == "remove" {
-			delete(object, key(object, t.sub))
-		} else {
-			object[key(object, t.sub)] = value
-		}
+		applyToSubAttr(container, k, kind, t.sub, value)
 	default:
-		list, _ := current.([]any)
-		found := false
-		var kept []any
-		for _, item := range list {
-			element, ok := item.(map[string]any)
-			if !ok || !elementMatches(element, t.filter) {
-				kept = append(kept, item)
-				continue
-			}
-			found = true
-			switch {
-			case kind == "remove" && t.sub == "":
-				continue
-			case kind == "remove":
-				delete(element, key(element, t.sub))
-			case t.sub == "":
-				if replacement, ok := value.(map[string]any); ok {
-					for vk, vv := range replacement {
-						element[key(element, vk)] = vv
-					}
-				}
-			default:
-				element[key(element, t.sub)] = value
-			}
-			kept = append(kept, element)
-		}
-		// emails[type eq "work"].value with no work email makes one (Entra).
-		if !found && kind != "remove" && t.sub != "" {
-			element := map[string]any{t.sub: value}
-			for _, c := range t.filter {
-				element[c.Attr] = c.Value
-			}
-			kept = append(kept, element)
-		}
-		if kept == nil {
-			kept = []any{}
-		}
-		container[k] = kept
+		applyToFiltered(container, k, kind, t, value)
 	}
 	return nil
+}
+
+// containerFor is the object a path's attribute is in: the extension's object for a
+// URN, made when it is not there, or the resource itself. It is nil for a remove from
+// an extension the resource does not have.
+func containerFor(resource map[string]any, kind, urn string) map[string]any {
+	if urn == "" {
+		return resource
+	}
+	k := key(resource, urn)
+	ext, _ := resource[k].(map[string]any)
+	if ext == nil {
+		if kind == "remove" {
+			return nil
+		}
+		ext = map[string]any{}
+		resource[k] = ext
+	}
+	return ext
+}
+
+// applyToAttr applies an operation to a whole attribute (a path of attr).
+func applyToAttr(container map[string]any, k, kind string, value any) {
+	current, there := container[k]
+	switch kind {
+	case "remove":
+		list, isList := current.([]any)
+		drop, dropping := value.([]any)
+		if isList && dropping {
+			// Entra takes members out by value: remove only those.
+			container[k] = without(list, drop)
+		} else {
+			delete(container, k)
+		}
+	case "add":
+		list, isList := current.([]any)
+		if isList && there {
+			container[k] = merged(list, value)
+		} else {
+			container[k] = value
+		}
+	default:
+		container[k] = value
+	}
+}
+
+// applyToSubAttr applies an operation to a sub-attribute (a path of attr.sub).
+func applyToSubAttr(container map[string]any, k, kind, sub string, value any) {
+	object, _ := container[k].(map[string]any)
+	if object == nil {
+		if kind == "remove" {
+			return
+		}
+		object = map[string]any{}
+		container[k] = object
+	}
+	if kind == "remove" {
+		delete(object, key(object, sub))
+	} else {
+		object[key(object, sub)] = value
+	}
+}
+
+// applyToFiltered applies an operation to the list elements that match a path's
+// filter (a path of attr[filter] or attr[filter].sub).
+func applyToFiltered(container map[string]any, k, kind string, t target, value any) {
+	list, _ := container[k].([]any)
+	found := false
+	var kept []any
+	for _, item := range list {
+		element, ok := item.(map[string]any)
+		if !ok || !elementMatches(element, t.filter) {
+			kept = append(kept, item)
+			continue
+		}
+		found = true
+		if kind == "remove" && t.sub == "" {
+			continue
+		}
+		applyToElement(element, kind, t.sub, value)
+		kept = append(kept, element)
+	}
+	// emails[type eq "work"].value with no work email makes one (Entra).
+	if !found && kind != "remove" && t.sub != "" {
+		element := map[string]any{t.sub: value}
+		for _, c := range t.filter {
+			element[c.Attr] = c.Value
+		}
+		kept = append(kept, element)
+	}
+	if kept == nil {
+		kept = []any{}
+	}
+	container[k] = kept
+}
+
+// applyToElement applies an operation, other than removing the whole element, to one
+// list element that matched the filter.
+func applyToElement(element map[string]any, kind, sub string, value any) {
+	switch {
+	case kind == "remove":
+		delete(element, key(element, sub))
+	case sub == "":
+		if replacement, ok := value.(map[string]any); ok {
+			for vk, vv := range replacement {
+				element[key(element, vk)] = vv
+			}
+		}
+	default:
+		element[key(element, sub)] = value
+	}
 }
 
 func elementMatches(element map[string]any, clauses []Clause) bool {
