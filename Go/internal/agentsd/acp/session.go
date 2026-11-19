@@ -225,7 +225,10 @@ func Start(ctx context.Context, l Launch, sink Sink, mcp []sdk.McpServer, meta, 
 			s.Continued = true
 			s.ID = sdk.SessionId(continuing)
 			return s, nil
-		} else if errors.Is(err, context.DeadlineExceeded) {
+		} else if errors.Is(err, context.DeadlineExceeded) || ictx.Err() != nil {
+			// The SDK hands a timeout back as a JSON-RPC error, which errors.Is does not see
+			// (as at initialize): a resume that timed out is not a lost conversation, and must
+			// not begin a second one beside it (#6186).
 			s.Stop()
 			return nil, fmt.Errorf("the runtime did not answer: %w%s", err, stderr.say())
 		}

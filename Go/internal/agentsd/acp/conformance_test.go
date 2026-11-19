@@ -443,8 +443,11 @@ func TestConformanceUnknownRequestIsAnswered(t *testing.T) {
 			return false
 		}
 		r.raw(`{"jsonrpc":"2.0","id":"q1","method":"vendor/ask","params":{}}`)
-		got <- <-r.answers
-		r.reply(l, map[string]any{"stopReason": "end_turn"})
+		// The answer arrives on the loop that runs this handler: wait for it off the loop.
+		go func() {
+			got <- <-r.answers
+			r.reply(l, map[string]any{"stopReason": "end_turn"})
+		}()
 		return true
 	}}, &recorder{})
 	finishesIn(t, 10*time.Second, "a turn", func() { _, _ = s.Prompt(context.Background(), text("go")) })
