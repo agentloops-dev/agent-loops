@@ -148,23 +148,8 @@ func TestBackupAndRestoreOneAccount(t *testing.T) {
 	st := store.NewMemory()
 	now := time.Now()
 	a := Admin{Store: st, Now: func() time.Time { return now }}
-	ana, _, _ := a.accounts().make(ctx, gitHubSignIn(1, "ana"))
-	bo, _, _ := a.accounts().make(ctx, gitHubSignIn(2, "bo"))
-	for _, id := range []string{ana.ID, bo.ID} {
-		for _, k := range []string{"v1/hosts/a.json", "v1/clients/b.json", "v1/keys/control.sealed"} {
-			if _, err := accountStore(st, id).Put(ctx, k, []byte(id+k), store.Absent); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	dir := t.TempDir()
-	done, err := a.Backup(ctx, dir, nil)
-	if err != nil || len(done) != 2 {
-		t.Fatal(done, err)
-	}
-	if info, err := os.Stat(filepath.Join(dir, ana.ID, "records.jsonl")); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatal(info, err)
-	}
+	later := func() { now = now.Add(2 * time.Minute) }
+	ana, bo, dir := backUpTwoAccounts(t, a, st)
 
 	// Both change after the backup.
 	for _, id := range []string{ana.ID, bo.ID} {
@@ -173,37 +158,81 @@ func TestBackupAndRestoreOneAccount(t *testing.T) {
 		_ = p.Delete(ctx, "v1/clients/b.json")
 		_, _ = p.Put(ctx, "v1/hosts/new.json", []byte("new"), store.Absent)
 	}
-	if _, err := a.Restore(ctx, dir, ana.ID); err == nil || !strings.Contains(err.Error(), "suspend it first") {
-		t.Fatal("restored a running account:", err)
-	}
-	if err := a.Suspend(ctx, ana.ID, "restoring"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.Restore(ctx, dir, ana.ID); err == nil || !strings.Contains(err.Error(), "try again in a minute") {
-		t.Fatal("restored over a copy that may still run:", err)
-	}
-	now = now.Add(2 * time.Minute)
-	if n, err := a.Restore(ctx, dir, ana.ID); err != nil || n != 3 {
-		t.Fatal(n, err)
-	}
-	same := func(id, key, want string) {
-		t.Helper()
-		o, _ := accountStore(st, id).Get(ctx, key)
-		if want == "" && o != nil || want != "" && (o == nil || string(o.Data) != want) {
-			t.Fatalf("%s %s: %v", id, key, o)
-		}
-	}
-	same(ana.ID, "v1/hosts/a.json", ana.ID+"v1/hosts/a.json")
-	same(ana.ID, "v1/clients/b.json", ana.ID+"v1/clients/b.json")
-	same(ana.ID, "v1/hosts/new.json", "")
+	restoreOnlyOnceSuspended(t, a, dir, ana.ID, later)
+	recordIs(t, st, ana.ID, "v1/hosts/a.json", ana.ID+"v1/hosts/a.json")
+	recordIs(t, st, ana.ID, "v1/clients/b.json", ana.ID+"v1/clients/b.json")
+	recordIs(t, st, ana.ID, "v1/hosts/new.json", "")
 	// The other account is as it was.
-	same(bo.ID, "v1/hosts/a.json", "changed")
-	same(bo.ID, "v1/clients/b.json", "")
-	same(bo.ID, "v1/hosts/new.json", "new")
+	recordIs(t, st, bo.ID, "v1/hosts/a.json", "changed")
+	recordIs(t, st, bo.ID, "v1/clients/b.json", "")
+	recordIs(t, st, bo.ID, "v1/hosts/new.json", "new")
 	if acc, _ := a.accounts().get(ctx, ana.ID); acc == nil || acc.Suspended == nil {
 		t.Fatal("the restore changed the account's record")
 	}
 
+	again := deletedAccountComesBack(t, a, st, dir, bo)
+	operatorDeletesSuspendedOnly(t, a, st, again, later)
+}
+
+// backUpTwoAccounts makes two accounts with three records each and backs them up to a
+// new folder, which it gives.
+func backUpTwoAccounts(t *testing.T, a Admin, st store.Store) (ana, bo *Account, dir string) {
+	t.Helper()
+	ctx := context.Background()
+	ana, _, _ = a.accounts().make(ctx, gitHubSignIn(1, "ana"))
+	bo, _, _ = a.accounts().make(ctx, gitHubSignIn(2, "bo"))
+	for _, id := range []string{ana.ID, bo.ID} {
+		for _, k := range []string{"v1/hosts/a.json", "v1/clients/b.json", "v1/keys/control.sealed"} {
+			if _, err := accountStore(st, id).Put(ctx, k, []byte(id+k), store.Absent); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	dir = t.TempDir()
+	done, err := a.Backup(ctx, dir, nil)
+	if err != nil || len(done) != 2 {
+		t.Fatal(done, err)
+	}
+	if info, err := os.Stat(filepath.Join(dir, ana.ID, "records.jsonl")); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatal(info, err)
+	}
+	return ana, bo, dir
+}
+
+// restoreOnlyOnceSuspended restores id: refused while it runs and just after its
+// suspension, done once later has moved the clock on.
+func restoreOnlyOnceSuspended(t *testing.T, a Admin, dir, id string, later func()) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := a.Restore(ctx, dir, id); err == nil || !strings.Contains(err.Error(), "suspend it first") {
+		t.Fatal("restored a running account:", err)
+	}
+	if err := a.Suspend(ctx, id, "restoring"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Restore(ctx, dir, id); err == nil || !strings.Contains(err.Error(), "try again in a minute") {
+		t.Fatal("restored over a copy that may still run:", err)
+	}
+	later()
+	if n, err := a.Restore(ctx, dir, id); err != nil || n != 3 {
+		t.Fatal(n, err)
+	}
+}
+
+// recordIs checks an account's record holds want, or is not there when want is "".
+func recordIs(t *testing.T, st store.Store, id, key, want string) {
+	t.Helper()
+	o, _ := accountStore(st, id).Get(context.Background(), key)
+	if want == "" && o != nil || want != "" && (o == nil || string(o.Data) != want) {
+		t.Fatalf("%s %s: %v", id, key, o)
+	}
+}
+
+// deletedAccountComesBack restores a deleted account, record and link; and not when its
+// user has another account, which it gives.
+func deletedAccountComesBack(t *testing.T, a Admin, st store.Store, dir string, bo *Account) *Account {
+	t.Helper()
+	ctx := context.Background()
 	// A deleted account comes back, record and link; not when its user has another.
 	if err := a.accounts().remove(ctx, bo); err != nil {
 		t.Fatal(err)
@@ -214,7 +243,7 @@ func TestBackupAndRestoreOneAccount(t *testing.T) {
 	if acc, _ := a.accounts().bySignIn(ctx, gitHubSignIn(2, "")); acc == nil || acc.ID != bo.ID {
 		t.Fatal("the deleted account did not come back", acc)
 	}
-	same(bo.ID, "v1/hosts/a.json", bo.ID+"v1/hosts/a.json")
+	recordIs(t, st, bo.ID, "v1/hosts/a.json", bo.ID+"v1/hosts/a.json")
 	_ = a.accounts().remove(ctx, bo)
 	again, _, _ := a.accounts().make(ctx, gitHubSignIn(2, "bo"))
 	if _, err := a.Restore(ctx, dir, bo.ID); err == nil || !strings.Contains(err.Error(), again.ID) {
@@ -223,21 +252,27 @@ func TestBackupAndRestoreOneAccount(t *testing.T) {
 	if _, err := a.Restore(ctx, dir, "zzzzzzzzzz"); err == nil {
 		t.Fatal("restored an account with no backup")
 	}
+	return again
+}
 
-	// The operator deletes a suspended account only.
-	if err := a.Delete(ctx, again.ID); err == nil || !strings.Contains(err.Error(), "suspend it first") {
+// operatorDeletesSuspendedOnly deletes an account: refused while it runs, and then all
+// its records and its sign-in go.
+func operatorDeletesSuspendedOnly(t *testing.T, a Admin, st store.Store, acc *Account, later func()) {
+	t.Helper()
+	ctx := context.Background()
+	if err := a.Delete(ctx, acc.ID); err == nil || !strings.Contains(err.Error(), "suspend it first") {
 		t.Fatal(err)
 	}
-	_ = a.Suspend(ctx, again.ID, "deleting")
-	now = now.Add(2 * time.Minute)
-	_, _ = accountStore(st, again.ID).Put(ctx, "v1/hosts/x.json", []byte("x"), store.Absent)
-	if err := a.Delete(ctx, again.ID); err != nil {
+	_ = a.Suspend(ctx, acc.ID, "deleting")
+	later()
+	_, _ = accountStore(st, acc.ID).Put(ctx, "v1/hosts/x.json", []byte("x"), store.Absent)
+	if err := a.Delete(ctx, acc.ID); err != nil {
 		t.Fatal(err)
 	}
-	if keys, _ := accountStore(st, again.ID).List(ctx, ""); len(keys) != 0 {
+	if keys, _ := accountStore(st, acc.ID).List(ctx, ""); len(keys) != 0 {
 		t.Fatal("records left:", keys)
 	}
-	if acc, _ := a.accounts().bySignIn(ctx, gitHubSignIn(2, "")); acc != nil {
+	if got, _ := a.accounts().bySignIn(ctx, gitHubSignIn(2, "")); got != nil {
 		t.Fatal("the account is still there")
 	}
 }

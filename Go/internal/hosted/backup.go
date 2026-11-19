@@ -194,40 +194,80 @@ func (a Admin) Restore(ctx context.Context, dir, id string) (int, error) {
 		return 0, fmt.Errorf("%q is not an account's id", id)
 	}
 	from := filepath.Join(dir, id)
-	data, err := os.ReadFile(filepath.Join(from, "account.json"))
+	data, backed, err := readBackedAccount(from, dir, id)
 	if err != nil {
-		return 0, fmt.Errorf("no backup of %s in %s: %w", id, dir, err)
-	}
-	var backed Account
-	if err := json.Unmarshal(data, &backed); err != nil || backed.ID != id {
-		return 0, fmt.Errorf("%s/account.json is not %s's record", from, id)
+		return 0, err
 	}
 	now, err := a.accounts().get(ctx, id)
 	if err != nil {
 		return 0, err
 	}
+	if err := a.checkRestorable(ctx, id, now, backed); err != nil {
+		return 0, err
+	}
+	n, err := a.putBackRecords(ctx, from, id)
+	if err != nil {
+		return n, err
+	}
+	// Its size is counted again at its next start.
+	if err := a.Store.Delete(ctx, usageKey(id)); err != nil {
+		return n, err
+	}
+	if now == nil {
+		if err := a.relinkDeleted(ctx, id, backed, data); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+// readBackedAccount reads the account record of a backup in from, and checks it is id's.
+func readBackedAccount(from, dir, id string) ([]byte, Account, error) {
+	var backed Account
+	data, err := os.ReadFile(filepath.Join(from, "account.json"))
+	if err != nil {
+		return nil, backed, fmt.Errorf("no backup of %s in %s: %w", id, dir, err)
+	}
+	if err := json.Unmarshal(data, &backed); err != nil || backed.ID != id {
+		return nil, backed, fmt.Errorf("%s/account.json is not %s's record", from, id)
+	}
+	return data, backed, nil
+}
+
+// checkRestorable refuses a restore over an account that runs, or may still run, and over
+// a deleted one whose sign-in has another account now.
+func (a Admin) checkRestorable(ctx context.Context, id string, now *Account, backed Account) error {
 	if now != nil && now.Suspended == nil {
-		return 0, fmt.Errorf("%s is running: suspend it first (agents-hosted admin suspend %s restoring), restore, then unsuspend it", id, id)
+		return fmt.Errorf("%s is running: suspend it first (agents-hosted admin suspend %s restoring), restore, then unsuspend it", id, id)
 	}
 	// A running service stops a suspended copy within a minute (sweepAccounts).
 	if now != nil && a.now().Sub(now.Suspended.At) < stopWithin {
-		return 0, fmt.Errorf("%s was suspended %s ago: its control plane may still be running; try again in a minute", id, a.now().Sub(now.Suspended.At).Round(time.Second))
+		return fmt.Errorf("%s was suspended %s ago: its control plane may still be running; try again in a minute", id, a.now().Sub(now.Suspended.At).Round(time.Second))
 	}
-	if now == nil {
-		// The person may have signed up again since: then this backup is not theirs to take
-		// back, and the operator decides.
-		if o, err := a.Store.Get(ctx, signInKey(backed.SignIn)); err != nil {
-			return 0, err
-		} else if o != nil {
-			var link struct {
-				Account string `json:"account"`
-			}
-			if json.Unmarshal(o.Data, &link) == nil && link.Account != id {
-				return 0, fmt.Errorf("%s has another account now, %s: delete it first", backed.SignIn, link.Account)
-			}
-		}
+	if now != nil {
+		return nil
 	}
+	// The person may have signed up again since: then this backup is not theirs to take
+	// back, and the operator decides.
+	o, err := a.Store.Get(ctx, signInKey(backed.SignIn))
+	if err != nil {
+		return err
+	}
+	if o == nil {
+		return nil
+	}
+	var link struct {
+		Account string `json:"account"`
+	}
+	if json.Unmarshal(o.Data, &link) == nil && link.Account != id {
+		return fmt.Errorf("%s has another account now, %s: delete it first", backed.SignIn, link.Account)
+	}
+	return nil
+}
 
+// putBackRecords puts each record of from/records.jsonl back in the account's store, and
+// deletes each record the backup did not hold. It gives how many it put back.
+func (a Admin) putBackRecords(ctx context.Context, from, id string) (int, error) {
 	f, err := os.Open(filepath.Join(from, "records.jsonl"))
 	if err != nil {
 		return 0, err
@@ -255,24 +295,24 @@ func (a Admin) Restore(ctx context.Context, dir, id string) (int, error) {
 		return len(kept), err
 	}
 	for _, k := range keys {
-		if !kept[k.Key] {
-			if err := st.Delete(ctx, k.Key); err != nil {
-				return len(kept), err
-			}
+		if kept[k.Key] {
+			continue
 		}
-	}
-	// Its size is counted again at its next start.
-	if err := a.Store.Delete(ctx, usageKey(id)); err != nil {
-		return len(kept), err
-	}
-	if now == nil {
-		link, _ := json.Marshal(map[string]string{"account": id})
-		if _, err := a.Store.Put(ctx, signInKey(backed.SignIn), link, store.Absent); err != nil && !store.IsConflict(err) {
-			return len(kept), err
-		}
-		if _, err := a.Store.Put(ctx, accountKey(id), data, store.Absent); err != nil && !store.IsConflict(err) {
+		if err := st.Delete(ctx, k.Key); err != nil {
 			return len(kept), err
 		}
 	}
 	return len(kept), nil
+}
+
+// relinkDeleted brings back a deleted account's record and its sign-in's link.
+func (a Admin) relinkDeleted(ctx context.Context, id string, backed Account, data []byte) error {
+	link, _ := json.Marshal(map[string]string{"account": id})
+	if _, err := a.Store.Put(ctx, signInKey(backed.SignIn), link, store.Absent); err != nil && !store.IsConflict(err) {
+		return err
+	}
+	if _, err := a.Store.Put(ctx, accountKey(id), data, store.Absent); err != nil && !store.IsConflict(err) {
+		return err
+	}
+	return nil
 }

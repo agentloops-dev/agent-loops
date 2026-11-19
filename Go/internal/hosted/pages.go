@@ -39,47 +39,11 @@ func (s *Service) pages(w http.ResponseWriter, r *http.Request) {
 	account := s.sessions.account(r)
 	switch {
 	case r.URL.Path == "/" && r.Method == http.MethodGet:
-		if account != "" {
-			http.Redirect(w, r, "/account", http.StatusSeeOther)
-			return
-		}
-		invite := r.URL.Query().Get("invite")
-		if !validInvite(invite) {
-			invite = ""
-		}
-		s.page(w, http.StatusOK, s.welcome(page{Invite: invite}))
+		s.home(w, r, account)
 	case r.URL.Path == "/signin" && r.Method == http.MethodGet:
-		invite := r.URL.Query().Get("invite")
-		if s.turnstile != nil {
-			// The check is on the page: back to it.
-			to := "/"
-			if validInvite(invite) {
-				to += "?invite=" + invite
-			}
-			http.Redirect(w, r, to, http.StatusSeeOther)
-			return
-		}
-		s.startSignIn(w, r, r.URL.Query().Get("with"), invite)
+		s.signInLink(w, r)
 	case r.URL.Path == "/signin" && r.Method == http.MethodPost && s.turnstile != nil:
-		invite := r.PostFormValue("invite")
-		if !validInvite(invite) {
-			invite = ""
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-		err := s.turnstile.check(ctx, r.PostFormValue(turnstileField), s.clientOf(r))
-		cancel()
-		if err != nil {
-			s.metrics.refused("turnstile")
-			s.log("sign-up page: " + err.Error())
-			problem := "The check that you are a person did not pass. Try again."
-			status := http.StatusForbidden
-			if !errors.Is(err, errNotPerson) {
-				problem, status = "The check that you are a person could not be made just now. Try again in a moment.", http.StatusServiceUnavailable
-			}
-			s.page(w, status, s.welcome(page{Invite: invite, Problem: problem}))
-			return
-		}
-		s.startSignIn(w, r, r.PostFormValue("with"), invite)
+		s.signInChecked(w, r)
 	case r.URL.Path == "/signin/callback" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
 		s.callback(w, r)
 	case r.URL.Path == "/account" && r.Method == http.MethodGet:
@@ -96,15 +60,7 @@ func (s *Service) pages(w http.ResponseWriter, r *http.Request) {
 		s.deleteAccount(w, r, account)
 	case r.URL.Path == "/account/upgrade" && r.Method == http.MethodPost && s.billingOn(),
 		r.URL.Path == "/account/billing" && r.Method == http.MethodPost && s.billingOn():
-		if account == "" || !s.sessions.formOK(r, account) {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		}
-		if r.URL.Path == "/account/upgrade" {
-			s.upgrade(w, r, account)
-		} else {
-			s.manageBilling(w, r, account)
-		}
+		s.billingForm(w, r, account)
 	case r.URL.Path == "/billing/webhook" && r.Method == http.MethodPost && s.billingOn():
 		s.webhook(w, r)
 	case r.URL.Path == "/signout" && r.Method == http.MethodPost:
@@ -112,6 +68,71 @@ func (s *Service) pages(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	default:
 		plain(w, http.StatusNotFound, "Not found.\n")
+	}
+}
+
+// home is the sign-up page, or the account page for a browser signed in already.
+func (s *Service) home(w http.ResponseWriter, r *http.Request, account string) {
+	if account != "" {
+		http.Redirect(w, r, "/account", http.StatusSeeOther)
+		return
+	}
+	invite := r.URL.Query().Get("invite")
+	if !validInvite(invite) {
+		invite = ""
+	}
+	s.page(w, http.StatusOK, s.welcome(page{Invite: invite}))
+}
+
+// signInLink starts a sign-in from a link; with Turnstile on, it goes back to the page,
+// where the check is.
+func (s *Service) signInLink(w http.ResponseWriter, r *http.Request) {
+	invite := r.URL.Query().Get("invite")
+	if s.turnstile != nil {
+		// The check is on the page: back to it.
+		to := "/"
+		if validInvite(invite) {
+			to += "?invite=" + invite
+		}
+		http.Redirect(w, r, to, http.StatusSeeOther)
+		return
+	}
+	s.startSignIn(w, r, r.URL.Query().Get("with"), invite)
+}
+
+// signInChecked starts a sign-in from the sign-up form once Turnstile says it is a person.
+func (s *Service) signInChecked(w http.ResponseWriter, r *http.Request) {
+	invite := r.PostFormValue("invite")
+	if !validInvite(invite) {
+		invite = ""
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	err := s.turnstile.check(ctx, r.PostFormValue(turnstileField), s.clientOf(r))
+	cancel()
+	if err != nil {
+		s.metrics.refused("turnstile")
+		s.log("sign-up page: " + err.Error())
+		problem := "The check that you are a person did not pass. Try again."
+		status := http.StatusForbidden
+		if !errors.Is(err, errNotPerson) {
+			problem, status = "The check that you are a person could not be made just now. Try again in a moment.", http.StatusServiceUnavailable
+		}
+		s.page(w, status, s.welcome(page{Invite: invite, Problem: problem}))
+		return
+	}
+	s.startSignIn(w, r, r.PostFormValue("with"), invite)
+}
+
+// billingForm is Upgrade and Manage Billing, for the account's own form.
+func (s *Service) billingForm(w http.ResponseWriter, r *http.Request, account string) {
+	if account == "" || !s.sessions.formOK(r, account) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if r.URL.Path == "/account/upgrade" {
+		s.upgrade(w, r, account)
+	} else {
+		s.manageBilling(w, r, account)
 	}
 }
 
