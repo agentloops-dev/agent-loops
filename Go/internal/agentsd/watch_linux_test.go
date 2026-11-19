@@ -17,7 +17,11 @@ func TestAFolderWatchItCannotHearIsNoWatch(t *testing.T) {
 	if err := os.Chmod(root, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(root, 0o755) })
+	t.Cleanup(func() {
+		if err := os.Chmod(root, 0o700); err != nil { //nolint:gosec // a folder needs x for TempDir to remove it
+			t.Error(err)
+		}
+	})
 	w, err := newFolderWatch(root, func([]string) {})
 	if err == nil {
 		w.stop()

@@ -57,7 +57,7 @@ func startFolderWatch(w *folderWatch, name string) (*folderWatch, error) {
 	// that said it was up and heard nothing lost a workflow written on disk (#6248). The
 	// folder list's next look tries it again.
 	if err := w.addTree(w.root); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd) // the error that counts is the watch's
 		return nil, err
 	}
 	safe.Go(name, w.read)
