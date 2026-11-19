@@ -189,10 +189,13 @@ type mcpEventsBook struct {
 	mcpToTell   map[string]bool
 	mcpBadNames map[string]bool
 	mcpTold     map[string]time.Time
-	mcpUnsaved  bool
-	mcpSavedAt  time.Time
-	mcpKick     chan struct{}
-	mcpRunning  sync.WaitGroup
+	// mcpAliveAt is when each subscription last polled, or stood by while another machine
+	// polled (#6190): a wait whose subscriptions all went quiet is a stall to tell.
+	mcpAliveAt map[string]time.Time
+	mcpUnsaved bool
+	mcpSavedAt time.Time
+	mcpKick    chan struct{}
+	mcpRunning sync.WaitGroup
 	// mcpSleep is how a poll waits: false when it was stopped first. A test hands in a
 	// quicker one.
 	mcpSleep func(ctx context.Context, d time.Duration) bool
@@ -986,6 +989,7 @@ func (d *Daemon) applyMCPSubscriptionsLocked(ctx context.Context, wanted map[str
 		delete(d.mcpCancels, id)
 		delete(d.mcpLives, id)
 		delete(d.mcpTold, id)
+		delete(d.mcpAliveAt, id)
 		d.mcpLetGo(id)
 		log.Printf("mcp events: %s %s unsubscribed (key %s)", gone.server, gone.event, gone.key)
 	}
@@ -1322,6 +1326,12 @@ func (d *Daemon) setMCPLive(id string, live mcpLive) {
 		return
 	}
 	d.mcpLives[id] = live
+	if live.state == wire.MCPTriggerStatusStateActive {
+		if d.mcpAliveAt == nil {
+			d.mcpAliveAt = map[string]time.Time{}
+		}
+		d.mcpAliveAt[id] = now().Time()
+	}
 	if r := d.mcpRecordsLocked().Subscriptions[id]; r != nil && string(mustRaw(r.Failure)) != string(mustRaw(live.failure)) {
 		r.Failure = live.failure
 		d.saveMCPRecordsLocked()

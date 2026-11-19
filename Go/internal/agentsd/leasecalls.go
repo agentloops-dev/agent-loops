@@ -20,8 +20,11 @@ import (
 
 const (
 	leaseCappedWords = " That is the longest a lease can run; extend it again before then if you need more."
-	leaseEmptyName   = "Nothing was leased: say which resource."
-	leaseNoCall      = "That conversation is not open any more, so nothing was leased."
+	// leaseLineCapWords is said when others wait in line (#6190): a holder keeps a lease at
+	// most one longest lease from when it got it, so the line moves.
+	leaseLineCapWords = " Others wait in line for it, so it cannot run past one longest lease from when you got it. Release it when you are done."
+	leaseEmptyName    = "Nothing was leased: say which resource."
+	leaseNoCall       = "That conversation is not open any more, so nothing was leased."
 )
 
 func ordinal(n int) string {
@@ -230,7 +233,7 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 	switch i := holderIndex(e, agent); {
 	case i >= 0:
 		var ev leaseEvent
-		ev, reply = extendHeldLease(e, i, t, length, capped)
+		ev, reply = extendHeldLease(e, i, t, length, capped, len(e.Line) > 0)
 		events = append(events, ev)
 	case !e.full() && len(e.Line) == 0 && !d.heldByCapacity(name, e):
 		l := wire.Lease{Resource: name, DisplayName: e.DisplayName, Holder: agent, GrantedAt: t, ExpiresAt: wire.DateOf(t.Time().Add(length))}
@@ -318,17 +321,31 @@ func (d *Daemon) leaseEntryOrNewLocked(name wire.ResourceName, kind wire.Resourc
 }
 
 // extendHeldLease extends lease i of e to length from t, up to the rules' ceiling. It
-// only moves the end forward: asking for less than is left does not shorten a lease.
-func extendHeldLease(e *leaseEntry, i int, t wire.Date, length time.Duration, capped bool) (leaseEvent, string) {
+// only moves the end forward: asking for less than is left does not shorten a lease. When
+// others wait in line (#6190), the ceiling is from when the lease was granted, not from t: a
+// holder that asks again and again cannot keep the resource from the line for ever.
+func extendHeldLease(e *leaseEntry, i int, t wire.Date, length time.Duration, capped, lineWaits bool) (leaseEvent, string) {
 	l := e.Leases[i]
 	wanted := t.Time().Add(length)
 	if l.ExpiresAt.Time().After(wanted) {
 		wanted = l.ExpiresAt.Time()
 	}
-	ceiling := t.Time().Add(time.Duration(e.Rules.ceiling()) * time.Minute)
+	longest := time.Duration(e.Rules.ceiling()) * time.Minute
+	ceiling := t.Time().Add(longest)
+	byLine := false
+	if lineWaits {
+		if fromGrant := l.GrantedAt.Time().Add(longest); fromGrant.Before(ceiling) {
+			ceiling, byLine = fromGrant, wanted.After(fromGrant)
+		}
+		// Never shorter than it is now: the cap only stops it going further.
+		ceiling = maxTime(ceiling, l.ExpiresAt.Time())
+	}
 	l.ExpiresAt = wire.DateOf(minTime(wanted, ceiling))
 	l.Warned = toldWhenItEnds(l, t)
 	e.Leases[i] = l
+	if byLine {
+		return leaseEvent{extended: true, lease: l}, extendedWords(l, false) + leaseLineCapWords
+	}
 	return leaseEvent{extended: true, lease: l}, extendedWords(l, capped || wanted.After(ceiling))
 }
 
@@ -382,6 +399,13 @@ func (d *Daemon) heldLease(agent wire.UUID, name wire.ResourceName) *wire.Lease 
 		}
 	}
 	return nil
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }
 
 func minTime(a, b time.Time) time.Time {

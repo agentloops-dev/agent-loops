@@ -45,11 +45,18 @@ type eventsServer struct {
 	// events it offers.
 	props map[string]any
 	more  []any
+	// down drops every request, as a server that was killed does (#6190); downHits counts
+	// what it dropped.
+	down     bool
+	downHits int
 }
 
 func newEventsServer(t *testing.T) *eventsServer {
 	s := &eventsServer{byCursor: map[string][]map[string]any{}}
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.dropIfDown(w) {
+			return
+		}
 		if r.Method == http.MethodDelete {
 			return
 		}
@@ -138,6 +145,24 @@ func newEventsServer(t *testing.T) *eventsServer {
 	}))
 	t.Cleanup(s.Close)
 	return s
+}
+
+// dropIfDown closes the request's connection with no answer when the server is down, as a
+// killed server does, and says whether it did.
+func (s *eventsServer) dropIfDown(w http.ResponseWriter) bool {
+	s.mu.Lock()
+	down := s.down
+	if down {
+		s.downHits++
+	}
+	s.mu.Unlock()
+	if !down {
+		return false
+	}
+	if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+		_ = conn.Close()
+	}
+	return true
 }
 
 func (s *eventsServer) polled(cursor string) bool {
