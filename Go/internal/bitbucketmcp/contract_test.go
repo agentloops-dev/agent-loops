@@ -13,6 +13,9 @@ import (
 // The forge contract (#6191) over the fake Bitbucket: pull request 1 is the story's, pull
 // request 2 the one that closes.
 
+// bitbucketMissing are the contract's events this server does not give: none (#6293).
+var bitbucketMissing = map[string]string{}
+
 func TestForgeContract(t *testing.T) {
 	f := newFake(t)
 	now := start
@@ -33,6 +36,7 @@ func TestForgeContract(t *testing.T) {
 		Name:    "bitbucket",
 		Kind:    forgecontract.CodeForge,
 		Offered: EventNames(),
+		Missing: bitbucketMissing,
 		Args:    func(string) map[string]any { return map[string]any{"pr": []int{1, 2}} },
 		Poll: func(ctx context.Context, raw json.RawMessage) (map[string]any, *mcpevents.Error) {
 			return events.Poll(ctx, raw)
