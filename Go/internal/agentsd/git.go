@@ -22,9 +22,22 @@ import (
 
 const gitOutputLimit = 16 << 20
 
-type gitError struct{ message string }
+type gitError struct {
+	message string
+	// answered is true when git ran to its own end and said no (an exit status, as "No such
+	// remote"), false when it gave no answer: it could not start, a signal or the deadline
+	// stopped it (#6257).
+	answered bool
+}
 
 func (e *gitError) Error() string { return e.message }
+
+// gitAnswered says whether err is git's own answer, not a git that did not run to its end: a
+// read that failed under load (#6257) is not a fact to keep.
+func gitAnswered(err error) bool {
+	var g *gitError
+	return err == nil || errors.As(err, &g) && g.answered
+}
 
 func gitDeadline(args []string) time.Duration {
 	if len(args) >= 2 && args[0] == "worktree" {
@@ -87,7 +100,7 @@ func gitRawEnv(dir string, env []string, stdin []byte, args ...string) ([]byte, 
 		time.Sleep(time.Duration(attempt) * 50 * time.Millisecond)
 	}
 	if errors.Is(err, exec.ErrNotFound) {
-		return nil, &gitError{"Git is not installed on this Mac."}
+		return nil, &gitError{message: "Git is not installed on this Mac."}
 	}
 	if ctx.Err() != nil {
 		msg := fmt.Sprintf("git %s was stopped after %s with no end in sight, so nothing else waits on it now.",
@@ -95,7 +108,7 @@ func gitRawEnv(dir string, env []string, stdin []byte, args ...string) ([]byte, 
 		if args[0] == "worktree" {
 			msg += " If it left a half-made worktree, `git worktree prune` clears it."
 		}
-		return out.Bytes(), &gitError{msg}
+		return out.Bytes(), &gitError{message: msg}
 	}
 	if err != nil {
 		msg := strings.TrimSpace(errOut.String())
@@ -107,7 +120,7 @@ func gitRawEnv(dir string, env []string, stdin []byte, args ...string) ([]byte, 
 		default:
 			msg = "git " + args[0] + " failed (" + err.Error() + ")." // a signal, with no words from git
 		}
-		return out.Bytes(), &gitError{msg}
+		return out.Bytes(), &gitError{message: msg, answered: errors.As(err, &exit) && exit.ExitCode() >= 0}
 	}
 	return out.Bytes(), nil
 }
@@ -127,9 +140,9 @@ func gitTo(dir string, w io.Writer, args ...string) error {
 	cmd.Stderr = &errOut
 	if err := cmd.Run(); err != nil {
 		if msg := strings.TrimSpace(errOut.String()); msg != "" {
-			return &gitError{msg}
+			return &gitError{message: msg}
 		}
-		return &gitError{"git " + args[0] + " failed."}
+		return &gitError{message: "git " + args[0] + " failed."}
 	}
 	return nil
 }
@@ -181,7 +194,7 @@ func findRepository(dir string) (repository, error) {
 	}
 	lines := strings.Split(out, "\n")
 	if len(lines) < 2 {
-		return repository{}, &gitError{"git rev-parse said too little: " + strconv.Quote(out)}
+		return repository{}, &gitError{message: "git rev-parse said too little: " + strconv.Quote(out)}
 	}
 	r := repository{toplevel: lines[0], commonDir: lines[1]}
 	if len(lines) > 2 {
