@@ -44,7 +44,7 @@ func newFaultProxy(t *testing.T) *faultProxy {
 		t.Fatal(err)
 	}
 	p := &faultProxy{ln: ln, conns: map[net.Conn]*proxied{}}
-	t.Cleanup(func() { ln.Close(); p.cut("") })
+	t.Cleanup(func() { _ = ln.Close(); p.cut("") })
 	return p
 }
 
@@ -59,7 +59,7 @@ func (p *faultProxy) serve(target string) {
 			}
 			up, err := net.Dial("tcp", target)
 			if err != nil {
-				c.Close()
+				_ = c.Close()
 				continue
 			}
 			pc := &proxied{other: up}
@@ -97,8 +97,8 @@ func (p *faultProxy) pipe(from, to net.Conn, pc *proxied, fromClient bool) {
 			}
 		}
 		if err != nil {
-			from.Close()
-			to.Close()
+			_ = from.Close()
+			_ = to.Close()
 			p.mu.Lock()
 			delete(p.conns, from)
 			delete(p.conns, to)
@@ -155,7 +155,7 @@ func (p *faultProxy) cut(who string) {
 	defer p.mu.Unlock()
 	for c, pc := range p.conns {
 		if who == "" || strings.EqualFold(pc.who, who) {
-			c.Close()
+			_ = c.Close()
 		}
 	}
 }
@@ -228,11 +228,31 @@ func (o *observer) heard(method string) (got []controllink.Note) {
 	return got
 }
 
+// requireInOrder fails when a notification's seq is heard twice or after a later one, or when
+// none was heard.
+func (o *observer) requireInOrder(t *testing.T, method string) {
+	t.Helper()
+	last := int64(0)
+	for _, n := range o.heard(method) {
+		var pr struct{ Seq int64 }
+		if err := json.Unmarshal(n.Params, &pr); err != nil {
+			t.Fatal(err)
+		}
+		if pr.Seq <= last {
+			t.Fatalf("notification %d came after %d: twice or out of order", pr.Seq, last)
+		}
+		last = pr.Seq
+	}
+	if last == 0 {
+		t.Fatal("the client heard no notification at all")
+	}
+}
+
 // hostStates is the states of host that control/hostChanged notes said, in order.
 func (o *observer) hostStates(host string) (states []string) {
 	for _, n := range o.heard("control/hostChanged") {
 		var p struct{ Host, State string }
-		json.Unmarshal(n.Params, &p)
+		_ = json.Unmarshal(n.Params, &p) // a note that is not one has no state
 		if p.Host == host || n.Host == host {
 			states = append(states, p.State)
 		}
@@ -274,7 +294,7 @@ func TestAProxyCutsTheHostsLinkAndTheClientCatchesUp(t *testing.T) {
 	t.Parallel()
 	seed := uint64(time.Now().UnixNano())
 	t.Logf("seed %d", seed)
-	rng := rand.New(rand.NewPCG(seed, 6185))
+	rng := rand.New(rand.NewPCG(seed, 6185)) //nolint:gosec // a fault pattern, not a secret
 
 	proxy := newFaultProxy(t)
 	// The plane's own address is the host proxy's: the host and each code go through it.
@@ -371,19 +391,7 @@ func TestAProxyCutsTheHostsLinkAndTheClientCatchesUp(t *testing.T) {
 		}
 	}
 
-	// The notifications that came through are each heard once and in order.
-	last := int64(0)
-	for _, n := range window.heard("agent/changed") {
-		var pr struct{ Seq int64 }
-		json.Unmarshal(n.Params, &pr)
-		if pr.Seq <= last {
-			t.Fatalf("notification %d came after %d: twice or out of order", pr.Seq, last)
-		}
-		last = pr.Seq
-	}
-	if last == 0 {
-		t.Fatal("the client heard no notification at all")
-	}
+	window.requireInOrder(t, "agent/changed")
 }
 
 // A proxy cuts the client's own connection at random points while the host goes on changing:
@@ -393,7 +401,7 @@ func TestAProxyCutsTheClientsLinkAndNoQuestionIsLost(t *testing.T) {
 	t.Parallel()
 	seed := uint64(time.Now().UnixNano())
 	t.Logf("seed %d", seed)
-	rng := rand.New(rand.NewPCG(seed, 6186))
+	rng := rand.New(rand.NewPCG(seed, 6186)) //nolint:gosec // a fault pattern, not a secret
 
 	proxy := newFaultProxy(t)
 	p := startPlaneWith(t, store.NewMemory(), controllink.NewPrivateKey(), func(c *Config) { c.URL = proxy.url() })
