@@ -377,7 +377,10 @@ export const reducerMethods = {
     const end = this.transcriptEnd;
     if (end === null || page.firstIndex > end || page.total < end) return false;
     if (page.firstIndex < Math.min(this.firstEntryIndex.value, end)) return false;
-    const entries = keepingLatestByID([...this.entries.value, ...page.entries, ...(this.heardSincePage ?? [])]);
+    // What is held before the page stays; from where the page starts, the host's page is the truth,
+    // as an opening's is (a copy's entry the host does not have goes).
+    const before = this.entries.value.slice(0, Math.max(0, page.firstIndex - this.firstEntryIndex.value));
+    const entries = keepingLatestByID([...before, ...page.entries, ...(this.heardSincePage ?? [])]);
     this.heardSincePage = null;
     this.transcriptEnd = page.total;
     batch(() => {

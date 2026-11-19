@@ -2025,7 +2025,10 @@ public final class AgentsModel {
         guard isLatestTranscriptLoad(load), let end = transcriptEnd, page.firstIndex <= end,
               page.firstIndex >= min(firstEntryIndex, end), page.total >= end
         else { return false }
-        entries = Self.entriesKeepingLatest(entries + page.entries + (heardSincePage ?? []))
+        // What is held before the page stays; from where the page starts, the host's page is
+        // the truth, as an opening's is (a copy's entry the host does not have goes).
+        let before = entries.prefix(max(0, page.firstIndex - firstEntryIndex))
+        entries = Self.entriesKeepingLatest(Array(before) + page.entries + (heardSincePage ?? []))
         heardSincePage = nil
         transcriptFromCopy = false
         transcriptEnd = page.total
