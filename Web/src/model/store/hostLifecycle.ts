@@ -269,14 +269,12 @@ export const hostLifecycleMethods = {
       void this.link.call("summaries/list", {}, host).then((pages) => { this.summaryPages.value = pages; })
         .catch(failed("summaries/list"));
     }
+    // A card heard while the reads are on their way is laid over their older replies (#6291).
+    const read = this.beginCardsRead(host);
     const [permissions, elicitations] = await Promise.all([
       this.link.call("permissions/pending", {}, host).catch(failed("permissions/pending")),
       this.link.call("elicitations/pending", {}, host).catch(failed("elicitations/pending")),
     ]);
-    batch(() => {
-      if (permissions) this.permissions.value = { ...this.permissions.value,
-        [host]: [...permissions].sort((a, b) => a.askedAt - b.askedAt) };
-      if (elicitations) this.elicitations.value = { ...this.elicitations.value, [host]: elicitations };
-    });
+    this.takePendingCards(read, permissions ?? undefined, elicitations ?? undefined);
   },
 };

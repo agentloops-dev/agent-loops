@@ -18,12 +18,12 @@ function webClient(stream) {
       // As loadPage: heard from now is laid after the page; the page from the first entry held
       // resumes it (#6282), and one that leaves a gap opens the chat whole.
       work.heardSincePage = [];
+      // As hostLifecycle's catch-up: the pending reads replace the host's cards (#6188), with what
+      // was heard while they were on their way laid over them (#6291).
+      const cards = work.beginCardsRead(host);
       work.replaceAgents(snapshot.agents, host);
       for (const [method, params] of during) work.apply(method, params, host);
-      // As hostLifecycle's catch-up: the pending reads replace the host's cards (#6188).
-      work.permissions.value = { ...work.permissions.value,
-        [host]: [...(snapshot.permissions ?? [])].sort((a, b) => a.askedAt - b.askedAt) };
-      work.elicitations.value = { ...work.elicitations.value, [host]: snapshot.elicitations ?? [] };
+      work.takePendingCards(cards, snapshot.permissions ?? [], snapshot.elicitations ?? []);
       const start = work.chatResumeStart();
       const page = snapshot.transcript;
       if (start !== null && page.total >= start) {
