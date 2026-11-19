@@ -157,7 +157,7 @@ extension TranscriptEntry {
 }
 
 /// `AgentsModel` as a client, doing what a reconnect does: a list replaces the host's agents, and the open
-/// chat is resumed from the end it holds, or opened whole when the page does not join (`loadPage`'s choices).
+/// chat is resumed from the first entry it holds (#6282), or opened whole when the page does not join (`loadPage`'s choices).
 @MainActor
 final class ModelStreamClient: StreamClient {
     let model = AgentsModel()
@@ -178,8 +178,9 @@ final class ModelStreamClient: StreamClient {
         for (method, params) in during { model.apply(method, params, from: host) }
         // As AppModel's catch-up of a host: its pending reads replace its agents' cards (#6188).
         model.replaceCards(from: host, permissions: snapshot.permissions, elicitations: snapshot.elicitations)
-        if let end = model.transcriptEnd, snapshot.page.total >= end {
-            let rest = TranscriptPage(firstIndex: end, total: snapshot.page.total, entries: Array(snapshot.page.entries.dropFirst(end)))
+        if let start = model.resumeStart, snapshot.page.total >= start {
+            let rest = TranscriptPage(firstIndex: start, total: snapshot.page.total,
+                                      entries: Array(snapshot.page.entries.dropFirst(start - snapshot.page.firstIndex)))
             if model.takeResumed(rest, load: load) { return }
         }
         model.takeOpening(ChatOpening.Loaded(turns: TurnsPage(turns: [], firstTurn: 0, openStart: 0), page: snapshot.page, turnsFailure: nil), load: load)

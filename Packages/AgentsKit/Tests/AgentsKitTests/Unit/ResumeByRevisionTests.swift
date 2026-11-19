@@ -118,23 +118,46 @@ struct ResumeByRevisionTests {
 
     // MARK: The open chat
 
-    @Test func aChatResumesFromItsHostsEnd() async {
+    @Test func aChatResumesFromTheFirstEntryItHolds() async {
         let model = AgentsModel()
         let session = UUID()
         model.watching = session
-        _ = opened(model, ["e0", "e1"])
-        #expect(model.transcriptEnd == 2)
+        _ = opened(model, ["e0", "e1"], firstIndex: 3)
+        #expect(model.transcriptEnd == 5)
 
         let load = model.beginTranscriptLoad()
         var asked: Int?
         let resumed = await model.resumeTranscript(load: load) { from, _ in
             asked = from
-            return page(["e2", "e3"], firstIndex: from)
+            return page(["e2", "e3"], firstIndex: 5)
         }
-        #expect(asked == 2)
+        // The held page again, not only what came after its end (#6282).
+        #expect(asked == 3)
         #expect(resumed != nil)
         #expect(model.entries.compactMap(\.text) == ["e0", "e1", "e2", "e3"])
-        #expect(model.transcriptEnd == 4)
+        #expect(model.transcriptEnd == 7)
+    }
+
+    /// An entry held changed in place while the chat was away (its reply's text grew): the
+    /// resume reads the held page again and takes the newer copy (#6282).
+    @Test func aResumeTakesTheNewerTextOfAnEntryHeld() async {
+        let model = AgentsModel()
+        model.watching = UUID()
+        let ask = TranscriptEntry(kind: .agentMessage(messageID: nil, text: "Fix the build"))
+        let reply = TranscriptEntry(kind: .agentMessage(messageID: "m1", text: "Looking"))
+        let load = model.beginTranscriptLoad()
+        model.takeOpening(ChatOpening.Loaded(turns: TurnsPage(turns: [], firstTurn: 0, openStart: 0),
+                                             page: TranscriptPage(firstIndex: 0, total: 2, entries: [ask, reply]),
+                                             turnsFailure: nil), load: load)
+        var revised = reply
+        revised.kind = .agentMessage(messageID: "m1", text: "Looking at the build")
+        let done = TranscriptEntry(kind: .agentMessage(messageID: "m2", text: "Done"))
+        let resumed = await model.resumeTranscript(load: model.beginTranscriptLoad()) { from, _ in
+            TranscriptPage(firstIndex: from, total: 3, entries: Array([ask, revised, done].dropFirst(from)))
+        }
+        #expect(resumed != nil)
+        #expect(model.entries.compactMap(\.text) == ["Fix the build", "Looking at the build", "Done"])
+        #expect(model.transcriptEnd == 3)
     }
 
     /// More written than one page holds leaves a gap: nothing is laid on, and the chat opens whole.
@@ -172,14 +195,14 @@ struct ResumeByRevisionTests {
         let heard = TranscriptEntry(kind: .agentMessage(messageID: nil, text: "heard"))
         model.apply(DaemonAPI.Notification.agentEntry,
                     try JSONValue.encoding(DaemonAPI.EntryNotification(agentID: session, entry: heard)))
-        let resumed = await model.resumeTranscript(load: load) { from, _ in
-            TranscriptPage(firstIndex: from, total: from + 1, entries: [heard])
+        let resumed = await model.resumeTranscript(load: load) { _, _ in
+            TranscriptPage(firstIndex: 1, total: 2, entries: [heard])
         }
         #expect(resumed != nil)
         #expect(model.entries.compactMap(\.text) == ["e0", "heard"])
     }
 
-    /// A chat drawn from the copy resumes from the copy's end and is the host's after.
+    /// A chat drawn from the copy resumes from the copy and is the host's after.
     @Test func aCopiedChatResumesFromTheCopysEnd() async {
         let model = AgentsModel()
         let session = UUID()
@@ -188,7 +211,7 @@ struct ResumeByRevisionTests {
         model.takeCopiedOpening(LocalCopy.Transcript(session: session, turns: TurnsPage(turns: [], firstTurn: 0, openStart: 0),
                                                      page: page(["e5"], firstIndex: 5)), load: load)
         #expect(model.transcriptFromCopy)
-        let resumed = await model.resumeTranscript(load: load) { from, _ in page(["e6"], firstIndex: from) }
+        let resumed = await model.resumeTranscript(load: load) { _, _ in page(["e6"], firstIndex: 6) }
         #expect(resumed != nil)
         #expect(!model.transcriptFromCopy)
         #expect(model.entries.compactMap(\.text) == ["e5", "e6"])

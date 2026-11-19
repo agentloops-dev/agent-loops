@@ -59,6 +59,7 @@ import { SecretUseCard } from "./SecretUseCard";
 import { LiveTile } from "./LiveTile";
 import { showsThoughts, shownItems } from "../model/thoughts";
 import { hasTurnInFlight, promptPlaceholder, willQueue } from "../model/promptWords";
+import { carryOnStop } from "../model/carryOn";
 import { eventCarryOnPrompt, eventWaitCardTitle, eventWaitKind, eventWaitLine, eventWaitMinutes, eventWaitSummaryLines, eventWaitTime, leaseMark, lineCarryOnPrompt, lineResource, triggerURL } from "../model/rowLines";
 import { routeHash } from "../route";
 import { sessionRuntimeName } from "../model/runtimes";
@@ -775,6 +776,7 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
           stop={agent && hasTurnInFlight(agent) ? () => void store.perform(host, agent.id, "agents/stop") : undefined}
           acting={agent && store.onItsWay.value[agent.id]}
           queues={willQueue(agent)} suggestion={agent?.suggestedPrompts?.[0]}
+          carryOn={agent ? carryOnStop(agent) : undefined}
           recipient={store.recipient(host)}
           capabilities={agent ? store.account(host, agent.runtimeID)?.promptCapabilities : undefined}
           runtimeName={agent ? runtimeNameOn(store, host, agent.runtimeID) : undefined}

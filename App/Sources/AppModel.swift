@@ -4599,7 +4599,7 @@ final class AppModel {
         var gone = false
         let loaded = await attempt(on: host, quietWhenDown: true) {
             let client = self.client(for: host)
-            // What was written since the end held (#4794), one page from it, in place of the
+            // The held page again and what was written since (#4794, #6282), one page, in place of the
             // whole opening; a page that leaves a gap, or no answer, opens it whole.
             if let resumed = await self.work.resumeTranscript(load: load, transcript: { from, limit in
                 try await client.call(DaemonAPI.Method.agentsTranscript,

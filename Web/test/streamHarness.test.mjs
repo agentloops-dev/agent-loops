@@ -15,8 +15,8 @@ function webClient(stream) {
   return {
     notify: (method, params) => work.apply(method, params, host),
     catchUp(snapshot, during) {
-      // As loadPage: heard from now is laid after the page; a page that starts where the held one
-      // ended resumes it, and any other opens the chat whole.
+      // As loadPage: heard from now is laid after the page; the page from the first entry held
+      // resumes it (#6282), and one that leaves a gap opens the chat whole.
       work.heardSincePage = [];
       work.replaceAgents(snapshot.agents, host);
       for (const [method, params] of during) work.apply(method, params, host);
@@ -24,10 +24,10 @@ function webClient(stream) {
       work.permissions.value = { ...work.permissions.value,
         [host]: [...(snapshot.permissions ?? [])].sort((a, b) => a.askedAt - b.askedAt) };
       work.elicitations.value = { ...work.elicitations.value, [host]: snapshot.elicitations ?? [] };
-      const end = work.chatEnd();
+      const start = work.chatResumeStart();
       const page = snapshot.transcript;
-      if (end !== null && page.total >= end) {
-        const resumed = { ...page, entries: page.entries.slice(end), firstIndex: end };
+      if (start !== null && page.total >= start) {
+        const resumed = { ...page, entries: page.entries.slice(start - page.firstIndex), firstIndex: start };
         if (work.takeResumed(resumed)) return;
       }
       work.replaceTranscript(page);
