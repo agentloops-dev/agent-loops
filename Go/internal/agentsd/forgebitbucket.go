@@ -23,8 +23,8 @@ import (
 // says which.
 //
 // Bitbucket's issues have no labels: their kind and component are their labels, as the
-// bitbucket server's events say them. A feature:<name> component is the issue's feature on
-// Work ▸ Features (#3880); Bitbucket has no epics, sub-issues or dependencies, so it has no plan
+// bitbucket server's events say them. A feature:<name> component is the issue's feature
+// (#3880); Bitbucket has no epics, sub-issues or dependencies, so it has no plan
 // and no board. Its pull requests have none. Rerun failed runs each
 // failed Pipelines run again, every step, as Pipelines cannot run only the failed ones.
 // bitbucketForge's Caps say what Bitbucket cannot do.

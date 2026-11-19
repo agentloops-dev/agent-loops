@@ -5704,46 +5704,6 @@ export type ForgeEventKind =
   | "referenced";
 
 /**
- * A feature (#3267): name is its label's after feature:, with the label's colour where the forge
- * gives one; epics counts its epics, open the open ones. issues counts its open issues that are not
- * epics, of the newest 500 open issues (#3741); a feature with no open epic and no such issue is
- * finished. refs are the lineage refs of its open issues and open epics, waiting the ones labelled
- * alex-todo, and updatedAt the newest update of any of them (#4115), so a client finds the sessions
- * labelled #<n> for them and which wait for Alex.
- */
-export interface ForgeFeature {
-  name: string;
-  color?: string;
-  epics: number;
-  open: number;
-  issues?: number;
-  refs?: string[];
-  waiting?: string[];
-  updatedAt?: WireDate;
-}
-
-/**
- * forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or
- * closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull
- * requests with a review requested from the person (#4115, #5803), so a client finds the sessions
- * labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
- */
-export interface ForgeFeatures {
-  features: ForgeFeature[];
-  approvals?: string[];
-  errors?: ForgeListError[];
-}
-
-/**
- * forge/features (#3267): the features of every folder on this machine, or of one folder's repo.
- */
-export interface ForgeFeaturesRequest {
-  folder?: string;
-  /** A board's url, from forge/boards (#3282): only the epics on that board. */
-  board?: string;
-}
-
-/**
  * forge/hold (#6091): put an issue on hold (on) or take it off hold. The daemon writes the forge's
  * own field where it has one (Bitbucket: the state on hold; Jira: a status named On hold where the
  * workflow has one), else the label on hold.
@@ -11491,8 +11451,8 @@ export interface Project {
 /**
  * One board in a project's Tasks slot (#3282): a GitHub Projects board, a Jira board, a Linear
  * team, a GitLab group board or an Azure Boards board (a team's, #3816), by its address and a name
- * (the team's). Work's Issues and Features lists narrow to one. A client sends name and url; the
- * control plane reads forge, key and site from the url.
+ * (the team's). Work's Issues and Timeline narrow to one. A client sends name and url; the control
+ * plane reads forge, key and site from the url.
  */
 export interface ProjectBoard {
   name: string;
@@ -16107,58 +16067,6 @@ export interface WorkDismissLeadRequest {
 }
 
 /**
- * A feature in work/features (#4586): feature is it as forge/features says it. epics are its open
- * epics, the newest first, each with where it is in its plan and its children. loose are its open
- * issues that are not epics and have no parent (of the newest 500 open issues), the newest update
- * first, as children are: when each started, and whether it waits for a person.
- */
-export interface WorkFeature {
-  feature: ForgeFeature;
-  epics: WorkFeatureEpic[];
-  loose: WorkTimelineChild[];
-}
-
-/**
- * An open epic in work/features (#4586), from forge/plan and work/timeline. steps is the number of
- * steps in its plan (ForgePlan.steps), and step the first of them with an open child, absent when
- * none is open. blockedOutside are the open blockers outside the plan of that step's open children
- * (an issue of another epic), each once. forecast is its open line's close as work/timeline
- * forecasts it, on GitHub only; absent when there is too little history or nothing to forecast.
- * children are its sub-issues in the plan's order (at most 100), each with its start, close and
- * wait as in work/timeline; absent when its plan could not be read (errors says why).
- */
-export interface WorkFeatureEpic {
-  item: ForgeItem;
-  step?: number;
-  steps: number;
-  blockedOutside?: LineageNode[];
-  forecast?: WorkTimelineForecast;
-  children?: WorkTimelineChild[];
-}
-
-/**
- * work/features (#4586, specs/4328-work-look/features-delivery.md): the Features page's one read.
- * features are forge/features' features, by name, each with its open epics and its loose open
- * issues, so an open feature's epics and children draw with no second read. approvals are as in
- * forge/features. errors say a forge, a plan or a timeline that could not be read.
- */
-export interface WorkFeatures {
-  features: WorkFeature[];
-  approvals?: string[];
-  errors?: ForgeListError[];
-}
-
-/**
- * work/features (#4586): the features of every folder on this machine, or of one folder's repo, as
- * forge/features.
- */
-export interface WorkFeaturesRequest {
-  folder?: string;
-  /** A board's url, from forge/boards (#3282): only the epics on that board. */
-  board?: string;
-}
-
-/**
  * An open epic with no lead, as work/suggest-leads says it (#5458, epic #5457). node, title and url
  * are the epic's; folder is a folder on this machine on its repo; milestone is its name and due its
  * due date (YYYY-MM-DD) where the forge says them. done and total are its children closed and all
@@ -16932,7 +16840,6 @@ export interface Methods {
   "forge/close": { params: ForgeCloseRequest; result: ForgeDone };
   "forge/comment": { params: ForgeCommentRequest; result: ForgeDone };
   "forge/diff": { params: ForgeNodeRequest; result: ForgeDiff };
-  "forge/features": { params: ForgeFeaturesRequest; result: ForgeFeatures };
   "forge/hold": { params: ForgeHoldRequest; result: ForgeDone };
   "forge/image": { params: ForgeImageRequest; result: ForgeImage };
   "forge/issue": { params: ForgeItemRequest; result: ForgeItemDetail };
@@ -17201,7 +17108,6 @@ export interface Methods {
   "wake/set": { params: WakeSettings; result: WakeSettings };
   "wake/settings": { params: Empty; result: WakeSettings };
   "work/dismiss-lead": { params: WorkDismissLeadRequest; result: ForgeDone };
-  "work/features": { params: WorkFeaturesRequest; result: WorkFeatures };
   "work/suggest-leads": { params: WorkSuggestLeadsRequest; result: WorkSuggestLeads };
   "work/timeline": { params: WorkTimelineRequest; result: WorkTimeline };
   "workflows/approve": { params: WorkflowApproveRequest; result: WorkflowSummary };
@@ -17414,7 +17320,6 @@ export const MethodTarget = {
   "forge/close": "host",
   "forge/comment": "host",
   "forge/diff": "host",
-  "forge/features": "host",
   "forge/hold": "host",
   "forge/image": "host",
   "forge/issue": "host",
@@ -17683,7 +17588,6 @@ export const MethodTarget = {
   "wake/set": "host",
   "wake/settings": "host",
   "work/dismiss-lead": "host",
-  "work/features": "host",
   "work/suggest-leads": "host",
   "work/timeline": "host",
   "workflows/approve": "host",
@@ -18210,9 +18114,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeDiffHunk: { required: ["oldStart", "newStart", "lines"], optional: [] },
   ForgeDone: { required: [], optional: ["url", "auto", "reran"] },
   ForgeEvent: { required: ["kind", "at"], optional: ["actor", "label", "assignee", "source"] },
-  ForgeFeature: { required: ["name", "epics", "open"], optional: ["color", "issues", "refs", "waiting", "updatedAt"] },
-  ForgeFeatures: { required: ["features"], optional: ["approvals", "errors"] },
-  ForgeFeaturesRequest: { required: [], optional: ["folder", "board"] },
   ForgeHoldRequest: { required: ["node", "on"], optional: [] },
   ForgeImage: { required: ["mimeType", "data"], optional: [] },
   ForgeImageRequest: { required: ["url"], optional: [] },
@@ -19062,10 +18963,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WebRemoteStatus: { required: ["port", "served"], optional: ["reason", "detail"] },
   WebServe: { required: ["on"], optional: [] },
   WorkDismissLeadRequest: { required: ["node"], optional: [] },
-  WorkFeature: { required: ["feature", "epics", "loose"], optional: [] },
-  WorkFeatureEpic: { required: ["item", "steps"], optional: ["step", "blockedOutside", "forecast", "children"] },
-  WorkFeatures: { required: ["features"], optional: ["approvals", "errors"] },
-  WorkFeaturesRequest: { required: [], optional: ["folder", "board"] },
   WorkLeadSuggestion: { required: ["node", "title", "done", "total", "start"], optional: ["url", "folder", "milestone", "due", "high", "ui", "standing"] },
   WorkReport: { required: ["outcome", "message", "at"], optional: ["block"] },
   WorkSuggestLeads: { required: ["suggestions", "more"], optional: ["errors"] },

@@ -222,7 +222,7 @@ test("previous and next are the rows above and below in the list shown (#3257)",
   assert.equal(w.neighbours(refs[1], w.filterRows(rows, { ...w.anyFilter, text: "Issue 3" })), undefined);
 });
 
-// #3282: a project's boards narrow Issues and Features, on the machines that know boards.
+// #3282: a project's boards narrow Issues and Timeline, on the machines that know boards.
 test("the boards of several machines are one list, each once by url, the first name kept", () => {
   const a = { name: "Platform", url: "https://github.com/orgs/acme/projects/7", forge: "github", key: "acme/7" };
   const b = { name: "Mobile", url: "https://linear.app/acme/team/MOB" };

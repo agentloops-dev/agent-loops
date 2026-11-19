@@ -402,8 +402,6 @@ final class WorkListState {
 /// The Work lists, one per kind, kept by the model while the app runs (#3257).
 @MainActor
 final class WorkLists {
-    /// Work ▸ Features (#3269): the features read, and the ones opened.
-    let features = WorkFeaturesState()
     /// Work ▸ Timeline (#4173): Core since #6044.
     let timeline = WorkTimelineState()
     #if os(macOS)

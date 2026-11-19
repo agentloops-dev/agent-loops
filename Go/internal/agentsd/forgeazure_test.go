@@ -373,34 +373,20 @@ func TestAnAzureBoardsBoardNarrowsWorkToItsTeam(t *testing.T) {
 	}
 }
 
-// #3939: Work ▸ Features narrowed to an Azure Boards board lists the features of the Epic work
-// items under the team's area paths, though the epic has no epic tag.
-func TestFeaturesOfAnAzureBoardsBoard(t *testing.T) {
+// #3939: Work ▸ Issues narrowed to an Azure Boards board lists the Epic work items under the
+// team's area paths as epics, with their feature, though the epic has no epic tag.
+func TestEpicsOfAnAzureBoardsBoard(t *testing.T) {
 	t.Parallel()
 
-	d, c, b, app := boardsDaemon(t)
+	d, c, _, app := boardsDaemon(t)
 	id, _, _ := d.folderProject(app)
 	payments := board("Payments", "https://tfs.acme.test/acme/Web%20App/_boards/board/t/Payments", wire.ConnectionProviderAzuredevops,
 		"acme/Web App/Payments", "tfs.acme.test")
 	d.heardProjects(wire.MachineProjects{Projects: []wire.ProjectTools{
 		{ID: id, Name: "App", Slots: []wire.ProjectSlot{}, Boards: []wire.ProjectBoard{payments}},
 	}})
-	var out wire.ForgeFeatures
-	json.Unmarshal(c.call(t, 1, "forge/features", wire.ForgeFeaturesRequest{Board: &payments.URL}), &out)
-	if len(out.Features) != 1 || out.Features[0].Name != "billing" || out.Features[0].Epics != 1 || out.Features[0].Open != 1 ||
-		len(out.Errors) != 0 {
-		t.Fatalf("features %+v", out)
-	}
-	searches, _ := b.asked()
-	areas := `([System.AreaPath] UNDER 'Web App\Payments' OR [System.AreaPath] = 'Web App')`
-	if len(searches) != 2 || !strings.Contains(searches[1], "([System.WorkItemType] = 'Epic' OR [System.Tags] CONTAINS 'epic')") ||
-		!strings.Contains(searches[0], areas) || !strings.Contains(searches[1], areas) {
-		t.Fatalf("searches %q", searches)
-	}
-
-	// The epic is an epic on Work ▸ Issues too.
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 2, "forge/issues", wire.ForgeListRequest{Board: &payments.URL, Label: new("epic"), State: new("all")}), &list)
+	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Board: &payments.URL, Label: new("epic"), State: new("all")}), &list)
 	if len(list.Items) != 1 || deref(list.Items[0].Level) != "epic" || deref(list.Items[0].Feature) != "billing" {
 		t.Fatalf("list %+v", list.Items)
 	}

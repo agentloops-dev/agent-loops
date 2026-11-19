@@ -7,7 +7,7 @@ outside account.
 - Forgejo 17 at http://127.0.0.1:<port>/. Any token connects ("Authorization: token …"),
   except "wrong-token", which gets a 401. /user says kim.
 - The repository acme/app (main branch main, merge or squash): issues 1 to 3 (labels, one
-  feature:wallet label for Work ▸ Features, a milestone, comments, a timeline, dependencies, so
+  feature:wallet label, a milestone, comments, a timeline, dependencies, so
   issue 1 is blocked by issue 2), and pull requests 4 to 6, numbered with the issues as Forgejo
   numbers them (open with a failing Actions status and a review, a draft in conflict, merged),
   their reviews, line comments, files, diff and statuses; a failed Forgejo Actions run with its

@@ -38,8 +38,8 @@ public enum SidebarItem: Hashable, Sendable {
     /// day and week. Core: the Remote has it under Status, after the Multiplier (#4758).
     case velocity
     /// One of Work's lists (#3119), a row each under the Work group (#4004): the issues and pull
-    /// requests from the forges, with lineage on top, the features, and the releases
-    /// lineage knows. An item's page keeps its list's row. The Remote has no Features row (#3269).
+    /// requests from the forges, with lineage on top, and the releases lineage knows. An
+    /// item's page keeps its list's row.
     case work(WorkList.Kind)
     /// The folders' docs and the docs connectors', each doc a page (#3321, spec 3319). Mac + web:
     /// the Remote has no row for it (#2796).

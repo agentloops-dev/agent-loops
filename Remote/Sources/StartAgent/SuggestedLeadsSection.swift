@@ -4,7 +4,7 @@ import SwiftUI
 /// New Session's **Suggested** section (#5460, epic #5457): at most 3 open epics with no lead,
 /// as the daemon ranks them, each a row that fills the form as Start lead does. It starts
 /// nothing: the person still presses Start. A row swipes to Dismiss; Hide folds the section to
-/// its heading, on this device, until Show. "N more in Work" opens Work ▸ Features.
+/// its heading, on this device, until Show. "N more in Work" opens Work ▸ Timeline.
 ///
 /// Placed under the project and the persona, above kept starts (#5460): a tap there fills the
 /// prompt card below, which is in view with the keyboard down or up. Not drawn when every epic
@@ -25,7 +25,7 @@ struct SuggestedLeadsSection: View {
                     ForEach(read.value.suggestions) { row($0) }
                     if let more = SuggestedLeads.more(read.value.more) {
                         Button {
-                            model.showWork(WorkPlace(kind: .feature))
+                            model.showWork(WorkPlace(kind: .timeline))
                         } label: {
                             HStack {
                                 Text(more)
@@ -37,7 +37,7 @@ struct SuggestedLeadsSection: View {
                             }
                         }
                         .foregroundStyle(Paper.accent)
-                        .accessibilityHint("Opens Work, Features")
+                        .accessibilityHint("Opens Work, Timeline")
                     }
                 }
                 if let note {

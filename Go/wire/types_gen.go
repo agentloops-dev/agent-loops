@@ -6133,42 +6133,6 @@ const ForgeEventKindClosed ForgeEventKind = "closed"
 const ForgeEventKindReopened ForgeEventKind = "reopened"
 const ForgeEventKindReferenced ForgeEventKind = "referenced"
 
-// A feature (#3267): name is its label's after feature:, with the label's colour where the forge gives one; epics counts its epics, open the open ones. issues counts its open issues that are not epics, of the newest 500 open issues (#3741); a feature with no open epic and no such issue is finished. refs are the lineage refs of its open issues and open epics, waiting the ones labelled alex-todo, and updatedAt the newest update of any of them (#4115), so a client finds the sessions labelled #<n> for them and which wait for Alex.
-type ForgeFeature struct {
-	Name string `json:"name"`
-
-	Color *string `json:"color,omitzero"`
-
-	Epics int64 `json:"epics"`
-
-	Open int64 `json:"open"`
-
-	Issues *int64 `json:"issues,omitzero"`
-
-	Refs []string `json:"refs,omitzero"`
-
-	Waiting []string `json:"waiting,omitzero"`
-
-	UpdatedAt *Date `json:"updatedAt,omitzero"`
-}
-
-// forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests with a review requested from the person (#4115, #5803), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
-type ForgeFeatures struct {
-	Features []ForgeFeature `json:"features"`
-
-	Approvals []string `json:"approvals,omitzero"`
-
-	Errors []ForgeListError `json:"errors,omitzero"`
-}
-
-// forge/features (#3267): the features of every folder on this machine, or of one folder's repo.
-type ForgeFeaturesRequest struct {
-	Folder *string `json:"folder,omitzero"`
-
-	// A board's url, from forge/boards (#3282): only the epics on that board.
-	Board *string `json:"board,omitzero"`
-}
-
 // forge/hold (#6091): put an issue on hold (on) or take it off hold. The daemon writes the forge's own field where it has one (Bitbucket: the state on hold; Jira: a status named On hold where the workflow has one), else the label on hold.
 type ForgeHoldRequest struct {
 	Node LineageNode `json:"node"`
@@ -12165,7 +12129,7 @@ type Project struct {
 	Boards []ProjectBoard `json:"boards,omitzero"`
 }
 
-// One board in a project's Tasks slot (#3282): a GitHub Projects board, a Jira board, a Linear team, a GitLab group board or an Azure Boards board (a team's, #3816), by its address and a name (the team's). Work's Issues and Features lists narrow to one. A client sends name and url; the control plane reads forge, key and site from the url.
+// One board in a project's Tasks slot (#3282): a GitHub Projects board, a Jira board, a Linear team, a GitLab group board or an Azure Boards board (a team's, #3816), by its address and a name (the team's). Work's Issues and Timeline narrow to one. A client sends name and url; the control plane reads forge, key and site from the url.
 type ProjectBoard struct {
 	Name string `json:"name"`
 
@@ -17252,47 +17216,6 @@ const WeekdaySat Weekday = "sat"
 // work/dismiss-lead (#5458): hide an epic from the suggestions until the epic changes or a lead of it ends. The list is the person's, kept on this machine.
 type WorkDismissLeadRequest struct {
 	Node LineageNode `json:"node"`
-}
-
-// A feature in work/features (#4586): feature is it as forge/features says it. epics are its open epics, the newest first, each with where it is in its plan and its children. loose are its open issues that are not epics and have no parent (of the newest 500 open issues), the newest update first, as children are: when each started, and whether it waits for a person.
-type WorkFeature struct {
-	Feature ForgeFeature `json:"feature"`
-
-	Epics []WorkFeatureEpic `json:"epics"`
-
-	Loose []WorkTimelineChild `json:"loose"`
-}
-
-// An open epic in work/features (#4586), from forge/plan and work/timeline. steps is the number of steps in its plan (ForgePlan.steps), and step the first of them with an open child, absent when none is open. blockedOutside are the open blockers outside the plan of that step's open children (an issue of another epic), each once. forecast is its open line's close as work/timeline forecasts it, on GitHub only; absent when there is too little history or nothing to forecast. children are its sub-issues in the plan's order (at most 100), each with its start, close and wait as in work/timeline; absent when its plan could not be read (errors says why).
-type WorkFeatureEpic struct {
-	Item ForgeItem `json:"item"`
-
-	Step *int64 `json:"step,omitzero"`
-
-	Steps int64 `json:"steps"`
-
-	BlockedOutside []LineageNode `json:"blockedOutside,omitzero"`
-
-	Forecast *WorkTimelineForecast `json:"forecast,omitzero"`
-
-	Children []WorkTimelineChild `json:"children,omitzero"`
-}
-
-// work/features (#4586, specs/4328-work-look/features-delivery.md): the Features page's one read. features are forge/features' features, by name, each with its open epics and its loose open issues, so an open feature's epics and children draw with no second read. approvals are as in forge/features. errors say a forge, a plan or a timeline that could not be read.
-type WorkFeatures struct {
-	Features []WorkFeature `json:"features"`
-
-	Approvals []string `json:"approvals,omitzero"`
-
-	Errors []ForgeListError `json:"errors,omitzero"`
-}
-
-// work/features (#4586): the features of every folder on this machine, or of one folder's repo, as forge/features.
-type WorkFeaturesRequest struct {
-	Folder *string `json:"folder,omitzero"`
-
-	// A board's url, from forge/boards (#3282): only the epics on that board.
-	Board *string `json:"board,omitzero"`
 }
 
 // An open epic with no lead, as work/suggest-leads says it (#5458, epic #5457). node, title and url are the epic's; folder is a folder on this machine on its repo; milestone is its name and due its due date (YYYY-MM-DD) where the forge says them. done and total are its children closed and all (0 and 0 for a standing epic, whose plan is a query). high says an open child has the label priority:high, and ui that an open child is a story (a person can see or use it: a client changes); the order says why. start is the new-agent form Start lead fills: the prompt, the labels #<n> and lead, and no worktree. It starts nothing.

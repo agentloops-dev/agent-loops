@@ -36,7 +36,6 @@ Alex chose tiers on 2026-10-27 (#2796). Each row has a **Tier** cell after its F
 - the Remote's trimmed Settings: This app (Voice, Notifications, Sidebar) and Help;
 - the daily checks: their Off / On control and how often in Settings ▸ Agent Configuration ▸ Workflows (Alex, 2026-11-01, #3192, #3351; the daily summary it was the control of went in #5853).
 - day-to-day coding from the Remote (Alex, 2026-11-07, #4030): the person's Secrets and For One Session, Accounts, the Machines group (its rows, New, Start, Stop, Delete, what a machine needs, and a machine's page), a machine's runtimes' **Sign In…** and **Update**, **Add Folder…** and **Clone Git URL…**, and **Move to Machine…**.
-- Work ▸ Features: its groups, its features and their epics and issues, with no Board menu (Alex, 2026-11-09).
 - the Velocity page, the PRs that landed over time, under Reports after Achievements on the Remote (named Multiplier until #5736) (Alex, 2026-11-11, #4758).
 - Work ▸ Timeline, after Releases in the Work group; on a phone in portrait it is the list of epics (Alex, 2026-11-17, #6044: "Timeline is Work, and then goes on the Remotes").
 
@@ -65,7 +64,7 @@ The surfaces: **Desk** is the Mac window (and the Windows and Linux shells, #445
 |---|---|---|---|---|---|
 | Engineer, agent work | Engineer (agent work) | yes | yes | yes | Core |
 | Engineer, set-up (folders, connectors, Agent Configuration, Folder Settings, own usage, Docs, Messages) | Engineer (set-up) | yes | yes | no | Mac + web |
-| Lead | Lead | yes | a link to the web page; Work ▸ Features, Velocity and Timeline stay native | no (Features, Velocity and Timeline stay) | Web + Mac link (Features, Velocity, Timeline: Core) |
+| Lead | Lead | yes | a link to the web page; Velocity and Timeline stay native | no (Velocity and Timeline stay) | Web + Mac link (Velocity, Timeline: Core) |
 | Admin | Admin | yes | no; a link only where an engineer looks for it (Edit in Console) | no | Web only, or Web + Mac link |
 | Report reader | Report reader | yes | a link to the web page (Reports, #4938) | no | Web + Mac link |
 

@@ -169,9 +169,6 @@ connected Forgejo); **Blocked by** makes a child depend on another child, or no 
 Forgejo keeps an issue with open dependencies from being closed, so an epic closes after its
 children.
 
-**Work ▸ Features** counts a Forgejo epic under its `feature:<name>` label, as it counts the
-other forges' epics.
-
 ## The tools
 
 - `list_pull_requests`, `get_pull_request` (with its description, head commit and the
