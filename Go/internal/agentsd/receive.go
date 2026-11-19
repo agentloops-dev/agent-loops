@@ -191,37 +191,41 @@ func (d *Daemon) receive(r wire.ReceiveRequest) (summary wire.FolderSummary, err
 	if err != nil {
 		return summary, err
 	}
-	if len(r.Branches) == 0 {
-		return summary, Invalid("Choose a branch to send.")
-	}
-	checkoutSent := false
-	for _, b := range r.Branches {
-		if !validBranch(b.Name) || len(b.Commit) < 40 || strings.HasPrefix(b.Commit, "-") {
-			return summary, Invalid("%q is not a branch this machine can take.", b.Name)
-		}
-		checkoutSent = checkoutSent || b.Name == r.Checkout
-	}
-	if !checkoutSent {
-		return summary, Invalid("The branch to check out is not one of those sent.")
+	if err := receiveCheckBranches(r); err != nil {
+		return summary, err
 	}
 	m, _ := receiveLocks.LoadOrStore(path, &sync.Mutex{})
 	m.(*sync.Mutex).Lock()
 	defer m.(*sync.Mutex).Unlock()
+	return d.receiveIntoLocked(r, path, bundle, patch)
+}
 
+// receiveCheckBranches refuses a send with no branch, a branch name or commit this machine
+// cannot take, or a branch to check out that is not one of those sent.
+func receiveCheckBranches(r wire.ReceiveRequest) error {
+	if len(r.Branches) == 0 {
+		return Invalid("Choose a branch to send.")
+	}
+	checkoutSent := false
+	for _, b := range r.Branches {
+		if !validBranch(b.Name) || len(b.Commit) < 40 || strings.HasPrefix(b.Commit, "-") {
+			return Invalid("%q is not a branch this machine can take.", b.Name)
+		}
+		checkoutSent = checkoutSent || b.Name == r.Checkout
+	}
+	if !checkoutSent {
+		return Invalid("The branch to check out is not one of those sent.")
+	}
+	return nil
+}
+
+// receiveIntoLocked puts the sent branches, origin and changes into the folder at path.
+// When it fails, it removes what it made. Called with the folder's receive lock held.
+func (d *Daemon) receiveIntoLocked(r wire.ReceiveRequest, path, bundle, patch string) (summary wire.FolderSummary, err error) {
 	here := shortPath(path)
-	fresh, made := false, false
-	if fi, err := os.Stat(path); err != nil {
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			return summary, &Error{Code: wire.FailureFolderInTheWay, Message: "Could not make " + here + ": " + err.Error()}
-		}
-		fresh, made = true, true
-	} else if !fi.IsDir() {
-		return summary, &Error{Code: wire.FailureFolderInTheWay, Message: here + " is a file. Nothing in it was changed."}
-	} else if repo, ok := repositoryOf(path); !ok || canonical(repo.toplevel) != canonical(path) {
-		if entries, _ := os.ReadDir(path); len(entries) > 0 {
-			return summary, &Error{Code: wire.FailureFolderInTheWay, Message: here + " is already there and is not a Git repository. Nothing in it was changed."}
-		}
-		fresh = true
+	fresh, made, err := receivePrepareFolder(path, here)
+	if err != nil {
+		return summary, err
 	}
 	defer func() {
 		switch {
@@ -232,64 +236,133 @@ func (d *Daemon) receive(r wire.ReceiveRequest) (summary wire.FolderSummary, err
 			os.RemoveAll(filepath.Join(path, ".git"))
 		}
 	}()
-	if fresh {
-		if _, err := git(path, "init", "-q"); err != nil {
-			return summary, err
-		}
-	} else {
-		_, own, err := changes(path)
-		if err != nil {
-			return summary, err
-		}
-		if own {
-			return summary, &Error{Code: wire.FailureFolderInTheWay, Message: here + " has changes of its own on this machine. Commit or remove them there, then send again. Nothing was changed."}
-		}
+	if err := receiveInitOrCheckChanges(path, here, fresh); err != nil {
+		return summary, err
 	}
 
 	if bundle != "" {
-		if _, err := git(path, "fetch", "-q", "--no-tags", "--", bundle, "+refs/heads/*:refs/agents-send/*"); err != nil {
-			if strings.Contains(err.Error(), "prerequisite") {
-				return summary, Invalid("The copy on this machine is not what the Mac expected. Send again. Nothing was changed.")
-			}
+		if err := receiveFetchBundle(path, bundle); err != nil {
 			return summary, err
 		}
 	}
-	defer func() {
-		if out, _ := git(path, "for-each-ref", "--format=%(refname)", "refs/agents-send"); out != "" {
-			for _, ref := range strings.Split(out, "\n") {
-				git(path, "update-ref", "-d", ref)
-			}
-		}
-	}()
+	defer receiveDropSentRefs(path)
 
-	// Every branch moves forward, or the send stops before any moves.
-	type move struct{ ref, from, to string }
-	var moves []move
-	for _, b := range r.Branches {
+	moves, err := receivePlanMoves(path, here, r.Branches)
+	if err != nil {
+		return summary, err
+	}
+	if err := receiveApplyMoves(path, fresh, moves, r.Checkout); err != nil {
+		return summary, err
+	}
+	if r.Origin != nil && *r.Origin != "" {
+		if err := receiveSetOrigin(path, *r.Origin); err != nil {
+			return summary, err
+		}
+	}
+	os.Remove(sentMark(path))
+	if patch != "" {
+		if err := receiveApplyPatch(path, patch); err != nil {
+			return summary, err
+		}
+	}
+	return d.addFolderOf(store.FolderURL(path), false, "")
+}
+
+// receivePrepareFolder makes the folder at path when it is not there, and refuses a file or
+// a folder with files that is not a Git repository. fresh is true when the folder has no
+// repository yet; made is true when this call made the folder.
+func receivePrepareFolder(path, here string) (fresh, made bool, err error) {
+	if fi, err := os.Stat(path); err != nil {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return false, false, &Error{Code: wire.FailureFolderInTheWay, Message: "Could not make " + here + ": " + err.Error()}
+		}
+		return true, true, nil
+	} else if !fi.IsDir() {
+		return false, false, &Error{Code: wire.FailureFolderInTheWay, Message: here + " is a file. Nothing in it was changed."}
+	} else if repo, ok := repositoryOf(path); !ok || canonical(repo.toplevel) != canonical(path) {
+		if entries, _ := os.ReadDir(path); len(entries) > 0 {
+			return false, false, &Error{Code: wire.FailureFolderInTheWay, Message: here + " is already there and is not a Git repository. Nothing in it was changed."}
+		}
+		return true, false, nil
+	}
+	return false, false, nil
+}
+
+// receiveInitOrCheckChanges makes a repository in a fresh folder, or refuses a repository
+// that has changes of its own.
+func receiveInitOrCheckChanges(path, here string, fresh bool) error {
+	if fresh {
+		_, err := git(path, "init", "-q")
+		return err
+	}
+	_, own, err := changes(path)
+	if err != nil {
+		return err
+	}
+	if own {
+		return &Error{Code: wire.FailureFolderInTheWay, Message: here + " has changes of its own on this machine. Commit or remove them there, then send again. Nothing was changed."}
+	}
+	return nil
+}
+
+// receiveFetchBundle fetches the bundle's branches into refs/agents-send.
+func receiveFetchBundle(path, bundle string) error {
+	if _, err := git(path, "fetch", "-q", "--no-tags", "--", bundle, "+refs/heads/*:refs/agents-send/*"); err != nil {
+		if strings.Contains(err.Error(), "prerequisite") {
+			return Invalid("The copy on this machine is not what the Mac expected. Send again. Nothing was changed.")
+		}
+		return err
+	}
+	return nil
+}
+
+// receiveDropSentRefs removes every ref under refs/agents-send.
+func receiveDropSentRefs(path string) {
+	if out, _ := git(path, "for-each-ref", "--format=%(refname)", "refs/agents-send"); out != "" {
+		for _, ref := range strings.Split(out, "\n") {
+			git(path, "update-ref", "-d", ref)
+		}
+	}
+}
+
+// receiveMove is a branch to move: its ref, the commit it has now ("" for a new branch),
+// and the commit it moves to.
+type receiveMove struct{ ref, from, to string }
+
+// receivePlanMoves is the move of each sent branch. Every branch moves forward, or the send
+// stops before any moves.
+func receivePlanMoves(path, here string, branches []wire.SentBranch) ([]receiveMove, error) {
+	var moves []receiveMove
+	for _, b := range branches {
 		if _, err := git(path, "cat-file", "-e", b.Commit+"^{commit}"); err != nil {
-			return summary, Invalid("This machine does not have the commits of %s. Send again. Nothing was changed.", b.Name)
+			return nil, Invalid("This machine does not have the commits of %s. Send again. Nothing was changed.", b.Name)
 		}
 		ref := "refs/heads/" + b.Name
 		have, _ := git(path, "rev-parse", "-q", "--verify", ref)
 		switch {
 		case have == b.Commit:
 		case have == "":
-			moves = append(moves, move{ref, "", b.Commit})
+			moves = append(moves, receiveMove{ref, "", b.Commit})
 		default:
 			if _, err := git(path, "merge-base", "--is-ancestor", have, b.Commit); err != nil {
-				return summary, &Error{Code: wire.FailureFolderInTheWay, Message: b.Name + " in " + here + " has commits of its own on this machine. Nothing was changed."}
+				return nil, &Error{Code: wire.FailureFolderInTheWay, Message: b.Name + " in " + here + " has commits of its own on this machine. Nothing was changed."}
 			}
-			moves = append(moves, move{ref, have, b.Commit})
+			moves = append(moves, receiveMove{ref, have, b.Commit})
 		}
 	}
+	return moves, nil
+}
 
+// receiveApplyMoves clears what the last send left (when the folder is not fresh), moves
+// the branches and checks out the branch to check out.
+func receiveApplyMoves(path string, fresh bool, moves []receiveMove, checkout string) error {
 	if !fresh {
 		// What is left is the last send's changes, or nothing: clear it for this send.
 		if _, err := git(path, "reset", "-q", "--hard"); err != nil {
-			return summary, err
+			return err
 		}
 		if _, err := git(path, "clean", "-fdq"); err != nil {
-			return summary, err
+			return err
 		}
 	}
 	for _, m := range moves {
@@ -298,39 +371,39 @@ func (d *Daemon) receive(r wire.ReceiveRequest) (summary wire.FolderSummary, err
 			args = append(args, m.from)
 		}
 		if _, err := git(path, args...); err != nil {
-			return summary, err
+			return err
 		}
 	}
-	if _, err := git(path, "symbolic-ref", "HEAD", "refs/heads/"+r.Checkout); err != nil {
-		return summary, err
+	if _, err := git(path, "symbolic-ref", "HEAD", "refs/heads/"+checkout); err != nil {
+		return err
 	}
-	if _, err := git(path, "reset", "-q", "--hard"); err != nil {
-		return summary, err
+	_, err := git(path, "reset", "-q", "--hard")
+	return err
+}
+
+// receiveSetOrigin sets the origin remote to origin, or adds it when there is none.
+func receiveSetOrigin(path, origin string) error {
+	var err error
+	if _, err = git(path, "remote", "get-url", "origin"); err == nil {
+		_, err = git(path, "remote", "set-url", "origin", origin)
+	} else {
+		_, err = git(path, "remote", "add", "origin", origin)
 	}
-	if r.Origin != nil && *r.Origin != "" {
-		// err is the named result. := here would hide it, and the check below would
-		// not see a failed set-url or add.
-		if _, err = git(path, "remote", "get-url", "origin"); err == nil {
-			_, err = git(path, "remote", "set-url", "origin", *r.Origin)
-		} else {
-			_, err = git(path, "remote", "add", "origin", *r.Origin)
+	return err
+}
+
+// receiveApplyPatch applies the uncommitted changes in patch, when it is not empty, and
+// marks the folder with its fingerprint.
+func receiveApplyPatch(path, patch string) error {
+	if fi, err := os.Stat(patch); err == nil && fi.Size() > 0 {
+		if _, err := git(path, "apply", "--binary", "--whitespace=nowarn", patch); err != nil {
+			return Invalid("The commits arrived, but the uncommitted changes did not apply: %s", err.Error())
 		}
-		if err != nil {
-			return summary, err
+		if now, err := worktreeFingerprint(path); err == nil {
+			os.WriteFile(sentMark(path), []byte(now+"\n"), 0o600)
 		}
 	}
-	os.Remove(sentMark(path))
-	if patch != "" {
-		if fi, err := os.Stat(patch); err == nil && fi.Size() > 0 {
-			if _, err := git(path, "apply", "--binary", "--whitespace=nowarn", patch); err != nil {
-				return summary, Invalid("The commits arrived, but the uncommitted changes did not apply: %s", err.Error())
-			}
-			if now, err := worktreeFingerprint(path); err == nil {
-				os.WriteFile(sentMark(path), []byte(now+"\n"), 0o600)
-			}
-		}
-	}
-	return d.addFolderOf(store.FolderURL(path), false, "")
+	return nil
 }
 
 func (d *Daemon) registerReceive() {

@@ -140,17 +140,7 @@ func (w *folderWatch) gather(paths <-chan string, ready chan struct{}) {
 				continue
 			}
 			gone = false
-			if here, ok := w.under(p); ok && !w.skipped(here) {
-				switch {
-				case w.files:
-					pending[here] = true
-				case here == w.root:
-					// The root itself (made, or its own metadata), not the folder it is in.
-					pending[w.root] = true
-				default:
-					pending[filepath.Dir(here)] = true
-				}
-			}
+			w.gatherNote(pending, p)
 		case <-tick.C:
 			if len(pending) == 0 {
 				continue
@@ -165,6 +155,24 @@ func (w *folderWatch) gather(paths <-chan string, ready chan struct{}) {
 		case <-w.done:
 			return
 		}
+	}
+}
+
+// gatherNote adds to pending what changed for the event path p: the file, the root, or
+// the folder that the file is in.
+func (w *folderWatch) gatherNote(pending map[string]bool, p string) {
+	here, ok := w.under(p)
+	if !ok || w.skipped(here) {
+		return
+	}
+	switch {
+	case w.files:
+		pending[here] = true
+	case here == w.root:
+		// The root itself (made, or its own metadata), not the folder it is in.
+		pending[w.root] = true
+	default:
+		pending[filepath.Dir(here)] = true
 	}
 }
 

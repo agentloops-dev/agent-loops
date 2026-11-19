@@ -361,31 +361,8 @@ func findMachine(given, provider string, listed wire.AgentMachines, done string)
 			return nil, nil, Invalid("Nothing was %s: %s", done, noProvider(provider, listed))
 		}
 	}
-	type match struct {
-		provider *wire.AgentMachinesProvider
-		machine  *wire.AgentMachinesMachine
-	}
 	for _, byHost := range []bool{false, true} {
-		var found []match
-		for i := range listed.Providers {
-			p := &listed.Providers[i]
-			if only != nil && p.ID != only.ID {
-				continue
-			}
-			for j := range p.Workspaces {
-				w := &p.Workspaces[j]
-				name := w.Name
-				if byHost {
-					if w.Host == nil {
-						continue
-					}
-					name = *w.Host
-				}
-				if strings.EqualFold(name, given) {
-					found = append(found, match{p, w})
-				}
-			}
-		}
+		found := findMachineMatches(given, only, listed, byHost)
 		if len(found) == 1 {
 			return found[0].provider, found[0].machine, nil
 		}
@@ -398,6 +375,38 @@ func findMachine(given, provider string, listed wire.AgentMachines, done string)
 		}
 	}
 	return nil, nil, nil
+}
+
+// foundMachine is a machine that findMachine found, with its provider.
+type foundMachine struct {
+	provider *wire.AgentMachinesProvider
+	machine  *wire.AgentMachinesMachine
+}
+
+// findMachineMatches is each machine called given: by the provider's name for it, or with
+// byHost by its host's name. With only given, only that provider's.
+func findMachineMatches(given string, only *wire.AgentMachinesProvider, listed wire.AgentMachines, byHost bool) []foundMachine {
+	var found []foundMachine
+	for i := range listed.Providers {
+		p := &listed.Providers[i]
+		if only != nil && p.ID != only.ID {
+			continue
+		}
+		for j := range p.Workspaces {
+			w := &p.Workspaces[j]
+			name := w.Name
+			if byHost {
+				if w.Host == nil {
+					continue
+				}
+				name = *w.Host
+			}
+			if strings.EqualFold(name, given) {
+				found = append(found, foundMachine{p, w})
+			}
+		}
+	}
+	return found
 }
 
 // deleteFailedMake is delete_machine on a make that failed (#6078): with the person's yes,
@@ -557,45 +566,7 @@ func workspacesNote(listed wire.AgentMachines) string {
 		lines = append(lines, "This control plane has no machine providers. The person adds them in Settings ▸ Machine Providers.")
 	}
 	for _, p := range listed.Providers {
-		var can []string
-		if p.CanMake {
-			can = append(can, "can make machines (make_machine)")
-		}
-		if p.CanDelete {
-			can = append(can, "can delete them")
-		}
-		line := fmt.Sprintf("%s (provider %s)", p.Name, p.ID)
-		if len(can) > 0 {
-			line += ": " + strings.Join(can, ", ")
-		}
-		lines = append(lines, line)
-		if len(p.Workspaces) == 0 {
-			lines = append(lines, "  no machines")
-		}
-		for _, w := range p.Workspaces {
-			host := " — not a host"
-			// A make that failed says why (#4706), not that it is no host.
-			if w.Reason != nil && *w.Reason != "" {
-				host = " — " + *w.Reason
-			}
-			if w.Host != nil {
-				state := "unknown"
-				if w.HostState != nil {
-					state = *w.HostState
-				}
-				host = " — host " + *w.Host + ", " + state
-			}
-			cost := ""
-			if w.Cost != nil {
-				cost = ", " + *w.Cost
-			}
-			lines = append(lines, "  - "+w.Name+": "+w.State+host+cost)
-		}
-		if p.CanMake && p.Options != nil {
-			if b, err := json.Marshal(p.Options); err == nil && string(b) != "null" {
-				lines = append(lines, "  New machine options (JSON Schema): "+string(b))
-			}
-		}
+		lines = append(lines, workspacesNoteProvider(p)...)
 	}
 	if len(listed.Providers) > 0 {
 		lines = append(lines, "Start, stop or delete one by its name at the start of its line, or by its host's name. Making and deleting ask the person first.")
@@ -608,4 +579,56 @@ func workspacesNote(listed wire.AgentMachines) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// workspacesNoteProvider is list_machines's lines for one provider: what it can do, its
+// machines, and the options a new machine takes.
+func workspacesNoteProvider(p wire.AgentMachinesProvider) []string {
+	var lines []string
+	var can []string
+	if p.CanMake {
+		can = append(can, "can make machines (make_machine)")
+	}
+	if p.CanDelete {
+		can = append(can, "can delete them")
+	}
+	line := fmt.Sprintf("%s (provider %s)", p.Name, p.ID)
+	if len(can) > 0 {
+		line += ": " + strings.Join(can, ", ")
+	}
+	lines = append(lines, line)
+	if len(p.Workspaces) == 0 {
+		lines = append(lines, "  no machines")
+	}
+	for _, w := range p.Workspaces {
+		lines = append(lines, workspacesNoteMachine(w))
+	}
+	if p.CanMake && p.Options != nil {
+		if b, err := json.Marshal(p.Options); err == nil && string(b) != "null" {
+			lines = append(lines, "  New machine options (JSON Schema): "+string(b))
+		}
+	}
+	return lines
+}
+
+// workspacesNoteMachine is list_machines's line for one machine: its state, its host or why
+// it is no host, and its cost.
+func workspacesNoteMachine(w wire.AgentMachinesMachine) string {
+	host := " — not a host"
+	// A make that failed says why (#4706), not that it is no host.
+	if w.Reason != nil && *w.Reason != "" {
+		host = " — " + *w.Reason
+	}
+	if w.Host != nil {
+		state := "unknown"
+		if w.HostState != nil {
+			state = *w.HostState
+		}
+		host = " — host " + *w.Host + ", " + state
+	}
+	cost := ""
+	if w.Cost != nil {
+		cost = ", " + *w.Cost
+	}
+	return "  - " + w.Name + ": " + w.State + host + cost
 }

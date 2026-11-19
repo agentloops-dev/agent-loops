@@ -85,6 +85,52 @@ func TestReadingAndMessagingSessions(t *testing.T) {
 	}
 }
 
+// checkToolAnswer fails the test unless the tool's answer is want, and is an error
+// only when wantErr is true.
+func checkToolAnswer(t *testing.T, text string, isErr, wantErr bool, want string) {
+	t.Helper()
+	if isErr != wantErr || text != want {
+		t.Fatal(text)
+	}
+}
+
+// checkToolAnswerPrefix fails the test unless the tool's answer is no error and starts with prefix.
+func checkToolAnswerPrefix(t *testing.T, text string, isErr bool, prefix string) {
+	t.Helper()
+	if isErr || !strings.HasPrefix(text, prefix) {
+		t.Fatal(text)
+	}
+}
+
+// checkReplacedQueuedPrompt fails the test unless got has one prompt with the text,
+// and that prompt keeps the id, the queue time and the preface of the first one.
+func checkReplacedQueuedPrompt(t *testing.T, got []wire.QueuedPrompt, text string, id wire.UUID, queuedAt wire.Date, preface *string) {
+	t.Helper()
+	if len(got) != 1 || got[0].Text != text || got[0].ID != id || got[0].QueuedAt != queuedAt {
+		t.Fatalf("%+v", got)
+	}
+	if (preface == nil) != (got[0].Preface == nil) || (preface != nil && got[0].Preface != nil && *preface != *got[0].Preface) {
+		t.Fatalf("preface %+v %+v", preface, got[0].Preface)
+	}
+}
+
+// messagesSentCount returns how many messages the sender has sent, under the lock.
+func messagesSentCount(d *Daemon, sender wire.UUID) int {
+	d.messageMu.Lock()
+	defer d.messageMu.Unlock()
+	return len(d.messagesSent[sender])
+}
+
+// hasQueuedPromptWithText reports whether the queue has the prompt with this id and text.
+func hasQueuedPromptWithText(queued []wire.QueuedPrompt, id wire.UUID, text string) bool {
+	for _, q := range queued {
+		if q.ID == id && q.Text == text {
+			return true
+		}
+	}
+	return false
+}
+
 // One queued message_session per sender and target: a second send is refused, replace
 // swaps the text in place, cancel takes it back, and a held looser message still counts (#2006).
 func TestOneQueuedMessagePerTarget(t *testing.T) {
@@ -124,21 +170,11 @@ func TestOneQueuedMessagePerTarget(t *testing.T) {
 	id, queuedAt, preface := first[0].ID, first[0].QueuedAt, first[0].Preface
 
 	text, isErr = m.tool(3, "message_session", map[string]any{"to": "Helper", "message": "second"})
-	if !isErr || text != "Nothing was sent: you already have a message waiting for “Helper”: “first words”. Replace it with message_session and replace: true, or take it back with cancel_message." {
-		t.Fatal(text)
-	}
+	checkToolAnswer(t, text, isErr, true, "Nothing was sent: you already have a message waiting for “Helper”: “first words”. Replace it with message_session and replace: true, or take it back with cancel_message.")
 
 	text, isErr = m.tool(4, "message_session", map[string]any{"to": "Helper", "message": "replaced", "replace": true})
-	if isErr || text != "Replaced the waiting message to “Helper”." {
-		t.Fatal(text)
-	}
-	replaced := d.Store.Agent(helper.ID).QueuedPrompts
-	if len(replaced) != 1 || replaced[0].Text != "replaced" || replaced[0].ID != id || replaced[0].QueuedAt != queuedAt {
-		t.Fatalf("%+v", replaced)
-	}
-	if (preface == nil) != (replaced[0].Preface == nil) || (preface != nil && replaced[0].Preface != nil && *preface != *replaced[0].Preface) {
-		t.Fatalf("preface %+v %+v", preface, replaced[0].Preface)
-	}
+	checkToolAnswer(t, text, isErr, false, "Replaced the waiting message to “Helper”.")
+	checkReplacedQueuedPrompt(t, d.Store.Agent(helper.ID).QueuedPrompts, "replaced", id, queuedAt, preface)
 
 	listed, _ := m.tool(5, "list_sessions", map[string]any{})
 	if !strings.Contains(listed, "Your message waits: replaced.") {
@@ -150,17 +186,13 @@ func TestOneQueuedMessagePerTarget(t *testing.T) {
 	}
 
 	text, isErr = m.tool(7, "message_session", map[string]any{"to": "Peer", "message": "other target"})
-	if isErr || !strings.HasPrefix(text, "Sent to “Peer”") {
-		t.Fatal(text)
-	}
+	checkToolAnswerPrefix(t, text, isErr, "Sent to “Peer”")
 	if waitingFrom(d.Store.Agent(peer.ID), lead.ID) == nil || waitingFrom(d.Store.Agent(helper.ID), lead.ID) == nil {
 		t.Fatal("wanted one waiting on each target")
 	}
 
 	text, isErr = o.tool(2, "message_session", map[string]any{"to": "Helper", "message": "from other"})
-	if isErr || !strings.HasPrefix(text, "Sent to “Helper”") {
-		t.Fatal(text)
-	}
+	checkToolAnswerPrefix(t, text, isErr, "Sent to “Helper”")
 	if waitingFrom(d.Store.Agent(helper.ID), other.ID) == nil || waitingFrom(d.Store.Agent(helper.ID), lead.ID) == nil {
 		t.Fatal("wanted one waiting from each sender")
 	}
@@ -169,16 +201,10 @@ func TestOneQueuedMessagePerTarget(t *testing.T) {
 	d.change(helper.ID, func(a *wire.Agent) {
 		a.QueuedPrompts = append(append([]wire.QueuedPrompt{}, a.QueuedPrompts...), person)
 	})
-	d.messageMu.Lock()
-	sent := len(d.messagesSent[lead.ID])
-	d.messageMu.Unlock()
+	sent := messagesSentCount(d, lead.ID)
 	text, isErr = m.tool(8, "message_session", map[string]any{"to": "Helper", "message": "again", "replace": true})
-	if isErr || text != "Replaced the waiting message to “Helper”." {
-		t.Fatal(text)
-	}
-	d.messageMu.Lock()
-	afterReplace := len(d.messagesSent[lead.ID])
-	d.messageMu.Unlock()
+	checkToolAnswer(t, text, isErr, false, "Replaced the waiting message to “Helper”.")
+	afterReplace := messagesSentCount(d, lead.ID)
 	if afterReplace != sent {
 		t.Fatalf("replace counted as a send: %d -> %d", sent, afterReplace)
 	}
@@ -193,13 +219,7 @@ func TestOneQueuedMessagePerTarget(t *testing.T) {
 	if waitingFrom(d.Store.Agent(helper.ID), other.ID) == nil {
 		t.Fatal("other's message was removed")
 	}
-	foundPerson := false
-	for _, q := range d.Store.Agent(helper.ID).QueuedPrompts {
-		if q.ID == person.ID && q.Text == "from the person" {
-			foundPerson = true
-		}
-	}
-	if !foundPerson {
+	if !hasQueuedPromptWithText(d.Store.Agent(helper.ID).QueuedPrompts, person.ID, "from the person") {
 		t.Fatal("the person's queued prompt was removed")
 	}
 
@@ -208,12 +228,8 @@ func TestOneQueuedMessagePerTarget(t *testing.T) {
 		t.Fatal(text)
 	}
 	text, isErr = m.tool(11, "message_session", map[string]any{"to": "Helper", "message": "fresh", "replace": true})
-	if !isErr || text != "Nothing was sent: nothing is waiting for “Helper”. Send a new message with message_session." {
-		t.Fatal(text)
-	}
+	checkToolAnswer(t, text, isErr, true, "Nothing was sent: nothing is waiting for “Helper”. Send a new message with message_session.")
 
 	text, isErr = m.tool(12, "message_session", map[string]any{"to": "Wake", "message": "go"})
-	if isErr || !strings.HasPrefix(text, "Sent to “Wake”") {
-		t.Fatal(text)
-	}
+	checkToolAnswerPrefix(t, text, isErr, "Sent to “Wake”")
 }

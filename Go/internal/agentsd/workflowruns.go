@@ -138,15 +138,7 @@ func (d *Daemon) fireWorkflows(e wire.Event) {
 	if d.workflowFiles == nil {
 		d.scanLocked()
 	}
-	var folders []string
-	if e.Scope.Folder != nil {
-		folders = []string{store.FolderPath(e.Scope.Folder.Value)}
-	} else {
-		for f := range d.workflowFiles {
-			folders = append(folders, f)
-		}
-		sort.Strings(folders)
-	}
+	folders := d.workflowEventFoldersLocked(e)
 	var triggering *wire.UUID
 	if a := e.Details["agent"]; a != "" {
 		id := wire.UUID(a)
@@ -173,29 +165,8 @@ func (d *Daemon) fireWorkflows(e wire.Event) {
 				}
 				continue
 			}
-			if strings.HasPrefix(e.Name, "workflow.") && e.Details["workflow"] == id {
-				continue
-			}
-			if strings.HasPrefix(e.Name, "agent.") && triggering != nil && d.isOwnAgentLocked(*triggering, folder, w) {
-				continue
-			}
-			for _, t := range w.Triggers {
-				if triggerMatches(t, e) {
-					pos := e.Position
-					ev := e
-					fr := fireRequest{folder: folder, id: id, trigger: t, triggeringAgent: triggering, depth: e.ChainDepth,
-						causingEvent: &pos, event: &ev}
-					// A burst on one subject and type is held, and runs it once (#4730).
-					if hold := triggerDebounce(t); hold > 0 && d.holdBurst("workflow:"+folder+"\n"+id, hold, e, func(last wire.Event, n int) {
-						pos := last.Position
-						fr.causingEvent, fr.event, fr.burst = &pos, &last, burstWords(n, hold)
-						d.goAfterTurn("workflow fire", func() { d.fire(fr) })
-					}) {
-						break
-					}
-					fires = append(fires, fr)
-					break
-				}
+			if fr, ok := d.workflowFireForEventLocked(folder, id, w, e, triggering); ok {
+				fires = append(fires, fr)
 			}
 		}
 	}
@@ -208,6 +179,51 @@ func (d *Daemon) fireWorkflows(e wire.Event) {
 		f := f
 		d.goJob("workflow event sent", func() { d.sendOthers(f) })
 	}
+}
+
+// workflowEventFoldersLocked is the folders whose workflows hear e: its own folder, else
+// every folder with workflows, in order.
+func (d *Daemon) workflowEventFoldersLocked(e wire.Event) []string {
+	if e.Scope.Folder != nil {
+		return []string{store.FolderPath(e.Scope.Folder.Value)}
+	}
+	var folders []string
+	for f := range d.workflowFiles {
+		folders = append(folders, f)
+	}
+	sort.Strings(folders)
+	return folders
+}
+
+// workflowFireForEventLocked is the fire of the first trigger of w that e matches. ok is
+// false when none matches, when e is news of the workflow or of its own agents, or when
+// a burst holds the fire for later.
+func (d *Daemon) workflowFireForEventLocked(folder, id string, w wire.Workflow, e wire.Event, triggering *wire.UUID) (fireRequest, bool) {
+	if strings.HasPrefix(e.Name, "workflow.") && e.Details["workflow"] == id {
+		return fireRequest{}, false
+	}
+	if strings.HasPrefix(e.Name, "agent.") && triggering != nil && d.isOwnAgentLocked(*triggering, folder, w) {
+		return fireRequest{}, false
+	}
+	for _, t := range w.Triggers {
+		if !triggerMatches(t, e) {
+			continue
+		}
+		pos := e.Position
+		ev := e
+		fr := fireRequest{folder: folder, id: id, trigger: t, triggeringAgent: triggering, depth: e.ChainDepth,
+			causingEvent: &pos, event: &ev}
+		// A burst on one subject and type is held, and runs it once (#4730).
+		if hold := triggerDebounce(t); hold > 0 && d.holdBurst("workflow:"+folder+"\n"+id, hold, e, func(last wire.Event, n int) {
+			pos := last.Position
+			fr.causingEvent, fr.event, fr.burst = &pos, &last, burstWords(n, hold)
+			d.goAfterTurn("workflow fire", func() { d.fire(fr) })
+		}) {
+			return fireRequest{}, false
+		}
+		return fr, true
+	}
+	return fireRequest{}, false
 }
 
 // isOwnAgentLocked is isOwnAgent: the agent a run of this workflow started, or one that
@@ -244,11 +260,30 @@ func (d *Daemon) refusalLocked(fr fireRequest, f *workflowFile) *wire.WorkflowRe
 	if st != nil {
 		queued = len(st.QueuedFires)
 	}
-	r := func(set func(*wire.WorkflowRefusal)) *wire.WorkflowRefusal {
-		var x wire.WorkflowRefusal
-		set(&x)
-		return &x
+	if x := d.refusalOfStateLocked(fr, f); x != nil {
+		return x
 	}
+	if x := d.refusalOfLimitsLocked(fr, w, st); x != nil {
+		return x
+	}
+	if x := refusalOfBusy(fr, w, st, running, queued); x != nil {
+		return x
+	}
+	return d.refusalOfTriggerLocked(fr, w)
+}
+
+// workflowRefusalSet is a new refusal that set fills.
+func workflowRefusalSet(set func(*wire.WorkflowRefusal)) *wire.WorkflowRefusal {
+	var x wire.WorkflowRefusal
+	set(&x)
+	return &x
+}
+
+// refusalOfStateLocked is the refusal for the workflow's approval, its archived or off
+// state, an unreadable file or a folder that is gone.
+func (d *Daemon) refusalOfStateLocked(fr fireRequest, f *workflowFile) *wire.WorkflowRefusal {
+	r := workflowRefusalSet
+	w := f.wf
 	exempt := isArchived(w) || (!fr.byHand && isOff(w))
 	if !exempt {
 		awaiting, denied := d.approvalOf(fr.folder, fr.id, f)
@@ -270,6 +305,12 @@ func (d *Daemon) refusalLocked(fr fireRequest, f *workflowFile) *wire.WorkflowRe
 	case !isDir(fr.folder):
 		return r(func(x *wire.WorkflowRefusal) { x.FolderGone = &struct{}{} })
 	}
+	return nil
+}
+
+// refusalOfLimitsLocked is the refusal for a workflow over its limit, or outside its hours.
+func (d *Daemon) refusalOfLimitsLocked(fr fireRequest, w wire.Workflow, st *workflowState) *wire.WorkflowRefusal {
+	r := workflowRefusalSet
 	if l, ok := d.ceilingsLocked()[workflowKey(fr.folder, fr.id)]; ok {
 		n := d.workflowTotal()
 		return r(func(x *wire.WorkflowRefusal) { x.OverLimit = &wire.WorkflowRefusalOverLimit{Value: l, Allowed: &n} })
@@ -285,6 +326,13 @@ func (d *Daemon) refusalLocked(fr fireRequest, f *workflowFile) *wire.WorkflowRe
 			return r(func(x *wire.WorkflowRefusal) { x.OutsideHours = &wire.WorkflowRefusalOutsideHours{Until: until} })
 		}
 	}
+	return nil
+}
+
+// refusalOfBusy is the refusal for a workflow that cools down, has a run in flight, has
+// fires queued, or is too deep in a chain.
+func refusalOfBusy(fr fireRequest, w wire.Workflow, st *workflowState, running bool, queued int) *wire.WorkflowRefusal {
+	r := workflowRefusalSet
 	if w.Cooldown != nil && !fr.byHand {
 		if fr.depth > workflowChainLimit {
 			return r(func(x *wire.WorkflowRefusal) {
@@ -319,6 +367,13 @@ func (d *Daemon) refusalLocked(fr fireRequest, f *workflowFile) *wire.WorkflowRe
 			x.ChainTooDeep = &wire.WorkflowRefusalChainTooDeep{Depth: workflowChainLimit}
 		})
 	}
+	return nil
+}
+
+// refusalOfTriggerLocked is the refusal for a trigger or mode the workflow cannot run, or
+// a triggering agent that is not there.
+func (d *Daemon) refusalOfTriggerLocked(fr fireRequest, w wire.Workflow) *wire.WorkflowRefusal {
+	r := workflowRefusalSet
 	if w.Problem != nil {
 		name := triggerName(fr.trigger)
 		if w.Problem.TriggerNotSupported != nil {
@@ -418,22 +473,7 @@ func (d *Daemon) fire(fr fireRequest) {
 		d.clearStoppedRunLocked(fr.folder, fr.id)
 	}
 	if refused := d.refusalLocked(fr, f); refused != nil {
-		st := d.stateLocked(fr.folder, fr.id, true)
-		hf := heldFire{Trigger: fr.trigger, TriggeringAgentID: fr.triggeringAgent, Depth: fr.depth, CausingEvent: fr.causingEvent, HeldAt: now()}
-		if fr.dueAt != nil {
-			due := wire.DateOf(*fr.dueAt)
-			hf.DueAt = &due
-		}
-		switch {
-		case refused.Queued != nil && fr.fromQueue:
-			// Taken from the queue's front as another run began: it keeps its place.
-			st.QueuedFires = append([]heldFire{hf}, st.QueuedFires...)
-		case refused.Queued != nil:
-			st.QueuedFires = append(st.QueuedFires, hf)
-		case refused.CoolingDown != nil, refused.OutsideHours != nil:
-			st.HeldFire = &hf
-		}
-		d.saveRecordsLocked(false)
+		d.holdRefusedFireLocked(fr, refused)
 		name := f.wf.Name
 		d.workflowMu.Unlock()
 		d.recordOutcome(fr, name, wire.WorkflowOutcome{Refused: &wire.WorkflowOutcomeRefused{Value: *refused, At: now()}}, nil)
@@ -459,6 +499,28 @@ func (d *Daemon) fire(fr fireRequest) {
 		return
 	}
 	d.attachRunAgent(fr, run, w, agent)
+}
+
+// holdRefusedFireLocked keeps a refused fire to run later: in the queue when the refusal
+// is Queued, else as the held fire when it cools down or is outside its hours. It saves
+// the records.
+func (d *Daemon) holdRefusedFireLocked(fr fireRequest, refused *wire.WorkflowRefusal) {
+	st := d.stateLocked(fr.folder, fr.id, true)
+	hf := heldFire{Trigger: fr.trigger, TriggeringAgentID: fr.triggeringAgent, Depth: fr.depth, CausingEvent: fr.causingEvent, HeldAt: now()}
+	if fr.dueAt != nil {
+		due := wire.DateOf(*fr.dueAt)
+		hf.DueAt = &due
+	}
+	switch {
+	case refused.Queued != nil && fr.fromQueue:
+		// Taken from the queue's front as another run began: it keeps its place.
+		st.QueuedFires = append([]heldFire{hf}, st.QueuedFires...)
+	case refused.Queued != nil:
+		st.QueuedFires = append(st.QueuedFires, hf)
+	case refused.CoolingDown != nil, refused.OutsideHours != nil:
+		st.HeldFire = &hf
+	}
+	d.saveRecordsLocked(false)
 }
 
 // attachRunAgent closes the gap between starting an agent and identifying its run.
@@ -538,31 +600,62 @@ func (d *Daemon) ranBy(a *wire.Agent) *wire.UUID {
 // runAgent starts or prompts the run's agent, as the workflow's mode says.
 func (d *Daemon) runAgent(w wire.Workflow, run workflowRun, fr fireRequest) (wire.UUID, *wire.WorkflowRefusal) {
 	prompt := d.runPrompt(w, fr)
-	settingRefused := func(setting, detail string) *wire.WorkflowRefusal {
-		return &wire.WorkflowRefusal{SettingRefused: &wire.WorkflowRefusalSettingRefused{Setting: setting, Detail: detail}}
-	}
 	if w.Mode == wire.WorkflowModeTriggering {
-		if fr.triggeringAgent == nil {
-			return "", &wire.WorkflowRefusal{Unreadable: &wire.WorkflowRefusalUnreadable{Value: "Nothing triggered it, so there was no agent to resume."}}
-		}
-		if err := d.promptFromApp(*fr.triggeringAgent, prompt); err != nil {
-			_, msg := errMessage(err)
-			return "", &wire.WorkflowRefusal{Unreadable: &wire.WorkflowRefusalUnreadable{Value: msg}}
-		}
-		return *fr.triggeringAgent, nil
+		return d.runAgentPromptTriggering(fr, prompt)
 	}
 	if w.Mode == wire.WorkflowModeStanding {
-		d.workflowMu.Lock()
-		st := d.stateLocked(fr.folder, fr.id, true)
-		standing := st.StandingAgentID
-		d.workflowMu.Unlock()
-		if standing != nil {
-			if a := d.Store.Agent(*standing); a != nil && a.State != wire.AgentStateArchived {
-				if err := d.promptFromApp(a.ID, prompt); err == nil {
-					return a.ID, nil
-				}
+		if id, ok := d.runAgentPromptStanding(fr, prompt); ok {
+			return id, nil
+		}
+	}
+	r, refused := d.runAgentStartRequest(w, fr, prompt)
+	if refused != nil {
+		return "", refused
+	}
+	id, err := d.startFor(r, startedBy{owner: wire.SessionLabelOwnerAgent})
+	if err != nil {
+		_, msg := errMessage(err)
+		return "", &wire.WorkflowRefusal{Unreadable: &wire.WorkflowRefusalUnreadable{Value: msg}}
+	}
+	d.runAgentNoteStarted(w, run, fr, id)
+	return id, nil
+}
+
+// runAgentPromptTriggering prompts the agent that triggered the run, for a workflow in
+// triggering mode.
+func (d *Daemon) runAgentPromptTriggering(fr fireRequest, prompt string) (wire.UUID, *wire.WorkflowRefusal) {
+	if fr.triggeringAgent == nil {
+		return "", &wire.WorkflowRefusal{Unreadable: &wire.WorkflowRefusalUnreadable{Value: "Nothing triggered it, so there was no agent to resume."}}
+	}
+	if err := d.promptFromApp(*fr.triggeringAgent, prompt); err != nil {
+		_, msg := errMessage(err)
+		return "", &wire.WorkflowRefusal{Unreadable: &wire.WorkflowRefusalUnreadable{Value: msg}}
+	}
+	return *fr.triggeringAgent, nil
+}
+
+// runAgentPromptStanding prompts the standing workflow's agent when it is still there. ok
+// is false when a new agent must start.
+func (d *Daemon) runAgentPromptStanding(fr fireRequest, prompt string) (wire.UUID, bool) {
+	d.workflowMu.Lock()
+	st := d.stateLocked(fr.folder, fr.id, true)
+	standing := st.StandingAgentID
+	d.workflowMu.Unlock()
+	if standing != nil {
+		if a := d.Store.Agent(*standing); a != nil && a.State != wire.AgentStateArchived {
+			if err := d.promptFromApp(a.ID, prompt); err == nil {
+				return a.ID, true
 			}
 		}
+	}
+	return "", false
+}
+
+// runAgentStartRequest is the request that starts the run's agent with the file's
+// settings, or the refusal of a setting this host cannot honour.
+func (d *Daemon) runAgentStartRequest(w wire.Workflow, fr fireRequest, prompt string) (wire.StartRequest, *wire.WorkflowRefusal) {
+	settingRefused := func(setting, detail string) *wire.WorkflowRefusal {
+		return &wire.WorkflowRefusal{SettingRefused: &wire.WorkflowRefusalSettingRefused{Setting: setting, Detail: detail}}
 	}
 	// The runtime the file names, else Auto (#2873). Never the runtime another agent used
 	// last: what the run may do must not depend on which agent was active.
@@ -571,7 +664,7 @@ func (d *Daemon) runAgent(w wire.Workflow, run workflowRun, fr fireRequest) (wir
 		runtimeID = *w.Settings.RuntimeID
 	}
 	if runtimeByID(runtimeID) == nil && runtimeID != autoRuntimeID {
-		return "", settingRefused("runtime", "There is no runtime called \""+runtimeID+"\" — this version knows "+knownRuntimes())
+		return wire.StartRequest{}, settingRefused("runtime", "There is no runtime called \""+runtimeID+"\" — this version knows "+knownRuntimes())
 	}
 	model, requests, box := "", "", ""
 	for to, from := range map[*string]*string{&model: w.Settings.Model, &requests: w.Settings.PermissionRequests, &box: w.Settings.Sandbox} {
@@ -581,13 +674,13 @@ func (d *Daemon) runAgent(w wire.Workflow, run workflowRun, fr fireRequest) (wir
 	}
 	levels, nativeModel, nativeMode, sandbox, err := fileLevels(runtimeID, model, w.Settings.PermissionMode, requests, box)
 	if err != nil {
-		return "", settingRefused("runtime", err.(*Error).Message)
+		return wire.StartRequest{}, settingRefused("runtime", err.(*Error).Message)
 	}
 	modeID := "mode"
 	if nativeMode != nil {
 		id, refusal := d.offeredMode(runtimeID, *nativeMode)
 		if refusal != "" {
-			return "", settingRefused("permission-mode", refusal)
+			return wire.StartRequest{}, settingRefused("permission-mode", refusal)
 		}
 		modeID = id
 	}
@@ -610,11 +703,12 @@ func (d *Daemon) runAgent(w wire.Workflow, run workflowRun, fr fireRequest) (wir
 		b := []byte(`"` + strings.ReplaceAll(v, `"`, `\"`) + `"`)
 		r.StartOptions.Values[id] = b
 	}
-	id, err := d.startFor(r, startedBy{owner: wire.SessionLabelOwnerAgent})
-	if err != nil {
-		_, msg := errMessage(err)
-		return "", &wire.WorkflowRefusal{Unreadable: &wire.WorkflowRefusalUnreadable{Value: msg}}
-	}
+	return r, nil
+}
+
+// runAgentNoteStarted marks a new agent as the run's: its workflow, run, chain depth,
+// title and mute, its lineage, and the standing agent of a standing workflow.
+func (d *Daemon) runAgentNoteStarted(w wire.Workflow, run workflowRun, fr fireRequest, id wire.UUID) {
 	depth := run.Depth + 1
 	wid, rid, name := w.WorkflowID, run.ID, w.Name
 	muted := w.Muted != nil && *w.Muted
@@ -639,7 +733,6 @@ func (d *Daemon) runAgent(w wire.Workflow, run workflowRun, fr fireRequest) (wir
 		d.saveRecordsLocked(false)
 		d.workflowMu.Unlock()
 	}
-	return id, nil
 }
 
 // offeredMode is the id of the runtime's mode option, when it offered mode last time, or
@@ -1019,6 +1112,27 @@ func (d *Daemon) workflowTickOnce(at time.Time) {
 	}
 	d.noteDay()
 	d.workflowMu.Lock()
+	since := d.workflowTickNoteLocked(at)
+	d.scanLocked()
+	due := workflowTickDue{held: map[string]bool{}}
+	if since != nil && since.Before(at) {
+		d.workflowSchedulesDueLocked(&due, *since, at)
+	}
+	alarms := d.alarmsDueLocked(at)
+	d.workflowMu.Unlock()
+	d.workflowTickAct(due, alarms, at)
+}
+
+// workflowTickDue is what one tick of the clock found to do.
+type workflowTickDue struct {
+	fires, missed, sends []fireRequest
+	// held is the workflows, by workflowKey, with a held fire or a queue.
+	held map[string]bool
+}
+
+// workflowTickNoteLocked records at as the last tick, and is the tick before it, if any.
+// It writes the records at most every 30 seconds: a restart reads how long it was away.
+func (d *Daemon) workflowTickNoteLocked(at time.Time) *time.Time {
 	rec := d.recordsLocked()
 	var since *time.Time
 	if rec.LastTickAt != nil {
@@ -1027,68 +1141,81 @@ func (d *Daemon) workflowTickOnce(at time.Time) {
 	}
 	n := wire.DateOf(at)
 	rec.LastTickAt = &n
-	// Written at most every 30 seconds: a restart reads how long it was away from it.
 	if since == nil || !since.Add(30*time.Second).After(at) {
 		d.saveRecordsLocked(false)
 	}
-	d.scanLocked()
-	var fires []fireRequest
-	var missed []fireRequest
-	var sends []fireRequest
-	held := map[string]bool{}
-	if since != nil && since.Before(at) {
-		away := at.Sub(*since) > workflowAway
-		bot := d.isBot()
-		for folder, ws := range d.workflowFiles {
-			for id, f := range ws {
-				// A held fire, or a queue that waited for an approval with no run left to
-				// release it (#6035).
-				if st := d.stateLocked(folder, id, false); st != nil && (st.HeldFire != nil || len(st.QueuedFires) > 0) {
-					held[workflowKey(folder, id)] = true
-				}
-				w := f.wf
-				if w.Problem != nil || isArchived(w) {
-					continue
-				}
-				// Another's runs-on: workflow, a bot's perhaps: a person's machine sends its
-				// schedule to the control plane, which starts a machine of the bot's for it
-				// when none is online (#2011, FR-034). Nothing of it runs here.
-				if !d.runsHere(w) {
-					if bot || away || isOff(w) || len(w.RunsOn) == 0 {
-						continue
-					}
-					for _, t := range w.Triggers {
-						if t.Schedule == nil {
-							continue
-						}
-						if due, ok := nextDue(t.Schedule.Value, *since); ok && !due.After(at) {
-							sends = append(sends, fireRequest{folder: folder, id: id, trigger: t, dueAt: &due})
-							break
-						}
-					}
-					continue
-				}
-				win := d.windowLocked(w)
-				for _, t := range w.Triggers {
-					if t.Schedule == nil {
-						continue
-					}
-					// A schedule fires only when its own window and hours: both allow it (#4818).
-					if due, ok := nextDue(t.Schedule.Value, *since); ok && !due.After(at) && win.open(due) {
-						fr := fireRequest{folder: folder, id: id, trigger: t, dueAt: &due}
-						if away {
-							missed = append(missed, fr)
-						} else {
-							fires = append(fires, fr)
-						}
-						break
-					}
-				}
-			}
+	return since
+}
+
+// workflowSchedulesDueLocked adds to due every schedule that came due after since and by
+// at, and every workflow with a held fire or a queue.
+func (d *Daemon) workflowSchedulesDueLocked(due *workflowTickDue, since, at time.Time) {
+	away := at.Sub(since) > workflowAway
+	bot := d.isBot()
+	for folder, ws := range d.workflowFiles {
+		for id, f := range ws {
+			d.scheduleDueOfFileLocked(due, folder, id, f, since, at, away, bot)
 		}
 	}
-	alarms := d.alarmsDueLocked(at)
-	d.workflowMu.Unlock()
+}
+
+// scheduleDueOfFileLocked adds to due what one workflow file has to do this tick: a held
+// fire or a queue, and a schedule to fire, to record missed, or to send.
+func (d *Daemon) scheduleDueOfFileLocked(due *workflowTickDue, folder, id string, f *workflowFile, since, at time.Time, away, bot bool) {
+	// A held fire, or a queue that waited for an approval with no run left to
+	// release it (#6035).
+	if st := d.stateLocked(folder, id, false); st != nil && (st.HeldFire != nil || len(st.QueuedFires) > 0) {
+		due.held[workflowKey(folder, id)] = true
+	}
+	w := f.wf
+	if w.Problem != nil || isArchived(w) {
+		return
+	}
+	// Another's runs-on: workflow, a bot's perhaps: a person's machine sends its
+	// schedule to the control plane, which starts a machine of the bot's for it
+	// when none is online (#2011, FR-034). Nothing of it runs here.
+	if !d.runsHere(w) {
+		if bot || away || isOff(w) || len(w.RunsOn) == 0 {
+			return
+		}
+		if fr, ok := scheduleDueOf(folder, id, w, since, at, nil); ok {
+			due.sends = append(due.sends, fr)
+		}
+		return
+	}
+	if fr, ok := scheduleDueOf(folder, id, w, since, at, d.windowLocked(w)); ok {
+		if away {
+			due.missed = append(due.missed, fr)
+		} else {
+			due.fires = append(due.fires, fr)
+		}
+	}
+}
+
+// scheduleDueOf is the fire of the first schedule of w that came due after since and by
+// at. The schedule fires only when its own window and hours: both allow it (#4818); a nil
+// window is always open.
+func scheduleDueOf(folder, id string, w wire.Workflow, since, at time.Time, win *hoursWindow) (fireRequest, bool) {
+	for _, t := range w.Triggers {
+		if t.Schedule == nil {
+			continue
+		}
+		due, ok := nextDue(t.Schedule.Value, since)
+		if !ok || due.After(at) {
+			continue
+		}
+		if !win.open(due) {
+			continue
+		}
+		return fireRequest{folder: folder, id: id, trigger: t, dueAt: &due}, true
+	}
+	return fireRequest{}, false
+}
+
+// workflowTickAct does what one tick found, with workflowMu not held: the alarms, the
+// waits whose time came, the held fires and queues, the missed and due schedules, and
+// the schedules sent to the control plane.
+func (d *Daemon) workflowTickAct(due workflowTickDue, alarms []onceFire, at time.Time) {
 	for _, of := range alarms {
 		of := of
 		d.goJob("workflow alarm", func() { d.runAlarm(of) })
@@ -1098,24 +1225,24 @@ func (d *Daemon) workflowTickOnce(at time.Time) {
 	if d.waitDeadlineDue(at) {
 		d.waitDeadlinesPassed()
 	}
-	for k := range held {
+	for k := range due.held {
 		folder, id := k[:strings.LastIndex(k, "/")], k[strings.LastIndex(k, "/")+1:]
 		if !d.runningOf(folder, id) {
 			d.releaseQueued(folder, id)
 		}
 	}
-	for _, fr := range missed {
+	for _, fr := range due.missed {
 		d.workflowMu.Lock()
 		name := d.fileLocked(fr.folder, fr.id).wf.Name
 		d.workflowMu.Unlock()
 		d.recordOutcome(fr, name, wire.WorkflowOutcome{Refused: &wire.WorkflowOutcomeRefused{
 			Value: wire.WorkflowRefusal{MissedWhileClosed: &struct{}{}}, At: now()}}, nil)
 	}
-	for _, fr := range fires {
+	for _, fr := range due.fires {
 		fr := fr
 		d.goJob("workflow schedule", func() { d.fire(fr) })
 	}
-	for _, fr := range sends {
+	for _, fr := range due.sends {
 		fr := fr
 		d.goJob("workflow schedule sent", func() { d.sendOthers(fr) })
 	}

@@ -381,6 +381,20 @@ func (d *Daemon) busSubscriptions() []wire.BusSubscription {
 		}
 		out = append(out, s)
 	}
+	d.busSubscriptionsOfWaits(add)
+	d.workflowMu.Lock()
+	d.busSubscriptionsOfWorkflowsLocked(add)
+	d.workflowMu.Unlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	if len(out) > 1_000 {
+		log.Printf("bus/subscribe: %d subscriptions, sending the first 1000", len(out))
+		out = out[:1_000]
+	}
+	return out
+}
+
+// busSubscriptionsOfWaits calls add for each pattern with no `where` of the open waits.
+func (d *Daemon) busSubscriptionsOfWaits(add func(id, name string, f busFilter)) {
 	for _, a := range d.Store.LiveAgents() {
 		w := a.EventWait
 		if w == nil || w.Ending != nil {
@@ -392,7 +406,11 @@ func (d *Daemon) busSubscriptions() []wire.BusSubscription {
 			}
 		}
 	}
-	d.workflowMu.Lock()
+}
+
+// busSubscriptionsOfWorkflowsLocked calls add for each trigger that is not narrowed, of
+// the workflows that run here. Call it with workflowMu held.
+func (d *Daemon) busSubscriptionsOfWorkflowsLocked(add func(id, name string, f busFilter)) {
 	for folder, files := range d.workflowFiles {
 		for id, f := range files {
 			w := f.wf
@@ -406,13 +424,6 @@ func (d *Daemon) busSubscriptions() []wire.BusSubscription {
 			}
 		}
 	}
-	d.workflowMu.Unlock()
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	if len(out) > 1_000 {
-		log.Printf("bus/subscribe: %d subscriptions, sending the first 1000", len(out))
-		out = out[:1_000]
-	}
-	return out
 }
 
 // triggerBus is a trigger's filter; narrowed when it has keys of its own (where), which

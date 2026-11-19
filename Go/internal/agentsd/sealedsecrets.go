@@ -639,6 +639,22 @@ func (d *Daemon) syncUserSecrets(home string, plain, flagged []wire.UserSecret, 
 			names = append(names, name)
 		}
 	}
+	dropGoneUserSecrets(f, before, sent, keep, done, coming)
+	if err := writeSealedSecrets(home, f); err != nil {
+		return nil, errors.New("sealed.json could not be written")
+	}
+	// The plain lines go after the sealed ones are kept: never neither.
+	if err := removePlainSecrets(home, append(names, before...)...); err != nil {
+		return nil, err
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// dropGoneUserSecrets removes from f each of the person's secrets that was sent before (or
+// sealed by a sync before) and is not sent now or kept, and each agent's secret whose offer
+// is done and that is not sent now or coming.
+func dropGoneUserSecrets(f sealedSecretsFile, before []string, sent, keep, done, coming map[string]bool) {
 	gone := slices.Clone(before)
 	for name, s := range f.Secrets {
 		if s.From == sealedFromUser {
@@ -656,15 +672,6 @@ func (d *Daemon) syncUserSecrets(home string, plain, flagged []wire.UserSecret, 
 			log.Printf("agent secrets: %s was dropped by the person, and went from this machine", name)
 		}
 	}
-	if err := writeSealedSecrets(home, f); err != nil {
-		return nil, errors.New("sealed.json could not be written")
-	}
-	// The plain lines go after the sealed ones are kept: never neither.
-	if err := removePlainSecrets(home, append(names, before...)...); err != nil {
-		return nil, err
-	}
-	sort.Strings(names)
-	return names, nil
 }
 
 // hasOfferedSecrets is whether sealed.json holds an agent's secret that was offered (#5308):

@@ -542,7 +542,19 @@ func moveAsideLocked(path string) {
 // already means no limit (R5, R7). Called with yoursMu held, at most once.
 func (d *Daemon) firstStartMoveLocked() {
 	rules := wire.PolicyRules{}
+	d.firstStartMoveBudgetsLocked(&rules)
+	d.firstStartMoveWorkflowLimitLocked(&rules)
+	d.firstStartMoveDisplayLocked(&rules)
+	d.firstStartMoveEnvironmentLocked(&rules)
 
+	next := wire.YourPolicy{Rules: rules, Revision: 1, Changed: wire.DateOf(nowFunc()), Person: d.personIDLocked(), Keeper: d.machineID()}
+	if err := d.saveYoursLocked(next); err != nil {
+		log.Printf("policy: the first-start move: %v", err)
+	}
+}
+
+// firstStartMoveBudgetsLocked moves limits.json into rules.Budgets and moves the file aside.
+func (d *Daemon) firstStartMoveBudgetsLocked(rules *wire.PolicyRules) {
 	if b, err := os.ReadFile(d.limitsPath()); err == nil {
 		var l wire.CostLimits
 		json.Unmarshal(b, &l)
@@ -560,7 +572,11 @@ func (d *Daemon) firstStartMoveLocked() {
 		}
 		moveAsideLocked(d.limitsPath())
 	}
+}
 
+// firstStartMoveWorkflowLimitLocked moves workflow-limit.json's total into
+// rules.Workflows and moves the file aside.
+func (d *Daemon) firstStartMoveWorkflowLimitLocked(rules *wire.PolicyRules) {
 	workflowLimitPath := filepath.Join(d.SettingsDir, "workflow-limit.json")
 	if b, err := os.ReadFile(workflowLimitPath); err == nil {
 		var l struct {
@@ -572,51 +588,85 @@ func (d *Daemon) firstStartMoveLocked() {
 		}
 		moveAsideLocked(workflowLimitPath)
 	}
+}
 
+// firstStartMoveDisplayLocked moves the notice limits and agentsMayArchiveMyChats out of
+// display.json into rules, and writes display.json again without the moved keys.
+func (d *Daemon) firstStartMoveDisplayLocked(rules *wire.PolicyRules) {
 	displayPath := d.displayFile()
-	if b, err := os.ReadFile(displayPath); err == nil {
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(b, &fields) == nil {
-			changed := false
-			if raw, ok := fields[noticeBurstKey]; ok {
-				var v int64
-				if json.Unmarshal(raw, &v) == nil {
-					if rules.NoticeLimits == nil {
-						rules.NoticeLimits = &wire.PolicyNoticeLimits{}
-					}
-					rules.NoticeLimits.Burst = &v
-				}
-				delete(fields, noticeBurstKey)
-				changed = true
-			}
-			if raw, ok := fields[noticeCooldownKey]; ok {
-				var minutes float64
-				if json.Unmarshal(raw, &minutes) == nil {
-					if rules.NoticeLimits == nil {
-						rules.NoticeLimits = &wire.PolicyNoticeLimits{}
-					}
-					wait := int64(minutes)
-					rules.NoticeLimits.WaitMinutes = &wait
-				}
-				delete(fields, noticeCooldownKey)
-				changed = true
-			}
-			if raw, ok := fields[agentsMayArchiveMyChatsKey]; ok {
-				var v bool
-				if json.Unmarshal(raw, &v) == nil {
-					rules.ArchiveMyChats = &v
-				}
-				delete(fields, agentsMayArchiveMyChatsKey)
-				changed = true
-			}
-			if changed {
-				if nb, err := json.Marshal(fields); err == nil {
-					store.WriteAtomically(displayPath, nb, 0o644)
-				}
-			}
+	b, err := os.ReadFile(displayPath)
+	if err != nil {
+		return
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(b, &fields) != nil {
+		return
+	}
+	changed := firstStartMoveNoticeBurst(fields, rules)
+	changed = firstStartMoveNoticeCooldown(fields, rules) || changed
+	changed = firstStartMoveArchiveMyChats(fields, rules) || changed
+	if changed {
+		if nb, err := json.Marshal(fields); err == nil {
+			store.WriteAtomically(displayPath, nb, 0o644)
 		}
 	}
+}
 
+// firstStartMoveNoticeBurst moves the noticeBurst key of fields into rules.NoticeLimits.
+// It returns true when the key was there.
+func firstStartMoveNoticeBurst(fields map[string]json.RawMessage, rules *wire.PolicyRules) bool {
+	raw, ok := fields[noticeBurstKey]
+	if !ok {
+		return false
+	}
+	var v int64
+	if json.Unmarshal(raw, &v) == nil {
+		if rules.NoticeLimits == nil {
+			rules.NoticeLimits = &wire.PolicyNoticeLimits{}
+		}
+		rules.NoticeLimits.Burst = &v
+	}
+	delete(fields, noticeBurstKey)
+	return true
+}
+
+// firstStartMoveNoticeCooldown moves the noticeCooldownMinutes key of fields into
+// rules.NoticeLimits. It returns true when the key was there.
+func firstStartMoveNoticeCooldown(fields map[string]json.RawMessage, rules *wire.PolicyRules) bool {
+	raw, ok := fields[noticeCooldownKey]
+	if !ok {
+		return false
+	}
+	var minutes float64
+	if json.Unmarshal(raw, &minutes) == nil {
+		if rules.NoticeLimits == nil {
+			rules.NoticeLimits = &wire.PolicyNoticeLimits{}
+		}
+		wait := int64(minutes)
+		rules.NoticeLimits.WaitMinutes = &wait
+	}
+	delete(fields, noticeCooldownKey)
+	return true
+}
+
+// firstStartMoveArchiveMyChats moves the agentsMayArchiveMyChats key of fields into
+// rules.ArchiveMyChats. It returns true when the key was there.
+func firstStartMoveArchiveMyChats(fields map[string]json.RawMessage, rules *wire.PolicyRules) bool {
+	raw, ok := fields[agentsMayArchiveMyChatsKey]
+	if !ok {
+		return false
+	}
+	var v bool
+	if json.Unmarshal(raw, &v) == nil {
+		rules.ArchiveMyChats = &v
+	}
+	delete(fields, agentsMayArchiveMyChatsKey)
+	return true
+}
+
+// firstStartMoveEnvironmentLocked moves runtime-environment.json into rules.Environment
+// and moves the file aside.
+func (d *Daemon) firstStartMoveEnvironmentLocked(rules *wire.PolicyRules) {
 	envPath := filepath.Join(d.SettingsDir, passThroughFile)
 	if b, err := os.ReadFile(envPath); err == nil {
 		var l passThroughList
@@ -625,10 +675,5 @@ func (d *Daemon) firstStartMoveLocked() {
 			rules.Environment = &wire.PolicyEnvironment{PassThrough: l.Names, Runtimes: l.Runtimes}
 		}
 		moveAsideLocked(envPath)
-	}
-
-	next := wire.YourPolicy{Rules: rules, Revision: 1, Changed: wire.DateOf(nowFunc()), Person: d.personIDLocked(), Keeper: d.machineID()}
-	if err := d.saveYoursLocked(next); err != nil {
-		log.Printf("policy: the first-start move: %v", err)
 	}
 }

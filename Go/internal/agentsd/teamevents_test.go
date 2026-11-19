@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,59 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
+
+// checkAskedMethods fails the test unless the control plane was asked n methods, the
+// last of them last.
+func checkAskedMethods(t *testing.T, got []string, n int, last string) {
+	t.Helper()
+	if len(got) != n || got[n-1] != last {
+		t.Fatal(got)
+	}
+}
+
+// workflowSummaryOf is the folder's workflow with the id, as workflows/list says it, or nil.
+func workflowSummaryOf(t *testing.T, c *conn, id int, folder wire.URL, workflowID string) *wire.WorkflowSummary {
+	t.Helper()
+	var list []wire.WorkflowSummary
+	json.Unmarshal(c.call(t, id, "workflows/list", map[string]any{"folder": folder}), &list)
+	for i := range list {
+		if list[i].Workflow.WorkflowID == workflowID {
+			return &list[i]
+		}
+	}
+	return nil
+}
+
+// checkTriggerScopes fails the test unless each kind of trigger has its scope: a machine
+// event runs here, a server's event or a schedule goes to the team, and the rest are claimed.
+func checkTriggerScopes(t *testing.T, server wire.Event, due time.Time) {
+	t.Helper()
+	for _, tc := range []struct {
+		fr   fireRequest
+		want triggerScope
+	}{
+		{fireRequest{event: &wire.Event{Name: "machine.disk_low"}}, scopeMachine},
+		{fireRequest{event: &wire.Event{Name: "file.added"}}, scopeMachine},
+		{fireRequest{event: &server}, scopeTeam},
+		{fireRequest{dueAt: &due}, scopeTeam},
+		{fireRequest{event: &wire.Event{Name: "agent.finished"}}, scopeClaimed},
+		{fireRequest{event: &wire.Event{Name: "lease.granted", Details: map[string]string{"server": "x"}}}, scopeClaimed},
+	} {
+		if got := scopeOf(tc.fr); got != tc.want {
+			t.Errorf("%+v: %d, want %d", tc.fr.event, got, tc.want)
+		}
+	}
+}
+
+// checkNoWorkflowRanHere fails the test when a workflow ran or was refused on this machine.
+func checkNoWorkflowRanHere(t *testing.T, d *Daemon) {
+	t.Helper()
+	for _, n := range names(d) {
+		if n == "workflow.ran" || n == "workflow.refused" {
+			t.Fatalf("%s here", n)
+		}
+	}
+}
 
 // Scoped events on a bot's machine (#2011, FR-035): a machine event runs where it was
 // heard, unclaimed; a server's event or a schedule goes to the control plane, which sends it
@@ -31,21 +85,7 @@ func TestABotsMachineSendsTeamEventsAndKeepsItsOwn(t *testing.T) {
 
 	due := time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
 	server := wire.Event{Name: "pr.opened", Details: map[string]string{"server": "github", "subscription": "s1", "mcp_event_id": "e1", "time": "a"}}
-	for _, tc := range []struct {
-		fr   fireRequest
-		want triggerScope
-	}{
-		{fireRequest{event: &wire.Event{Name: "machine.disk_low"}}, scopeMachine},
-		{fireRequest{event: &wire.Event{Name: "file.added"}}, scopeMachine},
-		{fireRequest{event: &server}, scopeTeam},
-		{fireRequest{dueAt: &due}, scopeTeam},
-		{fireRequest{event: &wire.Event{Name: "agent.finished"}}, scopeClaimed},
-		{fireRequest{event: &wire.Event{Name: "lease.granted", Details: map[string]string{"server": "x"}}}, scopeClaimed},
-	} {
-		if got := scopeOf(tc.fr); got != tc.want {
-			t.Errorf("%+v: %d, want %d", tc.fr.event, got, tc.want)
-		}
-	}
+	checkTriggerScopes(t, server, due)
 	// The same server event heard at another time, on another machine, is the same trigger.
 	later := server
 	later.Details = map[string]string{"server": "github", "subscription": "s1", "mcp_event_id": "e1", "time": "b", "missed_since": "c"}
@@ -84,23 +124,17 @@ func TestABotsMachineSendsTeamEventsAndKeepsItsOwn(t *testing.T) {
 	if d.teamFire(fireRequest{folder: "/w/app", id: "r", event: &server}, w) {
 		t.Fatal("a taken trigger ran here as well")
 	}
-	if got := asked(); len(got) != 1 || got[0] != wire.CallWorkflowsTrigger.Name {
-		t.Fatal(got)
-	}
+	checkAskedMethods(t, asked(), 1, wire.CallWorkflowsTrigger.Name)
 	taken = false
 	if !d.teamFire(fireRequest{folder: "/w/app", id: "r", dueAt: &due}, w) {
 		t.Fatal("not taken, not claimed")
 	}
-	if got := asked(); len(got) != 2 || got[1] != wire.CallWorkflowsClaimRun.Name {
-		t.Fatal(got)
-	}
+	checkAskedMethods(t, asked(), 2, wire.CallWorkflowsClaimRun.Name)
 	failing = true
 	if d.teamFire(fireRequest{folder: "/w/app", id: "r", event: &server}, w) {
 		t.Fatal("ran with no control plane to claim from")
 	}
-	if got := asked(); len(got) != 2 || got[1] != wire.CallWorkflowsClaimRun.Name {
-		t.Fatal(got)
-	}
+	checkAskedMethods(t, asked(), 2, wire.CallWorkflowsClaimRun.Name)
 	failing = false
 
 	// workflows/fire: run here, unclaimed, when the workflow is here and a server trigger of
@@ -141,14 +175,7 @@ func TestABotsMachineSendsTeamEventsAndKeepsItsOwn(t *testing.T) {
 	if !fire(filepath.Base(dir)+"/review", merged) {
 		t.Fatal("did not run it")
 	}
-	waitFor(t, "the run", func() bool {
-		for _, n := range names(d) {
-			if n == "workflow.ran" {
-				return true
-			}
-		}
-		return false
-	})
+	waitFor(t, "the run", func() bool { return slices.Contains(names(d), "workflow.ran") })
 	if got := asked(); len(got) != 0 {
 		t.Fatalf("a trigger the control plane sent was claimed or sent again: %v", got)
 	}
@@ -234,16 +261,7 @@ func TestAPersonsMachineHearsABotsServerEventsAndOnlySendsThem(t *testing.T) {
 		return json.Marshal(wire.TeamTriggerSent{Taken: true})
 	}))
 	sentCount := func() int { mu.Lock(); defer mu.Unlock(); return len(sent) }
-	summary := func() *wire.WorkflowSummary {
-		var list []wire.WorkflowSummary
-		json.Unmarshal(c.call(t, 90, "workflows/list", map[string]any{"folder": folder}), &list)
-		for i := range list {
-			if list[i].Workflow.WorkflowID == "merged" {
-				return &list[i]
-			}
-		}
-		return nil
-	}
+	summary := func() *wire.WorkflowSummary { return workflowSummaryOf(t, c, 90, folder, "merged") }
 	key := mcpTrigger{event: "pr.merged", arguments: map[string]json.RawMessage{}}.subscriptionKey("ci")
 	merged := func(id string) {
 		d.raise(wire.EventDraft{Name: "pr.merged", At: now(), Scope: folderScope(dir), Sentence: "ci reported pr.merged",
@@ -294,11 +312,7 @@ func TestAPersonsMachineHearsABotsServerEventsAndOnlySendsThem(t *testing.T) {
 		t.Fatal(e)
 	}
 	time.Sleep(200 * time.Millisecond)
-	for _, n := range names(d) {
-		if n == "workflow.ran" || n == "workflow.refused" {
-			t.Fatalf("%s here", n)
-		}
-	}
+	checkNoWorkflowRanHere(t, d)
 	d.workflowMu.Lock()
 	runs := len(d.recordsLocked().Runs)
 	d.workflowMu.Unlock()

@@ -89,14 +89,7 @@ func parseDays(n yamlnode.Node) ([]wire.Weekday, error) {
 // parseHours is `hours:` as the file says it, checked.
 func parseHours(n yamlnode.Node) (*wire.WorkflowHours, error) {
 	if !n.IsMapping() {
-		t, ok := n.Text()
-		switch name := wire.WorkflowHoursName(strings.TrimSpace(t)); {
-		case ok && name == "":
-			return nil, nil
-		case ok && (name == wire.WorkflowHoursNameWorking || name == wire.WorkflowHoursNameNotWorking):
-			return &wire.WorkflowHours{Named: &name}, nil
-		}
-		return nil, failure("`hours:` must be `working`, `not-working`, or say `between:`, `days:` or `time-zone:`, like `between: \"09:00-18:00\"`")
+		return parseHoursNamed(n)
 	}
 	keys := make([]string, 0, len(n.Mapping))
 	for k := range n.Mapping {
@@ -108,21 +101,13 @@ func parseHours(n yamlnode.Node) (*wire.WorkflowHours, error) {
 		v := n.Mapping[k]
 		switch k {
 		case "between":
-			t, ok := v.Text()
-			if !ok {
-				return nil, failure("`between:` under `hours:` must be one range of times, like \"09:00-18:00\"")
-			}
-			if t = strings.TrimSpace(t); t == "" {
-				continue
-			}
-			fh, fm, th, tm, err := parseBetween(t)
+			t, err := parseHoursBetween(v)
 			if err != nil {
 				return nil, err
 			}
-			if fh*60+fm == th*60+tm {
-				return nil, failure("\"" + t + "\" starts and ends at the same time")
+			if t != nil {
+				h.Between = t
 			}
-			h.Between = &t
 		case "days":
 			days, err := parseDays(v)
 			if err != nil {
@@ -132,17 +117,13 @@ func parseHours(n yamlnode.Node) (*wire.WorkflowHours, error) {
 				h.Days = days
 			}
 		case "time-zone":
-			t, ok := v.Text()
-			if !ok {
-				return nil, failure("`time-zone:` must be one name, like Europe/London")
+			t, err := parseHoursTimeZone(v)
+			if err != nil {
+				return nil, err
 			}
-			if t = strings.TrimSpace(t); t == "" {
-				continue
+			if t != nil {
+				h.TimeZone = t
 			}
-			if _, err := zoneNamed(t); err != nil {
-				return nil, failure("\"" + t + "\" is not a time zone — use a name like Europe/London or America/New_York")
-			}
-			h.TimeZone = &t
 		default:
 			return nil, failure("`hours:` has no `" + k + ":` — it takes `between:`, `days:` and `time-zone:`")
 		}
@@ -151,6 +132,52 @@ func parseHours(n yamlnode.Node) (*wire.WorkflowHours, error) {
 		return nil, nil
 	}
 	return &h, nil
+}
+
+// parseHoursNamed is `hours:` as one name: `working`, `not-working` or empty.
+func parseHoursNamed(n yamlnode.Node) (*wire.WorkflowHours, error) {
+	t, ok := n.Text()
+	switch name := wire.WorkflowHoursName(strings.TrimSpace(t)); {
+	case ok && name == "":
+		return nil, nil
+	case ok && (name == wire.WorkflowHoursNameWorking || name == wire.WorkflowHoursNameNotWorking):
+		return &wire.WorkflowHours{Named: &name}, nil
+	}
+	return nil, failure("`hours:` must be `working`, `not-working`, or say `between:`, `days:` or `time-zone:`, like `between: \"09:00-18:00\"`")
+}
+
+// parseHoursBetween is `between:` under `hours:`, checked. nil is an empty value.
+func parseHoursBetween(v yamlnode.Node) (*string, error) {
+	t, ok := v.Text()
+	if !ok {
+		return nil, failure("`between:` under `hours:` must be one range of times, like \"09:00-18:00\"")
+	}
+	if t = strings.TrimSpace(t); t == "" {
+		return nil, nil
+	}
+	fh, fm, th, tm, err := parseBetween(t)
+	if err != nil {
+		return nil, err
+	}
+	if fh*60+fm == th*60+tm {
+		return nil, failure("\"" + t + "\" starts and ends at the same time")
+	}
+	return &t, nil
+}
+
+// parseHoursTimeZone is `time-zone:` under `hours:`, checked. nil is an empty value.
+func parseHoursTimeZone(v yamlnode.Node) (*string, error) {
+	t, ok := v.Text()
+	if !ok {
+		return nil, failure("`time-zone:` must be one name, like Europe/London")
+	}
+	if t = strings.TrimSpace(t); t == "" {
+		return nil, nil
+	}
+	if _, err := zoneNamed(t); err != nil {
+		return nil, failure("\"" + t + "\" is not a time zone — use a name like Europe/London or America/New_York")
+	}
+	return &t, nil
 }
 
 // zoneNamed is an IANA zone; "Local" and "" are refused, so a file means the same zone on
