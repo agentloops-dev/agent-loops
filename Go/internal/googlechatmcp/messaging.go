@@ -172,15 +172,10 @@ func addReplyTool(server *mcp.Server, e *Events) {
 			if err != nil {
 				return nil, fmt.Errorf("conversation: %w", err)
 			}
-			text, err := checkText("text", in.Text)
+			posted, text, err := postText(ctx, e, space, thread, in.Text)
 			if err != nil {
 				return nil, err
 			}
-			posted, err := e.Inbox.Google.Post(ctx, space, thread, &chat.Message{Text: text})
-			if err != nil {
-				return nil, err
-			}
-			e.Inbox.Posted(space, thread, posted, text)
 			out := apiMessage(space, posted)
 			out.Text = cmp.Or(out.Text, text)
 			out.Time = cmp.Or(out.Time, time.Now().UTC().Format(time.RFC3339))

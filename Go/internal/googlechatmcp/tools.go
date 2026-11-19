@@ -102,7 +102,6 @@ func checkText(name, text string) (string, error) {
 
 // AddTools puts the tools on server; e's inbox keeps what they post.
 func AddTools(server *mcp.Server, e *Events) {
-	g := e.Inbox.Google
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
 	notDestructive := false
 	openWorld := true
@@ -110,92 +109,134 @@ func AddTools(server *mcp.Server, e *Events) {
 
 	tool(server, &mcp.Tool{Name: "list_spaces", Title: "List spaces",
 		Description: "The spaces, group chats and direct messages the Chat app is in: each one's name (spaces/…), its title and its type. The app can post only in these.",
-		Annotations: readOnly},
-		func(ctx context.Context, in spacesArgs) (*mcp.CallToolResult, error) {
-			limit := in.Limit
-			if limit <= 0 {
-				limit = 50
-			}
-			spaces, err := g.Spaces(ctx, min(limit, 200))
-			if err != nil {
-				return nil, err
-			}
-			list := make([]any, len(spaces))
-			for i, s := range spaces {
-				list[i] = map[string]any{"name": s.Name, "title": s.DisplayName, "type": s.Type}
-			}
-			return structured(map[string]any{"spaces": list}), nil
-		})
+		Annotations: readOnly}, listSpaces(e.Inbox.Google))
 
 	tool(server, &mcp.Tool{Name: "send_message", Title: "Send a message",
 		Description: "Posts a message as the Chat app in a space it is in, in a thread when one is given (answer a message.received in its thread). " +
 			"Everyone in the space sees it: write only what they may read.",
-		Annotations: posts},
-		func(ctx context.Context, in sendArgs) (*mcp.CallToolResult, error) {
-			space, thread, err := checkPlace(in.Space, in.Thread)
-			if err != nil {
-				return nil, err
-			}
-			text, err := checkText("text", in.Text)
-			if err != nil {
-				return nil, err
-			}
-			posted, err := g.Post(ctx, space, thread, &chat.Message{Text: text})
-			if err != nil {
-				return nil, err
-			}
-			e.Inbox.Posted(space, thread, posted, text)
-			return structured(map[string]any{"message": posted.Name, "thread": threadOf(posted, thread)}), nil
-		})
+		Annotations: posts}, sendMessage(e))
 
 	tool(server, &mcp.Tool{Name: "ask_question", Title: "Ask a question",
 		Description: "Posts a question as the Chat app, with a button for each option. The first press comes back as the event question.answered, with the question's id " +
 			"and the option's id; the card then says who answered and what. Use it to bring an agent's question to a person who is not at the app.",
-		Annotations: posts},
-		func(ctx context.Context, in askArgs) (*mcp.CallToolResult, error) {
-			space, thread, err := checkPlace(in.Space, in.Thread)
-			if err != nil {
-				return nil, err
-			}
-			question, err := checkText("question", in.Question)
-			if err != nil {
-				return nil, err
-			}
-			if len(in.Options) < 2 || len(in.Options) > maxOptions {
-				return nil, fmt.Errorf("options must be two to %d", maxOptions)
-			}
-			seen := map[string]bool{}
-			for i, o := range in.Options {
-				o.ID, o.Label = strings.TrimSpace(o.ID), strings.TrimSpace(o.Label)
-				if !idRule.MatchString(o.ID) || seen[o.ID] {
-					return nil, fmt.Errorf("option %d: id must be unique, of letters, digits, _ . : -", i+1)
-				}
-				if o.Label == "" || utf8.RuneCountInString(o.Label) > maxLabel {
-					return nil, fmt.Errorf("option %d: label must be 1 to %d characters", i+1, maxLabel)
-				}
-				seen[o.ID] = true
-				in.Options[i] = o
-			}
-			id := strings.TrimSpace(in.ID)
-			if id == "" {
-				id = newID()
-			} else if !idRule.MatchString(id) {
-				return nil, fmt.Errorf("id must be 1 to 64 letters, digits, _ . : -")
-			}
-			title := strings.TrimSpace(in.Title)
-			if utf8.RuneCountInString(title) > 200 {
-				title = string([]rune(title)[:200])
-			}
-			posted, err := g.Post(ctx, space, thread, &chat.Message{FallbackText: question, CardsV2: []*chat.CardWithId{questionCard(id, title, question, in.Options)}})
-			if err != nil {
-				return nil, err
-			}
-			e.Inbox.Posted(space, thread, posted, question)
-			return structured(map[string]any{"question": id, "message": posted.Name, "thread": threadOf(posted, thread)}), nil
-		})
+		Annotations: posts}, askQuestion(e))
 
 	addMessagingTools(server, e)
 	addReplyTool(server, e)
+}
+
+// listSpaces is list_spaces: the spaces the app is in, at most 200.
+func listSpaces(g *Google) func(context.Context, spacesArgs) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, in spacesArgs) (*mcp.CallToolResult, error) {
+		limit := in.Limit
+		if limit <= 0 {
+			limit = 50
+		}
+		spaces, err := g.Spaces(ctx, min(limit, 200))
+		if err != nil {
+			return nil, err
+		}
+		list := make([]any, len(spaces))
+		for i, s := range spaces {
+			list[i] = map[string]any{"name": s.Name, "title": s.DisplayName, "type": s.Type}
+		}
+		return structured(map[string]any{"spaces": list}), nil
+	}
+}
+
+// sendMessage is send_message: it posts the text as the app and keeps it in the inbox.
+func sendMessage(e *Events) func(context.Context, sendArgs) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, in sendArgs) (*mcp.CallToolResult, error) {
+		space, thread, err := checkPlace(in.Space, in.Thread)
+		if err != nil {
+			return nil, err
+		}
+		posted, _, err := postText(ctx, e, space, thread, in.Text)
+		if err != nil {
+			return nil, err
+		}
+		return structured(map[string]any{"message": posted.Name, "thread": threadOf(posted, thread)}), nil
+	}
+}
+
+// postText checks the text, posts it as the app and keeps it in the inbox; it gives the posted
+// message and the text as posted.
+func postText(ctx context.Context, e *Events, space, thread, text string) (*chat.Message, string, error) {
+	text, err := checkText("text", text)
+	if err != nil {
+		return nil, "", err
+	}
+	posted, err := e.Inbox.Google.Post(ctx, space, thread, &chat.Message{Text: text})
+	if err != nil {
+		return nil, "", err
+	}
+	e.Inbox.Posted(space, thread, posted, text)
+	return posted, text, nil
+}
+
+// askQuestion is ask_question: it posts the question as a card with a button per option.
+func askQuestion(e *Events) func(context.Context, askArgs) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, in askArgs) (*mcp.CallToolResult, error) {
+		space, thread, err := checkPlace(in.Space, in.Thread)
+		if err != nil {
+			return nil, err
+		}
+		question, err := checkText("question", in.Question)
+		if err != nil {
+			return nil, err
+		}
+		options, err := checkOptions(in.Options)
+		if err != nil {
+			return nil, err
+		}
+		id, err := questionID(in.ID)
+		if err != nil {
+			return nil, err
+		}
+		title := strings.TrimSpace(in.Title)
+		if utf8.RuneCountInString(title) > 200 {
+			title = string([]rune(title)[:200])
+		}
+		posted, err := e.Inbox.Google.Post(ctx, space, thread, &chat.Message{FallbackText: question, CardsV2: []*chat.CardWithId{questionCard(id, title, question, options)}})
+		if err != nil {
+			return nil, err
+		}
+		e.Inbox.Posted(space, thread, posted, question)
+		return structured(map[string]any{"question": id, "message": posted.Name, "thread": threadOf(posted, thread)}), nil
+	}
+}
+
+// checkOptions trims each option and refuses too few or too many, a repeated or bad id, and
+// a label that is empty or too long.
+func checkOptions(options []choice) ([]choice, error) {
+	if len(options) < 2 || len(options) > maxOptions {
+		return nil, fmt.Errorf("options must be two to %d", maxOptions)
+	}
+	seen := map[string]bool{}
+	for i, o := range options {
+		o.ID, o.Label = strings.TrimSpace(o.ID), strings.TrimSpace(o.Label)
+		if !idRule.MatchString(o.ID) || seen[o.ID] {
+			return nil, fmt.Errorf("option %d: id must be unique, of letters, digits, _ . : -", i+1)
+		}
+		if o.Label == "" || utf8.RuneCountInString(o.Label) > maxLabel {
+			return nil, fmt.Errorf("option %d: label must be 1 to %d characters", i+1, maxLabel)
+		}
+		seen[o.ID] = true
+		options[i] = o
+	}
+	return options, nil
+}
+
+// questionID is the question's id as given, or a new one when none is given.
+func questionID(given string) (string, error) {
+	id := strings.TrimSpace(given)
+	if id == "" {
+		return newID(), nil
+	}
+	if !idRule.MatchString(id) {
+		return "", fmt.Errorf("id must be 1 to 64 letters, digits, _ . : -")
+	}
+	return id, nil
 }
 
 func threadOf(m *chat.Message, asked string) string {
