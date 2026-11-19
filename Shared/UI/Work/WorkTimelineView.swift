@@ -756,7 +756,7 @@ struct WorkTimelinePane: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 glyph
                 Text(title).appText(.supporting).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
-                // The priority chip, as a Features row has it (#6089).
+                // The priority chip, as an Issues row has it (#6089).
                 WorkPriorityChip(priority: priority)
             }
             if !chips.shown.isEmpty || onHold {

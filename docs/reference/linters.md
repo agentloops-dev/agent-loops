@@ -14,6 +14,7 @@ is what each target runs.
 |---|---|---|---|
 | `go:lint` | golangci-lint, every rule in `Go/.golangci.yml` (bugs, security, and gocognit for readability) | a finding not in `Go/.golangci-baseline.txt` | `go` (Linux) |
 | `go:lint` | govulncheck | a known vulnerability that the code calls and that `Go/.govulncheck-excluded.txt` does not name | `go` (Linux) |
+| `go:lint` | deadcode (`golang.org/x/tools/cmd/deadcode`, whole program) | a function that no main package and no test reaches, in all Go code, and that `Go/.deadcode-allowed.txt` does not name; no baseline | `go` (Linux) |
 | `web:lint` | tsc, `Web/test/lint.mjs`, the licence list | an error | `go` (Linux) |
 | `web:lint` | Biome, the rules in `Web/biome.json` | an error or a warning | `go` (Linux) |
 | `repo-lint:lint` | shellcheck (`-S warning`, `.shellcheckrc`) | a finding | `go` (Linux) |
@@ -81,6 +82,15 @@ of #6126 take them out.
 - **A vulnerability that stays for a while** is a line in `Go/.govulncheck-excluded.txt`: its
   id, then why it stays and the issue that removes it. Two are there now, fixed by Go 1.26.11,
   which #5704 brings in.
+- **deadcode is a gate on all Go code, with no baseline (#6334).** It reads every `main`
+  package in `Go/` with its tests (`-test`) and its live tests (`-tags live`), once as
+  `GOOS=linux` and once as `GOOS=darwin GOARCH=arm64`, and fails on each function that both runs
+  say nothing reaches: one that only a `_darwin.go` or a `_linux.go` file calls is live. Remove
+  a dead function. One kept on purpose (reflection, `go:linkname`, a method that only something
+  outside the program calls) is a line in `Go/.deadcode-allowed.txt`: its path, a colon, its
+  name (`Func` or `Type.Method`) and why it stays. golangci-lint's `unused` still finds an
+  unexported name that its own package does not use. Swift (Periphery, #6336) and web (Knip,
+  #6337) are still the dead-code review's, on its schedule.
 - **govulncheck's database is outside the repository**, so `go:lint`'s inputs hold the date
   (UTC): a pass is good for that day only, and a vulnerability published since runs it again.
 

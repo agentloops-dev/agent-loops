@@ -1,6 +1,6 @@
 // Boards (#3282): on a run-app root whose folder's project has boards, see them on the folder's
 // Connectors page, add a board whose address names none and see why, then choose a board in
-// Work ▸ Issues and Work ▸ Features. Screenshots into <out dir>.
+// Work ▸ Issues. Screenshots into <out dir>.
 //
 //   node Web/test/walk/boards3282.mjs <WEB_URL> <browser code> <folder path> <out dir> [prefix]
 
@@ -57,12 +57,6 @@ try {
   ok("Issues has a Board menu", await choose("Board", "Web team"));
   await sleep(1500);
   await page.shot(`${out}/${prefix}-work-board.png`);
-
-  await page.eval(`location.hash = "#/work/features"`);
-  await page.waitFor(`[...document.querySelectorAll("label")].some((l) => l.textContent.trim().startsWith("Board"))`, 30_000);
-  ok("Features has a Board menu", await choose("Board", "Platform"));
-  await sleep(1500);
-  await page.shot(`${out}/${prefix}-features-board.png`);
 } finally {
   await chrome.close();
 }

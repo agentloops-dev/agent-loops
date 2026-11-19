@@ -52,10 +52,9 @@ import {
   couldNotSetPriority, holdToggleWords, priorityChoiceWords, priorityChoices, priorityTitle, shownLabels, sideLabels,
 } from "../model/forgeNextOrder";
 import { WorkPrioritySection } from "./WorkPrioritySection";
-import { epicLead, workingSession, workingWords } from "../model/workFeatures";
+import { epicLead, workingSession, workingWords } from "../model/workSessions";
 import { go, replace, route, routeHash } from "../route";
 import { type TrailTarget, trailHelp, workTrail } from "../model/workTrail";
-import { revealFeature } from "./WorkFeatures";
 import {
   allRows, askKey, boardHosts, boards, forgeHosts, fromList, hasMore, listProjects, loadBoards, loadList, loadMore, nextAfter, pageNeighbours,
   placeKey, rowSets, setRowPlan, shownRows, workList,
@@ -662,9 +661,8 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
     <article class={`work-page work-item-page${loading ? " loading" : ""}`} aria-busy={loading}>
       <div class="work-item-grid">
       <div class="work-page-bar">
-        {/* The place (note 1), the page's trail (#5452): Issues / #4331, or Features / Work / Epic #5448 / #5452 for an
-            issue in a feature's epic, each part a link to its place (a list as it was, Features with the feature open, the
-            epic's page); the browser's Back and Forward are the page's. On a 390 px page, the nearest part alone: ‹ Issues. */}
+        {/* The place (note 1), the page's trail (#5452): Issues / #4331, or Issues / Epic #5448 / #5452 for an issue in
+            an epic, each part a link to its place (a list as it was, the epic's page); the browser's Back and Forward are the page's. On a 390 px page, the nearest part alone: ‹ Issues. */}
         <nav class="work-place" aria-label="Place">
           {trail.map((part, i) => {
             const target = part.target;
@@ -677,7 +675,6 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
                   onClick={(e) => {
                     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
                     e.preventDefault();
-                    if (target.kind === "feature") revealFeature(target.name);
                     go(to);
                   }}>
                   {near && <Icon name="chevron-left" class="back" />}{part.words}</a>
@@ -1058,9 +1055,8 @@ export function Stepper({ store, kind, at }: { store: Store; kind: WorkKind; at:
   );
 }
 
-/** Where a part of a page's trail goes (#5452): a list, Features (with the feature open), or the epic's page. */
+/** Where a part of a page's trail goes (#5452): a list, or the epic's page. */
 function trailRoute(t: TrailTarget) {
   if (t.kind === "list") return { nav: "work", section: t.section } as const;
-  if (t.kind === "feature") return { nav: "work", section: "features" } as const;
   return { nav: "work", section: t.section, item: t.ref } as const;
 }

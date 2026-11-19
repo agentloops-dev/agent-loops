@@ -7,22 +7,23 @@
 #   scripts/lint.sh --fix [linter…]   run each linter's fix mode first, then lint
 #   scripts/lint.sh --baseline        write the go, swift and dupes baselines again (below)
 #   scripts/lint.sh --tools DIR TOOL…  put the pinned binaries in DIR (CI): shellcheck,
-#                                     golangci-lint, govulncheck (needs Go), biome, swiftlint, jscpd;
+#                                     golangci-lint, govulncheck and deadcode (need Go), biome,
+#                                     swiftlint, jscpd;
 #                                     Linux x86_64 on Linux, macOS arm64 on a Mac
 #
-# Linters: shell (shellcheck), zsh (zsh -n), go (golangci-lint), govulncheck, web (biome lint),
+# Linters: shell (shellcheck), zsh (zsh -n), go (golangci-lint), govulncheck, deadcode, web (biome lint),
 # swift (SwiftLint), dupes (jscpd), checks (our own text checks). Their rules are in
 # .shellcheckrc, Go/.golangci.yml, Web/biome.json and .swiftlint.yml. There is no Python
 # linter (#5645).
 #
 # On a Mac (not CI) with no linter named, only the linters for the files the branch changes
-# since its merge base with origin/main, committed or not, run (#4710): go and govulncheck for
+# since its merge base with origin/main, committed or not, run (#4710): go, govulncheck and deadcode for
 # Go/ or Packages/Wire/, swift for *.swift or .swiftlint.yml, web for Web/, shell and zsh for
 # a shell file or .shellcheckrc; checks and dupes always. A change to this script runs every
 # one. It says which it skipped.
 #
 # Nx runs the linters, one target per language (#5672), as `scripts/nx.sh affected -t lint`
-# does and CI does: go:lint (go, govulncheck), web:lint (web, beside tsc and its own checks),
+# does and CI does: go:lint (go, govulncheck, deadcode), web:lint (web, beside tsc and its own checks),
 # repo-lint:lint (shell, zsh, checks, dupes; lint/project.json) and swift-lint:lint (swift,
 # in CI's macOS `test` job). Each is cached by its inputs, so a lint that passed at the same
 # files is not run again.
@@ -41,7 +42,9 @@
 # (scripts/jscpd-report.py). Fix an old finding, then run `scripts/lint.sh --baseline` to drop
 # it from the list; never add a new one to it by hand. go is one run (#2162): every package is
 # loaded once. govulncheck fails on a vulnerability that the code calls (its default mode) and
-# that Go/.govulncheck-excluded.txt does not name with its reason, and
+# that Go/.govulncheck-excluded.txt does not name with its reason, deadcode on any function
+# that no main package or test reaches (#6334; below, run_deadcode) and that
+# Go/.deadcode-allowed.txt does not name with its reason (an allowlist, never a baseline), and
 # web (Biome) on any finding of the rules in Web/biome.json.
 #
 # Every linter runs on the host, never in a container (#4709). On Linux a linter on the PATH
@@ -59,17 +62,19 @@ cd "$root" || exit 1
 SHELLCHECK=0.11.0
 GOLANGCI=2.15.0
 GOVULNCHECK=1.9.0
+DEADCODE=0.53.0 # golang.org/x/tools/cmd/deadcode
 BIOME=2.5.15
 SWIFTLINT=0.65.1
 JSCPD=5.4.2
 ZSH=5.9
 CACHE=${AGENTS_BUILD_CACHE:-$HOME/Library/Caches/Agents-build}
 
-ALL="shell zsh go govulncheck web swift dupes checks"
+ALL="shell zsh go govulncheck deadcode web swift dupes checks"
 GO_BASELINE=Go/.golangci-baseline.txt
 SWIFT_BASELINE=.swiftlint-baseline.json
 DUPES_BASELINE=.jscpd-baseline.txt
 GOVULN_EXCLUDED=Go/.govulncheck-excluded.txt
+DEADCODE_ALLOWED=Go/.deadcode-allowed.txt
 
 if [ "${1:-}" = --tools ]; then
 	dir=${2:?usage: scripts/lint.sh --tools DIR TOOL…}
@@ -91,6 +96,7 @@ if [ "${1:-}" = --tools ]; then
 			curl -sSfL "$gh/golangci/golangci-lint/releases/download/v$GOLANGCI/golangci-lint-$GOLANGCI-$a.tar.gz" |
 				tar -xz --strip-components=1 "golangci-lint-$GOLANGCI-$a/golangci-lint" ;;
 		govulncheck) GOBIN=$PWD "$root/Go/scripts/go.sh" install "golang.org/x/vuln/cmd/govulncheck@v$GOVULNCHECK" ;;
+		deadcode) GOBIN=$PWD "$root/Go/scripts/go.sh" install "golang.org/x/tools/cmd/deadcode@v$DEADCODE" ;;
 		biome)
 			a=linux-x64; [ $mac = 1 ] && a=darwin-arm64
 			curl -sSfLo biome "$gh/biomejs/biome/releases/download/@biomejs/biome@$BIOME/biome-$a" && chmod +x biome ;;
@@ -134,7 +140,7 @@ changed_linters() {
 		[ -n "$f" ] || continue
 		case $f in
 		scripts/lint.sh) echo "$ALL"; return ;;
-		Go/* | Packages/Wire/*) want="$want go govulncheck " ;;
+		Go/* | Packages/Wire/*) want="$want go govulncheck deadcode " ;;
 		esac
 		case $f in
 		*.swift | .swiftlint.yml) want="$want swift " ;;
@@ -174,6 +180,7 @@ tool() {
 	case $1 in
 	shell) echo shellcheck ;; go) echo golangci-lint ;;
 	web) echo biome ;; swift) echo swiftlint ;; dupes) echo jscpd ;; govulncheck) echo govulncheck ;;
+	deadcode) echo deadcode ;;
 	*) ;;
 	esac
 }
@@ -182,7 +189,7 @@ tool() {
 version() {
 	case $1 in
 	shellcheck) echo "$SHELLCHECK" ;; golangci-lint) echo "$GOLANGCI" ;;
-	govulncheck) echo "$GOVULNCHECK" ;; biome) echo "$BIOME" ;; swiftlint) echo "$SWIFTLINT" ;;
+	govulncheck) echo "$GOVULNCHECK" ;; deadcode) echo "$DEADCODE" ;; biome) echo "$BIOME" ;; swiftlint) echo "$SWIFTLINT" ;;
 	jscpd) echo "$JSCPD" ;;
 	esac
 }
@@ -324,6 +331,43 @@ run_govulncheck() {
 		return 3
 	fi
 	echo "lint.sh: each vulnerability above is in $GOVULN_EXCLUDED, with why"
+}
+
+# deadcode (whole program, #6334): every function that no main package and no test reaches. It
+# runs twice, as GOOS=linux GOARCH=amd64 and as GOOS=darwin GOARCH=arm64, each with the tests
+# (-test) and the live tests (-tags live), cgo off; a function is dead only when both runs say
+# so, as one used only by a _darwin.go or a _linux.go file is live. A function kept on purpose
+# (reflection, go:linkname, a method that only something outside the program calls) is a line
+# in Go/.deadcode-allowed.txt: its path from the root, a colon, its name as deadcode gives it,
+# then why it stays. There is no baseline: every other finding fails. deadcode runs the `go`
+# on the PATH, which must be the Go of go.mod (a newer one fails to read the older toolchain's
+# sources): its GOROOT's bin goes first.
+run_deadcode() {
+	local goroot onlinux ondarwin status=0 line key
+	goroot=$(cd Go && go env GOROOT) || return 1
+	onlinux=$(mktemp) ondarwin=$(mktemp)
+	(cd Go && PATH="$goroot/bin:$PATH" GOOS=linux GOARCH=amd64 CGO_ENABLED=0 deadcode -test -tags live ./...) >"$onlinux" 2>&1 || status=$?
+	(cd Go && PATH="$goroot/bin:$PATH" GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 deadcode -test -tags live ./...) >"$ondarwin" 2>&1 || status=$?
+	if [ "$status" != 0 ]; then
+		cat "$onlinux" "$ondarwin"
+		rm -f "$onlinux" "$ondarwin"
+		return "$status"
+	fi
+	status=0
+	while IFS= read -r line; do
+		# path:line:col: unreachable func: Name, keyed as path: Name.
+		key=$(printf 'Go/%s\n' "$line" | sed -nE 's/^([^:]+):[0-9]+:[0-9]+: unreachable func: (.*)$/\1: \2/p')
+		if [ -z "$key" ]; then
+			printf '%s\n' "$line"
+			status=1
+		elif ! grep -qF -- "$key " "$DEADCODE_ALLOWED" 2>/dev/null; then
+			printf 'Go/%s\n' "$line"
+			status=1
+		fi
+	done < <(LC_ALL=C comm -12 <(LC_ALL=C sort "$onlinux") <(LC_ALL=C sort "$ondarwin"))
+	rm -f "$onlinux" "$ondarwin"
+	[ "$status" = 0 ] || echo "lint.sh: remove each function above, or name it in $DEADCODE_ALLOWED with why it stays"
+	return "$status"
 }
 
 # Biome's github reporter, turned into path:line:col: lines with the path from the root.
