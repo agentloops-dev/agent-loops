@@ -62,7 +62,6 @@ func (d *Daemon) register() {
 	d.registerMessages()
 	d.registerWorkTimeline()
 	d.registerDeployTargets()
-	d.registerWorkFeatures()
 	d.registerWorkSuggestLeads()
 	d.registerDocs()
 	d.registerDevices()

@@ -313,7 +313,6 @@ public extension DaemonAPI {
                 Row(Method.forgeDiff, params: ForgeNodeRequest.self, result: ForgeDiff.self, kind: .hostRequest),
                 Row(Method.forgePlan, params: ForgePlanRequest.self, result: ForgePlan.self, kind: .hostRequest),
                 Row(Method.forgeNext, params: ForgeNextRequest.self, result: ForgeNext.self, kind: .hostRequest),
-                Row(Method.forgeFeatures, params: ForgeFeaturesRequest.self, result: ForgeFeatures.self, kind: .hostRequest),
                 Row(Method.forgeBoards, params: ForgeBoardsRequest.self, result: ForgeBoards.self, kind: .hostRequest),
                 Row(Method.forgeImage, params: ForgeImageRequest.self, result: ForgeImage.self, kind: .hostRequest),
                 Row(Method.forgeReleases, params: ForgeReleasesRequest.self, result: ForgeReleases.self, kind: .hostRequest),
@@ -333,8 +332,6 @@ public extension DaemonAPI {
                 Row(Method.workDismissLead, params: WorkDismissLeadRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 // Work ▸ Deploys (#5270).
                 Row(Method.deploysTargets, params: DeployTargetsRequest.self, result: DeployTargets.self, kind: .hostRequest),
-                // Work ▸ Features as a delivery view (#4586).
-                Row(Method.workFeatures, params: WorkFeaturesRequest.self, result: WorkFeatures.self, kind: .hostRequest),
                 Row(Method.docsList, params: DocsListRequest.self, result: DocsList.self, kind: .hostRequest),
                 Row(Method.docsSearch, params: DocsSearchRequest.self, result: DocsSearch.self, kind: .hostRequest),
                 Row(Method.docsRead, params: DocsReadRequest.self, result: DocsReading.self, kind: .hostRequest),

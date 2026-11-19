@@ -50,7 +50,7 @@ test("a sort or state a page does not have is the default", async () => {
   }
 });
 
-test("Features and Timeline choices as words, each left out at its default", async () => {
+test("Timeline choices as words, each left out at its default", async () => {
   const r = await load("src/model/workRemembered.ts");
   const words = r.choiceWords({ range: "week", project: "p1", board: "" }, { range: "twoDays", project: "", board: "" });
   assert.equal(words, "range=week&project=p1");

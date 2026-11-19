@@ -729,8 +729,8 @@ public extension DaemonAPI {
     }
 }
 
-/// `forge/plan` and `forge/features` (#3267): an epic's children in steps, from the forge's
-/// sub-issues and "blocked by" links, with its lead; and the `feature:` labels on the epics.
+/// `forge/plan` (#3267): an epic's children in steps, from the forge's sub-issues and "blocked
+/// by" links, with its lead.
 public extension DaemonAPI {
     /// `forge/plan`'s question: the epic, an issue.
     struct ForgePlanRequest: Codable, Sendable, Hashable {
@@ -826,18 +826,6 @@ public extension DaemonAPI {
         }
     }
 
-    /// `forge/features`' question: every folder's on the machine, or one folder's; `board` (a
-    /// board's url) only the epics on that board (#3282).
-    struct ForgeFeaturesRequest: Codable, Sendable, Hashable {
-        public var folder: String?
-        public var board: String?
-
-        public init(folder: String? = nil, board: String? = nil) {
-            self.folder = folder
-            self.board = board
-        }
-    }
-
     /// `forge/boards`' question (#3282): the boards of every folder's project on the machine,
     /// or of one folder's.
     struct ForgeBoardsRequest: Codable, Sendable, Hashable {
@@ -869,47 +857,6 @@ public extension DaemonAPI {
         public init(mimeType: String, data: Data) {
             self.mimeType = mimeType
             self.data = data
-        }
-    }
-
-    /// A feature: its label's name after `feature:`, with its colour; its epics, and the open ones;
-    /// its open issues that are not epics (#3741), absent from a daemon that does not count them.
-    /// `refs` are its open issues' and open epics' lineage refs, `waiting` those labelled alex-todo,
-    /// and `updatedAt` the newest update of any of them (#4115).
-    struct ForgeFeature: Codable, Sendable, Hashable {
-        public var name: String
-        public var color: String?
-        public var epics: Int
-        public var open: Int
-        public var issues: Int?
-        public var refs: [String]?
-        public var waiting: [String]?
-        public var updatedAt: Date?
-
-        public init(name: String, color: String? = nil, epics: Int, open: Int, issues: Int? = nil, refs: [String]? = nil,
-                    waiting: [String]? = nil, updatedAt: Date? = nil) {
-            self.name = name
-            self.color = color
-            self.epics = epics
-            self.open = open
-            self.issues = issues
-            self.refs = refs
-            self.waiting = waiting
-            self.updatedAt = updatedAt
-        }
-    }
-
-    /// The features, by name; `approvals` are the open pull requests with a review requested
-    /// from the person (#4115, #5803); `errors` says a forge that could not be read.
-    struct ForgeFeatures: Codable, Sendable, Hashable {
-        public var features: [ForgeFeature]
-        public var approvals: [String]?
-        public var errors: [ForgeListError]?
-
-        public init(features: [ForgeFeature] = [], approvals: [String]? = nil, errors: [ForgeListError]? = nil) {
-            self.features = features
-            self.approvals = approvals
-            self.errors = errors
         }
     }
 }
@@ -989,11 +936,10 @@ public extension DaemonAPI.Method {
     static let forgeAssign = "forge/assign"
     static let forgeLog = "forge/log"
     static let forgeDiff = "forge/diff"
-    /// `ForgePlanRequest` → `ForgePlan`, `ForgeFeaturesRequest` → `ForgeFeatures` (#3267).
+    /// `ForgePlanRequest` → `ForgePlan` (#3267).
     static let forgePlan = "forge/plan"
     /// `ForgeNextRequest` → `ForgeNext` (#5689).
     static let forgeNext = "forge/next"
-    static let forgeFeatures = "forge/features"
     /// `ForgeBoardsRequest` → `ForgeBoards` (#3282).
     static let forgeBoards = "forge/boards"
     /// `ForgeImageRequest` → `ForgeImage` (#4009).

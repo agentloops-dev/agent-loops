@@ -9,18 +9,18 @@ struct WorkTrailTests {
     let ref = "github:alexec/Agents#5291"
     let epic = Node(kind: "issue", ref: "github:alexec/Agents#5281")
 
-    @Test("an issue in a feature's epic: Features, the feature, the epic, itself")
+    @Test("an issue in a feature's epic: Issues, the epic, itself")
     func featureEpicIssue() {
         let parts = WorkTrail.parts(kind: .issue, ref: ref, feature: "agent loops", parent: epic)
-        #expect(parts.map(\.words) == ["Features", "Agent loops", "Epic #5281", "#5291"])
-        #expect(parts.map(\.target) == [.list(.feature), .feature("agent loops"), .item(.issue, ref: epic.ref), nil])
-        #expect(WorkTrail.spoken(parts) == "Features, Agent loops, Epic #5281, #5291")
+        #expect(parts.map(\.words) == ["Issues", "Epic #5281", "#5291"])
+        #expect(parts.map(\.target) == [.list(.issue), .item(.issue, ref: epic.ref), nil])
+        #expect(WorkTrail.spoken(parts) == "Issues, Epic #5281, #5291")
     }
 
-    @Test("an epic: Features, its feature, itself")
+    @Test("an epic: Issues, itself")
     func epicItself() {
         let parts = WorkTrail.parts(kind: .issue, ref: epic.ref, feature: "work")
-        #expect(parts.map(\.words) == ["Features", "Work", "#5281"])
+        #expect(parts.map(\.words) == ["Issues", "#5281"])
     }
 
     @Test("an issue in no feature: its list, a parent with no Epic word, itself")

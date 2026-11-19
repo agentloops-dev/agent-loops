@@ -133,9 +133,8 @@ not read.
   one that is there (give `12`, `AB#12` or its page) under it. Blocked by adds or takes off
   a predecessor in the same organization.
 - **Epics and features (#3939):** an Epic work item is an epic, with no `epic` tag; a work
-  item tagged `epic` is one too. Work ▸ Features counts each epic under its `feature:<name>`
-  tag, and each open work item that is not an epic under its own. With a board chosen, it
-  counts only the work items under the team's area paths.
+  item tagged `epic` is one too. A `feature:<name>` tag is the work item's feature. With a
+  board chosen, Work ▸ Issues shows only the work items under the team's area paths.
 - **Lineage:** Start Agent labels the session `AB#12`. A session labelled `AB#12`, and a pull
   request whose title or branch says `AB#12` (as Azure Boards itself links them), count
   towards the work item of the folder's first project.

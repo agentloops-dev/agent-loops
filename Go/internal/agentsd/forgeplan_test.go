@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -212,46 +211,13 @@ func TestForgePlanOnGitLabAndLinear(t *testing.T) {
 	}
 }
 
-// #3267: feature narrows a list to the label feature:<name>; forge/features counts the epics of
-// each feature, open and closed, by name.
-func TestForgeFeatureFilterAndFeatures(t *testing.T) {
+// #3267: feature narrows a list to the label feature:<name>.
+func TestForgeFeatureFilter(t *testing.T) {
 	t.Parallel()
 
 	_, c, gh, _ := forgeDaemon(t)
 	c.call(t, 1, "forge/issues", wire.ForgeListRequest{Feature: new("work")})
 	if searches, _ := gh.asked(); len(searches) != 1 || !strings.Contains(searches[0], `label:"feature:work"`) {
 		t.Fatalf("searches: %q", searches)
-	}
-	gh.epics = []githubmcp.Item{planIssue(1, "open", "epic", "feature:work"), planIssue(2, "closed", "epic", "feature:Work"),
-		planIssue(3, "open", "epic", "feature:lineage"), planIssue(4, "open", "epic")}
-	gh.epics[0].LabelColors = map[string]string{"feature:work": "#1d76db"}
-	// #3741: the open issues that are not epics count under their feature; one with no epic adds no feature.
-	gh.open = []githubmcp.Item{planIssue(1, "open", "epic", "feature:work"), planIssue(5, "open", "bug", "feature:Work"),
-		planIssue(6, "open", "story", "feature:work", "alex-todo"), planIssue(7, "open", "feature:docs"), planIssue(8, "open")}
-	gh.open[2].UpdatedAt = "2026-11-02T10:00:00Z"
-	// #4115: the pull requests labelled needs-approval come with the features.
-	gh.reviews = []githubmcp.Item{{Repo: "alexec/agents", Number: 9, PR: true, State: "open", Title: "Groups", Labels: []string{"needs-approval"}}}
-	var out wire.ForgeFeatures
-	json.Unmarshal(c.call(t, 2, "forge/features", wire.ForgeFeaturesRequest{}), &out)
-	if len(out.Features) != 2 || out.Features[0].Name != "lineage" || out.Features[1].Name != "work" || out.Features[1].Epics != 2 ||
-		out.Features[1].Open != 1 || deref(out.Features[1].Color) != "#1d76db" || len(out.Errors) != 0 ||
-		out.Features[0].Issues == nil || *out.Features[0].Issues != 0 || out.Features[1].Issues == nil || *out.Features[1].Issues != 2 {
-		t.Fatalf("features: %+v", out)
-	}
-	searches, _ := gh.asked()
-	epics := slices.IndexFunc(searches, func(s string) bool { return strings.Contains(s, `label:"epic"`) })
-	if epics < 0 || strings.Contains(searches[epics], "is:open") {
-		t.Fatalf("searches: %q", searches)
-	}
-	// #4115: each feature's open issues and open epics, each once; those labelled alex-todo; the newest update.
-	work := out.Features[1]
-	if !slices.Equal(work.Refs, []string{"github:issue:alexec/agents#1", "github:issue:alexec/agents#5", "github:issue:alexec/agents#6"}) ||
-		!slices.Equal(work.Waiting, []string{"github:issue:alexec/agents#6"}) || work.UpdatedAt == nil ||
-		!slices.Equal(out.Features[0].Refs, []string{"github:issue:alexec/agents#3"}) || len(out.Features[0].Waiting) != 0 ||
-		!slices.Equal(out.Approvals, []string{"github:pr:alexec/agents#9"}) {
-		t.Fatalf("refs: %+v, approvals %q", out.Features, out.Approvals)
-	}
-	if lineage := out.Features[0].UpdatedAt; lineage == nil || *work.UpdatedAt <= *lineage {
-		t.Fatalf("updatedAt: %v, %v", work.UpdatedAt, lineage)
 	}
 }

@@ -26,7 +26,6 @@ import { DeliveryPage } from "./Delivery";
 import { nonePage, SummaryPage } from "./SummaryPage";
 import { WorkList, WorkPage } from "./Work";
 import { WorkReleasePage } from "./WorkRelease";
-import { WorkFeatures } from "./WorkFeatures";
 import { WorkNext } from "./WorkNext";
 import { WorkTimeline } from "./WorkTimeline";
 import { WorkDeploysPage } from "./WorkDeploysPage";
@@ -364,7 +363,6 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
             : <WorkPage key={route.value.item} store={store} kind={page.draw.work} ref={route.value.item} />
           : <WorkList key={page.draw.work} store={store} kind={page.draw.work} />)
         : page.draw.kind === "machine" ? <MachinePage key={page.draw.host} store={store} host={page.draw.host} />
-        : page.draw.kind === "features" ? <WorkFeatures store={store} />
         : page.draw.kind === "timeline" ? <WorkTimeline store={store} />
         : page.draw.kind === "deploys" ? <WorkDeploysPage store={store} />
         : page.draw.kind === "next" ? <WorkNext store={store} />
