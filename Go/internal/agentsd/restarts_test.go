@@ -1,6 +1,8 @@
 package agentsd
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +11,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -41,7 +42,6 @@ func lastEvent(d *Daemon, name string) *wire.Event {
 }
 
 func TestARestartIsSaidAndAWaitOpenOverItIsTold(t *testing.T) {
-	flaky.UnderLoad(t, "#6244")
 	t.Parallel()
 
 	fakeRuntimes(t)
@@ -69,9 +69,15 @@ func TestARestartIsSaidAndAWaitOpenOverItIsTold(t *testing.T) {
 		t.Fatalf("%s", b)
 	}
 
+	// down_for is from the stop to the start's own time, not to the write above: a slow
+	// start under load is more than 180 s (#6244).
+	d.restartMu.Lock()
+	startedAt := d.lastRestart.At
+	d.restartMu.Unlock()
+	downFor := fmt.Sprint(int(math.Round(startedAt.Time().Sub(stopped.Time()).Seconds())))
 	d.SayRestarted()
 	e := lastEvent(d, "system.restarted")
-	if e == nil || e.Details["reason"] != "stopped" || e.Details["down_for"] != "180" || e.Details["down_for_text"] != "3 min" ||
+	if e == nil || e.Details["reason"] != "stopped" || e.Details["down_for"] != downFor || e.Details["down_for_text"] != "3 min" ||
 		e.Details["down_since"] == "" || e.Sentence != "Agent Loops restarted after a clean stop. It was down for 3 min." || e.Scope.Mac == nil {
 		t.Fatalf("%+v", e)
 	}
