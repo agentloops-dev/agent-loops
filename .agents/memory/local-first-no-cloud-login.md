@@ -1,6 +1,6 @@
 ---
 name: local-first-no-cloud-login
-description: "Alex 2026-10-16 — never require a cloud login; every cloud service has a local version; plain files in platform folders, no SQLite"
+description: "Alex 2026-10-16 — never require a cloud login; every cloud service has a local version; plain files in platform folders, no SQLite in the backend store (client caches may use SQLite, #6253)"
 metadata:
   type: project
   modified: 2026-10-16T16:17:59.604Z
@@ -15,3 +15,5 @@ Alex 2026-10-16 (during the Go migration spikes, #1125/#1126):
 **How to apply:** check every cloud feature (#61, sign-in in [[733-team-enterprise-roadmap]], [[machines-and-groups]]) for a local, no-account path; refuse a database dependency in reviews.
 
 2026-10-18: Alex chose one identity model over mandatory SSO (#995, #1117): every client belongs to a person; providers are Google, Apple, GitHub or a built-in "local owner" (no account, no network); codes are the local provider's sign-in. Mandatory outside sign-in on a public control plane (#61) is not decided.
+
+2026-11-18 (#6253, the epic-lifecycle skill): Alex's epic principles give each client a local cache: SQLite in the Swift apps, IndexedDB on the web page. That is a client cache only, which can be deleted and filled again. The backend's store stays plain files or a bucket (`docs/explanation/direction.md`, "Where data lives").
