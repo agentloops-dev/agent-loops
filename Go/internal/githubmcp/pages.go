@@ -237,17 +237,9 @@ func (e gqlError) aboutIssueFields() bool {
 
 // graphql runs query with vars, and reads its data into into.
 func (g *RealGitHub) graphql(ctx context.Context, query string, vars map[string]any, into any) error {
-	request, _ := json.Marshal(map[string]any{"query": query, "variables": vars})
-	body, err := g.do(ctx, http.MethodPost, "graphql", request, false)
+	answer, err := g.graphqlAnswer(ctx, query, vars)
 	if err != nil {
 		return err
-	}
-	var answer struct {
-		Data   json.RawMessage `json:"data"`
-		Errors []gqlError      `json:"errors"`
-	}
-	if json.Unmarshal(body, &answer) != nil {
-		return &GitHubError{Kind: Failed, Message: "GitHub's answer is not JSON"}
 	}
 	if len(answer.Errors) > 0 {
 		if slices.ContainsFunc(answer.Errors, gqlError.aboutIssueFields) {
@@ -280,6 +272,26 @@ func (g *RealGitHub) graphqlFields(ctx context.Context, query string, vars map[s
 		}
 	}
 	return g.graphql(ctx, strings.Replace(query, priorityFields, "", 1), vars, into)
+}
+
+// gqlAnswer is GraphQL's answer: its data and its errors.
+type gqlAnswer struct {
+	Data   json.RawMessage `json:"data"`
+	Errors []gqlError      `json:"errors"`
+}
+
+// graphqlAnswer runs query and reads GitHub's answer, errors and all.
+func (g *RealGitHub) graphqlAnswer(ctx context.Context, query string, vars map[string]any) (gqlAnswer, error) {
+	request, _ := json.Marshal(map[string]any{"query": query, "variables": vars})
+	body, err := g.do(ctx, http.MethodPost, "graphql", request, false)
+	if err != nil {
+		return gqlAnswer{}, err
+	}
+	var answer gqlAnswer
+	if json.Unmarshal(body, &answer) != nil {
+		return gqlAnswer{}, &GitHubError{Kind: Failed, Message: "GitHub's answer is not JSON"}
+	}
+	return answer, nil
 }
 
 func ownerName(repo string) (string, string, error) {

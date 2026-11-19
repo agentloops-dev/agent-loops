@@ -123,7 +123,8 @@ func (j jiraForge) List(ctx context.Context, scope forgeScope, f forgeFilter, cu
 	if err != nil {
 		return forgePage{}, err
 	}
-	sf := jiramcp.SearchFilter{State: f.State, Label: f.Label, Assignee: f.Assignee, Query: f.Query, Feature: f.Feature}
+	sf := jiramcp.SearchFilter{State: f.State, Label: f.Label, Assignee: f.Assignee, Query: f.Query, Feature: f.Feature,
+		SinceMinutes: f.sinceMinutes()}
 	if f.Board != nil {
 		if sf.Filter, err = jr.BoardFilter(ctx, f.Board.jira); err != nil {
 			return forgePage{}, err
