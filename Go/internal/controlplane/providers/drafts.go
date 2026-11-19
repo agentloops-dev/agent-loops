@@ -351,11 +351,9 @@ func (s *Drafts) Runtimes() ProviderRuntimes {
 	return out
 }
 
-var cliPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
-
-// Start is ProviderDrafts.start: providers/draftStart, the cheap answers first (R8), then
-// the agent. existing is the provider's record and secrets in Edit… (US4).
-func (s *Drafts) Start(request ProviderDraftStart, owner Caller, existing *ExistingProvider) (ProviderDraftStarted, error) {
+// draftSecrets is the secrets a draft uses: the provider's in Edit…, with the ones the
+// sheet gives over them.
+func draftSecrets(request ProviderDraftStart, existing *ExistingProvider) map[string]string {
 	secrets := map[string]string{}
 	if existing != nil {
 		for k, v := range existing.Secrets {
@@ -367,6 +365,91 @@ func (s *Drafts) Start(request ProviderDraftStart, owner Caller, existing *Exist
 			secrets[k] = v
 		}
 	}
+	return secrets
+}
+
+// draftMachine is the machine a draft's provider runs on: the form's, else the provider's
+// in Edit…, else the host where the control plane runs.
+func (s *Drafts) draftMachine(request ProviderDraftStart, existing *ExistingProvider) string {
+	machine := string(deref(request.Form.Machine))
+	if machine == "" && existing != nil {
+		machine = deref(existing.Record.Machine)
+	}
+	if machine == "" {
+		if local := s.hooks.LocalHost(); local != nil {
+			machine = local.ID
+		}
+	}
+	return machine
+}
+
+// seedFromHelp is what a commands draft starts from: the CLI's own help. A CLI with a
+// preset is answered with no agent.
+func (s *Drafts) seedFromHelp(d *draft, secrets map[string]string) (string, *DraftAnswered, error) {
+	cli := d.cli()
+	if !cliPattern.MatchString(cli) {
+		if cli == "" {
+			return "", nil, refusal("Give the CLI its commands use.")
+		}
+		return "", nil, refusal("“%s” isn’t a program’s name.", cli)
+	}
+	program := path.Base(cli)
+	if preset, ok := presets[program]; ok {
+		return "", &DraftAnswered{
+			Note: "Agent Loops has a preset for " + program + ": use " + preset[1] + ".", Preset: optional(preset[0])}, nil
+	}
+	help := s.hooks.Help(cli, []string{}, secrets)
+	if help.NotInstalled() {
+		return "", nil, refusal("%s isn’t installed where the control plane runs.", cli)
+	}
+	d.helpSeen = help.Text
+	d.steps = append(d.steps, DraftStep{At: *dateOf(time.Now()), Kind: StepHelp, Text: "ran " + cli + " --help"})
+	return d.redact.Text(cut(help.Text)), nil, nil
+}
+
+// seedFromTools is what a map draft starts from: the server's tools. A server that follows
+// the contract, or that the shipped map fits, is answered with no agent.
+func (s *Drafts) seedFromTools(d *draft, secrets map[string]string) (string, *DraftAnswered, error) {
+	connection, err := s.hooks.Connect(draftRecord(d, nil), secrets)
+	var tools []any
+	if err == nil {
+		tools, err = connection.Tools()
+		go connection.End()
+	}
+	if err != nil {
+		return "", nil, refusal("%s", d.redact.Text(errorWords(err)))
+	}
+	var names []string
+	for _, t := range tools {
+		if n, ok := str(get(t, "name")); ok {
+			names = append(names, n)
+		}
+	}
+	all := true
+	for _, r := range RequiredTools {
+		all = all && contains(names, r)
+	}
+	if all {
+		return "", &DraftAnswered{Note: "It follows the contract: it needs no map."}, nil
+	}
+	if shipped, err := MapFrom(ShippedDigitalOceanMap); err == nil && shipped.Missing(names) == "" {
+		return "", &DraftAnswered{Note: "Agent Loops ships this map.", Map: jsonValue(ShippedDigitalOceanMap)}, nil
+	}
+	d.tools = tools
+	plural := "s"
+	if len(tools) == 1 {
+		plural = ""
+	}
+	d.steps = append(d.steps, DraftStep{At: *dateOf(time.Now()), Kind: StepRead, Text: fmt.Sprintf("read %d tool%s", len(tools), plural)})
+	return toolsText(tools, d.redact), nil, nil
+}
+
+var cliPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+
+// Start is ProviderDrafts.start: providers/draftStart, the cheap answers first (R8), then
+// the agent. existing is the provider's record and secrets in Edit… (US4).
+func (s *Drafts) Start(request ProviderDraftStart, owner Caller, existing *ExistingProvider) (ProviderDraftStarted, error) {
+	secrets := draftSecrets(request, existing)
 	if !contains(WriterRuntimes, request.RuntimeID) {
 		return ProviderDraftStarted{}, refusal("%s can’t write here: its own tools can’t be turned off for one session.",
 			runtimeName(request.RuntimeID))
@@ -375,70 +458,18 @@ func (s *Drafts) Start(request ProviderDraftStart, owner Caller, existing *Exist
 	d := &draft{id: id, owner: owner, form: request.Form, secrets: secrets, provider: string(deref(request.Provider)),
 		runtimeID: request.RuntimeID, runtimeName: runtimeName(request.RuntimeID), redact: NewRedaction(secrets),
 		state: "reading", stop: make(chan struct{})}
-	d.machine = string(deref(request.Form.Machine))
-	if d.machine == "" && existing != nil {
-		d.machine = deref(existing.Record.Machine)
-	}
-	if d.machine == "" {
-		if local := s.hooks.LocalHost(); local != nil {
-			d.machine = local.ID
-		}
-	}
+	d.machine = s.draftMachine(request, existing)
 	// What it starts from: the tools, or the CLI's own help.
-	var seed string
+	seedFrom := s.seedFromTools
 	if d.isCommands() {
-		cli := d.cli()
-		if !cliPattern.MatchString(cli) {
-			if cli == "" {
-				return ProviderDraftStarted{}, refusal("Give the CLI its commands use.")
-			}
-			return ProviderDraftStarted{}, refusal("“%s” isn’t a program’s name.", cli)
-		}
-		program := path.Base(cli)
-		if preset, ok := presets[program]; ok {
-			return ProviderDraftStarted{Draft: wire.UUID(id), Answered: &DraftAnswered{
-				Note: "Agent Loops has a preset for " + program + ": use " + preset[1] + ".", Preset: optional(preset[0])}}, nil
-		}
-		help := s.hooks.Help(cli, []string{}, secrets)
-		if help.NotInstalled() {
-			return ProviderDraftStarted{}, refusal("%s isn’t installed where the control plane runs.", cli)
-		}
-		d.helpSeen = help.Text
-		seed = d.redact.Text(cut(help.Text))
-		d.steps = append(d.steps, DraftStep{At: *dateOf(time.Now()), Kind: StepHelp, Text: "ran " + cli + " --help"})
-	} else {
-		connection, err := s.hooks.Connect(draftRecord(d, nil), secrets)
-		var tools []any
-		if err == nil {
-			tools, err = connection.Tools()
-			go connection.End()
-		}
-		if err != nil {
-			return ProviderDraftStarted{}, refusal("%s", d.redact.Text(errorWords(err)))
-		}
-		var names []string
-		for _, t := range tools {
-			if n, ok := str(get(t, "name")); ok {
-				names = append(names, n)
-			}
-		}
-		all := true
-		for _, r := range RequiredTools {
-			all = all && contains(names, r)
-		}
-		if all {
-			return ProviderDraftStarted{Draft: wire.UUID(id), Answered: &DraftAnswered{Note: "It follows the contract: it needs no map."}}, nil
-		}
-		if shipped, err := MapFrom(ShippedDigitalOceanMap); err == nil && shipped.Missing(names) == "" {
-			return ProviderDraftStarted{Draft: wire.UUID(id), Answered: &DraftAnswered{Note: "Agent Loops ships this map.", Map: jsonValue(ShippedDigitalOceanMap)}}, nil
-		}
-		d.tools = tools
-		seed = toolsText(tools, d.redact)
-		plural := "s"
-		if len(tools) == 1 {
-			plural = ""
-		}
-		d.steps = append(d.steps, DraftStep{At: *dateOf(time.Now()), Kind: StepRead, Text: fmt.Sprintf("read %d tool%s", len(tools), plural)})
+		seedFrom = s.seedFromHelp
+	}
+	seed, answered, err := seedFrom(d, secrets)
+	if err != nil {
+		return ProviderDraftStarted{}, err
+	}
+	if answered != nil {
+		return ProviderDraftStarted{Draft: wire.UUID(id), Answered: answered}, nil
 	}
 	host := s.hooks.LocalHost()
 	if host == nil {
@@ -798,6 +829,24 @@ func (s *Drafts) check(d *draft, given any) string {
 	return answer
 }
 
+// listedWorkspace is the workspace of d's last list that named names, by id, else by
+// name; nil when none.
+func (s *Drafts) listedWorkspace(d *draft, named string) *MachineInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range d.workspaces {
+		if d.workspaces[i].ID == named {
+			return &d.workspaces[i]
+		}
+	}
+	for i := range d.workspaces {
+		if strings.EqualFold(d.workspaces[i].Name, named) {
+			return &d.workspaces[i]
+		}
+	}
+	return nil
+}
+
 func (s *Drafts) prove(d *draft, start bool, arguments any) string {
 	given := get(arguments, "draft")
 	if _, ok := obj(given); !ok {
@@ -807,23 +856,7 @@ func (s *Drafts) prove(d *draft, start bool, arguments any) string {
 		return "Not asked: " + problem
 	}
 	named := strOr(get(arguments, "workspace"))
-	s.mu.Lock()
-	var workspace *MachineInfo
-	for i := range d.workspaces {
-		if d.workspaces[i].ID == named {
-			workspace = &d.workspaces[i]
-			break
-		}
-	}
-	if workspace == nil {
-		for i := range d.workspaces {
-			if strings.EqualFold(d.workspaces[i].Name, named) {
-				workspace = &d.workspaces[i]
-				break
-			}
-		}
-	}
-	s.mu.Unlock()
+	workspace := s.listedWorkspace(d, named)
 	if workspace == nil {
 		if named == "" {
 			return "Not asked: say which workspace. check_draft lists them."
