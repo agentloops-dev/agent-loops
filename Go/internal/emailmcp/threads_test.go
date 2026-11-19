@@ -41,6 +41,16 @@ func TestThreadsGroupByReferencesAndSubject(t *testing.T) {
 		"In-Reply-To: <plan-2@example.com>", "References: <plan@example.com> <plan-2@example.com>"))
 	m := f.mailbox()
 
+	threads := checkThreadTitles(ctx, t, m)
+	hello := checkThreadMessages(ctx, t, m, threads)
+	checkThreadPages(ctx, t, m, threads[2].ID)
+	checkUnreadThreads(ctx, t, m, hello)
+	checkBadThreadCursors(ctx, t, m, threads[2].ID)
+}
+
+// checkThreadTitles checks INBOX's three threads, the newest first, and is them.
+func checkThreadTitles(ctx context.Context, t *testing.T, m *Mailbox) []Thread {
+	t.Helper()
 	threads, next, err := m.Threads(ctx, "INBOX", "", false, 0)
 	if err != nil || next != "" {
 		t.Fatalf("threads: %v %q", err, next)
@@ -52,7 +62,12 @@ func TestThreadsGroupByReferencesAndSubject(t *testing.T) {
 	if want := []string{"Hello/1", "RE: lunch/2", "Re: Plan/2"}; !slices.Equal(titles, want) {
 		t.Fatalf("threads, newest first: %v", titles)
 	}
+	return threads
+}
 
+// checkThreadMessages reads each of the threads, and is the Hello thread's one mail.
+func checkThreadMessages(ctx context.Context, t *testing.T, m *Mailbox, threads []Thread) Summary {
+	t.Helper()
 	plan, _, err := m.ThreadMessages(ctx, threads[2].ID, "", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -76,12 +91,17 @@ func TestThreadsGroupByReferencesAndSubject(t *testing.T) {
 	if err != nil || len(hello) != 1 || hello[0].Subject != "Hello" {
 		t.Fatalf("a mail with no Message-Id is a thread of its own: %+v %v", hello, err)
 	}
+	return hello[0].Summary
+}
 
+// checkThreadPages reads the Plan thread id a page at a time.
+func checkThreadPages(ctx context.Context, t *testing.T, m *Mailbox, id string) {
+	t.Helper()
 	// A page at a time, the newest first.
 	var pages []string
 	cursor := ""
 	for range 4 {
-		page, after, err := m.ThreadMessages(ctx, threads[2].ID, cursor, 1)
+		page, after, err := m.ThreadMessages(ctx, id, cursor, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -95,22 +115,31 @@ func TestThreadsGroupByReferencesAndSubject(t *testing.T) {
 	if want := []string{fakeUser, "cy@example.com", "ann@example.com"}; !slices.Equal(pages, want) {
 		t.Fatalf("pages: %v", pages)
 	}
+}
 
+// checkUnreadThreads lists the unread threads before and after hello is marked read.
+func checkUnreadThreads(ctx context.Context, t *testing.T, m *Mailbox, hello Summary) {
+	t.Helper()
 	if unread, _, err := m.Threads(ctx, "INBOX", "", true, 0); err != nil || len(unread) != 3 {
 		t.Fatalf("unread: %+v %v", unread, err)
 	}
-	if err := m.MarkRead(ctx, hello[0].ID, true); err != nil {
+	if err := m.MarkRead(ctx, hello.ID, true); err != nil {
 		t.Fatal(err)
 	}
 	if unread, _, err := m.Threads(ctx, "INBOX", "", true, 0); err != nil || len(unread) != 2 {
 		t.Fatalf("unread after one is read: %+v %v", unread, err)
 	}
+}
 
+// checkBadThreadCursors checks that a bad cursor, or a message id as a thread id, says how to
+// go on.
+func checkBadThreadCursors(ctx context.Context, t *testing.T, m *Mailbox, id string) {
+	t.Helper()
 	for _, bad := range []string{"nope", "0:2"} {
 		if _, _, err := m.Threads(ctx, "INBOX", bad, false, 0); err == nil || !strings.Contains(err.Error(), "no cursor") {
 			t.Fatalf("cursor %q: %v", bad, err)
 		}
-		if _, _, err := m.ThreadMessages(ctx, threads[2].ID, bad, 0); err == nil || !strings.Contains(err.Error(), "no cursor") {
+		if _, _, err := m.ThreadMessages(ctx, id, bad, 0); err == nil || !strings.Contains(err.Error(), "no cursor") {
 			t.Fatalf("read cursor %q: %v", bad, err)
 		}
 	}

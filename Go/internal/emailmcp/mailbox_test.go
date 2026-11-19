@@ -57,6 +57,15 @@ func TestListSearchReadMarkAndMove(t *testing.T) {
 	f.deliver("INBOX", plain("news@example.org", fakeUser, "Weekly news", "Nothing much."))
 	m := f.mailbox()
 
+	checkInboxAndArchive(ctx, t, m)
+	code := checkListAndSearch(ctx, t, m)
+	checkReadAndMark(ctx, t, m, code)
+	checkMove(ctx, t, m, code)
+}
+
+// checkInboxAndArchive checks the fake's two folders, with two unread mail in INBOX.
+func checkInboxAndArchive(ctx context.Context, t *testing.T, m *Mailbox) {
+	t.Helper()
 	folders, err := m.Folders(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +78,11 @@ func TestListSearchReadMarkAndMove(t *testing.T) {
 			t.Fatalf("INBOX: %+v", folder)
 		}
 	}
+}
 
+// checkListAndSearch lists and searches INBOX, and is the sign-in code's summary.
+func checkListAndSearch(ctx context.Context, t *testing.T, m *Mailbox) Summary {
+	t.Helper()
 	list, err := m.List(ctx, "INBOX", false, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +105,12 @@ func TestListSearchReadMarkAndMove(t *testing.T) {
 	if found, _ := m.Search(ctx, "INBOX", Query{Text: "482913"}, 0); len(found) != 1 {
 		t.Fatalf("search text: %+v", found)
 	}
+	return code
+}
 
+// checkReadAndMark reads code, which leaves it unread, then marks it read and unread.
+func checkReadAndMark(ctx context.Context, t *testing.T, m *Mailbox, code Summary) {
+	t.Helper()
 	msg, err := m.Read(ctx, code.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +134,11 @@ func TestListSearchReadMarkAndMove(t *testing.T) {
 	if unread, _ := m.List(ctx, "INBOX", true, 0); len(unread) != 2 {
 		t.Fatalf("after marking unread: %+v", unread)
 	}
+}
 
+// checkMove moves code to Archive, where it has a new id, and fails on a folder that is not.
+func checkMove(ctx context.Context, t *testing.T, m *Mailbox, code Summary) {
+	t.Helper()
 	moved, err := m.Move(ctx, code.ID, "Archive")
 	if err != nil {
 		t.Fatal(err)
@@ -315,59 +337,63 @@ func TestFoldersAskOnceAndAreKept(t *testing.T) {
 		"LIST-STATUS": {imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapListStatus: {}}, 0},
 		"IMAP4rev1":   {imap.CapSet{imap.CapIMAP4rev1: {}}, 102}, // a STATUS for each
 	} {
-		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
-			f := newFakeMail(t, tc.caps)
-			for i := range 100 {
-				if err := f.user.Create(fmt.Sprintf("Folder %d", i), nil); err != nil {
-					t.Fatal(err)
-				}
-			}
-			f.deliver("INBOX", plain("news@example.org", fakeUser, "Weekly news", "Nothing much."))
-			m := f.mailbox()
+		t.Run(name, func(t *testing.T) { checkFoldersAskOnceAndAreKept(t, tc.caps, tc.statuses) })
+	}
+}
 
-			folders, err := m.Folders(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			inbox := slices.IndexFunc(folders, func(f Folder) bool { return f.Name == "INBOX" })
-			if len(folders) != 102 || inbox < 0 || folders[inbox].Total != 1 || folders[inbox].Unread != 1 {
-				t.Fatalf("%d folders, INBOX %d", len(folders), inbox)
-			}
-			if lists, statuses := f.commands(); lists != 1 || statuses != tc.statuses {
-				t.Fatalf("first: %d LIST, %d STATUS; want 1 and %d", lists, statuses, tc.statuses)
-			}
+// checkFoldersAskOnceAndAreKept checks a server of caps, which takes statuses STATUS
+// commands for the folders.
+func checkFoldersAskOnceAndAreKept(t *testing.T, caps imap.CapSet, statuses int) {
+	ctx := context.Background()
+	f := newFakeMail(t, caps)
+	for i := range 100 {
+		if err := f.user.Create(fmt.Sprintf("Folder %d", i), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.deliver("INBOX", plain("news@example.org", fakeUser, "Weekly news", "Nothing much."))
+	m := f.mailbox()
 
-			folders[inbox].Unread = 99 // a caller's copy
-			if again, err := m.Folders(ctx); err != nil || again[inbox].Unread != 1 {
-				t.Fatalf("kept: %+v %v", again[inbox], err)
-			}
-			if lists, statuses := f.commands(); lists != 0 || statuses != 0 {
-				t.Fatalf("kept: %d LIST, %d STATUS; want none", lists, statuses)
-			}
+	folders, err := m.Folders(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inbox := slices.IndexFunc(folders, func(f Folder) bool { return f.Name == "INBOX" })
+	if len(folders) != 102 || inbox < 0 || folders[inbox].Total != 1 || folders[inbox].Unread != 1 {
+		t.Fatalf("%d folders, INBOX %d", len(folders), inbox)
+	}
+	if lists, got := f.commands(); lists != 1 || got != statuses {
+		t.Fatalf("first: %d LIST, %d STATUS; want 1 and %d", lists, got, statuses)
+	}
 
-			list, err := m.List(ctx, "INBOX", false, 0)
-			if err != nil || len(list) != 1 {
-				t.Fatalf("list: %+v %v", list, err)
-			}
-			if err := m.MarkRead(ctx, list[0].ID, true); err != nil {
-				t.Fatal(err)
-			}
-			f.commands()
-			if after, err := m.Folders(ctx); err != nil || after[inbox].Unread != 0 {
-				t.Fatalf("after mark_read: %+v %v", after[inbox], err)
-			}
-			if lists, _ := f.commands(); lists != 1 {
-				t.Fatalf("after mark_read: %d LIST; want 1", lists)
-			}
+	folders[inbox].Unread = 99 // a caller's copy
+	if again, err := m.Folders(ctx); err != nil || again[inbox].Unread != 1 {
+		t.Fatalf("kept: %+v %v", again[inbox], err)
+	}
+	if lists, got := f.commands(); lists != 0 || got != 0 {
+		t.Fatalf("kept: %d LIST, %d STATUS; want none", lists, got)
+	}
 
-			m.foldersAt = time.Now().Add(-foldersFor)
-			if _, err := m.Folders(ctx); err != nil {
-				t.Fatal(err)
-			}
-			if lists, _ := f.commands(); lists != 1 {
-				t.Fatalf("old: %d LIST; want 1", lists)
-			}
-		})
+	list, err := m.List(ctx, "INBOX", false, 0)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list: %+v %v", list, err)
+	}
+	if err := m.MarkRead(ctx, list[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	f.commands()
+	if after, err := m.Folders(ctx); err != nil || after[inbox].Unread != 0 {
+		t.Fatalf("after mark_read: %+v %v", after[inbox], err)
+	}
+	if lists, _ := f.commands(); lists != 1 {
+		t.Fatalf("after mark_read: %d LIST; want 1", lists)
+	}
+
+	m.foldersAt = time.Now().Add(-foldersFor)
+	if _, err := m.Folders(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if lists, _ := f.commands(); lists != 1 {
+		t.Fatalf("old: %d LIST; want 1", lists)
 	}
 }
