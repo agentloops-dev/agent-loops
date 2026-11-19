@@ -343,14 +343,14 @@ run_govulncheck() {
 # on the PATH, which must be the Go of go.mod (a newer one fails to read the older toolchain's
 # sources): its GOROOT's bin goes first.
 run_deadcode() {
-	local goroot linux darwin status=0 line key
+	local goroot onlinux ondarwin status=0 line key
 	goroot=$(cd Go && go env GOROOT) || return 1
-	linux=$(mktemp) darwin=$(mktemp)
-	(cd Go && PATH="$goroot/bin:$PATH" GOOS=linux GOARCH=amd64 CGO_ENABLED=0 deadcode -test -tags live ./...) >"$linux" 2>&1 || status=$?
-	(cd Go && PATH="$goroot/bin:$PATH" GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 deadcode -test -tags live ./...) >"$darwin" 2>&1 || status=$?
+	onlinux=$(mktemp) ondarwin=$(mktemp)
+	(cd Go && PATH="$goroot/bin:$PATH" GOOS=linux GOARCH=amd64 CGO_ENABLED=0 deadcode -test -tags live ./...) >"$onlinux" 2>&1 || status=$?
+	(cd Go && PATH="$goroot/bin:$PATH" GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 deadcode -test -tags live ./...) >"$ondarwin" 2>&1 || status=$?
 	if [ "$status" != 0 ]; then
-		cat "$linux" "$darwin"
-		rm -f "$linux" "$darwin"
+		cat "$onlinux" "$ondarwin"
+		rm -f "$onlinux" "$ondarwin"
 		return "$status"
 	fi
 	status=0
@@ -364,8 +364,8 @@ run_deadcode() {
 			printf 'Go/%s\n' "$line"
 			status=1
 		fi
-	done < <(LC_ALL=C comm -12 <(LC_ALL=C sort "$linux") <(LC_ALL=C sort "$darwin"))
-	rm -f "$linux" "$darwin"
+	done < <(LC_ALL=C comm -12 <(LC_ALL=C sort "$onlinux") <(LC_ALL=C sort "$ondarwin"))
+	rm -f "$onlinux" "$ondarwin"
 	[ "$status" = 0 ] || echo "lint.sh: remove each function above, or name it in $DEADCODE_ALLOWED with why it stays"
 	return "$status"
 }
