@@ -444,7 +444,7 @@
     },
     "ForgeDone": {
       "type": "object",
-      "description": "What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge waits for the checks; reran is how many runs or pipelines were run again.",
+      "description": "What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge waits for the checks; reran is how many runs or pipelines were run again. item is the item the write was on, as the forge has it after the write, with its updatedAt (#6351, epic #6348): a client cache replaces its optimistic value with it. On forge/add-child it is the epic. Absent when the read after the write failed (the write still happened), and from an earlier daemon.",
       "properties": {
         "url": {
           "type": "string"
@@ -454,6 +454,9 @@
         },
         "reran": {
           "type": "integer"
+        },
+        "item": {
+          "$ref": "#/definitions/ForgeItem"
         }
       },
       "required": [],

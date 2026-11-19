@@ -5667,12 +5667,16 @@ export interface ForgeDiffHunk {
 
 /**
  * What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge
- * waits for the checks; reran is how many runs or pipelines were run again.
+ * waits for the checks; reran is how many runs or pipelines were run again. item is the item the
+ * write was on, as the forge has it after the write, with its updatedAt (#6351, epic #6348): a
+ * client cache replaces its optimistic value with it. On forge/add-child it is the epic. Absent
+ * when the read after the write failed (the write still happened), and from an earlier daemon.
  */
 export interface ForgeDone {
   url?: string;
   auto?: boolean;
   reran?: number;
+  item?: ForgeItem;
 }
 
 /**
@@ -18112,7 +18116,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeDiff: { required: ["files", "cut"], optional: ["url"] },
   ForgeDiffFile: { required: ["path", "change", "additions", "deletions", "hunks"], optional: ["previousPath", "note"] },
   ForgeDiffHunk: { required: ["oldStart", "newStart", "lines"], optional: [] },
-  ForgeDone: { required: [], optional: ["url", "auto", "reran"] },
+  ForgeDone: { required: [], optional: ["url", "auto", "reran", "item"] },
   ForgeEvent: { required: ["kind", "at"], optional: ["actor", "label", "assignee", "source"] },
   ForgeHoldRequest: { required: ["node", "on"], optional: [] },
   ForgeImage: { required: ["mimeType", "data"], optional: [] },
