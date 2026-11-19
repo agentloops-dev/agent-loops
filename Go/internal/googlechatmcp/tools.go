@@ -151,17 +151,27 @@ func sendMessage(e *Events) func(context.Context, sendArgs) (*mcp.CallToolResult
 		if err != nil {
 			return nil, err
 		}
-		text, err := checkText("text", in.Text)
+		posted, _, err := postText(ctx, e, space, thread, in.Text)
 		if err != nil {
 			return nil, err
 		}
-		posted, err := e.Inbox.Google.Post(ctx, space, thread, &chat.Message{Text: text})
-		if err != nil {
-			return nil, err
-		}
-		e.Inbox.Posted(space, thread, posted, text)
 		return structured(map[string]any{"message": posted.Name, "thread": threadOf(posted, thread)}), nil
 	}
+}
+
+// postText checks the text, posts it as the app and keeps it in the inbox; it gives the posted
+// message and the text as posted.
+func postText(ctx context.Context, e *Events, space, thread, text string) (*chat.Message, string, error) {
+	text, err := checkText("text", text)
+	if err != nil {
+		return nil, "", err
+	}
+	posted, err := e.Inbox.Google.Post(ctx, space, thread, &chat.Message{Text: text})
+	if err != nil {
+		return nil, "", err
+	}
+	e.Inbox.Posted(space, thread, posted, text)
+	return posted, text, nil
 }
 
 // askQuestion is ask_question: it posts the question as a card with a button per option.
