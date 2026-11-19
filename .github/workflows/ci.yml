@@ -157,7 +157,7 @@ jobs:
   # module, the web app, the Wire code generation and the design tokens (#5628, epic #5627):
   # go:build, go:vet, go:test (-race), web:build, web:lint (tsc, the lint that keeps agent output
   # inert, the licence list, Biome), web:test (which holds the build to its MANIFEST), wire:gen,
-  # design:gen, go:lint (golangci-lint, govulncheck) and repo-lint:lint (shellcheck, zsh -n, our
+  # design:gen, go:lint (golangci-lint, govulncheck, deadcode) and repo-lint:lint (shellcheck, zsh -n, our
   # text checks, jscpd; #5672), each linter failing on a finding. Then the Wire compat check and
   # the mixed-versions test (#1767). Each project's project.json names the inputs of its tasks; a
   # lane runs the same with scripts/nx.sh. The Xcode projects (tag xcode) are `apps` and `test`'s.
@@ -275,7 +275,7 @@ jobs:
         run: |
           { echo "### Nx task hashes, $(uname -sm)"; echo '```'; node scripts/nx-hashes.cjs --affected "$BASE" test vet lint; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
       # The pinned linters (scripts/lint.sh --tools), on the PATH for the lint targets in Nx
-      # (#5672): go:lint (golangci-lint, govulncheck), web:lint (Biome) and repo-lint:lint
+      # (#5672): go:lint (golangci-lint, govulncheck, deadcode), web:lint (Biome) and repo-lint:lint
       # (shellcheck, zsh -n, our text checks, jscpd). Each fails on a finding. The binaries are
       # cached, and golangci-lint's analysis with them.
       - uses: actions/cache@v5
@@ -293,7 +293,7 @@ jobs:
           restore-keys: golangci-lint-
       - name: Lint tools
         run: |
-          scripts/lint.sh --tools ~/.cache/lint-tools shellcheck golangci-lint govulncheck biome jscpd
+          scripts/lint.sh --tools ~/.cache/lint-tools shellcheck golangci-lint govulncheck deadcode biome jscpd
           echo "$HOME/.cache/lint-tools" >> "$GITHUB_PATH"
       # The reserve is the steps after it: the mixed-versions test (about a minute), the Wire
       # compat check and the cache saves. The linters are Nx's lint targets, inside this budget.

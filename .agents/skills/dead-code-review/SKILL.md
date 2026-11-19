@@ -1,6 +1,6 @@
 ---
 name: dead-code-review
-description: Review changed Swift, Go and web code for unreachable code since its last run with Periphery, deadcode and Knip, record false positives, and remove only code proven dead. Use when the Dead code review workflow runs on its schedule (#2161, #3715), or when Alex asks for a dead-code review.
+description: Review changed Swift and web code for unreachable code since its last run with Periphery and Knip (Go's is gated at PR time by deadcode in go:lint, #6334), search Go too for compatibility code, record false positives, and remove only code proven dead. Use when the Dead code review workflow runs on its schedule (#2161, #3715), or when Alex asks for a dead-code review.
 ---
 
 # Dead-code review
@@ -39,10 +39,10 @@ the keyboard, that is true only of a workflow run.
   --retain-public`. The Xcode index can still be partial: a Swift finding counts only
   when its name appears nowhere else in tracked Swift files. Record the exact command
   and any target the scan could not index.
-- Run `deadcode` from `golang.org/x/tools/cmd/deadcode@v0.49.0` with the Mac's own Go,
-  as `scripts/lint.sh` and `Go/scripts/go.sh` do (#4709; no container); scan `./...` from
-  `Go/`. Scan with `GOOS=linux` and again with `GOOS=darwin GOARCH=arm64`, or every function
-  with only `_darwin.go` (or only `_linux.go`) callers reads as dead.
+- Do not run `deadcode`: Go's unreachable functions fail `go:lint` on every PR
+  (`scripts/lint.sh deadcode`, #6334), so `main` has none. The compatibility search in
+  step 1.3 still reads Go, because deadcode cannot see a live function that only an old
+  peer's wire message reaches (#6312).
 - Run Knip 6.42.1 with `npx` and the Node of `Web/.node-version` on the Mac (no container,
   #4709), with `KNIP_DISABLE_RAW_TRANSFER=1` and the npm cache under
   `~/Library/Caches/Agents-build/npm`; run it from `Web/`. Keep the
@@ -61,7 +61,7 @@ the keyboard, that is true only of a workflow run.
 2. Read every file in `.agents/reviews/dead-code/`. The newest run file has
    `reviewed-through:` with the last reviewed `main` commit. If no run file exists,
    start at the last release tag.
-3. Review `git diff <previous reviewed-through>..main` for Swift, Go and web code. On the
+3. Review `git diff <previous reviewed-through>..main` for Swift and web code, and Go for the compatibility search only. On the
    first run, use `git diff <last release tag>..main`. Also search current source for
    compatibility code using `before 0NN`, `older build`, `legacy` and `no longer`.
    Review only matches that are still in source; ignore docs, release notes, tests that
@@ -72,7 +72,7 @@ the keyboard, that is true only of a workflow run.
 
 ## 2. Review
 
-Run all three analyzers and the compatibility search in step 1.3. Do not treat a tool
+Run both analyzers and the compatibility search in step 1.3. Do not treat a tool
 result as proof by itself. Check call sites, target membership, protocol and serialization
 use, App Intents, Objective-C selectors, reflection, test-only hooks and entry points.
 Generated code is excluded unless a handwritten reference is dead.
@@ -80,8 +80,8 @@ Generated code is excluded unless a handwritten reference is dead.
 For every false positive, add a durable baseline entry with the exact declaration or
 path, the analyzer, and the reason it is live. Use Periphery `retain_*` configuration or
 `// periphery:ignore` only for a declaration with a documented reason. Use Knip's
-`ignore` only for a path with a documented reason. Keep the Go baseline in
-`.agents/reviews/dead-code/baseline.md`; do not hide Go findings with broad exclusions.
+`ignore` only for a path with a documented reason. A Go function kept on purpose is a line
+in `Go/.deadcode-allowed.txt`, with its reason, on a PR, not in `baseline.md`.
 Include the baseline update in the report branch.
 
 For every likely-dead finding, give severity (critical, high, medium or low), the exact
@@ -109,7 +109,7 @@ on `agents/reviews-dead-code`.
 ## 4. Remove code that is surely dead
 
 Group `sure` findings by client or language: Mac/Host, Remote, each independent Swift
-package, Go and Web. Start no more than one helper for a group at a time, and stay within
+package, Go (compatibility code only) and Web. Start no more than one helper for a group at a time, and stay within
 the folder's session limits. Give each helper a new worktree off `main` and one group.
 The helper removes only that group's code, updates any necessary tests, runs the unit
 tests for touched paths, and opens one pull request with `Fixes #<finding issue>`.

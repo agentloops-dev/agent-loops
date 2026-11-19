@@ -1,0 +1,5 @@
+# Functions that deadcode (scripts/lint.sh deadcode, #6334) says no main package or test
+# reaches, kept on purpose. One line each: the path from the repo's root, a colon, the name as
+# deadcode gives it (Func or Type.Method), a space, then why it stays: reflection, go:linkname,
+# or a method that only something outside the program calls. Never an old finding to fix later:
+# remove a dead function instead.
