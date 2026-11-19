@@ -90,3 +90,4 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [A press on a sidebar header breaks layout](sidebar-section-header-press-breaks-layout.md) — #5567: AXPress on a Section header stood the window 41,378 pt tall; open pages from a tagged row
 - [A split column's least size is measured at no width](split-column-least-size-measured-at-no-width.md) — #5932: a foot banner's fixed-height text stood the split view 2116 pt tall; `.columnFloor()` on every column; repro: kill the scratch daemon
 - [Task tuples miscompile at -O](task-tuple-returns-miscompile.md) — #5946: a tuple returned from both a do that awaits and its catch loses its key in Swift 6.4.2 -O and crashed the window in completeFuture/TaskGroup::offer; use Result.catching, one return
+- [agentsd stacks on SIGUSR1](agentsd-stacks-on-sigusr1.md) — #6260: `kill -USR1` logs every goroutine to daemon.log, no stop; uplink logs handlers over 2 s

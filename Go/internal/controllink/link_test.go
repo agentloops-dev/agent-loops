@@ -37,6 +37,10 @@ type fakeControl struct {
 	// letGo, when set, closes every uplink as soon as its machine/hello is read: a copy that
 	// lets go at once (#1529).
 	letGo bool
+	// say, when set, is lines written to each uplink once its channel is open, and ws is the
+	// last uplink's socket, to ping the host from this side (#6260).
+	say chan string
+	ws  atomic.Pointer[websocket.Conn]
 
 	mu         sync.Mutex
 	hostPublic []byte // from machines/announce
@@ -134,6 +138,10 @@ func (f *fakeControl) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	l.Write(ctx, `{"c":1,"open":{"client":"C","device":"D1","fanOut":true}}`)
 	l.Write(ctx, `{"c":1,"m":{"jsonrpc":"2.0","id":7,"method":"daemon/ping"}}`)
+	f.ws.Store(ws)
+	if f.say != nil {
+		go f.relay(ctx, l)
+	}
 	if f.uplinks.Add(1) == 1 && f.stall != nil {
 		select {
 		case <-f.stall:
@@ -165,6 +173,20 @@ func (f *fakeControl) serve(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		f.channel <- line
+	}
+}
+
+// relay writes what the test says to the uplink, until it goes.
+func (f *fakeControl) relay(ctx context.Context, l *Lines) {
+	for {
+		select {
+		case line := <-f.say:
+			if l.Write(ctx, line) != nil {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
