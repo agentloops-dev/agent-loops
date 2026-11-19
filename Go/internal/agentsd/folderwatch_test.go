@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -57,13 +56,14 @@ func raised(d *Daemon, name string) []wire.Event {
 	return out
 }
 
+// It waits by the run's deadline, not a fixed 5 s (#6248): on a loaded Linux runner the
+// look took longer, and waitFailed's stacks tell a slow daemon from a lost wake-up.
 func TestAWorkflowFileOnDiskIsToldAtOnce(t *testing.T) {
-	flaky.UnderLoad(t, "#6248")
 	folder := canonical(t.TempDir())
 	_, c := watched(t, folder)
 	os.MkdirAll(workflowsFolder(folder), 0o755)
 	os.WriteFile(filepath.Join(workflowsFolder(folder), "pulled.md"), []byte("---\nname: Pulled\non: agent.finished\n---\nGo.\n"), 0o644)
-	deadline := time.After(5 * time.Second)
+	deadline := afterLimit(t)
 	for {
 		select {
 		case line := <-c.out:
@@ -80,19 +80,20 @@ func TestAWorkflowFileOnDiskIsToldAtOnce(t *testing.T) {
 				}
 				// And gone again: workflow/removed.
 				os.Remove(filepath.Join(workflowsFolder(folder), "pulled.md"))
+				removed := afterLimit(t)
 				for {
 					select {
 					case line := <-c.out:
 						if strings.Contains(line, wire.NotifyWorkflowRemoved.Name) && strings.Contains(line, `"pulled"`) {
 							return
 						}
-					case <-time.After(5 * time.Second):
-						t.Fatal("no workflow/removed")
+					case <-removed:
+						waitFailed(t, "no workflow/removed")
 					}
 				}
 			}
 		case <-deadline:
-			t.Fatal("no workflow/changed for a file written on disk")
+			waitFailed(t, "no workflow/changed for a file written on disk")
 		}
 	}
 }

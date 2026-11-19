@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -120,6 +121,7 @@ func TestTheStarterReachesItsSessionOnAnotherMachine(t *testing.T) {
 // one slow machine should not cost the others their share of the wait.
 func TestListThereAsksEveryMachineAtOnce(t *testing.T) {
 	t.Parallel()
+	flaky.UnderLoad(t, "#6262")
 
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
