@@ -87,17 +87,7 @@ func play(t *testing.T, base, token, file string) map[string]string {
 		t.Fatal(err)
 	}
 	var set struct {
-		Steps []struct {
-			Name          string          `json:"name"`
-			Method        string          `json:"method"`
-			Path          string          `json:"path"`
-			Body          json.RawMessage `json:"body"`
-			Status        int             `json:"status"`
-			Save          string          `json:"save"`
-			Expect        map[string]any  `json:"expect"`
-			ExpectMembers *int            `json:"expectMembers"`
-			NoMembers     bool            `json:"noMembers"`
-		} `json:"steps"`
+		Steps []scimStep `json:"steps"`
 	}
 	if err := json.Unmarshal(data, &set); err != nil {
 		t.Fatal(err)
@@ -124,25 +114,45 @@ func play(t *testing.T, base, token, file string) map[string]string {
 		if step.Save != "" {
 			ids[step.Save], _ = out["id"].(string)
 		}
-		for k, want := range step.Expect {
-			if got := out[k]; got != want && !(isNumber(got) && isNumber(want) && toFloat(got) == toFloat(want)) {
-				t.Fatalf("%s: %s: %s is %v, not %v", file, step.Name, k, got, want)
-			}
+		assertSCIMStepExpects(t, file, step, out)
+	}
+	return ids
+}
+
+// scimStep is one request of a recorded request set, and what it expects of the answer.
+type scimStep struct {
+	Name          string          `json:"name"`
+	Method        string          `json:"method"`
+	Path          string          `json:"path"`
+	Body          json.RawMessage `json:"body"`
+	Status        int             `json:"status"`
+	Save          string          `json:"save"`
+	Expect        map[string]any  `json:"expect"`
+	ExpectMembers *int            `json:"expectMembers"`
+	NoMembers     bool            `json:"noMembers"`
+}
+
+// assertSCIMStepExpects checks the answer to a step has the fields, the count of members and
+// the absence of members that the step expects.
+func assertSCIMStepExpects(t *testing.T, file string, step scimStep, out map[string]any) {
+	t.Helper()
+	for k, want := range step.Expect {
+		if got := out[k]; got != want && !(isNumber(got) && isNumber(want) && toFloat(got) == toFloat(want)) {
+			t.Fatalf("%s: %s: %s is %v, not %v", file, step.Name, k, got, want)
 		}
-		if step.ExpectMembers != nil {
-			if members, _ := out["members"].([]any); len(members) != *step.ExpectMembers {
-				t.Fatalf("%s: %s: %d members", file, step.Name, len(members))
-			}
+	}
+	if step.ExpectMembers != nil {
+		if members, _ := out["members"].([]any); len(members) != *step.ExpectMembers {
+			t.Fatalf("%s: %s: %d members", file, step.Name, len(members))
 		}
-		if step.NoMembers {
-			for _, r := range out["Resources"].([]any) {
-				if _, there := r.(map[string]any)["members"]; there {
-					t.Fatalf("%s: %s: members sent", file, step.Name)
-				}
+	}
+	if step.NoMembers {
+		for _, r := range out["Resources"].([]any) {
+			if _, there := r.(map[string]any)["members"]; there {
+				t.Fatalf("%s: %s: members sent", file, step.Name)
 			}
 		}
 	}
-	return ids
 }
 
 func isNumber(v any) bool { _, ok := v.(float64); return ok }
@@ -291,16 +301,7 @@ func TestSCIMUsers(t *testing.T) {
 	for i := range 5 {
 		scimDo(t, base, token, "POST", "/Users", newUser("user"+strconv.Itoa(i)+"@acme.test", "00u-"+strconv.Itoa(i)))
 	}
-	for _, f := range []string{`userName eq "LEE@acme.test"`, `externalId eq "00u-lee"`, `emails.value eq "nobody@acme.test"`} {
-		_, out := scimDo(t, base, token, "GET", "/Users?filter="+urlEscape(f), nil)
-		want := 1.0
-		if strings.HasPrefix(f, "emails") {
-			want = 0
-		}
-		if out["totalResults"] != want {
-			t.Fatal(f, out)
-		}
-	}
+	assertSCIMUserFilters(t, base, token)
 	_, page := scimDo(t, base, token, "GET", "/Users?startIndex=3&count=2", nil)
 	if page["totalResults"] != 6.0 || page["itemsPerPage"] != 2.0 || page["startIndex"] != 3.0 {
 		t.Fatal(page)
@@ -363,6 +364,22 @@ func TestSCIMUsers(t *testing.T) {
 	status, out := scimDo(t, base, token, "POST", "/Users", newUser("early@acme.test", "00u-early"))
 	if status != 201 || out["id"] != personOf(t, p, early) {
 		t.Fatal(status, out, personOf(t, p, early))
+	}
+}
+
+// assertSCIMUserFilters checks the filters by userName (in any case) and externalId find
+// Lee, and the filter by an email nobody has finds no one.
+func assertSCIMUserFilters(t *testing.T, base, token string) {
+	t.Helper()
+	for _, f := range []string{`userName eq "LEE@acme.test"`, `externalId eq "00u-lee"`, `emails.value eq "nobody@acme.test"`} {
+		_, out := scimDo(t, base, token, "GET", "/Users?filter="+urlEscape(f), nil)
+		want := 1.0
+		if strings.HasPrefix(f, "emails") {
+			want = 0
+		}
+		if out["totalResults"] != want {
+			t.Fatal(f, out)
+		}
 	}
 }
 

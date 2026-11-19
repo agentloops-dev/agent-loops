@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -489,14 +490,16 @@ func (r *Router) attachHost(host string, conn Uplink, local bool) {
 		go k.Attached(host)
 	}
 	r.mu.Unlock()
+	calls := r.startHostCalls(host, gen)
 	go func() {
 		for {
 			line, err := conn.Read(context.Background())
 			if err != nil {
 				break
 			}
-			r.hostLine(line, host)
+			r.hostLine(line, host, gen, calls)
 		}
+		calls.stop()
 		r.mu.Lock()
 		current := r.hosts[host] != nil && r.hosts[host].gen == gen
 		if !local {
@@ -856,66 +859,83 @@ type hostFrame struct {
 // readHostFrame is ControlWire.readHost. Lines this side writes put m last, so the fast
 // path finds where it starts; anything else is parsed whole.
 func readHostFrame(line string) (hostFrame, bool) {
-	if strings.HasPrefix(line, `{"f":[`) && strings.HasSuffix(line, "}") {
-		if end := strings.IndexByte(line, ']'); end > 0 {
-			var chans []int
-			ok := true
-			for _, p := range strings.Split(line[6:end], ",") {
-				n, err := strconv.Atoi(p)
-				if err != nil || n <= 0 {
-					ok = false
-					break
-				}
-				chans = append(chans, n)
-			}
-			var tails []string
-			rest := line[end+1:]
-			if ok && strings.HasPrefix(rest, `,"l":[`) {
-				// A lock member has digits and base64, so the first ] ends the list.
-				if stop := strings.IndexByte(rest, ']'); stop > 0 {
-					tails, ok = readTails(json.RawMessage(rest[5:stop+1]), len(chans))
-					rest = rest[stop+1:]
-				} else {
-					ok = false
-				}
-			}
-			if ok && strings.HasPrefix(rest, `,"m":`) {
-				return hostFrame{channels: chans, tails: tails, msg: rest[5 : len(rest)-1]}, true
-			}
+	if f, ok := readFanOutFast(line); ok {
+		return f, true
+	}
+	if f, ok := readChannelFast(line); ok {
+		return f, true
+	}
+	return readHostFrameWhole(line)
+}
+
+// readFanOutFast reads a fan-out line ({"f":[…],"l":[…],"m":…}) this side wrote, without
+// parsing m. It says false for anything it cannot read that way.
+func readFanOutFast(line string) (hostFrame, bool) {
+	if !strings.HasPrefix(line, `{"f":[`) || !strings.HasSuffix(line, "}") {
+		return hostFrame{}, false
+	}
+	end := strings.IndexByte(line, ']')
+	if end <= 0 {
+		return hostFrame{}, false
+	}
+	chans, ok := readFastChannels(line[6:end])
+	var tails []string
+	rest := line[end+1:]
+	if ok && strings.HasPrefix(rest, `,"l":[`) {
+		// A lock member has digits and base64, so the first ] ends the list.
+		if stop := strings.IndexByte(rest, ']'); stop > 0 {
+			tails, ok = readTails(json.RawMessage(rest[5:stop+1]), len(chans))
+			rest = rest[stop+1:]
+		} else {
+			ok = false
 		}
 	}
-	if strings.HasPrefix(line, `{"c":`) && strings.HasSuffix(line, "}") {
-		rest := line[5:]
-		i := 0
-		for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
-			i++
-		}
-		if i > 0 && strings.HasPrefix(rest[i:], `,"m":`) {
-			n, _ := strconv.Atoi(rest[:i])
-			return hostFrame{channel: n, msg: rest[i+5 : len(rest)-1]}, true
-		}
+	if ok && strings.HasPrefix(rest, `,"m":`) {
+		return hostFrame{channels: chans, tails: tails, msg: rest[5 : len(rest)-1]}, true
 	}
+	return hostFrame{}, false
+}
+
+// readFastChannels reads a fan-out line's comma-separated channel numbers; each must be
+// above zero.
+func readFastChannels(list string) ([]int, bool) {
+	var chans []int
+	for _, p := range strings.Split(list, ",") {
+		n, err := strconv.Atoi(p)
+		if err != nil || n <= 0 {
+			return chans, false
+		}
+		chans = append(chans, n)
+	}
+	return chans, true
+}
+
+// readChannelFast reads a one-channel line ({"c":n,"m":…}) this side wrote, without
+// parsing m.
+func readChannelFast(line string) (hostFrame, bool) {
+	if !strings.HasPrefix(line, `{"c":`) || !strings.HasSuffix(line, "}") {
+		return hostFrame{}, false
+	}
+	rest := line[5:]
+	i := 0
+	for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
+		i++
+	}
+	if i > 0 && strings.HasPrefix(rest[i:], `,"m":`) {
+		n, _ := strconv.Atoi(rest[:i])
+		return hostFrame{channel: n, msg: rest[i+5 : len(rest)-1]}, true
+	}
+	return hostFrame{}, false
+}
+
+// readHostFrameWhole parses a host's line as a whole JSON object.
+func readHostFrameWhole(line string) (hostFrame, bool) {
 	var o map[string]json.RawMessage
 	if json.Unmarshal([]byte(line), &o) != nil {
 		return hostFrame{}, false
 	}
 	if f, ok := o["f"]; ok {
-		var chans []int
-		if json.Unmarshal(f, &chans) != nil || o["m"] == nil {
-			return hostFrame{}, false
-		}
-		for _, c := range chans {
-			if c <= 0 {
-				return hostFrame{}, false
-			}
-		}
-		var tails []string
-		if l, ok := o["l"]; ok {
-			if tails, ok = readTails(l, len(chans)); !ok {
-				return hostFrame{}, false
-			}
-		}
-		return hostFrame{channels: chans, tails: tails, msg: string(o["m"])}, true
+		return readFanOutWhole(o, f)
 	}
 	var c int
 	if json.Unmarshal(o["c"], &c) != nil || c < 0 {
@@ -931,6 +951,26 @@ func readHostFrame(line string) (hostFrame, bool) {
 		return hostFrame{channel: c, close: true}, true
 	}
 	return hostFrame{}, false
+}
+
+// readFanOutWhole reads a parsed fan-out line: its channels f, its tails l and its m.
+func readFanOutWhole(o map[string]json.RawMessage, f json.RawMessage) (hostFrame, bool) {
+	var chans []int
+	if json.Unmarshal(f, &chans) != nil || o["m"] == nil {
+		return hostFrame{}, false
+	}
+	for _, c := range chans {
+		if c <= 0 {
+			return hostFrame{}, false
+		}
+	}
+	var tails []string
+	if l, ok := o["l"]; ok {
+		if tails, ok = readTails(l, len(chans)); !ok {
+			return hostFrame{}, false
+		}
+	}
+	return hostFrame{channels: chans, tails: tails, msg: string(o["m"])}, true
 }
 
 // readTails is a fan-out frame's l: a lock member (an object) or null for each channel.
@@ -952,7 +992,9 @@ func readTails(raw json.RawMessage, channels int) ([]string, bool) {
 	return tails, true
 }
 
-func (r *Router) hostLine(line, host string) {
+// hostLine is one line from host's link gen. It never waits on a handler: calls go to
+// the link's lanes (#6223), so the loop that reads it, and answers its pings, goes on.
+func (r *Router) hostLine(line, host string, gen int64, calls *hostCalls) {
 	f, ok := readHostFrame(line)
 	// Only the control plane opens channels. A host that tries is ignored.
 	if !ok || f.open {
@@ -963,12 +1005,7 @@ func (r *Router) hostLine(line, host string) {
 		return
 	}
 	if f.channel == 0 && !f.close {
-		// A git command waits on a person's answer (#1122): the host's other lines go on.
-		if strings.Contains(f.msg, `"git/credential"`) {
-			go r.channelZero(f.msg, host)
-		} else {
-			r.channelZero(f.msg, host)
-		}
+		r.channelZero(f.msg, host, gen, calls)
 		return
 	}
 	r.mu.Lock()
@@ -982,20 +1019,7 @@ func (r *Router) hostLine(line, host string) {
 		return
 	}
 	if f.close {
-		// The host hung up on a client (a device it was told to forget, say): the
-		// client's whole connection goes, as it would have today.
-		delete(h.channels, f.channel)
-		if t.kept != "" {
-			r.endKeptLocked(t.kept, nil)
-		} else if t.peer != "" {
-			delete(h.proxied, peerKey(t.peer, t.peerChannel))
-			r.tellPeerLocked(t.peer, peerFrame(host, closeFrame(t.peerChannel)))
-		} else if t.session != "" {
-			r.detachLocked(t.session, 0)
-		} else if other := r.hosts[t.tunnelHost]; other != nil {
-			delete(other.channels, t.tunnelOthers)
-			other.conn.Send(closeFrame(t.tunnelOthers))
-		}
+		r.hostClosedChannelLocked(h, t, f.channel, host)
 		return
 	}
 	if t.peer != "" {
@@ -1018,27 +1042,57 @@ func (r *Router) hostLine(line, host string) {
 		}
 		return
 	}
-	s := r.clients[t.session]
+	r.hostToClientLocked(t.session, host, f.msg)
+}
+
+// hostClosedChannelLocked ends what a channel the host hung up was for. The host hung up
+// on a client (a device it was told to forget, say): the client's whole connection goes,
+// as it would have today.
+func (r *Router) hostClosedChannelLocked(h *hostSession, t target, channel int, host string) {
+	delete(h.channels, channel)
+	if t.kept != "" {
+		r.endKeptLocked(t.kept, nil)
+	} else if t.peer != "" {
+		delete(h.proxied, peerKey(t.peer, t.peerChannel))
+		r.tellPeerLocked(t.peer, peerFrame(host, closeFrame(t.peerChannel)))
+	} else if t.session != "" {
+		r.detachLocked(t.session, 0)
+	} else if other := r.hosts[t.tunnelHost]; other != nil {
+		delete(other.channels, t.tunnelOthers)
+		other.conn.Send(closeFrame(t.tunnelOthers))
+	}
+}
+
+// hostToClientLocked passes a host's line on to the client session it is for, and notes
+// the answer to a request that waits on the host.
+func (r *Router) hostToClientLocked(sessionID, host, msg string) {
+	s := r.clients[sessionID]
 	if s == nil {
 		return
 	}
 	// Read only while something waits on this host, and only for its id: the line goes on
 	// as it came.
 	if len(s.inFlight[host]) > 0 {
-		if id := answeredID(f.msg); id != "" {
-			delete(s.inFlight[host], id)
-			if method, ok := s.copying[host][id]; ok {
-				delete(s.copying[host], id)
-				if r.copier != nil {
-					go r.copier(host, method, f.msg)
-				}
-			}
+		if id := answeredID(msg); id != "" {
+			r.answeredLocked(s, host, id, msg)
 		}
 	}
 	if s.wrapped {
-		r.writeLocked(t.session, wrap(host, f.msg))
+		r.writeLocked(sessionID, wrap(host, msg))
 	} else if host == r.homeHost {
-		r.writeLocked(t.session, f.msg)
+		r.writeLocked(sessionID, msg)
+	}
+}
+
+// answeredLocked notes that the host answered request id: it no longer waits, and a list
+// kept for when the host is offline is copied.
+func (r *Router) answeredLocked(s *clientSession, host, id, msg string) {
+	delete(s.inFlight[host], id)
+	if method, ok := s.copying[host][id]; ok {
+		delete(s.copying[host], id)
+		if r.copier != nil {
+			go r.copier(host, method, msg)
+		}
 	}
 }
 
@@ -1096,7 +1150,7 @@ func withLock(msg, tail string) string {
 	return msg[:len(msg)-1] + `,"lock":` + tail + `}`
 }
 
-func (r *Router) channelZero(msg, host string) {
+func (r *Router) channelZero(msg, host string, gen int64, calls *hostCalls) {
 	m, ok := decode(msg)
 	if !ok {
 		return
@@ -1118,18 +1172,20 @@ func (r *Router) channelZero(msg, host string) {
 	if !m.isRequest() {
 		return
 	}
-	result, err := r.handler.HostSaid(host, m.Method, m.Params)
-	line := ""
-	if err != nil {
-		line = replyError(m.ID, err)
-	} else {
-		line = reply(m.ID, result)
+	call := hostCall{id: m.ID, method: m.Method, params: m.Params}
+	if m.Method == "git/credential" {
+		// A git command waits on a person's answer (#1122): it holds no lane.
+		go r.answerHost(host, gen, call)
+		return
 	}
-	r.mu.Lock()
-	if h := r.hosts[host]; h != nil {
-		h.conn.Send(channelFrame(0, line))
+	if !calls.take(call) {
+		r.log(fmt.Sprintf("host %s: %s refused; its calls are %d behind", host, m.Method, hostCallQueue))
+		r.mu.Lock()
+		if h := r.hosts[host]; h != nil && h.gen == gen {
+			h.conn.Send(channelFrame(0, replyError(m.ID, hostBusy)))
+		}
+		r.mu.Unlock()
 	}
-	r.mu.Unlock()
 }
 
 // Tell sends a notification on a host's channel 0, when its uplink ends here.
@@ -1514,97 +1570,15 @@ func (r *Router) toHostLocked(host, msg, sessionID string) {
 		return
 	}
 	if m.Method == "presence/report" {
-		var p wire.PresenceReport
-		if json.Unmarshal(m.Params, &p) == nil {
-			previous := r.presence[sessionID]
-			may := p.MayNotify
-			if may == nil {
-				may = previous.mayNotify
-			}
-			device := s.caller.Kind != records.KindMac && s.caller.Kind != records.KindBrowser
-			r.presence[sessionID] = notedPresence{client: s.caller.Client, device: device, watching: (*string)(p.Watching),
-				active: p.Active, heardAt: time.Now(), mayNotify: may}
-			if r.presenceHeard != nil {
-				go r.presenceHeard(s.caller.Client, device, m.Params)
-			}
-		}
+		r.notePresenceLocked(s, sessionID, m)
 	}
-	// A bot's machine is the bot's alone: an admin, who may know it is there, is told so
-	// (#1761, FR-031); bots/stopRun is the one way to act on it.
-	if bots, ok := r.owners.(botOwners); ok && r.known[host] && bots.BotMachineFor(s.caller.Person, host) {
-		r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, fail(botMachine, "That machine is a bot's: only its workflows start work there. An admin can stop a run."))))
-		r.noteLocked(s.caller, host, m, "refused")
+	if r.refusedForHostLocked(s, sessionID, host, m) {
 		return
-	}
-	// Another user's machine is not found, as one that is not there (FR-018).
-	if !r.known[host] || !r.mayReachLocked(s.caller, host) {
-		r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, fail(noSuchHost, "No machine is called %s.", host))))
-		r.noteLocked(s.caller, host, m, "refused")
-		return
-	}
-	// A host from before the team tier, on a team, would act for every person (R14).
-	if list, known := r.hostCapabilities[host]; known {
-		if refusal := hostRefusal(list, r.version, r.team); refusal != nil {
-			r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
-			return
-		}
-	}
-	// A machine that does not follow the policy starts no work when it says so (#998).
-	if r.policyGate != nil {
-		if refusal := r.policyGate(host, m.Method); refusal != nil {
-			r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
-			r.noteLocked(s.caller, host, m, "refused")
-			return
-		}
-	}
-	// At the plan's limit on agents running at once, starting one more is refused;
-	// nothing running is stopped (#2243).
-	if r.agentsRunningGate != nil {
-		if refusal := r.agentsRunningGate(host, m.Method); refusal != nil {
-			r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
-			r.noteLocked(s.caller, host, m, "refused")
-			return
-		}
 	}
 	c, ok := s.channels[host]
 	h := r.hosts[host]
 	if !ok || h == nil {
-		refusal := providers.OfflineRefusal(r.workspaces[host])
-		// A prompt or a start for a stopped workspace may be kept, and start it (#691 US3).
-		if r.keeper != nil && providers.KeptMethods[m.Method] {
-			if r.audited != nil {
-				r.audited(s.caller, host, m.Method, m.Params)
-			}
-			// A request with a channel's MAC cannot be delivered later, on another channel:
-			// the client keeps it, signed, itself (machines/keep). One its client signed is
-			// kept as it came (#3492).
-			var signed *wire.LockDelivery
-			if len(m.Lock) > 0 {
-				if sig, ok := machinelock.SignatureOf(m.Lock); ok {
-					signed = &wire.LockDelivery{Method: m.Method, Params: string(m.Params), Lock: sig}
-				} else {
-					r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
-					return
-				}
-			}
-			k, caller, id, wrapped, method, params := r.keeper, s.caller, m.ID, s.wrapped, m.Method, m.Params
-			r.keeping <- func() {
-				answer := k.Keep(host, method, params, providersCaller(caller), signed)
-				var err error = refusal
-				if answer != nil {
-					err = answer
-				}
-				line := replyError(id, err)
-				if wrapped {
-					line = wrap(host, line)
-				}
-				r.mu.Lock()
-				r.writeLocked(sessionID, line)
-				r.mu.Unlock()
-			}
-			return
-		}
-		r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
+		r.toOfflineHostLocked(s, sessionID, host, m)
 		return
 	}
 	if !h.conn.Send(channelFrame(c, msg)) {
@@ -1613,6 +1587,116 @@ func (r *Router) toHostLocked(host, msg, sessionID string) {
 		r.noteLocked(s.caller, host, m, "offline")
 		return
 	}
+	r.sentToHostLocked(s, host, m)
+}
+
+// notePresenceLocked keeps what a client's presence/report says, and tells presenceHeard.
+func (r *Router) notePresenceLocked(s *clientSession, sessionID string, m *message) {
+	var p wire.PresenceReport
+	if json.Unmarshal(m.Params, &p) != nil {
+		return
+	}
+	previous := r.presence[sessionID]
+	may := p.MayNotify
+	if may == nil {
+		may = previous.mayNotify
+	}
+	device := s.caller.Kind != records.KindMac && s.caller.Kind != records.KindBrowser
+	r.presence[sessionID] = notedPresence{client: s.caller.Client, device: device, watching: (*string)(p.Watching),
+		active: p.Active, heardAt: time.Now(), mayNotify: may}
+	if r.presenceHeard != nil {
+		go r.presenceHeard(s.caller.Client, device, m.Params)
+	}
+}
+
+// refusedForHostLocked refuses a request this client may not send to the host, and says
+// true when it did: a bot's machine, a machine it may not reach, a host too old for the
+// team, the policy or the plan's limit on agents.
+func (r *Router) refusedForHostLocked(s *clientSession, sessionID, host string, m *message) bool {
+	// A bot's machine is the bot's alone: an admin, who may know it is there, is told so
+	// (#1761, FR-031); bots/stopRun is the one way to act on it.
+	if bots, ok := r.owners.(botOwners); ok && r.known[host] && bots.BotMachineFor(s.caller.Person, host) {
+		r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, fail(botMachine, "That machine is a bot's: only its workflows start work there. An admin can stop a run."))))
+		r.noteLocked(s.caller, host, m, "refused")
+		return true
+	}
+	// Another user's machine is not found, as one that is not there (FR-018).
+	if !r.known[host] || !r.mayReachLocked(s.caller, host) {
+		r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, fail(noSuchHost, "No machine is called %s.", host))))
+		r.noteLocked(s.caller, host, m, "refused")
+		return true
+	}
+	// A host from before the team tier, on a team, would act for every person (R14).
+	if list, known := r.hostCapabilities[host]; known {
+		if refusal := hostRefusal(list, r.version, r.team); refusal != nil {
+			r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
+			return true
+		}
+	}
+	// A machine that does not follow the policy starts no work when it says so (#998).
+	if r.policyGate != nil {
+		if refusal := r.policyGate(host, m.Method); refusal != nil {
+			r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
+			r.noteLocked(s.caller, host, m, "refused")
+			return true
+		}
+	}
+	// At the plan's limit on agents running at once, starting one more is refused;
+	// nothing running is stopped (#2243).
+	if r.agentsRunningGate != nil {
+		if refusal := r.agentsRunningGate(host, m.Method); refusal != nil {
+			r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
+			r.noteLocked(s.caller, host, m, "refused")
+			return true
+		}
+	}
+	return false
+}
+
+// toOfflineHostLocked answers a request for a host that is not here: it is refused, or
+// kept to be delivered when the host's workspace starts.
+func (r *Router) toOfflineHostLocked(s *clientSession, sessionID, host string, m *message) {
+	refusal := providers.OfflineRefusal(r.workspaces[host])
+	// A prompt or a start for a stopped workspace may be kept, and start it (#691 US3).
+	if r.keeper == nil || !providers.KeptMethods[m.Method] {
+		r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
+		return
+	}
+	if r.audited != nil {
+		r.audited(s.caller, host, m.Method, m.Params)
+	}
+	// A request with a channel's MAC cannot be delivered later, on another channel:
+	// the client keeps it, signed, itself (machines/keep). One its client signed is
+	// kept as it came (#3492).
+	var signed *wire.LockDelivery
+	if len(m.Lock) > 0 {
+		if sig, ok := machinelock.SignatureOf(m.Lock); ok {
+			signed = &wire.LockDelivery{Method: m.Method, Params: string(m.Params), Lock: sig}
+		} else {
+			r.writeLocked(sessionID, s.wrap(host, replyError(m.ID, refusal)))
+			return
+		}
+	}
+	k, caller, id, wrapped, method, params := r.keeper, s.caller, m.ID, s.wrapped, m.Method, m.Params
+	r.keeping <- func() {
+		answer := k.Keep(host, method, params, providersCaller(caller), signed)
+		var err error = refusal
+		if answer != nil {
+			err = answer
+		}
+		line := replyError(id, err)
+		if wrapped {
+			line = wrap(host, line)
+		}
+		r.mu.Lock()
+		r.writeLocked(sessionID, line)
+		r.mu.Unlock()
+	}
+}
+
+// sentToHostLocked notes a request the host's uplink took: routed, in flight, audited,
+// and kept to copy when it is a whole list.
+func (r *Router) sentToHostLocked(s *clientSession, host string, m *message) {
 	r.noteLocked(s.caller, host, m, "routed")
 	if s.inFlight[host] == nil {
 		s.inFlight[host] = map[string]bool{}

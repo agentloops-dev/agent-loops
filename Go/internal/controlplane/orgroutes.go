@@ -136,22 +136,7 @@ var orgRoutesSelfAudited = methodSet("orgRoutes/check", "orgRoutes/remove", "org
 func (m *Methods) orgRoutesMethod(ctx context.Context, method string, params json.RawMessage, from Caller) (any, error) {
 	user := m.callerPerson(from)
 	if method == "orgRoutes/mine" {
-		routes, err := m.s.readOrgRoutes(ctx)
-		if err != nil {
-			return nil, err
-		}
-		out := wire.OrgRoutesMine{Routes: []wire.OrgRouteMine{}}
-		for _, r := range routes {
-			if m.s.mayUseRoute(user, r.route) {
-				mine := wire.OrgRouteMine{ID: r.route.ID, Name: r.route.Name, Kind: r.route.Kind,
-					Runtimes: r.route.Runtimes, DefaultFor: nonNil(r.route.DefaultFor)}
-				if m.s.routeWaitsFor(ctx, r.route, func(owner string) bool { return owner == user }) > 0 {
-					mine.Waiting = optional(true)
-				}
-				out.Routes = append(out.Routes, mine)
-			}
-		}
-		return out, nil
+		return m.orgRoutesMine(ctx, user)
 	}
 	if !m.s.isAdmin(user) {
 		return nil, fail(notPermitted, "Only an admin can see or change the organisation's routes to the model.")
@@ -159,52 +144,11 @@ func (m *Methods) orgRoutesMethod(ctx context.Context, method string, params jso
 	actor := m.s.actorFor(from.Client)
 	switch method {
 	case "orgRoutes/list":
-		routes, err := m.s.readOrgRoutes(ctx)
-		if err != nil {
-			return nil, err
-		}
-		held := m.s.routesHeld()
-		out := wire.OrgRouteList{Routes: []wire.OrgRouteKept{}}
-		for _, r := range routes {
-			route := r.route
-			count := int64(held[route.ID+"|"+fmt.Sprint(deref(route.Version))])
-			waiting := int64(m.s.routeWaitsFor(ctx, route, nil))
-			route.Machines, route.Waiting = &count, &waiting
-			out.Routes = append(out.Routes, wire.OrgRouteKept{Route: route, Rev: r.rev})
-		}
-		return out, nil
+		return m.orgRoutesList(ctx)
 	case "orgRoutes/recipients":
-		request, err := require[wire.OrgRouteRecipientsRequest](params, "OrgRouteRecipientsRequest")
-		if err != nil {
-			return nil, err
-		}
-		for _, group := range request.Groups {
-			if m.s.records.Group(group) == nil {
-				return nil, fail(invalidParams, "There is no group %q.", group)
-			}
-		}
-		return wire.SealRecipients{Recipients: m.s.routeRecipients(request.Groups)}, nil
+		return m.orgRoutesRecipients(params)
 	case "orgRoutes/sealed":
-		request, err := require[wire.OrgRouteRequest](params, "OrgRouteRequest")
-		if err != nil {
-			return nil, err
-		}
-		kept, err := m.s.readOrgRoute(ctx, request.ID)
-		if err != nil {
-			return nil, err
-		}
-		if kept == nil {
-			return nil, fail(invalidParams, "There is no route %q.", request.ID)
-		}
-		record, _, err := m.s.readRouteSecrets(ctx, kept.route.ID)
-		if err != nil {
-			return nil, err
-		}
-		mine := record.Sealed[controllink.ClientRecipient(from.Client)]
-		if record.SealVersion != deref(kept.route.SealVersion) || !hasFields(mine, kept.route.SecretFields) {
-			return nil, fail(notSupported, "This app has no copy of the route's key yet. Wait for another admin's app to seal it for this one, or enter the key again.")
-		}
-		return routeItem(kept.route, mine, []wire.SealRecipient{}), nil
+		return m.orgRoutesSealed(ctx, params, from)
 	case "orgRoutes/set":
 		request, err := require[wire.OrgRouteSet](params, "OrgRouteSet")
 		if err != nil {
@@ -224,21 +168,106 @@ func (m *Methods) orgRoutesMethod(ctx context.Context, method string, params jso
 		}
 		return wire.Empty{}, m.s.removeOrgRoute(ctx, actor, method, request.ID, deref(request.Rev))
 	case "orgRoutes/check":
-		request, err := require[wire.OrgRouteRequest](params, "OrgRouteRequest")
-		if err != nil {
-			return nil, err
-		}
-		kept, err := m.s.readOrgRoute(ctx, request.ID)
-		if err != nil {
-			return nil, err
-		}
-		if kept == nil {
-			return nil, fail(invalidParams, "There is no route %q.", request.ID)
-		}
-		m.s.auditRoute(actor, method, kept.route.ID, "")
-		return m.s.checkOnMachine(kept.route), nil
+		return m.orgRoutesCheck(ctx, actor, method, params)
 	}
 	return nil, notFound(method)
+}
+
+// orgRoutesMine is orgRoutes/mine: the routes this person may use, and whether each one
+// waits for this person's machines.
+func (m *Methods) orgRoutesMine(ctx context.Context, user string) (any, error) {
+	routes, err := m.s.readOrgRoutes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := wire.OrgRoutesMine{Routes: []wire.OrgRouteMine{}}
+	for _, r := range routes {
+		if !m.s.mayUseRoute(user, r.route) {
+			continue
+		}
+		mine := wire.OrgRouteMine{ID: r.route.ID, Name: r.route.Name, Kind: r.route.Kind,
+			Runtimes: r.route.Runtimes, DefaultFor: nonNil(r.route.DefaultFor)}
+		if m.s.routeWaitsFor(ctx, r.route, func(owner string) bool { return owner == user }) > 0 {
+			mine.Waiting = optional(true)
+		}
+		out.Routes = append(out.Routes, mine)
+	}
+	return out, nil
+}
+
+// orgRoutesList is orgRoutes/list: every route, with how many machines hold it and how
+// many wait for it.
+func (m *Methods) orgRoutesList(ctx context.Context) (any, error) {
+	routes, err := m.s.readOrgRoutes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	held := m.s.routesHeld()
+	out := wire.OrgRouteList{Routes: []wire.OrgRouteKept{}}
+	for _, r := range routes {
+		route := r.route
+		count := int64(held[route.ID+"|"+fmt.Sprint(deref(route.Version))])
+		waiting := int64(m.s.routeWaitsFor(ctx, route, nil))
+		route.Machines, route.Waiting = &count, &waiting
+		out.Routes = append(out.Routes, wire.OrgRouteKept{Route: route, Rev: r.rev})
+	}
+	return out, nil
+}
+
+// orgRoutesRecipients is orgRoutes/recipients: who a route's key is sealed to, for the
+// groups named.
+func (m *Methods) orgRoutesRecipients(params json.RawMessage) (any, error) {
+	request, err := require[wire.OrgRouteRecipientsRequest](params, "OrgRouteRecipientsRequest")
+	if err != nil {
+		return nil, err
+	}
+	for _, group := range request.Groups {
+		if m.s.records.Group(group) == nil {
+			return nil, fail(invalidParams, "There is no group %q.", group)
+		}
+	}
+	return wire.SealRecipients{Recipients: m.s.routeRecipients(request.Groups)}, nil
+}
+
+// orgRoutesSealed is orgRoutes/sealed: a route with the key sealed to the calling app.
+func (m *Methods) orgRoutesSealed(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.OrgRouteRequest](params, "OrgRouteRequest")
+	if err != nil {
+		return nil, err
+	}
+	kept, err := m.s.readOrgRoute(ctx, request.ID)
+	if err != nil {
+		return nil, err
+	}
+	if kept == nil {
+		return nil, fail(invalidParams, "There is no route %q.", request.ID)
+	}
+	record, _, err := m.s.readRouteSecrets(ctx, kept.route.ID)
+	if err != nil {
+		return nil, err
+	}
+	mine := record.Sealed[controllink.ClientRecipient(from.Client)]
+	if record.SealVersion != deref(kept.route.SealVersion) || !hasFields(mine, kept.route.SecretFields) {
+		return nil, fail(notSupported, "This app has no copy of the route's key yet. Wait for another admin's app to seal it for this one, or enter the key again.")
+	}
+	return routeItem(kept.route, mine, []wire.SealRecipient{}), nil
+}
+
+// orgRoutesCheck is orgRoutes/check: a machine that holds the route checks it.
+func (m *Methods) orgRoutesCheck(ctx context.Context, actor wire.AuditActor, method string, params json.RawMessage) (any, error) {
+	request, err := require[wire.OrgRouteRequest](params, "OrgRouteRequest")
+	if err != nil {
+		return nil, err
+	}
+	kept, err := m.s.readOrgRoute(ctx, request.ID)
+	if err != nil {
+		return nil, err
+	}
+	if kept == nil {
+		return nil, fail(invalidParams, "There is no route %q.", request.ID)
+	}
+	m.s.auditRoute(actor, method, kept.route.ID, "")
+	return m.s.checkOnMachine(kept.route), nil
 }
 
 // auditRoute keeps an org route's change in the audit, with what changed and no value.
@@ -302,109 +331,166 @@ func (s *Service) setOrgRoute(ctx context.Context, actor wire.AuditActor, method
 		return wire.OrgRouteKept{}, fail(invalidParams, "A route's id is 1 to 40 of a to z, 0 to 9 and -.")
 	}
 	for try := 0; ; try++ {
-		kept, err := s.readOrgRoute(ctx, next.ID)
-		if err != nil {
-			return wire.OrgRouteKept{}, err
+		out, again, err := s.trySetOrgRoute(ctx, actor, method, next, sealed, rev, keyOnly, try)
+		if again {
+			continue
 		}
-		if rev == nil && kept != nil {
-			return wire.OrgRouteKept{}, fail(changedElsewhere, "There is a route %q already. Load it, then save.", next.ID)
-		}
-		if rev != nil && (kept == nil || *rev != kept.rev) {
-			return wire.OrgRouteKept{}, fail(changedElsewhere, "Another admin changed this route. Load it again, then save.")
-		}
-		if kept == nil {
-			if all, err := s.readOrgRoutes(ctx); err != nil {
-				return wire.OrgRouteKept{}, err
-			} else if len(all) >= mostOrgRoutes {
-				return wire.OrgRouteKept{}, fail(invalidParams, "Keep at most %d routes.", mostOrgRoutes)
-			}
-		}
-		route := next
-		if keyOnly {
-			route = kept.route
-		}
-		// The secrets: those kept, or those the client sealed now.
-		var fields []string
-		fingerprint := map[string]string{}
-		sealVersion := int64(0)
-		if kept != nil {
-			fields, sealVersion = kept.route.SecretFields, deref(kept.route.SealVersion)
-			maps.Copy(fingerprint, kept.route.Fingerprint)
-		}
-		var record *orgSecretRecord
-		secretTag := ""
-		if sealed != nil {
-			if record, err = s.checkSealedRoute(route, *sealed, sealVersion); err != nil {
-				return wire.OrgRouteKept{}, err
-			}
-			fields, sealVersion, fingerprint = sealedFields(*sealed), sealed.SealVersion, maps.Clone(sealed.Fingerprint)
-			if kept != nil {
-				if _, tag, err := s.readRouteSecrets(ctx, next.ID); err != nil {
-					return wire.OrgRouteKept{}, err
-				} else {
-					secretTag = tag
-				}
-			}
-		} else if kept != nil && len(fields) > 0 && !sameBinding(kept.route, route) {
-			return wire.OrgRouteKept{}, fail(invalidParams, "A change to the kind, the API or the settings seals the key again: save it from an admin's app that has a copy, or enter the key again.")
-		}
-		if err := s.boundOrgRoute(route, fields); err != nil {
-			return wire.OrgRouteKept{}, err
-		}
-		now := time.Now().UTC()
-		stamp := &wire.OrgRouteStamp{By: actor, At: wire.DateOf(now)}
-		route.Version, route.Created, route.Changed, route.Machines, route.Waiting = optional(int64(1)), stamp, stamp, nil, nil
-		if kept != nil {
-			route.Version, route.Created = optional(deref(kept.route.Version)+1), kept.route.Created
-		}
-		route.SecretFields, route.SealVersion = slices.Sorted(slices.Values(fields)), nil
-		if sealVersion > 0 {
-			route.SealVersion = &sealVersion
-		}
-		route.Fingerprint = fingerprint
-		route.DefaultFor, route.Groups = nonNil(route.DefaultFor), nonNil(route.Groups)
-		// The secrets first, then the record (data-model.md): a record that names a secret
-		// always finds one. Undone when the record's write loses.
-		var undo func()
-		if record != nil {
-			record.ID = next.ID
-			if undo, err = s.writeRouteSecrets(ctx, *record, secretTag); err != nil {
-				if store.IsConflict(err) && try < orgRouteRetries && rev == nil {
-					continue
-				}
-				if store.IsConflict(err) {
-					return wire.OrgRouteKept{}, fail(changedElsewhere, "Another admin changed this route. Load it again, then save.")
-				}
-				return wire.OrgRouteKept{}, fail(storeUnavailable, "The route's key could not be kept: %v", err)
-			}
-		}
-		data, err := records.Encode(route)
-		if err != nil {
-			return wire.OrgRouteKept{}, err
-		}
-		when := store.Absent
-		if kept != nil {
-			when = store.Matching(kept.rev)
-		}
-		tag, err := s.cfg.Store.Put(ctx, orgRouteKey(route.ID), data, when)
-		if err != nil {
-			if undo != nil {
-				undo()
+		return out, err
+	}
+}
+
+// routeSecrets is what a route's secrets are after a set: their fields, seal version and
+// fingerprints, and the record to write and the tag it replaces when the client sealed new
+// ones.
+type routeSecrets struct {
+	fields      []string
+	sealVersion int64
+	fingerprint map[string]string
+	record      *orgSecretRecord
+	tag         string
+}
+
+// trySetOrgRoute is one try of setOrgRoute. It says again when another admin's write of
+// the secrets won and the set may try once more.
+func (s *Service) trySetOrgRoute(ctx context.Context, actor wire.AuditActor, method string, next wire.OrgRoute,
+	sealed *wire.OrgRouteSealed, rev *string, keyOnly bool, try int) (wire.OrgRouteKept, bool, error) {
+	kept, err := s.keptRouteToSet(ctx, next.ID, rev)
+	if err != nil {
+		return wire.OrgRouteKept{}, false, err
+	}
+	route := next
+	if keyOnly {
+		route = kept.route
+	}
+	secrets, err := s.routeSecretsToSet(ctx, kept, route, next.ID, sealed)
+	if err != nil {
+		return wire.OrgRouteKept{}, false, err
+	}
+	if err := s.boundOrgRoute(route, secrets.fields); err != nil {
+		return wire.OrgRouteKept{}, false, err
+	}
+	stampOrgRoute(&route, kept, actor, secrets)
+	// The secrets first, then the record (data-model.md): a record that names a secret
+	// always finds one. Undone when the record's write loses.
+	var undo func()
+	if secrets.record != nil {
+		secrets.record.ID = next.ID
+		if undo, err = s.writeRouteSecrets(ctx, *secrets.record, secrets.tag); err != nil {
+			if store.IsConflict(err) && try < orgRouteRetries && rev == nil {
+				return wire.OrgRouteKept{}, true, nil
 			}
 			if store.IsConflict(err) {
-				return wire.OrgRouteKept{}, fail(changedElsewhere, "Another admin changed this route. Load it again, then save.")
+				return wire.OrgRouteKept{}, false, fail(changedElsewhere, "Another admin changed this route. Load it again, then save.")
 			}
-			return wire.OrgRouteKept{}, fail(storeUnavailable, "The route could not be kept: %v", err)
+			return wire.OrgRouteKept{}, false, fail(storeUnavailable, "The route's key could not be kept: %v", err)
 		}
-		var before *wire.OrgRoute
-		if kept != nil {
-			before = &kept.route
-		}
-		s.auditRoute(actor, method, route.ID, routeChanges(before, route, sealed != nil))
-		s.log(fmt.Sprintf("org route %s is now version %d", route.ID, deref(route.Version)))
-		s.orgRoutesChanged(route.ID, actor.User)
-		return wire.OrgRouteKept{Route: route, Rev: tag}, nil
 	}
+	out, err := s.putOrgRoute(ctx, actor, method, route, kept, undo, sealed != nil)
+	return out, false, err
+}
+
+// keptRouteToSet reads the route a set changes, or nil for a new one, and refuses a set
+// that another admin's change or the limit on routes has made wrong.
+func (s *Service) keptRouteToSet(ctx context.Context, id string, rev *string) (*keptRoute, error) {
+	kept, err := s.readOrgRoute(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if rev == nil && kept != nil {
+		return nil, fail(changedElsewhere, "There is a route %q already. Load it, then save.", id)
+	}
+	if rev != nil && (kept == nil || *rev != kept.rev) {
+		return nil, fail(changedElsewhere, "Another admin changed this route. Load it again, then save.")
+	}
+	if kept == nil {
+		if all, err := s.readOrgRoutes(ctx); err != nil {
+			return nil, err
+		} else if len(all) >= mostOrgRoutes {
+			return nil, fail(invalidParams, "Keep at most %d routes.", mostOrgRoutes)
+		}
+	}
+	return kept, nil
+}
+
+// routeSecretsToSet is the route's secrets after the set: those kept, or those the client
+// sealed now. A change to where the key goes needs the key sealed again.
+func (s *Service) routeSecretsToSet(ctx context.Context, kept *keptRoute, route wire.OrgRoute, id string,
+	sealed *wire.OrgRouteSealed) (routeSecrets, error) {
+	out := routeSecrets{fingerprint: map[string]string{}}
+	if kept != nil {
+		out.fields, out.sealVersion = kept.route.SecretFields, deref(kept.route.SealVersion)
+		maps.Copy(out.fingerprint, kept.route.Fingerprint)
+	}
+	if sealed == nil {
+		if kept != nil && len(out.fields) > 0 && !sameBinding(kept.route, route) {
+			return routeSecrets{}, fail(invalidParams, "A change to the kind, the API or the settings seals the key again: save it from an admin's app that has a copy, or enter the key again.")
+		}
+		return out, nil
+	}
+	record, err := s.checkSealedRoute(route, *sealed, out.sealVersion)
+	if err != nil {
+		return routeSecrets{}, err
+	}
+	out.record = record
+	out.fields, out.sealVersion, out.fingerprint = sealedFields(*sealed), sealed.SealVersion, maps.Clone(sealed.Fingerprint)
+	if kept != nil {
+		_, tag, err := s.readRouteSecrets(ctx, id)
+		if err != nil {
+			return routeSecrets{}, err
+		}
+		out.tag = tag
+	}
+	return out, nil
+}
+
+// stampOrgRoute sets what the control plane keeps on a route it saves: its version, who
+// made and changed it and when, and its secrets' fields, seal version and fingerprints.
+func stampOrgRoute(route *wire.OrgRoute, kept *keptRoute, actor wire.AuditActor, secrets routeSecrets) {
+	now := time.Now().UTC()
+	stamp := &wire.OrgRouteStamp{By: actor, At: wire.DateOf(now)}
+	route.Version, route.Created, route.Changed, route.Machines, route.Waiting = optional(int64(1)), stamp, stamp, nil, nil
+	if kept != nil {
+		route.Version, route.Created = optional(deref(kept.route.Version)+1), kept.route.Created
+	}
+	sealVersion := secrets.sealVersion
+	route.SecretFields, route.SealVersion = slices.Sorted(slices.Values(secrets.fields)), nil
+	if sealVersion > 0 {
+		route.SealVersion = &sealVersion
+	}
+	route.Fingerprint = secrets.fingerprint
+	route.DefaultFor, route.Groups = nonNil(route.DefaultFor), nonNil(route.Groups)
+}
+
+// putOrgRoute writes the route's record, undoes the secrets' write when that loses, and
+// audits, logs and tells of the change.
+func (s *Service) putOrgRoute(ctx context.Context, actor wire.AuditActor, method string, route wire.OrgRoute,
+	kept *keptRoute, undo func(), resealed bool) (wire.OrgRouteKept, error) {
+	data, err := records.Encode(route)
+	if err != nil {
+		return wire.OrgRouteKept{}, err
+	}
+	when := store.Absent
+	if kept != nil {
+		when = store.Matching(kept.rev)
+	}
+	tag, err := s.cfg.Store.Put(ctx, orgRouteKey(route.ID), data, when)
+	if err != nil {
+		if undo != nil {
+			undo()
+		}
+		if store.IsConflict(err) {
+			return wire.OrgRouteKept{}, fail(changedElsewhere, "Another admin changed this route. Load it again, then save.")
+		}
+		return wire.OrgRouteKept{}, fail(storeUnavailable, "The route could not be kept: %v", err)
+	}
+	var before *wire.OrgRoute
+	if kept != nil {
+		before = &kept.route
+	}
+	s.auditRoute(actor, method, route.ID, routeChanges(before, route, resealed))
+	s.log(fmt.Sprintf("org route %s is now version %d", route.ID, deref(route.Version)))
+	s.orgRoutesChanged(route.ID, actor.User)
+	return wire.OrgRouteKept{Route: route, Rev: tag}, nil
 }
 
 // sealedFields is the fields a client sealed: those of its first recipient, which
@@ -615,30 +701,8 @@ func (s *Service) boundOrgRoute(r wire.OrgRoute, fields []string) error {
 	if !ok {
 		return fail(invalidParams, "A route is a key, bedrock, vertex, azure or baseURL.")
 	}
-	if len(r.Runtimes) == 0 {
-		return fail(invalidParams, "Say which runtimes the route is for.")
-	}
-	needsVendor := r.Kind == wire.OrgRouteKindKey || r.Kind == wire.OrgRouteKindAzure || r.Kind == wire.OrgRouteKindBaseURL
-	if needsVendor && r.Vendor == nil {
-		return fail(invalidParams, "Say whose API the route speaks: anthropic, openai or xai.")
-	}
-	seen := map[string]bool{}
-	for _, runtime := range r.Runtimes {
-		if seen[runtime] {
-			return fail(invalidParams, "%s is named twice.", runtime)
-		}
-		seen[runtime] = true
-		if !slices.Contains(orgRouteKinds[runtime], r.Kind) {
-			return fail(invalidParams, "%s cannot reach the model by %s: its model traffic cannot go through the machine's relay.", runtime, r.Kind)
-		}
-		if needsVendor && !slices.Contains(orgRouteVendors[runtime], *r.Vendor) {
-			return fail(invalidParams, "%s does not speak the %s API.", runtime, *r.Vendor)
-		}
-	}
-	for _, runtime := range r.DefaultFor {
-		if !seen[runtime] {
-			return fail(invalidParams, "The route can be the default only for its own runtimes, not %s.", runtime)
-		}
+	if err := boundRouteRuntimes(r); err != nil {
+		return err
 	}
 	for _, group := range r.Groups {
 		if s.records.Group(group) == nil {
@@ -664,6 +728,43 @@ func (s *Service) boundOrgRoute(r wire.OrgRoute, fields []string) error {
 			return fail(invalidParams, "A %s route has no secret %q. It takes %s.", r.Kind, field, strings.Join(kindFields, ", "))
 		}
 	}
+	return boundRouteKindSecrets(r, fields)
+}
+
+// boundRouteRuntimes refuses a route's runtimes when there are none, one is named twice,
+// one cannot use the route's kind or vendor, or a default is for a runtime not named.
+func boundRouteRuntimes(r wire.OrgRoute) error {
+	if len(r.Runtimes) == 0 {
+		return fail(invalidParams, "Say which runtimes the route is for.")
+	}
+	needsVendor := r.Kind == wire.OrgRouteKindKey || r.Kind == wire.OrgRouteKindAzure || r.Kind == wire.OrgRouteKindBaseURL
+	if needsVendor && r.Vendor == nil {
+		return fail(invalidParams, "Say whose API the route speaks: anthropic, openai or xai.")
+	}
+	seen := map[string]bool{}
+	for _, runtime := range r.Runtimes {
+		if seen[runtime] {
+			return fail(invalidParams, "%s is named twice.", runtime)
+		}
+		seen[runtime] = true
+		if !slices.Contains(orgRouteKinds[runtime], r.Kind) {
+			return fail(invalidParams, "%s cannot reach the model by %s: its model traffic cannot go through the machine's relay.", runtime, r.Kind)
+		}
+		if needsVendor && !slices.Contains(orgRouteVendors[runtime], *r.Vendor) {
+			return fail(invalidParams, "%s does not speak the %s API.", runtime, *r.Vendor)
+		}
+	}
+	for _, runtime := range r.DefaultFor {
+		if !seen[runtime] {
+			return fail(invalidParams, "The route can be the default only for its own runtimes, not %s.", runtime)
+		}
+	}
+	return nil
+}
+
+// boundRouteKindSecrets refuses a route whose secrets and settings are not those its kind
+// needs.
+func boundRouteKindSecrets(r wire.OrgRoute, fields []string) error {
 	has := func(f string) bool { return slices.Contains(fields, f) }
 	settings := deref(r.Settings)
 	switch r.Kind {
@@ -690,19 +791,26 @@ func (s *Service) boundOrgRoute(r wire.OrgRoute, fields []string) error {
 			return fail(invalidParams, "Say the Google Cloud project and location.")
 		}
 	case wire.OrgRouteKindAzure:
-		if has("apiKey") == has("entraClientSecret") {
-			return fail(invalidParams, "Say an Azure key, or an Entra app's secret, not both.")
-		}
-		if has("entraClientSecret") && (settings.Tenant == nil || settings.ClientID == nil) {
-			return fail(invalidParams, "Say the Entra app's tenant and client id.")
-		}
-		if settings.Resource == nil && settings.Address == nil {
-			return fail(invalidParams, "Say the Azure resource, or its address.")
-		}
+		return boundAzureRoute(settings, has)
 	case wire.OrgRouteKindBaseURL:
 		if settings.Address == nil {
 			return fail(invalidParams, "Say the gateway's address.")
 		}
+	}
+	return nil
+}
+
+// boundAzureRoute refuses an Azure route without one kind of secret, the Entra app's ids
+// for its secret, or the resource or address.
+func boundAzureRoute(settings wire.OrgRouteSettings, has func(string) bool) error {
+	if has("apiKey") == has("entraClientSecret") {
+		return fail(invalidParams, "Say an Azure key, or an Entra app's secret, not both.")
+	}
+	if has("entraClientSecret") && (settings.Tenant == nil || settings.ClientID == nil) {
+		return fail(invalidParams, "Say the Entra app's tenant and client id.")
+	}
+	if settings.Resource == nil && settings.Address == nil {
+		return fail(invalidParams, "Say the Azure resource, or its address.")
 	}
 	return nil
 }

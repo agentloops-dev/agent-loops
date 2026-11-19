@@ -88,40 +88,7 @@ func (g *RealGitHub) Timeline(ctx context.Context, repo, since string) (Timeline
 		return Timeline{}, err
 	}
 	out := Timeline{Releases: []Release{}, Epics: []TimelineEpic{}}
-
-	// The ids: the open epics (with the releases) and those closed since since, at once.
-	type list struct {
-		Repository *struct {
-			Issues struct {
-				Nodes []struct {
-					ID     string `json:"id"`
-					Number int    `json:"number"`
-				} `json:"nodes"`
-			} `json:"issues"`
-			Releases struct {
-				Nodes []struct {
-					TagName     string `json:"tagName"`
-					PublishedAt string `json:"publishedAt"`
-					URL         string `json:"url"`
-					IsDraft     bool   `json:"isDraft"`
-				} `json:"nodes"`
-			} `json:"releases"`
-		} `json:"repository"`
-	}
-	var lists [2]list
-	var listErrs [2]error
-	var wg sync.WaitGroup
-	for n, states := range [][]string{{"OPEN"}, {"CLOSED"}} {
-		// The releases come with the open list; the other asks for one, the fewest GraphQL takes.
-		vars := map[string]any{"owner": owner, "name": name, "states": states, "first": timelineEpics, "releases": 1}
-		if n == 0 {
-			vars["releases"] = timelineReleases
-		} else {
-			vars["since"] = since
-		}
-		wg.Go(func() { listErrs[n] = g.graphql(ctx, timelineListQuery, vars, &lists[n]) })
-	}
-	wg.Wait()
+	lists, listErrs := g.timelineLists(ctx, owner, name, since)
 	var ids []string
 	seen := map[int]bool{}
 	for n := range lists {
@@ -144,11 +111,69 @@ func (g *RealGitHub) Timeline(ctx context.Context, repo, since string) (Timeline
 			out.Releases = append(out.Releases, Release{Tag: r.TagName, PublishedAt: r.PublishedAt, URL: r.URL})
 		}
 	}
+	batches, err := g.timelineBatches(ctx, ids)
+	if err != nil {
+		return Timeline{}, err
+	}
+	for _, batch := range batches {
+		for _, e := range batch {
+			// An id GitHub no longer gives (deleted, or moved out of reach) is null.
+			if e == nil || e.Number < 1 {
+				continue
+			}
+			out.Epics = append(out.Epics, timelineEpicOf(*e, repo))
+		}
+	}
+	return out, nil
+}
 
-	// The epics with their sub-issues, a batch of ids a query, a few queries at once, in order.
+// timelineList is the ids of a state's epics, with the releases.
+type timelineList struct {
+	Repository *struct {
+		Issues struct {
+			Nodes []struct {
+				ID     string `json:"id"`
+				Number int    `json:"number"`
+			} `json:"nodes"`
+		} `json:"issues"`
+		Releases struct {
+			Nodes []struct {
+				TagName     string `json:"tagName"`
+				PublishedAt string `json:"publishedAt"`
+				URL         string `json:"url"`
+				IsDraft     bool   `json:"isDraft"`
+			} `json:"nodes"`
+		} `json:"releases"`
+	} `json:"repository"`
+}
+
+// timelineLists asks for the ids: the open epics (with the releases) and those closed since
+// since, at once, each with its error.
+func (g *RealGitHub) timelineLists(ctx context.Context, owner, name, since string) ([2]timelineList, [2]error) {
+	var lists [2]timelineList
+	var listErrs [2]error
+	var wg sync.WaitGroup
+	for n, states := range [][]string{{"OPEN"}, {"CLOSED"}} {
+		// The releases come with the open list; the other asks for one, the fewest GraphQL takes.
+		vars := map[string]any{"owner": owner, "name": name, "states": states, "first": timelineEpics, "releases": 1}
+		if n == 0 {
+			vars["releases"] = timelineReleases
+		} else {
+			vars["since"] = since
+		}
+		wg.Go(func() { listErrs[n] = g.graphql(ctx, timelineListQuery, vars, &lists[n]) })
+	}
+	wg.Wait()
+	return lists, listErrs
+}
+
+// timelineBatches asks for the epics with their sub-issues, a batch of ids a query, a few
+// queries at once, in order. The first batch's error that failed is the one returned.
+func (g *RealGitHub) timelineBatches(ctx context.Context, ids []string) ([][]*timelineNode, error) {
 	batches := make([][]*timelineNode, (len(ids)+timelineBatch-1)/timelineBatch)
 	batchErrs := make([]error, len(batches))
 	next := make(chan int)
+	var wg sync.WaitGroup
 	for range min(timelineAtOnce, len(batches)) {
 		wg.Go(func() {
 			for b := range next {
@@ -166,19 +191,17 @@ func (g *RealGitHub) Timeline(ctx context.Context, repo, since string) (Timeline
 	}
 	close(next)
 	wg.Wait()
-	for b := range batches {
-		if batchErrs[b] != nil {
-			return Timeline{}, batchErrs[b]
-		}
-		for _, e := range batches[b] {
-			// An id GitHub no longer gives (deleted, or moved out of reach) is null.
-			if e == nil || e.Number < 1 {
-				continue
-			}
-			out.Epics = append(out.Epics, timelineEpicOf(*e, repo))
+	return batches, firstError(batchErrs)
+}
+
+// firstError is the first error in errs that is not nil, or nil.
+func firstError(errs []error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // timelineEpicOf is an epic and its sub-issues from what timelineEpicsQuery gives.

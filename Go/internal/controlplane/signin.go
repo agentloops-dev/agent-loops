@@ -300,28 +300,6 @@ func (si *signIns) configure(ctx context.Context, c wire.SignInConfigure, user s
 			return wire.SignInProviders{}, fail(notPermitted, "%s", why)
 		}
 	}
-	clean := func(in []string, pattern *regexp.Regexp, lower bool, what string) ([]string, error) {
-		out := []string{}
-		for _, v := range in {
-			v = strings.TrimSpace(v)
-			if lower {
-				v = strings.ToLower(v)
-			}
-			if v == "" {
-				continue
-			}
-			if !pattern.MatchString(v) || len(v) > 253 {
-				return nil, fail(invalidParams, "%q is not %s.", v, what)
-			}
-			if !slices.Contains(out, v) {
-				out = append(out, v)
-			}
-		}
-		if len(out) > 50 {
-			return nil, fail(invalidParams, "Allow 50 at most.")
-		}
-		return out, nil
-	}
 	if c.Domains != nil && c.Provider != signin.Google || c.Organisations != nil && c.Provider != signin.GitHub {
 		return wire.SignInProviders{}, fail(invalidParams, "Domains are Google's, and organisations GitHub's.")
 	}
@@ -330,29 +308,8 @@ func (si *signIns) configure(ctx context.Context, c wire.SignInConfigure, user s
 		if err != nil {
 			return wire.SignInProviders{}, fail(storeUnavailable, "The sign-in settings could not be read: %v", err)
 		}
-		switch c.Provider {
-		case signin.Google:
-			if c.On != nil {
-				settings.Google.On = *c.On
-			}
-			if c.Domains != nil {
-				if settings.Google.Domains, err = clean(c.Domains, domainPattern, true, "a domain"); err != nil {
-					return wire.SignInProviders{}, err
-				}
-			}
-		case signin.Apple:
-			if c.On != nil {
-				settings.Apple.On = *c.On
-			}
-		case signin.GitHub:
-			if c.On != nil {
-				settings.GitHub.On = *c.On
-			}
-			if c.Organisations != nil {
-				if settings.GitHub.Orgs, err = clean(c.Organisations, orgPattern, false, "a GitHub organisation"); err != nil {
-					return wire.SignInProviders{}, err
-				}
-			}
+		if err := applySignInConfigure(&settings, c); err != nil {
+			return wire.SignInProviders{}, err
 		}
 		data, err := records.Encode(settings)
 		if err != nil {
@@ -372,6 +329,62 @@ func (si *signIns) configure(ctx context.Context, c wire.SignInConfigure, user s
 		si.s.peopleChanged("", false)
 		return si.providers(settings, true, nil), nil
 	}
+}
+
+// applySignInConfigure makes the change signIn/configure asks for to the settings: the
+// provider on or off, and Google's domains or GitHub's organisations.
+func applySignInConfigure(settings *signInSettings, c wire.SignInConfigure) error {
+	var err error
+	switch c.Provider {
+	case signin.Google:
+		if c.On != nil {
+			settings.Google.On = *c.On
+		}
+		if c.Domains != nil {
+			if settings.Google.Domains, err = cleanSignInList(c.Domains, domainPattern, true, "a domain"); err != nil {
+				return err
+			}
+		}
+	case signin.Apple:
+		if c.On != nil {
+			settings.Apple.On = *c.On
+		}
+	case signin.GitHub:
+		if c.On != nil {
+			settings.GitHub.On = *c.On
+		}
+		if c.Organisations != nil {
+			if settings.GitHub.Orgs, err = cleanSignInList(c.Organisations, orgPattern, false, "a GitHub organisation"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// cleanSignInList is a list of domains or organisations as kept: trimmed, lower case when
+// lower, with no empty or twice-named ones, each matching pattern, and 50 at most.
+func cleanSignInList(in []string, pattern *regexp.Regexp, lower bool, what string) ([]string, error) {
+	out := []string{}
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if lower {
+			v = strings.ToLower(v)
+		}
+		if v == "" {
+			continue
+		}
+		if !pattern.MatchString(v) || len(v) > 253 {
+			return nil, fail(invalidParams, "%q is not %s.", v, what)
+		}
+		if !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	if len(out) > 50 {
+		return nil, fail(invalidParams, "Allow 50 at most.")
+	}
+	return out, nil
 }
 
 // newChallenge is a paired session's challenge for signIn/addToMe: fresh, used once.
@@ -600,6 +613,39 @@ func (si *signIns) drop(source string, conn *Conn) {
 // pairing is an s: connection after its ok: signIn/providers, then one signIn/pair.
 func (si *signIns) pairing(conn *Conn, client string, public, helloNonce []byte) {
 	source := keyOf(sourceOf(conn.Remote))
+	if !si.takeSignInPlace(conn, source) {
+		return
+	}
+	defer func() {
+		si.mu.Lock()
+		si.drop(source, conn)
+		si.mu.Unlock()
+		time.Sleep(200 * time.Millisecond)
+		conn.Close()
+	}()
+	// A sign-in says little: no line needs more than this.
+	conn.ws.SetReadLimit(64 << 10)
+	deadline := time.Now().Add(signInWait)
+	in := signInLine{conn: conn, client: client, public: public, helloNonce: helloNonce, source: source}
+	for asked := 0; asked < 20; asked++ {
+		line, err := conn.ReadWithin(time.Until(deadline))
+		if err != nil {
+			return
+		}
+		m, ok := decode(line)
+		if !ok || !m.isRequest() {
+			return
+		}
+		if si.answerSignInLine(in, m) {
+			return
+		}
+	}
+}
+
+// takeSignInPlace gives a sign-in connection one of the open places, and says false when
+// there is none for it, having closed it. When every place is taken, the oldest of the
+// address that holds the most goes (#2150).
+func (si *signIns) takeSignInPlace(conn *Conn, source string) bool {
 	si.mu.Lock()
 	total, counts := 0, map[string]int{}
 	for from, list := range si.open {
@@ -619,7 +665,7 @@ func (si *signIns) pairing(conn *Conn, client string, public, helloNonce []byte)
 		si.mu.Unlock()
 		si.s.refusals.note("signin", source, "closed a sign-in from "+source+": too many are open")
 		conn.Close()
-		return
+		return false
 	}
 	si.open[source] = append(si.open[source], conn)
 	si.mu.Unlock()
@@ -627,94 +673,117 @@ func (si *signIns) pairing(conn *Conn, client string, public, helloNonce []byte)
 		si.s.refusals.note("signin-dropped", "", "closed the oldest sign-in from "+keyOf(sourceOf(dropped.Remote))+": every place was taken")
 		dropped.Close()
 	}
-	defer func() {
-		si.mu.Lock()
-		si.drop(source, conn)
-		si.mu.Unlock()
-		time.Sleep(200 * time.Millisecond)
-		conn.Close()
-	}()
-	// A sign-in says little: no line needs more than this.
-	conn.ws.SetReadLimit(64 << 10)
-	deadline := time.Now().Add(signInWait)
-	for asked := 0; asked < 20; asked++ {
-		line, err := conn.ReadWithin(time.Until(deadline))
+	return true
+}
+
+// signInLine is what answering a line on a sign-in connection needs: the connection, the
+// client that said hello, and the address it came from.
+type signInLine struct {
+	conn       *Conn
+	client     string
+	public     []byte
+	helloNonce []byte
+	source     string
+}
+
+// answerSignInLine answers one request on a sign-in connection, and says true when the
+// connection is done with.
+func (si *signIns) answerSignInLine(in signInLine, m *message) bool {
+	conn := in.conn
+	switch m.Method {
+	case "signIn/providers":
+		settings, _, err := si.settings(context.Background())
 		if err != nil {
-			return
+			conn.SendNow(replyError(m.ID, fail(storeUnavailable, "The sign-in settings could not be read.")))
+			return false
 		}
-		m, ok := decode(line)
-		if !ok || !m.isRequest() {
-			return
+		conn.SendNow(reply(m.ID, si.providers(settings, false, in.helloNonce)))
+	case "signIn/pair":
+		si.answerSignInPair(in, m)
+		return true
+	case "signIn/ask":
+		si.answerSignInAsk(in, m)
+		return true
+	case "signIn/orgStart":
+		si.answerSignInOrgStart(in, m)
+	case "signIn/ticket":
+		si.answerSignInTicket(in, m)
+		return true
+	case "signIn/discover":
+		d, err := require[wire.SignInDiscover](m.Params, "SignInDiscover")
+		if err != nil {
+			conn.SendNow(replyError(m.ID, err))
+			return false
 		}
-		switch m.Method {
-		case "signIn/providers":
-			settings, _, err := si.settings(context.Background())
-			if err != nil {
-				conn.SendNow(replyError(m.ID, fail(storeUnavailable, "The sign-in settings could not be read.")))
-				continue
-			}
-			conn.SendNow(reply(m.ID, si.providers(settings, false, helloNonce)))
-		case "signIn/pair":
-			p, err := require[wire.SignInPair](m.Params, "SignInPair")
-			if err == nil {
-				var admitted *wire.Admitted
-				admitted, err = si.pair(context.Background(), conn, client, public, helloNonce, p)
-				if err == nil {
-					conn.SendNow(reply(m.ID, admitted))
-					return
-				}
-			}
-			si.s.log("a sign-in with " + signin.Title(p.Provider) + " from " + source + " was refused: " + asRPC(err).Message)
-			conn.SendNow(replyError(m.ID, err))
+		conn.SendNow(reply(m.ID, si.discover(context.Background(), d)))
+	default:
+		conn.SendNow(replyError(m.ID, fail(notPermitted, "Only signIn/providers, signIn/discover, signIn/pair, signIn/ask, signIn/orgStart and signIn/ticket are answered on a sign-in connection.")))
+	}
+	return false
+}
+
+// answerSignInPair answers signIn/pair: the client admitted, or the refusal, logged.
+func (si *signIns) answerSignInPair(in signInLine, m *message) {
+	conn := in.conn
+	p, err := require[wire.SignInPair](m.Params, "SignInPair")
+	if err == nil {
+		var admitted *wire.Admitted
+		admitted, err = si.pair(context.Background(), conn, in.client, in.public, in.helloNonce, p)
+		if err == nil {
+			conn.SendNow(reply(m.ID, admitted))
 			return
-		case "signIn/ask":
-			a, err := require[wire.SignInAsk](m.Params, "SignInAsk")
-			if err == nil {
-				var admitted *wire.Admitted
-				admitted, err = si.ask(context.Background(), conn, client, public, a)
-				if err == nil {
-					conn.SendNow(reply(m.ID, admitted))
-					return
-				}
-			}
-			si.s.log("a browser's sign-in by approval from " + source + " was refused: " + asRPC(err).Message)
-			conn.SendNow(replyError(m.ID, err))
-			return
-		case "signIn/orgStart":
-			// An org provider's flow (#1002): the browser goes and comes back while this
-			// connection waits, then signIn/ticket pairs it.
-			o, err := require[wire.SignInOrgStart](m.Params, "SignInOrgStart")
-			if err == nil {
-				var started wire.SignInOrgStarted
-				if started, err = si.orgStart(context.Background(), o, binding{hello: helloNonce, client: client, public: public}); err == nil {
-					conn.SendNow(reply(m.ID, started))
-					continue
-				}
-			}
-			conn.SendNow(replyError(m.ID, err))
-		case "signIn/ticket":
-			t, err := require[wire.SignInTicket](m.Params, "SignInTicket")
-			if err == nil {
-				var paired *wire.SignInTicketResult
-				if paired, err = si.ticketPair(context.Background(), client, public, helloNonce, t); err == nil {
-					conn.SendNow(reply(m.ID, paired))
-					return
-				}
-			}
-			si.s.log("an org sign-in from " + source + " was refused: " + asRPC(err).Message)
-			conn.SendNow(replyError(m.ID, err))
-			return
-		case "signIn/discover":
-			d, err := require[wire.SignInDiscover](m.Params, "SignInDiscover")
-			if err != nil {
-				conn.SendNow(replyError(m.ID, err))
-				continue
-			}
-			conn.SendNow(reply(m.ID, si.discover(context.Background(), d)))
-		default:
-			conn.SendNow(replyError(m.ID, fail(notPermitted, "Only signIn/providers, signIn/discover, signIn/pair, signIn/ask, signIn/orgStart and signIn/ticket are answered on a sign-in connection.")))
 		}
 	}
+	si.s.log("a sign-in with " + signin.Title(p.Provider) + " from " + in.source + " was refused: " + asRPC(err).Message)
+	conn.SendNow(replyError(m.ID, err))
+}
+
+// answerSignInAsk answers signIn/ask: a browser admitted by approval, or the refusal,
+// logged.
+func (si *signIns) answerSignInAsk(in signInLine, m *message) {
+	conn := in.conn
+	a, err := require[wire.SignInAsk](m.Params, "SignInAsk")
+	if err == nil {
+		var admitted *wire.Admitted
+		admitted, err = si.ask(context.Background(), conn, in.client, in.public, a)
+		if err == nil {
+			conn.SendNow(reply(m.ID, admitted))
+			return
+		}
+	}
+	si.s.log("a browser's sign-in by approval from " + in.source + " was refused: " + asRPC(err).Message)
+	conn.SendNow(replyError(m.ID, err))
+}
+
+// answerSignInOrgStart answers signIn/orgStart. An org provider's flow (#1002): the
+// browser goes and comes back while this connection waits, then signIn/ticket pairs it.
+func (si *signIns) answerSignInOrgStart(in signInLine, m *message) {
+	conn := in.conn
+	o, err := require[wire.SignInOrgStart](m.Params, "SignInOrgStart")
+	if err == nil {
+		var started wire.SignInOrgStarted
+		if started, err = si.orgStart(context.Background(), o, binding{hello: in.helloNonce, client: in.client, public: in.public}); err == nil {
+			conn.SendNow(reply(m.ID, started))
+			return
+		}
+	}
+	conn.SendNow(replyError(m.ID, err))
+}
+
+// answerSignInTicket answers signIn/ticket: the org sign-in paired, or the refusal,
+// logged.
+func (si *signIns) answerSignInTicket(in signInLine, m *message) {
+	conn := in.conn
+	t, err := require[wire.SignInTicket](m.Params, "SignInTicket")
+	if err == nil {
+		var paired *wire.SignInTicketResult
+		if paired, err = si.ticketPair(context.Background(), in.client, in.public, in.helloNonce, t); err == nil {
+			conn.SendNow(reply(m.ID, paired))
+			return
+		}
+	}
+	si.s.log("an org sign-in from " + in.source + " was refused: " + asRPC(err).Message)
+	conn.SendNow(replyError(m.ID, err))
 }
 
 // pair is signIn/pair: check the sign-in, find its person, and pair the client as theirs.

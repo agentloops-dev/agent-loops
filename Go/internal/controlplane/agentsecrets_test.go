@@ -133,16 +133,7 @@ func TestAnAgentsSecretBecomesThePersonsThroughTheirClient(t *testing.T) {
 	// devbox offers; a copy sealed to the other machine is dropped: a machine never seals to
 	// another machine.
 	const value = "glpat-agents-saved-this-4Kq9Zt"
-	var otherMachine wire.SealRecipients
-	if err := json.Unmarshal(call(t, window, "", "user/secretRecipients", nil), &otherMachine); err != nil {
-		t.Fatal(err)
-	}
-	var machineRecipient wire.SealRecipient
-	for _, r := range otherMachine.Recipients {
-		if r.ID == controllink.MachineRecipient(other.member.Host) {
-			machineRecipient = r
-		}
-	}
+	machineRecipient := machineRecipientOf(t, window, other.member.Host)
 	offerDescribed(t, devbox, "0FFE0000-0000-4000-8000-000000000001", "GITLAB_TOKEN", value, "gitlab.com, api", machineRecipient)
 	waitNote(t, window, wire.NotifyControlSealingWanted.Name)
 
@@ -198,16 +189,7 @@ func TestAnAgentsSecretBecomesThePersonsThroughTheirClient(t *testing.T) {
 	}
 	// An app that takes it as a new name, not as Use the Agent's at the kept version plus one, is
 	// refused: the person's value is never replaced on its own.
-	if err := json.Unmarshal(call(t, window, "", "user/secretNames", nil), &names); err != nil {
-		t.Fatal(err)
-	}
-	had := deref(names.Secrets[0].Version)
-	for _, version := range []int64{time.Now().UnixMilli() + 60_000, had + 2} {
-		set, _ := offerSet(t, alex, offers.Offers[0], alex.id, version)
-		if e := callError(t, window, "", "user/setSecret", set); !strings.Contains(e, "Keep Yours") {
-			t.Fatalf("version %d: %s", version, e)
-		}
-	}
+	had := refuseTakingOverYours(t, alex, offers.Offers[0], &names)
 	// Use the Agent's, at the kept version plus one: the agent's value, and the person's own
 	// description, which the agent's offer did not give.
 	takeOffer(t, alex, offers.Offers[0], alex.id, had+1)
@@ -248,27 +230,82 @@ func TestAnAgentsSecretBecomesThePersonsThroughTheirClient(t *testing.T) {
 	}
 
 	// The audit: each step, with the name, the machine and the session; never the value.
-	actions, raw := auditActions(t, window)
-	saved, took, kept := actions["An agent saved a secret"], actions["Took an agent's secret"], actions["Kept your secret over an agent's"]
-	if !strings.Contains(deref(saved.Target), "GITLAB_TOKEN · "+row.MachineName+" · session 6F1C2D7E") ||
-		!strings.Contains(deref(took.Target), "GITLAB_TOKEN") || took.Actor.Client == nil || !strings.Contains(deref(kept.Target), "GITLAB_TOKEN") {
-		t.Fatalf("%+v", actions)
-	}
-	if strings.Contains(raw, "glpat-") {
-		t.Fatal("the audit holds a value")
-	}
+	assertAgentSecretAudit(t, window, row.MachineName)
 
 	// A removed machine's offers go with it.
 	call(t, window, "", "machines/remove", map[string]any{"host": devbox.member.Host})
 	p.waitFor(func() bool { return len(offersOf(t, window).Offers) == 0 }, "devbox's offers gone with it")
 
 	// The store and the log hold no value.
+	assertStoreHoldsNoSecretValue(t, st)
+	assertLogHoldsNoSecretValue(t, p)
+}
+
+// machineRecipientOf finds the sealing recipient of a machine among the recipients the
+// window is told to seal to.
+func machineRecipientOf(t *testing.T, window *controllink.Session, host string) wire.SealRecipient {
+	t.Helper()
+	var recipients wire.SealRecipients
+	if err := json.Unmarshal(call(t, window, "", "user/secretRecipients", nil), &recipients); err != nil {
+		t.Fatal(err)
+	}
+	var machineRecipient wire.SealRecipient
+	for _, r := range recipients.Recipients {
+		if r.ID == controllink.MachineRecipient(host) {
+			machineRecipient = r
+		}
+	}
+	return machineRecipient
+}
+
+// refuseTakingOverYours checks that an offer for a name the person has is refused at any
+// version other than the kept one plus one, and returns the kept version. It reads the
+// names into the caller's names, as the test did before.
+func refuseTakingOverYours(t *testing.T, alex *person, offer wire.SecretOffer, names *wire.UserSecretNames) int64 {
+	t.Helper()
+	if err := json.Unmarshal(call(t, alex.window, "", "user/secretNames", nil), names); err != nil {
+		t.Fatal(err)
+	}
+	had := deref(names.Secrets[0].Version)
+	for _, version := range []int64{time.Now().UnixMilli() + 60_000, had + 2} {
+		set, _ := offerSet(t, alex, offer, alex.id, version)
+		if e := callError(t, alex.window, "", "user/setSecret", set); !strings.Contains(e, "Keep Yours") {
+			t.Fatalf("version %d: %s", version, e)
+		}
+	}
+	return had
+}
+
+// assertAgentSecretAudit checks the audit names each step with the secret, the machine and
+// the session, and never holds the value.
+func assertAgentSecretAudit(t *testing.T, window *controllink.Session, machineName string) {
+	t.Helper()
+	actions, raw := auditActions(t, window)
+	saved, took, kept := actions["An agent saved a secret"], actions["Took an agent's secret"], actions["Kept your secret over an agent's"]
+	if !strings.Contains(deref(saved.Target), "GITLAB_TOKEN · "+machineName+" · session 6F1C2D7E") ||
+		!strings.Contains(deref(took.Target), "GITLAB_TOKEN") || took.Actor.Client == nil || !strings.Contains(deref(kept.Target), "GITLAB_TOKEN") {
+		t.Fatalf("%+v", actions)
+	}
+	if strings.Contains(raw, "glpat-") {
+		t.Fatal("the audit holds a value")
+	}
+}
+
+// assertStoreHoldsNoSecretValue checks that no key in the store holds a secret's value.
+func assertStoreHoldsNoSecretValue(t *testing.T, st store.Store) {
+	t.Helper()
 	listed, _ := st.List(t.Context(), "")
 	for _, k := range listed {
 		if o, _ := st.Get(t.Context(), k.Key); o != nil && (strings.Contains(string(o.Data), "glpat-") || strings.Contains(string(o.Data), "npm_xyz")) {
 			t.Fatalf("%s holds a value", k.Key)
 		}
 	}
+}
+
+// assertLogHoldsNoSecretValue reads the log lines written so far and checks none holds a
+// secret's value.
+func assertLogHoldsNoSecretValue(t *testing.T, p *plane) {
+	t.Helper()
 	for drained := false; !drained; {
 		select {
 		case line := <-p.lines:

@@ -126,10 +126,8 @@ func (m *Methods) setGroup(ctx context.Context, request wire.GroupSet) (wire.Gro
 		return wire.Group{}, fail(invalidParams, "Give the group a name of 1 to 60 characters.")
 	}
 	id := deref(request.ID)
-	for _, g := range m.records.Groups() {
-		if g.ID != id && strings.EqualFold(g.Name, name) {
-			return wire.Group{}, fail(invalidParams, "There is already a group called %s.", g.Name)
-		}
+	if err := m.refuseTakenGroupName(id, name); err != nil {
+		return wire.Group{}, err
 	}
 	if err := refuseBadCap(request.Caps); err != nil {
 		return wire.Group{}, err
@@ -137,16 +135,9 @@ func (m *Methods) setGroup(ctx context.Context, request wire.GroupSet) (wire.Gro
 	everyone := deref(request.Everyone)
 	members := []string{}
 	if !everyone {
-		seen := map[string]bool{}
-		for _, user := range request.Members {
-			p := m.records.Person(user)
-			if (p == nil && user != m.s.localOwner()) || (p != nil && p.IsRemoved()) {
-				return wire.Group{}, fail(invalidParams, "There is no such person as %s.", user)
-			}
-			if !seen[user] {
-				seen[user] = true
-				members = append(members, user)
-			}
+		var err error
+		if members, err = m.groupMembers(request.Members); err != nil {
+			return wire.Group{}, err
 		}
 	}
 	// A SCIM group's name and members are its provider's (FR-019); its caps are an admin's.
@@ -179,6 +170,33 @@ func (m *Methods) setGroup(ctx context.Context, request wire.GroupSet) (wire.Gro
 	}
 	m.s.groupsChanged(id, false)
 	return groupOnWire(*kept), nil
+}
+
+// refuseTakenGroupName refuses a name another group than id has, in any case.
+func (m *Methods) refuseTakenGroupName(id, name string) error {
+	for _, g := range m.records.Groups() {
+		if g.ID != id && strings.EqualFold(g.Name, name) {
+			return fail(invalidParams, "There is already a group called %s.", g.Name)
+		}
+	}
+	return nil
+}
+
+// groupMembers is the people asked for, each once in the order asked, or why one is refused.
+func (m *Methods) groupMembers(users []string) ([]string, error) {
+	members := []string{}
+	seen := map[string]bool{}
+	for _, user := range users {
+		p := m.records.Person(user)
+		if (p == nil && user != m.s.localOwner()) || (p != nil && p.IsRemoved()) {
+			return nil, fail(invalidParams, "There is no such person as %s.", user)
+		}
+		if !seen[user] {
+			seen[user] = true
+			members = append(members, user)
+		}
+	}
+	return members, nil
 }
 
 func (m *Methods) removeGroup(ctx context.Context, id string) error {

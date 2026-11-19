@@ -436,37 +436,14 @@ func cleanOrgProvider(p wire.OrgProvider) (wire.OrgProvider, error) {
 		return p, fail(invalidParams, "%q is not a claim's name.", claim)
 	}
 	p.AccountClaim = &claim
-	if tenant := strings.TrimSpace(deref(p.Tenant)); tenant != "" {
-		if !claimPattern.MatchString(tenant) {
-			return p, fail(invalidParams, "%q is not a tenant id.", tenant)
-		}
-		p.Tenant = &tenant
-	} else if p.Preset == wire.OrgProviderPresetEntra {
-		// https://login.microsoftonline.com/<tenant id>/v2.0 names the tenant.
-		parts := strings.Split(strings.TrimPrefix(p.Issuer, "https://"), "/")
-		if len(parts) < 2 || !claimPattern.MatchString(parts[1]) {
-			return p, fail(invalidParams, "An Entra issuer is https://login.microsoftonline.com/<tenant id>/v2.0.")
-		}
-		p.Tenant = &parts[1]
-	} else {
-		p.Tenant = nil
+	tenant, err := orgProviderTenant(p)
+	if err != nil {
+		return p, err
 	}
-	scopes := []string{"openid"}
-	for _, s := range p.Scopes {
-		s = strings.TrimSpace(s)
-		if s == "" || slices.Contains(scopes, s) {
-			continue
-		}
-		if !scopePattern.MatchString(s) {
-			return p, fail(invalidParams, "%q is not a scope.", s)
-		}
-		scopes = append(scopes, s)
-	}
-	if len(scopes) == 1 {
-		scopes = append(scopes, "email", "profile")
-	}
-	if len(scopes) > 20 {
-		return p, fail(invalidParams, "Ask for 20 scopes at most.")
+	p.Tenant = tenant
+	scopes, err := orgProviderScopes(p.Scopes)
+	if err != nil {
+		return p, err
 	}
 	p.Scopes = scopes
 	join := deref(p.Join)
@@ -487,6 +464,49 @@ func cleanOrgProvider(p wire.OrgProvider) (wire.OrgProvider, error) {
 	return p, nil
 }
 
+// orgProviderTenant is the provider's tenant as kept: the one the admin said, the one an
+// Entra issuer names, or none.
+func orgProviderTenant(p wire.OrgProvider) (*string, error) {
+	if tenant := strings.TrimSpace(deref(p.Tenant)); tenant != "" {
+		if !claimPattern.MatchString(tenant) {
+			return nil, fail(invalidParams, "%q is not a tenant id.", tenant)
+		}
+		return &tenant, nil
+	}
+	if p.Preset != wire.OrgProviderPresetEntra {
+		return nil, nil
+	}
+	// https://login.microsoftonline.com/<tenant id>/v2.0 names the tenant.
+	parts := strings.Split(strings.TrimPrefix(p.Issuer, "https://"), "/")
+	if len(parts) < 2 || !claimPattern.MatchString(parts[1]) {
+		return nil, fail(invalidParams, "An Entra issuer is https://login.microsoftonline.com/<tenant id>/v2.0.")
+	}
+	return &parts[1], nil
+}
+
+// orgProviderScopes is the scopes to ask for: openid first, then each one the admin
+// named once, or email and profile when they named none; 20 at most.
+func orgProviderScopes(in []string) ([]string, error) {
+	scopes := []string{"openid"}
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" || slices.Contains(scopes, s) {
+			continue
+		}
+		if !scopePattern.MatchString(s) {
+			return nil, fail(invalidParams, "%q is not a scope.", s)
+		}
+		scopes = append(scopes, s)
+	}
+	if len(scopes) == 1 {
+		scopes = append(scopes, "email", "profile")
+	}
+	if len(scopes) > 20 {
+		return nil, fail(invalidParams, "Ask for 20 scopes at most.")
+	}
+	return scopes, nil
+}
+
 // setOrgProvider is signIn/orgProviders/set (FR-001 to FR-004).
 func (si *signIns) setOrgProvider(ctx context.Context, set wire.OrgProviderSet, actor wire.AuditActor) (wire.OrgProviderKept, error) {
 	if !si.s.users.Sealing() {
@@ -503,33 +523,9 @@ func (si *signIns) setOrgProvider(ctx context.Context, set wire.OrgProviderSet, 
 	if err != nil {
 		return wire.OrgProviderKept{}, err
 	}
-	switch {
-	case kept != nil && kept.removed:
-		return wire.OrgProviderKept{}, fail(invalidParams, "%q was a provider that was removed. Choose another id.", p.ID)
-	case kept == nil && set.Rev != nil, kept != nil && deref(set.Rev) != kept.rev:
-		return wire.OrgProviderKept{}, fail(changedElsewhere, "This provider was changed elsewhere. Read it again.")
-	}
 	secret := strings.TrimSpace(deref(set.Secret))
-	if kept == nil && secret == "" {
-		return wire.OrgProviderKept{}, fail(invalidParams, "Give the client secret the provider made for this control plane.")
-	}
-	if len(secret) > 1000 {
-		return wire.OrgProviderKept{}, fail(invalidParams, "That client secret is too long.")
-	}
-	if kept == nil {
-		all, err := si.readOrgProviders(ctx)
-		if err != nil {
-			return wire.OrgProviderKept{}, err
-		}
-		live := 0
-		for _, k := range all {
-			if !k.removed {
-				live++
-			}
-		}
-		if live >= mostOrgProviders {
-			return wire.OrgProviderKept{}, fail(invalidParams, "A control plane has %d org providers at most.", mostOrgProviders)
-		}
+	if err := si.checkOrgProviderSet(ctx, set, p.ID, kept, secret); err != nil {
+		return wire.OrgProviderKept{}, err
 	}
 	// FR-004: the issuer must do the code flow with PKCE S256.
 	d, err := si.discovery(ctx, p, true)
@@ -549,25 +545,8 @@ func (si *signIns) setOrgProvider(ctx context.Context, set wire.OrgProviderSet, 
 	}
 	var restore func()
 	if secret != "" {
-		key := orgProviderSecretKey(p.ID)
-		previous, _ := si.s.cfg.Store.Get(ctx, key)
-		when := store.Absent
-		if previous != nil {
-			when = store.Matching(previous.ETag)
-		}
-		written, err := si.sealTo(ctx, key, []byte(secret), when)
-		if err != nil {
-			if store.IsConflict(err) {
-				return wire.OrgProviderKept{}, fail(changedElsewhere, "This provider was changed elsewhere. Read it again.")
-			}
-			return wire.OrgProviderKept{}, userFailure(err)
-		}
-		restore = func() {
-			if previous == nil {
-				si.s.cfg.Store.Delete(context.Background(), key)
-			} else {
-				si.s.cfg.Store.Put(context.Background(), key, previous.Data, store.Matching(written))
-			}
+		if restore, err = si.sealOrgProviderSecret(ctx, p.ID, secret); err != nil {
+			return wire.OrgProviderKept{}, err
 		}
 		p.Secret = &wire.OrgProviderSecret{Fingerprint: fingerprint(secret), SetBy: &actor, SetAt: wire.DateOf(now.Time)}
 	}
@@ -598,6 +577,66 @@ func (si *signIns) setOrgProvider(ctx context.Context, set wire.OrgProviderSet, 
 	si.s.peopleChanged("", false)
 	p.RedirectURI = new(si.redirectURI())
 	return wire.OrgProviderKept{Provider: p, Rev: rev}, nil
+}
+
+// checkOrgProviderSet refuses a set of an org provider that was removed or changed
+// elsewhere, a new one with no client secret or past the most there may be, and a secret
+// too long.
+func (si *signIns) checkOrgProviderSet(ctx context.Context, set wire.OrgProviderSet, id string, kept *keptProvider, secret string) error {
+	switch {
+	case kept != nil && kept.removed:
+		return fail(invalidParams, "%q was a provider that was removed. Choose another id.", id)
+	case kept == nil && set.Rev != nil, kept != nil && deref(set.Rev) != kept.rev:
+		return fail(changedElsewhere, "This provider was changed elsewhere. Read it again.")
+	}
+	if kept == nil && secret == "" {
+		return fail(invalidParams, "Give the client secret the provider made for this control plane.")
+	}
+	if len(secret) > 1000 {
+		return fail(invalidParams, "That client secret is too long.")
+	}
+	if kept != nil {
+		return nil
+	}
+	all, err := si.readOrgProviders(ctx)
+	if err != nil {
+		return err
+	}
+	live := 0
+	for _, k := range all {
+		if !k.removed {
+			live++
+		}
+	}
+	if live >= mostOrgProviders {
+		return fail(invalidParams, "A control plane has %d org providers at most.", mostOrgProviders)
+	}
+	return nil
+}
+
+// sealOrgProviderSecret keeps the provider's client secret sealed, and gives the function
+// that puts back what was there before, for when the provider's own write loses.
+func (si *signIns) sealOrgProviderSecret(ctx context.Context, id, secret string) (func(), error) {
+	key := orgProviderSecretKey(id)
+	previous, _ := si.s.cfg.Store.Get(ctx, key)
+	when := store.Absent
+	if previous != nil {
+		when = store.Matching(previous.ETag)
+	}
+	written, err := si.sealTo(ctx, key, []byte(secret), when)
+	if err != nil {
+		if store.IsConflict(err) {
+			return nil, fail(changedElsewhere, "This provider was changed elsewhere. Read it again.")
+		}
+		return nil, userFailure(err)
+	}
+	return func() {
+		if previous == nil {
+			si.s.cfg.Store.Delete(context.Background(), key)
+		} else {
+			si.s.cfg.Store.Put(context.Background(), key, previous.Data, store.Matching(written))
+		}
+	}, nil
 }
 
 // providerChanges says which fields an admin changed, for the audit: never the secret,
@@ -1091,28 +1130,34 @@ func (m *Methods) orgSignInMethod(ctx context.Context, method string, params jso
 		}
 		return si.setDomain(ctx, r, actor)
 	case "signIn/domains/check", "signIn/domains/preview", "signIn/domains/remove":
-		r, err := require[wire.SignInDomainRequest](params, "SignInDomainRequest")
+		return si.domainMethod(ctx, method, params, actor)
+	}
+	return nil, fail(methodNotFound, "%s", method)
+}
+
+// domainMethod answers signIn/domains/check, preview and remove, which each name one
+// domain.
+func (si *signIns) domainMethod(ctx context.Context, method string, params json.RawMessage, actor wire.AuditActor) (any, error) {
+	r, err := require[wire.SignInDomainRequest](params, "SignInDomainRequest")
+	if err != nil {
+		return nil, err
+	}
+	switch method {
+	case "signIn/domains/check":
+		domain, err := cleanDomain(r.Domain)
 		if err != nil {
 			return nil, err
 		}
-		switch method {
-		case "signIn/domains/check":
-			domain, err := cleanDomain(r.Domain)
-			if err != nil {
-				return nil, err
-			}
-			k, err := si.readClaim(ctx, domain)
-			if err != nil {
-				return nil, err
-			}
-			if k == nil {
-				return nil, fail(invalidParams, "%s is not claimed.", domain)
-			}
-			return si.checkClaim(ctx, *k, actor)
-		case "signIn/domains/preview":
-			return si.previewDomain(ctx, r)
+		k, err := si.readClaim(ctx, domain)
+		if err != nil {
+			return nil, err
 		}
-		return map[string]any{}, si.removeDomain(ctx, r, actor)
+		if k == nil {
+			return nil, fail(invalidParams, "%s is not claimed.", domain)
+		}
+		return si.checkClaim(ctx, *k, actor)
+	case "signIn/domains/preview":
+		return si.previewDomain(ctx, r)
 	}
-	return nil, fail(methodNotFound, "%s", method)
+	return map[string]any{}, si.removeDomain(ctx, r, actor)
 }

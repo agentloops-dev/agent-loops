@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -140,7 +141,178 @@ const HostedEnv = "AGENTS_MCP_HOSTED"
 // AddViews puts the views' tools and pages on server; with person, also the tools that
 // only a view may call (merge_pr, review_pr, comment_on_pr).
 func AddViews(server *mcp.Server, gh Views, person bool) {
-	repoOf := func(ctx context.Context, repo string) (string, error) {
+	repoOf := repoOfViews(gh)
+	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
+	addCodeRabbitTools(server, gh, repoOf)
+
+	addListTools(server, gh, repoOf, readOnly)
+	addPageTools(server, gh, repoOf, readOnly)
+
+	// Merge, review and comment are the person's, from a view. They are only on the copy the
+	// host runs (person), whose tools/list the host filters for an agent; a copy that a
+	// session runs itself has none of them.
+	if person {
+		addPersonTools(server, gh, repoOf)
+	}
+
+	addViewPages(server)
+}
+
+// addPersonTools puts merge_pr, review_pr and comment_on_pr on server: the tools only a view
+// (a person) may call.
+func addPersonTools(server *mcp.Server, gh Views, repoOf func(context.Context, string) (string, error)) {
+	mcp.AddTool(server, &mcp.Tool{Name: "merge_pr", Title: "Merge a pull request",
+		Description: "Squash-merges a pull request and deletes its branch on GitHub, as the signed-in person; auto: true turns on " +
+			"auto-merge, so it merges once its checks pass. Only a view may call it: a person merges.",
+		Meta: uiMeta("", "app")},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in mergeArgs) (*mcp.CallToolResult, any, error) {
+			repo, err := repoOf(ctx, in.Repo)
+			if err != nil {
+				return failed(err), nil, nil
+			}
+			r, err := gh.MergePR(ctx, repo, in.Number, in.Sha, in.Auto)
+			if err != nil {
+				return failed(err), nil, nil
+			}
+			return structured(r), nil, nil
+		})
+
+	mcp.AddTool(server, &mcp.Tool{Name: "review_pr", Title: "Review a pull request",
+		Description: "Approves a pull request, or requests changes with a body that says what, as the signed-in person. " +
+			"GitHub refuses either on the person's own pull request. Only a view may call it: a person reviews.",
+		Meta: uiMeta("", "app")},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in reviewArgs) (*mcp.CallToolResult, any, error) {
+			repo, err := repoOf(ctx, in.Repo)
+			if err != nil {
+				return failed(err), nil, nil
+			}
+			body := strings.TrimSpace(in.Body)
+			switch {
+			case in.Event != "approve" && in.Event != "request_changes":
+				return failed(fmt.Errorf("event is approve or request_changes")), nil, nil
+			case in.Event == "request_changes" && body == "":
+				return failed(fmt.Errorf("say what is to change: body is needed to request changes")), nil, nil
+			}
+			r, err := gh.ReviewPR(ctx, repo, in.Number, in.Sha, in.Event == "approve", body)
+			if err != nil {
+				return failed(err), nil, nil
+			}
+			return structured(r), nil, nil
+		})
+
+	mcp.AddTool(server, &mcp.Tool{Name: "comment_on_pr", Title: "Comment on a pull request",
+		Description: "Adds a comment to a pull request, as the signed-in person, from its page. Only a view may call it; " +
+			"an agent comments with add_issue_comment.",
+		Meta: uiMeta("", "app")},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in commentArgs) (*mcp.CallToolResult, any, error) {
+			repo, err := repoOf(ctx, in.Repo)
+			if err != nil {
+				return failed(err), nil, nil
+			}
+			if strings.TrimSpace(in.Body) == "" {
+				return failed(fmt.Errorf("write the comment first")), nil, nil
+			}
+			r, err := gh.CommentOnPR(ctx, repo, in.Number, in.Body)
+			if err != nil {
+				return failed(err), nil, nil
+			}
+			return structured(r), nil, nil
+		})
+}
+
+// addViewPages puts the views' pages on server.
+func addViewPages(server *mcp.Server) {
+	// No network at all: an empty csp, so the host draws them under its strictest policy.
+	meta := mcp.Meta{"ui": map[string]any{"csp": map[string]any{}, "prefersBorder": true}}
+	for _, v := range []struct{ uri, name, title, description, file string }{
+		{pullsURI, "pulls", "Pull requests", "The repo's open pull requests, newest created first, with their checks, review, conflict and auto-merge; " +
+			"a pull request opens its page. Fed by show_pull_requests.", "pulls.html"},
+		{issuesURI, "issues", "Issues", "The repo's open issues, newest created first, with their labels and assignees, and Start Agent; a label narrows " +
+			"the list. A person expands a row to read its rich-text description and linked pull requests. Fed by show_issues.", "issues.html"},
+		{prURI, "pr", "Pull request", "One pull request's page: description, checks with a failed run's log, files, comments and " +
+			"review threads, CodeRabbit's summary and review, with Comment, Approve, Merge, Auto-merge, Start Agent and Ask CodeRabbit Again. Fed by show_pull_request.", "pr.html"},
+	} {
+		html := page(v.file)
+		uri := v.uri
+		server.AddResource(&mcp.Resource{URI: uri, Name: v.name, Title: v.title, Description: v.description, MIMEType: viewMime, Meta: meta},
+			func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+				return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: uri, MIMEType: viewMime, Text: html, Meta: meta}}}, nil
+			})
+	}
+}
+
+// filter is show_issues' filter: its labels, with label first when it is not in them, and its query.
+func (in issuesArgs) filter() IssueFilter {
+	labels := in.Labels
+	if in.Label != "" && !slices.Contains(labels, in.Label) {
+		labels = append([]string{in.Label}, labels...)
+	}
+	return IssueFilter{Labels: labels, Query: strings.TrimSpace(in.Query)}
+}
+
+// pullRequestsData is show_pull_requests' answer: the board's rows, each with its section,
+// the count on the sidebar's row (#2033), and the PRs that need the signed-in person (#2453).
+func pullRequestsData(repo string, b Board, meta mcp.Meta) map[string]any {
+	// The control plane's people (#2951): names a row, tells Team from Others.
+	people := teamMetaOf(meta, "github")
+	prs := make([]any, len(b.PRs))
+	colors := map[string]string{}
+	needsYou := 0
+	for i, p := range b.PRs {
+		j := p.json()
+		maps.Copy(colors, p.LabelColors)
+		section := prSection(p, b.Viewer, people)
+		annotateRow(j, section, p.Author, people, agentOnOf(meta, "agentOnPR", p.Number))
+		if section == sectionNeedsYou {
+			needsYou++
+		}
+		prs[i] = j
+	}
+	return map[string]any{"repo": repo, "viewer": b.Viewer, "prs": prs,
+		"count": len(prs), "attention": needsYou, "labelColors": colors}
+}
+
+// issuesData is show_issues' answer: the issues, each with its section, and the count of
+// those that need the signed-in person.
+func issuesData(repo, viewer string, list []ListedIssue, meta mcp.Meta) map[string]any {
+	// The control plane's people (#2951): names a row, tells Team from Others.
+	people := teamMetaOf(meta, "github")
+	issues := make([]any, len(list))
+	colors := map[string]string{}
+	needsYou := 0
+	for i, l := range list {
+		j := l.json()
+		section := issueSection(l, viewer, people)
+		annotateRow(j, section, l.Author, people, agentOnOf(meta, "agentOnIssue", l.Number))
+		if section == sectionNeedsYou {
+			needsYou++
+		}
+		issues[i] = j
+		maps.Copy(colors, l.LabelColors)
+	}
+	return map[string]any{"repo": repo, "viewer": viewer, "issues": issues, "count": len(issues),
+		"attention": needsYou, "labelColors": colors}
+}
+
+// annotateRow adds a row's section, its author's name on the control plane, and, on the
+// viewer's own rows, who is on it (agentOn).
+func annotateRow(j map[string]any, section, author string, people teamMeta, agentOn string) {
+	j["section"] = section
+	if tp, on := people[strings.ToLower(author)]; on {
+		j["authorName"] = tp.Name
+		if tp.Bot {
+			j["authorBot"] = true
+		}
+	}
+	if (section == sectionNeedsYou || section == sectionYours) && agentOn != "" {
+		j["agentOn"] = agentOn
+	}
+}
+
+// repoOfViews is the repo a view's tool names: the one given, when it is owner/name, else the
+// repo this folder pushes to.
+func repoOfViews(gh Views) func(ctx context.Context, repo string) (string, error) {
+	return func(ctx context.Context, repo string) (string, error) {
 		if repo != "" {
 			if _, _, err := ownerName(repo); err != nil {
 				return "", err
@@ -149,9 +321,11 @@ func AddViews(server *mcp.Server, gh Views, person bool) {
 		}
 		return gh.DefaultRepo(ctx)
 	}
-	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
-	addCodeRabbitTools(server, gh, repoOf)
+}
 
+// addListTools puts show_pull_requests and show_issues on server: the lists the Pull requests
+// and Issues pages show.
+func addListTools(server *mcp.Server, gh Views, repoOf func(context.Context, string) (string, error), readOnly *mcp.ToolAnnotations) {
 	mcp.AddTool(server, &mcp.Tool{Name: "show_pull_requests", Title: "Show pull requests",
 		Description: "The repo's open pull requests, newest created first, each with its checks (passing, failing, running or none), " +
 			"its review (approved, changes_requested or review_required), whether it conflicts with its base, whether auto-merge is on, " +
@@ -170,37 +344,7 @@ func AddViews(server *mcp.Server, gh Views, person bool) {
 			if err != nil {
 				return failed(err), nil, nil
 			}
-			// The control plane's people (#2951): names a row, tells Team from Others.
-			people := teamMetaOf(req.Params.Meta, "github")
-			prs := make([]any, len(b.PRs))
-			// The count on the sidebar's row (#2033), and the PRs that need the signed-in person (#2453).
-			colors := map[string]string{}
-			needsYou := 0
-			for i, p := range b.PRs {
-				j := p.json()
-				for name, color := range p.LabelColors {
-					colors[name] = color
-				}
-				section := prSection(p, b.Viewer, people)
-				j["section"] = section
-				if tp, on := people[strings.ToLower(p.Author)]; on {
-					j["authorName"] = tp.Name
-					if tp.Bot {
-						j["authorBot"] = true
-					}
-				}
-				if section == sectionNeedsYou {
-					needsYou++
-				}
-				if section == sectionNeedsYou || section == sectionYours {
-					if who := agentOnOf(req.Params.Meta, "agentOnPR", p.Number); who != "" {
-						j["agentOn"] = who
-					}
-				}
-				prs[i] = j
-			}
-			return structured(map[string]any{"repo": repo, "viewer": b.Viewer, "prs": prs,
-				"count": len(prs), "attention": needsYou, "labelColors": colors}), nil, nil
+			return structured(pullRequestsData(repo, b, req.Params.Meta)), nil, nil
 		})
 
 	mcp.AddTool(server, &mcp.Tool{Name: "show_issues", Title: "Show issues",
@@ -216,48 +360,19 @@ func AddViews(server *mcp.Server, gh Views, person bool) {
 			if err != nil {
 				return failed(err), nil, nil
 			}
-			labels := in.Labels
-			if in.Label != "" && !slices.Contains(labels, in.Label) {
-				labels = append([]string{in.Label}, labels...)
-			}
-			list, err := gh.OpenIssues(ctx, repo, IssueFilter{Labels: labels, Query: strings.TrimSpace(in.Query)})
+			list, err := gh.OpenIssues(ctx, repo, in.filter())
 			if err != nil {
 				return failed(err), nil, nil
 			}
 			// Without the viewer the list still shows, as Team and Others only.
 			viewer, _ := gh.Viewer(ctx)
-			// The control plane's people (#2951): names a row, tells Team from Others.
-			people := teamMetaOf(req.Params.Meta, "github")
-			issues := make([]any, len(list))
-			colors := map[string]string{}
-			needsYou := 0
-			for i, l := range list {
-				j := l.json()
-				section := issueSection(l, viewer, people)
-				j["section"] = section
-				if tp, on := people[strings.ToLower(l.Author)]; on {
-					j["authorName"] = tp.Name
-					if tp.Bot {
-						j["authorBot"] = true
-					}
-				}
-				if section == sectionNeedsYou {
-					needsYou++
-				}
-				if section == sectionNeedsYou || section == sectionYours {
-					if who := agentOnOf(req.Params.Meta, "agentOnIssue", l.Number); who != "" {
-						j["agentOn"] = who
-					}
-				}
-				issues[i] = j
-				for name, color := range l.LabelColors {
-					colors[name] = color
-				}
-			}
-			return structured(map[string]any{"repo": repo, "viewer": viewer, "issues": issues, "count": len(issues),
-				"attention": needsYou, "labelColors": colors}), nil, nil
+			return structured(issuesData(repo, viewer, list, req.Params.Meta)), nil, nil
 		})
+}
 
+// addPageTools puts the tools of one issue's or pull request's page on server: its details,
+// diff, a failed run's log and a rerun.
+func addPageTools(server *mcp.Server, gh Views, repoOf func(context.Context, string) (string, error), readOnly *mcp.ToolAnnotations) {
 	mcp.AddTool(server, &mcp.Tool{Name: "show_issue_details", Title: "Show issue details",
 		Description: "One issue's description and the pull requests GitHub's issue_read tool links to it by closing keywords.",
 		Annotations: readOnly, Meta: uiMeta("", "model", "app")},
@@ -342,85 +457,4 @@ func AddViews(server *mcp.Server, gh Views, person bool) {
 			}
 			return structured(r), nil, nil
 		})
-
-	// Merge, review and comment are the person's, from a view. They are only on the copy the
-	// host runs (person), whose tools/list the host filters for an agent; a copy that a
-	// session runs itself has none of them.
-	if person {
-		mcp.AddTool(server, &mcp.Tool{Name: "merge_pr", Title: "Merge a pull request",
-			Description: "Squash-merges a pull request and deletes its branch on GitHub, as the signed-in person; auto: true turns on " +
-				"auto-merge, so it merges once its checks pass. Only a view may call it: a person merges.",
-			Meta: uiMeta("", "app")},
-			func(ctx context.Context, _ *mcp.CallToolRequest, in mergeArgs) (*mcp.CallToolResult, any, error) {
-				repo, err := repoOf(ctx, in.Repo)
-				if err != nil {
-					return failed(err), nil, nil
-				}
-				r, err := gh.MergePR(ctx, repo, in.Number, in.Sha, in.Auto)
-				if err != nil {
-					return failed(err), nil, nil
-				}
-				return structured(r), nil, nil
-			})
-
-		mcp.AddTool(server, &mcp.Tool{Name: "review_pr", Title: "Review a pull request",
-			Description: "Approves a pull request, or requests changes with a body that says what, as the signed-in person. " +
-				"GitHub refuses either on the person's own pull request. Only a view may call it: a person reviews.",
-			Meta: uiMeta("", "app")},
-			func(ctx context.Context, _ *mcp.CallToolRequest, in reviewArgs) (*mcp.CallToolResult, any, error) {
-				repo, err := repoOf(ctx, in.Repo)
-				if err != nil {
-					return failed(err), nil, nil
-				}
-				body := strings.TrimSpace(in.Body)
-				switch {
-				case in.Event != "approve" && in.Event != "request_changes":
-					return failed(fmt.Errorf("event is approve or request_changes")), nil, nil
-				case in.Event == "request_changes" && body == "":
-					return failed(fmt.Errorf("say what is to change: body is needed to request changes")), nil, nil
-				}
-				r, err := gh.ReviewPR(ctx, repo, in.Number, in.Sha, in.Event == "approve", body)
-				if err != nil {
-					return failed(err), nil, nil
-				}
-				return structured(r), nil, nil
-			})
-
-		mcp.AddTool(server, &mcp.Tool{Name: "comment_on_pr", Title: "Comment on a pull request",
-			Description: "Adds a comment to a pull request, as the signed-in person, from its page. Only a view may call it; " +
-				"an agent comments with add_issue_comment.",
-			Meta: uiMeta("", "app")},
-			func(ctx context.Context, _ *mcp.CallToolRequest, in commentArgs) (*mcp.CallToolResult, any, error) {
-				repo, err := repoOf(ctx, in.Repo)
-				if err != nil {
-					return failed(err), nil, nil
-				}
-				if strings.TrimSpace(in.Body) == "" {
-					return failed(fmt.Errorf("write the comment first")), nil, nil
-				}
-				r, err := gh.CommentOnPR(ctx, repo, in.Number, in.Body)
-				if err != nil {
-					return failed(err), nil, nil
-				}
-				return structured(r), nil, nil
-			})
-	}
-
-	// No network at all: an empty csp, so the host draws them under its strictest policy.
-	meta := mcp.Meta{"ui": map[string]any{"csp": map[string]any{}, "prefersBorder": true}}
-	for _, v := range []struct{ uri, name, title, description, file string }{
-		{pullsURI, "pulls", "Pull requests", "The repo's open pull requests, newest created first, with their checks, review, conflict and auto-merge; " +
-			"a pull request opens its page. Fed by show_pull_requests.", "pulls.html"},
-		{issuesURI, "issues", "Issues", "The repo's open issues, newest created first, with their labels and assignees, and Start Agent; a label narrows " +
-			"the list. A person expands a row to read its rich-text description and linked pull requests. Fed by show_issues.", "issues.html"},
-		{prURI, "pr", "Pull request", "One pull request's page: description, checks with a failed run's log, files, comments and " +
-			"review threads, CodeRabbit's summary and review, with Comment, Approve, Merge, Auto-merge, Start Agent and Ask CodeRabbit Again. Fed by show_pull_request.", "pr.html"},
-	} {
-		html := page(v.file)
-		uri := v.uri
-		server.AddResource(&mcp.Resource{URI: uri, Name: v.name, Title: v.title, Description: v.description, MIMEType: viewMime, Meta: meta},
-			func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-				return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: uri, MIMEType: viewMime, Text: html, Meta: meta}}}, nil
-			})
-	}
 }
