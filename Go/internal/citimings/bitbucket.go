@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"time"
 )
@@ -94,21 +93,23 @@ func (p BitbucketPipeline) workflow() string {
 }
 
 type bitbucketSteps struct {
-	Values []struct {
-		Name        string `json:"name"`
-		RunNumber   int    `json:"run_number"`
-		StartedOn   string `json:"started_on"`
-		CompletedOn string `json:"completed_on"`
-		State       struct {
-			Name   string `json:"name"`
-			Result *struct {
-				Name string `json:"name"`
-			} `json:"result"`
-		} `json:"state"`
-		// RunsOn is a self-hosted step's runner labels, as runs-on: says them.
-		RunsOn []string `json:"runs_on"`
-	} `json:"values"`
-	Next string `json:"next"`
+	Values []bitbucketStep `json:"values"`
+	Next   string          `json:"next"`
+}
+
+type bitbucketStep struct {
+	Name        string `json:"name"`
+	RunNumber   int    `json:"run_number"`
+	StartedOn   string `json:"started_on"`
+	CompletedOn string `json:"completed_on"`
+	State       struct {
+		Name   string `json:"name"`
+		Result *struct {
+			Name string `json:"name"`
+		} `json:"result"`
+	} `json:"state"`
+	// RunsOn is a self-hosted step's runner labels, as runs-on: says them.
+	RunsOn []string `json:"runs_on"`
 }
 
 // BitbucketStepsNext is the next page of a steps answer, "" for none.
@@ -142,33 +143,10 @@ func FromBitbucket(p BitbucketPipeline, stepPages [][]byte, ref, url string, onD
 	if err != nil {
 		return nil, fmt.Errorf("pipeline %d: no made time", p.BuildNumber)
 	}
-	since := func(s string) (float64, bool) {
-		t, err := time.Parse(time.RFC3339, s)
-		if err != nil {
-			return 0, false
-		}
-		return math.Round(t.Sub(made).Seconds()*10) / 10, true
-	}
-	base := Run{Ref: ref, ID: p.BuildNumber, Workflow: p.workflow(), Event: strings.ToLower(p.Trigger.Name),
-		Branch: p.Branch(), HeadSHA: p.Target.Commit.Hash, Default: onDefault, Tag: p.OnTag() && !onDefault, URL: url,
-		Made: made.Unix()}
-	if p.PullRequest() {
-		base.Default, base.Tag = false, false
-		if p.Target.PullRequest != nil {
-			base.PR = p.Target.PullRequest.ID
-		}
-	}
+	since := sinceMade(made, parseRFC3339)
 	latest := max(p.RunNumber, 1)
-	attempts := map[int]*Run{}
-	attemptOf := func(n int) *Run {
-		if attempts[n] == nil {
-			r := base
-			r.Attempt, r.Jobs = n, []Job{}
-			attempts[n] = &r
-		}
-		return attempts[n]
-	}
-	attemptOf(latest)
+	attempts := newAttempts(bitbucketBase(p, ref, url, onDefault, made))
+	attempts.of(latest)
 	started := map[int]float64{}
 	for _, raw := range stepPages {
 		var steps bitbucketSteps
@@ -180,56 +158,71 @@ func FromBitbucket(p BitbucketPipeline, stepPages [][]byte, ref, url string, onD
 			if s.RunNumber > 0 {
 				n = min(s.RunNumber, latest)
 			}
-			job := Job{Name: s.Name}
-			if s.State.Result != nil {
-				job.Conclusion = bitbucketConclusion(s.State.Result.Name)
+			job, ran := bitbucketJob(s, since)
+			if first, ok := started[n]; ran && (!ok || job.Started < first) {
+				started[n] = job.Started
 			}
-			if len(s.RunsOn) > 0 {
-				job.Runner = s.RunsOn[0]
-			}
-			if a, ok := since(s.StartedOn); ok {
-				job.Made, job.Started = a, a
-				if first, ok := started[n]; !ok || a < first {
-					started[n] = a
-				}
-				if job.Ended, ok = since(s.CompletedOn); !ok {
-					job.Ended = a
-				}
-			} else if e, ok := since(s.CompletedOn); ok {
-				// It never ran (not run, or stopped before a runner took it).
-				job.Made, job.Started, job.Ended = e, e, e
-			}
-			r := attemptOf(n)
-			r.Jobs = append(r.Jobs, job)
+			attempts.addJob(n, job)
 		}
 	}
-	var out []Run
-	for n, r := range attempts {
-		failed, cancelled := false, false
-		for _, j := range r.Jobs {
-			r.Ended = math.Max(r.Ended, j.Ended)
-			failed = failed || j.Conclusion == "failure"
-			cancelled = cancelled || j.Conclusion == "cancelled"
-		}
-		r.Started = started[n]
-		switch {
-		case n == latest:
-			if p.State.Result != nil {
-				r.Conclusion = bitbucketConclusion(p.State.Result.Name)
-			}
-			if e, ok := since(p.CompletedOn); ok && e > r.Ended {
-				r.Ended = e
-			}
-		case failed:
-			// An earlier run was run again, so it did not pass.
-			r.Conclusion = "failure"
-		case cancelled:
-			r.Conclusion = "cancelled"
-		default:
-			r.Conclusion = "success"
-		}
-		out = append(out, *r)
+	for n, r := range attempts.byN {
+		finishBitbucketAttempt(r, started[n], n == latest, p, since)
 	}
-	sort.Slice(out, func(a, b int) bool { return out[a].Attempt < out[b].Attempt })
-	return out, nil
+	return attempts.sorted(), nil
+}
+
+// bitbucketBase is what each attempt of p has in common.
+func bitbucketBase(p BitbucketPipeline, ref, url string, onDefault bool, made time.Time) Run {
+	base := Run{Ref: ref, ID: p.BuildNumber, Workflow: p.workflow(), Event: strings.ToLower(p.Trigger.Name),
+		Branch: p.Branch(), HeadSHA: p.Target.Commit.Hash, Default: onDefault, Tag: p.OnTag() && !onDefault, URL: url,
+		Made: made.Unix()}
+	if p.PullRequest() {
+		base.Default, base.Tag = false, false
+		if p.Target.PullRequest != nil {
+			base.PR = p.Target.PullRequest.ID
+		}
+	}
+	return base
+}
+
+// bitbucketJob is a step as a job; ran says it started.
+func bitbucketJob(s bitbucketStep, since sinceFn) (Job, bool) {
+	job := Job{Name: s.Name}
+	if s.State.Result != nil {
+		job.Conclusion = bitbucketConclusion(s.State.Result.Name)
+	}
+	if len(s.RunsOn) > 0 {
+		job.Runner = s.RunsOn[0]
+	}
+	if a, ok := since(s.StartedOn); ok {
+		job.Made, job.Started = a, a
+		if job.Ended, ok = since(s.CompletedOn); !ok {
+			job.Ended = a
+		}
+		return job, true
+	}
+	if e, ok := since(s.CompletedOn); ok {
+		// It never ran (not run, or stopped before a runner took it).
+		job.Made, job.Started, job.Ended = e, e, e
+	}
+	return job, false
+}
+
+// finishBitbucketAttempt gives an attempt its start, its end and its conclusion: the latest
+// the pipeline's, an earlier one its jobs'.
+func finishBitbucketAttempt(r *Run, started float64, latest bool, p BitbucketPipeline, since sinceFn) {
+	s := summarize(r.Jobs, "failure")
+	r.Ended = math.Max(r.Ended, s.ended)
+	r.Started = started
+	if !latest {
+		// An earlier run was run again, so it did not pass.
+		r.Conclusion = earlierConclusion(s.failed, s.cancelled)
+		return
+	}
+	if p.State.Result != nil {
+		r.Conclusion = bitbucketConclusion(p.State.Result.Name)
+	}
+	if e, ok := since(p.CompletedOn); ok && e > r.Ended {
+		r.Ended = e
+	}
 }

@@ -222,13 +222,7 @@ func FromForgejo(run ForgejoRun, jobs []ForgejoJob, ref string, onDefault, onTag
 	if !ok {
 		return nil, fmt.Errorf("run %d: no made time", run.Number())
 	}
-	since := func(s string) (float64, bool) {
-		t, ok := forgeTime(s)
-		if !ok {
-			return 0, false
-		}
-		return math.Round(t.Sub(made).Seconds()*10) / 10, true
-	}
+	since := sinceMade(made, forgeTime)
 	out := Run{Ref: ref, ID: int64(run.Number()), Attempt: max(run.RunAttempt, 1), Workflow: run.Workflow(),
 		Event: run.Event, Branch: run.Branch(), HeadSHA: firstOf(run.HeadSHA, run.CommitSHA), Default: onDefault,
 		Tag: onTag && !onDefault, PR: run.PR(), URL: run.HTMLURL, Made: made.Unix(), Conclusion: run.Result(), Jobs: []Job{}}
@@ -238,50 +232,85 @@ func FromForgejo(run ForgejoRun, jobs []ForgejoJob, ref string, onDefault, onTag
 	needs := make([]bool, len(jobs))
 	for i, j := range jobs {
 		out.Attempt = max(out.Attempt, j.Attempt, j.RunAttempt)
-		job := Job{Name: j.Name, Conclusion: forgejoConclusion(firstOf(j.Conclusion, j.Status))}
-		if job.Conclusion == "completed" {
-			job.Conclusion = "success"
-		}
-		job.Runner = firstOf(append(append([]string{}, j.RunsOn...), j.Labels...)...)
-		started, ended := math.Inf(1), math.Inf(-1)
-		for _, s := range j.Steps {
-			a, okA := since(firstOf(s.StartedAt, s.Started))
-			b, okB := since(firstOf(s.CompletedAt, s.Stopped))
-			if !okA || !okB {
-				continue
-			}
-			started, ended = math.Min(started, a), math.Max(ended, b)
-			c := forgejoConclusion(firstOf(s.Conclusion, s.Status))
-			job.Steps = append(job.Steps, Step{Name: s.Name, Number: s.Number, Started: a, Ended: b, Conclusion: c})
-		}
-		if a, ok := since(j.StartedAt); ok {
-			// Gitea's job says its own times.
-			job.Started, job.Ended = a, a
-			if b, ok := since(j.CompletedAt); ok {
-				job.Ended = b
-			}
-			job.Made = a
-			if m, ok := since(j.CreatedAt); ok {
-				job.Made = m
-			}
-		} else if !math.IsInf(started, 1) {
-			job.Started, job.Ended = started, ended
-			needs[i] = len(j.Needs) > 0
-		}
+		var job Job
+		job, needs[i] = forgejoJobOf(j, since)
 		out.Jobs = append(out.Jobs, job)
 	}
-	// A Forgejo job that needs others was made when the last job that ended before it started
-	// ended; one with no needs, with its run (0).
-	for i := range out.Jobs {
+	madeAfterNeeds(out.Jobs, needs)
+	setForgejoRunTimes(&out, run, since)
+	if out.Conclusion == "" {
+		out.Conclusion = "success"
+	}
+	if out.Attempt == 1 {
+		return []Run{out}, nil
+	}
+	return []Run{forgejoFirstAttempt(out, jobs), out}, nil
+}
+
+// forgejoJobOf is a job as a run's line has it; needs says it is a Forgejo job, timed by its
+// steps, that needs others.
+func forgejoJobOf(j ForgejoJob, since sinceFn) (job Job, needs bool) {
+	job = Job{Name: j.Name, Conclusion: forgejoConclusion(firstOf(j.Conclusion, j.Status))}
+	if job.Conclusion == "completed" {
+		job.Conclusion = "success"
+	}
+	job.Runner = firstOf(append(append([]string{}, j.RunsOn...), j.Labels...)...)
+	var started, ended float64
+	job.Steps, started, ended = forgejoSteps(j, since)
+	if a, ok := since(j.StartedAt); ok {
+		// Gitea's job says its own times.
+		job.Started, job.Ended = a, a
+		if b, ok := since(j.CompletedAt); ok {
+			job.Ended = b
+		}
+		job.Made = a
+		if m, ok := since(j.CreatedAt); ok {
+			job.Made = m
+		}
+		return job, false
+	}
+	if !math.IsInf(started, 1) {
+		job.Started, job.Ended = started, ended
+		return job, len(j.Needs) > 0
+	}
+	return job, false
+}
+
+// forgejoSteps is j's steps that say both times, with the first start and the last end of
+// them (+Inf and -Inf for none).
+func forgejoSteps(j ForgejoJob, since sinceFn) (steps []Step, started, ended float64) {
+	started, ended = math.Inf(1), math.Inf(-1)
+	for _, s := range j.Steps {
+		a, okA := since(firstOf(s.StartedAt, s.Started))
+		b, okB := since(firstOf(s.CompletedAt, s.Stopped))
+		if !okA || !okB {
+			continue
+		}
+		started, ended = math.Min(started, a), math.Max(ended, b)
+		c := forgejoConclusion(firstOf(s.Conclusion, s.Status))
+		steps = append(steps, Step{Name: s.Name, Number: s.Number, Started: a, Ended: b, Conclusion: c})
+	}
+	return steps, started, ended
+}
+
+// madeAfterNeeds makes each Forgejo job that needs others (needs[i]) when the last job that
+// ended before it started ended; one with no needs is made with its run (0).
+func madeAfterNeeds(jobs []Job, needs []bool) {
+	for i := range jobs {
 		if !needs[i] {
 			continue
 		}
-		for k, other := range out.Jobs {
-			if k != i && other.Ended > out.Jobs[i].Made && other.Ended <= out.Jobs[i].Started {
-				out.Jobs[i].Made = other.Ended
+		for k, other := range jobs {
+			if k != i && other.Ended > jobs[i].Made && other.Ended <= jobs[i].Started {
+				jobs[i].Made = other.Ended
 			}
 		}
 	}
+}
+
+// setForgejoRunTimes gives out its start (the run's, else its first job's) and its end (its
+// last job's, else the run's).
+func setForgejoRunTimes(out *Run, run ForgejoRun, since sinceFn) {
 	earliest, last := math.Inf(1), 0.0
 	for _, j := range out.Jobs {
 		if j.Ended > 0 {
@@ -298,13 +327,11 @@ func FromForgejo(run ForgejoRun, jobs []ForgejoJob, ref string, onDefault, onTag
 	if out.Ended == 0 {
 		out.Ended, _ = since(firstOf(run.Stopped, run.CompletedAt, run.Updated, run.UpdatedAt))
 	}
-	if out.Conclusion == "" {
-		out.Conclusion = "success"
-	}
-	if out.Attempt == 1 {
-		return []Run{out}, nil
-	}
-	// The first attempt did not pass: a job of it was run again.
+}
+
+// forgejoFirstAttempt is attempt 1 of a run that a job was run again in: it did not pass, and
+// each job that was run again has no time in it.
+func forgejoFirstAttempt(out Run, jobs []ForgejoJob) Run {
 	one := out
 	one.Attempt, one.Conclusion, one.Jobs = 1, "failure", make([]Job, 0, len(out.Jobs))
 	for i, j := range jobs {
@@ -318,5 +345,5 @@ func FromForgejo(run ForgejoRun, jobs []ForgejoJob, ref string, onDefault, onTag
 	for _, j := range one.Jobs {
 		one.Ended = math.Max(one.Ended, j.Ended)
 	}
-	return []Run{one, out}, nil
+	return one
 }
