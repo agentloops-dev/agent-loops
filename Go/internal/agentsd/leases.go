@@ -296,6 +296,17 @@ func (d *Daemon) nextDeadline() (time.Time, bool) {
 	return next, !next.IsZero()
 }
 
+// lapseLeasesNow ends the leases that have run out by now and hands them on, as the
+// leases timer does.
+func (d *Daemon) lapseLeasesNow() {
+	d.leaseMu.Lock()
+	events := d.loadLeases()
+	events = append(events, d.lapse(now().Time())...)
+	d.leasesChanged()
+	d.leaseMu.Unlock()
+	d.settle(events)
+}
+
 // leasesChanged saves the book, says resources/changed and aims the timer at what is next.
 // Called with leaseMu held.
 func (d *Daemon) leasesChanged() {
@@ -631,6 +642,7 @@ func (d *Daemon) registerLeases() {
 	})
 	// While anything is held, the person's view is kept current every minute.
 	d.goLoop("lease ticker", d.runLeaseTicker)
+	d.goLoop("stall check", d.runStallTicker)
 }
 
 // leaseChangeByPerson runs a person's change f to the book with leaseMu held, and gives

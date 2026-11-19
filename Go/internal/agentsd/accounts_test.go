@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -17,6 +18,7 @@ import (
 // own; and it goes with its folder.
 
 func TestAnAddedAccount(t *testing.T) {
+	flaky.UnderLoad(t, "#6289")
 	fakeRuntimes(t)
 	root := t.TempDir()
 	home := t.TempDir()

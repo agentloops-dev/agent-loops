@@ -147,7 +147,7 @@ func TestAMadeMachinesSetUpBeginsAtMakeAndJoinsUnderItsID(t *testing.T) {
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	ctx := context.Background()
 	const made = "madehost"
-	shown, err := p.s.Codes().Issue(withMadeMachine(ctx, made), true, false, time.Minute)
+	shown, err := p.s.Codes().Issue(withMadeMachine(ctx, made), true, false, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestALateJoinMakesAFailedJoinStepDone(t *testing.T) {
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	ctx := context.Background()
 	const made = "latehost"
-	shown, err := p.s.Codes().Issue(withMadeMachine(ctx, made), true, false, time.Minute)
+	shown, err := p.s.Codes().Issue(withMadeMachine(ctx, made), true, false, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestAMadeMachineIsLinkedAsItJoinsAfterARestart(t *testing.T) {
 	withProviders := func(c *Config) { c.ProviderHome = t.TempDir() }
 	before := startPlaneWith(t, st, private, withProviders)
 	const made = "madehost6075"
-	shown, err := before.s.Codes().Issue(withMadeMachine(ctx, made), true, false, time.Minute)
+	shown, err := before.s.Codes().Issue(withMadeMachine(ctx, made), true, false, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}

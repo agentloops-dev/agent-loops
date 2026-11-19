@@ -109,7 +109,9 @@ type attentionState struct {
 	controlCapabilities atomic.Pointer[func() []string]
 	// notices are what agents told the person and are still posted, and noticeBucket the
 	// person's attention they share when this host has no control plane (#2805, notify.go).
-	notices      []postedNotice
+	notices []postedNotice
+	// stallsTold is the stall notices told (#6190), so each stall is told once.
+	stallsTold   map[string]bool
 	noticeBucket noticebucket.Bucket
 }
 

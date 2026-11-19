@@ -79,3 +79,43 @@ func endingRaised(events string, id wire.UUID) bool {
 	}
 	return false
 }
+
+// A wait for the writes after a turn on a live daemon is safe while new ones start (#6269):
+// with a sync.WaitGroup, an Add from a count of zero while Wait ran was a data race, and a
+// folder.changed timer did that under a test's wait for its queue check.
+func TestWaitAfterTurnsWhileTurnsStart(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	stop := make(chan struct{})
+	started := make(chan struct{})
+	go func() {
+		defer close(started)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			d.goAfterTurn("a short write", func() {})
+		}
+	}()
+	for range 200 {
+		if !d.waitAfterTurns(10 * time.Second) {
+			t.Fatal("a wait on short writes did not end")
+		}
+	}
+	close(stop)
+	<-started
+
+	// A wait sees a write that is under way, and ends when it does.
+	release := make(chan struct{})
+	d.goAfterTurn("a long write", func() { <-release })
+	if d.waitAfterTurns(50 * time.Millisecond) {
+		t.Fatal("the wait ended before the write did")
+	}
+	close(release)
+	if !d.waitAfterTurns(10 * time.Second) {
+		t.Fatal("the wait did not end after the write did")
+	}
+}

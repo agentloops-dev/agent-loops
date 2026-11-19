@@ -1714,7 +1714,7 @@ func (d *Daemon) waitDeadlinesPassed() {
 		if w == nil || w.Ending != nil || w.Deadline == nil || w.Deadline.Time().After(at.Time()) {
 			continue
 		}
-		d.endWaitWithNoMatch(a.ID, w, timedOutWords(w, at))
+		d.endWaitWithNoMatch(a.ID, w, timedOutWords(w, at)+d.serverTroubleWords(w))
 	}
 	d.tellEvents(nil)
 	d.armWaitTimer()

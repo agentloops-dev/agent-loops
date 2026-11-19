@@ -62,7 +62,7 @@ func TestAPageAHostCarries(t *testing.T) {
 	*page = port
 
 	// The browser pairs through the host, with a browser code, bound to the host's origin.
-	shown, err := p.s.Codes().Issue(context.Background(), false, true, time.Minute)
+	shown, err := p.s.Codes().Issue(context.Background(), false, true, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}

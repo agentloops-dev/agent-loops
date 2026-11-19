@@ -16,6 +16,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -59,6 +60,9 @@ type lineageLinker struct {
 	otherHost map[string]bool
 	// topics is each folder's topic for its agents nodes (folderTopic), looked up once.
 	topics map[string]string
+	// origins is each folder's origin URL as git said it ("" with none), read once for repos and
+	// topics both (folderOrigin, #6257).
+	origins map[string]string
 	// configs is each folder's git config file and when it last changed, as repos and topics
 	// were read: a change (a new origin after a repo moved) reads them again (#5335).
 	configs map[string]gitConfigStamp
@@ -77,7 +81,11 @@ func (d *Daemon) forgetChangedRemote(folder string) {
 	c, ok := d.configs[folder]
 	d.repoMu.Unlock()
 	if !ok {
-		if dir, err := git(folder, "rev-parse", "--git-common-dir"); err == nil && dir != "" {
+		dir, err := git(folder, "rev-parse", "--git-common-dir")
+		if !gitAnswered(err) {
+			return // no answer: no stamp, so the next call asks again (#6257)
+		}
+		if err == nil && dir != "" {
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(folder, dir)
 			}
@@ -99,6 +107,7 @@ func (d *Daemon) forgetChangedRemote(folder string) {
 		delete(d.repos, folder)
 		delete(d.otherHost, folder)
 		delete(d.topics, folder)
+		delete(d.origins, folder)
 	}
 	if d.configs == nil {
 		d.configs = map[string]gitConfigStamp{}
@@ -356,6 +365,41 @@ func (d *Daemon) agentsTopic(kind, id string) string {
 	return ""
 }
 
+// folderOrigin is folder's origin URL, "" when git says it has none (or the folder is no git
+// repository). It asks git once per folder for folderRepo and folderTopic both, so the two
+// cannot disagree. known is false, and nothing is kept, when there is no answer: the folder is
+// gone (it may come back), or git did not run to its end (it could not start or was stopped,
+// as on a loaded machine). That is not "no origin": kept, it named a session's node with no
+// repo for good, since lineage keeps the first topic it sees for an id (#6257).
+func (d *Daemon) folderOrigin(folder string) (origin string, known bool) {
+	d.repoMu.Lock()
+	o, ok := d.origins[folder]
+	d.repoMu.Unlock()
+	if ok {
+		return o, true
+	}
+	out, err := git(folder, "remote", "get-url", "origin")
+	if err != nil {
+		if !isDir(folder) {
+			return "", false
+		}
+		if !gitAnswered(err) || !gitSaidNoOrigin(err) {
+			// A read that failed (a slow or a killed git, a config git refuses) is not "no
+			// origin": it keeps nothing, so the next call reads again (#6261).
+			log.Printf("forge of %s: read the origin: %v", folder, err)
+			return "", false
+		}
+		out = ""
+	}
+	d.repoMu.Lock()
+	if d.origins == nil {
+		d.origins = map[string]string{}
+	}
+	d.origins[folder] = out
+	d.repoMu.Unlock()
+	return out, true
+}
+
 // folderTopic is the topic of a folder's agents nodes: the path of its origin's repo, lower
 // case, as forgeOf reads it on a forge it knows (owner/repo), else the remote's path; "" with
 // no origin. It asks git once per folder, and never a forge, so it does not change with a
@@ -368,11 +412,11 @@ func (d *Daemon) folderTopic(folder string) string {
 	if ok {
 		return t
 	}
-	out, err := git(folder, "remote", "get-url", "origin")
-	if err != nil && !isDir(folder) {
+	out, ok := d.folderOrigin(folder)
+	if !ok {
 		return ""
 	}
-	if remote, ok := parseRemote(out); err == nil && ok {
+	if remote, ok := parseRemote(out); ok {
 		if r := forgeOf(remote.host, remote.path); r.forge != "" {
 			t = r.path
 		} else {
@@ -468,14 +512,13 @@ func (d *Daemon) folderRepo(folder string) forgeRepo {
 		}
 		return r
 	}
-	if out, err := git(folder, "remote", "get-url", "origin"); err == nil {
-		if remote, ok := parseRemote(out); ok {
-			r = forgeOf(remote.host, remote.path)
-			other = r.forge == ""
-		}
-	} else if !isDir(folder) {
-		// A folder gone is not remembered, in case it comes back.
+	out, known := d.folderOrigin(folder)
+	if !known {
 		return forgeRepo{}
+	}
+	if remote, ok := parseRemote(out); ok {
+		r = forgeOf(remote.host, remote.path)
+		other = r.forge == ""
 	}
 	d.repoMu.Lock()
 	if d.repos == nil {
@@ -493,6 +536,13 @@ func (d *Daemon) folderRepo(folder string) forgeRepo {
 		return d.connectedRepo(folder)
 	}
 	return r
+}
+
+// gitSaidNoOrigin says git's refusal of `git remote get-url origin` is an answer: the folder has
+// no origin, or is not in a git repository.
+func gitSaidNoOrigin(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "No such remote") || gitremote.NotARepository(msg)
 }
 
 // connectedRepo is folder's repo on the connected Forgejo, else on the connected GitLab (#4118),

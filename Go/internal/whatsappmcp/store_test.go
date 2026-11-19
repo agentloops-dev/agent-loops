@@ -88,6 +88,38 @@ func TestTheConversationsArePagedNewestFirst(t *testing.T) {
 	f := newFakeMeta(t)
 	inbox := NewInbox(f.accountFunc(), nil)
 	inbox.Store = &Store{Dir: t.TempDir()}
+	deliverFivePeople(t, inbox)
+	c := connectTools(t, NewServer("test", f.meta(), inbox))
+
+	last := checkTheConversationPages(t, c)
+	checkTheMessagePages(t, c)
+
+	// reply (#4345) sends as the number, gives the sent message as read_messages does, and
+	// keeps it, so it is the conversation's newest; the list says who a reply goes as.
+	if last["replyAs"] != ReplyAs {
+		t.Fatalf("replyAs: %v", last)
+	}
+	sent, _ := c.call("reply", map[string]any{"conversation": "+44 7700 900114", "text": " Thanks! "})
+	if sent["id"] == nil || sent["conversation"] != "447700900114" || sent["text"] != "Thanks!" ||
+		sent["sender"].(map[string]any)["identity"] != fakePhoneNumberID {
+		t.Fatalf("reply: %v", sent)
+	}
+	if out, _ := f.snapshot(); len(out) != 1 || out[0]["to"] != "447700900114" || out[0]["text"].(map[string]any)["body"] != "Thanks!" {
+		t.Fatalf("sent: %v", out)
+	}
+	if read, _ := c.call("read_messages", map[string]any{"conversation": "447700900114", "limit": 1}); ids(read["messages"], "id") != sent["id"] {
+		t.Fatalf("the reply is not the newest: %v", read)
+	}
+	if _, said := c.call("reply", map[string]any{"conversation": "447700900114", "text": ""}); !strings.Contains(said, "empty") {
+		t.Fatalf("no text: %q", said)
+	}
+}
+
+// deliverFivePeople gives inbox five messages from each of five people, a second apart
+// and each person ten seconds after the one before, and then the last person's quote of
+// their second message.
+func deliverFivePeople(t *testing.T, inbox *Inbox) {
+	t.Helper()
 	start := time.Now().Add(-time.Hour).Unix()
 	var people []map[string]any
 	var msgs []map[string]any
@@ -106,8 +138,17 @@ func TestTheConversationsArePagedNewestFirst(t *testing.T) {
 	if code := deliver(inbox, call(fakePhoneNumberID, people, msgs...), fakeSecret); code != 200 {
 		t.Fatal(code)
 	}
+}
 
-	server := NewServer("test", f.meta(), inbox)
+// toolClient calls a server's tools in memory.
+type toolClient struct {
+	t       *testing.T
+	session *mcp.ClientSession
+}
+
+// connectTools is a client of server, closed when the test ends.
+func connectTools(t *testing.T, server *mcp.Server) toolClient {
+	t.Helper()
 	ct, st := mcp.NewInMemoryTransports()
 	if _, err := server.Connect(t.Context(), st, nil); err != nil {
 		t.Fatal(err)
@@ -116,87 +157,81 @@ func TestTheConversationsArePagedNewestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = session.Close() }()
-	call := func(name string, args map[string]any) (map[string]any, string) {
-		t.Helper()
-		r, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
-		if err != nil {
-			t.Fatal(err)
-		}
-		text := r.Content[0].(*mcp.TextContent).Text
-		if r.IsError {
-			return nil, text
-		}
-		data, _ := json.Marshal(r.StructuredContent)
-		var out map[string]any
-		_ = json.Unmarshal(data, &out)
-		return out, text
-	}
-	ids := func(list any, key string) string {
-		var out []string
-		for _, it := range list.([]any) {
-			out = append(out, it.(map[string]any)[key].(string))
-		}
-		return strings.Join(out, " ")
-	}
+	t.Cleanup(func() { _ = session.Close() })
+	return toolClient{t: t, session: session}
+}
 
-	page, _ := call("list_conversations", map[string]any{"limit": 2})
+// call is a tool's structured answer and its text; the answer is nil when the tool refused.
+func (c toolClient) call(name string, args map[string]any) (map[string]any, string) {
+	c.t.Helper()
+	r, err := c.session.CallTool(c.t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	text := r.Content[0].(*mcp.TextContent).Text
+	if r.IsError {
+		return nil, text
+	}
+	data, _ := json.Marshal(r.StructuredContent)
+	var out map[string]any
+	_ = json.Unmarshal(data, &out)
+	return out, text
+}
+
+// ids is each item's key in list, joined with spaces.
+func ids(list any, key string) string {
+	var out []string
+	for _, it := range list.([]any) {
+		out = append(out, it.(map[string]any)[key].(string))
+	}
+	return strings.Join(out, " ")
+}
+
+// checkTheConversationPages pages list_conversations two at a time, and gives its last page.
+func checkTheConversationPages(t *testing.T, c toolClient) map[string]any {
+	t.Helper()
+	page, _ := c.call("list_conversations", map[string]any{"limit": 2})
 	if got := ids(page["conversations"], "id"); got != "447700900114 447700900113" || page["cursor"] == nil {
 		t.Fatalf("the first page: %v", page)
 	}
-	page, _ = call("list_conversations", map[string]any{"limit": 2, "cursor": page["cursor"]})
+	page, _ = c.call("list_conversations", map[string]any{"limit": 2, "cursor": page["cursor"]})
 	if got := ids(page["conversations"], "id"); got != "447700900112 447700900111" {
 		t.Fatalf("the second page: %v", page)
 	}
-	page, _ = call("list_conversations", map[string]any{"limit": 2, "cursor": page["cursor"]})
+	page, _ = c.call("list_conversations", map[string]any{"limit": 2, "cursor": page["cursor"]})
 	if got := ids(page["conversations"], "id"); got != "447700900110" || page["cursor"] != nil {
 		t.Fatalf("the last page: %v", page)
 	}
-	if _, said := call("list_conversations", map[string]any{"cursor": "nonsense"}); !strings.Contains(said, "no cursor") {
+	if _, said := c.call("list_conversations", map[string]any{"cursor": "nonsense"}); !strings.Contains(said, "no cursor") {
 		t.Fatalf("a cursor not given: %q", said)
 	}
-	if unread, _ := call("list_conversations", map[string]any{"unread": true}); len(unread["conversations"].([]any)) != 0 {
+	if unread, _ := c.call("list_conversations", map[string]any{"unread": true}); len(unread["conversations"].([]any)) != 0 {
 		t.Fatalf("unread: %v", unread)
 	}
+	return page
+}
 
-	read, _ := call("read_messages", map[string]any{"conversation": "+44 7700 900114", "limit": 4})
+// checkTheMessagePages pages read_messages, by person, by thread and for every person.
+func checkTheMessagePages(t *testing.T, c toolClient) {
+	t.Helper()
+	read, _ := c.call("read_messages", map[string]any{"conversation": "+44 7700 900114", "limit": 4})
 	if got := ids(read["messages"], "id"); got != "wamid.Q wamid.P4M4 wamid.P4M3 wamid.P4M2" || read["cursor"] != "wamid.P4M2" {
 		t.Fatalf("the first page: %v", read)
 	}
-	read, _ = call("read_messages", map[string]any{"conversation": "447700900114", "limit": 4, "cursor": read["cursor"]})
+	read, _ = c.call("read_messages", map[string]any{"conversation": "447700900114", "limit": 4, "cursor": read["cursor"]})
 	if got := ids(read["messages"], "id"); got != "wamid.P4M1 wamid.P4M0" || read["cursor"] != nil {
 		t.Fatalf("the last page: %v", read)
 	}
-	if thread, _ := call("read_messages", map[string]any{"conversation": "447700900114", "thread": "wamid.P4M1"}); ids(thread["messages"], "id") != "wamid.Q wamid.P4M1" {
+	if thread, _ := c.call("read_messages", map[string]any{"conversation": "447700900114", "thread": "wamid.P4M1"}); ids(thread["messages"], "id") != "wamid.Q wamid.P4M1" {
 		t.Fatalf("a quoted message and its quote: %v", thread)
 	}
-	if every, _ := call("read_messages", map[string]any{"limit": 3}); ids(every["messages"], "id") != "wamid.Q wamid.P4M4 wamid.P4M3" || every["conversation"] != "" {
+	if every, _ := c.call("read_messages", map[string]any{"limit": 3}); ids(every["messages"], "id") != "wamid.Q wamid.P4M4 wamid.P4M3" || every["conversation"] != "" {
 		t.Fatalf("every person's: %v", every)
 	}
-	if _, said := call("read_messages", map[string]any{"conversation": "447700900114", "cursor": "wamid.GONE"}); !strings.Contains(said, "no cursor") {
+	if _, said := c.call("read_messages", map[string]any{"conversation": "447700900114", "cursor": "wamid.GONE"}); !strings.Contains(said, "no cursor") {
 		t.Fatalf("a cursor no longer in the store: %q", said)
 	}
-	if _, said := call("read_messages", map[string]any{"conversation": "sam"}); !strings.Contains(said, "conversation") {
+	if _, said := c.call("read_messages", map[string]any{"conversation": "sam"}); !strings.Contains(said, "conversation") {
 		t.Fatalf("a conversation that is not a number: %q", said)
-	}
-
-	// reply (#4345) sends as the number, gives the sent message as read_messages does, and
-	// keeps it, so it is the conversation's newest; the list says who a reply goes as.
-	if page["replyAs"] != ReplyAs {
-		t.Fatalf("replyAs: %v", page)
-	}
-	sent, _ := call("reply", map[string]any{"conversation": "+44 7700 900114", "text": " Thanks! "})
-	if sent["id"] == nil || sent["conversation"] != "447700900114" || sent["text"] != "Thanks!" ||
-		sent["sender"].(map[string]any)["identity"] != fakePhoneNumberID {
-		t.Fatalf("reply: %v", sent)
-	}
-	if out, _ := f.snapshot(); len(out) != 1 || out[0]["to"] != "447700900114" || out[0]["text"].(map[string]any)["body"] != "Thanks!" {
-		t.Fatalf("sent: %v", out)
-	}
-	if read, _ := call("read_messages", map[string]any{"conversation": "447700900114", "limit": 1}); ids(read["messages"], "id") != sent["id"] {
-		t.Fatalf("the reply is not the newest: %v", read)
-	}
-	if _, said := call("reply", map[string]any{"conversation": "447700900114", "text": ""}); !strings.Contains(said, "empty") {
-		t.Fatalf("no text: %q", said)
 	}
 }

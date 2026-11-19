@@ -10,7 +10,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	sdk "github.com/coder/acp-go-sdk"
 )
@@ -58,7 +57,6 @@ func bitbucketFolder(t *testing.T, d *Daemon) string {
 // #3879: lineage takes a Bitbucket folder's labels and pull request events as Bitbucket nodes,
 // by its remote's host, with or without a connection. Nothing is asked of gh or glab about them.
 func TestLineageOnABitbucketFolder(t *testing.T) {
-	flaky.UnderLoad(t, "#6257")
 	t.Parallel()
 
 	d, _, _, file := bitbucketDaemon(t)
@@ -105,6 +103,37 @@ func TestLineageOnABitbucketFolder(t *testing.T) {
 	file.Delete(connections.Bitbucket)
 	if r := d.folderRepo(folder); r != (forgeRepo{"bitbucket", "walkalex/app"}) {
 		t.Fatalf("with no Bitbucket connection: %+v", r)
+	}
+}
+
+// #6257: a git that gives no answer (here it cannot start) is not "no origin": nothing is kept,
+// and the next look reads the origin. Kept, it named a session's node with no repo for good,
+// since lineage keeps the first topic it sees for a session. No origin is git's answer, and is
+// kept. Not parallel: PATH is the process's.
+func TestAFolderTopicIsNotKeptWhenGitGivesNoAnswer(t *testing.T) {
+	folder := gitFolder(t, "git@bitbucket.org:walkalex/App.git")
+	d := &Daemon{}
+	t.Run("git does not start", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		if topic := d.folderTopic(folder); topic != "" {
+			t.Fatalf("with no git: %q", topic)
+		}
+		if r := d.folderRepo(folder); r != (forgeRepo{}) {
+			t.Fatalf("with no git: %+v", r)
+		}
+	})
+	if topic := d.folderTopic(folder); topic != "walkalex/app" {
+		t.Fatalf("a failed read was kept: %q", topic)
+	}
+	if r := d.folderRepo(folder); r != (forgeRepo{"bitbucket", "walkalex/app"}) {
+		t.Fatalf("a failed read was kept: %+v", r)
+	}
+	bare := gitFolder(t, "")
+	if topic := d.folderTopic(bare); topic != "" {
+		t.Fatalf("no origin: %q", topic)
+	}
+	if origin, known := d.folderOrigin(bare); !known || origin != "" {
+		t.Fatalf("no origin is not kept: %q %v", origin, known)
 	}
 }
 
