@@ -2005,16 +2005,30 @@ public final class AgentsModel {
         refold()
     }
 
-    /// The entries written since the open chat's last page (#4794), asked `from:
-    /// transcriptEnd`, laid after what is held, with what was heard meanwhile: the chat as
-    /// it would be had it heard them live. False, and nothing changed, when `load` is not the
-    /// latest or the page does not start where the held one ended (more was written than
-    /// one page holds, or the transcript is not the one held); the chat then opens whole.
+    /// Where a resume reads the open chat from (#4794, #6282): the first entry held, not the
+    /// end. An entry changes in place (a reply's text grows, a tool call ends), so one held
+    /// can be older than the host's; the page from here has the newer copy. Nil when nothing
+    /// is held.
+    public var resumeStart: Int? {
+        transcriptEnd.map { min(firstEntryIndex, $0) }
+    }
+
+    /// The open chat's entries from `resumeStart` again (#4794, #6282), with those written
+    /// since its last page, laid over what is held, with what was heard meanwhile: the chat
+    /// as it would be had it heard them live, an entry changed in place included. False, and
+    /// nothing changed, when `load` is not the latest or the page leaves a gap: it starts
+    /// after the held end (more was written than one page holds) or before the held page, or
+    /// counts fewer than the held end (the transcript is not the one held); the chat then
+    /// opens whole.
     @discardableResult
     public func takeResumed(_ page: TranscriptPage, load: Int) -> Bool {
-        guard isLatestTranscriptLoad(load), let end = transcriptEnd, page.firstIndex == end, page.total >= end
+        guard isLatestTranscriptLoad(load), let end = transcriptEnd, page.firstIndex <= end,
+              page.firstIndex >= min(firstEntryIndex, end), page.total >= end
         else { return false }
-        entries = Self.entriesKeepingLatest(entries + page.entries + (heardSincePage ?? []))
+        // What is held before the page stays; from where the page starts, the host's page is
+        // the truth, as an opening's is (a copy's entry the host does not have goes).
+        let before = entries.prefix(max(0, page.firstIndex - firstEntryIndex))
+        entries = Self.entriesKeepingLatest(Array(before) + page.entries + (heardSincePage ?? []))
         heardSincePage = nil
         transcriptFromCopy = false
         transcriptEnd = page.total
