@@ -236,6 +236,21 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 	if bad != nil {
 		return nil, bad
 	}
+	yours, bad := s.target(ctx, e.Name, &a)
+	if bad != nil {
+		return nil, bad
+	}
+	if key, ok := stateKeys[e.Name]; ok {
+		was := polls.CursorIDs(p)
+		return s.pollDiff(e.Name, key, a, p, func() ([]state, error) { return s.states(ctx, e.Name, a, yours, was) })
+	}
+	return s.poll(e, p, func(since string) ([]candidate, Listed, error) {
+		return candidates(ctx, s.Forgejo, e.Name, a, yours, since)
+	})
+}
+
+// target sets a's repo when it names none, and gives mine's set (yoursFor).
+func (s *Events) target(ctx context.Context, name string, a *args) (*Yours, *rpcError) {
 	if a.repo == "" {
 		repo, bad := s.defaultRepo(ctx)
 		if bad != nil {
@@ -243,16 +258,7 @@ func (s *Events) Poll(ctx context.Context, raw json.RawMessage) (map[string]any,
 		}
 		a.repo = repo
 	}
-	yours, bad := s.yoursFor(ctx, e.Name, a)
-	if bad != nil {
-		return nil, bad
-	}
-	if key, ok := stateKeys[e.Name]; ok {
-		return s.pollDiff(e.Name, key, a, p, s.states(ctx, e.Name, a, p, yours))
-	}
-	return s.poll(e, p, func(since string) ([]candidate, Listed, error) {
-		return candidates(ctx, s.Forgejo, e.Name, a, yours, since)
-	})
+	return s.yoursFor(ctx, name, *a)
 }
 
 // defaultRepo is the repo a poll with none names: the one this folder pushes to.
@@ -291,29 +297,32 @@ var stateKeys = map[string]string{
 	"pr.opened":        "openedAt",
 }
 
-// states finds the states of a state event (one in stateKeys).
-func (s *Events) states(ctx context.Context, name string, a args, p pollParams, yours *Yours) func() ([]state, error) {
+// states finds the states of a state event (one in stateKeys); was is the ids the cursor had.
+func (s *Events) states(ctx context.Context, name string, a args, yours *Yours, was []string) ([]state, error) {
 	switch name {
 	case "review.requested":
-		return func() ([]state, error) { return reviewRequestedStates(yours), nil }
+		return reviewRequestedStates(yours), nil
 	case "issue.assigned":
-		return func() ([]state, error) { return assignedStates(a, yours), nil }
+		return assignedStates(a, yours), nil
 	case "pr.blocked":
-		was := polls.CursorIDs(p)
-		return func() ([]state, error) { return s.blockedStates(ctx, name, a, yours, was) }
+		return s.blockedStates(ctx, name, a, yours, was)
 	case "pr.conflicted":
-		return func() ([]state, error) { return s.conflictedStates(ctx, a, yours) }
+		return s.conflictedStates(ctx, a, yours)
 	}
-	return func() ([]state, error) { return s.openedStates(ctx, a) }
+	return s.openedStates(ctx, a)
+}
+
+// withAuthor is a pull request's json with its author.
+func withAuthor(j map[string]any, author string) map[string]any {
+	j["author"] = author
+	return j
 }
 
 // reviewRequestedStates is review.requested's states: the pull requests that ask the owner's review.
 func reviewRequestedStates(yours *Yours) []state {
-	var out []state
+	out := make([]state, 0, len(yours.Reviews))
 	for _, r := range yours.Reviews {
-		j := r.PR.json()
-		j["author"] = r.Author
-		out = append(out, state{mr: r.PR, on: new(true), json: j})
+		out = append(out, state{mr: r.PR, on: new(true), json: withAuthor(r.PR.json(), r.Author)})
 	}
 	return out
 }
@@ -334,13 +343,21 @@ func (s *Events) blockedStates(ctx context.Context, name string, a args, yours *
 	prs, err := s.Forgejo.OpenPRs(ctx, a.repo)
 	var out []state
 	for _, m := range prs {
-		if m.SkipsBlocked || (a.mine && !a.byMe(m.PR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
-			continue
+		if !m.SkipsBlocked && a.keeps(m.PR, m.Trusted, yours) {
+			bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", name, a.repo, m.PR.Number), m.blocking(), was)
+			out = append(out, state{mr: m.PR, on: &bs.On, key: bs.Key, json: m.PR.json(), extra: bs.Data})
 		}
-		bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", name, a.repo, m.PR.Number), m.blocking(), was)
-		out = append(out, state{mr: m.PR, on: &bs.On, key: bs.Key, json: m.PR.json(), extra: bs.Data})
 	}
 	return out, err
+}
+
+// keeps says whether a state event raises m: with mine, only the owner's own pull request;
+// else only a trusted one, unless anyone (#728).
+func (a args) keeps(m PR, trusted bool, yours *Yours) bool {
+	if a.mine {
+		return a.byMe(m, yours)
+	}
+	return a.anyone || trusted
 }
 
 // conflictedStates is pr.conflicted's states.
@@ -348,11 +365,7 @@ func (s *Events) conflictedStates(ctx context.Context, a args, yours *Yours) ([]
 	prs, err := s.Forgejo.OpenPRs(ctx, a.repo)
 	var out []state
 	for _, m := range prs {
-		if a.mine {
-			if a.byMe(m.PR, yours) {
-				out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
-			}
-		} else if a.anyone || m.Trusted {
+		if a.keeps(m.PR, m.Trusted, yours) {
 			out = append(out, state{mr: m.PR, on: m.Conflicts, json: m.PR.json()})
 		}
 	}
@@ -368,9 +381,7 @@ func (s *Events) openedStates(ctx context.Context, a args) ([]state, error) {
 			continue
 		}
 		ready := !m.Draft
-		j := m.PR.json()
-		j["author"] = m.Author
-		out = append(out, state{mr: m.PR, on: &ready, json: j})
+		out = append(out, state{mr: m.PR, on: &ready, json: withAuthor(m.PR.json(), m.Author)})
 	}
 	return out, err
 }
