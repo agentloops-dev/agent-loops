@@ -773,6 +773,7 @@ var CallProvidersUpdate = Method[ProviderAdd, ProviderSummary]{"providers/update
 var CallReadApiList = Method[Empty, ReadAPI]{"readApi/list"}
 var CallReadApiMake = Method[ReadTokenMake, ReadTokenMade]{"readApi/make"}
 var CallReadApiRevoke = Method[ReadTokenRevoke, ReadAPI]{"readApi/revoke"}
+var CallReportsChanges = Method[ReportChangesQuery, ReportChanges]{"reports/changes"}
 var CallReportsDeleteView = Method[ReportViewID, ReportViews]{"reports/deleteView"}
 var CallReportsExport = Method[ReportQuery, ReportExport]{"reports/export"}
 var CallReportsFeaturesAll = Method[Empty, FeatureUsageAll]{"reports/featuresAll"}

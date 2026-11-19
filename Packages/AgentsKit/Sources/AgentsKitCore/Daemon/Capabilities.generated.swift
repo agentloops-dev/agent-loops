@@ -192,6 +192,7 @@ public enum Capability {
     public static let providers2 = "providers/2"
     public static let readapi1 = "readapi/1"
     public static let relay1 = "relay/1"
+    public static let reportsChanges1 = "reports.changes/1"
     public static let reportsNodes2 = "reports.nodes/2"
     public static let reportsProblem1 = "reports.problem/1"
     public static let reportsScope1 = "reports.scope/1"
@@ -937,6 +938,7 @@ public enum Capability {
         "readApi/list": "readapi/1",
         "readApi/make": "readapi/1",
         "readApi/revoke": "readapi/1",
+        "reports/changes": "reports.changes/1",
         "reports/deleteView": "reports.views/1",
         "reports/export": "reports/2",
         "reports/featuresAll": "machines.all/1",

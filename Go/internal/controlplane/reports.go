@@ -301,8 +301,8 @@ func (s *Service) reportProjects(ctx context.Context) map[string]map[string]*rec
 	return out
 }
 
-// reportMethod answers reports/usage, reports/export, reports/value (#2351) and reports/nodes
-// (#3118) for a scope (#1804), and the scopes and their policy. With no scope, a member sees
+// reportMethod answers reports/usage, reports/export, reports/value (#2351), reports/nodes
+// (#3118) and reports/changes (#6350) for a scope (#1804), and the scopes and their policy. With no scope, a member sees
 // their own machines and an admin every person's.
 func (m *Methods) reportMethod(ctx context.Context, method string, params json.RawMessage, from Caller) (any, error) {
 	user := m.s.actorFor(from.Client).User
@@ -323,6 +323,12 @@ func (m *Methods) reportMethod(ctx context.Context, method string, params json.R
 			return nil, err
 		}
 		return m.s.setReportPolicy(ctx, policy)
+	case "reports/changes":
+		request, err := require[wire.ReportChangesQuery](params, "ReportChangesQuery")
+		if err != nil {
+			return nil, err
+		}
+		return m.s.changesReport(ctx, request, user)
 	case "reports/nodes":
 		request, err := require[wire.ReportNodesQuery](params, "ReportNodesQuery")
 		if err != nil {

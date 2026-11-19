@@ -5970,6 +5970,32 @@
       ]
     },
     {
+      "name": "reports/changes",
+      "x-capability": "reports.changes/1",
+      "description": "The lineage figures that changed since a cursor (#6350, epic #6348): the rows of one kind, as reports/nodes gives them, whose machines' lineage changed since the cursor, by ref in pages of at most 100. A read with no change since the cursor reads only the store's listing: it decodes and merges no lineage.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/ReportChangesQuery"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/ReportChanges"
+        }
+      }
+    },
+    {
       "name": "reports/deleteView",
       "x-capability": "reports.views/1",
       "description": "Deletes one of the caller's saved views of Reports (#2019).",

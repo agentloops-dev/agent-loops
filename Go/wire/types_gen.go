@@ -12950,6 +12950,34 @@ type RenameRequest struct {
 	Title string `json:"title"`
 }
 
+// reports/changes' answer (#6350): a page of at most 100 rows, by ref, each as reports/nodes gives it. nextPageCursor asks for the next page of the same change; absent on the last. cursor is on the last page only: send it as since next time. reset says the rows are every row of the kind, not only those that changed: the client replaces the figures it holds of the kind with the rows of all the pages. An empty last page with a cursor says nothing changed.
+type ReportChanges struct {
+	Nodes []ReportNode `json:"nodes"`
+
+	NextPageCursor *string `json:"nextPageCursor,omitzero"`
+
+	Cursor *string `json:"cursor,omitzero"`
+
+	Reset bool `json:"reset"`
+}
+
+// reports/changes (#6350): the rows of one kind whose lineage figures changed since a cursor, for a client's local cache (#6348). kind, repo and scope are as reports/nodes'. since is the cursor of the last answer's last page, opaque; absent asks for every row (a reset). pageCursor is the last page's nextPageCursor. limit is 1 to 100, 100 when absent.
+type ReportChangesQuery struct {
+	// issue, pr or release.
+	Kind string `json:"kind"`
+
+	Repo *string `json:"repo,omitzero"`
+
+	// Me or the organisation (#1804).
+	Scope *ReportScope `json:"scope,omitzero"`
+
+	Since *string `json:"since,omitzero"`
+
+	PageCursor *string `json:"pageCursor,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
+}
+
 // What a machine's agents did in an hour or a day (#2019, R2 to R6), counted from its own event log and its time ledger: never a conversation's words. Absent from a machine before #2019.
 type ReportCounts struct {
 	// Agents that began their first turn (agent.started).

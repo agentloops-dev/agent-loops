@@ -92,7 +92,51 @@ public extension DaemonAPI {
     }
 }
 
+public extension DaemonAPI {
+    /// `reports/changes`' question (#6350): the rows of `kind` whose figures changed since
+    /// `since`, the last answer's `cursor` (nil asks for every row). `kind`, `repo` and `scope`
+    /// are as `ReportNodesQuery`'s. `pageCursor` is the last page's `nextPageCursor`; `limit`
+    /// is 1 to 100, 100 when nil.
+    struct ReportChangesQuery: Codable, Sendable, Hashable {
+        public var kind: String
+        public var repo: String?
+        public var scope: ReportScope?
+        public var since: String?
+        public var pageCursor: String?
+        public var limit: Int?
+
+        public init(kind: String, repo: String? = nil, scope: ReportScope? = nil, since: String? = nil,
+                    pageCursor: String? = nil, limit: Int? = nil) {
+            self.kind = kind
+            self.repo = repo
+            self.scope = scope
+            self.since = since
+            self.pageCursor = pageCursor
+            self.limit = limit
+        }
+    }
+
+    /// `reports/changes`' answer: a page of rows by ref. `nextPageCursor` asks for the next
+    /// page; `cursor` is on the last page only, to send as `since` next time. `reset` says the
+    /// pages hold every row of the kind, so the cache replaces the figures it holds of it.
+    struct ReportChanges: Codable, Sendable, Hashable {
+        public var nodes: [ReportNode]
+        public var nextPageCursor: String?
+        public var cursor: String?
+        public var reset: Bool
+
+        public init(nodes: [ReportNode] = [], nextPageCursor: String? = nil, cursor: String? = nil, reset: Bool = false) {
+            self.nodes = nodes
+            self.nextPageCursor = nextPageCursor
+            self.cursor = cursor
+            self.reset = reset
+        }
+    }
+}
+
 public extension DaemonAPI.Method {
     /// `ReportNodesQuery` → `ReportNodes` (#3118).
     static let reportsNodes = "reports/nodes"
+    /// `ReportChangesQuery` → `ReportChanges` (#6350).
+    static let reportsChanges = "reports/changes"
 }
