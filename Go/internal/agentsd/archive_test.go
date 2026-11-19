@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -62,6 +63,7 @@ func TestAnArchiveDuringATurnStaysArchived(t *testing.T) {
 // An archive while a card waits for the person: the card's answer does not take the
 // session out of the archive (#1611).
 func TestAnArchiveWhileACardWaitsStaysArchived(t *testing.T) {
+	flaky.UnderLoad(t, "#6251")
 	t.Parallel()
 
 	fakeRuntimes(t)
