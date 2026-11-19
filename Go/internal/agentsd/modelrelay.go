@@ -369,7 +369,10 @@ func (d *Daemon) relayServe(r *modelRelay, w http.ResponseWriter, req *http.Requ
 		relayError(w, http.StatusBadGateway, "api_error", err.Error())
 		return
 	}
-	resp, err := relayUpstreamClient.Do(out)
+	// The host is the route's own upstream (upstreamURL); only the path and query are the
+	// session's, as a relay sends them on. gosec's taint check sees the request in the helpers
+	// that #6195 split out of here as more ways in.
+	resp, err := relayUpstreamClient.Do(out) //nolint:gosec // G704: see above
 	if err != nil {
 		if req.Context().Err() == nil {
 			relayError(w, http.StatusBadGateway, "api_error", "The organisation's way to the model could not be reached.")
