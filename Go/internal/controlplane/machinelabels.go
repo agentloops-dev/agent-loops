@@ -115,21 +115,7 @@ func (m *Methods) setLabels(ctx context.Context, request wire.MachineLabelsReque
 			if replace {
 				next = set
 			}
-			var kept []string
-			for _, l := range next {
-				if !remove[strings.ToLower(l)] {
-					kept = append(kept, l)
-				}
-			}
-			seen := map[string]bool{}
-			for _, l := range kept {
-				seen[strings.ToLower(l)] = true
-			}
-			for _, l := range add {
-				if !seen[strings.ToLower(l)] {
-					kept = append(kept, l)
-				}
-			}
+			kept := nextLabels(next, add, remove)
 			if len(kept) > maxMachineLabels {
 				failure = fail(invalidParams, "%s has more than %d labels. Remove one first.", h.Name, maxMachineLabels)
 				return false
@@ -150,4 +136,25 @@ func (m *Methods) setLabels(ctx context.Context, request wire.MachineLabelsReque
 		}
 	}
 	return wire.MachineLabelsResult{Changed: int64(changed)}, nil
+}
+
+// nextLabels is labels without those in remove (by lowercase), then each of add that is not
+// there yet, in any case.
+func nextLabels(labels, add []string, remove map[string]bool) []string {
+	var kept []string
+	for _, l := range labels {
+		if !remove[strings.ToLower(l)] {
+			kept = append(kept, l)
+		}
+	}
+	seen := map[string]bool{}
+	for _, l := range kept {
+		seen[strings.ToLower(l)] = true
+	}
+	for _, l := range add {
+		if !seen[strings.ToLower(l)] {
+			kept = append(kept, l)
+		}
+	}
+	return kept
 }

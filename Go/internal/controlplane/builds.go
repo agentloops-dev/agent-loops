@@ -88,17 +88,8 @@ func (s *Service) keepBuildsSync(ctx context.Context, host string, sync wire.Bui
 	}
 	dir := buildsDir(host, repo)
 	if sync.Reset != nil && *sync.Reset {
-		listed, err := s.cfg.Store.List(ctx, dir)
-		if err != nil {
+		if err := s.deleteUnsentBuildsDays(ctx, dir, days); err != nil {
 			return wire.BuildsSyncAnswer{}, err
-		}
-		for _, k := range listed {
-			day, ok := strings.CutSuffix(strings.TrimPrefix(k.Key, dir), ".json")
-			if _, sent := days[day]; ok && citimings.DayOK(day) && !sent {
-				if err := s.cfg.Store.Delete(ctx, k.Key); err != nil {
-					return wire.BuildsSyncAnswer{}, err
-				}
-			}
 		}
 	} else {
 		object, err := s.cfg.Store.Get(ctx, dir+buildsMeta)
@@ -110,22 +101,56 @@ func (s *Service) keepBuildsSync(ctx context.Context, host string, sync wire.Bui
 			return wire.BuildsSyncAnswer{Full: new(true)}, nil
 		}
 	}
-	for _, d := range sync.Days {
+	if err := s.putBuildsDays(ctx, dir, sync.Days, days, now); err != nil {
+		return wire.BuildsSyncAnswer{}, err
+	}
+	if err := s.putBuildsMeta(ctx, dir, sync, now); err != nil {
+		return wire.BuildsSyncAnswer{}, err
+	}
+	return wire.BuildsSyncAnswer{}, nil
+}
+
+// deleteUnsentBuildsDays deletes each day object in dir that the reset does not send again.
+func (s *Service) deleteUnsentBuildsDays(ctx context.Context, dir string, days map[string][]citimings.Run) error {
+	listed, err := s.cfg.Store.List(ctx, dir)
+	if err != nil {
+		return err
+	}
+	for _, k := range listed {
+		day, ok := strings.CutSuffix(strings.TrimPrefix(k.Key, dir), ".json")
+		if _, sent := days[day]; ok && citimings.DayOK(day) && !sent {
+			if err := s.cfg.Store.Delete(ctx, k.Key); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// putBuildsDays writes each day sent, bounded, in place of the copy's day; a day with no runs
+// left is deleted.
+func (s *Service) putBuildsDays(ctx context.Context, dir string, sent []wire.BuildsSyncDay, days map[string][]citimings.Run, now time.Time) error {
+	for _, d := range sent {
 		runs := citimings.BoundDay(d.Day, days[d.Day], now)
 		if len(runs) == 0 {
 			if err := s.cfg.Store.Delete(ctx, dir+d.Day+".json"); err != nil {
-				return wire.BuildsSyncAnswer{}, err
+				return err
 			}
 			continue
 		}
 		data, err := records.Encode(storedBuildsDay{Runs: runs, At: records.At(now)})
 		if err != nil {
-			return wire.BuildsSyncAnswer{}, err
+			return err
 		}
 		if _, err := s.cfg.Store.Put(ctx, dir+d.Day+".json", data, store.Always); err != nil {
-			return wire.BuildsSyncAnswer{}, err
+			return err
 		}
 	}
+	return nil
+}
+
+// putBuildsMeta writes the copy's meta.json: what the machine said of the repository, and now.
+func (s *Service) putBuildsMeta(ctx context.Context, dir string, sync wire.BuildsSync, now time.Time) error {
 	meta := storedBuildsMeta{At: records.At(now)}
 	if sync.DefaultBranch != nil {
 		meta.DefaultBranch = *sync.DefaultBranch
@@ -138,12 +163,10 @@ func (s *Service) keepBuildsSync(ctx context.Context, host string, sync wire.Bui
 	}
 	data, err := records.Encode(meta)
 	if err != nil {
-		return wire.BuildsSyncAnswer{}, err
+		return err
 	}
-	if _, err := s.cfg.Store.Put(ctx, dir+buildsMeta, data, store.Always); err != nil {
-		return wire.BuildsSyncAnswer{}, err
-	}
-	return wire.BuildsSyncAnswer{}, nil
+	_, err = s.cfg.Store.Put(ctx, dir+buildsMeta, data, store.Always)
+	return err
 }
 
 // checkBuildsSync is the runs of each day sent, or why the send is refused.
@@ -234,40 +257,46 @@ func (c *buildsChangesCache) of(repo string, kept keptBuilds) []citimings.Change
 func (m *Methods) buildsReadMethod(ctx context.Context, method string, params json.RawMessage, from Caller) (any, error) {
 	user := m.s.actorFor(from.Client).User
 	if method == wire.CallBuildsHistoryAll.Name {
-		request, err := require[wire.BuildsHistoryRequest](params, "BuildsHistoryRequest")
-		if err != nil {
-			return nil, err
-		}
-		a, err := citimings.ReadHistoryAsk(request)
-		if err != nil {
-			return nil, fail(invalidParams, "builds/historyAll: %v.", err)
-		}
-		kept, err := m.s.scopeBuilds(ctx, request.Scope, user, a.Repo)
-		if err != nil {
-			return nil, err
-		}
-		out := citimings.EmptyHistory(a.Repo)
-		if !citimings.Reads(a.Repo.Forge) {
-			return out, nil
-		}
-		out.Reader = a.Repo.Forge
-		if kept.def != "" {
-			out.DefaultBranch = new(kept.def)
-		}
-		if kept.readAt != nil {
-			out.ReadAt = new(wire.DateOf(*kept.readAt))
-		}
-		if kept.filledFrom != nil {
-			out.FilledFrom = new(wire.DateOf(*kept.filledFrom))
-		}
-		var runs []citimings.Run
-		for _, r := range kept.runs {
-			if t := r.MadeAt(); !t.Before(a.From) && t.Before(a.To) {
-				runs = append(runs, r)
-			}
-		}
-		return citimings.History(out, a, runs, m.s.buildsChanges.of(a.Repo.String(), kept), nil), nil
+		return m.buildsHistoryAll(ctx, params, user)
 	}
+	return m.buildsRunAll(ctx, params, user)
+}
+
+// buildsHistoryAll is builds/historyAll: the history of a repository from the scope's copies.
+func (m *Methods) buildsHistoryAll(ctx context.Context, params json.RawMessage, user string) (any, error) {
+	request, err := require[wire.BuildsHistoryRequest](params, "BuildsHistoryRequest")
+	if err != nil {
+		return nil, err
+	}
+	a, err := citimings.ReadHistoryAsk(request)
+	if err != nil {
+		return nil, fail(invalidParams, "builds/historyAll: %v.", err)
+	}
+	kept, err := m.s.scopeBuilds(ctx, request.Scope, user, a.Repo)
+	if err != nil {
+		return nil, err
+	}
+	out := citimings.EmptyHistory(a.Repo)
+	if !citimings.Reads(a.Repo.Forge) {
+		return out, nil
+	}
+	out.Reader = a.Repo.Forge
+	if kept.def != "" {
+		out.DefaultBranch = new(kept.def)
+	}
+	if kept.readAt != nil {
+		out.ReadAt = new(wire.DateOf(*kept.readAt))
+	}
+	if kept.filledFrom != nil {
+		out.FilledFrom = new(wire.DateOf(*kept.filledFrom))
+	}
+	runs := runsMadeBetween(kept.runs, a.From, a.To)
+	return citimings.History(out, a, runs, m.s.buildsChanges.of(a.Repo.String(), kept), nil), nil
+}
+
+// buildsRunAll is builds/runAll: one attempt of a run from the scope's copies, with the runs
+// made near it.
+func (m *Methods) buildsRunAll(ctx context.Context, params json.RawMessage, user string) (any, error) {
 	request, err := require[wire.BuildsRunRequest](params, "BuildsRunRequest")
 	if err != nil {
 		return nil, err
@@ -292,18 +321,23 @@ func (m *Methods) buildsReadMethod(ctx context.Context, method string, params js
 	}
 	out, ok, err := citimings.RunAnswer(attempts, want, func(run citimings.Run) ([]citimings.Run, error) {
 		from, to := citimings.NearFrom(run)
-		var near []citimings.Run
-		for _, r := range kept.runs {
-			if t := r.MadeAt(); !t.Before(from) && t.Before(to) {
-				near = append(near, r)
-			}
-		}
-		return near, nil
+		return runsMadeBetween(kept.runs, from, to), nil
 	})
 	if !ok {
 		return nil, fail(invalidParams, "No attempt %d of %s.", want, request.Ref)
 	}
 	return out, err
+}
+
+// runsMadeBetween is the runs made from from up to (not at) to, in their order.
+func runsMadeBetween(runs []citimings.Run, from, to time.Time) []citimings.Run {
+	var out []citimings.Run
+	for _, r := range runs {
+		if t := r.MadeAt(); !t.Before(from) && t.Before(to) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // scopeBuilds is the copies of repo from the machines whose people the scope takes.
@@ -320,6 +354,35 @@ func (s *Service) scopeBuilds(ctx context.Context, scope *wire.ReportScope, user
 	for _, h := range s.records.Hosts() {
 		known[strings.ToLower(h.ID)] = h.ID
 	}
+	read, tags := s.scopeBuildsKeys(listed, repo, known, keep)
+	objects, err := s.storeReads.read(ctx, s.cfg.Store, buildsPrefix, listed, read)
+	if err != nil {
+		return keptBuilds{}, fail(storeUnavailable, "The build timings could not be read: %v", err)
+	}
+	out := keptBuilds{tags: tags}
+	for i, data := range objects {
+		if data == nil {
+			continue
+		}
+		if strings.HasSuffix(read[i].Key, "/"+buildsMeta) {
+			var meta storedBuildsMeta
+			if json.Unmarshal(data, &meta) == nil {
+				out.addMeta(meta)
+			}
+			continue
+		}
+		var day storedBuildsDay
+		if json.Unmarshal(data, &day) == nil {
+			out.runs = append(out.runs, day.Runs...)
+		}
+	}
+	out.runs = citimings.Once(out.runs)
+	return out, nil
+}
+
+// scopeBuildsKeys is the objects of repo, among listed, whose machine's person keep takes,
+// and the tags that name them. known maps a machine's lowercase name to its name.
+func (s *Service) scopeBuildsKeys(listed []store.Key, repo citimings.Repo, known map[string]string, keep func(person string) bool) ([]store.Key, string) {
 	tail := "/" + repo.Forge + "/" + repo.Path + "/"
 	var read []store.Key
 	var tags strings.Builder
@@ -338,38 +401,21 @@ func (s *Service) scopeBuilds(ctx context.Context, scope *wire.ReportScope, user
 			tags.WriteString(k.Key + "\t" + k.ETag + "\n")
 		}
 	}
-	objects, err := s.storeReads.read(ctx, s.cfg.Store, buildsPrefix, listed, read)
-	if err != nil {
-		return keptBuilds{}, fail(storeUnavailable, "The build timings could not be read: %v", err)
+	return read, tags.String()
+}
+
+// addMeta merges one machine's meta.json in: the first default branch, the newest last read
+// and the oldest reach.
+func (k *keptBuilds) addMeta(meta storedBuildsMeta) {
+	if k.def == "" {
+		k.def = meta.DefaultBranch
 	}
-	out := keptBuilds{tags: tags.String()}
-	for i, data := range objects {
-		if data == nil {
-			continue
-		}
-		if strings.HasSuffix(read[i].Key, "/"+buildsMeta) {
-			var meta storedBuildsMeta
-			if json.Unmarshal(data, &meta) != nil {
-				continue
-			}
-			if out.def == "" {
-				out.def = meta.DefaultBranch
-			}
-			if meta.ReadAt != nil && (out.readAt == nil || meta.ReadAt.After(*out.readAt)) {
-				out.readAt = meta.ReadAt
-			}
-			if meta.FilledFrom != nil && (out.filledFrom == nil || meta.FilledFrom.Before(*out.filledFrom)) {
-				out.filledFrom = meta.FilledFrom
-			}
-			continue
-		}
-		var day storedBuildsDay
-		if json.Unmarshal(data, &day) == nil {
-			out.runs = append(out.runs, day.Runs...)
-		}
+	if meta.ReadAt != nil && (k.readAt == nil || meta.ReadAt.After(*k.readAt)) {
+		k.readAt = meta.ReadAt
 	}
-	out.runs = citimings.Once(out.runs)
-	return out, nil
+	if meta.FilledFrom != nil && (k.filledFrom == nil || meta.FilledFrom.Before(*k.filledFrom)) {
+		k.filledFrom = meta.FilledFrom
+	}
 }
 
 // MARK: The sweep
@@ -387,7 +433,21 @@ func sweepBuildTimings(ctx context.Context, st store.Store, rs *records.Records,
 	for _, h := range rs.Hosts() {
 		known[strings.ToLower(h.ID)] = true
 	}
-	// Each copy's objects, by its folder.
+	dirs, byDir := buildsDirs(listed)
+	n := 0
+	for _, dir := range dirs {
+		if n >= most {
+			break
+		}
+		if n, err = sweepBuildsDir(ctx, st, known, dir, byDir[dir], now, n, most); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+// buildsDirs is each copy's objects, by its folder, and the folders in the order listed.
+func buildsDirs(listed []store.Key) ([]string, map[string][]store.Key) {
 	var dirs []string
 	byDir := map[string][]store.Key{}
 	for _, k := range listed {
@@ -398,58 +458,70 @@ func sweepBuildTimings(ctx context.Context, st store.Store, rs *records.Records,
 		}
 		byDir[dir] = append(byDir[dir], k)
 	}
-	n := 0
-	for _, dir := range dirs {
+	return dirs, byDir
+}
+
+// sweepBuildsDir sweeps one copy's folder: it deletes the copy of a machine removed a day
+// since, or applies the bounds to a copy that stopped sending. n is the count of deletions
+// and writes so far, and the new count is returned.
+func sweepBuildsDir(ctx context.Context, st store.Store, known map[string]bool, dir string, keys []store.Key, now time.Time, n, most int) (int, error) {
+	host, _, _ := strings.Cut(strings.TrimPrefix(dir, buildsPrefix), "/")
+	var meta storedBuildsMeta
+	metaTag := ""
+	object, err := st.Get(ctx, dir+buildsMeta)
+	if err != nil {
+		return n, err
+	}
+	hasMeta := object != nil && json.Unmarshal(object.Data, &meta) == nil
+	if object != nil {
+		metaTag = object.ETag
+	}
+	if !known[host] {
+		// A machine another copy has just added is not in these records yet: only a copy
+		// a day old goes.
+		if hasMeta && meta.At.After(now.Add(-24*time.Hour)) {
+			return n, nil
+		}
+		return deleteBuildsKeys(ctx, st, keys, n, most)
+	}
+	if !hasMeta || meta.At.After(now.Add(-buildsStopped)) || meta.SweptAt != nil && meta.SweptAt.After(now.Add(-buildsSweepEvery)) {
+		return n, nil
+	}
+	return sweepStoppedBuilds(ctx, st, dir, keys, meta, metaTag, now, n)
+}
+
+// deleteBuildsKeys deletes keys until the count n reaches most, and is the new count.
+func deleteBuildsKeys(ctx context.Context, st store.Store, keys []store.Key, n, most int) (int, error) {
+	for _, k := range keys {
 		if n >= most {
-			break
+			return n, nil
 		}
-		host, _, _ := strings.Cut(strings.TrimPrefix(dir, buildsPrefix), "/")
-		var meta storedBuildsMeta
-		metaTag := ""
-		object, err := st.Get(ctx, dir+buildsMeta)
-		if err != nil {
-			return n, err
-		}
-		hasMeta := object != nil && json.Unmarshal(object.Data, &meta) == nil
-		if object != nil {
-			metaTag = object.ETag
-		}
-		if !known[host] {
-			// A machine another copy has just added is not in these records yet: only a copy
-			// a day old goes.
-			if hasMeta && meta.At.After(now.Add(-24*time.Hour)) {
-				continue
-			}
-			for _, k := range byDir[dir] {
-				if n >= most {
-					return n, nil
-				}
-				if err := st.Delete(ctx, k.Key); err != nil {
-					return n, err
-				}
-				n++
-			}
-			continue
-		}
-		if !hasMeta || meta.At.After(now.Add(-buildsStopped)) || meta.SweptAt != nil && meta.SweptAt.After(now.Add(-buildsSweepEvery)) {
-			continue
-		}
-		days := &objectDays{ctx: ctx, st: st, dir: dir, keys: byDir[dir], now: now, tags: map[string]string{}}
-		_, err = citimings.SweepDays(days, now)
-		n += days.writes
-		if err != nil {
-			return n, err
-		}
-		meta.SweptAt = new(records.At(now))
-		data, err := records.Encode(meta)
-		if err != nil {
-			return n, err
-		}
-		if _, err := st.Put(ctx, dir+buildsMeta, data, store.Matching(metaTag)); err != nil && !isConflict(err) {
+		if err := st.Delete(ctx, k.Key); err != nil {
 			return n, err
 		}
 		n++
 	}
+	return n, nil
+}
+
+// sweepStoppedBuilds applies the bounds to the days of a copy that stopped sending and marks
+// its meta.json swept, only over the meta.json it read. It is the new count.
+func sweepStoppedBuilds(ctx context.Context, st store.Store, dir string, keys []store.Key, meta storedBuildsMeta, metaTag string, now time.Time, n int) (int, error) {
+	days := &objectDays{ctx: ctx, st: st, dir: dir, keys: keys, now: now, tags: map[string]string{}}
+	_, err := citimings.SweepDays(days, now)
+	n += days.writes
+	if err != nil {
+		return n, err
+	}
+	meta.SweptAt = new(records.At(now))
+	data, err := records.Encode(meta)
+	if err != nil {
+		return n, err
+	}
+	if _, err := st.Put(ctx, dir+buildsMeta, data, store.Matching(metaTag)); err != nil && !isConflict(err) {
+		return n, err
+	}
+	n++
 	return n, nil
 }
 

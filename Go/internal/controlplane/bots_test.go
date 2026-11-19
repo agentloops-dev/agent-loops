@@ -96,17 +96,7 @@ func TestABotRunsOncePerTriggerAndStopsAtItsCap(t *testing.T) {
 		p.waitFor(func() bool { u, ok := users.of(host); return ok && u.Kind == "bot" && u.Name == "review-bot" }, "told it is the bot's")
 	}
 
-	var list wire.PeopleList
-	json.Unmarshal(call(t, admin, "", "people/list", nil), &list)
-	found := false
-	for _, row := range list.People {
-		if row.ID == bot {
-			found = row.Kind == "bot" && row.Role == wire.UserRoleMember && deref(row.Group) == platform.ID && len(row.Machines) == 3
-		}
-	}
-	if !found {
-		t.Fatalf("%+v", list.People)
-	}
+	assertBotListedWithItsMachines(t, admin, bot, platform.ID)
 
 	// No client acts on a bot's machine: an admin is told it is a bot's, a member that
 	// there is no such machine. bots/stopRun reaches it.
@@ -127,30 +117,7 @@ func TestABotRunsOncePerTriggerAndStopsAtItsCap(t *testing.T) {
 
 	// SC-008: one trigger, three machines, one run, 100 times.
 	for i := range 100 {
-		claim, _ := json.Marshal(wire.WorkflowClaim{Workflow: "app/review", Trigger: "event:pr.opened:" + itoa(i)})
-		won := make(chan bool, len(machines))
-		var wg sync.WaitGroup
-		for _, m := range machines {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				out, err := p.s.methods.HostSaid(m.member.Host, "workflows/claimRun", claim)
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				won <- out.(wire.WorkflowClaimed).Won
-			}()
-		}
-		wg.Wait()
-		close(won)
-		n := 0
-		for w := range won {
-			if w {
-				n++
-			}
-		}
-		if n != 1 {
+		if n := claimTriggerFromAll(t, p, machines, i); n != 1 {
 			t.Fatalf("trigger %d ran %d times", i, n)
 		}
 	}
@@ -188,4 +155,51 @@ func TestABotRunsOncePerTriggerAndStopsAtItsCap(t *testing.T) {
 	if e := callError(t, admin, "", "bots/setCaps", wire.BotCaps{User: bot, Caps: wire.SpendCaps{DailyUSD: &zero}}); !strings.Contains(e, "more than $0") {
 		t.Fatalf("a $0 cap: %q", e)
 	}
+}
+
+// assertBotListedWithItsMachines checks that people/list shows the bot as a member of its
+// group, with its three machines.
+func assertBotListedWithItsMachines(t *testing.T, admin *controllink.Session, bot, group string) {
+	t.Helper()
+	var list wire.PeopleList
+	json.Unmarshal(call(t, admin, "", "people/list", nil), &list)
+	found := false
+	for _, row := range list.People {
+		if row.ID == bot {
+			found = row.Kind == "bot" && row.Role == wire.UserRoleMember && deref(row.Group) == group && len(row.Machines) == 3
+		}
+	}
+	if !found {
+		t.Fatalf("%+v", list.People)
+	}
+}
+
+// claimTriggerFromAll has every machine claim trigger i at the same time, and returns how
+// many of them won it.
+func claimTriggerFromAll(t *testing.T, p *plane, machines []*fakeHost, i int) int {
+	t.Helper()
+	claim, _ := json.Marshal(wire.WorkflowClaim{Workflow: "app/review", Trigger: "event:pr.opened:" + itoa(i)})
+	won := make(chan bool, len(machines))
+	var wg sync.WaitGroup
+	for _, m := range machines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, err := p.s.methods.HostSaid(m.member.Host, "workflows/claimRun", claim)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			won <- out.(wire.WorkflowClaimed).Won
+		}()
+	}
+	wg.Wait()
+	close(won)
+	n := 0
+	for w := range won {
+		if w {
+			n++
+		}
+	}
+	return n
 }

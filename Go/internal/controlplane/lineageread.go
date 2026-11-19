@@ -103,6 +103,30 @@ func (s *Service) keptLineageGraph(ctx context.Context, keep func(person string)
 	if err != nil {
 		return nil, fail(storeUnavailable, "Lineage could not be read: %v", err)
 	}
+	read, hosts := s.keptLineageKeys(keys, keep)
+	objects, err := s.storeReads.read(ctx, s.cfg.Store, lineageGraphPrefix, keys, read)
+	if err != nil {
+		return nil, fail(storeUnavailable, "Lineage could not be read: %v", err)
+	}
+	g := &mergedLineage{byNode: map[wire.LineageNode][]int{}, states: map[wire.LineageNode]wire.LineageSessionState{}}
+	seen := map[syncLinkKey]bool{}
+	for i, data := range objects {
+		if data == nil {
+			continue
+		}
+		if strings.HasSuffix(read[i].Key, "/states.json") {
+			g.addStates(data)
+			continue
+		}
+		g.addLinks(data, hosts[i], seen)
+	}
+	g.sortLinks()
+	return g, nil
+}
+
+// keptLineageKeys is the objects among keys of the machines whose people keep says, and the
+// machine of each.
+func (s *Service) keptLineageKeys(keys []store.Key, keep func(person string) bool) ([]store.Key, []string) {
 	known := map[string]string{}
 	for _, h := range s.records.Hosts() {
 		known[strings.ToLower(h.ID)] = h.ID
@@ -125,45 +149,45 @@ func (s *Service) keptLineageGraph(ctx context.Context, keep func(person string)
 			hosts = append(hosts, id)
 		}
 	}
-	objects, err := s.storeReads.read(ctx, s.cfg.Store, lineageGraphPrefix, keys, read)
-	if err != nil {
-		return nil, fail(storeUnavailable, "Lineage could not be read: %v", err)
+	return read, hosts
+}
+
+// addStates merges in one machine's states.json: the newest state of each session wins.
+func (g *mergedLineage) addStates(data []byte) {
+	var kept storedStates
+	if json.Unmarshal(data, &kept) != nil {
+		return
 	}
-	g := &mergedLineage{byNode: map[wire.LineageNode][]int{}, states: map[wire.LineageNode]wire.LineageSessionState{}}
-	seen := map[syncLinkKey]bool{}
-	for i, data := range objects {
-		if data == nil {
-			continue
-		}
-		if strings.HasSuffix(read[i].Key, "/states.json") {
-			var kept storedStates
-			if json.Unmarshal(data, &kept) != nil {
-				continue
-			}
-			for _, c := range kept.States {
-				c.Node = g.names.Name(c.Node)
-				if have, ok := g.states[c.Node]; !ok || c.At >= have.At {
-					g.states[c.Node] = wire.LineageSessionState{State: c.State, At: c.At}
-				}
-			}
-			continue
-		}
-		var kept storedLinks
-		if json.Unmarshal(data, &kept) != nil {
-			continue
-		}
-		for _, l := range kept.Links {
-			l.From, l.To = g.names.Name(l.From), g.names.Name(l.To)
-			// An issue's link is on each machine that knows it only once it is the same link.
-			k := syncLinkKey{l.From, l.To, l.Rel, l.At}
-			if seen[k] {
-				continue
-			}
-			seen[k] = true
-			g.links = append(g.links, l)
-			g.hostOf = append(g.hostOf, hosts[i])
+	for _, c := range kept.States {
+		c.Node = g.names.Name(c.Node)
+		if have, ok := g.states[c.Node]; !ok || c.At >= have.At {
+			g.states[c.Node] = wire.LineageSessionState{State: c.State, At: c.At}
 		}
 	}
+}
+
+// addLinks merges in one machine's links.json, each link once across the machines (seen).
+func (g *mergedLineage) addLinks(data []byte, host string, seen map[syncLinkKey]bool) {
+	var kept storedLinks
+	if json.Unmarshal(data, &kept) != nil {
+		return
+	}
+	for _, l := range kept.Links {
+		l.From, l.To = g.names.Name(l.From), g.names.Name(l.To)
+		// An issue's link is on each machine that knows it only once it is the same link.
+		k := syncLinkKey{l.From, l.To, l.Rel, l.At}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		g.links = append(g.links, l)
+		g.hostOf = append(g.hostOf, host)
+	}
+}
+
+// sortLinks puts the links (and their machines) oldest first, keeping the order of links made
+// at the same time, and indexes them by node.
+func (g *mergedLineage) sortLinks() {
 	order := make([]int, len(g.links))
 	for i := range order {
 		order[i] = i
@@ -180,7 +204,6 @@ func (s *Service) keptLineageGraph(ctx context.Context, keep func(person string)
 			g.byNode[l.To] = append(g.byNode[l.To], i)
 		}
 	}
-	return g, nil
 }
 
 // sessionsOn is the sessions linked to nodes, each once, with the nodes it is on, its first

@@ -121,16 +121,7 @@ func fanOut[T any](hosts []string, cursor string, limit int, ask func(host, page
 	if err != nil {
 		return fanAnswer[T]{}, err
 	}
-	pages := make([]fanPage[T], len(hosts))
-	answered := make([]bool, len(hosts))
-	var wg sync.WaitGroup
-	for i, host := range hosts {
-		if places[host].Done {
-			continue
-		}
-		wg.Go(func() { pages[i], answered[i] = ask(host, places[host].Page) })
-	}
-	wg.Wait()
+	pages, answered := askFanHosts(hosts, places, ask)
 
 	out := fanAnswer[T]{Items: []fanItem[T]{}}
 	// The next of each machine's items not yet taken, as an index into its page.
@@ -146,7 +137,33 @@ func fanOut[T any](hosts []string, cursor string, limit int, ask func(host, page
 		// A shorter page than before (an item went): nothing to skip past its end.
 		next[i] = min(places[host].Took, len(pages[i].Items))
 	}
-	for len(out.Items) < limit {
+	out.Items = mergeFanPages(out.Items, hosts, pages, answered, next, limit, newer)
+	if moveFanPlaces(places, hosts, pages, answered, next) {
+		out.Cursor = encodeFanCursor(places)
+	}
+	return out, nil
+}
+
+// askFanHosts asks each host not at its end for its page, all at once, and is the pages and
+// which hosts answered, in the order of hosts.
+func askFanHosts[T any](hosts []string, places map[string]fanPlace, ask func(host, page string) (fanPage[T], bool)) ([]fanPage[T], []bool) {
+	pages := make([]fanPage[T], len(hosts))
+	answered := make([]bool, len(hosts))
+	var wg sync.WaitGroup
+	for i, host := range hosts {
+		if places[host].Done {
+			continue
+		}
+		wg.Go(func() { pages[i], answered[i] = ask(host, places[host].Page) })
+	}
+	wg.Wait()
+	return pages, answered
+}
+
+// mergeFanPages adds to items the newest of the pages' next items, one at a time, until
+// there are limit items or none is left; next moves past each item taken.
+func mergeFanPages[T any](items []fanItem[T], hosts []string, pages []fanPage[T], answered []bool, next []int, limit int, newer func(a, b T) bool) []fanItem[T] {
+	for len(items) < limit {
 		best := -1
 		for i := range hosts {
 			if !answered[i] || next[i] >= len(pages[i].Items) {
@@ -159,10 +176,15 @@ func fanOut[T any](hosts []string, cursor string, limit int, ask func(host, page
 		if best < 0 {
 			break
 		}
-		out.Items = append(out.Items, fanItem[T]{Host: hosts[best], Item: pages[best].Items[next[best]]})
+		items = append(items, fanItem[T]{Host: hosts[best], Item: pages[best].Items[next[best]]})
 		next[best]++
 	}
+	return items
+}
 
+// moveFanPlaces sets each asked host's place for the next page, and says whether any host
+// is not at its end.
+func moveFanPlaces[T any](places map[string]fanPlace, hosts []string, pages []fanPage[T], answered []bool, next []int) bool {
 	more := false
 	for i, host := range hosts {
 		place := places[host]
@@ -186,10 +208,7 @@ func fanOut[T any](hosts []string, cursor string, limit int, ask func(host, page
 		places[host] = place
 		more = more || !place.Done
 	}
-	if more {
-		out.Cursor = encodeFanCursor(places)
-	}
-	return out, nil
+	return more
 }
 
 // askHost is a request to one machine, as the caller's client, and its answer's result; false

@@ -146,50 +146,14 @@ func TestTheInstallScriptFallsBackToTheReleases(t *testing.T) {
 			if tc.tampered {
 				sums = hexSum("another") + "  " + name + "\n"
 			}
-			var asked []string
-			releases := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				asked = append(asked, r.URL.Path)
-				switch r.URL.Path {
-				case "/v0.12.0/SHA256SUMS":
-					_, _ = w.Write([]byte(sums))
-				case "/v0.12.0/" + name:
-					_, _ = w.Write([]byte(tarball))
-				default:
-					http.NotFound(w, r)
-				}
-			}))
+			releases := fakeReleaseDownloads(name, sums, tarball)
 			defer releases.Close()
 			// The control plane: no server folder, and no release files of its own.
-			rf := newReleaseFiles(Config{Version: "0.12.0"})
-			control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if strings.HasPrefix(r.URL.Path, "/v1/releases/") {
-					rf.serve(w, r)
-					return
-				}
-				http.NotFound(w, r)
-			}))
+			control := controlWithNoServerFolder()
 			defer control.Close()
 
 			dir := t.TempDir()
-			bin := filepath.Join(dir, "bin")
-			home := filepath.Join(dir, "home")
-			for _, d := range []string{bin, home} {
-				if err := os.MkdirAll(d, 0o750); err != nil {
-					t.Fatal(err)
-				}
-			}
-			fakes := map[string]string{
-				"uname": "#!/bin/sh\ncase \"$1\" in -s) echo Linux ;; -m) echo x86_64 ;; esac\n",
-				"sudo":  "#!/bin/sh\nexit 1\n",
-			}
-			if _, err := exec.LookPath("sha256sum"); err != nil {
-				fakes["sha256sum"] = "#!/bin/sh\nexec shasum -a 256 \"$@\"\n"
-			}
-			for n, body := range fakes {
-				if err := os.WriteFile(filepath.Join(bin, n), []byte(body), 0o755); err != nil { //nolint:gosec // G306: a test's script
-					t.Fatal(err)
-				}
-			}
+			bin, home := fakeLinuxBox(t, dir)
 			address := strings.ReplaceAll(strings.ReplaceAll(control.URL, ":", "%3A"), "/", "%2F")
 			code := "agents-control:2:h:-:key:secret:" + address + ":-:test"
 			cmd := exec.Command("sh", "-s", "--", code, "box")
@@ -209,20 +173,83 @@ func TestTheInstallScriptFallsBackToTheReleases(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v\n%s", err, out)
 			}
-			if !strings.Contains(string(out), "fetching release 0.12.0") {
-				t.Fatalf("%s", out)
-			}
-			installed, _ := os.ReadFile(filepath.Join(home, ".agents-server", "bin", "current"))
-			if string(installed) != host {
-				t.Fatalf("installed %q\n%s", installed, out)
-			}
-			if _, err := os.Stat(filepath.Join(home, ".agents-server", "bin", "github-mcp")); err != nil {
-				t.Fatalf("github-mcp: %v\n%s", err, out)
-			}
-			args, _ := os.ReadFile(filepath.Join(home, "started-args"))
-			if !strings.HasPrefix(string(args), "install\n--join\n"+code+"\n") {
-				t.Fatalf("started with %q", args)
-			}
+			assertInstalledFromTheRelease(t, home, host, code, out)
 		})
+	}
+}
+
+// fakeReleaseDownloads serves the release's SHA256SUMS and tarball, as the release
+// downloads do.
+func fakeReleaseDownloads(name, sums, tarball string) *httptest.Server {
+	var asked []string
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Path)
+		switch r.URL.Path {
+		case "/v0.12.0/SHA256SUMS":
+			_, _ = w.Write([]byte(sums))
+		case "/v0.12.0/" + name:
+			_, _ = w.Write([]byte(tarball))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+// controlWithNoServerFolder serves a control plane's releases with no server folder and no
+// release files of its own.
+func controlWithNoServerFolder() *httptest.Server {
+	rf := newReleaseFiles(Config{Version: "0.12.0"})
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/releases/") {
+			rf.serve(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+}
+
+// fakeLinuxBox makes a bin folder with a uname that says Linux x86_64, a sudo that fails and,
+// when this machine has none, a sha256sum; and an empty home. It returns both.
+func fakeLinuxBox(t *testing.T, dir string) (bin, home string) {
+	t.Helper()
+	bin = filepath.Join(dir, "bin")
+	home = filepath.Join(dir, "home")
+	for _, d := range []string{bin, home} {
+		if err := os.MkdirAll(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fakes := map[string]string{
+		"uname": "#!/bin/sh\ncase \"$1\" in -s) echo Linux ;; -m) echo x86_64 ;; esac\n",
+		"sudo":  "#!/bin/sh\nexit 1\n",
+	}
+	if _, err := exec.LookPath("sha256sum"); err != nil {
+		fakes["sha256sum"] = "#!/bin/sh\nexec shasum -a 256 \"$@\"\n"
+	}
+	for n, body := range fakes {
+		if err := os.WriteFile(filepath.Join(bin, n), []byte(body), 0o755); err != nil { //nolint:gosec // G306: a test's script
+			t.Fatal(err)
+		}
+	}
+	return bin, home
+}
+
+// assertInstalledFromTheRelease checks the script fetched the release, installed the host and
+// its MCP server, and started the host to join with the code.
+func assertInstalledFromTheRelease(t *testing.T, home, host, code string, out []byte) {
+	t.Helper()
+	if !strings.Contains(string(out), "fetching release 0.12.0") {
+		t.Fatalf("%s", out)
+	}
+	installed, _ := os.ReadFile(filepath.Join(home, ".agents-server", "bin", "current"))
+	if string(installed) != host {
+		t.Fatalf("installed %q\n%s", installed, out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents-server", "bin", "github-mcp")); err != nil {
+		t.Fatalf("github-mcp: %v\n%s", err, out)
+	}
+	args, _ := os.ReadFile(filepath.Join(home, "started-args"))
+	if !strings.HasPrefix(string(args), "install\n--join\n"+code+"\n") {
+		t.Fatalf("started with %q", args)
 	}
 }

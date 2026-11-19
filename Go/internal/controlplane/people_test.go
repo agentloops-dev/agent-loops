@@ -216,32 +216,9 @@ func TestEachPersonReachesOnlyTheirOwnMachines(t *testing.T) {
 		p.machine(who, "MACHINE-"+itoa(11+2*i))
 	}
 
-	for _, who := range everyone {
-		if got, want := listedHosts(t, who.window), idsOf(who.machines); strings.Join(got, ",") != strings.Join(want, ",") {
-			t.Fatalf("%s lists %v, owns %v", who.id, got, want)
-		}
-		for _, other := range everyone {
-			for _, h := range other.machines {
-				if other == who {
-					call(t, who.window, h.member.Host, "agents/list", nil)
-					continue
-				}
-				if e := callError(t, who.window, h.member.Host, "agents/list", nil); !strings.Contains(e, "-32091") {
-					t.Fatalf("%s reached %s's machine: %s", who.id, other.id, e)
-				}
-			}
-		}
-	}
+	assertReachesOnlyOwnMachines(t, everyone)
 	// Each machine opened channels for its own person's clients only.
-	for _, who := range everyone[1:] {
-		who.mu.Lock()
-		for _, user := range who.actors {
-			if user != who.id {
-				t.Fatalf("%s's machine opened a channel for %s", who.id, user)
-			}
-		}
-		who.mu.Unlock()
-	}
+	assertChannelsOnlyForOwnPerson(t, everyone[1:])
 
 	// People: an admin sees everyone's machines by name and state; a member only themselves.
 	var list wire.PeopleList
@@ -264,6 +241,43 @@ func TestEachPersonReachesOnlyTheirOwnMachines(t *testing.T) {
 	}
 	if e := callError(t, sam.window, "", "clients/forget", wire.ClientRequest{Client: wire.UUID(kim.member.Client)}); !strings.Contains(e, "-32602") {
 		t.Fatal(e)
+	}
+}
+
+// assertReachesOnlyOwnMachines checks that each person lists and reaches their own
+// machines, and that another's is not found.
+func assertReachesOnlyOwnMachines(t *testing.T, everyone []*person) {
+	t.Helper()
+	for _, who := range everyone {
+		if got, want := listedHosts(t, who.window), idsOf(who.machines); strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("%s lists %v, owns %v", who.id, got, want)
+		}
+		for _, other := range everyone {
+			for _, h := range other.machines {
+				if other == who {
+					call(t, who.window, h.member.Host, "agents/list", nil)
+					continue
+				}
+				if e := callError(t, who.window, h.member.Host, "agents/list", nil); !strings.Contains(e, "-32091") {
+					t.Fatalf("%s reached %s's machine: %s", who.id, other.id, e)
+				}
+			}
+		}
+	}
+}
+
+// assertChannelsOnlyForOwnPerson checks that each person's machines opened channels for
+// that person's clients only.
+func assertChannelsOnlyForOwnPerson(t *testing.T, people []*person) {
+	t.Helper()
+	for _, who := range people {
+		who.mu.Lock()
+		for _, user := range who.actors {
+			if user != who.id {
+				t.Fatalf("%s's machine opened a channel for %s", who.id, user)
+			}
+		}
+		who.mu.Unlock()
 	}
 }
 

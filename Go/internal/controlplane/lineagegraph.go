@@ -259,74 +259,88 @@ func sweepLineageGraph(ctx context.Context, st store.Store, rs *records.Records,
 		if n >= most {
 			break
 		}
-		host, name, ok := strings.Cut(strings.TrimPrefix(k.Key, lineageGraphPrefix), "/")
-		if !ok {
-			continue
-		}
-		object, err := st.Get(ctx, k.Key)
+		done, err := sweepLineageObject(ctx, st, known, k, now)
 		if err != nil {
 			return n, err
 		}
-		if object == nil {
-			continue
-		}
-		var stamp struct {
-			At records.Stamp `json:"at"`
-		}
-		readable := json.Unmarshal(object.Data, &stamp) == nil
-		if !known[host] {
-			// A machine another copy has just added is not in these records yet: only an
-			// object a day old goes.
-			if readable && stamp.At.After(now.Add(-24*time.Hour)) {
-				continue
-			}
-			if err := st.Delete(ctx, k.Key); err != nil {
-				return n, err
-			}
+		if done {
 			n++
-			continue
 		}
-		var data []byte
-		switch name {
-		case "links.json":
-			var kept storedLinks
-			if json.Unmarshal(object.Data, &kept) != nil {
-				continue
-			}
-			bounded := lineage.Bound(kept.Links, now)
-			if len(bounded) == len(kept.Links) {
-				continue
-			}
-			kept.Links = bounded
-			if kept.Links == nil {
-				kept.Links = []wire.LineageLink{}
-			}
-			data, err = records.Encode(kept)
-		case "states.json":
-			var kept storedStates
-			if json.Unmarshal(object.Data, &kept) != nil {
-				continue
-			}
-			before := len(kept.States)
-			kept.States = boundStates(kept.States, now)
-			if len(kept.States) == before {
-				continue
-			}
-			data, err = records.Encode(kept)
-		default:
-			continue
-		}
-		if err != nil {
-			return n, err
-		}
-		if _, err := st.Put(ctx, k.Key, data, store.Matching(object.ETag)); err != nil {
-			var conflict *store.ConflictError
-			if errors.As(err, &conflict) {
-				continue
-			}
-			return n, err
-		}
-		n++
 	}
 	return n, nil
+}
+
+// sweepLineageObject deletes one object of a machine removed a day since, or bounds it again
+// over the object it read. It says whether it deleted or wrote.
+func sweepLineageObject(ctx context.Context, st store.Store, known map[string]bool, k store.Key, now time.Time) (bool, error) {
+	host, name, ok := strings.Cut(strings.TrimPrefix(k.Key, lineageGraphPrefix), "/")
+	if !ok {
+		return false, nil
+	}
+	object, err := st.Get(ctx, k.Key)
+	if err != nil || object == nil {
+		return false, err
+	}
+	var stamp struct {
+		At records.Stamp `json:"at"`
+	}
+	readable := json.Unmarshal(object.Data, &stamp) == nil
+	if !known[host] {
+		// A machine another copy has just added is not in these records yet: only an
+		// object a day old goes.
+		if readable && stamp.At.After(now.Add(-24*time.Hour)) {
+			return false, nil
+		}
+		if err := st.Delete(ctx, k.Key); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	data, changed, err := reboundLineageObject(name, object.Data, now)
+	if err != nil || !changed {
+		return false, err
+	}
+	if _, err := st.Put(ctx, k.Key, data, store.Matching(object.ETag)); err != nil {
+		var conflict *store.ConflictError
+		if errors.As(err, &conflict) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// reboundLineageObject is a machine's links.json or states.json (by name) bounded again, and
+// whether the bounds took anything out. An object it cannot read is left as it is.
+func reboundLineageObject(name string, raw []byte, now time.Time) ([]byte, bool, error) {
+	switch name {
+	case "links.json":
+		var kept storedLinks
+		if json.Unmarshal(raw, &kept) != nil {
+			return nil, false, nil
+		}
+		bounded := lineage.Bound(kept.Links, now)
+		if len(bounded) == len(kept.Links) {
+			return nil, false, nil
+		}
+		kept.Links = bounded
+		if kept.Links == nil {
+			kept.Links = []wire.LineageLink{}
+		}
+		data, err := records.Encode(kept)
+		return data, true, err
+	case "states.json":
+		var kept storedStates
+		if json.Unmarshal(raw, &kept) != nil {
+			return nil, false, nil
+		}
+		before := len(kept.States)
+		kept.States = boundStates(kept.States, now)
+		if len(kept.States) == before {
+			return nil, false, nil
+		}
+		data, err := records.Encode(kept)
+		return data, true, err
+	}
+	return nil, false, nil
 }

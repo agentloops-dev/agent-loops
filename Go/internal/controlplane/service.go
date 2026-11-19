@@ -303,18 +303,7 @@ func New(cfg Config) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s is not an address clients can dial", cfg.URL)
 	}
-	if cfg.Log == nil {
-		cfg.Log = func(string) {}
-	}
-	if cfg.Version == "" {
-		cfg.Version = buildinfo.Version
-	}
-	if cfg.Bind == "" {
-		cfg.Bind = "0.0.0.0"
-	}
-	if cfg.Logger == nil {
-		cfg.Logger = slog.New(slog.DiscardHandler)
-	}
+	cfg = withDefaults(cfg)
 	metrics := newMetrics()
 	cfg.Store = countedStore{Store: cfg.Store, m: metrics}
 	s := &Service{cfg: cfg, keyBook: keyBook{keys: controlKeys{private: cfg.PrivateKey, public: public}}, origin: origin, copyID: strings.ToLower(records.NewUUID()[:8]),
@@ -367,26 +356,65 @@ func New(cfg Config) (*Service, error) {
 	}
 	// Tunnels belong to a single copy: its ssh is the person's on this machine.
 	if cfg.PeerURL == "" && !cfg.Hosted {
-		s.tunnels = hosttunnels.New(hosttunnels.Config{Store: cfg.Store, Port: cfg.Port, Log: s.log,
-			Prepare: s.prepareSSH,
-			Hosts:   func(context.Context) []records.MachineRecord { return s.records.Hosts() },
-			Changed: func(change hosttunnels.Changed) { s.router.BroadcastControl("control/tunnelChanged", change) },
-			// Made after the tunnels: read when a tunnel asks.
-			Asleep: func(host string) bool { return s.providers != nil && s.providers.Asleep(host) },
-			Listed: func(host string) string {
-				if s.providers == nil {
-					return ""
-				}
-				return s.providers.Listed(host)
-			}})
+		s.tunnels = s.newTunnels(cfg)
 	}
 	s.router.SetCopier(s.copies.take)
+	s.releases = newReleaseFiles(cfg)
+	s.installer = s.newInstaller(cfg)
+	if cfg.ProviderHome != "" && s.mesh == nil {
+		// A command provider runs in it, also when the store keeps their secrets (#3113).
+		if err := os.MkdirAll(cfg.ProviderHome, 0o700); err != nil {
+			s.log(fmt.Sprintf("providers: no folder at %s: %v", cfg.ProviderHome, err))
+		}
+		s.providers = s.makeProviders(cfg.ProviderHome)
+	}
+	if cfg.PublicWeb != "" {
+		s.openPage(cfg)
+	}
+	return s, nil
+}
+
+// withDefaults is cfg with a value for each optional field left empty.
+func withDefaults(cfg Config) Config {
+	if cfg.Log == nil {
+		cfg.Log = func(string) {}
+	}
+	if cfg.Version == "" {
+		cfg.Version = buildinfo.Version
+	}
+	if cfg.Bind == "" {
+		cfg.Bind = "0.0.0.0"
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.New(slog.DiscardHandler)
+	}
+	return cfg
+}
+
+// newTunnels makes the ssh tunnels to this copy's hosts.
+func (s *Service) newTunnels(cfg Config) *hosttunnels.Tunnels {
+	return hosttunnels.New(hosttunnels.Config{Store: cfg.Store, Port: cfg.Port, Log: s.log,
+		Prepare: s.prepareSSH,
+		Hosts:   func(context.Context) []records.MachineRecord { return s.records.Hosts() },
+		Changed: func(change hosttunnels.Changed) { s.router.BroadcastControl("control/tunnelChanged", change) },
+		// Made after the tunnels: read when a tunnel asks.
+		Asleep: func(host string) bool { return s.providers != nil && s.providers.Asleep(host) },
+		Listed: func(host string) string {
+			if s.providers == nil {
+				return ""
+			}
+			return s.providers.Listed(host)
+		}})
+}
+
+// newInstaller makes the installer of the server on a host, through the tunnels when
+// this copy has them.
+func (s *Service) newInstaller(cfg Config) *hostinstall.Installer {
 	var tunnels hostinstall.Tunnels
 	if s.tunnels != nil {
 		tunnels = s.tunnels
 	}
-	s.releases = newReleaseFiles(cfg)
-	s.installer = &hostinstall.Installer{Codes: s.codes, ServerFolder: cfg.ServerFolder,
+	return &hostinstall.Installer{Codes: s.codes, ServerFolder: cfg.ServerFolder,
 		Releases:      s.releases.linux,
 		ToolsetFolder: cfg.ToolsetFolder,
 		Log:           func(format string, args ...any) { s.log(fmt.Sprintf(format, args...)) },
@@ -402,27 +430,21 @@ func New(cfg Config) (*Service, error) {
 			}
 			return names
 		}}
-	if cfg.ProviderHome != "" && s.mesh == nil {
-		// A command provider runs in it, also when the store keeps their secrets (#3113).
-		if err := os.MkdirAll(cfg.ProviderHome, 0o700); err != nil {
-			s.log(fmt.Sprintf("providers: no folder at %s: %v", cfg.ProviderHome, err))
-		}
-		s.providers = s.makeProviders(cfg.ProviderHome)
+}
+
+// openPage opens the web page at this copy's own origin. A build that doesn't match its
+// manifest leaves the page off and says so; hosts and clients carry on (071 R3).
+func (s *Service) openPage(cfg Config) {
+	var err error
+	if s.page, err = web.NewPublic(cfg.PublicWeb, cfg.URL, cfg.PublicViews); err != nil {
+		s.log(fmt.Sprintf("web: not serving the page at %s: %v", cfg.URL, err))
+		s.page = nil
+		return
 	}
-	if cfg.PublicWeb != "" {
-		// A build that doesn't match its manifest leaves the page off and says so; hosts and
-		// clients carry on (071 R3).
-		if s.page, err = web.NewPublic(cfg.PublicWeb, cfg.URL, cfg.PublicViews); err != nil {
-			s.log(fmt.Sprintf("web: not serving the page at %s: %v", cfg.URL, err))
-			s.page = nil
-		} else {
-			s.log("web: serving the page at " + s.page.Address())
-			if views := s.page.ViewsOrigin(); views != "" {
-				s.log("web: serving the views' sandbox proxy at " + views)
-			}
-		}
+	s.log("web: serving the page at " + s.page.Address())
+	if views := s.page.ViewsOrigin(); views != "" {
+		s.log("web: serving the views' sandbox proxy at " + views)
 	}
-	return s, nil
 }
 
 func (s *Service) log(line string) { s.cfg.Log("agents-control[" + s.copyID + "]: " + line) }
@@ -459,55 +481,21 @@ func (s *Service) Start(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("the store can't be used: %w", err)
 	}
 	if s.cfg.Receive {
-		s.phase.set(phaseReceiving)
-		if object, err := s.cfg.Store.Get(ctx, records.SettingsKey); err != nil {
+		if err := s.startReceiving(ctx); err != nil {
 			return 0, err
-		} else if object != nil {
-			// Started again after it took over: it serves, as any copy would. A store with
-			// records that it never took is a handover that didn't finish. Or it took over,
-			// then handed over again and forwards.
-			var settings records.Settings
-			first := ""
-			if json.Unmarshal(object.Data, &settings) == nil {
-				if list := currentEndpoints(&settings); len(list) > 0 {
-					first = list[0].URL
-				}
-			}
-			forwarded, _ := s.cfg.Store.Get(ctx, s.forwardingKey())
-			if first != s.cfg.URL && forwarded == nil {
-				return 0, errors.New("this store holds records from a handover that didn't finish; empty it and receive again")
-			}
-			s.phase.set(phaseServing)
 		}
 	}
 	if s.phase.now() != phaseReceiving {
-		if err := s.takeUp(ctx); err != nil {
+		if err := s.takeUpStore(ctx); err != nil {
 			return 0, err
-		}
-		if err := s.resumeForwardingIfMarked(ctx); err != nil {
-			return 0, err
-		}
-		s.noteTeam()
-		if kept, err := s.readPolicy(ctx); err == nil {
-			s.notePolicy(kept)
 		}
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.serveHTTP)
 	listeners, err := s.listen()
 	if err != nil {
 		return 0, err
 	}
 	port := listeners[0].Addr().(*net.TCPAddr).Port
-	for _, ln := range listeners {
-		srv := timeouts(&http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, ErrorLog: nil})
-		s.servers = append(s.servers, srv)
-		if s.cfg.TLS != nil {
-			go srv.Serve(tls.NewListener(ln, s.cfg.TLS))
-		} else {
-			go srv.Serve(ln)
-		}
-	}
+	s.serveOn(listeners)
 	s.setReady(true)
 	if s.cfg.Web != nil {
 		if s.cfg.WebOff {
@@ -536,6 +524,65 @@ func (s *Service) Start(ctx context.Context) (int, error) {
 	go s.watchJoinFile()
 	s.log(fmt.Sprintf("listening on %s:%d for %s", s.cfg.Bind, port, s.cfg.URL))
 	return port, nil
+}
+
+// startReceiving sets a copy started to receive a handover to receiving, or to serving
+// when the store already has its records. Started again after it took over: it serves,
+// as any copy would. A store with records that it never took is a handover that didn't
+// finish. Or it took over, then handed over again and forwards.
+func (s *Service) startReceiving(ctx context.Context) error {
+	s.phase.set(phaseReceiving)
+	object, err := s.cfg.Store.Get(ctx, records.SettingsKey)
+	if err != nil {
+		return err
+	}
+	if object == nil {
+		return nil
+	}
+	var settings records.Settings
+	first := ""
+	if json.Unmarshal(object.Data, &settings) == nil {
+		if list := currentEndpoints(&settings); len(list) > 0 {
+			first = list[0].URL
+		}
+	}
+	forwarded, _ := s.cfg.Store.Get(ctx, s.forwardingKey())
+	if first != s.cfg.URL && forwarded == nil {
+		return errors.New("this store holds records from a handover that didn't finish; empty it and receive again")
+	}
+	s.phase.set(phaseServing)
+	return nil
+}
+
+// takeUpStore takes up the store's records, goes on forwarding when a handover marked
+// it, and notes the team and the policy.
+func (s *Service) takeUpStore(ctx context.Context) error {
+	if err := s.takeUp(ctx); err != nil {
+		return err
+	}
+	if err := s.resumeForwardingIfMarked(ctx); err != nil {
+		return err
+	}
+	s.noteTeam()
+	if kept, err := s.readPolicy(ctx); err == nil {
+		s.notePolicy(kept)
+	}
+	return nil
+}
+
+// serveOn serves HTTP on each listener, with TLS when configured, in the background.
+func (s *Service) serveOn(listeners []net.Listener) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.serveHTTP)
+	for _, ln := range listeners {
+		srv := timeouts(&http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, ErrorLog: nil})
+		s.servers = append(s.servers, srv)
+		if s.cfg.TLS != nil {
+			go srv.Serve(tls.NewListener(ln, s.cfg.TLS))
+		} else {
+			go srv.Serve(ln)
+		}
+	}
 }
 
 // listen binds the address given, and on 0.0.0.0 the IPv6 any address on the same port
@@ -940,46 +987,7 @@ func (s *Service) deliver(need notices.AttentionNeed, owner, host string) {
 		}
 		return
 	}
-	flags := s.router.NotifyFlags()
-	var devices []notices.Device
-	for _, c := range s.records.Clients() {
-		if owner != "" && s.PersonOf(c.ID) != owner {
-			continue
-		}
-		// A browser goes by Web Push (#1486): only one that subscribed, which says it may
-		// be notified.
-		if c.Kind == records.KindBrowser {
-			if s.webPush == nil || c.WebPush == nil {
-				continue
-			}
-			may := true
-			d := notices.Device{ID: c.ID, Kind: notices.Browser, MayNotify: &may}
-			if c.LastSeen != nil {
-				d.LastSeen = c.LastSeen.Time
-			}
-			devices = append(devices, d)
-			continue
-		}
-		if !c.IsDevice() || len(c.PublicKey) == 0 {
-			continue
-		}
-		// Only a device that gave its token can be chosen.
-		if s.pushes == nil || c.PushToken == nil {
-			continue
-		}
-		kind := notices.Unknown
-		if c.Kind == records.KindIPhone || c.Kind == records.KindIPad {
-			kind = c.Kind
-		}
-		d := notices.Device{ID: c.ID, PublicKey: c.PublicKey, Kind: kind, MayNotify: c.MayNotify}
-		if c.LastSeen != nil {
-			d.LastSeen = c.LastSeen.Time
-		}
-		if may, ok := flags[c.ID]; ok {
-			d.MayNotify = &may
-		}
-		devices = append(devices, d)
-	}
+	devices := s.noticeDevices(owner)
 	kinds := map[string]string{}
 	for _, d := range devices {
 		kinds[d.ID] = d.Kind
@@ -995,31 +1003,89 @@ func (s *Service) deliver(need notices.AttentionNeed, owner, host string) {
 		s.log(fmt.Sprintf("notice: %s sent to no device: it is watched, at the Mac, or sent already", needID))
 	}
 	for _, delivery := range deliveries {
-		did := "sent"
-		if delivery.Headline == nil {
-			did = "withdrew"
-		}
-		needID, _ := json.Marshal(delivery.NeedID)
-		if delivery.Headline != nil && delivery.NeedID.Notice != nil && host != "" {
-			s.router.Tell(host, wire.NotifyNoticesDelivered.Name, wire.NoticeDelivered{Need: delivery.NeedID, To: noticeDevice(kinds[string(delivery.Device)])})
-		}
-		// A browser gets no withdrawal: a push that shows nothing costs a browser its
-		// subscription (Safari) or shows one of its own (Chrome). The page takes its
-		// notices back when it comes into view.
-		if s.isBrowser(string(delivery.Device)) {
-			if s.webPush != nil && delivery.Headline != nil {
-				s.webPush.deliver(delivery)
-				s.log(fmt.Sprintf("notice: %s %s for %s by Web Push", did, needID, delivery.Device))
-			}
-			continue
-		}
-		if s.pushes == nil {
-			s.log(fmt.Sprintf("notice: could not withdraw %s from %s: this copy has no APNs key", needID, delivery.Device))
-			continue
-		}
-		s.pushes.deliver(delivery)
-		s.log(fmt.Sprintf("notice: %s %s for %s through APNs", did, needID, delivery.Device))
+		s.sendDelivery(delivery, host, kinds)
 	}
+}
+
+// noticeDevices is the devices of owner ("" for everyone's) a notice can go to: each
+// browser that subscribed to Web Push, and each phone or iPad that gave its push token.
+func (s *Service) noticeDevices(owner string) []notices.Device {
+	flags := s.router.NotifyFlags()
+	var devices []notices.Device
+	for _, c := range s.records.Clients() {
+		if owner != "" && s.PersonOf(c.ID) != owner {
+			continue
+		}
+		if d, ok := s.noticeDeviceOf(c, flags); ok {
+			devices = append(devices, d)
+		}
+	}
+	return devices
+}
+
+// noticeDeviceOf is the client as a device a notice can go to, or false when it can't.
+func (s *Service) noticeDeviceOf(c records.ClientRecord, flags map[string]bool) (notices.Device, bool) {
+	// A browser goes by Web Push (#1486): only one that subscribed, which says it may
+	// be notified.
+	if c.Kind == records.KindBrowser {
+		if s.webPush == nil || c.WebPush == nil {
+			return notices.Device{}, false
+		}
+		may := true
+		d := notices.Device{ID: c.ID, Kind: notices.Browser, MayNotify: &may}
+		if c.LastSeen != nil {
+			d.LastSeen = c.LastSeen.Time
+		}
+		return d, true
+	}
+	if !c.IsDevice() || len(c.PublicKey) == 0 {
+		return notices.Device{}, false
+	}
+	// Only a device that gave its token can be chosen.
+	if s.pushes == nil || c.PushToken == nil {
+		return notices.Device{}, false
+	}
+	kind := notices.Unknown
+	if c.Kind == records.KindIPhone || c.Kind == records.KindIPad {
+		kind = c.Kind
+	}
+	d := notices.Device{ID: c.ID, PublicKey: c.PublicKey, Kind: kind, MayNotify: c.MayNotify}
+	if c.LastSeen != nil {
+		d.LastSeen = c.LastSeen.Time
+	}
+	if may, ok := flags[c.ID]; ok {
+		d.MayNotify = &may
+	}
+	return d, true
+}
+
+// sendDelivery sends or withdraws one notice on one device, by Web Push or through APNs,
+// and tells the host where a notice went.
+func (s *Service) sendDelivery(delivery notices.RelayDelivery, host string, kinds map[string]string) {
+	did := "sent"
+	if delivery.Headline == nil {
+		did = "withdrew"
+	}
+	needID, _ := json.Marshal(delivery.NeedID)
+	if delivery.Headline != nil && delivery.NeedID.Notice != nil && host != "" {
+		s.router.Tell(host, wire.NotifyNoticesDelivered.Name, wire.NoticeDelivered{Need: delivery.NeedID, To: noticeDevice(kinds[string(delivery.Device)])})
+	}
+	// A browser gets no withdrawal: a push that shows nothing costs a browser its
+	// subscription (Safari) or shows one of its own (Chrome). The page takes its
+	// notices back when it comes into view.
+	if s.isBrowser(string(delivery.Device)) {
+		if s.webPush != nil && delivery.Headline != nil {
+			s.webPush.deliver(delivery)
+			s.log(fmt.Sprintf("notice: %s %s for %s by Web Push", did, needID, delivery.Device))
+		}
+		return
+	}
+	if s.pushes == nil {
+		s.log(fmt.Sprintf("notice: could not withdraw %s from %s: this copy has no APNs key", needID, delivery.Device))
+		return
+	}
+	s.pushes.deliver(delivery)
+	s.log(fmt.Sprintf("notice: %s %s for %s through APNs", did, needID, delivery.Device))
 }
 
 // isBrowser says whether a client is a browser, for a withdrawal from one the ladder no
@@ -1281,11 +1347,7 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 	defer settle(false)
 	serverNonce := controllink.Nonce()
 	keys := s.currentKeys()
-	hello := controllink.Hello{V: int64(controllink.Version), Name: s.cfg.Name, Control: controllink.B64URL(keys.public),
-		Nonce: controllink.B64URL(serverNonce), Copy: s.copyID}
-	if keys.previousPublic != nil {
-		hello.Previous = new(controllink.B64URL(keys.previousPublic))
-	}
+	hello := s.helloWith(keys, serverNonce)
 	// why says more of a refusal in the log, where the reason alone says too little.
 	why := ""
 	refuse := func(err error) {
@@ -1319,77 +1381,28 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 		return
 	}
 	auth := m.Auth
-	var client *records.ClientRecord
-	var host string
-	var admittedAny bool
-	bound := s.origins()
-	// A peer copy dials the address copies reach each other at, and proves that. Anyone
-	// else (a handover's driver too) may have dialled any place the control plane answers.
-	if strings.HasPrefix(auth.ID, "x:") && !strings.HasPrefix(auth.ID, "x:"+handoverPrefix) && s.peerOrigin != "" {
-		bound = []string{s.peerOrigin}
-	}
-	if webOrigin != "" {
-		// On the loopback listener only a browser or its code may prove anything (071). The
-		// page on this domain also signs in with an org provider (#1002, FR-027): an s:
-		// whose ticket comes back to it.
-		signingIn := strings.HasPrefix(auth.ID, "s:") && s.page != nil && webOrigin == s.page.Origin()
-		if !strings.HasPrefix(auth.ID, "c:") && !strings.HasPrefix(auth.ID, "p:") && !signingIn {
-			refuse(controllink.Refuse(controllink.Unknown))
-			return
-		}
-		bound = []string{webOrigin}
-	}
-	var shared []byte
-	verify := func(private []byte) (controllink.Identity, []byte, error) {
-		return controllink.Verify(auth, serverNonce, bound, func(id controllink.Identity) ([]byte, error) {
-			// A client signing in with no code (#995): its new key, which it proves here.
-			if id.Kind == 's' {
-				key, err := s.signIns.key(id, auth.PublicKey, private)
-				admittedAny, shared = err == nil, key
-				return key, err
-			}
-			key, c, h, err := s.keyWith(id, private)
-			client, host, admittedAny, shared = c, h, err == nil, key
-			return key, err
-		})
-	}
-	id, mac, err := verify(keys.private)
-	// A member that still trusts the key before a rotation proves itself with it (#997),
-	// and is given the new one in ok.
-	var offer *controllink.NewKeyOffer
-	if r := (*controllink.Refusal)(nil); errors.As(err, &r) && r.Reason == controllink.BadProof && keys.previousPrivate != nil &&
-		(strings.HasPrefix(auth.ID, "c:") || strings.HasPrefix(auth.ID, "h:") || strings.HasPrefix(auth.ID, "w:")) {
-		if id, mac, err = verify(keys.previousPrivate); err == nil {
-			offer = newKeyFor(shared, keys.public)
-		}
-	}
+	bound, err := s.boundOrigins(auth, webOrigin)
 	if err != nil {
-		// A host refused for ever, and nothing else would say why (#1996).
-		if r := (*controllink.Refusal)(nil); errors.As(err, &r) && r.Reason == controllink.BadProof && id.Kind == 'h' {
-			why = " (host " + id.ID + " proved a key that is not the one it enrolled with; it must join again with a new host code)"
-		}
+		refuse(err)
+		return
+	}
+	p, err := s.proveKey(auth, serverNonce, bound, keys)
+	if err != nil {
+		why = hostRefusalWhy(p.id, err)
 		refuse(err)
 		return
 	}
 	settle(false)
-	if !admittedAny {
+	if !p.admitted {
 		refuse(controllink.Refuse(controllink.Unknown))
 		return
 	}
+	id, client, host := p.id, p.client, p.host
 	// In a handover (R16): a receiving copy answers only the copy filling it, and no code
 	// is used while records can't be written.
 	phase := s.phase.now()
-	switch {
-	case phase == phaseReceiving && id.Kind != 'x':
-		// Being filled, so its records are not whole yet: not a verdict on anyone (#81).
-		refuse(controllink.Refuse(controllink.Unavailable))
-		return
-	case (phase == phaseFrozen || phase == phaseForwarding) && (id.Kind == 'p' || id.Kind == 'e' || id.Kind == 'w' || id.Kind == 's'):
-		refuse(controllink.Refuse(controllink.Unknown))
-		return
-	case phase == phaseForwarding && (id.Kind == 'c' || id.Kind == 'h') && s.phase.forwardingUntil().Before(time.Now()):
-		// Forwarding ended (30 days at most): anyone still to hear pairs again.
-		refuse(controllink.Refuse(controllink.Unknown))
+	if err := s.phaseRefusal(phase, id.Kind); err != nil {
+		refuse(err)
 		return
 	}
 	// A browser's key works only through a page's socket (the loopback listener's, or the
@@ -1408,26 +1421,9 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 		conn.Close()
 		return
 	}
-	// A page a host carries (#1480): from a host that runs agents and whose uplink is up,
-	// for a port it can listen on. Its origin is http://localhost:<page>, never anything
-	// else, and the page proves itself to this control plane after the ok, bound to it.
-	var pageOrigin string
-	if id.Kind == 'w' {
-		h := s.records.Host(host)
-		switch {
-		case auth.Page == nil || *auth.Page < 1 || *auth.Page > 65535:
-			refuse(controllink.Refuse(controllink.BadMessage))
-			return
-		case h == nil:
-			refuse(controllink.Refuse(controllink.Unknown))
-			return
-		case !s.router.Reaches(host):
-			refuse(controllink.Refuse(controllink.Unavailable))
-			return
-		}
-		pageOrigin = web.OriginFor(int(*auth.Page))
-	} else if auth.Page != nil {
-		refuse(controllink.Refuse(controllink.BadMessage))
+	pageOrigin, err := s.carriedPageOrigin(id, auth, host)
+	if err != nil {
+		refuse(err)
 		return
 	}
 	// Only a client signing in says its key in the auth line.
@@ -1435,78 +1431,19 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 		refuse(controllink.Refuse(controllink.BadMessage))
 		return
 	}
-	// Once a list has been announced, every member is given it (R16).
-	settings := s.records.Settings()
-	ok2 := controllink.OK{Mac: controllink.B64URL(mac), Host: optional(wire.MachineRef(host)), NewKey: offer}
-	if settings != nil && settings.Epoch != nil {
-		ok2.Endpoints = currentEndpoints(settings)
-		ok2.Epoch = int64Of(settings.Epoch)
-	}
-	if err := conn.SendNow(controllink.Message{OK: &ok2}.Line()); err != nil {
+	if err := s.sendOK(conn, p, auth); err != nil {
 		conn.Close()
 		return
-	}
-	// A member that says an epoch keeps a list, and takes the one just given.
-	if auth.Epoch != nil {
-		epoch := int(*auth.Epoch)
-		if settings != nil && settings.Epoch != nil && *settings.Epoch > epoch {
-			epoch = *settings.Epoch
-		}
-		s.inBackground(func() { s.methods.NoteEpoch(context.Background(), id, epoch) })
 	}
 	// A forwarding copy's ok gave the new list; that is all it has to say.
 	if phase == phaseForwarding && (id.Kind == 'c' || id.Kind == 'h') {
 		conn.Close()
 		return
 	}
-	// The largest message by what proved a key (#2150): a host or a copy carries files and
-	// records, a client its largest upload, and a code or a page's exchange little.
+	setReadLimitFor(conn, id.Kind)
 	switch id.Kind {
 	case 'c':
-		conn.SetReadLimit(clientMessageMost)
-	case 'h', 'x':
-		conn.SetReadLimit(peerMessageMost)
-	}
-	switch id.Kind {
-	case 'c':
-		// A page a host carries, of the host's own person: the host may answer its calls
-		// itself (#1970). It is told so on the line right after the ok, and never otherwise.
-		var carried *controllink.Carried
-		if via != "" {
-			carried = s.carriedBy(client, via)
-		}
-		if carried != nil {
-			if err := conn.SendNow(carried.Line()); err != nil {
-				conn.Close()
-				return
-			}
-		}
-		// Forgotten after its key was looked up (#3893): never attached, so none of its
-		// calls is answered.
-		if s.records.Client(client.ID) == nil && s.records.WasForgotten(client.ID) {
-			conn.CloseWith(ForgottenCloseCode, "forgotten")
-			return
-		}
-		session := s.router.AttachClient(client, conn, auth.Capabilities)
-		if carried != nil {
-			s.router.NoteCarried(session, via)
-		}
-		// Forgotten while it joined (#1229): the forget's sweep of sessions may have come
-		// before this one was attached, and admitting it would write it back over its
-		// tombstone. It is closed as any forgotten client is.
-		if s.records.Client(client.ID) == nil && s.records.WasForgotten(client.ID) {
-			s.router.ForgetClient(client.ID)
-			return
-		}
-		if err := s.methods.Admit(context.Background(), *client); err != nil {
-			s.log("store: could not note " + client.Name + " connecting: " + err.Error())
-		}
-		s.renewClient(context.Background(), client.ID)
-		through := ""
-		if via != "" {
-			through = " through " + via + "'s loopback listener"
-		}
-		s.log(fmt.Sprintf("client %s (%s) connected%s from %s", client.Name, client.Kind, through, conn.Remote))
+		s.attachClient(conn, client, auth, via)
 	case 'h':
 		s.hostArrived(host, conn)
 	case 'w':
@@ -1518,16 +1455,220 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 	case 's':
 		s.signIns.pairing(conn, id.ID, auth.PublicKey, serverNonce)
 	case 'x':
-		if strings.HasPrefix(id.ID, handoverPrefix) {
-			s.handoverSession(conn)
-			return
+		s.acceptCopy(conn, id.ID)
+	}
+}
+
+// helloWith is the server's hello: this control plane's key, and the one before a
+// rotation when there is one, and the nonce the peer must prove a key over.
+func (s *Service) helloWith(keys controlKeys, serverNonce []byte) controllink.Hello {
+	hello := controllink.Hello{V: int64(controllink.Version), Name: s.cfg.Name, Control: controllink.B64URL(keys.public),
+		Nonce: controllink.B64URL(serverNonce), Copy: s.copyID}
+	if keys.previousPublic != nil {
+		hello.Previous = new(controllink.B64URL(keys.previousPublic))
+	}
+	return hello
+}
+
+// boundOrigins is the origins the auth line may be bound to, or a refusal for what may
+// not prove anything on the loopback listener.
+func (s *Service) boundOrigins(auth *controllink.Auth, webOrigin string) ([]string, error) {
+	bound := s.origins()
+	// A peer copy dials the address copies reach each other at, and proves that. Anyone
+	// else (a handover's driver too) may have dialled any place the control plane answers.
+	if strings.HasPrefix(auth.ID, "x:") && !strings.HasPrefix(auth.ID, "x:"+handoverPrefix) && s.peerOrigin != "" {
+		bound = []string{s.peerOrigin}
+	}
+	if webOrigin == "" {
+		return bound, nil
+	}
+	// On the loopback listener only a browser or its code may prove anything (071). The
+	// page on this domain also signs in with an org provider (#1002, FR-027): an s:
+	// whose ticket comes back to it.
+	signingIn := strings.HasPrefix(auth.ID, "s:") && s.page != nil && webOrigin == s.page.Origin()
+	if !strings.HasPrefix(auth.ID, "c:") && !strings.HasPrefix(auth.ID, "p:") && !signingIn {
+		return nil, controllink.Refuse(controllink.Unknown)
+	}
+	return []string{webOrigin}, nil
+}
+
+// keyProof is what an auth line proved: who it is, the MAC for the ok, what it is
+// admitted as, and the new key for a member that proved the one before a rotation.
+type keyProof struct {
+	id       controllink.Identity
+	mac      []byte
+	client   *records.ClientRecord
+	host     string
+	admitted bool
+	offer    *controllink.NewKeyOffer
+}
+
+// proveKey verifies the auth line with the control plane's key. A member that still
+// trusts the key before a rotation proves itself with it (#997), and is given the new one
+// in ok.
+func (s *Service) proveKey(auth *controllink.Auth, serverNonce []byte, bound []string, keys controlKeys) (keyProof, error) {
+	var p keyProof
+	var shared []byte
+	verify := func(private []byte) (controllink.Identity, []byte, error) {
+		return controllink.Verify(auth, serverNonce, bound, func(id controllink.Identity) ([]byte, error) {
+			// A client signing in with no code (#995): its new key, which it proves here.
+			if id.Kind == 's' {
+				key, err := s.signIns.key(id, auth.PublicKey, private)
+				p.admitted, shared = err == nil, key
+				return key, err
+			}
+			key, c, h, err := s.keyWith(id, private)
+			p.client, p.host, p.admitted, shared = c, h, err == nil, key
+			return key, err
+		})
+	}
+	var err error
+	p.id, p.mac, err = verify(keys.private)
+	if r := (*controllink.Refusal)(nil); errors.As(err, &r) && r.Reason == controllink.BadProof && keys.previousPrivate != nil &&
+		(strings.HasPrefix(auth.ID, "c:") || strings.HasPrefix(auth.ID, "h:") || strings.HasPrefix(auth.ID, "w:")) {
+		if p.id, p.mac, err = verify(keys.previousPrivate); err == nil {
+			p.offer = newKeyFor(shared, keys.public)
 		}
-		if s.mesh == nil {
+	}
+	return p, err
+}
+
+// hostRefusalWhy says more of a host refused for ever, where nothing else would say why
+// (#1996), or "".
+func hostRefusalWhy(id controllink.Identity, err error) string {
+	if r := (*controllink.Refusal)(nil); errors.As(err, &r) && r.Reason == controllink.BadProof && id.Kind == 'h' {
+		return " (host " + id.ID + " proved a key that is not the one it enrolled with; it must join again with a new host code)"
+	}
+	return ""
+}
+
+// phaseRefusal is the refusal of a member of this kind in a handover's phase (R16), or nil.
+func (s *Service) phaseRefusal(phase string, kind byte) error {
+	switch {
+	case phase == phaseReceiving && kind != 'x':
+		// Being filled, so its records are not whole yet: not a verdict on anyone (#81).
+		return controllink.Refuse(controllink.Unavailable)
+	case (phase == phaseFrozen || phase == phaseForwarding) && (kind == 'p' || kind == 'e' || kind == 'w' || kind == 's'):
+		return controllink.Refuse(controllink.Unknown)
+	case phase == phaseForwarding && (kind == 'c' || kind == 'h') && s.phase.forwardingUntil().Before(time.Now()):
+		// Forwarding ended (30 days at most): anyone still to hear pairs again.
+		return controllink.Refuse(controllink.Unknown)
+	}
+	return nil
+}
+
+// carriedPageOrigin is the origin of a page a host carries (#1480), or "" for any other
+// member, or a refusal. The page must come from a host that runs agents and whose uplink
+// is up, for a port it can listen on. Its origin is http://localhost:<page>, never anything
+// else, and the page proves itself to this control plane after the ok, bound to it.
+func (s *Service) carriedPageOrigin(id controllink.Identity, auth *controllink.Auth, host string) (string, error) {
+	if id.Kind != 'w' {
+		if auth.Page != nil {
+			return "", controllink.Refuse(controllink.BadMessage)
+		}
+		return "", nil
+	}
+	h := s.records.Host(host)
+	switch {
+	case auth.Page == nil || *auth.Page < 1 || *auth.Page > 65535:
+		return "", controllink.Refuse(controllink.BadMessage)
+	case h == nil:
+		return "", controllink.Refuse(controllink.Unknown)
+	case !s.router.Reaches(host):
+		return "", controllink.Refuse(controllink.Unavailable)
+	}
+	return web.OriginFor(int(*auth.Page)), nil
+}
+
+// sendOK sends the ok. Once a list has been announced, every member is given it (R16). A
+// member that says an epoch keeps a list, and takes the one just given.
+func (s *Service) sendOK(conn *Conn, p keyProof, auth *controllink.Auth) error {
+	settings := s.records.Settings()
+	ok2 := controllink.OK{Mac: controllink.B64URL(p.mac), Host: optional(wire.MachineRef(p.host)), NewKey: p.offer}
+	if settings != nil && settings.Epoch != nil {
+		ok2.Endpoints = currentEndpoints(settings)
+		ok2.Epoch = int64Of(settings.Epoch)
+	}
+	if err := conn.SendNow(controllink.Message{OK: &ok2}.Line()); err != nil {
+		return err
+	}
+	if auth.Epoch != nil {
+		epoch := int(*auth.Epoch)
+		if settings != nil && settings.Epoch != nil && *settings.Epoch > epoch {
+			epoch = *settings.Epoch
+		}
+		id := p.id
+		s.inBackground(func() { s.methods.NoteEpoch(context.Background(), id, epoch) })
+	}
+	return nil
+}
+
+// setReadLimitFor sets the largest message by what proved a key (#2150): a host or a copy
+// carries files and records, a client its largest upload, and a code or a page's exchange
+// little.
+func setReadLimitFor(conn *Conn, kind byte) {
+	switch kind {
+	case 'c':
+		conn.SetReadLimit(clientMessageMost)
+	case 'h', 'x':
+		conn.SetReadLimit(peerMessageMost)
+	}
+}
+
+// attachClient attaches a client that proved its key to the router, and notes it
+// connecting.
+func (s *Service) attachClient(conn *Conn, client *records.ClientRecord, auth *controllink.Auth, via string) {
+	// A page a host carries, of the host's own person: the host may answer its calls
+	// itself (#1970). It is told so on the line right after the ok, and never otherwise.
+	var carried *controllink.Carried
+	if via != "" {
+		carried = s.carriedBy(client, via)
+	}
+	if carried != nil {
+		if err := conn.SendNow(carried.Line()); err != nil {
 			conn.Close()
 			return
 		}
-		s.mesh.accepted(id.ID, conn)
 	}
+	// Forgotten after its key was looked up (#3893): never attached, so none of its
+	// calls is answered.
+	if s.records.Client(client.ID) == nil && s.records.WasForgotten(client.ID) {
+		conn.CloseWith(ForgottenCloseCode, "forgotten")
+		return
+	}
+	session := s.router.AttachClient(client, conn, auth.Capabilities)
+	if carried != nil {
+		s.router.NoteCarried(session, via)
+	}
+	// Forgotten while it joined (#1229): the forget's sweep of sessions may have come
+	// before this one was attached, and admitting it would write it back over its
+	// tombstone. It is closed as any forgotten client is.
+	if s.records.Client(client.ID) == nil && s.records.WasForgotten(client.ID) {
+		s.router.ForgetClient(client.ID)
+		return
+	}
+	if err := s.methods.Admit(context.Background(), *client); err != nil {
+		s.log("store: could not note " + client.Name + " connecting: " + err.Error())
+	}
+	s.renewClient(context.Background(), client.ID)
+	through := ""
+	if via != "" {
+		through = " through " + via + "'s loopback listener"
+	}
+	s.log(fmt.Sprintf("client %s (%s) connected%s from %s", client.Name, client.Kind, through, conn.Remote))
+}
+
+// acceptCopy takes a socket from a handover's driver or from a peer copy.
+func (s *Service) acceptCopy(conn *Conn, id string) {
+	if strings.HasPrefix(id, handoverPrefix) {
+		s.handoverSession(conn)
+		return
+	}
+	if s.mesh == nil {
+		conn.Close()
+		return
+	}
+	s.mesh.accepted(id, conn)
 }
 
 // carriedBy is what a host that carries a client's page is told (#1970), or nil when the
@@ -1607,82 +1748,14 @@ func (s *Service) keyWith(id controllink.Identity, private []byte) ([]byte, *rec
 	}
 	switch id.Kind {
 	case 'c':
-		// Paired at another copy moments ago: this one reads the store again. A store that
-		// cannot be read says so; unknown would have the device forget its pairing (#81).
-		if s.records.Client(id.ID) == nil {
-			if err := s.readAgain(); err != nil {
-				return nil, nil, "", err
-			}
-		}
-		c := s.records.Client(id.ID)
-		// A browser hears it was forgotten, and deletes its key (071 FR-014).
-		if c == nil && s.records.WasForgotten(id.ID) {
-			return nil, nil, "", controllink.Refuse(controllink.Forgotten)
-		}
-		// Listed and unreadable is not unknown (#171).
-		if c == nil && s.records.ClientUnreadable(id.ID) {
-			return nil, nil, "", notTheirs{controllink.Refuse(controllink.Unavailable)}
-		}
-		if c == nil || len(c.PublicKey) == 0 {
-			return nil, nil, "", controllink.Refuse(controllink.Unknown)
-		}
-		// Not used for its whole lifetime (#997): it pairs again.
-		if keyExpired(c.Expires, time.Now()) {
-			return nil, nil, "", controllink.Refuse(controllink.Expired)
-		}
-		// Its person's org provider suspended them (#1002, D13): it keeps its key.
-		if c.Owner != nil && s.suspended(*c.Owner) {
-			return nil, nil, "", controllink.Refuse(controllink.Suspended)
-		}
-		key, err := controllink.ClientKey(private, c.PublicKey, c.ID)
-		if err != nil {
-			return nil, nil, "", controllink.Refuse(controllink.Unknown)
-		}
-		return key, c, "", nil
+		key, c, err := s.clientProofKey(id, private)
+		return key, c, "", err
 	case 'h', 'w':
-		if s.records.Host(id.ID) == nil {
-			if err := s.readAgain(); err != nil {
-				return nil, nil, "", err
-			}
-		}
-		h := s.records.Host(id.ID)
-		if h == nil && s.records.HostUnreadable(id.ID) {
-			return nil, nil, "", notTheirs{controllink.Refuse(controllink.Unavailable)}
-		}
-		// A machine the person removed hears it, and deletes what it keeps of theirs, such as
-		// the bot's key (#3950).
-		if h == nil && id.Kind == 'h' && s.records.WasRemoved(id.ID) {
-			return nil, nil, "", controllink.Refuse(controllink.Forgotten)
-		}
-		if h == nil || len(h.PublicKey) == 0 {
-			return nil, nil, "", controllink.Refuse(controllink.Unknown)
-		}
-		if keyExpired(h.Expires, time.Now()) {
-			return nil, nil, "", controllink.Refuse(controllink.Expired)
-		}
-		key, err := controllink.HostKey(private, h.PublicKey, h.ID)
-		if err != nil {
-			return nil, nil, "", controllink.Refuse(controllink.Unknown)
-		}
-		return key, nil, h.ID, nil
+		key, host, err := s.hostProofKey(id, private)
+		return key, nil, host, err
 	case 'p', 'e':
-		// Spent or not: a join replayed by the key that spent it is told apart in announce.
-		stored, err := s.codes.Stored(context.Background(), id.ID, true)
-		if err != nil {
-			var r *controllink.Refusal
-			if errors.As(err, &r) {
-				return nil, nil, "", err
-			}
-			// The store's error may name the code's key: it stays out of the log.
-			s.log("store: could not read a code")
-			return nil, nil, "", notTheirs{controllink.Refuse(controllink.Unavailable)}
-		}
-		wanted := (id.Kind == 'e') == (stored.Purpose == "host")
-		secret := controllink.CodeSecret(s.privateKey(), id.ID)
-		if !wanted || secret == nil {
-			return nil, nil, "", controllink.Refuse(controllink.Unknown)
-		}
-		return controllink.CodeKey(secret), nil, "", nil
+		key, err := s.codeProofKey(id)
+		return key, nil, "", err
 	case 'x':
 		// Copies link with each other only on a control plane of several copies; a
 		// handover's driver proves the copies' key at any.
@@ -1692,6 +1765,93 @@ func (s *Service) keyWith(id controllink.Identity, private []byte) ([]byte, *rec
 		return controllink.CopyKey(s.privateKey()), nil, "", nil
 	}
 	return nil, nil, "", controllink.Refuse(controllink.Unknown)
+}
+
+// clientProofKey is the key a paired client proves, and its record, or a refusal.
+func (s *Service) clientProofKey(id controllink.Identity, private []byte) ([]byte, *records.ClientRecord, error) {
+	// Paired at another copy moments ago: this one reads the store again. A store that
+	// cannot be read says so; unknown would have the device forget its pairing (#81).
+	if s.records.Client(id.ID) == nil {
+		if err := s.readAgain(); err != nil {
+			return nil, nil, err
+		}
+	}
+	c := s.records.Client(id.ID)
+	// A browser hears it was forgotten, and deletes its key (071 FR-014).
+	if c == nil && s.records.WasForgotten(id.ID) {
+		return nil, nil, controllink.Refuse(controllink.Forgotten)
+	}
+	// Listed and unreadable is not unknown (#171).
+	if c == nil && s.records.ClientUnreadable(id.ID) {
+		return nil, nil, notTheirs{controllink.Refuse(controllink.Unavailable)}
+	}
+	if c == nil || len(c.PublicKey) == 0 {
+		return nil, nil, controllink.Refuse(controllink.Unknown)
+	}
+	// Not used for its whole lifetime (#997): it pairs again.
+	if keyExpired(c.Expires, time.Now()) {
+		return nil, nil, controllink.Refuse(controllink.Expired)
+	}
+	// Its person's org provider suspended them (#1002, D13): it keeps its key.
+	if c.Owner != nil && s.suspended(*c.Owner) {
+		return nil, nil, controllink.Refuse(controllink.Suspended)
+	}
+	key, err := controllink.ClientKey(private, c.PublicKey, c.ID)
+	if err != nil {
+		return nil, nil, controllink.Refuse(controllink.Unknown)
+	}
+	return key, c, nil
+}
+
+// hostProofKey is the key a host (or a page it carries) proves, and the host's id, or a
+// refusal.
+func (s *Service) hostProofKey(id controllink.Identity, private []byte) ([]byte, string, error) {
+	if s.records.Host(id.ID) == nil {
+		if err := s.readAgain(); err != nil {
+			return nil, "", err
+		}
+	}
+	h := s.records.Host(id.ID)
+	if h == nil && s.records.HostUnreadable(id.ID) {
+		return nil, "", notTheirs{controllink.Refuse(controllink.Unavailable)}
+	}
+	// A machine the person removed hears it, and deletes what it keeps of theirs, such as
+	// the bot's key (#3950).
+	if h == nil && id.Kind == 'h' && s.records.WasRemoved(id.ID) {
+		return nil, "", controllink.Refuse(controllink.Forgotten)
+	}
+	if h == nil || len(h.PublicKey) == 0 {
+		return nil, "", controllink.Refuse(controllink.Unknown)
+	}
+	if keyExpired(h.Expires, time.Now()) {
+		return nil, "", controllink.Refuse(controllink.Expired)
+	}
+	key, err := controllink.HostKey(private, h.PublicKey, h.ID)
+	if err != nil {
+		return nil, "", controllink.Refuse(controllink.Unknown)
+	}
+	return key, h.ID, nil
+}
+
+// codeProofKey is the key a code's holder proves, or a refusal. Spent or not: a join replayed
+// by the key that spent it is told apart in announce.
+func (s *Service) codeProofKey(id controllink.Identity) ([]byte, error) {
+	stored, err := s.codes.Stored(context.Background(), id.ID, true)
+	if err != nil {
+		var r *controllink.Refusal
+		if errors.As(err, &r) {
+			return nil, err
+		}
+		// The store's error may name the code's key: it stays out of the log.
+		s.log("store: could not read a code")
+		return nil, notTheirs{controllink.Refuse(controllink.Unavailable)}
+	}
+	wanted := (id.Kind == 'e') == (stored.Purpose == "host")
+	secret := controllink.CodeSecret(s.privateKey(), id.ID)
+	if !wanted || secret == nil {
+		return nil, controllink.Refuse(controllink.Unknown)
+	}
+	return controllink.CodeKey(secret), nil
 }
 
 // readAgainEvery is how often at most a member not in the records reads the store
@@ -1839,7 +1999,6 @@ func (s *Service) spend(conn *Conn, id string, webOrigin string) {
 
 func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin string) (*wire.Admitted, error) {
 	ctx := context.Background()
-	fromPage := webOrigin != ""
 	stored, err := s.codes.Stored(ctx, id, true)
 	if err != nil {
 		return nil, err
@@ -1852,147 +2011,188 @@ func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin
 	}
 	switch {
 	case stored.Purpose == "client" && method == "clients/announce":
-		var said wire.ClientAnnounce
-		if json.Unmarshal(params, &said) != nil || len(said.PublicKey) == 0 || !controllink.IsUUID(string(said.ID)) {
-			return nil, fail(invalidParams, "Say who you are.")
-		}
-		// A kind a later build added reads as unknown (ClientKind's fallback).
-		a := struct {
-			ID, Name, Kind string
-			PublicKey      []byte
-		}{strings.ToUpper(string(said.ID)), said.Name, string(said.Kind), said.PublicKey}
-		// A browser pairs through a page, and only a browser does (071, #1459).
-		if (a.Kind == records.KindBrowser) != fromPage {
-			return nil, fail(invalidParams, "Pair that kind of client elsewhere.")
-		}
-		// And with a code made for one, which is good nowhere else (R2): on the page on the
-		// Mac or on this domain's. Refused before it is spent, so the browser it was made for
-		// can still use it.
-		browser := stored.Browser != nil && *stored.Browser
-		if browser != fromPage {
-			if browser {
-				return nil, fail(invalidParams, "That code is for a browser. Paste it in the Agent Loops page.")
-			}
-			return nil, fail(invalidParams, "That code is for a window or a phone. Get one from Add a Browser….")
-		}
-		name := a.Name
-		if a.Kind == records.KindBrowser {
-			name = browserName(a.Name, s.page != nil && webOrigin == s.page.Origin())
-		}
-		spender := a.ID
-		sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Client: &spender})
-		if err != nil {
-			return nil, err
-		}
-		client := a.ID
-		if sp.Client != nil {
-			client = strings.ToUpper(*sp.Client)
-		}
-		result := &wire.Admitted{Client: new(wire.UUID(client))}
-		// The same join again (#212): it paired, and could not keep it.
-		if old := s.records.Client(client); sp.replayed && old != nil && bytes.Equal(old.PublicKey, a.PublicKey) {
-			s.log(name + " paired again with the code it spent (" + a.Kind + ")")
-			return result, nil
-		}
-		record := records.ClientRecord{ID: client, Name: name, Kind: a.Kind, PublicKey: a.PublicKey, Paired: records.Now(),
-			Owner: stored.Owner, Expires: s.newExpiry()}
-		// An invite's first client is a new person's (#994).
-		if stored.Invite != nil {
-			person, err := s.redeemInvite(ctx, id, *stored.Invite)
-			if err != nil {
-				return nil, err
-			}
-			record.Owner = &person
-		}
-		if err := s.methods.Admit(ctx, record); err != nil {
-			return nil, err
-		}
-		s.log(name + " paired (" + a.Kind + ")")
-		// Known at every copy at once.
-		s.announce("clientPaired", client, "code")
-		return result, nil
+		return s.spendClientCode(ctx, id, stored, params, webOrigin)
 	case stored.Purpose == "host" && method == "machines/announce":
-		var a wire.MachineAnnounce
-		if json.Unmarshal(params, &a) != nil {
-			return nil, fail(invalidParams, "Say which host you are.")
-		}
-		// The host on the control plane's own machine is its home host, mac, as a moved
-		// set-up's is (data-model.md).
-		home := s.cfg.MachineID != "" && a.MachineID == s.cfg.MachineID && s.records.Host("mac") == nil
-		want := records.NewHostID()
-		if stored.MadeHost != "" {
-			// A machine the control plane made joins as the host its set-up is kept for (#5765).
-			want = stored.MadeHost
-		} else if home {
-			want = "mac"
-		}
-		sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Host: &want})
-		if err != nil {
-			return nil, err
-		}
-		if sp.Host == nil {
-			return nil, controllink.Refuse(controllink.Spent)
-		}
-		host := *sp.Host
-		result := &wire.Admitted{Host: new(wire.MachineRef(host))}
-		// The same join again (#212): it enrolled, and could not keep it.
-		if old := s.records.Host(host); sp.replayed && old != nil && bytes.Equal(old.PublicKey, a.PublicKey) {
-			s.log("host " + a.Name + " enrolled again as " + host + " with the code it spent")
-			return result, nil
-		}
-		mid := a.MachineID
-		// The machine is the person's who made the code (FR-017).
-		record := records.MachineRecord{ID: host, Name: a.Name, PublicKey: a.PublicKey, Platform: a.Platform,
-			Version: a.Version, MachineID: &mid, Owner: stored.Owner, Expires: s.newExpiry()}
-		if deref(a.Implementation) != "" {
-			impl, _ := json.Marshal(*a.Implementation)
-			record.Extra = records.Extra{"implementation": impl}
-		}
-		// Only ever a new record (#1996): another host's, or its key, is never written over.
-		err = s.records.AddHost(ctx, record)
-		if errors.Is(err, records.ErrHostTaken) && host == "mac" {
-			// Another host on this machine enrolled as mac first, at this copy or another: this
-			// one gets an id of its own, and the code says so to a replay.
-			other := records.NewHostID()
-			if err := s.codes.Respend(ctx, id, spent{PublicKey: a.PublicKey, Host: &other}); err != nil {
-				return nil, err
-			}
-			s.log("host " + a.Name + " joined from this machine as another host enrolled as mac: it enrols as " + other)
-			host, record.ID = other, other
-			result.Host = new(wire.MachineRef(host))
-			err = s.records.AddHost(ctx, record)
-		}
-		if errors.Is(err, records.ErrHostTaken) {
-			s.log("refused host " + a.Name + ": another host is already enrolled as " + host)
-			return nil, fail(invalidParams, "Another host is already enrolled as %s. Make a new host code and join again.", host)
-		}
-		if err != nil {
-			return nil, err
-		}
-		// Every other copy knows it at once.
-		s.announce("hostEnrolled", host, "code")
-		s.router.Know(host)
-		s.router.HoldToOwners()
-		s.log("host " + a.Name + " enrolled as " + host)
-		// A machine the control plane made: it has joined (step 2), and its token's digits are
-		// what the host must show at the compare step (#5359, #5765).
-		if stored.Made {
-			private, _ := s.codes.keys()
-			s.madeMachineJoined(ctx, host, controllink.TokenCode(controllink.CodeSecret(private, id)))
-		}
-		// A host an install made the code for a workspace for is linked to it (#3871): its
-		// name may not be the one the install asked for. A machine a provider made is linked to
-		// the workspace its set-up keeps (#6075), with no wait in memory that a restart loses.
-		w := stored.Workspace
-		if w == nil && stored.MadeHost != "" {
-			w = s.madeWorkspace(ctx, host)
-		}
-		if w != nil && s.providers != nil {
-			go s.providers.LinkJoined(host, w.Provider, w.Workspace, w.Trust)
-		}
-		return result, nil
+		return s.spendHostCode(ctx, id, stored, params)
 	}
 	return nil, fail(notPermitted, "That code is not for %s.", method)
+}
+
+// spendClientCode pairs the client that announces itself with a client code.
+func (s *Service) spendClientCode(ctx context.Context, id string, stored *storedCode, params json.RawMessage, webOrigin string) (*wire.Admitted, error) {
+	fromPage := webOrigin != ""
+	var said wire.ClientAnnounce
+	if json.Unmarshal(params, &said) != nil || len(said.PublicKey) == 0 || !controllink.IsUUID(string(said.ID)) {
+		return nil, fail(invalidParams, "Say who you are.")
+	}
+	// A kind a later build added reads as unknown (ClientKind's fallback).
+	a := struct {
+		ID, Name, Kind string
+		PublicKey      []byte
+	}{strings.ToUpper(string(said.ID)), said.Name, string(said.Kind), said.PublicKey}
+	// A browser pairs through a page, and only a browser does (071, #1459).
+	if (a.Kind == records.KindBrowser) != fromPage {
+		return nil, fail(invalidParams, "Pair that kind of client elsewhere.")
+	}
+	if err := codeForPage(stored, fromPage); err != nil {
+		return nil, err
+	}
+	name := a.Name
+	if a.Kind == records.KindBrowser {
+		name = browserName(a.Name, s.page != nil && webOrigin == s.page.Origin())
+	}
+	spender := a.ID
+	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Client: &spender})
+	if err != nil {
+		return nil, err
+	}
+	client := a.ID
+	if sp.Client != nil {
+		client = strings.ToUpper(*sp.Client)
+	}
+	result := &wire.Admitted{Client: new(wire.UUID(client))}
+	// The same join again (#212): it paired, and could not keep it.
+	if old := s.records.Client(client); sp.replayed && old != nil && bytes.Equal(old.PublicKey, a.PublicKey) {
+		s.log(name + " paired again with the code it spent (" + a.Kind + ")")
+		return result, nil
+	}
+	record := records.ClientRecord{ID: client, Name: name, Kind: a.Kind, PublicKey: a.PublicKey, Paired: records.Now(),
+		Owner: stored.Owner, Expires: s.newExpiry()}
+	// An invite's first client is a new person's (#994).
+	if stored.Invite != nil {
+		person, err := s.redeemInvite(ctx, id, *stored.Invite)
+		if err != nil {
+			return nil, err
+		}
+		record.Owner = &person
+	}
+	if err := s.methods.Admit(ctx, record); err != nil {
+		return nil, err
+	}
+	s.log(name + " paired (" + a.Kind + ")")
+	// Known at every copy at once.
+	s.announce("clientPaired", client, "code")
+	return result, nil
+}
+
+// codeForPage refuses a code made for a browser outside a page, and a code made for
+// another client on a page. A browser's code is good nowhere else (R2): on the page on the
+// Mac or on this domain's. Refused before it is spent, so the browser it was made for can
+// still use it.
+func codeForPage(stored *storedCode, fromPage bool) error {
+	browser := stored.Browser != nil && *stored.Browser
+	if browser == fromPage {
+		return nil
+	}
+	if browser {
+		return fail(invalidParams, "That code is for a browser. Paste it in the Agent Loops page.")
+	}
+	return fail(invalidParams, "That code is for a window or a phone. Get one from Add a Browser….")
+}
+
+// spendHostCode enrols the host that announces itself with a host code.
+func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCode, params json.RawMessage) (*wire.Admitted, error) {
+	var a wire.MachineAnnounce
+	if json.Unmarshal(params, &a) != nil {
+		return nil, fail(invalidParams, "Say which host you are.")
+	}
+	want := s.joiningHostID(stored, a)
+	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Host: &want})
+	if err != nil {
+		return nil, err
+	}
+	if sp.Host == nil {
+		return nil, controllink.Refuse(controllink.Spent)
+	}
+	host := *sp.Host
+	result := &wire.Admitted{Host: new(wire.MachineRef(host))}
+	// The same join again (#212): it enrolled, and could not keep it.
+	if old := s.records.Host(host); sp.replayed && old != nil && bytes.Equal(old.PublicKey, a.PublicKey) {
+		s.log("host " + a.Name + " enrolled again as " + host + " with the code it spent")
+		return result, nil
+	}
+	mid := a.MachineID
+	// The machine is the person's who made the code (FR-017).
+	record := records.MachineRecord{ID: host, Name: a.Name, PublicKey: a.PublicKey, Platform: a.Platform,
+		Version: a.Version, MachineID: &mid, Owner: stored.Owner, Expires: s.newExpiry()}
+	if deref(a.Implementation) != "" {
+		impl, _ := json.Marshal(*a.Implementation)
+		record.Extra = records.Extra{"implementation": impl}
+	}
+	host, err = s.addJoiningHost(ctx, id, a, record)
+	if err != nil {
+		return nil, err
+	}
+	result.Host = new(wire.MachineRef(host))
+	s.hostEnrolled(ctx, id, stored, host, a.Name)
+	return result, nil
+}
+
+// joiningHostID is the id a joining host asks for: the host its set-up is kept for, when
+// the control plane made the machine (#5765); mac, for the host on the control plane's own
+// machine, its home host, as a moved set-up's is (data-model.md); else a new id.
+func (s *Service) joiningHostID(stored *storedCode, a wire.MachineAnnounce) string {
+	home := s.cfg.MachineID != "" && a.MachineID == s.cfg.MachineID && s.records.Host("mac") == nil
+	want := records.NewHostID()
+	if stored.MadeHost != "" {
+		want = stored.MadeHost
+	} else if home {
+		want = "mac"
+	}
+	return want
+}
+
+// addJoiningHost adds the record of a host that spent its code, and says the id it
+// enrolled as. Only ever a new record (#1996): another host's, or its key, is never
+// written over.
+func (s *Service) addJoiningHost(ctx context.Context, id string, a wire.MachineAnnounce, record records.MachineRecord) (string, error) {
+	host := record.ID
+	err := s.records.AddHost(ctx, record)
+	if errors.Is(err, records.ErrHostTaken) && host == "mac" {
+		// Another host on this machine enrolled as mac first, at this copy or another: this
+		// one gets an id of its own, and the code says so to a replay.
+		other := records.NewHostID()
+		if err := s.codes.Respend(ctx, id, spent{PublicKey: a.PublicKey, Host: &other}); err != nil {
+			return "", err
+		}
+		s.log("host " + a.Name + " joined from this machine as another host enrolled as mac: it enrols as " + other)
+		host, record.ID = other, other
+		err = s.records.AddHost(ctx, record)
+	}
+	if errors.Is(err, records.ErrHostTaken) {
+		s.log("refused host " + a.Name + ": another host is already enrolled as " + host)
+		return "", fail(invalidParams, "Another host is already enrolled as %s. Make a new host code and join again.", host)
+	}
+	if err != nil {
+		return "", err
+	}
+	return host, nil
+}
+
+// hostEnrolled tells every copy of a host that enrolled, and finishes the join of a
+// machine the control plane made.
+func (s *Service) hostEnrolled(ctx context.Context, id string, stored *storedCode, host, name string) {
+	// Every other copy knows it at once.
+	s.announce("hostEnrolled", host, "code")
+	s.router.Know(host)
+	s.router.HoldToOwners()
+	s.log("host " + name + " enrolled as " + host)
+	// A machine the control plane made: it has joined (step 2), and its token's digits are
+	// what the host must show at the compare step (#5359, #5765).
+	if stored.Made {
+		private, _ := s.codes.keys()
+		s.madeMachineJoined(ctx, host, controllink.TokenCode(controllink.CodeSecret(private, id)))
+	}
+	// A host an install made the code for a workspace for is linked to it (#3871): its
+	// name may not be the one the install asked for. A machine a provider made is linked to
+	// the workspace its set-up keeps (#6075), with no wait in memory that a restart loses.
+	w := stored.Workspace
+	if w == nil && stored.MadeHost != "" {
+		w = s.madeWorkspace(ctx, host)
+	}
+	if w != nil && s.providers != nil {
+		go s.providers.LinkJoined(host, w.Provider, w.Workspace, w.Trust)
+	}
 }
 
 // browserName is "Safari on Alex's MacBook": the page can't learn the Mac's name, and the

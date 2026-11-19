@@ -144,93 +144,110 @@ func (m *Methods) policyMethod(ctx context.Context, method string, params json.R
 		}
 		return m.s.policyKept(kept), nil
 	case "policy/set":
-		request, err := require[wire.PolicySet](params, "PolicySet")
-		if err != nil {
-			return nil, err
-		}
-		if err := checkPolicyRawEnums(params); err != nil {
-			return nil, err
-		}
-		if err := checkPolicy(request.Policy); err != nil {
-			return nil, err
-		}
-		rev := deref(request.Rev)
-		return m.s.changePolicy(ctx, actor, &rev, func(now time.Time, current *wire.OrgPolicy) (wire.OrgPolicy, error) {
-			next := request.Policy
-			// The kill switch and the raises change only by their own methods.
-			next.StopAll = nil
-			var raises []wire.BudgetRaise
-			if current != nil {
-				next.StopAll = current.StopAll
-				if current.Budgets != nil {
-					raises = current.Budgets.Raises
-				}
-			}
-			if next.Budgets != nil {
-				next.Budgets.Raises = raises
-			}
-			return next, nil
-		})
+		return m.policySet(ctx, params, actor)
 	case "policy/stopAll":
-		request, err := require[wire.PolicyStopAllRequest](params, "PolicyStopAllRequest")
-		if err != nil {
-			return nil, err
-		}
-		note := strings.TrimSpace(deref(request.Note))
-		if utf8.RuneCountInString(note) > mostPolicyNote {
-			return nil, fail(invalidParams, "Keep the note to %d characters.", mostPolicyNote)
-		}
-		return m.s.changePolicy(ctx, actor, nil, func(now time.Time, current *wire.OrgPolicy) (wire.OrgPolicy, error) {
-			next := wire.OrgPolicy{}
-			if current != nil {
-				next = *current
-			}
-			next.StopAll = &wire.PolicyStopAll{On: request.On, By: actor, At: wire.DateOf(now)}
-			if note != "" {
-				next.StopAll.Note = &note
-			}
-			return next, nil
-		})
+		return m.policyStopAll(ctx, params, actor)
 	case "policy/raise":
-		request, err := require[wire.PolicyRaiseRequest](params, "PolicyRaiseRequest")
-		if err != nil {
-			return nil, err
-		}
-		if p := m.records.Person(request.User); p == nil || p.IsRemoved() {
-			return nil, fail(invalidParams, "There is no such person.")
-		}
-		if request.Daily == nil && request.DailyTokens == nil {
-			return nil, fail(invalidParams, "Say how much to raise the budget to: dollars, tokens or both.")
-		}
-		if err := checkBudget(request.Daily, request.DailyTokens); err != nil {
-			return nil, err
-		}
-		var raised wire.BudgetRaise
-		kept, err := m.s.changePolicy(ctx, actor, nil, func(now time.Time, current *wire.OrgPolicy) (wire.OrgPolicy, error) {
-			if current == nil || current.Budgets == nil {
-				return wire.OrgPolicy{}, fail(invalidParams, "The policy sets no budget to raise.")
-			}
-			next := *current
-			budgets := *current.Budgets
-			day := now.UTC().Format(time.DateOnly)
-			raise := wire.BudgetRaise{User: request.User, Day: day, Daily: request.Daily, DailyTokens: request.DailyTokens,
-				By: actor, Request: request.Request}
-			// One raise a person a day: the newest.
-			budgets.Raises = append(slices.DeleteFunc(slices.Clone(budgets.Raises), func(r wire.BudgetRaise) bool {
-				return r.User == request.User && r.Day == day
-			}), raise)
-			next.Budgets = &budgets
-			raised = raise
-			return next, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		// The person's Ask for More of today, if they asked (#3262), is answered by it.
-		m.s.raisedFor(ctx, actor, raised, time.Now())
-		return kept, nil
+		return m.policyRaise(ctx, params, actor)
 	}
 	return nil, notFound(method)
+}
+
+// policySet is policy/set: the admin's document, kept with the kill switch and the
+// raises as they are.
+func (m *Methods) policySet(ctx context.Context, params json.RawMessage, actor wire.AuditActor) (any, error) {
+	request, err := require[wire.PolicySet](params, "PolicySet")
+	if err != nil {
+		return nil, err
+	}
+	if err := checkPolicyRawEnums(params); err != nil {
+		return nil, err
+	}
+	if err := checkPolicy(request.Policy); err != nil {
+		return nil, err
+	}
+	rev := deref(request.Rev)
+	return m.s.changePolicy(ctx, actor, &rev, func(now time.Time, current *wire.OrgPolicy) (wire.OrgPolicy, error) {
+		next := request.Policy
+		// The kill switch and the raises change only by their own methods.
+		next.StopAll = nil
+		var raises []wire.BudgetRaise
+		if current != nil {
+			next.StopAll = current.StopAll
+			if current.Budgets != nil {
+				raises = current.Budgets.Raises
+			}
+		}
+		if next.Budgets != nil {
+			next.Budgets.Raises = raises
+		}
+		return next, nil
+	})
+}
+
+// policyStopAll is policy/stopAll: the kill switch on or off, with the admin's note.
+func (m *Methods) policyStopAll(ctx context.Context, params json.RawMessage, actor wire.AuditActor) (any, error) {
+	request, err := require[wire.PolicyStopAllRequest](params, "PolicyStopAllRequest")
+	if err != nil {
+		return nil, err
+	}
+	note := strings.TrimSpace(deref(request.Note))
+	if utf8.RuneCountInString(note) > mostPolicyNote {
+		return nil, fail(invalidParams, "Keep the note to %d characters.", mostPolicyNote)
+	}
+	return m.s.changePolicy(ctx, actor, nil, func(now time.Time, current *wire.OrgPolicy) (wire.OrgPolicy, error) {
+		next := wire.OrgPolicy{}
+		if current != nil {
+			next = *current
+		}
+		next.StopAll = &wire.PolicyStopAll{On: request.On, By: actor, At: wire.DateOf(now)}
+		if note != "" {
+			next.StopAll.Note = &note
+		}
+		return next, nil
+	})
+}
+
+// policyRaise is policy/raise: a person's budget raised for today, which answers their Ask
+// for More.
+func (m *Methods) policyRaise(ctx context.Context, params json.RawMessage, actor wire.AuditActor) (any, error) {
+	request, err := require[wire.PolicyRaiseRequest](params, "PolicyRaiseRequest")
+	if err != nil {
+		return nil, err
+	}
+	if p := m.records.Person(request.User); p == nil || p.IsRemoved() {
+		return nil, fail(invalidParams, "There is no such person.")
+	}
+	if request.Daily == nil && request.DailyTokens == nil {
+		return nil, fail(invalidParams, "Say how much to raise the budget to: dollars, tokens or both.")
+	}
+	if err := checkBudget(request.Daily, request.DailyTokens); err != nil {
+		return nil, err
+	}
+	var raised wire.BudgetRaise
+	kept, err := m.s.changePolicy(ctx, actor, nil, func(now time.Time, current *wire.OrgPolicy) (wire.OrgPolicy, error) {
+		if current == nil || current.Budgets == nil {
+			return wire.OrgPolicy{}, fail(invalidParams, "The policy sets no budget to raise.")
+		}
+		next := *current
+		budgets := *current.Budgets
+		day := now.UTC().Format(time.DateOnly)
+		raise := wire.BudgetRaise{User: request.User, Day: day, Daily: request.Daily, DailyTokens: request.DailyTokens,
+			By: actor, Request: request.Request}
+		// One raise a person a day: the newest.
+		budgets.Raises = append(slices.DeleteFunc(slices.Clone(budgets.Raises), func(r wire.BudgetRaise) bool {
+			return r.User == request.User && r.Day == day
+		}), raise)
+		next.Budgets = &budgets
+		raised = raise
+		return next, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// The person's Ask for More of today, if they asked (#3262), is answered by it.
+	m.s.raisedFor(ctx, actor, raised, time.Now())
+	return kept, nil
 }
 
 // policyViewFor is the policy as a person sees it: every rule, and only their own raises.
@@ -302,6 +319,44 @@ func checkPolicy(p wire.OrgPolicy) error {
 	if b, _ := json.Marshal(p); len(b) > mostPolicyBytes {
 		return fail(invalidParams, "The policy is larger than %d KiB.", mostPolicyBytes>>10)
 	}
+	if err := checkPolicyLayers(p); err != nil {
+		return err
+	}
+	if err := checkPolicyRuntimes(p); err != nil {
+		return err
+	}
+	if n := p.Notices; n != nil && n.AntigravityTerms != nil && !slices.Contains(antigravityTerms, *n.AntigravityTerms) {
+		return fail(invalidParams, "Antigravity's terms are %s.", strings.Join(antigravityTerms, ", "))
+	}
+	if p.Marketplaces != nil {
+		if err := checkNames("marketplaces", p.Marketplaces.Allowed, false); err != nil {
+			return err
+		}
+		if c := p.Marketplaces.CustomServers; c != "allow" && c != "refuse" {
+			return fail(invalidParams, "Servers added by hand are allow or refuse.")
+		}
+	}
+	if b := p.Budgets; b != nil {
+		if err := checkPolicyBudgets(*b); err != nil {
+			return err
+		}
+	}
+	if h := p.Helpers; h != nil {
+		for _, n := range []*int64{h.MostRunning, h.MostNotArchived, h.MostQueued} {
+			if n != nil && (*n < 0 || *n > mostPolicyHelpers) {
+				return fail(invalidParams, "A helper limit is from 0 to %d.", mostPolicyHelpers)
+			}
+		}
+	}
+	if e := p.Environment; e != nil {
+		return checkPassThrough(e.PassThrough)
+	}
+	return nil
+}
+
+// checkPolicyLayers bounds the rules of #2957: the permission mode and requests, the
+// sandbox, the most workflows on and the notice limits.
+func checkPolicyLayers(p wire.OrgPolicy) error {
 	if p.PermissionMode != nil && !slices.Contains(permissionModeNames, string(*p.PermissionMode)) {
 		return fail(invalidParams, "The permission mode is one of %s.", strings.Join(permissionModeNames, ", "))
 	}
@@ -322,6 +377,12 @@ func checkPolicy(p wire.OrgPolicy) error {
 			return fail(invalidParams, "The notice wait is 1 to 1440 minutes.")
 		}
 	}
+	return nil
+}
+
+// checkPolicyRuntimes bounds the runtimes' rules: how many, their ids, their models and
+// their ways to the model.
+func checkPolicyRuntimes(p wire.OrgPolicy) error {
 	if len(p.Runtimes) > mostPolicyItems {
 		return fail(invalidParams, "Allow at most %d runtimes.", mostPolicyItems)
 	}
@@ -336,43 +397,29 @@ func checkPolicy(p wire.OrgPolicy) error {
 			return err
 		}
 	}
-	if n := p.Notices; n != nil && n.AntigravityTerms != nil && !slices.Contains(antigravityTerms, *n.AntigravityTerms) {
-		return fail(invalidParams, "Antigravity's terms are %s.", strings.Join(antigravityTerms, ", "))
+	return nil
+}
+
+// checkPolicyBudgets bounds the budgets: a day's and an agent's, and the unmetered
+// runtimes.
+func checkPolicyBudgets(b wire.PolicyBudgets) error {
+	if err := checkBudget(b.Daily, b.DailyTokens); err != nil {
+		return err
 	}
-	if p.Marketplaces != nil {
-		if err := checkNames("marketplaces", p.Marketplaces.Allowed, false); err != nil {
-			return err
-		}
-		if c := p.Marketplaces.CustomServers; c != "allow" && c != "refuse" {
-			return fail(invalidParams, "Servers added by hand are allow or refuse.")
-		}
+	if err := checkBudget(b.PerAgent, b.PerAgentTokens); err != nil {
+		return err
 	}
-	if b := p.Budgets; b != nil {
-		if err := checkBudget(b.Daily, b.DailyTokens); err != nil {
-			return err
-		}
-		if err := checkBudget(b.PerAgent, b.PerAgentTokens); err != nil {
-			return err
-		}
-		if err := checkNames("unmetered runtimes", b.AllowUnmetered, false); err != nil {
-			return err
-		}
+	return checkNames("unmetered runtimes", b.AllowUnmetered, false)
+}
+
+// checkPassThrough bounds the environment variables a machine passes through to agents.
+func checkPassThrough(names []string) error {
+	if len(names) > mostPolicyItems {
+		return fail(invalidParams, "Name at most %d variables.", mostPolicyItems)
 	}
-	if h := p.Helpers; h != nil {
-		for _, n := range []*int64{h.MostRunning, h.MostNotArchived, h.MostQueued} {
-			if n != nil && (*n < 0 || *n > mostPolicyHelpers) {
-				return fail(invalidParams, "A helper limit is from 0 to %d.", mostPolicyHelpers)
-			}
-		}
-	}
-	if e := p.Environment; e != nil {
-		if len(e.PassThrough) > mostPolicyItems {
-			return fail(invalidParams, "Name at most %d variables.", mostPolicyItems)
-		}
-		for _, name := range e.PassThrough {
-			if len(name) > mostPolicyName || !passThroughName.MatchString(name) {
-				return fail(invalidParams, "%q is not a variable name (letters, digits and _, with * at the end allowed).", name)
-			}
+	for _, name := range names {
+		if len(name) > mostPolicyName || !passThroughName.MatchString(name) {
+			return fail(invalidParams, "%q is not a variable name (letters, digits and _, with * at the end allowed).", name)
 		}
 	}
 	return nil
@@ -513,29 +560,9 @@ func (s *Service) changePolicy(ctx context.Context, actor wire.AuditActor, rev *
 			return wire.PolicyKept{}, fail(changedElsewhere, "Another admin changed the policy. Load it again, then save.")
 		}
 		now := time.Now().UTC()
-		next, err := change(now, kept.policy)
+		next, raw, err := nextPolicy(kept, now, actor, change)
 		if err != nil {
 			return wire.PolicyKept{}, err
-		}
-		next.Version = 1
-		if kept.policy != nil {
-			next.Version = kept.policy.Version + 1
-		}
-		next.Issued, next.ChangedBy = wire.DateOf(now), actor
-		next.Requires = policyRequires(next)
-		if next.Budgets != nil {
-			next.Budgets.Raises = currentRaises(next.Budgets.Raises, now)
-			if next.Budgets.AllowUnmetered == nil {
-				next.Budgets.AllowUnmetered = []string{}
-			}
-		}
-		next.Groups = nil
-		raw, err := encodePolicy(next)
-		if err != nil {
-			return wire.PolicyKept{}, err
-		}
-		if len(raw) > mostPolicyBytes {
-			return wire.PolicyKept{}, fail(invalidParams, "The policy is larger than %d KiB.", mostPolicyBytes>>10)
 		}
 		when := store.Absent
 		if kept.rev != "" {
@@ -551,15 +578,53 @@ func (s *Service) changePolicy(ctx context.Context, actor wire.AuditActor, rev *
 		if err != nil {
 			return wire.PolicyKept{}, fail(storeUnavailable, "The policy could not be kept: %v", err)
 		}
-		if err := s.signPolicy(ctx, next.Version, raw); err != nil {
-			return wire.PolicyKept{}, err
-		}
-		s.keepPolicyVersion(ctx, next.Version, raw)
-		s.log(fmt.Sprintf("the policy is now version %d", next.Version))
-		stopped := kept.policy != nil && kept.policy.StopAll != nil && kept.policy.StopAll.On
-		s.policyChanged(fmt.Sprint(next.Version), actor.User, stopped != (next.StopAll != nil && next.StopAll.On))
-		return s.policyKept(keptPolicy{raw: raw, policy: &next, rev: tag}), nil
+		return s.policyChangeKept(ctx, actor, kept, next, raw, tag)
 	}
+}
+
+// nextPolicy is the change made to the kept policy, one version higher and stamped, and
+// its canonical JSON, which must fit the bound.
+func nextPolicy(kept keptPolicy, now time.Time, actor wire.AuditActor,
+	change func(now time.Time, current *wire.OrgPolicy) (wire.OrgPolicy, error)) (wire.OrgPolicy, []byte, error) {
+	next, err := change(now, kept.policy)
+	if err != nil {
+		return wire.OrgPolicy{}, nil, err
+	}
+	next.Version = 1
+	if kept.policy != nil {
+		next.Version = kept.policy.Version + 1
+	}
+	next.Issued, next.ChangedBy = wire.DateOf(now), actor
+	next.Requires = policyRequires(next)
+	if next.Budgets != nil {
+		next.Budgets.Raises = currentRaises(next.Budgets.Raises, now)
+		if next.Budgets.AllowUnmetered == nil {
+			next.Budgets.AllowUnmetered = []string{}
+		}
+	}
+	next.Groups = nil
+	raw, err := encodePolicy(next)
+	if err != nil {
+		return wire.OrgPolicy{}, nil, err
+	}
+	if len(raw) > mostPolicyBytes {
+		return wire.OrgPolicy{}, nil, fail(invalidParams, "The policy is larger than %d KiB.", mostPolicyBytes>>10)
+	}
+	return next, raw, nil
+}
+
+// policyChangeKept signs the policy the store took, keeps its version, and tells every
+// copy, saying whether the kill switch changed.
+func (s *Service) policyChangeKept(ctx context.Context, actor wire.AuditActor, kept keptPolicy, next wire.OrgPolicy,
+	raw []byte, tag string) (wire.PolicyKept, error) {
+	if err := s.signPolicy(ctx, next.Version, raw); err != nil {
+		return wire.PolicyKept{}, err
+	}
+	s.keepPolicyVersion(ctx, next.Version, raw)
+	s.log(fmt.Sprintf("the policy is now version %d", next.Version))
+	stopped := kept.policy != nil && kept.policy.StopAll != nil && kept.policy.StopAll.On
+	s.policyChanged(fmt.Sprint(next.Version), actor.User, stopped != (next.StopAll != nil && next.StopAll.On))
+	return s.policyKept(keptPolicy{raw: raw, policy: &next, rev: tag}), nil
 }
 
 // encodePolicy is the document as kept and signed: its canonical JSON.

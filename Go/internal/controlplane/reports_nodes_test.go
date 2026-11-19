@@ -133,40 +133,13 @@ func TestReportsNodesFiltersSortsAndPages(t *testing.T) {
 		Banked: wire.LineageCost{Cost: map[string]float64{}}, LastAt: 1000})
 	page := func(q wire.ReportNodesQuery, order wire.ReportNodesSort, limit int) []wire.ReportNode {
 		t.Helper()
-		var all []wire.ReportNode
-		var after *nodesCursor
-		for range 100 {
-			got := nodesPage(nodeRows(nodes, "issue"), q, order, after, limit)
-			if len(got.Nodes) > limit {
-				t.Fatalf("a page of %d", len(got.Nodes))
-			}
-			all = append(all, got.Nodes...)
-			if got.Cursor == nil {
-				if got.Limited {
-					t.Fatal("limited with no cursor")
-				}
-				return all
-			}
-			c, ok := decodeNodesCursor(*got.Cursor)
-			if !ok {
-				t.Fatal(*got.Cursor)
-			}
-			after = &c
-		}
-		t.Fatal("the pages did not end")
-		return nil
+		return everyNodesPage(t, nodes, q, order, limit)
 	}
 	all := page(wire.ReportNodesQuery{Kind: "issue"}, wire.ReportNodesSortNewest, nodesPageMost)
 	if len(all) != 251 || all[0].Node.Ref != "github:issue:o/rx#1" || all[1].Node.Ref != "github:issue:o/r#249" {
 		t.Fatalf("%d %v", len(all), all[0].Node)
 	}
-	seen := map[string]bool{}
-	for _, r := range all {
-		if seen[r.Node.Ref] {
-			t.Fatalf("%s twice", r.Node.Ref)
-		}
-		seen[r.Node.Ref] = true
-	}
+	assertNoNodeTwice(t, all)
 	if got := page(wire.ReportNodesQuery{Kind: "issue", Repo: str("github:o/r")}, wire.ReportNodesSortNewest, 7); len(got) != 250 {
 		t.Fatalf("repo: %d", len(got))
 	}
@@ -188,17 +161,64 @@ func TestReportsNodesFiltersSortsAndPages(t *testing.T) {
 	if len(byCost) != 251 {
 		t.Fatalf("cost: %d", len(byCost))
 	}
+	assertByCostThenRef(t, byCost)
+	// No issue here has a merged PR, so none has a lead time: all of them, by ref.
+	if got := page(wire.ReportNodesQuery{Kind: "issue"}, wire.ReportNodesSortLeadTime, 100); len(got) != 251 ||
+		got[0].Node.Ref != "github:issue:o/r#0" {
+		t.Fatalf("leadTime: %d", len(got))
+	}
+}
+
+// everyNodesPage reads the nodes' rows page by page, following the cursor, and returns every
+// row.
+func everyNodesPage(t *testing.T, nodes []wire.LineageCostNode, q wire.ReportNodesQuery, order wire.ReportNodesSort, limit int) []wire.ReportNode {
+	t.Helper()
+	var all []wire.ReportNode
+	var after *nodesCursor
+	for range 100 {
+		got := nodesPage(nodeRows(nodes, "issue"), q, order, after, limit)
+		if len(got.Nodes) > limit {
+			t.Fatalf("a page of %d", len(got.Nodes))
+		}
+		all = append(all, got.Nodes...)
+		if got.Cursor == nil {
+			if got.Limited {
+				t.Fatal("limited with no cursor")
+			}
+			return all
+		}
+		c, ok := decodeNodesCursor(*got.Cursor)
+		if !ok {
+			t.Fatal(*got.Cursor)
+		}
+		after = &c
+	}
+	t.Fatal("the pages did not end")
+	return nil
+}
+
+// assertNoNodeTwice checks no node is in the rows more than once.
+func assertNoNodeTwice(t *testing.T, all []wire.ReportNode) {
+	t.Helper()
+	seen := map[string]bool{}
+	for _, r := range all {
+		if seen[r.Node.Ref] {
+			t.Fatalf("%s twice", r.Node.Ref)
+		}
+		seen[r.Node.Ref] = true
+	}
+}
+
+// assertByCostThenRef checks the rows go from the most total cost to the least, and by ref
+// when the cost is the same.
+func assertByCostThenRef(t *testing.T, byCost []wire.ReportNode) {
+	t.Helper()
 	for i := 1; i < len(byCost); i++ {
 		a, b := byCost[i-1], byCost[i]
 		if a.Cost.Total.Cost["USD"] < b.Cost.Total.Cost["USD"] ||
 			a.Cost.Total.Cost["USD"] == b.Cost.Total.Cost["USD"] && a.Node.Ref > b.Node.Ref {
 			t.Fatalf("cost order at %d: %v %v", i, a.Node, b.Node)
 		}
-	}
-	// No issue here has a merged PR, so none has a lead time: all of them, by ref.
-	if got := page(wire.ReportNodesQuery{Kind: "issue"}, wire.ReportNodesSortLeadTime, 100); len(got) != 251 ||
-		got[0].Node.Ref != "github:issue:o/r#0" {
-		t.Fatalf("leadTime: %d", len(got))
 	}
 }
 

@@ -39,6 +39,44 @@ type cachedRead struct {
 // listed is the whole listing of prefix: a key it no longer has is let go.
 func (c *readCache) read(ctx context.Context, st store.Store, prefix string, listed, keys []store.Key) ([][]byte, error) {
 	out := make([][]byte, len(keys))
+	missing := c.fromHeld(prefix, listed, keys, out)
+	if len(missing) == 0 {
+		return out, nil
+	}
+
+	next := make(chan int)
+	errs := make(chan error, 1)
+	var wg sync.WaitGroup
+	for range min(storeReadsAtOnce, len(missing)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.readEach(ctx, st, keys, next, errs, out)
+		}()
+	}
+	for _, i := range missing {
+		if len(errs) > 0 || ctx.Err() != nil {
+			break
+		}
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	select {
+	case err := <-errs:
+		return nil, err
+	default:
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// fromHeld lets go of each held key under prefix that listed no longer has, puts the held
+// data of each key whose tag has not moved into out, and returns the indexes of the keys
+// still to read.
+func (c *readCache) fromHeld(prefix string, listed, keys []store.Key, out [][]byte) []int {
 	var missing []int
 	c.mu.Lock()
 	if c.held == nil {
@@ -62,61 +100,43 @@ func (c *readCache) read(ctx context.Context, st store.Store, prefix string, lis
 		}
 	}
 	c.mu.Unlock()
-	if len(missing) == 0 {
-		return out, nil
-	}
+	return missing
+}
 
-	next := make(chan int)
-	errs := make(chan error, 1)
-	var wg sync.WaitGroup
-	for range min(storeReadsAtOnce, len(missing)) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range next {
-				k := keys[i]
-				object, err := st.Get(ctx, k.Key)
-				if err != nil {
-					select {
-					case errs <- err:
-					default:
-					}
-					continue
-				}
-				if object == nil {
-					continue
-				}
-				out[i] = object.Data
-				// Kept only when what was read is what was listed.
-				if k.ETag != "" && object.ETag == k.ETag {
-					c.mu.Lock()
-					c.bytes -= len(c.held[k.Key].data)
-					if len(c.held) >= mostCachedReads || c.bytes+len(object.Data) > mostCachedBytes {
-						clear(c.held)
-						c.bytes = 0
-					}
-					c.held[k.Key] = cachedRead{etag: k.ETag, data: object.Data}
-					c.bytes += len(object.Data)
-					c.mu.Unlock()
-				}
+// readEach reads from the store each key whose index comes on next, into out, and keeps
+// what it read. The first error goes on errs, and the rest are dropped.
+func (c *readCache) readEach(ctx context.Context, st store.Store, keys []store.Key, next <-chan int, errs chan<- error, out [][]byte) {
+	for i := range next {
+		k := keys[i]
+		object, err := st.Get(ctx, k.Key)
+		if err != nil {
+			select {
+			case errs <- err:
+			default:
 			}
-		}()
-	}
-	for _, i := range missing {
-		if len(errs) > 0 || ctx.Err() != nil {
-			break
+			continue
 		}
-		next <- i
+		if object == nil {
+			continue
+		}
+		out[i] = object.Data
+		// Kept only when what was read is what was listed.
+		if k.ETag != "" && object.ETag == k.ETag {
+			c.keep(k, object.Data)
+		}
 	}
-	close(next)
-	wg.Wait()
-	select {
-	case err := <-errs:
-		return nil, err
-	default:
+}
+
+// keep holds the data read at a key with its tag. When the cache is full by count or by
+// bytes, it lets go of everything first.
+func (c *readCache) keep(k store.Key, data []byte) {
+	c.mu.Lock()
+	c.bytes -= len(c.held[k.Key].data)
+	if len(c.held) >= mostCachedReads || c.bytes+len(data) > mostCachedBytes {
+		clear(c.held)
+		c.bytes = 0
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
+	c.held[k.Key] = cachedRead{etag: k.ETag, data: data}
+	c.bytes += len(data)
+	c.mu.Unlock()
 }

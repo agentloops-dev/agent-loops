@@ -84,25 +84,7 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 	s := rs.Store
 	left := most
 
-	// Events, by the day in their key: the audit's days (#996), or the days before a
-	// shorter time for a day after it (#2067).
-	cutoff := audit.Cutoff(audit.SweepDays(rs.Settings(), now), now)
-	n, err := events.sweep(ctx, s, cutoff, left)
-	report.events += n
-	left -= n
-	if err != nil {
-		return report, err
-	}
-	// The audit chain's seals (#1001), a day's each, go with their day's entries.
-	n, err = audit.SweepSeals(ctx, s, cutoff)
-	report.events += n
-	left -= n
-	if err != nil {
-		return report, err
-	}
-
-	// Copies' change events, by the day in their key.
-	n, err = sweepMeshEvents(ctx, s, now, left)
+	n, err := sweepAllEvents(ctx, rs, now, left, events)
 	report.events += n
 	left -= n
 	if err != nil {
@@ -110,118 +92,24 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 	}
 
 	// Codes, by their expiry; a .spent whose code is gone goes too.
-	codes, err := s.List(ctx, codesPrefix)
+	n, err = sweepCodes(ctx, s, now, left)
+	report.codes += n
+	left -= n
 	if err != nil {
 		return report, err
 	}
-	named := map[string]bool{}
-	for _, c := range codes {
-		named[c.Key] = true
-	}
-	expiredBefore := now.Add(-codesKeptAfterExpiry)
-	for _, c := range codes {
-		// Two left at least: a code may go with its .spent.
-		if left <= 1 {
-			break
-		}
-		if strings.HasSuffix(c.Key, ".spent") {
-			if named[strings.TrimSuffix(c.Key, ".spent")+".json"] {
-				continue
-			}
-		} else {
-			object, err := s.Get(ctx, c.Key)
-			if err != nil {
-				return report, err
-			}
-			var stored storedCode
-			if object == nil || json.Unmarshal(object.Data, &stored) != nil || !stored.Expires.Before(expiredBefore) {
-				continue
-			}
-			spentKey := strings.TrimSuffix(c.Key, ".json") + ".spent"
-			if named[spentKey] {
-				if err := s.Delete(ctx, spentKey); err != nil {
-					return report, err
-				}
-				report.codes++
-				left--
-			}
-		}
-		if err := s.Delete(ctx, c.Key); err != nil {
-			return report, err
-		}
-		report.codes++
-		left--
-	}
 
 	// Tombstones, as the records found them.
-	forgottenBefore := now.Add(-tombstonesKept)
-	for _, key := range rs.TombstoneKeys() {
-		if left <= 0 {
-			break
-		}
-		object, err := s.Get(ctx, key)
-		if err != nil {
-			return report, err
-		}
-		var mark struct {
-			Forgotten   *bool          `json:"forgotten"`
-			ForgottenAt *records.Stamp `json:"forgottenAt"`
-			Removed     *bool          `json:"removed"`
-			RemovedAt   *records.Stamp `json:"removedAt"`
-			SignIns     []any          `json:"signIns"`
-		}
-		if object == nil || json.Unmarshal(object.Data, &mark) != nil {
-			continue
-		}
-		before := forgottenBefore
-		if strings.HasPrefix(key, records.ProjectsPrefix) || strings.HasPrefix(key, records.GroupsPrefix) ||
-			strings.HasPrefix(key, records.PeoplePrefix) {
-			// A removed project (#2711), group or person (#3126): removing one always gives
-			// it removedAt.
-			if mark.Removed == nil || !*mark.Removed || mark.RemovedAt == nil {
-				continue
-			}
-			if strings.HasPrefix(key, records.PeoplePrefix) {
-				// A person's sign-ins stay refused while the record is kept.
-				if len(mark.SignIns) > 0 {
-					continue
-				}
-				before = now.Add(-removedPeopleKept)
-			}
-			mark.Forgotten, mark.ForgottenAt = mark.Removed, mark.RemovedAt
-		}
-		if mark.Forgotten == nil || !*mark.Forgotten {
-			continue
-		}
-		if mark.ForgottenAt == nil {
-			// One written before forgottenAt was kept is given today's, so it goes a week on.
-			if dated, err := dateTombstone(ctx, s, key, object, now); err != nil {
-				return report, err
-			} else if dated {
-				report.dated++
-			}
-			continue
-		}
-		if !mark.ForgottenAt.Before(before) {
-			continue
-		}
-		// Read again just before: a record written over it since is not a tombstone.
-		again, err := s.Get(ctx, key)
-		if err != nil {
-			return report, err
-		}
-		if again == nil || again.ETag != object.ETag {
-			continue
-		}
-		if err := s.Delete(ctx, key); err != nil {
-			return report, err
-		}
-		report.tombstones++
-		left--
+	n, dated, err := sweepTombstones(ctx, rs, now, left)
+	report.tombstones += n
+	report.dated += dated
+	left -= n
+	if err != nil {
+		return report, err
 	}
 
 	// Removed providers' tombstones (#3748), as a client's.
-	n, dated, err := sweepProviders(ctx, s, now, left)
+	n, dated, err = sweepProviders(ctx, s, now, left)
 	report.tombstones += n
 	report.dated += dated
 	left -= n
@@ -245,52 +133,7 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 		return report, err
 	}
 
-	// The reports' hours and days (#1811).
-	usage, err := sweepUsage(ctx, s, now, left)
-	report.usage = usage
-	if err != nil {
-		return report, err
-	}
-	// Bots' run claims (#1761), counted with the usage periods.
-	runs, err := sweepRuns(ctx, s, now, left-usage)
-	report.usage += runs
-	if err != nil {
-		return report, err
-	}
-	// A removed machine's cost on links (#2350), counted with them too.
-	work, err := sweepLineage(ctx, s, rs, now, left-report.usage)
-	report.usage += work
-	if err != nil {
-		return report, err
-	}
-	// The bus log past its last busLogKept envelopes (#4729), counted with them too. Its own
-	// bound: a busy bus can add more than a sweep's in an hour.
-	busOld, err := sweepBus(ctx, s, busLogKept, busLogKept/10)
-	report.usage += busOld
-	if err != nil {
-		return report, err
-	}
-	// Producer leases that ended a day ago (#4731).
-	leases, err := sweepBusLeases(ctx, s, now, left-report.usage)
-	report.usage += leases
-	if err != nil {
-		return report, err
-	}
-	// The merged copy of lineage (#4275): old links and states, and a removed machine's.
-	graph, err := sweepLineageGraph(ctx, s, rs, now, left-report.usage)
-	report.usage += graph
-	if err != nil {
-		return report, err
-	}
-	// The copy of the build timings (#5232): a stopped machine's, and a removed machine's.
-	builds, err := sweepBuildTimings(ctx, s, rs, now, left-report.usage)
-	report.usage += builds
-	if err != nil {
-		return report, err
-	}
-	// The copy of the deploys (#5496): a removed machine's.
-	deploys, err := sweepDeploys(ctx, s, rs, now, left-report.usage)
-	report.usage += deploys
+	report.usage, err = sweepUsages(ctx, rs, now, left)
 	if err != nil {
 		return report, err
 	}
@@ -313,20 +156,275 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 	return report, nil
 }
 
+// sweepAllEvents deletes, at most most, the audit's events and seals and the copies'
+// change events past their days, and says how many went.
+func sweepAllEvents(ctx context.Context, rs *records.Records, now time.Time, most int, events *eventSweep) (int, error) {
+	s := rs.Store
+	left := most
+	total := 0
+	// Events, by the day in their key: the audit's days (#996), or the days before a
+	// shorter time for a day after it (#2067).
+	cutoff := audit.Cutoff(audit.SweepDays(rs.Settings(), now), now)
+	n, err := events.sweep(ctx, s, cutoff, left)
+	total += n
+	left -= n
+	if err != nil {
+		return total, err
+	}
+	// The audit chain's seals (#1001), a day's each, go with their day's entries.
+	n, err = audit.SweepSeals(ctx, s, cutoff)
+	total += n
+	left -= n
+	if err != nil {
+		return total, err
+	}
+	// Copies' change events, by the day in their key.
+	n, err = sweepMeshEvents(ctx, s, now, left)
+	total += n
+	return total, err
+}
+
+// sweepCodes deletes, at most most, the codes a day past their expiry with their .spent,
+// and each .spent whose code is gone, and says how many files went.
+func sweepCodes(ctx context.Context, s store.Store, now time.Time, most int) (int, error) {
+	deleted := 0
+	left := most
+	codes, err := s.List(ctx, codesPrefix)
+	if err != nil {
+		return deleted, err
+	}
+	named := map[string]bool{}
+	for _, c := range codes {
+		named[c.Key] = true
+	}
+	expiredBefore := now.Add(-codesKeptAfterExpiry)
+	for _, c := range codes {
+		// Two left at least: a code may go with its .spent.
+		if left <= 1 {
+			break
+		}
+		if strings.HasSuffix(c.Key, ".spent") {
+			if named[strings.TrimSuffix(c.Key, ".spent")+".json"] {
+				continue
+			}
+		} else {
+			due, spentGone, err := sweepExpiredCode(ctx, s, c.Key, named, expiredBefore)
+			if spentGone {
+				deleted++
+				left--
+			}
+			if err != nil {
+				return deleted, err
+			}
+			if !due {
+				continue
+			}
+		}
+		if err := s.Delete(ctx, c.Key); err != nil {
+			return deleted, err
+		}
+		deleted++
+		left--
+	}
+	return deleted, nil
+}
+
+// sweepExpiredCode reads a code and says whether it is a day past its expiry, so it goes.
+// When it goes, its .spent is deleted first, and spentGone says so.
+func sweepExpiredCode(ctx context.Context, s store.Store, key string, named map[string]bool, expiredBefore time.Time) (due, spentGone bool, err error) {
+	object, err := s.Get(ctx, key)
+	if err != nil {
+		return false, false, err
+	}
+	var stored storedCode
+	if object == nil || json.Unmarshal(object.Data, &stored) != nil || !stored.Expires.Before(expiredBefore) {
+		return false, false, nil
+	}
+	spentKey := strings.TrimSuffix(key, ".json") + ".spent"
+	if named[spentKey] {
+		if err := s.Delete(ctx, spentKey); err != nil {
+			return false, false, err
+		}
+		return true, true, nil
+	}
+	return true, false, nil
+}
+
+// tombstoneMark is what the sweep reads of a record: whether it is a tombstone, and since
+// when.
+type tombstoneMark struct {
+	Forgotten   *bool          `json:"forgotten"`
+	ForgottenAt *records.Stamp `json:"forgottenAt"`
+	Removed     *bool          `json:"removed"`
+	RemovedAt   *records.Stamp `json:"removedAt"`
+	SignIns     []any          `json:"signIns"`
+}
+
+// sweepTombstones deletes, at most most, the tombstones the records found that are past
+// their time, and dates those with no time. It says how many went and how many it dated.
+func sweepTombstones(ctx context.Context, rs *records.Records, now time.Time, most int) (deleted, dated int, err error) {
+	left := most
+	for _, key := range rs.TombstoneKeys() {
+		if left <= 0 {
+			break
+		}
+		gone, wasDated, err := sweepTombstone(ctx, rs.Store, key, now)
+		if err != nil {
+			return deleted, dated, err
+		}
+		if wasDated {
+			dated++
+		}
+		if gone {
+			deleted++
+			left--
+		}
+	}
+	return deleted, dated, nil
+}
+
+// sweepTombstone deletes one tombstone past its time, or gives one with no time today's,
+// so it goes a week on. It says which it did.
+func sweepTombstone(ctx context.Context, s store.Store, key string, now time.Time) (gone, dated bool, err error) {
+	object, err := s.Get(ctx, key)
+	if err != nil {
+		return false, false, err
+	}
+	var mark tombstoneMark
+	if object == nil || json.Unmarshal(object.Data, &mark) != nil {
+		return false, false, nil
+	}
+	before, ok := tombstoneBefore(key, &mark, now)
+	if !ok || mark.Forgotten == nil || !*mark.Forgotten {
+		return false, false, nil
+	}
+	if mark.ForgottenAt == nil {
+		// One written before forgottenAt was kept is given today's, so it goes a week on.
+		dated, err := dateTombstone(ctx, s, key, object, now)
+		return false, dated, err
+	}
+	if !mark.ForgottenAt.Before(before) {
+		return false, false, nil
+	}
+	// Read again just before: a record written over it since is not a tombstone.
+	again, err := s.Get(ctx, key)
+	if err != nil {
+		return false, false, err
+	}
+	if again == nil || again.ETag != object.ETag {
+		return false, false, nil
+	}
+	if err := s.Delete(ctx, key); err != nil {
+		return false, false, err
+	}
+	return true, false, nil
+}
+
+// tombstoneBefore is the time before which a tombstone at key was forgotten goes, or false
+// when the record is kept. A removed project (#2711), group or person (#3126) is forgotten
+// when it was removed; removing one always gives it removedAt. A person's sign-ins stay
+// refused while the record is kept.
+func tombstoneBefore(key string, mark *tombstoneMark, now time.Time) (time.Time, bool) {
+	before := now.Add(-tombstonesKept)
+	if !strings.HasPrefix(key, records.ProjectsPrefix) && !strings.HasPrefix(key, records.GroupsPrefix) &&
+		!strings.HasPrefix(key, records.PeoplePrefix) {
+		return before, true
+	}
+	if mark.Removed == nil || !*mark.Removed || mark.RemovedAt == nil {
+		return before, false
+	}
+	if strings.HasPrefix(key, records.PeoplePrefix) {
+		if len(mark.SignIns) > 0 {
+			return before, false
+		}
+		before = now.Add(-removedPeopleKept)
+	}
+	mark.Forgotten, mark.ForgottenAt = mark.Removed, mark.RemovedAt
+	return before, true
+}
+
+// sweepUsages deletes, within most, the reports' periods and the other counted copies
+// (bots' run claims, lineage, the bus log and its leases, build timings and deploys), and
+// says how many went.
+func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left int) (int, error) {
+	s := rs.Store
+	// The reports' hours and days (#1811).
+	usage, err := sweepUsage(ctx, s, now, left)
+	if err != nil {
+		return usage, err
+	}
+	// Bots' run claims (#1761), counted with the usage periods.
+	runs, err := sweepRuns(ctx, s, now, left-usage)
+	usage += runs
+	if err != nil {
+		return usage, err
+	}
+	// A removed machine's cost on links (#2350), counted with them too.
+	work, err := sweepLineage(ctx, s, rs, now, left-usage)
+	usage += work
+	if err != nil {
+		return usage, err
+	}
+	// The bus log past its last busLogKept envelopes (#4729), counted with them too. Its own
+	// bound: a busy bus can add more than a sweep's in an hour.
+	busOld, err := sweepBus(ctx, s, busLogKept, busLogKept/10)
+	usage += busOld
+	if err != nil {
+		return usage, err
+	}
+	// Producer leases that ended a day ago (#4731).
+	leases, err := sweepBusLeases(ctx, s, now, left-usage)
+	usage += leases
+	if err != nil {
+		return usage, err
+	}
+	// The merged copy of lineage (#4275): old links and states, and a removed machine's.
+	graph, err := sweepLineageGraph(ctx, s, rs, now, left-usage)
+	usage += graph
+	if err != nil {
+		return usage, err
+	}
+	// The copy of the build timings (#5232): a stopped machine's, and a removed machine's.
+	builds, err := sweepBuildTimings(ctx, s, rs, now, left-usage)
+	usage += builds
+	if err != nil {
+		return usage, err
+	}
+	// The copy of the deploys (#5496): a removed machine's.
+	deploys, err := sweepDeploys(ctx, s, rs, now, left-usage)
+	usage += deploys
+	return usage, err
+}
+
 // sweepOrphans deletes, at most most, what outlived what it belonged to (#2293): the lease
 // of a host that has no record, once it has run out (an expired lease fences no copy),
 // a host's folder list once its record is gone from the store too (#3125), and an org
 // route's tombstone, with its secret, that its removal could not delete.
 func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most int) (int, error) {
-	s := rs.Store
 	deleted := 0
+	for _, step := range []func(context.Context, *records.Records, time.Time, int) (int, bool, error){
+		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes,
+	} {
+		n, full, err := step(ctx, rs, now, most-deleted)
+		deleted += n
+		if err != nil || full {
+			return deleted, err
+		}
+	}
+	return deleted, nil
+}
+
+// sweepOrphanLeases deletes, at most most, the leases of hosts with no record once they
+// have run out. full says it stopped at most.
+func sweepOrphanLeases(ctx context.Context, rs *records.Records, now time.Time, most int) (deleted int, full bool, err error) {
+	s := rs.Store
 	leases, err := s.List(ctx, leasesPrefix)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	for _, k := range leases {
 		if deleted >= most {
-			return deleted, nil
+			return deleted, true, nil
 		}
 		host, ok := strings.CutSuffix(strings.TrimPrefix(k.Key, leasesPrefix), ".json")
 		if !ok || rs.Host(host) != nil {
@@ -334,24 +432,31 @@ func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most 
 		}
 		object, err := s.Get(ctx, k.Key)
 		if err != nil {
-			return deleted, err
+			return deleted, false, err
 		}
 		var lease hostLease
 		if object == nil || (json.Unmarshal(object.Data, &lease) == nil && lease.Expires.After(now)) {
 			continue
 		}
 		if err := s.Delete(ctx, k.Key); err != nil {
-			return deleted, err
+			return deleted, false, err
 		}
 		deleted++
 	}
+	return deleted, false, nil
+}
+
+// sweepOrphanFolderLists deletes, at most most, the folder lists of hosts whose record is
+// gone from the store too (#3125). full says it stopped at most.
+func sweepOrphanFolderLists(ctx context.Context, rs *records.Records, _ time.Time, most int) (deleted int, full bool, err error) {
+	s := rs.Store
 	folders, err := s.List(ctx, projectFoldersPrefix)
 	if err != nil {
-		return deleted, err
+		return 0, false, err
 	}
 	for _, k := range folders {
 		if deleted >= most {
-			return deleted, nil
+			return deleted, true, nil
 		}
 		host := joinedHost(k.Key)
 		if rs.Host(host) != nil {
@@ -360,22 +465,29 @@ func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most 
 		// A machine that joined at another copy has a record this one has not read yet,
 		// and a removed one keeps its tombstone a while: either keeps its list.
 		if record, err := s.Get(ctx, records.HostKey(host)); err != nil {
-			return deleted, err
+			return deleted, false, err
 		} else if record != nil {
 			continue
 		}
 		if err := s.Delete(ctx, k.Key); err != nil {
-			return deleted, err
+			return deleted, false, err
 		}
 		deleted++
 	}
+	return deleted, false, nil
+}
+
+// sweepRemovedOrgRoutes deletes, at most most, the org routes' tombstones with their
+// secrets, which their removal could not delete. full says it stopped at most.
+func sweepRemovedOrgRoutes(ctx context.Context, rs *records.Records, _ time.Time, most int) (deleted int, full bool, err error) {
+	s := rs.Store
 	routes, err := s.List(ctx, orgRoutesPrefix)
 	if err != nil {
-		return deleted, err
+		return 0, false, err
 	}
 	for _, k := range routes {
 		if deleted >= most-1 {
-			return deleted, nil
+			return deleted, true, nil
 		}
 		id, ok := strings.CutSuffix(strings.TrimPrefix(k.Key, orgRoutesPrefix), ".json")
 		if !ok || strings.HasSuffix(k.Key, orgSecretSuffix) {
@@ -383,7 +495,7 @@ func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most 
 		}
 		object, err := s.Get(ctx, k.Key)
 		if err != nil {
-			return deleted, err
+			return deleted, false, err
 		}
 		var mark struct {
 			Removed bool `json:"removed"`
@@ -392,14 +504,14 @@ func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most 
 			continue
 		}
 		if err := s.Delete(ctx, orgSecretKey(id)); err != nil {
-			return deleted, err
+			return deleted, false, err
 		}
 		if err := s.Delete(ctx, k.Key); err != nil {
-			return deleted, err
+			return deleted, false, err
 		}
 		deleted++
 	}
-	return deleted, nil
+	return deleted, false, nil
 }
 
 // sweepRequests reads each request store, so the ended requests go within the hour
@@ -653,6 +765,44 @@ func sweepRounds(ctx context.Context, rs *records.Records, now func() time.Time,
 	}
 }
 
+// sweepServing is one hour's sweep on a serving copy: it seals the audit chain, sweeps
+// the store in rounds, prunes the orphaned backups once a day (backupsSwept is the day
+// they last were), sweeps the requests and the kept ones, and renews and forgets members.
+func (s *Service) sweepServing(events *eventSweep, backupsSwept *string) (sweepReport, error) {
+	// Today's head of this copy's audit chain, sealed (#1001).
+	if err := s.auditChain.Seal(context.Background(), s.cfg.Store, time.Now()); err != nil {
+		s.log("audit: could not seal the chain: " + err.Error())
+	}
+	report, _, err := sweepRounds(context.Background(), s.records, time.Now, mostPerSweep, events, sweepPause,
+		func(pause time.Duration) bool {
+			select {
+			case <-s.stop:
+				return false
+			case <-time.After(pause):
+				return s.phase.now() == phaseServing
+			}
+		})
+	// Once a day, the backups no host of their owner prunes any more (#2293).
+	if day := time.Now().UTC().Format(sweptDayLayout); err == nil && s.backups != nil && day != *backupsSwept {
+		if err := s.backups.pruneOrphans(context.Background()); err != nil {
+			s.log("store: backups not swept: " + err.Error())
+		} else {
+			*backupsSwept = day
+		}
+	}
+	s.sweepRequests(context.Background(), time.Now())
+	// Kept requests not sent for a week, with their attachments (#3647).
+	if s.providers != nil {
+		if kept := s.providers.Kept(); kept != nil {
+			kept.Expire(time.Now())
+		}
+	}
+	s.renewConnected(context.Background())
+	s.forgetExpired(context.Background(), time.Now(), mostPerSweep)
+	s.dropPreviousKey(context.Background())
+	return report, err
+}
+
 // sweepEveryHour runs the sweep once an hour, the first a minute after start (#174).
 func (s *Service) sweepEveryHour() {
 	select {
@@ -669,37 +819,7 @@ func (s *Service) sweepEveryHour() {
 		var report sweepReport
 		var err error
 		if s.phase.now() == phaseServing {
-			// Today's head of this copy's audit chain, sealed (#1001).
-			if err := s.auditChain.Seal(context.Background(), s.cfg.Store, time.Now()); err != nil {
-				s.log("audit: could not seal the chain: " + err.Error())
-			}
-			report, _, err = sweepRounds(context.Background(), s.records, time.Now, mostPerSweep, &events, sweepPause,
-				func(pause time.Duration) bool {
-					select {
-					case <-s.stop:
-						return false
-					case <-time.After(pause):
-						return s.phase.now() == phaseServing
-					}
-				})
-			// Once a day, the backups no host of their owner prunes any more (#2293).
-			if day := time.Now().UTC().Format(sweptDayLayout); err == nil && s.backups != nil && day != backupsSwept {
-				if err := s.backups.pruneOrphans(context.Background()); err != nil {
-					s.log("store: backups not swept: " + err.Error())
-				} else {
-					backupsSwept = day
-				}
-			}
-			s.sweepRequests(context.Background(), time.Now())
-			// Kept requests not sent for a week, with their attachments (#3647).
-			if s.providers != nil {
-				if kept := s.providers.Kept(); kept != nil {
-					kept.Expire(time.Now())
-				}
-			}
-			s.renewConnected(context.Background())
-			s.forgetExpired(context.Background(), time.Now(), mostPerSweep)
-			s.dropPreviousKey(context.Background())
+			report, err = s.sweepServing(&events, &backupsSwept)
 		}
 		switch {
 		case err != nil:

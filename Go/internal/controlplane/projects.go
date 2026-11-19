@@ -162,27 +162,61 @@ func (s *Service) keepJoined(ctx context.Context, host string, joined wire.Proje
 	if len(joined.Folders) > mostJoinedFolders {
 		return wire.MachineProjects{}, fail(invalidParams, "Send at most %d folders.", mostJoinedFolders)
 	}
+	folders, err := cleanJoinedFolders(joined.Folders)
+	if err != nil {
+		return wire.MachineProjects{}, err
+	}
+	changed, err := s.putJoinedFolders(ctx, host, folders)
+	if err != nil {
+		return wire.MachineProjects{}, err
+	}
+	adopted, err := s.adoptJoinedProjects(ctx, host, folders)
+	if err != nil {
+		return wire.MachineProjects{}, err
+	}
+	changed = changed || adopted
+	answer := s.machineProjects(folders)
+	s.toldProjects.note(host, answer)
+	if changed {
+		s.projectsChanged("", false)
+	}
+	return answer, nil
+}
+
+// cleanJoinedFolders is the folders sent, each name cut to 200 characters, or why one is
+// refused.
+func cleanJoinedFolders(sent []wire.JoinedFolder) ([]wire.JoinedFolder, error) {
 	folders := []wire.JoinedFolder{}
-	for _, f := range joined.Folders {
+	for _, f := range sent {
 		if !wire.ValidProjectID(f.Project) {
-			return wire.MachineProjects{}, fail(invalidParams, "%q is not a project id.", f.Project)
+			return nil, fail(invalidParams, "%q is not a project id.", f.Project)
 		}
 		if utf8.RuneCountInString(f.Name) > 200 {
 			f.Name = string([]rune(f.Name)[:200])
 		}
 		folders = append(folders, f)
 	}
+	return folders, nil
+}
+
+// putJoinedFolders writes the machine's list over its last, and says whether it changed.
+// Only this machine writes its own list; the same list again changes nothing.
+func (s *Service) putJoinedFolders(ctx context.Context, host string, folders []wire.JoinedFolder) (bool, error) {
 	data, err := records.Encode(storedProjectFolders{Folders: folders})
 	if err != nil {
-		return wire.MachineProjects{}, err
+		return false, err
 	}
-	// Only this machine writes its own list; the same list again changes nothing.
-	changed := true
 	if before, err := s.cfg.Store.Get(ctx, projectFoldersKey(host)); err == nil && before != nil && bytes.Equal(before.Data, data) {
-		changed = false
+		return false, nil
 	} else if _, err := s.cfg.Store.Put(ctx, projectFoldersKey(host), data, store.Always); err != nil {
-		return wire.MachineProjects{}, err
+		return false, err
 	}
+	return true, nil
+}
+
+// adoptJoinedProjects adopts each id of folders that no project has, or a removed one has,
+// with its folder's name, and says whether it adopted or brought back any.
+func (s *Service) adoptJoinedProjects(ctx context.Context, host string, folders []wire.JoinedFolder) (bool, error) {
 	// The ids no project has, each once, adopted in one hold of the write lock (#2735).
 	var unknown []string
 	names := map[string]string{}
@@ -192,49 +226,43 @@ func (s *Service) keepJoined(ctx context.Context, host string, joined wire.Proje
 			names[f.Project] = f.Name
 		}
 	}
-	if len(unknown) > 0 {
-		owner := s.ownerOf(host)
-		if owner == "" {
-			owner = s.localOwner()
-		}
-		var taken map[string]string
-		refused := 0
-		err := s.records.ChangeProjects(ctx, unknown, func(id string, p *records.Project) (*records.Project, error) {
-			if p != nil && !p.IsRemoved() {
-				return nil, nil
-			}
-			if taken == nil {
-				// Read under the lock, after projects were read again.
-				taken = s.projectNames()
-			}
-			changed = true
-			if p != nil {
-				// A removed id that a folder names again comes back, with its old name.
-				next := *p
-				next.Removed, next.RemovedAt = nil, nil
-				next.Name = freeProjectName(taken, p.Name, p.ID)
-				return &next, nil
-			}
-			if s.records.ProjectsOwnedBy(owner) >= mostOwnedProjects {
-				// Not adopted: the folder has no project until its owner has fewer.
-				refused++
-				return nil, nil
-			}
-			return &records.Project{ID: id, Name: freeProjectName(taken, names[id], id), Owner: owner, MadeAt: records.Now()}, nil
-		})
-		if refused > 0 {
-			s.log(fmt.Sprintf("projects/joined from %s: %d project ids not adopted, as %s has %d projects already", host, refused, owner, mostOwnedProjects))
-		}
-		if err != nil {
-			return wire.MachineProjects{}, err
-		}
+	if len(unknown) == 0 {
+		return false, nil
 	}
-	answer := s.machineProjects(folders)
-	s.toldProjects.note(host, answer)
-	if changed {
-		s.projectsChanged("", false)
+	owner := s.ownerOf(host)
+	if owner == "" {
+		owner = s.localOwner()
 	}
-	return answer, nil
+	changed := false
+	var taken map[string]string
+	refused := 0
+	err := s.records.ChangeProjects(ctx, unknown, func(id string, p *records.Project) (*records.Project, error) {
+		if p != nil && !p.IsRemoved() {
+			return nil, nil
+		}
+		if taken == nil {
+			// Read under the lock, after projects were read again.
+			taken = s.projectNames()
+		}
+		changed = true
+		if p != nil {
+			// A removed id that a folder names again comes back, with its old name.
+			next := *p
+			next.Removed, next.RemovedAt = nil, nil
+			next.Name = freeProjectName(taken, p.Name, p.ID)
+			return &next, nil
+		}
+		if s.records.ProjectsOwnedBy(owner) >= mostOwnedProjects {
+			// Not adopted: the folder has no project until its owner has fewer.
+			refused++
+			return nil, nil
+		}
+		return &records.Project{ID: id, Name: freeProjectName(taken, names[id], id), Owner: owner, MadeAt: records.Now()}, nil
+	})
+	if refused > 0 {
+		s.log(fmt.Sprintf("projects/joined from %s: %d project ids not adopted, as %s has %d projects already", host, refused, owner, mostOwnedProjects))
+	}
+	return changed, err
 }
 
 // projectsMethod answers projects/list, projects/set, projects/setSlot, projects/setBoards and

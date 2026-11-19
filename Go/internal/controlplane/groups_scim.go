@@ -266,14 +266,7 @@ func (s *Service) rolesFromGroups(ctx context.Context, provider string) {
 	var kept []string
 	err := s.records.ChangePeople(ctx, func(all map[string]records.Person) ([]records.Person, error) {
 		kept = nil
-		givers := map[string][]string{}
-		for _, g := range s.records.Groups() {
-			if g.Role == records.RoleAdmin && g.Source != nil {
-				for _, m := range g.Members {
-					givers[m] = append(givers[m], g.ID)
-				}
-			}
-		}
+		givers := s.adminGivers()
 		next := map[string]records.Person{}
 		for id, p := range all {
 			if p.IsRemoved() || p.IsBot() {
@@ -281,43 +274,11 @@ func (s *Service) rolesFromGroups(ctx context.Context, provider string) {
 			}
 			from := givers[id]
 			slices.Sort(from)
-			switch {
-			case len(from) > 0:
-				if len(p.RoleFrom) == 0 {
-					p.RoleByHand = p.RoleOrAdmin()
-				}
-				if p.Role == records.RoleAdmin && slices.Equal(p.RoleFrom, from) {
-					continue
-				}
-				p.Role, p.RoleFrom = records.RoleAdmin, from
-			case len(p.RoleFrom) > 0:
-				p.Role, p.RoleFrom = p.RoleByHand, nil
-				if p.Role == "" {
-					p.Role = records.RoleMember
-				}
-				p.RoleByHand = ""
-			default:
-				continue
-			}
-			next[id] = p
-		}
-		after := map[string]records.Person{}
-		for id, p := range all {
-			after[id] = p
-		}
-		for id, p := range next {
-			after[id] = p
-		}
-		if admins(after) == 0 {
-			// The last admins stay admins, still set by the groups they left.
-			for id, p := range next {
-				was := all[id]
-				if was.IsAdmin() && !p.IsAdmin() {
-					delete(next, id)
-					kept = append(kept, was.Name)
-				}
+			if p, changed := roleFromGivers(p, from); changed {
+				next[id] = p
 			}
 		}
+		kept = keepLastAdmins(all, next)
 		out := make([]records.Person, 0, len(next))
 		for _, p := range next {
 			out = append(out, p)
@@ -329,15 +290,83 @@ func (s *Service) rolesFromGroups(ctx context.Context, provider string) {
 		return
 	}
 	if len(kept) > 0 {
-		name := provider
-		if p, err := s.signIns.scimProvider(ctx, provider); err == nil {
-			name = p.Name
-		}
-		s.noticeAdmins(wire.ControlNotice{Kind: "lastAdminKept",
-			Words: name + " took the last admin out of the groups that give the admin role. " + strings.Join(kept, ", ") +
-				" stays an admin until another admin is set."})
+		s.noticeLastAdminsKept(ctx, provider, kept)
 	}
 	s.peopleChanged("", false)
+}
+
+// adminGivers is, for each person, the provider's groups they are in that give the admin role.
+func (s *Service) adminGivers() map[string][]string {
+	givers := map[string][]string{}
+	for _, g := range s.records.Groups() {
+		if g.Role == records.RoleAdmin && g.Source != nil {
+			for _, m := range g.Members {
+				givers[m] = append(givers[m], g.ID)
+			}
+		}
+	}
+	return givers
+}
+
+// roleFromGivers is p with the role the groups in from (sorted) give, and whether it changed:
+// admin while in one, and back to the role set by hand, or member, when in none.
+func roleFromGivers(p records.Person, from []string) (records.Person, bool) {
+	switch {
+	case len(from) > 0:
+		if len(p.RoleFrom) == 0 {
+			p.RoleByHand = p.RoleOrAdmin()
+		}
+		if p.Role == records.RoleAdmin && slices.Equal(p.RoleFrom, from) {
+			return p, false
+		}
+		p.Role, p.RoleFrom = records.RoleAdmin, from
+	case len(p.RoleFrom) > 0:
+		p.Role, p.RoleFrom = p.RoleByHand, nil
+		if p.Role == "" {
+			p.Role = records.RoleMember
+		}
+		p.RoleByHand = ""
+	default:
+		return p, false
+	}
+	return p, true
+}
+
+// keepLastAdmins takes out of next each change that takes an admin's role away when the
+// changes would leave no admin, and is the names of the admins kept.
+func keepLastAdmins(all, next map[string]records.Person) []string {
+	after := map[string]records.Person{}
+	for id, p := range all {
+		after[id] = p
+	}
+	for id, p := range next {
+		after[id] = p
+	}
+	if admins(after) != 0 {
+		return nil
+	}
+	// The last admins stay admins, still set by the groups they left.
+	var kept []string
+	for id, p := range next {
+		was := all[id]
+		if was.IsAdmin() && !p.IsAdmin() {
+			delete(next, id)
+			kept = append(kept, was.Name)
+		}
+	}
+	return kept
+}
+
+// noticeLastAdminsKept tells the admins that the provider took the last admins out of the
+// groups that give the admin role, and that they stay admins.
+func (s *Service) noticeLastAdminsKept(ctx context.Context, provider string, kept []string) {
+	name := provider
+	if p, err := s.signIns.scimProvider(ctx, provider); err == nil {
+		name = p.Name
+	}
+	s.noticeAdmins(wire.ControlNotice{Kind: "lastAdminKept",
+		Words: name + " took the last admin out of the groups that give the admin role. " + strings.Join(kept, ", ") +
+			" stays an admin until another admin is set."})
 }
 
 // setGroupRole is groups/setRole (FR-020): a SCIM group gives the admin role, or not.

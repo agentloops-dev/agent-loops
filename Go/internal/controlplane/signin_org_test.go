@@ -610,103 +610,11 @@ func TestClaimedDomainsSendAndRequire(t *testing.T) {
 		t.Fatal(e)
 	}
 
-	var claim wire.DomainClaim
-	json.Unmarshal(call(t, owner, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "Acme.Test", Provider: "acme-okta"}), &claim)
-	if claim.Domain != "acme.test" || claim.TxtName != "_agents.acme.test" || !strings.HasPrefix(claim.TxtValue, "agents-domain=") ||
-		len(claim.TxtValue) != len("agents-domain=")+32 || claim.State != wire.DomainClaimStateNotProved {
-		t.Fatalf("%+v", claim)
-	}
-	if e := callError(t, kim.window, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "kim.test", Provider: "acme-okta"}); !strings.Contains(e, "Only an admin") {
-		t.Fatal(e)
-	}
-	// Not proved: neither switch (US3 AS1).
-	if e := callError(t, owner, "", "signIn/domains/set", wire.SignInDomainSet{Domain: "acme.test", Require: new(true)}); !strings.Contains(e, "Prove acme.test first") {
-		t.Fatal(e)
-	}
-	json.Unmarshal(call(t, owner, "", "signIn/domains/check", wire.SignInDomainRequest{Domain: "acme.test"}), &claim)
-	if claim.State != wire.DomainClaimStateNotProved {
-		t.Fatalf("proved with no record: %+v", claim)
-	}
-	dns.set(claim.TxtName, "v=spf1", claim.TxtValue)
-	json.Unmarshal(call(t, owner, "", "signIn/domains/check", wire.SignInDomainRequest{Domain: "acme.test"}), &claim)
-	if claim.State != wire.DomainClaimStateProved || claim.LastGood == nil {
-		t.Fatalf("%+v", claim)
-	}
-	// One domain, one provider (US3 AS5).
-	other := orgProvider(prov, "invite")
-	other.Name = "Other Okta"
-	call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: other, Secret: &prov.ClientSecret})
-	if e := callError(t, owner, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "acme.test", Provider: "other-okta"}); !strings.Contains(e, "another provider") {
-		t.Fatal(e)
-	}
-	// The preview names Kim and her Google sign-in, and never the local owner.
-	var preview wire.SignInDomainPreview
-	json.Unmarshal(call(t, owner, "", "signIn/domains/preview", wire.SignInDomainRequest{Domain: "acme.test"}), &preview)
-	if len(preview.People) != 1 || preview.People[0].User != kim.id || deref(preview.People[0].SignIns[0].Email) != "kim@acme.test" {
-		t.Fatalf("%+v", preview)
-	}
-	// Send people here: discover answers for acme.test only, the same for any other.
-	json.Unmarshal(call(t, owner, "", "signIn/domains/set", wire.SignInDomainSet{Domain: "acme.test", SendHere: new(true), Require: new(true)}), &claim)
-	s := openSignIn(t, p)
-	for email, want := range map[string]string{"lee@ACME.test": "acme-okta", "lee@other.test": "", "no email": ""} {
-		raw, err := s.Call(context.Background(), "signIn/discover", wire.SignInDiscover{Email: email})
-		if err != nil {
-			t.Fatal(err)
-		}
-		var d wire.SignInDiscovered
-		json.Unmarshal(raw, &d)
-		if deref(d.Provider) != want {
-			t.Errorf("%s: %s", email, raw)
-		}
-	}
-	var providers wire.SignInProviders
-	json.Unmarshal(call(t, owner, "", "signIn/providers", nil), &providers)
-	if !deref(providers.Discover) {
-		t.Fatalf("%+v", providers)
-	}
-	// Require: Kim's Google sign-in cannot pair, and a new Google person at acme.test
-	// cannot join; Google elsewhere and the local owner can.
-	if _, err := p.signInAs(signin.Google, googleKim, nil); err == nil || !strings.Contains(err.Error(), "-32077") || !strings.Contains(err.Error(), "Acme Okta") {
-		t.Fatal(err)
-	}
-	call(t, owner, "", "signIn/configure", wire.SignInConfigure{Provider: signin.Google, Domains: []string{"acme.test", "other.test"}})
-	if _, err := p.signInAs(signin.Google, func(n string) string {
-		return f.mint(signin.Google, "new-google", n, signintest.Claims{"hd": "acme.test", "email": "new@acme.test", "email_verified": true})
-	}, nil); err == nil || !strings.Contains(err.Error(), "-32077") {
-		t.Fatal(err)
-	}
-	if _, err := p.signInAs(signin.Google, func(n string) string {
-		return f.mint(signin.Google, "else-google", n, signintest.Claims{"hd": "other.test", "email": "x@other.test", "email_verified": true})
-	}, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p.signInAs(signin.Google, func(n string) string {
-		return f.mint(signin.Google, "alex-google", n, signintest.Claims{"email": "alex@acme.test", "email_verified": true})
-	}, nil); err != nil {
-		t.Fatalf("the local owner was refused: %v", err)
-	}
-	// Renewal: Kim's client is not renewed, and keeps working until its key ends; once
-	// Kim adds the org sign-in, it renews.
-	soon := records.At(time.Now().Add(24 * time.Hour))
-	p.s.records.ChangeClient(context.Background(), kim.member.Client, func(c *records.ClientRecord) bool { c.Expires = &soon; return true })
-	p.s.renewClient(context.Background(), kim.member.Client)
-	if c := p.s.records.Client(kim.member.Client); !c.Expires.Equal(soon.Time) {
-		t.Fatalf("renewed: %v", c.Expires)
-	}
-	call(t, kim.window, "", "control/status", nil)
-	prov.SignInAs(signintest.Claims{"sub": "00u-kim", "email": "kim@acme.test"})
-	var started wire.SignInOrgStarted
-	json.Unmarshal(call(t, kim.window, "", "signIn/orgStart", wire.SignInOrgStart{Provider: "acme-okta", Purpose: wire.SignInOrgPurposeAddToMe,
-		ReturnTo: wire.SignInOrgReturnApp, LoginHint: new("kim@acme.test")}), &started)
-	v := (&browser{prov: prov}).open(t, started.URL)
-	call(t, kim.window, "", "signIn/ticket", wire.SignInTicket{Ticket: v.Get("ticket")})
-	if hint := prov.Authorized()[len(prov.Authorized())-1].Get("login_hint"); hint != "kim@acme.test" {
-		t.Fatalf("login_hint %q", hint)
-	}
-	p.s.renewClient(context.Background(), kim.member.Client)
-	if c := p.s.records.Client(kim.member.Client); c.Expires.Equal(soon.Time) {
-		t.Fatal("not renewed once Kim signs in with the org provider")
-	}
+	claim := claimAndProveAcme(t, owner, kim.window, dns)
+	checkOneProviderAndPreview(t, owner, prov, kim.id)
+	checkSendHere(t, p, owner, &claim)
+	checkRequiredAtSignIn(t, p, owner, f, googleKim)
+	checkRenewalNeedsOrg(t, p, prov, kim)
 
 	// The daily check: the record goes; a day later it is failing, still proved; 7 days on,
 	// the claim is not proved and its switches are off (US3 AS2).
@@ -735,6 +643,130 @@ func TestClaimedDomainsSendAndRequire(t *testing.T) {
 	json.Unmarshal(call(t, owner, "", "signIn/domains/list", nil), &list)
 	if len(list.Domains) != 0 {
 		t.Fatalf("%+v", list)
+	}
+}
+
+// claimAndProveAcme claims acme.test for acme-okta, as an admin only, and proves it by
+// its TXT record; neither switch turns on before it is proved (US3 AS1).
+func claimAndProveAcme(t *testing.T, owner, kimWindow *controllink.Session, dns *fakeDNS) wire.DomainClaim {
+	t.Helper()
+	var claim wire.DomainClaim
+	json.Unmarshal(call(t, owner, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "Acme.Test", Provider: "acme-okta"}), &claim)
+	if claim.Domain != "acme.test" || claim.TxtName != "_agents.acme.test" || !strings.HasPrefix(claim.TxtValue, "agents-domain=") ||
+		len(claim.TxtValue) != len("agents-domain=")+32 || claim.State != wire.DomainClaimStateNotProved {
+		t.Fatalf("%+v", claim)
+	}
+	if e := callError(t, kimWindow, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "kim.test", Provider: "acme-okta"}); !strings.Contains(e, "Only an admin") {
+		t.Fatal(e)
+	}
+	// Not proved: neither switch (US3 AS1).
+	if e := callError(t, owner, "", "signIn/domains/set", wire.SignInDomainSet{Domain: "acme.test", Require: new(true)}); !strings.Contains(e, "Prove acme.test first") {
+		t.Fatal(e)
+	}
+	json.Unmarshal(call(t, owner, "", "signIn/domains/check", wire.SignInDomainRequest{Domain: "acme.test"}), &claim)
+	if claim.State != wire.DomainClaimStateNotProved {
+		t.Fatalf("proved with no record: %+v", claim)
+	}
+	dns.set(claim.TxtName, "v=spf1", claim.TxtValue)
+	json.Unmarshal(call(t, owner, "", "signIn/domains/check", wire.SignInDomainRequest{Domain: "acme.test"}), &claim)
+	if claim.State != wire.DomainClaimStateProved || claim.LastGood == nil {
+		t.Fatalf("%+v", claim)
+	}
+	return claim
+}
+
+// checkOneProviderAndPreview checks that a second provider cannot claim acme.test (US3
+// AS5), and that the preview names Kim and her Google sign-in, and never the local owner.
+func checkOneProviderAndPreview(t *testing.T, owner *controllink.Session, prov *signintest.Provider, kimID string) {
+	t.Helper()
+	// One domain, one provider (US3 AS5).
+	other := orgProvider(prov, "invite")
+	other.Name = "Other Okta"
+	call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: other, Secret: &prov.ClientSecret})
+	if e := callError(t, owner, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "acme.test", Provider: "other-okta"}); !strings.Contains(e, "another provider") {
+		t.Fatal(e)
+	}
+	// The preview names Kim and her Google sign-in, and never the local owner.
+	var preview wire.SignInDomainPreview
+	json.Unmarshal(call(t, owner, "", "signIn/domains/preview", wire.SignInDomainRequest{Domain: "acme.test"}), &preview)
+	if len(preview.People) != 1 || preview.People[0].User != kimID || deref(preview.People[0].SignIns[0].Email) != "kim@acme.test" {
+		t.Fatalf("%+v", preview)
+	}
+}
+
+// checkSendHere sends people at acme.test here and requires its provider: discover
+// answers for acme.test only, the same for any other, and the providers say so.
+func checkSendHere(t *testing.T, p *plane, owner *controllink.Session, claim *wire.DomainClaim) {
+	t.Helper()
+	json.Unmarshal(call(t, owner, "", "signIn/domains/set", wire.SignInDomainSet{Domain: "acme.test", SendHere: new(true), Require: new(true)}), claim)
+	s := openSignIn(t, p)
+	for email, want := range map[string]string{"lee@ACME.test": "acme-okta", "lee@other.test": "", "no email": ""} {
+		raw, err := s.Call(context.Background(), "signIn/discover", wire.SignInDiscover{Email: email})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var d wire.SignInDiscovered
+		json.Unmarshal(raw, &d)
+		if deref(d.Provider) != want {
+			t.Errorf("%s: %s", email, raw)
+		}
+	}
+	var providers wire.SignInProviders
+	json.Unmarshal(call(t, owner, "", "signIn/providers", nil), &providers)
+	if !deref(providers.Discover) {
+		t.Fatalf("%+v", providers)
+	}
+}
+
+// checkRequiredAtSignIn checks the required provider: Kim's Google sign-in cannot pair,
+// and a new Google person at acme.test cannot join; Google elsewhere and the local owner
+// can.
+func checkRequiredAtSignIn(t *testing.T, p *plane, owner *controllink.Session, f *providersFake, googleKim func(string) string) {
+	t.Helper()
+	if _, err := p.signInAs(signin.Google, googleKim, nil); err == nil || !strings.Contains(err.Error(), "-32077") || !strings.Contains(err.Error(), "Acme Okta") {
+		t.Fatal(err)
+	}
+	call(t, owner, "", "signIn/configure", wire.SignInConfigure{Provider: signin.Google, Domains: []string{"acme.test", "other.test"}})
+	if _, err := p.signInAs(signin.Google, func(n string) string {
+		return f.mint(signin.Google, "new-google", n, signintest.Claims{"hd": "acme.test", "email": "new@acme.test", "email_verified": true})
+	}, nil); err == nil || !strings.Contains(err.Error(), "-32077") {
+		t.Fatal(err)
+	}
+	if _, err := p.signInAs(signin.Google, func(n string) string {
+		return f.mint(signin.Google, "else-google", n, signintest.Claims{"hd": "other.test", "email": "x@other.test", "email_verified": true})
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.signInAs(signin.Google, func(n string) string {
+		return f.mint(signin.Google, "alex-google", n, signintest.Claims{"email": "alex@acme.test", "email_verified": true})
+	}, nil); err != nil {
+		t.Fatalf("the local owner was refused: %v", err)
+	}
+}
+
+// checkRenewalNeedsOrg checks renewal: Kim's client is not renewed, and keeps working
+// until its key ends; once Kim adds the org sign-in, it renews.
+func checkRenewalNeedsOrg(t *testing.T, p *plane, prov *signintest.Provider, kim *person) {
+	t.Helper()
+	soon := records.At(time.Now().Add(24 * time.Hour))
+	p.s.records.ChangeClient(context.Background(), kim.member.Client, func(c *records.ClientRecord) bool { c.Expires = &soon; return true })
+	p.s.renewClient(context.Background(), kim.member.Client)
+	if c := p.s.records.Client(kim.member.Client); !c.Expires.Equal(soon.Time) {
+		t.Fatalf("renewed: %v", c.Expires)
+	}
+	call(t, kim.window, "", "control/status", nil)
+	prov.SignInAs(signintest.Claims{"sub": "00u-kim", "email": "kim@acme.test"})
+	var started wire.SignInOrgStarted
+	json.Unmarshal(call(t, kim.window, "", "signIn/orgStart", wire.SignInOrgStart{Provider: "acme-okta", Purpose: wire.SignInOrgPurposeAddToMe,
+		ReturnTo: wire.SignInOrgReturnApp, LoginHint: new("kim@acme.test")}), &started)
+	v := (&browser{prov: prov}).open(t, started.URL)
+	call(t, kim.window, "", "signIn/ticket", wire.SignInTicket{Ticket: v.Get("ticket")})
+	if hint := prov.Authorized()[len(prov.Authorized())-1].Get("login_hint"); hint != "kim@acme.test" {
+		t.Fatalf("login_hint %q", hint)
+	}
+	p.s.renewClient(context.Background(), kim.member.Client)
+	if c := p.s.records.Client(kim.member.Client); c.Expires.Equal(soon.Time) {
+		t.Fatal("not renewed once Kim signs in with the org provider")
 	}
 }
 

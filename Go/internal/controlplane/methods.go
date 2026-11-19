@@ -358,40 +358,8 @@ func (m *Methods) installCarried(params json.RawMessage, from Caller) (any, bool
 
 func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (any, error) {
 	ctx := context.Background()
-	m.mu.Lock()
-	frozen := m.frozen
-	m.mu.Unlock()
-	readsOnly := method == "providers/list" || method == "providers/refresh" || method == "machines/listKept"
-	if frozen && (writes[method] || workspaceMethods[method] && !readsOnly) {
-		return nil, fail(storeUnavailable, "The control plane is moving to another machine. Nothing was changed; try again in a minute.")
-	}
-	// Add as Machine… on a codespace whose provider a machine carries (#3497): that
-	// machine's ssh installs it, not this one's, so neither a hosted copy's refusal nor the
-	// owner's ssh applies.
-	if method == "machines/install" && m.s.providers != nil {
-		if answer, carried, err := m.installCarried(params, from); carried {
-			return answer, err
-		}
-		// A click on a machine that never joined (#4978): its provider starts a stopped one first.
-		var request wire.MachineInstall
-		if json.Unmarshal(params, &request) == nil {
-			if err := m.s.providers.StartToJoin(request, m.callerPerson(from)); err != nil {
-				return nil, err
-			}
-		}
-	}
-	if m.s.cfg.Hosted && overSSH[method] {
-		return nil, noSSHHere
-	}
-	// Another user's machine is not there (#994, FR-018); bots/stopRun names a bot's, an
-	// admin's to stop (#1761), and console/stopAgent anyone's, an admin's to stop (#2019, M9).
-	if method != "bots/stopRun" && method != "console/stopAgent" {
-		if err := m.refuseOthersHosts(params, from); err != nil {
-			return nil, err
-		}
-	}
-	if ownersSSH[method] && m.callerPerson(from) != m.s.localOwner() {
-		return nil, notOwnersSSH
+	if answer, done, err := m.beforeDispatch(method, params, from); done {
+		return answer, err
 	}
 	// What a code makes is the caller's person's (FR-017).
 	ctx = withCodeOwner(ctx, m.callerPerson(from))
@@ -409,14 +377,7 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 	case "machines/list":
 		return m.hostList(from, params)
 	case "clients/list", "devices/list":
-		// The caller's person's own clients (#994).
-		out := []wire.ClientRecord{}
-		for _, c := range m.records.Clients() {
-			if m.s.PersonOf(c.ID) == m.callerPerson(from) {
-				out = append(out, clientOnWire(c))
-			}
-		}
-		return out, nil
+		return m.ownClients(from), nil
 	case "people/list", "people/invite", "people/setRole", "people/remove", "people/removePreview", "people/removeRequests",
 		"people/forViews", "people/setForgeLogins":
 		return m.peopleMethod(ctx, method, params, from)
@@ -478,25 +439,9 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 	case "machines/joinRequests":
 		return m.s.joins.list(ctx, m.callerPerson(from))
 	case "machines/approveJoin", "machines/denyJoin":
-		request, err := require[wire.JoinRequestDecide](params, "JoinRequestDecide")
-		if err != nil {
-			return nil, err
-		}
-		approved, err := m.s.joins.decide(ctx, request.Request, m.callerPerson(from), method == "machines/approveJoin")
-		if err != nil || approved == nil {
-			return map[string]any{}, err
-		}
-		return approved, nil
+		return m.decideJoin(ctx, method, params, from)
 	case "clients/connections":
-		out := []wire.ClientConnection{}
-		for _, client := range m.router.Connections() {
-			if m.s.PersonOf(client) != m.callerPerson(from) {
-				continue
-			}
-			out = append(out, wire.ClientConnection{Client: wire.UUID(client)})
-		}
-		sort.Slice(out, func(i, j int) bool { return out[i].Client < out[j].Client })
-		return out, nil
+		return m.ownConnections(from), nil
 	case "clients/startPairing":
 		// A grant an older window still sends is let go: every client may do everything
 		// (#111).
@@ -511,27 +456,7 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		// An older window's grant picker, refused in words: there is nothing left to set.
 		return nil, fail(notSupported, "Every paired client may do everything now, so there is no grant to change. Update this window to lose the choice.")
 	case "clients/forget", "devices/forget":
-		// clients/forget says the client; devices/forget, from an older Remote, its id.
-		var client wire.ClientRequest
-		var device wire.DeviceForget
-		json.Unmarshal(params, &client)
-		json.Unmarshal(params, &device)
-		id := string(client.Client)
-		if !controllink.IsUUID(id) {
-			id = string(device.ID)
-		}
-		if !controllink.IsUUID(id) {
-			return nil, fail(invalidParams, "Which client?")
-		}
-		// Only the person's own; an admin removes another's with the person (#994).
-		if m.records.Client(id) != nil && m.s.PersonOf(id) != m.callerPerson(from) {
-			return nil, fail(invalidParams, "There is no such client.")
-		}
-		if err := m.forget(ctx, strings.ToUpper(id), 0); err != nil {
-			return nil, err
-		}
-		m.s.announce("clientForgotten", strings.ToUpper(id), from.Client)
-		return map[string]any{}, nil
+		return m.forgetClient(ctx, params, from)
 	case "clients/forgetSelf":
 		// Only itself. The reply goes before the sockets close, so the caller hears it.
 		if err := m.forget(ctx, from.Client, 200*time.Millisecond); err != nil {
@@ -540,53 +465,15 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		m.s.announce("clientForgotten", from.Client, from.Client)
 		return map[string]any{}, nil
 	case "clients/setPushToken":
-		request, err := require[wire.PushToken](params, "PushToken")
-		if err != nil {
-			return nil, err
-		}
-		if err := m.setPushToken(ctx, from.Client, request); err != nil {
-			return nil, err
-		}
-		return map[string]any{}, nil
+		return m.savePushToken(ctx, params, from)
 	case "clients/setWebPush":
-		request, err := require[wire.WebPushSubscription](params, "WebPushSubscription")
-		if err != nil {
-			return nil, err
-		}
-		if err := m.setWebPush(ctx, from.Client, request); err != nil {
-			return nil, err
-		}
-		return map[string]any{}, nil
+		return m.saveWebPush(ctx, params, from)
 	case "clients/webPushKey":
-		key := wire.WebPushKey{}
-		if m.s.webPush != nil {
-			public := m.s.webPush.sender.PublicKey()
-			key.PublicKey = &public
-		}
-		return key, nil
+		return m.webPushKey(), nil
 	case "clients/setActivityToken":
-		request, err := require[wire.ActivityToken](params, "ActivityToken")
-		if err != nil {
-			return nil, err
-		}
-		if err := m.setActivityToken(ctx, from.Client, request); err != nil {
-			return nil, err
-		}
-		return map[string]any{}, nil
+		return m.saveActivityToken(ctx, params, from)
 	case "machines/startEnroll":
-		// With as, a machine for a bot, which an admin enrols (#1761, FR-030).
-		var enroll wire.MachineEnroll
-		json.Unmarshal(params, &enroll)
-		if bot := deref(enroll.As); bot != "" {
-			if !m.s.isAdmin(m.callerPerson(from)) {
-				return nil, fail(notPermitted, "Only an admin can add a machine for a bot.")
-			}
-			if !m.s.isBot(bot) {
-				return nil, fail(invalidParams, "There is no such bot.")
-			}
-			ctx = withCodeOwner(ctx, bot)
-		}
-		return m.s.codes.Issue(ctx, true, false, controllink.CodeLifetime)
+		return m.startEnroll(ctx, params, from)
 	case "machines/install":
 		var request wire.MachineInstall
 		json.Unmarshal(params, &request)
@@ -598,27 +485,9 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		json.Unmarshal(params, &p)
 		return m.s.installer.SSHHosts(ctx, strings.TrimSpace(deref(p.Destination)))
 	case "machines/update":
-		request, err := require[wire.MachineUpdate](params, "MachineUpdate")
-		if err != nil {
-			return nil, err
-		}
-		h := m.s.records.Host(string(request.Host))
-		if h == nil {
-			return nil, &RPCError{Code: wire.FailureNoSuchHost, Message: "There is no such host."}
-		}
-		return m.s.installer.Update(ctx, request, h.Name)
+		return m.updateMachine(ctx, params)
 	case "machines/setLabels":
-		request, err := require[wire.MachineLabelsRequest](params, "MachineLabelsRequest")
-		if err != nil {
-			return nil, err
-		}
-		answer, err := m.setLabels(ctx, request, from)
-		if answer.Changed > 0 {
-			for _, id := range request.Machines {
-				m.s.announce("hostEnrolled", string(id), from.Client)
-			}
-		}
-		return answer, err
+		return m.setMachineLabels(ctx, params, from)
 	case "machines/checkAgain":
 		request, err := require[wire.MachineRequest](params, "MachineRequest")
 		if err != nil {
@@ -642,155 +511,82 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 	case "control/restart", "control/retryWeb", "control/setWeb":
 		return m.localMethod(ctx, method, params, from)
 	case "control/setFolderDetection":
-		request, err := require[wire.FolderDetection](params, "FolderDetection")
-		if err != nil {
-			return nil, err
-		}
-		paths := []string{}
-		for _, p := range request.Paths {
-			if p = strings.TrimSpace(p); p != "" {
-				paths = append(paths, p)
-			}
-		}
-		request.Paths = paths
-		raw, _ := json.Marshal(request)
-		if _, err := m.records.ChangeSettings(ctx, func(s *records.Settings) { s.FolderDetection = raw }); err != nil {
-			return nil, err
-		}
-		return request, nil
+		return m.setFolderDetection(ctx, params)
 	case "machines/lendSignIn":
-		request, err := require[wire.LendSignIn](params, "LendSignIn")
-		if err != nil {
-			return nil, err
-		}
-		record := m.records.Host(string(request.Host))
-		if record == nil || m.records.Host(string(request.From)) == nil || !m.sameUser(record.ID, string(request.From)) {
-			return nil, fail(noSuchHost, "No such host.")
-		}
-		lends := map[string]string{}
-		for k, v := range record.SignInFrom {
-			lends[k] = v
-		}
-		if request.Allowed {
-			lends[request.Runtime] = string(request.From)
-		} else {
-			delete(lends, request.Runtime)
-		}
-		record.SignInFrom = lends
-		if len(lends) == 0 {
-			record.SignInFrom = nil
-		}
-		if err := m.records.SaveHost(ctx, *record); err != nil {
-			return nil, err
-		}
-		m.s.announce("hostEnrolled", string(request.Host), from.Client)
-		return map[string]any{}, nil
+		return m.lendSignIn(ctx, params, from)
 	case "machines/lendGit":
-		request, err := require[wire.LendGit](params, "LendGit")
-		if err != nil {
-			return nil, err
-		}
-		if err := m.lendGit(ctx, request); err != nil {
-			return nil, err
-		}
-		m.s.announce("hostEnrolled", string(request.Host), from.Client)
-		return map[string]any{}, nil
+		return m.lendGitTo(ctx, params, from)
 	case "machines/remove":
-		request, err := require[wire.MachineRequest](params, "MachineRequest")
-		if err != nil {
-			return nil, err
-		}
-		host, err := m.ownHostNamed(from, string(request.Host))
-		if err != nil {
-			return nil, err
-		}
-		gone, err := m.removeHost(ctx, host, from)
-		if err != nil {
-			return nil, err
-		}
-		if !gone {
-			return nil, fail(noSuchHost, "No machine is called %s.", host)
-		}
-		return map[string]any{}, nil
+		return m.removeMachine(ctx, params, from)
 	case "machines/retrySetup":
-		// Try Again on a machine's set-up (#5355).
-		request, err := require[wire.MachineRequest](params, "MachineRequest")
-		if err != nil {
-			return nil, err
-		}
-		host, err := m.ownHostNamed(from, string(request.Host))
-		if err != nil {
-			return nil, err
-		}
-		if m.records.Host(host) == nil || !m.owns(from, host) {
-			return nil, fail(noSuchHost, "No machine is called %s.", host)
-		}
-		return map[string]any{}, m.s.retrySetup(ctx, host)
+		return m.retryMachineSetup(ctx, params, from)
 	case "machines/deletePreview":
-		// Delete's question (#3979): the worktrees on the machine with work not pushed.
-		request, err := require[wire.MachineRequest](params, "MachineRequest")
-		if err != nil {
-			return nil, err
-		}
-		host, err := m.ownHostNamed(from, string(request.Host))
-		if err != nil {
-			return nil, err
-		}
-		h := m.records.Host(host)
-		if h == nil {
-			return nil, fail(noSuchHost, "No machine is called %s.", host)
-		}
-		return m.unpushedOn(*h, from), nil
+		return m.deletePreview(params, from)
 	case "machines/lastHeard":
-		request, err := require[wire.MachineRequest](params, "MachineRequest")
-		if err != nil {
-			return nil, err
-		}
-		host := string(request.Host)
-		if m.records.Host(host) == nil {
-			return nil, fail(noSuchHost, "No machine is called %s.", host)
-		}
-		return m.s.copies.lastHeard(host), nil
+		return m.machineLastHeard(params)
 	case "machines/versions":
-		// The Agents versions it ran (#5272), for its page (#5273).
-		request, err := require[wire.MachineRequest](params, "MachineRequest")
-		if err != nil {
-			return nil, err
-		}
-		host, err := m.ownHostNamed(from, string(request.Host))
-		if err != nil {
-			return nil, err
-		}
-		if m.records.Host(host) == nil || !m.owns(from, host) {
-			return nil, fail(noSuchHost, "No machine is called %s.", host)
-		}
-		return m.s.machineVersions(ctx, host)
+		return m.ownMachineVersions(ctx, params, from)
 	case "machines/agents":
-		// A machine page's Agents section (#5273).
-		request, err := require[wire.MachineRequest](params, "MachineRequest")
-		if err != nil {
-			return nil, err
-		}
-		host, err := m.ownHostNamed(from, string(request.Host))
-		if err != nil {
-			return nil, err
-		}
-		if m.records.Host(host) == nil || !m.owns(from, host) {
-			return nil, fail(noSuchHost, "No machine is called %s.", host)
-		}
-		return m.machineAgents(ctx, host, from)
+		return m.ownMachineAgents(ctx, params, from)
 	case "machines/agentsChanges":
-		// The changes between two Agents versions (#5273): public, from GitHub.
-		request, err := require[wire.AgentsChangesRequest](params, "AgentsChangesRequest")
-		if err != nil {
-			return nil, err
-		}
-		limit := 0
-		if request.Limit != nil {
-			limit = max(int(*request.Limit), 0)
-		}
-		return m.s.agentsChanges(ctx, request.Base, request.Head, limit)
+		return m.agentsChangesBetween(ctx, params)
 	}
+	return m.workspaceAnswer(method, params, from)
+}
+
+// beforeDispatch runs Handle's checks before it picks the method: a control plane that is
+// moving, a codespace install that another machine carries, ssh on a hosted control plane,
+// another user's machine, and the owner's ssh. done says Handle returns its answer at once.
+func (m *Methods) beforeDispatch(method string, params json.RawMessage, from Caller) (answer any, done bool, err error) {
+	m.mu.Lock()
+	frozen := m.frozen
+	m.mu.Unlock()
+	readsOnly := method == "providers/list" || method == "providers/refresh" || method == "machines/listKept"
+	if frozen && (writes[method] || workspaceMethods[method] && !readsOnly) {
+		return nil, true, fail(storeUnavailable, "The control plane is moving to another machine. Nothing was changed; try again in a minute.")
+	}
+	// Add as Machine… on a codespace whose provider a machine carries (#3497): that
+	// machine's ssh installs it, not this one's, so neither a hosted copy's refusal nor the
+	// owner's ssh applies.
+	if method == "machines/install" && m.s.providers != nil {
+		if answer, done, err := m.installFirst(params, from); done {
+			return answer, true, err
+		}
+	}
+	if m.s.cfg.Hosted && overSSH[method] {
+		return nil, true, noSSHHere
+	}
+	// Another user's machine is not there (#994, FR-018); bots/stopRun names a bot's, an
+	// admin's to stop (#1761), and console/stopAgent anyone's, an admin's to stop (#2019, M9).
+	if method != "bots/stopRun" && method != "console/stopAgent" {
+		if err := m.refuseOthersHosts(params, from); err != nil {
+			return nil, true, err
+		}
+	}
+	if ownersSSH[method] && m.callerPerson(from) != m.s.localOwner() {
+		return nil, true, notOwnersSSH
+	}
+	return nil, false, nil
+}
+
+// installFirst is what machines/install does with a machine provider before Handle picks the
+// method: a carried install answers at once, and a stopped machine is started to join.
+func (m *Methods) installFirst(params json.RawMessage, from Caller) (answer any, done bool, err error) {
+	if answer, carried, err := m.installCarried(params, from); carried {
+		return answer, true, err
+	}
+	// A click on a machine that never joined (#4978): its provider starts a stopped one first.
+	var request wire.MachineInstall
+	if json.Unmarshal(params, &request) == nil {
+		if err := m.s.providers.StartToJoin(request, m.callerPerson(from)); err != nil {
+			return nil, true, err
+		}
+	}
+	return nil, false, nil
+}
+
+// workspaceAnswer is a machine provider's method, or notFound for a method nothing answers.
+func (m *Methods) workspaceAnswer(method string, params json.RawMessage, from Caller) (any, error) {
 	if workspaceMethods[method] {
 		if m.s.providers == nil {
 			return nil, m.s.providersOff()
@@ -798,6 +594,339 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.s.providers.Answer(method, params, providersCaller(from))
 	}
 	return nil, notFound(method)
+}
+
+// ownClients is clients/list: the caller's person's own clients (#994).
+func (m *Methods) ownClients(from Caller) []wire.ClientRecord {
+	out := []wire.ClientRecord{}
+	for _, c := range m.records.Clients() {
+		if m.s.PersonOf(c.ID) == m.callerPerson(from) {
+			out = append(out, clientOnWire(c))
+		}
+	}
+	return out
+}
+
+// decideJoin is machines/approveJoin and machines/denyJoin: the caller's answer to a
+// machine that asked to join.
+func (m *Methods) decideJoin(ctx context.Context, method string, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.JoinRequestDecide](params, "JoinRequestDecide")
+	if err != nil {
+		return nil, err
+	}
+	approved, err := m.s.joins.decide(ctx, request.Request, m.callerPerson(from), method == "machines/approveJoin")
+	if err != nil || approved == nil {
+		return map[string]any{}, err
+	}
+	return approved, nil
+}
+
+// ownConnections is clients/connections: the caller's person's clients that are connected
+// now, sorted by id.
+func (m *Methods) ownConnections(from Caller) []wire.ClientConnection {
+	out := []wire.ClientConnection{}
+	for _, client := range m.router.Connections() {
+		if m.s.PersonOf(client) != m.callerPerson(from) {
+			continue
+		}
+		out = append(out, wire.ClientConnection{Client: wire.UUID(client)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Client < out[j].Client })
+	return out
+}
+
+// forgetClient is clients/forget and devices/forget: it removes one of the caller's
+// person's own clients.
+func (m *Methods) forgetClient(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	// clients/forget says the client; devices/forget, from an older Remote, its id.
+	var client wire.ClientRequest
+	var device wire.DeviceForget
+	json.Unmarshal(params, &client)
+	json.Unmarshal(params, &device)
+	id := string(client.Client)
+	if !controllink.IsUUID(id) {
+		id = string(device.ID)
+	}
+	if !controllink.IsUUID(id) {
+		return nil, fail(invalidParams, "Which client?")
+	}
+	// Only the person's own; an admin removes another's with the person (#994).
+	if m.records.Client(id) != nil && m.s.PersonOf(id) != m.callerPerson(from) {
+		return nil, fail(invalidParams, "There is no such client.")
+	}
+	if err := m.forget(ctx, strings.ToUpper(id), 0); err != nil {
+		return nil, err
+	}
+	m.s.announce("clientForgotten", strings.ToUpper(id), from.Client)
+	return map[string]any{}, nil
+}
+
+// savePushToken is clients/setPushToken: the calling client's push token.
+func (m *Methods) savePushToken(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.PushToken](params, "PushToken")
+	if err != nil {
+		return nil, err
+	}
+	if err := m.setPushToken(ctx, from.Client, request); err != nil {
+		return nil, err
+	}
+	return map[string]any{}, nil
+}
+
+// saveWebPush is clients/setWebPush: the calling client's web push subscription.
+func (m *Methods) saveWebPush(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.WebPushSubscription](params, "WebPushSubscription")
+	if err != nil {
+		return nil, err
+	}
+	if err := m.setWebPush(ctx, from.Client, request); err != nil {
+		return nil, err
+	}
+	return map[string]any{}, nil
+}
+
+// webPushKey is clients/webPushKey: the public key for web push, when web push is on.
+func (m *Methods) webPushKey() wire.WebPushKey {
+	key := wire.WebPushKey{}
+	if m.s.webPush != nil {
+		public := m.s.webPush.sender.PublicKey()
+		key.PublicKey = &public
+	}
+	return key
+}
+
+// saveActivityToken is clients/setActivityToken: the calling client's Live Activity token.
+func (m *Methods) saveActivityToken(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.ActivityToken](params, "ActivityToken")
+	if err != nil {
+		return nil, err
+	}
+	if err := m.setActivityToken(ctx, from.Client, request); err != nil {
+		return nil, err
+	}
+	return map[string]any{}, nil
+}
+
+// startEnroll is machines/startEnroll: a code to enrol a machine. With as, a machine for a
+// bot, which an admin enrols (#1761, FR-030).
+func (m *Methods) startEnroll(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	var enroll wire.MachineEnroll
+	json.Unmarshal(params, &enroll)
+	if bot := deref(enroll.As); bot != "" {
+		if !m.s.isAdmin(m.callerPerson(from)) {
+			return nil, fail(notPermitted, "Only an admin can add a machine for a bot.")
+		}
+		if !m.s.isBot(bot) {
+			return nil, fail(invalidParams, "There is no such bot.")
+		}
+		ctx = withCodeOwner(ctx, bot)
+	}
+	return m.s.codes.Issue(ctx, true, false, controllink.CodeLifetime)
+}
+
+// updateMachine is machines/update: the installer updates a known machine.
+func (m *Methods) updateMachine(ctx context.Context, params json.RawMessage) (any, error) {
+	request, err := require[wire.MachineUpdate](params, "MachineUpdate")
+	if err != nil {
+		return nil, err
+	}
+	h := m.s.records.Host(string(request.Host))
+	if h == nil {
+		return nil, &RPCError{Code: wire.FailureNoSuchHost, Message: "There is no such host."}
+	}
+	return m.s.installer.Update(ctx, request, h.Name)
+}
+
+// setMachineLabels is machines/setLabels: it sets the labels, and announces each machine
+// again when any label changed.
+func (m *Methods) setMachineLabels(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.MachineLabelsRequest](params, "MachineLabelsRequest")
+	if err != nil {
+		return nil, err
+	}
+	answer, err := m.setLabels(ctx, request, from)
+	if answer.Changed > 0 {
+		for _, id := range request.Machines {
+			m.s.announce("hostEnrolled", string(id), from.Client)
+		}
+	}
+	return answer, err
+}
+
+// setFolderDetection is control/setFolderDetection: it keeps the paths with no blanks in
+// the settings.
+func (m *Methods) setFolderDetection(ctx context.Context, params json.RawMessage) (any, error) {
+	request, err := require[wire.FolderDetection](params, "FolderDetection")
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{}
+	for _, p := range request.Paths {
+		if p = strings.TrimSpace(p); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	request.Paths = paths
+	raw, _ := json.Marshal(request)
+	if _, err := m.records.ChangeSettings(ctx, func(s *records.Settings) { s.FolderDetection = raw }); err != nil {
+		return nil, err
+	}
+	return request, nil
+}
+
+// lendSignIn is machines/lendSignIn: one machine lends, or stops lending, a runtime's
+// sign-in to another machine of the same user.
+func (m *Methods) lendSignIn(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.LendSignIn](params, "LendSignIn")
+	if err != nil {
+		return nil, err
+	}
+	record := m.records.Host(string(request.Host))
+	if record == nil || m.records.Host(string(request.From)) == nil || !m.sameUser(record.ID, string(request.From)) {
+		return nil, fail(noSuchHost, "No such host.")
+	}
+	lends := map[string]string{}
+	for k, v := range record.SignInFrom {
+		lends[k] = v
+	}
+	if request.Allowed {
+		lends[request.Runtime] = string(request.From)
+	} else {
+		delete(lends, request.Runtime)
+	}
+	record.SignInFrom = lends
+	if len(lends) == 0 {
+		record.SignInFrom = nil
+	}
+	if err := m.records.SaveHost(ctx, *record); err != nil {
+		return nil, err
+	}
+	m.s.announce("hostEnrolled", string(request.Host), from.Client)
+	return map[string]any{}, nil
+}
+
+// lendGitTo is machines/lendGit: one machine lends, or stops lending, its git access.
+func (m *Methods) lendGitTo(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.LendGit](params, "LendGit")
+	if err != nil {
+		return nil, err
+	}
+	if err := m.lendGit(ctx, request); err != nil {
+		return nil, err
+	}
+	m.s.announce("hostEnrolled", string(request.Host), from.Client)
+	return map[string]any{}, nil
+}
+
+// removeMachine is machines/remove: it takes one of the caller's machines off the control
+// plane.
+func (m *Methods) removeMachine(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.MachineRequest](params, "MachineRequest")
+	if err != nil {
+		return nil, err
+	}
+	host, err := m.ownHostNamed(from, string(request.Host))
+	if err != nil {
+		return nil, err
+	}
+	gone, err := m.removeHost(ctx, host, from)
+	if err != nil {
+		return nil, err
+	}
+	if !gone {
+		return nil, fail(noSuchHost, "No machine is called %s.", host)
+	}
+	return map[string]any{}, nil
+}
+
+// ownMachine is the machine a MachineRequest names, when it is one of the caller's own;
+// else noSuchHost.
+func (m *Methods) ownMachine(params json.RawMessage, from Caller) (string, error) {
+	request, err := require[wire.MachineRequest](params, "MachineRequest")
+	if err != nil {
+		return "", err
+	}
+	host, err := m.ownHostNamed(from, string(request.Host))
+	if err != nil {
+		return "", err
+	}
+	if m.records.Host(host) == nil || !m.owns(from, host) {
+		return "", fail(noSuchHost, "No machine is called %s.", host)
+	}
+	return host, nil
+}
+
+// retryMachineSetup is machines/retrySetup: Try Again on a machine's set-up (#5355).
+func (m *Methods) retryMachineSetup(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	host, err := m.ownMachine(params, from)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{}, m.s.retrySetup(ctx, host)
+}
+
+// deletePreview is machines/deletePreview, Delete's question (#3979): the worktrees on the
+// machine with work not pushed.
+func (m *Methods) deletePreview(params json.RawMessage, from Caller) (any, error) {
+	request, err := require[wire.MachineRequest](params, "MachineRequest")
+	if err != nil {
+		return nil, err
+	}
+	host, err := m.ownHostNamed(from, string(request.Host))
+	if err != nil {
+		return nil, err
+	}
+	h := m.records.Host(host)
+	if h == nil {
+		return nil, fail(noSuchHost, "No machine is called %s.", host)
+	}
+	return m.unpushedOn(*h, from), nil
+}
+
+// machineLastHeard is machines/lastHeard: when the control plane last heard from a machine.
+func (m *Methods) machineLastHeard(params json.RawMessage) (any, error) {
+	request, err := require[wire.MachineRequest](params, "MachineRequest")
+	if err != nil {
+		return nil, err
+	}
+	host := string(request.Host)
+	if m.records.Host(host) == nil {
+		return nil, fail(noSuchHost, "No machine is called %s.", host)
+	}
+	return m.s.copies.lastHeard(host), nil
+}
+
+// ownMachineVersions is machines/versions: the Agents versions one of the caller's
+// machines ran (#5272), for its page (#5273).
+func (m *Methods) ownMachineVersions(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	host, err := m.ownMachine(params, from)
+	if err != nil {
+		return nil, err
+	}
+	return m.s.machineVersions(ctx, host)
+}
+
+// ownMachineAgents is machines/agents: a machine page's Agents section (#5273).
+func (m *Methods) ownMachineAgents(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
+	host, err := m.ownMachine(params, from)
+	if err != nil {
+		return nil, err
+	}
+	return m.machineAgents(ctx, host, from)
+}
+
+// agentsChangesBetween is machines/agentsChanges: the changes between two Agents versions
+// (#5273), public, from GitHub.
+func (m *Methods) agentsChangesBetween(ctx context.Context, params json.RawMessage) (any, error) {
+	request, err := require[wire.AgentsChangesRequest](params, "AgentsChangesRequest")
+	if err != nil {
+		return nil, err
+	}
+	limit := 0
+	if request.Limit != nil {
+		limit = max(int(*request.Limit), 0)
+	}
+	return m.s.agentsChanges(ctx, request.Base, request.Head, limit)
 }
 
 // workspaceMethods is DaemonAPI.Method.workspaceMethods: machine providers (#691).
@@ -1256,6 +1385,9 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 	if startsWork[method] && m.s.suspended(m.s.ownerOf(host)) {
 		return nil, fail(personSuspended, "This machine's person was suspended by their organisation.")
 	}
+	if answer, ok, err := m.hostReported(ctx, host, method, params); ok {
+		return answer, err
+	}
 	switch method {
 	case "control/ping":
 		return map[string]any{}, nil
@@ -1268,82 +1400,15 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		}
 		// What this control plane can do, so the host asks only what it answers (#4100).
 		return wire.MachineHelloAnswer{Capabilities: capabilities()}, m.hello(ctx, host, hello)
-	case wire.CallMachineCapacity.Name:
-		report, err := require[wire.CapacityReport](params, "CapacityReport")
-		if err != nil {
-			return nil, err
-		}
-		m.s.noteCapacity(host, report, time.Now())
-		return wire.Empty{}, nil
 	case "folders/detected":
-		// Once: from now on its folders are the person's to add and remove (#429).
-		if record := m.records.Host(host); record != nil && record.DetectFolders != nil && *record.DetectFolders {
-			record.DetectFolders = nil
-			if err := m.records.SaveHost(ctx, *record); err != nil {
-				return nil, err
-			}
-		}
-		return map[string]any{}, nil
+		return m.foldersDetected(ctx, host)
 	case "attention/need":
 		m.s.heard(host, params)
 		return map[string]any{}, nil
 	case "notices/take":
-		// The person's one bucket of notices, for every machine of theirs (#2859).
-		limits, err := require[wire.NoticeLimits](params, "NoticeLimits")
-		if err != nil {
-			return nil, err
-		}
-		if m.s.users == nil {
-			return nil, fail(notSupported, "This control plane keeps no user settings.")
-		}
-		return m.s.users.TakeNotice(ctx, m.s.ownerOf(host), limits)
+		return m.takeNotice(ctx, host, params)
 	case "user/setPolicy":
-		// Your layer changed on its keeper (#2957, research R11): stored as the part
-		// policy, and pushed on to the person's other machines. Only the keeper may set
-		// it: a machine named elsewhere in the signed layer is refused notKeeper.
-		signed, err := require[wire.SignedYourPolicy](params, "SignedYourPolicy")
-		if err != nil {
-			return nil, err
-		}
-		if m.s.users == nil {
-			return nil, fail(notSupported, "This control plane keeps no user settings.")
-		}
-		decoded, derr := base64.StdEncoding.DecodeString(signed.Policy)
-		var policy wire.YourPolicy
-		if derr != nil || json.Unmarshal(decoded, &policy) != nil {
-			return nil, fail(invalidParams, "The policy is not a signed YourPolicy.")
-		}
-		if policy.Keeper != host {
-			return nil, fail(notKeeper, "Only %s keeps your policy.", policy.Keeper)
-		}
-		user := m.s.ownerOf(host)
-		changed, err := m.s.users.SetPolicy(ctx, user, signed)
-		if err != nil {
-			return nil, userFailure(err)
-		}
-		if changed {
-			m.s.userChanged(user, []wire.UserSettingsPartName{wire.UserSettingsPartNamePolicy}, false, host)
-		}
-		return map[string]any{}, nil
-	case wire.CallMachineSetupStep.Name:
-		// A step of the installer on the machine (#5355).
-		report, err := require[wire.MachineSetupReport](params, "MachineSetupReport")
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{}, m.s.setupStep(ctx, host, report)
-	case "machine/policyApplied":
-		applied, err := require[wire.PolicyApplied](params, "PolicyApplied")
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{}, m.s.policyApplied(ctx, host, applied)
-	case "machine/orgRoutesApplied":
-		applied, err := require[wire.OrgRoutesApplied](params, "OrgRoutesApplied")
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{}, m.s.orgRoutesApplied(ctx, host, applied)
+		return m.setYourPolicy(ctx, host, params)
 	case "machine/orgRoutesAgain":
 		m.s.orgRoutesAgain(host)
 		return map[string]any{}, nil
@@ -1353,67 +1418,10 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		return m.hostLockMethod(ctx, host, method, params)
 	case wire.CallMachineSecretKey.Name, wire.CallMachineSecretRelease.Name:
 		return m.secretReleaseMethod(ctx, host, method, params)
-	case "attention/turn":
-		turn, err := require[wire.AttentionTurn](params, "AttentionTurn")
-		if err != nil {
-			return nil, err
-		}
-		m.s.turnMoved(turn)
-		return map[string]any{}, nil
-	case "governance/report":
-		report, err := require[wire.MachineCatalog](params, "MachineCatalog")
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{}, m.s.keepGovernanceReport(ctx, host, report, time.Now())
-	case "projects/joined":
-		joined, err := require[wire.ProjectsJoined](params, "ProjectsJoined")
-		if err != nil {
-			return nil, err
-		}
-		return m.s.keepJoined(ctx, host, joined)
 	case "multiplier/count":
-		// An older host sends {}: its weeks are UTC's, and its baseline is 1.4.
-		var count wire.MultiplierCountParams
-		if len(params) > 0 {
-			_ = json.Unmarshal(params, &count)
-		}
-		var prs float64
-		if count.PrsPerWeek != nil {
-			prs = *count.PrsPerWeek
-		}
-		return m.s.multiplierCount(ctx, host, zoneOf(count.TimeZone), lineage.BaselineOf(prs, ""), time.Now())
-	case wire.CallBuildsSync.Name:
-		sync, err := require[wire.BuildsSync](params, "BuildsSync")
-		if err != nil {
-			return nil, err
-		}
-		return m.s.keepBuildsSync(ctx, host, sync, m.s.now())
-	case wire.CallDeploysSync.Name:
-		sync, err := require[wire.DeploysSync](params, "DeploysSync")
-		if err != nil {
-			return nil, err
-		}
-		return m.s.keepDeploysSync(ctx, host, sync, time.Now())
-	case "lineage/sync":
-		sync, err := require[wire.LineageSync](params, "LineageSync")
-		if err != nil {
-			return nil, err
-		}
-		return m.s.keepLineageSync(ctx, host, sync, time.Now())
+		return m.countMultiplier(ctx, host, params)
 	case "usage/rollup":
-		rollup, err := require[wire.UsageRollup](params, "UsageRollup")
-		if err != nil {
-			return nil, err
-		}
-		if err := m.s.keepRollup(ctx, host, rollup, time.Now()); err != nil {
-			return nil, err
-		}
-		// A bot's spend against its caps (#1761, FR-033).
-		if owner := m.s.ownerOf(host); m.s.isBot(owner) {
-			go m.s.checkCaps(owner)
-		}
-		return map[string]any{}, nil
+		return m.keepUsageRollup(ctx, host, params)
 	case wire.CallApprovalsList.Name:
 		person := m.s.ownerOf(host)
 		return m.s.listApprovals(ctx, person)
@@ -1451,15 +1459,7 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		}
 		return m.s.claimRun(ctx, host, claim, time.Now())
 	case "workflows/trigger":
-		// A team event, sent once by the control plane (#2011, FR-035).
-		trigger, err := require[wire.TeamTrigger](params, "TeamTrigger")
-		if err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(trigger.Workflow) == "" || strings.TrimSpace(trigger.Trigger) == "" {
-			return nil, fail(invalidParams, "Say the workflow and the trigger.")
-		}
-		return m.s.teamTrigger(ctx, host, trigger, time.Now())
+		return m.triggerWorkflow(ctx, host, params)
 	case "links/check":
 		// May a channel message start work (#1762, FR-037)?
 		sender, err := require[wire.ChannelSender](params, "ChannelSender")
@@ -1468,30 +1468,7 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		}
 		return m.s.links.check(ctx, sender)
 	case "machine/accounts":
-		// For an agent on the machine (#3967): the accounts are its person's, as their secrets are.
-		request, err := require[wire.MachineAccountsCall](params, "MachineAccountsCall")
-		if err != nil {
-			return nil, err
-		}
-		user := m.s.ownerOf(host)
-		listed, changed, err := m.s.users.AddAccounts(ctx, user, request.Add, time.Now())
-		if err != nil {
-			return nil, userFailure(err)
-		}
-		if len(request.Remove) > 0 {
-			// Only an agent the person said yes to, or one that added them, gets here (#5253): agentsd asks.
-			var removed int
-			if listed, removed, err = m.s.users.RemoveAccounts(ctx, user, request.Remove); err != nil {
-				return nil, userFailure(err)
-			}
-			changed = changed || removed > 0
-		}
-		m.s.auditAccountOps(host, user, request.Ops)
-		m.s.noteAccountOps(user, request.Ops, wire.DateOf(time.Now()))
-		if changed {
-			m.s.userChanged(user, []wire.UserSettingsPartName{wire.UserSettingsPartNameAccounts}, false, host)
-		}
-		return listed, nil
+		return m.machineAccounts(ctx, host, params)
 	case wire.CallMachineOfferSecret.Name:
 		return m.offerSecret(ctx, host, params)
 	case wire.CallMachineSecretClients.Name:
@@ -1507,21 +1484,9 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		m.s.noteSecretInfo(host, owner, request.Ops, request.Held, request.Held != nil)
 		return wire.Empty{}, nil
 	case "machine/machines", "machine/providerDraft", "machine/status", "machine/installProgress":
-		if m.s.providers == nil {
-			if method == "machine/status" || method == "machine/installProgress" {
-				return map[string]any{}, nil
-			}
-			return nil, m.s.providersOff()
-		}
-		return m.s.providers.HostSaid(host, method, params)
+		return m.machineProviders(host, method, params)
 	case "backups/stored", "backups/upload", "backups/commit", "backups/download":
-		m.mu.Lock()
-		frozen := m.frozen
-		m.mu.Unlock()
-		if frozen && (method == "backups/upload" || method == "backups/commit") {
-			return nil, fail(storeUnavailable, "The control plane is moving to another machine. Back up again in a minute.")
-		}
-		return m.s.backups.said(method, host, params)
+		return m.backupsSaid(host, method, params)
 	case "git/credential":
 		request, err := require[wire.GitCredentialRequest](params, "GitCredentialRequest")
 		if err != nil {
@@ -1529,63 +1494,265 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		}
 		return m.gitCredential(ctx, host, request)
 	case "tunnel/open":
-		// Only to a lender a person said yes to, for that runtime (T091).
-		request, err := require[wire.TunnelOpen](params, "TunnelOpen")
-		if err != nil {
-			return nil, err
-		}
-		if record := m.records.Host(host); record == nil || record.SignInFrom[request.Runtime] == "" {
-			m.records.Load(ctx)
-		}
-		record := m.records.Host(host)
-		if record == nil || record.SignInFrom[request.Runtime] == "" || !m.sameUser(host, record.SignInFrom[request.Runtime]) {
-			return nil, fail(notPermitted, "No host lends this host its %s sign-in.", request.Runtime)
-		}
-		if !m.router.OpenTunnel(host, record.SignInFrom[request.Runtime], request.Runtime, request.Ref) {
-			return nil, fail(hostOffline, "The host that lends this sign-in is offline.")
-		}
-		return map[string]any{}, nil
+		return m.openTunnel(ctx, host, params)
 	}
 	return nil, notFound(method)
+}
+
+// hostReported answers what a machine reports for the control plane to keep: its capacity,
+// set-up, applied policy and routes, turns, catalogue, projects, builds, deploys and lineage.
+// ok is false for any other method.
+func (m *Methods) hostReported(ctx context.Context, host, method string, params json.RawMessage) (answer any, ok bool, err error) {
+	switch method {
+	case wire.CallMachineCapacity.Name:
+		report, err := require[wire.CapacityReport](params, "CapacityReport")
+		if err != nil {
+			return nil, true, err
+		}
+		m.s.noteCapacity(host, report, time.Now())
+		return wire.Empty{}, true, nil
+	case wire.CallMachineSetupStep.Name:
+		// A step of the installer on the machine (#5355).
+		report, err := require[wire.MachineSetupReport](params, "MachineSetupReport")
+		if err != nil {
+			return nil, true, err
+		}
+		return map[string]any{}, true, m.s.setupStep(ctx, host, report)
+	case "machine/policyApplied":
+		applied, err := require[wire.PolicyApplied](params, "PolicyApplied")
+		if err != nil {
+			return nil, true, err
+		}
+		return map[string]any{}, true, m.s.policyApplied(ctx, host, applied)
+	case "machine/orgRoutesApplied":
+		applied, err := require[wire.OrgRoutesApplied](params, "OrgRoutesApplied")
+		if err != nil {
+			return nil, true, err
+		}
+		return map[string]any{}, true, m.s.orgRoutesApplied(ctx, host, applied)
+	case "attention/turn":
+		turn, err := require[wire.AttentionTurn](params, "AttentionTurn")
+		if err != nil {
+			return nil, true, err
+		}
+		m.s.turnMoved(turn)
+		return map[string]any{}, true, nil
+	case "governance/report":
+		report, err := require[wire.MachineCatalog](params, "MachineCatalog")
+		if err != nil {
+			return nil, true, err
+		}
+		return map[string]any{}, true, m.s.keepGovernanceReport(ctx, host, report, time.Now())
+	case "projects/joined":
+		joined, err := require[wire.ProjectsJoined](params, "ProjectsJoined")
+		if err != nil {
+			return nil, true, err
+		}
+		answer, err := m.s.keepJoined(ctx, host, joined)
+		return answer, true, err
+	case wire.CallBuildsSync.Name:
+		sync, err := require[wire.BuildsSync](params, "BuildsSync")
+		if err != nil {
+			return nil, true, err
+		}
+		answer, err := m.s.keepBuildsSync(ctx, host, sync, m.s.now())
+		return answer, true, err
+	case wire.CallDeploysSync.Name:
+		sync, err := require[wire.DeploysSync](params, "DeploysSync")
+		if err != nil {
+			return nil, true, err
+		}
+		answer, err := m.s.keepDeploysSync(ctx, host, sync, time.Now())
+		return answer, true, err
+	case "lineage/sync":
+		sync, err := require[wire.LineageSync](params, "LineageSync")
+		if err != nil {
+			return nil, true, err
+		}
+		answer, err := m.s.keepLineageSync(ctx, host, sync, time.Now())
+		return answer, true, err
+	}
+	return nil, false, nil
+}
+
+// foldersDetected is folders/detected, said once: from now on the machine's folders are
+// the person's to add and remove (#429).
+func (m *Methods) foldersDetected(ctx context.Context, host string) (any, error) {
+	if record := m.records.Host(host); record != nil && record.DetectFolders != nil && *record.DetectFolders {
+		record.DetectFolders = nil
+		if err := m.records.SaveHost(ctx, *record); err != nil {
+			return nil, err
+		}
+	}
+	return map[string]any{}, nil
+}
+
+// takeNotice is notices/take: the person's one bucket of notices, for every machine of
+// theirs (#2859).
+func (m *Methods) takeNotice(ctx context.Context, host string, params json.RawMessage) (any, error) {
+	limits, err := require[wire.NoticeLimits](params, "NoticeLimits")
+	if err != nil {
+		return nil, err
+	}
+	if m.s.users == nil {
+		return nil, fail(notSupported, "This control plane keeps no user settings.")
+	}
+	return m.s.users.TakeNotice(ctx, m.s.ownerOf(host), limits)
+}
+
+// setYourPolicy is user/setPolicy. Your layer changed on its keeper (#2957, research R11):
+// stored as the part policy, and pushed on to the person's other machines. Only the keeper
+// may set it: a machine named elsewhere in the signed layer is refused notKeeper.
+func (m *Methods) setYourPolicy(ctx context.Context, host string, params json.RawMessage) (any, error) {
+	signed, err := require[wire.SignedYourPolicy](params, "SignedYourPolicy")
+	if err != nil {
+		return nil, err
+	}
+	if m.s.users == nil {
+		return nil, fail(notSupported, "This control plane keeps no user settings.")
+	}
+	decoded, derr := base64.StdEncoding.DecodeString(signed.Policy)
+	var policy wire.YourPolicy
+	if derr != nil || json.Unmarshal(decoded, &policy) != nil {
+		return nil, fail(invalidParams, "The policy is not a signed YourPolicy.")
+	}
+	if policy.Keeper != host {
+		return nil, fail(notKeeper, "Only %s keeps your policy.", policy.Keeper)
+	}
+	user := m.s.ownerOf(host)
+	changed, err := m.s.users.SetPolicy(ctx, user, signed)
+	if err != nil {
+		return nil, userFailure(err)
+	}
+	if changed {
+		m.s.userChanged(user, []wire.UserSettingsPartName{wire.UserSettingsPartNamePolicy}, false, host)
+	}
+	return map[string]any{}, nil
+}
+
+// countMultiplier is multiplier/count. An older host sends {}: its weeks are UTC's, and its
+// baseline is 1.4.
+func (m *Methods) countMultiplier(ctx context.Context, host string, params json.RawMessage) (any, error) {
+	var count wire.MultiplierCountParams
+	if len(params) > 0 {
+		_ = json.Unmarshal(params, &count)
+	}
+	var prs float64
+	if count.PrsPerWeek != nil {
+		prs = *count.PrsPerWeek
+	}
+	return m.s.multiplierCount(ctx, host, zoneOf(count.TimeZone), lineage.BaselineOf(prs, ""), time.Now())
+}
+
+// keepUsageRollup is usage/rollup: it keeps the machine's usage, and weighs a bot's spend
+// against its caps.
+func (m *Methods) keepUsageRollup(ctx context.Context, host string, params json.RawMessage) (any, error) {
+	rollup, err := require[wire.UsageRollup](params, "UsageRollup")
+	if err != nil {
+		return nil, err
+	}
+	if err := m.s.keepRollup(ctx, host, rollup, time.Now()); err != nil {
+		return nil, err
+	}
+	// A bot's spend against its caps (#1761, FR-033).
+	if owner := m.s.ownerOf(host); m.s.isBot(owner) {
+		go m.s.checkCaps(owner)
+	}
+	return map[string]any{}, nil
+}
+
+// triggerWorkflow is workflows/trigger: a team event, sent once by the control plane
+// (#2011, FR-035).
+func (m *Methods) triggerWorkflow(ctx context.Context, host string, params json.RawMessage) (any, error) {
+	trigger, err := require[wire.TeamTrigger](params, "TeamTrigger")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(trigger.Workflow) == "" || strings.TrimSpace(trigger.Trigger) == "" {
+		return nil, fail(invalidParams, "Say the workflow and the trigger.")
+	}
+	return m.s.teamTrigger(ctx, host, trigger, time.Now())
+}
+
+// machineAccounts is machine/accounts, for an agent on the machine (#3967): it adds and
+// removes the accounts, which are its person's, as their secrets are.
+func (m *Methods) machineAccounts(ctx context.Context, host string, params json.RawMessage) (any, error) {
+	request, err := require[wire.MachineAccountsCall](params, "MachineAccountsCall")
+	if err != nil {
+		return nil, err
+	}
+	user := m.s.ownerOf(host)
+	listed, changed, err := m.s.users.AddAccounts(ctx, user, request.Add, time.Now())
+	if err != nil {
+		return nil, userFailure(err)
+	}
+	if len(request.Remove) > 0 {
+		// Only an agent the person said yes to, or one that added them, gets here (#5253): agentsd asks.
+		var removed int
+		if listed, removed, err = m.s.users.RemoveAccounts(ctx, user, request.Remove); err != nil {
+			return nil, userFailure(err)
+		}
+		changed = changed || removed > 0
+	}
+	m.s.auditAccountOps(host, user, request.Ops)
+	m.s.noteAccountOps(user, request.Ops, wire.DateOf(time.Now()))
+	if changed {
+		m.s.userChanged(user, []wire.UserSettingsPartName{wire.UserSettingsPartNameAccounts}, false, host)
+	}
+	return listed, nil
+}
+
+// machineProviders is what a machine says to the machine providers. With none, a status or
+// install progress is let go and the rest are refused.
+func (m *Methods) machineProviders(host, method string, params json.RawMessage) (any, error) {
+	if m.s.providers == nil {
+		if method == "machine/status" || method == "machine/installProgress" {
+			return map[string]any{}, nil
+		}
+		return nil, m.s.providersOff()
+	}
+	return m.s.providers.HostSaid(host, method, params)
+}
+
+// backupsSaid is a machine's backups call. An upload or a commit is refused while the
+// control plane moves to another machine.
+func (m *Methods) backupsSaid(host, method string, params json.RawMessage) (any, error) {
+	m.mu.Lock()
+	frozen := m.frozen
+	m.mu.Unlock()
+	if frozen && (method == "backups/upload" || method == "backups/commit") {
+		return nil, fail(storeUnavailable, "The control plane is moving to another machine. Back up again in a minute.")
+	}
+	return m.s.backups.said(method, host, params)
+}
+
+// openTunnel is tunnel/open: only to a lender a person said yes to, for that runtime (T091).
+func (m *Methods) openTunnel(ctx context.Context, host string, params json.RawMessage) (any, error) {
+	request, err := require[wire.TunnelOpen](params, "TunnelOpen")
+	if err != nil {
+		return nil, err
+	}
+	if record := m.records.Host(host); record == nil || record.SignInFrom[request.Runtime] == "" {
+		m.records.Load(ctx)
+	}
+	record := m.records.Host(host)
+	if record == nil || record.SignInFrom[request.Runtime] == "" || !m.sameUser(host, record.SignInFrom[request.Runtime]) {
+		return nil, fail(notPermitted, "No host lends this host its %s sign-in.", request.Runtime)
+	}
+	if !m.router.OpenTunnel(host, record.SignInFrom[request.Runtime], request.Runtime, request.Ref) {
+		return nil, fail(hostOffline, "The host that lends this sign-in is offline.")
+	}
+	return map[string]any{}, nil
 }
 
 // hello is machine/hello: what the host says it is now, written only when it changed
 // something, and the home host settled.
 func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHello) error {
 	known := m.records.Host(host)
-	said := func(record *records.MachineRecord) {
-		record.Version = hello.Version
-		record.Platform = hello.Platform
-		mid := hello.MachineID
-		record.MachineID = &mid
-		if hello.Name != nil {
-			record.Name = *hello.Name
-		}
-		// Which language the host is written in (#1134), kept beside the record's own fields
-		// so a Swift copy keeps it too.
-		if deref(hello.Implementation) != "" {
-			impl, _ := json.Marshal(*hello.Implementation)
-			extra := records.Extra{}
-			for k, v := range record.Extra {
-				extra[k] = v
-			}
-			extra["implementation"] = impl
-			record.Extra = extra
-		} else if _, had := record.Extra["implementation"]; had {
-			extra := records.Extra{}
-			for k, v := range record.Extra {
-				if k != "implementation" {
-					extra[k] = v
-				}
-			}
-			record.Extra = extra
-		}
-		*record = withCapabilities(*record, hello.Capabilities)
-	}
 	changed := known == nil
 	if known == nil {
 		record := records.MachineRecord{ID: host, Name: host}
-		said(&record)
+		applyHello(&record, hello)
 		if err := m.records.SaveHost(ctx, record); err != nil {
 			return err
 		}
@@ -1594,7 +1761,7 @@ func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHell
 		// same moment is kept (#1763).
 		err := m.records.ChangeHost(ctx, host, func(record *records.MachineRecord) bool {
 			before := *record
-			said(record)
+			applyHello(record, hello)
 			changed = !sameHost(before, *record)
 			return changed
 		})
@@ -1602,24 +1769,12 @@ func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHell
 			return err
 		}
 	}
-	// The home host is where a device's plain connection goes: the host on the control
-	// plane's own machine, or, on a control plane with none, the first host to join until
-	// one on its machine does.
-	if settings := m.records.Settings(); settings != nil {
-		onThisMachine := hello.MachineID == settings.MachineID
-		homeIsHere := false
-		if settings.HomeHost != nil {
-			if h := m.records.Host(*settings.HomeHost); h != nil && h.MachineID != nil && *h.MachineID == settings.MachineID {
-				homeIsHere = true
-			}
-		}
-		if settings.HomeHost == nil || (onThisMachine && *settings.HomeHost != host && !homeIsHere) {
-			if _, err := m.records.ChangeSettings(ctx, func(s *records.Settings) { s.HomeHost = &host }); err != nil {
-				return err
-			}
-			m.router.SetHomeHost(host)
-			changed = true
-		}
+	moved, err := m.settleHomeHost(ctx, host, hello)
+	if err != nil {
+		return err
+	}
+	if moved {
+		changed = true
 	}
 	// A suspended person's machine that cannot stop their work is refused (#1002, FR-018).
 	if err := m.s.refuseSuspendedHost(host, hello.Capabilities); err != nil {
@@ -1635,6 +1790,70 @@ func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHell
 		m.router.BroadcastHost(host, "control/hostChanged", m.router.Described(host))
 	}
 	m.s.tellHostClients(host)
+	m.sendAtJoin(host)
+	m.clearDetectFolders(ctx, host)
+	return nil
+}
+
+// applyHello writes what a host's hello says onto its record.
+func applyHello(record *records.MachineRecord, hello wire.MachineHello) {
+	record.Version = hello.Version
+	record.Platform = hello.Platform
+	mid := hello.MachineID
+	record.MachineID = &mid
+	if hello.Name != nil {
+		record.Name = *hello.Name
+	}
+	// Which language the host is written in (#1134), kept beside the record's own fields
+	// so a Swift copy keeps it too.
+	if deref(hello.Implementation) != "" {
+		impl, _ := json.Marshal(*hello.Implementation)
+		extra := records.Extra{}
+		for k, v := range record.Extra {
+			extra[k] = v
+		}
+		extra["implementation"] = impl
+		record.Extra = extra
+	} else if _, had := record.Extra["implementation"]; had {
+		extra := records.Extra{}
+		for k, v := range record.Extra {
+			if k != "implementation" {
+				extra[k] = v
+			}
+		}
+		record.Extra = extra
+	}
+	*record = withCapabilities(*record, hello.Capabilities)
+}
+
+// settleHomeHost makes the host the home host when it should be, and says whether it did.
+// The home host is where a device's plain connection goes: the host on the control
+// plane's own machine, or, on a control plane with none, the first host to join until
+// one on its machine does.
+func (m *Methods) settleHomeHost(ctx context.Context, host string, hello wire.MachineHello) (bool, error) {
+	settings := m.records.Settings()
+	if settings == nil {
+		return false, nil
+	}
+	onThisMachine := hello.MachineID == settings.MachineID
+	homeIsHere := false
+	if settings.HomeHost != nil {
+		if h := m.records.Host(*settings.HomeHost); h != nil && h.MachineID != nil && *h.MachineID == settings.MachineID {
+			homeIsHere = true
+		}
+	}
+	if settings.HomeHost == nil || (onThisMachine && *settings.HomeHost != host && !homeIsHere) {
+		if _, err := m.records.ChangeSettings(ctx, func(s *records.Settings) { s.HomeHost = &host }); err != nil {
+			return false, err
+		}
+		m.router.SetHomeHost(host)
+		return true, nil
+	}
+	return false, nil
+}
+
+// sendAtJoin sends a host what it gets at every join, after its hello.
+func (m *Methods) sendAtJoin(host string) {
 	// Whether its person is suspended, before anything they set (#1002, FR-018).
 	m.s.sendUserSuspended(host)
 	// Its person's settings and secrets, at every join (#1760, FR-024).
@@ -1656,7 +1875,11 @@ func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHell
 			m.s.botMachineJoined(host)
 		}
 	}()
-	// A host marked before #656 to add the folders it found: the mark goes, unsaid.
+}
+
+// clearDetectFolders drops the mark of a host marked before #656 to add the folders it
+// found: the mark goes, unsaid.
+func (m *Methods) clearDetectFolders(ctx context.Context, host string) {
 	m.records.ChangeHost(ctx, host, func(r *records.MachineRecord) bool {
 		if r.DetectFolders == nil || !*r.DetectFolders {
 			return false
@@ -1664,7 +1887,6 @@ func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHell
 		r.DetectFolders = nil
 		return true
 	})
-	return nil
 }
 
 func sameHost(a, b records.MachineRecord) bool {

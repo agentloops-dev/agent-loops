@@ -147,24 +147,32 @@ func (s *Service) readLineage(ctx context.Context, keys, read []store.Key) ([]wi
 // heard, as each machine that listens hears the same rounds.
 func mergeNode(have *wire.LineageCostNode, n wire.LineageCostNode) {
 	lineage.AddCost(&have.Banked, n.Banked)
-	for _, f := range n.Fixes {
-		if !slices.Contains(have.Fixes, f) {
-			have.Fixes = append(have.Fixes, f)
-		}
-	}
-	for _, p := range n.PartOf {
-		if !slices.Contains(have.PartOf, p) {
-			have.PartOf = append(have.PartOf, p)
-		}
-	}
-	for _, id := range n.Sessions {
-		if !slices.Contains(have.Sessions, id) {
-			have.Sessions = append(have.Sessions, id)
-		}
-	}
+	have.Fixes = appendMissing(have.Fixes, n.Fixes)
+	have.PartOf = appendMissing(have.PartOf, n.PartOf)
+	have.Sessions = appendMissing(have.Sessions, n.Sessions)
 	if have.Repo == nil {
 		have.Repo = n.Repo
 	}
+	mergeNodeState(have, n)
+	mergeNodePlan(have, n)
+	if n.LastAt > have.LastAt {
+		have.LastAt = n.LastAt
+	}
+}
+
+// appendMissing is have with each of more it does not have yet added, in order.
+func appendMissing(have, more []string) []string {
+	for _, s := range more {
+		if !slices.Contains(have, s) {
+			have = append(have, s)
+		}
+	}
+	return have
+}
+
+// mergeNodeState takes from n what it heard of the node's state: the newest title, state,
+// labels and outcome, the most failed checks, the first start and the last end.
+func mergeNodeState(have *wire.LineageCostNode, n wire.LineageCostNode) {
 	// The newest title, state and labels any machine resolved (#3118).
 	if n.Resolved != nil && (have.Resolved == nil || n.LastAt > have.LastAt) {
 		have.Resolved = n.Resolved
@@ -181,6 +189,11 @@ func mergeNode(have *wire.LineageCostNode, n wire.LineageCostNode) {
 	if n.EndedAt != nil && (have.EndedAt == nil || *n.EndedAt > *have.EndedAt) {
 		have.EndedAt = n.EndedAt
 	}
+}
+
+// mergeNodePlan takes from n what it knows of the node's plan: the first start of work, the
+// level, feature, epic and milestone, the first estimate and the first forecast.
+func mergeNodePlan(have *wire.LineageCostNode, n wire.LineageCostNode) {
 	// The first start any machine saw, and the level, feature, epic and milestone (#4620) of
 	// the copy that knows them, the newest first (#3562).
 	if n.StartedAt != nil && (have.StartedAt == nil || *n.StartedAt < *have.StartedAt) {
@@ -201,9 +214,6 @@ func mergeNode(have *wire.LineageCostNode, n wire.LineageCostNode) {
 	if n.Forecast != nil && (have.Forecast == nil || n.Forecast.At < have.Forecast.At) {
 		have.Forecast = n.Forecast
 	}
-	if n.LastAt > have.LastAt {
-		have.LastAt = n.LastAt
-	}
 }
 
 // valueOf adds up the nodes that changed since: the totals over each node once, and a row
@@ -212,45 +222,114 @@ func valueOf(nodes []wire.LineageCostNode, since wire.Date) wire.ReportValue {
 	blank := func() wire.LineageCost { return wire.LineageCost{Cost: map[string]float64{}} }
 	out := wire.ReportValue{Total: blank(), Waste: blank(), Unlinked: blank(), PerMergedPR: map[string]float64{},
 		Issues: []wire.ReportValueRow{}, Releases: []wire.ReportValueRow{}}
-	byRef := map[string]wire.LineageCostNode{}
-	// A release's own node (#4524): what a release session banked on it.
-	ownRelease := map[string]wire.LineageCostNode{}
-	fixers := map[string][]wire.LineageCostNode{}
-	members := map[string][]wire.LineageCostNode{}
-	var issues, releases []string
+	ix := indexValueNodes(nodes)
+	addValueTotals(&out, nodes, since)
+	// All in (#4524): the work, and the turns that went on no work.
+	loaded := wire.LineageCost{Cost: map[string]float64{}}
+	lineage.AddCost(&loaded, out.Total)
+	lineage.AddCost(&loaded, out.Unlinked)
+	out.Loaded = &loaded
+	if out.PrsMerged > 0 {
+		for currency, v := range out.Total.Cost {
+			out.PerMergedPR[currency] = v / float64(out.PrsMerged)
+		}
+	}
+	issueParts := func(ref string) []wire.LineageCostNode {
+		var parts []wire.LineageCostNode
+		if n, ok := ix.byRef[ref]; ok {
+			parts = append(parts, n)
+		}
+		return append(parts, ix.fixers[ref]...)
+	}
+	children := childrenOf(nodes)
+	var leads, cycles []float64
+	out.Issues, leads, cycles = valueIssueRows(out.Issues, ix, issueParts, children, since)
+	for _, ref := range ix.releases {
+		// Its PRs, and the issues those PRs fix, each once (#3023; the same shape as
+		// lineage.Rollup's KindRelease case): only PRs are ever part-of a release.
+		var own []wire.LineageCostNode
+		if n, ok := ix.ownRelease[ref]; ok {
+			own = append(own, n)
+		}
+		parts := releaseParts(append(own, ix.members[ref]...), ix.byRef)
+		if row, ok := valueRow(wire.LineageNode{Kind: lineage.KindRelease, Ref: ref}, parts, since); ok {
+			out.Releases = append(out.Releases, row)
+		}
+	}
+	out.LeadTimeSeconds, out.CycleTimeSeconds = median(leads), median(cycles)
+	out.EstimateError = estimateError(ix.issues, ix.byRef, issueParts, children, since)
+	out.ForecastScore = forecastScore(ix.byRef, issueParts, children, since)
+	out.OpenEpics = openEpics(nodes, children)
+	limited := false
+	out.Issues, limited = mostCostly(out.Issues)
+	var more bool
+	out.Releases, more = mostCostly(out.Releases)
+	if limited || more {
+		t := true
+		out.Limited = &t
+	}
+	return out
+}
+
+// valueIndex is the nodes looked up for valueOf.
+type valueIndex struct {
+	// byRef is each issue's own node, by ref.
+	byRef map[string]wire.LineageCostNode
+	// ownRelease is a release's own node (#4524): what a release session banked on it.
+	ownRelease map[string]wire.LineageCostNode
+	// fixers is the PRs that fix each issue; members the nodes part of each release.
+	fixers  map[string][]wire.LineageCostNode
+	members map[string][]wire.LineageCostNode
+	// issues and releases are the refs that get a row, each once, in the order first met.
+	issues, releases []string
+}
+
+// indexValueNodes looks the nodes up by issue and by release, and finds the issues and
+// releases that may get a row.
+func indexValueNodes(nodes []wire.LineageCostNode) valueIndex {
+	ix := valueIndex{byRef: map[string]wire.LineageCostNode{}, ownRelease: map[string]wire.LineageCostNode{},
+		fixers: map[string][]wire.LineageCostNode{}, members: map[string][]wire.LineageCostNode{}}
 	seen := map[string]bool{}
 	addIssue := func(ref string) {
 		if !seen[ref] {
 			seen[ref] = true
-			issues = append(issues, ref)
+			ix.issues = append(ix.issues, ref)
 		}
 	}
 	for _, n := range nodes {
 		switch n.Node.Kind {
 		case lineage.KindIssue:
-			byRef[n.Node.Ref] = n
+			ix.byRef[n.Node.Ref] = n
 			addIssue(n.Node.Ref)
 		case lineage.KindPR:
 			for _, f := range n.Fixes {
-				fixers[f] = append(fixers[f], n)
+				ix.fixers[f] = append(ix.fixers[f], n)
 				addIssue(f)
 			}
 		case lineage.KindRelease:
-			if _, ok := members[n.Node.Ref]; !ok {
-				releases = append(releases, n.Node.Ref)
-				members[n.Node.Ref] = nil
+			if _, ok := ix.members[n.Node.Ref]; !ok {
+				ix.releases = append(ix.releases, n.Node.Ref)
+				ix.members[n.Node.Ref] = nil
 			}
-			ownRelease[n.Node.Ref] = n
+			ix.ownRelease[n.Node.Ref] = n
 		}
 		for _, m := range n.PartOf {
 			if !lineage.IsReleaseRef(m) {
 				continue
 			}
-			if _, ok := members[m]; !ok {
-				releases = append(releases, m)
+			if _, ok := ix.members[m]; !ok {
+				ix.releases = append(ix.releases, m)
 			}
-			members[m] = append(members[m], n)
+			ix.members[m] = append(ix.members[m], n)
 		}
+	}
+	return ix
+}
+
+// addValueTotals adds the nodes that changed since to out's totals: the work, the turns on no
+// work, the waste and the PRs.
+func addValueTotals(out *wire.ReportValue, nodes []wire.LineageCostNode, since wire.Date) {
+	for _, n := range nodes {
 		if n.LastAt < since {
 			continue
 		}
@@ -265,31 +344,19 @@ func valueOf(nodes []wire.LineageCostNode, since wire.Date) wire.ReportValue {
 		}
 		countPR(n, &out.PrsMerged, &out.PrsClosed, &out.PrsReverted, &out.FailedChecks)
 	}
-	// All in (#4524): the work, and the turns that went on no work.
-	loaded := wire.LineageCost{Cost: map[string]float64{}}
-	lineage.AddCost(&loaded, out.Total)
-	lineage.AddCost(&loaded, out.Unlinked)
-	out.Loaded = &loaded
-	if out.PrsMerged > 0 {
-		for currency, v := range out.Total.Cost {
-			out.PerMergedPR[currency] = v / float64(out.PrsMerged)
-		}
-	}
-	issueParts := func(ref string) []wire.LineageCostNode {
-		var parts []wire.LineageCostNode
-		if n, ok := byRef[ref]; ok {
-			parts = append(parts, n)
-		}
-		return append(parts, fixers[ref]...)
-	}
-	children := childrenOf(nodes)
+}
+
+// valueIssueRows adds to rows a row for each issue with a part that changed since, and is
+// them with the lead and cycle times of those rows that have one.
+func valueIssueRows(rows []wire.ReportValueRow, ix valueIndex, issueParts func(string) []wire.LineageCostNode,
+	children map[string][]string, since wire.Date) ([]wire.ReportValueRow, []float64, []float64) {
 	var leads, cycles []float64
-	for _, ref := range issues {
+	for _, ref := range ix.issues {
 		row, ok := valueRow(wire.LineageNode{Kind: lineage.KindIssue, Ref: ref}, issueParts(ref), since)
 		if !ok {
 			continue
 		}
-		if n, ok := byRef[ref]; ok {
+		if n, ok := ix.byRef[ref]; ok {
 			row.Level = n.Level
 		}
 		if kids := children[ref]; len(kids) > 0 {
@@ -301,41 +368,9 @@ func valueOf(nodes []wire.LineageCostNode, since wire.Date) wire.ReportValue {
 		if row.CycleTimeSeconds != nil {
 			cycles = append(cycles, *row.CycleTimeSeconds)
 		}
-		out.Issues = append(out.Issues, row)
+		rows = append(rows, row)
 	}
-	for _, ref := range releases {
-		// Its PRs, and the issues those PRs fix, each once (#3023; the same shape as
-		// lineage.Rollup's KindRelease case): only PRs are ever part-of a release.
-		var own []wire.LineageCostNode
-		if n, ok := ownRelease[ref]; ok {
-			own = append(own, n)
-		}
-		parts := dedupParts(append(own, members[ref]...), func(n wire.LineageCostNode) []wire.LineageCostNode {
-			var fixed []wire.LineageCostNode
-			for _, f := range n.Fixes {
-				if issue, ok := byRef[f]; ok {
-					fixed = append(fixed, issue)
-				}
-			}
-			return fixed
-		})
-		if row, ok := valueRow(wire.LineageNode{Kind: lineage.KindRelease, Ref: ref}, parts, since); ok {
-			out.Releases = append(out.Releases, row)
-		}
-	}
-	out.LeadTimeSeconds, out.CycleTimeSeconds = median(leads), median(cycles)
-	out.EstimateError = estimateError(issues, byRef, issueParts, children, since)
-	out.ForecastScore = forecastScore(byRef, issueParts, children, since)
-	out.OpenEpics = openEpics(nodes, children)
-	limited := false
-	out.Issues, limited = mostCostly(out.Issues)
-	var more bool
-	out.Releases, more = mostCostly(out.Releases)
-	if limited || more {
-		t := true
-		out.Limited = &t
-	}
-	return out
+	return rows, leads, cycles
 }
 
 // secondsPerDay converts a span of wire.Date (seconds) to days.
@@ -353,19 +388,10 @@ func estimateError(issues []string, byRef map[string]wire.LineageCostNode, issue
 	var n, checked, covered int64
 	for _, ref := range issues {
 		node, ok := byRef[ref]
-		if !ok || node.Estimate == nil || len(children[ref]) > 0 || (node.Level != nil && *node.Level == "epic") ||
-			(node.Resolved != nil && node.Resolved.State != nil && *node.Resolved.State == "open") {
+		if !ok || !estimateCounts(node, children[ref]) {
 			continue
 		}
-		actual := wire.LineageCost{Cost: map[string]float64{}}
-		var merged *wire.Date
-		for _, p := range issueParts(ref) {
-			lineage.AddCost(&actual, p.Banked)
-			if p.Node.Kind == lineage.KindPR && p.Outcome != nil && *p.Outcome == lineage.OutcomeMerged && p.EndedAt != nil &&
-				(merged == nil || *p.EndedAt > *merged) {
-				merged = p.EndedAt
-			}
-		}
+		actual, merged := issueActual(issueParts(ref))
 		if merged == nil || *merged < since {
 			continue
 		}
@@ -378,14 +404,10 @@ func estimateError(issues []string, byRef map[string]wire.LineageCostNode, issue
 				works = append(works, v)
 			}
 		}
-		if p10, ok := node.Estimate.CostP10["USD"]; ok {
-			if p90, ok := node.Estimate.CostP90["USD"]; ok {
-				if a, ok := actual.Cost["USD"]; ok {
-					checked++
-					if a >= p10 && a <= p90 {
-						covered++
-					}
-				}
+		if inRange, ok := estimateCovers(node.Estimate, actual); ok {
+			checked++
+			if inRange {
+				covered++
 			}
 		}
 		if node.Estimate.LandsAt != nil {
@@ -401,6 +423,46 @@ func estimateError(issues []string, byRef map[string]wire.LineageCostNode, issue
 		out.Coverage = &c
 	}
 	return out
+}
+
+// estimateCounts says an issue's estimate is scored: it has one, it is not an epic (by its
+// level or its children kids), and it is not open.
+func estimateCounts(node wire.LineageCostNode, kids []string) bool {
+	return node.Estimate != nil && len(kids) == 0 && (node.Level == nil || *node.Level != "epic") &&
+		(node.Resolved == nil || node.Resolved.State == nil || *node.Resolved.State != "open")
+}
+
+// issueActual is what an issue's parts cost, and when its last merged PR ended (nil when no
+// PR merged).
+func issueActual(parts []wire.LineageCostNode) (wire.LineageCost, *wire.Date) {
+	actual := wire.LineageCost{Cost: map[string]float64{}}
+	var merged *wire.Date
+	for _, p := range parts {
+		lineage.AddCost(&actual, p.Banked)
+		if p.Node.Kind == lineage.KindPR && p.Outcome != nil && *p.Outcome == lineage.OutcomeMerged && p.EndedAt != nil &&
+			(merged == nil || *p.EndedAt > *merged) {
+			merged = p.EndedAt
+		}
+	}
+	return actual, merged
+}
+
+// estimateCovers says whether the estimate's P10-P90 dollar range held the actual dollars;
+// false for ok when the estimate has no range or the actual no dollars.
+func estimateCovers(est *wire.LineageEstimateKept, actual wire.LineageCost) (inRange, ok bool) {
+	p10, ok := est.CostP10["USD"]
+	if !ok {
+		return false, false
+	}
+	p90, ok := est.CostP90["USD"]
+	if !ok {
+		return false, false
+	}
+	a, ok := actual.Cost["USD"]
+	if !ok {
+		return false, false
+	}
+	return a >= p10 && a <= p90, true
 }
 
 // mostOpenEpics bounds reports/value's openEpics.
