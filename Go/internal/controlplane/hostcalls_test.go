@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/coder/websocket"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
