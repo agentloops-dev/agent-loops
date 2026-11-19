@@ -265,6 +265,8 @@ struct PromptBar: View {
         .onChange(of: draftFolderAgentCount) { loadWorktreesWhenFolderChanges() }
         .modifier(KeepsDrafts(text: $text, attachments: $attachments,
                               lostSomething: $draftLostSomething, key: draftKey))
+            // After an error stop, "Carry on" waits in an empty bar.
+            .modifier(OffersCarryOn(text: $text, agent: agent))
     }
 
     /// Words offered from elsewhere: in place of an empty bar, else after what is typed

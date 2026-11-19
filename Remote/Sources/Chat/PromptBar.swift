@@ -107,6 +107,8 @@ struct PromptBar: View {
         .animation(ResponseMotion.response, value: isMentioning)
         .onAppear { restoreDraft() }
         .onChange(of: agent.id) { restoreDraft() }
+        // After an error stop, "Carry on" waits in an empty bar, as on the Mac.
+        .modifier(OffersCarryOn(text: $text, agent: agent))
         // Voice mode listens with its own dictation: this bar's stops, so the same words do
         // not go two ways (#2445).
         .onChange(of: VoiceMode.shared.isOn) { _, isOn in
