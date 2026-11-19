@@ -16,6 +16,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/gitremote"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -476,6 +477,11 @@ func (d *Daemon) folderRepo(folder string) forgeRepo {
 	} else if !isDir(folder) {
 		// A folder gone is not remembered, in case it comes back.
 		return forgeRepo{}
+	} else if !gitSaidNoOrigin(err) {
+		// A read that failed (a slow or a killed git, a config git refuses) is not "on no
+		// forge": it keeps nothing, so the next call reads again (#6261).
+		log.Printf("forge of %s: read the origin: %v", folder, err)
+		return forgeRepo{}
 	}
 	d.repoMu.Lock()
 	if d.repos == nil {
@@ -493,6 +499,13 @@ func (d *Daemon) folderRepo(folder string) forgeRepo {
 		return d.connectedRepo(folder)
 	}
 	return r
+}
+
+// gitSaidNoOrigin says git's refusal of `git remote get-url origin` is an answer: the folder has
+// no origin, or is not in a git repository.
+func gitSaidNoOrigin(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "No such remote") || gitremote.NotARepository(msg)
 }
 
 // connectedRepo is folder's repo on the connected Forgejo, else on the connected GitLab (#4118),
