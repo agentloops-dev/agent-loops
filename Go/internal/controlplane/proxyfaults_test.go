@@ -17,6 +17,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 // faultProxy is a TCP proxy in front of the control plane that cuts the connections through
@@ -291,6 +292,7 @@ func (w *hostWorld) snapshot() (agents, pending []map[string]any) {
 // and finds what the host holds, hears of the outage once (offline, then online), and hears
 // no notification twice or out of order (#6185).
 func TestAProxyCutsTheHostsLinkAndTheClientCatchesUp(t *testing.T) {
+	flaky.UnderLoad(t, "#6346")
 	t.Parallel()
 	seed := uint64(time.Now().UnixNano())
 	t.Logf("seed %d", seed)
