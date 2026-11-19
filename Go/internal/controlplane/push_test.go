@@ -15,7 +15,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/notices"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -129,7 +128,6 @@ func TestANeedIsPushedThroughAPNsWithNoRelay(t *testing.T) {
 // Only a device sets a token, only its own, and only a token; a token Apple says is gone
 // is forgotten.
 func TestOnlyADeviceSetsItsOwnToken(t *testing.T) {
-	flaky.UnderLoad(t, "#6259")
 	t.Parallel()
 	pusher := &fakePusher{answer: apns.ErrGone}
 	p := startPlaneWith(t, store.NewMemory(), controllink.NewPrivateKey(), func(c *Config) { c.Push = pusher })

@@ -360,7 +360,7 @@ func TestNoSecretReachesTheLog(t *testing.T) {
 	st := &countingStore{Store: store.NewMemory()}
 	p := startPlane(t, st, private)
 	var secrets []string
-	shown, err := p.s.Codes().Issue(context.Background(), false, false, time.Minute)
+	shown, err := p.s.Codes().Issue(context.Background(), false, false, testCodeLife)
 	if err != nil {
 		t.Fatal(err)
 	}
