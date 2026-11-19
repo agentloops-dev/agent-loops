@@ -292,7 +292,7 @@ public enum ProjectWords {
 public enum ProjectBoardWords {
     public static let heading = "Boards"
     public static let note = "A board is a GitHub Projects board, a Jira board, a Linear team, a GitLab group board or an Azure Boards board. "
-        + "Work ▸ Issues and Features can show one board."
+        + "Work ▸ Issues and Timeline can show one board."
     public static let none = "No boards. Work shows every issue of the project."
     public static let onlyOwner = "Only the project's owner or an admin can change its boards."
     public static let namePrompt = "Name"

@@ -87,7 +87,7 @@ export function Suggested({ store, host, down }: { store: Store; host: string; d
           </li>
         ))}
       </ul>
-      {more && <a class="small" href="#/work/features" onClick={(e) => { e.preventDefault(); go({ nav: "work", section: "features" }); }}>{more}</a>}
+      {more && <a class="small" href="#/work/timeline" onClick={(e) => { e.preventDefault(); go({ nav: "work", section: "timeline" }); }}>{more}</a>}
       {said.value && <p class="failure small">{said.value}</p>}
     </section>
   );

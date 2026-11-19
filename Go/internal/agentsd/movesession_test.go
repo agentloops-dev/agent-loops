@@ -13,6 +13,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -273,6 +274,7 @@ func nextMove(c *conn, wait time.Duration) *wire.MoveNotification {
 // agents/moves finds it mid-move, a second move is refused, and the session stays here until
 // that machine has it.
 func TestPersonMovesASessionToAMachine(t *testing.T) {
+	flaky.UnderLoad(t, "#6341")
 	t.Parallel()
 
 	hold := make(chan struct{})

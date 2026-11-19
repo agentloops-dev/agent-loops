@@ -7,11 +7,10 @@ import Foundation
 public enum WorkList {
     /// Work's lists, in the order of its tabs, by the lineage kind each holds.
     public enum Kind: String, CaseIterable, Identifiable, Sendable, Hashable, Codable {
-        /// Features (#3269) are the `feature:` labels on the epics, not a lineage kind: an epic opens as an issue.
         /// Deploys (#5270) is every component in every environment (`WorkDeploys`), Mac + web; its
         /// raw value is lineage's deploy kind, but a deploy node opens no Work page.
         /// Timeline (#4173) is the epics on a time axis (`WorkTimeline`), Core since #6044.
-        case issue, pr, feature, release, deploy, timeline
+        case issue, pr, release, deploy, timeline
 
         public var id: Self { self }
 
@@ -19,15 +18,13 @@ public enum WorkList {
             switch self {
             case .issue: "Issues"
             case .pr: "Pull requests"
-            case .feature: "Features"
             case .release: "Releases"
             case .deploy: "Deploys"
             case .timeline: "Timeline"
             }
         }
 
-        /// Issues and PRs are read from the forges; releases from lineage alone;
-        /// features from the forges' labels, as a list of their own.
+        /// Issues and PRs are read from the forges; releases from lineage alone.
         public var fromForge: Bool { self == .issue || self == .pr }
 
         /// The states a list can be narrowed to: a PR's merged is its own.
@@ -607,7 +604,7 @@ public enum WorkList {
 
     /// The Work list a node's page is in: an issue, a PR or a release; nil for any other.
     public static func kind(of node: DaemonAPI.LineageNode) -> Kind? {
-        Kind(rawValue: node.kind).flatMap { $0 == .feature || $0 == .deploy || $0 == .timeline ? nil : $0 }
+        Kind(rawValue: node.kind).flatMap { $0 == .deploy || $0 == .timeline ? nil : $0 }
     }
 
     // MARK: Actions (#3130)

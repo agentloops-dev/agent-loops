@@ -4,8 +4,8 @@
 // page is the way back to the defaults.
 import { effect } from "@preact/signals";
 
-/** The pages that remember: the lists by kind, then Features, Timeline and Next (#5691). */
-export type WorkPage = "issue" | "pr" | "release" | "features" | "timeline" | "next";
+/** The pages that remember: the lists by kind, then Timeline and Next (#5691). */
+export type WorkPage = "issue" | "pr" | "release" | "timeline" | "next";
 
 export const rememberedKey = (page: WorkPage) => `agents.work.filters.${page}`;
 

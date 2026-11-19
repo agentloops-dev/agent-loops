@@ -369,24 +369,6 @@ func TestForgePlanReadsAForgejoEpic(t *testing.T) {
 	}
 }
 
-// forge/features counts a Forgejo epic under its feature:<name> label.
-func TestForgeFeaturesCountForgejoEpics(t *testing.T) {
-	t.Parallel()
-
-	_, c, _, _ := forgejoDaemon(t)
-	var features wire.ForgeFeatures
-	json.Unmarshal(c.call(t, 1, "forge/features", wire.ForgeFeaturesRequest{}), &features)
-	var export *wire.ForgeFeature
-	for _, f := range features.Features {
-		if f.Name == "Export" {
-			export = &f
-		}
-	}
-	if export == nil || export.Epics != 1 || export.Open != 1 || deref(export.Color) != "#5319e7" {
-		t.Fatalf("features: %+v", features)
-	}
-}
-
 // Add child makes the Forgejo epic depend on a new issue (in the epic's feature) or one that is
 // there; Blocked by makes a child depend on another, or no longer.
 func TestForgePlanWritesOnAForgejoEpic(t *testing.T) {

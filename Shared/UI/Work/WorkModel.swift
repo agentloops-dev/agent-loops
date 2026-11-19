@@ -26,9 +26,6 @@ protocol WorkModel: AnyObject, Sendable {
     /// The machines that say their deploys' targets (`deploys/targets`, #5270), the home one first.
     /// None on the Remote: Work ▸ Deploys is Mac + web.
     var deploysMachines: [(id: MachineRef, name: String)] { get }
-    /// The machines that give Work ▸ Features in one read (`work/features`, #4586), the home one
-    /// first; the others are read with `forge/features`, `forge/issues` and `forge/plan`.
-    var featuresMachines: [(id: MachineRef, name: String)] { get }
     /// The person's projects (#3283), for Work's Project filter: Mac + web, so the Remote has none.
     var workProjects: [WorkList.Project] { get }
     /// Every machine's live folders, as this app knows them: Work's lists read again when they change (#6152).
@@ -65,9 +62,9 @@ protocol WorkModel: AnyObject, Sendable {
     func workSessionTitle(_ id: UUID) -> String?
     /// A session's state, or nil when this app does not know the session (#3268, a plan's marks).
     func workSessionState(_ id: UUID) -> AgentState?
-    /// The session that leads an epic, of those this app knows (#3269, Work ▸ Features); nil with none.
+    /// The session that leads an epic, of those this app knows (#3269, an epic's page); nil with none.
     func workLead(of epic: DaemonAPI.LineageNode) -> Agent?
-    /// The sessions this app knows, of every machine (#4115, Work ▸ Features's groups).
+    /// The sessions this app knows, of every machine (#4115).
     var workAgents: [Agent] { get }
     /// Show a session's chat.
     func openWorkSession(_ id: UUID)
@@ -127,7 +124,6 @@ extension WorkModel {
     }
     var timelineMachines: [(id: MachineRef, name: String)] { [] }
     var deploysMachines: [(id: MachineRef, name: String)] { [] }
-    var featuresMachines: [(id: MachineRef, name: String)] { [] }
     func lineageSessionsOn(_ nodes: [DaemonAPI.LineageNode]) async -> DaemonAPI.LineageSessionsOn? { nil }
     var lineageChanges: Int { 0 }
 
@@ -224,15 +220,11 @@ extension WorkModel {
         workHistory.replace(WorkPlace(kind: place.kind, ref: to, fromList: true))
     }
 
-    /// Open a part of a page's trail (#5452): a list, Work ▸ Features with a feature open and in
-    /// view, or an epic's page. Each is a new place, so Back comes back to the page.
+    /// Open a part of a page's trail (#5452): a list, or an epic's page. Each is a new place, so Back comes back to the page.
     func openTrail(_ target: WorkTrail.Target) {
         switch target {
         case .list(let kind):
             showWork(WorkPlace(kind: kind))
-        case .feature(let name):
-            workLists.features.reveal(name, model: self)
-            showWork(WorkPlace(kind: .feature))
         case .item(let kind, let ref):
             showWork(WorkPlace(kind: kind, ref: ref))
         }

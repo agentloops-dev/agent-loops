@@ -24,7 +24,7 @@ import (
 // suggestLeadsMost is how many suggestions one read gives; the rest are only counted.
 const suggestLeadsMost = 3
 
-// suggestLeadsPlans is how many plans are read at once, as workFeaturesPlans.
+// suggestLeadsPlans is how many plans are read at once.
 const suggestLeadsPlans = 4
 
 // dismissedLeadsFile is the person's list of dismissed epics, under their home's .agents, or
