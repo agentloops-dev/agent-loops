@@ -1564,7 +1564,6 @@
   },
   {
    "name": "a card raised while the read is on its way",
-   "fault": "#6291",
    "ops": [
     {
      "op": "reconnect",
@@ -1587,6 +1586,80 @@
     }
    ],
    "expect": 2
+  },
+  {
+   "name": "a card answered while the read is on its way",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "reconnect",
+     "read": 2,
+     "during": [
+      3
+     ]
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    }
+   ],
+   "expect": 4
+  },
+  {
+   "name": "a question raised while the read is on its way",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "reconnect",
+     "read": 4,
+     "during": [
+      5
+     ]
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    }
+   ],
+   "expect": 6
   },
   {
    "name": "a daemon restart while a card waits",

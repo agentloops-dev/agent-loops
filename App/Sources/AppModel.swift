@@ -4024,9 +4024,12 @@ final class AppModel {
         }
         let theirs = Set(work.agents.filter { $0.host == host }.map(\.id))
         // A card of an agent removed while away goes with these reads (#6188).
+        // A card heard while the reads are on their way is laid over their replies (#6291).
+        let read = work.beginCardsRead()
+        defer { work.endCardsRead(read) }
         let permissions = try? await server.call(DaemonAPI.Method.permissionsPending, returning: [PermissionRequest].self)
         let elicitations = try? await server.call(DaemonAPI.Method.elicitationsPending, returning: [ElicitationRequest].self)
-        work.replaceCards(from: host, permissions: permissions, elicitations: elicitations)
+        work.replaceCards(from: host, permissions: permissions, elicitations: elicitations, since: read)
         if let watching = selection, theirs.contains(watching) { await loadTranscript() }
         for chat in popouts.values where theirs.contains(chat.id) { await loadTranscript(of: chat) }
     }
@@ -4149,10 +4152,13 @@ final class AppModel {
     #endif
 
     func refreshElicitations() async {
+        // A card heard while the read is on its way is laid over its reply (#6291).
+        let read = work.beginCardsRead()
+        defer { work.endCardsRead(read) }
         guard let list = try? await client.call(DaemonAPI.Method.elicitationsPending,
                                                 Optional<Int>.none,
                                                 returning: [ElicitationRequest].self) else { return }
-        work.replaceElicitations(elicitationsOnServers + list)
+        work.replaceElicitations(elicitationsOnServers + list, since: read)
     }
 
     /// What is held for the servers' agents, kept when the Mac's own are re-listed (037).
@@ -4536,11 +4542,14 @@ final class AppModel {
     }
 
     func refreshPermissions() async {
+        // A card heard while the read is on its way is laid over its reply (#6291).
+        let read = work.beginCardsRead()
+        defer { work.endCardsRead(read) }
         await attempt {
-            self.work.replacePermissions(self.permissionsOnServers
-                + (try await self.client.call(DaemonAPI.Method.permissionsPending,
-                                              Optional<String>.none,
-                                              returning: [PermissionRequest].self)))
+            let listed = try await self.client.call(DaemonAPI.Method.permissionsPending,
+                                                    Optional<String>.none,
+                                                    returning: [PermissionRequest].self)
+            self.work.replacePermissions(self.permissionsOnServers + listed, since: read)
         }
     }
 

@@ -14,6 +14,11 @@ import Observation
 ///
 /// Nothing is decided here. Every method either files what arrived or replaces what
 /// was there. Anything that needs a decision belongs to the daemon.
+/// A pending read of the cards on its way (`AgentsModel.beginCardsRead`, #6291).
+public struct CardsRead: Hashable, Sendable {
+    let id: Int
+}
+
 @MainActor
 @Observable
 public final class AgentsModel {
@@ -201,6 +206,11 @@ public final class AgentsModel {
     /// first steps were drawn below that reply (#2807). Bounded, as the web's is.
     @ObservationIgnored private var heardSincePage: [TranscriptEntry]? = []
     private static let heardSincePageLimit = 1_000
+
+    /// By pending read of the cards on its way: the card notifications heard since it was
+    /// sent, to lay over its reply (#6291). Bounded, as `heardSincePage` is.
+    @ObservationIgnored private var cardsHeard: [Int: [Update]] = [:]
+    @ObservationIgnored private var nextCardsRead = 0
 
     /// Why the open chat's history did not load, or only partly, until a page lands or
     /// the chat is left (#400). Said in the chat with a way to try again, where a failed
@@ -798,18 +808,9 @@ public final class AgentsModel {
                 transcriptItems = display.items
             }
 
-        case .permission(let notification):
-            permissions.removeAll { $0.agentID == notification.agentID && $0.id == notification.requestID }
-            if answering.contains(notification.requestID) {
-                if notification.request == nil { answeredElsewhere.insert(notification.requestID) }
-            } else if let request = notification.request { permissions.append(request) }
-            permissions.sort { $0.askedAt < $1.askedAt }
-
-        case .elicitation(let notification):
-            elicitations.removeAll { $0.id == notification.requestID }
-            if answering.contains(notification.requestID) {
-                if notification.request == nil { answeredElsewhere.insert(notification.requestID) }
-            } else if let request = notification.request { elicitations.append(request) }
+        case .permission, .elicitation:
+            hearCard(update)
+            applyCard(update)
 
         case .attention(let notification):
             if let need = notification.need {
@@ -888,8 +889,8 @@ public final class AgentsModel {
             // Deleted (#398). Out of every list; a chat that was showing it finds no
             // agent and says so.
             unfile(notification.agentID)
-            permissions.removeAll { $0.agentID == notification.agentID }
-            elicitations.removeAll { $0.agentID == notification.agentID }
+            hearCard(update)
+            applyCard(update)
 
         case .leasesChanged(let snapshot):
             replaceLeases(snapshot)
@@ -1759,26 +1760,85 @@ public final class AgentsModel {
         return agent.isAtCostLimit(under: limits)
     }
 
-    public func replacePermissions(_ listed: [PermissionRequest]) {
-        permissions = listed.filter { !answering.contains($0.id) }
+    /// What a card notification does to the cards: `agent/permission` and `agent/elicitation`
+    /// put up or take down one card, and `agent/removed` takes down the agent's cards.
+    private func applyCard(_ update: Update) {
+        switch update {
+        case .permission(let notification):
+            permissions.removeAll { $0.agentID == notification.agentID && $0.id == notification.requestID }
+            if answering.contains(notification.requestID) {
+                if notification.request == nil { answeredElsewhere.insert(notification.requestID) }
+            } else if let request = notification.request { permissions.append(request) }
+            permissions.sort { $0.askedAt < $1.askedAt }
+        case .elicitation(let notification):
+            elicitations.removeAll { $0.id == notification.requestID }
+            if answering.contains(notification.requestID) {
+                if notification.request == nil { answeredElsewhere.insert(notification.requestID) }
+            } else if let request = notification.request { elicitations.append(request) }
+        case .agentRemoved(let notification):
+            permissions.removeAll { $0.agentID == notification.agentID }
+            elicitations.removeAll { $0.agentID == notification.agentID }
+        default:
+            break
+        }
     }
 
-    public func replaceElicitations(_ listed: [ElicitationRequest]) {
+    /// Keeps a card notification for each pending read on its way (#6291).
+    private func hearCard(_ update: Update) {
+        for read in cardsHeard.keys {
+            cardsHeard[read]?.append(update)
+            if let count = cardsHeard[read]?.count, count > Self.heardSincePageLimit {
+                cardsHeard[read]?.removeFirst(count - Self.heardSincePageLimit)
+            }
+        }
+    }
+
+    /// Call as a pending read of the cards (`permissions/pending`, `elicitations/pending`, or
+    /// a catch-up that holds them) is sent, give it to the `replace` that takes its reply, and
+    /// end it when the reply is taken or failed. The daemon serves a read on its own, so a card
+    /// raised or answered after it made the reply and before the reply came is heard first; the
+    /// older reply would undo it, so what was heard since the read was sent is laid over the
+    /// reply (#6291), as `heardSincePage` is for a page.
+    public func beginCardsRead() -> CardsRead {
+        nextCardsRead += 1
+        cardsHeard[nextCardsRead] = []
+        return CardsRead(id: nextCardsRead)
+    }
+
+    /// The read's reply is taken or failed: stop keeping what is heard for it.
+    public func endCardsRead(_ read: CardsRead) {
+        cardsHeard[read.id] = nil
+    }
+
+    /// The card notifications heard since `read` was sent, laid over a reply just taken.
+    private func layHeardCards(since read: CardsRead?) {
+        guard let read, let heard = cardsHeard[read.id] else { return }
+        for update in heard { applyCard(update) }
+    }
+
+    public func replacePermissions(_ listed: [PermissionRequest], since read: CardsRead? = nil) {
+        permissions = listed.filter { !answering.contains($0.id) }
+        layHeardCards(since: read)
+    }
+
+    public func replaceElicitations(_ listed: [ElicitationRequest], since read: CardsRead? = nil) {
         elicitations = listed.filter { !answering.contains($0.id) }
+        layHeardCards(since: read)
     }
 
     /// One host's pending reads (`permissions/pending`, `elicitations/pending`) replace its
     /// cards; nil leaves that kind as it is. A card is kept only when its agent is held on
     /// another host: the card of an agent that is on no host now (removed while this client
     /// was away) goes with the read, and does not wait for ever (#6188).
+    /// `read` (#6291): what was heard while the reads were on their way is laid over them.
     public func replaceCards(from host: MachineRef, permissions listedPermissions: [PermissionRequest]?,
-                             elicitations listedElicitations: [ElicitationRequest]?) {
+                             elicitations listedElicitations: [ElicitationRequest]?, since read: CardsRead? = nil) {
         let elsewhere = { (id: UUID) in self.agent(id).map { $0.host != host } ?? false }
         if let listedPermissions {
-            replacePermissions(permissions.filter { elsewhere($0.agentID) } + listedPermissions)
+            replacePermissions(permissions.filter { elsewhere($0.agentID) } + listedPermissions, since: read)
         }
         if let listedElicitations {
-            replaceElicitations(elicitations.filter { elsewhere($0.agentID) } + listedElicitations)
+            replaceElicitations(elicitations.filter { elsewhere($0.agentID) } + listedElicitations, since: read)
         }
     }
 

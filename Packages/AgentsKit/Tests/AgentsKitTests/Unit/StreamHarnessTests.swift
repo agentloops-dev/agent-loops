@@ -194,10 +194,13 @@ final class ModelStreamClient: StreamClient {
 
     func catchUp(_ snapshot: StreamSnapshot, during: [(String, JSONValue)]) throws {
         let load = model.beginTranscriptLoad()
+        // As AppModel's catch-up of a host: its pending reads replace its agents' cards (#6188), with
+        // what was heard while they were on their way laid over them (#6291).
+        let cards = model.beginCardsRead()
+        defer { model.endCardsRead(cards) }
         model.replaceAgents(snapshot.agents, from: host)
         for (method, params) in during { model.apply(method, params, from: host) }
-        // As AppModel's catch-up of a host: its pending reads replace its agents' cards (#6188).
-        model.replaceCards(from: host, permissions: snapshot.permissions, elicitations: snapshot.elicitations)
+        model.replaceCards(from: host, permissions: snapshot.permissions, elicitations: snapshot.elicitations, since: cards)
         if let start = model.resumeStart, snapshot.page.total >= start {
             let rest = TranscriptPage(firstIndex: start, total: snapshot.page.total,
                                       entries: Array(snapshot.page.entries.dropFirst(start - snapshot.page.firstIndex)))
