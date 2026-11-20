@@ -5,8 +5,7 @@
 import type { OrgRoute, OrgRouteKind, OrgRouteMine, OrgRouteSettings, OrgRouteVendor } from "../protocol/generated";
 import { runtimeName } from "./orgPolicy";
 
-export { reachChoiceNames, reachChoiceOf, reachChoices, reachName, reachOf, reachWords, termsChoices, termsNames } from "./orgPolicy";
-export type { ReachChoice } from "./orgPolicy";
+export { reachChoiceOf, reachWords } from "./orgPolicy";
 
 export const fromOrganisation = "From your organisation";
 export const noPlanLimit = "Organisation · No plan limit";
@@ -109,7 +108,6 @@ export function mineLine(route: OrgRouteMine): string {
 export function requires(runtime: string, route: string): string {
   return `Your organisation requires ${runtimeName(runtime)} to use ${route}.`;
 }
-export const antigravityRefused = "Your organisation does not allow Antigravity, because of Google’s terms on third-party tools.";
 export const routeMissing = "Your organisation’s way to this model has not reached this machine. Connect to the network.";
 export function routeRemoved(name: string): string {
   return `Your organisation removed ${name}.`;

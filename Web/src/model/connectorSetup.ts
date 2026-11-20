@@ -221,12 +221,6 @@ export function proofText(proof: ConnectorProof, now: Date = new Date()): string
   return text;
 }
 
-export function proof(slot: ConnectorSlot, now: Date = new Date()): string | undefined {
-  if (!slot.proof) return undefined;
-  const number = slot.proof.number != null ? `#${slot.proof.number} ` : "";
-  return `${proofLead(slot.slot)}: ${number}${proofText(slot.proof, now)}`;
-}
-
 export function eventsLead(events: ConnectorEvents, forge: ConnectionProvider = "github"): string {
   switch (events.state) {
     case "on": return "On for Agents:";

@@ -271,10 +271,10 @@ and high findings fixed by helper agents on branches of their own (failing test 
   main-thread work, unbounded growth, file descriptors, polling, transcript size,
   start-up and reconnects. At most one helper a run, whose proof is six runs of the
   measurement on `main` and six on its branch.
-- **Dead-code review** (`.agents/workflows/dead-code-review.md`, #2161): unreachable
-  web code, plus compatibility code from old builds (Go and Swift too). It uses Knip; Go's
-  and Swift's unreachable code fails lint on every PR (`deadcode` in `go:lint`, #6334;
-  Periphery in `swift-lint:lint`, #6336). It records findings under `.agents/reviews/dead-code/` and removes
+- **Dead-code review** (`.agents/workflows/dead-code-review.md`, #2161): compatibility
+  code from old builds, in Go, Swift and the web app. Unreachable code fails lint on every
+  PR (`deadcode` in `go:lint`, #6334; Periphery in `swift-lint:lint`, #6336; Knip in
+  `web:lint`, #6337). It records findings under `.agents/reviews/dead-code/` and removes
   only code proven dead, with a separate pull request for each client or language.
 - **HADR review** (`.agents/workflows/hadr-review.md`, #1557): high availability, disaster
   recovery and bounded data. Every store has an enforced bound, writes are atomic, each

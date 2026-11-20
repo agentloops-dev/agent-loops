@@ -44,7 +44,7 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "commands": ["./node_modules/.bin/tsc --noEmit -p .", "node test/lint.mjs", "node test/licences.mjs", "../scripts/lint.sh web"],
+        "commands": ["./node_modules/.bin/tsc --noEmit -p .", "node test/lint.mjs", "node test/licences.mjs", "../scripts/lint.sh web knip"],
         "parallel": false,
         "cwd": "{projectRoot}"
       },

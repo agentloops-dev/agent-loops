@@ -40,7 +40,7 @@
 #                   one (#1796). A go test or build that is killed leaves its folders in
 #                   tmp/ (go-build*, a test's t.TempDir): prune removes each one in which
 #                   nothing changed for AGENTS_GO_TMP_HOURS (6), also while Go runs (#5722).
-#   npm/            npm's cache for a Node tool run by hand (Knip); lint.sh's once
+#   npm/            npm's cache for a Node tool run by hand; lint.sh's once
 #   lint-tools/<t>-<v>/  scripts/lint.sh's pinned macOS linters (#4709); prune takes a
 #                   version not used in a week
 #   in-use/<pid>    the folders the build with that pid uses; prune keeps them

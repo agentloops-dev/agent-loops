@@ -11,20 +11,20 @@
 #                                     swiftlint, jscpd, periphery (macOS only);
 #                                     Linux x86_64 on Linux, macOS arm64 on a Mac
 #
-# Linters: shell (shellcheck), zsh (zsh -n), go (golangci-lint), govulncheck, deadcode, web (biome lint),
+# Linters: shell (shellcheck), zsh (zsh -n), go (golangci-lint), govulncheck, deadcode, web (biome lint), knip (dead web code),
 # swift (SwiftLint), periphery (dead Swift, a Mac only), dupes (jscpd), checks (our own text checks). Their rules are in
-# .shellcheckrc, Go/.golangci.yml, Web/biome.json and .swiftlint.yml. There is no Python
+# .shellcheckrc, Go/.golangci.yml, Web/biome.json, Web/knip.config.js and .swiftlint.yml. There is no Python
 # linter (#5645).
 #
 # On a Mac (not CI) with no linter named, only the linters for the files the branch changes
 # since its merge base with origin/main, committed or not, run (#4710): go, govulncheck and deadcode for
 # Go/ or Packages/Wire/, swift and periphery for *.swift, swift for .swiftlint.yml, periphery for
-# project.yml or .periphery-allowed.txt, web for Web/, shell and zsh for
+# project.yml or .periphery-allowed.txt, web and knip for Web/, shell and zsh for
 # a shell file or .shellcheckrc; checks and dupes always. A change to this script runs every
 # one. It says which it skipped.
 #
 # Nx runs the linters, one target per language (#5672), as `scripts/nx.sh affected -t lint`
-# does and CI does: go:lint (go, govulncheck, deadcode), web:lint (web, beside tsc and its own checks),
+# does and CI does: go:lint (go, govulncheck, deadcode), web:lint (web and knip, beside tsc and its own checks),
 # repo-lint:lint (shell, zsh, checks, dupes; lint/project.json) and swift-lint:lint (swift and
 # periphery, in CI's macOS `swift-lint` job). Each is cached by its inputs, so a lint that passed at the same
 # files is not run again.
@@ -47,7 +47,9 @@
 # that no main package or test reaches (#6334; below, run_deadcode) and that
 # Go/.deadcode-allowed.txt does not name with its reason (an allowlist, never a baseline),
 # periphery on any Swift declaration that nothing reaches (#6336; below, run_periphery) and that
-# .periphery-allowed.txt does not name with its reason (an allowlist too), and web (Biome) on any finding of the rules in Web/biome.json.
+# .periphery-allowed.txt does not name with its reason (an allowlist too), web (Biome) on any finding of the rules in Web/biome.json,
+# and knip on any unused file, export, type or dependency of the web app (#6337; below, run_knip) that
+# Web/knip.config.js does not allow with its reason (an allowlist too).
 #
 # Every linter runs on the host, never in a container (#4709). On Linux a linter on the PATH
 # is run as it is (CI, after --tools). On a Mac each one is the pinned macOS binary in
@@ -73,7 +75,7 @@ PERIPHERY_SHA256=07d4e286e31dd79164df39097e0b59f533c94badbe18158464a455ea88a166d
 ZSH=5.9
 CACHE=${AGENTS_BUILD_CACHE:-$HOME/Library/Caches/Agents-build}
 
-ALL="shell zsh go govulncheck deadcode web swift periphery dupes checks"
+ALL="shell zsh go govulncheck deadcode web knip swift periphery dupes checks"
 GO_BASELINE=Go/.golangci-baseline.txt
 SWIFT_BASELINE=.swiftlint-baseline.json
 DUPES_BASELINE=.jscpd-baseline.txt
@@ -156,7 +158,7 @@ changed_linters() {
 		*.swift) want="$want swift periphery " ;;
 		.swiftlint.yml) want="$want swift " ;;
 		project.yml | .periphery-allowed.txt | scripts/periphery-report.py) want="$want periphery " ;;
-		Web/*) want="$want web " ;;
+		Web/*) want="$want web knip " ;;
 		*.sh | *.bash | *.zsh | .shellcheckrc) want="$want shell zsh " ;;
 		*)
 			# An executable script with no extension: its first line says sh or zsh.
@@ -392,6 +394,24 @@ run_web() {
 		sed -E 's#^Web/(/repo/Web/|'"$root"'/Web/|\./)?#Web/#'
 	local status=${PIPESTATUS[0]}
 	cd "$root" || return 1
+	return "$status"
+}
+
+# knip (#6337): every file, export, type and dependency of the web app that no bundle of
+# Web/build.mjs, test or walk reaches, from Knip at the version Web/package.json pins (it is
+# in the workspace's packages: scripts/pnpm.sh install --frozen-lockfile, as scripts/nx.sh
+# does). Web/knip.config.js names the entry points, reads a test's load("src/…") as an import,
+# and allows each finding kept on purpose, with why; there is no baseline. Its GitHub reporter,
+# turned into path:line:col: lines with the path from the root.
+run_knip() {
+	local knip=Web/node_modules/.bin/knip
+	[ -x "$knip" ] || { echo "lint.sh: no $knip: run scripts/pnpm.sh install --frozen-lockfile first"; return 1; }
+	cd Web || return 1
+	./node_modules/.bin/knip --no-progress --no-config-hints --reporter github-actions 2>&1 |
+		sed -E 's#^::(error|warning) file=([^,]*),line=([0-9]+),[^:]*,col=([0-9]+),[^:]*,title=[^:]*/ ([^:]*)::(.*)#Web/\2:\3:\4: \1: \6 (\5)#'
+	local status=${PIPESTATUS[0]}
+	cd "$root" || return 1
+	[ "$status" = 0 ] || echo "lint.sh: remove each one above, or allow it in Web/knip.config.js with why it stays"
 	return "$status"
 }
 
