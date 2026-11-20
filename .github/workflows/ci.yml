@@ -1204,6 +1204,21 @@ jobs:
       - name: SwiftLint and Periphery
         timeout-minutes: 40
         run: scripts/nx.sh run swift-lint:lint --output-style=stream
+      # The linked bundles out of the index builds before main saves them: about 2 GB of the
+      # 6 GB (the two apps with their Go helpers, their extensions, the package test bundles and
+      # dSYMs). Periphery reads only the index stores and Intermediates' .SwiftFileList files,
+      # and the next build relinks and copies the bundles from the objects it keeps. Whole, the
+      # cache (3.3 GB packed) put the repo's caches over GitHub's 10 GB, so it was evicted soon
+      # after each save and every pull request's index builds ran cold, 32 to 34 minutes.
+      - name: Trim the index builds
+        if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' }}
+        run: |
+          du -sh build/periphery 2>/dev/null || true
+          find build/periphery/mac/Build/Products/Debug build/periphery/remote/Build/Products/Debug-iphonesimulator \
+            -maxdepth 1 \( -name '*.app' -o -name '*.appex' -o -name '*.dSYM' \) -exec rm -rf {} + 2>/dev/null || true
+          find build/periphery/AgentsKit build/periphery/CodeText \
+            -maxdepth 3 \( -name '*.xctest' -o -name '*.dSYM' \) -prune -exec rm -rf {} + 2>/dev/null || true
+          du -sh build/periphery 2>/dev/null || true
       - name: Save the index builds
         id: save-index
         if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' }}
