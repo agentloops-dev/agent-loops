@@ -50,74 +50,115 @@ func (u Updates) Check(ctx context.Context, managed map[string]wire.ManagedSkill
 		if !ok {
 			continue
 		}
-		u.Cache.mu.Lock()
-		if u.Cache.answers == nil {
-			u.Cache.answers = map[string]updateAnswer{}
-		}
-		answer, had := u.Cache.answers[source]
-		u.Cache.mu.Unlock()
-		if !had || now.Sub(answer.at) > updateInterval {
-			head, err := u.GitHub.Head(ctx, owner, repo)
-			if err != nil {
-				for _, s := range skills {
-					out[s.Name] = unknown
-				}
-				continue
-			}
-			moved := false
+		answer, ok := u.skillAnswer(ctx, source, owner, repo, skills, now)
+		if !ok {
 			for _, s := range skills {
-				if s.Commit == nil || *s.Commit != head.Commit {
-					moved = true
-				}
+				out[s.Name] = unknown
 			}
-			folders := map[string]string{}
-			if moved {
-				if tree, err := u.GitHub.Tree(ctx, owner, repo, head.Commit); err == nil {
-					for _, e := range tree {
-						if e.Type == "tree" {
-							folders[e.Path] = e.SHA
-						}
-					}
-				}
-			}
-			answer = updateAnswer{at: now, head: head.Commit, folders: folders}
-			u.Cache.mu.Lock()
-			u.Cache.answers[source] = answer
-			u.Cache.mu.Unlock()
+			continue
 		}
 		for _, s := range skills {
-			key := SidecarKey(place.Destination, s.Name)
-			if s.Commit != nil && *s.Commit == answer.head {
-				out[s.Name] = wire.UpdateState{Current: &struct{}{}}
-				continue
-			}
-			folder := ""
-			if s.SkillPath != nil {
-				folder = strings.Trim(strings.TrimSuffix(*s.SkillPath, "SKILL.md"), "/")
-			}
-			// What the folder was when it was added: the lock's tree SHA for a personal
-			// skill, the sidecar's for a folder one.
-			var was *string
-			if place.LockKind == Personal {
-				was = s.RecordedHash
-			} else if r, ok := side.Skills[key]; ok {
-				was = &r.TreeSHA
-			}
-			sha, ok := answer.folders[folder]
-			switch {
-			case !ok || was == nil:
-				out[s.Name] = unknown
-			case sha == *was:
-				out[s.Name] = wire.UpdateState{Current: &struct{}{}}
-				if r, ok := side.Skills[key]; ok {
-					r.Commit = answer.head
-					side.Skills[key] = r
-				}
-			default:
-				out[s.Name] = wire.UpdateState{Available: &wire.UpdateStateAvailable{Commit: answer.head}}
-			}
+			out[s.Name] = skillUpdateState(s, answer, place, side)
 		}
 	}
 	side.Save(u.Sidecar)
 	return out
+}
+
+// cached is source's last answer, if there is one.
+func (c *UpdateCache) cached(source string) (updateAnswer, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.answers == nil {
+		c.answers = map[string]updateAnswer{}
+	}
+	answer, had := c.answers[source]
+	return answer, had
+}
+
+// remember keeps answer as source's last answer.
+func (c *UpdateCache) remember(source string, answer updateAnswer) {
+	c.mu.Lock()
+	c.answers[source] = answer
+	c.mu.Unlock()
+}
+
+// skillAnswer is source's answer for skills: the cached one if it is under an hour old,
+// else its HEAD now and, when a skill is not at that commit, each folder's tree SHA there.
+// It is false when the HEAD cannot be read.
+func (u Updates) skillAnswer(ctx context.Context, source, owner, repo string, skills []wire.ManagedSkill, now time.Time) (updateAnswer, bool) {
+	answer, had := u.Cache.cached(source)
+	if had && now.Sub(answer.at) <= updateInterval {
+		return answer, true
+	}
+	head, err := u.GitHub.Head(ctx, owner, repo)
+	if err != nil {
+		return updateAnswer{}, false
+	}
+	folders := map[string]string{}
+	if skillsMoved(skills, head.Commit) {
+		folders = u.treeFolders(ctx, owner, repo, head.Commit)
+	}
+	answer = updateAnswer{at: now, head: head.Commit, folders: folders}
+	u.Cache.remember(source, answer)
+	return answer, true
+}
+
+// skillsMoved is whether a skill is not at commit.
+func skillsMoved(skills []wire.ManagedSkill, commit string) bool {
+	for _, s := range skills {
+		if s.Commit == nil || *s.Commit != commit {
+			return true
+		}
+	}
+	return false
+}
+
+// treeFolders is each folder's tree SHA at commit, by path; empty when the tree cannot be read.
+func (u Updates) treeFolders(ctx context.Context, owner, repo, commit string) map[string]string {
+	folders := map[string]string{}
+	tree, err := u.GitHub.Tree(ctx, owner, repo, commit)
+	if err != nil {
+		return folders
+	}
+	for _, e := range tree {
+		if e.Type == "tree" {
+			folders[e.Path] = e.SHA
+		}
+	}
+	return folders
+}
+
+// skillUpdateState is s's update state against answer. A skill whose folder has the same
+// tree SHA at the new HEAD is current, and its sidecar record moves to that commit.
+func skillUpdateState(s wire.ManagedSkill, answer updateAnswer, place Place, side Sidecar) wire.UpdateState {
+	key := SidecarKey(place.Destination, s.Name)
+	if s.Commit != nil && *s.Commit == answer.head {
+		return wire.UpdateState{Current: &struct{}{}}
+	}
+	folder := ""
+	if s.SkillPath != nil {
+		folder = strings.Trim(strings.TrimSuffix(*s.SkillPath, "SKILL.md"), "/")
+	}
+	// What the folder was when it was added: the lock's tree SHA for a personal
+	// skill, the sidecar's for a folder one.
+	var was *string
+	if place.LockKind == Personal {
+		was = s.RecordedHash
+	} else if r, ok := side.Skills[key]; ok {
+		was = &r.TreeSHA
+	}
+	sha, ok := answer.folders[folder]
+	switch {
+	case !ok || was == nil:
+		return wire.UpdateState{Unknown: &struct{}{}}
+	case sha == *was:
+		if r, ok := side.Skills[key]; ok {
+			r.Commit = answer.head
+			side.Skills[key] = r
+		}
+		return wire.UpdateState{Current: &struct{}{}}
+	default:
+		return wire.UpdateState{Available: &wire.UpdateStateAvailable{Commit: answer.head}}
+	}
 }
