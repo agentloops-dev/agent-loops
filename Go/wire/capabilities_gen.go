@@ -191,6 +191,7 @@ const CapProviders1 = "providers/1"
 const CapProviders2 = "providers/2"
 const CapReadapi1 = "readapi/1"
 const CapRelay1 = "relay/1"
+const CapReportsChanges1 = "reports.changes/1"
 const CapReportsNodes2 = "reports.nodes/2"
 const CapReportsProblem1 = "reports.problem/1"
 const CapReportsScope1 = "reports.scope/1"
@@ -999,6 +1000,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"readApi/list", "readapi/1"},
 	{"readApi/make", "readapi/1"},
 	{"readApi/revoke", "readapi/1"},
+	{"reports/changes", "reports.changes/1"},
 	{"reports/deleteView", "reports.views/1"},
 	{"reports/export", "reports/2"},
 	{"reports/featuresAll", "machines.all/1"},

@@ -615,6 +615,8 @@ public extension DaemonAPI {
                 Row(Method.reportsValue, params: ReportQuery.self, result: ReportValue.self, kind: .controlRequest),
                 // Work ▸ Issues, Pull requests and Releases (#3118).
                 Row(Method.reportsNodes, params: ReportNodesQuery.self, result: ReportNodes.self, kind: .controlRequest),
+                // The figures changed since a cursor, for Work's local cache (#6350).
+                Row(Method.reportsChanges, params: ReportChangesQuery.self, result: ReportChanges.self, kind: .controlRequest),
                 Row(Method.reportsScopes, params: Empty.self, result: ReportScopes.self, kind: .controlRequest),
                 // Lineage over every machine's copy (#4276): Work ▸ Timeline's sessions.
                 Row(Method.lineageWalkAll, params: LineageWalkAllRequest.self, result: LineageGraph.self, kind: .controlRequest),

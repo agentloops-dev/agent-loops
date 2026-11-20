@@ -12278,6 +12278,37 @@ export interface RenameRequest {
 }
 
 /**
+ * reports/changes' answer (#6350): a page of at most 100 rows, by ref, each as reports/nodes gives
+ * it. nextPageCursor asks for the next page of the same change; absent on the last. cursor is on
+ * the last page only: send it as since next time. reset says the rows are every row of the kind,
+ * not only those that changed: the client replaces the figures it holds of the kind with the rows
+ * of all the pages. An empty last page with a cursor says nothing changed.
+ */
+export interface ReportChanges {
+  nodes: ReportNode[];
+  nextPageCursor?: string;
+  cursor?: string;
+  reset: boolean;
+}
+
+/**
+ * reports/changes (#6350): the rows of one kind whose lineage figures changed since a cursor, for a
+ * client's local cache (#6348). kind, repo and scope are as reports/nodes'. since is the cursor of
+ * the last answer's last page, opaque; absent asks for every row (a reset). pageCursor is the last
+ * page's nextPageCursor. limit is 1 to 100, 100 when absent.
+ */
+export interface ReportChangesQuery {
+  /** issue, pr or release. */
+  kind: string;
+  repo?: string;
+  /** Me or the organisation (#1804). */
+  scope?: ReportScope;
+  since?: string;
+  pageCursor?: string;
+  limit?: number;
+}
+
+/**
  * What a machine's agents did in an hour or a day (#2019, R2 to R6), counted from its own event log
  * and its time ledger: never a conversation's words. Absent from a machine before #2019.
  */
@@ -17145,6 +17176,7 @@ export interface Methods {
   "readApi/list": { params: Empty; result: ReadAPI };
   "readApi/make": { params: ReadTokenMake; result: ReadTokenMade };
   "readApi/revoke": { params: ReadTokenRevoke; result: ReadAPI };
+  "reports/changes": { params: ReportChangesQuery; result: ReportChanges };
   "reports/deleteView": { params: ReportViewID; result: ReportViews };
   "reports/export": { params: ReportQuery; result: ReportExport };
   "reports/features": { params: Empty; result: FeatureUsage };
@@ -17629,6 +17661,7 @@ export const MethodTarget = {
   "readApi/list": "control",
   "readApi/make": "control",
   "readApi/revoke": "control",
+  "reports/changes": "control",
   "reports/deleteView": "control",
   "reports/export": "control",
   "reports/features": "host",
@@ -18779,6 +18812,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   RemoveRequestList: { required: ["requests"], optional: [] },
   RemoveResourceRequest: { required: ["name"], optional: [] },
   RenameRequest: { required: ["agentID", "title"], optional: [] },
+  ReportChanges: { required: ["nodes", "reset"], optional: ["nextPageCursor", "cursor"] },
+  ReportChangesQuery: { required: ["kind"], optional: ["repo", "scope", "since", "pageCursor", "limit"] },
   ReportCounts: { required: ["sessions", "failedSessions", "prsOpened", "prsMerged", "prsReverted", "mergeSeconds", "waits", "waitBuckets", "workflowRuns", "workflowFailures"], optional: [] },
   ReportDelivery: { required: ["repo", "figures"], optional: [] },
   ReportEstimateError: { required: ["issues"], optional: ["cost", "workingSeconds", "coverage", "landsAtErrorDays"] },

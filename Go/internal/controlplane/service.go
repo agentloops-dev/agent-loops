@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
@@ -268,6 +269,9 @@ type Service struct {
 	bus eventBus
 	// What Reports and the Console read from the store, by entity tag (#2054, #2056).
 	storeReads readCache
+	// lineageMerges counts the reads that decoded and merged the machines' lineage, so a
+	// test can see that reports/changes with no change merges none (#6350).
+	lineageMerges atomic.Int64
 	// buildsChanges is each repository's change points over the build timings' copy (#5232).
 	buildsChanges buildsChangesCache
 	// What each machine here was last sent of its projects (#2735).
