@@ -28,6 +28,8 @@ type gitError struct {
 	// remote"), false when it gave no answer: it could not start, a signal or the deadline
 	// stopped it (#6257).
 	answered bool
+	// status is git's exit status when it answered.
+	status int
 }
 
 func (e *gitError) Error() string { return e.message }
@@ -37,6 +39,13 @@ func (e *gitError) Error() string { return e.message }
 func gitAnswered(err error) bool {
 	var g *gitError
 	return err == nil || errors.As(err, &g) && g.answered
+}
+
+// gitSaidNo says whether err is git's own answer with exit status status, as 1 from
+// `rev-parse -q --verify` for a ref that is not there.
+func gitSaidNo(err error, status int) bool {
+	var g *gitError
+	return errors.As(err, &g) && g.answered && g.status == status
 }
 
 func gitDeadline(args []string) time.Duration {
@@ -120,7 +129,11 @@ func gitRawEnv(dir string, env []string, stdin []byte, args ...string) ([]byte, 
 		default:
 			msg = "git " + args[0] + " failed (" + err.Error() + ")." // a signal, with no words from git
 		}
-		return out.Bytes(), &gitError{message: msg, answered: errors.As(err, &exit) && exit.ExitCode() >= 0}
+		g := &gitError{message: msg}
+		if errors.As(err, &exit) && exit.ExitCode() >= 0 {
+			g.answered, g.status = true, exit.ExitCode()
+		}
+		return out.Bytes(), g
 	}
 	return out.Bytes(), nil
 }
