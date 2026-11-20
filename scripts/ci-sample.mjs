@@ -105,6 +105,20 @@ function git(args, cwd = root) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] }).trim();
 }
 
+/**
+ * Remove a scratch folder, and never throw (#6391). A task that ran out of time can leave child
+ * processes (swift-frontend) that still write into the folder, so the remove fails with ENOTEMPTY.
+ * A folder left on a runner does no harm; a throw here turned a timeout, which has no verdict,
+ * into a red job on main.
+ */
+function removeScratch(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 1000 });
+  } catch (error) {
+    console.error(`ci-sample: left ${dir} on the runner: ${error.message}`);
+  }
+}
+
 /** Run a task with Nx and no cache in a worktree at sha. Returns {ok, log}; ok is null when it ran out of time. */
 function runAt(sha, task, minutes) {
   const dir = mkdtempSync(join(tmpdir(), "ci-sample-"));
@@ -119,7 +133,7 @@ function runAt(sha, task, minutes) {
     return { ok: r.status === 0, log: `${r.stdout}${r.stderr}` };
   } finally {
     spawnSync("git", ["worktree", "remove", "--force", dir], { cwd: root });
-    rmSync(dir, { recursive: true, force: true });
+    removeScratch(dir);
   }
 }
 
