@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -18,11 +17,22 @@ const testSimulator = "6E7A7E1C-9A35-4D87-8E0B-5E0F7F2A0B12"
 // It says how many times its screen was read.
 func fakeSimulator(t *testing.T, picture *atomic.Value) *atomic.Int64 {
 	t.Helper()
+	return slowSimulator(t, picture, 0)
+}
+
+// slowSimulator is fakeSimulator with each read of its screen taking slow.
+func slowSimulator(t *testing.T, picture *atomic.Value, slow time.Duration) *atomic.Int64 {
+	t.Helper()
 	var reads atomic.Int64
 	shot, name := simulatorLiveShot, simulatorNameOf
 	pace, window := simulatorLivePace.Swap(int64(20*time.Millisecond)), liveDriveWindow.Swap(int64(300*time.Millisecond))
-	simulatorLiveShot = func(_ context.Context, udid string, height int) (wire.SimulatorScreen, error) {
+	simulatorLiveShot = func(ctx context.Context, udid string, height int) (wire.SimulatorScreen, error) {
 		reads.Add(1)
+		select {
+		case <-ctx.Done():
+			return wire.SimulatorScreen{}, ctx.Err()
+		case <-time.After(slow): //nolint:forbidigo // the fake's read is slow on purpose; no test waits on it
+		}
 		if udid != testSimulator || height != simulatorLiveHeight {
 			t.Errorf("read %s at %d", udid, height)
 		}
@@ -59,7 +69,6 @@ func TestASimulatorLeaseNamesTheSimulator(t *testing.T) {
 // changed picture, to the client with the chat in front only; none more than liveDriveWindow
 // after the last change; and with nobody in front, the screen is not read at all.
 func TestLiveFrameOfASimulatorGoesWhileItsHolderDrivesIt(t *testing.T) {
-	flaky.UnderLoad(t, "#6393")
 	fakeRuntimes(t)
 	var picture atomic.Value
 	picture.Store("first")
@@ -139,4 +148,26 @@ func TestLiveFrameOfASimulatorGoesWhileItsHolderDrivesIt(t *testing.T) {
 	if f := nextLive(t, front, 100*time.Millisecond); f != nil {
 		t.Fatalf("a frame after the release: %+v", f)
 	}
+}
+
+// A grant whose first read ends later than liveDriveWindow after it (a host under load, a slow
+// simctl) still sends that picture (#6393): the grant's drive is marked by the watch, after the
+// read, not when the lease is settled.
+func TestTheGrantsFirstPictureGoesWhenTheReadIsSlow(t *testing.T) {
+	fakeRuntimes(t)
+	var picture atomic.Value
+	picture.Store("first")
+	slowSimulator(t, &picture, 400*time.Millisecond)
+	d, front := start(t, t.TempDir())
+	defer d.Shutdown()
+	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
+	front.call(t, 1, "presence/report", map[string]any{"active": true, "showing": a.ID})
+	agent := appClient(t, d, a.ID)
+	agent.post("initialize", map[string]any{}, 1)
+	agent.tool(2, "lease_resource", map[string]any{"name": testSimulator})
+	f := nextLive(t, front, 3*time.Second)
+	if f == nil || f.Image == nil || *f.Image != base64.StdEncoding.EncodeToString([]byte("first")) {
+		t.Fatalf("no frame of the grant's first picture: %+v", f)
+	}
+	agent.tool(3, "release_resource", map[string]any{"name": testSimulator})
 }
