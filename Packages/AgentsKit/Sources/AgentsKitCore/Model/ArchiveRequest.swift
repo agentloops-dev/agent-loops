@@ -62,19 +62,7 @@ public enum AfterTurn: String, Codable, Hashable, Sendable {
         self = after
     }
 
-    /// Whether it may go with an ending. Not an ending that asks the
-    /// person for something (that session wants them again), nor `blocked` (a blocked
-    /// one has to be woken). Archiving puts the work out of sight, so only an ending
-    /// with nothing left in it goes with it.
-    public func goes(with outcome: WorkOutcome) -> Bool {
-        switch (self, outcome) {
-        case (.requestArchive, .done), (.requestArchive, .nothingToDo): return true
-        case (.archive, .done), (.archive, .nothingToDo): return true
-        default: return false
-        }
-    }
-
-    /// Said when `goes(with:)` is false, by both the service and the daemon.
+    /// Said when the ending is not one it may go with, by both the service and the daemon.
     public var refusal: String {
         switch self {
         case .requestArchive:
@@ -82,15 +70,4 @@ public enum AfterTurn: String, Codable, Hashable, Sendable {
         case .archive: "Nothing was recorded: archive only goes with done or nothing_to_do."
         }
     }
-
-    /// Said when `afterwards` is neither.
-    public static let unknown = "Nothing was recorded: afterwards has to be request_archive or archive."
-
-    /// Said when an agent asks to archive itself and its workflow did not allow it, or
-    /// no workflow started it.
-    public static let archiveNotAllowed = """
-        Nothing was recorded: only a workflow's run can archive itself, and only when \
-        its workflow says when-done: archive-allowed or archive. Call archive_session \
-        with no id instead, and the person approves it.
-        """
 }

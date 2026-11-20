@@ -29,10 +29,4 @@ public struct MCPTriggerFailure: Codable, Hashable, Sendable {
     public var code: Code
     public var message: String
     public var since: Date
-
-    public init(code: Code, message: String, since: Date) {
-        self.code = code
-        self.message = message
-        self.since = since
-    }
 }

@@ -187,14 +187,6 @@ extension RemoteModel {
         }
     }
 
-    /// Where Auto would start an Auto session's successor now (FR-022).
-    func autoPreview(for agent: Agent) async -> AutoPreview? {
-        guard let pick = agent.auto else { return nil }
-        let request = AutoPreviewRequest(cwd: agent.cwd, levels: pick.levels, sandbox: agent.sandboxOverride)
-        guard let client = try? client(for: DaemonAPI.AgentRequest(agentID: agent.id)) else { return nil }
-        return try? await client.call(DaemonAPI.Method.autoPreview, request, returning: AutoPreview.self)
-    }
-
     /// A running agent's model level or permission mode, mapped on its own runtime (#2658).
     func setAgentLevel(_ agentID: UUID, _ field: AutoField, _ level: String) async {
         var levels = Levels()

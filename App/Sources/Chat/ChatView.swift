@@ -251,7 +251,6 @@ struct ChatView: View {
             reloadTranscript: { [model, popped] in
                 if let popped { await model.loadTranscript(of: popped) } else { await model.loadTranscript() }
             },
-            continueWithoutSandbox: sandboxAnswer(carryOn: true),
             keepStopped: sandboxAnswer(carryOn: false),
             waitingSandbox: agent?.pendingSandboxFailure,
             kept: { [model] agentID in model.kept(for: agentID) },
@@ -522,7 +521,7 @@ struct ChatView: View {
             cards.append(WaitingCard(id: "block:" + agent.id.uuidString, asks: false) {
                 BlockWaitCard(block: block, since: report.at, lines: model.blockLines(agent),
                               stop: { await model.carryOn(agent.id) },
-                              help: AgentsModel.carryOnHelp(for: agent),
+                              help: AgentsModel.carryOnHelp(),
                               isDisabled: selectedHostOffline)
                     .help(selectedHostOffline ? offlineHelp : "")
             })

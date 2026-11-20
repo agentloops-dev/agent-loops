@@ -17,7 +17,7 @@ iPhone, and on a narrow web page, it is the first screen, and what you open goes
 | **Work** | **Docs**, **Messages**, then a row for each list: **Issues**, **Pull Requests** and the rest. On the web page, Work is a section of the bar, with the same pages. |
 | **Status** | What is going on, and no settings: **Runtimes** (each runtime once, with your accounts and a line per machine), **Events**, **Secrets** and **Accounts** (what happened to them last). To change your connectors, secrets and outside accounts, use **Settings ▸ You**. |
 | **Machines** | A page for each machine: its disks, CPU and memory, **Runtimes** installed, **Resources** and **Worktrees**. |
-| **Reports** | Pages about past work: **Achievements** (the Multiplier and the badges), **Cost**, **Tokens**, **Time**, **Velocity**, **Summary** while the daily summary is on, and **Milestones** until you have done every first step. On the iPhone and the iPad, Reports has **Achievements**, **Velocity** and **Summary** only. |
+| **Reports** | Pages about past work: **Achievements** (the Multiplier and the badges), **Cost**, **Tokens**, **Time**, **Velocity**, and **Milestones** until you have done every first step. On the iPhone and the iPad, Reports has **Achievements** and **Velocity** only. |
 | Smart groups | **Pinned**, **Needs You**, **For Review**, **Working** and **Unread**, each across every folder and host. See [Smart groups](#smart-groups). |
 | One group per project | Each project's sessions on every machine, and its folder's workflows. A project with one folder is that folder's group. See [A folder's group](#a-folders-group) and [A project with folders on several machines](#a-project-with-folders-on-several-machines). |
 | **Archived folders** | Folders you put away. The heading stays folded until you open it. Each has **Unarchive**. |
@@ -49,7 +49,7 @@ you without opening each folder.
 | --- | --- | --- |
 | **Pinned** | The sessions and workflows you pinned, in the order you pinned them. | On, open |
 | **Needs You** | Sessions that asked you something, are blocked, or ask to be archived. Also each approval that waits for you: a connector, a workflow, a plugin, a guarded file, and a workflow that failed. | On, open |
-| **For Review** | Finished sessions that showed you a file you have not opened yet, such as a report or the newest daily summary. After them, each folder's open pull requests on GitHub with a review requested from you, until you review one, or it is closed. Then what the daily checks found, such as failing CI or a pull request in conflict, until you start a session on it or dismiss it. These do not block an agent. | On, open |
+| **For Review** | Finished sessions that showed you a file you have not opened yet, such as a report. After them, each folder's open pull requests on GitHub with a review requested from you, until you review one, or it is closed. Then what the daily checks found, such as failing CI or a pull request in conflict, until you start a session on it or dismiss it. These do not block an agent. | On, open |
 | **Working** | Sessions with a turn in progress. | Off |
 | **Unread** | Finished sessions you have not opened since they finished. | Off |
 
@@ -74,7 +74,7 @@ you without opening each folder.
   point at it on the Mac and the web page. On iPhone and iPad, tap it or swipe right. Then
   it leaves For Review. To take it out with no session, use **Dismiss**: point at the row
   on the Mac and the web page, or swipe left on iPhone and iPad. A dismissed suggestion does
-  not come back, in For Review, in the next daily summary or from a later check. An urgent
+  not come back, in For Review or from a later check. An urgent
   one has an orange mark.
 
 ### Turn a smart group on or off

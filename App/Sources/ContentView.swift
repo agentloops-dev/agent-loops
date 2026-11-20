@@ -157,12 +157,6 @@ struct ContentView: View {
             DocsView().paperGround()
         } else if model.showsMessages {
             MessagesView(list: model.messagesList).paperGround()
-        } else if model.showsSummary {
-            SummaryPageView(pages: model.summaryPages, settings: model.dailySummarySettings,
-                            read: { await model.readSummaryPage($0) },
-                            setSettings: { changed in Task { await model.setDailySummarySettings(changed) } },
-                            openAgent: { model.openAgent($0) })
-                .paperGround()
         } else if let id = model.openWorkflow {
             // No files pane and no sidebar toggle: a workflow has no agent to have
             // asked about a file, so there would be nothing for either to show.
@@ -226,7 +220,7 @@ struct ContentView: View {
         guard terminal.isOpen, !model.showsEvents, !model.showsRuntimes, model.statusSecretsPage == nil,
               model.machinePage == nil, !model.showsMachines,
               !model.showsSpending, !model.showsTokens, !model.showsTime, !model.showsVelocity,
-              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsSummary, !model.showsAchievements, let folder = model.selectedFolderSummary, folder.exists else { return nil }
+              !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsAchievements, let folder = model.selectedFolderSummary, folder.exists else { return nil }
         return folder
     }
 
@@ -241,7 +235,7 @@ struct ContentView: View {
         model.selection != nil && !model.showsEvents
             && !model.showsRuntimes && model.statusSecretsPage == nil && model.machinePage == nil && !model.showsMachines
             && !model.showsSpending && !model.showsTime && !model.showsVelocity && !model.showsWork && !model.showsDocs && !model.showsMessages
-            && !model.showsSummary && !model.showsAchievements && model.openWorkflow == nil
+            && !model.showsAchievements && model.openWorkflow == nil
             && model.folderPage == nil && model.openPin == nil
     }
 
@@ -403,7 +397,7 @@ struct ContentView: View {
         // the system's link blue rather than the app's accent (#156).
         .tint(Paper.accent)
         // A file a chat links to is on its host: that host opens it (058, US1). Links to
-        // the web are the window's own. A session's link, as the daily summary writes one
+        // the web are the window's own. A session's link, as an agent writes one
         // per line, selects that session (#3353).
         .environment(\.openURL, OpenURLAction { url in
             if case .agent(let id) = AttentionLink.parse(url) {
@@ -440,7 +434,7 @@ struct ContentView: View {
         }
         // The window's one alert, held while it is open (#101): a reconnect clearing the
         // problem, or a second arriving, waits for its button rather than closing it.
-        .heldAlert(\.title, item: { WindowAlert.wanted(by: model) }, dismiss: { $0.closed(in: model) }) { alert in
+        .heldAlert(\.title, item: { WindowAlert.wanted(by: model) }, dismiss: { $0.closed() }) { alert in
             switch alert {
             case .lend(let ask):
                 Button("Approve") { model.finishSignInLendAsk(ask, allowed: true) }
@@ -518,7 +512,7 @@ enum WindowAlert: Identifiable {
     /// Closed, by its button or by Escape (its cancel button). An ask the model has moved
     /// on from is not the model's to forget again.
     @MainActor
-    func closed(in model: AppModel) {
+    func closed() {
         switch self {
         // Its buttons answer it, Escape as Deny, and only once: its answer is a
         // continuation, so nothing here answers it again.

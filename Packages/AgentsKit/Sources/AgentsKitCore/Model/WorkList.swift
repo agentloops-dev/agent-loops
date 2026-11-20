@@ -7,11 +7,10 @@ import Foundation
 public enum WorkList {
     /// Work's lists, in the order of its tabs, by the lineage kind each holds.
     public enum Kind: String, CaseIterable, Identifiable, Sendable, Hashable, Codable {
-        /// Features (#3269) are the `feature:` labels on the epics, not a lineage kind: an epic opens as an issue.
         /// Deploys (#5270) is every component in every environment (`WorkDeploys`), Mac + web; its
         /// raw value is lineage's deploy kind, but a deploy node opens no Work page.
         /// Timeline (#4173) is the epics on a time axis (`WorkTimeline`), Core since #6044.
-        case issue, pr, feature, release, deploy, timeline
+        case issue, pr, release, deploy, timeline
 
         public var id: Self { self }
 
@@ -19,15 +18,13 @@ public enum WorkList {
             switch self {
             case .issue: "Issues"
             case .pr: "Pull requests"
-            case .feature: "Features"
             case .release: "Releases"
             case .deploy: "Deploys"
             case .timeline: "Timeline"
             }
         }
 
-        /// Issues and PRs are read from the forges; releases from lineage alone;
-        /// features from the forges' labels, as a list of their own.
+        /// Issues and PRs are read from the forges; releases from lineage alone.
         public var fromForge: Bool { self == .issue || self == .pr }
 
         /// The states a list can be narrowed to: a PR's merged is its own.
@@ -99,8 +96,6 @@ public enum WorkList {
         public var url: URL?
         /// The machine the forge read came from, to read the item again on.
         public var host: MachineRef?
-        /// The folder on `host` the forge read was for (#3283): its project is the row's.
-        public var folder: String?
         public var draft: Bool
         public var lineage: DaemonAPI.ReportNode?
         /// How many comments it has (0 when the forge did not say), and a pull request's checks
@@ -113,7 +108,7 @@ public enum WorkList {
 
         public init(node: DaemonAPI.LineageNode, title: String, state: String, labels: [DaemonAPI.ForgeLabel] = [],
                     repo: String, author: String? = nil, assignees: [String] = [],
-                    updated: Date, url: URL? = nil, host: MachineRef? = nil, folder: String? = nil, draft: Bool = false,
+                    updated: Date, url: URL? = nil, host: MachineRef? = nil, draft: Bool = false,
                     lineage: DaemonAPI.ReportNode? = nil, status: String? = nil, comments: Int = 0, checks: String? = nil,
                     review: String? = nil, stateReason: String? = nil, avatar: String? = nil, created: Date? = nil,
                     closed: Date? = nil) {
@@ -132,7 +127,6 @@ public enum WorkList {
             self.closed = closed
             self.url = url
             self.host = host
-            self.folder = folder
             self.draft = draft
             self.lineage = lineage
             self.comments = comments
@@ -144,7 +138,7 @@ public enum WorkList {
         public init(_ item: DaemonAPI.ForgeItem, on host: MachineRef, lineage: DaemonAPI.ReportNode? = nil) {
             self.init(node: item.node, title: item.title, state: item.state, labels: item.labels, repo: WorkList.repo(of: item.node.ref),
                       author: item.author, assignees: item.assignees, updated: item.updatedAt,
-                      url: item.url.flatMap(URL.init(string:)), host: host, folder: item.folder, draft: item.draft ?? false,
+                      url: item.url.flatMap(URL.init(string:)), host: host, draft: item.draft ?? false,
                       lineage: lineage,
                       status: item.status, comments: item.comments, checks: item.checks, review: item.review,
                       stateReason: item.stateReason, avatar: item.authorAvatar, created: item.createdAt, closed: item.closedAt)
@@ -607,7 +601,7 @@ public enum WorkList {
 
     /// The Work list a node's page is in: an issue, a PR or a release; nil for any other.
     public static func kind(of node: DaemonAPI.LineageNode) -> Kind? {
-        Kind(rawValue: node.kind).flatMap { $0 == .feature || $0 == .deploy || $0 == .timeline ? nil : $0 }
+        Kind(rawValue: node.kind).flatMap { $0 == .deploy || $0 == .timeline ? nil : $0 }
     }
 
     // MARK: Actions (#3130)

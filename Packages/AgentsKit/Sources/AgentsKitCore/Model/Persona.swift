@@ -40,14 +40,6 @@ public struct Persona: Codable, Hashable, Sendable, Identifiable {
         self.problem = problem
     }
 
-    /// Where both kinds of persona live, under a folder or a home folder.
-    public static let folderName = ".agents/personas"
-    public static let fileExtension = "md"
-
-    public static func folder(in base: URL) -> URL {
-        base.appending(path: folderName, directoryHint: .isDirectory)
-    }
-
     /// The option values this persona names that the runtime offers, by option id, to
     /// lay over the form's choices. Each key on its own: a model this runtime does not
     /// offer is left as the form has it rather than refusing the rest, because the

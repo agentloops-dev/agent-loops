@@ -12,23 +12,11 @@ public extension DaemonAPI {
         public var bot: Bool
         public var running: Int?
         public var heardAt: Date?
-
-        public init(host: ControlMachine, ownerName: String, bot: Bool, running: Int? = nil, heardAt: Date? = nil) {
-            self.host = host
-            self.ownerName = ownerName
-            self.bot = bot
-            self.running = running
-            self.heardAt = heardAt
-        }
     }
 
     /// `console/fleet`'s answer: every machine on the control plane, for an admin.
     struct FleetBoard: Codable, Sendable, Hashable {
         public var machines: [FleetMachine]
-
-        public init(machines: [FleetMachine]) {
-            self.machines = machines
-        }
     }
 }
 

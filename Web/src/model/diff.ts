@@ -43,9 +43,6 @@ export function lineDiff(old: string | undefined, next: string): DiffLine[] {
   return rows;
 }
 
-/** A diff line with the stretches of it that changed, as UTF-16 [from, to) offsets (WordDiff). */
-export type MarkedLine = DiffLine & { changed?: [number, number][] };
-
 /** Lines longer than this are not compared word by word (Limits.wordMarkMaxLine). */
 const wordMarkMaxLine = 1_000;
 /** Change blocks with more pairs than this are left unmarked (Limits.wordMarkMaxPairs). */

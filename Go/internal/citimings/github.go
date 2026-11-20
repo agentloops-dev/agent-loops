@@ -59,15 +59,6 @@ type gitHubJob struct {
 	} `json:"steps"`
 }
 
-// JobsTotal is how many jobs a jobs answer says the run has, beside how many it gave.
-func JobsTotal(raw []byte) (total, given int) {
-	var j gitHubJobs
-	if json.Unmarshal(raw, &j) != nil {
-		return 0, 0
-	}
-	return j.TotalCount, len(j.Jobs)
-}
-
 // FromGitHub is each attempt of run, from its jobs answer: ref is its ci-run ref; onDefault and
 // onTag say what its branch is. An attempt with no job that ran is still kept: it counts.
 func FromGitHub(run GitHubRun, jobsRaw []byte, ref string, onDefault, onTag bool) ([]Run, error) {

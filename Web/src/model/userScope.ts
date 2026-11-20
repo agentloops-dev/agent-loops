@@ -4,13 +4,6 @@
 import type { SecretsLeft, UserSecretRow } from "../protocol/generated";
 import { namesWords } from "./machineNames";
 
-export const secretsTitle = "Secrets";
-export const addSecret = "Add a Secret…";
-export const secretsFoot = "A secret is sealed in this app to each of your own machines and apps; the control plane "
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: ${NAME} is the words a person types, not a placeholder of ours
-  + "cannot open it. Write ${NAME} for it in an MCP server's env or headers. You can reveal and copy it here, and each "
-  + "reveal and copy is in the audit log. Agents never get a value from here. To change it, replace it.";
-
 // Reveal and Copy (#5112, #5115; specs/5112-view-copy-secrets-accounts/wireframes.md), as UserScopeWords.
 export type CardPart = "number" | "expiry" | "cvc" | "name" | "zip";
 export const cardParts: CardPart[] = ["number", "expiry", "cvc", "name", "zip"];
@@ -30,7 +23,6 @@ export function copiedLine(part: CardPart | null = null): string {
   return (part ? `Copied ${partWords[part]}.` : "Copied.") + ` The clipboard clears in ${clipboardSeconds} s.`;
 }
 
-export const asksForAgents = "Asks before use: for agents. You reveal and copy at once.";
 export const noCopyYet = "This browser has no copy yet. It gets one when another app of yours is online.";
 export const didNotOpen = "This browser's copy did not open. Replace the secret to seal it again.";
 export const copyRefused = "This browser did not let the page copy.";
@@ -75,13 +67,6 @@ export function machines(row: Pick<UserSecretRow, "machines">): string {
   return n === 0 ? "On no machine yet" : n === 1 ? "On 1 machine" : `On ${n} machines`;
 }
 
-/** Under a secret that one of the person's machines has no copy of yet (#3397). */
-export function waitingOn(row: Pick<UserSecretRow, "waiting">): string | null {
-  const n = row.waiting?.length ?? 0;
-  if (n === 0) return null;
-  return `${n === 1 ? "1 machine waits" : `${n} machines wait`} for one of your apps to seal it there. This happens when you open Agent Loops.`;
-}
-
 /** The version a secret is set at (#3397): the kept one plus one; for a new name, the time in ms, above a removed one's. */
 export function nextVersion(row: Pick<UserSecretRow, "version"> | null, now: number): number {
   return row?.version !== undefined ? row.version + 1 : now;
@@ -110,8 +95,6 @@ export function isSecretName(name: string): boolean {
 // (a merchant or category lock is recommended), kept as one secret whose value is a JSON object of its parts. agentsd's fill_secret
 // reads it a part at a time.
 export const cardKind = "card";
-export const addCard = "Add a Card…";
-export const cardKindLabel = "Card";
 export const cardRule = "Add only a card that has a spend limit, such as a Privacy.com card. A card locked to one merchant or category is safer. "
   + "An agent fills it into a page with fill_secret and never sees it. It stays sealed on your own machines.";
 export const cardConfirm = "This card has a spend limit";

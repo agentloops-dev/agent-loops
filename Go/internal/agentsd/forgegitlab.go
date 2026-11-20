@@ -123,7 +123,8 @@ func (g gitlabForge) Sources(ctx context.Context, folders []string, _ bool) (for
 // is of its group's projects on the connected GitLab, in the board's scope.
 func (g gitlabForge) List(ctx context.Context, scope forgeScope, f forgeFilter, cursor string, limit int) (forgePage, error) {
 	s, _ := scope.(gitlabScope)
-	sf := gitlabmcp.SearchFilter{MRs: f.PRs, State: f.State, Label: f.Label, Assignee: f.Assignee, Query: f.Query, Feature: f.Feature}
+	sf := gitlabmcp.SearchFilter{MRs: f.PRs, State: f.State, Label: f.Label, Assignee: f.Assignee, Query: f.Query, Feature: f.Feature,
+		UpdatedAfter: f.since()}
 	projects := s.projects
 	gl := g.d.forgeGitLab(s.root)
 	if b := f.Board; b != nil {

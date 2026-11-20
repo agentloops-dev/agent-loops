@@ -8,9 +8,4 @@ public struct ContinueWhenBack: Codable, Hashable, Sendable {
     public var at: Date
     /// Whether `at` is the time the provider said; false when it is only the next check.
     public var resetKnown: Bool
-
-    public init(at: Date, resetKnown: Bool) {
-        self.at = at
-        self.resetKnown = resetKnown
-    }
 }

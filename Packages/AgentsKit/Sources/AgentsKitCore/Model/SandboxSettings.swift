@@ -37,12 +37,6 @@ public struct EffectiveSandbox: Codable, Sendable, Hashable {
     public var requested: SandboxChoice
     /// Such as "Limited by the agent that started it".
     public var reason: String?
-
-    public init(state: SandboxState, requested: SandboxChoice, reason: String? = nil) {
-        self.state = state
-        self.requested = requested
-        self.reason = reason
-    }
 }
 
 /// `<root>/sandbox-settings.json`: one default per runtime. A runtime not in it is
@@ -92,13 +86,4 @@ public struct SandboxFailureRecord: Codable, Sendable, Hashable {
     /// Tool calls that finished in the failed turn. Nonzero means recovery asks the agent
     /// to carry on rather than sending the prompt again (R12).
     public var completedToolCalls: Int
-
-    public init(runtimeID: String, detail: String, hang: Bool = false, recoveryOffered: Bool,
-                completedToolCalls: Int = 0) {
-        self.runtimeID = runtimeID
-        self.detail = detail
-        self.hang = hang
-        self.recoveryOffered = recoveryOffered
-        self.completedToolCalls = completedToolCalls
-    }
 }

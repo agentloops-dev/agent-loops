@@ -79,8 +79,7 @@ struct ChatActions {
     }
     /// Ask again for the open chat's history, after it did not load (#400).
     var reloadTranscript: @MainActor () async -> Void = {}
-    /// The sandbox card's two answers (064), for the open agent. Nil offers neither.
-    var continueWithoutSandbox: (@MainActor () async -> Void)? = nil
+    /// The sandbox card's answer (064), for the open agent. Nil offers none.
     var keepStopped: (@MainActor () async -> Void)? = nil
     /// The card those answer: the open agent's `pendingSandboxFailure`. An earlier card in
     /// the same chat is history and offers nothing.

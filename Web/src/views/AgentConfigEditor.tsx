@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { AgentConfigEditorFile } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { Modal } from "./Modal";
-import { DailySummaryControl } from "./settings/DailySummary";
+import { DailyChecksControl } from "./settings/DailyChecks";
 import { agentConfigurationFollows, thisMacOnly } from "../model/userScope";
 import { machineKeepsItsOwn, machineOnly } from "../model/settingsMachine";
 import { useSettingsMachine } from "./settings/SettingsMachine";
@@ -157,7 +157,7 @@ export function AgentConfigSettingsSection({ store, down, kind }: {
     <h3 class="section-head">{title(kind)}</h3>
     {picker}
     {host && <UserScopeLines name={isMac ? undefined : name} />}
-    {kind === "workflows" && <DailySummaryControl store={store} />}
+    {kind === "workflows" && <DailyChecksControl store={store} />}
     {host && kind === "personas" && store.has(host, Capability.personasCatalog1) &&
       <MarketplacePersonasSection store={store} host={host} destination={personal} down={down}
         changed={() => setRead(read + 1)} />}

@@ -66,19 +66,6 @@ enum StateTint {
     func style(or fallback: some ShapeStyle) -> AnyShapeStyle {
         color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(fallback)
     }
-
-    /// The one mapping from an agent to a tint, so no surface decides for itself.
-    ///
-    /// `Agent.needsAPerson` is the input, not something redefined here: it already
-    /// means exactly this — a question asked mid-turn, or an outcome reported at the
-    /// end of one that needs a person — and it is what puts the agent under Needs
-    /// attention in the list. `failure` is never derived from an agent; it is chosen
-    /// by surfaces describing a condition, and has no single predicate.
-    static func of(_ agent: Agent) -> StateTint {
-        if agent.needsAPerson { return .attention }
-        if agent.state == .finished, agent.report?.outcome == .done { return .vouched }
-        return .none
-    }
 }
 
 extension View {

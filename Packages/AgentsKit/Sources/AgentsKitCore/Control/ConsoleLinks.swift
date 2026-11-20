@@ -42,6 +42,4 @@ public enum ConsoleLinks {
         guard admin, BrowserOpening.linkPage(status, onThisMac: onThisMac) != nil else { return [] }
         return links
     }
-
-    public static let cannotOpen = "Agents can’t open the Console"
 }

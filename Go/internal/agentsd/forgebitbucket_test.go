@@ -342,24 +342,12 @@ func TestABoardLeavesBitbucketOut(t *testing.T) {
 	}
 }
 
-// #3880: an open Bitbucket issue's feature:<name> component is a feature on Work ▸ Features,
-// with its open issues and no epics: Bitbucket has none.
-func TestForgeFeaturesCountBitbucketComponents(t *testing.T) {
+// #3880: an open Bitbucket issue's feature:<name> component is its feature.
+func TestForgeFeatureOfABitbucketComponent(t *testing.T) {
 	t.Parallel()
 
 	_, c, bb, _ := bitbucketDaemon(t)
 	bb.labels = []string{"task", "feature:Export"}
-	var features wire.ForgeFeatures
-	json.Unmarshal(c.call(t, 1, "forge/features", wire.ForgeFeaturesRequest{}), &features)
-	var export *wire.ForgeFeature
-	for _, f := range features.Features {
-		if f.Name == "Export" {
-			export = &f
-		}
-	}
-	if export == nil || export.Epics != 0 || export.Open != 0 || export.Issues == nil || *export.Issues != 1 || export.Color != nil || len(features.Errors) != 0 {
-		t.Fatalf("features: %+v", features)
-	}
 	var list wire.ForgeList
 	json.Unmarshal(c.call(t, 2, "forge/issues", wire.ForgeListRequest{Feature: new("Export")}), &list)
 	if len(list.Items) == 0 || deref(list.Items[0].Feature) != "Export" || deref(list.Items[0].Level) != "task" {

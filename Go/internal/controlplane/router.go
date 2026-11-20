@@ -473,8 +473,16 @@ func (r *Router) AttachProxy(host string, conn Uplink) { r.attachHost(host, conn
 
 func (r *Router) attachHost(host string, conn Uplink, local bool) {
 	r.mu.Lock()
-	if r.hosts[host] != nil {
-		r.dropHostLocked(host, 0, nil)
+	if old := r.hosts[host]; old != nil {
+		// A host that links again before its old link's end is read here (#6346) had an
+		// outage all the same: what it said in between is lost, and its channels close. Its
+		// clients hear offline, then online, and read its state again. A stream from a peer
+		// copy that the host moved from is not an outage of its own.
+		var gone *hostState
+		if old.local {
+			gone = &hostState{State: "offline", Since: time.Now()}
+		}
+		r.dropHostLocked(host, 0, gone)
 	}
 	r.known[host] = true
 	r.generation++

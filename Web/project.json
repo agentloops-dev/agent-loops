@@ -18,7 +18,7 @@
       "{workspaceRoot}/App/Sources/Sidebar/SidebarState.swift",
       "{workspaceRoot}/Go/internal/agentsd/changes.go",
       "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/BrowserSettings.swift",
-      "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/DailySummarySettings.swift",
+      "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/DailyChecksSettings.swift",
       "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/SessionPrompts.swift",
       "{workspaceRoot}/Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/**/*",
       "{workspaceRoot}/Remote/Sources/Chat/PromptBar.swift",
@@ -28,7 +28,7 @@
       "{workspaceRoot}/Shared/UI/Chat/LiveTile.swift",
       "{workspaceRoot}/Shared/UI/Chat/NowCard.swift",
       "{workspaceRoot}/Shared/UI/Chat/TranscriptRows.swift",
-      "{workspaceRoot}/Shared/UI/DailySummaryControls.swift",
+      "{workspaceRoot}/Shared/UI/DailyChecksControls.swift",
       "{workspaceRoot}/design/icons.json",
       "{workspaceRoot}/scripts/perf-budgets.json"
     ]
@@ -44,7 +44,7 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "commands": ["./node_modules/.bin/tsc --noEmit -p .", "node test/lint.mjs", "node test/licences.mjs", "../scripts/lint.sh web"],
+        "commands": ["./node_modules/.bin/tsc --noEmit -p .", "node test/lint.mjs", "node test/licences.mjs", "../scripts/lint.sh web knip"],
         "parallel": false,
         "cwd": "{projectRoot}"
       },

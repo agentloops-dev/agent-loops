@@ -160,7 +160,7 @@ func boardsItemOf(i azureboardsmcp.Item, folder string) wire.ForgeItem {
 	// A work item's Priority field, where its type has one; its tag on hold.
 	out.Priority = optional(i.Priority)
 	withPlanLabels(&out, forgeOwn{priority: i.PriorityField})
-	// An Epic work item is an epic with no epic tag (#3939), so Work ▸ Features counts it.
+	// An Epic work item is an epic with no epic tag (#3939).
 	if out.Level == nil && strings.EqualFold(i.Type, azureboardsmcp.EpicType) {
 		out.Level = new("epic")
 	}

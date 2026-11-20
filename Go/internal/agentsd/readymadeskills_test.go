@@ -27,8 +27,8 @@ func TestReadyMadeSkillsFollowThePin(t *testing.T) {
 	newApp := set.Skills["start-a-new-app"]
 	_, workSkill := set.text("work-an-issue")
 	_, checksSkill := set.text("daily-checks")
-	_, summarySkill := set.text("daily-summary")
-	if newApp == "" || workSkill == "" || checksSkill == "" || summarySkill == "" {
+	_, linkedSkill := set.text("fix-failed-checks")
+	if newApp == "" || workSkill == "" || checksSkill == "" || linkedSkill == "" {
 		t.Fatal("the fixture has no such skills")
 	}
 
@@ -51,10 +51,10 @@ func TestReadyMadeSkillsFollowThePin(t *testing.T) {
 	if err := os.WriteFile(mine, []byte("mine\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(skillPath("daily-summary")), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(skillPath("fix-failed-checks")), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(mine, skillPath("daily-summary")); err != nil {
+	if err := os.Symlink(mine, skillPath("fix-failed-checks")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -65,7 +65,7 @@ func TestReadyMadeSkillsFollowThePin(t *testing.T) {
 	if !fileHas(t, skillPath("daily-checks"), edited) {
 		t.Fatal("the edited skill was changed")
 	}
-	if fi, err := os.Lstat(skillPath("daily-summary")); err != nil || fi.Mode()&os.ModeSymlink == 0 || !fileHas(t, mine, "mine\n") {
+	if fi, err := os.Lstat(skillPath("fix-failed-checks")); err != nil || fi.Mode()&os.ModeSymlink == 0 || !fileHas(t, mine, "mine\n") {
 		t.Fatal("the person's link was changed")
 	}
 	made := madeReadyMadeSkills(home)

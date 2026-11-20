@@ -24,8 +24,6 @@ public extension DaemonAPI.Method {
 }
 
 public extension DaemonAPI.Failure {
-    /// A view asked for something the app will not do for it. The message says what.
-    static let viewRefused = -32062
     /// A third-party server's view the person has not said Show to (#191). The error's
     /// `data` is a `ViewAsk`: what to ask, and the hash to answer for.
     static let viewNeedsShow = -32063
@@ -97,17 +95,6 @@ public extension DaemonAPI {
         /// The app's look as the spec's CSS variables (`AppViewTheme`), for the web page,
         /// which has no copy of its own.
         public var variables: [String: String]
-
-        public init(uri: String, mimeType: String = AppViewResourceType.html, html: String,
-                    policy: AppViewPolicy, prefersBorder: Bool? = nil,
-                    variables: [String: String] = AppViewTheme.variables) {
-            self.uri = uri
-            self.mimeType = mimeType
-            self.html = html
-            self.policy = policy
-            self.prefersBorder = prefersBorder
-            self.variables = variables
-        }
     }
 
     /// A view's `tools/call`.
@@ -171,22 +158,4 @@ public extension DaemonAPI {
             self.structuredContent = structuredContent
         }
     }
-
-    /// An agent's call of a tool with a view, relayed with its token.
-    struct ViewToolCallRequest: Codable, Sendable, Hashable {
-        public var token: String
-        public var name: String
-        public var arguments: JSONValue?
-
-        public init(token: String, name: String, arguments: JSONValue? = nil) {
-            self.token = token
-            self.name = name
-            self.arguments = arguments
-        }
-    }
-}
-
-/// The one kind of view there is so far.
-public enum AppViewResourceType {
-    public static let html = "text/html;profile=mcp-app"
 }

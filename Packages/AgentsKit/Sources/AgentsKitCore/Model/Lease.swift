@@ -147,18 +147,8 @@ public struct LeaseRules: Codable, Hashable, Sendable {
         self.maximumMinutes = maximumMinutes
     }
 
-    public static let standard = LeaseRules()
-
     /// The longest a lease may run, in minutes: the declaration's, never past the app's.
     public var ceiling: Int { min(maximumMinutes ?? LeaseLimits.maximumMinutes, LeaseLimits.maximumMinutes) }
-
-    /// The length asked for, in seconds, and whether it had to be cut to the longest
-    /// allowed. Nothing shorter than a minute.
-    public func length(_ minutes: Int?) -> (TimeInterval, capped: Bool) {
-        let asked = max(1, minutes ?? min(defaultMinutes ?? LeaseLimits.defaultMinutes, ceiling))
-        let given = min(asked, ceiling)
-        return (TimeInterval(given * 60), asked > given)
-    }
 }
 
 extension ResourceKind {
@@ -203,61 +193,6 @@ public struct Lease: Codable, Hashable, Sendable {
     }
 }
 
-/// An agent in line for a resource.
-public struct Waiter: Codable, Hashable, Sendable {
-    public var agentID: UUID
-    /// The order of the line. First asked, first served (US2-AS5).
-    public var askedAt: Date
-    /// How long it asked for, applied when the lease reaches it.
-    public var minutes: Int?
-    /// Set while the agent's tool call is still open, waiting to be answered. Nil means
-    /// the call has returned, and the agent has to be started again when its turn
-    /// comes (FR-006). Always nil after a restart: no call survives one.
-    public var waitID: UUID?
-
-    public init(agentID: UUID, askedAt: Date, minutes: Int? = nil, waitID: UUID? = nil) {
-        self.agentID = agentID
-        self.askedAt = askedAt
-        self.minutes = minutes
-        self.waitID = waitID
-    }
-
-    public var isCallOpen: Bool { waitID != nil }
-}
-
-/// How a lease came to an end. Said in the holder's transcript (FR-016).
-public enum LeaseEnding: String, Codable, Hashable, Sendable {
-    case released
-    case expired
-    case endedByPerson
-    case holderStopped
-    case holderArchived
-    /// It reached an agent that could not be started to use it, so it was passed on.
-    case couldNotStart
-}
-
-/// Something an agent is told at the head of its next lease tool reply, rather than
-/// interrupted with mid-turn (FR-012, US5-AS5).
-public struct LeaseNotice: Codable, Hashable, Sendable {
-    public enum Kind: Codable, Hashable, Sendable {
-        case endedByPerson
-        case expired
-        case endingSoon(expiresAt: Date)
-    }
-
-    public var resource: ResourceName
-    public var displayName: String
-    public var kind: Kind
-    public var at: Date
-
-    public init(resource: ResourceName, displayName: String, kind: Kind, at: Date) {
-        self.resource = resource
-        self.displayName = displayName
-        self.kind = kind
-        self.at = at
-    }
-}
-
 /// The numbers a lease runs by. Chosen in the spec rather than asked about, and
 /// constants until someone wants them in Settings.
 public enum LeaseLimits {
@@ -267,8 +202,4 @@ public enum LeaseLimits {
     public static let maximumMinutes = 240
     /// How long before expiry the holder is warned.
     public static let warning: TimeInterval = 5 * 60
-    /// How long a lease call may stay open waiting. Under the shortest runtime tool
-    /// timeout there is — Codex's sixty seconds — so the call always comes back from
-    /// us rather than failing on the runtime's side (research R3).
-    public static let waitLimit: Duration = .seconds(45)
 }

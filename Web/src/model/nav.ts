@@ -25,9 +25,7 @@ export type PageDraw =
   | { kind: "report"; section: Section }
   | { kind: "builds" }
   | { kind: "delivery" }
-  | { kind: "summary" }
   | { kind: "work"; work: WorkKind }
-  | { kind: "features" }
   | { kind: "timeline" }
   | { kind: "deploys" }
   | { kind: "next" }
@@ -64,7 +62,6 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   ],
   // Every issue and pull request from the forges, with lineage on top, and the releases lineage knows
   // (#3119). The page's id is the lineage kind, so #/work/pr/<ref> is a PR's page.
-  // Features (#3269) after Pull requests: the feature:<name> labels on the epics, not a lineage kind.
   // Deploys (#5270) after Releases: every component in every environment, from deploys/targets.
   // Timeline (#4206) after Deploys: the epics in time, from work/timeline.
   // Docs and Messages first (#5267), as the window's Work group has them; were sections of their own.
@@ -77,7 +74,6 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
       { id: k, title: workKindTitle[k], group: "Work", draw: { kind: "work", work: k } },
       // Next (#5691) after Issues: the ready work in one order, with the reason for each place, from forge/next.
       ...k === "issue" ? [{ id: "next", title: "Next", group: "Work", draw: { kind: "next" } } satisfies NavPage] : [],
-      ...k === "pr" ? [{ id: "features", title: "Features", group: "Work", draw: { kind: "features" } } satisfies NavPage] : [],
       ...k === "release" ? [
         { id: "deploys", title: "Deploys", group: "Work", draw: { kind: "deploys" } } satisfies NavPage,
         { id: "timeline", title: "Timeline", group: "Work", draw: { kind: "timeline" } } satisfies NavPage,
@@ -100,10 +96,6 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
         { id: "builds", title: "Builds", group: s.group, under: "delivery", draw: { kind: "builds" } },
         { id: "environments", title: "Environments", group: s.group, under: "delivery", draw: { kind: "delivery" } },
       ] satisfies NavPage[] : [],
-      // The daily summary's page (#3721) after Outcomes, whose Me lens has Multiplier and Velocity: a report, as the
-      // window's and the Remote's Reports have it (#5729; was a row at the top of the Agents sidebar). Listed only while
-      // the daily summary is on (shownWhile).
-      ...s.id === "outcomes" ? [{ id: "summary", title: "Summary", group: s.group, draw: { kind: "summary" } } satisfies NavPage] : [],
     ]),
     // Multiplier and Usage went into the Me lens of Outcomes, Spend and Time (#5280): an old address opens there (movedReport).
     adminPage("audit", "Audit", "Records"),

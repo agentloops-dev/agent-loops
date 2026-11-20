@@ -25,18 +25,6 @@ public enum WaitKind: String, CaseIterable, Sendable {
         }
     }
 
-    /// What it waits on, in words, for a screen reader: "Waiting for a pull request".
-    public var spoken: String {
-        switch self {
-        case .time: return "Waiting for a time"
-        case .pullRequest: return "Waiting for a pull request"
-        case .checks: return "Waiting for checks"
-        case .agents: return "Waiting for other agents"
-        case .line: return "Waiting for its turn"
-        case .other: return "Waiting"
-        }
-    }
-
     /// The kind of an agent's wait. A wait on events goes before a block, as the row's line
     /// names it first; `other` when it waits on nothing the app can name.
     public static func of(_ agent: Agent) -> WaitKind {

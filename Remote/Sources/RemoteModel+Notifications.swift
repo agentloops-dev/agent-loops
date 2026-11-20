@@ -133,14 +133,11 @@ extension RemoteModel {
         publishAttention()
         liveActivities.settle(with: work)
         if let pendingOpen { open(pendingOpen) }
-        // The Summary row (#3721): shown only while the daily summary is on, with its newest page.
-        async let dailySummary: Void = refreshDailySummarySettings()
-        async let summaries: Void = refreshSummaryPages()
         // The Achievements page (#4116), on the iPad's empty detail as well as its row.
         async let multiplier: Void = refreshMultiplier()
         async let achievements: Void = refreshAchievements()
         async let moving: Void = refreshMoves(on: .mac, through: client)
-        _ = await (dailySummary, summaries, multiplier, achievements, moving)
+        _ = await (multiplier, achievements, moving)
         if let pendingNeed {
             self.pendingNeed = nil
             if let agentID = agentID(forNeedToken: pendingNeed) { open(agentID) } else { openUnheld(needToken: pendingNeed) }
@@ -155,6 +152,9 @@ extension RemoteModel {
     /// The snapshot, or nil when it failed.
     func refreshSnapshot(with parts: Set<CatchUpPart>) async -> DaemonAPI.CatchUpSnapshot? {
         let snapshot: DaemonAPI.CatchUpSnapshot
+        // A card heard while the snapshot is on its way is laid over its cards (#6291).
+        let cards = work.beginCardsRead()
+        defer { work.endCardsRead(cards) }
         do {
             // Only what changed since the point held (#4794): the last catch-up's, or the copy's
             // at launch. A host that cannot say what changed since then sends the first page.
@@ -178,8 +178,8 @@ extension RemoteModel {
             takeLiveAgents(snapshot.agents, page: DaemonAPI.CatchUpRequest.firstPage)
             work.notePoint(snapshot.agentChanges, of: .mac)
         }
-        work.replacePermissions(snapshot.permissions)
-        work.replaceElicitations(snapshot.elicitations)
+        work.replacePermissions(snapshot.permissions, since: cards)
+        work.replaceElicitations(snapshot.elicitations, since: cards)
         work.replaceAttention(snapshot.attention)
         work.setResuming(snapshot.resuming)
         toNotifier { [deviceID = self.deviceID] notifier in await notifier.sweep(keeping: snapshot.attention, me: .device(deviceID)) }
@@ -445,12 +445,6 @@ extension RemoteModel {
         // chat is the detail's own page (#226), not a push over the folder's, so there
         // is no push for a collapsing split view to drop.
         sidebarItem = .session(agentID)
-    }
-
-    /// A folder's page, from a banner with no session behind it (#531): where a change
-    /// git brought to its files is asked. The phone holds the Mac's folders only.
-    func openFolder(_ folder: URL) {
-        sidebarItem = .folder(work.folder(folder)?.key ?? FolderKey(host: .mac, folder: folder))
     }
 
     /// Open what a need is about, from a banner or a widget row (#1046). A need the

@@ -2,7 +2,7 @@
 import type { ExportImportBusy } from "../exports";
 import { type HeardLiveFrame } from "../liveTile";
 import { computed, signal, type ReadonlySignal, type Signal } from "@preact/signals";
-import type { Agent, BrowserFrame, BrowserPageState, LiveSource, ControlMachine, ElicitationRequest, PermissionRequest, FolderSummary, TranscriptEntry, TurnSummary, WorkflowSummary, DraftOptionsNotification, JSONValue, AccountProfile, CloneSummary, LeaseSnapshot, HostedMCPSnapshot, MCPHealthSnapshot, DiskState, CapacityState, EventsPage, PinView, ReviewPull, CheckSuggestion, MachineJoinStatus, RequiredCapabilities, KeptDelivered, KeptRequest, Approval, Achievements, Multiplier, FolderWorktrees, WorktreeSize, BackupState, CapReached, ChannelLinkRequest, ConnectReport, ControlPerson, DailySummarySettings, SummaryPage, DesktopControlSettings, WakeSettings, JoinRequest, PeopleList, PersonRow, SecretsLeft, PolicyView, PolicyState, PassThroughName, SignInRequest, CatalogRequest, BudgetRequest, RemoveRequest, Connection, MoveNotification, Request as PersonRequest, OutsideAccount, ListRevision, PlaneMoveReport, UserSecretRow, WebRemoteStatus, WireDate, SecretOffer } from "../../protocol/generated";
+import type { Agent, BrowserFrame, BrowserPageState, LiveSource, ControlMachine, ElicitationRequest, PermissionRequest, FolderSummary, TranscriptEntry, TurnSummary, WorkflowSummary, DraftOptionsNotification, JSONValue, AccountProfile, CloneSummary, LeaseSnapshot, HostedMCPSnapshot, MCPHealthSnapshot, DiskState, CapacityState, EventsPage, PinView, ReviewPull, CheckSuggestion, MachineJoinStatus, RequiredCapabilities, KeptDelivered, KeptRequest, Approval, Achievements, Multiplier, FolderWorktrees, WorktreeSize, BackupState, CapReached, ChannelLinkRequest, ConnectReport, ControlPerson, DailyChecksSettings, DesktopControlSettings, WakeSettings, JoinRequest, PeopleList, PersonRow, SecretsLeft, PolicyView, PolicyState, PassThroughName, SignInRequest, CatalogRequest, BudgetRequest, RemoveRequest, Connection, MoveNotification, Request as PersonRequest, OutsideAccount, ListRevision, PlaneMoveReport, UserSecretRow, WebRemoteStatus, WireDate, SecretOffer } from "../../protocol/generated";
 import { type Artifact } from "../artifacts";
 import { folderKey, type FolderView } from "../groups";
 import { decideMacHostNotice, steadyNotice, type MacHostNotice } from "../macHostNotice";
@@ -263,13 +263,10 @@ export class Work {
    * host too old to know the method, which leaves the section out. */
   readonly wakeSettings = signal<WakeSettings | null>(null);
 
-  /** The daily summary's Off / Summary control and its time (#3351), for Settings ▸ Workflows: null
-   * until the Mac's host has said, or from a host too old to know the method, which leaves it out. */
-  readonly dailySummary = signal<DailySummarySettings | null>(null);
-
-  /** The daily summary's saved pages on the Mac's host, newest first (#3721): the Summary row and
-   * page. Empty from a host too old to know `summaries/list`. */
-  readonly summaryPages = signal<SummaryPage[]>([]);
+  /** The daily checks' Off / On control and how often they run (#3355, #5853), for Settings ▸
+   * Workflows: null until the Mac's host has said, or from a host too old to know the method, which
+   * leaves it out. */
+  readonly dailyChecks = signal<DailyChecksSettings | null>(null);
 
   /** Each host's folders' worktrees (#790), as `worktrees/all` last answered: asked when Activity ▸
    * Worktrees is shown, not kept up by the host. */
@@ -476,6 +473,9 @@ export class Work {
 
   /** What was heard while a page is on its way, to lay over it; null when none is (#214). */
   heardSincePage: TranscriptEntry[] | null = [];
+
+  /** By host: the card notifications heard since each pending read on its way was sent (#6291). */
+  cardsHeard = new Map<string, [string, unknown][][]>();
 
   /**
    * How many entries the open chat's host had when it last gave a page of it (#4794): every entry

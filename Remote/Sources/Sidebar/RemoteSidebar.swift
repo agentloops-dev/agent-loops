@@ -24,8 +24,6 @@ struct RemoteSidebar: View {
     @State private var searched = ""
     /// Folders whose every archived match is on show, past the first few (#176).
     @State private var showingAllMatches: Set<FolderKey> = []
-    /// Archived folders, open or closed, kept as the window keeps it (#343).
-    @AppStorage("showsArchivedFolders") private var showsArchived = false
     /// Status, open until folded, and kept so, as the window keeps it. It keeps Activity's
     /// key (#915), so it opens as Activity was left.
     @AppStorage("showsActivity") private var showsStatus = true
@@ -189,7 +187,7 @@ struct RemoteSidebar: View {
                 // Work, Status, Machines, then Reports, as the window has them (#5454). New Session
                 // is in the + (#5447), and a folder's long press.
                 // Work (#3119, #3256): a row per list, as the window has them (#4004), above
-                // Status, Features too (#3269), and Timeline after Releases, as the window has it (#6044).
+                // Status, and Timeline after Releases, as the window has it (#6044).
                 // No Deploys: it is Mac + web.
                 Section(isExpanded: $showsWork) {
                     ForEach(WorkList.Kind.allCases.filter { $0 != .deploy }) { kind in
@@ -277,12 +275,6 @@ struct RemoteSidebar: View {
                     HStack { Text("Velocity"); Spacer() }
                         .accessibilityHint("The pull requests that landed, over time")
                         .activityIcon("arrow.triangle.merge").appText(.supporting).paperTag(SidebarItem.velocity)
-                    // The daily summary's page (#3721), a report too, while the daily summary is on.
-                    if model.dailySummarySettings?.mode.writesPages == true {
-                        SummaryRowLabel(newest: model.summaryPages.first)
-                            .accessibilityHint("Opens your daily summary")
-                            .activityIcon(SummaryRowLabel.systemImage).appText(.supporting).paperTag(SidebarItem.summary)
-                    }
                 } header: {
                     Text("Reports")
                 }

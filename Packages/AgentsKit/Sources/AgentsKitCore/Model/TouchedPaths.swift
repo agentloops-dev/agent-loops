@@ -21,14 +21,9 @@ public struct TouchedPaths: Sendable, Equatable {
 
     public var isEmpty: Bool { paths.isEmpty }
     public var count: Int { paths.count }
-    public var all: [String] { Array(paths) }
 
     public init(paths: some Sequence<String>) {
         self.paths = Set(paths)
-    }
-
-    public mutating func absorb(path: String) {
-        paths.insert(Self.key(URL(filePath: path)))
     }
 
     /// Paths are compared as resolved file-system paths, so `/tmp/x` and

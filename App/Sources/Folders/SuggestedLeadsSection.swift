@@ -82,7 +82,7 @@ struct SuggestedLeadsSection: View {
                 SuggestedLeadRow(row: row, take: { take(row) }, dismiss: { Task { await dismiss(row) } })
             }
             if let more = SuggestedLeads.more(answer.more) {
-                Button(more) { model.showWork(WorkPlace(kind: .feature)) }
+                Button(more) { model.showWork(WorkPlace(kind: .timeline)) }
                     .buttonStyle(.plain)
                     .appText(.supporting)
                     .foregroundStyle(Paper.secondary)

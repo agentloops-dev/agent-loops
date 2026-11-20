@@ -24,7 +24,7 @@ struct AddMachineTests {
     }
 
     @Test func aNewMachineWithNoRepositorySendsNone() {
-        let field = MachineFromRepository.Field(key: "size", title: "Size", kind: .string, choices: nil, value: "s-1vcpu", help: nil)
+        let field = MachineFromRepository.Field(key: "size", title: "Size", kind: .string, choices: nil, value: "s-1vcpu")
         let request = MachineFromRepository.request(ProviderID(rawValue: "p1"), name: "build-2", repository: nil, fields: [field])
         #expect(request.repository == nil)
         #expect(request.options == .object(["size": .string("s-1vcpu")]))

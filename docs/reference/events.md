@@ -590,7 +590,8 @@ and `pr.reviewed` stay as they are.
   | `github` | all five | `mergeable`, `mergeStateStatus` (`BEHIND`), `reviewDecision`, the last auto-merge event of the timeline, and the head's checks against the required checks of the base's rulesets and branch protection, in one GraphQL query |
   | `gitlab` | `conflict`, `required_check_failed` (the head pipeline), `changes_requested`, `behind` | `detailed_merge_status`, one reason at a time |
   | `azuredevops` | `conflict`, `changes_requested` | `mergeStatus`, and a reviewer's vote of *waiting for author* or *rejected* |
-  | `forgejo`, `bitbucket` | `conflict` | the same read as `pr.conflicted` |
+  | `forgejo` | `conflict` | the same read as `pr.conflicted` |
+  | `bitbucket` | `conflict`, `required_check_failed`, `changes_requested` | the same read as `pr.conflicted`, a FAILED status at the head (every status: the API does not say which the merge checks require), and a participant whose state is `changes_requested` |
 
 ### Deploys
 
@@ -646,6 +647,9 @@ it, so two machines can make two ids for one change.
 | `gitlab`, `azuredevops`, `bitbucket` | `deploy.started`, `deploy.succeeded`, `deploy.failed` | `<server>:deploy:<repo>#<deployment id>` (Bitbucket's uuid, Azure DevOps's record id) | none: each is sent once for a deployment |
 | `forgejo`, `bitbucket` | `issue.*`, `review.comment`, `pr.merged`, `pr.closed`, states | `<server>:issue:` or `<server>:pr:<owner/repo>#<n>` | as `github` |
 | `forgejo`, `bitbucket` | `checks.failed` | the PR | the head commit and the time |
+| `bitbucket` | `checks.passed` | the PR | the head commit, the status's key and its time |
+| `bitbucket` | `pr.commented` | `bitbucket:pr:<workspace/name>#<n>` | the comment's id |
+| `bitbucket` | `pr.reviewed` | `bitbucket:pr:<workspace/name>#<n>` | the participant and the state, as `dev:approved` |
 | `bitbucket` | `run.completed` | `bitbucket:run:<workspace/name>#<build number>` | the finish time |
 | `forgejo` | `run.completed` | `forgejo:run:<owner/repo>#<run number>` | the finish time |
 | `azuredevops` | PR events, `checks.*` | `azuredevops:pr:<org/project/repo>#<n>` | the thread and comment, or the head commit and the time |

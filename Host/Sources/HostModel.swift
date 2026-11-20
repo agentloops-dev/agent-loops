@@ -81,10 +81,6 @@ final class HostModel {
     /// `https://<this Mac>.local:8791`: what codes carry and clients dial.
     var controlURL: String { "https://\(LocalHostName.current):\(paths.port)" }
 
-    var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-    }
-
     // MARK: Looking
 
     private var looking = HostRefreshPolicy()
@@ -140,9 +136,9 @@ final class HostModel {
         controlPID = control
         webRemote = control.flatMap { WebRemoteFile.read(in: paths.controlHome, pid: $0) }
         if controlRunning, settings.role == .runHere {
-            let listed = await ControlTool.run(["clients"], paths: paths, settings: settings, key: false)
+            let listed = await ControlTool.run(["clients"], paths: paths, key: false)
             clients = listed.ok ? listed.output.split(separator: "\n").count : nil
-            let joined = await ControlTool.run(["hosts"], paths: paths, settings: settings, key: false)
+            let joined = await ControlTool.run(["hosts"], paths: paths, key: false)
             hosts = joined.ok ? joined.output.split(separator: "\n").count : nil
         } else {
             clients = nil
@@ -418,7 +414,7 @@ final class HostModel {
     /// trying with it until the control plane answers, and only it ever sees it (#113).
     private func makeOwnHostCode() async -> String? {
         let made = await ControlTool.run(["code", "--host", "--minutes", String(Self.ownHostCodeMinutes),
-                                          "--home", paths.controlHome.path], paths: paths, settings: settings)
+                                          "--home", paths.controlHome.path], paths: paths)
         guard made.ok else { return nil }
         return made.output.split(separator: "\n").last.map(String.init)
     }
@@ -538,7 +534,7 @@ final class HostModel {
     private func readForwarding() async {
         guard let until = settings.forwardingUntil, let place = settings.movedTo else { forwarding = nil; return }
         if until < Date() { return await stopForwarding() }
-        let read = await ControlTool.run(["handover", "status", "--at", place, "--json"], paths: paths, settings: settings)
+        let read = await ControlTool.run(["handover", "status", "--at", place, "--json"], paths: paths)
         guard read.ok, let status = try? JSONDecoder().decode(HandoverStatus.self, from: Data(read.output.utf8)) else { return }
         forwarding = status
         if status.stillToHear.isEmpty { await stopForwarding() }
@@ -706,7 +702,7 @@ final class HostModel {
     /// (`BrowserOpening`). Why not goes to `problem`.
     func openInBrowser() async {
         problem = nil
-        let listed = await ControlTool.run(["clients"], paths: paths, settings: settings, key: false)
+        let listed = await ControlTool.run(["clients"], paths: paths, key: false)
         // `<id>\t<name>\t<kind>` a line.
         let browsers = listed.output.split(separator: "\n").map { $0.split(separator: "\t").map(String.init) }
             .filter { $0.count >= 3 && $0[2] == ClientRecord.Kind.browser.rawValue }.map { $0[1] }
@@ -721,7 +717,7 @@ final class HostModel {
         case .pair:
             // A browser's code is good only through the page's own listener (071 R2).
             let made = await ControlTool.run(["code", "--client", "--browser", "--home", paths.controlHome.path],
-                                             paths: paths, settings: settings)
+                                             paths: paths)
             guard made.ok, let web, let text = made.output.split(separator: "\n").last.map(String.init),
                   let url = BrowserOpening.pairingURL(web, code: text) else {
                 problem = made.problem.isEmpty ? "No code could be made." : made.problem

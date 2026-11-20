@@ -126,19 +126,6 @@ extension RemoteModel {
         toNotifier { [deviceID = self.deviceID] notifier in await notifier.sweep(keeping: pending, me: .device(deviceID)) }
     }
 
-    /// The live agents only, the first page of them. Archived ones outnumber them many
-    /// times over and are almost never looked at, so they come when a page asks for them
-    /// — a folder's Archived section, a workflow's runs — and not on every connection.
-    func refreshAgents() async {
-        // Lean: no card or row reads the option and command lists, which were nearly all of
-        // each record (#107). The open chat's come with `loadWholeAgent`.
-        let page = DaemonAPI.CatchUpRequest.firstPage
-        guard let listed = try? await client.call(DaemonAPI.Method.agentsList, page, returning: [Agent].self)
-        else { return }
-        takeLiveAgents(listed, page: page)
-        if let selectedFolder { await fillFolder(selectedFolder) }
-    }
-
     /// The first page of live agents, in place of what was held. Archived agents already
     /// fetched are kept only where a screen can still show them: the open folder, and an
     /// open archived chat (#175). One brought back while this phone was away is in the live

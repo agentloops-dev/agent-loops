@@ -24,10 +24,6 @@ public extension DaemonAPI {
     struct GitAsk: Codable, Sendable, Hashable {
         public var server: String
         public var from: MachineRef
-        public init(server: String, from: MachineRef) {
-            self.server = server
-            self.from = from
-        }
     }
 
     /// What git asks a credential helper: only https, and only the server.

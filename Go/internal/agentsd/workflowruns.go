@@ -453,8 +453,8 @@ func (d *Daemon) fire(fr fireRequest) {
 			return
 		}
 	}
-	// The daily summary is the person's, not a machine's (#3192): of their machines, the one
-	// that claims its schedule first writes it.
+	// The daily checks are the person's, not a machine's (#3192, #3355): of their machines,
+	// the one that claims its schedule first runs them.
 	if fr.dueAt != nil && !fr.fromQueue && fr.folder == d.personalHome() && oneMachineWorkflows[fr.id] {
 		d.workflowMu.Unlock()
 		if !d.claimRun(personalWorkflowFolder, fr.id, triggerID(fr, fr.event)) {

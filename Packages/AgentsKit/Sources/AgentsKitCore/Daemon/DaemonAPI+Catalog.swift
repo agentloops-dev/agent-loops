@@ -10,7 +10,6 @@ import Foundation
 extension DaemonAPI.Method {
     public static let catalogSearch = "catalog/search"
     public static let catalogPreview = "catalog/preview"
-    public static let catalogDestinationState = "catalog/destination-state"
     public static let skillsAdd = "skills/add"
     public static let skillsList = "skills/list"
     public static let skillsCheckUpdates = "skills/check-updates"
@@ -251,20 +250,6 @@ extension DaemonAPI {
             self.preview = preview
             self.error = error
         }
-    }
-
-    public struct DestinationStateRequest: Codable, Sendable {
-        public var previewID: UUID
-        public var destination: SkillDestination
-        public init(previewID: UUID, destination: SkillDestination) {
-            self.previewID = previewID
-            self.destination = destination
-        }
-    }
-
-    public struct DestinationStateAnswer: Codable, Sendable, Equatable {
-        public var destinationState: DestinationState
-        public init(destinationState: DestinationState) { self.destinationState = destinationState }
     }
 
     public struct SkillAddRequest: Codable, Sendable {

@@ -4,42 +4,9 @@ import Foundation
 /// delete, relayed by the agent's daemon to its control plane on channel 0, which answers
 /// them as a client's would. Making and deleting ask the person first, on the daemon.
 public extension DaemonAPI.Method {
-    /// `MachineWorkspaceCall`, a host to its control plane on channel 0.
-    static let hostMachines = "machine/machines"
-    /// `{}` → `AgentMachines`: what an agent is shown, never a secret's name.
-    static let machinesForAgent = "machines/forAgent"
-    /// What an agent may ask of the control plane through `machine/machines`.
-    static let agentWorkspaceMethods: Set<String> = [
-        machinesForAgent, hostsStart, hostsStop, providersOptions, providersCreate, hostsDeleteMachine,
-    ]
 }
 
 public extension DaemonAPI {
-    /// A workspace tool call, as the agent made it.
-    struct WorkspaceToolRequest: Codable, Sendable, Hashable {
-        public enum Action: String, Codable, Sendable { case list, start, stop, make, delete }
-        public var token: String
-        public var action: Action
-        /// For start, stop and delete: the host, by its name or id.
-        public var host: String?
-        /// For make: the provider, by its name or id; the new machine's name and choices.
-        public var provider: String?
-        public var name: String?
-        public var options: JSONValue?
-        /// For stop: stop even though agents are working there.
-        public var confirmRunning: Bool?
-
-        public init(token: String, action: Action, host: String? = nil, provider: String? = nil, name: String? = nil,
-                    options: JSONValue? = nil, confirmRunning: Bool? = nil) {
-            self.token = token
-            self.action = action
-            self.host = host
-            self.provider = provider
-            self.name = name
-            self.options = options
-            self.confirmRunning = confirmRunning
-        }
-    }
 
     /// `machine/machines`: a control plane method, for an agent on this host.
     struct MachineWorkspaceCall: Codable, Sendable, Hashable {

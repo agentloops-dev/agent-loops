@@ -26,7 +26,7 @@ export const projectWords = {
 export const boardWords = {
   heading: "Boards",
   note: "A board is a GitHub Projects board, a Jira board, a Linear team, a GitLab group board or an Azure Boards board. "
-    + "Work ▸ Issues and Features can show one board.",
+    + "Work ▸ Issues and Timeline can show one board.",
   none: "No boards. Work shows every issue of the project.",
   onlyOwner: "Only the project's owner or an admin can change its boards.",
   namePrompt: "Name",

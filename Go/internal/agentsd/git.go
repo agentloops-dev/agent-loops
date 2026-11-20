@@ -28,6 +28,8 @@ type gitError struct {
 	// remote"), false when it gave no answer: it could not start, a signal or the deadline
 	// stopped it (#6257).
 	answered bool
+	// status is git's exit status when it answered.
+	status int
 }
 
 func (e *gitError) Error() string { return e.message }
@@ -37,6 +39,13 @@ func (e *gitError) Error() string { return e.message }
 func gitAnswered(err error) bool {
 	var g *gitError
 	return err == nil || errors.As(err, &g) && g.answered
+}
+
+// gitSaidNo says whether err is git's own answer with exit status status, as 1 from
+// `rev-parse -q --verify` for a ref that is not there.
+func gitSaidNo(err error, status int) bool {
+	var g *gitError
+	return errors.As(err, &g) && g.answered && g.status == status
 }
 
 func gitDeadline(args []string) time.Duration {
@@ -120,7 +129,11 @@ func gitRawEnv(dir string, env []string, stdin []byte, args ...string) ([]byte, 
 		default:
 			msg = "git " + args[0] + " failed (" + err.Error() + ")." // a signal, with no words from git
 		}
-		return out.Bytes(), &gitError{message: msg, answered: errors.As(err, &exit) && exit.ExitCode() >= 0}
+		g := &gitError{message: msg}
+		if errors.As(err, &exit) && exit.ExitCode() >= 0 {
+			g.answered, g.status = true, exit.ExitCode()
+		}
+		return out.Bytes(), g
 	}
 	return out.Bytes(), nil
 }
@@ -132,19 +145,36 @@ const gitStartAttempts = 3
 func gitTo(dir string, w io.Writer, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), gitDeadline(args))
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 	var errOut bytes.Buffer
-	cmd.Stdout = w
-	cmd.Stderr = &errOut
-	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(errOut.String()); msg != "" {
-			return &gitError{message: msg}
+	var err error
+	for attempt := 1; ; attempt++ {
+		errOut.Reset()
+		cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // git itself, with no shell
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+		cmd.Stdout = w
+		cmd.Stderr = &errOut
+		err = cmd.Run()
+		// A git the system did not start wrote nothing to w, so it is safe to start again (#6341).
+		if err == nil || cmd.ProcessState != nil || ctx.Err() != nil || attempt == gitStartAttempts ||
+			errors.Is(err, exec.ErrNotFound) || !isDir(dir) {
+			break
 		}
-		return &gitError{message: "git " + args[0] + " failed."}
+		time.Sleep(time.Duration(attempt) * 50 * time.Millisecond)
 	}
-	return nil
+	if err == nil {
+		return nil
+	}
+	var exit *exec.ExitError
+	answered := errors.As(err, &exit) && exit.ExitCode() >= 0
+	switch msg := strings.TrimSpace(errOut.String()); {
+	case msg != "":
+		return &gitError{message: msg, answered: answered}
+	case exit == nil:
+		return &gitError{message: "git " + args[0] + " could not start: " + err.Error() + "."}
+	default:
+		return &gitError{message: "git " + args[0] + " failed (" + err.Error() + ").", answered: answered} // say why (#6341)
+	}
 }
 
 type limited struct {

@@ -5,10 +5,8 @@ import Foundation
 /// `workQuery` in `model/work.ts`), each left out while it is its default, so the three clients keep the same.
 /// The window and the Remote keep it in defaults, under `key(_:)`; the web page in localStorage, under the same name.
 public enum WorkRemembered {
-    /// What a page is kept under: `agents.work.filters.issue`, `.pr`, `.release`, `.features` or `.timeline`.
-    public static func key(_ kind: WorkList.Kind) -> String {
-        "agents.work.filters.\(kind == .feature ? "features" : kind.rawValue)"
-    }
+    /// What a page is kept under: `agents.work.filters.issue`, `.pr`, `.release` or `.timeline`.
+    public static func key(_ kind: WorkList.Kind) -> String { "agents.work.filters.\(kind.rawValue)" }
 
     /// A list's filters and sort as words; "" when all are the defaults.
     public static func words(_ filter: WorkList.Filter, sort: WorkList.Sort, kind: WorkList.Kind) -> String {
@@ -36,9 +34,6 @@ public enum WorkRemembered {
         return (filter, sort)
     }
 
-    /// Work ▸ Features's board as words.
-    public static func features(board: String) -> String { words([("board", board)]) }
-
     /// Work ▸ Timeline's range, project and board as words.
     public static func timeline(range: WorkTimeline.Range, project: String, board: String) -> String {
         words([("range", range == .twoDays ? "" : range.rawValue), ("project", project), ("board", board)])
@@ -49,9 +44,6 @@ public enum WorkRemembered {
         let q = values(words)
         return (q["range"].flatMap(WorkTimeline.Range.init(rawValue:)) ?? .twoDays, q["project"] ?? "", q["board"] ?? "")
     }
-
-    /// One value from words.
-    public static func value(_ name: String, in words: String?) -> String { values(words)[name] ?? "" }
 
     private static func words(_ pairs: [(String, String)]) -> String {
         var c = URLComponents()

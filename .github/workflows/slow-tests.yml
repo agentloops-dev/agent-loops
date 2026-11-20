@@ -235,7 +235,7 @@ jobs:
         if: matrix.os == 'linux'
         timeout-minutes: 5
         run: |
-          scripts/lint.sh --tools "$RUNNER_TEMP/lint-tools" shellcheck golangci-lint govulncheck biome jscpd
+          scripts/lint.sh --tools "$RUNNER_TEMP/lint-tools" shellcheck golangci-lint govulncheck deadcode biome jscpd
           echo "$RUNNER_TEMP/lint-tools" >> "$GITHUB_PATH"
       # Before the run, which may write its own results over them.
       - name: The cached passes

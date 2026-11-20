@@ -1,0 +1,1883 @@
+{
+ "format": 1,
+ "session": "00000000-0000-4000-8000-000000000001",
+ "host": "server-1",
+ "start": {
+  "agents": [],
+  "transcript": {
+   "firstIndex": 0,
+   "total": 0,
+   "entries": []
+  },
+  "permissions": [],
+  "elicitations": []
+ },
+ "steps": [
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 101,
+    "runtimeID": "claude",
+    "state": "running",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 101,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/permission",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "requestID": "00000000-0000-4000-8000-000000000201",
+    "request": {
+     "id": "00000000-0000-4000-8000-000000000201",
+     "agentID": "00000000-0000-4000-8000-000000000001",
+     "askedAt": 201,
+     "toolCall": {
+      "toolCallID": "call_1",
+      "title": "Write hi.txt",
+      "kind": "edit",
+      "status": "pending",
+      "content": [],
+      "locations": []
+     },
+     "options": [
+      {
+       "optionID": "allow",
+       "name": "Allow",
+       "kind": "allow_once"
+      },
+      {
+       "optionID": "reject",
+       "name": "Reject",
+       "kind": "reject_once"
+      }
+     ]
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 101,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [
+     {
+      "id": "00000000-0000-4000-8000-000000000201",
+      "agentID": "00000000-0000-4000-8000-000000000001",
+      "askedAt": 201,
+      "toolCall": {
+       "toolCallID": "call_1",
+       "title": "Write hi.txt",
+       "kind": "edit",
+       "status": "pending",
+       "content": [],
+       "locations": []
+      },
+      "options": [
+       {
+        "optionID": "allow",
+        "name": "Allow",
+        "kind": "allow_once"
+       },
+       {
+        "optionID": "reject",
+        "name": "Reject",
+        "kind": "reject_once"
+       }
+      ]
+     }
+    ],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 102,
+    "runtimeID": "claude",
+    "state": "waitingOnUser",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 102,
+      "runtimeID": "claude",
+      "state": "waitingOnUser",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [
+     {
+      "id": "00000000-0000-4000-8000-000000000201",
+      "agentID": "00000000-0000-4000-8000-000000000001",
+      "askedAt": 201,
+      "toolCall": {
+       "toolCallID": "call_1",
+       "title": "Write hi.txt",
+       "kind": "edit",
+       "status": "pending",
+       "content": [],
+       "locations": []
+      },
+      "options": [
+       {
+        "optionID": "allow",
+        "name": "Allow",
+        "kind": "allow_once"
+       },
+       {
+        "optionID": "reject",
+        "name": "Reject",
+        "kind": "reject_once"
+       }
+      ]
+     }
+    ],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/permission",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "requestID": "00000000-0000-4000-8000-000000000201"
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 102,
+      "runtimeID": "claude",
+      "state": "waitingOnUser",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 103,
+    "runtimeID": "claude",
+    "state": "running",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 103,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/elicitation",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "requestID": "00000000-0000-4000-8000-000000000301",
+    "request": {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "agentID": "00000000-0000-4000-8000-000000000001",
+     "askedAt": 301,
+     "message": "Sign in",
+     "mode": {
+      "url": {
+       "_0": "https://example.com/sign-in"
+      }
+     },
+     "scope": "request"
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 103,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": [
+     {
+      "id": "00000000-0000-4000-8000-000000000301",
+      "agentID": "00000000-0000-4000-8000-000000000001",
+      "askedAt": 301,
+      "message": "Sign in",
+      "mode": {
+       "url": {
+        "_0": "https://example.com/sign-in"
+       }
+      },
+      "scope": "request"
+     }
+    ]
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 104,
+    "runtimeID": "claude",
+    "state": "waitingOnUser",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 104,
+      "runtimeID": "claude",
+      "state": "waitingOnUser",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": [
+     {
+      "id": "00000000-0000-4000-8000-000000000301",
+      "agentID": "00000000-0000-4000-8000-000000000001",
+      "askedAt": 301,
+      "message": "Sign in",
+      "mode": {
+       "url": {
+        "_0": "https://example.com/sign-in"
+       }
+      },
+      "scope": "request"
+     }
+    ]
+   }
+  },
+  {
+   "method": "agent/elicitation",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "requestID": "00000000-0000-4000-8000-000000000301"
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 104,
+      "runtimeID": "claude",
+      "state": "waitingOnUser",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 105,
+    "runtimeID": "claude",
+    "state": "running",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 105,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/permission",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "requestID": "00000000-0000-4000-8000-000000000202",
+    "request": {
+     "id": "00000000-0000-4000-8000-000000000202",
+     "agentID": "00000000-0000-4000-8000-000000000001",
+     "askedAt": 202,
+     "toolCall": {
+      "toolCallID": "call_2",
+      "title": "Write bye.txt",
+      "kind": "edit",
+      "status": "pending",
+      "content": [],
+      "locations": []
+     },
+     "options": [
+      {
+       "optionID": "allow",
+       "name": "Allow",
+       "kind": "allow_once"
+      },
+      {
+       "optionID": "reject",
+       "name": "Reject",
+       "kind": "reject_once"
+      }
+     ]
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 105,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [
+     {
+      "id": "00000000-0000-4000-8000-000000000202",
+      "agentID": "00000000-0000-4000-8000-000000000001",
+      "askedAt": 202,
+      "toolCall": {
+       "toolCallID": "call_2",
+       "title": "Write bye.txt",
+       "kind": "edit",
+       "status": "pending",
+       "content": [],
+       "locations": []
+      },
+      "options": [
+       {
+        "optionID": "allow",
+        "name": "Allow",
+        "kind": "allow_once"
+       },
+       {
+        "optionID": "reject",
+        "name": "Reject",
+        "kind": "reject_once"
+       }
+      ]
+     }
+    ],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 106,
+    "runtimeID": "claude",
+    "state": "waitingOnUser",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 106,
+      "runtimeID": "claude",
+      "state": "waitingOnUser",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [
+     {
+      "id": "00000000-0000-4000-8000-000000000202",
+      "agentID": "00000000-0000-4000-8000-000000000001",
+      "askedAt": 202,
+      "toolCall": {
+       "toolCallID": "call_2",
+       "title": "Write bye.txt",
+       "kind": "edit",
+       "status": "pending",
+       "content": [],
+       "locations": []
+      },
+      "options": [
+       {
+        "optionID": "allow",
+        "name": "Allow",
+        "kind": "allow_once"
+       },
+       {
+        "optionID": "reject",
+        "name": "Reject",
+        "kind": "reject_once"
+       }
+      ]
+     }
+    ],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 107,
+    "runtimeID": "claude",
+    "state": "stopped",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 107,
+      "runtimeID": "claude",
+      "state": "stopped",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 108,
+    "runtimeID": "claude",
+    "state": "running",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 108,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/permission",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "requestID": "00000000-0000-4000-8000-000000000203",
+    "request": {
+     "id": "00000000-0000-4000-8000-000000000203",
+     "agentID": "00000000-0000-4000-8000-000000000001",
+     "askedAt": 203,
+     "toolCall": {
+      "toolCallID": "call_3",
+      "title": "Write bye.txt",
+      "kind": "edit",
+      "status": "pending",
+      "content": [],
+      "locations": []
+     },
+     "options": [
+      {
+       "optionID": "allow",
+       "name": "Allow",
+       "kind": "allow_once"
+      },
+      {
+       "optionID": "reject",
+       "name": "Reject",
+       "kind": "reject_once"
+      }
+     ]
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 108,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [
+     {
+      "id": "00000000-0000-4000-8000-000000000203",
+      "agentID": "00000000-0000-4000-8000-000000000001",
+      "askedAt": 203,
+      "toolCall": {
+       "toolCallID": "call_3",
+       "title": "Write bye.txt",
+       "kind": "edit",
+       "status": "pending",
+       "content": [],
+       "locations": []
+      },
+      "options": [
+       {
+        "optionID": "allow",
+        "name": "Allow",
+        "kind": "allow_once"
+       },
+       {
+        "optionID": "reject",
+        "name": "Reject",
+        "kind": "reject_once"
+       }
+      ]
+     }
+    ],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 109,
+    "runtimeID": "claude",
+    "state": "waitingOnUser",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 109,
+      "runtimeID": "claude",
+      "state": "waitingOnUser",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [
+     {
+      "id": "00000000-0000-4000-8000-000000000203",
+      "agentID": "00000000-0000-4000-8000-000000000001",
+      "askedAt": 203,
+      "toolCall": {
+       "toolCallID": "call_3",
+       "title": "Write bye.txt",
+       "kind": "edit",
+       "status": "pending",
+       "content": [],
+       "locations": []
+      },
+      "options": [
+       {
+        "optionID": "allow",
+        "name": "Allow",
+        "kind": "allow_once"
+       },
+       {
+        "optionID": "reject",
+        "name": "Reject",
+        "kind": "reject_once"
+       }
+      ]
+     }
+    ],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/permission",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000001",
+    "requestID": "00000000-0000-4000-8000-000000000203"
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 109,
+      "runtimeID": "claude",
+      "state": "waitingOnUser",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "title": "Cards",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 110,
+    "runtimeID": "claude",
+    "state": "finished",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 110,
+      "runtimeID": "claude",
+      "state": "finished",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/changed",
+   "params": {
+    "id": "00000000-0000-4000-8000-000000000002",
+    "title": "Second chat",
+    "cwd": "file:///fixture/project/",
+    "createdAt": 100,
+    "lastActivityAt": 111,
+    "runtimeID": "claude",
+    "state": "running",
+    "advertisedOptions": [],
+    "availableCommands": [],
+    "startOptions": {
+     "extraArguments": [],
+     "values": {}
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 110,
+      "runtimeID": "claude",
+      "state": "finished",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "title": "Second chat",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 111,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/permission",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000002",
+    "requestID": "00000000-0000-4000-8000-000000000204",
+    "request": {
+     "id": "00000000-0000-4000-8000-000000000204",
+     "agentID": "00000000-0000-4000-8000-000000000002",
+     "askedAt": 204,
+     "toolCall": {
+      "toolCallID": "call_4",
+      "title": "Run make",
+      "kind": "edit",
+      "status": "pending",
+      "content": [],
+      "locations": []
+     },
+     "options": [
+      {
+       "optionID": "allow",
+       "name": "Allow",
+       "kind": "allow_once"
+      },
+      {
+       "optionID": "reject",
+       "name": "Reject",
+       "kind": "reject_once"
+      }
+     ]
+    }
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 110,
+      "runtimeID": "claude",
+      "state": "finished",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "title": "Second chat",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 111,
+      "runtimeID": "claude",
+      "state": "running",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [
+     {
+      "id": "00000000-0000-4000-8000-000000000204",
+      "agentID": "00000000-0000-4000-8000-000000000002",
+      "askedAt": 204,
+      "toolCall": {
+       "toolCallID": "call_4",
+       "title": "Run make",
+       "kind": "edit",
+       "status": "pending",
+       "content": [],
+       "locations": []
+      },
+      "options": [
+       {
+        "optionID": "allow",
+        "name": "Allow",
+        "kind": "allow_once"
+       },
+       {
+        "optionID": "reject",
+        "name": "Reject",
+        "kind": "reject_once"
+       }
+      ]
+     }
+    ],
+    "elicitations": []
+   }
+  },
+  {
+   "method": "agent/removed",
+   "params": {
+    "agentID": "00000000-0000-4000-8000-000000000002"
+   },
+   "after": {
+    "agents": [
+     {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Cards",
+      "cwd": "file:///fixture/project/",
+      "createdAt": 100,
+      "lastActivityAt": 110,
+      "runtimeID": "claude",
+      "state": "finished",
+      "advertisedOptions": [],
+      "availableCommands": [],
+      "startOptions": {
+       "extraArguments": [],
+       "values": {}
+      }
+     }
+    ],
+    "transcript": {
+     "firstIndex": 0,
+     "total": 0,
+     "entries": []
+    },
+    "permissions": [],
+    "elicitations": []
+   }
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "in order, nothing lost",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    },
+    {
+     "op": "deliver",
+     "step": 8
+    },
+    {
+     "op": "deliver",
+     "step": 9
+    },
+    {
+     "op": "deliver",
+     "step": 10
+    },
+    {
+     "op": "reconnect",
+     "read": 11
+    },
+    {
+     "op": "deliver",
+     "step": 12
+    },
+    {
+     "op": "deliver",
+     "step": 13
+    },
+    {
+     "op": "deliver",
+     "step": 14
+    },
+    {
+     "op": "deliver",
+     "step": 15
+    },
+    {
+     "op": "deliver",
+     "step": 16
+    },
+    {
+     "op": "deliver",
+     "step": 17
+    },
+    {
+     "op": "deliver",
+     "step": 18
+    },
+    {
+     "op": "deliver",
+     "step": 19
+    }
+   ],
+   "expect": 19
+  },
+  {
+   "name": "each notification twice",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    },
+    {
+     "op": "deliver",
+     "step": 8
+    },
+    {
+     "op": "deliver",
+     "step": 8
+    },
+    {
+     "op": "deliver",
+     "step": 9
+    },
+    {
+     "op": "deliver",
+     "step": 9
+    },
+    {
+     "op": "deliver",
+     "step": 10
+    },
+    {
+     "op": "deliver",
+     "step": 10
+    },
+    {
+     "op": "reconnect",
+     "read": 11
+    },
+    {
+     "op": "deliver",
+     "step": 12
+    },
+    {
+     "op": "deliver",
+     "step": 12
+    },
+    {
+     "op": "deliver",
+     "step": 13
+    },
+    {
+     "op": "deliver",
+     "step": 13
+    },
+    {
+     "op": "deliver",
+     "step": 14
+    },
+    {
+     "op": "deliver",
+     "step": 14
+    },
+    {
+     "op": "deliver",
+     "step": 15
+    },
+    {
+     "op": "deliver",
+     "step": 15
+    },
+    {
+     "op": "deliver",
+     "step": 16
+    },
+    {
+     "op": "deliver",
+     "step": 16
+    },
+    {
+     "op": "deliver",
+     "step": 17
+    },
+    {
+     "op": "deliver",
+     "step": 17
+    },
+    {
+     "op": "deliver",
+     "step": 18
+    },
+    {
+     "op": "deliver",
+     "step": 18
+    },
+    {
+     "op": "deliver",
+     "step": 19
+    },
+    {
+     "op": "deliver",
+     "step": 19
+    }
+   ],
+   "expect": 19
+  },
+  {
+   "name": "a card is shown",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    }
+   ],
+   "expect": 1
+  },
+  {
+   "name": "a card is gone once answered",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    }
+   ],
+   "expect": 3
+  },
+  {
+   "name": "a question is shown, then gone",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    }
+   ],
+   "expect": 5
+  },
+  {
+   "name": "a card asked while no client was there shows after the reconnect",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "drop",
+     "steps": [
+      1,
+      2
+     ]
+    },
+    {
+     "op": "reconnect",
+     "read": 2
+    }
+   ],
+   "expect": 2
+  },
+  {
+   "name": "a card answered elsewhere while away goes after the reconnect",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "drop",
+     "steps": [
+      3,
+      4
+     ]
+    },
+    {
+     "op": "reconnect",
+     "read": 4
+    }
+   ],
+   "expect": 4
+  },
+  {
+   "name": "a card whose notification overlaps the read",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "reconnect",
+     "read": 1,
+     "during": [
+      1
+     ]
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    }
+   ],
+   "expect": 2
+  },
+  {
+   "name": "a card raised while the read is on its way",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "reconnect",
+     "read": 0,
+     "during": [
+      1
+     ]
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    }
+   ],
+   "expect": 2
+  },
+  {
+   "name": "a card answered while the read is on its way",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "reconnect",
+     "read": 2,
+     "during": [
+      3
+     ]
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    }
+   ],
+   "expect": 4
+  },
+  {
+   "name": "a question raised while the read is on its way",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "reconnect",
+     "read": 4,
+     "during": [
+      5
+     ]
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    }
+   ],
+   "expect": 6
+  },
+  {
+   "name": "a daemon restart while a card waits",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    },
+    {
+     "op": "deliver",
+     "step": 8
+    },
+    {
+     "op": "deliver",
+     "step": 9
+    },
+    {
+     "op": "deliver",
+     "step": 10
+    },
+    {
+     "op": "reconnect",
+     "read": 11
+    }
+   ],
+   "expect": 11
+  },
+  {
+   "name": "the card asked again after the restart",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    },
+    {
+     "op": "deliver",
+     "step": 8
+    },
+    {
+     "op": "deliver",
+     "step": 9
+    },
+    {
+     "op": "deliver",
+     "step": 10
+    },
+    {
+     "op": "reconnect",
+     "read": 11
+    },
+    {
+     "op": "deliver",
+     "step": 12
+    },
+    {
+     "op": "deliver",
+     "step": 13
+    },
+    {
+     "op": "deliver",
+     "step": 14
+    }
+   ],
+   "expect": 14
+  },
+  {
+   "name": "an agent removed with its card while away",
+   "ops": [
+    {
+     "op": "reconnect",
+     "read": -1
+    },
+    {
+     "op": "deliver",
+     "step": 0
+    },
+    {
+     "op": "deliver",
+     "step": 1
+    },
+    {
+     "op": "deliver",
+     "step": 2
+    },
+    {
+     "op": "deliver",
+     "step": 3
+    },
+    {
+     "op": "deliver",
+     "step": 4
+    },
+    {
+     "op": "deliver",
+     "step": 5
+    },
+    {
+     "op": "deliver",
+     "step": 6
+    },
+    {
+     "op": "deliver",
+     "step": 7
+    },
+    {
+     "op": "deliver",
+     "step": 8
+    },
+    {
+     "op": "deliver",
+     "step": 9
+    },
+    {
+     "op": "deliver",
+     "step": 10
+    },
+    {
+     "op": "reconnect",
+     "read": 11
+    },
+    {
+     "op": "deliver",
+     "step": 12
+    },
+    {
+     "op": "deliver",
+     "step": 13
+    },
+    {
+     "op": "deliver",
+     "step": 14
+    },
+    {
+     "op": "deliver",
+     "step": 15
+    },
+    {
+     "op": "deliver",
+     "step": 16
+    },
+    {
+     "op": "deliver",
+     "step": 17
+    },
+    {
+     "op": "deliver",
+     "step": 18
+    },
+    {
+     "op": "reconnect",
+     "read": 19
+    }
+   ],
+   "expect": 19
+  }
+ ]
+}

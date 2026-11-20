@@ -25,15 +25,6 @@ struct ReachDots: View {
             ?? String(runtimeID.prefix(1)).uppercased()
     }
 
-    /// What a row's accessibility label says about its dots.
-    static func spoken(_ runtimes: [DaemonAPI.RuntimeName], _ reach: [String: DaemonAPI.Reach]) -> String {
-        let reached = runtimes.filter { reach[$0.id]?.gets == true }.map(\.name)
-        let rest = runtimes.filter { reach[$0.id].map { !$0.gets } ?? false }.map(\.name)
-        var words = reached.isEmpty ? "no agent gets it" : "\(reached.joined(separator: ", ")) \(reached.count == 1 ? "gets" : "get") it"
-        if !rest.isEmpty { words += "; not \(rest.joined(separator: ", "))" }
-        return words
-    }
-
     private struct Dot: View {
         let letter: String
         let state: DaemonAPI.Reach?
