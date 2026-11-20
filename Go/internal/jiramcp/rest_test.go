@@ -184,6 +184,62 @@ func TestTheChangelogGivesLabelsAddedAndAssignedToMe(t *testing.T) {
 	}
 }
 
+func TestTheChangelogGivesAMoveIntoDoneAsClosed(t *testing.T) {
+	since := time.Now().Add(-5 * time.Minute)
+	at := since.Add(time.Minute).Format(jiraTime)
+	move := func(id, from, fromName, to, toName string) map[string]any {
+		return map[string]any{"id": id, "created": at, "author": map[string]any{"name": "sam", "displayName": "Sam"}, "items": []any{
+			map[string]any{"field": "status", "from": from, "fromString": fromName, "to": to, "toString": toName},
+		}}
+	}
+	f, j := newSite(t, false, func(path string, _ map[string]any) any {
+		if path == "/status" {
+			return []any{
+				map[string]any{"id": "1", "name": "To Do", "statusCategory": map[string]any{"key": "new"}},
+				map[string]any{"id": "3", "name": "In Progress", "statusCategory": map[string]any{"key": "indeterminate"}},
+				map[string]any{"id": "10", "name": "Done", "statusCategory": map[string]any{"key": "done"}},
+				map[string]any{"id": "11", "name": "Won't do", "statusCategory": map[string]any{"key": "done"}},
+			}
+		}
+		i := restIssueJSON("ENG-4", at, nil)
+		i["changelog"] = map[string]any{"histories": []any{
+			move("600", "1", "To Do", "3", "In Progress"),
+			move("601", "3", "In Progress", "10", "Done"),
+			move("602", "10", "Done", "11", "Won't do"),
+			move("603", "11", "Won't do", "1", "To Do"),
+			move("604", "1", "To Do", "11", "Won't do"),
+		}}
+		return map[string]any{"total": 1, "issues": []any{i}}
+	})
+	closed, _, err := j.Activity(context.Background(), Closed, "", mcpevents.TimeString(since))
+	if err != nil || len(closed) != 2 || closed[0].ID != "601:0" || closed[0].Status != "Done" || closed[0].By.Name != "Sam" ||
+		closed[1].ID != "604:0" || closed[1].Status != "Won't do" {
+		t.Fatalf("closed %+v %v", closed, err)
+	}
+	if len(f.asked) != 2 || f.asked[1] != "GET /status" {
+		t.Fatalf("one search, then the statuses once: %v", f.asked)
+	}
+	if d := closed[0].data(); d["status"] != "Done" || d["by"] != "Sam" || d["closedAt"] != at {
+		t.Fatalf("data %v", d)
+	}
+}
+
+func TestClosedReadsNoStatusesWhenNoStatusMoved(t *testing.T) {
+	since := time.Now().Add(-5 * time.Minute)
+	at := since.Add(time.Minute).Format(jiraTime)
+	f, j := newSite(t, false, func(string, map[string]any) any {
+		i := restIssueJSON("ENG-4", at, nil)
+		i["changelog"] = map[string]any{"histories": []any{map[string]any{"id": "700", "created": at, "items": []any{
+			map[string]any{"field": "labels", "fromString": "", "toString": "bug"},
+		}}}}
+		return map[string]any{"total": 1, "issues": []any{i}}
+	})
+	closed, _, err := j.Activity(context.Background(), Closed, "", mcpevents.TimeString(since))
+	if err != nil || len(closed) != 0 || len(f.asked) != 1 {
+		t.Fatalf("closed %+v %v, asked %v", closed, err, f.asked)
+	}
+}
+
 func TestJirasFailures(t *testing.T) {
 	f, j := newSite(t, true, nil)
 	for _, c := range []struct {

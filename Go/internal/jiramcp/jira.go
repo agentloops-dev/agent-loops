@@ -82,6 +82,8 @@ const (
 	Commented Kind = "commented"
 	// Assigned is to the connection's owner (#2034).
 	Assigned Kind = "assigned"
+	// Closed is a move to a status of the category done (#6297).
+	Closed Kind = "closed"
 )
 
 // Activity is one thing that happened to an issue.
@@ -95,6 +97,8 @@ type Activity struct {
 	By *Person
 	// Label for a label added.
 	Label string
+	// Status for a close: the done status it moved to.
+	Status string
 	// CommentURL and CommentBody (clipped) for a comment.
 	CommentURL, CommentBody string
 }
@@ -111,6 +115,8 @@ func (a Activity) data() map[string]any {
 		d["commentedAt"] = a.At
 	case Assigned:
 		d["by"], d["assignedAt"] = a.By.name(), a.At
+	case Closed:
+		d["status"], d["by"], d["closedAt"] = a.Status, a.By.name(), a.At
 	}
 	return d
 }
