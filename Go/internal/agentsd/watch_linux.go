@@ -110,7 +110,13 @@ func (w *folderWatch) addTree(dir string) error {
 	return rootErr
 }
 
+// read is the only one that uses w.fd once the watch is up, so it is the one that closes
+// it, when it returns. Closed from stop on another goroutine, the number was given to the
+// next socket the process opened, and this loop's next Read took that socket's bytes: an
+// HTTP request the app tools' server never saw, its client waiting 120 s for an answer
+// (#6395, #4593).
 func (w *folderWatch) read() {
+	defer unix.Close(w.fd)
 	buf := make([]byte, 64<<10)
 	pending := map[string]bool{}
 	flush := time.NewTicker(250 * time.Millisecond)
@@ -183,11 +189,9 @@ func cString(b []byte) string {
 	return string(b)
 }
 
+// stop ends the watch: read sees it within its 50 ms nap and closes the descriptor.
 func (w *folderWatch) stop() {
-	w.once.Do(func() {
-		close(w.done)
-		unix.Close(w.fd)
-	})
+	w.once.Do(func() { close(w.done) })
 }
 
 // readFlush tells what changed in pending, in order, when there is any. It gives the
