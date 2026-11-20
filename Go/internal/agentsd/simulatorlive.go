@@ -15,7 +15,10 @@ import (
 // named simulator:<udid> says which simulator, and that the agent uses it. While the agent
 // holds it and a client has its chat in front, the simulator's screen is read every
 // simulatorLivePace; the grant and each changed picture count as a drive (d.drove), and a
-// changed picture goes as live/frame, source simulator. sendLive keeps the two rules: within
+// changed picture goes as live/frame, source simulator. The grant's drive is marked when the
+// watch takes it up, after its first read when a client is in front, not when the lease is
+// settled: under load the first read can come later than liveDriveWindow, and its picture,
+// then held as seen, would never go (#6393). sendLive keeps the two rules: within
 // liveDriveWindow of the last drive, and only to the clients with the chat in front. With no
 // client in front nothing is read at all.
 
@@ -89,15 +92,18 @@ type simulatorWatch struct {
 }
 
 // simulatorWatchEnds is whether the watch k stops, its holder having let go: then it is gone
-// from the book, under liveMu, so a grant just after starts a new one.
-func (d *Daemon) simulatorWatchEnds(k simulatorWatch, holder wire.UUID) bool {
+// from the book, under liveMu, so a grant just after starts a new one. When it goes on, granted
+// says whether a grant came since the last call: the watch then marks it as a drive.
+func (d *Daemon) simulatorWatchEnds(k simulatorWatch, holder wire.UUID) (ends, granted bool) {
 	d.liveMu.Lock()
 	defer d.liveMu.Unlock()
 	if d.holdsLease(holder, k.name) {
-		return false
+		granted = d.simulatorWatches[k]
+		d.simulatorWatches[k] = false
+		return false, granted
 	}
 	delete(d.simulatorWatches, k)
-	return true
+	return true, false
 }
 
 // watchSimulator follows a simulator lease just granted, until its holder lets go of it or
@@ -112,11 +118,11 @@ func (d *Daemon) watchSimulator(l wire.Lease) {
 	if d.simulatorWatches == nil {
 		d.simulatorWatches = map[simulatorWatch]bool{}
 	}
-	running := d.simulatorWatches[k]
+	// In the book is a watch that runs; true is a grant it has not taken up yet. The grant is
+	// a drive (the agent took the lease to use the simulator), which the watch marks.
+	_, running := d.simulatorWatches[k]
 	d.simulatorWatches[k] = true
 	d.liveMu.Unlock()
-	// The grant is the first drive: the agent took the lease to use the simulator.
-	d.drove(l.Holder, wire.LiveSourceSimulator, nil)
 	if running {
 		return
 	}
@@ -131,15 +137,19 @@ func (d *Daemon) watchSimulator(l wire.Lease) {
 			}
 		}()
 		for {
-			if d.simulatorWatchEnds(k, l.Holder) {
+			ends, granted := d.simulatorWatchEnds(k, l.Holder)
+			if ends {
 				return
 			}
 			if len(d.inFront(l.Holder)) == 0 {
 				// Nobody looks: nothing is read, and the next picture is a new start.
 				seen = false
+				if granted {
+					d.drove(l.Holder, wire.LiveSourceSimulator, nil)
+				}
 			} else if s, err := simulatorLiveShot(ctx, udid, simulatorLiveHeight); err == nil {
 				sum := sha256.Sum256(s.Jpeg)
-				if seen && sum != last {
+				if granted || (seen && sum != last) {
 					d.drove(l.Holder, wire.LiveSourceSimulator, nil)
 				}
 				if !seen || sum != last {
@@ -148,6 +158,8 @@ func (d *Daemon) watchSimulator(l wire.Lease) {
 						Width: &width, Height: &height, Title: optional(l.DisplayName)})
 				}
 				last, seen = sum, true
+			} else if granted {
+				d.drove(l.Holder, wire.LiveSourceSimulator, nil)
 			}
 			select {
 			case <-ctx.Done():
