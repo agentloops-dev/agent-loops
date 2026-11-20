@@ -641,9 +641,6 @@ func passedCheckCandidates(ctx context.Context, f Bitbucket, a args, yours *Your
 	return list, listed, nil
 }
 
-// agentMarker starts a comment an agent posted as the person (#3860): pr.commented leaves it out.
-const agentMarker = "<!-- agent -->"
-
 // prCommentCandidates is pr.commented's (#6293).
 func prCommentCandidates(ctx context.Context, f Bitbucket, a args, yours *Yours, since string) ([]candidate, Listed, error) {
 	repo := a.repo
@@ -656,7 +653,7 @@ func prCommentCandidates(ctx context.Context, f Bitbucket, a args, yours *Yours,
 		// Trust is the commenter's; mine only narrows the pull request, as review.comment's.
 		m := c.PR
 		if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && a.closesOne(m) && a.byMe(m, yours) &&
-			(a.anyone || c.Trusted) && !strings.HasPrefix(strings.TrimSpace(c.Body), agentMarker) {
+			(a.anyone || c.Trusted) && !mcpevents.ByAgent(c.Body) {
 			list = append(list, candidate{EventID: fmt.Sprintf("pr.commented:%s:%d", repo, c.ID), Time: at,
 				Data:    func() (map[string]any, error) { return c.data(), nil },
 				Subject: prRef(repo, m.Number), Key: fmt.Sprint(c.ID)})

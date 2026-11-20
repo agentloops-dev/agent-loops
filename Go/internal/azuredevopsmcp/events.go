@@ -505,9 +505,6 @@ func waitingCandidates(ctx context.Context, f AzureDevOps, a args) ([]candidate,
 	return list, nil
 }
 
-// agentMarker starts a comment an agent posted as the person (#3860): pr.commented leaves it out.
-const agentMarker = "<!-- agent -->"
-
 // commentCandidates are review.comment's comments on lines, or pr.commented's on the pull
 // requests themselves (#6295), made at or after since.
 func commentCandidates(ctx context.Context, f AzureDevOps, name string, a args, yours *Yours, since string) ([]candidate, Listed, error) {
@@ -526,7 +523,7 @@ func commentCandidates(ctx context.Context, f AzureDevOps, name string, a args, 
 		m := c.PR
 		if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) &&
 			a.closesOne(m) && a.byMe(m, yours) && (a.anyone || c.Trusted) &&
-			(name != "pr.commented" || !strings.HasPrefix(strings.TrimSpace(c.Body), agentMarker)) {
+			(name != "pr.commented" || !mcpevents.ByAgent(c.Body)) {
 			list = append(list, candidate{EventID: fmt.Sprintf("%s:%s:%d:%d:%d", name, repo, c.PR.Number, c.ThreadID, c.ID), Time: at,
 				Data:    func() (map[string]any, error) { return data(c), nil },
 				Subject: prRef(repo, c.PR.Number), Key: fmt.Sprintf("%d:%d", c.ThreadID, c.ID)})

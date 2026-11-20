@@ -18,16 +18,12 @@ import (
 func TestTheEventsAreTheGitLabServersPullRequestEventsChecksPassedRunCompletedAndDeployWaiting(t *testing.T) {
 	var want []string
 	for _, name := range gitlabmcp.EventNames() {
-		if name == "review.requested" {
-			// pr.reviewed and pr.commented, which GitLab does not give yet (#6296), as the github server's (#6295).
-			want = append(want, "pr.reviewed", "pr.commented")
-		}
 		// The gitlab server's own run.completed and deploy.waiting are here after checks.passed (#4217).
 		if !strings.HasPrefix(name, "issue.") && name != "run.completed" && name != "deploy.waiting" {
 			want = append(want, name)
 		}
-		if name == "checks.failed" {
-			want = append(want, "checks.passed", "run.completed", "deploy.waiting")
+		if name == "checks.passed" {
+			want = append(want, "run.completed", "deploy.waiting")
 		}
 	}
 	same(t, EventNames(), want)

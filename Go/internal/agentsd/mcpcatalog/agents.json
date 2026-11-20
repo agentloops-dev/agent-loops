@@ -106,6 +106,7 @@
             "tools": true,
             "events": [
               "checks.failed",
+              "checks.passed",
               "run.completed",
               "deploy.waiting",
               "deploy.started",
@@ -116,6 +117,8 @@
               "pr.closed",
               "pr.conflicted",
               "pr.blocked",
+              "pr.reviewed",
+              "pr.commented",
               "review.requested",
               "review.comment",
               "issue.opened",
