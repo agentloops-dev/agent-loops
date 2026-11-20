@@ -85,6 +85,7 @@ public enum Capability {
     public static let foldersToMachine1 = "folders.to-machine/1"
     public static let foldersWorkingHours1 = "folders.working-hours/1"
     public static let folders1 = "folders/1"
+    public static let forgeSync1 = "forge-sync/1"
     public static let forgeWrite1 = "forge-write/1"
     public static let forgeAssign1 = "forge.assign/1"
     public static let forgeBoards1 = "forge.boards/1"
@@ -435,10 +436,13 @@ public enum Capability {
         "forge/blocked-by": "forge-write/1",
         "forge/boards": "forge.boards/1",
         "forge/cancel-auto-merge": "forge.cancel-auto-merge/1",
+        "forge/changes": "forge-sync/1",
+        "forge/checks": "forge-sync/1",
         "forge/close": "forge-write/1",
         "forge/comment": "forge-write/1",
         "forge/diff": "forge-write/1",
         "forge/hold": "forge-write/1",
+        "forge/ids": "forge-sync/1",
         "forge/image": "forge.image/1",
         "forge/issue": "forge/1",
         "forge/issues": "forge/1",
@@ -456,6 +460,7 @@ public enum Capability {
         "forge/releases": "forge.releases/1",
         "forge/request-changes": "forge-write/1",
         "forge/rerun": "forge-write/1",
+        "forge/sources": "forge-sync/1",
         "git/fill": "git/1",
         "lineage/cost": "lineage/1",
         "lineage/end": "lineage/1",

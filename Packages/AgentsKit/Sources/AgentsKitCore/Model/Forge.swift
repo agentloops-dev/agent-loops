@@ -139,10 +139,12 @@ public extension DaemonAPI {
         public var limit: Int?
         public var feature: String?
         public var board: String?
+        /// Only the items that changed at or after it (#6349); an earlier daemon lists every item.
+        public var updatedSince: Date?
 
         public init(folder: String? = nil, state: String? = nil, label: String? = nil, assignee: String? = nil,
                     query: String? = nil, cursor: String? = nil, limit: Int? = nil, feature: String? = nil,
-                    board: String? = nil) {
+                    board: String? = nil, updatedSince: Date? = nil) {
             self.folder = folder
             self.state = state
             self.label = label
@@ -152,6 +154,7 @@ public extension DaemonAPI {
             self.limit = limit
             self.feature = feature
             self.board = board
+            self.updatedSince = updatedSince
         }
     }
 
@@ -905,7 +908,154 @@ public extension DaemonAPI {
     }
 }
 
+/// The reads a client cache syncs by (#6349, epic #6348): what changed since a cursor that
+/// each client keeps, the ids now (for what a changed-since read does not see), many pull
+/// requests' checks at once, and the sources a machine reads, so a client asks one machine
+/// for each.
+public extension DaemonAPI {
+    /// `forge/changes`'s question: the items of `source` (every source on the machine when nil)
+    /// of `kinds` (`issue`, `pr`) that changed at or after `updatedSince` (every item when nil).
+    struct ForgeChangesRequest: Codable, Sendable, Hashable {
+        public var source: String?
+        public var kinds: [String]
+        public var updatedSince: Date?
+        public var pageCursor: String?
+        public var limit: Int?
+
+        public init(source: String? = nil, kinds: [String], updatedSince: Date? = nil, pageCursor: String? = nil, limit: Int? = nil) {
+            self.source = source
+            self.kinds = kinds
+            self.updatedSince = updatedSince
+            self.pageCursor = pageCursor
+            self.limit = limit
+        }
+    }
+
+    /// A page of what changed. `highWater` is the latest `updatedAt` of the read so far; the
+    /// last page's is the client's next cursor. It does not move while a source failed (`errors`).
+    struct ForgeChanges: Codable, Sendable, Hashable {
+        public var items: [ForgeItem]
+        public var nextPageCursor: String?
+        public var highWater: Date
+        public var errors: [ForgeListError]?
+        public var forges: [ForgeCapabilities]?
+
+        public init(items: [ForgeItem] = [], nextPageCursor: String? = nil, highWater: Date,
+                    errors: [ForgeListError]? = nil, forges: [ForgeCapabilities]? = nil) {
+            self.items = items
+            self.nextPageCursor = nextPageCursor
+            self.highWater = highWater
+            self.errors = errors
+            self.forges = forges
+        }
+    }
+
+    /// `forge/ids`'s question: one source's items of `kinds` in `states` (`open`, `closed`; both when nil).
+    struct ForgeIdsRequest: Codable, Sendable, Hashable {
+        public var source: String
+        public var kinds: [String]
+        public var states: [String]?
+        public var pageCursor: String?
+
+        public init(source: String, kinds: [String], states: [String]? = nil, pageCursor: String? = nil) {
+            self.source = source
+            self.kinds = kinds
+            self.states = states
+            self.pageCursor = pageCursor
+        }
+    }
+
+    /// A page of the nodes the source has now, at most 1,000. `at` is when the read began: keep
+    /// a cached item whose `updatedAt` is at or after it, as it can be missing from the pages.
+    struct ForgeIds: Codable, Sendable, Hashable {
+        public var at: Date
+        public var nodes: [LineageNode]
+        public var nextPageCursor: String?
+
+        public init(at: Date, nodes: [LineageNode] = [], nextPageCursor: String? = nil) {
+            self.at = at
+            self.nodes = nodes
+            self.nextPageCursor = nextPageCursor
+        }
+    }
+
+    /// `forge/checks`'s question: one source's pull requests, by number, 1 to 100.
+    struct ForgeChecksRequest: Codable, Sendable, Hashable {
+        public var source: String
+        public var numbers: [Int]
+
+        public init(source: String, numbers: [Int]) {
+            self.source = source
+            self.numbers = numbers
+        }
+    }
+
+    /// One pull request's checks summary, in `ForgeItem`'s words.
+    struct ForgeChecksRow: Codable, Sendable, Hashable {
+        public var node: LineageNode
+        public var state: String?
+        public var checks: String?
+        public var review: String?
+        public var mergeable: String?
+        public var autoMerge: Bool?
+
+        public init(node: LineageNode, state: String? = nil, checks: String? = nil, review: String? = nil,
+                    mergeable: String? = nil, autoMerge: Bool? = nil) {
+            self.node = node
+            self.state = state
+            self.checks = checks
+            self.review = review
+            self.mergeable = mergeable
+            self.autoMerge = autoMerge
+        }
+    }
+
+    /// The checks of the pull requests asked for, and when they were read.
+    struct ForgeChecks: Codable, Sendable, Hashable {
+        public var pulls: [ForgeChecksRow]
+        public var at: Date
+
+        public init(pulls: [ForgeChecksRow] = [], at: Date) {
+            self.pulls = pulls
+            self.at = at
+        }
+    }
+
+    /// A forge source the machine reads: `github:owner/repo`, `jira:proj`, `linear:eng` (lower case, as the nodes' refs), or
+    /// `linear` for a whole workspace; `kinds` is what it has (`issue`, `pr`).
+    struct ForgeSource: Codable, Sendable, Hashable {
+        public var source: String
+        public var forge: String
+        public var kinds: [String]
+        public var folder: String?
+
+        public init(source: String, forge: String, kinds: [String], folder: String? = nil) {
+            self.source = source
+            self.forge = forge
+            self.kinds = kinds
+            self.folder = folder
+        }
+    }
+
+    /// The machine's sources, and the forges whose sources could not all be found.
+    struct ForgeSources: Codable, Sendable, Hashable {
+        public var sources: [ForgeSource]
+        public var errors: [ForgeListError]?
+
+        public init(sources: [ForgeSource] = [], errors: [ForgeListError]? = nil) {
+            self.sources = sources
+            self.errors = errors
+        }
+    }
+}
+
 public extension DaemonAPI.Method {
+    /// `ForgeChangesRequest` → `ForgeChanges`, `ForgeIdsRequest` → `ForgeIds`,
+    /// `ForgeChecksRequest` → `ForgeChecks`, `Empty` → `ForgeSources` (#6349).
+    static let forgeChanges = "forge/changes"
+    static let forgeIds = "forge/ids"
+    static let forgeChecks = "forge/checks"
+    static let forgeSources = "forge/sources"
     /// `ForgeListRequest` → `ForgeList` (#3129).
     static let forgeIssues = "forge/issues"
     static let forgePulls = "forge/pulls"

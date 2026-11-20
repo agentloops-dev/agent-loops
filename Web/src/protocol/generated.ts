@@ -5566,6 +5566,40 @@ export interface ForgeCapabilities {
 }
 
 /**
+ * forge/changes (#6349, epic #6348): a page of the items that changed at or after the request's
+ * updatedSince, each a whole ForgeItem with its updatedAt, newest first within each source.
+ * nextPageCursor is the next page, absent at the end. highWater is the latest updatedAt of the read
+ * so far, carried from page to page, so the last page's is the read's: a client keeps it as its
+ * cursor for the next read (and asks from a minute before it). While a source in the read could not
+ * be read (errors), highWater does not move past updatedSince, so the next read asks again from
+ * there; with no item, highWater is updatedSince (0 for none), so a client keeps the later of it
+ * and its cursor. errors says a source that could not be read, and the items of the others still
+ * come; forges says what each forge on the page fills, as ForgeList's does.
+ */
+export interface ForgeChanges {
+  items: ForgeItem[];
+  nextPageCursor?: string;
+  highWater: WireDate;
+  errors?: ForgeListError[];
+  forges?: ForgeCapabilities[];
+}
+
+/**
+ * forge/changes (#6349): the issues and pull requests of one source (a ForgeSource's source; every
+ * source on this machine when not said) that changed at or after updatedSince, in every state
+ * (open, closed and merged); every item when not said, for a first fill. kinds is issue, pr or
+ * both. limit is 1 to 100, 100 when not said; pageCursor is the last page's nextPageCursor, with
+ * the same source, kinds and updatedSince.
+ */
+export interface ForgeChangesRequest {
+  source?: string;
+  kinds: ("issue" | "pr")[];
+  updatedSince?: WireDate;
+  pageCursor?: string;
+  limit?: number;
+}
+
+/**
  * One of a pull request's checks (#3129): a check run or a commit status. state is passing,
  * failing, running or skipped; url is its page on the forge. startedAt and finishedAt are when it
  * started and ended (#4409), where the forge says them (ForgeCapabilities.checkTimes): absent on a
@@ -5577,6 +5611,41 @@ export interface ForgeCheck {
   url?: string;
   startedAt?: WireDate;
   finishedAt?: WireDate;
+}
+
+/**
+ * forge/checks (#6349): the checks summary of each pull request asked for that the forge still has,
+ * in one call on GitHub; on another forge from its list of open pull requests, so one that is no
+ * longer open is left out. at is when they were read. A pull request's checks do not move its
+ * updatedAt, so a changed-since read does not see them.
+ */
+export interface ForgeChecks {
+  pulls: ForgeChecksRow[];
+  at: WireDate;
+}
+
+/**
+ * forge/checks (#6349): the pull requests of one source (a ForgeSource's source), by their numbers,
+ * 1 to 100 of them.
+ */
+export interface ForgeChecksRequest {
+  source: string;
+  numbers: number[];
+}
+
+/**
+ * One pull request's checks summary (#6349), in ForgeItem's words: state is open, closed or merged;
+ * checks is passing, failing, running or none; review is approved, changes_requested or
+ * review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on.
+ * Each is absent where the forge does not say it.
+ */
+export interface ForgeChecksRow {
+  node: LineageNode;
+  state?: string;
+  checks?: string;
+  review?: string;
+  mergeable?: string;
+  autoMerge?: boolean;
 }
 
 /**
@@ -5711,6 +5780,32 @@ export type ForgeEventKind =
 export interface ForgeHoldRequest {
   node: LineageNode;
   on: boolean;
+}
+
+/**
+ * forge/ids (#6349): a page of the nodes of the items the source has now in the states asked, at
+ * most 1,000 a page. nextPageCursor is the next page, absent at the end. A client removes from its
+ * cache an item of those kinds and states that no page named: it was deleted, moved, or the person
+ * can no longer see it. A read that fails is an error, never a short list. at is when the read
+ * began (the first page's time, on every page): an item that changed after it can be missing from
+ * the pages, so a client keeps a cached item whose updatedAt is at or after at.
+ */
+export interface ForgeIds {
+  at: WireDate;
+  nodes: LineageNode[];
+  nextPageCursor?: string;
+}
+
+/**
+ * forge/ids (#6349): the ids of one source's items (a ForgeSource's source) of kinds (issue, pr or
+ * both) in states: open, closed (a closed pull request includes a merged one), or both when not
+ * said. pageCursor is the last page's nextPageCursor, with the same source, kinds and states.
+ */
+export interface ForgeIdsRequest {
+  source: string;
+  kinds: ("issue" | "pr")[];
+  states?: ("open" | "closed")[];
+  pageCursor?: string;
 }
 
 /**
@@ -5952,7 +6047,8 @@ export interface ForgeListError {
  * request includes a merged one. label, assignee (a login) and query (words in the title or body)
  * narrow the list. limit is 1 to 100, 50 when not said; cursor is the last page's. feature (a name:
  * work for the label feature:work) narrows it to one feature's items (#3267). board (a board's url,
- * from forge/boards) narrows it to one board's items (#3282).
+ * from forge/boards) narrows it to one board's items (#3282). updatedSince narrows it to the items
+ * that changed at or after that time (#6349); an earlier daemon leaves it out and lists every item.
  */
 export interface ForgeListRequest {
   folder?: string;
@@ -5964,6 +6060,7 @@ export interface ForgeListRequest {
   limit?: number;
   feature?: string;
   board?: string;
+  updatedSince?: WireDate;
 }
 
 /** forge/log (#3130): the last lines of each failed check's log, as plain text. */
@@ -6224,6 +6321,30 @@ export type ForgeReviewerState =
   | "changes_requested"
   | "commented"
   | "pending";
+
+/**
+ * A forge source this machine reads (#6349): source is the forge's name and the repository, project
+ * or team in lower case, as its nodes' refs name it (github:agentloops-dev/agent-loops,
+ * gitlab:group/project, jira:proj, linear:eng; linear for a whole Linear workspace), the key of a
+ * client cache's records. kinds is what it has: issue, pr or both. folder is a folder on this
+ * machine on it.
+ */
+export interface ForgeSource {
+  source: string;
+  forge: string;
+  kinds: ("issue" | "pr")[];
+  folder?: string;
+}
+
+/**
+ * forge/sources (#6349): the forge sources this machine reads, from its folders, so a client asks
+ * one machine for each source, not every machine. errors says a forge whose sources could not all
+ * be found (not connected).
+ */
+export interface ForgeSources {
+  sources: ForgeSource[];
+  errors?: ForgeListError[];
+}
 
 /**
  * A standing epic's query (#3659, #3661), as the daemon read it from the standing block in the
@@ -16837,10 +16958,13 @@ export interface Methods {
   "forge/boards": { params: ForgeBoardsRequest; result: ForgeBoards };
   "forge/boardsAll": { params: Empty; result: ForgeBoardsAll };
   "forge/cancel-auto-merge": { params: ForgeNodeRequest; result: ForgeDone };
+  "forge/changes": { params: ForgeChangesRequest; result: ForgeChanges };
+  "forge/checks": { params: ForgeChecksRequest; result: ForgeChecks };
   "forge/close": { params: ForgeCloseRequest; result: ForgeDone };
   "forge/comment": { params: ForgeCommentRequest; result: ForgeDone };
   "forge/diff": { params: ForgeNodeRequest; result: ForgeDiff };
   "forge/hold": { params: ForgeHoldRequest; result: ForgeDone };
+  "forge/ids": { params: ForgeIdsRequest; result: ForgeIds };
   "forge/image": { params: ForgeImageRequest; result: ForgeImage };
   "forge/issue": { params: ForgeItemRequest; result: ForgeItemDetail };
   "forge/issues": { params: ForgeListRequest; result: ForgeList };
@@ -16859,6 +16983,7 @@ export interface Methods {
   "forge/releases": { params: ForgeReleasesRequest; result: ForgeReleases };
   "forge/request-changes": { params: ForgeRequestChangesRequest; result: ForgeDone };
   "forge/rerun": { params: ForgeNodeRequest; result: ForgeDone };
+  "forge/sources": { params: Empty; result: ForgeSources };
   "governance/approvals": { params: Empty; result: CatalogApprovalList };
   "governance/decide": { params: CatalogDecide; result: CatalogRequest };
   "governance/request": { params: CatalogAsk; result: CatalogRequest };
@@ -17317,10 +17442,13 @@ export const MethodTarget = {
   "forge/boards": "host",
   "forge/boardsAll": "control",
   "forge/cancel-auto-merge": "host",
+  "forge/changes": "host",
+  "forge/checks": "host",
   "forge/close": "host",
   "forge/comment": "host",
   "forge/diff": "host",
   "forge/hold": "host",
+  "forge/ids": "host",
   "forge/image": "host",
   "forge/issue": "host",
   "forge/issues": "host",
@@ -17339,6 +17467,7 @@ export const MethodTarget = {
   "forge/releases": "host",
   "forge/request-changes": "host",
   "forge/rerun": "host",
+  "forge/sources": "host",
   "governance/approvals": "control",
   "governance/decide": "control",
   "governance/request": "control",
@@ -18105,7 +18234,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeBoardsAll: { required: ["boards", "unreached", "notAsked"], optional: [] },
   ForgeBoardsRequest: { required: [], optional: ["folder"] },
   ForgeCapabilities: { required: ["forge", "issues", "pulls", "labelColors", "avatars", "stateReason", "commentCount"], optional: ["createdAt", "closedAt", "children", "linkedPulls", "events", "total", "releases", "branches", "mergedBy", "mergeCommit", "size", "reviewers", "closes", "checkTimes", "priority", "hold", "commentsMost"] },
+  ForgeChanges: { required: ["items", "highWater"], optional: ["nextPageCursor", "errors", "forges"] },
+  ForgeChangesRequest: { required: ["kinds"], optional: ["source", "updatedSince", "pageCursor", "limit"] },
   ForgeCheck: { required: ["name", "state"], optional: ["url", "startedAt", "finishedAt"] },
+  ForgeChecks: { required: ["pulls", "at"], optional: [] },
+  ForgeChecksRequest: { required: ["source", "numbers"], optional: [] },
+  ForgeChecksRow: { required: ["node"], optional: ["state", "checks", "review", "mergeable", "autoMerge"] },
   ForgeCloseRequest: { required: ["node"], optional: ["reopen", "transition", "reason"] },
   ForgeComment: { required: ["author", "body", "at"], optional: ["avatar", "url", "bot"] },
   ForgeCommentRequest: { required: ["node", "body"], optional: [] },
@@ -18115,6 +18249,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeDone: { required: [], optional: ["url", "auto", "reran"] },
   ForgeEvent: { required: ["kind", "at"], optional: ["actor", "label", "assignee", "source"] },
   ForgeHoldRequest: { required: ["node", "on"], optional: [] },
+  ForgeIds: { required: ["at", "nodes"], optional: ["nextPageCursor"] },
+  ForgeIdsRequest: { required: ["source", "kinds"], optional: ["states", "pageCursor"] },
   ForgeImage: { required: ["mimeType", "data"], optional: [] },
   ForgeImageRequest: { required: ["url"], optional: [] },
   ForgeItem: { required: ["node", "title", "state", "labels", "assignees", "updatedAt", "comments"], optional: ["stateReason", "status", "url", "folder", "author", "authorAvatar", "milestone", "milestoneDue", "priority", "onHold", "createdAt", "closedAt", "draft", "checks", "review", "mergeable", "autoMerge", "headRef", "baseRef", "mergedBy", "mergeCommit", "parent", "level", "feature", "progress", "standing"] },
@@ -18129,7 +18265,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
   ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "limit", "pages"] },
   ForgeListError: { required: ["forge", "message"], optional: [] },
-  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board"] },
+  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board", "updatedSince"] },
   ForgeLog: { required: ["text"], optional: [] },
   ForgeLogRequest: { required: ["node"], optional: ["check"] },
   ForgeLogins: { required: [], optional: ["github", "gitlab", "linear", "jira", "forgejo", "bitbucket", "azureDevOps"] },
@@ -18152,6 +18288,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeReleasesRequest: { required: [], optional: ["folder", "limit"] },
   ForgeRequestChangesRequest: { required: ["node", "sha", "body"], optional: [] },
   ForgeReviewer: { required: ["login", "state"], optional: ["avatar"] },
+  ForgeSource: { required: ["source", "forge", "kinds"], optional: ["folder"] },
+  ForgeSources: { required: ["sources"], optional: ["errors"] },
   ForgeStanding: { required: ["labels", "any", "not", "lanes"], optional: ["milestone", "parent", "error"] },
   ForgeStart: { required: ["prompt", "labels"], optional: ["worktree"] },
   ForgeTransition: { required: ["id", "name"], optional: ["category"] },

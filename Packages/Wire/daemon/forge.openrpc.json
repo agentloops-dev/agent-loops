@@ -158,6 +158,56 @@
       }
     },
     {
+      "name": "forge/changes",
+      "x-capability": "forge-sync/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/forge.schema.json#/definitions/ForgeChangesRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ForgeChanges"
+        }
+      }
+    },
+    {
+      "name": "forge/checks",
+      "x-capability": "forge-sync/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/forge.schema.json#/definitions/ForgeChecksRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ForgeChecks"
+        }
+      }
+    },
+    {
       "name": "forge/close",
       "x-capability": "forge-write/1",
       "tags": [
@@ -254,6 +304,31 @@
         "name": "result",
         "schema": {
           "$ref": "schema/forge.schema.json#/definitions/ForgeDone"
+        }
+      }
+    },
+    {
+      "name": "forge/ids",
+      "x-capability": "forge-sync/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/forge.schema.json#/definitions/ForgeIdsRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ForgeIds"
         }
       }
     },
@@ -680,6 +755,31 @@
         "name": "result",
         "schema": {
           "$ref": "schema/forge.schema.json#/definitions/ForgeDone"
+        }
+      }
+    },
+    {
+      "name": "forge/sources",
+      "x-capability": "forge-sync/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ForgeSources"
         }
       }
     }

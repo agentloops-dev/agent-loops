@@ -316,6 +316,10 @@ public extension DaemonAPI {
                 Row(Method.forgeRelease, params: ForgeReleaseRequest.self, result: ForgeReleaseDetail.self, kind: .hostRequest),
                 Row(Method.forgeAddChild, params: ForgeAddChildRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeBlockedBy, params: ForgeBlockedByRequest.self, result: ForgeDone.self, kind: .hostRequest),
+                Row(Method.forgeChanges, params: ForgeChangesRequest.self, result: ForgeChanges.self, kind: .hostRequest),
+                Row(Method.forgeIds, params: ForgeIdsRequest.self, result: ForgeIds.self, kind: .hostRequest),
+                Row(Method.forgeChecks, params: ForgeChecksRequest.self, result: ForgeChecks.self, kind: .hostRequest),
+                Row(Method.forgeSources, params: Empty.self, result: ForgeSources.self, kind: .hostRequest),
                 // The Messages page's reads and its reply (#4343, #4344, #4345).
                 Row(Method.messagesConversations, params: MessagesConversationsRequest.self, result: MessagesConversations.self,
                     kind: .hostRequest),

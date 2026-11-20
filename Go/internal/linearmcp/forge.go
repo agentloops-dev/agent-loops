@@ -21,6 +21,9 @@ import (
 type SearchFilter struct {
 	State                           string
 	Label, Assignee, Query, Feature string
+	// UpdatedSince narrows the list to the issues updated at or after a time in RFC 3339 (#6349),
+	// "" for none.
+	UpdatedSince string
 }
 
 // Item is an issue as the forge reads list it, by its identifier (ENG-4).
@@ -271,6 +274,9 @@ func SearchFilterOf(teams []string, f SearchFilter) map[string]any {
 	if q := strings.TrimSpace(f.Query); q != "" {
 		filter["or"] = []any{map[string]any{"title": map[string]any{"containsIgnoreCase": q}},
 			map[string]any{"description": map[string]any{"containsIgnoreCase": q}}}
+	}
+	if f.UpdatedSince != "" {
+		filter["updatedAt"] = map[string]any{"gte": f.UpdatedSince}
 	}
 	return filter
 }
