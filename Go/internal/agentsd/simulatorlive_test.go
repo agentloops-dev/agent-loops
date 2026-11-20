@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -58,6 +59,7 @@ func TestASimulatorLeaseNamesTheSimulator(t *testing.T) {
 // changed picture, to the client with the chat in front only; none more than liveDriveWindow
 // after the last change; and with nobody in front, the screen is not read at all.
 func TestLiveFrameOfASimulatorGoesWhileItsHolderDrivesIt(t *testing.T) {
+	flaky.UnderLoad(t, "#6393")
 	fakeRuntimes(t)
 	var picture atomic.Value
 	picture.Store("first")

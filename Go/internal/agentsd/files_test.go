@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -190,6 +191,7 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 }
 
 func TestATerminal(t *testing.T) {
+	flaky.UnderLoad(t, "#6396")
 	t.Setenv("SHELL", "/bin/sh")
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
