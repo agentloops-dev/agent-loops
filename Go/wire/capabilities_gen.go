@@ -84,6 +84,7 @@ const CapFoldersNotCommitted1 = "folders.not-committed/1"
 const CapFoldersToMachine1 = "folders.to-machine/1"
 const CapFoldersWorkingHours1 = "folders.working-hours/1"
 const CapFolders1 = "folders/1"
+const CapForgeSync1 = "forge-sync/1"
 const CapForgeWrite1 = "forge-write/1"
 const CapForgeAssign1 = "forge.assign/1"
 const CapForgeBoards1 = "forge.boards/1"
@@ -434,10 +435,13 @@ var HostCapabilities = pairs([][2]string{
 	{"forge/blocked-by", "forge-write/1"},
 	{"forge/boards", "forge.boards/1"},
 	{"forge/cancel-auto-merge", "forge.cancel-auto-merge/1"},
+	{"forge/changes", "forge-sync/1"},
+	{"forge/checks", "forge-sync/1"},
 	{"forge/close", "forge-write/1"},
 	{"forge/comment", "forge-write/1"},
 	{"forge/diff", "forge-write/1"},
 	{"forge/hold", "forge-write/1"},
+	{"forge/ids", "forge-sync/1"},
 	{"forge/image", "forge.image/1"},
 	{"forge/issue", "forge/1"},
 	{"forge/issues", "forge/1"},
@@ -455,6 +459,7 @@ var HostCapabilities = pairs([][2]string{
 	{"forge/releases", "forge.releases/1"},
 	{"forge/request-changes", "forge-write/1"},
 	{"forge/rerun", "forge-write/1"},
+	{"forge/sources", "forge-sync/1"},
 	{"git/fill", "git/1"},
 	{"lineage/cost", "lineage/1"},
 	{"lineage/end", "lineage/1"},

@@ -6004,6 +6004,32 @@ type ForgeCapabilities struct {
 	CommentsMost *int64 `json:"commentsMost,omitzero"`
 }
 
+// forge/changes (#6349, epic #6348): a page of the items that changed at or after the request's updatedSince, each a whole ForgeItem with its updatedAt, newest first within each source. nextPageCursor is the next page, absent at the end. highWater is the latest updatedAt of the read so far, carried from page to page, so the last page's is the read's: a client keeps it as its cursor for the next read (and asks from a minute before it). While a source in the read could not be read (errors), highWater does not move past updatedSince, so the next read asks again from there; with no item, highWater is updatedSince (0 for none), so a client keeps the later of it and its cursor. errors says a source that could not be read, and the items of the others still come; forges says what each forge on the page fills, as ForgeList's does.
+type ForgeChanges struct {
+	Items []ForgeItem `json:"items"`
+
+	NextPageCursor *string `json:"nextPageCursor,omitzero"`
+
+	HighWater Date `json:"highWater"`
+
+	Errors []ForgeListError `json:"errors,omitzero"`
+
+	Forges []ForgeCapabilities `json:"forges,omitzero"`
+}
+
+// forge/changes (#6349): the issues and pull requests of one source (a ForgeSource's source; every source on this machine when not said) that changed at or after updatedSince, in every state (open, closed and merged); every item when not said, for a first fill. kinds is issue, pr or both. limit is 1 to 100, 100 when not said; pageCursor is the last page's nextPageCursor, with the same source, kinds and updatedSince.
+type ForgeChangesRequest struct {
+	Source *string `json:"source,omitzero"`
+
+	Kinds []string `json:"kinds"`
+
+	UpdatedSince *Date `json:"updatedSince,omitzero"`
+
+	PageCursor *string `json:"pageCursor,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
+}
+
 // One of a pull request's checks (#3129): a check run or a commit status. state is passing, failing, running or skipped; url is its page on the forge. startedAt and finishedAt are when it started and ended (#4409), where the forge says them (ForgeCapabilities.checkTimes): absent on a check that has not started, and finishedAt on one still running; a commit status has neither.
 type ForgeCheck struct {
 	Name string `json:"name"`
@@ -6015,6 +6041,35 @@ type ForgeCheck struct {
 	StartedAt *Date `json:"startedAt,omitzero"`
 
 	FinishedAt *Date `json:"finishedAt,omitzero"`
+}
+
+// forge/checks (#6349): the checks summary of each pull request asked for that the forge still has, in one call on GitHub; on another forge from its list of open pull requests, so one that is no longer open is left out. at is when they were read. A pull request's checks do not move its updatedAt, so a changed-since read does not see them.
+type ForgeChecks struct {
+	Pulls []ForgeChecksRow `json:"pulls"`
+
+	At Date `json:"at"`
+}
+
+// forge/checks (#6349): the pull requests of one source (a ForgeSource's source), by their numbers, 1 to 100 of them.
+type ForgeChecksRequest struct {
+	Source string `json:"source"`
+
+	Numbers []int64 `json:"numbers"`
+}
+
+// One pull request's checks summary (#6349), in ForgeItem's words: state is open, closed or merged; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. Each is absent where the forge does not say it.
+type ForgeChecksRow struct {
+	Node LineageNode `json:"node"`
+
+	State *string `json:"state,omitzero"`
+
+	Checks *string `json:"checks,omitzero"`
+
+	Review *string `json:"review,omitzero"`
+
+	Mergeable *string `json:"mergeable,omitzero"`
+
+	AutoMerge *bool `json:"autoMerge,omitzero"`
 }
 
 // Why forge/close closes an issue (#4404): completed, or not_planned where the forge has it (the action closeNotPlanned).
@@ -6098,13 +6153,15 @@ type ForgeDiffHunk struct {
 	Lines []DiffLine `json:"lines"`
 }
 
-// What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge waits for the checks; reran is how many runs or pipelines were run again.
+// What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge waits for the checks; reran is how many runs or pipelines were run again. item is the item the write was on, as the forge has it after the write, with its updatedAt (#6351, epic #6348): a client cache replaces its optimistic value with it. On forge/add-child it is the epic. Absent when the read after the write failed (the write still happened), and from an earlier daemon.
 type ForgeDone struct {
 	URL *string `json:"url,omitzero"`
 
 	Auto *bool `json:"auto,omitzero"`
 
 	Reran *int64 `json:"reran,omitzero"`
+
+	Item *ForgeItem `json:"item,omitzero"`
 }
 
 // One event on an issue's timeline (#4373), as its forge says it: kind is what happened; actor is who did it, absent when the forge says nobody (a deleted account); label is the label that labelled and unlabelled name; assignee is the person that assigned and unassigned name; source is the issue or pull request that referenced names, or the pull request that closed closed it with.
@@ -6138,6 +6195,26 @@ type ForgeHoldRequest struct {
 	Node LineageNode `json:"node"`
 
 	On bool `json:"on"`
+}
+
+// forge/ids (#6349): a page of the nodes of the items the source has now in the states asked, at most 1,000 a page. nextPageCursor is the next page, absent at the end. A client removes from its cache an item of those kinds and states that no page named: it was deleted, moved, or the person can no longer see it. A read that fails is an error, never a short list. at is when the read began (the first page's time, on every page): an item that changed after it can be missing from the pages, so a client keeps a cached item whose updatedAt is at or after at.
+type ForgeIds struct {
+	At Date `json:"at"`
+
+	Nodes []LineageNode `json:"nodes"`
+
+	NextPageCursor *string `json:"nextPageCursor,omitzero"`
+}
+
+// forge/ids (#6349): the ids of one source's items (a ForgeSource's source) of kinds (issue, pr or both) in states: open, closed (a closed pull request includes a merged one), or both when not said. pageCursor is the last page's nextPageCursor, with the same source, kinds and states.
+type ForgeIdsRequest struct {
+	Source string `json:"source"`
+
+	Kinds []string `json:"kinds"`
+
+	States []string `json:"states,omitzero"`
+
+	PageCursor *string `json:"pageCursor,omitzero"`
 }
 
 // forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL. mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes.
@@ -6356,7 +6433,7 @@ type ForgeListError struct {
 	Message string `json:"message"`
 }
 
-// forge/issues and forge/pulls (#3129): the issues or pull requests of every folder on this machine, or of one folder's repo. state is open (when not said), closed or all; a closed pull request includes a merged one. label, assignee (a login) and query (words in the title or body) narrow the list. limit is 1 to 100, 50 when not said; cursor is the last page's. feature (a name: work for the label feature:work) narrows it to one feature's items (#3267). board (a board's url, from forge/boards) narrows it to one board's items (#3282).
+// forge/issues and forge/pulls (#3129): the issues or pull requests of every folder on this machine, or of one folder's repo. state is open (when not said), closed or all; a closed pull request includes a merged one. label, assignee (a login) and query (words in the title or body) narrow the list. limit is 1 to 100, 50 when not said; cursor is the last page's. feature (a name: work for the label feature:work) narrows it to one feature's items (#3267). board (a board's url, from forge/boards) narrows it to one board's items (#3282). updatedSince narrows it to the items that changed at or after that time (#6349); an earlier daemon leaves it out and lists every item.
 type ForgeListRequest struct {
 	Folder *string `json:"folder,omitzero"`
 
@@ -6375,6 +6452,8 @@ type ForgeListRequest struct {
 	Feature *string `json:"feature,omitzero"`
 
 	Board *string `json:"board,omitzero"`
+
+	UpdatedSince *Date `json:"updatedSince,omitzero"`
 }
 
 // forge/log (#3130): the last lines of each failed check's log, as plain text.
@@ -6613,6 +6692,24 @@ const ForgeReviewerStateApproved ForgeReviewerState = "approved"
 const ForgeReviewerStateChangesRequested ForgeReviewerState = "changes_requested"
 const ForgeReviewerStateCommented ForgeReviewerState = "commented"
 const ForgeReviewerStatePending ForgeReviewerState = "pending"
+
+// A forge source this machine reads (#6349): source is the forge's name and the repository, project or team in lower case, as its nodes' refs name it (github:agentloops-dev/agent-loops, gitlab:group/project, jira:proj, linear:eng; linear for a whole Linear workspace), the key of a client cache's records. kinds is what it has: issue, pr or both. folder is a folder on this machine on it.
+type ForgeSource struct {
+	Source string `json:"source"`
+
+	Forge string `json:"forge"`
+
+	Kinds []string `json:"kinds"`
+
+	Folder *string `json:"folder,omitzero"`
+}
+
+// forge/sources (#6349): the forge sources this machine reads, from its folders, so a client asks one machine for each source, not every machine. errors says a forge whose sources could not all be found (not connected).
+type ForgeSources struct {
+	Sources []ForgeSource `json:"sources"`
+
+	Errors []ForgeListError `json:"errors,omitzero"`
+}
 
 // A standing epic's query (#3659, #3661), as the daemon read it from the standing block in the epic's body. labels: the issue has all of them; any: at least one of them; not: none of them; milestone: none, any or a milestone's name; parent: none, only issues that are no other issue's sub-issue (#4335, #4348). lanes is how many lanes its lead runs at once, 1 when the block does not say. error says why there is no query: no block, a second block, or an unknown or bad field; with an error, the plan has no children.
 type ForgeStanding struct {

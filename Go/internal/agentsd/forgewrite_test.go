@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -217,15 +218,63 @@ func TestForgeIssueWritesGoToGitHub(t *testing.T) {
 		t.Fatalf("writes:\n%q\nwant\n%q", got, want)
 	}
 
+	// Each write reads the item again, and keeps that read (#6351): the page's next read is it.
+	_, wrote := gh.asked()
+	if calls := 6; wrote != before+calls {
+		t.Fatalf("each write reads its item once: %d reads, then %d after %d writes", before, wrote, calls)
+	}
 	c.call(t, 6, "forge/issue", wire.ForgeItemRequest{Node: ghIssue})
-	if _, after := gh.asked(); after != before+1 {
-		t.Fatalf("the read after a write was the kept one: %d reads, then %d", before, after)
+	if _, after := gh.asked(); after != wrote {
+		t.Fatalf("the read after a write was not the write's own: %d reads, then %d", wrote, after)
 	}
 
 	var labels wire.ForgeLabels
 	json.Unmarshal(c.call(t, 7, "forge/labels", wire.ForgeNodeRequest{Node: ghIssue}), &labels)
 	if len(labels.Labels) != 2 || deref(labels.Labels[0].Color) != "#d73a4a" {
 		t.Fatalf("labels: %+v", labels)
+	}
+}
+
+// #6351: each write on an item returns the item as the forge has it after the write, with its
+// updatedAt, so a client's cache replaces its optimistic value; a write whose read after it
+// fails still answers, with no item.
+func TestForgeWritesReturnTheItem(t *testing.T) {
+	t.Parallel()
+
+	_, c, gh, _ := forgeDaemon(t)
+	for i, w := range []struct {
+		method string
+		node   wire.LineageNode
+		params any
+	}{
+		{"forge/label", ghIssue, wire.ForgeLabelRequest{Node: ghIssue, Add: []string{"bug"}}},
+		{"forge/assign", ghIssue, wire.ForgeAssignRequest{Node: ghIssue, Add: []string{"kim"}}},
+		{"forge/close", ghIssue, wire.ForgeCloseRequest{Node: ghIssue}},
+		{"forge/priority", ghIssue, wire.ForgePriorityRequest{Node: ghIssue, Priority: setTo("high")}},
+		{"forge/hold", ghIssue, wire.ForgeHoldRequest{Node: ghIssue, On: true}},
+		{"forge/comment", ghIssue, wire.ForgeCommentRequest{Node: ghIssue, Body: "Done."}},
+		{"forge/merge", ghPull, wire.ForgeMergeRequest{Node: ghPull, Sha: "abc"}},
+		{"forge/ready", ghPull, wire.ForgeNodeRequest{Node: ghPull}},
+	} {
+		var done wire.ForgeDone
+		if err := json.Unmarshal(c.call(t, 1+i, w.method, w.params), &done); err != nil {
+			t.Fatal(err)
+		}
+		if done.Item == nil || done.Item.Node != w.node || !done.Item.UpdatedAt.Time().Equal(time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)) {
+			t.Errorf("%s: item %+v, want %s with its updatedAt", w.method, done.Item, w.node.Ref)
+		}
+	}
+
+	missing := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#404"}
+	var done wire.ForgeDone
+	if err := json.Unmarshal(c.call(t, 20, "forge/label", wire.ForgeLabelRequest{Node: missing, Add: []string{"bug"}}), &done); err != nil {
+		t.Fatal(err)
+	}
+	if done.Item != nil {
+		t.Fatalf("a failed read after the write: item %+v", done.Item)
+	}
+	if got := gh.writes(); got[len(got)-1] != "labels alexec/agents#404 +bug -" {
+		t.Fatalf("the write before the failed read: %q", got)
 	}
 }
 

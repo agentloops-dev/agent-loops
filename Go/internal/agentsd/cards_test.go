@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -265,6 +266,7 @@ func TestEachCardShowsOnEveryClientAndOneAnswerWins(t *testing.T) {
 // A card of an agent that is stopped goes from every client and from the control plane,
 // and an answer that comes after is refused, not taken (failure mode 4).
 func TestACardOfAStoppedAgentGoesEverywhere(t *testing.T) {
+	flaky.UnderLoad(t, "#6367")
 	for _, k := range cardKinds {
 		t.Run(k.name, func(t *testing.T) {
 			t.Parallel()

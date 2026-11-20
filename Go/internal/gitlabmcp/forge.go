@@ -35,6 +35,9 @@ type SearchFilter struct {
 	State                           string
 	Label, Assignee, Query, Feature string
 	Board                           BoardScope
+	// UpdatedAfter narrows the list to the items updated at or after a time in RFC 3339 (#6349),
+	// "" for none: GitLab's updated_after.
+	UpdatedAfter string
 }
 
 // BoardScope is what a group board shows (#3282): the issues with all of Labels, and in
@@ -317,6 +320,9 @@ func listPath(project string, f SearchFilter, state, before string, first int) s
 	if before != "" {
 		t, _ := mcpevents.ParseTime(before)
 		q.Set("updated_before", mcpevents.TimeString(t.Add(time.Millisecond)))
+	}
+	if f.UpdatedAfter != "" {
+		q.Set("updated_after", f.UpdatedAfter)
 	}
 	// GitLab's labels are all of them, by commas.
 	var labels []string
