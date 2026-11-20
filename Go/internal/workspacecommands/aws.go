@@ -116,12 +116,14 @@ func xmlValue(data []byte) (any, error) {
 	}
 }
 
+// xmlChild is one child element of an XML element: its name and its value.
+type xmlChild struct {
+	name  string
+	value any
+}
+
 func element(d *xml.Decoder, name string) (any, error) {
-	type child struct {
-		name  string
-		value any
-	}
-	var children []child
+	var children []xmlChild
 	var text strings.Builder
 	for {
 		token, err := d.Token()
@@ -137,36 +139,51 @@ func element(d *xml.Decoder, name string) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			children = append(children, child{t.Name.Local, v})
+			children = append(children, xmlChild{t.Name.Local, v})
 		case xml.CharData:
 			text.Write(t)
 		case xml.EndElement:
-			list := strings.HasSuffix(name, "Set") && name != "Set"
-			if len(children) > 0 {
-				items := true
-				for _, c := range children {
-					items = items && c.name == "item"
-				}
-				list = list || items
-			}
-			if list {
-				out := make([]any, len(children))
-				for i, c := range children {
-					out[i] = c.value
-				}
-				return out, nil
-			}
-			if len(children) == 0 {
-				return strings.TrimSpace(text.String()), nil
-			}
-			out := map[string]any{}
-			for _, c := range children {
-				if _, taken := out[c.name]; !taken {
-					out[c.name] = c.value
-				}
-			}
-			return out, nil
+			return elementValue(name, children, text.String()), nil
 		}
 	}
 	return nil, io.ErrUnexpectedEOF
+}
+
+// elementValue is the value of a closed element: an array when it is a list, its text
+// when it has no children, else an object of its children (the first of each name).
+func elementValue(name string, children []xmlChild, text string) any {
+	if isXMLList(name, children) {
+		out := make([]any, len(children))
+		for i, c := range children {
+			out[i] = c.value
+		}
+		return out
+	}
+	if len(children) == 0 {
+		return strings.TrimSpace(text)
+	}
+	out := map[string]any{}
+	for _, c := range children {
+		if _, taken := out[c.name]; !taken {
+			out[c.name] = c.value
+		}
+	}
+	return out
+}
+
+// isXMLList says if an element is a list: its name ends in Set, or its children are all
+// <item>.
+func isXMLList(name string, children []xmlChild) bool {
+	if strings.HasSuffix(name, "Set") && name != "Set" {
+		return true
+	}
+	if len(children) == 0 {
+		return false
+	}
+	for _, c := range children {
+		if c.name != "item" {
+			return false
+		}
+	}
+	return true
 }
