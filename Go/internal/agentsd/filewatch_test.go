@@ -5,11 +5,11 @@ package agentsd
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -30,13 +30,21 @@ func fileWait(t *testing.T, d *Daemon, folder, event string, paths ...string) (w
 	}()
 	waitFor(t, "the wait", func() bool {
 		w := d.Store.Agent(a.ID).EventWait
-		if w == nil || w.Ending != nil {
-			return false
-		}
-		d.fileMu.Lock()
-		defer d.fileMu.Unlock()
-		return d.fileWatches[folder] != nil
+		return w != nil && w.Ending == nil
 	})
+	// Once the record says it waits, its files are followed (#6410): a file that goes now
+	// was seen, so it is removed.
+	d.fileMu.Lock()
+	var globs []string
+	if st := d.fileWatches[folder]; st != nil {
+		globs = st.globs
+	}
+	d.fileMu.Unlock()
+	for _, p := range paths {
+		if !slices.Contains(globs, p) {
+			t.Fatalf("the wait is recorded, but its files are not followed: %q not in %q", p, globs)
+		}
+	}
 	return a.ID, answered
 }
 
@@ -77,7 +85,6 @@ func TestAPullThatAddsThreeWatchedFilesWakesOnceWithThePaths(t *testing.T) {
 }
 
 func TestAWatchedFileDeletedOrMovedAwayIsRemoved(t *testing.T) {
-	flaky.UnderLoad(t, "#6410")
 	folder := canonical(t.TempDir())
 	os.MkdirAll(filepath.Join(folder, "reports"), 0o755)
 	for _, name := range []string{"a.csv", "b.csv"} {
