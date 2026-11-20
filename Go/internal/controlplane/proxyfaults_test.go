@@ -451,3 +451,29 @@ func TestAProxyCutsTheClientsLinkAndNoQuestionIsLost(t *testing.T) {
 		}
 	}
 }
+
+// A host that links again before the control plane reads the end of its old link (#6346):
+// the client still hears offline, then online, so it reads the host's state again. The
+// host's notices between the two links are lost, and without them a client keeps stale
+// agents and cards.
+func TestAHostThatLinksAgainBeforeItsOldLinkEndsIsHeardOfflineThenOnline(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	box := p.host("MACHINE-2")
+	host := box.member.Host
+	window := p.observe(p.url, "Window")
+	// A client hears host notices once it speaks the wrapped wire, from its first call.
+	p.waitFor(func() bool { _, ok := window.ask(host, "agents/list"); return ok }, "the client reaches the host")
+	before := len(window.hostStates(host))
+
+	// The new link takes the host while the plane still holds the old one.
+	again := &uplinkStandIn{closed: make(chan struct{})}
+	t.Cleanup(again.Close)
+	p.s.Router().AttachHost(host, again)
+
+	want := []string{"offline", "online"}
+	p.waitFor(func() bool { return len(window.hostStates(host)) >= before+len(want) }, "an offline and an online notice")
+	if got := window.hostStates(host)[before : before+len(want)]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("after the host linked again the client heard %v, want %v", got, want)
+	}
+}

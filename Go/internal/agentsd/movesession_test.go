@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -270,11 +270,18 @@ func nextMove(c *conn, wait time.Duration) *wire.MoveNotification {
 	}
 }
 
+// moveWords is n with its problem's words, not the pointer (#6341).
+func moveWords(n *wire.MoveNotification) string {
+	if n.Problem == nil {
+		return fmt.Sprintf("%+v", *n)
+	}
+	return fmt.Sprintf("%+v: %s", *n, *n.Problem)
+}
+
 // Move to Machine… answers once the move is checked (#4641): move/changed says how it goes,
 // agents/moves finds it mid-move, a second move is refused, and the session stays here until
 // that machine has it.
 func TestPersonMovesASessionToAMachine(t *testing.T) {
-	flaky.UnderLoad(t, "#6341")
 	t.Parallel()
 
 	hold := make(chan struct{})
@@ -299,7 +306,7 @@ func TestPersonMovesASessionToAMachine(t *testing.T) {
 			t.Fatal("no move/changed")
 		}
 		if last.Finished || last.AgentID != a.ID || last.MachineName != "pc" || last.Folder != folder {
-			t.Fatalf("%+v", last)
+			t.Fatal(moveWords(last))
 		}
 	}
 	if last.Total == 0 || last.Sent != last.Total {
