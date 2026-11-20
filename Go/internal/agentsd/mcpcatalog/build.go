@@ -84,91 +84,122 @@ func Build(s Server, run wire.MCPRunKind, alreadySet func(string) bool) (Built, 
 		nameHere = slug(*s.Title)
 	}
 	mark := func(v wire.MCPVariable) wire.MCPVariable { v.AlreadySet = alreadySet(v.Name); return v }
-	vars := []wire.MCPVariable{}
+	var b Built
+	var err error
 	switch run {
 	case wire.MCPRunKindRemote:
-		if len(s.Remotes) == 0 || s.Remotes[0].URL == nil {
-			return Built{}, NoRunnableWay()
+		b, err = buildRemote(s, mark)
+	case wire.MCPRunKindNpx, wire.MCPRunKindUvx:
+		b, err = buildPackage(s, run, mark)
+	case wire.MCPRunKindDocker:
+		b, err = buildDocker(s, mark)
+	default:
+		// Only a server added by hand runs as a command of its own.
+		return Built{}, NoRunnableWay()
+	}
+	if err != nil {
+		return Built{}, err
+	}
+	b.NameHere, b.ChosenRun = nameHere, run
+	return b, nil
+}
+
+type markFunc func(wire.MCPVariable) wire.MCPVariable
+
+// buildRemote is Build for the server's first remote.
+func buildRemote(s Server, mark markFunc) (Built, error) {
+	if len(s.Remotes) == 0 || s.Remotes[0].URL == nil {
+		return Built{}, NoRunnableWay()
+	}
+	remote := s.Remotes[0]
+	u := *remote.URL
+	vars := []wire.MCPVariable{}
+	var headers []pair
+	for _, h := range remote.Headers {
+		if h.Name == nil {
+			continue
 		}
-		remote := s.Remotes[0]
-		u := *remote.URL
-		var hostLabel *string
-		if p, err := url.Parse(u); err == nil && p.Host != "" {
-			h := p.Hostname()
-			label := h + " · not the publisher's"
-			if ownHosts(s)[strings.ToLower(h)] {
-				label = h + " · the publisher's own"
-			}
-			hostLabel = &label
+		value, vs := headerValue(h, s.Name)
+		headers = append(headers, pair{*h.Name, value})
+		for _, v := range vs {
+			vars = append(vars, mark(v))
 		}
-		var headers []pair
-		for _, h := range remote.Headers {
-			if h.Name == nil {
-				continue
-			}
-			value, vs := headerValue(h, s.Name)
-			headers = append(headers, pair{*h.Name, value})
+	}
+	kind := "http"
+	if deref(remote.Type) == "sse" {
+		kind = "sse"
+	}
+	entry := skillcatalog.Object(skillcatalog.Pair{Key: "type", Value: skillcatalog.String(kind)},
+		skillcatalog.Pair{Key: "url", Value: skillcatalog.String(u)})
+	if len(headers) > 0 {
+		entry.Set("headers", object(headers))
+	}
+	return Built{CommandOrURL: u, Host: remoteHostLabel(s, u), Entry: entry, Variables: vars}, nil
+}
+
+// remoteHostLabel says whose host the remote's URL is on, or nil when it has none.
+func remoteHostLabel(s Server, u string) *string {
+	p, err := url.Parse(u)
+	if err != nil || p.Host == "" {
+		return nil
+	}
+	h := p.Hostname()
+	label := h + " · not the publisher's"
+	if ownHosts(s)[strings.ToLower(h)] {
+		label = h + " · the publisher's own"
+	}
+	return &label
+}
+
+// buildPackage is Build for an npm package by npx, or a PyPI package by uvx.
+func buildPackage(s Server, run wire.MCPRunKind, mark markFunc) (Built, error) {
+	registryType, command := "npm", "npx"
+	if run == wire.MCPRunKindUvx {
+		registryType, command = "pypi", "uvx"
+	}
+	p, ok := packageOf(s, registryType)
+	if !ok {
+		return Built{}, NoRunnableWay()
+	}
+	version := "latest"
+	if p.Version != nil {
+		version = *p.Version
+	} else if s.Version != nil {
+		version = *s.Version
+	}
+	args := []string{"-y", *p.Identifier + "@" + version}
+	if run == wire.MCPRunKindUvx {
+		args = []string{*p.Identifier + "==" + version}
+	}
+	env, vs := envFrom(p, mark)
+	return Built{CommandOrURL: command + " " + strings.Join(args, " "),
+		Entry: stdioEntry(command, args, env), Variables: append([]wire.MCPVariable{}, vs...)}, nil
+}
+
+// buildDocker is Build for an OCI image by docker run.
+func buildDocker(s Server, mark markFunc) (Built, error) {
+	p, ok := packageOf(s, "oci")
+	if !ok {
+		return Built{}, NoRunnableWay()
+	}
+	vars := []wire.MCPVariable{}
+	args := []string{"run", "-i", "--rm"}
+	for _, a := range p.RuntimeArguments {
+		if a.Name != nil {
+			args = append(args, *a.Name)
+		}
+		if a.Value != nil {
+			filled, vs := expandBraces(*a.Value)
+			args = append(args, filled)
 			for _, v := range vs {
 				vars = append(vars, mark(v))
 			}
 		}
-		kind := "http"
-		if deref(remote.Type) == "sse" {
-			kind = "sse"
-		}
-		entry := skillcatalog.Object(skillcatalog.Pair{Key: "type", Value: skillcatalog.String(kind)},
-			skillcatalog.Pair{Key: "url", Value: skillcatalog.String(u)})
-		if len(headers) > 0 {
-			entry.Set("headers", object(headers))
-		}
-		return Built{NameHere: nameHere, ChosenRun: run, CommandOrURL: u, Host: hostLabel, Entry: entry, Variables: vars}, nil
-	case wire.MCPRunKindNpx, wire.MCPRunKindUvx:
-		registryType, command := "npm", "npx"
-		if run == wire.MCPRunKindUvx {
-			registryType, command = "pypi", "uvx"
-		}
-		p, ok := packageOf(s, registryType)
-		if !ok {
-			return Built{}, NoRunnableWay()
-		}
-		version := "latest"
-		if p.Version != nil {
-			version = *p.Version
-		} else if s.Version != nil {
-			version = *s.Version
-		}
-		args := []string{"-y", *p.Identifier + "@" + version}
-		if run == wire.MCPRunKindUvx {
-			args = []string{*p.Identifier + "==" + version}
-		}
-		env, vs := envFrom(p, mark)
-		return Built{NameHere: nameHere, ChosenRun: run, CommandOrURL: command + " " + strings.Join(args, " "),
-			Entry: stdioEntry(command, args, env), Variables: append(vars, vs...)}, nil
-	case wire.MCPRunKindDocker:
-		p, ok := packageOf(s, "oci")
-		if !ok {
-			return Built{}, NoRunnableWay()
-		}
-		args := []string{"run", "-i", "--rm"}
-		for _, a := range p.RuntimeArguments {
-			if a.Name != nil {
-				args = append(args, *a.Name)
-			}
-			if a.Value != nil {
-				filled, vs := expandBraces(*a.Value)
-				args = append(args, filled)
-				for _, v := range vs {
-					vars = append(vars, mark(v))
-				}
-			}
-		}
-		args = append(args, *p.Identifier)
-		env, vs := envFrom(p, mark)
-		return Built{NameHere: nameHere, ChosenRun: run, CommandOrURL: "docker " + strings.Join(args, " "),
-			Entry: stdioEntry("docker", args, env), Variables: append(vars, vs...)}, nil
 	}
-	// Only a server added by hand runs as a command of its own.
-	return Built{}, NoRunnableWay()
+	args = append(args, *p.Identifier)
+	env, vs := envFrom(p, mark)
+	return Built{CommandOrURL: "docker " + strings.Join(args, " "),
+		Entry: stdioEntry("docker", args, env), Variables: append(vars, vs...)}, nil
 }
 
 func packageOf(s Server, registryType string) (Package, bool) {
@@ -201,7 +232,7 @@ func object(pairs []pair) skillcatalog.Value {
 	return o
 }
 
-func envFrom(p Package, mark func(wire.MCPVariable) wire.MCPVariable) ([]pair, []wire.MCPVariable) {
+func envFrom(p Package, mark markFunc) ([]pair, []wire.MCPVariable) {
 	var env []pair
 	var vars []wire.MCPVariable
 	for _, v := range p.EnvironmentVariables {
