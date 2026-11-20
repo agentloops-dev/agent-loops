@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -80,6 +81,9 @@ type connectionBook struct {
 	connFlows map[wire.UUID]*connectionFlow
 	// connRenew is one renewal at a time: a refresh token is single use.
 	connRenew sync.Mutex
+	// connReadFailed is set while the store does not read: storedConnection logs the first
+	// failure, and the next after a read works again (#6359).
+	connReadFailed atomic.Bool
 	// newDeviceFlow is the provider's flow; a test gives a fake GitHub.
 	newDeviceFlow func(provider wire.ConnectionProvider) *connections.DeviceFlow
 	// newCodeFlow is a code-flow provider's flow; a test gives a fake Linear.

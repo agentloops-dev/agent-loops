@@ -446,3 +446,36 @@ func (r *recordingGitHub) NewestPull(ctx context.Context, repo string) (*githubm
 	r.mu.Unlock()
 	return r.fakeSetupGitHub.NewestPull(ctx, repo)
 }
+
+// #6359: a store that does not read is no connection, and the daemon says so once until a
+// read works again; a connection that reads again counts again.
+func TestAStoreThatDoesNotReadIsNoConnection(t *testing.T) {
+	t.Parallel()
+
+	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
+	d := &Daemon{}
+	d.connStoreFor = func() (connections.Store, error) { return file, nil }
+	if err := os.WriteFile(file.Path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, ok := d.forgejoConnection(); ok {
+			t.Fatal("an unreadable store gave a connection")
+		}
+	}
+	if !d.connReadFailed.Load() {
+		t.Fatal("the failed read was not kept")
+	}
+	if err := os.Remove(file.Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Put(connections.Connection{Provider: connections.Forgejo, URL: "http://localhost:3753/"}); err != nil {
+		t.Fatal(err)
+	}
+	if c, ok := d.forgejoConnection(); !ok || c.URL != "http://localhost:3753/" {
+		t.Fatalf("%+v %v", c, ok)
+	}
+	if d.connReadFailed.Load() {
+		t.Fatal("a read that worked kept the failure")
+	}
+}
