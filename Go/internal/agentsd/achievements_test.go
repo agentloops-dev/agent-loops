@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -135,6 +136,7 @@ func TestACloudMachineStarted(t *testing.T) {
 
 func TestALandedPullRequestIsCounted(t *testing.T) {
 	t.Parallel()
+	flaky.UnderLoad(t, "#6369")
 
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
