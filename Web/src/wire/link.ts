@@ -500,8 +500,12 @@ export class Link {
       if (authed || this.state.kind === "down") this.down();
     };
     socket.onopen = async () => {
+      // A socket the link let go of (dropped, stopped, or replaced by a redial) never opens
+      // the link (#6385): it would show "open" on a socket that is gone, and no redial follows.
+      if (this.socket !== socket) return;
       try {
         const admitted = await this.options.authenticate(lines, record, this.options.origin);
+        if (this.socket !== socket) return void socket.close(1000, "");
         // The control plane rotated its key (#997): trusted from now on, with no new pairing.
         if (admitted.newKey && admitted.newKey !== record.control) {
           await this.options.keys.save({ ...record, control: admitted.newKey });

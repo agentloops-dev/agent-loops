@@ -1,6 +1,7 @@
 // One event redraws what it changed, and the page holds a bounded amount (#170).
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { eventually } from "./eventually.mjs";
 import { load } from "./load.mjs";
 
 const {
@@ -311,18 +312,49 @@ test("out of sight, a dropped link waits for the tab to come back", async () => 
     },
     backoff: [0.001], heartbeat: { every: 60_000, within: 1_000 }, random: () => 0, hidden: () => hidden,
     authenticate: async () => ({ name: "test" }) });
+  // Each step waits for the state it needs, not a fixed time (#6385): under load the
+  // socket's open and the sign-in after it take longer than 5 ms.
   l.start();
-  await wait(5);
-  hidden = true;
-  sockets[0].onclose({ code: 1006, reason: "" });
-  await wait(20);
-  assert.equal(sockets.length, 1, "no redial while hidden");
-  hidden = false;
-  l.retryNow();
-  await wait(5);
-  assert.equal(sockets.length, 2);
-  assert.equal(l.state.kind, "open");
-  l.stop();
+  try {
+    await eventually(() => l.state.kind === "open");
+    hidden = true;
+    sockets[0].onclose({ code: 1006, reason: "" });
+    assert.equal(l.state.kind, "down");
+    await wait(20);
+    assert.equal(sockets.length, 1, "no redial while hidden");
+    hidden = false;
+    l.retryNow();
+    await eventually(() => l.state.kind === "open");
+    assert.equal(sockets.length, 2);
+  } finally {
+    l.stop();
+  }
+});
+
+test("a socket that dropped before it opened never opens the link (#6385)", async () => {
+  const sockets = [];
+  let signIns = 0;
+  const l = new w.Link({ url: "ws://localhost:1/v1/connect", origin: "http://localhost:1",
+    keys: Object.assign(new w.MemoryKeyStore(), { record: { privateKey: {}, publicKey: {}, client: "C", control: "K", paired: "" } }),
+    open: () => {
+      const socket = { send() {}, close() {}, onopen: null, onmessage: null, onclose: null, onerror: null };
+      sockets.push(socket);
+      return socket;
+    },
+    backoff: [60], heartbeat: { every: 60_000, within: 1_000 }, random: () => 0, hidden: () => true,
+    authenticate: async () => (signIns++, { name: "test" }) });
+  l.start();
+  try {
+    await eventually(() => sockets.length === 1);
+    sockets[0].onclose({ code: 1006, reason: "" });
+    await eventually(() => l.state.kind === "down");
+    // The open that a slow machine fires only after the drop: the link stays down.
+    await sockets[0].onopen?.({});
+    assert.equal(signIns, 0, "no sign-in on a socket the link let go of");
+    assert.equal(l.state.kind, "down");
+  } finally {
+    l.stop();
+  }
 });
 
 /** A link whose replies are held until the test lets each go, in any order. */
