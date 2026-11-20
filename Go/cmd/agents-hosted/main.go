@@ -78,6 +78,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/kms"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/webpush"
 	"github.com/agentloops-dev/agent-loops/Go/internal/hosted"
 )
@@ -112,15 +113,29 @@ func serve() error {
 	if err != nil {
 		return err
 	}
-	trusted, err := controlplane.ParseTrustedProxies(os.Getenv("AGENTS_CONTROL_TRUSTED_PROXIES"))
+	logf := func(line string) { fmt.Fprintln(os.Stderr, time.Now().UTC().Format(time.RFC3339)+" "+line) }
+	cfg, err := hostedConfig(where, st, logf)
 	if err != nil {
 		return err
+	}
+	service, err := hosted.New(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer service.Stop()
+	return listen(ctx, service, cfg, logf)
+}
+
+// hostedConfig is the service's configuration, from the environment.
+func hostedConfig(where string, st store.Store, logf func(string)) (hosted.Config, error) {
+	trusted, err := controlplane.ParseTrustedProxies(os.Getenv("AGENTS_CONTROL_TRUSTED_PROXIES"))
+	if err != nil {
+		return hosted.Config{}, err
 	}
 	client := os.Getenv("AGENTS_HOSTED_GITHUB_CLIENT_ID")
 	if client == "" {
 		client = connections.GitHubClientID
 	}
-	logf := func(line string) { fmt.Fprintln(os.Stderr, time.Now().UTC().Format(time.RFC3339)+" "+line) }
 	cfg := hosted.Config{Store: st, Keeper: os.Getenv("AGENTS_CONTROL_KMS"),
 		Domain: strings.ToLower(os.Getenv("AGENTS_HOSTED_DOMAIN")), AccountsDomain: strings.ToLower(os.Getenv("AGENTS_HOSTED_ACCOUNTS_DOMAIN")),
 		GitHubClientID: client, GitHubSecret: os.Getenv("AGENTS_HOSTED_GITHUB_SECRET"), Web: os.Getenv("AGENTS_HOSTED_WEB"),
@@ -132,6 +147,21 @@ func serve() error {
 		StripeKey: os.Getenv("AGENTS_HOSTED_STRIPE_KEY"), StripePrice: os.Getenv("AGENTS_HOSTED_STRIPE_PRICE"),
 		StripeWebhookSecret: os.Getenv("AGENTS_HOSTED_STRIPE_WEBHOOK_SECRET"),
 		TurnstileSiteKey:    os.Getenv("AGENTS_HOSTED_TURNSTILE_SITE_KEY"), TurnstileSecret: os.Getenv("AGENTS_HOSTED_TURNSTILE_SECRET")}
+	if err := hostedLimits(&cfg, where); err != nil {
+		return hosted.Config{}, err
+	}
+	if p := webPusher(logf); p != nil {
+		cfg.WebPush = p
+	}
+	if cfg.MetricsFrom, err = controlplane.ParseTrustedProxies(os.Getenv("AGENTS_HOSTED_METRICS_FROM")); err != nil {
+		return hosted.Config{}, fmt.Errorf("AGENTS_HOSTED_METRICS_FROM: %w", err)
+	}
+	return cfg, nil
+}
+
+// hostedLimits sets the limits that keep the service whole (#2152), from the environment.
+func hostedLimits(cfg *hosted.Config, where string) error {
+	var err error
 	for name, into := range map[string]*int{"AGENTS_HOSTED_MAX_ACCOUNTS": &cfg.MaxAccounts,
 		"AGENTS_HOSTED_SIGNUPS_PER_ADDRESS": &cfg.SignUpsPerAddress, "AGENTS_HOSTED_SIGNUPS_PER_HOUR": &cfg.SignUpsPerHour,
 		"AGENTS_HOSTED_MAX_COPIES": &cfg.MaxCopies, "AGENTS_HOSTED_CERTS_PER_HOUR": &cfg.CertsPerHour,
@@ -158,60 +188,63 @@ func serve() error {
 	} else if os.Getenv("AGENTS_HOSTED_MIN_GITHUB_AGE") == "0" {
 		cfg.MinGitHubAge = -1
 	}
-	if p := webPusher(logf); p != nil {
-		cfg.WebPush = p
-	}
-	if cfg.MetricsFrom, err = controlplane.ParseTrustedProxies(os.Getenv("AGENTS_HOSTED_METRICS_FROM")); err != nil {
-		return fmt.Errorf("AGENTS_HOSTED_METRICS_FROM: %w", err)
-	}
-	service, err := hosted.New(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	defer service.Stop()
+	return nil
+}
+
+// listen serves the service, and its metrics on a port of their own, until ctx ends.
+func listen(ctx context.Context, service *hosted.Service, cfg hosted.Config, logf func(string)) error {
 	port := os.Getenv("AGENTS_HOSTED_PORT")
 	if port == "" {
 		port = "8795"
 	}
 	server := &http.Server{Addr: ":" + port, Handler: service, ReadHeaderTimeout: 20 * time.Second}
-	metricsPort := os.Getenv("AGENTS_HOSTED_METRICS_PORT")
-	if metricsPort == "" {
-		metricsPort = "9795"
-	}
-	var metrics *http.Server
-	if metricsPort != "off" {
-		if metricsPort == port {
-			return errors.New("AGENTS_HOSTED_METRICS_PORT is the service's own port: the proxy would pass it")
-		}
-		metrics = &http.Server{Addr: ":" + metricsPort, Handler: service.Metrics(), ReadHeaderTimeout: 20 * time.Second}
-		go func() {
-			if err := metrics.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				logf("metrics: " + err.Error())
-			}
-		}()
+	metrics, err := serveMetrics(service, port, logf)
+	if err != nil {
+		return err
 	}
 	go func() {
 		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdown, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		if metrics != nil {
 			_ = metrics.Shutdown(shutdown)
 		}
 		_ = server.Shutdown(shutdown)
 	}()
-	billing := "off"
-	if cfg.StripeKey != "" {
-		billing = "on"
-	}
-	webPush := "off"
-	if cfg.WebPush != nil {
-		webPush = "on"
-	}
-	logf("agents-hosted " + buildinfo.Version + " listening on :" + port + ", billing " + billing + ", Web Push " + webPush)
+	logf("agents-hosted " + buildinfo.Version + " listening on :" + port + ", billing " + onOff(cfg.StripeKey != "") + ", Web Push " + onOff(cfg.WebPush != nil))
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
+}
+
+// serveMetrics starts the metrics server (#2226), or none when AGENTS_HOSTED_METRICS_PORT is off.
+func serveMetrics(service *hosted.Service, port string, logf func(string)) (*http.Server, error) {
+	metricsPort := os.Getenv("AGENTS_HOSTED_METRICS_PORT")
+	if metricsPort == "" {
+		metricsPort = "9795"
+	}
+	if metricsPort == "off" {
+		return nil, nil
+	}
+	if metricsPort == port {
+		return nil, errors.New("AGENTS_HOSTED_METRICS_PORT is the service's own port: the proxy would pass it")
+	}
+	metrics := &http.Server{Addr: ":" + metricsPort, Handler: service.Metrics(), ReadHeaderTimeout: 20 * time.Second}
+	go func() {
+		if err := metrics.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logf("metrics: " + err.Error())
+		}
+	}()
+	return metrics, nil
+}
+
+// onOff is "on" or "off", for the start-up line.
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 // webPusher is the VAPID key, a compose secret as agents-control's is: nil when there is
