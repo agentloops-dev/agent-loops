@@ -179,12 +179,7 @@ func Smoke(ctx context.Context, o Options, d Deps, rep *Reporter, say func(strin
 		if err != nil {
 			return fail(err)
 		}
-		var agent *wire.Agent
-		for i := range agents {
-			if agents[i].ID == id {
-				agent = &agents[i]
-			}
-		}
+		agent := findAgent(agents, id)
 		if agent == nil {
 			return fail(fmt.Errorf("the session is not on the host any more"))
 		}
@@ -192,22 +187,7 @@ func Smoke(ctx context.Context, o Options, d Deps, rep *Reporter, say func(strin
 		if err != nil {
 			return fail(err)
 		}
-		answered, finished := false, false
-		for _, e := range page.Entries {
-			switch {
-			case e.Kind.AgentMessage != nil && strings.TrimSpace(e.Kind.AgentMessage.Text) != "":
-				answered = true
-			case e.Kind.ToolCall != nil:
-				c := e.Kind.ToolCall.Value
-				name := c.Title
-				if c.Name != nil {
-					name = *c.Name
-				}
-				if strings.HasSuffix(name, "finish_turn") {
-					finished = true
-				}
-			}
-		}
+		answered, finished := smokeReplied(page.Entries)
 		if answered && first == 0 {
 			first = time.Since(began)
 			rep.Say(step, wire.MachineSetupStateRunning, "First word after "+shortDuration(first), "")
@@ -215,13 +195,7 @@ func Smoke(ctx context.Context, o Options, d Deps, rep *Reporter, say func(strin
 		ended := agent.State == wire.AgentStateFinished || agent.State == wire.AgentStateStopped || agent.State == wire.AgentStateArchived
 		switch {
 		case answered && (finished || ended):
-			text := "Answered, first word after " + shortDuration(first)
-			if !finished {
-				text += " (it did not call finish_turn)"
-			}
-			if model != nil {
-				text += ", model " + *model
-			}
+			text := smokeAnswered(first, finished, model)
 			rep.Say(step, wire.MachineSetupStateDone, text, "")
 			say("Smoke session: %s", text)
 			return nil
@@ -243,6 +217,50 @@ func Smoke(ctx context.Context, o Options, d Deps, rep *Reporter, say func(strin
 		case <-time.After(d.Poll):
 		}
 	}
+}
+
+// findAgent is the session with this id in the host's list, or nil.
+func findAgent(agents []wire.Agent, id wire.UUID) *wire.Agent {
+	var agent *wire.Agent
+	for i := range agents {
+		if agents[i].ID == id {
+			agent = &agents[i]
+		}
+	}
+	return agent
+}
+
+// smokeReplied says whether the transcript has an answer with words, and whether the session
+// called finish_turn.
+func smokeReplied(entries []wire.TranscriptEntry) (answered, finished bool) {
+	for _, e := range entries {
+		switch {
+		case e.Kind.AgentMessage != nil && strings.TrimSpace(e.Kind.AgentMessage.Text) != "":
+			answered = true
+		case e.Kind.ToolCall != nil:
+			c := e.Kind.ToolCall.Value
+			name := c.Title
+			if c.Name != nil {
+				name = *c.Name
+			}
+			if strings.HasSuffix(name, "finish_turn") {
+				finished = true
+			}
+		}
+	}
+	return answered, finished
+}
+
+// smokeAnswered is the done line of step 8.
+func smokeAnswered(first time.Duration, finished bool, model *string) string {
+	text := "Answered, first word after " + shortDuration(first)
+	if !finished {
+		text += " (it did not call finish_turn)"
+	}
+	if model != nil {
+		text += ", model " + *model
+	}
+	return text
 }
 
 func shortDuration(d time.Duration) string {
