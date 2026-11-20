@@ -489,50 +489,10 @@ func TestARealGoogleChrome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		p.stop()
-		<-p.done
-		if p.display == "" {
-			return
-		}
-		// Its Xvfb stops with it (#5227): the screen's socket goes.
-		socket := "/tmp/.X11-unix/X" + strings.TrimPrefix(p.display, ":")
-		for i := 0; i < 60; i++ {
-			if _, err := os.Stat(socket); err != nil {
-				return
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		t.Errorf("Xvfb %s still runs after Chrome stopped", p.display)
-	}()
+	defer stopAndCheckXvfb(t, p)
 	ctx := p.store.(cdpStore).ctx
-	// userAgentData is only in a secure context, which about:blank is not.
-	if _, err := chromedp.Run(ctx, chromedp.Navigate("https://example.com/")); err != nil {
-		t.Fatal(err)
-	}
-	says, err := chromedp.Run(ctx, chromedp.Evaluate[[]any](`[navigator.userAgentData.brands.map(b => b.brand).join(","), navigator.webdriver, navigator.userAgent, typeof PublicKeyCredential]`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("it says %v", says)
-	if cmd, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(p.pid)).Output(); err == nil {
-		t.Logf("it runs as %s", cmd)
-	}
-	if !strings.Contains(says[0].(string), "Google Chrome") || says[1] != false || strings.Contains(says[2].(string), "Headless") || says[3] != "undefined" {
-		t.Fatalf("not the Chrome it is, or WebAuthn on: %v", says)
-	}
-	where, err := chromedp.Run(ctx, chromedp.Evaluate[[]float64](`[window.screenX, window.screenY, window.outerWidth, screen.availLeft, screen.height]`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("the window is at %v", where)
-	if p.display != "" {
-		// A Linux machine with no display (#5227): an Xvfb screen of its own, which nobody sees.
-		t.Logf("it runs on the Xvfb screen %s", p.display)
-	} else if len(where) != 5 || where[0]+where[2]-where[3] > 1 && where[1] < where[4] {
-		// At most one point across shows, at the screen's left edge, or none below it.
-		t.Fatalf("the window is on the screen: %v", where)
-	}
+	checkItSaysGoogleChrome(t, ctx, p.pid)
+	checkTheWindowIsBelowTheScreen(t, ctx, p.display)
 	// Below the screen, macOS says the window is occluded. The page must still be visible
 	// and draw frames: a hidden page runs no requestAnimationFrame, so Playwright's clicks
 	// wait for ever and a sign-in page stops after its first step (#5230).
@@ -543,7 +503,82 @@ func TestARealGoogleChrome(t *testing.T) {
 	if len(drawn) != 2 || drawn[0] != "visible" || drawn[1] != true {
 		t.Fatalf("the page below the screen is not visible, or draws no frame: %v", drawn)
 	}
-	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(p.pid)).Output()
+	checkItHasNoTestFlags(t, p.pid)
+	checkTheScreencastPaints(t, ctx)
+	if url := os.Getenv("AGENTS_TEST_BOT_CHECK"); url != "" {
+		// One page that checks, opened once: what it says after the check.
+		if _, err := chromedp.Run(ctx, chromedp.Navigate(url)); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(15 * time.Second)
+		said, err := chromedp.Run(ctx, chromedp.Evaluate[[]any](`[document.title, location.href, document.body.innerText.slice(0, 300)]`))
+		t.Logf("%v (err %v)", said, err)
+	}
+}
+
+// stopAndCheckXvfb stops the browser and checks that its Xvfb stops with it (#5227): the
+// screen's socket goes.
+func stopAndCheckXvfb(t *testing.T, p *process) {
+	t.Helper()
+	p.stop()
+	<-p.done
+	if p.display == "" {
+		return
+	}
+	socket := "/tmp/.X11-unix/X" + strings.TrimPrefix(p.display, ":")
+	for i := 0; i < 60; i++ {
+		if _, err := os.Stat(socket); err != nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Errorf("Xvfb %s still runs after Chrome stopped", p.display)
+}
+
+// checkItSaysGoogleChrome checks that the browser says the Chrome it is, that it is not
+// driven as a webdriver, and that WebAuthn is off.
+func checkItSaysGoogleChrome(t *testing.T, ctx context.Context, pid int) {
+	t.Helper()
+	// userAgentData is only in a secure context, which about:blank is not.
+	if _, err := chromedp.Run(ctx, chromedp.Navigate("https://example.com/")); err != nil {
+		t.Fatal(err)
+	}
+	says, err := chromedp.Run(ctx, chromedp.Evaluate[[]any](`[navigator.userAgentData.brands.map(b => b.brand).join(","), navigator.webdriver, navigator.userAgent, typeof PublicKeyCredential]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("it says %v", says)
+	if cmd, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output(); err == nil {
+		t.Logf("it runs as %s", cmd)
+	}
+	if !strings.Contains(says[0].(string), "Google Chrome") || says[1] != false || strings.Contains(says[2].(string), "Headless") || says[3] != "undefined" {
+		t.Fatalf("not the Chrome it is, or WebAuthn on: %v", says)
+	}
+}
+
+// checkTheWindowIsBelowTheScreen checks that the window is below every screen, or on an
+// Xvfb screen of its own.
+func checkTheWindowIsBelowTheScreen(t *testing.T, ctx context.Context, display string) {
+	t.Helper()
+	where, err := chromedp.Run(ctx, chromedp.Evaluate[[]float64](`[window.screenX, window.screenY, window.outerWidth, screen.availLeft, screen.height]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("the window is at %v", where)
+	if display != "" {
+		// A Linux machine with no display (#5227): an Xvfb screen of its own, which nobody sees.
+		t.Logf("it runs on the Xvfb screen %s", display)
+	} else if len(where) != 5 || where[0]+where[2]-where[3] > 1 && where[1] < where[4] {
+		// At most one point across shows, at the screen's left edge, or none below it.
+		t.Fatalf("the window is on the screen: %v", where)
+	}
+}
+
+// checkItHasNoTestFlags checks the browser's command line: no test flags, and a covered
+// window's pages stay visible.
+func checkItHasNoTestFlags(t *testing.T, pid int) {
+	t.Helper()
+	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +590,12 @@ func TestARealGoogleChrome(t *testing.T) {
 	if !strings.Contains(string(out), "--disable-backgrounding-occluded-windows") {
 		t.Errorf("a covered window's pages would be hidden: %s", out)
 	}
-	// The chat tile's screencast (#4138) paints from below the screen while the page changes.
+}
+
+// checkTheScreencastPaints checks that the chat tile's screencast (#4138) paints from below
+// the screen while the page changes.
+func checkTheScreencastPaints(t *testing.T, ctx context.Context) {
+	t.Helper()
 	frames := chromedp.Events(ctx, page.ScreencastFrame)
 	var painted atomic.Int32
 	go func() {
@@ -577,15 +617,6 @@ func TestARealGoogleChrome(t *testing.T) {
 	t.Logf("the screencast painted %d frames in 3 s", painted.Load())
 	if painted.Load() < 10 {
 		t.Fatalf("the screencast painted %d frames in 3 s", painted.Load())
-	}
-	if url := os.Getenv("AGENTS_TEST_BOT_CHECK"); url != "" {
-		// One page that checks, opened once: what it says after the check.
-		if _, err := chromedp.Run(ctx, chromedp.Navigate(url)); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(15 * time.Second)
-		said, err := chromedp.Run(ctx, chromedp.Evaluate[[]any](`[document.title, location.href, document.body.innerText.slice(0, 300)]`))
-		t.Logf("%v (err %v)", said, err)
 	}
 }
 
