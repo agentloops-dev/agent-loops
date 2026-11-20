@@ -8,11 +8,7 @@ Tool pins for the first scan:
 
 - Periphery: pinned in `scripts/lint.sh` since #6336 (3.8.0)
 - `golang.org/x/tools/cmd/deadcode` v0.49.0
-- Knip 6.42.1
-
-The Web Knip entry points are `src/main.tsx`, `src/sandbox/proxy.ts` and `src/sw.ts` (the
-service worker), the JavaScript bundles declared in `Web/build.mjs`. Knip does not infer these API-based
-esbuild entries, so `Web/knip.json` names them. The analyzer configuration has no ignores.
+- Knip: pinned in `Web/package.json` since #6337 (6.45.1)
 
 ## Confirmed false positives
 
@@ -47,10 +43,10 @@ Added 2026-10-29 (`2026-10-29.md`, the first complete `GOOS=darwin -test` scan):
 
 ### Knip (Web)
 
-- Any export of `Web/src` that a `Web/test/*.test.mjs` file names: the tests bundle the
-  source with `test/load.mjs` and read exports by name, which Knip does not follow.
-  Knip lists them as unused exports. Not ignored in `knip.json` (it would hide real
-  findings); filter them when reading the output.
+- Since #6337, Knip is a gate on every PR (`scripts/lint.sh knip`, in `web:lint`), not this
+  review's: a web file, export or dependency kept on purpose is an entry in
+  `Web/knip.config.js`, with why. The old entry here (an export that a test names) is settled
+  there: the config reads a test's `load("src/…")` as an import (added 2026-11-19).
 
 ### Compatibility search
 

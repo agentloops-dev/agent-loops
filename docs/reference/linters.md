@@ -17,6 +17,7 @@ is what each target runs.
 | `go:lint` | deadcode (`golang.org/x/tools/cmd/deadcode`, whole program) | a function that no main package and no test reaches, in all Go code, and that `Go/.deadcode-allowed.txt` does not name; no baseline | `go` (Linux) |
 | `web:lint` | tsc, `Web/test/lint.mjs`, the licence list | an error | `go` (Linux) |
 | `web:lint` | Biome, the rules in `Web/biome.json` | an error or a warning | `go` (Linux) |
+| `web:lint` | Knip (`Web/knip.config.js`: the bundles of `Web/build.mjs`, the tests and the walks) | an unused file, export, type or dependency of the web app that `Web/knip.config.js` does not allow; no baseline | `go` (Linux) |
 | `repo-lint:lint` | shellcheck (`-S warning`, `.shellcheckrc`) | a finding | `go` (Linux) |
 | `repo-lint:lint` | `zsh -n` | a syntax error | `go` (Linux) |
 | `repo-lint:lint` | our text checks (`scripts/check-*.py` and the other self-tests) | a failure | `go` (Linux) |
@@ -90,8 +91,16 @@ of #6126 take them out.
   a dead function. One kept on purpose (reflection, `go:linkname`, a method that only something
   outside the program calls) is a line in `Go/.deadcode-allowed.txt`: its path, a colon, its
   name (`Func` or `Type.Method`) and why it stays. golangci-lint's `unused` still finds an
-  unexported name that its own package does not use. Web (Knip, #6337) is still the dead-code
-  review's, on its schedule.
+  unexported name that its own package does not use.
+- **Knip is a gate on all web code, with no baseline (#6337).** `scripts/lint.sh knip` runs
+  Knip at the version `Web/package.json` pins, from the workspace's packages, over `Web/`: from
+  the bundles that `Web/build.mjs` makes (`src/main.tsx`, `src/sandbox/proxy.ts`, `src/sw.ts`),
+  and from the tests and walks, whose `load("src/…")` it reads as an import. It fails on each
+  file, export, type and dependency that none of them reaches: an export that only a test reads
+  is live, as a Go function that only a test calls. An export that its own file uses is live
+  too; only its `export` word is spare. Remove a dead one. One kept on purpose (the generated
+  wire types, a package that the esbuild plugin reads by path, two names for one value) is an
+  entry in `Web/knip.config.js`, with why it stays.
 - **Periphery is a gate on all Swift code, with no baseline (#6336).** `scripts/lint.sh
   periphery` builds four indexes under `build/periphery` (the Mac app `AgentsHost`, the Remote for
   arm64 with its extensions, and AgentsKit and CodeText with their tests, through

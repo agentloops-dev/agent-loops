@@ -169,10 +169,6 @@ export function lensTitle(title: string, lens: ReportScope, name: string | undef
   }
 }
 
-/** A lens bar's button words for each lens kind. */
-export const lensKinds = ["me", "project", "org"] as const;
-export type LensKind = (typeof lensKinds)[number];
-
 /** The ways to add up, leaving out the lens's own dimension: no By ▸ Project in a project lens (#5279). */
 export function dimensionsFor(lens: ReportScope | undefined, all: readonly ReportDimension[] = dimensions): ReportDimension[] {
   return all.filter((d) => !(lens?.kind === "project" && d === "project"));

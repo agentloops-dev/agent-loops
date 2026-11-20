@@ -9,5 +9,5 @@ Two Nx projects with no code of their own (#5672): each has one `lint` target th
   macOS `swift-lint` job runs it.
 
 The other linters are their languages' targets: `go:lint` (golangci-lint, govulncheck, deadcode) and
-`web:lint` (tsc, `test/lint.mjs`, the licence list, Biome). `docs/reference/linters.md` says
+`web:lint` (tsc, `test/lint.mjs`, the licence list, Biome, Knip). `docs/reference/linters.md` says
 what each one fails on.
