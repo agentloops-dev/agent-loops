@@ -11,7 +11,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -50,7 +49,6 @@ func sendThereFolderStep(d *Daemon, s wire.MachineFolderSend, steps *[]string) (
 }
 
 func TestStartSessionSendsTheBranchFirst(t *testing.T) {
-	flaky.UnderLoad(t, "#6345")
 	t.Parallel()
 
 	d, c := start(t, t.TempDir())
