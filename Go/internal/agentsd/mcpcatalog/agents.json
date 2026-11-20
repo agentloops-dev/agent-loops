@@ -462,6 +462,8 @@
               "pr.closed",
               "pr.conflicted",
               "pr.blocked",
+              "pr.reviewed",
+              "pr.commented",
               "review.requested",
               "review.comment"
             ],

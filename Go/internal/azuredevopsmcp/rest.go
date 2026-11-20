@@ -1,7 +1,6 @@
 package azuredevopsmcp
 
 import (
-	"slices"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -407,6 +407,25 @@ func (p pullJSON) changesRequested() bool {
 	return slices.ContainsFunc(p.Reviewers, func(r reviewerJSON) bool { return r.Vote <= -5 })
 }
 
+// votes are its reviewers' answers (#6295): approved (10) or approved with suggestions (5) is
+// approved; waiting for author (-5) or rejected (-10) is changes_requested; no vote is none.
+func (p pullJSON) votes() []Vote {
+	var out []Vote
+	for _, r := range p.Reviewers {
+		state := ""
+		switch {
+		case r.Vote >= 5:
+			state = "approved"
+		case r.Vote <= -5:
+			state = "changes_requested"
+		default:
+			continue
+		}
+		out = append(out, Vote{Author: r.name(), State: state, Trusted: !isBot(r.identity)})
+	}
+	return out
+}
+
 // fork says whether its branch is in another repository.
 func (p pullJSON) fork() bool { return p.ForkSource != nil }
 
@@ -454,6 +473,11 @@ type threadCommentJSON struct {
 // onALine says whether a thread is on a line of the diff: a file and a line.
 func (t threadJSON) onALine() bool {
 	return !t.IsDeleted && t.ThreadContext != nil && t.ThreadContext.FilePath != "" && t.line() > 0
+}
+
+// onThePR says whether a thread is on the pull request itself, not on a file of its diff (#6295).
+func (t threadJSON) onThePR() bool {
+	return !t.IsDeleted && (t.ThreadContext == nil || t.ThreadContext.FilePath == "")
 }
 
 // line is the line a thread is on: the new file's, else the old file's.
@@ -617,16 +641,24 @@ func conflicts(p pullJSON) *bool {
 	return nil
 }
 
-func (f *RealAzureDevOps) OpenPRs(ctx context.Context, repo string) ([]OpenPR, error) {
+func (f *RealAzureDevOps) OpenPRs(ctx context.Context, repo string, checks bool) ([]OpenPR, error) {
 	list, err := f.openPulls(ctx, repo)
 	if err != nil {
 		return nil, err
 	}
+	var heads map[int]headState
+	if checks {
+		if heads, err = f.headStates(ctx, repo, list[:min(maxChecked, len(list))]); err != nil {
+			return nil, err
+		}
+	}
 	out := make([]OpenPR, 0, len(list))
 	for _, p := range list {
+		h := heads[p.ID]
 		out = append(out, OpenPR{PR: f.pr(repo, p), Author: p.CreatedBy.name(), Draft: p.IsDraft, Conflicts: conflicts(p),
 			HeadSHA: p.head(), Trusted: trustedPR(p),
-			SkipsBlocked: mcpevents.SkipsBlocked(p.IsDraft, p.personAsked()), ChangesRequested: p.changesRequested()})
+			SkipsBlocked: mcpevents.SkipsBlocked(p.IsDraft, p.personAsked()), ChangesRequested: p.changesRequested(),
+			FailedChecks: h.failed, ChecksRunning: h.running, Votes: p.votes()})
 	}
 	return out, nil
 }
@@ -734,6 +766,21 @@ func (f *RealAzureDevOps) builds(ctx context.Context, repo, since string) ([]bui
 		return nil, false, err
 	}
 	return list.Value, len(list.Value) == perPage, nil
+}
+
+// recentBuilds are the repository's newest builds, queued, running or finished, newest
+// first, one page: what pr.blocked reads of each head's builds (#6295).
+func (f *RealAzureDevOps) recentBuilds(ctx context.Context, repo string) ([]buildJSON, error) {
+	r, err := f.repository(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	q := url.Values{"repositoryId": {r.ID}, "repositoryType": {"TfsGit"}, "queryOrder": {"queueTimeDescending"}, "$top": {strconv.Itoa(perPage)}}
+	var list struct {
+		Value []buildJSON `json:"value"`
+	}
+	err = f.get(ctx, api(projectPath(repo)+"build/builds", q), true, &list)
+	return list.Value, err
 }
 
 // statuses are the statuses other services set on a pull request, every iteration's.
@@ -868,12 +915,13 @@ func newestStatuses(statuses []statusJSON) map[string]statusJSON {
 	return newest
 }
 
-// statusChecks are the newest statuses of each context of pull request p that passed or
-// failed at or after since, at its newest iteration, by context's name.
-func (f *RealAzureDevOps) statusChecks(ctx context.Context, repo string, p pullJSON, since string, listed Listed) ([]headCheck, Listed, error) {
+// headStatuses are the newest status of each context of pull request p, by context's name,
+// that keep takes and that are of its newest iteration (or of no iteration). keep sees every
+// newest status first, so only one it takes reads the iterations.
+func (f *RealAzureDevOps) headStatuses(ctx context.Context, repo string, p pullJSON, keep func(statusJSON) bool) ([]statusJSON, error) {
 	statuses, err := f.statuses(ctx, repo, p.ID, true)
 	if err != nil {
-		return nil, listed, err
+		return nil, err
 	}
 	newest := newestStatuses(statuses)
 	names := make([]string, 0, len(newest))
@@ -881,30 +929,105 @@ func (f *RealAzureDevOps) statusChecks(ctx context.Context, repo string, p pullJ
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	var out []headCheck
-	last := -1 // not read yet: only a status that would be raised reads it
+	var out []statusJSON
+	last := -1 // not read yet: only a status that keep takes reads it
 	for _, name := range names {
 		s := newest[name]
-		listed = listed.Saw(s.at())
-		passed, done := statusPassed(s.State)
-		if !done || mcpevents.Before(s.at(), since) {
+		if !keep(s) {
 			continue
 		}
 		// A status of an iteration is of that push's commit; one with none is of the pull request.
 		if s.IterationID != 0 {
 			if last < 0 {
 				if last, err = f.lastIteration(ctx, repo, p.ID); err != nil {
-					return nil, listed, err
+					return nil, err
 				}
 			}
 			if s.IterationID != last {
 				continue
 			}
 		}
-		out = append(out, headCheck{pr: p, at: mcpevents.Normalized(s.at()), check: Check{Name: name, URL: s.TargetURL},
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// statusChecks are the newest statuses of each context of pull request p that passed or
+// failed at or after since, at its newest iteration, by context's name.
+func (f *RealAzureDevOps) statusChecks(ctx context.Context, repo string, p pullJSON, since string, listed Listed) ([]headCheck, Listed, error) {
+	statuses, err := f.headStatuses(ctx, repo, p, func(s statusJSON) bool {
+		listed = listed.Saw(s.at())
+		_, done := statusPassed(s.State)
+		return done && !mcpevents.Before(s.at(), since)
+	})
+	if err != nil {
+		return nil, listed, err
+	}
+	out := make([]headCheck, 0, len(statuses))
+	for _, s := range statuses {
+		passed, _ := statusPassed(s.State)
+		out = append(out, headCheck{pr: p, at: mcpevents.Normalized(s.at()), check: Check{Name: s.name(), URL: s.TargetURL},
 			key: fmt.Sprintf("status:%d", s.ID), passed: passed})
 	}
 	return out, listed, nil
+}
+
+// headState is what pr.blocked reads of an active pull request's head (#6295): the checks
+// that failed there, and whether one still runs.
+type headState struct {
+	failed  []Check
+	running bool
+}
+
+// headStates are pulls' heads' states, by number: the newest build of each pipeline at its
+// head (queued or running is running; failed is a failed check) from the repository's newest
+// builds, and the newest status of each context at its newest iteration (pending is running;
+// failed or error is a failed check). Azure DevOps's API says which builds a branch policy
+// requires only per pull request, so every failed one counts, as checks.failed counts them.
+func (f *RealAzureDevOps) headStates(ctx context.Context, repo string, pulls []pullJSON) (map[int]headState, error) {
+	builds, err := f.recentBuilds(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int]headState{}
+	ix := indexPulls(pulls)
+	type pipeline struct{ pr, definition int }
+	seen := map[pipeline]bool{}
+	for _, b := range builds { // newest first: the first of a pipeline at a head is its state
+		for _, p := range ix.headsOf(b) {
+			k := pipeline{p.ID, b.Definition.ID}
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			h := out[p.ID]
+			if b.Status != "completed" {
+				h.running = true
+			} else if passed, done := buildPassed(b.Result); done && !passed {
+				h.failed = append(h.failed, Check{Name: b.Definition.Name, URL: b.Links.Web.Href})
+			}
+			out[p.ID] = h
+		}
+	}
+	for _, p := range pulls {
+		statuses, err := f.headStatuses(ctx, repo, p, func(s statusJSON) bool {
+			_, done := statusPassed(s.State)
+			return s.State == "pending" || done
+		})
+		if err != nil {
+			return nil, err
+		}
+		h := out[p.ID]
+		for _, s := range statuses {
+			if s.State == "pending" {
+				h.running = true
+			} else if passed, _ := statusPassed(s.State); !passed {
+				h.failed = append(h.failed, Check{Name: s.name(), URL: s.TargetURL})
+			}
+		}
+		out[p.ID] = h
+	}
+	return out, nil
 }
 
 // FailedChecks reads the builds and statuses that failed since at an active pull request's
@@ -1016,28 +1139,29 @@ func (f *RealAzureDevOps) threads(ctx context.Context, repo string, number int, 
 	return list.Value, err
 }
 
-// ReviewComments reads the threads of the maxChecked newest active pull requests and of those
+// eachComment calls fn for each comment, not a system's or deleted, made at or after since
+// in the threads that take takes, of the maxChecked newest active pull requests and of those
 // closed since: Azure DevOps has no list of a repository's comments, nor a pull request's
 // time of its last change.
-func (f *RealAzureDevOps) ReviewComments(ctx context.Context, repo, since string) ([]ReviewComment, Listed, error) {
+func (f *RealAzureDevOps) eachComment(ctx context.Context, repo, since string, takes func(threadJSON) bool,
+	fn func(p pullJSON, t threadJSON, c threadCommentJSON)) (Listed, error) {
 	pulls, err := f.openPulls(ctx, repo)
 	if err != nil {
-		return nil, Listed{}, err
+		return Listed{}, err
 	}
 	pulls = pulls[:min(maxChecked, len(pulls))]
 	closed, _, err := f.closedPulls(ctx, repo, since)
 	if err != nil {
-		return nil, Listed{}, err
+		return Listed{}, err
 	}
-	var out []ReviewComment
 	var listed Listed
 	for _, p := range append(pulls, closed...) {
 		threads, err := f.threads(ctx, repo, p.ID, true)
 		if err != nil {
-			return nil, Listed{}, err
+			return Listed{}, err
 		}
 		for _, t := range threads {
-			if !t.onALine() {
+			if !takes(t) {
 				continue
 			}
 			for _, c := range t.Comments {
@@ -1045,14 +1169,47 @@ func (f *RealAzureDevOps) ReviewComments(ctx context.Context, repo, since string
 					continue
 				}
 				listed = listed.Saw(c.PublishedDate)
-				if mcpevents.Before(c.PublishedDate, since) {
-					continue
+				if !mcpevents.Before(c.PublishedDate, since) {
+					fn(p, t, c)
 				}
-				out = append(out, ReviewComment{ID: c.ID, ThreadID: t.ID, At: c.PublishedDate, PR: f.pr(repo, p), Author: c.Author.name(),
-					Path: t.path(), Line: t.line(), Body: clip(c.Content), URL: fmt.Sprintf("%s?discussionId=%d", f.prURL(repo, p.ID), t.ID),
-					Trusted: !p.fork() && !isBot(c.Author)})
 			}
 		}
+	}
+	return listed, nil
+}
+
+// threadURL is a thread's page: its pull request's, opened at the thread.
+func (f *RealAzureDevOps) threadURL(repo string, p pullJSON, t threadJSON) string {
+	return fmt.Sprintf("%s?discussionId=%d", f.prURL(repo, p.ID), t.ID)
+}
+
+// ReviewComments reads the comments on lines of pull requests' diffs (eachComment).
+func (f *RealAzureDevOps) ReviewComments(ctx context.Context, repo, since string) ([]ReviewComment, Listed, error) {
+	var out []ReviewComment
+	listed, err := f.eachComment(ctx, repo, since, threadJSON.onALine, func(p pullJSON, t threadJSON, c threadCommentJSON) {
+		out = append(out, ReviewComment{ID: c.ID, ThreadID: t.ID, At: c.PublishedDate, PR: f.pr(repo, p), Author: c.Author.name(),
+			Path: t.path(), Line: t.line(), Body: clip(c.Content), URL: f.threadURL(repo, p, t),
+			Trusted: !p.fork() && !isBot(c.Author)})
+	})
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	return out, listed, nil
+}
+
+// PRComments reads the comments on pull requests themselves (eachComment, #6295): a thread on
+// no file. A comment with no words is not one.
+func (f *RealAzureDevOps) PRComments(ctx context.Context, repo, since string) ([]ReviewComment, Listed, error) {
+	var out []ReviewComment
+	listed, err := f.eachComment(ctx, repo, since, threadJSON.onThePR, func(p pullJSON, t threadJSON, c threadCommentJSON) {
+		if strings.TrimSpace(c.Content) == "" {
+			return
+		}
+		out = append(out, ReviewComment{ID: c.ID, ThreadID: t.ID, At: c.PublishedDate, PR: f.pr(repo, p), Author: c.Author.name(),
+			Body: clip(c.Content), URL: f.threadURL(repo, p, t), Trusted: !p.fork() && !isBot(c.Author)})
+	})
+	if err != nil {
+		return nil, Listed{}, err
 	}
 	return out, listed, nil
 }
