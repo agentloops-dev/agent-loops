@@ -237,6 +237,8 @@ export class MachineLock {
   private running: Promise<void> | null = null;
   private again = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** Counts the calls of show, so that only the latest one draws its cards (#5819). */
+  private shows = 0;
 
   /** The control plane's key from the key record, which names where the pins are kept. */
   private control: string | undefined;
@@ -624,6 +626,7 @@ export class MachineLock {
 
   /** The signer's cards from the rows: each one's view, the digits made from this browser's nonce. */
   private async show(): Promise<void> {
+    const turn = ++this.shows;
     const now = this.now();
     this.rows = this.rows.filter((r) => r.expires > now);
     const cards: SignerCard[] = [];
@@ -633,6 +636,9 @@ export class MachineLock {
       if (isCompared(request) && view.kind !== "notPromised" && !this.approveFailed.has(request.request)) continue;
       cards.push({ request, view });
     }
+    // A later show read newer rows; this one's views can be stale, as digits for a reveal
+    // that a newer row shows broke its promise (#5819).
+    if (turn !== this.shows) return;
     this.cards.value = cards;
     this.wake();
   }
