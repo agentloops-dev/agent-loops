@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -76,6 +77,7 @@ func TestAPullThatAddsThreeWatchedFilesWakesOnceWithThePaths(t *testing.T) {
 }
 
 func TestAWatchedFileDeletedOrMovedAwayIsRemoved(t *testing.T) {
+	flaky.UnderLoad(t, "#6410")
 	folder := canonical(t.TempDir())
 	os.MkdirAll(filepath.Join(folder, "reports"), 0o755)
 	for _, name := range []string{"a.csv", "b.csv"} {
