@@ -3976,8 +3976,6 @@ Go/internal/machinelock/recovery.go: G115: integer overflow conversion uint64 ->
 Go/internal/machinelock/recovery_test.go: G117: Marshaled struct field "Secret" (JSON key "secret") matches secret pattern (gosec)
 Go/internal/machinelock/recovery_test.go: G306: Expect WriteFile permissions to be 0600 or less (gosec)
 Go/internal/mcpevents/front.go: Error return value is not checked (errcheck)
-Go/internal/mcpevents/front.go: cognitive complexity of func `(*Front).Serve` is high (> 30) (gocognit)
-Go/internal/mcpevents/schema.go: cognitive complexity of func `(Schema).Check` is high (> 30) (gocognit)
 Go/internal/orgtoken/orgtoken.go: Error return value of `io.Copy` is not checked (errcheck)
 Go/internal/orgtoken/orgtoken.go: G101: Potential hardcoded credentials (gosec)
 Go/internal/orgtoken/orgtoken.go: G104: Errors unhandled (gosec)
