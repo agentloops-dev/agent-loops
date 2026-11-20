@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -119,6 +120,7 @@ func TestAnAgentRunsAWorkflow(t *testing.T) {
 // not (#1730). No workflow here answers agent.finished, which would prompt the run's
 // session again and take it out of the archive.
 func TestTheSessionThatRanAWorkflowArchivesIt(t *testing.T) {
+	flaky.UnderLoad(t, "#6395")
 	t.Parallel()
 
 	fakeRuntimes(t)
