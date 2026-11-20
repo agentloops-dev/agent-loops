@@ -113,22 +113,11 @@ func TestACastOfARealChromium(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next := func() Frame {
-		t.Helper()
-		select {
-		case f := <-frames:
-			cast.Ack(f.Ack)
-			return f
-		case <-time.After(10 * time.Second):
-			t.Fatal("no frame")
-		}
-		return Frame{}
-	}
 	page := `data:text/html,<input id=f style="position:absolute;left:0;top:0;width:300px;height:40px" autofocus>`
 	if err := cast.Navigate("go", page); err != nil {
 		t.Fatal(err)
 	}
-	f := next()
+	f := nextCastFrame(t, cast, frames)
 	if len(f.JPEG) < 100 || f.JPEG[0] != 0xFF || f.JPEG[1] != 0xD8 || f.Width != 640 || f.Height != 480 {
 		t.Fatalf("not a 640×480 JPEG: %d bytes, %v×%v", len(f.JPEG), f.Width, f.Height)
 	}
@@ -137,16 +126,62 @@ func TestACastOfARealChromium(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForTheField(t, ctx)
+	typeIntoTheField(t, cast)
+	if v := castFieldValue(t, ctx); v != "h there" {
+		t.Fatalf("%q", v)
+	}
+	editTheField(t, cast, ctx)
+	clickBesideTheField(t, cast)
+	followTheNewTab(t, cast, pages)
+	if err := cast.Navigate("back", ""); err != nil {
+		t.Fatal(err)
+	}
+	cast.Close()
+	checkTheTabsAreLeft(t, p.endpoint)
+}
+
+// nextCastFrame waits for the cast's next frame and acknowledges it.
+func nextCastFrame(t *testing.T, cast *Cast, frames <-chan Frame) Frame {
+	t.Helper()
+	select {
+	case f := <-frames:
+		cast.Ack(f.Ack)
+		return f
+	case <-time.After(10 * time.Second):
+		t.Fatal("no frame")
+	}
+	return Frame{}
+}
+
+// waitForTheField waits until the page is loaded and has its field.
+func waitForTheField(t *testing.T, ctx context.Context) {
+	t.Helper()
 	for i := 0; ; i++ {
 		ready, _ := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.readyState === "complete" && !!document.getElementById("f")`))
 		if ready {
-			break
+			return
 		}
 		if i == 100 {
 			t.Fatal("the page did not load")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// castFieldValue reads the value of the page's field.
+func castFieldValue(t *testing.T, ctx context.Context) string {
+	t.Helper()
+	v, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.getElementById("f").value`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// typeIntoTheField clicks into the field, types "hi", deletes the "i" and pastes " there".
+func typeIntoTheField(t *testing.T, cast *Cast) {
+	t.Helper()
 	for _, in := range []Input{
 		{Kind: "mouse", Type: "mousePressed", X: 20, Y: 20, Button: "left"},
 		{Kind: "mouse", Type: "mouseReleased", X: 20, Y: 20, Button: "left"},
@@ -168,18 +203,12 @@ func TestACastOfARealChromium(t *testing.T) {
 			t.Fatalf("%v: editing %v", in, editing)
 		}
 	}
-	value, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.getElementById("f").value`))
-	if err != nil || value != "h there" {
-		t.Fatalf("%q %v", value, err)
-	}
-	// ⌘A, ⌘C, ⌘X and ⌘Z act on the field, and a copy comes back for the Mac's clipboard (#5119).
-	field := func() string {
-		v, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.getElementById("f").value`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
+}
+
+// editTheField checks that ⌘A, ⌘C, ⌘X and ⌘Z act on the field, and that a copy comes
+// back for the Mac's clipboard (#5119). It leaves "h there" in the field.
+func editTheField(t *testing.T, cast *Cast, ctx context.Context) {
+	t.Helper()
 	for _, step := range []struct {
 		command, copied, value string
 	}{
@@ -197,7 +226,7 @@ func TestACastOfARealChromium(t *testing.T) {
 			copies && *said.Copied != step.copied {
 			t.Fatalf("%s: copied %v", step.command, said.Copied)
 		}
-		if v := field(); v != step.value {
+		if v := castFieldValue(t, ctx); v != step.value {
 			t.Fatalf("%s: the field says %q, not %q", step.command, v, step.value)
 		}
 	}
@@ -207,7 +236,12 @@ func TestACastOfARealChromium(t *testing.T) {
 	if _, err := cast.Input(Input{Kind: "text", Text: "h there"}); err != nil {
 		t.Fatal(err)
 	}
-	// A click beside the field takes the focus out of it: the keyboard goes.
+}
+
+// clickBesideTheField checks that a click beside the field takes the focus out of it: the
+// keyboard goes.
+func clickBesideTheField(t *testing.T, cast *Cast) {
+	t.Helper()
 	for _, kind := range []string{"mousePressed", "mouseReleased"} {
 		said, err := cast.Input(Input{Kind: "mouse", Type: kind, X: 400, Y: 300, Button: "left"})
 		if err != nil {
@@ -218,8 +252,12 @@ func TestACastOfARealChromium(t *testing.T) {
 			t.Fatalf("editing %v after a click outside the field", editing)
 		}
 	}
+}
 
-	// An agent's new tab is the one watched.
+// followTheNewTab checks that an agent's new tab is the one watched, and that its title
+// comes.
+func followTheNewTab(t *testing.T, cast *Cast, pages <-chan Page) {
+	t.Helper()
 	made, err := chromedp.CallBrowser(cast.root, target.CreateTarget, target.CreateTargetParams{URL: "data:text/html,<title>Second</title>"})
 	if err != nil {
 		t.Fatal(err)
@@ -246,13 +284,12 @@ func TestACastOfARealChromium(t *testing.T) {
 			t.Fatal("no page title")
 		}
 	}
-	if err := cast.Navigate("back", ""); err != nil {
-		t.Fatal(err)
-	}
-	cast.Close()
+}
 
-	// Watching leaves the tabs as they were.
-	alloc, cancelAlloc := remote.NewAllocator(context.Background(), p.endpoint, remote.NoModifyURL)
+// checkTheTabsAreLeft checks that watching left the tabs as they were.
+func checkTheTabsAreLeft(t *testing.T, endpoint string) {
+	t.Helper()
+	alloc, cancelAlloc := remote.NewAllocator(context.Background(), endpoint, remote.NoModifyURL)
 	defer cancelAlloc()
 	check, cancel := chromedp.NewContext(alloc)
 	defer cancel()
