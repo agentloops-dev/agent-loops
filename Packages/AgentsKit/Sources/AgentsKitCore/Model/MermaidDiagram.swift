@@ -286,7 +286,6 @@ struct MermaidFlowchart {
     enum Direction: String { case down = "TD", up = "BT", right = "LR", left = "RL" }
 
     struct Node {
-        var id: String
         var lines: [String]
         var shape: MermaidDiagram.Shape
     }
@@ -385,7 +384,7 @@ struct MermaidFlowchart {
             return known
         }
         index[read.id] = nodes.count
-        nodes.append(Node(id: read.id, lines: MermaidDiagram.textLines(read.text ?? read.id),
+        nodes.append(Node(lines: MermaidDiagram.textLines(read.text ?? read.id),
                           shape: read.shape ?? .rectangle))
         return nodes.count - 1
     }
@@ -757,7 +756,6 @@ struct MermaidScanner {
 
 struct MermaidSequence {
     struct Participant {
-        var id: String
         var lines: [String]
     }
 
@@ -815,7 +813,7 @@ struct MermaidSequence {
                     diagram.participants[known].lines = MermaidDiagram.textLines(shown)
                 } else {
                     diagram.index[id] = diagram.participants.count
-                    diagram.participants.append(Participant(id: id, lines: MermaidDiagram.textLines(shown)))
+                    diagram.participants.append(Participant(lines: MermaidDiagram.textLines(shown)))
                 }
                 continue
             }
@@ -861,7 +859,7 @@ struct MermaidSequence {
     private mutating func participant(_ id: String) -> Int {
         if let known = index[id] { return known }
         index[id] = participants.count
-        participants.append(Participant(id: id, lines: MermaidDiagram.textLines(id)))
+        participants.append(Participant(lines: MermaidDiagram.textLines(id)))
         return participants.count - 1
     }
 

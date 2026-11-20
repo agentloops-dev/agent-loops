@@ -19,8 +19,6 @@ public extension DaemonAPI.Method {
     /// (FR-020, FR-022). Both are idempotent by an id of their own (`sendID`, `requestID`),
     /// which the control plane fills in when the client left it out.
     static let keptMethods: Set<String> = [agentsPrompt, agentsStart]
-    /// `MachineStatus`, from a host on channel 0, whenever it changes (#691 US4).
-    static let hostStatus = "machine/status"
     /// `KeepRequest` → never a result: the `kept` error, or the host's refusal. For a client
     /// whose link to a host closes while the host is offline (the window's, the Remote's),
     /// so it can't send the request to the host itself.
@@ -64,19 +62,6 @@ public extension DaemonAPI {
         /// Not sent, and why (US3 AS4): the start failed, or the host refused it.
         public var failed: String?
 
-        public init(id: UUID, host: MachineRef, kind: String, agentID: UUID? = nil, text: String,
-                    folder: URL? = nil, runtimeID: String? = nil, at: Date, failed: String? = nil) {
-            self.id = id
-            self.host = host
-            self.kind = kind
-            self.agentID = agentID
-            self.text = text
-            self.folder = folder
-            self.runtimeID = runtimeID
-            self.at = at
-            self.failed = failed
-        }
-
         public var isStart: Bool { kind == "start" }
     }
 
@@ -108,7 +93,6 @@ public extension DaemonAPI {
 
     struct KeptList: Codable, Sendable, Hashable {
         public var kept: [KeptRequest]
-        public init(kept: [KeptRequest]) { self.kept = kept }
     }
 
     /// `machine/status` on channel 0 (#691 US4): whether the host is idle, and what is working
@@ -133,10 +117,6 @@ public extension DaemonAPI {
         public var at: Date?
         /// The workflow's name, as its page shows it.
         public var workflow: String?
-        public init(at: Date? = nil, workflow: String? = nil) {
-            self.at = at
-            self.workflow = workflow
-        }
     }
 
     /// `control/keptDelivered`.
@@ -145,10 +125,5 @@ public extension DaemonAPI {
         public var id: UUID
         /// For a start: the agent it made.
         public var agentID: UUID?
-        public init(host: MachineRef, id: UUID, agentID: UUID? = nil) {
-            self.host = host
-            self.id = id
-            self.agentID = agentID
-        }
     }
 }

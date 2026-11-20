@@ -111,7 +111,7 @@ Mac.
 | Store | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- |
 | `~/.agents/settings/` | Settings that follow you (see [The `~/.agents` folder](../../reference/agents-folder.md)) | A fixed shape | — |
-| `~/.agents/summaries/` | Daily summaries | The newest 3 | On write |
+| `~/.agents/summaries/` | Daily summaries saved before #5853: none is written now, and the app does not delete them | The newest 3 that were kept | — |
 | `~/.agents/checks/suggestions.json` | Daily-check findings | 50 findings, 200 dismissals | On write |
 | `~/.agents-secrets` | Secrets, connections and machine provider secrets (see [Security overview](security-overview.md#where-secrets-live)) | Until you remove them | — |
 | `~/.agents-secrets/sealed.json` | Every secret of yours on this machine, sealed to it (#4014, #4177), with Ask before use on or off | Until you remove them | — |

@@ -20,9 +20,6 @@ public extension DaemonAPI.Method {
     /// `LendGit`: whether `host` may use `from`'s git access for one git server (#1122).
     /// Any client's, after it asked the person; a no ends a waiting ask.
     static let hostsLendGit = "machines/lendGit"
-    /// `machines/detect` (#429): every server in the control plane's `~/.ssh/config` that
-    /// answers, added as `machines/install` would with no key. `[DetectedServer]`.
-    static let hostsDetect = "machines/detect"
     /// `machines/sshHosts` (#610): the hosts in the control plane's ssh config, as `ssh -G`
     /// resolves each, with no network. `{destination}` resolves just that, as typed.
     /// `[SSHHost]`.
@@ -53,8 +50,6 @@ public extension DaemonAPI.Method {
     static let controlPlaneMove = "control/planeMove"
     /// `PlaneMove.Report` → `Empty`: the window says how that move stands.
     static let controlPlaneMoveReport = "control/planeMoveReport"
-    /// A host, on its channel 0 (T091): a tunnel to the host that lends it a sign-in.
-    static let tunnelOpen = "tunnel/open"
     /// On the Mac's host (T091): start relaying a runtime's sign-in, and say what a server
     /// needs to use it. Never the token.
     static let relayGrant = "relay/grant"
@@ -62,16 +57,10 @@ public extension DaemonAPI.Method {
     /// `agentsd git-credential`, of its daemon on its socket only; then by that host of the
     /// control plane on its channel 0.
     static let gitCredential = "git/credential"
-    /// `GitCredentialRequest` → `GitCredential`: the control plane, on the lending host's
-    /// channel 0 (#1122), for a lend an operator allowed. Nothing else can ask it.
-    static let gitFill = "git/fill"
     static let clientsList = "clients/list"
     static let clientsStartPairing = "clients/startPairing"
     static let clientsStopPairing = "clients/stopPairing"
     static let clientsAnnounce = "clients/announce"
-    /// Retired with grants (#111): an older window that asks is told there is nothing to
-    /// set.
-    static let clientsSetGrant = "clients/setGrant"
     static let clientsForget = "clients/forget"
     /// A client forgets itself, and only itself (071 FR-015).
     static let clientsForgetSelf = "clients/forgetSelf"
@@ -89,10 +78,7 @@ public extension DaemonAPI.Method {
     static let clientsSetActivityToken = "clients/setActivityToken"
 
     // A host, on its channel 0.
-    static let hostsAnnounce = "machines/announce"
     static let hostHello = "machine/hello"
-    static let attentionNeed = "attention/need"
-    static let controlPing = "control/ping"
     /// To a host just added, on its channel 0 (#429), never answered: `FolderDetection`.
     /// Sent only by a control plane before #656; a host since says `folders/detected` with
     /// nothing added.
@@ -104,9 +90,6 @@ public extension DaemonAPI.Method {
 public extension DaemonAPI.Notification {
     static let controlHostChanged = "control/hostChanged"
     static let controlClientChanged = "control/clientChanged"
-    static let controlPairingChanged = "control/pairingChanged"
-    /// `WebRemoteStatus`: the web remote's listener started, or could not (071 R3).
-    static let controlWebChanged = "control/webChanged"
     /// `MachineJoinStatus`: this Mac's host's join changed, as it said it (#113).
     static let controlThisMacHostChanged = "control/thisMacHostChanged"
     static let controlInstallProgress = "control/installProgress"
@@ -238,7 +221,6 @@ public extension DaemonAPI {
         public static let off = "off"
         public static let portInUse = "portInUse"
         public static let build = "build"
-        public static let failed = "failed"
 
         public init(port: Int, served: Bool, reason: String? = nil, detail: String? = nil) {
             self.port = port
@@ -274,10 +256,6 @@ public extension DaemonAPI {
     struct RequiredCapabilities: Codable, Sendable, Hashable {
         public var host: [String]
         public var client: [String]
-        public init(host: [String], client: [String]) {
-            self.host = host
-            self.client = client
-        }
     }
 
     /// One step of a machine's set-up (#5357), as `MachineSetupStep` on the wire.
@@ -525,11 +503,6 @@ public extension DaemonAPI {
         public var up: Bool
         /// Why it is down, in ssh's words, when it said any.
         public var problem: String?
-
-        public init(up: Bool, problem: String? = nil) {
-            self.up = up
-            self.problem = problem
-        }
     }
 
     /// `control/tunnelChanged`: by name, since a server's tunnel is up before it joins.
@@ -537,21 +510,6 @@ public extension DaemonAPI {
         public var name: String
         public var host: MachineRef?
         public var tunnel: MachineTunnel
-
-        public init(name: String, host: MachineRef?, tunnel: MachineTunnel) {
-            self.name = name
-            self.host = host
-            self.tunnel = tunnel
-        }
-    }
-
-    /// `control/hostChanged`.
-    struct ControlHostChanged: Codable, Sendable, Hashable {
-        public var host: MachineRef
-        /// As in `ControlMachine.state`, or `removed`.
-        public var state: String
-        /// As in `ControlMachine.workspace`.
-        public var workspace: MachineWorkspace?
     }
 
     /// `machine/hello`, on every connect of an uplink.

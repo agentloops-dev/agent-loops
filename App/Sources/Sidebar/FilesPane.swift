@@ -89,13 +89,13 @@ struct FilesPane: View {
         .onChange(of: serverChanges) {
             folderEvents += 1
             changesRevision += 1
-            reloadListings(inBackground: true)
+            reloadListings()
             if let openFile = state.openFile { reloadFile(openFile) }
         }
         // The host is back on a new connection: whatever is open is read again, and a
         // folder that said it could not be read gets another go (#62).
         .onChange(of: server.reconnections) {
-            reloadListings(inBackground: true)
+            reloadListings()
             if let openFile = state.openFile { reloadFile(openFile) }
         }
         .onChange(of: model.entries.count) { refreshTouched() }
@@ -553,7 +553,7 @@ struct FilesPane: View {
             state.expanded.remove(key)
         } else {
             state.expanded.insert(key)
-            reloadListing(of: url, inBackground: reads.listings[key] != nil)
+            reloadListing(of: url)
         }
     }
 
@@ -566,9 +566,9 @@ struct FilesPane: View {
     fileprivate static func key(_ url: URL) -> String { FileTree.key(url) }
 
     /// Every folder on screen, read again.
-    private func reloadListings(inBackground: Bool = false) {
+    private func reloadListings() {
         for folder in reads.visibleFolders(root: root, expanded: state.expanded) {
-            reloadListing(of: folder, inBackground: inBackground)
+            reloadListing(of: folder)
         }
     }
 
@@ -581,11 +581,8 @@ struct FilesPane: View {
         reloadFile(url)
     }
 
-    /// Read a folder now, or — for a change the disk reported rather than one the
-    /// person made — on another thread, with the old listing kept up until the new
-    /// one is in hand. Opening a folder stays on this thread so it appears in the
-    /// same frame as the click.
-    private func reloadListing(of folder: URL, inBackground: Bool = false) {
+    /// Read a folder; the old listing stays up until the new one is in hand.
+    private func reloadListing(of folder: URL) {
         reads.read(folder, agentID: agent.id, files: server) { readUnread() }
     }
 

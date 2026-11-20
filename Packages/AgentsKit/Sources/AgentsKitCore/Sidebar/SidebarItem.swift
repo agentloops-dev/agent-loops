@@ -38,8 +38,8 @@ public enum SidebarItem: Hashable, Sendable {
     /// day and week. Core: the Remote has it under Status, after the Multiplier (#4758).
     case velocity
     /// One of Work's lists (#3119), a row each under the Work group (#4004): the issues and pull
-    /// requests from the forges, with lineage on top, the features, and the releases
-    /// lineage knows. An item's page keeps its list's row. The Remote has no Features row (#3269).
+    /// requests from the forges, with lineage on top, and the releases lineage knows. An
+    /// item's page keeps its list's row.
     case work(WorkList.Kind)
     /// The folders' docs and the docs connectors', each doc a page (#3321, spec 3319). Mac + web:
     /// the Remote has no row for it (#2796).
@@ -47,9 +47,6 @@ public enum SidebarItem: Hashable, Sendable {
     /// The messaging connectors' conversations, read only (#4344), from the Messages row below Work. Mac + web:
     /// the Remote has no row for it (#2796).
     case messages
-    /// The daily summary's page (#3721), from the Summary row at the top of the sidebar: the
-    /// newest saved page, the earlier ones in a picker, and the control. Core: every client.
-    case summary
     /// Every resource an agent can lease, and who holds and waits for each (036). The Remote's
     /// only: the Mac and the web page show a machine's resources on its page (#3629).
     case resources

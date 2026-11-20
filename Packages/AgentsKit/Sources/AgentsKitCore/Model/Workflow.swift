@@ -229,12 +229,6 @@ public struct Workflow: Codable, Hashable, Sendable, Identifiable {
     public var cooldownPart: String? {
         cooldown.map { "at most once every \(WorkflowCooldown.words($0))" }
     }
-
-    /// The next time a clock makes this fire, across all of its schedules.
-    public func nextDue(after date: Date, calendar: Calendar = .current) -> Date? {
-        guard problem == nil else { return nil }
-        return schedules.compactMap { $0.nextDue(after: date, calendar: calendar) }.min()
-    }
 }
 
 /// A workflow, plus what the app knows about it that its file cannot say.

@@ -35,22 +35,6 @@ extension DaemonAPI {
         /// person chose to keep it awake there (#992). False when not holding.
         public var onPower: Bool
 
-        public init(isHolding: Bool,
-                    agentsInFlight: Int,
-                    heldBackByBattery: Bool,
-                    batteryPercent: Int?,
-                    since: Date?,
-                    graceUntil: Date? = nil,
-                    onPower: Bool = false) {
-            self.isHolding = isHolding
-            self.agentsInFlight = agentsInFlight
-            self.heldBackByBattery = heldBackByBattery
-            self.batteryPercent = batteryPercent
-            self.since = since
-            self.graceUntil = graceUntil
-            self.onPower = onPower
-        }
-
         /// A daemon from before #992 sends no `onPower`: it never holds for the power.
         public init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -62,12 +46,6 @@ extension DaemonAPI {
             graceUntil = try c.decodeIfPresent(Date.self, forKey: .graceUntil)
             onPower = try c.decodeIfPresent(Bool.self, forKey: .onPower) ?? false
         }
-
-        /// Nothing held and nothing working. What a window shows before it has heard
-        /// anything, and what it goes back to.
-        public static let idle = WakeState(isHolding: false, agentsInFlight: 0,
-                                           heldBackByBattery: false,
-                                           batteryPercent: nil, since: nil)
 
         /// Whether there is anything at all to say. Nil `wakeState` and this being
         /// false are drawn the same way — as nothing (FR-015).

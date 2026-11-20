@@ -16,73 +16,6 @@ import Foundation
 /// is. What is not read: vendor `_meta` on updates, and the rest of the handshake's —
 /// Grok's `x.ai/hooks`, Claude's `goal`. Reading those is how one code path becomes three.
 public enum ACP {
-    public static let protocolVersion = 1
-
-    // MARK: Methods we call
-
-    public enum Method {
-        public static let initialize = "initialize"
-        public static let authenticate = "authenticate"
-        public static let logout = "logout"
-        public static let listProviders = "providers/list"
-        public static let setProvider = "providers/set"
-        public static let disableProvider = "providers/disable"
-        public static let newSession = "session/new"
-        public static let loadSession = "session/load"
-        public static let resumeSession = "session/resume"
-        public static let forkSession = "session/fork"
-        public static let deleteSession = "session/delete"
-        public static let prompt = "session/prompt"
-        public static let cancel = "session/cancel"
-        public static let close = "session/close"
-        public static let list = "session/list"
-        /// Confirmed by handshake against Copilot and the Claude adapter on
-        /// 2026-09-18. `session/setConfigOption` and `session/set_option` are both
-        /// method-not-found; this spelling is the one that exists.
-        public static let setConfigOption = "session/set_config_option"
-        /// The older way to set a mode or a model, for a runtime that advertises
-        /// `modes` and `models` but no `configOptions`.
-        /// `set_config_option` is used wherever the runtime offers it.
-        public static let setSessionMode = "session/set_mode"
-        public static let setSessionModel = "session/set_model"
-        /// Stop one background task without cancelling the turn (057). Claude and Codex
-        /// both answer it, once `asyncTasks` was advertised. `{stopped: false}` is an
-        /// answer, not an error: the task had already gone.
-        public static let stopAsyncTask = "_session/async_task/stop"
-        /// A vendor extension shared by the Claude adapter and codex-acp: words put into
-        /// the turn that is running rather than queued behind it. Advertised by
-        /// `initialize`'s root `_meta.steering.supported`, and only used where it is.
-        public static let steering = "_session/steering"
-        /// Grok's own: how much of the plan's included credit is used, and the period
-        /// it counts over. Not advertised; a runtime without it answers `-32601`.
-        public static let grokBilling = "_x.ai/billing"
-    }
-
-    /// Named so that "we chose not to" and "we forgot" stay different things. Each of
-    /// these is in the spec's Out of Scope section with the reason.
-    public enum UnusedMethod {
-        public static let mcpMessage = "mcp/message"
-        public static let cancelRequest = "$/cancel_request"
-        public static let nesPrefix = "nes/"
-        public static let documentPrefix = "document/did"
-    }
-
-    // MARK: Methods we answer
-
-    public enum ClientMethod {
-        public static let requestPermission = "session/request_permission"
-        public static let sessionUpdate = "session/update"
-        public static let readTextFile = "fs/read_text_file"
-        public static let writeTextFile = "fs/write_text_file"
-        public static let createTerminal = "terminal/create"
-        public static let terminalOutput = "terminal/output"
-        public static let releaseTerminal = "terminal/release"
-        public static let waitForTerminalExit = "terminal/wait_for_exit"
-        public static let killTerminal = "terminal/kill"
-        public static let createElicitation = "elicitation/create"
-        public static let completeElicitation = "elicitation/complete"
-    }
-
     // MARK: What we tell the agent we can do
 
     /// Advertising a capability is a promise, not a hint. Grok stops doing its own file
@@ -210,47 +143,6 @@ public enum ACP {
 
     // MARK: initialize
 
-    public struct InitializeResult: Decodable, Sendable {
-        public var protocolVersion: Int?
-        public var agentCapabilities: AgentCapabilities?
-        public var agentInfo: AgentInfo?
-        public var authMethods: [AuthMethod]?
-        /// Vendor extensions the agent advertises beside its capabilities, not in them.
-        public var _meta: JSONValue?
-
-        /// Whether the version the agent answered with is one we speak. An agent that
-        /// omits it is taken at its word, which is what every runtime here does.
-        public var speaksOurVersion: Bool { (protocolVersion ?? ACP.protocolVersion) == ACP.protocolVersion }
-
-        public var supportsResume: Bool { agentCapabilities?.sessionCapabilities?.resume != nil }
-        public var supportsLoad: Bool { agentCapabilities?.loadSession ?? false }
-        public var supportsList: Bool { agentCapabilities?.sessionCapabilities?.list != nil }
-        public var supportsFork: Bool { agentCapabilities?.sessionCapabilities?.fork != nil }
-        public var supportsDelete: Bool { agentCapabilities?.sessionCapabilities?.delete != nil }
-        public var supportsAdditionalDirectories: Bool {
-            agentCapabilities?.sessionCapabilities?.additionalDirectories != nil
-        }
-        public var supportsLogout: Bool { agentCapabilities?.auth?.logout != nil }
-        public var supportsProviders: Bool { agentCapabilities?.providers != nil }
-        /// The runtime pushes `_auth/status_update` whenever its account changes.
-        public var pushesAuthStatus: Bool { agentCapabilities?._meta?["authStatus"] != nil }
-        /// Whether words can be put into a running turn (`_session/steering`). Read off
-        /// what the agent said, never off which runtime it is.
-        public var supportsSteering: Bool { _meta?["steering"]?["supported"]?.boolValue ?? false }
-
-        public var accepts: PromptCapabilities { agentCapabilities?.promptCapabilities ?? PromptCapabilities() }
-    }
-
-    public struct AgentCapabilities: Decodable, Sendable {
-        public var loadSession: Bool?
-        public var promptCapabilities: PromptCapabilities?
-        public var mcpCapabilities: MCPCapabilities?
-        public var sessionCapabilities: SessionCapabilities?
-        public var auth: AgentAuthCapabilities?
-        public var providers: JSONValue?
-        public var _meta: JSONValue?
-    }
-
     /// The protocol's own rule: text and resource links are baseline, everything else
     /// is opted in to.
     public struct PromptCapabilities: Codable, Hashable, Sendable {
@@ -278,52 +170,11 @@ public enum ACP {
         }
     }
 
-    public struct MCPCapabilities: Decodable, Sendable {
-        public var http: Bool?
-        public var sse: Bool?
-    }
-
-    /// Each of these is `{}` when supported and absent when not, so presence is the
-    /// answer and the shape inside is reserved for later.
-    public struct SessionCapabilities: Decodable, Sendable {
-        public var list: JSONValue?
-        public var delete: JSONValue?
-        public var additionalDirectories: JSONValue?
-        public var fork: JSONValue?
-        public var resume: JSONValue?
-        public var close: JSONValue?
-    }
-
-    public struct AgentAuthCapabilities: Decodable, Sendable {
-        public var logout: JSONValue?
-    }
-
-    public struct AgentInfo: Decodable, Sendable {
-        public var name: String?
-        public var title: String?
-        public var version: String?
-    }
-
     public struct AuthMethod: Decodable, Hashable, Sendable {
         public var id: String
         public var name: String?
         public var description: String?
         public var _meta: JSONValue?
-
-        /// The same method with a terminal command that names the runtime's program by its
-        /// bare name pointed at `program`, the file the app actually started. OpenCode
-        /// names itself `opencode` (049 research R6), and an `opencode` looked up on the
-        /// person's PATH may be another program altogether (the name trap), so the sheet
-        /// hands over the app's own copy by its full path. Any other command is left alone.
-        public func naming(program: URL) -> AuthMethod {
-            guard case .object(var meta) = _meta, case .object(var auth) = meta["terminal-auth"],
-                  auth["command"]?.stringValue == program.lastPathComponent else { return self }
-            auth["command"] = .string(program.path)
-            meta["terminal-auth"] = .object(auth)
-            var method = self
-            method._meta = .object(meta)
-            return method
-        }
 
         /// Copilot puts the command that fixes it in `_meta.terminal-auth`, which is
         /// worth showing verbatim rather than inventing advice of our own.
@@ -376,71 +227,6 @@ public enum ACP {
 
     // MARK: session/new
 
-    public struct NewSessionResult: Decodable, Sendable {
-        public var sessionId: String
-        // `models` and `modes` also arrive from some runtimes. They are inconsistent
-        // between the three and the protocol is retiring them, so they are not decoded.
-        //
-        // `configOptions` is deliberately NOT decoded here. A shape we cannot read
-        // inside the options list must cost that option and never the session, and a
-        // field on a `Decodable` struct cannot fail softly. It is read separately from
-        // the raw value by `ConfigOption.list(in:)`.
-    }
-
-    public struct PromptResult: Decodable, Sendable {
-        public var stopReason: String?
-    }
-
-    /// What `_session/steering` did with the words. The Claude adapter answers
-    /// `promptRequired` when asked to and no turn is running; codex-acp does not know
-    /// that ask and starts a turn of its own instead, or answers `failed`.
-    public enum SteeringOutcome: String, Decodable, Sendable {
-        case injected, startedNewTurn, promptRequired, failed
-    }
-
-    public struct SteeringResult: Decodable, Sendable {
-        public var outcome: SteeringOutcome
-    }
-
-    public struct SessionListResult: Decodable, Sendable {
-        public var sessions: [SessionSummary]?
-        public var nextCursor: String?
-    }
-
-    public struct SessionSummary: Decodable, Sendable {
-        public var sessionId: String
-        public var cwd: String?
-        public var title: String?
-        public var updatedAt: Date?
-        public var additionalDirectories: [String]?
-
-        enum CodingKeys: String, CodingKey {
-            case sessionId, cwd, title, updatedAt, additionalDirectories
-        }
-
-        /// The runtimes send ISO 8601 with fractional seconds. A date we cannot read is
-        /// not worth failing a listing over.
-        public init(from decoder: any Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            sessionId = try c.decode(String.self, forKey: .sessionId)
-            cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
-            title = try c.decodeIfPresent(String.self, forKey: .title)
-            additionalDirectories = try c.decodeIfPresent([String].self, forKey: .additionalDirectories)
-            updatedAt = (try? c.decodeIfPresent(String.self, forKey: .updatedAt))
-                .flatMap { $0 }
-                .flatMap(ACP.timestamp(from:))
-        }
-    }
-
-    public struct ForkSessionResult: Decodable, Sendable {
-        public var sessionId: String
-    }
-
-    public struct ProvidersResult: Decodable, Sendable {
-        public var providers: [ProviderInfo]?
-        public var currentProviderId: String?
-    }
-
     public struct ProviderInfo: Decodable, Hashable, Sendable {
         public var id: String
         public var name: String?
@@ -449,15 +235,6 @@ public enum ACP {
         /// Mandatory: the runtime says it cannot be turned off, so `providers/disable`
         /// is never offered for it.
         public var required: Bool?
-
-        public init(id: String, name: String? = nil, protocol: String? = nil,
-                    configured: Bool? = nil, required: Bool? = nil) {
-            self.id = id
-            self.name = name
-            self.protocol = `protocol`
-            self.configured = configured
-            self.required = required
-        }
 
         private enum CodingKeys: String, CodingKey {
             case id, providerId, name, `protocol`, configured, required

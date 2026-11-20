@@ -96,7 +96,6 @@ struct AutoSettingsView: View {
 /// One field's table: a row for each runtime, a column for each value; each cell the
 /// runtime's own setting, its mark, and a menu of the runtime's own choices (FR-014–FR-016).
 private struct MappingTable: View {
-    @Environment(AppModel.self) private var model
     let field: AutoField
     let runtimeIDs: [String]
 

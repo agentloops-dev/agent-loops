@@ -3,7 +3,6 @@
 // list rules, apart from the views, so the tests read them.
 import type { CatalogApproval, CatalogKind, CatalogRequest, CatalogUseRow } from "../protocol/generated";
 
-export const catalogueTitle = "Catalogue";
 export const askTitle = "Ask for an MCP Server or Skill";
 export const askFoot = "An admin approves it for you or for a group of yours. Once a group has it approved, each of its members has it approved at once.";
 export const usageTitle = "Who Uses What";

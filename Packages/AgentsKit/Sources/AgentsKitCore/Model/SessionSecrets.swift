@@ -42,10 +42,6 @@ public struct SessionSecret: Codable, Sendable, Hashable, Identifiable {
 
 public struct SessionSecrets: Codable, Sendable, Hashable {
     public var secrets: [SessionSecret]
-
-    public init(secrets: [SessionSecret] = []) {
-        self.secrets = secrets
-    }
 }
 
 /// secrets/sessionSet's request: the value is one line.
@@ -97,11 +93,8 @@ public struct SessionSecretRemoveRequest: Codable, Sendable, Hashable {
 public enum SessionSecretWords {
     /// The card's checkbox, and the sheet's title.
     public static let toggle = "For this session only"
-    public static let header = "For One Session"
     public static let footer = "Only that session's agent can use one, and it is deleted when the session is archived. "
         + "It stays on this machine and is not sent to your other machines."
-    public static let none = "No secrets for one session."
-    public static let add = "Add for a Session…"
     public static let sheetTitle = "Add a Secret for a Session"
     public static let session = "Session"
     public static let noSessions = "No session to add one for."

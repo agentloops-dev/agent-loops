@@ -1,6 +1,6 @@
 // The words of the Changed files card at the end of a turn (#3437), as TurnChangesTests checks them in Swift
 // (Packages/AgentsKit/.../TurnChangesWords.swift).
-import type { ChangeState, TurnChanges, TurnUndo } from "../protocol/generated";
+import type { TurnChanges, TurnUndo } from "../protocol/generated";
 import { CallFailed } from "../wire/link";
 
 export const undoTitle = "Undo These Changes";
@@ -32,14 +32,6 @@ export function fileNames(changes: TurnChanges): string {
 
 export function moreWords(n: number): string {
   return `and ${n} more`;
-}
-
-export function stateMark(state: ChangeState): string {
-  return state === "added" || state === "untracked" ? "+" : state === "deleted" ? "−" : "✎";
-}
-
-export function stateWord(state: ChangeState): string {
-  return state === "added" || state === "untracked" ? "Added" : state === "deleted" ? "Deleted" : "Changed";
 }
 
 function names(paths: string[]): string {

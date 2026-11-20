@@ -45,8 +45,6 @@ extension RemoteModel {
     /// The open folder's standing arrangements.
     var workflows: [WorkflowSummary] { work.workflows(in: selectedFolder) }
 
-    var userWorkflows: [WorkflowSummary] { work.userWorkflows }
-
     /// What the sidebar has picked (#226), the Mac's one value for it: the first of what is
     /// open over the folder — a pinned page, a workflow, a chat — and what
     /// was opened from that is pushed over it in the detail. A folder chosen with nothing
@@ -122,7 +120,7 @@ extension RemoteModel {
                 openWorkflow = nil
                 openArchive = nil
                 openReview = id
-            case .resources, .events, .runtimes, .summary, .secretsStatus, .accountsStatus, .environmentStatus:
+            case .resources, .events, .runtimes, .secretsStatus, .accountsStatus, .environmentStatus:
                 openActivity = newValue
             case .work(let kind):
                 // The list's row: its list, or the place in it still open (#4004).
@@ -212,10 +210,6 @@ extension RemoteModel {
     }
 
     var selectedAgent: Agent? { work.agent(selection) }
-
-    var entries: [TranscriptEntry] { work.entries }
-
-    var transcriptItems: [TranscriptItem] { work.transcriptItems }
 
     /// What the reader will allow, as the Mac has it. The phone shows limits and does
     /// not set them; it can only let one agent go on past its own (033).

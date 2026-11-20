@@ -65,8 +65,12 @@ func (d *Daemon) sendFacts(r wire.SendFactsRequest) (wire.SendFacts, error) {
 	} else if out != "" {
 		f.Branches = strings.Split(out, "\n")
 	}
+	// "On no branch" only when git says so (#6341): a git that did not run to its end under
+	// load is not a detached HEAD, and a move or send then fails with git's words.
 	if cur, err := git(path, "symbolic-ref", "-q", "--short", "HEAD"); err == nil && cur != "" {
 		f.Current = &cur
+	} else if !gitAnswered(err) {
+		return f, err
 	}
 	if origin, err := git(path, "remote", "get-url", "origin"); err == nil && origin != "" {
 		f.Origin = &origin

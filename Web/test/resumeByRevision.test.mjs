@@ -97,7 +97,7 @@ test("the copy keeps the point, and a launch resumes from it", async () => {
   stopAgain();
 });
 
-test("a chat resumes from its host's end; a gap opens it whole", async () => {
+test("a chat resumes from the first entry it holds; a gap opens it whole", async () => {
   let written = 2;
   const link = hostLink({
     answer: () => all([agent("s")]),
@@ -118,7 +118,8 @@ test("a chat resumes from its host's end; a gap opens it whole", async () => {
   await store.reloadTranscript();
   const pages = link.asked.filter((a) => a.method === "agents/transcript");
   assert.equal(pages.length, 1);
-  assert.equal(pages[0].params.from, 2);
+  // The held page again, not only what came after its end: an entry can change in place (#6282).
+  assert.equal(pages[0].params.from, 0);
   assert.equal(link.asked.some((a) => a.method === "agents/turns"), false);
   assert.deepEqual(store.entries.value.map((e) => e.id), ["e0", "e1", "e2"]);
 
@@ -142,6 +143,30 @@ test("a chat opened at launch resumes from this device's copy", async () => {
   await store.openSession("mac", "s");
   assert.equal(store.transcriptSource.value, "host");
   assert.deepEqual(store.entries.value.map((e) => e.id), ["e0", "e1"]);
-  assert.equal(link.asked.find((a) => a.method === "agents/transcript").params.from, 1);
+  assert.equal(link.asked.find((a) => a.method === "agents/transcript").params.from, 0);
   stop();
+});
+
+test("a resume takes the newer text of an entry held, changed in place while away (#6282)", async () => {
+  let texts = ["Fix the build", "Looking"];
+  const link = hostLink({
+    answer: () => all([agent("s")]),
+    page: (asked) => {
+      const from = asked.from ?? 0;
+      return { firstIndex: from, total: texts.length,
+        entries: texts.slice(from).map((text, i) => ({ id: `e${from + i}`, at: 0, kind: { agentMessage: { text } } })) };
+    },
+  });
+  const store = new Store(link);
+  await store.load();
+  await store.openSession("mac", "s");
+  assert.deepEqual(store.entries.value.map((e) => e.kind.agentMessage.text), ["Fix the build", "Looking"]);
+
+  texts = ["Fix the build", "Looking at the build", "Done"];
+  link.asked.length = 0;
+  await store.reloadTranscript();
+  assert.equal(link.asked.some((a) => a.method === "agents/turns"), false);
+  assert.deepEqual(store.entries.value.map((e) => [e.id, e.kind.agentMessage.text]),
+    [["e0", "Fix the build"], ["e1", "Looking at the build"], ["e2", "Done"]]);
+  assert.equal(store.chatEnd(), 3);
 });

@@ -32,8 +32,6 @@ public final class FolderShelf {
 
     init() {}
 
-    var isEmpty: Bool { groups.isEmpty }
-
     /// Put in where its group's order says, or taken out, then the numbers again.
     func insert(_ agent: Agent, in group: AgentGroup) {
         var list = groups[group] ?? []

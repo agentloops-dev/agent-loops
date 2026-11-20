@@ -48,8 +48,6 @@ public extension DaemonAPI.Notification {
 }
 
 public extension DaemonAPI.Failure {
-    /// A pin call the app will not take. The message says why, and what would do.
-    static let pinRefused = -32061
 }
 
 public extension DaemonAPI {
@@ -181,17 +179,6 @@ public extension DaemonAPI {
         public var reviews: [ReviewPull]?
         /// What the read-only daily checks found in it (#3331), newest first. Nil from a host with none.
         public var suggestions: [CheckSuggestion]?
-
-        public init(folder: URL, pins: [PinView], sessions: [UUID] = [], workflows: [String] = [],
-                    views: [PinView] = [], reviews: [ReviewPull] = [], suggestions: [CheckSuggestion] = []) {
-            self.folder = folder
-            self.pins = pins
-            self.sessions = sessions.isEmpty ? nil : sessions
-            self.workflows = workflows.isEmpty ? nil : workflows
-            self.views = views.isEmpty ? nil : views
-            self.reviews = reviews.isEmpty ? nil : reviews
-            self.suggestions = suggestions.isEmpty ? nil : suggestions
-        }
     }
 
     /// A person's press on a pull request in For Review (#3464), by its page's address.
@@ -231,10 +218,5 @@ public extension DaemonAPI {
         public var folder: URL
         /// Folders, relative to the folder ("" for its top), where something changed.
         public var folders: [String]
-
-        public init(folder: URL, folders: [String]) {
-            self.folder = folder
-            self.folders = folders
-        }
     }
 }

@@ -28,6 +28,7 @@ func SignIn(ctx context.Context, o Options, d Deps, rep *Reporter, say func(stri
 	}
 	begun := time.Now()
 	last := ""
+	var said wire.MachineSetupState
 	for {
 		raw, err := d.Call(wire.CallRuntimesList.Name, wire.Empty{})
 		var all []wire.RuntimeStatus
@@ -61,20 +62,23 @@ func SignIn(ctx context.Context, o Options, d Deps, rep *Reporter, say func(stri
 			say("Sign in to runtimes: %s", line)
 			return nil
 		}
+		// The states go in order, also when an answer is slow (#6340): the first pass says
+		// running, needs-you comes only after running was said, and the step fails only
+		// after needs-you was said, so the person is told before it fails.
 		elapsed := time.Since(begun)
-		if elapsed > d.SignInWait {
+		if said == wire.MachineSetupStateNeedsYou && elapsed > d.SignInWait {
 			problem := fmt.Sprintf("%s not signed in after %s. Nobody used the sign-in.", strings.Join(waiting, ", "), d.SignInWait)
 			rep.Say(step, wire.MachineSetupStateFailed, "", problem)
 			say("%s: %s", step, problem)
 			return fmt.Errorf("%s: %s", step, problem)
 		}
 		state, line := wire.MachineSetupStateRunning, "Looking for keys in Secrets: "+strings.Join(waiting, ", ")
-		if elapsed > d.KeyWait {
+		if said != "" && elapsed > d.KeyWait {
 			state, line = wire.MachineSetupStateNeedsYou, "Waiting for you: "+strings.Join(waiting, ", ")
 		}
 		if line != last {
 			rep.Say(step, state, line, "")
-			last = line
+			last, said = line, state
 		}
 		select {
 		case <-ctx.Done():

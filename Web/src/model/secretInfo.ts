@@ -112,6 +112,3 @@ export function onlyMachine(rows: readonly Pick<UserSecretRow, "backedUp" | "wai
 export function onlyMachineLine(id: string, names: Record<string, string> = {}): string {
   return `Your secrets are only on ${names[id] ?? "one machine"}. Add a second machine to keep a copy.`;
 }
-
-/** Under each secret for one session: it is on this Mac only. */
-export const sessionNotBackedUp = "Only on this Mac. Not backed up. It is deleted when the session is archived.";

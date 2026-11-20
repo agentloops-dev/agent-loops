@@ -2053,6 +2053,62 @@
       ],
       "additionalProperties": false
     },
+    "ReportChanges": {
+      "type": "object",
+      "description": "reports/changes' answer (#6350): a page of at most 100 rows, by ref, each as reports/nodes gives it. nextPageCursor asks for the next page of the same change; absent on the last. cursor is on the last page only: send it as since next time. reset says the rows are every row of the kind, not only those that changed: the client replaces the figures it holds of the kind with the rows of all the pages. An empty last page with a cursor says nothing changed.",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ReportNode"
+          }
+        },
+        "nextPageCursor": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "reset": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "nodes",
+        "reset"
+      ],
+      "additionalProperties": false
+    },
+    "ReportChangesQuery": {
+      "type": "object",
+      "description": "reports/changes (#6350): the rows of one kind whose lineage figures changed since a cursor, for a client's local cache (#6348). kind, repo and scope are as reports/nodes'. since is the cursor of the last answer's last page, opaque; absent asks for every row (a reset). pageCursor is the last page's nextPageCursor. limit is 1 to 100, 100 when absent.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "issue, pr or release."
+        },
+        "repo": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/definitions/ReportScope",
+          "description": "Me or the organisation (#1804)."
+        },
+        "since": {
+          "type": "string"
+        },
+        "pageCursor": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
     "ReportCounts": {
       "type": "object",
       "description": "What a machine's agents did in an hour or a day (#2019, R2 to R6), counted from its own event log and its time ledger: never a conversation's words. Absent from a machine before #2019.",
@@ -3477,110 +3533,6 @@
         "node": { "$ref": "lineage.schema.json#/definitions/LineageNode" }
       },
       "required": ["node"],
-      "additionalProperties": false
-    },
-    "WorkFeature": {
-      "type": "object",
-      "description": "A feature in work/features (#4586): feature is it as forge/features says it. epics are its open epics, the newest first, each with where it is in its plan and its children. loose are its open issues that are not epics and have no parent (of the newest 500 open issues), the newest update first, as children are: when each started, and whether it waits for a person.",
-      "properties": {
-        "feature": {
-          "$ref": "forge.schema.json#/definitions/ForgeFeature"
-        },
-        "epics": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/WorkFeatureEpic"
-          }
-        },
-        "loose": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/WorkTimelineChild"
-          }
-        }
-      },
-      "required": [
-        "feature",
-        "epics",
-        "loose"
-      ],
-      "additionalProperties": false
-    },
-    "WorkFeatureEpic": {
-      "type": "object",
-      "description": "An open epic in work/features (#4586), from forge/plan and work/timeline. steps is the number of steps in its plan (ForgePlan.steps), and step the first of them with an open child, absent when none is open. blockedOutside are the open blockers outside the plan of that step's open children (an issue of another epic), each once. forecast is its open line's close as work/timeline forecasts it, on GitHub only; absent when there is too little history or nothing to forecast. children are its sub-issues in the plan's order (at most 100), each with its start, close and wait as in work/timeline; absent when its plan could not be read (errors says why).",
-      "properties": {
-        "item": {
-          "$ref": "forge.schema.json#/definitions/ForgeItem"
-        },
-        "step": {
-          "type": "integer"
-        },
-        "steps": {
-          "type": "integer"
-        },
-        "blockedOutside": {
-          "type": "array",
-          "items": {
-            "$ref": "lineage.schema.json#/definitions/LineageNode"
-          }
-        },
-        "forecast": {
-          "$ref": "#/definitions/WorkTimelineForecast"
-        },
-        "children": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/WorkTimelineChild"
-          }
-        }
-      },
-      "required": [
-        "item",
-        "steps"
-      ],
-      "additionalProperties": false
-    },
-    "WorkFeatures": {
-      "type": "object",
-      "description": "work/features (#4586, specs/4328-work-look/features-delivery.md): the Features page's one read. features are forge/features' features, by name, each with its open epics and its loose open issues, so an open feature's epics and children draw with no second read. approvals are as in forge/features. errors say a forge, a plan or a timeline that could not be read.",
-      "properties": {
-        "features": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/WorkFeature"
-          }
-        },
-        "approvals": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "errors": {
-          "type": "array",
-          "items": {
-            "$ref": "forge.schema.json#/definitions/ForgeListError"
-          }
-        }
-      },
-      "required": [
-        "features"
-      ],
-      "additionalProperties": false
-    },
-    "WorkFeaturesRequest": {
-      "type": "object",
-      "description": "work/features (#4586): the features of every folder on this machine, or of one folder's repo, as forge/features.",
-      "properties": {
-        "folder": {
-          "type": "string"
-        },
-        "board": {
-          "type": "string",
-          "description": "A board's url, from forge/boards (#3282): only the epics on that board."
-        }
-      },
       "additionalProperties": false
     },
     "WorkLeadSuggestion": {

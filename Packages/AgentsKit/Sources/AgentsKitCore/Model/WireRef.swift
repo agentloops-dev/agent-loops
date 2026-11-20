@@ -212,12 +212,6 @@ public struct WireRef: Codable, Sendable, Hashable, CustomStringConvertible {
         self = r
     }
 
-    /// A lineage ref's full form, or the ref as it is when `init(lineageKind:ref:topic:)`
-    /// does not know its form.
-    public static func lineage(kind: String, ref: String, topic: String = "") -> String {
-        WireRef(lineageKind: kind, ref: ref, topic: topic)?.description ?? ref
-    }
-
     /// The session id in a session's ref, in the full form (`agents:session:<topic>#<id>`)
     /// or the old form (`session:<id>`). Nil for a ref that names no session.
     public static func sessionID(fromRef ref: String) -> String? {
@@ -230,13 +224,6 @@ public struct WireRef: Codable, Sendable, Hashable, CustomStringConvertible {
     /// The ref of a session, as a query names it: the project is not known here, so the topic
     /// is empty. The daemon names the node as it keeps it; compare sessions by id.
     public static func sessionRef(id: String) -> String { "agents:session:#\(id)" }
-
-    /// A repository's ref in either form (`github:repo:#alexec/agents` or the old
-    /// `github:alexec/agents`). Nil for a text that names no repository.
-    public init?(repo: String) {
-        guard let r = WireRef(lineageKind: "repo", ref: repo), r.type == "repo" else { return nil }
-        self = r
-    }
 
     /// For a repository's ref: the old form, `<provider>:<id>` (`github:alexec/agents`,
     /// `linear:eng`), which the parts of the app that show a repository still read.

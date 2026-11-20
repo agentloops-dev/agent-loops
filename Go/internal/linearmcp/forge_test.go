@@ -196,3 +196,11 @@ func TestForgeItemPageLinksAndEvents(t *testing.T) {
 		t.Errorf("events: %+v", d.Events)
 	}
 }
+
+// #6349: a changed-since list is a filter on updatedAt.
+func TestSearchFilterOfUpdatedSince(t *testing.T) {
+	f := SearchFilterOf([]string{"ENG"}, SearchFilter{State: "all", UpdatedSince: "2026-11-19T10:00:00Z"})
+	if !reflect.DeepEqual(f["updatedAt"], map[string]any{"gte": "2026-11-19T10:00:00Z"}) || f["state"] != nil {
+		t.Fatalf("filter: %v", f)
+	}
+}

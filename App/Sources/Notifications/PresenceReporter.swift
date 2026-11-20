@@ -67,15 +67,6 @@ final class PresenceReporter {
         send(force: true)
     }
 
-    func stop() {
-        observers.forEach { NotificationCenter.default.removeObserver($0) }
-        observers = []
-        if let inputMonitor { NSEvent.removeMonitor(inputMonitor) }
-        inputMonitor = nil
-        sampler?.invalidate()
-        sampler = nil
-    }
-
     /// Which conversation is on screen now. Nil for a folder page, a workflow, or
     /// nothing.
     func watching(_ agentID: UUID?) {

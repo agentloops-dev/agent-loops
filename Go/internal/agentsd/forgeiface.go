@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -107,6 +108,9 @@ type forgeCaps struct {
 	// Priority and Hold: forge/priority and forge/hold set an issue's priority and on hold
 	// (#6091).
 	Priority, Hold bool
+	// SearchMost is how many items one query of the forge's list gives at most, however many
+	// pages: a read of more goes on in windows of updatedAt (forgesync.go, #6349). 0 for no limit.
+	SearchMost int
 	// Reasons say why an action is missing, by the action's name, in the words a person reads,
 	// as bitbucketNoAutoMerge says it now.
 	Reasons map[string]string
@@ -377,6 +381,31 @@ type forgeFilter struct {
 	Reviewer string
 	// Board is the project board the list is of, nil for none; each forge reads its own.
 	Board *forgeBoard
+	// UpdatedSince and UpdatedBefore bound the items by their updatedAt, at or after and at or
+	// before (#6349); zero for no bound. A forge narrows its read by them where its API can
+	// (GitHub both; GitLab, Jira and Linear since), and sinceBounded drops what is left over, so
+	// every forge keeps to them.
+	UpdatedSince, UpdatedBefore time.Time
+}
+
+// since and before are the bounds in RFC 3339, "" for none.
+func (f forgeFilter) since() string  { return rfc3339(f.UpdatedSince) }
+func (f forgeFilter) before() string { return rfc3339(f.UpdatedBefore) }
+
+func rfc3339(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+// sinceMinutes is UpdatedSince as minutes before now, rounded up and one more, for a tracker
+// whose dates are in the person's time zone (Jira); 0 for none.
+func (f forgeFilter) sinceMinutes() int {
+	if f.UpdatedSince.IsZero() {
+		return 0
+	}
+	return int(nowFunc().Sub(f.UpdatedSince).Minutes()) + 2
 }
 
 // forgeChild is a plan's new child (its title, labels and level), or an issue that is there to

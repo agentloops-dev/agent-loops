@@ -59,12 +59,6 @@ public extension DaemonAPI {
             public var leases: LeaseSnapshot
             public var hosted: HostedMCPSnapshot
             public var health: MCPHealthSnapshot
-
-            public init(leases: LeaseSnapshot, hosted: HostedMCPSnapshot, health: MCPHealthSnapshot) {
-                self.leases = leases
-                self.hosted = hosted
-                self.health = health
-            }
         }
 
         public init(folders: [FolderSummary], agents: [Agent], permissions: [PermissionRequest],

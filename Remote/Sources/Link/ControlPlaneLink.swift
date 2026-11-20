@@ -72,9 +72,6 @@ enum RemoteControl {
         return membership
     }
 
-    /// The control key this device trusts, which a sign-in's nonce is bound to (#995).
-    static var controlKey: Data? { membership?.controlKey }
-
     /// An older build kept the key in `control-client-key`, which went into backups
     /// (#1031). It goes, once, with the pairing made under it, so the device asks for a
     /// code again (v0.x, no migration); a moved device's pairing never used it.

@@ -19,7 +19,7 @@ import Foundation
 /// withdrawal — is pushed content-available so the app wakes and shows or removes a
 /// local notification itself. The silent half is best effort by Apple's design, which
 /// is why the foreground sweep exists.
-public struct CloudKitMailbox: Mailbox {
+public struct CloudKitMailbox {
     public static let containerID = "iCloud.com.alexecollins.agents"
     public static let zoneName = "mailbox"
     public static let recordType = "Item"
@@ -55,45 +55,6 @@ public struct CloudKitMailbox: Mailbox {
     /// The zone, made once. Safe to call again.
     public func prepare() async throws {
         _ = try await database.modifyRecordZones(saving: [CKRecordZone(zoneID: zone)], deleting: [])
-    }
-
-    public static func recordID(device: UUID, token: String, zone: CKRecordZone.ID) -> CKRecord.ID {
-        CKRecord.ID(recordName: "\(device.uuidString)/\(token)", zoneID: zone)
-    }
-
-    public func post(_ item: MailboxItem) async throws {
-        let id = Self.recordID(device: item.device, token: item.needID.token, zone: zone)
-        let record = CKRecord(recordType: Self.recordType, recordID: id)
-        record[Field.device] = item.device.uuidString
-        record[Field.needToken] = item.needID.token
-        record[Field.need] = String(decoding: try JSONEncoder().encode(item.needID), as: UTF8.self)
-        record[Field.envelope] = item.envelope.map { String(decoding: try! JSONEncoder().encode($0), as: UTF8.self) } ?? ""
-        record[Field.alert] = item.alert ? 1 : 0
-        record[Field.withdrawn] = item.envelope == nil ? 1 : 0
-        record[Field.postedAt] = item.postedAt
-        if let waiting = item.waiting {
-            record[Field.waiting] = waiting
-            record[Field.countedAt] = item.postedAt.timeIntervalSince1970
-        }
-        // All keys, so the record is replaced whole whatever it held.
-        _ = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
-    }
-
-    /// The device's count (#1163): one record under `countToken`, with no alert, so the
-    /// quiet subscription pushes it content-available and the app wakes to write it.
-    public func post(_ count: MailboxCount) async throws {
-        let id = Self.recordID(device: count.device, token: Self.countToken, zone: zone)
-        let record = CKRecord(recordType: Self.recordType, recordID: id)
-        record[Field.device] = count.device.uuidString
-        record[Field.needToken] = Self.countToken
-        record[Field.need] = ""
-        record[Field.envelope] = ""
-        record[Field.alert] = 0
-        record[Field.withdrawn] = 0
-        record[Field.postedAt] = count.countedAt
-        record[Field.waiting] = count.waiting
-        record[Field.countedAt] = count.countedAt.timeIntervalSince1970
-        _ = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
     }
 
     // MARK: The device's side

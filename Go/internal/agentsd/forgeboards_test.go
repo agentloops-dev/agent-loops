@@ -111,19 +111,6 @@ func TestABoardNarrowsWorkToItsForge(t *testing.T) {
 	if len(list.Items) != 0 || len(narrowed.Items) != 0 || len(after) != len(before) {
 		t.Fatalf("other board %+v, app's folder %+v, searches %q", list, narrowed, after[len(before):])
 	}
-
-	// Features: only the epics on the board.
-	gh.mu.Lock()
-	gh.epics = nil
-	gh.mu.Unlock()
-	before, _ = gh.asked()
-	c.call(t, 9, "forge/features", wire.ForgeFeaturesRequest{Board: &webBoard.URL})
-	searches, _ = gh.asked()
-	searches = searches[len(before):]
-	epics := slices.IndexFunc(searches, func(s string) bool { return strings.Contains(s, `label:"epic"`) })
-	if epics < 0 || !strings.Contains(searches[epics], "project:acme/7") {
-		t.Fatalf("features searches %q", searches)
-	}
 }
 
 // writeFolderProject puts folder in project id, as the Project picker writes it.

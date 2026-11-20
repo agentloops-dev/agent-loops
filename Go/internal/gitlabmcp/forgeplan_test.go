@@ -157,3 +157,14 @@ func TestParentsReadManyWorkItems(t *testing.T) {
 		t.Fatalf("asked: %v", asked)
 	}
 }
+
+// #6349: a changed-since list is GitLab's updated_after, in one call per project for every state.
+func TestListPathUpdatedAfter(t *testing.T) {
+	f := SearchFilter{State: "all", UpdatedAfter: "2026-11-19T10:00:00Z"}
+	if p := listPath("group/app", f, "all", "", 100); !strings.Contains(p, "updated_after=2026-11-19T10%3A00%3A00Z") {
+		t.Fatalf("path: %s", p)
+	}
+	if states := listStates(f); len(states) != 1 || states[0] != "all" {
+		t.Fatalf("states: %q", states)
+	}
+}

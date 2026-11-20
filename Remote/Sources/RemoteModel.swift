@@ -673,13 +673,9 @@ final class RemoteModel {
     /// own settings are Mac + web (#2923).
     var autoMappings = AutoMappings()
 
-    /// The daily summary's Off / Summary control and its time (#3351), from the Mac's host. Nil
+    /// The daily checks' Off / On control and how often (#3355, #5853), from the Mac's host. Nil
     /// until it has said, or from a host too old to know the method.
-    var dailySummarySettings: DailySummarySettings?
-
-    /// The daily summary's saved pages on the Mac's host, newest first (#3721): the Summary row
-    /// and page. Empty from a host too old to know `summaries/list`.
-    var summaryPages: [SummaryPage] = []
+    var dailyChecksSettings: DailyChecksSettings?
 
     /// Each runtime's sandbox default, read from the Mac, for "Use runtime default (Off)".
     var sandboxSettings = SandboxSettings()

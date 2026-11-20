@@ -191,9 +191,6 @@ export function anyLineageRef(ref: string): RefParts | undefined {
   return refFromLineage(kind, ref);
 }
 
-/** A node's ref, parsed, in either form. */
-export const nodeRef = (n: { kind: string; ref: string }): RefParts | undefined => refFromLineage(n.kind, n.ref) ?? anyLineageRef(n.ref);
-
 /** The session id of a session's ref: agents:session:<topic>#<id>, or session:<id> in the old form. */
 export function sessionIdOf(ref: string): string | undefined {
   const r = refFromLineage("session", ref);
@@ -203,12 +200,6 @@ export function sessionIdOf(ref: string): string | undefined {
 /** A session's ref as a client names it: it does not know the project, so the topic is empty; the
  * daemon names the node as it keeps it (#4800). */
 export const sessionRef = (id: string) => `agents:session:#${id}`;
-
-/** A repo's ref in either form: github:repo:#alexec/agents, or the old github:alexec/agents. */
-export function repoRefOf(repo: string): RefParts | undefined {
-  const r = refFromLineage("repo", repo);
-  return r && r.type === "repo" ? r : undefined;
-}
 
 /** The ref of the repo or tracker a ref is in: github:repo:#alexec/agents of github:issue:alexec/agents#12. */
 export function repoOfRef(r: RefParts): RefParts | undefined {

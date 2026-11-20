@@ -48,10 +48,6 @@ public final class FDTransport: LineTransport, @unchecked Sendable {
     /// See `LineSplitter.cut`.
     public let maximumLine: Int?
 
-    /// The longest line read from a runtime (#209). A tool result can be any size, and a
-    /// line is held whole, parsed, written to the transcript and sent to every window;
-    /// one past this is cut to a note instead.
-    public static let runtimeLineLimit = 16 << 20
     /// The longest line read from a daemon.sock client (#209): a prompt with its largest
     /// attachment (25 MB, base64) fits, as it does on the control plane's WebSocket.
     public static let clientLineLimit = 64 << 20

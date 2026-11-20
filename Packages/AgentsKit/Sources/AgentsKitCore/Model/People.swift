@@ -32,13 +32,6 @@ public extension DaemonAPI {
         public var role: UserRole
         public var localOwner: Bool?
 
-        public init(id: String, name: String, role: UserRole, localOwner: Bool? = nil) {
-            self.id = id
-            self.name = name
-            self.role = role
-            self.localOwner = localOwner
-        }
-
         public var isAdmin: Bool { role == .admin }
     }
 
@@ -156,13 +149,6 @@ public extension DaemonAPI {
         public var userName: String
         public var displayName: String?
         public var active: Bool
-
-        public init(provider: String, userName: String, displayName: String? = nil, active: Bool = true) {
-            self.provider = provider
-            self.userName = userName
-            self.displayName = displayName
-            self.active = active
-        }
     }
 
     /// Why a person is suspended (#1002, D13): by SCIM, a refused refresh, or an admin; with
@@ -172,24 +158,12 @@ public extension DaemonAPI {
         public var provider: String
         public var at: Date
         public var why: String?
-
-        public init(by: String, provider: String, at: Date, why: String? = nil) {
-            self.by = by
-            self.provider = provider
-            self.at = at
-            self.why = why
-        }
     }
 
     /// `people/list`: every user for an admin; for a member, only themselves.
     struct PeopleList: Codable, Sendable, Hashable {
         public var people: [PersonRow]
         public var admin: Bool
-
-        public init(people: [PersonRow], admin: Bool) {
-            self.people = people
-            self.admin = admin
-        }
     }
 
     /// `people/invite`: the new person's name and role.
@@ -232,11 +206,6 @@ public extension DaemonAPI {
     struct PersonRemovePreview: Codable, Sendable, Hashable {
         public var startedMachines: [StartedMachinePreview]
         public var registeredMachines: [PersonMachine]
-
-        public init(startedMachines: [StartedMachinePreview] = [], registeredMachines: [PersonMachine] = []) {
-            self.startedMachines = startedMachines
-            self.registeredMachines = registeredMachines
-        }
     }
 
     /// A started machine in `people/removePreview`. `unknown` says why it could not be asked.
@@ -361,19 +330,12 @@ public extension DaemonAPI {
     /// `machines/approveJoin`'s answer: the machine's new host.
     struct JoinApproved: Codable, Sendable, Hashable {
         public var host: MachineRef
-
-        public init(host: MachineRef) { self.host = host }
     }
 
     /// `control/joinDecided`: a request ended, approved or not, so every card for it goes.
     struct JoinDecided: Codable, Sendable, Hashable {
         public var request: String
         public var result: String
-
-        public init(request: String, result: String) {
-            self.request = request
-            self.result = result
-        }
     }
 }
 

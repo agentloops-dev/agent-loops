@@ -204,6 +204,12 @@ func nodeState(r wire.ReportNode) string {
 // issue with the PRs that fix it (also an issue only its PRs name), a PR on its own, and a
 // release with its PRs and the issues those PRs fix.
 func nodeRows(nodes []wire.LineageCostNode, kind string) []wire.ReportNode {
+	return nodeRowsTouched(nodes, kind, nil)
+}
+
+// nodeRowsTouched is nodeRows, only the rows with a part in touched when touched is not nil
+// (reports/changes, #6350): a row changes when any node it adds up changes.
+func nodeRowsTouched(nodes []wire.LineageCostNode, kind string, touched map[wire.LineageNode]bool) []wire.ReportNode {
 	ix := indexNodes(nodes, kind)
 	children := childrenOf(nodes)
 	issueParts := func(ref string) []wire.LineageCostNode {
@@ -225,13 +231,26 @@ func nodeRows(nodes []wire.LineageCostNode, kind string) []wire.ReportNode {
 		case lineage.KindRelease:
 			parts = releaseParts(ix.members[ref], ix.issues)
 		}
+		kids := children[ref]
+		var epic []wire.LineageCostNode
+		if kind == lineage.KindIssue && len(kids) > 0 {
+			epic = epicParts(ref, kids, issueParts)
+		}
+		if touched != nil && !touched[of] && !anyTouched(parts, touched) && !anyTouched(epic, touched) {
+			continue
+		}
 		row := nodeRow(of, ix.byNode, parts)
-		if kids := children[ref]; kind == lineage.KindIssue && len(kids) > 0 {
-			row.StartedAt, row.CycleTimeSeconds = cycleOf(epicParts(ref, kids, issueParts))
+		if epic != nil {
+			row.StartedAt, row.CycleTimeSeconds = cycleOf(epic)
 		}
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// anyTouched says one of parts is in touched.
+func anyTouched(parts []wire.LineageCostNode, touched map[wire.LineageNode]bool) bool {
+	return slices.ContainsFunc(parts, func(n wire.LineageCostNode) bool { return touched[n.Node] })
 }
 
 // nodeIndex is the nodes sent, looked up for nodeRows.

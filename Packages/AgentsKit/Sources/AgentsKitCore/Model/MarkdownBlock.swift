@@ -112,6 +112,13 @@ public enum MarkdownBlock: Hashable, Sendable {
         MarkdownCache.shared.blocks(for: markdown)
     }
 
+    /// A part of a text (`parts`): its words, and, for a part cut inside a table, the table's
+    /// header and delimiter rows, read before them so the part reads as a table too (#6299).
+    struct Part: Equatable {
+        var text: Substring
+        var head: String?
+    }
+
     /// A text cut where a block surely starts, into parts of about `size` characters or more
     /// that read as the whole does (P20261022-18): so a streamed reply that grows is read
     /// again at its last part, not from its start. One part, the whole, when it is short or
@@ -119,13 +126,22 @@ public enum MarkdownBlock: Hashable, Sendable {
     ///
     /// A cut is before a line at the left edge after a blank line, outside a fence, that
     /// starts no list item, quote or table row: a new block, whatever came before it.
-    static func parts(_ markdown: String, size: Int = 2_000) -> [Substring] {
+    ///
+    /// A long table has no blank line, so it is also cut before a row (#6299): a table at the
+    /// left edge after a blank line, whose rows each start with `|`. The part after the cut
+    /// gets the table's head, and `MarkdownCache` joins its rows to the table before it.
+    static func parts(_ markdown: String, size: Int = 2_000) -> [Part] {
         let utf8 = markdown.utf8
-        guard utf8.count > size * 2 else { return [markdown[...]] }
-        var parts: [Substring] = []
+        guard utf8.count > size * 2 else { return [Part(text: markdown[...])] }
+        var parts: [Part] = []
         var start = markdown.startIndex
+        var head: String?
         var fence: (mark: Character, count: Int)?
         var afterBlank = false
+        // The table this line is in: its head, and whether a row came after it.
+        var table: (head: String, rows: Bool)?
+        // The line before, when it could be a table's header row: at the left edge after a blank line.
+        var header: Substring?
         for (index, line) in markdown.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
             let indent = line.prefix(while: { $0 == " " }).count
             let body = line.dropFirst(indent)
@@ -137,19 +153,41 @@ public enum MarkdownBlock: Hashable, Sendable {
                 afterBlank = false
                 continue
             }
-            if indent <= 3, body.first == "<" || isReferenceDefinition(body) { return [markdown[...]] }
-            if index == 0, line.trimmingCharacters(in: .whitespaces) == "---" { return [markdown[...]] }
+            if indent <= 3, body.first == "<" || isReferenceDefinition(body) { return [Part(text: markdown[...])] }
+            if index == 0, line.trimmingCharacters(in: .whitespaces) == "---" { return [Part(text: markdown[...])] }
             let blank = line.allSatisfy(\.isWhitespace)
+            if let open = table {
+                if line.first == "|" {
+                    if open.rows, utf8.distance(from: start, to: line.startIndex) >= size {
+                        parts.append(Part(text: markdown[start..<line.startIndex], head: head))
+                        start = line.startIndex
+                        head = open.head
+                    }
+                    table = (open.head, true)
+                } else {
+                    table = nil
+                }
+            } else if let row = header, isDelimiterRow(line) {
+                table = ("\(row)\n\(line)\n", false)
+            }
+            header = afterBlank || index == 0 ? (line.first == "|" ? line : nil) : nil
             if !blank, afterBlank, indent == 0, startsABlock(body),
                utf8.distance(from: start, to: line.startIndex) >= size {
-                parts.append(markdown[start..<line.startIndex])
+                parts.append(Part(text: markdown[start..<line.startIndex], head: head))
                 start = line.startIndex
+                head = nil
             }
             if indent <= 3, let open = fenceMark(body) { fence = open }
             afterBlank = blank
         }
-        parts.append(markdown[start...])
+        parts.append(Part(text: markdown[start...], head: head))
         return parts
+    }
+
+    /// A table's delimiter row at the left edge, such as `| --- | :-: |`.
+    private static func isDelimiterRow(_ line: Substring) -> Bool {
+        line.contains("|") && line.contains("-")
+            && line.wholeMatch(of: /\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*/) != nil
     }
 
     /// A fence's mark and how many of it: three or more backticks or tildes.
@@ -467,18 +505,42 @@ public final class MarkdownCache: @unchecked Sendable {
         if parts.count == 1 {
             blocks = MarkdownBlock.parse(markdown)
             counted(key.length)
+        } else if let joined = joined(parts) {
+            blocks = joined
         } else {
-            // Each part read once and remembered, so a reply that grows reads its last part.
-            blocks = parts.flatMap { part -> [MarkdownBlock] in
-                let partKey = ("\u{1}" + part) as NSString
-                if let reading = readings.object(forKey: partKey) { return reading.blocks }
-                let read = MarkdownBlock.parse(String(part), frontMatter: false)
-                readings.setObject(Reading(read), forKey: partKey, cost: partKey.length)
-                counted(partKey.length - 1)
-                return read
-            }
+            // A table cut by rows that did not read as one table: read whole, as before the cut.
+            blocks = MarkdownBlock.parse(markdown)
+            counted(key.length)
         }
         readings.setObject(Reading(blocks), forKey: key, cost: key.length)
+        return blocks
+    }
+
+    /// The parts' readings, each read once and remembered, so a reply that grows reads its last
+    /// part; a part cut inside a table gives its rows to the table before it (#6299). Nil when
+    /// such a part does not read as the same table.
+    private func joined(_ parts: [MarkdownBlock.Part]) -> [MarkdownBlock]? {
+        var blocks: [MarkdownBlock] = []
+        for part in parts {
+            let source = (part.head ?? "") + part.text
+            let partKey = ("\u{1}" + source) as NSString
+            var read: [MarkdownBlock]
+            if let reading = readings.object(forKey: partKey) {
+                read = reading.blocks
+            } else {
+                read = MarkdownBlock.parse(source, frontMatter: false)
+                readings.setObject(Reading(read), forKey: partKey, cost: partKey.length)
+                counted(partKey.length - 1)
+            }
+            if part.head != nil {
+                guard case .table(let more)? = read.first, case .table(var table)? = blocks.last,
+                      table.header == more.header, table.columns == more.columns else { return nil }
+                table.rows += more.rows
+                blocks[blocks.count - 1] = .table(table)
+                read.removeFirst()
+            }
+            blocks += read
+        }
         return blocks
     }
 

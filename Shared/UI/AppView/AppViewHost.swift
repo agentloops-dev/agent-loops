@@ -518,7 +518,7 @@ final class AppViewHost {
             log("agents/open-diff: \(diff.files.count) file(s) drawn in the app's diff")
         case .updateContext(let id, let content, let structured):
             contextLine = AppViewBridge.contextPreface(viewTitle: title, content: content, structuredContent: structured)
-                .map { _ in Self.contextWords(content, structured) }
+                .map { _ in Self.contextWords(content) }
             relay(id, DaemonAPI.Method.viewsContext,
                   DaemonAPI.ViewContextRequest(agentID: actions.agentID, viewID: call.id, uri: call.resourceURI,
                                                content: content, structuredContent: structured),
@@ -575,7 +575,7 @@ final class AppViewHost {
         }
     }
 
-    private static func contextWords(_ content: JSONValue?, _ structured: JSONValue?) -> String {
+    private static func contextWords(_ content: JSONValue?) -> String {
         let text = (content?.arrayValue ?? []).compactMap { $0["text"]?.stringValue }.joined(separator: " ")
         return text.isEmpty ? "what the view last showed" : text
     }

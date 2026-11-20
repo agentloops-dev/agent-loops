@@ -8,7 +8,6 @@ public enum ConnectorSetupWords {
 
     public static let connectTitle = "Connect GitHub once: issues, pull requests and Actions."
     public static let connectNote = "Your connection, for every folder. You choose on github.com which repositories Agents can see."
-    public static let connectButton = "Connect GitHub\u{2026}"
 
     /// The sheet's list of what Agents will be able to do, from the App's permissions.
     public static let abilities = [
@@ -430,20 +429,6 @@ public enum ConnectorSetupWords {
         case 0: return nil
         case 1: return "Your \(names[0]) connection ended"
         default: return "Your \(names.dropLast().joined(separator: ", ")) and \(names.last!) connections ended"
-        }
-    }
-
-    /// A provider with no connection yet, on Connectors.
-    public static func notConnectedNote(_ p: DaemonAPI.ConnectionProvider) -> String {
-        switch p {
-        case .github: "Issues, pull requests and Actions in every folder."
-        case .linear: "Linear issues in every folder, and their events."
-        case .gitlab: "Merge requests, pipelines and issues on gitlab.com or your own GitLab."
-        case .email: Email.notConnectedNote
-        case .atlassian: Jira.notConnectedNote
-        case .forgejo: Forgejo.notConnectedNote
-        case .bitbucket: Bitbucket.notConnectedNote
-        case .azuredevops: AzureDevOps.notConnectedNote
         }
     }
 
