@@ -3874,8 +3874,6 @@ Go/internal/hostsetup/install_test.go: Error return value of `os.WriteFile` is n
 Go/internal/hostsetup/install_test.go: Error return value of `os.WriteFile` is not checked (errcheck)
 Go/internal/hostsetup/install_test.go: Error return value of `os.WriteFile` is not checked (errcheck)
 Go/internal/hostsetup/install_test.go: Error return value of `os.WriteFile` is not checked (errcheck)
-Go/internal/hostsetup/signin.go: cognitive complexity of func `SignIn` is high (> 30) (gocognit)
-Go/internal/hostsetup/smoke.go: cognitive complexity of func `Smoke` is high (> 30) (gocognit)
 Go/internal/hostsetup/smoke_test.go: ST1008: error should be returned as the last argument (staticcheck)
 Go/internal/jiramcp/forge.go: cognitive complexity of func `(restIssue).events` is high (> 30) (gocognit)
 Go/internal/jiramcp/rest_test.go: QF1001: could apply De Morgan's law (staticcheck)
