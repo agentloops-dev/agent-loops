@@ -309,12 +309,12 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 		return wire.ForgeList{Items: []wire.ForgeItem{}}, nil
 	}
 	filter := forgeFilter{PRs: prs, State: state, Label: deref(r.Label), Assignee: deref(r.Assignee), Query: deref(r.Query),
-		Feature: deref(r.Feature), Reviewer: reviewer, Board: board}
+		Feature: deref(r.Feature), Reviewer: reviewer, Board: board, Sort: deref(r.Sort)}
 	if r.UpdatedSince != nil {
 		filter.UpdatedSince = r.UpdatedSince.Time()
 	}
 	moved, scopeKeys := d.forgeListScopes(ctx, folders, prs, board, reviewer)
-	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit, r.UpdatedSince})
+	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit, r.UpdatedSince, r.Sort})
 	if a, ok := d.forgeCached(string(key)); ok && a.list != nil {
 		return *a.list, nil
 	}
@@ -322,7 +322,7 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 	pages := forgeListPages(ctx, moved, cursor, filter, limit)
 	var more bool
 	totals := listTotals(cursor, pages)
-	out.Items, cursor, more = mergeForgePages(pages, cursor, limit)
+	out.Items, cursor, more = mergeForgePagesBy(pages, cursor, limit, filter.Sort == forgeSortPriority)
 	cursor.Totals = totals
 	names := make([]string, len(moved))
 	for n, m := range moved {
@@ -507,12 +507,42 @@ func listTotal(forges []string, totals map[string]int) (int, bool) {
 // forge whose page was all kept and was its last is done, and a forge that failed is asked
 // again from where it was. more says some forge goes on.
 func mergeForgePages(pages []forgePage, from forgeCursor, limit int) ([]wire.ForgeItem, forgeCursor, bool) {
+	return mergeForgePagesBy(pages, from, limit, false)
+}
+
+// forgeSortPriority is a list request's sort in priority order (#6358).
+const forgeSortPriority = "priority"
+
+// forgeItemRank is an item's place in a list in priority order: high, medium, low, then none.
+func forgeItemRank(i wire.ForgeItem) int {
+	switch strings.ToLower(deref(i.Priority)) {
+	case "high":
+		return 0
+	case "medium":
+		return 1
+	case "low":
+		return 2
+	}
+	return 3
+}
+
+// mergeForgePagesBy is mergeForgePages, by priority first when byPriority (#6358): each forge's
+// page is in that order already, so the merge keeps it.
+func mergeForgePagesBy(pages []forgePage, from forgeCursor, limit int, byPriority bool) ([]wire.ForgeItem, forgeCursor, bool) {
 	items := []wire.ForgeItem{}
 	taken := make([]int, len(pages))
+	before := func(a, b wire.ForgeItem) bool {
+		if byPriority {
+			if ra, rb := forgeItemRank(a), forgeItemRank(b); ra != rb {
+				return ra < rb
+			}
+		}
+		return a.UpdatedAt > b.UpdatedAt
+	}
 	for len(items) < limit {
 		best := -1
 		for n, p := range pages {
-			if taken[n] < len(p.items) && (best < 0 || p.items[taken[n]].UpdatedAt > pages[best].items[taken[best]].UpdatedAt) {
+			if taken[n] < len(p.items) && (best < 0 || before(p.items[taken[n]], pages[best].items[taken[best]])) {
 				best = n
 			}
 		}

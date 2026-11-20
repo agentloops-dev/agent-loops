@@ -366,6 +366,7 @@ private struct WorkListPane: View {
                     .tag(row.id)
                 }
                 footer(shown: shown.count)
+                if list.queryPoC { cacheLine }
                 if !kind.fromForge {
                     Text(WorkList.lineageOnlyNote).appText(.fine).foregroundStyle(.tertiary).selectionDisabled()
                 }
@@ -443,6 +444,23 @@ private struct WorkListPane: View {
             guard list.hasMore, !list.loadingMore, list.pageProblem == nil else { return }
             await list.loadMore(model: model)
         }
+    }
+
+    /// The query cache proof of concept (#6358): a read on its way, else the age of the answer on screen.
+    private var cacheLine: some View {
+        HStack(spacing: 6) {
+            if list.cacheReading {
+                ProgressView().controlSize(.small)
+                Text("Updating…")
+            } else if let at = list.cacheRead {
+                LastUpdateText(read: at)
+            }
+        }
+        .appText(.fine)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity)
+        .listRowSeparator(.hidden)
+        .selectionDisabled()
     }
 
     /// The forge's count of the list (#4396), where it gives one and the list shows all it counts.

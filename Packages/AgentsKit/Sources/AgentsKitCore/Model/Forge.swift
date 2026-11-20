@@ -141,10 +141,13 @@ public extension DaemonAPI {
         public var board: String?
         /// Only the items that changed at or after it (#6349); an earlier daemon lists every item.
         public var updatedSince: Date?
+        /// The order (#6358): `priority` (High, then Medium, then Low, then none, each newest first), else the last
+        /// updated first; an earlier daemon lists the last updated first.
+        public var sort: String?
 
         public init(folder: String? = nil, state: String? = nil, label: String? = nil, assignee: String? = nil,
                     query: String? = nil, cursor: String? = nil, limit: Int? = nil, feature: String? = nil,
-                    board: String? = nil, updatedSince: Date? = nil) {
+                    board: String? = nil, updatedSince: Date? = nil, sort: String? = nil) {
             self.folder = folder
             self.state = state
             self.label = label
@@ -155,6 +158,7 @@ public extension DaemonAPI {
             self.feature = feature
             self.board = board
             self.updatedSince = updatedSince
+            self.sort = sort
         }
     }
 

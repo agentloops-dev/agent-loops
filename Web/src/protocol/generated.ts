@@ -6065,6 +6065,11 @@ export interface ForgeListRequest {
   feature?: string;
   board?: string;
   updatedSince?: WireDate;
+  /**
+   * The order (#6358): priority (High, then Medium, then Low, then none, each newest first; a page
+   * that ends a priority is short), else the last updated first.
+   */
+  sort?: "updated" | "priority";
 }
 
 /** forge/log (#3130): the last lines of each failed check's log, as plain text. */
@@ -18302,7 +18307,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
   ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "limit", "pages"] },
   ForgeListError: { required: ["forge", "message"], optional: [] },
-  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board", "updatedSince"] },
+  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board", "updatedSince", "sort"] },
   ForgeLog: { required: ["text"], optional: [] },
   ForgeLogRequest: { required: ["node"], optional: ["check"] },
   ForgeLogins: { required: [], optional: ["github", "gitlab", "linear", "jira", "forgejo", "bitbucket", "azureDevOps"] },

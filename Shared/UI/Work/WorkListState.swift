@@ -69,9 +69,14 @@ final class WorkListState {
         var asked: Int
         var board: String
         var source: String
+        /// The PoC's query beyond these (#6358): the label, assignee and sort the forge is asked for; empty otherwise.
+        var query = ""
     }
 
-    var ask: Ask { Ask(state: filter.state.forge, sort: nodesSort, asked: asked, board: filter.board, source: source) }
+    var ask: Ask {
+        Ask(state: filter.state.forge, sort: nodesSort, asked: asked, board: filter.board, source: source,
+            query: queryPoC ? cacheQuery : "")
+    }
 
     /// A read for what is asked now is on its way: another would read the same again.
     var readingAsk: Bool { reading && read == ask }
@@ -109,6 +114,19 @@ final class WorkListState {
     /// An issue's or a PR's lineage is joined by ref, in any order; a release's list is lineage's own.
     private var nodesSort: DaemonAPI.ReportNodesSort { !kind.fromForge && sort == .cost ? .cost : .newest }
 
+    /// The PoC's rows (#6358): each machine's items in the server's order, once each by ref, with their figures.
+    private var serverOrdered: [WorkList.Row] {
+        let byRef = Dictionary(lineage.map { ($0.node.ref, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        var rows: [WorkList.Row] = []
+        for (host, list) in lists ?? [] {
+            for item in list.items where seen.insert(item.node.ref).inserted {
+                rows.append(WorkList.Row(item, on: host, lineage: byRef[item.node.ref]))
+            }
+        }
+        return rows
+    }
+
     var all: [WorkList.Row] {
         kind.fromForge ? WorkList.merge((lists ?? []).map { (host: $0.host, items: $0.list.items) }, lineage: lineage)
             : lineage.map(WorkList.Row.init)
@@ -119,6 +137,8 @@ final class WorkListState {
         var f = filter
         // Releases have no state in v1.
         if !kind.fromForge { f.state = .all }
+        // The PoC sorts nothing here (#6358): the order is the server's; the words still narrow the rows.
+        if queryPoC { return WorkList.filter(serverOrdered, f, projects: projectRepos) }
         return WorkList.sort(WorkList.filter(all, f, projects: projectRepos), by: sort)
     }
 
@@ -165,6 +185,10 @@ final class WorkListState {
     /// screen stay until the new ones come (#4930); a list not read yet this run draws this
     /// device's copy first, and the machines' answer replaces it.
     func load(model: any WorkModel) async {
+        if queryPoC, let cache = WorkCache.shared {
+            await loadQuery(cache, model: model)
+            return
+        }
         let mine = ask
         guard read != mine || lists == nil else { return }
         read = mine
@@ -253,6 +277,136 @@ final class WorkListState {
         }
     }
 
+    // MARK: The query cache proof of concept (#6358, epic #6348)
+
+    /// The PoC is on for issues and pull requests (the default WorkLocalCachePoC).
+    var queryPoC: Bool { kind.fromForge && WorkCache.enabled }
+    /// A read of the list's query runs, for the footer.
+    var cacheReading = false
+    /// When the answer on screen was read, for "Last update".
+    var cacheRead: Date?
+
+    /// The forge's order for the list's sort: priority, else the last updated first. The other sorts are not the
+    /// server's yet, so they show the last updated first.
+    private var forgeSort: String { sort == .priority ? "priority" : "updated" }
+
+    /// What a list's answer is kept under: everything the forge is asked.
+    private var cacheQuery: String {
+        [kind.rawValue, filter.state.forge, filter.board, filter.label, filter.assignee, forgeSort].joined(separator: "|")
+    }
+
+    private func forgeRequest(cursor: String?) -> DaemonAPI.ForgeListRequest {
+        .init(state: filter.state.forge, label: filter.label.isEmpty ? nil : filter.label,
+              assignee: filter.assignee.isEmpty ? nil : filter.assignee, cursor: cursor, limit: 100,
+              board: filter.board.isEmpty ? nil : filter.board, sort: forgeSort)
+    }
+
+    /// Draws the kept answer to the list's query at once, with no call, then asks the query's first page again (one
+    /// request a machine) and keeps that answer. When no machine answers, the kept answer stays, with what failed.
+    private func loadQuery(_ cache: WorkCache, model: any WorkModel) async {
+        let mine = ask
+        read = mine
+        problem = nil
+        pageProblem = nil
+        let query = cacheQuery
+        let start = Date()
+        if let kept = await cache.answer(query, kind: kind), ask == mine {
+            lists = kept.lists
+            cacheRead = kept.read
+            shownFor = copyAsk
+            WorkCache.note("work cache: drew \(query) from the kept answer: \(kept.lists.reduce(0) { $0 + $1.list.items.count }) ids, \(Int(Date().timeIntervalSince(start) * 1000)) ms, 0 forge calls")
+        } else if ask == mine {
+            lists = nil
+            cacheRead = nil
+        }
+        cacheReading = true
+        reading = true
+        defer {
+            if ask == mine {
+                cacheReading = false
+                reading = false
+            }
+        }
+        let hosts = model.workMachines(board: filter.board).map(\.id)
+        guard !hosts.isEmpty else { return }
+        let asked = Date()
+        let got = await askEach(hosts, cursors: hosts.map { _ in nil }, model: model)
+        guard ask == mine else { return }
+        let took = Int(Date().timeIntervalSince(asked) * 1000)
+        let failed = got.allSatisfy { $0.list.items.isEmpty && !($0.list.errors ?? []).isEmpty }
+        if failed, let had = lists, had.contains(where: { !$0.list.items.isEmpty }) {
+            let said = got.flatMap { $0.list.errors ?? [] }
+            lists = had.enumerated().map { i, entry in
+                var list = entry.list
+                list.errors = i == 0 ? said : nil
+                return (entry.host, list)
+            }
+            keptRead = cacheRead
+            WorkCache.note("work cache: asked \(query) again: failed in \(took) ms; the kept answer stays")
+            return
+        }
+        let now = Date()
+        if !failed { await cache.keep(query, kind: kind, lists: got, read: now) }
+        lists = got
+        cacheRead = now
+        keptRead = nil
+        shownFor = copyAsk
+        WorkCache.note("work cache: asked \(query): \(got.count) request(s), \(got.reduce(0) { $0 + $1.list.items.count }) items\(got.compactMap(\.list.total).max().map { " of \($0)" } ?? ""), \(took) ms")
+        if let known = try? await readLineage(model), ask == mine {
+            lineage = known.nodes
+            lineageCursor = known.cursor
+        }
+    }
+
+    /// The next page of each machine that has one (one request each), added to the answer on screen and kept.
+    private func loadNextPage(_ cache: WorkCache, model: any WorkModel) async {
+        guard let had = lists, had.contains(where: { $0.list.cursor != nil }), !loadingMore else { return }
+        let mine = ask
+        let query = cacheQuery
+        loadingMore = true
+        pageProblem = nil
+        defer { loadingMore = false }
+        let asked = Date()
+        let got = await askEach(had.map(\.host), cursors: had.map(\.list.cursor), model: model)
+        guard ask == mine else { return }
+        var next = had
+        var said: [String] = []
+        for (i, entry) in got.enumerated() where had[i].list.cursor != nil {
+            if let errors = entry.list.errors, !errors.isEmpty, entry.list.items.isEmpty {
+                said += errors.map(\.message)
+                continue
+            }
+            next[i].list.items += entry.list.items
+            next[i].list.cursor = entry.list.cursor
+        }
+        pageProblem = said.isEmpty ? nil : said.joined(separator: "\n")
+        lists = next
+        await cache.keep(query, kind: kind, lists: next, read: cacheRead ?? Date())
+        WorkCache.note("work cache: next page of \(query): \(got.count) machine(s), \(got.reduce(0) { $0 + $1.list.items.count }) items, \(Int(Date().timeIntervalSince(asked) * 1000)) ms")
+    }
+
+    /// The list's query on each machine, at its cursor (nil for the first page; a machine with no next page is not
+    /// asked): one forge/issues or forge/pulls call each, side by side.
+    private func askEach(_ hosts: [MachineRef], cursors: [String?], model: any WorkModel) async
+        -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
+        let kind = kind
+        let first = cursors.allSatisfy { $0 == nil }
+        let requests = cursors.map { forgeRequest(cursor: $0) }
+        return await withTaskGroup(of: (Int, DaemonAPI.ForgeList).self) { group in
+            for (i, host) in hosts.enumerated() where first || cursors[i] != nil {
+                let request = requests[i]
+                group.addTask {
+                    let read = await Result.catching { try await model.forgeList(kind, request, on: host) }
+                    let list = (try? read.get()) ?? .init(errors: [.init(forge: "", message: read.error?.localizedDescription ?? "")])
+                    return (i, list)
+                }
+            }
+            var out = hosts.map { (host: $0, list: DaemonAPI.ForgeList()) }
+            for await (i, list) in group { out[i].list = list }
+            return out
+        }
+    }
+
     /// forge/listAll's request (#5592) for a kind's list: its state, a page of 100, the board when one is chosen, and
     /// `pages`, each machine still to read and its cursor, for the next page.
     static func listAllRequest(_ kind: WorkList.Kind, state: String, board: String,
@@ -308,8 +462,9 @@ final class WorkListState {
         guard let host = row.host, priority != row.priority?.lowercased() else { return }
         let old = row.priority
         change(row) { $0.priority = priority }
+        cacheEdit(row) { $0.priority = priority }
         write(DaemonAPI.Method.forgePriority, DaemonAPI.ForgePriorityRequest(node: row.node, priority: priority),
-              on: host, model: model) { $0.change(row) { $0.priority = old } }
+              on: host, model: model) { $0.change(row) { $0.priority = old }; $0.cacheEdit(row) { $0.priority = old } }
     }
 
     /// A row's On hold from its menu (`forge/hold`), as `set(priority:)` does.
@@ -317,8 +472,9 @@ final class WorkListState {
         guard let host = row.host, on != row.onHold else { return }
         let old = row.onHold
         change(row) { $0.onHold = on }
+        cacheEdit(row) { $0.onHold = on }
         write(DaemonAPI.Method.forgeHold, DaemonAPI.ForgeHoldRequest(node: row.node, on: on),
-              on: host, model: model) { $0.change(row) { $0.onHold = old } }
+              on: host, model: model) { $0.change(row) { $0.onHold = old }; $0.cacheEdit(row) { $0.onHold = old } }
     }
 
     private func write(_ method: String, _ params: some Encodable & Sendable, on host: MachineRef,
@@ -335,6 +491,14 @@ final class WorkListState {
                 writeProblem = WorkList.failureWords(error)
             }
         }
+    }
+
+    /// The same change to the kept item (#6358), so every list that holds it draws it so.
+    private func cacheEdit(_ row: WorkList.Row, _ edit: @escaping @Sendable (inout DaemonAPI.ForgeItem) -> Void) {
+        guard queryPoC, let cache = WorkCache.shared, let host = row.host else { return }
+        let kind = kind
+        let ref = row.node.ref
+        Task { await cache.edit(kind, host: host, ref: ref, edit) }
     }
 
     /// Changes the row's item in the list it came from: the same ref on the same machine.
@@ -356,6 +520,10 @@ final class WorkListState {
     }
 
     func loadMore(model: any WorkModel) async {
+        if queryPoC, let cache = WorkCache.shared {
+            await loadNextPage(cache, model: model)
+            return
+        }
         // A page after the copy's is read once the machines answered (#4930): the copy's cursors may be old.
         guard !fromDevice else { return }
         loadingMore = true

@@ -1174,6 +1174,11 @@
         },
         "updatedSince": {
           "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "sort": {
+          "description": "The order (#6358): priority (High, then Medium, then Low, then none, each newest first; a page that ends a priority is short), else the last updated first.",
+          "type": "string",
+          "enum": ["updated", "priority"]
         }
       },
       "additionalProperties": false
