@@ -26,9 +26,13 @@ func slowSimulator(t *testing.T, picture *atomic.Value, slow time.Duration) *ato
 	var reads atomic.Int64
 	shot, name := simulatorLiveShot, simulatorNameOf
 	pace, window := simulatorLivePace.Swap(int64(20*time.Millisecond)), liveDriveWindow.Swap(int64(300*time.Millisecond))
-	simulatorLiveShot = func(_ context.Context, udid string, height int) (wire.SimulatorScreen, error) {
+	simulatorLiveShot = func(ctx context.Context, udid string, height int) (wire.SimulatorScreen, error) {
 		reads.Add(1)
-		time.Sleep(slow)
+		select {
+		case <-ctx.Done():
+			return wire.SimulatorScreen{}, ctx.Err()
+		case <-time.After(slow): //nolint:forbidigo // the fake's read is slow on purpose; no test waits on it
+		}
 		if udid != testSimulator || height != simulatorLiveHeight {
 			t.Errorf("read %s at %d", udid, height)
 		}

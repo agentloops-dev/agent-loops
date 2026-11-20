@@ -141,26 +141,7 @@ func (d *Daemon) watchSimulator(l wire.Lease) {
 			if ends {
 				return
 			}
-			if len(d.inFront(l.Holder)) == 0 {
-				// Nobody looks: nothing is read, and the next picture is a new start.
-				seen = false
-				if granted {
-					d.drove(l.Holder, wire.LiveSourceSimulator, nil)
-				}
-			} else if s, err := simulatorLiveShot(ctx, udid, simulatorLiveHeight); err == nil {
-				sum := sha256.Sum256(s.Jpeg)
-				if granted || (seen && sum != last) {
-					d.drove(l.Holder, wire.LiveSourceSimulator, nil)
-				}
-				if !seen || sum != last {
-					width, height := s.Width, s.Height
-					d.sendLive(wire.LiveFrame{Source: wire.LiveSourceSimulator, AgentID: l.Holder, Image: liveImage(s.Jpeg),
-						Width: &width, Height: &height, Title: optional(l.DisplayName)})
-				}
-				last, seen = sum, true
-			} else if granted {
-				d.drove(l.Holder, wire.LiveSourceSimulator, nil)
-			}
+			seen = d.simulatorLook(ctx, l, udid, granted, &last, seen)
 			select {
 			case <-ctx.Done():
 				return
@@ -168,4 +149,35 @@ func (d *Daemon) watchSimulator(l wire.Lease) {
 			}
 		}
 	})
+}
+
+// simulatorLook is one look of a watch at l's simulator, udid: with a client in front, it reads
+// the screen and sends a changed picture, or the first one, as live/frame. granted is a grant
+// the watch takes up, a drive. last is the picture before, and it says whether there is one.
+func (d *Daemon) simulatorLook(ctx context.Context, l wire.Lease, udid string, granted bool, last *[32]byte, seen bool) bool {
+	if len(d.inFront(l.Holder)) == 0 {
+		// Nobody looks: nothing is read, and the next picture is a new start.
+		if granted {
+			d.drove(l.Holder, wire.LiveSourceSimulator, nil)
+		}
+		return false
+	}
+	s, err := simulatorLiveShot(ctx, udid, simulatorLiveHeight)
+	if err != nil {
+		if granted {
+			d.drove(l.Holder, wire.LiveSourceSimulator, nil)
+		}
+		return seen
+	}
+	sum := sha256.Sum256(s.Jpeg)
+	if granted || (seen && sum != *last) {
+		d.drove(l.Holder, wire.LiveSourceSimulator, nil)
+	}
+	if !seen || sum != *last {
+		width, height := s.Width, s.Height
+		d.sendLive(wire.LiveFrame{Source: wire.LiveSourceSimulator, AgentID: l.Holder, Image: liveImage(s.Jpeg),
+			Width: &width, Height: &height, Title: optional(l.DisplayName)})
+	}
+	*last = sum
+	return true
 }
