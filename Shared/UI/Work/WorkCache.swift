@@ -19,11 +19,17 @@ actor WorkCache {
 
     @MainActor static var enabled: Bool { WindowDefaults.store.bool(forKey: flag) }
 
-    /// The Mac window's cache: in its root's cache folder, so a scratch root has its own.
+    /// The window's cache, in the cache folder. A walk's or another root's copy of the window keeps a file of its own,
+    /// named by its defaults domain, so it never writes the person's (run-app's `stop.sh` leaves it: delete it by hand).
     static let shared: WorkCache? = {
         let folder = StoreLocations.default.cacheRoot
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return try? WorkCache(file: folder.appendingPathComponent("work-cache.sqlite"))
+        #if os(macOS)
+        let name = WindowDefaults.scratchDomain.map { "work-cache.\($0).sqlite" } ?? "work-cache.sqlite"
+        #else
+        let name = "work-cache.sqlite"
+        #endif
+        return try? WorkCache(file: folder.appendingPathComponent(name))
     }()
 
     /// What the cache knows of one machine's list of one kind.
@@ -48,6 +54,9 @@ actor WorkCache {
     private var db: OpaquePointer? { handle.db }
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    /// The decoded items of each kind, by machine and ref, read from the database once: a draw after the first decodes
+    /// nothing (decoding 1,000 items took 1.2 to 2 s in a Debug build). The database stays the record.
+    private var memo: [WorkList.Kind: [MachineRef: [String: DaemonAPI.ForgeItem]]] = [:]
 
     init(file: URL) throws {
         var opened: OpaquePointer?
@@ -105,25 +114,30 @@ actor WorkCache {
         return Data(bytes: bytes, count: Int(sqlite3_column_bytes(s, i)))
     }
 
-    /// Every cached item of a kind, as one list per machine, newest first. A read of an index: no forge call.
+    /// Every cached item of a kind, as one list per machine, newest first. No forge call.
     func lists(_ kind: WorkList.Kind) -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
-        guard let s = try? prepare("SELECT host, json FROM item WHERE kind = ? ORDER BY updated DESC") else { return [] }
-        defer { sqlite3_finalize(s) }
-        bind(s, 1, kind.rawValue)
-        var items: [String: [DaemonAPI.ForgeItem]] = [:]
-        var order: [String] = []
-        while sqlite3_step(s) == SQLITE_ROW {
-            guard let text = sqlite3_column_text(s, 0) else { continue }
-            let host = String(cString: text)
-            guard let item = try? decoder.decode(DaemonAPI.ForgeItem.self, from: column(s, 1)) else { continue }
-            if items[host] == nil { order.append(host) }
-            items[host, default: []].append(item)
+        let byHost = items(kind)
+        return byHost.keys.sorted { $0.rawValue < $1.rawValue }.map { host in
+            let items = (byHost[host] ?? [:]).values.sorted { $0.updatedAt > $1.updatedAt }
+            return (host, DaemonAPI.ForgeList(items: items, forges: sync(kind, host).forges, total: items.count))
         }
-        let syncs = order.map { (host: $0, sync: sync(kind, MachineRef(rawValue: $0))) }
-        return syncs.map { entry in
-            (MachineRef(rawValue: entry.host), DaemonAPI.ForgeList(items: items[entry.host] ?? [], forges: entry.sync.forges,
-                                                                    total: items[entry.host]?.count))
+    }
+
+    /// The kind's items from memory, read from the database the first time.
+    private func items(_ kind: WorkList.Kind) -> [MachineRef: [String: DaemonAPI.ForgeItem]] {
+        if let had = memo[kind] { return had }
+        var byHost: [MachineRef: [String: DaemonAPI.ForgeItem]] = [:]
+        if let s = try? prepare("SELECT host, json FROM item WHERE kind = ?") {
+            bind(s, 1, kind.rawValue)
+            while sqlite3_step(s) == SQLITE_ROW {
+                guard let text = sqlite3_column_text(s, 0),
+                      let item = try? decoder.decode(DaemonAPI.ForgeItem.self, from: column(s, 1)) else { continue }
+                byHost[MachineRef(rawValue: String(cString: text)), default: [:]][item.node.ref] = item
+            }
+            sqlite3_finalize(s)
         }
+        memo[kind] = byHost
+        return byHost
     }
 
     func count(_ kind: WorkList.Kind) -> Int {
@@ -145,7 +159,10 @@ actor WorkCache {
         """) else { return }
         defer { sqlite3_finalize(s) }
         let now = Date().timeIntervalSince1970
+        var held = self.items(kind)
         for item in items {
+            if let had = held[host]?[item.node.ref], had.updatedAt > item.updatedAt { continue }
+            held[host, default: [:]][item.node.ref] = item
             guard let json = try? encoder.encode(item) else { continue }
             sqlite3_reset(s)
             bind(s, 1, kind.rawValue)
@@ -157,6 +174,7 @@ actor WorkCache {
             bind(s, 7, json)
             sqlite3_step(s)
         }
+        memo[kind] = held
     }
 
     /// Changes one cached item at once (an optimistic write), keeping its `updatedAt`, so the forge's answer replaces it.
@@ -169,6 +187,7 @@ actor WorkCache {
         sqlite3_finalize(s)
         guard let found, var item = try? decoder.decode(DaemonAPI.ForgeItem.self, from: found) else { return }
         change(&item)
+        if memo[kind] != nil { memo[kind]?[host]?[ref] = item }
         guard let json = try? encoder.encode(item),
               let u = try? prepare("UPDATE item SET json = ? WHERE kind = ? AND host = ? AND ref = ?") else { return }
         defer { sqlite3_finalize(u) }

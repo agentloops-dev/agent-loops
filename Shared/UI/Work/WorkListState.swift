@@ -119,8 +119,34 @@ final class WorkListState {
         var f = filter
         // Releases have no state in v1.
         if !kind.fromForge { f.state = .all }
-        return WorkList.sort(WorkList.filter(all, f, projects: projectRepos), by: sort)
+        guard kind.fromForge, WorkCache.enabled else {
+            return WorkList.sort(WorkList.filter(all, f, projects: projectRepos), by: sort)
+        }
+        // The cache proof of concept (#6358): every cached item is in `lists`, so the rows are made once for what is on
+        // screen and kept, and the list shows `cacheShown` of them, 100 more as it scrolls, as the forge's pages did.
+        let key = RowsKey(lists: lists?.map { $0.list.items.count } ?? [], generation: cacheGeneration, lineage: lineage.count,
+                          filter: f, sort: sort, projects: projects.map(\.id))
+        if let memo = rowsMemo, memo.key == key { return Array(memo.rows.prefix(cacheShown)) }
+        let made = WorkList.sort(WorkList.filter(all, f, projects: projectRepos), by: sort)
+        rowsMemo = (key, made)
+        return Array(made.prefix(cacheShown))
     }
+
+    private struct RowsKey: Equatable {
+        var lists: [Int]
+        var generation: Int
+        var lineage: Int
+        var filter: WorkList.Filter
+        var sort: WorkList.Sort
+        var projects: [String]
+    }
+
+    @ObservationIgnored private var rowsMemo: (key: RowsKey, rows: [WorkList.Row])?
+    /// Moves on each draw from the cache, so the kept rows are made again.
+    private var cacheGeneration = 0
+    /// How many of the cached rows the list shows (#6358).
+    var cacheShown = 100
+    private var cacheHasMore: Bool { (rowsMemo?.rows.count ?? 0) > cacheShown }
 
     /// Each project with the repos its folders read (#3283); none for releases,
     /// which lineage alone lists, with no folder.
@@ -128,7 +154,7 @@ final class WorkListState {
         kind.fromForge ? WorkList.projectRepos(projects, lists: (lists ?? []).map { (host: $0.host, items: $0.list.items) }) : []
     }
 
-    var hasMore: Bool { kind.fromForge ? (lists ?? []).contains { $0.list.cursor != nil } : lineageCursor != nil }
+    var hasMore: Bool { kind.fromForge && WorkCache.enabled ? cacheHasMore : kind.fromForge ? (lists ?? []).contains { $0.list.cursor != nil } : lineageCursor != nil }
 
     /// Previous and Next for an item's page; nil when the list has not got the item.
     func neighbours(of ref: String) -> WorkList.Neighbours? { WorkList.neighbours(of: ref, in: rows) }
@@ -290,6 +316,7 @@ final class WorkListState {
         let start = Date()
         let cached = await cache.lists(kind)
         lists = cached
+        cacheGeneration += 1
         cacheDrawn = Date().timeIntervalSince(start)
         shownFor = copyAsk
         fromDeviceRead = nil
@@ -322,22 +349,16 @@ final class WorkListState {
         var failed: [String] = []
         var pages: [DaemonAPI.MachineCursor]?
         for _ in 0 ..< WorkCache.pagesPerSync {
-            let all: DaemonAPI.ForgeListAll
+            let all: [(machine: MachineRef, list: DaemonAPI.ForgeList)]
             do {
                 cacheCalls += 1
-                guard let got = try await model.controlAll(DaemonAPI.Method.forgeListAll,
-                                                           Self.listAllRequest(kind, state: "all", board: "", pages: pages),
-                                                           returning: DaemonAPI.ForgeListAll.self) else {
-                    failed.append("This control plane does not read every machine's list in one call.")
-                    break
-                }
-                all = got
+                all = try await cachePage(kind, hosts: hosts, pages: pages, model: model)
             } catch {
                 failed.append(WorkList.failureWords(error))
                 break
             }
             var next: [DaemonAPI.MachineCursor] = []
-            for entry in all.lists {
+            for entry in all {
                 let host = entry.machine
                 let list = entry.list
                 failed += (list.errors ?? []).map(\.message)
@@ -374,6 +395,24 @@ final class WorkListState {
             lineage = known.nodes
             lineageCursor = known.cursor
         }
+    }
+
+    /// One page of every machine's items, newest `updatedAt` first: one forge/listAll call, or, with one machine (the
+    /// control plane is not asked then), a forge/issues or forge/pulls call to each. `pages` nil is the first page.
+    private func cachePage(_ kind: WorkList.Kind, hosts: [MachineRef], pages: [DaemonAPI.MachineCursor]?,
+                           model: any WorkModel) async throws -> [(machine: MachineRef, list: DaemonAPI.ForgeList)] {
+        if let got = try await model.controlAll(DaemonAPI.Method.forgeListAll,
+                                                Self.listAllRequest(kind, state: "all", board: "", pages: pages),
+                                                returning: DaemonAPI.ForgeListAll.self) {
+            return got.lists.map { ($0.machine, $0.list) }
+        }
+        var out: [(machine: MachineRef, list: DaemonAPI.ForgeList)] = []
+        for host in hosts {
+            let cursor = pages?.first { $0.machine == host }?.cursor
+            if pages != nil, cursor == nil { continue }
+            out.append((host, try await model.forgeList(kind, .init(state: "all", cursor: cursor, limit: 100), on: host)))
+        }
+        return out
     }
 
     /// forge/listAll's request (#5592) for a kind's list: its state, a page of 100, the board when one is chosen, and
@@ -489,6 +528,10 @@ final class WorkListState {
     }
 
     func loadMore(model: any WorkModel) async {
+        if kind.fromForge, WorkCache.enabled {
+            cacheShown += 100
+            return
+        }
         // A page after the copy's is read once the machines answered (#4930): the copy's cursors may be old.
         guard !fromDevice else { return }
         loadingMore = true
