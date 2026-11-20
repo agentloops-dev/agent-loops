@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -136,18 +136,23 @@ func TestACloudMachineStarted(t *testing.T) {
 
 func TestALandedPullRequestIsCounted(t *testing.T) {
 	t.Parallel()
-	flaky.UnderLoad(t, "#6369")
 
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
-	os.Mkdir(filepath.Join(dir, ".git"), 0o755)
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	day := time.Now().AddDate(0, 0, -2)
 	merged := day.UTC().Format(time.RFC3339)
 	pulls := `[{"url":"https://github.com/o/r/pull/1","mergedAt":"` + merged + `","headRefName":"agents/fix-1"},` +
 		`{"url":"https://github.com/o/r/pull/2","mergedAt":"` + merged + `","headRefName":"someone-else"}]`
 	gh := filepath.Join(t.TempDir(), "gh")
-	os.WriteFile(gh, []byte("#!/bin/sh\ncat <<'END'\n"+pulls+"\nEND\n"), 0o755)
+	// execfile.Write, not os.WriteFile: a fork by another test while the script is open
+	// fails its exec with "text file busy" on Linux (#6369).
+	if err := execfile.Write(gh, []byte("#!/bin/sh\ncat <<'END'\n"+pulls+"\nEND\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	d.countMergedPRsWith(context.Background(), gh)
 	h := d.timeHistory()
 	if r := h.Recap[dayStamp(day)]; r.PrsMerged == nil || *r.PrsMerged != 1 {
