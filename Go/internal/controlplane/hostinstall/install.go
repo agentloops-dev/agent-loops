@@ -207,10 +207,6 @@ func (i *Installer) run(ctx context.Context, request Request, personsKnownHosts 
 	if trimSpaces(request.Destination) == "" {
 		return nil, &Failure{Code: InvalidParams, Message: "Say which server."}
 	}
-	var key string
-	if request.Key != nil && strings.TrimSpace(*request.Key) != "" {
-		key = *request.Key
-	}
 	destination := trimSpaces(request.Destination)
 	name := label(destination)
 	if request.Name != nil && trimSpaces(*request.Name) != "" {
@@ -223,17 +219,10 @@ func (i *Installer) run(ctx context.Context, request Request, personsKnownHosts 
 		return nil, err
 	}
 	defer os.RemoveAll(folder)
-	keyFile := ""
-	if key != "" {
-		keyFile = filepath.Join(folder, "key")
-		if !strings.HasSuffix(key, "\n") {
-			key += "\n"
-		}
-		if os.WriteFile(keyFile, []byte(key), 0o600) != nil {
-			return nil, &Failure{Code: InternalError, Message: "The key could not be held for the install."}
-		}
+	keyFile, err := holdKey(folder, request.Key)
+	if err != nil {
+		return nil, err
 	}
-	knownHosts := filepath.Join(folder, "known_hosts")
 	keyGiven := keyFile != ""
 	config := i.configFile()
 
@@ -247,45 +236,16 @@ func (i *Installer) run(ctx context.Context, request Request, personsKnownHosts 
 	if request.Trust != nil && !personsKnownHosts {
 		trusting = *request.Trust
 	}
-	var found *facts
-	if trusting != "" {
-		// The key shown on the first call: fetched again, and used only if it is that one.
-		ssh.options = config
-		file, fingerprint, err := fetchHostKey(ctx, ssh, folder)
-		if err != nil {
-			return nil, words(err, keyGiven)
-		}
-		defer os.Remove(file)
-		if trusting != fingerprint {
-			return map[string]any{"needsTrust": fingerprint, "name": name}, nil
-		}
-		if err := os.Rename(file, knownHosts); err != nil {
-			return nil, err
-		}
-		ssh.options = join(config, options(keyFile, knownHosts))
-		i.progress(name, "checkSystem")
-		if found, err = (installer{ssh}).probe(ctx); err != nil {
-			return nil, words(err, keyGiven)
-		}
-	} else {
-		ssh.options = join(config, options(keyFile, ""))
-		ssh.options = append(ssh.options, personsKnownHostsOptions(ctx, ssh)...)
-		i.progress(name, "checkSystem")
-		found, err = (installer{ssh}).probe(ctx)
-		if p, ok := err.(*Problem); ok && p.Kind == HostKeyUnknown && !personsKnownHosts {
-			fetching := ssh
-			fetching.options = config
-			file, fingerprint, err := fetchHostKey(ctx, fetching, folder)
-			if err != nil {
-				return nil, words(err, keyGiven)
-			}
-			os.Remove(file)
-			return map[string]any{"needsTrust": fingerprint, "name": name}, nil
-		}
-		if err != nil {
-			return nil, words(err, keyGiven)
-		}
+	at := connection{ssh: ssh, config: config, folder: folder, keyFile: keyFile,
+		knownHosts: filepath.Join(folder, "known_hosts"), trusting: trusting, name: name}
+	found, needsTrust, err := i.connect(ctx, &at, personsKnownHosts)
+	if err != nil {
+		return nil, words(err, keyGiven)
 	}
+	if needsTrust != nil {
+		return needsTrust, nil
+	}
+	ssh = at.ssh
 
 	server := installer{ssh}
 	// An update goes only to the server whose root is this host's (#1766).
@@ -294,42 +254,9 @@ func (i *Installer) run(ctx context.Context, request Request, personsKnownHosts 
 			return nil, err
 		}
 	}
-	arch := binarySuffix(found.architecture)
-	files := i.ServerFolder
-	binary, ok := binaryFor(arch, files)
-	if arch != "" && !ok && i.Releases != nil {
-		// No host for this machine here: the control plane's release, from the public
-		// releases (#5787, epic #5785).
-		if released, err := i.Releases(ctx, arch); err == nil {
-			files = released
-			binary, ok = binaryFor(arch, files)
-		} else if i.Log != nil {
-			i.Log("The releases gave no host for %s-linux: %v", arch, err)
-		}
-	}
-	if arch == "" || !ok {
-		return nil, &Failure{Code: NotAllowed, Message: name + " is " + found.system + " " +
-			displayArchitecture(found.architecture) + ", which this control plane has no host for."}
-	}
-	i.progress(name, "setUp")
-	if err := server.install(ctx, binary.file, binary.sha256, true); err != nil {
+	if err := i.putFiles(ctx, server, found, folder, name); err != nil {
 		return nil, words(err, keyGiven)
 	}
-	if err := server.swapCurrent(ctx, binary.sha256, binary.version, "control plane"); err != nil {
-		return nil, words(err, keyGiven)
-	}
-	// The MCP servers Agents ships (#700), beside agentsd. One that fails to copy leaves
-	// the host without it, not without a host.
-	for _, shipped := range shippedFor(arch, files) {
-		server.installServer(ctx, shipped.name, shipped.file, shipped.sha256)
-	}
-	// The runtimes' toolsets (#1136), as the window's ToolsetInstaller puts them on a server
-	// it holds. One that cannot be installed leaves the host without that runtime, not
-	// without a host: the runtime says why when it is chosen.
-	i.installToolsets(ctx, server, found, folder, name)
-	// Google Chrome and Xvfb for the agents' browser (#5228), before the host starts, so
-	// its browser finds them. A server without them keeps Chrome for Testing headless.
-	server.installBrowser(ctx, i.Log, name)
 
 	// An update keeps the host's membership and root: it stops and starts again, as itself.
 	if updating != "" {
@@ -343,47 +270,9 @@ func (i *Installer) run(ctx context.Context, request Request, personsKnownHosts 
 		return map[string]any{"updated": true, "name": name}, nil
 	}
 
-	// A host code, left in the host's root and read once, never on its command line.
-	// Through a tunnel, it names the server's end of the tunnel (#435, #610).
-	var code string
-	var tunnel *TunnelRecord
-	wantsTunnel := false
-	if request.Tunnel != nil {
-		wantsTunnel = *request.Tunnel
-	} else {
-		wantsTunnel = throughBastion(ctx, ssh)
-	}
-	if wantsTunnel && i.Tunnels == nil {
-		return nil, &Failure{Code: NotAllowed,
-			Message: "This control plane can’t hold an ssh tunnel: only one on your Mac can. Add the server without one."}
-	}
-	if wantsTunnel {
-		port := i.Tunnels.Port()
-		text, id, err := i.Codes.HostCode(ctx, "https://127.0.0.1:"+strconv.Itoa(port))
-		if err != nil {
-			return nil, err
-		}
-		// The key shown and trusted, or the one the person's own known_hosts trusts
-		// (#1691): pinned either way, so a new address at a start is still checked.
-		trusted := ""
-		if trusting != "" {
-			data, _ := os.ReadFile(knownHosts)
-			trusted = string(data)
-		} else {
-			trusted = personsKey(ctx, ssh, config, folder)
-		}
-		tunnel = &TunnelRecord{ID: newID(), Destination: destination, Name: name, Port: port, Code: id,
-			KnownHosts: trusted, Made: records.Now()}
-		// A tunnel held before for this server goes now, before the steps below: its
-		// master would dial again beside them, and its forward holds the port (#1769).
-		i.Tunnels.LetGo(ctx, destination, name)
-		code = text
-	} else {
-		text, _, err := i.Codes.HostCode(ctx, "")
-		if err != nil {
-			return nil, err
-		}
-		code = text
+	code, tunnel, err := i.joinCode(ctx, request, at, destination)
+	if err != nil {
+		return nil, err
 	}
 	if err := server.leaveJoinCode(ctx, code); err != nil {
 		return nil, words(err, keyGiven)
@@ -404,6 +293,163 @@ func (i *Installer) run(ctx context.Context, request Request, personsKnownHosts 
 	// The host enrols over its own connection; control/hostChanged says when it is on.
 	return map[string]any{"started": true, "name": name,
 		"platform": found.system + " " + displayArchitecture(found.architecture), "tunnel": tunnel != nil}, nil
+}
+
+// holdKey writes the key the request gives, if any, to the install's folder, and says
+// where. With no key it is "".
+func holdKey(folder string, given *string) (string, error) {
+	if given == nil || strings.TrimSpace(*given) == "" {
+		return "", nil
+	}
+	key := *given
+	keyFile := filepath.Join(folder, "key")
+	if !strings.HasSuffix(key, "\n") {
+		key += "\n"
+	}
+	if os.WriteFile(keyFile, []byte(key), 0o600) != nil {
+		return "", &Failure{Code: InternalError, Message: "The key could not be held for the install."}
+	}
+	return keyFile, nil
+}
+
+// connection is what an install knows of its way to the server: the ssh command, with
+// the options connect gives it, and the files it reads.
+type connection struct {
+	ssh                                   sshCommand
+	config                                []string
+	folder, keyFile, knownHosts, trusting string
+	name                                  string
+}
+
+// connect logs in and probes the server, with the host key in the order install says.
+// A key to show the person first comes back as needsTrust, with no error.
+func (i *Installer) connect(ctx context.Context, at *connection, personsKnownHosts bool) (found *facts, needsTrust any, err error) {
+	if at.trusting != "" {
+		// The key shown on the first call: fetched again, and used only if it is that one.
+		at.ssh.options = at.config
+		file, fingerprint, err := fetchHostKey(ctx, at.ssh, at.folder)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer os.Remove(file)
+		if at.trusting != fingerprint {
+			return nil, map[string]any{"needsTrust": fingerprint, "name": at.name}, nil
+		}
+		if err := os.Rename(file, at.knownHosts); err != nil {
+			return nil, nil, err
+		}
+		at.ssh.options = join(at.config, options(at.keyFile, at.knownHosts))
+		i.progress(at.name, "checkSystem")
+		found, err = (installer{at.ssh}).probe(ctx)
+		return found, nil, err
+	}
+	at.ssh.options = join(at.config, options(at.keyFile, ""))
+	at.ssh.options = append(at.ssh.options, personsKnownHostsOptions(ctx, at.ssh)...)
+	i.progress(at.name, "checkSystem")
+	found, err = (installer{at.ssh}).probe(ctx)
+	if p, ok := err.(*Problem); ok && p.Kind == HostKeyUnknown && !personsKnownHosts {
+		fetching := at.ssh
+		fetching.options = at.config
+		file, fingerprint, err := fetchHostKey(ctx, fetching, at.folder)
+		if err != nil {
+			return nil, nil, err
+		}
+		os.Remove(file)
+		return nil, map[string]any{"needsTrust": fingerprint, "name": at.name}, nil
+	}
+	return found, nil, err
+}
+
+// putFiles puts the host for the server's machine on it, with the MCP servers, the
+// toolsets and the browser beside it. It starts nothing.
+func (i *Installer) putFiles(ctx context.Context, server installer, found *facts, folder, name string) error {
+	arch := binarySuffix(found.architecture)
+	binary, files, err := i.hostFor(ctx, arch, found, name)
+	if err != nil {
+		return err
+	}
+	i.progress(name, "setUp")
+	if err := server.install(ctx, binary.file, binary.sha256, true); err != nil {
+		return err
+	}
+	if err := server.swapCurrent(ctx, binary.sha256, binary.version, "control plane"); err != nil {
+		return err
+	}
+	// The MCP servers Agents ships (#700), beside agentsd. One that fails to copy leaves
+	// the host without it, not without a host.
+	for _, shipped := range shippedFor(arch, files) {
+		server.installServer(ctx, shipped.name, shipped.file, shipped.sha256)
+	}
+	// The runtimes' toolsets (#1136), as the window's ToolsetInstaller puts them on a server
+	// it holds. One that cannot be installed leaves the host without that runtime, not
+	// without a host: the runtime says why when it is chosen.
+	i.installToolsets(ctx, server, found, folder, name)
+	// Google Chrome and Xvfb for the agents' browser (#5228), before the host starts, so
+	// its browser finds them. A server without them keeps Chrome for Testing headless.
+	server.installBrowser(ctx, i.Log, name)
+	return nil
+}
+
+// hostFor is the host binary for arch and the folder it is in: the server folder's, or
+// else the control plane's release.
+func (i *Installer) hostFor(ctx context.Context, arch string, found *facts, name string) (serverBinary, string, error) {
+	files := i.ServerFolder
+	binary, ok := binaryFor(arch, files)
+	if arch != "" && !ok && i.Releases != nil {
+		// No host for this machine here: the control plane's release, from the public
+		// releases (#5787, epic #5785).
+		if released, err := i.Releases(ctx, arch); err == nil {
+			files = released
+			binary, ok = binaryFor(arch, files)
+		} else if i.Log != nil {
+			i.Log("The releases gave no host for %s-linux: %v", arch, err)
+		}
+	}
+	if arch == "" || !ok {
+		return serverBinary{}, "", &Failure{Code: NotAllowed, Message: name + " is " + found.system + " " +
+			displayArchitecture(found.architecture) + ", which this control plane has no host for."}
+	}
+	return binary, files, nil
+}
+
+// joinCode is the host code the new host joins with, and the tunnel to hold for it when
+// it goes through one. The code is left in the host's root and read once, never on its
+// command line. Through a tunnel, it names the server's end of the tunnel (#435, #610).
+func (i *Installer) joinCode(ctx context.Context, request Request, at connection, destination string) (string, *TunnelRecord, error) {
+	wantsTunnel := false
+	if request.Tunnel != nil {
+		wantsTunnel = *request.Tunnel
+	} else {
+		wantsTunnel = throughBastion(ctx, at.ssh)
+	}
+	if !wantsTunnel {
+		text, _, err := i.Codes.HostCode(ctx, "")
+		return text, nil, err
+	}
+	if i.Tunnels == nil {
+		return "", nil, &Failure{Code: NotAllowed,
+			Message: "This control plane can’t hold an ssh tunnel: only one on your Mac can. Add the server without one."}
+	}
+	port := i.Tunnels.Port()
+	text, id, err := i.Codes.HostCode(ctx, "https://127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		return "", nil, err
+	}
+	// The key shown and trusted, or the one the person's own known_hosts trusts
+	// (#1691): pinned either way, so a new address at a start is still checked.
+	trusted := ""
+	if at.trusting != "" {
+		data, _ := os.ReadFile(at.knownHosts)
+		trusted = string(data)
+	} else {
+		trusted = personsKey(ctx, at.ssh, at.config, at.folder)
+	}
+	tunnel := &TunnelRecord{ID: newID(), Destination: destination, Name: at.name, Port: port, Code: id,
+		KnownHosts: trusted, Made: records.Now()}
+	// A tunnel held before for this server goes now, before the steps below: its
+	// master would dial again beside them, and its forward holds the port (#1769).
+	i.Tunnels.LetGo(ctx, destination, at.name)
+	return text, tunnel, nil
 }
 
 // installToolsets puts each toolset the Installer names on the server, and points its
