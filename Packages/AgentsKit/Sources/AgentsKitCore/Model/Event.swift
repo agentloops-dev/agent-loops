@@ -26,11 +26,6 @@ public enum EventScope: Codable, Hashable, Sendable {
 public struct EventPublisher: Codable, Hashable, Sendable {
     public var agentID: UUID
     public var title: String
-
-    public init(agentID: UUID, title: String) {
-        self.agentID = agentID
-        self.title = title
-    }
 }
 
 /// What the app did because of an event (042 FR-027).

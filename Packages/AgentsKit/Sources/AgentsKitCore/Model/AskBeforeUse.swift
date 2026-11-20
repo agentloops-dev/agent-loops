@@ -7,8 +7,6 @@ import Foundation
 public enum AskBeforeUseWords {
     /// The toggle.
     public static let toggle = "Ask before use"
-    /// On a secret's row when the flag is on.
-    public static let asks = "Asks before use"
     /// Under the toggle when it is on.
     public static let on = "Only fill_secret, set_ci_secret and HTTP MCP servers can use it. It is not in $NAME or in a file."
     /// Under the toggle when it is off.

@@ -447,12 +447,6 @@ extension RemoteModel {
         sidebarItem = .session(agentID)
     }
 
-    /// A folder's page, from a banner with no session behind it (#531): where a change
-    /// git brought to its files is asked. The phone holds the Mac's folders only.
-    func openFolder(_ folder: URL) {
-        sidebarItem = .folder(work.folder(folder)?.key ?? FolderKey(host: .mac, folder: folder))
-    }
-
     /// Open what a need is about, from a banner or a widget row (#1046). A need the
     /// model does not hold yet (a cold launch, a wake) is kept and opened once caught up,
     /// as `open(_:)` keeps an agent (#1045).

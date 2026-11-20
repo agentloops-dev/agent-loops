@@ -8,7 +8,6 @@ import WebKit
 /// agent's behalf (FR-035). It is a viewing surface for local servers and documentation,
 /// not a replacement for Safari: no tabs, no bookmarks, no downloads.
 struct BrowserPane: View {
-    @Environment(AppModel.self) private var model
     let agent: Agent
     let state: AgentPaneState
 

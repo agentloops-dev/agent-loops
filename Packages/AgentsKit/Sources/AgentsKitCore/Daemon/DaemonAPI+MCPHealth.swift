@@ -105,11 +105,6 @@ extension DaemonAPI {
         /// The folder, or nil for the person's own file.
         public var folder: String?
         public var message: String
-
-        public init(folder: String?, message: String) {
-            self.folder = folder
-            self.message = message
-        }
     }
 
     /// Every server on a host, in each file's order (the person's first, then each folder
@@ -124,8 +119,6 @@ extension DaemonAPI {
             self.problems = problems
             self.at = at
         }
-
-        public static let empty = MCPHealthSnapshot(servers: [], at: .distantPast)
 
         /// The person's own servers, for Activity.
         public var personal: [MCPServerHealth] { servers.filter { $0.folder == nil } }

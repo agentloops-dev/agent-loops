@@ -96,44 +96,16 @@ public extension DaemonAPI {
         }
     }
 
-    /// One project's slots, as a machine gets them (#2669).
-    struct ProjectTools: Codable, Sendable, Hashable {
-        public var id: String
-        public var name: String
-        public var slots: [ProjectSlot]
-        /// The boards in its Tasks slot (#3282).
-        public var boards: [ProjectBoard]?
-
-        public init(id: String, name: String, slots: [ProjectSlot] = [], boards: [ProjectBoard]? = nil) {
-            self.id = id; self.name = name; self.slots = slots; self.boards = boards
-        }
-    }
-
-    /// `projects/joined`'s answer and `machine/projects` (#2669).
-    struct MachineProjects: Codable, Sendable, Hashable {
-        public var projects: [ProjectTools]
-
-        public init(projects: [ProjectTools] = []) { self.projects = projects }
-    }
-
     /// A folder in a project, as its machine last said it.
     struct ProjectFolder: Codable, Sendable, Hashable {
         public var machine: MachineRef
         public var folder: URL
         public var name: String
-
-        public init(machine: MachineRef, folder: URL, name: String) {
-            self.machine = machine
-            self.folder = folder
-            self.name = name
-        }
     }
 
     /// `projects/list`: the organisation's projects, by name.
     struct ProjectList: Codable, Sendable, Hashable {
         public var projects: [Project]
-
-        public init(projects: [Project] = []) { self.projects = projects }
     }
 
     /// `projects/set`: makes a project, or with `id` renames one.
@@ -215,7 +187,6 @@ public enum ProjectWords {
     public static let title = "Project"
     public static let newProject = "New Project…"
     public static let rename = "Rename Project…"
-    public static let remove = "Remove Project"
     public static let namePrompt = "Project name"
     /// Under the picker: what a project is, and where the choice is kept.
     public static let explanation = "Folders in one project share its tools and its reports, on every machine. "
@@ -273,18 +244,6 @@ public enum ProjectWords {
     public static let useForProject = "Use for the Whole Project"
     /// Give the slot back to each folder.
     public static let useFolderOwn = "Use Each Folder's Own"
-
-    /// The project a folder is in, by its id, from the list.
-    public static func name(of id: String?, in projects: [DaemonAPI.Project]) -> String? {
-        guard let id else { return nil }
-        return projects.first { $0.id == id }?.name
-    }
-
-    /// Whether a project of this name, in any case, is there already, other than `except`.
-    public static func taken(_ name: String, in projects: [DaemonAPI.Project], except: String? = nil) -> Bool {
-        let wanted = name.trimmingCharacters(in: .whitespaces)
-        return projects.contains { $0.id != except && $0.name.caseInsensitiveCompare(wanted) == .orderedSame }
-    }
 }
 
 /// The words of a project's boards (#3282), in Project Settings ▸ Tools and Work's Board menu (the

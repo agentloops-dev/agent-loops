@@ -19,10 +19,8 @@ public final class WebSocketLineTransport: LineTransport, @unchecked Sendable {
 
     /// The most this end holds for the other end to read before giving up on it (#167): a
     /// phone on poor cellular or a page that stopped reading costs the control plane at
-    /// most this, not everything said until its pings time out. The host's own uplink is
-    /// given more (`uplinkOutboundLimit`), since everything its clients hear crosses it.
+    /// most this, not everything said until its pings time out.
     public static let outboundLimit = 8 << 20
-    public static let uplinkOutboundLimit = 32 << 20
     /// How long queued bytes may wait with none of them sent before the other end is
     /// given up on: the daemon socket's `sendWait`, for the same reason.
     public static let writeDeadline: Duration = .seconds(10)
@@ -46,15 +44,6 @@ public final class WebSocketLineTransport: LineTransport, @unchecked Sendable {
                                onHigh: { [channel] in channel.setOption(ChannelOptions.autoRead, value: false).whenComplete { _ in } },
                                onLow: { [channel] in channel.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in } })
     }
-
-    /// The cap on what may wait to be sent; the uplink raises it.
-    public var outboundLimit: Int {
-        get { lock.withLock { limit } }
-        set { lock.withLock { limit = newValue } }
-    }
-
-    /// Bytes written and not yet handed to the kernel: this end's queue for the other.
-    public var bytesQueued: Int { lock.withLock { pending } }
 
     public func write(line: String) throws {
         guard channel.isActive else { throw WebSocketClosed() }
@@ -137,27 +126,12 @@ public final class WebSocketLineTransport: LineTransport, @unchecked Sendable {
         }
     }
 
-    /// Runs `body` once the connection is gone, however it went.
-    public func whenClosed(_ body: @escaping @Sendable () -> Void) {
-        channel.closeFuture.whenComplete { _ in body() }
-    }
-
-    /// Called once by `proven()`: the server's listener lifts its limits (#206).
+    /// The server's listener lifts its limits when this is called (#206).
     var onProven: (@Sendable () -> Void)? {
         get { lock.withLock { provenHook } }
         set { lock.withLock { provenHook = newValue } }
     }
     private var provenHook: (@Sendable () -> Void)?
-
-    /// The other end proved who it is (the control plane's `ok`): its connection is no
-    /// longer held to what a stranger may send, nor counted as one (#206).
-    public func proven() {
-        let hook = lock.withLock { () -> (@Sendable () -> Void)? in
-            defer { provenHook = nil }
-            return provenHook
-        }
-        hook?()
-    }
 
     /// The address at the other end, for the log.
     public var remote: String { channel.remoteAddress?.description ?? "?" }

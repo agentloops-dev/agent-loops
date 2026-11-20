@@ -25,55 +25,25 @@ public enum SandboxCatalog {
     public struct Entry: Sendable, Hashable {
         public let runtimeID: String
         public let route: Route
-        /// The version the route was measured on, for the reference page and the next check.
-        public let measuredOn: String
         /// One sentence for a runtime with no choice, or about the one it lacks (FR-013, FR-015).
         public let why: String?
-        /// Text that means the runtime's sandbox could not be set up (R11), from the real
-        /// failures in `Fixtures/sandbox-failures/`. Never a bare "Operation not permitted",
-        /// which is also what a command denied inside a working sandbox says.
-        public let failurePatterns: [String]
-        /// Codex only: a failed sandbox shows in no tool call, only in the agent's reply.
-        public let readsReply: Bool
-        /// True when turning the sandbox on makes the runtime hang before `initialize` (R6).
-        public let hangsWhenOn: Bool
     }
-
-    /// Seatbelt refusing to nest, as macOS says it to every runtime that uses `sandbox-exec`.
-    static let seatbelt = "sandbox_apply: Operation not permitted"
 
     public static let entries: [Entry] = [
         Entry(runtimeID: RuntimeCatalog.claude.id, route: .claudeMeta,
-              measuredOn: "Claude Code 2.1.284, adapter 0.81.2",
-              why: nil,
-              failurePatterns: ["Sandbox required but unavailable", seatbelt],
-              readsReply: false, hangsWhenOn: false),
+              why: nil),
         Entry(runtimeID: RuntimeCatalog.codex.id, route: .codexMode,
-              measuredOn: "Codex 0.156.1, adapter 1.13.1",
-              why: nil,
-              failurePatterns: [seatbelt, "bwrap: No permissions to create a new namespace"],
-              readsReply: true, hangsWhenOn: false),
+              why: nil),
         Entry(runtimeID: RuntimeCatalog.grok.id, route: .fixed(.runtimeControlled),
-              measuredOn: "Grok 1.0.67",
-              why: "Grok 1.0.67 does not accept --sandbox with agent stdio. The app cannot change Grok’s sandbox.",
-              failurePatterns: ["Refusing to start with its protections missing", "sandbox initialization failed"],
-              readsReply: false, hangsWhenOn: false),
+              why: "Grok 1.0.67 does not accept --sandbox with agent stdio. The app cannot change Grok’s sandbox."),
         Entry(runtimeID: RuntimeCatalog.cursor.id, route: .fixed(.runtimeControlled),
-              measuredOn: "Cursor 2026.09.26",
-              why: "Cursor’s own sandbox setting decides. The app cannot change it.",
-              failurePatterns: [], readsReply: false, hangsWhenOn: false),
+              why: "Cursor’s own sandbox setting decides. The app cannot change it."),
         Entry(runtimeID: RuntimeCatalog.copilot.id, route: .fixed(.runtimeControlled),
-              measuredOn: "Copilot 1.0.89-5",
-              why: "Copilot’s own sandbox setting decides. The app cannot change it yet.",
-              failurePatterns: [], readsReply: false, hangsWhenOn: false),
+              why: "Copilot’s own sandbox setting decides. The app cannot change it yet."),
         Entry(runtimeID: RuntimeCatalog.antigravity.id, route: .fixed(.none),
-              measuredOn: "agy_acp_server 1.2.1",
-              why: "Antigravity sandboxes commands only when a business account’s admin turns Sandbox mode on.",
-              failurePatterns: [], readsReply: false, hangsWhenOn: false),
+              why: "Antigravity sandboxes commands only when a business account’s admin turns Sandbox mode on."),
         Entry(runtimeID: RuntimeCatalog.opencode.id, route: .fixed(.none),
-              measuredOn: "OpenCode 1.18.33",
-              why: "OpenCode has no command sandbox. It asks before running commands unless set to Always Approve.",
-              failurePatterns: [], readsReply: false, hangsWhenOn: false),
+              why: "OpenCode has no command sandbox. It asks before running commands unless set to Always Approve."),
     ]
 
     public static func entry(for runtimeID: String) -> Entry? {

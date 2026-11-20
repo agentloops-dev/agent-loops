@@ -21,7 +21,8 @@ is what each target runs.
 | `repo-lint:lint` | `zsh -n` | a syntax error | `go` (Linux) |
 | `repo-lint:lint` | our text checks (`scripts/check-*.py` and the other self-tests) | a failure | `go` (Linux) |
 | `repo-lint:lint` | jscpd (`.jscpd.json`) | a clone not in `.jscpd-baseline.txt` | `go` (Linux) |
-| `swift-lint:lint` | SwiftLint (`.swiftlint.yml`) | a finding not in `.swiftlint-baseline.json` | `test-swift` (macOS) |
+| `swift-lint:lint` | SwiftLint (`.swiftlint.yml`) | a finding not in `.swiftlint-baseline.json` | `swift-lint` (macOS) |
+| `swift-lint:lint` | Periphery (whole program: the Mac app, the Remote, each Swift package with its tests) | a declaration that nothing reaches, in all Swift code, and that `.periphery-allowed.txt` does not name; no baseline | `swift-lint` (macOS) |
 
 `repo-lint` and `swift-lint` are projects with no code of their own (`lint/`). `repo-lint` reads
 every tracked file, so every change runs it; a change to docs only runs only it. CI's `test-swift` job
@@ -89,8 +90,23 @@ of #6126 take them out.
   a dead function. One kept on purpose (reflection, `go:linkname`, a method that only something
   outside the program calls) is a line in `Go/.deadcode-allowed.txt`: its path, a colon, its
   name (`Func` or `Type.Method`) and why it stays. golangci-lint's `unused` still finds an
-  unexported name that its own package does not use. Swift (Periphery, #6336) and web (Knip,
-  #6337) are still the dead-code review's, on its schedule.
+  unexported name that its own package does not use. Web (Knip, #6337) is still the dead-code
+  review's, on its schedule.
+- **Periphery is a gate on all Swift code, with no baseline (#6336).** `scripts/lint.sh
+  periphery` builds four indexes under `build/periphery` (the Mac app `AgentsHost`, the Remote for
+  arm64 with its extensions, and AgentsKit and CodeText with their tests, through
+  `scripts/build-cache.sh` with `AGENTS_BUILD_CACHE_INDEX=1`), scans each alone, and fails on
+  each declaration that every scan whose build compiles its file reports
+  (`scripts/periphery-report.py`): a `Shared/UI` view that only the Remote draws, or a helper
+  that only a package's tests call, is live. One scan over two indexes, or over one index with
+  two builds of a file, gives a different answer on each run, so each index has one build of
+  each file. Codable properties (the wire's), Equatable and Hashable ones (`==` reads each, as for
+  a key of `.task(id:)`) and SwiftUI previews are kept, and redundant
+  `public` is not checked: it is not dead code. Remove a dead declaration. One kept on purpose
+  (a test that reads the source by its text, a design token, a generated file) is a line in
+  `.periphery-allowed.txt`: its path, a colon, Periphery's name for it (or `*` for a generated
+  file) and why it stays. A line that no finding matches fails too. Periphery needs Xcode's
+  index, so it runs on a Mac only: CI's macOS `swift-lint` job, which caches `build/periphery`.
 - **govulncheck's database is outside the repository**, so `go:lint`'s inputs hold the date
   (UTC): a pass is good for that day only, and a vulnerability published since runs it again.
 

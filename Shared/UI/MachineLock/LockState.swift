@@ -333,16 +333,9 @@ final class LockState {
         }
     }
 
-    /// A host code with an invite (#3491, D3): this client puts an invite on the lock and adds
-    /// its key to the code, so the machine adds itself. A client that is not a signer gives the
-    /// code back as it was: the machine then asks to join.
-    func invite(_ shown: DaemonAPI.ControlCodeShown, on control: DaemonClient) async -> DaemonAPI.ControlCodeShown {
-        guard let key = signingKey() else { return shown }
-        return await Self.invite(shown, on: control, pins: pins, key: key)
-    }
-
-    /// `invite` for a caller with no `LockState` of its own: Add a Machine, on its own
-    /// connection. A control plane with no lock, or no signing key, gives the code back.
+    /// A host code with an invite (#3491, D3), for a caller with no `LockState` of its own: Add
+    /// a Machine, on its own connection. The client puts an invite on the lock and adds its key
+    /// to the code, so the machine adds itself. A control plane with no lock, or no signing key, gives the code back.
     static func invite(_ shown: DaemonAPI.ControlCodeShown, on control: DaemonClient, pins: LockPins,
                        account: String) async -> DaemonAPI.ControlCodeShown {
         guard let key = try? LockSigningKey.load(account: account) else { return shown }

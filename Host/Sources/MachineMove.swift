@@ -40,7 +40,7 @@ struct HandoverStatus: Codable, Equatable {
 enum HandoverTool {
     static func run(_ arguments: [String], model: HostModel) async -> ControlTool.Result {
         await ControlTool.run(["handover"] + arguments + ["--home", model.paths.controlHome.path, "--port", String(model.paths.port)],
-                              paths: model.paths, settings: model.settings)
+                              paths: model.paths)
     }
 
     static func status(_ arguments: [String], model: HostModel) async -> HandoverStatus? {

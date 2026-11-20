@@ -56,18 +56,6 @@ public struct EventLog: Codable, Hashable, Sendable {
         return .new(event)
     }
 
-    /// Put a whole event in, as read from the store.
-    public mutating func insert(_ event: Event) {
-        if let index = index(of: event.position) {
-            events[index] = event
-        } else if event.position > head {
-            events.append(event)
-        } else {
-            events.append(event)
-            events.sort { $0.position < $1.position }
-        }
-    }
-
     @discardableResult
     public mutating func addConsequence(_ consequence: Consequence, to position: EventPosition) -> Event? {
         guard let index = index(of: position) else { return nil }

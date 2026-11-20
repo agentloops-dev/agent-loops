@@ -111,7 +111,7 @@ private struct SandboxDefaultRow: View {
             Picker("Default", selection: binding) {
                 ForEach(choices, id: \.self) { choice in
                     // While the organisation requires the sandbox, only On is in force (#998): the rest shown, not chosen.
-                    Text(SandboxWords.choice(choice, runtimeID: runtimeID)).tag(choice)
+                    Text(SandboxWords.choice(choice)).tag(choice)
                         .disabled(isRefused(choice))
                 }
             }

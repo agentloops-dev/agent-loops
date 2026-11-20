@@ -33,8 +33,6 @@ public struct PageFollower: Sendable, Equatable {
     /// top of the paragraph.
     public struct Reveal: Sendable, Equatable {
         public var index: Int
-        /// The agreed prefix: what was already on the page when this began.
-        public var from: Int
         /// How many characters are drawn now.
         public var shown: Int
         /// What this block said before the write. Drawn while it waits its turn, so
@@ -292,7 +290,7 @@ public struct PageFollower: Sendable, Equatable {
             let old = previous.indices.contains(index) ? previous[index].source : ""
             let agreed = zip(old, new).prefix { $0 == $1 }.count
             guard agreed < new.count else { continue }
-            queue.append(Reveal(index: index, from: agreed, shown: agreed, before: old))
+            queue.append(Reveal(index: index, shown: agreed, before: old))
         }
         guard !queue.isEmpty else { return [] }
         let first = queue.removeFirst()

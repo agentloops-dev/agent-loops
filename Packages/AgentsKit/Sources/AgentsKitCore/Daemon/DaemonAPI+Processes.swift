@@ -123,10 +123,5 @@ extension DaemonAPI {
     public struct MachineUsageState: Codable, Hashable, Sendable {
         public var machine: MachineUsage
         public var disks: [DiskAlarm]
-
-        public init(machine: MachineUsage, disks: [DiskAlarm] = []) {
-            self.machine = machine
-            self.disks = disks
-        }
     }
 }

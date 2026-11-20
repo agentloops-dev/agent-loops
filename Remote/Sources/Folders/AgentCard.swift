@@ -238,9 +238,6 @@ struct AgentCard: View {
         .accessibilityValue(agent.drawsUnread ? "unread" : "")
     }
 
-    /// Something is on its way to this agent; its menu and swipe hold until it is back (#87).
-    private var isActing: Bool { model.acting(agent.id) != nil }
-
     /// Whether the Mac is bringing this chat back by itself after a restart.
     private var isComingBack: Bool { model.isComingBack(agent) }
 
@@ -296,7 +293,7 @@ struct AgentMenuItems: View {
             } label: {
                 Label(AgentsModel.carryOnLabel, icon: "play.circle")
             }
-            .help(AgentsModel.carryOnHelp(for: agent))
+            .help(AgentsModel.carryOnHelp())
         }
         // In a scene of its own on an iPad (#888), as the Mac's window of its own (#826).
         OpenInNewWindowButton(agent: agent)
@@ -518,26 +515,5 @@ struct StatusIcon: View {
         }
         .frame(width: 20, height: 20)
         .accessibilityHidden(true)
-    }
-
-    /// The words a screen reader hears. An outcome's come from `WorkOutcome.heading`,
-    /// which is the same place the Mac reads them, so the two cannot drift (FR-017).
-    static func words(for state: AgentState, outcome: WorkOutcome? = nil, isWaiting: Bool = false,
-                      isUnaccountedFor: Bool = false) -> String {
-        if state == .queued { return HelperLimit.queuedLabel(position: nil) }
-        if StatusShape(state: state, outcome: outcome, isWaiting: isWaiting, isComingBack: false) == .waiting {
-            return StatusShape.waitingLabel
-        }
-        if state == .finished, let outcome { return outcome.heading }
-        if state == .finished, isUnaccountedFor { return "Finished without saying how it went" }
-        switch state {
-        case .running: return "Working"
-        case .starting: return AgentState.startingLabel
-        case .waitingOnUser: return "Waiting on you"
-        case .finished: return "Finished"
-        case .stopped: return "Stopped"
-        case .archived: return "Archived"
-        case .queued: return HelperLimit.queuedLabel(position: nil)
-        }
     }
 }

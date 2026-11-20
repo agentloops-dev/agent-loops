@@ -45,9 +45,6 @@ public enum WorkRemembered {
         return (q["range"].flatMap(WorkTimeline.Range.init(rawValue:)) ?? .twoDays, q["project"] ?? "", q["board"] ?? "")
     }
 
-    /// One value from words.
-    public static func value(_ name: String, in words: String?) -> String { values(words)[name] ?? "" }
-
     private static func words(_ pairs: [(String, String)]) -> String {
         var c = URLComponents()
         c.queryItems = pairs.filter { !$0.1.isEmpty }.map { URLQueryItem(name: $0.0, value: $0.1) }

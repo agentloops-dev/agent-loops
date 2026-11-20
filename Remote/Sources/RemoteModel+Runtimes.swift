@@ -127,8 +127,6 @@ extension RemoteModel {
 
     /// A folder's counts from the same grouping its page uses, so the list and the
     /// page cannot disagree about what needs attention.
-    func counts(in folder: URL?) -> [AgentGroup: Int] { work.counts(in: folder) }
-
     func counts(in key: FolderKey) -> [AgentGroup: Int] { work.counts(in: key) }
 
     /// Whether the Mac is bringing this chat back by itself after a restart.

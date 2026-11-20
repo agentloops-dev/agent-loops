@@ -671,7 +671,6 @@ struct FolderFold: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SidebarSmartRow.offDefaultsKey, store: WindowDefaults.store) private var smartOff = SidebarSmartRow.offAtFirst
-    @Environment(WindowRequests.self) private var requests
     let summary: DaemonAPI.FolderSummary
     let folds: SidebarFolds
     /// The search's words, already trimmed; empty when there is no search.
@@ -1433,7 +1432,7 @@ private struct GoneFolderRows: View {
                     Text("Gone from \(model.hosts.label(host))").appText(.fine).foregroundStyle(.tertiary)
                 }
                 Spacer()
-                Button("Remove") { model.hosts.forgetGoneFolder(host, path: path) }
+                Button("Remove") { model.hosts.forgetGoneFolder() }
                     .controlSize(.small)
             }
             .appText(.supporting)

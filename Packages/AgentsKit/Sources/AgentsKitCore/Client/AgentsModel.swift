@@ -55,11 +55,6 @@ public final class AgentsModel {
     /// not redraw every other folder's (#285). The array stays, for a one-off read.
     @ObservationIgnored public private(set) var workflows: [WorkflowSummary] = []
 
-    /// User workflows shown in Settings, separate from folder copies merged into forge folders.
-    public var userWorkflows: [WorkflowSummary] {
-        workflows.filter { $0.scope == "user" && $0.content != nil }
-    }
-
     /// Each folder's pinned pages (#159), by its standardized folder: kept current by
     /// `pins/changed`, which carries them. A folder with none is absent. Not observed:
     /// a folder reads its own shelf (#285).
@@ -1585,9 +1580,6 @@ public final class AgentsModel {
     /// The most events paging back brings in (#3650), as on the web page.
     static let eventsPagedMost = 5_000
 
-    /// What kind of wait an agent's mark draws (#5022).
-    public func waitKind(of agent: Agent) -> WaitKind { WaitKind.of(agent) }
-
     /// What an agent is waiting on, in the words its row, card and capsule use.
     public func waitStatus(of agent: Agent) -> WaitStatus? {
         WaitStatus.of(agent, names: { self.agentTitles[$0] }, lease: leaseStatus(of: agent.id))
@@ -2393,7 +2385,7 @@ public final class AgentsModel {
     public static let carryOnLabel = "Carry on"
 
     /// Help for Carry on, which only a wait has (#1916).
-    public static func carryOnHelp(for agent: Agent) -> String {
+    public static func carryOnHelp() -> String {
         "Stop waiting and carry on now"
     }
 

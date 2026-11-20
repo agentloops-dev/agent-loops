@@ -1,6 +1,6 @@
 ---
 name: dead-code-review
-description: Review changed Swift and web code for unreachable code since its last run with Periphery and Knip (Go's is gated at PR time by deadcode in go:lint, #6334), search Go too for compatibility code, record false positives, and remove only code proven dead. Use when the Dead code review workflow runs on its schedule (#2161, #3715), or when Alex asks for a dead-code review.
+description: Review changed web code for unreachable code since its last run with Knip (Go's and Swift's are gated at PR time, by deadcode in go:lint, #6334, and Periphery in swift-lint:lint, #6336), search Go and Swift too for compatibility code, record false positives, and remove only code proven dead. Use when the Dead code review workflow runs on its schedule (#2161, #3715), or when Alex asks for a dead-code review.
 ---
 
 # Dead-code review
@@ -18,27 +18,10 @@ the keyboard, that is true only of a workflow run.
   helper branch and pull request. A helper must explain why the finding cannot be reached
   through reflection, generated code, a runtime entry point, a test hook or an external
   consumer. Leave uncertain findings in the report.
-- Before any Xcode or Swift build, lease `build`; release it as soon as the command ends.
-  Keep the lease only while the build runs. Periphery uses the Mac's Xcode index and
-  cannot run in a Linux container.
-- Periphery is pinned at 3.8.0. Download its release archive to a temporary folder and
-  run that binary; do not install it. Verify its SHA-256 against the recorded value in
-  `baseline.md` before use.
-  Scan `AgentsHost` (the one Mac app: `App/Sources` and `Host/Sources`), `Remote` and every
-  `Packages/*` Swift package. Run `xcodegen generate` first (`Agents.xcodeproj` is not
-  checked in, and a copy older than the merge of `main` misses new files). Build the
-  two schemes one at a time with plain `xcodebuild`
-  (`-derivedDataPath build/DD-periphery`, the build cache's package checkout through
-  `-clonedSourcePackagesDirPath`, `COMPILER_INDEX_STORE_ENABLE=YES`), not through
-  `scripts/build-cache.sh`: its prefix mapping writes `/^worktree` paths into the index,
-  and Periphery then finds nothing. Run one scan over both schemes with
-  `--skip-build --index-store-path build/DD-periphery/Index.noindex/DataStore`. For a
-  package, `swift build --build-tests --build-system native -Xswiftc -index-store-path
-  -Xswiftc .build/periphery-index` (Swift 6.4's default build system writes no index),
-  then `periphery scan --skip-build --index-store-path .build/periphery-index
-  --retain-public`. The Xcode index can still be partial: a Swift finding counts only
-  when its name appears nowhere else in tracked Swift files. Record the exact command
-  and any target the scan could not index.
+- Do not run Periphery: Swift's dead declarations fail `swift-lint:lint` on every PR
+  (`scripts/lint.sh periphery`, #6336), so `main` has none. A Swift declaration kept on
+  purpose is a line in `.periphery-allowed.txt`, with its reason, on a PR. The compatibility
+  search in step 1.3 still reads Swift, as it reads Go.
 - Do not run `deadcode`: Go's unreachable functions fail `go:lint` on every PR
   (`scripts/lint.sh deadcode`, #6334), so `main` has none. The compatibility search in
   step 1.3 still reads Go, because deadcode cannot see a live function that only an old
@@ -61,7 +44,7 @@ the keyboard, that is true only of a workflow run.
 2. Read every file in `.agents/reviews/dead-code/`. The newest run file has
    `reviewed-through:` with the last reviewed `main` commit. If no run file exists,
    start at the last release tag.
-3. Review `git diff <previous reviewed-through>..main` for Swift and web code, and Go for the compatibility search only. On the
+3. Review `git diff <previous reviewed-through>..main` for web code, and Go and Swift for the compatibility search only. On the
    first run, use `git diff <last release tag>..main`. Also search current source for
    compatibility code using `before 0NN`, `older build`, `legacy` and `no longer`.
    Review only matches that are still in source; ignore docs, release notes, tests that
@@ -78,10 +61,10 @@ use, App Intents, Objective-C selectors, reflection, test-only hooks and entry p
 Generated code is excluded unless a handwritten reference is dead.
 
 For every false positive, add a durable baseline entry with the exact declaration or
-path, the analyzer, and the reason it is live. Use Periphery `retain_*` configuration or
-`// periphery:ignore` only for a declaration with a documented reason. Use Knip's
+path, the analyzer, and the reason it is live. Use Knip's
 `ignore` only for a path with a documented reason. A Go function kept on purpose is a line
-in `Go/.deadcode-allowed.txt`, with its reason, on a PR, not in `baseline.md`.
+in `Go/.deadcode-allowed.txt`, and a Swift declaration a line in `.periphery-allowed.txt`,
+with its reason, on a PR, not in `baseline.md`.
 Include the baseline update in the report branch.
 
 For every likely-dead finding, give severity (critical, high, medium or low), the exact
@@ -109,7 +92,7 @@ on `agents/reviews-dead-code`.
 ## 4. Remove code that is surely dead
 
 Group `sure` findings by client or language: Mac/Host, Remote, each independent Swift
-package, Go (compatibility code only) and Web. Start no more than one helper for a group at a time, and stay within
+package (compatibility code only), Go (compatibility code only) and Web. Start no more than one helper for a group at a time, and stay within
 the folder's session limits. Give each helper a new worktree off `main` and one group.
 The helper removes only that group's code, updates any necessary tests, runs the unit
 tests for touched paths, and opens one pull request with `Fixes #<finding issue>`.

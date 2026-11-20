@@ -63,7 +63,6 @@ public enum MachineFromRepository {
         public var kind: Kind
         public var choices: [String]?
         public var value: String
-        public var help: String?
         public var id: String { key }
     }
 
@@ -75,8 +74,7 @@ public enum MachineFromRepository {
             let type = p["type"]?.stringValue
             let kind: Field.Kind = type == "integer" || type == "number" ? .integer : type == "boolean" ? .boolean : .string
             return Field(key: key, title: p["title"]?.stringValue ?? key, kind: kind,
-                         choices: p["enum"]?.arrayValue?.map(text), value: p["default"].map(text) ?? "",
-                         help: p["description"]?.stringValue)
+                         choices: p["enum"]?.arrayValue?.map(text), value: p["default"].map(text) ?? "")
         }
     }
 

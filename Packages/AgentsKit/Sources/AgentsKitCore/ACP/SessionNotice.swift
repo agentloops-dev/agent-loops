@@ -19,16 +19,6 @@ public struct SessionNotice: Codable, Hashable, Sendable {
         self.detail = detail
     }
 
-    /// A notice with no title is not one: the protocol requires it and it is the part
-    /// that has to stand alone.
-    public init?(wire: JSONValue) {
-        guard let title = wire["title"]?.stringValue, !title.isEmpty else { return nil }
-        let detail = wire["description"]?.stringValue
-        self.init(severity: wire["severity"]?.stringValue ?? "info",
-                  title: title,
-                  detail: detail?.isEmpty == true ? nil : detail)
-    }
-
     /// Whether something has gone wrong, which is the only thing the chat gives a colour.
     public var isError: Bool { severity == "error" }
     public var isWarning: Bool { severity == "warning" }

@@ -243,12 +243,6 @@ public extension DaemonAPI {
         public var median: Date
         public var p10: Date
         public var p90: Date
-
-        public init(median: Date, p10: Date, p90: Date) {
-            self.median = median
-            self.p10 = p10
-            self.p90 = p90
-        }
     }
 
     /// An estimate as it was when work started (#3561): the medians, from the issues merged
@@ -517,11 +511,6 @@ public extension DaemonAPI {
     struct LineageSessionsOn: Codable, Sendable, Hashable {
         public var sessions: [LineageSessionOn]
         public var limited: Bool?
-
-        public init(sessions: [LineageSessionOn] = [], limited: Bool? = nil) {
-            self.sessions = sessions
-            self.limited = limited
-        }
     }
 
     /// `control/lineageChanged` (#4276): a machine sent lineage the merged copy did not have:

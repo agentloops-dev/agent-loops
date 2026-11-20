@@ -16,21 +16,6 @@ public enum DiskSweep {
     /// How many crash notes the window keeps.
     public static let crashNotesKept = 20
 
-    /// What a daemon sweeps as it starts: the temporary folder each runtime is given under
-    /// the root's cache folder, of entries older than a day. Off the start's path, since the first sweep
-    /// can have a thousand folders to remove; anything a runtime it starts writes there is
-    /// new, so it is never what goes.
-    public static func runtimeTemporaries(_ locations: StoreLocations, now: Date = Date()) {
-        for launch in RuntimeLaunchCatalog.builtIn {
-            guard let temporary = launch.environment["TMPDIR"] ?? nil,
-                  temporary.hasPrefix(RuntimeLaunch.cachePlaceholder) else { continue }
-            let folder = URL(filePath: RuntimeLaunch.expand(temporary, root: locations.root.path,
-                                                            cache: locations.cacheRoot.path),
-                             directoryHint: .isDirectory)
-            removeOlder(than: temporaryAge, in: folder, within: locations.cacheRoot, now: now)
-        }
-    }
-
     /// Remove every entry of `folder` last changed more than `age` before `now`. Says how
     /// many went. A folder that is not there is nothing to do. `within` is the folder it
     /// must really be inside, with no link on the way: an agent can replace a folder in its

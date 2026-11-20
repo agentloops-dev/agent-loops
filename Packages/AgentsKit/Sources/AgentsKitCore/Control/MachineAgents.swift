@@ -35,11 +35,6 @@ public extension DaemonAPI {
     struct MachineAgentsVersion: Codable, Sendable, Equatable, Hashable {
         public var version: String
         public var since: Date?
-
-        public init(version: String, since: Date? = nil) {
-            self.version = version
-            self.since = since
-        }
     }
 
     /// Another of the person's machines: its version, and how far it is ahead of and behind

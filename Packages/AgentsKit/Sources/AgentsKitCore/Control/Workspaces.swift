@@ -9,16 +9,6 @@ public struct ProviderID: RawRepresentable, Codable, Hashable, Sendable, CustomS
     public var rawValue: String
     public init(rawValue: String) { self.rawValue = rawValue }
 
-    /// A slug of the name and four random characters: `digitalocean-x7k2`.
-    public static func make(name: String) -> ProviderID {
-        let mapped: [Character] = name.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }
-        let slug = String(mapped).split(separator: "-", omittingEmptySubsequences: true).joined(separator: "-")
-        let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")
-        let tail = String((0..<4).map { _ in alphabet.randomElement()! })
-        let head = String(slug.prefix(24))
-        return ProviderID(rawValue: "\(head.isEmpty ? "provider" : head)-\(tail)")
-    }
-
     public var description: String { rawValue }
 }
 
@@ -42,14 +32,6 @@ public struct WorkspaceLink: Codable, Hashable, Sendable {
     public var wokeFor: Date?
 
     public static let defaultIdleMinutes = 120
-
-    public init(provider: ProviderID, workspace: String, startWhenUsed: Bool? = true,
-                stopWhenIdleMinutes: Int? = WorkspaceLink.defaultIdleMinutes) {
-        self.provider = provider
-        self.workspace = workspace
-        self.startWhenUsed = startWhenUsed
-        self.stopWhenIdleMinutes = stopWhenIdleMinutes
-    }
 }
 
 /// A provider as the store keeps it, `v1/providers/<id>.json`: never its secrets' values,
@@ -153,25 +135,6 @@ public struct ProviderRecord: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// The control plane's part that talks to providers, handed to `ControlMethods` by the
-/// executable. Absent on a control plane with several copies (research R4).
-public protocol WorkspaceHandling: Sendable {
-    func answer(method: String, params: JSONValue?, from caller: ControlRouter.Caller) async throws -> JSONValue
-    /// A host said whether it is idle (`machine/status`, #691 US4).
-    func heard(_ host: MachineRef, status: DaemonAPI.MachineStatus) async
-    /// An agent on `host` asked through its workspace tools (US6): one of
-    /// `agentWorkspaceMethods`, logged as that agent's.
-    func agentCall(from host: MachineRef, agent: String, method: String, params: JSONValue) async throws -> JSONValue
-    /// A writing agent on `host` called one of the writer's tools (#858).
-    func draftCall(from host: MachineRef, call: DaemonAPI.MachineProviderDraftCall) async throws -> JSONValue
-}
-
-public extension WorkspaceHandling {
-    func draftCall(from host: MachineRef, call: DaemonAPI.MachineProviderDraftCall) async throws -> JSONValue {
-        throw JSONRPCError(code: DaemonAPI.Failure.notSupported, message: "This control plane has no drafts.")
-    }
-}
-
 public extension DaemonAPI.Method {
     /// `{}` → `{providers: [ProviderSummary]}`, as last listed.
     static let providersList = "providers/list"
@@ -208,16 +171,6 @@ public extension DaemonAPI.Method {
     /// `ProviderWorkspaceRequest` → `{}`: Delete on a machine New Machine made that never
     /// joined (#4610). The provider deletes the workspace.
     static let providersDeleteWorkspace = "providers/deleteWorkspace"
-
-    /// Every method the control plane's workspace part answers.
-    static let workspaceMethods: Set<String> = [
-        providersList, providersAdd, providersUpdate, providersRemove, providersRefresh,
-        hostsLink, hostsUnlink, hostsSetMachineOptions, hostsStart, hostsStop,
-        hostsKeep, hostsListKept, hostsDropKept, hostsRetryKept,
-        providersOptions, providersCreate, hostsDeleteMachine,
-        providersDraftStart, providersDraftCancel, providersDraftAnswer, providersDraftSigned, providersRuntimes,
-        providersMakeDefault, providersDeleteWorkspace,
-    ]
 }
 
 public extension DaemonAPI.Notification {
@@ -228,10 +181,6 @@ public extension DaemonAPI.Notification {
 public extension DaemonAPI.Failure {
     /// Providers are off on this control plane: several copies (research R4), or no folder for their secrets (#3113). The message says which.
     static let providersNeedOneCopy = -32064
-    /// A start or stop for a host that isn't linked to a workspace.
-    static let notLinked = -32065
-    /// The provider said no, in its own words.
-    static let providerFailed = -32066
     /// Stop while agents are working there, not confirmed (US4 AS4). `data` is `{running: [names]}`.
     static let agentsWorking = -32068
     /// machines/link for a machine whose ssh host key nobody has trusted yet: one that joined
@@ -545,12 +494,6 @@ public extension DaemonAPI {
         public var id: ProviderID?
         public var values: JSONValue?
         public var name: String?
-        public init(schema: JSONValue, id: ProviderID? = nil, values: JSONValue? = nil, name: String? = nil) {
-            self.schema = schema
-            self.id = id
-            self.values = values
-            self.name = name
-        }
     }
 
     /// `providers/create`.

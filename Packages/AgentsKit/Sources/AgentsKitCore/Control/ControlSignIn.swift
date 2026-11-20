@@ -70,17 +70,6 @@ public enum ControlSignIn {
         return nonce(controlKey: controlKey, challenge: challenge)
     }
 
-    /// The providers turned on at `url`, read on an `s:` connection that is then closed: for a
-    /// sign-in sheet to show only those. Refused (`unknown`) when none is on.
-    public static func providers(url: URL, pin: String?, controlKey: Data?, kind: ClientRecord.Kind,
-                                 dial: ControlCodeUse.Dial) async throws -> DaemonAPI.SignInProviders {
-        let session = try await open(url: url, pin: pin, controlKey: controlKey, privateKey: ControlAgreement.generate().privateKey, id: UUID(),
-                                     kind: kind, dial: dial)
-        defer { session.reader.close() }
-        return try await call(session.reader, id: 1, method: DaemonAPI.Method.signInProviders, params: .object([:]),
-                              within: 15, waiting: nil).decode(DaemonAPI.SignInProviders.self)
-    }
-
     /// Pairs as the person the sign-in names: what the client keeps to dial again. A GitHub
     /// sign-in waits for Approve on another of the person's clients; `waiting` is told the
     /// code to show, made here (`approvalCode`).

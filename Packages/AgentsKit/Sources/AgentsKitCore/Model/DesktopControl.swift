@@ -15,11 +15,6 @@ import Foundation
 public struct DesktopControlPause: Codable, Sendable, Hashable {
     public var app: String
     public var pausedAt: Date
-
-    public init(app: String, pausedAt: Date) {
-        self.app = app
-        self.pausedAt = pausedAt
-    }
 }
 
 /// The live tile's latest look at the Mac's screen while an agent holds the `screen` lease

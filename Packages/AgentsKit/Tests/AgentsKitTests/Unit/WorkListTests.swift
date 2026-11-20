@@ -319,7 +319,6 @@ struct WorkListTests {
 @Suite("Work page")
 struct WorkPageTests {
     typealias Node = DaemonAPI.LineageNode
-    let issue = Node(kind: "issue", ref: "github:alexec/Agents#12")
     let pr = Node(kind: "pr", ref: "github:alexec/Agents#34")
     let release = Node(kind: "release", ref: "github:alexec/Agents/release/v0.14.0")
     let session = Node(kind: "session", ref: "session:S1")

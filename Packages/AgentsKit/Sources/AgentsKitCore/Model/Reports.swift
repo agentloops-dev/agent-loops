@@ -37,10 +37,6 @@ public extension DaemonAPI {
     /// Whose rows a report adds up (#1804).
     struct ReportScope: Codable, Sendable, Hashable {
         public var kind: ReportScopeKind
-
-        public init(kind: ReportScopeKind) {
-            self.kind = kind
-        }
     }
 
     /// A scope the caller may see, with its name (#1804).

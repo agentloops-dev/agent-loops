@@ -40,8 +40,6 @@ public struct HeldAudio {
         return buffers
     }
 
-    public mutating func removeAll() { buffers = [] }
-
     static func copy(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
         guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
             return nil

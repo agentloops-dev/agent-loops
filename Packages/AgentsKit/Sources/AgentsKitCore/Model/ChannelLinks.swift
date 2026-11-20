@@ -84,11 +84,6 @@ public extension DaemonAPI {
     struct ChannelLinkDecided: Codable, Sendable, Hashable {
         public var request: String
         public var result: String
-
-        public init(request: String, result: String) {
-            self.request = request
-            self.result = result
-        }
     }
 
     /// `links/remove`.

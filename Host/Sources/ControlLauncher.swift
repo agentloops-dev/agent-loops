@@ -20,7 +20,7 @@ enum ControlTool {
     }
 
     /// The arguments and environment for a command, with the descriptor to hand over.
-    static func plan(_ arguments: [String], paths: HostPaths, settings: HostSettings, key: Bool = true) throws
+    static func plan(_ arguments: [String], paths: HostPaths, key: Bool = true) throws
         -> (arguments: [String], environment: [String: String], secrets: [Int32: Data]) {
         var arguments = arguments
         var secrets: [Int32: Data] = [:]
@@ -41,9 +41,9 @@ enum ControlTool {
     }
 
     /// Runs one command to its end: `code`, `hosts`, `clients`, `handover`.
-    static func run(_ arguments: [String], paths: HostPaths, settings: HostSettings, key: Bool = true) async -> Result {
+    static func run(_ arguments: [String], paths: HostPaths, key: Bool = true) async -> Result {
         do {
-            let planned = try plan(arguments, paths: paths, settings: settings, key: key)
+            let planned = try plan(arguments, paths: paths, key: key)
             return try await spawn(paths.agentsControl.path, planned.arguments, planned.environment, planned.secrets)
         } catch {
             return Result(status: -1, output: "", error: "\(error)")
@@ -140,7 +140,7 @@ enum ControlLauncher {
             }
             // launchd starts it again (KeepAlive), so a page's Restart may stop it (#4252).
             arguments.append("--restartable")
-            let planned = try ControlTool.plan(arguments, paths: paths, settings: settings)
+            let planned = try ControlTool.plan(arguments, paths: paths)
             for (target, data) in planned.secrets {
                 var ends: [Int32] = [0, 0]
                 guard pipe(&ends) == 0 else { throw ControlService.Failure("no pipe for the key") }

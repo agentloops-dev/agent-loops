@@ -497,8 +497,8 @@ extension RemoteModel {
             let id = host.id
             reachableHosts.insert(id)
             // A start there with no key of its own asks this device for one (#344).
-            await other.setCredentialLender { [weak self] wanted in
-                await self?.answerCredentialWanted(wanted, on: id) ?? false
+            await other.setCredentialLender { [weak self] _ in
+                await self?.answerCredentialWanted() ?? false
             }
             if let folders = try? await other.call(DaemonAPI.Method.foldersList,
                                                     DaemonAPI.FoldersListRequest(includeArchived: false),

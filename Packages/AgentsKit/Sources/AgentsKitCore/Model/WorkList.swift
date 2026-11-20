@@ -96,8 +96,6 @@ public enum WorkList {
         public var url: URL?
         /// The machine the forge read came from, to read the item again on.
         public var host: MachineRef?
-        /// The folder on `host` the forge read was for (#3283): its project is the row's.
-        public var folder: String?
         public var draft: Bool
         public var lineage: DaemonAPI.ReportNode?
         /// How many comments it has (0 when the forge did not say), and a pull request's checks
@@ -110,7 +108,7 @@ public enum WorkList {
 
         public init(node: DaemonAPI.LineageNode, title: String, state: String, labels: [DaemonAPI.ForgeLabel] = [],
                     repo: String, author: String? = nil, assignees: [String] = [],
-                    updated: Date, url: URL? = nil, host: MachineRef? = nil, folder: String? = nil, draft: Bool = false,
+                    updated: Date, url: URL? = nil, host: MachineRef? = nil, draft: Bool = false,
                     lineage: DaemonAPI.ReportNode? = nil, status: String? = nil, comments: Int = 0, checks: String? = nil,
                     review: String? = nil, stateReason: String? = nil, avatar: String? = nil, created: Date? = nil,
                     closed: Date? = nil) {
@@ -129,7 +127,6 @@ public enum WorkList {
             self.closed = closed
             self.url = url
             self.host = host
-            self.folder = folder
             self.draft = draft
             self.lineage = lineage
             self.comments = comments
@@ -141,7 +138,7 @@ public enum WorkList {
         public init(_ item: DaemonAPI.ForgeItem, on host: MachineRef, lineage: DaemonAPI.ReportNode? = nil) {
             self.init(node: item.node, title: item.title, state: item.state, labels: item.labels, repo: WorkList.repo(of: item.node.ref),
                       author: item.author, assignees: item.assignees, updated: item.updatedAt,
-                      url: item.url.flatMap(URL.init(string:)), host: host, folder: item.folder, draft: item.draft ?? false,
+                      url: item.url.flatMap(URL.init(string:)), host: host, draft: item.draft ?? false,
                       lineage: lineage,
                       status: item.status, comments: item.comments, checks: item.checks, review: item.review,
                       stateReason: item.stateReason, avatar: item.authorAvatar, created: item.createdAt, closed: item.closedAt)

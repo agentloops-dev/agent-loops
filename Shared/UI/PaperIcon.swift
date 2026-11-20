@@ -108,25 +108,6 @@ extension Menu where Label == SwiftUI.Label<Text, Image> {
     init(_ titleKey: LocalizedStringKey, icon systemName: String, @ViewBuilder content: () -> Content) {
         self.init(content: content) { SwiftUI.Label(titleKey, icon: systemName) }
     }
-
-    /// A menu with a title and the icon for an SF Symbol's name (#4976).
-    @_disfavoredOverload
-    init<S: StringProtocol>(_ title: S, icon systemName: String, @ViewBuilder content: () -> Content) {
-        self.init(content: content) { SwiftUI.Label(title, icon: systemName) }
-    }
-}
-
-extension Toggle where Label == SwiftUI.Label<Text, Image> {
-    /// A toggle with a title and the icon for an SF Symbol's name (#4976).
-    init(_ titleKey: LocalizedStringKey, icon systemName: String, isOn: Binding<Bool>) {
-        self.init(isOn: isOn) { SwiftUI.Label(titleKey, icon: systemName) }
-    }
-
-    /// A toggle with a title and the icon for an SF Symbol's name (#4976).
-    @_disfavoredOverload
-    init<S: StringProtocol>(_ title: S, icon systemName: String, isOn: Binding<Bool>) {
-        self.init(isOn: isOn) { SwiftUI.Label(title, icon: systemName) }
-    }
 }
 
 extension ContentUnavailableView where Label == SwiftUI.Label<Text, Image>, Description == Text?, Actions == EmptyView {

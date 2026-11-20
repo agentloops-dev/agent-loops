@@ -37,13 +37,6 @@ public enum Speakable {
 
     // MARK: - Blocks
 
-    /// Code fences and tables become one short line each; every other line stays a line.
-    static func blocks(_ markdown: String) -> [String] {
-        var out: [String] = []
-        forEachBlock(markdown) { out.append($0); return true }
-        return out
-    }
-
     /// Gives each line of `blocks`, in order, until `visit` says false: the rest of the
     /// reply is not read.
     static func forEachBlock(_ markdown: String, _ visit: (String) -> Bool) {

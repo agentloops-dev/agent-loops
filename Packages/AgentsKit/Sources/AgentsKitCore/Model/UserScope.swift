@@ -79,25 +79,6 @@ public extension DaemonAPI {
         public var retention: JSONValue?
         public var updated: String?
 
-        public init(mcpServers: JSONValue? = nil, agentConfig: JSONValue? = nil, agentConfigFiles: AgentConfigFiles? = nil, runtimes: JSONValue? = nil,
-                    costLimits: JSONValue? = nil, notifications: JSONValue? = nil, accounts: JSONValue? = nil, timeZone: JSONValue? = nil,
-                    environment: JSONValue? = nil, person: JSONValue? = nil, auto: JSONValue? = nil, retention: JSONValue? = nil,
-                    updated: String? = nil) {
-            self.person = person
-            self.auto = auto
-            self.retention = retention
-            self.timeZone = timeZone
-            self.environment = environment
-            self.mcpServers = mcpServers
-            self.agentConfig = agentConfig
-            self.agentConfigFiles = agentConfigFiles
-            self.runtimes = runtimes
-            self.costLimits = costLimits
-            self.notifications = notifications
-            self.accounts = accounts
-            self.updated = updated
-        }
-
         public subscript(part: UserSettingsPartName) -> JSONValue? {
             switch part {
             case .mcpServers: mcpServers
@@ -378,8 +359,6 @@ public extension DaemonAPI.Method {
     static let userSettings = "user/settings"
     /// `UserSettingsPart` → `{}` (#1760).
     static let userSetSettings = "user/setSettings"
-    /// `AgentConfigFileRequest` → `{}` (#2129).
-    static let userSetAgentConfigFile = "user/setAgentConfigFile"
     /// `UserSecretSet` → `{}` (#1760, #3397).
     static let userSetSecret = "user/setSecret"
     /// `{}` → `SealRecipients`: the person's machines and clients, to seal a secret to (#3397).
@@ -413,11 +392,6 @@ public enum UserScopeWords {
         + "skills and MCP servers from the Mac's Settings window. Workflows, plugins and a skill's other files stay on this Mac."
 
     public static let thisMacOnly = "This Mac's"
-    public static let addSecret = "Add a Secret…"
-
-    public static let secretsFoot = "A secret is sealed in this app to each of your own machines and apps; the control plane "
-        + "cannot open it. Write ${NAME} for it in an MCP server's env or headers. You can reveal and copy it here, and each "
-        + "reveal and copy is in the audit log. Agents never get a value from here. To change it, replace it."
 
     // Reveal and Copy (#5112, #5115; specs/5112-view-copy-secrets-accounts/wireframes.md).
     public static let reveal = "Reveal"
@@ -530,7 +504,6 @@ public enum UserScopeWords {
     }
 
     // Card secrets (#3531).
-    public static let addCard = "Add a Card…"
     /// Where a person adds a card: what a card for agents must be.
     public static let cardRule = "Add only a card that has a spend limit, such as a Privacy.com card. A card locked to one merchant or category is safer. "
         + "An agent fills it into a page with fill_secret and never sees it. It stays sealed on your own machines."

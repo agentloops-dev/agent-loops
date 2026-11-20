@@ -79,73 +79,6 @@ public struct RemovedTool: Codable, Hashable, Sendable {
     }
 }
 
-/// A tool left in place that looks like it should have gone.
-public struct KeptTool: Codable, Hashable, Sendable {
-    public var name: String
-    /// Why it survived.
-    ///
-    /// This field exists for one tool and one reader. The escalation tool is the thing
-    /// this whole feature was built to protect, and it looks exactly like the rivals
-    /// being removed; without a reason written beside it, somebody tidying this table in
-    /// a year moves it into `removed` and takes away the only way an agent has of
-    /// reaching the person.
-    public var because: String
-
-    public init(name: String, because: String) {
-        self.name = name
-        self.because = because
-    }
-}
-
-/// A conflicting tool a runtime will not let us remove. Covered by words instead.
-public struct ResidualTool: Codable, Hashable, Sendable {
-    public var name: String
-    public var category: RemitCategory
-
-    /// Taken from the category rather than stored, so the briefing line and the refusal
-    /// cannot drift apart into two sentences about the same tool.
-    public var instead: String { category.instead }
-
-    public init(name: String, category: RemitCategory) {
-        self.name = name
-        self.category = category
-    }
-}
-
-/// Config the app writes for a runtime that will read policy only from a file.
-///
-/// Nothing reads it back. It is an argument that happens to need a path: written whole
-/// before the process starts, pointed at by an environment variable or by a launch
-/// argument, and rebuilt every launch from the policy above it (Research R11).
-///
-/// Grok reads its switches only from a file named by `GROK_CONFIG_PATH`. A policy file
-/// pointed at by a launch flag such as `--policy <path>` can add to a runtime's own
-/// policies, where a settings file named by a variable would replace theirs key by key
-/// (046, R5).
-public struct EnvironmentFile: Codable, Hashable, Sendable {
-    /// The file's name under `<root>/runtimes/`.
-    public var name: String
-    public var contents: String
-    /// The environment variable pointed at it, or nil when an argument is.
-    public var variable: String?
-    /// The launch flag its path follows, or nil when a variable points at it.
-    public var argument: String?
-
-    public init(name: String, contents: String, variable: String) {
-        self.name = name
-        self.contents = contents
-        self.variable = variable
-        self.argument = nil
-    }
-
-    public init(name: String, contents: String, argument: String) {
-        self.name = name
-        self.contents = contents
-        self.variable = nil
-        self.argument = argument
-    }
-}
-
 /// A runtime's sign-in relayed from the Mac to a server (047, research R12; Claude's, 056).
 ///
 /// The sign-in stays on the Mac. On the server the runtime starts with a stand-in that holds
@@ -193,20 +126,6 @@ public struct SignInRelay: Codable, Hashable, Sendable {
         self.ownSignInVariables = ownSignInVariables
         self.ownSignInFile = ownSignInFile
     }
-
-    /// The config written into the runtime's home, for a `.home` relay; nil otherwise.
-    public func config(gatePort: UInt16) -> String? {
-        guard case .home(_, _, _, let template) = pointing else { return nil }
-        return template.replacingOccurrences(of: "{port}", with: String(gatePort))
-    }
-
-    /// The variables of an `.environment` relay, filled in; empty for a `.home` one.
-    public func environment(gatePort: UInt16, standIn: String) -> [String: String] {
-        guard case .environment(let template) = pointing else { return [:] }
-        return template.mapValues {
-            $0.replacingOccurrences(of: "{port}", with: String(gatePort)).replacingOccurrences(of: "{standIn}", with: standIn)
-        }
-    }
 }
 
 /// How a removal is asked for.
@@ -230,109 +149,31 @@ public enum Lever: Hashable, Sendable {
     /// feature switches take the removed tools away). The removed names are for the
     /// briefing; the switches that remove them are in `value`.
     case environmentJSON(variable: String, value: JSONValue)
-    /// The removed names are written into one of the policy's `environmentFiles`, which the
-    /// runtime is pointed at; nothing rides on the session or the command line besides the
-    /// file's own path (046: a runtime's `--policy` flag).
-    case file
     /// No mechanism at all. Everything conflicting is residue.
     case words
-}
-
-/// How a runtime is directed to the app's MCP tool schemas.
-public enum AppToolSchemaDelivery: Hashable, Sendable {
-    case none
-    case sessionRules
-    case firstPrompt
 }
 
 /// One runtime's policy: what goes, what deliberately stays, and what we could not move.
 public struct ToolPolicy: Hashable, Sendable {
     public var runtimeID: String
     public var removed: [RemovedTool] = []
-    public var kept: [KeptTool] = []
-    public var residue: [ResidualTool] = []
     public var lever: Lever
-    /// Some runtimes need the app's tools written out because they do not reliably
-    /// discover them from the MCP catalog. The delivery point is runtime-specific.
-    public var appToolSchemaDelivery: AppToolSchemaDelivery
-    public var environmentFiles: [EnvironmentFile] = []
-    /// This runtime's own name for a tool that can actually put a question to the person,
-    /// where there is one — the one tool in `kept` the briefing may name out loud.
-    ///
-    /// "Can actually" is the whole of it, and it is narrower than "has a question tool".
-    /// Grok has `ask_user_question`, keeps it, and lists it — and it draws a card in a
-    /// terminal UI that does not exist over `agent stdio`, with no ACP notification that
-    /// carries a question (R13). Naming it there was measured and made things worse: the
-    /// agent spent its turn searching the MCP catalogue for a tool that could never reach
-    /// anybody, and then guessed regardless. So this is `nil` for Grok.
-    ///
-    /// 016 deliberately named no tool in its escalation line, and was right to at the
-    /// time: the tool belongs to the runtime, each spells it differently, and naming one
-    /// would have been the first place in the app to branch on runtime identity. 015
-    /// changed the facts that rested on. There is now a table that knows, per runtime,
-    /// which tool this is — protecting it from removal is the single thing that feature
-    /// could break that would matter most — so the name is already written down, and the
-    /// briefing reads it from here rather than the app guessing.
-    ///
-    /// `nil` where we do not know the name, which is not a formality: Copilot has a
-    /// question flow and nobody has established what its model calls it, so its line stays
-    /// as it was rather than naming something that might not be there (FR-008).
-    public var escalationTool: String?
     /// The order to offer this runtime's own sign-in methods in, by id, first to last (047:
     /// Codex puts ChatGPT before an API key, D1). Methods not named keep their order after
     /// these. Empty keeps the rule for everyone else: the first one without a terminal.
     public var preferredAuthMethods: [String]
-    /// Added to its environment by a server's daemon only (047: Codex's `NO_BROWSER`, so a
-    /// ChatGPT sign-in is never offered on a server).
-    public var serverEnvironment: [String: String]
     /// How this runtime's sign-in is relayed from the Mac to a server (047), or nil when it
     /// is not.
     public var relay: SignInRelay?
-    /// Not offered the client's file reading, so the runtime reads from disk itself; writes
-    /// still come through the app (046). For a runtime whose own file-write tool reads
-    /// first and treats only an error carrying code `ENOENT` as "a new file", which a
-    /// JSON-RPC error over ACP can never carry: every new file it tried to write through
-    /// the app would fail.
-    public var readsFilesItself: Bool
-    /// The sign-in method to call `authenticate` with when picking a conversation back up is
-    /// refused as not signed in, before trying once more (046: a runtime's own key-based
-    /// method, which reads the key from its environment and records that choice in its own
-    /// settings — so only when needed).
-    public var authMethodBeforeContinuing: String?
-
     public init(runtimeID: String,
                 removed: [RemovedTool] = [],
-                kept: [KeptTool] = [],
-                residue: [ResidualTool] = [],
                 lever: Lever,
-                appToolSchemaDelivery: AppToolSchemaDelivery = .none,
-                environmentFiles: [EnvironmentFile] = [],
-                escalationTool: String? = nil,
                 preferredAuthMethods: [String] = [],
-                serverEnvironment: [String: String] = [:],
-                relay: SignInRelay? = nil,
-                readsFilesItself: Bool = false,
-                authMethodBeforeContinuing: String? = nil) {
+                relay: SignInRelay? = nil) {
         self.runtimeID = runtimeID
         self.removed = removed
-        self.kept = kept
-        self.residue = residue
         self.lever = lever
-        self.appToolSchemaDelivery = appToolSchemaDelivery
-        self.environmentFiles = environmentFiles
-        self.escalationTool = escalationTool
         self.preferredAuthMethods = preferredAuthMethods
-        self.serverEnvironment = serverEnvironment
         self.relay = relay
-        self.readsFilesItself = readsFilesItself
-        self.authMethodBeforeContinuing = authMethodBeforeContinuing
-    }
-
-    /// What is added to the runtime's own arguments when the process is started.
-    public var launchArguments: [String] {
-        guard case .launchArguments(let flag, let repeatsFlag, let extra) = lever else { return [] }
-        let names = removed.map(\.name)
-        guard !names.isEmpty else { return extra }
-        return extra + (repeatsFlag ? names.flatMap { [flag, $0] } : [flag] + names)
     }
 }

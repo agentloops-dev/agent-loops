@@ -27,12 +27,6 @@ public enum WorkflowWhenDone: String, Codable, Hashable, Sendable, CaseIterable 
         }
     }
 
-    /// The key, as the file spells it.
-    public static let key = "when-done"
-
-    /// Said when the file names a value that is none of the three.
-    public static let unknown = "`when-done:` must be keep, archive-allowed or archive"
-
     /// The menu's words for it, the same on every page.
     public var words: String {
         switch self {

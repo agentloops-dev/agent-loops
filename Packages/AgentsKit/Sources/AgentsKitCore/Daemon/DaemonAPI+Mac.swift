@@ -52,7 +52,4 @@ public extension DaemonAPI {
             self.onlyIfAbsent = onlyIfAbsent
         }
     }
-
-    /// The most `files/readText` and `files/saveText` carry.
-    static let textFileLimit = 1024 * 1024
 }

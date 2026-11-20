@@ -56,7 +56,7 @@ final class DeviceNotifier: NSObject, UNUserNotificationCenterDelegate {
         if change.to == me {
             guard !isShowing else { return }
             guard await ensureAuthorised() else { return }
-            show(need, token: token, alert: change.alert)
+            show(need, alert: change.alert)
         } else if isShowing {
             withdraw(token)
         }
@@ -79,11 +79,11 @@ final class DeviceNotifier: NSObject, UNUserNotificationCenterDelegate {
             guard showing[token] == nil, !delivered.contains(token),
                   let need = pending.needs.first(where: { $0.id == delivery.needID }) else { continue }
             guard await ensureAuthorised() else { return }
-            show(need, token: token, alert: false)
+            show(need, alert: false)
         }
     }
 
-    private func show(_ need: Need, token: String, alert: Bool) {
+    private func show(_ need: Need, alert: Bool) {
         show(need.headline, needID: need.id, alert: alert, agentID: need.agentID)
     }
 
