@@ -52,9 +52,6 @@ extension Trait where Self == ConditionTrait {
     ///   RuntimeExitTests.aSessionWhoseRuntimeDiesGivesBackEveryDescriptor and
     ///   tenDeathsLeaveNothingBehind;
     ///   GitBoundsTests.aChildWhoseGrandchildHoldsItsPipeEndsWithItsOwnStatus.
-    /// - CloseOnExecTests.aConnectionBecomesTheDeviceItIdentifiesAs — the identify request
-    ///   was not handled within 45 s, past the 60 s limit, on main at 587caf85a
-    ///   (2026-11-16, #5852).
     ///
     /// Slow quarantine, run manually from `.github/workflows/slow-tests.yml`:
     /// - RelayCarryingTests.aReplyOfFiveMegabytesArrivesWhole — 62 s on the shared

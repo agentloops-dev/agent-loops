@@ -121,6 +121,11 @@ public final class DaemonServer: @unchecked Sendable {
     /// Readable inside the module so a test can ask whether it would survive an exec.
     /// There is no other way to see the flag: it only shows itself in a child.
     private(set) var listenFD: Int32 = -1
+    /// The write end of the accept thread's wake-up pipe: `stop` closes it, and the
+    /// thread, waking, closes the listener as it leaves (#5852). `stop` never closes the
+    /// listener itself. A thread on its way back to `accept` would then wait on a number
+    /// the process may since have given to another listener, and take that one's clients.
+    private var wakeFD: Int32 = -1
     private let connections = ConnectionSet()
     private let stopped = ManagedAtomicFlag()
     /// Lines a caller could have said every few seconds: once, then a count (#168).
@@ -193,12 +198,39 @@ public final class DaemonServer: @unchecked Sendable {
             close(listenFD)
             throw DaemonServerError.cannotListen(errno: errno)
         }
+        // The thread waits on the listener and on this pipe. Closing the pipe's write end
+        // wakes it, where closing the listener under it did not, and left it free to
+        // `accept` on a number that was by then another server's (#5852).
+        var wake: [Int32] = [-1, -1]
+        guard pipe(&wake) == 0 else {
+            let error = errno
+            close(listenFD)
+            throw DaemonServerError.cannotCreateSocket(errno: error)
+        }
+        for fd in wake { _ = setCloseOnExec(fd) }
+        wakeFD = wake[1]
 
         let listenFD = self.listenFD
+        let wakeRead = wake[0]
         let stopped = self.stopped
         let thread = Thread { [weak self] in
+            // The listener is this thread's: closed only once nothing will `accept` on it.
+            defer {
+                close(listenFD)
+                close(wakeRead)
+            }
             let failures = AcceptFailures(name: "socket")
             while true {
+                var fds = [pollfd(fd: listenFD, events: Int16(POLLIN), revents: 0),
+                           pollfd(fd: wakeRead, events: Int16(POLLIN), revents: 0)]
+                let ready = poll(&fds, 2, -1)
+                if stopped.isSet || fds[1].revents != 0 { return }
+                if ready < 0 {
+                    let error = errno
+                    if error == EINTR || error == EAGAIN { continue }
+                    DaemonLog.shared.write("socket: waiting for connections failed (\(String(cString: strerror(error)))); no more connections")
+                    return
+                }
                 let fd = accept(listenFD, nil, nil)
                 if fd < 0 {
                     // Not the end of the listener unless it was closed (#201): one
@@ -465,7 +497,8 @@ public final class DaemonServer: @unchecked Sendable {
 
     public func stop() {
         guard stopped.set() else { return }
-        if listenFD >= 0 { close(listenFD) }
+        // Wakes the accept thread, which closes the listener as it leaves (#5852).
+        if wakeFD >= 0 { close(wakeFD) }
         unlink(url.path)
         for connection in connections.all {
             Task { await connection.close() }
