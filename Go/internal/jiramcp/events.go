@@ -89,6 +89,9 @@ var events = func() []event {
 			"Only issues with this label.",
 			map[string]any{"comment": object(map[string]any{"author": str, "url": str, "body": str}), "commentedAt": str},
 			"Only comments by"},
+		{Closed, "Issue closed",
+			"An issue moved to a status of the category done (Done, Closed, Won't do…) from one that is not, read from the issue's history: moving it back and closing it again is a new event. A move from one done status to another is not.",
+			"Only issues with this label.", map[string]any{"status": str, "by": str, "closedAt": str}, "Only issues closed by"},
 	}
 	out := make([]event, len(kinds))
 	for i, k := range kinds {

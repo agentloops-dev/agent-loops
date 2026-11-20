@@ -383,7 +383,7 @@ func projectClause(project string) string {
 }
 
 // Activity reads what happened since, of one kind: issues created, comments, or the changelog
-// of issues updated (labels added, assigned to the token's user).
+// of issues updated (labels added, assigned to the token's user, moved to a done status).
 func (j *RealJira) Activity(ctx context.Context, kind Kind, project, since string) ([]Activity, bool, error) {
 	site := j.Auth().Site
 	now := time.Now()
@@ -425,8 +425,9 @@ func (j *RealJira) Activity(ctx context.Context, kind Kind, project, since strin
 }
 
 // changed reads the changelog of the issues updated since: a label added is labelled, an
-// assignee set to the token's user is assigned. Both share the one search, so a poll of both
-// costs one (and one more for the user, for assigned).
+// assignee set to the token's user is assigned, and a status moved into the category done
+// from one not in it is closed. They share the one search, so a poll of each costs one (and
+// one more for the user, for assigned, or for the statuses, for closed when a status moved).
 func (j *RealJira) changed(ctx context.Context, kind Kind, project, since string, now time.Time) ([]Activity, bool, error) {
 	var me *Person
 	if kind == Assigned {
@@ -441,6 +442,7 @@ func (j *RealJira) changed(ctx context.Context, kind Kind, project, since string
 		return nil, false, err
 	}
 	var items []Activity
+	read := historyReader{kind: kind, me: me, done: &doneStatuses{j: j}}
 	for _, r := range list {
 		if r.Changelog == nil {
 			continue
@@ -450,21 +452,79 @@ func (j *RealJira) changed(ctx context.Context, kind Kind, project, since string
 			if before(h.Created, since) {
 				continue
 			}
-			by := h.Author.person()
-			for n, it := range h.Items {
-				switch {
-				case kind == Labelled && it.Field == "labels":
-					for _, label := range added(it.FromString, it.ToString) {
-						items = append(items, Activity{ID: h.ID + ":" + label, At: h.Created, Issue: i, Kind: Labelled, By: by, Label: label})
-					}
-				// To the connection's owner (#2034), by anyone.
-				case kind == Assigned && it.Field == "assignee" && me != nil && me.ID != "" && it.To == me.ID:
-					items = append(items, Activity{ID: h.ID + ":" + strconv.Itoa(n), At: h.Created, Issue: i, Kind: Assigned, By: by})
-				}
+			got, err := read.activity(ctx, i, h)
+			if err != nil {
+				return nil, false, err
 			}
+			items = append(items, got...)
 		}
 	}
 	return items, more, nil
+}
+
+// historyReader finds one kind of activity in a changelog entry: for assigned, to me; for
+// closed, by the done statuses.
+type historyReader struct {
+	kind Kind
+	me   *Person
+	done *doneStatuses
+}
+
+// activity is what h, an entry of issue i's changelog, did of the reader's kind.
+func (r historyReader) activity(ctx context.Context, i Issue, h restHistory) ([]Activity, error) {
+	by := h.Author.person()
+	var items []Activity
+	for n, it := range h.Items {
+		switch {
+		case r.kind == Labelled && it.Field == "labels":
+			for _, label := range added(it.FromString, it.ToString) {
+				items = append(items, Activity{ID: h.ID + ":" + label, At: h.Created, Issue: i, Kind: Labelled, By: by, Label: label})
+			}
+		// To the connection's owner (#2034), by anyone.
+		case r.kind == Assigned && it.Field == "assignee" && r.me != nil && r.me.ID != "" && it.To == r.me.ID:
+			items = append(items, Activity{ID: h.ID + ":" + strconv.Itoa(n), At: h.Created, Issue: i, Kind: Assigned, By: by})
+		case r.kind == Closed && it.Field == "status":
+			closes, err := r.done.closes(ctx, it.From, it.To)
+			if err != nil {
+				return nil, err
+			}
+			if closes {
+				items = append(items, Activity{ID: h.ID + ":" + strconv.Itoa(n), At: h.Created, Issue: i, Kind: Closed, By: by, Status: it.ToString})
+			}
+		}
+	}
+	return items, nil
+}
+
+// doneStatuses are the ids of the site's statuses of the category done, read once, when a
+// status first moved: the changelog gives a move by the statuses' ids and names, not their
+// categories.
+type doneStatuses struct {
+	j    *RealJira
+	done map[string]bool
+}
+
+// closes says whether a move from one status to another closes the issue: into done from a
+// status not in it.
+func (d *doneStatuses) closes(ctx context.Context, from, to string) (bool, error) {
+	if d.done == nil {
+		var list []struct {
+			ID       string `json:"id"`
+			Category *struct {
+				Key string `json:"key"`
+			} `json:"statusCategory"`
+		}
+		if err := d.j.call(ctx, http.MethodGet, "/status", nil, &list); err != nil {
+			return false, err
+		}
+		d.done = map[string]bool{}
+		for _, s := range list {
+			if s.Category != nil && s.Category.Key == "done" {
+				d.done[s.ID] = true
+			}
+		}
+	}
+	return d.done[to] && !d.done[from], nil
 }
 
 // added is the labels in to that are not in from: Jira's changelog gives a label change as the

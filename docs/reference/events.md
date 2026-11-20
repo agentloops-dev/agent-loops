@@ -657,7 +657,7 @@ it, so two machines can make two ids for one change.
 | `azuredevops` | `pr.reviewed` | `azuredevops:pr:<org/project/repo>#<n>` | the reviewer and the state, as `dev@acme.test:approved` |
 | `azuredevops` | `run.completed`, `deploy.waiting` | `azuredevops:run:<org/project/repo>#<build id>` | the finish time, or the environments |
 | `azureboards` | `issue.*` | `azureboards:issue:<org/project>#<id>` | none for `issue.opened`; else the activity's id |
-| `jira` | `issue.*` | `jira:issue:<project>#<KEY-n>` | none for `issue.opened`; else the comment, label or change's id |
+| `jira` | `issue.*` | `jira:issue:<project>#<KEY-n>` | none for `issue.opened`; else the comment, label or change's id (`issue.closed`: the status move's) |
 | `linear` | `issue.*` | `linear:issue:<team>#<ENG-n>` | none for `issue.opened`; else the comment, label or history entry's id |
 | `sentry` | `health.issue_new` / `health.issue_regressed` | `sentry:issue:<org/project>#<id>` | none / the regression's time |
 | `betterstack` | `health.incident_*` | `betterstack:incident:<team>#<id>` | none |
