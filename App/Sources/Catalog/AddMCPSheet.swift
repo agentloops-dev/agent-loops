@@ -202,7 +202,7 @@ struct AddMCPSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.buttonStyle(.paper)
-                Button(addLabel(preview)) { Task { await add(preview) } }
+                Button(addLabel()) { Task { await add(preview) } }
                     .buttonStyle(.paperProminent)
                     .disabled(!canAdd(preview) || adding)
             }
@@ -210,7 +210,7 @@ struct AddMCPSheet: View {
         .padding(18)
     }
 
-    private func addLabel(_ preview: DaemonAPI.MCPPreview) -> String {
+    private func addLabel() -> String {
         switch destination {
         case .personal: return "Add to ~/.agents"
         case .folder: return "Add to folder"

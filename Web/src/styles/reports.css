@@ -10,9 +10,6 @@
 /* Reports ▸ Planning ▸ Builds (#5178, spec 5166): run time is the accent, waiting for a runner is hatched, waiting
    its turn is the rule's grey; a release tag is a dashed purple line; slower is red, faster is green. */
 .sub-app-row.under { padding-left: 24px; }
-/* Reports ▸ Summary (#3721, #5729): bold and a dot while the newest page is unread; its title under the row (.page-need). */
-.sub-app-row.unread { font-weight: 700; }
-.sub-app-row .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .builds-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 .builds-filters select { max-width: 16rem; }
 .builds-tiles { list-style: none; margin: 4px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }

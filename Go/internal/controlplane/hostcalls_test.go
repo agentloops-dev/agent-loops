@@ -13,9 +13,11 @@ import (
 	"github.com/coder/websocket"
 )
 
-// slowHandler holds every lineage/sync until let go, and answers the rest at once.
+// slowHandler holds every lineage/sync until let go, and answers the rest at once. When
+// began is set, each lineage/sync that starts says so on it.
 type slowHandler struct {
 	letGo chan struct{}
+	began chan struct{}
 }
 
 func (h *slowHandler) Handles(string) bool { return false }
@@ -24,6 +26,10 @@ func (h *slowHandler) Handle(string, json.RawMessage, Caller) (any, error) {
 }
 func (h *slowHandler) HostSaid(_, method string, _ json.RawMessage) (any, error) {
 	if method == "lineage/sync" {
+		select {
+		case h.began <- struct{}{}:
+		default:
+		}
 		<-h.letGo
 	}
 	return map[string]any{}, nil
@@ -182,13 +188,22 @@ func TestAHostCallThatAsksTheSameHostIsAnswered(t *testing.T) {
 // link's reads still go on.
 func TestAHostLaneWithNoRoomRefusesACall(t *testing.T) {
 	t.Parallel()
-	h := &slowHandler{letGo: make(chan struct{})}
+	h := &slowHandler{letGo: make(chan struct{}), began: make(chan struct{}, 1)}
 	r := NewRouter(h, nil)
 	ws, lines := hostLink(t, r)
 	defer close(h.letGo)
 
-	// One runs, hostCallQueue wait, and the next has no room.
-	for i := 0; i <= hostCallQueue; i++ {
+	// One runs, hostCallQueue wait, and the next has no room. The lane's goroutine takes
+	// the first call only when it is scheduled, so wait until that call runs (#6338):
+	// before it does, the queue is full one call early, and that call is refused in place
+	// of over, which then waits behind the held calls.
+	callHost(t, ws, "held", "lineage/sync")
+	select {
+	case <-h.began:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first call did not start in 5s")
+	}
+	for i := 1; i <= hostCallQueue; i++ {
 		callHost(t, ws, "held"+strings.Repeat("x", i), "lineage/sync")
 	}
 	callHost(t, ws, "over", "lineage/sync")

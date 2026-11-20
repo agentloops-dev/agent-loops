@@ -24,52 +24,13 @@ public struct QueuedPrompt: Codable, Hashable, Sendable, Identifiable {
     /// The agent that sent it, when `from` is `.agent` (#560).
     public var sender: MessageSender?
 
-    public init(id: UUID = UUID(), text: String, attachments: [Attachment] = [],
-                queuedAt: Date = Date(), from: PromptOrigin = .person, preface: String? = nil,
-                sender: MessageSender? = nil) {
-        self.id = id
-        self.text = text
-        self.attachments = attachments
-        self.queuedAt = queuedAt
-        self.from = from
-        self.preface = preface
-        self.sender = sender
-    }
-
     /// What goes to the runtime when its turn comes: the words, then what was
     /// attached. The same shape a prompt sent straight away takes.
     public var blocks: [ContentBlock] {
         [.text(text)] + attachments.map(\.block)
     }
 
-    /// Several waiting prompts as the one that goes when the turn ends (#346): the
-    /// words in the order they were queued, a blank line between them, with every
-    /// attachment and every preface. Later words often correct earlier ones, and a turn
-    /// each would answer each half-thought on its own, at a turn's cost each time.
-    ///
-    /// Keeps the first one's id, so a turn that fails puts back one prompt, not three.
-    public static func merging(_ prompts: [QueuedPrompt]) -> QueuedPrompt? {
-        guard var merged = prompts.first else { return nil }
-        guard prompts.count > 1 else { return merged }
-        merged.text = prompts.map(\.text).joined(separator: "\n\n")
-        merged.attachments = prompts.flatMap(\.attachments)
-        let prefaces = prompts.compactMap(\.preface)
-        merged.preface = prefaces.isEmpty ? nil : prefaces.joined(separator: "\n\n")
-        return merged
-    }
-
     /// Said when an edit came too late (#1552): the prompt went, or was taken back, first.
     /// The same words on the page (`sentBeforeEdit` in `Web/src/views/Chat.tsx`).
     public static let sentBeforeEdit = "That prompt was sent before your change. Your words are in the prompt bar."
-}
-
-extension Array where Element == QueuedPrompt {
-    /// What the next turn takes from the head of the queue (#346): every prompt of the
-    /// person's waiting there in a row, or the app's own prompt alone. The app's words
-    /// are a turn of their own and are never folded into what somebody typed.
-    public var nextTurn: [QueuedPrompt] {
-        guard let first else { return [] }
-        guard first.from == .person else { return [first] }
-        return Array(prefix { $0.from == .person })
-    }
 }

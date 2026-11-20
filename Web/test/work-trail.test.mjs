@@ -8,18 +8,17 @@ const ref = "github:alexec/Agents#5291";
 const epic = { kind: "issue", ref: "github:alexec/Agents#5281" };
 const words = (parts) => parts.map((p) => p.words);
 
-test("an issue in a feature's epic: Features, the feature, the epic, itself", () => {
+test("an issue in a feature's epic: Issues, the epic, itself", () => {
   const parts = t.workTrail("issue", ref, "agent loops", epic);
-  assert.deepEqual(words(parts), ["Features", "Agent loops", "Epic #5281", "#5291"]);
+  assert.deepEqual(words(parts), ["Issues", "Epic #5281", "#5291"]);
   assert.deepEqual(parts.map((p) => p.target), [
-    { kind: "list", section: "features" }, { kind: "feature", name: "agent loops" }, { kind: "item", section: "issue", ref: epic.ref }, undefined,
+    { kind: "list", section: "issue" }, { kind: "item", section: "issue", ref: epic.ref }, undefined,
   ]);
-  assert.equal(t.trailHelp(parts[0]), "All features");
-  assert.equal(t.trailHelp(parts[1]), "Agent loops in Features");
+  assert.equal(t.trailHelp(parts[0]), "All issues");
 });
 
-test("an epic: Features, its feature, itself", () => {
-  assert.deepEqual(words(t.workTrail("issue", epic.ref, "work")), ["Features", "Work", "#5281"]);
+test("an epic: Issues, itself", () => {
+  assert.deepEqual(words(t.workTrail("issue", epic.ref, "work")), ["Issues", "#5281"]);
 });
 
 test("an issue in no feature: its list, a parent with no Epic word, itself", () => {

@@ -4495,27 +4495,6 @@
       }
     },
     {
-      "name": "machines/summaryFacts",
-      "x-capability": "summary.machines/1",
-      "description": "Through machine/machines only (#3354): the Daily summary workflow's facts from each of the person's other machines. The control plane asks each one online for its agents/summaryFacts at once; one that is off, or does not answer in time, is named with why.",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/core.schema.json#/definitions/SummaryFactsRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/machines.schema.json#/definitions/MachinesSummaryFacts"
-        }
-      }
-    },
-    {
       "name": "machines/unlink",
       "x-capability": "machines/1",
       "tags": [
@@ -5989,6 +5968,32 @@
           "name": "web"
         }
       ]
+    },
+    {
+      "name": "reports/changes",
+      "x-capability": "reports.changes/1",
+      "description": "The lineage figures that changed since a cursor (#6350, epic #6348): the rows of one kind, as reports/nodes gives them, whose machines' lineage changed since the cursor, by ref in pages of at most 100. A read with no change since the cursor reads only the store's listing: it decodes and merges no lineage.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/ReportChangesQuery"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/ReportChanges"
+        }
+      }
     },
     {
       "name": "reports/deleteView",

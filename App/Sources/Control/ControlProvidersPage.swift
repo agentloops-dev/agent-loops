@@ -185,7 +185,7 @@ struct ControlProvidersPage: View {
             }
             ForEach(provider.workspaces) { workspace in
                 Divider()
-                ControlRow(dot: dot(workspace), title: workspace.name, detail: workspaceLine(workspace, of: provider)) {
+                ControlRow(dot: dot(workspace), title: workspace.name, detail: workspaceLine(workspace)) {
                     if control.isJoining(provider.id, workspace) {
                         // Made here, installing on its first boot (US5).
                         HStack(spacing: 6) {
@@ -293,7 +293,7 @@ struct ControlProvidersPage: View {
         }
     }
 
-    private func workspaceLine(_ workspace: DaemonAPI.MachineInfo, of provider: DaemonAPI.ProviderSummary) -> String {
+    private func workspaceLine(_ workspace: DaemonAPI.MachineInfo) -> String {
         var parts = [workspace.state.capitalized]
         if let host = workspace.host {
             parts.append("linked to \(control.hosts.first { $0.id == host }?.name ?? "a machine")")

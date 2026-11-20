@@ -54,27 +54,7 @@ public enum ToolPolicyCatalog {
             RemovedTool(name: "EnterWorktree", category: .workingFolder),
             RemovedTool(name: "ExitWorktree", category: .workingFolder),
         ],
-        kept: [
-            KeptTool(name: "AskUserQuestion",
-                     because: "It is the escalation path: the adapter raises it as a form elicitation, which the daemon holds and the phone can answer."),
-            // Sub-agents, whole: starting one, reading what it left running, stopping it,
-            // and saying something to it. `Agent`, `TaskOutput` and `TaskStop` came back in
-            // 057 so the app could show them as a list with a Stop button; `ListAgents` and
-            // `SendMessage` joined them on 2026-09-29, when sub-agents came back for every
-            // runtime. Addressing an agent as a peer is no longer the app's alone.
-            KeptTool(name: "Agent",
-                     because: "A sub-agent of its own, which the app now shows as a list with Stop (057)."),
-            KeptTool(name: "TaskOutput",
-                     because: "Reading what a sub-agent it started left running, for the same list (057)."),
-            KeptTool(name: "TaskStop",
-                     because: "Stopping one of its own, for the same list (057)."),
-            KeptTool(name: "ListAgents",
-                     because: "Listing its own sub-agents, with the app's (2026-09-29)."),
-            KeptTool(name: "SendMessage",
-                     because: "Saying something to one of its own sub-agents, with the app's (2026-09-29)."),
-        ],
         lever: .sessionMetaDenyList(path: ["claudeCode", "options", "disallowedTools"]),
-        escalationTool: "AskUserQuestion",
         // The Mac's Claude sign-in, relayed (056, research R3–R7). No files: Claude takes its
         // base URL and a stand-in subscription token from the environment, and trusts the
         // relay's CA through NODE_EXTRA_CA_CERTS. A cloud provider or key in the server's
@@ -114,46 +94,10 @@ public enum ToolPolicyCatalog {
             RemovedTool(name: "monitor", category: .standingArrangements),
             RemovedTool(name: "send_feedback", category: .escalation),
         ],
-        kept: [
-            KeptTool(name: "ask_user_question",
-                     because: "It is the escalation path: the daemon holds what it raises, and the phone can answer it."),
-            KeptTool(name: "spawn_subagent",
-                     because: "A sub-agent of its own, alongside the app's (2026-09-29)."),
-            KeptTool(name: "kill_command_or_subagent",
-                     because: "Stopping one it started, alongside the app's (2026-09-29)."),
-            KeptTool(name: "get_command_or_subagent_output",
-                     because: "Reading what one it started left running, alongside the app's (2026-09-29)."),
-            KeptTool(name: "wait_commands_or_subagents",
-                     because: "Waiting on one it started, alongside the app's (Grok 1.0.52)."),
-        ],
         lever: .sessionMetaDenyList(
             path: ["agentProfile", "disallowedTools"],
             extra: ["name": .string("agents-app"),
-                    "description": .string("An agent hosted by the Agents app.")]),
-        appToolSchemaDelivery: .sessionRules,
-        // Feature switches Grok reads only from a config file. `GROK_CONFIG` with the
-        // same TOML inline was measured and ignored, so it has to be a path (R6), and
-        // the path has to be ours: `~/.grok/config.toml` is the person's (FR-011).
-        environmentFiles: [
-            EnvironmentFile(
-                name: "grok-overlay.toml",
-                contents: """
-                    # Written by the Agents app. Do not edit: rebuilt on every launch.
-                    [features]
-                    image_gen = false
-                    video_gen = false
-
-                    """,
-                variable: "GROK_CONFIG_PATH"),
-        ])
-    // No `escalationTool`, and that is the measured answer rather than an omission.
-    // `ask_user_question` is not in the deny list above and stays, but it cannot reach
-    // a client over `agent stdio`: Grok's own documentation files it under blocking TUI
-    // cards, beside the permission prompt and the cancel-turn panel, and the ACP page
-    // lists every update kind, extension method and agent-to-client notification without
-    // one that carries a question. There is no channel, so there is no name worth telling
-    // an agent — naming it only sent Grok hunting through the MCP catalogue for it.
-    // Research R13.
+                    "description": .string("An agent hosted by the Agents app.")]))
 
     /// Copilot: three flags at launch.
     ///
@@ -181,21 +125,6 @@ public enum ToolPolicyCatalog {
             RemovedTool(name: "dynamic_workflows_manage", category: .standingArrangements),
             RemovedTool(name: "run_dynamic_workflow", category: .standingArrangements),
         ],
-        kept: [
-            KeptTool(name: "its own question flow",
-                     because: "It is the escalation path: what it raises becomes an elicitation the daemon holds."),
-            KeptTool(name: "task",
-                     because: "A sub-agent of its own, alongside the app's (2026-09-29)."),
-            KeptTool(name: "list_agents",
-                     because: "Listing its own sub-agents, with the app's (2026-09-29)."),
-            KeptTool(name: "read_agent",
-                     because: "Reading what a sub-agent it started left running, with the app's (2026-09-29)."),
-            KeptTool(name: "write_agent",
-                     because: "Saying something to one of its own sub-agents, with the app's (2026-09-29)."),
-        ],
-        residue: [
-            ResidualTool(name: "search_code_subagent", category: .agents),
-        ],
         lever: .launchArguments(flag: "--excluded-tools", repeatsFlag: false,
                                 extra: ["--disable-mcp-server", "software-factory",
                                         "--disable-builtin-mcps"]))
@@ -219,19 +148,7 @@ public enum ToolPolicyCatalog {
     /// `ask_question` as the fallback the app always serves.
     public static let cursor = ToolPolicy(
         runtimeID: RuntimeCatalog.cursor.id,
-        kept: [
-            KeptTool(name: "AskQuestion",
-                     because: "It is the escalation path: the daemon holds what it raises, and the phone can answer it."),
-            KeptTool(name: "Task",
-                     because: "A sub-agent of its own, alongside the app's (2026-09-29). It cannot be denied either way, and refusing it only stopped Cursor from working."),
-            KeptTool(name: "CreateGoal",
-                     because: "A task list for the turn, which every other runtime keeps (2026-09-29)."),
-            KeptTool(name: "UpdateGoal",
-                     because: "Writing to that same list (2026-09-29)."),
-        ],
-        lever: .words,
-        appToolSchemaDelivery: .firstPrompt,
-        escalationTool: "AskQuestion")
+        lever: .words)
 
     /// Codex: feature switches in `CODEX_CONFIG` (047, research R5).
     ///
@@ -272,12 +189,6 @@ public enum ToolPolicyCatalog {
             RemovedTool(name: "apps", category: .artefacts),
             RemovedTool(name: "computer_use", category: .artefacts),
         ],
-        kept: [
-            KeptTool(name: "request_user_input",
-                     because: "It is the escalation path: the adapter raises it as a form elicitation, which the daemon holds and the phone can answer."),
-            KeptTool(name: "goals",
-                     because: "Codex's own task list, alongside every other runtime's (2026-09-29)."),
-        ],
         lever: .environmentJSON(variable: "CODEX_CONFIG", value: .object([
             "features": .object([
                 "sleep_tool": .bool(false),
@@ -289,10 +200,7 @@ public enum ToolPolicyCatalog {
                 "default_mode_request_user_input": .bool(true),
             ]),
         ])),
-        escalationTool: "request_user_input",
         preferredAuthMethods: ["chat-gpt", "chat-gpt-device-code", "api-key"],
-        // A server never offers ChatGPT: its sign-in is the Mac's, and never lent (FR-020).
-        serverEnvironment: ["NO_BROWSER": "1"],
         // The Mac's ChatGPT sign-in, relayed (research R12). Codex insists on HTTPS for it,
         // keeps only the origin for its model calls, and trusts CODEX_CA_CERTIFICATE.
         relay: SignInRelay(upstreamHost: "chatgpt.com", macSignIn: .file(".codex/auth.json"),
@@ -323,14 +231,7 @@ public enum ToolPolicyCatalog {
     /// server also offers are hidden (`RuntimeLaunchCatalog.hiddenAuthMethods`).
     public static let antigravity = ToolPolicy(
         runtimeID: RuntimeCatalog.antigravity.id,
-        kept: [
-            KeptTool(name: "ask_question",
-                     because: "It is the escalation path: the server raises it as a permission request whose options are the answers, which the daemon holds and the phone can answer."),
-            KeptTool(name: "start_subagent",
-                     because: "Its own sub-agent tool, alongside the app's (2026-09-29)."),
-        ],
         lever: .sessionMetaDenyList(path: ["agy", "disabledTools"]),
-        escalationTool: "ask_question",
         preferredAuthMethods: ["oauth-personal", "oauth-business"])
 
     /// OpenCode: its own configuration, inline, in `OPENCODE_CONFIG_CONTENT`, which OpenCode
@@ -354,10 +255,6 @@ public enum ToolPolicyCatalog {
     /// through the app's own `ask_question`, or ends the turn as needs_answer.
     public static let opencode = ToolPolicy(
         runtimeID: RuntimeCatalog.opencode.id,
-        kept: [
-            KeptTool(name: "task",
-                     because: "Its own sub-agent tool, alongside the app's (2026-09-29)."),
-        ],
         lever: .environmentJSON(variable: "OPENCODE_CONFIG_CONTENT", value: .object([
             "autoupdate": .bool(false),
             "permission": .object([
@@ -371,49 +268,4 @@ public enum ToolPolicyCatalog {
 
     /// In the order `RuntimeCatalog` declares its runtimes, so the two read side by side.
     public static let builtIn: [ToolPolicy] = [claude, grok, copilot, cursor, codex, antigravity, opencode]
-}
-
-// MARK: The writer (#858)
-
-/// The tools of the agent that writes a provider's tool map or commands: none of its
-/// runtime's own, so nothing it reads can make it run a command, read a file such as the
-/// control plane's secrets, reach the network or start another agent. It keeps only the
-/// app's writer tools, which its MCP server is the only one to serve (FR-010).
-///
-/// Only a runtime whose tools can be taken away for one session is a writer: the policy
-/// rides on `session/new`, so the runtime's process can be shared with other agents. A
-/// launch flag or an environment variable would scope every session of that process.
-public extension ToolPolicyCatalog {
-    /// What Claude's writer is denied, besides having no built-in tools at all: a second
-    /// wall, by name, in case an adapter ignores the empty `tools`.
-    static let claudeWriterDenied = [
-        "Bash", "BashOutput", "KillShell", "Read", "Grep", "Glob", "LS", "Write", "Edit", "MultiEdit",
-        "NotebookEdit", "NotebookRead", "WebFetch", "WebSearch", "Agent", "Task", "TaskOutput", "TaskStop",
-        "ListAgents", "SendMessage", "TodoWrite", "Skill", "SlashCommand", "AskUserQuestion", "ExitPlanMode",
-        "EnterWorktree", "ExitWorktree", "Workflow", "CronCreate", "CronList", "CronDelete", "ScheduleWakeup",
-        "Monitor", "RemoteTrigger", "PushNotification", "ReportFindings", "DesignSync",
-    ]
-
-    /// The `_meta` a writer's session is made with, or nil when this runtime can't be a
-    /// writer. Not merged with the runtime's usual scoping or the folder's plugins: a
-    /// plugin can bring tools and servers of its own.
-    static func writerMeta(for runtimeID: String) -> JSONValue? {
-        switch runtimeID {
-        case RuntimeCatalog.claude.id:
-            // `tools: []` is the allowlist of built-in tools, empty; `strictMcpConfig` takes
-            // only the servers the session names, which for a writer is the app's alone.
-            return ["claudeCode": ["options": [
-                "tools": [],
-                "disallowedTools": .array(claudeWriterDenied.map(JSONValue.string)),
-                "strictMcpConfig": true,
-            ]]]
-        default:
-            return nil
-        }
-    }
-
-    /// The runtimes that can write, in the catalog's order.
-    static var writerRuntimes: [String] {
-        RuntimeCatalog.builtIn.map(\.id).filter { writerMeta(for: $0) != nil }
-    }
 }

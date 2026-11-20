@@ -54,7 +54,7 @@ struct WorkItemRow: View {
                 title.lineLimit(1).truncationMode(.tail).layoutPriority(1)
                 if latest { WorkReleaseChip.latest.fixedSize() }
                 #if os(macOS)
-                // The Remote's Work lists have no priority chip: only its Features rows do (#5690, tier).
+                // The Remote's Work lists have no priority chip (#5690, tier).
                 WorkPriorityChip(priority: row.priority)
                 #endif
                 WorkOnHoldChip(onHold: row.onHold)
@@ -128,7 +128,7 @@ struct WorkItemRow: View {
             let mark = HStack(spacing: 4) {
                 Circle().fill(asks ? Paper.forgeWaiting : WorkLook.Tone.green.color).frame(width: 7, height: 7)
                     .accessibilityHidden(true)
-                Text(WorkFeatures.workingWords(session.state)).lineLimit(1)
+                Text(WorkSessions.workingWords(session.state)).lineLimit(1)
             }
             .appText(.fine)
             .foregroundStyle(asks ? Paper.forgeWaiting : .secondary)
@@ -136,7 +136,7 @@ struct WorkItemRow: View {
             if let openSession {
                 Button { openSession(session.id) } label: { mark }
                     .buttonStyle(.plain)
-                    .help("\(session.title ?? "The session"): \(WorkFeatures.workingWords(session.state).lowercased()). Open its chat")
+                    .help("\(session.title ?? "The session"): \(WorkSessions.workingWords(session.state).lowercased()). Open its chat")
             } else {
                 mark
             }
@@ -172,7 +172,7 @@ struct WorkItemRow: View {
         parts.append(row.onHold ? WorkPlan.onHoldWords.lowercased() : nil)
         parts.append(labels.isEmpty ? nil : "labels " + labels.map(\.name).joined(separator: ", "))
         parts.append(WorkLook.rowLine(row, compact: false))
-        parts.append(session.map { "session " + WorkFeatures.workingWords($0.state).lowercased() })
+        parts.append(session.map { "session " + WorkSessions.workingWords($0.state).lowercased() })
         parts.append(WorkLook.checks(row.checks)?.accessibilityLabel)
         parts.append(WorkLook.reviewWord(row.review))
         parts.append(row.comments > 0 ? "\(row.comments) comments" : nil)

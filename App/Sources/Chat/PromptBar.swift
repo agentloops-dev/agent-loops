@@ -11,7 +11,6 @@ import UniformTypeIdentifiers
 struct PromptBar: View {
     @Environment(AppModel.self) private var model
     @Environment(WindowRequests.self) private var requests
-    @Environment(\.chatActions) private var chatActions
     /// Set in a window of its own (#826): this bar is that session's.
     @Environment(\.poppedChat) private var popped
     /// In New Session in Background's window (#5798): always a new session, in that window's folder.
@@ -265,6 +264,8 @@ struct PromptBar: View {
         .onChange(of: draftFolderAgentCount) { loadWorktreesWhenFolderChanges() }
         .modifier(KeepsDrafts(text: $text, attachments: $attachments,
                               lostSomething: $draftLostSomething, key: draftKey))
+            // After an error stop, "Carry on" waits in an empty bar.
+            .modifier(OffersCarryOn(text: $text, agent: agent))
     }
 
     /// Words offered from elsewhere: in place of an empty bar, else after what is typed

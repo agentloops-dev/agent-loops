@@ -30,9 +30,6 @@ public struct WorkflowHours: Codable, Hashable, Sendable {
         case notWorking = "not-working"
     }
 
-    /// The key, as the file spells it.
-    public static let key = "hours"
-
     public init(between: String? = nil, days: [Weekday]? = nil, timeZone: String? = nil, named: Name? = nil) {
         self.between = between
         self.days = days

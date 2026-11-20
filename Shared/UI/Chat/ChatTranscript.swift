@@ -339,7 +339,7 @@ struct ChatTranscript: View {
             // height is the sum of the rows' own, so the foot is where it says (#2310).
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(isFollowing ? .bottom : nil, for: .sizeChanges)
-            .transcriptInput(key: { read($0, scroller) }, hand: hand)
+            .transcriptInput(key: { read($0) }, hand: hand)
             // The text stops above the floating prompt, and so does the scrollbar.
             // Insetting the content alone left the bar running the whole height of the
             // pane and disappearing under the glass, where it could be neither read nor
@@ -692,7 +692,7 @@ struct ChatTranscript: View {
     /// A key that moves the pane: a pane at a time, less a few lines so the reader keeps
     /// their place, or to either end. Going up is reading back, and ends following as a
     /// hand would.
-    private func read(_ key: TranscriptKey, _ scroller: ScrollViewProxy) {
+    private func read(_ key: TranscriptKey) {
         let page = max(40, Double(paneHeight ?? 400) - 60)
         switch key {
         case .end:

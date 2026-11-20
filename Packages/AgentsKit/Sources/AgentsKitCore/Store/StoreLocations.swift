@@ -546,12 +546,3 @@ extension StoreCoding {
         return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     }
 }
-
-/// One element of a list that is kept only if it decodes, so that one bad entry costs
-/// that entry rather than the list.
-public struct Lossy<Element: Decodable>: Decodable {
-    public let value: Element?
-    public init(from decoder: Decoder) throws {
-        value = try? Element(from: decoder)
-    }
-}

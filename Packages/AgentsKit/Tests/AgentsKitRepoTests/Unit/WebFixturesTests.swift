@@ -317,7 +317,7 @@ struct WebFixturesTests {
             return .object(["isBlocked": .bool(model.openBlock(agent) != nil), "isHeld": .bool(model.isHeld(agent)),
                             "lines": .array(lines.map(JSONValue.string)), "hasDeadline": .bool(hasDeadline),
                             "waitLine": names ? .string(model.waitMark(of: agent)?.line ?? "") : .null,
-                            "carryOnHelp": .string(AgentsModel.carryOnHelp(for: agent)),
+                            "carryOnHelp": .string(AgentsModel.carryOnHelp()),
                             "cardTitle": model.openBlock(agent).map { .string($0.block.cardTitle()) } ?? .null])
         }
     }
@@ -1174,10 +1174,10 @@ struct WebFixturesTests {
                     ($0.rawValue, JSONValue.string(SandboxWords.state(SandboxCatalog.state(runtimeID: id, choice: $0, codexMode: mode))))
                 })),
                 "words": .object(Dictionary(uniqueKeysWithValues: all.map {
-                    ($0.rawValue, JSONValue.string(SandboxWords.choice($0, runtimeID: id)))
+                    ($0.rawValue, JSONValue.string(SandboxWords.choice($0)))
                 })),
                 "defaults": .object(Dictionary(uniqueKeysWithValues: all.map {
-                    ($0.rawValue, JSONValue.string(SandboxWords.override(nil, runtimeDefault: $0, runtimeID: id)))
+                    ($0.rawValue, JSONValue.string(SandboxWords.override(nil, runtimeDefault: $0)))
                 })),
                 "explanations": .object(Dictionary(uniqueKeysWithValues: all.map {
                     ($0.rawValue, JSONValue.string(SandboxWords.explanation($0, runtimeID: id, name: name)))

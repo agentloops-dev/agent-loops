@@ -104,7 +104,14 @@ func ownTree(dir string) (head, tree string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	head, _ = git(dir, "rev-parse", "-q", "--verify", "HEAD")
+	// A branch with no commit yet is git's own answer, with no head (exit 1, no words). A git
+	// that gave no answer under load, or any other failure, is not "no head" (#6345): an
+	// empty head made the send's diff fail with "ambiguous argument ''", and a fingerprint
+	// with no head made a sent folder's changes look like its own.
+	head, err = git(dir, "rev-parse", "-q", "--verify", "HEAD")
+	if err != nil && !gitSaidNo(err, 1) {
+		return "", "", err
+	}
 	return head, strings.TrimSpace(string(out)), nil
 }
 

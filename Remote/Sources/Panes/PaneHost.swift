@@ -23,7 +23,7 @@ struct PaneHost<Chat: View>: View {
         HStack(spacing: 0) {
             chat
             if case .column(let paneWidth) = placement, state.pane != nil {
-                ColumnHandle(width: paneWidth, total: width)
+                ColumnHandle(width: paneWidth)
                 PaneView(agent: agent, isColumn: true)
                     .frame(width: paneWidth)
                     .transition(.move(edge: .trailing))
@@ -49,7 +49,6 @@ struct PaneHost<Chat: View>: View {
 private struct ColumnHandle: View {
     @Environment(RemoteModel.self) private var model
     let width: Double
-    let total: Double
     @State private var start: Double?
 
     var body: some View {

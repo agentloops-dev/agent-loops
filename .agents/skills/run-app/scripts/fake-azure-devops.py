@@ -7,7 +7,7 @@ azureboardsmcp fake_test.go). Scratch data only, kept in memory: a walk makes no
 - The organization acme, whose connectionData says Kim Lee is the token's owner. Any token
   connects, except "wrong-token", which gets a 401.
 - The project acme/Web Shop (Agile's work item types, its tags) with five work items (two of
-  them Epics with feature: tags, for Work ▸ Features, #3939), their comments, links and
+  them Epics with feature: tags, #3939), their comments, links and
   updates (#3815, #3826), and the team Payments, whose area path
   Web Shop\\Payments holds the wallet's work items, for a project's board (#3816):
   http://127.0.0.1:<port>/acme/Web%20Shop/_boards/board/t/Payments. WIQL by state, type, tag,
@@ -115,7 +115,7 @@ ITEMS = {
              area=PAYMENTS),
     43: item("Coupon field hides behind the keyboard", "User Story", "Resolved", ["checkout", "ux"], SAM, SAM,
              ago(1.25), "<p>On a small phone the coupon field is under the keyboard.</p>"),
-    # An epic outside the team Payments, done, with no epic tag: Work ▸ Features finds it by its type (#3939).
+    # An epic outside the team Payments, done, with no epic tag: an epic by its type (#3939).
     44: item("Gift cards", "Epic", "Closed", ["feature:gift-cards"], KIM, None, ago(40), "<p>Sell and redeem gift cards.</p>"),
 }
 NEXT = [100]

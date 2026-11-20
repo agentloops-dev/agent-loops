@@ -26,13 +26,6 @@ final class FakeDaemon: DaemonLink, @unchecked Sendable {
         await state.hold(connection)
         return near
     }
-
-    /// Raise a question on the agent that is waiting, as if a runtime had just asked.
-    /// The one thing worth being able to provoke by hand: the screen this feature
-    /// exists for.
-    func askSomething() async {
-        await state.askSomething()
-    }
 }
 
 /// The canned Mac: a handful of folders, the agents in them, and one question
@@ -233,21 +226,6 @@ private actor FakeState {
         try? await Task.sleep(for: .seconds(4))
         merged = true
         await tell(DaemonAPI.Notification.multiplierChanged, try? JSONValue.encoding(Canned.multiplier(merged: true)))
-    }
-
-    func askSomething() async {
-        guard let agent = agents.first(where: { $0.state == .running }) else { return }
-        let question = PermissionRequest(
-            agentID: agent.id,
-            toolCall: ToolCall(title: "Run `git push origin main`", kind: "execute"),
-            options: [PermissionOption(optionID: "allow", name: "Allow", kind: .allowOnce),
-                      PermissionOption(optionID: "always", name: "Always allow", kind: .allowAlways),
-                      PermissionOption(optionID: "no", name: "Don't allow", kind: .rejectOnce)])
-        permissions.append(question)
-        await change(agent.id) { $0.state = .waitingOnUser }
-        await tell(DaemonAPI.Notification.agentPermission,
-                   try? JSONValue.encoding(DaemonAPI.PermissionNotification(agentID: agent.id,
-                                                                           request: question)))
     }
 
     /// Push something at whoever is connected. The far end of a `JSONRPCConnection` is

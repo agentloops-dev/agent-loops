@@ -42,17 +42,6 @@ public enum DeletionWords {
         return confirmMessage + " " + PoolWords.runtimeName(agent.runtimeID) + " keeps its own copy of this conversation."
     }
 
-    /// Why Delete is refused for an agent.
-    public static func refusal(_ hold: Hold) -> String {
-        switch hold {
-        case .worktreeHasWork: return "Its worktree still has work in it that is not committed or merged."
-        case .workflowRunning: return "A workflow run it belongs to is still going."
-        case .openInWindow: return "It is open in a window or on a device."
-        }
-    }
-
-    public static let notArchived = "Only an archived session can be deleted. Archive it first."
-
     // MARK: Delete a folder (#677)
 
     /// "Delete “Agents”?": the folder's name as its row shows it, host and all.

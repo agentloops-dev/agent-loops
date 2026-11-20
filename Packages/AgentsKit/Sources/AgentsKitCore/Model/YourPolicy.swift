@@ -11,13 +11,6 @@ public extension DaemonAPI {
         public var keyID: String
         public var alg: String
         public var sig: Data
-
-        public init(version: Int, keyID: String, alg: String, sig: Data) {
-            self.version = version
-            self.keyID = keyID
-            self.alg = alg
-            self.sig = sig
-        }
     }
 
     /// Which client saved your layer.
@@ -25,11 +18,6 @@ public extension DaemonAPI {
         public var client: String
         /// `mac`, `remote` or `web`.
         public var kind: String
-
-        public init(client: String, kind: String) {
-            self.client = client
-            self.kind = kind
-        }
     }
 
     /// Your layer (#2957, data-model.md "YourPolicy"): the rules, a revision, when it was
@@ -45,16 +33,6 @@ public extension DaemonAPI {
         public var person: String
         /// The host id of the keeper (research R4).
         public var keeper: String
-
-        public init(rules: PolicyRules, revision: Int, changed: Date, changedFrom: YourPolicyChangedFrom? = nil,
-                    person: String, keeper: String) {
-            self.rules = rules
-            self.revision = revision
-            self.changed = changed
-            self.changedFrom = changedFrom
-            self.person = person
-            self.keeper = keeper
-        }
     }
 
     /// Which machine signs your layer (#2957, research R4): the Mac's host, or the first
@@ -62,11 +40,6 @@ public extension DaemonAPI {
     struct PolicyKeeper: Codable, Sendable, Hashable {
         public var host: String
         public var name: String
-
-        public init(host: String, name: String) {
-            self.host = host
-            self.name = name
-        }
     }
 
     /// `policy/yours` (#2957): your layer, which machine is the keeper, and the person key this
@@ -81,15 +54,6 @@ public extension DaemonAPI {
         /// Your rules from a copy of your layer this machine cannot trust (#3230): the newest such
         /// copy. Its rules do not apply until the person signs them again here.
         public var untrusted: UntrustedYourPolicy?
-
-        public init(policy: YourPolicy, keeper: PolicyKeeper, pinnedKeyID: String? = nil, signed: SignedYourPolicy? = nil,
-                    untrusted: UntrustedYourPolicy? = nil) {
-            self.policy = policy
-            self.keeper = keeper
-            self.pinnedKeyID = pinnedKeyID
-            self.signed = signed
-            self.untrusted = untrusted
-        }
     }
 
     /// One rule a layer sets, in the Policy pane's words (#3230).
@@ -98,12 +62,6 @@ public extension DaemonAPI {
         public var rule: String
         public var title: String
         public var words: String
-
-        public init(rule: String, title: String, words: String) {
-            self.rule = rule
-            self.title = title
-            self.words = words
-        }
     }
 
     /// A copy of your layer on disk that fails the signature check (#3230): signed with a person
@@ -120,17 +78,6 @@ public extension DaemonAPI {
         public var keyID: String
         /// Each rule the copy sets, in the Policy pane's words and order.
         public var lines: [PolicyRuleLine]
-
-        public init(file: String, rules: PolicyRules, revision: Int, changed: Date, keeper: String, keyID: String,
-                    lines: [PolicyRuleLine]) {
-            self.file = file
-            self.rules = rules
-            self.revision = revision
-            self.changed = changed
-            self.keeper = keeper
-            self.keyID = keyID
-            self.lines = lines
-        }
     }
 
     /// `policy/settleUntrustedYours` (#3230): what the person chose for the untrusted copy in
@@ -169,12 +116,6 @@ public extension DaemonAPI {
         public var newKey: Data
         public var newKeyID: String
         public var signature: PolicySignature
-
-        public init(newKey: Data, newKeyID: String, signature: PolicySignature) {
-            self.newKey = newKey
-            self.newKeyID = newKeyID
-            self.signature = signature
-        }
     }
 
     /// Your layer, signed by the person key (#2957, data-model.md "SignedYourPolicy"): what the
@@ -189,31 +130,5 @@ public extension DaemonAPI {
         /// The person key's public half (X9.63), for a machine with no pin yet to check the
         /// signature and pin it (trust on first use, research R3).
         public var key: Data?
-
-        public init(policy: String, signature: PolicySignature, rotation: PersonKeyRotation? = nil, key: Data? = nil) {
-            self.policy = policy
-            self.signature = signature
-            self.rotation = rotation
-            self.key = key
-        }
-    }
-
-    /// The person's public key this machine trusts (#2957, data-model.md "PinnedPersonKey"),
-    /// kept at `<root>/person-key.pub.json`: from a join code, the Mac window's direct link, or,
-    /// for a machine joined before this version, the first signed layer the control plane sends
-    /// (trust on first use, research R3).
-    struct PinnedPersonKey: Codable, Sendable, Hashable {
-        public var key: Data
-        public var keyID: String
-        /// `joinCode`, `window` or `controlPlane`.
-        public var from: String
-        public var at: Date
-
-        public init(key: Data, keyID: String, from: String, at: Date) {
-            self.key = key
-            self.keyID = keyID
-            self.from = from
-            self.at = at
-        }
     }
 }

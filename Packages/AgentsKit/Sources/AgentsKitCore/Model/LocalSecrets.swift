@@ -33,10 +33,6 @@ public struct LocalSecret: Codable, Sendable, Hashable, Identifiable {
 
 public struct LocalSecrets: Codable, Sendable, Hashable {
     public var secrets: [LocalSecret]
-
-    public init(secrets: [LocalSecret] = []) {
-        self.secrets = secrets
-    }
 }
 
 /// The words of Settings ▸ You ▸ Secrets ▸ On This Machine (#5122); the web page's are the same,

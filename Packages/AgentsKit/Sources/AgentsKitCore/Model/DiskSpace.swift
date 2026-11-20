@@ -155,8 +155,6 @@ public enum DiskCrossing: Hashable, Sendable {
 
 public enum DiskSpace {
     public static let gigabyte: Int64 = 1_000_000_000
-    /// How often the daemon looks.
-    public static let interval: Duration = .seconds(60)
 
     /// How far above a line free space must climb before the level it marks is left,
     /// so a volume hovering at the line doesn't flap: a tenth of the line, at least 1 GB.

@@ -667,10 +667,33 @@ func (b *RealBitbucket) trustedPR(ctx context.Context, repo string, p pullJSON) 
 
 func (b *RealBitbucket) DefaultRepo(ctx context.Context) (string, error) { return b.Repo(ctx) }
 
-// openPulls are the open pull requests, newest updated first.
-func (b *RealBitbucket) openPulls(ctx context.Context, repo string) ([]pullJSON, error) {
-	list, _, err := all[pullJSON](ctx, b, repoPath(repo)+"/pullrequests?state=OPEN&sort=-updated_on&"+pullFields, true)
+// openPulls are the open pull requests, newest updated first, with their participants.
+func (b *RealBitbucket) openPulls(ctx context.Context, repo string) ([]forgePullJSON, error) {
+	list, _, err := all[forgePullJSON](ctx, b, repoPath(repo)+"/pullrequests?state=OPEN&sort=-updated_on&"+forgePullFields, true)
 	return list, err
+}
+
+// changesRequested says whether a participant asked for changes and has not answered since.
+func (p forgePullJSON) changesRequested() bool {
+	for _, r := range p.Participants {
+		if r.State == "changes_requested" {
+			return true
+		}
+	}
+	return false
+}
+
+// headChecks are a head's failed statuses, and whether one still runs.
+func headChecks(statuses []statusJSON) (failed []Check, running bool) {
+	for _, s := range statuses {
+		switch s.State {
+		case "FAILED":
+			failed = append(failed, Check{Name: s.title(), URL: s.URL})
+		case "INPROGRESS":
+			running = true
+		}
+	}
+	return failed, running
 }
 
 // conflictStates are the diffstat states of a file in conflict.
@@ -700,17 +723,25 @@ func (b *RealBitbucket) OpenPRs(ctx context.Context, repo string, withConflicts 
 	}
 	out := make([]OpenPR, 0, len(list))
 	for i, p := range list {
-		trusted, err := b.trustedPR(ctx, repo, p)
+		trusted, err := b.trustedPR(ctx, repo, p.pullJSON)
 		if err != nil {
 			return nil, err
 		}
-		o := OpenPR{PR: p.pr(), Author: p.Author.name(), Draft: p.Draft, HeadSHA: p.Source.hash(), Trusted: trusted, SkipsBlocked: p.Draft}
+		o := OpenPR{PR: p.pr(), Author: p.Author.name(), Draft: p.Draft, HeadSHA: p.Source.hash(), Trusted: trusted, SkipsBlocked: p.Draft,
+			ChangesRequested: p.changesRequested()}
 		if withConflicts && i < maxChecked {
-			c, err := b.conflicts(ctx, repo, p)
+			c, err := b.conflicts(ctx, repo, p.pullJSON)
 			if err != nil {
 				return nil, err
 			}
 			o.Conflicts = &c
+			if sha := p.Source.hash(); sha != "" {
+				statuses, err := b.statuses(ctx, repo, sha, true)
+				if err != nil {
+					return nil, err
+				}
+				o.FailedChecks, o.ChecksRunning = headChecks(statuses)
+			}
 		}
 		out = append(out, o)
 	}
@@ -832,15 +863,13 @@ func (b *RealBitbucket) statuses(ctx context.Context, repo, sha string, shared b
 	return list, err
 }
 
-// FailedChecks reads the statuses of the head of each of the maxChecked open pull requests
-// updated last: Bitbucket has no list of failed checks for a repository.
-func (b *RealBitbucket) FailedChecks(ctx context.Context, repo, since string) ([]FailedChecks, Listed, error) {
+// eachHead calls visit with the head and its statuses of each of the maxChecked open pull
+// requests updated last: Bitbucket has no list of a repository's checks.
+func (b *RealBitbucket) eachHead(ctx context.Context, repo string, visit func(p forgePullJSON, sha string, statuses []statusJSON) error) error {
 	pulls, err := b.openPulls(ctx, repo)
 	if err != nil {
-		return nil, Listed{}, err
+		return err
 	}
-	var out []FailedChecks
-	var listed Listed
 	for _, p := range pulls[:min(maxChecked, len(pulls))] {
 		sha := p.Source.hash()
 		if sha == "" {
@@ -848,8 +877,30 @@ func (b *RealBitbucket) FailedChecks(ctx context.Context, repo, since string) ([
 		}
 		statuses, err := b.statuses(ctx, repo, sha, true)
 		if err != nil {
-			return nil, Listed{}, err
+			return err
 		}
+		if err := visit(p, sha, statuses); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// runOf is the Pipelines run (its build number) a status links to, 0 for another CI.
+func runOf(s statusJSON) int {
+	if m := pipelinesRun.FindStringSubmatch(s.URL); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return n
+	}
+	return 0
+}
+
+// FailedChecks reads the statuses of the head of each of the maxChecked open pull requests
+// updated last.
+func (b *RealBitbucket) FailedChecks(ctx context.Context, repo, since string) ([]FailedChecks, Listed, error) {
+	var out []FailedChecks
+	var listed Listed
+	err := b.eachHead(ctx, repo, func(p forgePullJSON, sha string, statuses []statusJSON) error {
 		d := FailedChecks{PR: p.pr(), HeadSHA: sha, Failed: []Check{}}
 		for _, s := range statuses {
 			if s.State != "FAILED" {
@@ -860,25 +911,95 @@ func (b *RealBitbucket) FailedChecks(ctx context.Context, repo, since string) ([
 			}
 			d.Failed = append(d.Failed, Check{Name: s.title(), URL: s.URL})
 			if d.RunURL == "" {
-				d.RunName, d.RunURL = s.title(), s.URL
-				if m := pipelinesRun.FindStringSubmatch(s.URL); m != nil {
-					d.RunID, _ = strconv.Atoi(m[1])
-				}
+				d.RunName, d.RunURL, d.RunID = s.title(), s.URL, runOf(s)
 			}
 		}
 		if len(d.Failed) == 0 {
-			continue
+			return nil
 		}
 		listed = listed.Saw(d.At)
 		if d.At == "" || mcpevents.Before(d.At, since) {
-			continue
+			return nil
 		}
-		if d.Trusted, err = b.trustedPR(ctx, repo, p); err != nil {
-			return nil, Listed{}, err
+		var err error
+		if d.Trusted, err = b.trustedPR(ctx, repo, p.pullJSON); err != nil {
+			return err
 		}
 		out = append(out, d)
+		return nil
+	})
+	if err != nil {
+		return nil, Listed{}, err
 	}
 	return out, listed, nil
+}
+
+// PassedChecks reads the same statuses as FailedChecks: each one SUCCESSFUL at a head is one.
+func (b *RealBitbucket) PassedChecks(ctx context.Context, repo, since string) ([]PassedCheck, Listed, error) {
+	var out []PassedCheck
+	var listed Listed
+	err := b.eachHead(ctx, repo, func(p forgePullJSON, sha string, statuses []statusJSON) error {
+		trusted, read := false, false
+		for _, s := range statuses {
+			at := mcpevents.Normalized(s.UpdatedOn)
+			if s.State != "SUCCESSFUL" || at == "" {
+				continue
+			}
+			listed = listed.Saw(at)
+			if mcpevents.Before(at, since) {
+				continue
+			}
+			if !read {
+				var err error
+				if trusted, err = b.trustedPR(ctx, repo, p.pullJSON); err != nil {
+					return err
+				}
+				read = true
+			}
+			out = append(out, PassedCheck{PR: p.pr(), HeadSHA: sha, At: at, Key: s.Key, RunID: runOf(s), RunName: s.title(), RunURL: s.URL,
+				Trusted: trusted})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	return out, listed, nil
+}
+
+// Reviews are the open pull requests' participants who approved or asked for changes, from the
+// same listing as OpenPRs.
+func (b *RealBitbucket) Reviews(ctx context.Context, repo string) ([]Review, error) {
+	pulls, err := b.openPulls(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	var out []Review
+	for _, p := range pulls {
+		prTrusted, read := false, false
+		for _, r := range p.Participants {
+			state := r.State
+			if state == "" && r.Approved {
+				state = "approved"
+			}
+			if state != "approved" && state != "changes_requested" {
+				continue
+			}
+			if !read {
+				if prTrusted, err = b.trustedPR(ctx, repo, p.pullJSON); err != nil {
+					return nil, err
+				}
+				read = true
+			}
+			trusted, err := b.trusted(ctx, repo, &r.User)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, Review{PR: p.pr(), HeadSHA: p.Source.hash(), Author: r.User.name(), State: state,
+				PRTrusted: prTrusted, Trusted: trusted})
+		}
+	}
+	return out, nil
 }
 
 // issuesSince are the repository's issues updated at or after since, newest first; none when
@@ -997,6 +1118,12 @@ func (b *RealBitbucket) issueCommented(ctx context.Context, repo string, i issue
 // inlineComments are a pull request's comments on lines of its diff, and the answers in their
 // threads (which carry their line), newest first; with since, only those made at or after it.
 func (b *RealBitbucket) inlineComments(ctx context.Context, repo string, p pullJSON, since string) ([]commentJSON, error) {
+	return b.pullComments(ctx, repo, p, since, true)
+}
+
+// pullComments are a pull request's comments not deleted, newest first: those on lines of its
+// diff when inline, else those on the pull request itself; with since, only those made at or after it.
+func (b *RealBitbucket) pullComments(ctx context.Context, repo string, p pullJSON, since string, inline bool) ([]commentJSON, error) {
 	comments, _, err := newest(ctx, b, fmt.Sprintf("%s/pullrequests/%d/comments?sort=-created_on", repoPath(repo), p.ID), since, p.UpdatedOn,
 		func(c commentJSON) string { return c.CreatedOn })
 	if err != nil {
@@ -1004,37 +1131,66 @@ func (b *RealBitbucket) inlineComments(ctx context.Context, repo string, p pullJ
 	}
 	out := []commentJSON{}
 	for _, c := range comments {
-		if c.Inline != nil && !c.Deleted {
+		if (c.Inline != nil) == inline && !c.Deleted {
 			out = append(out, c)
 		}
 	}
 	return out, nil
 }
 
-// ReviewComments reads the comments of the pull requests updated since: Bitbucket has no list
-// of a repository's comments, and a comment updates its pull request.
-func (b *RealBitbucket) ReviewComments(ctx context.Context, repo, since string) ([]ReviewComment, Listed, error) {
+// eachComment calls visit with each comment, inline or not, of the pull requests updated
+// since, and whether it is trusted: Bitbucket has no list of a repository's comments, and a
+// comment updates its pull request.
+func (b *RealBitbucket) eachComment(ctx context.Context, repo, since string, inline bool, visit func(p pullJSON, c commentJSON, trusted bool)) (Listed, error) {
 	pulls, listed, err := newest(ctx, b, repoPath(repo)+"/pullrequests?state=OPEN&state=MERGED&state=DECLINED&sort=-updated_on", since, "",
 		func(p pullJSON) string { return p.UpdatedOn })
 	if err != nil {
-		return nil, Listed{}, err
+		return Listed{}, err
 	}
-	var out []ReviewComment
 	for _, p := range pulls {
-		comments, err := b.inlineComments(ctx, repo, p, since)
+		comments, err := b.pullComments(ctx, repo, p, since, inline)
 		if err != nil {
-			return nil, Listed{}, err
+			return Listed{}, err
 		}
 		for _, c := range comments {
 			trusted := !p.fork()
 			if trusted {
 				if trusted, err = b.trusted(ctx, repo, c.User); err != nil {
-					return nil, Listed{}, err
+					return Listed{}, err
 				}
 			}
-			out = append(out, ReviewComment{ID: c.ID, At: c.CreatedOn, PR: p.pr(), Author: c.User.name(), Path: c.Inline.Path, Line: c.line(),
-				Body: clip(c.Content.Raw), URL: c.Links.HTML.Href, Trusted: trusted})
+			visit(p, c, trusted)
 		}
+	}
+	return listed, nil
+}
+
+// ReviewComments are the comments on lines of the diffs of the pull requests updated since.
+func (b *RealBitbucket) ReviewComments(ctx context.Context, repo, since string) ([]ReviewComment, Listed, error) {
+	var out []ReviewComment
+	listed, err := b.eachComment(ctx, repo, since, true, func(p pullJSON, c commentJSON, trusted bool) {
+		out = append(out, ReviewComment{ID: c.ID, At: c.CreatedOn, PR: p.pr(), Author: c.User.name(), Path: c.Inline.Path, Line: c.line(),
+			Body: clip(c.Content.Raw), URL: c.Links.HTML.Href, Trusted: trusted})
+	})
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	return out, listed, nil
+}
+
+// PRComments are the comments on the pull requests updated since themselves, not on their
+// diffs; a comment with no words is none.
+func (b *RealBitbucket) PRComments(ctx context.Context, repo, since string) ([]PRComment, Listed, error) {
+	var out []PRComment
+	listed, err := b.eachComment(ctx, repo, since, false, func(p pullJSON, c commentJSON, trusted bool) {
+		if strings.TrimSpace(c.Content.Raw) == "" {
+			return
+		}
+		out = append(out, PRComment{ID: c.ID, At: c.CreatedOn, PR: p.pr(), Author: c.User.name(), Body: clip(c.Content.Raw),
+			URL: c.Links.HTML.Href, Trusted: trusted})
+	})
+	if err != nil {
+		return nil, Listed{}, err
 	}
 	return out, listed, nil
 }

@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-@testable import AgentsKit
 
 /// Wait for something to become true, rather than sleeping long enough that it usually
 /// has.

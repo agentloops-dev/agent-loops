@@ -84,13 +84,6 @@ public struct AllowanceState: Codable, Hashable, Sendable {
         public var name: String?
         public var since: Date
         public var retryAfter: Date
-
-        public init(model: String, name: String? = nil, since: Date, retryAfter: Date) {
-            self.model = model
-            self.name = name
-            self.since = since
-            self.retryAfter = retryAfter
-        }
     }
 
     public enum Status: Codable, Hashable, Sendable {
@@ -123,20 +116,11 @@ public struct AllowanceState: Codable, Hashable, Sendable {
     // MARK: Reading
 
     /// The status as of `now`, with short rate limits that have run out applied. A reading,
-    /// not a change: the stored state moves when `settle(now:)` is called.
+    /// not a change.
     public func current(now: Date) -> Status {
         switch status {
         case .rateLimited(let until) where until <= now: return .available
         default: return status
-        }
-    }
-
-    /// Whether a chat may be sent here now. An entry without a stated return stays out
-    /// until the scheduled read-only check succeeds.
-    public func isUsable(now: Date) -> Bool {
-        switch current(now: now) {
-        case .available, .rateLimited: return true
-        case .out: return false
         }
     }
 
@@ -163,20 +147,6 @@ public struct AllowanceState: Codable, Hashable, Sendable {
 
     // MARK: Changing
 
-    /// Apply the short rate-limit clock. A spent allowance needs a successful check.
-    @discardableResult
-    public mutating func settle(now: Date) -> Bool {
-        let lapsed = modelsOut.map { marks in marks.contains { $0.retryAfter <= now } } ?? false
-        if lapsed { clearModels { $0.retryAfter <= now } }
-        let settled = current(now: now)
-        guard settled != status else { return lapsed }
-        status = settled
-        since = now
-        changedAt = now
-        rateLimitStreak = []
-        return true
-    }
-
     /// Spent. `until` is the runtime's own return time. Every credential gets a check
     /// every four hours, whether the runtime gave a time or not: a key's credit too, now
     /// the app keeps no ledger of it (065) and the provider is what says it is used up.
@@ -196,7 +166,7 @@ public struct AllowanceState: Codable, Hashable, Sendable {
         }
         // Out since the moment it went out: marked out again while out, by another
         // refusal, a shared plan's word or a failed check, it keeps that time and moves
-        // only the freshness stamp (#334), as `markFailed` and a model's mark do.
+        // only the freshness stamp (#334), as a model's mark does.
         if !isOut { since = now }
         status = .out(until: back, retryAfter: retry, why: why)
         changedAt = now
@@ -204,59 +174,18 @@ public struct AllowanceState: Codable, Hashable, Sendable {
         rateLimitStreak = []
     }
 
-    /// A runtime failed without a recognised allowance refusal. It stays out
-    /// until it passes a check or finishes a later turn, even when it uses credit.
-    @discardableResult
-    public mutating func markFailed(now: Date) -> Bool {
-        guard !isOut else { return false }
-        status = .out(until: nil, retryAfter: now.addingTimeInterval(Self.retryWithoutATime), why: .runtimeFailed)
-        since = now
-        changedAt = now
-        learnedFrom = .runtimeFailure
-        rateLimitStreak = []
-        return true
-    }
-
-    /// The model marks that `lapsed` says are over, dropped. Nil again when none is left.
-    public mutating func clearModels(where lapsed: (ModelOut) -> Bool) {
-        let kept = (modelsOut ?? []).filter { !lapsed($0) }
-        modelsOut = kept.isEmpty ? nil : kept
-    }
-
     /// The models still marked out, as of `now`.
     public func modelsOut(now: Date) -> [ModelOut] {
         (modelsOut ?? []).filter { $0.retryAfter > now }
     }
 
-    /// A turn on a failed runtime is answering (#140): its tool calls are coming back, so
-    /// it is not failed any more, before that turn ends. Only a failure: a spent
-    /// allowance waits for the turn's ending or its check, which say more.
-    @discardableResult
-    public mutating func answering(now: Date) -> Bool {
-        guard case .out(_, _, .runtimeFailed) = status else { return false }
-        status = .available
-        since = now
-        changedAt = now
-        rateLimitStreak = []
-        return true
-    }
-
     /// A chat on it was rate limited and will try again at `retryAt`. Shown, and over
     /// by itself at that time. Whether the limit has persisted is the chat's streak,
-    /// not this (065, `RateLimitPolicy.streak`).
+    /// not this (065).
     public mutating func rateLimited(now: Date, retryAt: Date) {
         status = .rateLimited(until: retryAt)
         since = now
         changedAt = now
-    }
-
-    /// A turn worked here: whatever was holding it is over.
-    public mutating func worked(now: Date) {
-        guard status != .available || !rateLimitStreak.isEmpty else { return }
-        status = .available
-        since = now
-        changedAt = now
-        rateLimitStreak = []
     }
 
     /// The person says it is back: bought more credit, a new month began (FR-023). What
@@ -269,37 +198,5 @@ public struct AllowanceState: Codable, Hashable, Sendable {
         changedAt = now
         learnedFrom = .person
         rateLimitStreak = []
-    }
-
-    /// What makes two entries one allowance: the runtime and the credential it runs on.
-    /// A plan is the runtime's own sign-in, the same on the Mac and on every server that
-    /// relays it (047); a key is the lent credential.
-    public static func credentialKey(for entry: PoolEntry) -> String {
-        "\(entry.runtimeID):\(entry.credentialRef ?? "sign-in")"
-    }
-}
-
-/// How rate limits are retried before they count as spent (052, R7). Defaults, not
-/// settings, in this version.
-public struct RateLimitPolicy: Hashable, Sendable {
-    /// Waits before the first and second retries when the runtime gave no time.
-    public var delays: [TimeInterval]
-    /// How far back a streak counts.
-    public var window: TimeInterval
-    /// How many in the window make it out.
-    public var persistsAfter: Int
-
-    public static let standard = RateLimitPolicy(delays: [30, 120], window: 600, persistsAfter: 3)
-
-    public func delay(forAttempt attempt: Int) -> TimeInterval {
-        delays.isEmpty ? 30 : delays[min(attempt, delays.count - 1)]
-    }
-
-    /// One chat's refusals within the window, with this one added, and whether that
-    /// many means the limit has persisted (three within ten minutes, R7). The streak is
-    /// the chat's own: another chat's refusals on the same runtime do not count (065).
-    public func streak(_ earlier: [Date], adding now: Date) -> (streak: [Date], persists: Bool) {
-        let streak = earlier.filter { now.timeIntervalSince($0) < window } + [now]
-        return (streak, streak.count >= persistsAfter)
     }
 }

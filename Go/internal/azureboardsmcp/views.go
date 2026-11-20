@@ -157,65 +157,7 @@ func AddViews(server *mcp.Server, b *RealBoards) {
 			"A type, a state category (Proposed, InProgress or Resolved) or a tag narrows it. " +
 			"Its view is the Azure Boards page, where a person expands a row for its description or chooses Start Agent.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}, Meta: uiMeta(issuesURI, "model", "app")},
-		func(ctx context.Context, req *mcp.CallToolRequest, in issuesArgs) (*mcp.CallToolResult, any, error) {
-			if in.Category != "" && !slices.Contains(openCategories, in.Category) {
-				return failed(fmt.Errorf("category must be one of %s", strings.Join(openCategories, ", "))), nil, nil
-			}
-			project, err := b.Project(ctx)
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			list, truncated, err := b.List(ctx, Filter{State: "open", Type: strings.TrimSpace(in.Type), Category: in.Category,
-				Label: strings.TrimSpace(in.Label)})
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			me, err := b.myID(ctx, project)
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			types, err := b.typesOf(ctx, project)
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			typeNames := make([]string, 0, len(types))
-			for name := range types {
-				typeNames = append(typeNames, name)
-			}
-			sort.Strings(typeNames)
-			items := make([]any, len(list))
-			// The count on the sidebar's row (#2033): the work items that need the viewer (#2453).
-			needsYou := 0
-			people := teamMetaOf(req.Params.Meta)
-			for i, w := range list {
-				j := w.json()
-				j["key"] = "AB#" + itoa(w.ID)
-				j["statusCategory"], j["updatedAt"] = w.Category, mcpevents.Normalized(w.UpdatedAt)
-				if w.Creator != nil && w.Creator.Bot {
-					j["authorBot"] = true
-				}
-				if tp, on := people.of(w.Creator); on {
-					j["authorName"] = tp.Name
-					if tp.Bot {
-						j["authorBot"] = true
-					}
-				}
-				section := itemSection(w, me, people)
-				j["section"] = section
-				if section == sectionNeedsYou {
-					needsYou++
-				}
-				if section == sectionNeedsYou || section == sectionYours {
-					if who := agentOnOf(req.Params.Meta, w.ID); who != "" {
-						j["agentOn"] = who
-					}
-				}
-				items[i] = j
-			}
-			return structured(map[string]any{"project": project, "type": in.Type, "category": in.Category, "label": in.Label,
-				"types": typeNames, "categories": openCategories, "issues": items, "count": len(items),
-				"attention": needsYou, "truncated": truncated}), nil, nil
-		})
+		showIssues(b))
 
 	tool(server, &mcp.Tool{Name: "show_issue_details", Title: "Show work item details",
 		Description: "One work item's description, rendered as rich text for the Azure Boards page.",
@@ -242,4 +184,75 @@ func AddViews(server *mcp.Server, b *RealBoards) {
 		func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: issuesURI, MIMEType: viewMime, Text: html, Meta: meta}}}, nil
 		})
+}
+
+// showIssues is the show_issues tool: the project's open work items, each with its section
+// for the viewer.
+func showIssues(b *RealBoards) mcp.ToolHandlerFor[issuesArgs, any] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in issuesArgs) (*mcp.CallToolResult, any, error) {
+		if in.Category != "" && !slices.Contains(openCategories, in.Category) {
+			return failed(fmt.Errorf("category must be one of %s", strings.Join(openCategories, ", "))), nil, nil
+		}
+		project, err := b.Project(ctx)
+		if err != nil {
+			return failed(err), nil, nil
+		}
+		list, truncated, err := b.List(ctx, Filter{State: "open", Type: strings.TrimSpace(in.Type), Category: in.Category,
+			Label: strings.TrimSpace(in.Label)})
+		if err != nil {
+			return failed(err), nil, nil
+		}
+		me, err := b.myID(ctx, project)
+		if err != nil {
+			return failed(err), nil, nil
+		}
+		types, err := b.typesOf(ctx, project)
+		if err != nil {
+			return failed(err), nil, nil
+		}
+		typeNames := make([]string, 0, len(types))
+		for name := range types {
+			typeNames = append(typeNames, name)
+		}
+		sort.Strings(typeNames)
+		items := make([]any, len(list))
+		// The count on the sidebar's row (#2033): the work items that need the viewer (#2453).
+		needsYou := 0
+		people := teamMetaOf(req.Params.Meta)
+		for i, w := range list {
+			j := issueRow(w, me, people, req.Params.Meta)
+			if j["section"] == sectionNeedsYou {
+				needsYou++
+			}
+			items[i] = j
+		}
+		return structured(map[string]any{"project": project, "type": in.Type, "category": in.Category, "label": in.Label,
+			"types": typeNames, "categories": openCategories, "issues": items, "count": len(items),
+			"attention": needsYou, "truncated": truncated}), nil, nil
+	}
+}
+
+// issueRow is one work item as the view draws it: its key, author, section for the viewer,
+// and who is on it when it is the viewer's.
+func issueRow(w WorkItem, me string, people teamMeta, meta mcp.Meta) map[string]any {
+	j := w.json()
+	j["key"] = "AB#" + itoa(w.ID)
+	j["statusCategory"], j["updatedAt"] = w.Category, mcpevents.Normalized(w.UpdatedAt)
+	if w.Creator != nil && w.Creator.Bot {
+		j["authorBot"] = true
+	}
+	if tp, on := people.of(w.Creator); on {
+		j["authorName"] = tp.Name
+		if tp.Bot {
+			j["authorBot"] = true
+		}
+	}
+	section := itemSection(w, me, people)
+	j["section"] = section
+	if section == sectionNeedsYou || section == sectionYours {
+		if who := agentOnOf(meta, w.ID); who != "" {
+			j["agentOn"] = who
+		}
+	}
+	return j
 }

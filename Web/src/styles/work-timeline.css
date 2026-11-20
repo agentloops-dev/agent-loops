@@ -1,0 +1,146 @@
+/* Work ▸ Timeline (#4206), as the window's (#4173): white by day, navy at night. Each epic a block (#5506): its
+   feature's colour, darkened until white text has 4.5:1, solid to Now; after Now a lighter tint with a dashed edge, and
+   the words in the colour itself (lighter at night, to read on the navy). One background before and after Now, and Now
+   grey (Alex, 2026-11-10). */
+/* --c-later is set where --c is, so it is that element's colour, not the page's. */
+.timeline-page { --timeline-tint: 0.22; }
+.timeline-page [style*="--c"] { --c-later: var(--c); }
+@media (prefers-color-scheme: dark) {
+  .timeline-page { --timeline-tint: 0.32; }
+  .timeline-page [style*="--c"] { --c-later: color-mix(in srgb, var(--c) 55%, var(--paper-on-fill)); }
+}
+.timeline-page .spacer { flex: 1; }
+.timeline { position: relative; }
+.timeline-scroll { position: relative; overflow: auto; height: max(360px, calc(100vh - 240px)); border: 1px solid var(--paper-rule);
+  border-radius: var(--radius-control); background: var(--timeline-plot); overscroll-behavior-x: contain; }
+.timeline-content { position: relative; display: flex; align-items: stretch; }
+/* The priority bands' gutter (#6089, #6093): at the leading edge while the plot scrolls in time; it scrolls with the rows. */
+.timeline-gutter { position: sticky; left: 0; z-index: 3; flex: none; background: var(--timeline-plot); border-right: 1px solid var(--paper-rule);
+  font: 11px var(--font-text); }
+.timeline-gutter svg { display: block; }
+.timeline-gutter-corner { position: sticky; top: 0; z-index: 1; background: var(--timeline-plot); border-bottom: 1px solid var(--paper-rule); }
+.timeline-plot-column { position: relative; flex: none; }
+.timeline-band-name text { font-weight: 600; fill: var(--timeline-faint); }
+.timeline-band-name.is-high text, .timeline-chip.is-high text { fill: var(--tint-failure); }
+.timeline-band-name.is-medium text, .timeline-chip.is-medium text { fill: var(--tint-warning); }
+.timeline-band-name line, .timeline-band-rule { stroke: var(--paper-rule); stroke-width: 1; }
+/* The priority chip after a block's title (#6089): the plot's ground, the tint in its text and line; on hold dashed. */
+.timeline-chip rect { fill: var(--timeline-plot); stroke: var(--timeline-faint); stroke-width: 1; }
+.timeline-chip.is-high rect { stroke: var(--line-failure); }
+.timeline-chip.is-medium rect { stroke: var(--line-warning); }
+.timeline-chip.is-on-hold rect { stroke-dasharray: 3 2; }
+.timeline-chip text { font-weight: 500; fill: var(--timeline-faint); }
+.timeline-list-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.timeline-plot, .timeline-axis, .timeline-foot { display: block; font: 11px var(--font-text); }
+.timeline-plot.pointing { cursor: pointer; }
+.timeline-axis { position: sticky; top: 0; z-index: 1; border-bottom: 1px solid var(--paper-rule); }
+.timeline-foot { position: sticky; bottom: 0; z-index: 1; }
+.timeline-ground { fill: var(--timeline-plot); }
+.timeline-block rect.ghost, .timeline-block rect.past, .timeline-block rect.ahead, .timeline-block rect.breathing, .timeline-placeholder rect { rx: var(--radius-code); }
+.timeline-block .past { fill: var(--c); }
+/* The ghost (#6043): the lighter tint from created to closed; the solid span is drawn over it. */
+.timeline-block .ghost { fill: var(--c); fill-opacity: var(--timeline-tint); }
+.timeline-block .ahead { fill: none; stroke: var(--c-later); stroke-width: 1; stroke-dasharray: 4 3; }
+.timeline-block .band { fill: var(--c-later); opacity: 0.35; }
+.timeline-block .title { font-weight: 600; }
+.timeline-block .title.past { fill: var(--paper-on-fill); }
+.timeline-block .title.later, .timeline-block .outside { fill: var(--c-later); font-weight: 600; }
+.timeline-block.dropped .outside { fill: var(--timeline-faint); font-weight: 400; }
+.timeline-dot { fill: var(--paper-on-fill); }
+.timeline-dot.ahead { fill: none; stroke: var(--paper-on-fill); stroke-width: 1.2; }
+.timeline-dot.later { fill: var(--c-later); }
+.timeline-dot.ahead.later { fill: none; stroke: var(--c-later); }
+.timeline-working circle { fill: var(--timeline-plot); stroke: var(--c-later); stroke-width: 1.5; }
+.timeline-working path { fill: var(--c-later); }
+.timeline-now { stroke: var(--timeline-now); stroke-width: 1.5; }
+.timeline-more { font-weight: 700; fill: var(--paper-on-fill); }
+.timeline-more.later { fill: var(--c-later); }
+.timeline-pill text { font-weight: 600; fill: var(--paper-on-fill); }
+.timeline-pill.waits rect { fill: var(--tint-attention); }
+@media (prefers-color-scheme: dark) { .timeline-pill.waits text { fill: var(--timeline-plot); } }
+.timeline-pill.now rect { fill: var(--timeline-now); }
+.timeline-tick line { stroke: var(--timeline-faint); }
+.timeline-tick text { fill: var(--timeline-faint); }
+.timeline-tick.midnight text { font-weight: 600; }
+/* S11: a card in the middle of the plot, with Show the week. */
+.timeline-empty { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); width: max-content; max-width: 80%; margin: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 14px; border: 1px solid var(--paper-rule);
+  border-radius: 6px; background: var(--paper-raised); text-align: center; }
+.timeline-empty button { margin-top: 4px; }
+/* The bar (notes 30 to 32): the range and a bordered Now at the trailing edge, then Refresh. */
+.timeline-bar .work-menus { gap: 8px; }
+.timeline-trailing { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+.timeline-now-button { padding: 2px 10px; font-size: 0.75rem; border: 1px solid var(--paper-rule); border-radius: 999px; background: none; }
+/* S12: the last plot under the error strip, dimmed. */
+.timeline.dim .timeline-scroll { opacity: 0.45; }
+/* S10: grey bars where the lanes go, shimmering; still with Reduce Motion. */
+.timeline-placeholder rect { fill: var(--timeline-faint); opacity: 0.25; }
+@media (prefers-reduced-motion: no-preference) {
+  .timeline-placeholder rect { animation: timeline-shimmer 1.4s ease-in-out infinite; }
+}
+@keyframes timeline-shimmer { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.35; } }
+/* The list of epics (note 36): what a screen reader reads over the plot; the Timeline itself under 700 px. Now on a
+   line above it, then a row per epic: its colour at the leading edge, the title and line 2, the progress at the end. */
+.timeline-list { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.timeline-list-now { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--timeline-now); }
+.timeline-list-now::after { content: ""; flex: 1; height: 1.5px; background: var(--timeline-now); }
+.timeline-list-row { display: flex; flex-direction: row; justify-content: flex-start; align-items: center; gap: 10px; width: 100%;
+  text-align: left; background: none; border: none; border-radius: 0; padding: 8px 4px 8px 0; font: inherit; color: inherit; cursor: pointer; }
+.timeline-list-row .edge { flex: none; align-self: stretch; width: 4px; border-radius: 2px; background: var(--c-shown, var(--c)); }
+.timeline-list-row .work-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.timeline-list-row .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-list-row .waits { color: var(--tint-attention); }
+.timeline-list-progress { flex: none; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.timeline-list-progress .track { width: 56px; height: 4px; border-radius: 2px; background: var(--paper-rule); overflow: hidden; }
+.timeline-list-progress .fill { display: block; height: 100%; background: var(--c-shown, var(--c)); }
+@media (max-width: 699px) {
+  .timeline-scroll { display: none; }
+  .timeline-list { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
+  .timeline-empty { position: static; transform: none; width: auto; max-width: none; margin: 8px 0; }
+  .timeline-trailing { margin-left: 0; }
+}
+.timeline-card { position: absolute; z-index: 2; max-width: 360px; padding: 8px; border: 1px solid var(--paper-rule); border-radius: 6px;
+  background: var(--paper-raised); box-shadow: var(--shadow-floating); pointer-events: none; line-height: 1.35; }
+.timeline-card .strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-card-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.timeline-card-title svg { flex: none; }
+.timeline-card .work-chips, .timeline-card-line { margin-left: 20px; }
+.timeline-card-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-card-row { display: flex; flex-direction: column; gap: 4px; }
+.timeline-card-row + .timeline-card-row { margin-top: 8px; }
+.timeline-card .work-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.timeline-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A dot that landed while the page is open pulses once; not with Reduce Motion. */
+.timeline-pulse { fill: none; stroke: var(--paper-on-fill); stroke-width: 2; opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .timeline-pulse { animation: timeline-pulse 1s ease-out 1; }
+}
+/* An epic worked on now: a soft glow round its block breathes every 1.6 s, one clock for every block; with Reduce
+   Motion, a still glow. */
+.timeline-block .breathing { fill: none; stroke: var(--c); stroke-opacity: 0.3; stroke-width: 6px; filter: blur(2px); }
+@media (prefers-reduced-motion: no-preference) {
+  .timeline-block .breathing { animation: timeline-breathe 1.6s ease-in-out infinite; }
+  /* The ◐ turns once a breath, on the same clock (#4265); with Reduce Motion it is still. */
+  .timeline-working path { animation: timeline-turn 1.6s linear infinite; }
+}
+@keyframes timeline-turn { to { transform: rotate(360deg); } }
+@keyframes timeline-breathe {
+  0%, 100% { stroke-width: 4px; stroke-opacity: 0.15; }
+  50% { stroke-width: 10px; stroke-opacity: 0.45; }
+}
+@keyframes timeline-pulse { from { r: 4px; opacity: 1; } to { r: 14px; opacity: 0; } }
+
+
+/* Work ▸ Next (#5691): the place before each row, the level and Last update at the bar's trailing edge, and the on hold
+   rows at the end under their own heading. */
+.next-trailing { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+.next-row .next-place { flex: none; min-width: 2.2em; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600;
+  color: var(--paper-secondary); }
+.next-rows li.on-hold .work-title { color: var(--paper-secondary); }
+.next-on-hold { margin-top: 16px; }
+.next-on-hold .section-head { margin: 0 16px 2px; }
+.next-on-hold > p { margin: 0 16px 6px; }
+.next-number { font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .next-trailing { margin-left: 0; }
+}

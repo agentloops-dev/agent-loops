@@ -26,11 +26,6 @@ extension RemoteModel {
         workMachines { $0.has(Capability.lineage1) }
     }
 
-    /// The machines that give Work ▸ Features in one read (#4586).
-    var featuresMachines: [(id: MachineRef, name: String)] {
-        workMachines { $0.has(Capability.forge1) && $0.has(Capability.workFeatures1) && $0.state != "offline" }
-    }
-
     /// The machines that draw Work ▸ Timeline (#4173; on the Remote since #6044), the home host first.
     var timelineMachines: [(id: MachineRef, name: String)] {
         workMachines { $0.has(Capability.forge1) && $0.has(Capability.workTimeline1) && $0.state != "offline" }
@@ -125,7 +120,7 @@ extension RemoteModel {
 
     func openWorkSession(_ id: UUID) { sidebarItem = .session(id) }
 
-    func workLead(of epic: DaemonAPI.LineageNode) -> Agent? { WorkFeatures.lead(of: epic, in: work.agents) }
+    func workLead(of epic: DaemonAPI.LineageNode) -> Agent? { WorkSessions.lead(of: epic, in: work.agents) }
 
     var workAgents: [Agent] { work.agents }
 

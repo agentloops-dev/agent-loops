@@ -113,11 +113,6 @@ public enum LevelWords {
     }
 
     public static let noneIncluded = "No runtime included"
-    /// The form's chooser, on the Remote: "Auto (Claude)".
-    public static func autoRow(_ runtimeName: String?) -> String {
-        guard let runtimeName else { return auto }
-        return "\(auto) (\(runtimeName))"
-    }
 
     /// An Auto agent's header: "Auto · Claude".
     public static func header(_ runtimeName: String) -> String { "\(auto) · \(runtimeName)" }

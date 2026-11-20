@@ -69,8 +69,8 @@ extension RemoteModel {
             note("link: connected after \(ContinuousClock.now - began)")
             refusals.connected()
             // A home host that is a server asks for a key as any other server does (#344).
-            await client.setCredentialLender { [weak self] wanted in
-                await self?.answerHomeCredentialWanted(wanted) ?? false
+            await client.setCredentialLender { [weak self] _ in
+                await self?.answerHomeCredentialWanted() ?? false
             }
             isConnected = true
             lastHeardFrom = Date()

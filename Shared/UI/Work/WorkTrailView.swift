@@ -1,9 +1,9 @@
 import AgentsKitCore
 import SwiftUI
 
-/// A Work page's trail (#5452): *Features › Agent loops › Epic #5281 › #5291*. Each part but the
-/// last is a plain button in the secondary colour that opens its place; the last, the page
-/// itself, is semibold. Never wraps: a long feature's name is cut in its middle.
+/// A Work page's trail (#5452): *Issues › Epic #5281 › #5291*. Each part but the last is a
+/// plain button in the secondary colour that opens its place; the last, the page itself, is
+/// semibold. Never wraps: a long part is cut in its middle.
 struct WorkTrailView: View {
     let model: any WorkModel
     let parts: [WorkTrail.Part]
@@ -35,7 +35,6 @@ struct WorkTrailView: View {
     static func help(_ target: WorkTrail.Target, _ words: String) -> String {
         switch target {
         case .list(let kind): "All \(kind.title.lowercased())"
-        case .feature: "\(words) in Features"
         case .item: "The page of \(words)"
         }
     }

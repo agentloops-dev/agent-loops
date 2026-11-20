@@ -119,9 +119,6 @@ public enum SecretInfoWords {
         return names
     }
 
-    /// Under each secret for one session: it is on this Mac only.
-    public static let sessionNotBackedUp = "Only on this Mac. Not backed up. It is deleted when the session is archived."
-
     /// A row's `created` or `updated`, as the control plane writes it (RFC 3339).
     static func date(_ text: String?) -> Date? {
         guard let text, !text.isEmpty else { return nil }

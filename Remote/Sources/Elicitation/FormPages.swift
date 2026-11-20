@@ -16,8 +16,6 @@ import SwiftUI
 /// rarer than a choice, but a question that reaches you and cannot be answered where
 /// you are is the thing this app exists to avoid.
 struct FormPages: View {
-    @Environment(RemoteModel.self) private var model
-    let request: ElicitationRequest
     let schema: ElicitationSchema
     /// Hands the answer to the sheet, which shows it going and puts the buttons back if
     /// it did not.

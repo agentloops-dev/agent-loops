@@ -33,8 +33,6 @@ public struct StartPageAsks: Equatable, Sendable {
         answered.insert(ask)
     }
 
-    public func isAnswered(_ ask: Ask) -> Bool { answered.contains(ask) }
-
     /// Back in touch: every ask with no answer.
     public var toAskAgain: Set<Ask> { Set(Ask.allCases).subtracting(answered) }
 

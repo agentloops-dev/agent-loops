@@ -54,7 +54,7 @@ struct ClientPermissionCapsule: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach([ClientPermissionMode.default, .alwaysApprove], id: \.self) { choice in
                 SelectChoice(title: ClientPermissionWords.title(choice),
-                             description: ClientPermissionWords.description(choice, runtimeName: runtimeName),
+                             description: ClientPermissionWords.description(choice),
                              isChosen: choice == mode,
                              mark: own == nil && choice == settings ? LevelWords.followsSettings : nil) {
                     if choice == .alwaysApprove, mode != .alwaysApprove {
@@ -82,7 +82,7 @@ struct ClientPermissionCapsule: View {
             Text(ClientPermissionWords.confirmTitle(runtimeName: runtimeName))
                 .appText(.fine)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(ClientPermissionWords.confirmMessage(runtimeName: runtimeName))
+            Text(ClientPermissionWords.confirmMessage)
                 .appText(.fine)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -124,7 +124,7 @@ enum ClientPermissionWords {
         "\(runtimeName) \(LevelWords.requestsField.lowercased())"
     }
 
-    static func description(_ choice: ClientPermissionMode, runtimeName: String) -> String {
+    static func description(_ choice: ClientPermissionMode) -> String {
         LevelWords.meaning(requests: choice)
     }
 
@@ -136,9 +136,8 @@ enum ClientPermissionWords {
         "Say yes to every permission request of this \(runtimeName) agent?"
     }
 
-    static func confirmMessage(runtimeName: String) -> String {
+    static let confirmMessage =
         "It will not ask before it edits files or runs commands. Choose Request cards to make it ask again."
-    }
 
     static let confirmButton = "Yes to All"
 }

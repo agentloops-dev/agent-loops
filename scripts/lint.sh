@@ -7,24 +7,26 @@
 #   scripts/lint.sh --fix [linter…]   run each linter's fix mode first, then lint
 #   scripts/lint.sh --baseline        write the go, swift and dupes baselines again (below)
 #   scripts/lint.sh --tools DIR TOOL…  put the pinned binaries in DIR (CI): shellcheck,
-#                                     golangci-lint, govulncheck (needs Go), biome, swiftlint, jscpd;
+#                                     golangci-lint, govulncheck and deadcode (need Go), biome,
+#                                     swiftlint, jscpd, periphery (macOS only);
 #                                     Linux x86_64 on Linux, macOS arm64 on a Mac
 #
-# Linters: shell (shellcheck), zsh (zsh -n), go (golangci-lint), govulncheck, web (biome lint),
-# swift (SwiftLint), dupes (jscpd), checks (our own text checks). Their rules are in
-# .shellcheckrc, Go/.golangci.yml, Web/biome.json and .swiftlint.yml. There is no Python
+# Linters: shell (shellcheck), zsh (zsh -n), go (golangci-lint), govulncheck, deadcode, web (biome lint), knip (dead web code),
+# swift (SwiftLint), periphery (dead Swift, a Mac only), dupes (jscpd), checks (our own text checks). Their rules are in
+# .shellcheckrc, Go/.golangci.yml, Web/biome.json, Web/knip.config.js and .swiftlint.yml. There is no Python
 # linter (#5645).
 #
 # On a Mac (not CI) with no linter named, only the linters for the files the branch changes
-# since its merge base with origin/main, committed or not, run (#4710): go and govulncheck for
-# Go/ or Packages/Wire/, swift for *.swift or .swiftlint.yml, web for Web/, shell and zsh for
+# since its merge base with origin/main, committed or not, run (#4710): go, govulncheck and deadcode for
+# Go/ or Packages/Wire/, swift and periphery for *.swift, swift for .swiftlint.yml, periphery for
+# project.yml or .periphery-allowed.txt, web and knip for Web/, shell and zsh for
 # a shell file or .shellcheckrc; checks and dupes always. A change to this script runs every
 # one. It says which it skipped.
 #
 # Nx runs the linters, one target per language (#5672), as `scripts/nx.sh affected -t lint`
-# does and CI does: go:lint (go, govulncheck), web:lint (web, beside tsc and its own checks),
-# repo-lint:lint (shell, zsh, checks, dupes; lint/project.json) and swift-lint:lint (swift,
-# in CI's macOS `test` job). Each is cached by its inputs, so a lint that passed at the same
+# does and CI does: go:lint (go, govulncheck, deadcode), web:lint (web and knip, beside tsc and its own checks),
+# repo-lint:lint (shell, zsh, checks, dupes; lint/project.json) and swift-lint:lint (swift and
+# periphery, in CI's macOS `swift-lint` job). Each is cached by its inputs, so a lint that passed at the same
 # files is not run again.
 #
 # Every linter fails on a finding (#5672): there is no linter that only reports. A linter
@@ -41,8 +43,13 @@
 # (scripts/jscpd-report.py). Fix an old finding, then run `scripts/lint.sh --baseline` to drop
 # it from the list; never add a new one to it by hand. go is one run (#2162): every package is
 # loaded once. govulncheck fails on a vulnerability that the code calls (its default mode) and
-# that Go/.govulncheck-excluded.txt does not name with its reason, and
-# web (Biome) on any finding of the rules in Web/biome.json.
+# that Go/.govulncheck-excluded.txt does not name with its reason, deadcode on any function
+# that no main package or test reaches (#6334; below, run_deadcode) and that
+# Go/.deadcode-allowed.txt does not name with its reason (an allowlist, never a baseline),
+# periphery on any Swift declaration that nothing reaches (#6336; below, run_periphery) and that
+# .periphery-allowed.txt does not name with its reason (an allowlist too), web (Biome) on any finding of the rules in Web/biome.json,
+# and knip on any unused file, export, type or dependency of the web app (#6337; below, run_knip) that
+# Web/knip.config.js does not allow with its reason (an allowlist too).
 #
 # Every linter runs on the host, never in a container (#4709). On Linux a linter on the PATH
 # is run as it is (CI, after --tools). On a Mac each one is the pinned macOS binary in
@@ -59,17 +66,22 @@ cd "$root" || exit 1
 SHELLCHECK=0.11.0
 GOLANGCI=2.15.0
 GOVULNCHECK=1.9.0
+DEADCODE=0.53.0 # golang.org/x/tools/cmd/deadcode
 BIOME=2.5.15
 SWIFTLINT=0.65.1
 JSCPD=5.4.2
+PERIPHERY=3.8.0 # github.com/peripheryapp/periphery, the release's zip
+PERIPHERY_SHA256=07d4e286e31dd79164df39097e0b59f533c94badbe18158464a455ea88a166d7
 ZSH=5.9
 CACHE=${AGENTS_BUILD_CACHE:-$HOME/Library/Caches/Agents-build}
 
-ALL="shell zsh go govulncheck web swift dupes checks"
+ALL="shell zsh go govulncheck deadcode web knip swift periphery dupes checks"
 GO_BASELINE=Go/.golangci-baseline.txt
 SWIFT_BASELINE=.swiftlint-baseline.json
 DUPES_BASELINE=.jscpd-baseline.txt
 GOVULN_EXCLUDED=Go/.govulncheck-excluded.txt
+DEADCODE_ALLOWED=Go/.deadcode-allowed.txt
+PERIPHERY_ALLOWED=.periphery-allowed.txt
 
 if [ "${1:-}" = --tools ]; then
 	dir=${2:?usage: scripts/lint.sh --tools DIR TOOL…}
@@ -91,6 +103,7 @@ if [ "${1:-}" = --tools ]; then
 			curl -sSfL "$gh/golangci/golangci-lint/releases/download/v$GOLANGCI/golangci-lint-$GOLANGCI-$a.tar.gz" |
 				tar -xz --strip-components=1 "golangci-lint-$GOLANGCI-$a/golangci-lint" ;;
 		govulncheck) GOBIN=$PWD "$root/Go/scripts/go.sh" install "golang.org/x/vuln/cmd/govulncheck@v$GOVULNCHECK" ;;
+		deadcode) GOBIN=$PWD "$root/Go/scripts/go.sh" install "golang.org/x/tools/cmd/deadcode@v$DEADCODE" ;;
 		biome)
 			a=linux-x64; [ $mac = 1 ] && a=darwin-arm64
 			curl -sSfLo biome "$gh/biomejs/biome/releases/download/@biomejs/biome@$BIOME/biome-$a" && chmod +x biome ;;
@@ -102,6 +115,11 @@ if [ "${1:-}" = --tools ]; then
 				curl -sSfLo swiftlint.zip "$gh/realm/SwiftLint/releases/download/$SWIFTLINT/swiftlint_linux_amd64.zip"
 				unzip -qo swiftlint.zip swiftlint-static && mv swiftlint-static swiftlint && rm swiftlint.zip
 			fi ;;
+		periphery)
+			[ $mac = 1 ] || { echo "lint.sh: periphery is for macOS only (Xcode's index)" >&2; exit 2; }
+			curl -sSfLo periphery.zip "$gh/peripheryapp/periphery/releases/download/$PERIPHERY/periphery-$PERIPHERY.zip"
+			echo "$PERIPHERY_SHA256  periphery.zip" | shasum -a 256 -c --quiet
+			unzip -qo periphery.zip periphery libIndexStore.dylib LICENSE.md && rm periphery.zip ;;
 		jscpd)
 			a=linux-x64-gnu; [ $mac = 1 ] && a=darwin-arm64
 			curl -sSfL "$gh/kucherenko/jscpd/releases/download/v$JSCPD/jscpd-$a.tar.gz" |
@@ -134,11 +152,13 @@ changed_linters() {
 		[ -n "$f" ] || continue
 		case $f in
 		scripts/lint.sh) echo "$ALL"; return ;;
-		Go/* | Packages/Wire/*) want="$want go govulncheck " ;;
+		Go/* | Packages/Wire/*) want="$want go govulncheck deadcode " ;;
 		esac
 		case $f in
-		*.swift | .swiftlint.yml) want="$want swift " ;;
-		Web/*) want="$want web " ;;
+		*.swift) want="$want swift periphery " ;;
+		.swiftlint.yml) want="$want swift " ;;
+		project.yml | .periphery-allowed.txt | scripts/periphery-report.py) want="$want periphery " ;;
+		Web/*) want="$want web knip " ;;
 		*.sh | *.bash | *.zsh | .shellcheckrc) want="$want shell zsh " ;;
 		*)
 			# An executable script with no extension: its first line says sh or zsh.
@@ -174,6 +194,7 @@ tool() {
 	case $1 in
 	shell) echo shellcheck ;; go) echo golangci-lint ;;
 	web) echo biome ;; swift) echo swiftlint ;; dupes) echo jscpd ;; govulncheck) echo govulncheck ;;
+	deadcode) echo deadcode ;; periphery) echo periphery ;;
 	*) ;;
 	esac
 }
@@ -182,8 +203,8 @@ tool() {
 version() {
 	case $1 in
 	shellcheck) echo "$SHELLCHECK" ;; golangci-lint) echo "$GOLANGCI" ;;
-	govulncheck) echo "$GOVULNCHECK" ;; biome) echo "$BIOME" ;; swiftlint) echo "$SWIFTLINT" ;;
-	jscpd) echo "$JSCPD" ;;
+	govulncheck) echo "$GOVULNCHECK" ;; deadcode) echo "$DEADCODE" ;; biome) echo "$BIOME" ;; swiftlint) echo "$SWIFTLINT" ;;
+	jscpd) echo "$JSCPD" ;; periphery) echo "$PERIPHERY" ;;
 	esac
 }
 
@@ -201,7 +222,8 @@ have() {
 		echo "== getting $1 $(version "$1") into $dir"
 		# Got beside it, then renamed: two lanes may get it at once.
 		mkdir -p "$dir" && tmp=$(mktemp -d "$CACHE/lint-tools/.get.XXXXXX") || return 1
-		"$root/scripts/lint.sh" --tools "$tmp" "$1" >&2 && mv -f "$tmp/$1" "$dir/$1"
+		# Every file it got: periphery has its libIndexStore.dylib beside it.
+		"$root/scripts/lint.sh" --tools "$tmp" "$1" >&2 && mv -f "$tmp"/* "$dir/"
 		rm -rf "$tmp"
 		[ -x "$dir/$1" ] || return 1
 	fi
@@ -326,6 +348,43 @@ run_govulncheck() {
 	echo "lint.sh: each vulnerability above is in $GOVULN_EXCLUDED, with why"
 }
 
+# deadcode (whole program, #6334): every function that no main package and no test reaches. It
+# runs twice, as GOOS=linux GOARCH=amd64 and as GOOS=darwin GOARCH=arm64, each with the tests
+# (-test) and the live tests (-tags live), cgo off; a function is dead only when both runs say
+# so, as one used only by a _darwin.go or a _linux.go file is live. A function kept on purpose
+# (reflection, go:linkname, a method that only something outside the program calls) is a line
+# in Go/.deadcode-allowed.txt: its path from the root, a colon, its name as deadcode gives it,
+# then why it stays. There is no baseline: every other finding fails. deadcode runs the `go`
+# on the PATH, which must be the Go of go.mod (a newer one fails to read the older toolchain's
+# sources): its GOROOT's bin goes first.
+run_deadcode() {
+	local goroot onlinux ondarwin status=0 line key
+	goroot=$(cd Go && go env GOROOT) || return 1
+	onlinux=$(mktemp) ondarwin=$(mktemp)
+	(cd Go && PATH="$goroot/bin:$PATH" GOOS=linux GOARCH=amd64 CGO_ENABLED=0 deadcode -test -tags live ./...) >"$onlinux" 2>&1 || status=$?
+	(cd Go && PATH="$goroot/bin:$PATH" GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 deadcode -test -tags live ./...) >"$ondarwin" 2>&1 || status=$?
+	if [ "$status" != 0 ]; then
+		cat "$onlinux" "$ondarwin"
+		rm -f "$onlinux" "$ondarwin"
+		return "$status"
+	fi
+	status=0
+	while IFS= read -r line; do
+		# path:line:col: unreachable func: Name, keyed as path: Name.
+		key=$(printf 'Go/%s\n' "$line" | sed -nE 's/^([^:]+):[0-9]+:[0-9]+: unreachable func: (.*)$/\1: \2/p')
+		if [ -z "$key" ]; then
+			printf '%s\n' "$line"
+			status=1
+		elif ! grep -qF -- "$key " "$DEADCODE_ALLOWED" 2>/dev/null; then
+			printf 'Go/%s\n' "$line"
+			status=1
+		fi
+	done < <(LC_ALL=C comm -12 <(LC_ALL=C sort "$onlinux") <(LC_ALL=C sort "$ondarwin"))
+	rm -f "$onlinux" "$ondarwin"
+	[ "$status" = 0 ] || echo "lint.sh: remove each function above, or name it in $DEADCODE_ALLOWED with why it stays"
+	return "$status"
+}
+
 # Biome's github reporter, turned into path:line:col: lines with the path from the root.
 run_web() {
 	local args=(lint --max-diagnostics=none --error-on-warnings --reporter=github)
@@ -335,6 +394,24 @@ run_web() {
 		sed -E 's#^Web/(/repo/Web/|'"$root"'/Web/|\./)?#Web/#'
 	local status=${PIPESTATUS[0]}
 	cd "$root" || return 1
+	return "$status"
+}
+
+# knip (#6337): every file, export, type and dependency of the web app that no bundle of
+# Web/build.mjs, test or walk reaches, from Knip at the version Web/package.json pins (it is
+# in the workspace's packages: scripts/pnpm.sh install --frozen-lockfile, as scripts/nx.sh
+# does). Web/knip.config.js names the entry points, reads a test's load("src/…") as an import,
+# and allows each finding kept on purpose, with why; there is no baseline. Its GitHub reporter,
+# turned into path:line:col: lines with the path from the root.
+run_knip() {
+	local knip=Web/node_modules/.bin/knip
+	[ -x "$knip" ] || { echo "lint.sh: no $knip: run scripts/pnpm.sh install --frozen-lockfile first"; return 1; }
+	cd Web || return 1
+	./node_modules/.bin/knip --no-progress --no-config-hints --reporter github-actions 2>&1 |
+		sed -E 's#^::(error|warning) file=([^,]*),line=([0-9]+),[^:]*,col=([0-9]+),[^:]*,title=[^:]*/ ([^:]*)::(.*)#Web/\2:\3:\4: \1: \6 (\5)#'
+	local status=${PIPESTATUS[0]}
+	cd "$root" || return 1
+	[ "$status" = 0 ] || echo "lint.sh: remove each one above, or allow it in Web/knip.config.js with why it stays"
 	return "$status"
 }
 
@@ -348,6 +425,60 @@ run_swift() {
 	fi
 	swiftlint lint --quiet --strict --baseline "$SWIFT_BASELINE" | sed -E "s#^(/repo/|$root/)##"
 	return "${PIPESTATUS[0]}"
+}
+
+# periphery (#6336): every Swift declaration that nothing reaches, in all Swift code, from the
+# Mac app (AgentsHost: App, Host, Shared and the packages), the Remote (with its extensions) and
+# each Swift package with its tests. Each is built with an index of its own, under build/periphery
+# (scripts/build-cache.sh with AGENTS_BUILD_CACHE_INDEX=1, so the pinned packages but no
+# compilation cache, which writes no index), and scanned alone: Periphery's answer changes from
+# run to run when one index has two builds of a file (two platforms, two archs, two stores), so
+# the Remote is built for arm64 only. scripts/periphery-report.py then fails on each declaration
+# that every scan whose build compiles its file reports: one that only the Remote, only the Mac
+# or only a package's tests use is live. Codable properties (the wire's, which encode and
+# decode as Packages/Wire says), Equatable and Hashable ones (== reads each of them, as for a
+# key of .task(id:) or onChange) and SwiftUI previews are kept; redundant `public` is not dead
+# code, so it is not checked. A declaration kept on purpose is a line in .periphery-allowed.txt,
+# with why; there is no baseline. The builds are incremental: build/periphery stays between runs.
+run_periphery() {
+	local out=build/periphery status=0 p
+	local opts=(--retain-codable-properties --retain-equatable-properties --retain-swift-ui-previews --disable-redundant-public-analysis
+		--disable-update-check --format json --quiet
+		--index-exclude '**/*?.build/**/*' '**/SourcePackages/checkouts/**' '**/Library/Caches/**' '**/build/periphery/*/checkouts/**')
+	local xcode=(-project Agents.xcodeproj -skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO -quiet)
+	command -v xcodegen >/dev/null || { echo "lint.sh: periphery needs xcodegen (brew install xcodegen)"; return 1; }
+	mkdir -p "$out"
+	xcodegen generate --quiet >"$out/xcodegen.log" 2>&1 || { cat "$out/xcodegen.log"; return 1; }
+	build() { # NAME COMMAND…: run it, and show its log's end when it fails.
+		local name=$1
+		shift
+		"$@" >"$out/$name.log" 2>&1 && return 0
+		tail -40 "$out/$name.log"
+		echo "lint.sh: periphery: the $name build failed ($out/$name.log)"
+		return 1
+	}
+	build mac env AGENTS_BUILD_CACHE_INDEX=1 scripts/build-cache.sh xcodebuild build "${xcode[@]}" -scheme AgentsHost \
+		-destination platform=macOS -derivedDataPath "$root/$out/mac" || return 1
+	build remote env AGENTS_BUILD_CACHE_INDEX=1 scripts/build-cache.sh xcodebuild build "${xcode[@]}" -scheme Remote \
+		-destination 'generic/platform=iOS Simulator' -derivedDataPath "$root/$out/remote" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES || return 1
+	for p in AgentsKit CodeText; do
+		build "$p" scripts/build-cache.sh swift build --package-path "Packages/$p" --build-tests --build-system native \
+			--scratch-path "$root/$out/$p" -Xswiftc -index-store-path -Xswiftc "$root/$out/$p/index" || return 1
+	done
+	periphery scan --project Agents.xcodeproj --schemes AgentsHost --skip-build \
+		--index-store-path "$out/mac/Index.noindex/DataStore" "${opts[@]}" >"$out/mac.json" || status=1
+	periphery scan --project Agents.xcodeproj --schemes Remote --skip-build \
+		--index-store-path "$out/remote/Index.noindex/DataStore" "${opts[@]}" >"$out/remote.json" || status=1
+	for p in AgentsKit CodeText; do
+		(cd "Packages/$p" && periphery scan --skip-build --index-store-path "$root/$out/$p/index" "${opts[@]}") >"$out/$p.json" || status=1
+	done
+	[ "$status" = 0 ] || { echo "lint.sh: periphery: a scan failed"; return 1; }
+	python3 scripts/periphery-report.py --allowed "$PERIPHERY_ALLOWED" \
+		--xcode "$out/mac.json" "$out/mac" --xcode "$out/remote.json" "$out/remote" \
+		--package "$out/AgentsKit.json" Packages/AgentsKit --package "$out/CodeText.json" Packages/CodeText
+	status=$?
+	[ "$status" = 0 ] || echo "lint.sh: remove each declaration above, or name it in $PERIPHERY_ALLOWED with why it stays"
+	return "$status"
 }
 
 run_dupes() {
@@ -391,6 +522,7 @@ run_checks() {
 	python3 scripts/check-deploy-bounds.py || status=1
 	python3 scripts/wire-compat.py --selftest || status=1
 	python3 scripts/jscpd-report.py --selftest || status=1
+	python3 scripts/periphery-report.py --selftest || status=1
 	python3 scripts/docs-parts.py --selftest || status=1
 	python3 scripts/docs-parts.py check || status=1
 	sh scripts/design.sh selftest || status=1

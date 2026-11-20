@@ -163,10 +163,4 @@ func TestNoPersonalHomeWritesNoRelativePath(t *testing.T) {
 	if err := writeChecks("", checksRecord{}); err == nil {
 		t.Fatal("checks were written with no home")
 	}
-	if _, err := d.saveSummary(wire.UUID("x"), "# Daily summary\n", "", time.Now()); err == nil {
-		t.Fatal("a summary was saved with no home")
-	}
-	if summaryFiles("") != nil {
-		t.Fatal("summaries read from a relative path")
-	}
 }

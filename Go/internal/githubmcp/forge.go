@@ -23,6 +23,9 @@ type SearchFilter struct {
 	Label, Assignee, Query, Feature, Project string
 	// Reviewer is a login a review is requested from (#5803), "" for any.
 	Reviewer string
+	// UpdatedSince and UpdatedBefore narrow the list to the items updated at or after, and at or
+	// before, a time in RFC 3339 (#6349); "" for no bound.
+	UpdatedSince, UpdatedBefore string
 }
 
 // Item is an issue or a pull request as the forge reads list it.
@@ -408,6 +411,12 @@ func SearchQuery(repos []string, f SearchFilter) string {
 	}
 	if f.Project != "" {
 		words = append(words, "project:"+f.Project)
+	}
+	if f.UpdatedSince != "" {
+		words = append(words, "updated:>="+f.UpdatedSince)
+	}
+	if f.UpdatedBefore != "" {
+		words = append(words, "updated:<="+f.UpdatedBefore)
 	}
 	if q := strings.TrimSpace(f.Query); q != "" {
 		words = append(words, q)

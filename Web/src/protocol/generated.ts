@@ -3687,31 +3687,15 @@ export interface DaemonStatus {
 }
 
 /**
- * How much the daily summary does (#3351, #3395): off, the summary only, or the summary and the
- * read-only checks between summaries (the home folder's Daily checks workflow).
+ * The daily checks' one control, for all folders (#3355, #5853). It is the home folder's ready-made
+ * Daily checks workflow: enabled turns it on or off, and every is how many hours apart its
+ * schedules run, from midnight.
  */
-export type DailySummaryMode =
-  | "off"
-  | "summary"
-  | "summaryAndChecks";
-
-/**
- * The daily summary's one control, for all folders (#3351). It is the home folder's ready-made
- * Daily summary workflow: the mode turns it on or off, and the time is its schedule's. The days
- * stay as the workflow says (weekdays by default).
- */
-export interface DailySummarySettings {
-  mode: DailySummaryMode;
-  /**
-   * The time it runs, HH:MM in this machine's time zone, on the hour or the half hour. 08:00 by
-   * default.
-   */
-  at: string;
-  /**
-   * With summaryAndChecks, how many hours apart the checks run, counted from the summary's time and
-   * never at it (#3395): 2, 3, 4, 6, 8 or 12. 4 by default.
-   */
-  checksEvery?: number;
+export interface DailyChecksSettings {
+  /** The Daily checks workflow is on. */
+  enabled: boolean;
+  /** How many hours apart the checks run, from midnight: 2, 3, 4, 6, 8 or 12. 4 by default. */
+  every: number;
 }
 
 export interface DayRecap {
@@ -5582,6 +5566,40 @@ export interface ForgeCapabilities {
 }
 
 /**
+ * forge/changes (#6349, epic #6348): a page of the items that changed at or after the request's
+ * updatedSince, each a whole ForgeItem with its updatedAt, newest first within each source.
+ * nextPageCursor is the next page, absent at the end. highWater is the latest updatedAt of the read
+ * so far, carried from page to page, so the last page's is the read's: a client keeps it as its
+ * cursor for the next read (and asks from a minute before it). While a source in the read could not
+ * be read (errors), highWater does not move past updatedSince, so the next read asks again from
+ * there; with no item, highWater is updatedSince (0 for none), so a client keeps the later of it
+ * and its cursor. errors says a source that could not be read, and the items of the others still
+ * come; forges says what each forge on the page fills, as ForgeList's does.
+ */
+export interface ForgeChanges {
+  items: ForgeItem[];
+  nextPageCursor?: string;
+  highWater: WireDate;
+  errors?: ForgeListError[];
+  forges?: ForgeCapabilities[];
+}
+
+/**
+ * forge/changes (#6349): the issues and pull requests of one source (a ForgeSource's source; every
+ * source on this machine when not said) that changed at or after updatedSince, in every state
+ * (open, closed and merged); every item when not said, for a first fill. kinds is issue, pr or
+ * both. limit is 1 to 100, 100 when not said; pageCursor is the last page's nextPageCursor, with
+ * the same source, kinds and updatedSince.
+ */
+export interface ForgeChangesRequest {
+  source?: string;
+  kinds: ("issue" | "pr")[];
+  updatedSince?: WireDate;
+  pageCursor?: string;
+  limit?: number;
+}
+
+/**
  * One of a pull request's checks (#3129): a check run or a commit status. state is passing,
  * failing, running or skipped; url is its page on the forge. startedAt and finishedAt are when it
  * started and ended (#4409), where the forge says them (ForgeCapabilities.checkTimes): absent on a
@@ -5593,6 +5611,41 @@ export interface ForgeCheck {
   url?: string;
   startedAt?: WireDate;
   finishedAt?: WireDate;
+}
+
+/**
+ * forge/checks (#6349): the checks summary of each pull request asked for that the forge still has,
+ * in one call on GitHub; on another forge from its list of open pull requests, so one that is no
+ * longer open is left out. at is when they were read. A pull request's checks do not move its
+ * updatedAt, so a changed-since read does not see them.
+ */
+export interface ForgeChecks {
+  pulls: ForgeChecksRow[];
+  at: WireDate;
+}
+
+/**
+ * forge/checks (#6349): the pull requests of one source (a ForgeSource's source), by their numbers,
+ * 1 to 100 of them.
+ */
+export interface ForgeChecksRequest {
+  source: string;
+  numbers: number[];
+}
+
+/**
+ * One pull request's checks summary (#6349), in ForgeItem's words: state is open, closed or merged;
+ * checks is passing, failing, running or none; review is approved, changes_requested or
+ * review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on.
+ * Each is absent where the forge does not say it.
+ */
+export interface ForgeChecksRow {
+  node: LineageNode;
+  state?: string;
+  checks?: string;
+  review?: string;
+  mergeable?: string;
+  autoMerge?: boolean;
 }
 
 /**
@@ -5683,12 +5736,16 @@ export interface ForgeDiffHunk {
 
 /**
  * What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge
- * waits for the checks; reran is how many runs or pipelines were run again.
+ * waits for the checks; reran is how many runs or pipelines were run again. item is the item the
+ * write was on, as the forge has it after the write, with its updatedAt (#6351, epic #6348): a
+ * client cache replaces its optimistic value with it. On forge/add-child it is the epic. Absent
+ * when the read after the write failed (the write still happened), and from an earlier daemon.
  */
 export interface ForgeDone {
   url?: string;
   auto?: boolean;
   reran?: number;
+  item?: ForgeItem;
 }
 
 /**
@@ -5720,46 +5777,6 @@ export type ForgeEventKind =
   | "referenced";
 
 /**
- * A feature (#3267): name is its label's after feature:, with the label's colour where the forge
- * gives one; epics counts its epics, open the open ones. issues counts its open issues that are not
- * epics, of the newest 500 open issues (#3741); a feature with no open epic and no such issue is
- * finished. refs are the lineage refs of its open issues and open epics, waiting the ones labelled
- * alex-todo, and updatedAt the newest update of any of them (#4115), so a client finds the sessions
- * labelled #<n> for them and which wait for Alex.
- */
-export interface ForgeFeature {
-  name: string;
-  color?: string;
-  epics: number;
-  open: number;
-  issues?: number;
-  refs?: string[];
-  waiting?: string[];
-  updatedAt?: WireDate;
-}
-
-/**
- * forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or
- * closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull
- * requests with a review requested from the person (#4115, #5803), so a client finds the sessions
- * labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
- */
-export interface ForgeFeatures {
-  features: ForgeFeature[];
-  approvals?: string[];
-  errors?: ForgeListError[];
-}
-
-/**
- * forge/features (#3267): the features of every folder on this machine, or of one folder's repo.
- */
-export interface ForgeFeaturesRequest {
-  folder?: string;
-  /** A board's url, from forge/boards (#3282): only the epics on that board. */
-  board?: string;
-}
-
-/**
  * forge/hold (#6091): put an issue on hold (on) or take it off hold. The daemon writes the forge's
  * own field where it has one (Bitbucket: the state on hold; Jira: a status named On hold where the
  * workflow has one), else the label on hold.
@@ -5767,6 +5784,32 @@ export interface ForgeFeaturesRequest {
 export interface ForgeHoldRequest {
   node: LineageNode;
   on: boolean;
+}
+
+/**
+ * forge/ids (#6349): a page of the nodes of the items the source has now in the states asked, at
+ * most 1,000 a page. nextPageCursor is the next page, absent at the end. A client removes from its
+ * cache an item of those kinds and states that no page named: it was deleted, moved, or the person
+ * can no longer see it. A read that fails is an error, never a short list. at is when the read
+ * began (the first page's time, on every page): an item that changed after it can be missing from
+ * the pages, so a client keeps a cached item whose updatedAt is at or after at.
+ */
+export interface ForgeIds {
+  at: WireDate;
+  nodes: LineageNode[];
+  nextPageCursor?: string;
+}
+
+/**
+ * forge/ids (#6349): the ids of one source's items (a ForgeSource's source) of kinds (issue, pr or
+ * both) in states: open, closed (a closed pull request includes a merged one), or both when not
+ * said. pageCursor is the last page's nextPageCursor, with the same source, kinds and states.
+ */
+export interface ForgeIdsRequest {
+  source: string;
+  kinds: ("issue" | "pr")[];
+  states?: ("open" | "closed")[];
+  pageCursor?: string;
 }
 
 /**
@@ -6008,7 +6051,8 @@ export interface ForgeListError {
  * request includes a merged one. label, assignee (a login) and query (words in the title or body)
  * narrow the list. limit is 1 to 100, 50 when not said; cursor is the last page's. feature (a name:
  * work for the label feature:work) narrows it to one feature's items (#3267). board (a board's url,
- * from forge/boards) narrows it to one board's items (#3282).
+ * from forge/boards) narrows it to one board's items (#3282). updatedSince narrows it to the items
+ * that changed at or after that time (#6349); an earlier daemon leaves it out and lists every item.
  */
 export interface ForgeListRequest {
   folder?: string;
@@ -6020,6 +6064,7 @@ export interface ForgeListRequest {
   limit?: number;
   feature?: string;
   board?: string;
+  updatedSince?: WireDate;
 }
 
 /** forge/log (#3130): the last lines of each failed check's log, as plain text. */
@@ -6280,6 +6325,30 @@ export type ForgeReviewerState =
   | "changes_requested"
   | "commented"
   | "pending";
+
+/**
+ * A forge source this machine reads (#6349): source is the forge's name and the repository, project
+ * or team in lower case, as its nodes' refs name it (github:agentloops-dev/agent-loops,
+ * gitlab:group/project, jira:proj, linear:eng; linear for a whole Linear workspace), the key of a
+ * client cache's records. kinds is what it has: issue, pr or both. folder is a folder on this
+ * machine on it.
+ */
+export interface ForgeSource {
+  source: string;
+  forge: string;
+  kinds: ("issue" | "pr")[];
+  folder?: string;
+}
+
+/**
+ * forge/sources (#6349): the forge sources this machine reads, from its folders, so a client asks
+ * one machine for each source, not every machine. errors says a forge whose sources could not all
+ * be found (not connected).
+ */
+export interface ForgeSources {
+  sources: ForgeSource[];
+  errors?: ForgeListError[];
+}
 
 /**
  * A standing epic's query (#3659, #3661), as the daemon read it from the standing block in the
@@ -9029,17 +9098,6 @@ export interface MachineStop {
   confirmRunning?: boolean;
 }
 
-/**
- * One of the person's other machines in machines/summaryFacts (#3354): its facts, or, when it is
- * off or did not answer, unreached, the words that say why.
- */
-export interface MachineSummaryFacts {
-  machine: MachineRef;
-  machineName: string;
-  facts?: SummaryFacts;
-  unreached?: string;
-}
-
 export interface MachineTunnel {
   up: boolean;
   problem?: string;
@@ -9198,14 +9256,6 @@ export interface MachineWorkspaceCall {
   method: string;
   params: JSONValue;
   deliver?: LockDelivery;
-}
-
-/**
- * machines/summaryFacts (#3354): the daily summary's facts from each of the person's other
- * machines, by name.
- */
-export interface MachinesSummaryFacts {
-  machines: MachineSummaryFacts[];
 }
 
 export interface ManagedMCPServer {
@@ -11526,8 +11576,8 @@ export interface Project {
 /**
  * One board in a project's Tasks slot (#3282): a GitHub Projects board, a Jira board, a Linear
  * team, a GitLab group board or an Azure Boards board (a team's, #3816), by its address and a name
- * (the team's). Work's Issues and Features lists narrow to one. A client sends name and url; the
- * control plane reads forge, key and site from the url.
+ * (the team's). Work's Issues and Timeline narrow to one. A client sends name and url; the control
+ * plane reads forge, key and site from the url.
  */
 export interface ProjectBoard {
   name: string;
@@ -12225,6 +12275,37 @@ export interface RemoveResourceRequest {
 export interface RenameRequest {
   agentID: UUID;
   title: string;
+}
+
+/**
+ * reports/changes' answer (#6350): a page of at most 100 rows, by ref, each as reports/nodes gives
+ * it. nextPageCursor asks for the next page of the same change; absent on the last. cursor is on
+ * the last page only: send it as since next time. reset says the rows are every row of the kind,
+ * not only those that changed: the client replaces the figures it holds of the kind with the rows
+ * of all the pages. An empty last page with a cursor says nothing changed.
+ */
+export interface ReportChanges {
+  nodes: ReportNode[];
+  nextPageCursor?: string;
+  cursor?: string;
+  reset: boolean;
+}
+
+/**
+ * reports/changes (#6350): the rows of one kind whose lineage figures changed since a cursor, for a
+ * client's local cache (#6348). kind, repo and scope are as reports/nodes'. since is the cursor of
+ * the last answer's last page, opaque; absent asks for every row (a reset). pageCursor is the last
+ * page's nextPageCursor. limit is 1 to 100, 100 when absent.
+ */
+export interface ReportChangesQuery {
+  /** issue, pr or release. */
+  kind: string;
+  repo?: string;
+  /** Me or the organisation (#1804). */
+  scope?: ReportScope;
+  since?: string;
+  pageCursor?: string;
+  limit?: number;
 }
 
 /**
@@ -14919,54 +15000,6 @@ export interface SuggestionRequest {
   id: string;
 }
 
-/**
- * agents/summaryFacts (#3354): one machine's lines for the daily summary since a time, each list at
- * most 40 lines, newest last; folders is how many folders it has.
- */
-export interface SummaryFacts {
-  folders: number;
-  landed: string[];
-  failed: string[];
-  waiting: string[];
-  suggested: string[];
-  checked: string[];
-}
-
-/** agents/summaryFacts and machines/summaryFacts (#3354): the facts since this time. */
-export interface SummaryFactsRequest {
-  since: WireDate;
-}
-
-/**
- * One saved page of the daily summary (#3721), in ~/.agents/summaries on this machine: the
- * sidebar's Summary row and the Summary page.
- */
-export interface SummaryPage {
-  /** The file's name without .md, such as 2026-11-06-1810: what summaries/read names. */
-  name: string;
-  /** The page's first heading, such as "Daily summary, Fri 6 Nov"; the name when it has none. */
-  title: string;
-  savedAt: WireDate;
-  /** Nobody has read it with summaries/read since it was saved. */
-  unread: boolean;
-  /**
-   * The Daily summary workflow's session that wrote it: the page's "How this was written". Absent
-   * for a page saved before #3721.
-   */
-  writer?: UUID;
-}
-
-/** summaries/read (#3721): a saved page of the daily summary and its Markdown. */
-export interface SummaryPageText {
-  page: SummaryPage;
-  markdown: string;
-}
-
-/** summaries/read (#3721): the page to read, as SummaryPage.name says it. */
-export interface SummaryReadRequest {
-  name: string;
-}
-
 /** Surface (Attention/Surface.swift): a tagged object, `{ mac: {} }` or `{ device: "<uuid>" }`. */
 export type Surface =
   | { mac: Record<string, never> }
@@ -16190,58 +16223,6 @@ export interface WorkDismissLeadRequest {
 }
 
 /**
- * A feature in work/features (#4586): feature is it as forge/features says it. epics are its open
- * epics, the newest first, each with where it is in its plan and its children. loose are its open
- * issues that are not epics and have no parent (of the newest 500 open issues), the newest update
- * first, as children are: when each started, and whether it waits for a person.
- */
-export interface WorkFeature {
-  feature: ForgeFeature;
-  epics: WorkFeatureEpic[];
-  loose: WorkTimelineChild[];
-}
-
-/**
- * An open epic in work/features (#4586), from forge/plan and work/timeline. steps is the number of
- * steps in its plan (ForgePlan.steps), and step the first of them with an open child, absent when
- * none is open. blockedOutside are the open blockers outside the plan of that step's open children
- * (an issue of another epic), each once. forecast is its open line's close as work/timeline
- * forecasts it, on GitHub only; absent when there is too little history or nothing to forecast.
- * children are its sub-issues in the plan's order (at most 100), each with its start, close and
- * wait as in work/timeline; absent when its plan could not be read (errors says why).
- */
-export interface WorkFeatureEpic {
-  item: ForgeItem;
-  step?: number;
-  steps: number;
-  blockedOutside?: LineageNode[];
-  forecast?: WorkTimelineForecast;
-  children?: WorkTimelineChild[];
-}
-
-/**
- * work/features (#4586, specs/4328-work-look/features-delivery.md): the Features page's one read.
- * features are forge/features' features, by name, each with its open epics and its loose open
- * issues, so an open feature's epics and children draw with no second read. approvals are as in
- * forge/features. errors say a forge, a plan or a timeline that could not be read.
- */
-export interface WorkFeatures {
-  features: WorkFeature[];
-  approvals?: string[];
-  errors?: ForgeListError[];
-}
-
-/**
- * work/features (#4586): the features of every folder on this machine, or of one folder's repo, as
- * forge/features.
- */
-export interface WorkFeaturesRequest {
-  folder?: string;
-  /** A board's url, from forge/boards (#3282): only the epics on that board. */
-  board?: string;
-}
-
-/**
  * An open epic with no lead, as work/suggest-leads says it (#5458, epic #5457). node, title and url
  * are the epic's; folder is a folder on this machine on its repo; milestone is its name and due its
  * due date (YYYY-MM-DD) where the forge says them. done and total are its children closed and all
@@ -16954,8 +16935,8 @@ export interface Methods {
   "cost/state": { params: Empty; result: CostState };
   "credentials/offer": { params: CredentialsOffer; result: Empty };
   "daemon/policyState": { params: Empty; result: PolicyState };
-  "dailySummary/setSettings": { params: DailySummarySettings; result: DailySummarySettings };
-  "dailySummary/settings": { params: Empty; result: DailySummarySettings };
+  "dailyChecks/setSettings": { params: DailyChecksSettings; result: DailyChecksSettings };
+  "dailyChecks/settings": { params: Empty; result: DailyChecksSettings };
   "deploys/delivery": { params: DeploysDeliveryRequest; result: DeploysDelivery };
   "deploys/deliveryAll": { params: DeploysDeliveryRequest; result: DeploysDelivery };
   "deploys/targets": { params: DeployTargetsRequest; result: DeployTargets };
@@ -17012,11 +16993,13 @@ export interface Methods {
   "forge/boards": { params: ForgeBoardsRequest; result: ForgeBoards };
   "forge/boardsAll": { params: Empty; result: ForgeBoardsAll };
   "forge/cancel-auto-merge": { params: ForgeNodeRequest; result: ForgeDone };
+  "forge/changes": { params: ForgeChangesRequest; result: ForgeChanges };
+  "forge/checks": { params: ForgeChecksRequest; result: ForgeChecks };
   "forge/close": { params: ForgeCloseRequest; result: ForgeDone };
   "forge/comment": { params: ForgeCommentRequest; result: ForgeDone };
   "forge/diff": { params: ForgeNodeRequest; result: ForgeDiff };
-  "forge/features": { params: ForgeFeaturesRequest; result: ForgeFeatures };
   "forge/hold": { params: ForgeHoldRequest; result: ForgeDone };
+  "forge/ids": { params: ForgeIdsRequest; result: ForgeIds };
   "forge/image": { params: ForgeImageRequest; result: ForgeImage };
   "forge/issue": { params: ForgeItemRequest; result: ForgeItemDetail };
   "forge/issues": { params: ForgeListRequest; result: ForgeList };
@@ -17035,6 +17018,7 @@ export interface Methods {
   "forge/releases": { params: ForgeReleasesRequest; result: ForgeReleases };
   "forge/request-changes": { params: ForgeRequestChangesRequest; result: ForgeDone };
   "forge/rerun": { params: ForgeNodeRequest; result: ForgeDone };
+  "forge/sources": { params: Empty; result: ForgeSources };
   "governance/approvals": { params: Empty; result: CatalogApprovalList };
   "governance/decide": { params: CatalogDecide; result: CatalogRequest };
   "governance/request": { params: CatalogAsk; result: CatalogRequest };
@@ -17192,6 +17176,7 @@ export interface Methods {
   "readApi/list": { params: Empty; result: ReadAPI };
   "readApi/make": { params: ReadTokenMake; result: ReadTokenMade };
   "readApi/revoke": { params: ReadTokenRevoke; result: ReadAPI };
+  "reports/changes": { params: ReportChangesQuery; result: ReportChanges };
   "reports/deleteView": { params: ReportViewID; result: ReportViews };
   "reports/export": { params: ReportQuery; result: ReportExport };
   "reports/features": { params: Empty; result: FeatureUsage };
@@ -17263,8 +17248,6 @@ export interface Methods {
   "store/notes": { params: Empty; result: StoreNotes };
   "suggestions/dismiss": { params: SuggestionRequest; result: Empty };
   "suggestions/start": { params: SuggestionRequest; result: UUID };
-  "summaries/list": { params: Empty; result: SummaryPage[] };
-  "summaries/read": { params: SummaryReadRequest; result: SummaryPageText };
   "surface/identify": { params: SurfaceIdentification; result: Empty };
   "time/history": { params: Empty; result: TimeHistory };
   "usage/history": { params: Empty; result: UsageHistory };
@@ -17286,7 +17269,6 @@ export interface Methods {
   "wake/set": { params: WakeSettings; result: WakeSettings };
   "wake/settings": { params: Empty; result: WakeSettings };
   "work/dismiss-lead": { params: WorkDismissLeadRequest; result: ForgeDone };
-  "work/features": { params: WorkFeaturesRequest; result: WorkFeatures };
   "work/suggest-leads": { params: WorkSuggestLeadsRequest; result: WorkSuggestLeads };
   "work/timeline": { params: WorkTimelineRequest; result: WorkTimeline };
   "workflows/approve": { params: WorkflowApproveRequest; result: WorkflowSummary };
@@ -17438,8 +17420,8 @@ export const MethodTarget = {
   "cost/state": "host",
   "credentials/offer": "host",
   "daemon/policyState": "host",
-  "dailySummary/setSettings": "host",
-  "dailySummary/settings": "host",
+  "dailyChecks/setSettings": "host",
+  "dailyChecks/settings": "host",
   "deploys/delivery": "host",
   "deploys/deliveryAll": "control",
   "deploys/targets": "host",
@@ -17496,11 +17478,13 @@ export const MethodTarget = {
   "forge/boards": "host",
   "forge/boardsAll": "control",
   "forge/cancel-auto-merge": "host",
+  "forge/changes": "host",
+  "forge/checks": "host",
   "forge/close": "host",
   "forge/comment": "host",
   "forge/diff": "host",
-  "forge/features": "host",
   "forge/hold": "host",
+  "forge/ids": "host",
   "forge/image": "host",
   "forge/issue": "host",
   "forge/issues": "host",
@@ -17519,6 +17503,7 @@ export const MethodTarget = {
   "forge/releases": "host",
   "forge/request-changes": "host",
   "forge/rerun": "host",
+  "forge/sources": "host",
   "governance/approvals": "control",
   "governance/decide": "control",
   "governance/request": "control",
@@ -17676,6 +17661,7 @@ export const MethodTarget = {
   "readApi/list": "control",
   "readApi/make": "control",
   "readApi/revoke": "control",
+  "reports/changes": "control",
   "reports/deleteView": "control",
   "reports/export": "control",
   "reports/features": "host",
@@ -17747,8 +17733,6 @@ export const MethodTarget = {
   "store/notes": "host",
   "suggestions/dismiss": "host",
   "suggestions/start": "host",
-  "summaries/list": "host",
-  "summaries/read": "host",
   "surface/identify": "host",
   "time/history": "host",
   "usage/history": "host",
@@ -17770,7 +17754,6 @@ export const MethodTarget = {
   "wake/set": "host",
   "wake/settings": "host",
   "work/dismiss-lead": "host",
-  "work/features": "host",
   "work/suggest-leads": "host",
   "work/timeline": "host",
   "workflows/approve": "host",
@@ -17843,7 +17826,7 @@ export interface Notifications {
   "control/stopAll": PolicyView;
   "control/userSettingsChanged": UserSettingsChanged;
   "daemon/policyStateChanged": PolicyState;
-  "dailySummary/changed": DailySummarySettings;
+  "dailyChecks/changed": DailyChecksSettings;
   "desktopControl/liveFrame": DesktopControlLiveFrame;
   "disk/changed": DiskState;
   "env/changed": EnvChanged;
@@ -17866,7 +17849,6 @@ export interface Notifications {
   "runtimes/accountProfilesChanged": AccountProfile[];
   "storage/writeFailed": WriteFailure;
   "store/notesChanged": StoreNotes;
-  "summaries/changed": SummaryPage[];
   "workflow/changed": WorkflowSummary;
   "workflow/removed": WorkflowRemovedNotification;
   "worktrees/sized": WorktreesSized;
@@ -18137,7 +18119,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   CostState: { required: ["limits", "today", "day", "tokensToday"], optional: ["note", "organisation", "setBy"] },
   CredentialsOffer: { required: ["runtimes", "ownSignInOnly"], optional: ["notRelayed", "signIns"] },
   DaemonStatus: { required: ["turnsInFlight", "agentsLive"], optional: [] },
-  DailySummarySettings: { required: ["mode", "at"], optional: ["checksEvery"] },
+  DailyChecksSettings: { required: ["enabled", "every"], optional: [] },
   DayRecap: { required: ["agents", "peakAgents", "longestClear"], optional: ["prsMerged"] },
   DeclareResourceRequest: { required: ["resource"], optional: ["replacing"] },
   DeclaredResource: { required: ["name", "displayName", "description", "holders"], optional: ["defaultMinutes", "maximumMinutes"] },
@@ -18289,19 +18271,23 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeBoardsAll: { required: ["boards", "unreached", "notAsked"], optional: [] },
   ForgeBoardsRequest: { required: [], optional: ["folder"] },
   ForgeCapabilities: { required: ["forge", "issues", "pulls", "labelColors", "avatars", "stateReason", "commentCount"], optional: ["createdAt", "closedAt", "children", "linkedPulls", "events", "total", "releases", "branches", "mergedBy", "mergeCommit", "size", "reviewers", "closes", "checkTimes", "priority", "hold", "commentsMost"] },
+  ForgeChanges: { required: ["items", "highWater"], optional: ["nextPageCursor", "errors", "forges"] },
+  ForgeChangesRequest: { required: ["kinds"], optional: ["source", "updatedSince", "pageCursor", "limit"] },
   ForgeCheck: { required: ["name", "state"], optional: ["url", "startedAt", "finishedAt"] },
+  ForgeChecks: { required: ["pulls", "at"], optional: [] },
+  ForgeChecksRequest: { required: ["source", "numbers"], optional: [] },
+  ForgeChecksRow: { required: ["node"], optional: ["state", "checks", "review", "mergeable", "autoMerge"] },
   ForgeCloseRequest: { required: ["node"], optional: ["reopen", "transition", "reason"] },
   ForgeComment: { required: ["author", "body", "at"], optional: ["avatar", "url", "bot"] },
   ForgeCommentRequest: { required: ["node", "body"], optional: [] },
   ForgeDiff: { required: ["files", "cut"], optional: ["url"] },
   ForgeDiffFile: { required: ["path", "change", "additions", "deletions", "hunks"], optional: ["previousPath", "note"] },
   ForgeDiffHunk: { required: ["oldStart", "newStart", "lines"], optional: [] },
-  ForgeDone: { required: [], optional: ["url", "auto", "reran"] },
+  ForgeDone: { required: [], optional: ["url", "auto", "reran", "item"] },
   ForgeEvent: { required: ["kind", "at"], optional: ["actor", "label", "assignee", "source"] },
-  ForgeFeature: { required: ["name", "epics", "open"], optional: ["color", "issues", "refs", "waiting", "updatedAt"] },
-  ForgeFeatures: { required: ["features"], optional: ["approvals", "errors"] },
-  ForgeFeaturesRequest: { required: [], optional: ["folder", "board"] },
   ForgeHoldRequest: { required: ["node", "on"], optional: [] },
+  ForgeIds: { required: ["at", "nodes"], optional: ["nextPageCursor"] },
+  ForgeIdsRequest: { required: ["source", "kinds"], optional: ["states", "pageCursor"] },
   ForgeImage: { required: ["mimeType", "data"], optional: [] },
   ForgeImageRequest: { required: ["url"], optional: [] },
   ForgeItem: { required: ["node", "title", "state", "labels", "assignees", "updatedAt", "comments"], optional: ["stateReason", "status", "url", "folder", "author", "authorAvatar", "milestone", "milestoneDue", "priority", "onHold", "createdAt", "closedAt", "draft", "checks", "review", "mergeable", "autoMerge", "headRef", "baseRef", "mergedBy", "mergeCommit", "parent", "level", "feature", "progress", "standing"] },
@@ -18316,7 +18302,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
   ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "limit", "pages"] },
   ForgeListError: { required: ["forge", "message"], optional: [] },
-  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board"] },
+  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board", "updatedSince"] },
   ForgeLog: { required: ["text"], optional: [] },
   ForgeLogRequest: { required: ["node"], optional: ["check"] },
   ForgeLogins: { required: [], optional: ["github", "gitlab", "linear", "jira", "forgejo", "bitbucket", "azureDevOps"] },
@@ -18339,6 +18325,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeReleasesRequest: { required: [], optional: ["folder", "limit"] },
   ForgeRequestChangesRequest: { required: ["node", "sha", "body"], optional: [] },
   ForgeReviewer: { required: ["login", "state"], optional: ["avatar"] },
+  ForgeSource: { required: ["source", "forge", "kinds"], optional: ["folder"] },
+  ForgeSources: { required: ["sources"], optional: ["errors"] },
   ForgeStanding: { required: ["labels", "any", "not", "lanes"], optional: ["milestone", "parent", "error"] },
   ForgeStart: { required: ["prompt", "labels"], optional: ["worktree"] },
   ForgeTransition: { required: ["id", "name"], optional: ["category"] },
@@ -18559,7 +18547,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
-  MachineSummaryFacts: { required: ["machine", "machineName"], optional: ["facts", "unreached"] },
   MachineTunnel: { required: ["up"], optional: ["problem"] },
   MachineTunnelChanged: { required: ["name", "tunnel"], optional: ["host"] },
   MachineUpdate: { required: ["host", "destination"], optional: ["key", "trust"] },
@@ -18570,7 +18557,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineVersions: { required: ["host", "version", "deploys"], optional: ["firstSeen", "seen", "previous"] },
   MachineWorkspace: { required: ["provider", "providerName", "workspace", "workspaceName", "workspaceState", "canStart", "canStop", "startWhenUsed", "current"], optional: ["hostState", "phase", "since", "problem", "stoppedBy", "stopWhenIdleMinutes", "cost", "idleTimeoutMinutes", "startForSchedules", "tellsSchedule", "nextWorkflow", "nextWorkflowAt", "wakeAt"] },
   MachineWorkspaceCall: { required: ["agent", "method", "params"], optional: ["deliver"] },
-  MachinesSummaryFacts: { required: ["machines"], optional: [] },
   ManagedMCPServer: { required: ["name", "registryName", "version", "run", "addedAt", "destination"], optional: ["byHand"] },
   ManagedPersona: { required: ["destination", "id", "source", "path", "edited", "update"], optional: ["commit"] },
   ManagedSkill: { required: ["destination", "name", "source", "edited", "update"], optional: ["skillPath", "recordedHash", "commit", "committedAt", "catalogue"] },
@@ -18826,6 +18812,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   RemoveRequestList: { required: ["requests"], optional: [] },
   RemoveResourceRequest: { required: ["name"], optional: [] },
   RenameRequest: { required: ["agentID", "title"], optional: [] },
+  ReportChanges: { required: ["nodes", "reset"], optional: ["nextPageCursor", "cursor"] },
+  ReportChangesQuery: { required: ["kind"], optional: ["repo", "scope", "since", "pageCursor", "limit"] },
   ReportCounts: { required: ["sessions", "failedSessions", "prsOpened", "prsMerged", "prsReverted", "mergeSeconds", "waits", "waitBuckets", "workflowRuns", "workflowFailures"], optional: [] },
   ReportDelivery: { required: ["repo", "figures"], optional: [] },
   ReportEstimateError: { required: ["issues"], optional: ["cost", "workingSeconds", "coverage", "landsAtErrorDays"] },
@@ -19062,11 +19050,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   StoreNotes: { required: ["notes"], optional: [] },
   SuggestedPrompt: { required: ["id", "label", "prompt"], optional: [] },
   SuggestionRequest: { required: ["folder", "id"], optional: [] },
-  SummaryFacts: { required: ["folders", "landed", "failed", "waiting", "suggested", "checked"], optional: [] },
-  SummaryFactsRequest: { required: ["since"], optional: [] },
-  SummaryPage: { required: ["name", "title", "savedAt", "unread"], optional: ["writer"] },
-  SummaryPageText: { required: ["page", "markdown"], optional: [] },
-  SummaryReadRequest: { required: ["name"], optional: [] },
   SurfaceIdentification: { required: ["id", "name", "kind"], optional: [] },
   TeamBot: { required: ["user", "name", "spentTodayUSD", "capped", "machines", "online", "workflows", "live"], optional: ["group", "groupName", "caps"] },
   TeamBotRun: { required: ["host", "hostName", "agent"], optional: ["workflow", "since"] },
@@ -19157,10 +19140,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WebRemoteStatus: { required: ["port", "served"], optional: ["reason", "detail"] },
   WebServe: { required: ["on"], optional: [] },
   WorkDismissLeadRequest: { required: ["node"], optional: [] },
-  WorkFeature: { required: ["feature", "epics", "loose"], optional: [] },
-  WorkFeatureEpic: { required: ["item", "steps"], optional: ["step", "blockedOutside", "forecast", "children"] },
-  WorkFeatures: { required: ["features"], optional: ["approvals", "errors"] },
-  WorkFeaturesRequest: { required: [], optional: ["folder", "board"] },
   WorkLeadSuggestion: { required: ["node", "title", "done", "total", "start"], optional: ["url", "folder", "milestone", "due", "high", "ui", "standing"] },
   WorkReport: { required: ["outcome", "message", "at"], optional: ["block"] },
   WorkSuggestLeads: { required: ["suggestions", "more"], optional: ["errors"] },

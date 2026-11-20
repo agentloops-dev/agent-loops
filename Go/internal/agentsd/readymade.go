@@ -113,6 +113,9 @@ func (d *Daemon) ensureReadyMadeUserWorkflowsLocked() {
 		ensureReadyMadeSkill(home, id, set.Skills[id], madeSkills[id])
 	}
 	made := madeReadyMade(home)
+	for _, id := range retiredReadyMade {
+		retireReadyMade(home, id, made[id], madeSkills[id])
+	}
 	for _, id := range set.ids() {
 		if wasRemoved[id] {
 			continue
@@ -139,6 +142,45 @@ func (d *Daemon) ensureReadyMadeUserWorkflowsLocked() {
 		if digest, ok := readyMadeDigest(workflow); ok {
 			markReadyMadeMade(home, id, digest)
 		}
+	}
+}
+
+// retiredReadyMade are the ready-made workflows that are gone from the repository, with their
+// skills: the daily summary (#5853). A copy the person did not edit is removed; an edited one,
+// a link or a file that cannot be read stays theirs, as do the pages it saved.
+var retiredReadyMade = []string{"daily-summary"}
+
+// retireReadyMade removes a retired workflow's copy and its skill's, each only when it is the
+// same as the copy the daemon made (madeDigest, madeSkillDigest) or as an earlier version.
+func retireReadyMade(home, id, madeDigest, madeSkillDigest string) {
+	if path, ok := workflowPath(home, id); ok && ownFolders(home, workflowsRel) {
+		if old, _, why := readWorkflowFile(path); why == "" {
+			if have, ok := readyMadeDigest(old); ok && (have == madeDigest || earlierReadyMade[id][have]) {
+				if os.Remove(path) == nil {
+					log.Printf("workflows: removed the unedited ready-made %s, which is gone", id)
+				}
+			}
+		}
+	}
+	dir := filepath.Join(home, ".agents", "skills", id)
+	if !ownFolders(home, filepath.Join(".agents", "skills", id)) {
+		return
+	}
+	path := filepath.Join(dir, "SKILL.md")
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() > readyMadeMaxBytes {
+		return
+	}
+	old, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	if have := readyMadeSkillDigest(string(old)); have != madeSkillDigest && !earlierReadyMadeSkills[id][have] {
+		return // the person's own edit
+	}
+	if os.Remove(path) == nil {
+		_ = os.Remove(dir) // only when nothing else is in it
+		log.Printf("skills: removed the unedited ready-made skill %s, which is gone", id)
 	}
 }
 

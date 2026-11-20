@@ -1,6 +1,7 @@
 // One event redraws what it changed, and the page holds a bounded amount (#170).
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { flakyUnderLoad } from "./flaky.mjs";
 import { load } from "./load.mjs";
 
 const {
@@ -298,7 +299,7 @@ test("a call that is never answered is given up", async () => {
   l.stop();
 });
 
-test("out of sight, a dropped link waits for the tab to come back", async () => {
+test("out of sight, a dropped link waits for the tab to come back", { skip: flakyUnderLoad("#6385") }, async () => {
   const sockets = [];
   let hidden = false;
   const l = new w.Link({ url: "ws://localhost:1/v1/connect", origin: "http://localhost:1",

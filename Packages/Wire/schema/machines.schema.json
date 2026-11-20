@@ -2636,29 +2636,6 @@
       ],
       "additionalProperties": false
     },
-    "MachineSummaryFacts": {
-      "type": "object",
-      "description": "One of the person's other machines in machines/summaryFacts (#3354): its facts, or, when it is off or did not answer, unreached, the words that say why.",
-      "properties": {
-        "machine": {
-          "$ref": "#/definitions/MachineRef"
-        },
-        "machineName": {
-          "type": "string"
-        },
-        "facts": {
-          "$ref": "core.schema.json#/definitions/SummaryFacts"
-        },
-        "unreached": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "machine",
-        "machineName"
-      ],
-      "additionalProperties": false
-    },
     "MachineTunnel": {
       "type": "object",
       "properties": {
@@ -2746,22 +2723,6 @@
         "host",
         "version",
         "deploys"
-      ],
-      "additionalProperties": false
-    },
-    "MachinesSummaryFacts": {
-      "type": "object",
-      "description": "machines/summaryFacts (#3354): the daily summary's facts from each of the person's other machines, by name.",
-      "properties": {
-        "machines": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/MachineSummaryFacts"
-          }
-        }
-      },
-      "required": [
-        "machines"
       ],
       "additionalProperties": false
     },

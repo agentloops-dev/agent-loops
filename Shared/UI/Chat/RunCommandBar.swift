@@ -1,4 +1,3 @@
-import AgentsKitCore
 import SwiftUI
 
 /// Run a shell command from a reply (#1533): under a `sh`, `bash`, `zsh` or `console` block

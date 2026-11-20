@@ -40,8 +40,8 @@ extension RemoteModel {
         if localCopy?.drawPrefetched(of: selection, load: load) != true, work.transcriptEnd == nil {
             await localCopy?.drawOpening(of: selection, load: load)
         }
-        // What was written since the end held (#4794), one page from it, in place of the whole
-        // opening; a page that leaves a gap, or no answer, opens it whole.
+        // The held page again and what was written since (#4794, #6282), one page, in place of
+        // the whole opening; a page that leaves a gap, or no answer, opens it whole.
         if await work.resumeTranscript(load: load, transcript: { from, limit in
             let request = DaemonAPI.TranscriptRequest(agentID: selection, limit: limit, from: from)
             return try await self.client(for: request).call(DaemonAPI.Method.agentsTranscript, request,

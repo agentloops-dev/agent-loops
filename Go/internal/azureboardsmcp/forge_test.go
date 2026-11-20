@@ -26,13 +26,6 @@ var (
 // serveForge answers the forge's paths, and says whether it did. f.mu is held.
 func (f *fakeBoards) serveForge(w http.ResponseWriter, r *http.Request, answer func(any)) bool {
 	q := r.URL.Query()
-	full := func(id int, it *fakeItem) obj {
-		relations := it.relations
-		if relations == nil {
-			relations = []obj{}
-		}
-		return obj{"id": id, "rev": len(it.updates), "fields": it.fields, "relations": relations}
-	}
 	switch {
 	case r.URL.Path == "/acme/_apis/wit/wiql" && r.Method == http.MethodPost && q.Get("timePrecision") == "true":
 		var body struct{ Query string }
@@ -41,68 +34,13 @@ func (f *fakeBoards) serveForge(w http.ResponseWriter, r *http.Request, answer f
 		top, _ := strconv.Atoi(q.Get("$top"))
 		answer(obj{"workItems": f.wiql(body.Query, top)})
 	case r.URL.Path == "/acme/_apis/wit/workitemsbatch" && r.Method == http.MethodPost:
-		var body struct {
-			IDs    []int    `json:"ids"`
-			Fields []string `json:"fields"`
-			Expand string   `json:"$expand"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body.Expand != "" && len(body.Fields) > 0 {
-			w.WriteHeader(http.StatusBadRequest) // as Azure DevOps: not both
-			return true
-		}
-		list := []any{}
-		for _, id := range body.IDs {
-			it, ok := f.items[id]
-			switch {
-			case !ok:
-				list = append(list, nil)
-			case body.Expand == "relations":
-				list = append(list, full(id, it))
-			default:
-				fields := obj{}
-				for _, name := range body.Fields {
-					if v, ok := it.fields[name]; ok {
-						fields[name] = v
-					}
-				}
-				list = append(list, obj{"id": id, "fields": fields})
-			}
-		}
-		answer(obj{"count": len(list), "value": list})
+		f.serveForgeBatch(w, r, answer)
 	case orgItemPath.MatchString(r.URL.Path) && r.Method == http.MethodGet && q.Get("$expand") == "relations":
-		id, _ := strconv.Atoi(orgItemPath.FindStringSubmatch(r.URL.Path)[1])
-		it, ok := f.items[id]
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(w, `{"message":"TF401232: Work item does not exist"}`)
-			return true
-		}
-		answer(full(id, it))
+		f.serveOrgItem(w, r, answer)
 	case patchItemPath.MatchString(r.URL.Path) && r.Method == http.MethodPatch:
-		id, _ := strconv.Atoi(patchItemPath.FindStringSubmatch(r.URL.Path)[1])
-		it := f.items[id]
-		if r.Header.Get("Content-Type") != "application/json-patch+json" || it == nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return true
-		}
-		var ops []obj
-		_ = json.NewDecoder(r.Body).Decode(&ops)
-		if !f.apply(it, ops) {
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, `{"message":"TF26071: This work item has been changed by someone else since you opened it."}`)
-			return true
-		}
-		answer(full(id, it))
+		f.servePatchItem(w, r, answer)
 	case makeItemPath.MatchString(r.URL.Path) && r.Method == http.MethodPost:
-		kind := makeItemPath.FindStringSubmatch(r.URL.Path)[1]
-		var ops []obj
-		_ = json.NewDecoder(r.Body).Decode(&ops)
-		id := 100 + len(f.items)
-		it := &fakeItem{fields: obj{fieldType: kind, fieldState: "New", "System.TeamProject": "Web App", fieldChanged: at(99)}}
-		f.apply(it, ops)
-		f.items[id] = it
-		answer(full(id, it))
+		f.serveMakeItem(r, answer)
 	case r.URL.Path == "/acme/Web App/Payments/_apis/work/teamsettings/teamfieldvalues" && q.Get("api-version") == apiVersion:
 		answer(obj{"field": obj{"referenceName": fieldArea}, "defaultValue": `Web App\Payments`,
 			"values": []obj{{"value": `Web App\Payments`, "includeChildren": true}, {"value": "Web App", "includeChildren": false}}})
@@ -114,6 +52,91 @@ func (f *fakeBoards) serveForge(w http.ResponseWriter, r *http.Request, answer f
 		return false
 	}
 	return true
+}
+
+// fullItem is a work item as the forge reads it: every field, its revision and its relations.
+func fullItem(id int, it *fakeItem) obj {
+	relations := it.relations
+	if relations == nil {
+		relations = []obj{}
+	}
+	return obj{"id": id, "rev": len(it.updates), "fields": it.fields, "relations": relations}
+}
+
+// serveForgeBatch answers the organization's workitemsbatch read: the asked fields, or whole
+// work items with their relations, never both.
+func (f *fakeBoards) serveForgeBatch(w http.ResponseWriter, r *http.Request, answer func(any)) {
+	var body struct {
+		IDs    []int    `json:"ids"`
+		Fields []string `json:"fields"`
+		Expand string   `json:"$expand"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if body.Expand != "" && len(body.Fields) > 0 {
+		w.WriteHeader(http.StatusBadRequest) // as Azure DevOps: not both
+		return
+	}
+	list := []any{}
+	for _, id := range body.IDs {
+		it, ok := f.items[id]
+		switch {
+		case !ok:
+			list = append(list, nil)
+		case body.Expand == "relations":
+			list = append(list, fullItem(id, it))
+		default:
+			fields := obj{}
+			for _, name := range body.Fields {
+				if v, ok := it.fields[name]; ok {
+					fields[name] = v
+				}
+			}
+			list = append(list, obj{"id": id, "fields": fields})
+		}
+	}
+	answer(obj{"count": len(list), "value": list})
+}
+
+// serveOrgItem answers a read of one work item with its relations.
+func (f *fakeBoards) serveOrgItem(w http.ResponseWriter, r *http.Request, answer func(any)) {
+	id, _ := strconv.Atoi(orgItemPath.FindStringSubmatch(r.URL.Path)[1])
+	it, ok := f.items[id]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"message":"TF401232: Work item does not exist"}`)
+		return
+	}
+	answer(fullItem(id, it))
+}
+
+// servePatchItem applies a JSON Patch to one work item, or refuses it as Azure DevOps does.
+func (f *fakeBoards) servePatchItem(w http.ResponseWriter, r *http.Request, answer func(any)) {
+	id, _ := strconv.Atoi(patchItemPath.FindStringSubmatch(r.URL.Path)[1])
+	it := f.items[id]
+	if r.Header.Get("Content-Type") != "application/json-patch+json" || it == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	var ops []obj
+	_ = json.NewDecoder(r.Body).Decode(&ops)
+	if !f.apply(it, ops) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"message":"TF26071: This work item has been changed by someone else since you opened it."}`)
+		return
+	}
+	answer(fullItem(id, it))
+}
+
+// serveMakeItem makes a new work item of the path's type from a JSON Patch.
+func (f *fakeBoards) serveMakeItem(r *http.Request, answer func(any)) {
+	kind := makeItemPath.FindStringSubmatch(r.URL.Path)[1]
+	var ops []obj
+	_ = json.NewDecoder(r.Body).Decode(&ops)
+	id := 100 + len(f.items)
+	it := &fakeItem{fields: obj{fieldType: kind, fieldState: "New", "System.TeamProject": "Web App", fieldChanged: at(99)}}
+	f.apply(it, ops)
+	f.items[id] = it
+	answer(fullItem(id, it))
 }
 
 // apply is a JSON Patch on a work item, as one update; false when its test fails.
@@ -231,7 +254,7 @@ func TestForgeSearchWhere(t *testing.T) {
 }
 
 // #3939: the label epic finds the Epic work items, with or without the tag, and a story tagged
-// epic, for Work ▸ Features; a feature narrows them.
+// epic; a feature narrows them.
 func TestForgeSearchFindsEpicsByTheirType(t *testing.T) {
 	f, b := forgeFake(t)
 	f.item(4, "Invoices", "Epic", "New", alex, 4, obj{fieldTags: "feature:billing"})

@@ -103,6 +103,7 @@ func (d *Daemon) countMergedPRsWith(ctx context.Context, gh string) {
 		}
 		found, err := mergedPullRequests(ctx, gh, f, stamps[len(stamps)-1])
 		if err != nil {
+			log.Printf("merged pull requests: gh in %s: %v", f, err)
 			continue
 		}
 		pulls = append(pulls, found...)
