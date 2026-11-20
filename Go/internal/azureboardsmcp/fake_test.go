@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -178,20 +179,7 @@ func (f *fakeBoards) serve(w http.ResponseWriter, r *http.Request) {
 	if rest, ok := strings.CutPrefix(r.URL.Path, "/acme/web app/"); ok {
 		r.URL.Path = "/acme/Web App/" + rest
 	}
-	if f.signIn {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusNonAuthoritativeInfo)
-		_, _ = io.WriteString(w, "<html>Sign in</html>")
-		return
-	}
-	if f.status != 0 {
-		w.Header().Set("Retry-After", "7")
-		w.WriteHeader(f.status)
-		_, _ = io.WriteString(w, `{"message":"no"}`)
-		return
-	}
-	if r.Header.Get("Authorization") != "Basic "+base64.StdEncoding.EncodeToString([]byte(":"+token)) {
-		w.WriteHeader(http.StatusUnauthorized)
+	if f.refuse(w, r) {
 		return
 	}
 	q := r.URL.Query()
@@ -215,67 +203,109 @@ func (f *fakeBoards) serve(w http.ResponseWriter, r *http.Request) {
 		top, _ := strconv.Atoi(q.Get("$top"))
 		answer(obj{"workItems": f.wiql(body.Query, top)})
 	case r.URL.Path == "/acme/Web App/_apis/wit/workitemsbatch" && r.Method == http.MethodPost && version == apiVersion:
-		var body struct {
-			IDs    []int    `json:"ids"`
-			Fields []string `json:"fields"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		list := []any{}
-		for _, id := range body.IDs {
-			it, ok := f.items[id]
-			if !ok {
-				list = append(list, nil)
-				continue
-			}
-			fields := obj{}
-			for _, name := range body.Fields {
-				if v, ok := it.fields[name]; ok {
-					fields[name] = v
-				}
-			}
-			list = append(list, obj{"id": id, "fields": fields})
-		}
-		answer(obj{"count": len(list), "value": list})
+		answer(f.workItemsBatch(r))
 	case itemPath.MatchString(r.URL.Path):
-		m := itemPath.FindStringSubmatch(r.URL.Path)
-		id, _ := strconv.Atoi(m[1])
-		it, ok := f.items[id]
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(w, `{"message":"TF401232: Work item does not exist"}`)
-			return
-		}
-		if m[2] == "updates" && version == apiVersion {
-			top, _ := strconv.Atoi(q.Get("$top"))
-			skip, _ := strconv.Atoi(q.Get("$skip"))
-			page := it.updates[min(skip, len(it.updates)):min(skip+top, len(it.updates))]
-			answer(obj{"count": len(page), "value": page})
-			return
-		}
-		if m[2] == "comments" && version == commentsVersion && r.Method == http.MethodGet {
-			list := append([]obj(nil), it.comments...)
-			if q.Get("order") == "desc" {
-				sort.SliceStable(list, func(i, j int) bool { return list[i]["createdDate"].(string) > list[j]["createdDate"].(string) })
-			}
-			top, _ := strconv.Atoi(q.Get("$top"))
-			answer(obj{"totalCount": len(list), "count": min(top, len(list)), "comments": list[:min(top, len(list))]})
-			return
-		}
-		if m[2] == "comments" && version == commentsVersion && r.Method == http.MethodPost {
-			var body obj
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			body["format"] = q.Get("format")
-			f.posted = append(f.posted, body)
-			made := obj{"id": 900 + len(f.posted), "text": body["text"], "createdBy": alex, "createdDate": at(99)}
-			it.comments = append(it.comments, made)
-			answer(made)
-			return
-		}
-		w.WriteHeader(http.StatusBadRequest)
+		f.serveItem(w, r, answer)
 	default:
 		f.t.Errorf("the fake has no %s %s", r.Method, r.URL)
 		w.WriteHeader(http.StatusNotFound)
 	}
+}
+
+// refuse answers the request as a server that does not serve it (a sign-in page, the
+// status the test set, or a wrong token), and says whether it did.
+func (f *fakeBoards) refuse(w http.ResponseWriter, r *http.Request) bool {
+	if f.signIn {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusNonAuthoritativeInfo)
+		_, _ = io.WriteString(w, "<html>Sign in</html>")
+		return true
+	}
+	if f.status != 0 {
+		w.Header().Set("Retry-After", "7")
+		w.WriteHeader(f.status)
+		_, _ = io.WriteString(w, `{"message":"no"}`)
+		return true
+	}
+	if r.Header.Get("Authorization") != "Basic "+base64.StdEncoding.EncodeToString([]byte(":"+token)) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return true
+	}
+	return false
+}
+
+// workItemsBatch is the answer to a workitemsbatch read: each asked work item with only the
+// asked fields, or null for one the fake does not have.
+func (f *fakeBoards) workItemsBatch(r *http.Request) obj {
+	var body struct {
+		IDs    []int    `json:"ids"`
+		Fields []string `json:"fields"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	list := []any{}
+	for _, id := range body.IDs {
+		it, ok := f.items[id]
+		if !ok {
+			list = append(list, nil)
+			continue
+		}
+		fields := obj{}
+		for _, name := range body.Fields {
+			if v, ok := it.fields[name]; ok {
+				fields[name] = v
+			}
+		}
+		list = append(list, obj{"id": id, "fields": fields})
+	}
+	return obj{"count": len(list), "value": list}
+}
+
+// serveItem answers a request under one work item: its updates, its comments, or a new comment.
+func (f *fakeBoards) serveItem(w http.ResponseWriter, r *http.Request, answer func(any)) {
+	q := r.URL.Query()
+	version := q.Get("api-version")
+	m := itemPath.FindStringSubmatch(r.URL.Path)
+	id, _ := strconv.Atoi(m[1])
+	it, ok := f.items[id]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"message":"TF401232: Work item does not exist"}`)
+		return
+	}
+	switch {
+	case m[2] == "updates" && version == apiVersion:
+		top, _ := strconv.Atoi(q.Get("$top"))
+		skip, _ := strconv.Atoi(q.Get("$skip"))
+		page := it.updates[min(skip, len(it.updates)):min(skip+top, len(it.updates))]
+		answer(obj{"count": len(page), "value": page})
+	case m[2] == "comments" && version == commentsVersion && r.Method == http.MethodGet:
+		answer(itemComments(it, q))
+	case m[2] == "comments" && version == commentsVersion && r.Method == http.MethodPost:
+		answer(f.postComment(it, r))
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+	}
+}
+
+// itemComments is one page of a work item's comments, newest first when the query asks.
+func itemComments(it *fakeItem, q url.Values) obj {
+	list := append([]obj(nil), it.comments...)
+	if q.Get("order") == "desc" {
+		sort.SliceStable(list, func(i, j int) bool { return list[i]["createdDate"].(string) > list[j]["createdDate"].(string) })
+	}
+	top, _ := strconv.Atoi(q.Get("$top"))
+	return obj{"totalCount": len(list), "count": min(top, len(list)), "comments": list[:min(top, len(list))]}
+}
+
+// postComment keeps the posted comment's body and adds the comment to the work item.
+func (f *fakeBoards) postComment(it *fakeItem, r *http.Request) obj {
+	var body obj
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	body["format"] = r.URL.Query().Get("format")
+	f.posted = append(f.posted, body)
+	made := obj{"id": 900 + len(f.posted), "text": body["text"], "createdBy": alex, "createdDate": at(99)}
+	it.comments = append(it.comments, made)
+	return made
 }
 
 // wiql is the work items a query finds, changed last first, at most top: by its time, its
