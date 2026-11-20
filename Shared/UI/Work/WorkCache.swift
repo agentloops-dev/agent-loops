@@ -71,7 +71,10 @@ actor WorkCache {
         }
     }
 
-    struct CacheError: Error { var message: String }
+    struct CacheError: LocalizedError {
+        var message: String
+        var errorDescription: String? { message }
+    }
 
     private func exec(_ sql: String) throws {
         guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
