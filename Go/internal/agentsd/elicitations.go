@@ -465,9 +465,8 @@ func declinedFormWords(req wire.ElicitationRequest, reason string) string {
 }
 
 // moveIf moves an agent from one state to another, and does nothing from any other
-// (AgentState's permissionAsked and permissionAnswered).
+// (AgentState's permissionAsked and permissionAnswered). The test and the move are one
+// change: a turn's end between them would be undone (#6367).
 func (d *Daemon) moveIf(id wire.UUID, from, to wire.AgentState) {
-	if a := d.Store.Agent(id); a != nil && a.State == from {
-		d.setState(id, to)
-	}
+	d.moveState(id, to, false, &from)
 }

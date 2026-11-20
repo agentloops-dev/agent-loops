@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -266,7 +265,6 @@ func TestEachCardShowsOnEveryClientAndOneAnswerWins(t *testing.T) {
 // A card of an agent that is stopped goes from every client and from the control plane,
 // and an answer that comes after is refused, not taken (failure mode 4).
 func TestACardOfAStoppedAgentGoesEverywhere(t *testing.T) {
-	flaky.UnderLoad(t, "#6367")
 	for _, k := range cardKinds {
 		t.Run(k.name, func(t *testing.T) {
 			t.Parallel()
@@ -295,6 +293,48 @@ func TestACardOfAStoppedAgentGoesEverywhere(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A stop lets the runtime end its turn before the permission card's wait has woken: the
+// runtime's own session/cancel cancels its request (#6367). The card's late wake-up does
+// not take the stopped agent back to running.
+func TestAPermissionCardLetGoAfterTheStopLeavesItStopped(t *testing.T) {
+	t.Parallel()
+	fakeRuntimes(t)
+	k := cardKinds[0]
+	d, c := start(t, t.TempDir())
+	d.SetControl((&offers{}).tell)
+	one := listen(t, d)
+	var agent wire.UUID
+	if err := json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+		"prompt": "Please ask, and end at once on a stop"}), &agent); err != nil {
+		t.Fatal(err)
+	}
+	k.shown(t, agent, nil, one)
+	held, moved := make(chan func(), 1), make(chan struct{})
+	hold := func(l *live, move func()) {
+		if l.id != agent {
+			move()
+			return
+		}
+		held <- move
+		<-moved
+	}
+	permissionLetGo.Store(&hold)
+	t.Cleanup(func() { permissionLetGo.CompareAndSwap(&hold, nil) })
+	c.call(t, 2, "agents/stop", map[string]any{"agentID": agent})
+	var move func()
+	select {
+	case move = <-held:
+	case <-afterLimit(t):
+		waitFailed(t, "the card was never let go")
+	}
+	waitFor(t, "stopped", func() bool { return d.Store.Agent(agent).State == wire.AgentStateStopped })
+	move()
+	close(moved)
+	if a := d.Store.Agent(agent); a.State != wire.AgentStateStopped {
+		t.Fatalf("the card's late wake-up moved the stopped agent to %s", a.State)
 	}
 }
 

@@ -473,17 +473,8 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	// AGENTS_FAKE_ASK_AGAIN=1 it asks again, as a runtime that still needs it does (#6188).
 	askAgain := f.getenv("AGENTS_FAKE_ASK_AGAIN") == "1" && strings.Contains(text, "the question you had asked went with it")
 	if strings.Contains(text, "Please ask") || askAgain {
-		r, _ := f.conn.RequestPermission(ctx, sdk.RequestPermissionRequest{SessionId: p.SessionId,
-			ToolCall: sdk.ToolCallUpdate{ToolCallId: "call_1", Title: sdk.Ptr("Write hi.txt")},
-			Options: []sdk.PermissionOption{{Kind: sdk.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: "allow"},
-				{Kind: sdk.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"}}})
-		// A stop answers the card cancelled, and the turn ends cancelled, as ACP says (#6188).
-		if r.Outcome.Cancelled != nil || ctx.Err() != nil {
-			return sdk.PromptResponse{StopReason: sdk.StopReasonCancelled}, nil
-		}
-		if r.Outcome.Selected == nil || r.Outcome.Selected.OptionId != "allow" {
-			say("You said no.")
-			return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+		if r, ended := f.askToWrite(ctx, p.SessionId, text, say); ended {
+			return r, nil
 		}
 	}
 	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateToolCall("call_1",
@@ -491,6 +482,32 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	say("I wrote hi.txt. ")
 	say("Anything else?")
 	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+}
+
+// askToWrite asks for permission to write hi.txt. It is true, with the turn's answer,
+// when the turn ends there: stopped, or refused.
+func (f *fakeRuntime) askToWrite(ctx context.Context, session sdk.SessionId, text string, say func(string)) (sdk.PromptResponse, bool) {
+	req := sdk.RequestPermissionRequest{SessionId: session,
+		ToolCall: sdk.ToolCallUpdate{ToolCallId: "call_1", Title: sdk.Ptr("Write hi.txt")},
+		Options: []sdk.PermissionOption{{Kind: sdk.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: "allow"},
+			{Kind: sdk.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"}}}
+	// "and end at once on a stop": session/cancel ends the turn with the request still
+	// open and no $/cancel_request, as a runtime that drops its own question does (#6367).
+	if strings.Contains(text, "end at once on a stop") {
+		go func() { _, _ = f.conn.RequestPermission(context.WithoutCancel(ctx), req) }()
+		<-ctx.Done()
+		return sdk.PromptResponse{StopReason: sdk.StopReasonCancelled}, true
+	}
+	r, _ := f.conn.RequestPermission(ctx, req)
+	// A stop answers the card cancelled, and the turn ends cancelled, as ACP says (#6188).
+	if r.Outcome.Cancelled != nil || ctx.Err() != nil {
+		return sdk.PromptResponse{StopReason: sdk.StopReasonCancelled}, true
+	}
+	if r.Outcome.Selected == nil || r.Outcome.Selected.OptionId != "allow" {
+		say("You said no.")
+		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, true
+	}
+	return sdk.PromptResponse{}, false
 }
 
 // fakePromptWords gives the last text of a prompt, and the texts before it.
