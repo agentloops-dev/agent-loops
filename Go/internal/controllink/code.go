@@ -105,25 +105,13 @@ func ParseCode(text string) (*Code, error) {
 	if err != nil || len(secret) != 32 {
 		return nil, errors.New("the code's secret is not 32 bytes")
 	}
-	where, err1 := url.PathUnescape(parts[6])
-	name, err2 := url.PathUnescape(parts[8])
-	if err1 != nil || err2 != nil {
-		return nil, errors.New("the code's address or name is not percent-encoded")
+	where, name, err := parseCodeAddress(parts[6], parts[8])
+	if err != nil {
+		return nil, err
 	}
-	// https only, except on this machine: a walk or a test on loopback.
-	u, err := url.Parse(where)
-	if err != nil || u.Hostname() == "" {
-		return nil, errors.New("the code's address is not a URL")
-	}
-	loopback := u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1"
-	if !(u.Scheme == "https" || u.Scheme == "wss" || u.Scheme == "http" && loopback) {
-		return nil, errors.New("the code's address is not https")
-	}
-	pin := parts[7]
-	if pin == "-" {
-		pin = ""
-	} else if b, err := FromB64URL(pin); err != nil || len(b) != 32 {
-		return nil, errors.New("the code's pin is not 32 bytes")
+	pin, err := parseCodePin(parts[7])
+	if err != nil {
+		return nil, err
 	}
 	c := &Code{ControlKey: key, Secret: secret, URL: where, Pin: pin, Name: name}
 	if v3 && parts[9] != "-" {
@@ -134,20 +122,9 @@ func ParseCode(text string) (*Code, error) {
 		c.PersonKey = personKey
 	}
 	if v4 {
-		if parts[2] != "h" {
-			return nil, errors.New("only a host code carries an invite")
+		if err := c.parseInvite(parts); err != nil {
+			return nil, err
 		}
-		invite, err := FromB64URL(parts[10])
-		if err != nil || len(invite) != 32 {
-			return nil, errors.New("the code's invite is not a 32-byte key")
-		}
-		person, err := url.PathUnescape(parts[11])
-		count, cerr := strconv.Atoi(parts[12])
-		head, herr := FromB64URL(parts[13])
-		if err != nil || person == "" || cerr != nil || count < 1 || herr != nil || len(head) != 32 {
-			return nil, errors.New("the code's lock is not a person, a count and a head")
-		}
-		c.Invite, c.Lock = invite, &LockPin{Person: person, Count: count, Head: head}
 	}
 	switch {
 	case parts[2] == "c" && parts[3] != "":
@@ -157,6 +134,55 @@ func ParseCode(text string) (*Code, error) {
 		return nil, errors.New("the code is neither a client's nor a host's")
 	}
 	return c, nil
+}
+
+// parseCodeAddress reads a code's address and name, both percent-encoded; the address is
+// https only, except on this machine: a walk or a test on loopback.
+func parseCodeAddress(rawWhere, rawName string) (where, name string, err error) {
+	where, err1 := url.PathUnescape(rawWhere)
+	name, err2 := url.PathUnescape(rawName)
+	if err1 != nil || err2 != nil {
+		return "", "", errors.New("the code's address or name is not percent-encoded")
+	}
+	u, err := url.Parse(where)
+	if err != nil || u.Hostname() == "" {
+		return "", "", errors.New("the code's address is not a URL")
+	}
+	loopback := u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1"
+	if !(u.Scheme == "https" || u.Scheme == "wss" || u.Scheme == "http" && loopback) {
+		return "", "", errors.New("the code's address is not https")
+	}
+	return where, name, nil
+}
+
+// parseCodePin reads a code's pin: "-" for none, else 32 bytes of base64url.
+func parseCodePin(pin string) (string, error) {
+	if pin == "-" {
+		return "", nil
+	}
+	if b, err := FromB64URL(pin); err != nil || len(b) != 32 {
+		return "", errors.New("the code's pin is not 32 bytes")
+	}
+	return pin, nil
+}
+
+// parseInvite reads a version 4 code's invite and lock into c; only a host code has them.
+func (c *Code) parseInvite(parts []string) error {
+	if parts[2] != "h" {
+		return errors.New("only a host code carries an invite")
+	}
+	invite, err := FromB64URL(parts[10])
+	if err != nil || len(invite) != 32 {
+		return errors.New("the code's invite is not a 32-byte key")
+	}
+	person, err := url.PathUnescape(parts[11])
+	count, cerr := strconv.Atoi(parts[12])
+	head, herr := FromB64URL(parts[13])
+	if err != nil || person == "" || cerr != nil || count < 1 || herr != nil || len(head) != 32 {
+		return errors.New("the code's lock is not a person, a count and a head")
+	}
+	c.Invite, c.Lock = invite, &LockPin{Person: person, Count: count, Head: head}
+	return nil
 }
 
 // Digits is the short code the holder shows for this code's token (TokenCode, #5359).
