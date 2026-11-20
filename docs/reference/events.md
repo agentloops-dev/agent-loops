@@ -641,8 +641,9 @@ it, so two machines can make two ids for one change.
 | `github` | `pr.merged` / `pr.closed` | the PR | none / the close time |
 | `github`, `gitlab`, `forgejo`, `bitbucket`, `azuredevops` | `pr.blocked` | the PR (the merge request on GitLab) | the head commit and the reasons, as `<sha>:conflict,behind` |
 | `github` | `pr.conflicted` and the other states | the PR, or the issue for `issue.assigned` | the review for `review.posted`, else the poll time |
-| `gitlab` | `issue.*`, `review.comment`, `pr.merged`, `pr.closed`, states | `gitlab:issue:` or `gitlab:mr:<group/project>#<n>` | as `github` |
-| `gitlab` | `checks.failed` | `gitlab:pipeline:<group/project>#<pipeline id>` | the pipeline's update time |
+| `gitlab` | `issue.*`, `review.comment`, `pr.commented`, `pr.merged`, `pr.closed`, states | `gitlab:issue:` or `gitlab:mr:<group/project>#<n>` | as `github` |
+| `gitlab` | `checks.failed`, `checks.passed` | `gitlab:pipeline:<group/project>#<pipeline id>` | the pipeline's update time |
+| `gitlab` | `pr.reviewed` | `gitlab:mr:<group/project>#<n>` | the person and the state, as `dev:approved` |
 | `gitlab` | `run.completed`, `deploy.waiting` | `gitlab:pipeline:<group/project>#<pipeline id>` | the update time, or the blocked deployments |
 | `gitlab`, `azuredevops`, `bitbucket` | `deploy.started`, `deploy.succeeded`, `deploy.failed` | `<server>:deploy:<repo>#<deployment id>` (Bitbucket's uuid, Azure DevOps's record id) | none: each is sent once for a deployment |
 | `forgejo`, `bitbucket` | `issue.*`, `review.comment`, `pr.merged`, `pr.closed`, states | `<server>:issue:` or `<server>:pr:<owner/repo>#<n>` | as `github` |

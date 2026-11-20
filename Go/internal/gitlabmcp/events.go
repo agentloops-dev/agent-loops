@@ -79,7 +79,8 @@ func namedInput() schema {
 }
 
 // events are the events this server offers, in the github server's order, with run.completed
-// and deploy.waiting after checks.failed as there (#4217).
+// and deploy.waiting after checks.passed as there (#4217), and pr.reviewed and pr.commented
+// after pr.blocked (#6296).
 // fixesSchema is a merge request's fixes: the issues its description closes, "#12" or
 // "group/project#12" (#2349).
 var fixesSchema = map[string]any{"type": "array", "items": str}
@@ -92,6 +93,15 @@ var events = append([]event{
 			"pr": mrSchema(nil), "headSha": str,
 			"run":        object(map[string]any{"id": integer, "name": str, "url": str}),
 			"failedJobs": map[string]any{"type": "array", "items": object(map[string]any{"name": str, "url": str})},
+		})},
+	// The github server's checks.passed (#6296): one event per pipeline that passed.
+	{Name: "checks.passed", Title: "Pipeline passed",
+		Description: "A merge request's pipeline finished with success: one event per pipeline and update time, so a lane waiting on CI going green wakes without polling, and a pipeline retried that passes again is a new one. run is the pipeline; completedAt is when GitLab last updated it, as it finished." + ownMRs,
+		Input:       schema{projectProperty, branchProperty("Only pipelines of the merge request from this branch."), prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
+		Payload: object(map[string]any{
+			"pr": mrSchema(nil), "headSha": str,
+			"run":         object(map[string]any{"id": integer, "name": str, "url": str}),
+			"completedAt": str,
 		})},
 	// A pipeline no merge request owns, as main's or a tag's, as the github server's (#3810, #4217).
 	{Name: "run.completed", Title: "Pipeline finished",
@@ -145,6 +155,17 @@ var events = append([]event{
 		Description: mcpevents.BlockedDescription("On GitLab: detailed_merge_status, one reason at a time (conflict, need_rebase as behind, ci_must_pass as required_check_failed with the head pipeline, requested_changes); automerge_disabled is never read, as GitLab does not say who turned auto-merge off." + ownMRs),
 		Input:       namedInput(),
 		Payload:     mcpevents.BlockedPayload(mrSchema(nil))},
+	// The github server's pr.reviewed and pr.commented (#6296).
+	{Name: "pr.reviewed", Title: "Merge request reviewed",
+		Description: "Someone approved an open merge request (state approved), or a reviewer asked for changes (changes_requested, GitLab 17.2 or later). GitLab keeps only each person's last answer, with no words: so body is always empty, url is the merge request's, commit is its head when the poll saw the answer, and reviewedAt is that poll's time. Once per answer: an approval taken back and given again is a new one. Read for the 50 newest open merge requests. Never a bot's answer, nor a person's who is not one of the project's members with Reporter access or more, unless anyone is true." + ownMRs,
+		Input:       namedInput(),
+		Payload: object(map[string]any{"pr": mrSchema(nil),
+			"review": object(map[string]any{"author": str, "state": str, "body": str, "url": str, "commit": str}), "reviewedAt": str})},
+	{Name: "pr.commented", Title: "Merge request commented on",
+		Description: "A comment was left on a merge request itself, in its overview (not on a line of its diff, which review.comment covers), or an answer in such a thread. Its body is the first 4000 characters. GitLab's own notes (a push, an approval) are not comments. A comment whose body starts with <!-- agent --> is left out: an agent's, not a person's, where agents post as the person's account. Only comments by the project's members with Reporter access or more, never a bot, unless anyone is true; and only on the project's own merge requests.",
+		Input:       schema{projectProperty, prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
+		Payload: object(map[string]any{"pr": mrSchema(nil),
+			"comment": object(map[string]any{"id": integer, "author": str, "url": str, "body": str}), "commentedAt": str})},
 	// For the person, not the project (#2034): what asks the connection's owner for something.
 	{Name: "review.requested", Title: "Review requested from me",
 		Description: "The GitLab account this server is connected as was made a reviewer of an open merge request: once per request, so one taken off and put back is a new one. Anyone's merge request, a fork's too.",
@@ -336,6 +357,11 @@ func (s *Events) diffStates(ctx context.Context, name string, a args, p pollPara
 			mrs, err := s.GitLab.OpenMRs(ctx, a.project)
 			return openedStates(a, mrs), err
 		}
+	case "pr.reviewed":
+		return "reviewedAt", func() ([]state, error) {
+			reviews, err := s.GitLab.Reviews(ctx, a.project)
+			return reviewedStates(a, yours, reviews), err
+		}
 	}
 	return "", nil
 }
@@ -403,6 +429,21 @@ func openedStates(a args, mrs []OpenMR) []state {
 		j := m.MR.json()
 		j["author"] = m.Author
 		out = append(out, state{mr: m.MR, on: &ready, json: j})
+	}
+	return out
+}
+
+// reviewedStates is pr.reviewed's (#6296): each answer on an open merge request a wants, on
+// while it stands, keyed by its author and state. Trust is the merge request's and the
+// reviewer's; mine narrows the merge request.
+func reviewedStates(a args, yours *Yours, reviews []Review) []state {
+	var out []state
+	for _, r := range reviews {
+		if (a.mine && !a.byMe(r.MR, yours)) || (!a.mine && !a.anyone && !r.MRTrusted) || (!a.anyone && !r.Trusted) {
+			continue
+		}
+		out = append(out, state{mr: r.MR, on: new(true), key: r.Author + ":" + r.State, json: r.MR.json(),
+			extra: map[string]any{"review": map[string]any{"author": r.Author, "state": r.State, "body": "", "url": r.MR.URL, "commit": r.HeadSHA}}})
 	}
 	return out
 }
@@ -490,14 +531,14 @@ func candidates(ctx context.Context, gl GitLab, name string, a args, yours *Your
 		return mcpevents.DeployCandidates(name, a.deploy, deploys), listed, nil
 	}
 	switch name {
-	case "review.comment":
-		return f.reviewComments()
+	case "review.comment", "pr.commented":
+		return f.mrComments()
 	case "run.completed":
 		return f.completedRuns()
 	case "deploy.waiting":
 		return f.waitingDeploys()
-	case "checks.failed":
-		return f.failedChecks()
+	case "checks.failed", "checks.passed":
+		return f.pipelineChecks()
 	}
 	return f.closedMRs()
 }
@@ -552,9 +593,15 @@ func (f finder) issueActivity(kind IssueKind) ([]candidate, Listed, error) {
 	return list, listed, nil
 }
 
-func (f finder) reviewComments() ([]candidate, Listed, error) {
+// mrComments are review.comment's comments on lines, or pr.commented's on the merge requests
+// themselves (#6296), but an agent's.
+func (f finder) mrComments() ([]candidate, Listed, error) {
 	a := f.a
-	comments, listed, err := f.gl.ReviewComments(f.ctx, f.project, f.since)
+	read, data := f.gl.ReviewComments, ReviewComment.data
+	if f.name == "pr.commented" {
+		read, data = f.gl.MRComments, ReviewComment.prData
+	}
+	comments, listed, err := read(f.ctx, f.project, f.since)
 	if err != nil {
 		return nil, Listed{}, err
 	}
@@ -563,9 +610,9 @@ func (f finder) reviewComments() ([]candidate, Listed, error) {
 		// Trust is the commenter's; mine only narrows the merge request (#3797).
 		m := c.MR
 		if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) &&
-			a.closesOne(m) && a.byMe(m, f.yours) && (a.anyone || c.Trusted) {
-			list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d", f.project, c.ID), Time: at,
-				Data:    func() (map[string]any, error) { return c.data(), nil },
+			a.closesOne(m) && a.byMe(m, f.yours) && (a.anyone || c.Trusted) && (f.name != "pr.commented" || !mcpevents.ByAgent(c.Body)) {
+			list = append(list, candidate{EventID: fmt.Sprintf("%s:%s:%d", f.name, f.project, c.ID), Time: at,
+				Data:    func() (map[string]any, error) { return data(c), nil },
 				Subject: prRef(f.project, m.Number), Key: fmt.Sprint(c.ID)})
 		}
 	}
@@ -652,8 +699,13 @@ func (f finder) waitingDeployData(w WaitingDeploy) (map[string]any, error) {
 		"canApprove": canApprove, "waitingSince": w.Since}, nil
 }
 
-func (f finder) failedChecks() ([]candidate, Listed, error) {
-	pipelines, listed, err := f.gl.FailedPipelines(f.ctx, f.project, f.since)
+// pipelineChecks are checks.failed's failed pipelines, or checks.passed's that passed (#6296).
+func (f finder) pipelineChecks() ([]candidate, Listed, error) {
+	read, data := f.gl.FailedPipelines, FailedPipelineData.json
+	if f.name == "checks.passed" {
+		read, data = f.gl.PassedPipelines, FailedPipelineData.passedJSON
+	}
+	pipelines, listed, err := read(f.ctx, f.project, f.since)
 	if err != nil {
 		return nil, Listed{}, err
 	}
@@ -666,7 +718,7 @@ func (f finder) failedChecks() ([]candidate, Listed, error) {
 		if at == "" {
 			continue
 		}
-		list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%d:%s", f.project, pl.ID, at), Time: at,
+		list = append(list, candidate{EventID: fmt.Sprintf("%s:%s:%d:%s", f.name, f.project, pl.ID, at), Time: at,
 			Subject: pipelineRef(f.project, pl.ID), Key: at,
 			Data: func() (map[string]any, error) {
 				if pl.MRNumber != 0 && !f.a.wantsPR(pl.MRNumber) {
@@ -679,7 +731,7 @@ func (f finder) failedChecks() ([]candidate, Listed, error) {
 				if !f.wanted(details.MR, details.Trusted) {
 					return nil, nil
 				}
-				return details.json(), nil
+				return data(*details), nil
 			}})
 	}
 	return list, listed, nil

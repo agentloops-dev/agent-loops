@@ -16,9 +16,8 @@ import (
 
 func TestTheEventsAreTheGitLabServersNames(t *testing.T) {
 	// The gitlab server's, but for run.completed and deploy.waiting, which each forge has
-	// where its API does, and checks.passed, pr.reviewed and pr.commented, which GitLab does
-	// not give yet (#6296); run.completed is after checks.failed, as there (#4217).
-	not := map[string]bool{"run.completed": true, "deploy.waiting": true, "checks.passed": true, "pr.reviewed": true, "pr.commented": true}
+	// where its API does; run.completed is after checks.failed, as there (#4217).
+	not := map[string]bool{"run.completed": true, "deploy.waiting": true}
 	without := func(names []string) []string {
 		var out []string
 		for _, n := range names {
