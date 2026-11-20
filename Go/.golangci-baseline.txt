@@ -3981,8 +3981,6 @@ Go/internal/mcpevents/schema.go: cognitive complexity of func `(Schema).Check` i
 Go/internal/orgtoken/orgtoken.go: Error return value of `io.Copy` is not checked (errcheck)
 Go/internal/orgtoken/orgtoken.go: G101: Potential hardcoded credentials (gosec)
 Go/internal/orgtoken/orgtoken.go: G104: Errors unhandled (gosec)
-Go/internal/policylayers/resolve.go: cognitive complexity of func `Resolve` is high (> 30) (gocognit)
-Go/internal/policylayers/validate.go: cognitive complexity of func `validateRules` is high (> 30) (gocognit)
 Go/internal/procgroup/procgroup.go: Error return value of `syscall.Kill` is not checked (errcheck)
 Go/internal/procgroup/procgroup_test.go: Error return value of `cmd.Wait` is not checked (errcheck)
 Go/internal/procgroup/procgroup_test.go: Error return value of `syscall.Kill` is not checked (errcheck)
