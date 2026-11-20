@@ -6153,13 +6153,15 @@ type ForgeDiffHunk struct {
 	Lines []DiffLine `json:"lines"`
 }
 
-// What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge waits for the checks; reran is how many runs or pipelines were run again.
+// What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge waits for the checks; reran is how many runs or pipelines were run again. item is the item the write was on, as the forge has it after the write, with its updatedAt (#6351, epic #6348): a client cache replaces its optimistic value with it. On forge/add-child it is the epic. Absent when the read after the write failed (the write still happened), and from an earlier daemon.
 type ForgeDone struct {
 	URL *string `json:"url,omitzero"`
 
 	Auto *bool `json:"auto,omitzero"`
 
 	Reran *int64 `json:"reran,omitzero"`
+
+	Item *ForgeItem `json:"item,omitzero"`
 }
 
 // One event on an issue's timeline (#4373), as its forge says it: kind is what happened; actor is who did it, absent when the forge says nobody (a deleted account); label is the label that labelled and unlabelled name; assignee is the person that assigned and unassigned name; source is the issue or pull request that referenced names, or the pull request that closed closed it with.

@@ -644,16 +644,20 @@ public extension DaemonAPI {
     }
 
     /// What a write did: `url` is the comment or the item; `auto` says a merge waits for the
-    /// checks; `reran` is how many runs or pipelines ran again.
+    /// checks; `reran` is how many runs or pipelines ran again. `item` is the item as the forge
+    /// has it after the write, with its `updatedAt` (#6351): a cache replaces its optimistic value
+    /// with it. On `forge/add-child` it is the epic; absent when the read after the write failed.
     struct ForgeDone: Codable, Sendable, Hashable {
         public var url: String?
         public var auto: Bool?
         public var reran: Int?
+        public var item: ForgeItem?
 
-        public init(url: String? = nil, auto: Bool? = nil, reran: Int? = nil) {
+        public init(url: String? = nil, auto: Bool? = nil, reran: Int? = nil, item: ForgeItem? = nil) {
             self.url = url
             self.auto = auto
             self.reran = reran
+            self.item = item
         }
     }
 

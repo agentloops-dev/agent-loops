@@ -176,6 +176,22 @@ func (d *Daemon) forgeWrote() {
 	d.forgeCache = nil
 }
 
+// forgeWroteOn forgets every answer kept, as forgeWrote does, and gives done the item the write
+// was on as the forge has it now, with its updatedAt (#6351, epic #6348): a client's cache
+// replaces its optimistic value with it. The read is forge/issue's or forge/pull's, so it is
+// kept for the page's next read. When the read fails, done has no item: the write still
+// happened, and the client's next read of the changes brings the item.
+func (d *Daemon) forgeWroteOn(ctx context.Context, node wire.LineageNode, done wire.ForgeDone) wire.ForgeDone {
+	d.forgeWrote()
+	detail, err := d.forgeItem(ctx, node.Kind, wire.ForgeItemRequest{Node: node})
+	if err != nil {
+		return done
+	}
+	item := detail.Item
+	done.Item = &item
+	return done
+}
+
 func (d *Daemon) forgeComment(ctx context.Context, r wire.ForgeCommentRequest) (wire.ForgeDone, error) {
 	const method = "forge/comment"
 	body := strings.TrimSpace(r.Body)
@@ -193,8 +209,7 @@ func (d *Daemon) forgeComment(ctx context.Context, r wire.ForgeCommentRequest) (
 	if err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return wire.ForgeDone{URL: done.URL}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{URL: done.URL}), nil
 }
 
 // labelNames are the names given, trimmed, each once, or why not.
@@ -231,8 +246,7 @@ func (d *Daemon) forgeLabel(ctx context.Context, r wire.ForgeLabelRequest) (wire
 	if err := t.forge.SetLabels(ctx, t.ref, add, remove); err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return wire.ForgeDone{}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{}), nil
 }
 
 // assigneeLogins are the logins given, trimmed, without a leading @, each once, or why not.
@@ -269,8 +283,7 @@ func (d *Daemon) forgeAssign(ctx context.Context, r wire.ForgeAssignRequest) (wi
 	if err := t.forge.SetAssignees(ctx, t.ref, add, remove); err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return wire.ForgeDone{}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{}), nil
 }
 
 func (d *Daemon) forgeLabels(ctx context.Context, r wire.ForgeNodeRequest) (wire.ForgeLabels, error) {
@@ -313,8 +326,7 @@ func (d *Daemon) forgeClose(ctx context.Context, r wire.ForgeCloseRequest) (wire
 	if err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return wire.ForgeDone{}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{}), nil
 }
 
 func (d *Daemon) forgeMerge(ctx context.Context, r wire.ForgeMergeRequest) (wire.ForgeDone, error) {
@@ -334,8 +346,7 @@ func (d *Daemon) forgeMerge(ctx context.Context, r wire.ForgeMergeRequest) (wire
 	if err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return done, nil
+	return d.forgeWroteOn(ctx, r.Node, done), nil
 }
 
 // forgePullWrite is a write on a pull request with nothing but its node: forge/cancel-auto-merge
@@ -348,8 +359,7 @@ func (d *Daemon) forgePullWrite(ctx context.Context, method string, node wire.Li
 	if err := write(t.forge, ctx, t.ref); err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return wire.ForgeDone{}, nil
+	return d.forgeWroteOn(ctx, node, wire.ForgeDone{}), nil
 }
 
 func (d *Daemon) forgeApprove(ctx context.Context, r wire.ForgeApproveRequest) (wire.ForgeDone, error) {
@@ -365,8 +375,7 @@ func (d *Daemon) forgeApprove(ctx context.Context, r wire.ForgeApproveRequest) (
 	if err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return wire.ForgeDone{URL: done.URL}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{URL: done.URL}), nil
 }
 
 func (d *Daemon) forgeRequestChanges(ctx context.Context, r wire.ForgeRequestChangesRequest) (wire.ForgeDone, error) {
@@ -389,8 +398,7 @@ func (d *Daemon) forgeRequestChanges(ctx context.Context, r wire.ForgeRequestCha
 	if err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return wire.ForgeDone{URL: done.URL}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{URL: done.URL}), nil
 }
 
 // actionsRun is an Actions run's id in a check's link: …/actions/runs/123/job/456.
@@ -425,8 +433,7 @@ func (d *Daemon) forgeRerun(ctx context.Context, r wire.ForgeNodeRequest) (wire.
 	if err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return done, nil
+	return d.forgeWroteOn(ctx, r.Node, done), nil
 }
 
 func (d *Daemon) forgeLog(ctx context.Context, r wire.ForgeLogRequest) (wire.ForgeLog, error) {
